@@ -76,9 +76,8 @@ grade = "fairly sure"
 ["0x14044b630"]
 name = "HandleStoreMessage"
 statement = """Handles the store messages, opcodes 0x0987 to 0x0991 except 0x098F."""
-proof = """Called from the receive router 0x140014f10. The earlier notes; the instructions \
-were not re-read."""
-grade = "fairly sure"
+proof = """Called from the receive router 0x140014f10. The disassembly was read again and confirms it."""
+grade = "sure"
 
 ["0x1403ec6a0"]
 name = "HandleInGameMessage"
@@ -140,8 +139,8 @@ runs the effect's execute. For damage, heal and default effects that execute doe
 (0x140001b70), so the message shows nothing for them."""
 proof = """Cast map lookup 0x140561c30; the target node's unit id is at +0x40, the effect's \
 id at +0x64; execute is vtable +0x10. A code comment cites 0x1403ee2ec for the same message's \
-path to a delayed effect's execute. The earlier notes; the instructions were not re-read."""
-grade = "fairly sure"
+path to a delayed effect's execute. The disassembly was read again and confirms it."""
+grade = "sure"
 
 ["0x140001b70"]
 name = "DoNothing"
@@ -280,8 +279,8 @@ grade = "fairly sure"
 name = "HandleEntityHealthUpdate"
 statement = """Handles 0x0937, an entity's health update. It skips the local player, whose \
 health comes from 0x092F."""
-proof = """The earlier notes; the instructions were not re-read."""
-grade = "fairly sure"
+proof = """The disassembly was read again and confirms it."""
+grade = "sure"
 
 ["0x1400370d0"]
 name = "HandleLoginScreenMessage"
@@ -490,9 +489,8 @@ grade = "fairly sure"
 ["0x1400a7250"]
 name = "WriteFlagOrByte"
 statement = """Writes a flag or a byte, given the value and its bit count."""
-proof = """Arguments (writer, value, bits). The earlier notes; the instructions were not \
-re-read."""
-grade = "fairly sure"
+proof = """Arguments (writer, value, bits). The disassembly was read again and confirms it."""
+grade = "sure"
 
 # Account rewards
 
@@ -661,11 +659,13 @@ writer. A seed above 14 bits round-trips through `ServerChat` and `ClientChat`."
 grade = "fairly sure"
 
 ["0x140c1ec90"]
-statement = """The chat format reader table: format types 1 (Alien), 7 (Profanity) and 11 (Loot) \
-map to the reader 0x14007ab50, which reads the format's seed as one 32-bit value."""
-proof = """The packet schema's chat format comments: `MOV R8D,0x20` in the reader. A seed above \
-14 bits round-trips through `ServerChat` and `ClientChat`."""
-grade = "fairly sure"
+statement = """The chat format reader table: 12 entries indexed by the 4-bit format type, where a type above \
+11 fails. Format types 1, 7 and 11 map to the reader 0x14007ab50, which reads one 32-bit value. The client \
+does not hold names for the format types."""
+proof = """The table read from the image; the type is read by 0x140085ca0. 0x14007ab50 is MOV R8D,0x20; JMP \
+0x14006c090. The writer table 0x140c1ec30 maps the same types to 0x14007d010 (ADD RAX,0x20 at 0x14007d082). \
+A round trip of a value above 14 bits was not run."""
+grade = "sure"
 
 ["0x140c65890"]
 statement = """The client's word filter global. It keeps three sets of words by \
@@ -787,12 +787,16 @@ proof = """The earlier notes: binding 0x14070dfb0 reads game state +0x6ac4 (frie
 grade = "fairly sure"
 
 ["FriendshipLib.GetById"]
-statement = """Returns a character friend's Lua table, which 0x1405dab80 builds, as \
-`FriendshipLib.GetList` does. Its `bTemporary` is true when the friendship id is below 2^48 \
-(unsigned), and `FriendsList.lua` line 788 then shows the name as "(Temporary) <name>"."""
-proof = """The earlier notes: binding 0x14070dcc0, `GetList` 0x14070ddc0, and the unsigned \
-compare `friendship_id < 0x1000000000000` at 0x1405dac1f."""
-grade = "fairly sure"
+statement = """Returns a character friend's Lua table, built as FriendshipLib.GetList builds each entry. \
+Its argument is the friend's 32-bit local id; an unknown id returns nothing. A friend not yet loaded gets \
+a table holding only its id. Otherwise `bTemporary` is true when the friendship id is below 2^48, \
+compared unsigned, and the friends list then shows the name as "(Temporary) $1n"."""
+proof = """Row 0x140b736a0 {GetById, 0x14070dcc0} in the table that 0x14070f700 registers as \
+"FriendshipLib". 0x14070dcc0: CALL 0x140056d60, MOV EDX,EAX, CALL 0x1405e2300 (the map at game+0x6838, \
+local id at friend +8). The table is built by 0x1405dab80, as GetList 0x14070ddc0 does over the list at \
+game+0x6a90: CMP [RBP+0x100],0 / JZ at 0x1405dabd9 (not loaded); the unsigned compare at 0x1405dac1f; \
+SETNZ stored as a boolean at 0x1405dacac. FriendsList.lua line 788; en-US Friends_TemporaryIgnoreName."""
+grade = "sure"
 
 ["FriendshipLib.SetFriendPrivateData"]
 statement = """Sets the private note of an account friendship: its binding 0x14070ef80 calls the \
@@ -932,12 +936,16 @@ proof = "The earlier notes; the instructions were not re-read."
 grade = "fairly sure"
 
 ["0x1403f87b0"]
-name = "LookUpFriendRealmName"
-statement = """Looks up the realm name for a friend's pending 0x0597 request (types 2, 3 and 1, \
-0x1403f8660). When the realm is in the client's realm map it calls its callback 0x1405e2c10 at \
-once and sends nothing; else it queues the request and sends 0x059C."""
-proof = """The earlier notes: the realm map is `DAT_140c635f0`+0x15e0; the instructions were not \
-re-read."""
+name = "RequestRealmName"
+statement = """Gives a realm id's name to a callback; its arguments are the game, the 32-bit realm id, the \
+callback and a user value. For realm id 0, or an id already known, it calls the callback at once with the \
+name (or none) and sends nothing. Otherwise it queues the request and, when no request for that id was \
+already queued and a game flag allows, sends 0x059C with the 32-bit realm id. It is not part of the \
+0x0597 player info requests."""
+proof = """The decompile and disassembly: the known realms are a map by u32 at DAT_140c635f0+0x15e0, with the \
+name at node+0x28; the queue is at game+0x6818; the flag is game+0x7b48 & 0x10; the send is \
+FUN_1403f4740(game, 0x59c, &id). Callers: 0x1405dcbe0, 0x1405dfab0, 0x1405dfe00 (callback 0x1405e2c10), \
+0x1405ef320, 0x140661f00. The 0x0597 requests go through 0x1403f8660, whose list is at game+0x6810."""
 grade = "fairly sure"
 
 ["0x1405e0bd0"]
@@ -1009,11 +1017,14 @@ grade = "fairly sure"
 
 ["0x1405dcee0"]
 name = "SetAccountFriendOffline"
-statement = """Clears an account friend's characters and sets its presence to 3, invisible, when \
-0x03A3 or 0x03B1 carries a nonzero last-online float."""
-proof = """The earlier notes, which cite it in brackets after that behaviour without saying \
-whether it does it; the instructions were not re-read."""
-grade = "guess"
+statement = """Clears an account friend's characters and, when its second argument is not 0, sets its \
+presence to 3, invisible, and raises the Lua event FriendshipAccountDataUpdate. The 0x03A3 and 0x03B1 \
+handlers call it with 1 when the last-online value is not 0 (a NaN counts as 0); the destructor calls it \
+with 0."""
+proof = """Its disassembly: +0x70 = 0 always; with EDX != 0, [friend+0x40] = 3. Callers 0x1405dc130 (0x03A3, \
+at 0x1405dc38a, only when the float is not 0, after 0x1401e82f0 stores the time), 0x1405e1860 (0x03B1, at \
+0x1405e18fa) and the destructor 0x1405dc3a0. Invisible is 3.0 in 0x14070f700; the float test is UCOMISS."""
+grade = "sure"
 
 ["0x14070f700"]
 name = "RegisterFriendshipLibEnums"
@@ -1052,8 +1063,8 @@ grade = "fairly sure"
 name = "ReadFriendLocations"
 statement = """The reader of 0x03C0: an 8-bit count, then that many 64-bit friendship ids, then \
 that many 32-bit WorldZone ids (zone ids, not world ids)."""
-proof = "The earlier notes: the friends recording carries zone 0x248; the instructions were not re-read."
-grade = "fairly sure"
+proof = "The earlier notes: the friends recording carries zone 0x248; The disassembly was read again and confirms it."
+grade = "sure"
 
 ["0x1405dce30"]
 name = "SetAccountFriendCharacterZone"
@@ -1144,8 +1155,8 @@ statement = """The in-game screen handler's case for 0x0424, a request to join t
 group. It keeps the group id and the requester's name as the pending request, sets to 1 the \
 last bit the 0x0453 answer sends, and raises the Lua event `Group_JoinRequest`."""
 proof = """The earlier notes: the group id goes to game state +0x6c30, the name pointer to \
-+0x6c40, and +0x6c48 is set to 1; the instructions were not re-read."""
-grade = "fairly sure"
++0x6c40, and +0x6c48 is set to 1; The disassembly was read again and confirms it."""
+grade = "sure"
 
 ["0x1403f056a"]
 statement = """The in-game screen handler's case for 0x0427, joining a group."""
@@ -1500,10 +1511,16 @@ proof = "The earlier notes; the instructions were not re-read."
 grade = "fairly sure"
 
 ["0x1406d9bf0"]
-name = "HandleBagItemRightClick"
-statement = """The bag's right-click on an item (DDBagItem): calls the use-item entry \
-0x1403998e0 and ignores its result."""
-proof = "The earlier notes; the instructions were not re-read."
+name = "HandleDragDropBagItemUse"
+statement = """The drop handler of a drag-and-drop window class. When the dragged payload is a bag item \
+("DDBagItem") and the window is not blocked, it uses that item: it calls the use-item entry 0x1403998e0 \
+with the item's location, taken as two values from the payload (bits 8 to 15, then the low byte). It \
+returns false whatever the result. It reads no mouse button, so it is not the bag's right-click."""
+proof = """Disassembly 0x1406d9bf0 to 0x1406d9c69: [this+0x400] must be 0; a 9-byte compare of the manager's \
+payload type ([[this+0x20]+0xd70]) against 0x140b3cfc0 "DDBagItem"; the location from [[this+0x20]+0xda0]; \
+CALL 0x1403998e0 at 0x1406d9c5e, then XOR AL,AL. It is slot +0x158 of vtable 0x140b71570 (found by Refs \
+at 0x140b716c8), after the query slot 0x1406d9ba0, which returns 2 for "DDBagItem" and 3 otherwise. The \
+same vtable's 0x1406d9c70 registers the Lua class name "Apollo.DragDropFrame"."""
 grade = "fairly sure"
 
 ["0x140419dd0"]
@@ -1530,10 +1547,13 @@ grade = "guess"
 
 # Lua bindings and enums
 
-["0x140b69830"]
-statement = """AccountItemLib's binding table: {name, function} rows."""
-proof = """The earlier notes; the instructions were not re-read."""
-grade = "fairly sure"
+["0x140b69660"]
+statement = """AccountItemLib's Lua binding table: 37 {name, function} rows, from GetPendingAccountItemGroups \
+(0x140b69660) to GetCharacterNames (0x140b698a0), ended by a null row at 0x140b698b0. Row 29, at \
+0x140b69830, is {"GetExternalCurrency", 0x1404e7c90}."""
+proof = """A walk of the rows; the decompiles of 0x140434a00 and 0x140727a70 both register it under \
+"AccountItemLib" (FUN_140057020(L, "AccountItemLib", 0x140b69660))."""
+grade = "sure"
 
 ["0x140b69d80"]
 statement = """StorefrontLib's binding table: {name, function} rows."""
@@ -1868,7 +1888,7 @@ name = "WriteSingleUnsigned3"
 statement = """Writes who parameter type 2: one u3."""
 proof = """Entry 2 of the table at 0x140c1ed80, read from the file on disk; the bit-count constant \
 read in the function's disassembly."""
-grade = "fairly sure"
+grade = "sure"
 
 ["0x14007eea0"]
 name = "WriteSingleUnsigned15"
@@ -1889,7 +1909,7 @@ name = "WriteWhoParameterVariant7"
 statement = """Writes who parameter type 7: a wide string, a u14, a u3, a u14, a u15 and a u14."""
 proof = """Entry 7 of the table at 0x140c1ed80, read from the file on disk; the bit-count constants \
 read in order in the function's disassembly."""
-grade = "fairly sure"
+grade = "sure"
 
 ["0x14007f660"]
 name = "ReadServerWhoResponse"
@@ -1897,7 +1917,7 @@ statement = """Reads 0x095A ServerWhoResponse: a u32 count, that many players (e
 0x14007f410), then a u2."""
 proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
 disassembly."""
-grade = "fairly sure"
+grade = "sure"
 
 ["0x14007f410"]
 name = "ReadWhoPlayer"
@@ -2106,7 +2126,7 @@ actor table (0x140c1ecf0); and types 0 and 2 of the quest Lua event table (0x140
 writing side for the chat formats is 0x14007d010, from the writer table at 0x140c1ec30."""
 proof = """`MOV R8D,0x20` in the function; the writer 0x14007d010 adds 0x20 bits (`ADD RAX,0x20` at \
 0x14007d082). The three tables read from the file on disk as arrays of code pointers."""
-grade = "fairly sure"
+grade = "sure"
 
 ["0x14008f530"]
 name = "ReadServerQuestLuaEvent"
@@ -2322,15 +2342,14 @@ not re-read."""
 grade = "fairly sure"
 
 ["0x1400896f0"]
-name = "WriteClientFallingDamage"
-statement = """Writes 0x00FB ClientFallingDamage: one 32-bit float, how hard the player \
-landed, which the client turns into no damage itself. The movement tick sends it at the end \
-of a tick whose summed impact severity is above 0, unless the controlled unit is a ghost \
-(unit type 0x17). 1.0 is a landing at the lethal speed, and the sum is not clamped."""
-proof = """Registered at 0x140070878; MOVSS XMM1,[RDX] then JMP 0x14006bd80. The call is at \
-0x1403a62f1 in 0x1403a25c0, through 0x1403f4900; the summed severity is the tick state's \
-+0x90, added to at 0x1407bab32. Recordings hold 6AF89440 (4.6553), 3A7DF83D, E2132C3D, \
-8797C03C and 4FE73A3D."""
+statement = """Writes 0x00FB: one 32-bit float. The movement tick sends it when its fall value is above 0 \
+(a NaN sends too) and the controlled unit is not a ghost; the value is sent as it is. How the fall value \
+is summed is not shown."""
+proof = """MOVSS XMM1,[RDX]; JMP 0x14006bd80; registered at 0x140070878 with size 4. The tick 0x1403a25c0: \
+COMISS 0.0,[RSI+0x90] / JNC at 0x1403a62b8, unit +0x80 != 0x17, MOV EDX,0xfb at 0x1403a62f1, CALL \
+0x1403f4900 at 0x1403a62ff. 0x1407ba940 adds terms into [object+0xb0] at 0x1407bab32, each from \
+0x1408fbfc0, which looks like pow, unclamped; that this is the +0x90 value is not shown. Recorded values \
+6AF89440 = 4.6553 and 3A7DF83D = 0.1213 decode as one float each."""
 grade = "fairly sure"
 
 ["0x1407ba940"]
@@ -2417,12 +2436,14 @@ grade = "fairly sure"
 
 ["0x1403f3d30"]
 name = "HandlePlayerInfoFull"
-statement = """Handles 0x0599, the full player info: it runs the basic handler's code first, then \
-completes the pending friend, rival and neighbour requests. The in-game screen handler's case for \
-0x0599 at 0x1403ec7a5 calls it."""
-proof = """The in-game screen handler's jump table entry for 0x0599, whose case at 0x1403ec7a5 calls \
-this function."""
-grade = "fairly sure"
+statement = """Handles 0x0599, the full player info. It runs the basic handler's code first, then walks the \
+pending player info requests and, for each whose 32-bit and 64-bit identity match the message's, calls its \
+callback and frees it; the message goes to the callback only when the result code is 0. It matches by \
+identity, not by request type."""
+proof = """The jump table entry for 0x0599 points to 0x1403ec7a5, which calls this function. It calls \
+0x1403f3b50, then walks the list at game+0x6810, matching msg +8 (u32) and +0x10 (u64). 0x1403f8660 queues \
+into that list."""
+grade = "sure"
 
 ["0x1403f82f0"]
 name = "LookUpPlayerName"
@@ -2445,12 +2466,14 @@ come from two separate readings of its callers in the earlier notes, which do no
 grade = "guess"
 
 ["0x1405df4e0"]
-name = "RequestFriendPlayerInfo"
-statement = """Asks a character friend's player info again, with 0x0597 request type 2, through \
-0x1403f8660. The handler of 0x03CA, a character friend's last online (0x1405e01d0), calls it before \
-it reads the days."""
-proof = """Its call to 0x1403f8660 with type 2; the call from 0x1405e01d0 before the float test."""
-grade = "fairly sure"
+statement = """Asks again for a character friend's player info, with 0x0597. The request type follows the \
+friend's type: friend type 0 or 4 asks with type 2, friend type 3 with type 3, any other with type 1. The \
+0x03CA handler marks the friend and calls it before reading the message's days value."""
+proof = """Disassembly 0x1405df4f3 to 0x1405df528 (the friend's type at +0xd0); it calls 0x1403f8660 with \
+callback 0x1405e2a30. The 0x03CA handler 0x1405e01d0 sets friend +0xfc = 1 and calls it at 0x1405e024a, \
+then reads the float at msg+0x10. The other callers of 0x1403f8660 ask with type 2 (0x1405dfab0, \
+0x1405dfe00) or 4 (0x1404ba660, 0x1404bb790)."""
+grade = "sure"
 
 ["0x1404ba660"]
 statement = """One of the two housing neighbour functions that ask a neighbour's player info with \
@@ -2640,9 +2663,18 @@ proof = "The comment of the earlier code's quest flags: the mask is at +0x44."
 grade = "fairly sure"
 
 ["0x1405fcb80"]
-statement = "Toggles an active quest's tracked bit, 0x2, which shows it in the quest tracker."
-proof = "The comment of the earlier code's tracked flag; the instructions were not re-read."
-grade = "fairly sure"
+name = "SetQuestTracked"
+statement = """Sets or clears a quest's tracked state from its third argument (0 or 1); it never toggles. \
+For an unknown quest, or when asked to clear a state that is already clear, it does nothing. Otherwise \
+it sets or clears the state, sends 0x0364 (a 15-bit quest id, then 1 bit: tracked) and raises the Lua \
+event QuestTrackedChanged; asked to track a quest that is already tracked, it still sends and raises. \
+The quest tracker draws a quest only while it is tracked. Lua's ToggleTracked passes the opposite of the \
+current state; SetTracked passes its argument."""
+proof = """Disassembly 0x1405fcbe9 to 0x1405fcc1e (the tracked state is bit 0x2 of quest +0x6c; quest +0x70 \
+is zeroed), MOV EDX,0x364 at 0x1405fcc2a, the event call at 0x1405fcc8c; writer 0x140084bb0 masks 0x7fff \
+(15 bits) then AND 1. IsTracked is 0x14054f480 (+0x6c & 2); ToggleTracked 0x140664d80; SetTracked \
+0x140664c70; QuestTracker.lua DrawQuest."""
+grade = "sure"
 
 ["0x14049f3d0"]
 statement = """Prerequisite type 43: reads a quest's done mask to tell whether an objective is \
@@ -2655,11 +2687,13 @@ with no prompt."""
 grade = "fairly sure"
 
 ["0x140612c7c"]
-statement = """The jump table of the quest Lua event handler 0x1406128b0, which builds the Lua \
-arguments with the letters i, s, U, b, o and Q. Type 2, a u32 unit id read by 0x14007ab50, is \
-taken as the 'U' case by its order among them."""
-proof = "The packet schema's comment on `LuaEventDataUnit`, which says the jump table was not read."
-grade = "guess"
+statement = """The jump table of the quest Lua event handler 0x1406128b0, by argument type: 0 an int ('i'), 1 a \
+string ('s'), 2 a unit id ('U'), 3 a bool ('b'), 4 an item ('o') and 5 a quest ('Q'). A type above 5 fails, \
+and at most 5 arguments are used."""
+proof = """The table read from the file on disk with jump_table.py: types 0 to 5 go to 0x140612994, 0x1406129a1, \
+0x1406129ae, 0x1406129bb, 0x1406129c8 (item, 0x1400b5df0) and 0x1406129ec (quest, 0x1405a8a40); a type above \
+5 returns 0x80004005; min(count, 5) entries. The type 2 value is a u32 read by 0x14007ab50."""
+grade = "sure"
 
 ["0x14046c4d0"]
 name = "EvaluateUnitAnimStatePrerequisite"
@@ -2738,13 +2772,15 @@ proof = """The earlier notes: the progress is at [obj+0x1c]; the instructions we
 grade = "fairly sure"
 
 ["0x1405517a0"]
-name = "CountObjectiveProgress"
-statement = """Picks how an objective's progress counts. For objective types 10, 13, 14 and 18 \
-the progress is a bit mask and the client counts its set bits (0x140575a90); for every other \
-type it reads the raw value (0x140575a80)."""
-proof = """The earlier notes: the bit count is the objective's vtable slot +0x48, the raw value \
-slot +0x40; the instructions were not re-read."""
-grade = "fairly sure"
+name = "IsBitMaskObjective"
+statement = """Answers whether a quest objective's progress is a bit mask. It is for objective types 10, \
+13, 14 and 18, and for types 27 and 28 when the row the objective names has 1 or 2 in its fifth \
+field. A bit-mask objective counts its set bits (0x140575a90); every other type reads the raw value \
+(0x140575a80)."""
+proof = """Its disassembly and its jump table, read from the file on disk (0x140551814, index table \
+0x140551820); the row comes from 0x140223380 on the objective's +0xc, field +0x10. The bit count is the \
+objective's vtable slot +0x48, the raw value slot +0x40."""
+grade = "sure"
 
 ["0x140575a80"]
 name = "ReadObjectiveProgressValue"
@@ -2762,16 +2798,23 @@ grade = "fairly sure"
 
 ["0x140575ae0"]
 name = "TestObjectiveProgressBit"
-statement = "Tests one bit of an objective's progress."
-proof = "The earlier notes: it is the objective's vtable slot +0x50; the instructions were not re-read."
-grade = "fairly sure"
+statement = """Tests one bit of an objective's progress: it returns progress & (1 << (index & 31)), the masked \
+value, not 0 or 1."""
+proof = """MOV EAX,1; SHL EAX,CL (CL from EDX); AND EAX,[this+0x1c]. It is vtable slot +0x50, after 0x140575a80 \
+and 0x140575a90, in four objective vtables: 0x140b6c9a0, 0x140b6cb30, 0x140b6cc20 and 0x140b6fa20."""
+grade = "sure"
 
 ["0x14079d700"]
-name = "WriteObjectiveProgress"
-statement = """Writes an objective's progress from `ServerQuestObjectiveUpdate` or a \
-`QuestActive` entry. It takes any value, up or down, with no clamp; the client never counts \
-held items itself."""
-proof = "The earlier notes; the instructions were not re-read."
+statement = """Sets a quest objective's state, progress and third value from its three arguments. It \
+returns 0 when all three are unchanged; otherwise it tells the objective's listeners which of progress \
+and the third value changed, and returns 1. 0x0361 (a 15-bit quest id, a 32-bit objective index and a \
+32-bit value) calls it with state 1, the value as progress and 0; 0x035F calls it for each entry with \
+state 1. The progress is stored as sent, up or down, with no clamp; the caller then compares it with the \
+objective's need to set the done bit."""
+proof = """Disassembly 0x14079d700 to 0x14079d85f: EDX -> +0x24, R8D -> +0x1c, R9D -> +0x20; vtable +0x30 and \
++0x38 notify. 0x1405fb830 -> 0x1406115a0 for 0x0361 (reader 0x14008f100: bit counts 0xf, 0x20, 0x20); \
+0x1405fb350 for 0x035F; the need comes from 0x140551840 and 0x1405515c0. Whether the client counts held \
+items itself is not shown here."""
 grade = "fairly sure"
 
 ["0x1406652e0"]
@@ -2857,20 +2900,29 @@ proof = "The earlier notes; the instructions were not re-read."
 grade = "fairly sure"
 
 ["0x140611680"]
-name = "TestChecklistBit"
-statement = """Tests bit (checklist index & 31) of an objective's progress, for the bit-count \
-objective types; the quest-anim hide test 0x1405a8b30 hides the unit once it is set."""
-proof = "The earlier notes; the instructions were not re-read."
-grade = "fairly sure"
+statement = """Tests one bit of a quest objective's progress: it returns progress & (1 << bit), the masked \
+value, not 0 or 1. It returns 0 when the quest has no objectives, the objective index is past the last, \
+the entry is empty, the objective is not a bit-mask objective (0x1405517a0), or the bit is 32 or more. It \
+does not mask the bit itself: its caller 0x1405a8b30 passes the checklist index & 0x1f. For a quest at \
+state 1, that caller then gives 0x65 once the bit is set, which hides the unit, and 0x27 while it is \
+clear."""
+proof = """Disassembly 0x140611680 to 0x140611706: CMP EDX,EAX / JZ / JA; CMP EDI,0x20 / JNC; CALL [RAX+0x40] \
+(the progress at +0x1c); SHL EDX,CL / AND EAX,EDX. The caller's call at 0x1405a8cdb; 0x14046c4d0 sets unit \
++0x1900 = 1 when it gets 0x65."""
+grade = "sure"
 
 ["0x14046c580"]
-name = "PickActivationSpell"
-statement = """Picks a unit's activation spell: the first of Creature2 \
-`spell4IdActivate00..03` whose prerequisite is 0 or passes, else the spell GameFormula row \
-0x19e names."""
-proof = """The earlier notes: the fallback is GameFormula 0x19e's +4; the instructions were not \
-re-read."""
-grade = "fairly sure"
+statement = """Picks a unit's activation spell. A unit of kind 0x14 whose two checks pass returns that \
+row's spell. Otherwise, a unit with no creature record returns the fallback, GameFormula row 414's \
+dataint0 (8 in the table). A creature record with either of two disabling fields set returns 0. \
+Otherwise it returns the spell of the first of four slots whose prerequisite is 0 or passes, even when \
+that spell id is 0; only when all four prerequisites are set and fail does it return the fallback."""
+proof = """Disassembly 0x14046c580 to 0x14046c68f: the kind is unit +0x80; the checks are \
+0x1401f31e0([arg2+0xdc]) and 0x14045a950(unit, [arg2+8]), and the spell is the row's +0x54. The record is \
++0x18; the disabling fields are +0x6c and +0x148 (JNZ 0x14046c68d returns 0); the slots' spells are \
+[[rec+0xc0]+4i] and their prerequisites [[rec+0xc0]+0x10+4i], tested by the evaluator 0x140c659a0, vtable \
++0x18; TEST R8D,R8D / JZ 0x14046c67b returns the slot's spell."""
+grade = "sure"
 
 ["0x14039d4a0"]
 name = "ActivateUnit"
@@ -2891,8 +2943,8 @@ grade = "fairly sure"
 name = "ItemGetVirtualItems"
 statement = """The Lua `Item.GetVirtualItems`. Its quest branch (0x1405fcd70) lists the quests' \
 virtual items, shown under the bag's "Show Quest Items"."""
-proof = "The earlier notes; the instructions were not re-read."
-grade = "fairly sure"
+proof = "The disassembly was read again and confirms it."
+grade = "sure"
 
 ["0x1405fcd70"]
 name = "ListQuestVirtualItems"
@@ -2988,19 +3040,26 @@ proof = "The earlier notes; the instructions were not re-read."
 grade = "fairly sure"
 
 ["0x140407990"]
-statement = """One of the two places, with 0x140407600, where the client picks a custom chat \
-channel's slot number itself when `ServerChatJoin` sends order 0; that number becomes the \
-channel's command."""
-proof = """The earlier notes, which cite both addresses together without saying which does \
-what; the instructions were not re-read."""
+name = "ChooseChatChannelSlot"
+statement = """Picks the slot number of a society or custom chat channel the player joined (channel types \
+17 and 18); that number becomes the channel's command. The 0x01BC handler calls it with the channel, its \
+name and its order, the message's third 32-bit value. A non-zero order is tried first as the slot. If \
+0x140407600 refuses it, or the order is 0, it tries slots 1 to 99 in turn and keeps the first that \
+0x140407600 accepts. A society channel first matches its name against a 20-entry table at 0x140c7b310, \
+not decoded."""
+proof = """Disassembly 0x140403bf9 to 0x140403c04 in the 0x01BC handler 0x1404039f0 (R9D = [RSI+0x20], \
+R8 = [RSI+0x10], RDX = the channel); the decompile's loop over slots 1 to 99. The slot replaces $1c in the \
+type's command text: ChatChannel row 18 "$1c", row 17 "c$1c"."""
 grade = "fairly sure"
 
 ["0x140407600"]
-statement = """One of the two places, with 0x140407990, where the client picks a custom chat \
-channel's slot number itself when `ServerChatJoin` sends order 0; that number becomes the \
-channel's command."""
-proof = """The earlier notes, which cite both addresses together without saying which does \
-what; the instructions were not re-read."""
+statement = """Tests one slot number for a society or custom chat channel. It builds the channel type's six \
+command strings with the slot substituted, and refuses the slot (returns 0) when either of two string \
+tests succeeds, which appears to mean the command is taken. Otherwise it stores the six commands on the \
+channel and accepts (returns 1). 0x140407990 calls it to pick the slot."""
+proof = """Read with 0x140407990: the strings are built by 0x140407b90; the tests are 0x1400ec6c0 and \
+0x1400ec7d0; the commands are stored at channel +0x38 to +0xd8. That a successful test means a taken \
+command is inferred."""
 grade = "fairly sure"
 
 ["0x140692bc0"]
@@ -3242,10 +3301,16 @@ proof = """The earlier notes; the instructions were not re-read."""
 grade = "fairly sure"
 
 ["0x14055e180"]
-name = "BuildSpellTelegraphList"
-statement = """Builds a spell's list of TelegraphDamage records from its Spell4Telegraph rows."""
-proof = """The list at spell entry +0x60. The earlier notes; the instructions were not re-read."""
-grade = "fairly sure"
+name = "LoadSpellData"
+statement = """The spell system's loader: one function of 10,283 bytes that reads Spell4, Spell4Base, \
+Spell4Visual, SpellPhase, Spell4Effects, Spell4Telegraph, Spell4Modification, Spell4EffectModification and \
+other tables into the spell manager. In its Spell4Telegraph pass, each row whose spell id is non-zero and \
+whose spell exists gets its TelegraphDamage record appended to that spell's telegraph list."""
+proof = """A vtable slot (0x140b6c738). Disassembly 0x1405607a0 to 0x1405607ff: CALL 0x14023c360, then \
+0x140241c40 (TelegraphDamage by the row's +8), 0x1402dd480 (the spell by the row's +4), 0x140033260 \
+(append to the spell entry's +0x60). The table names come from the string loads through 0x140c63838 and \
+0x140c63840 in the decompile."""
+grade = "sure"
 
 ["0x140542d90"]
 name = "CanSpawnCastTelegraph"
@@ -3376,11 +3441,11 @@ proof = "The earlier notes; the instructions were not re-read."
 grade = "fairly sure"
 
 ["0x140450280"]
-statement = """Gives an offer's Lua `bItemsAreGiftable`, whether its items may be given as a \
-gift."""
-proof = """The earlier notes, in the row of `StorefrontLib.PurchaseOffer`; the instructions were \
-not re-read."""
-grade = "fairly sure"
+statement = """Gives an offer's Lua `bItemsAreGiftable`: 0 when any of its 16-byte item entries whose first \
+value is 0 names an AccountItem row with flag bit 0 set, otherwise 1, also for an empty list."""
+proof = """0x1404ed920 calls it at 0x1404ee7cf and stores the result as the boolean "bItemsAreGiftable" \
+(wide key 0x140b0d8e8, at 0x1404ee7ee). The AccountItem flags are the row's +4."""
+grade = "sure"
 
 ["StorefrontLib.PurchaseOffer"]
 statement = """Buys a store offer: its binding 0x1404f1150 sends 0x0828 or 0x082A."""
