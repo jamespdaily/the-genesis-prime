@@ -24,6 +24,7 @@ PLANTED_ONE = 0x140001010
 PLANTED_TWO = 0x140001020
 
 
+@cs.needs_client
 class SeedLinesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -54,6 +55,7 @@ class SeedLinesTest(unittest.TestCase):
         self.assertNotIn(seed.PLANTED_UNMAPPED, {a for a, _k, _n in self.lines})
 
 
+@cs.needs_client
 class SeedFileTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

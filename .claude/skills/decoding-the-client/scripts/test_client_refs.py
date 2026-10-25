@@ -19,6 +19,7 @@ import check_support as cs  # noqa: E402
 from client_refs import RefIndex  # noqa: E402
 
 
+@cs.needs_client
 class RefIndexTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -435,6 +435,7 @@ INSIDE_PDATA_FUNCTION = 0x140003FE8  # the switch jump inside it
 RDATA_CONSTANT = 0x140B79D14  # a constant in .rdata (formulas_by_hand.py)
 
 
+@cs.needs_client
 class FunctionEntriesTest(unittest.TestCase):
     """item 2's name rule on the real client: .pdata lists no leaf function."""
 
@@ -468,12 +469,15 @@ class MainTest(unittest.TestCase):
             code = check_facts.main(list(argv))
         return code, out.getvalue()
 
+    @cs.needs_client
     def test_the_real_repository_passes_and_prints_no_problem(self):
         # item 1: "main([]) exits 0 and prints no problem"; fails until the records land. The
         # client is named so the name rule runs; without it main prints that the rule was not checked.
-        with mock.patch.dict(os.environ, {"WILDSTAR_CLIENT_EXE": str(cs.client_exe())}):
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {"WILDSTAR_CLIENT_EXE": str(cs.client_exe())}), contextlib.redirect_stderr(err):
             code, printed = self.run_main()
-        self.assertEqual((code, printed), (0, ""))
+        # main exits 0 without the client too and says on stderr that the name rule was not checked
+        self.assertEqual((code, printed, err.getvalue()), (0, "", ""))
 
     def test_main_exits_non_zero_and_prints_each_problem(self):
         # item 5: a planted repository with one bad record and one address no record holds

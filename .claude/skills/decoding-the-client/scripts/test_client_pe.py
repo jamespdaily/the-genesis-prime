@@ -21,6 +21,7 @@ import ghidra_env  # noqa: E402
 from client_pe import ClientPE  # noqa: E402
 
 
+@cs.needs_client
 class ClientPETest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

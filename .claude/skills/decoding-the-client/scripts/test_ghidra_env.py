@@ -30,11 +30,17 @@ class PinnedValuesTest(unittest.TestCase):
         self.assertEqual(ghidra_env.PYTHON_MINOR, (3, 13))
         self.assertEqual(ghidra_env.PYGHIDRA_VERSION, "3.2.0")
 
-    def test_the_pinned_client_hash_is_the_clients_hash(self):
+    def test_the_pinned_client_hash_is_the_one_the_issue_measured(self):
         # issue 16 trial
         self.assertEqual(
             ghidra_env.CLIENT_SHA256, "565c2fa1a1cf4b08cf5a93e0bff90bf09bde5772d03615402132d72db5fe0b10"
         )
+
+
+@cs.needs_client
+class ClientHashTest(unittest.TestCase):
+    def test_the_pinned_client_hash_is_the_hash_of_the_client_file(self):
+        # issue 16 trial
         self.assertEqual(hashlib.sha256(cs.client_exe().read_bytes()).hexdigest(), ghidra_env.CLIENT_SHA256)
 
 
@@ -63,11 +69,13 @@ class SettingsTest(unittest.TestCase):
                 self.assertIn(name, str(raised.exception))
 
 
+@cs.integration_only
 class RealInstallTest(unittest.TestCase):
     def test_ghidra_version_reads_application_properties(self):
         self.assertEqual(ghidra_env.ghidra_version(Path(cs.require_env("GENESIS_GHIDRA_DIR"))), "12.2")
 
 
+@cs.integration_only
 class PlantedInstallTest(unittest.TestCase):
     def setUp(self):
         self._dir = tempfile.TemporaryDirectory()

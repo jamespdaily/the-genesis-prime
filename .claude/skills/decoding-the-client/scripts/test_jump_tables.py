@@ -27,6 +27,7 @@ def table_at(jump_tables, jmp):
     return found
 
 
+@cs.needs_client
 class JumpTableTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
