@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# The full check, run locally and in CI (.github/workflows/check.yml).
+#
+# Parts, independent ones side by side; a part that fails is named, and the
+# script exits non-zero:
+#   format         gleam format --check src test
+#   gleam-build    gleam build --warnings-as-errors
+#   glinter        gleam run -m glinter                 (after gleam-build)
+#   gleam-test     gleam test                           (after gleam-build)
+#   migrations     a fresh database with a unique name, every
+#                  priv/migrations/*.sql applied in name order, each with
+#                  psql -v ON_ERROR_STOP=1 --single-transaction
+#   squirrel       gleam run -m squirrel check, against that database
+#   client-suite   the client query process's fast unit tests
+#   fact-checker   check_facts.py over the fact file
+#
+# The database is on the Postgres named by PGHOST, PGPORT and PGUSER (defaults
+# /tmp, 5433 and postgres: the native Postgres 18 on the development machine)
+# and is dropped on exit, also on failure. squirrel connects over TCP only:
+# when PGHOST is a socket directory, it uses PGTCPHOST (default ::1).
+#
+# GENESIS_NO_CLIENT=1, which only CI sets, marks a machine without the client;
+# everywhere else a missing client fails the part that reads it.
+#
+# gleam holds a lock on its build directory, so the gleam parts run one after
+# another in a single chain; every other part runs beside the chain.
+
+cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
+
+: "${PGHOST:=/tmp}"
+: "${PGPORT:=5433}"
+: "${PGUSER:=postgres}"
+export PGHOST PGPORT PGUSER
+
+started=$(date +%s)
+work=$(mktemp -d)
+database="genesis_check_$$_${started}"
+parts="format gleam-build glinter gleam-test migrations squirrel client-suite fact-checker"
+
+cleanup() {
+  if [ -f "$work/database_created" ]; then
+    psql -X -q -d postgres -c "drop database if exists \"$database\" with (force)" \
+      >/dev/null 2>&1
+  fi
+  rm -rf "$work"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+# step NAME COMMAND...: runs the command here, its output to a log, and records
+# its status and seconds under NAME.
+step() {
+  local name=$1 status begin
+  shift
+  begin=$(date +%s)
+  "$@" >"$work/$name.log" 2>&1
+  status=$?
+  echo "$status" >"$work/$name.status"
+  echo $(($(date +%s) - begin)) >"$work/$name.seconds"
+  return $status
+}
+
+in_background() {
+  ("$@") &
+}
+
+prepare_database() {
+  psql -X -q -v ON_ERROR_STOP=1 -d postgres -c "create database \"$database\"" || return 1
+  touch "$work/database_created"
+  local migration
+  while IFS= read -r migration; do
+    echo "applying $migration"
+    psql -X -q -v ON_ERROR_STOP=1 --single-transaction -d "$database" -f "$migration" || return 1
+  done < <(find priv/migrations -name '*.sql' | LC_ALL=C sort)
+}
+
+database_url() {
+  local host=$PGHOST
+  case "$host" in
+    /*) host=${PGTCPHOST:-::1} ;;
+  esac
+  case "$host" in
+    *:*) host="[$host]" ;;
+  esac
+  local login=$PGUSER
+  if [ -n "${PGPASSWORD:-}" ]; then
+    login="$PGUSER:$PGPASSWORD"
+  fi
+  echo "postgres://$login@$host:$PGPORT/$database"
+}
+
+wait_for_status() {
+  local name=$1 waited=0
+  while [ ! -f "$work/$name.status" ] && [ "$waited" -lt 600 ]; do
+    sleep 0.2
+    waited=$((waited + 1))
+  done
+  [ "$(cat "$work/$name.status" 2>/dev/null)" = 0 ]
+}
+
+squirrel_check() {
+  DATABASE_URL=$(database_url) gleam run -m squirrel check
+}
+
+gleam_chain() {
+  if step gleam-build gleam build --warnings-as-errors; then
+    step glinter gleam run -m glinter
+    step gleam-test gleam test
+  fi
+  if wait_for_status migrations; then
+    step squirrel squirrel_check
+  fi
+}
+
+facts_with_the_client_named() {
+  if [ "${GENESIS_NO_CLIENT:-}" != 1 ] && [ -z "${WILDSTAR_CLIENT_EXE:-}" ]; then
+    WILDSTAR_CLIENT_EXE=$(python3.13 -I -c '
+import sys
+sys.path.insert(0, ".claude/skills/decoding-the-client/scripts")
+import check_support
+print(check_support.client_exe())')
+    export WILDSTAR_CLIENT_EXE
+  fi
+  python3.13 -I .claude/skills/decoding-the-client/scripts/check_facts.py 2>&1 |
+    tee "$work/facts.out"
+  local status=${PIPESTATUS[0]}
+  if [ "${GENESIS_NO_CLIENT:-}" != 1 ] && grep -q "name rule was not checked" "$work/facts.out"; then
+    echo "the client is missing and GENESIS_NO_CLIENT is not 1, so the name rule did not run"
+    return 1
+  fi
+  return "$status"
+}
+
+in_background step format gleam format --check src test
+in_background gleam_chain
+in_background step migrations prepare_database
+in_background step client-suite python3.13 -I -m unittest discover \
+  -s .claude/skills/decoding-the-client/scripts -p 'test_*.py'
+in_background step fact-checker facts_with_the_client_named
+wait
+
+failed=""
+failed_names=""
+for part in $parts; do
+  if [ -f "$work/$part.status" ]; then
+    if [ "$(cat "$work/$part.status")" = 0 ]; then
+      printf '  %-13s ok      %ss\n' "$part" "$(cat "$work/$part.seconds")"
+    else
+      printf '  %-13s FAILED  %ss\n' "$part" "$(cat "$work/$part.seconds")"
+      failed="$failed $part"
+      failed_names="${failed_names:+$failed_names, }$part"
+    fi
+  else
+    printf '  %-13s not run (a part it needs failed)\n' "$part"
+  fi
+done
+
+for part in $failed; do
+  echo
+  echo "---- $part ----"
+  cat "$work/$part.log"
+done
+
+echo
+if [ -n "$failed" ]; then
+  echo "check FAILED: $failed_names"
+  echo "wall time $(($(date +%s) - started))s"
+  exit 1
+fi
+echo "check passed, wall time $(($(date +%s) - started))s"

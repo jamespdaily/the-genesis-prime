@@ -5,7 +5,7 @@ address (lower-case, 0x-prefixed), an opcode, a table column, an enum or a Lua
 function. Its fields:
 
   statement  what the client does, in the game's or the message's terms
-  proof      how it was read: the instructions, the table rows, the test that checks it
+  proof      how it was read: the instructions, the bytes or table rows, the test that checks it
   grade      "sure", "fairly sure" or "guess"
   gap        what is not yet read, and what would settle it; for "fairly sure" and "guess" only
   name       the function's name, when the key is a function's entry
@@ -36,6 +36,7 @@ _HEADER_RE = re.compile(r"^\s*\[(?!\[).*\]\s*(#.*)?$")
 _PLANTED_RE = re.compile(r"^\s*PLANTED_\w*\s*(?::[^=]+)?=")
 _INSTRUCTION_RE = re.compile(_ADDRESS + r"\s+[a-z][a-z0-9]*")
 _TEST_FILE_RE = re.compile(r"\btest_\w+\.py\b")
+_BYTES_RE = re.compile(r"\b[Bb]ytes at " + _ADDRESS)
 
 _REGISTERS = (
     "rax rbx rcx rdx rsi rdi rbp rsp eax ebx ecx edx esi edi ebp esp ax bx cx dx si di bp sp "
@@ -124,8 +125,8 @@ def record_problems(records: dict[str, Record], function_entries: set[str] | Non
         elif r.grade == "sure":
             if r.gap:
                 problems.append(Problem(key, "gap is for fairly sure and guess only, and this grade is sure"))
-            if not (_INSTRUCTION_RE.search(r.proof) or _TEST_FILE_RE.search(r.proof)):
-                problems.append(Problem(key, "proof of a sure record names no instruction (address, mnemonic) and no test file"))
+            if not (_INSTRUCTION_RE.search(r.proof) or _TEST_FILE_RE.search(r.proof) or _BYTES_RE.search(r.proof)):
+                problems.append(Problem(key, "proof of a sure record names no instruction (address, mnemonic), no bytes read at an address and no test file"))
         elif not r.gap:
             problems.append(Problem(key, "gap is missing, and a %s record needs one" % r.grade))
         for what, rule in _STATEMENT_RULES:

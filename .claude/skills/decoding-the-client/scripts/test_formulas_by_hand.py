@@ -3,8 +3,8 @@
 They are the emulator tests' expected values, so they are checked here against
 what the functions are known to compute, and the planted variants are checked
 to differ. Evidence: llvm-objdump of WildStar64.exe at 0x140882470 and
-0x1408296a0, read by the main session (comments in formulas_by_hand.py give each
-address). Run: python3 -I test_formulas_by_hand.py
+0x1408296a0 (comments in formulas_by_hand.py give each address).
+Run: python3 -I test_formulas_by_hand.py
 """
 
 import os
@@ -26,7 +26,7 @@ from formulas_by_hand import (  # noqa: E402
 
 class FormulaATest(unittest.TestCase):
     def test_formula_a_is_the_index_of_the_highest_set_bit(self):
-        # 0x140882470 computes 63 - clz(x): bit_length() - 1 (disassembly, issue 24)
+        # 0x140882470 computes 63 - clz(x): bit_length() - 1 (llvm-objdump; fact file record 0x140882470)
         rng = random.Random(24)
         checked = 0
         while checked < 100_000:

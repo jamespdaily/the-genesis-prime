@@ -1,9 +1,8 @@
 """client_pe.ClientPE against WildStar64.exe.
 
-Expected values come from the issue 16 trial's checkers (its pe.py and
-test_checkers.py) run on WildStar64.exe, SHA-256
-565c2fa1a1cf4b08cf5a93e0bff90bf09bde5772d03615402132d72db5fe0b10, or from
-check_support.RawPE, a second reading of the same file written for the tests.
+Expected values come from the PE header and directories of WildStar64.exe,
+SHA-256 565c2fa1a1cf4b08cf5a93e0bff90bf09bde5772d03615402132d72db5fe0b10, and
+from check_support.RawPE, a second reading of the same file written for the tests.
 Run: python3 -I test_client_pe.py
 """
 
@@ -21,6 +20,7 @@ import ghidra_env  # noqa: E402
 from client_pe import ClientPE  # noqa: E402
 
 
+@cs.needs_client
 class ClientPETest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -29,32 +29,31 @@ class ClientPETest(unittest.TestCase):
 
     def test_the_client_file_is_the_one_the_expected_values_were_measured_on(self):
         blob = cs.client_exe().read_bytes()
-        self.assertEqual(len(blob), 13927576)  # issue 16 trial: test_checkers.test_file_identity
+        self.assertEqual(len(blob), 13927576)  # size of WildStar64.exe in bytes
         self.assertEqual(
             hashlib.sha256(blob).hexdigest(),
-            "565c2fa1a1cf4b08cf5a93e0bff90bf09bde5772d03615402132d72db5fe0b10",  # issue 16 trial
+            "565c2fa1a1cf4b08cf5a93e0bff90bf09bde5772d03615402132d72db5fe0b10",  # SHA-256 of WildStar64.exe
         )
         self.assertEqual(ghidra_env.CLIENT_SHA256, hashlib.sha256(blob).hexdigest())
 
     def test_the_image_base_is_0x140000000(self):
-        self.assertEqual(self.pe.image_base, 0x140000000)  # issue 16 trial: test_header
+        self.assertEqual(self.pe.image_base, 0x140000000)  # PE header ImageBase (fact file record 0x140000000)
 
     def test_the_entry_point_is_a_function_start(self):
-        # issue 16 trial: entry 0x1400088c0. ClientPE has no entry attribute, so
-        # the entry is checked as a function start; the entry value itself is
-        # reported to the main session as not expressible.
+        # PE header AddressOfEntryPoint is 0x1400088c0 (fact file record 0x140000000).
+        # ClientPE has no entry attribute, so the entry is checked as a function start.
         self.assertEqual(self.pe.root_of(0x1400088C0), 0x1400088C0)
         self.assertIn(0x1400088C0, self.pe.function_starts())
 
     def test_the_eight_sections_are_in_the_pe_header_order(self):
-        # issue 16 trial: test_header
+        # PE header section table
         self.assertEqual(
             [s.name for s in self.pe.sections],
             [".text", "BINK", ".rdata", ".data", ".pdata", "_RDATA", ".rsrc", ".reloc"],
         )
 
     def test_the_text_section_has_the_pe_headers_numbers(self):
-        # issue 16 trial: test_header (.text va 0x140001000, vsize 9792556, raw 1024 + 9793024, chars 0x60000020)
+        # .text section header (fact file record 0x140001000): va 0x140001000, vsize 9792556, raw 1024 + 9793024, chars 0x60000020
         text = self.pe.sections[0]
         self.assertEqual(
             (text.va, text.virtual_size, text.raw_offset, text.raw_size, text.executable),
@@ -78,7 +77,7 @@ class ClientPETest(unittest.TestCase):
         text = self.pe.sections[0]
         self.assertEqual(self.pe.section_of(0x140001000).name, ".text")
         self.assertEqual(self.pe.section_of(text.end - 1).name, ".text")
-        self.assertEqual(self.pe.section_of(0x140B47EC8).name, ".rdata")  # the string "Lighting" (issue 16 trial)
+        self.assertEqual(self.pe.section_of(0x140B47EC8).name, ".rdata")  # the string "Lighting"
 
     def test_an_address_outside_every_section_has_no_section(self):
         self.assertIsNone(self.pe.section_of(0x1BFFFF000))  # seed.PLANTED_UNMAPPED
@@ -86,12 +85,12 @@ class ClientPETest(unittest.TestCase):
         self.assertIsNone(self.pe.section_of(0x140957FFF))  # the page gap before BINK (PE header: .text ends at 0x140957c2c, its file data at 0x140957e00; BINK starts at 0x140958000)
 
     def test_read_returns_the_files_bytes_at_a_known_address(self):
-        # issue 16 trial: the 16 bytes at two function starts
+        # the 16 bytes at two function starts (fact file records 0x1404a4e30 and 0x14063e550)
         self.assertEqual(self.pe.read(0x1404A4E30, 16).hex(), "48895c24084889742410574883ec4041")
         self.assertEqual(self.pe.read(0x14063E550, 16).hex(), "40534883ec50ba9ec90600e870d8d0ff")
 
     def test_read_equals_the_file_at_the_text_sections_offset(self):
-        # .text raw offset 1024 at va 0x140001000 (PE header, issue 16 trial)
+        # .text raw offset 1024 at va 0x140001000 (PE header)
         blob = cs.client_exe().read_bytes()
         for va in (0x140001000, 0x1400088C0, 0x1404A4E30, 0x14063E550):
             with self.subTest(va=hex(va)):
@@ -121,13 +120,13 @@ class ClientPETest(unittest.TestCase):
             self.pe.read(data.va + data.raw_size + 16, 16)
 
     def test_pdata_has_46407_entries_of_which_23153_are_chained(self):
-        # issue 16 trial
+        # .pdata directory
         entries = self.pe.runtime_functions()
         self.assertEqual(len(entries), 46407)
         self.assertEqual(sum(1 for e in entries if e.chained_to is not None), 23153)
 
     def test_function_starts_are_the_23254_entries_that_are_not_chained(self):
-        # issue 16 trial: 23,254 function starts = 46,407 - 23,153
+        # 23,254 function starts = 46,407 - 23,153
         starts = self.pe.function_starts()
         self.assertEqual(len(starts), 23254)
         self.assertEqual(
@@ -135,7 +134,7 @@ class ClientPETest(unittest.TestCase):
         )
 
     def test_pdata_entries_are_sorted_and_do_not_overlap(self):
-        # issue 16 trial: test_pdata_sorted_non_overlapping
+        # the .pdata directory is sorted and non-overlapping
         entries = self.pe.runtime_functions()
         for a, b in zip(entries, entries[1:]):
             self.assertLess(a.begin, a.end)
@@ -177,7 +176,7 @@ class ClientPETest(unittest.TestCase):
     def test_root_of_an_address_in_no_pdata_range_is_none(self):
         self.assertIsNone(self.pe.root_of(0x1BFFFF000))
         self.assertIsNone(self.pe.root_of(0x140B47EC8))  # data in .rdata
-        # issue 16 trial: pointer-only functions lie outside every .pdata range
+        # pointer-only functions lie outside every .pdata range
         self.assertIsNone(self.pe.root_of(cs.POINTER_ONLY_A))
         self.assertIsNone(self.pe.root_of(cs.POINTER_ONLY_B))
 
@@ -199,7 +198,7 @@ class ClientPETest(unittest.TestCase):
 
     def test_imports_are_384_slots_named_dll_bang_name_in_lower_case(self):
         imports = self.pe.imports()
-        self.assertEqual(len(imports), 384)  # issue 16 trial: import + delay-import directories
+        self.assertEqual(len(imports), 384)  # import + delay-import directories
         self.assertEqual(imports[0x140959298], "kernel32.dll!SetErrorMode")
         self.assertEqual(imports[0x1409598F8], "user32.dll!ShowCursor")
         self.assertEqual(imports[0x140959A78], "ws2_32.dll!#115")  # ordinal import
@@ -214,17 +213,17 @@ class ClientPETest(unittest.TestCase):
 
     def test_there_are_46525_dir64_relocations_whose_value_is_the_stored_pointer(self):
         relocations = self.pe.relocations()
-        self.assertEqual(len(relocations), 46525)  # issue 16 trial
+        self.assertEqual(len(relocations), 46525)  # DIR64 entries of the .reloc directory
         self.assertEqual(len({a for a, _v in relocations}), 46525)
         for address, value in relocations:
             self.assertEqual(value, self.raw.u64(address), hex(address))
 
     def test_pointer_only_functions_are_the_pointer_targets_outside_every_pdata_range(self):
         found = self.pe.pointer_only_functions()
-        # issue 16 trial found 2,677 targets that plain Ghidra also missed, a subset of these
+        # at least the 2,677 targets that plain Ghidra misses
         self.assertGreaterEqual(len(found), 2677)
-        self.assertIn(cs.POINTER_ONLY_A, found)  # issue 16 trial
-        self.assertIn(cs.POINTER_ONLY_B, found)  # issue 16 trial
+        self.assertIn(cs.POINTER_ONLY_A, found)  # fact file record 0x14077ed70
+        self.assertIn(cs.POINTER_ONLY_B, found)  # fact file record 0x140001c30
         self.assertEqual(len(set(found)), len(found))
         for target in found:
             self.assertIsNone(self.pe.root_of(target), hex(target))

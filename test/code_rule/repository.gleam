@@ -1,0 +1,53 @@
+//// The repository as the code-rule tests read it: its Gleam source, its
+//// tracked paths and its guidance files.
+
+import code_rule/source.{type SourceFile}
+import gleam/list
+import gleam/result
+import gleam/string
+import simplifile
+
+@external(erlang, "repository_ffi", "tracked_files")
+fn tracked_files() -> String
+
+/// Every `.gleam` file under each directory, which must hold at least one, so
+/// a rule checked over the repository cannot pass by finding nothing.
+pub fn sources(under directories: List(String)) -> List(SourceFile) {
+  let files = list.flat_map(directories, source.files)
+  let assert [_, ..] = files as "no Gleam source found under the directories"
+  files
+}
+
+/// Every path `git ls-files` lists from the repository root.
+pub fn tracked_paths() -> List(String) {
+  let paths =
+    tracked_files()
+    |> string.split("\n")
+    |> list.filter(fn(path) { path != "" })
+  let assert [_, ..] = paths as "git ls-files listed no path"
+  paths
+}
+
+/// The guidance files as (path, text): CLAUDE.md, every skill's SKILL.md and
+/// every agent file.
+pub fn guidance() -> List(#(String, String)) {
+  let skills = directory_entries(".claude/skills")
+  let skill_files =
+    list.map(skills, fn(skill) { ".claude/skills/" <> skill <> "/SKILL.md" })
+  let agent_files =
+    directory_entries(".claude/agents")
+    |> list.filter(string.ends_with(_, ".md"))
+    |> list.map(fn(agent) { ".claude/agents/" <> agent })
+  let paths = ["CLAUDE.md", ..list.append(skill_files, agent_files)]
+  list.map(paths, fn(path) {
+    let assert Ok(text) = simplifile.read(path)
+      as "a guidance file could not be read"
+    #(path, text)
+  })
+}
+
+fn directory_entries(directory: String) -> List(String) {
+  simplifile.read_directory(directory)
+  |> result.unwrap([])
+  |> list.sort(string.compare)
+}

@@ -432,3 +432,168 @@ proof = "0x14055a264 the options object 0x140c635f0 with bit 0x2000; game object
 grade = "fairly sure"
 gap = "What the four settings, the game state 4 and the linked entries are is not read; the function writing the settings at the game object would name them."
 name = "IsMouseLockOn"
+
+# The client's archive indexes
+["archive_index.header"]
+statement = "An archive index file (Patch, ClientData, ClientDataEN, Client64 .index) is a PACK container holding an AIDX block. Every number is little-endian. PACK header, 0x230 bytes at file offset 0: 0x000 u32 signature 0x5041434B (the bytes 'KCAP'); 0x004 u32 version, must be 1; 0x008 64 u64 file offsets, each 0 or a multiple of 16 at or after 0x240 with 24 bytes inside the archive end (their use is unread); 0x208 u64 archive end, which the file's real size must not be below; 0x210 u64, not read when opening; 0x218 u64 file offset of the block table; 0x220 u32 block count; 0x224 u32, below the block count when there are blocks; 0x228 u32 root block index, below the block count; 0x22c u32, not read when opening. With no blocks, 0x218, 0x224 and 0x228 must all be 0. The block table is block-count entries of 16 bytes: u64 file offset, u64 size. An entry with a nonzero size must start at a multiple of 16, at or after 0x240, with offset plus 24 and offset plus size inside the archive end; an entry with size 0 holds a block index below the count in its offset. Block index 0 is never readable. The root block (index from 0x228) begins with the AIDX header, 16 bytes: u32 signature 0x41494458 (the bytes 'XDIA'), u32 version, must be 1, u32 the index's build, u32 the block index of the root directory. The client reads the build into the index object but never compares it with its own build; a nonzero build only forbids adding files to the index."
+proof = "PACK header: 0x1401b7c9b..0x1401b7caa reads 0x230 bytes from file offset 0 into the object at 0x38; 0x1401ba550 cmp dword [rcx+0x38], 0x5041434b; 0x1401ba559 cmp dword [rcx+0x3c], 1; loop 0x1401ba565..0x1401ba591 over 0x40 u64 at object 0x40 (file 0x008) with test al, 0xf / cmp 0x240 / add 0x18 / cmp [rcx+0x240] (file 0x208); 0x1401b7cd0 cmp [rsi+0x240], file size from GetFileSizeEx; 0x1401ba593 count at object 0x258 (file 0x220); table offset object 0x250 (file 0x218); object 0x25c (file 0x224) and 0x260 (file 0x228) below the count (0x1401ba5bd, 0x1401ba5c5). Table: 0x1401b7cf5 mov r9d, [rsi+0x258]; shl r9, 4; 0x1401b7d0c rdx = [rsi+0x250]; 0x1401b7d16 call 0x1401bc1a0; checks in 0x1401ba600. Root block: 0x1401b8870 returns object 0x260 (file 0x228); 0x1401b8600 refuses index 0, index >= count, size 0, or a range past the size. AIDX: 0x1401bf632 call [rax+0x78] (root index), 0x1401bf64c length 0x10, 0x1401bf655 call [rax+0x58] offset 0, 0x1401bf65c cmp dword [rbx+0x38], 0x41494458, 0x1401bf665 cmp dword [rbx+0x3c], 1; build at AIDX offset 8 (0x1401bf850 writes 4 bytes at block offset 8 and stores them at object 0x40, which 0x1401bf830 returns); 0x1401bf69f the fourth u32 (object 0x44) becomes the directory node's block, loaded by 0x1401bcea0. Build use: the only compare of 0x3eaa in the client is 0x140037bae (the auth server's version); object 0x40 is compared only with 0 (0x1401bf8f5, 0x1401c0050) giving 0xa0030004 E_Asset_BuildSet. Local files: Patch.index, ClientData.index, ClientDataEN.index, Client64.index all give signature 0x5041434b, version 1, 64 zero offsets, archive end equal to the file size (1368, 12474936, 2030312, 1448), block table at 0x260 / 0xbba020 / 0x1ef910 / 0x260 with 3 / 8680 / 18 / 3 blocks, 0x224 = 0, root block 2 = (0x240, 16), AIDX version 1, build 16042, root directory block 1."
+grade = "sure"
+
+["0x1401b7a40"]
+statement = "Opens an archive file object: given a path, open flags (1 read, 2 write; neither is invalid), an optional completion port and an optional expected file record, it stores the path and flags, then loads an existing archive for read, or for write builds a new one (an expected record is refused then)."
+proof = "0x1401b7a40 returns 0x80070057 when the path is null or (flags & 3) == 0; copies the path with 0x14018e9c0 to object 0x8, flags to 0x10, port to 0x18; flags bit 2 clear -> call 0x1401b7af0 (path, record); set -> 0x80004005 if a record is given, else call 0x1401b7d40. Called by 0x14018d720, which allocates the 0x2a0-byte object built by 0x1401b7900 (class table 0x140b5f170)."
+grade = "fairly sure"
+gap = "0x1401b7d40, the write-mode open, is unread past its call to the header check 0x1401ba550."
+name = "PackFileOpen"
+
+["0x1401b7af0"]
+statement = "Loads an existing PACK archive for reading. It opens the file read-only (shared read), and when given an expected file record, verifies the file against it (size, write time, SHA-1). A file shorter than the 0x230-byte header is an empty archive when its size is 0 and corrupt otherwise. It reads the header, checks it, fails as corrupt when the file is shorter than the header's archive end, reads the block table (block count times 16 bytes at the header's table offset) and checks it. On any failure it closes the file, resets the header in memory to an empty archive (signature PACK, version 1, archive end 0x238, no blocks), and returns the error only when an expected record was given; otherwise it returns success with the empty archive."
+proof = "0x1401b7b35/0x1401b7b5a CreateFileW(path, 0x80000000 GENERIC_READ, 1 FILE_SHARE_READ, 0, 3 OPEN_EXISTING, 0x10000000 or 0x50000000); 0x1401b7bbc GetFileSizeEx; 0x1401b7c6f call 0x1401ba2a0 (path record r14 = the second argument); 0x1401b7c83 cmp size, 0x230; 0x1401b7c8b neg/sbb/and 0xa0030001; 0x1401b7caa call 0x1401bc1a0(offset 0, object 0x38, 0x230); 0x1401b7cbc call 0x1401ba550; 0x1401b7cd0 cmp [rsi+0x240], size -> 0xa0030001; 0x1401b7ce3 resize the table to [rsi+0x258] entries; 0x1401b7cf5 shl r9, 4; 0x1401b7d16 call 0x1401bc1a0; 0x1401b7d28 call 0x1401ba600. Failure path 0x1401b7bdf: CloseHandle both handles, 0x1401b7c1b clear 0x230 bytes, 0x1401b7c29 mov dword [rsi+0x38], 0x5041434b, 0x1401b7c30 [rsi+0x3c] = 1, 0x1401b7c37 [rsi+0x240] = 0x238, table size 0; 0x1401b7c47 test r14, r14; cmovne ebp, edi (ebp = 0 from 0x1401b7b02)."
+grade = "sure"
+name = "PackFileLoad"
+
+["0x1401ba550"]
+statement = "Checks a PACK header: signature 0x5041434B and version 1; each of the 64 header offsets is 0 or a multiple of 16 at or after 0x240 with 24 bytes inside the archive end; with blocks, the block table offset obeys the same rule and the two block indexes (the one at 0x224 and the root at 0x228) are below the block count; with no blocks, the table offset and both indexes are 0. It returns 0, or 0xA0030001 (E_Asset_Corrupt) on any failure."
+proof = "0x1401ba550 cmp dword [rcx+0x38], 0x5041434b; 0x1401ba559 cmp dword [rcx+0x3c], 1; 0x1401ba565..0x1401ba591 loop rdx < 0x40 over u64 at [rcx+0x40]: test al, 0xf; cmp rax, 0x240; add rax, 0x18; cmp rax, [rcx+0x240]; 0x1401ba593 mov edx, [rcx+0x258]; 0x1401ba59d [rcx+0x250] same checks; 0x1401ba5bd cmp [rcx+0x25c], edx; 0x1401ba5c5 cmp [rcx+0x260], edx; zero-count branch 0x1401ba5d3..0x1401ba5ed; 0x1401ba5cd mov eax, 0xa0030001. The code's name is from the table at 0x140a40920. Header object offset minus 0x38 is the file offset (read at 0x1401b7caa)."
+grade = "sure"
+name = "ValidatePackHeader"
+
+["0x1401ba600"]
+statement = "Checks a PACK block table: for each 16-byte entry (file offset, size), a nonzero size needs an offset that is a multiple of 16, at or after 0x240, with offset plus 24 and offset plus size inside the archive end; a zero size needs an offset below the block count. It returns 0, or 0xA0030001 (E_Asset_Corrupt)."
+proof = "0x1401ba605 count [rcx+0x270]; 0x1401ba617 entries [rcx+0x268]; 0x1401ba620 size [rdx+0x8]; 0x1401ba629 offset [rdx]; 0x1401ba62c test r8b, 0xf; 0x1401ba632 cmp r8, 0x240; 0x1401ba642 lea rax, [r8+0x18]; cmp rax, end; 0x1401ba64b cmp size, end; 0x1401ba653 cmp offset, end - size; 0x1401ba663 size 0: cmp [rdx], count; jae fail; 0x1401ba66b add rdx, 0x10; 0x1401ba658 mov eax, 0xa0030001."
+grade = "sure"
+name = "ValidatePackBlockTable"
+
+["0x1401ba2a0"]
+statement = "Verifies an archive file against an expected file record (write time, size, SHA-1): with no record it returns 0; a size other than the record's gives 0xA0030003 (E_Asset_SizeMismatch); a last-write time more than 2 seconds from the record's gives 0xA0030007 (E_Asset_TimeMismatch); otherwise it hashes the whole file in pieces of up to 1 MiB with SHA-1, and a hash other than the record's 20 bytes gives 0xA0030002 (E_Asset_KeyMismatch)."
+proof = "Ghidra decompile: null record -> 0; record u64 at 0x10 != size -> 0xa0030003; GetFileTime(handle, 0, 0, &lastWrite); |record u64 at 0 - lastWrite| > 20000000 (100 ns units) -> 0xa0030007; chunk min(size, 0x100000); state seeded 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0 (SHA-1); 0x1401bc1a0 reads, 0x1401c8c20 updates, 0x1401c8f20 finishes; digest bytes taken big-endian from five words; memcmp(digest, record + 0x18, 0x14) != 0 -> 0xa0030002. Codes named by the table at 0x140a40920. Called only at 0x1401b7c6f."
+grade = "fairly sure"
+gap = "0x1401c8c20 and 0x1401c8f20 are taken as SHA-1 update and finish from the seed words and the 20-byte digest, not read; the record's bytes 0x8..0x10 are unread."
+name = "VerifyFileAgainstRecord"
+
+["0x1401bc1a0"]
+statement = "Reads a given number of bytes at a given file offset of an archive file into a buffer, by synchronous reads, by overlapped reads when a second handle is open, or by copying from a memory image when no file is open. It returns 0, E_INVALIDARG for a null buffer, E_UNEXPECTED when a read returns no bytes, or the Windows error."
+proof = "Ghidra decompile: null buffer -> 0x80070057; second handle (object 0x28) == -1 and file handle == -1 -> memcpy from the image object at 0x30 (slot 0x18) plus offset, or 0x80004005 when none; else SetFilePointerEx(offset) then ReadFile in pieces of at most 0x80000000, zero bytes read -> 0x8000ffff; second handle open -> CreateEventW, ReadFile with OVERLAPPED offset, GetOverlappedResult on ERROR_IO_PENDING (0x3e5)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not instruction by instruction."
+name = "PackFileReadAt"
+
+["0x1401b8600"]
+statement = "Reads part of a PACK block: given a block index, an offset in the block, a buffer and a length, it reads from the file at the block's file offset plus the offset. A length of 0 succeeds at once; block index 0, an index at or past the block count, a block of size 0, or a range past the block's size gives E_INVALIDARG."
+proof = "0x1401b860c test r9 (length) -> return 0; 0x1401b8618 test edx (index) -> 0x80070057; 0x1401b8623 cmp rax, [rcx+0x270]; 0x1401b862c shl rax, 4; add [rcx+0x268]; 0x1401b8637 size [rax+0x8], zero -> fail; 0x1401b8643 cmp offset, size; 0x1401b864b cmp length, size - offset; 0x1401b8650 lea rdx, [r8+r11]; 0x1401b8657 call 0x1401bc1a0. Slot 0x58 of the PACK class table 0x140b5f170."
+grade = "sure"
+name = "PackReadBlock"
+
+["0x1401b8870"]
+statement = "Returns a PACK archive's root block index, the header's u32 at file offset 0x228 (E_INVALIDARG for a null output)."
+proof = "0x1401b8870 test rdx, rdx; 0x1401b887b mov eax, [rcx+0x260]; mov [rdx], eax; return 0. Object 0x260 is file offset 0x228 (header read to object 0x38 at 0x1401b7caa). Slot 0x78 of the class table 0x140b5f170; called at 0x1401bf632."
+grade = "sure"
+name = "PackGetRootBlock"
+
+["0x1401b8580"]
+statement = "Returns the size of a PACK block by index; index 0, an index past the count, or a block of size 0 gives E_INVALIDARG."
+proof = "Ghidra decompile: index != 0, index < [this+0x270], entry [this+0x268] + index * 16 field 8 nonzero -> *out = size. Slot 0x40 of 0x140b5f170; called by 0x1401bcea0 for the root directory block."
+grade = "sure"
+name = "PackGetBlockSize"
+
+["0x1401b85c0"]
+statement = "Returns the file offset of a PACK block by index; index 0, an index past the count, or a block of size 0 gives E_INVALIDARG."
+proof = "Ghidra decompile: index != 0, index < [this+0x270], entry size nonzero -> *out = entry offset (field 0). Slot 0x48 of 0x140b5f170."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not instruction by instruction."
+name = "PackGetBlockOffset"
+
+["0x1401ba150"]
+statement = "Empties a PACK archive opened for writing: resets the header to signature PACK, version 1, archive end 0x238 and no blocks, writes the 0x230-byte header at the start of the file and cuts the file to 0x230 bytes. Without write access it returns E_ACCESSDENIED."
+proof = "Ghidra decompile: (flags & 2) == 0 -> 0x80070005; 0x1401ba19b mov [rbx], 0x5041434b; version 1; [0x240] = 0x238; table size 0; SetFilePointerEx(0); WriteFile 0x230 bytes; SetFilePointerEx(0x230); SetEndOfFile. Slot 0xa0 of 0x140b5f170."
+grade = "sure"
+name = "PackFileReset"
+
+["0x1401bf610"]
+statement = "Loads an archive index opened for reading: gets the PACK's root block index, reads the 16-byte AIDX header from the start of that block (signature 0x41494458, version, build, root directory block), and when the read fails or the signature is not AIDX or the version is not 1, it silently uses an empty index (build 0, no root directory). It then loads the root directory from the block the header names, and returns success in every case."
+proof = "0x1401bf632 call [rax+0x78] (0x1401b8870) into object 0x34; 0x1401bf64c [rsp+0x20] = 0x10; 0x1401bf649 offset 0; 0x1401bf655 call [rax+0x58] (0x1401b8600) into object 0x38; 0x1401bf65c cmp dword [rbx+0x38], 0x41494458; 0x1401bf665 cmp dword [rbx+0x3c], 1; failure 0x1401bf66b: zero 16 bytes, signature AIDX, version 1, root block 0; 0x1401bf68b allocate 0x38 bytes, 0x1401bf69f its first u32 = the header's fourth u32 (object 0x44); 0x1401bf6cb call 0x1401bcea0; 0x1401bf6d5 xor eax, eax. Called by 0x14018d7d0 at 0x14018d916 when the index's flags lack bit 2."
+grade = "sure"
+name = "LoadArchiveIndex"
+
+["0x1401bf6e0"]
+statement = "Loads an archive index opened for writing: reads the AIDX header as the read-only load does; when it is missing or bad, it starts an empty index and writes a new 16-byte AIDX header block (build 0) and makes it the PACK's root block."
+proof = "Same read and checks as 0x1401bf610 (0x1401bf738 cmp dword [rdi], 0x41494458); when not valid: 0x1401bd1f0 builds the directory, header fourth u32 = its block; PACK slot 0x28 with object 0x34 and 0x10 (a new 16-byte block), slot 0x68 writes the 16 header bytes at offset 0, slot 0x80 with the block index. Called by 0x14018d7d0 at 0x14018d90f when the index's flags have bit 2."
+grade = "fairly sure"
+gap = "PACK slots 0x28 (0x1401b7f40), 0x68 (0x1401b8710) and 0x80 (0x1401b8890) are taken as allocate, write and set-root from their arguments, not read; 0x1401bd1f0 is unread."
+name = "LoadOrCreateArchiveIndex"
+
+["0x1401bf830"]
+statement = "Returns an archive index's build, the third u32 of its AIDX header (E_INVALIDARG for a null output)."
+proof = "0x1401bf830 test rdx, rdx; 0x1401bf835 0x80070057; 0x1401bf83b mov eax, [rcx+0x40]; mov [rdx], eax; xor eax, eax. Object 0x38..0x47 holds the 16 header bytes read at 0x1401bf655, so object 0x40 is header offset 8. Slot 0x10 of the index class table 0x140b5f280 (data ref 0x140b5f290). No direct caller; none of the file-system loops over the index list (0x1401b4070, 0x1401b5670, 0x1401b5940, 0x1401b5d60, 0x1401b6550, 0x1401b69a0) calls slot 0x10."
+grade = "sure"
+name = "GetArchiveIndexBuild"
+
+["0x1401bf850"]
+statement = "Sets an archive index's build: with write access, it writes the 4-byte build at offset 8 of the AIDX header block and keeps it; without write access it returns E_ACCESSDENIED."
+proof = "0x1401bf859 test byte [rcx+0x30], 2; 0x1401bf862 0x80070005; 0x1401bf871 block = object 0x34 (root block); 0x1401bf87c r8d = 8; 0x1401bf882 length 4; 0x1401bf88b call [rax+0x68]; 0x1401bf896 mov [rbx+0x40], eax. Slot 0x18 of 0x140b5f280."
+grade = "fairly sure"
+gap = "PACK slot 0x68 (0x1401b8710) is taken as a block write from its arguments (block, offset, buffer, length, the shape of the read 0x1401b8600), not read."
+name = "SetArchiveIndexBuild"
+
+["0x1401bf8b0"]
+statement = "Queues a file into an archive index opened for writing: given a wide path and a 48-byte file record, it converts the path to UTF-8 (at most 260 bytes) and appends the pair to the index's pending list. It refuses an index without write access (E_ACCESSDENIED), a null path (E_INVALIDARG), a path too long (0x8007007A), and an index whose build is set: 0xA0030004, E_Asset_BuildSet, 'Index cannot be modified - build set'."
+proof = "0x1401bf8d0 test byte [rcx+0x30], 2; 0x1401bf8f5 cmp dword [rcx+0x40], 0; 0x1401bf8fb mov eax, 0xa0030004; decompile: UTF-16 to UTF-8 into 0x104 bytes, 0x8007007a when full; copies six u64 of the record; 0x1401c04f0 appends to object 0x58. Slot 0x20 of 0x140b5f280. Message from the table at 0x140a40920."
+grade = "fairly sure"
+gap = "What reads the pending list at object 0x58 (likely a commit slot) is unread."
+name = "ArchiveIndexQueueFile"
+
+["0x1401c0050"]
+statement = "An archive index operation that needs write access (else E_ACCESSDENIED) and an unset build (else 0xA0030004, E_Asset_BuildSet), then passes through to the PACK archive's own operation and returns its error or 0."
+proof = "Ghidra decompile: (object 0x30 & 2) == 0 -> -0x7ff8fffb (0x80070005); object 0x40 != 0 -> -0x5ffcfffc (0xa0030004); else PACK slot 0x90 (0x1401b89b0). Slot 0x58 of 0x140b5f280."
+grade = "fairly sure"
+gap = "What PACK slot 0x90 (0x1401b89b0) does is unread; reading it would name this function."
+name = "function_1401c0050"
+
+["0x1401bcea0"]
+statement = "Loads one directory of an archive index from its block: an empty block index means no directory; a block under 8 bytes is corrupt (E_Asset_Corrupt). The block starts with a u32 count of subdirectories and a u32 count of files, then 8 bytes per subdirectory, 56 bytes per file, then the name text, and every name offset must fall inside the name text."
+proof = "Ghidra decompile: *node == 0 -> 0; PACK slot 0x40 (0x1401b8580) block size; < 8 -> 0xa0030001; slot 0x58 reads the whole block; counts u32 [0], u32 [1]; header 8 + 8 * dirs + 0x38 * files; name text the rest; each subdirectory u32 and each file's first u32 below the text size. Called at 0x1401bf6cb with the root node whose block is the AIDX header's fourth u32. Patch.index root directory block 1 (0x2a0, 448 bytes) holds 0 subdirectories and 6 files."
+grade = "fairly sure"
+gap = "The rest of the function (building child nodes) and the 56-byte file record's fields are unread."
+name = "LoadArchiveIndexDirectory"
+
+["0x14018d7d0"]
+statement = "Opens an archive index by path: when the path is not a folder, it makes an index object, opens the PACK file for reading with the given expected file record, and loads the AIDX index (read-only); on failure it frees the object and returns the error. When the path is a folder and no record is given, it opens the folder as a loose file source instead; a folder with a record gives 0x80004005."
+proof = "Ghidra decompile: null output -> 0x80070057; GetFileAttributesW; not a directory: allocate 0x70, class table 0x140b5f280, object flags (0x30) = 1, 0x14018d8fb call 0x14018d720(path, 1, port, object 0x28, record); flags bit 2 -> 0x1401bf6e0 else 0x1401bf610; directory: allocate 0x218, class 0x140b5f220, 0x1401bcbf0(path); record given -> 0x80004005 (-0x7fffbffb). Callers: 0x1401b4560 at 0x1401b4825 (Patch.index), 0x1401b494d (Bootstrap.index), 0x1401b4db4 (each data set's index)."
+grade = "fairly sure"
+gap = "What the folder source (0x1401bcbf0, class 0x140b5f220) does is unread."
+name = "OpenArchiveIndex"
+
+["0x1401b4560"]
+statement = "Mounts the client's archives under the game folder: opens Patch\\CoreData.archive when present (a failure is logged as 'Failed to open Core Archive'); opens Patch\\Patch.index with no expected record (missing: 'File not found' and 0x80070490); optionally Bootstrap\\Bootstrap.index; then, for each data set the flags select (bit 0 ClientDataEN, 1 ClientDataFR, 2 ClientDataDE, 3 ClientDataZH, 4 ClientData, 5 ServerData, 6 ToolsData, 7 SupportData under Patch, bit 8 LauncherData under Bootstrap), it looks up '<name>.index' in the Patch (or Bootstrap) index to get its expected file record, opens '<folder>\\<name>.index' checked against that record, and opens '<folder>\\<name>.archive'; each index joins the file system's index list and each archive its archive list. A data set whose index is missing is skipped when its parent index is not open, else logged 'File not found' and 0x80070490. Any error stops the mount and is returned."
+proof = "Ghidra decompile: '%s\\%s' with the game folder, GetFullPathNameW, L'\\Patch\\CoreData.archive' -> 0x14018d950 (log 0x141d416b0 = 0x140a47070 after LogMessage's 0x12fa640 shift); L'\\Patch\\Patch.index' -> 0x14018d7d0(path, fs, &patch, 0) at 0x1401b4825, missing -> log 0x140a47250 'File not found: %s', 0x80070490; L'\\Bootstrap\\Bootstrap.index' at 0x1401b494d; names pushed by flag bits with the parent pair {'Patch', length, patch index} or {'Bootstrap', ...}; L'\\%s\\%s.index'; parent slot 0x28 (0x1401bfac0) with the path after the parent folder fills a 0x38-byte record; 0x1401b4db4 call 0x14018d7d0(path, fs, &index, record); L'\\%s\\%s.archive' -> 0x14018d950; 0x140033260 appends to the file system at 0x850 (indexes) and 0x860 (archives). Called by 0x1401b41f0 at 0x1401b444c, which takes its failure path at 0x1401b4453 on a negative result."
+grade = "fairly sure"
+gap = "The lookup slot 0x1401bfac0 and the record it fills (the time, size and SHA-1 that 0x1401ba2a0 checks) are read only from the use; what 0x1401b41f0 shows the player on failure (0x1401b4529) is unread."
+name = "MountClientArchives"
+
+["0x140a40920"]
+statement = "The client's table of archive error codes, each with a name and a message: 0xA0030001 E_Asset_Corrupt 'File is corrupt'; 0xA0030002 E_Asset_KeyMismatch 'FileKey mismatch'; 0xA0030003 E_Asset_SizeMismatch 'FileSize mismatch'; 0xA0030004 E_Asset_BuildSet 'Index cannot be modified - build set'; 0xA0030005 E_Asset_BuildNotSet 'Index cannot be patched - build not set'; 0xA0030006 E_Asset_Closed 'File has been closed'; 0xA0030007 E_Asset_TimeMismatch 'FileTime mismatch'."
+proof = "Bytes at 0x140a40920: 24-byte entries {u32 code, pad, name pointer, message pointer}: (0xa0030001, 0x140a406a8, 0x140a40688) ... (0xa0030007, 0x140a408d8, 0x140a408b0); the strings read as UTF-16 at those addresses. 0xa0030005 has no use as an immediate in the client's code (llvm-objdump search)."
+grade = "sure"
+
+["0x140037b70"]
+statement = "Checks the auth server's version message against the client: when the server's version is not 16042 it logs 'Client(%d) Auth(%d) versions do not match' and ends the attempt with error 0x41CCC; when the version matches but the message-table checksum is not 0x097998A0 it logs 'Client(0x%8X) Auth(0x%8X) messages do not match' and ends it with 0x41CCD; when both match it goes on to the next step. It does nothing unless the connection is in state 5 or 7."
+proof = "0x140037bae cmp r9d, 0x3eaa (the message's first u32); decompile: state (object 0xa8) - 5 & ~2 != 0 -> return 0; param[8] == 0x97998a0 -> 0x14003a620; strings at 0x1409f5a90; LogMessage(0xb, 1, ...); 0x1400383a0(this, 0x41ccc or 0x41ccd, 0). Only caller 0x1400370d0 at 0x1400371d6. The only compare with 0x3eaa in the client's code."
+grade = "fairly sure"
+gap = "Which server message carries these fields, and what 0x1400383a0 shows the player, are unread."
+name = "CheckAuthServerVersion"
+
+["0x1406f8360"]
+statement = "The Lua function GetVersionInfo: returns a new table with nBuildNumber 16042, nVersion 1, nVersionMajor 7, nVersionMinor 8 and nApolloAPIVersion 16, all constants in code."
+proof = "0x1406f83c0 lea r8, L'nBuildNumber' (0x140b41410); 0x1406f83ca mov r9d, 0x3eaa; 0x1406f8401 L'nVersion', r9d 1; 0x1406f8443 L'nVersionMajor', r9d 7; 0x1406f8485 L'nVersionMinor', r9d 8; 0x1406f84d9 L'nApolloAPIVersion' (0x140b41390), r9d 0x10; each through 0x1400f06f0; returns 1. Name pair at 0x140b72920: 'GetVersionInfo', 0x1406f8360."
+grade = "sure"
+name = "LuaGetVersionInfo"
+
+["0x140a44fa0"]
+statement = "The client's version text '1.7.8.16042', put in the window title text as '<product> <version> - ReleaseShipping|x64 - ...'."
+proof = "UTF-16 at 0x140a44fa0; data ref from 0x140012822 in 0x140012780, which formats L'%s %s - %s%s%s - %s' with it and stores the result."
+grade = "sure"
+
+["0x140e58248"]
+statement = "The client's version resource: file version and product version 1.7.8.16042, also given as the strings FileVersion and ProductVersion '1.7.8.16042'."
+proof = "VS_FIXEDFILEINFO signature 0xfeef04bd at file offset 0xcee048 in .rsrc (virtual 0x140e58248): dwFileVersionMS 0x00010007, LS 0x00080000 | 0x3eaa = 1.7.8.16042; product the same; StringFileInfo entries FileVersion and ProductVersion '1.7.8.16042' (UTF-16 at 0x140e583fc and 0x140e58438)."
+grade = "sure"

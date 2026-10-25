@@ -1,12 +1,11 @@
 """check_facts: the fact file's checker.
 
-Expected values come from the issue 7 approved test list (comment "Re-scoped
-plan and test list", 2026-10-25; items cited below) and the rules in the
-docstring of check_facts.py and in SKILL.md (decoding-the-client). Every
-record, file and address here is planted: the checker is run on text and on
-temporary git repositories made for the test, never on a judgement of the
-client. Addresses are assigned once to PLANTED_ names, as the checker's own
-coverage rule asks, so these tests cite no client address a record must hold.
+Expected values come from the rules in the docstring of check_facts.py and in
+SKILL.md (decoding-the-client). Every record, file and address here is planted:
+the checker is run on text and on temporary git repositories made for the test,
+never on a judgement of the client. Addresses are assigned once to PLANTED_
+names, as the checker's own coverage rule asks, so these tests cite no client
+address a record must hold.
 Run: python3 -I test_check_facts.py
 """
 
@@ -83,7 +82,7 @@ def refusals(text: str, entries=()) -> list[tuple[str, str]]:
 
 class Refusal(unittest.TestCase):
     def assertRefused(self, found: list[tuple[str, str]], key: str, field: str):
-        """item 5: the refusal names the record and the rule (the field) broken."""
+        """The refusal names the record and the rule (the field) broken."""
         self.assertTrue(found, "nothing was refused")
         self.assertTrue(all(key in where for where, _what in found), found)
         self.assertTrue(any(field in what for _where, what in found), found)
@@ -104,7 +103,7 @@ class LoadTest(unittest.TestCase):
         )
 
     def test_a_duplicate_key_raises_value_error_naming_it(self):
-        # item 2; docstring of load
+        # load: a duplicate key raises ValueError naming it
         text = toml_text(PLANTED_A, statement="S", proof="P", grade="sure") * 2
         with self.assertRaises(ValueError) as raised:
             load_text(text)
@@ -113,26 +112,22 @@ class LoadTest(unittest.TestCase):
 
 class FieldsTest(Refusal):
     def test_a_record_that_breaks_no_rule_is_not_refused(self):
-        # item 3, "a clean record passes"
         self.assertEqual(problems_of(record()), [])
 
     def test_a_missing_statement_is_refused(self):
-        # item 2
         text = toml_text("Spell4.damageScale", proof=TEST_PROOF, grade="sure")
         self.assertRefused(refusals(text), "Spell4.damageScale", "statement")
 
     def test_a_missing_proof_is_refused(self):
-        # item 2
         text = toml_text("Spell4.damageScale", statement=CLEAN_STATEMENT, grade="sure")
         self.assertRefused(refusals(text), "Spell4.damageScale", "proof")
 
     def test_a_missing_grade_is_refused(self):
-        # item 2
         text = toml_text("Spell4.damageScale", statement=CLEAN_STATEMENT, proof=TEST_PROOF)
         self.assertRefused(refusals(text), "Spell4.damageScale", "grade")
 
     def test_an_unknown_grade_is_refused(self):
-        # item 2; docstring: grade is "sure", "fairly sure" or "guess"
+        # the docstring of check_facts.py: grade is "sure", "fairly sure" or "guess"
         text = toml_text("Spell4.damageScale", statement=CLEAN_STATEMENT, proof=TEST_PROOF, grade="certain")
         self.assertRefused(refusals(text), "Spell4.damageScale", "grade")
 
@@ -143,7 +138,6 @@ class FieldsTest(Refusal):
                 self.assertEqual(problems_of(record(grade=grade, gap=gap)), [])
 
     def test_a_fairly_sure_record_without_a_gap_is_refused(self):
-        # item 2
         self.assertRefused(
             [(p.where, p.what) for p in problems_of(record(grade="fairly sure", gap=None))],
             "Spell4.damageScale",
@@ -151,7 +145,6 @@ class FieldsTest(Refusal):
         )
 
     def test_a_guess_without_a_gap_is_refused(self):
-        # item 2
         self.assertRefused(
             [(p.where, p.what) for p in problems_of(record(grade="guess", gap=None))],
             "Spell4.damageScale",
@@ -159,7 +152,7 @@ class FieldsTest(Refusal):
         )
 
     def test_a_sure_record_with_a_gap_is_refused(self):
-        # item 2; docstring: gap is for "fairly sure" and "guess" only
+        # the docstring of check_facts.py: gap is for "fairly sure" and "guess" only
         self.assertRefused(
             [(p.where, p.what) for p in problems_of(record(grade="sure", gap="not yet read"))],
             "Spell4.damageScale",
@@ -167,16 +160,14 @@ class FieldsTest(Refusal):
         )
 
     def test_a_function_entry_without_a_name_is_refused(self):
-        # item 2
         found = problems_of(record(key=PLANTED_A), entries={PLANTED_A})
         self.assertRefused([(p.where, p.what) for p in found], PLANTED_A, "name")
 
     def test_a_function_entry_with_a_name_is_accepted(self):
-        # item 2, the other side of the rule
+        # the other side of the name rule
         self.assertEqual(problems_of(record(key=PLANTED_A, name="CastSpell"), entries={PLANTED_A}), [])
 
     def test_a_name_on_a_key_that_is_not_a_function_entry_is_refused(self):
-        # item 2
         found = problems_of(record(key=PLANTED_B, name="CastSpell"), entries={PLANTED_A})
         self.assertRefused([(p.where, p.what) for p in found], PLANTED_B, "name")
 
@@ -186,31 +177,26 @@ class WordingTest(Refusal):
         return [(p.where, p.what) for p in problems_of(record(statement=statement))]
 
     def test_a_statement_holding_a_register_name_is_refused(self):
-        # item 3
         for register in ("rax", "ecx", "xmm0", "rsp"):
             with self.subTest(register=register):
                 found = self.refused_statement(f"Returns the scaled value in {register}.")
                 self.assertRefused(found, "Spell4.damageScale", "statement")
 
     def test_a_statement_holding_a_struct_offset_is_refused(self):
-        # item 3
         found = self.refused_statement("Reads the level from the caster at +0x1678.")
         self.assertRefused(found, "Spell4.damageScale", "statement")
 
     def test_a_statement_holding_the_word_vtable_is_refused(self):
-        # item 3
         found = self.refused_statement("Calls the second entry of the vtable of the unit.")
         self.assertRefused(found, "Spell4.damageScale", "statement")
 
     def test_a_register_name_inside_the_proof_is_allowed(self):
-        # item 3: "A register name inside the proof is allowed"
         for register in ("rax", "ecx", "xmm0", "rsp"):
             with self.subTest(register=register):
                 proof = f"{PLANTED_A} mulss {register}, xmm1 scales the level"
                 self.assertEqual(problems_of(record(proof=proof)), [])
 
     def test_another_server_named_in_any_field_is_refused(self):
-        # item 3: "NexusForever", "Nexus Forever", in any field
         for server in ("NexusForever", "Nexus Forever"):
             for field, fields in (
                 ("statement", dict(statement=f"Matches what {server} does.")),
@@ -223,7 +209,7 @@ class WordingTest(Refusal):
                     self.assertRefused([(p.where, p.what) for p in found], fields.get("key", "Spell4.damageScale"), field)
 
     def test_an_issue_or_pull_request_named_in_any_field_is_refused(self):
-        # item 3: "#16", "issue 16", "pull request 25"
+        # a number after "#", "issue" or "pull request"
         for reference in ("#16", "issue 16", "pull request 25"):
             for field, fields in (
                 ("statement", dict(statement=f"Scales the damage, see {reference}.")),
@@ -235,17 +221,16 @@ class WordingTest(Refusal):
                     self.assertRefused([(p.where, p.what) for p in found], "Spell4.damageScale", field)
 
     def test_an_import_by_ordinal_is_not_an_issue_number(self):
-        # item 3 refuses issue numbers; `ws2_32.dll!#115` is how the client's import
+        # issue numbers are refused; `ws2_32.dll!#115` is how the client's import
         # table names an ordinal import (test_client_pe.py)
         self.assertEqual(problems_of(record(proof=f"{TEST_PROOF}; the slot holds ws2_32.dll!#115")), [])
 
     def test_a_register_name_is_matched_in_lower_case_only(self):
-        # item 3: a register is written lower-case by the disassembler; "SP" in a
+        # a register is written lower-case by the disassembler; "SP" in a
         # statement is an ordinary abbreviation
         self.assertEqual(problems_of(record(statement="Adds the SP cost to the ability.")), [])
 
     def test_a_decision_record_named_in_any_field_is_refused(self):
-        # item 3: "decision record"
         for field, fields in (
             ("statement", dict(statement="Scales the damage, as the decision record says.")),
             ("proof", dict(proof=f"{TEST_PROOF}; the decision record has it")),
@@ -261,7 +246,6 @@ class GradeAgainstProofTest(Refusal):
         return [(p.where, p.what) for p in problems_of(record(proof=proof, grade=grade, gap=gap))]
 
     def test_a_sure_record_whose_proof_names_no_instruction_or_test_is_refused(self):
-        # item 4
         for proof in (
             "Read the function by hand and it looked right.",
             f"The function at {PLANTED_A}",  # an address with no mnemonic after it
@@ -270,12 +254,15 @@ class GradeAgainstProofTest(Refusal):
                 self.assertRefused(self.refused_proof(proof), "Spell4.damageScale", "proof")
 
     def test_a_sure_record_whose_proof_names_an_instruction_is_accepted(self):
-        # item 4: an address followed by a mnemonic
+        # an address followed by a mnemonic
         self.assertEqual(self.refused_proof(f"{PLANTED_A} mulss"), [])
 
     def test_a_sure_record_whose_proof_names_a_test_file_is_accepted(self):
-        # item 4: a test file
         self.assertEqual(self.refused_proof("test_emulator.py"), [])
+
+    def test_a_sure_record_whose_proof_names_bytes_read_at_an_address_is_accepted(self):
+        # SKILL.md: sure means "the instructions or rows were read"; data is read as bytes
+        self.assertEqual(self.refused_proof(f"Bytes at {PLANTED_A}: 24-byte entries"), [])
 
     def test_a_fairly_sure_record_needs_no_instruction_or_test_in_its_proof(self):
         # SKILL.md: "Fairly sure: read, with a named gap"; only "sure" is held to the proof
@@ -337,42 +324,37 @@ class CitedAddressesTest(unittest.TestCase):
         return sorted(self.cited.get(address, []))
 
     def test_every_address_in_a_tracked_file_is_found_with_its_file_and_line(self):
-        # item 1
         self.assertEqual(self.citations(PLANTED_A), ["src/a.gleam:2", "src/c.gleam:1"])
         self.assertEqual(self.citations(PLANTED_C), ["src/c.gleam:4"])
 
     def test_two_addresses_on_one_line_are_both_found_there(self):
-        # item 1
         self.assertIn("docs/b.txt:1", self.citations(PLANTED_B))
         self.assertEqual(self.citations(PLANTED_MIXED.lower()), ["docs/b.txt:1"])
 
     def test_an_address_is_reported_lower_case_whatever_case_it_was_written_in(self):
-        # item 1: "any case, reported lower-case"
         self.assertIn(PLANTED_MIXED.lower(), self.cited)
         self.assertNotIn(PLANTED_MIXED, self.cited)
         self.assertEqual(self.cited, {k: v for k, v in self.cited.items() if k == k.lower()})
 
     def test_a_number_that_is_not_seven_digits_after_0x14_is_not_an_address(self):
-        # item 1: "7 hex digits after 0x14"
         for text in (PLANTED_FIVE_DIGITS, PLANTED_SIX_DIGITS, PLANTED_OTHER_PREFIX):
             with self.subTest(text=text):
                 self.assertNotIn(text, self.cited)
 
     def test_the_fact_file_itself_is_skipped(self):
-        # item 1; docstring of cited_addresses
+        # the docstring of cited_addresses
         self.assertNotIn(PLANTED_FACT_FILE_ONLY, self.cited)
 
     def test_a_line_assigning_a_planted_name_is_skipped(self):
-        # item 1; docstring: PLANTED_ lines, indented or commented too
+        # a line assigning a PLANTED_ name is skipped (cited_addresses), indented or commented too
         self.assertNotIn(PLANTED_SKIPPED_ONE, self.cited)
         self.assertNotIn(PLANTED_SKIPPED_TWO, self.cited)
 
     def test_a_planted_line_skips_only_its_own_line(self):
-        # item 1: the next line of the same file is still read
+        # the next line of the same file is still read
         self.assertIn("src/planted.py:3", self.citations(PLANTED_B))
 
     def test_a_file_git_does_not_track_is_not_read(self):
-        # item 1: "git-tracked files"
         self.assertNotIn(PLANTED_UNTRACKED, self.cited)
 
     def test_exactly_the_planted_addresses_are_found(self):
@@ -388,14 +370,12 @@ class CoverageProblemsTest(unittest.TestCase):
         return check_facts.coverage_problems({r.key: r for r in records}, self.CITED if cited is None else cited)
 
     def test_a_cited_address_no_record_holds_is_one_problem_naming_it_and_a_citation(self):
-        # item 1 and item 5
         found = self.problems(record(key="Spell4.damageScale"))
         self.assertEqual(len(found), 1)
         self.assertIn(PLANTED_A, found[0].what)
         self.assertIn(found[0].where, self.CITED[PLANTED_A])
 
     def test_each_address_no_record_holds_is_its_own_problem(self):
-        # item 1: "one problem per cited address"
         cited = {PLANTED_A: ["src/a.gleam:2"], PLANTED_B: ["docs/b.txt:1"], PLANTED_C: ["src/c.gleam:4"]}
         found = self.problems(record(key=PLANTED_B, name="Held"), cited=cited)
         self.assertEqual({p.where for p in found}, {"src/a.gleam:2", "src/c.gleam:4"})
@@ -404,23 +384,18 @@ class CoverageProblemsTest(unittest.TestCase):
         self.assertEqual(len(found), 2)
 
     def test_an_address_cited_twice_is_still_one_problem(self):
-        # item 1: one per address, not per citation
         self.assertEqual(len(self.problems(record())), 1)
 
     def test_an_address_held_as_a_records_key_is_covered(self):
-        # item 1
         self.assertEqual(self.problems(record(key=PLANTED_A, name="Held")), [])
 
     def test_an_address_inside_a_statement_is_covered(self):
-        # item 1
         self.assertEqual(self.problems(record(statement=f"Calls the function at {PLANTED_A} first.")), [])
 
     def test_an_address_inside_a_proof_is_covered(self):
-        # item 1
         self.assertEqual(self.problems(record(proof=INSTRUCTION_PROOF)), [])
 
     def test_an_address_held_only_in_another_records_proof_is_covered(self):
-        # item 1: "an address held only in another record's proof counts as held"
         owner = record(key="Spell4.damageScale", proof=INSTRUCTION_PROOF)
         other = record(key="Spell4.effectType")
         self.assertEqual(self.problems(owner, other), [])
@@ -435,8 +410,9 @@ INSIDE_PDATA_FUNCTION = 0x140003FE8  # the switch jump inside it
 RDATA_CONSTANT = 0x140B79D14  # a constant in .rdata (formulas_by_hand.py)
 
 
+@cs.needs_client
 class FunctionEntriesTest(unittest.TestCase):
-    """item 2's name rule on the real client: .pdata lists no leaf function."""
+    """The name rule on the real client: .pdata lists no leaf function."""
 
     @classmethod
     def setUpClass(cls):
@@ -468,15 +444,18 @@ class MainTest(unittest.TestCase):
             code = check_facts.main(list(argv))
         return code, out.getvalue()
 
+    @cs.needs_client
     def test_the_real_repository_passes_and_prints_no_problem(self):
-        # item 1: "main([]) exits 0 and prints no problem"; fails until the records land. The
+        # main([]) exits 0 and prints no problem. The
         # client is named so the name rule runs; without it main prints that the rule was not checked.
-        with mock.patch.dict(os.environ, {"WILDSTAR_CLIENT_EXE": str(cs.client_exe())}):
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {"WILDSTAR_CLIENT_EXE": str(cs.client_exe())}), contextlib.redirect_stderr(err):
             code, printed = self.run_main()
-        self.assertEqual((code, printed), (0, ""))
+        # main exits 0 without the client too and says on stderr that the name rule was not checked
+        self.assertEqual((code, printed, err.getvalue()), (0, "", ""))
 
     def test_main_exits_non_zero_and_prints_each_problem(self):
-        # item 5: a planted repository with one bad record and one address no record holds
+        # a planted repository with one bad record and one address no record holds
         with tempfile.TemporaryDirectory() as d:
             facts = toml_text(
                 PLANTED_A, statement=CLEAN_STATEMENT, proof=INSTRUCTION_PROOF, grade="certain"

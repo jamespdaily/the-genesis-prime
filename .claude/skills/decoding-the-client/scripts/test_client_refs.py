@@ -1,9 +1,8 @@
 """client_refs.RefIndex: the reference index of WildStar64.exe from llvm-objdump.
 
-Expected values come from the issue 16 trial's checkers (refs.py,
-test_checkers.py) and its measurements on WildStar64.exe (SHA-256
-565c2fa1...fe0b10), or from llvm-objdump on the sites named. The index is
-built once per class (about 2 s with 4 jobs).
+Expected values come from llvm-objdump on the sites named, on WildStar64.exe
+(SHA-256 565c2fa1...fe0b10), and from the fact file's records at those
+addresses. The index is built once per class (about 2 s with 4 jobs).
 Run: python3 -I test_client_refs.py
 """
 
@@ -19,6 +18,7 @@ import check_support as cs  # noqa: E402
 from client_refs import RefIndex  # noqa: E402
 
 
+@cs.needs_client
 class RefIndexTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -26,8 +26,8 @@ class RefIndexTest(unittest.TestCase):
         cls.idx = cs.ref_index()
 
     def test_the_callers_of_0x140663030_are_these_17_functions(self):
-        # issue 16 trial; a jmp to the entry counts as a call. The jmp at 0x14042023e lies
-        # outside every function and is left out.
+        # a jmp to the entry counts as a call. The jmp at 0x14042023e lies outside every
+        # function and is left out (fact file records 0x140663030 and 0x14042023e).
         want = {
             0x140409330, 0x1404165E0, 0x140419AC0, 0x14050F800, 0x140664840, 0x140664880,
             0x140672840, 0x140680180, 0x1406A30D0, 0x1406EE640, 0x140708120, 0x14072DC90,
@@ -49,7 +49,7 @@ class RefIndexTest(unittest.TestCase):
         self.assertEqual(self.idx.callers(0x1BFFFF000), {})
 
     def test_the_callees_of_0x140283670_are_five_functions_and_five_imports(self):
-        # issue 16 trial
+        # fact file record 0x140283670
         internal, imports = self.idx.callees(0x140283670)
         self.assertEqual(sorted(internal), [0x1401971E0, 0x1401A3130, 0x1401B54E0, 0x1401B6D00, 0x140288100])
         self.assertEqual(
@@ -64,11 +64,11 @@ class RefIndexTest(unittest.TestCase):
         )
 
     def test_the_string_Lighting_has_one_reference_from_0x140737da0(self):
-        # issue 16 trial: the string is at 0x140b47ec8, referenced from 0x140738e19 in function 0x140737da0
+        # the string is at 0x140b47ec8, referenced from 0x140738e19 in function 0x140737da0 (fact file records)
         self.assertEqual(self.idx.string_refs("Lighting"), {0x140B47EC8: [(0x140738E19, 0x140737DA0)]})
 
     def test_the_string_DialogResponseType_ViewQuestIncomplete_has_one_reference(self):
-        # issue 16 trial: at 0x140b46b48, one reference from 0x14072f318 in function 0x14072ee90
+        # at 0x140b46b48, one reference from 0x14072f318 in function 0x14072ee90 (fact file records)
         self.assertEqual(
             self.idx.string_refs("DialogResponseType_ViewQuestIncomplete"),
             {0x140B46B48: [(0x14072F318, 0x14072EE90)]},
@@ -79,7 +79,7 @@ class RefIndexTest(unittest.TestCase):
         self.assertEqual(self.idx.string_refs("NoSuchString_9f3a7c1e_NotInTheClient"), {})
 
     def test_the_showcursor_slot_is_referenced_by_two_calls_and_a_jmp_through_it(self):
-        # issue 16 trial; llvm-objdump: `call [rip+..]` at 0x14000a061 and 0x14000a0bb (function
+        # llvm-objdump: `call [rip+..]` at 0x14000a061 and 0x14000a0bb (function
         # 0x140009d00) and `jmp [rip+..]` at 0x1402801f3, which lies outside every function
         refs = self.idx.refs_to(cs.IAT_SHOWCURSOR)
         self.assertEqual({r.source for r in refs}, {0x14000A061, 0x14000A0BB, 0x1402801F3})
@@ -93,7 +93,7 @@ class RefIndexTest(unittest.TestCase):
         self.assertIsNone(self.pe.root_of(0x1402801F3))
 
     def test_the_pointer_only_function_0x14077ed70_has_one_reference_a_pointer_from_0x140b6d240(self):
-        # issue 16 trial
+        # fact file record 0x14077ed70
         refs = self.idx.refs_to(cs.POINTER_ONLY_A)
         self.assertEqual([(r.source, r.target, r.kind) for r in refs], [(0x140B6D240, cs.POINTER_ONLY_A, "pointer")])
 
@@ -113,8 +113,8 @@ class RefIndexTest(unittest.TestCase):
             self.assertEqual(loaded.callees(function), self.idx.callees(function), hex(function))
         self.assertEqual(loaded.string_refs("Lighting"), self.idx.string_refs("Lighting"))
 
-    def test_the_ten_questions_drawn_with_random_16_are_issue_16s(self):
-        # issue 16 trial: questions.py drew these with random.Random(16) from the full index
+    def test_the_ten_questions_drawn_with_random_16_are_the_fixed_ten(self):
+        # draw_questions draws from the full index with random.Random(16)
         drawn = cs.draw_questions(self.pe, self.idx)
         self.assertEqual(drawn, cs.QUESTIONS_16)
 

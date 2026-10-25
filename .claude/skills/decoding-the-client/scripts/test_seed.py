@@ -1,9 +1,9 @@
 """seed.py: the seed file applied to the Ghidra project before analysis.
 
-Expected values come from the issue 24 test list (item 2: the .pdata function
-starts plus the pointer-only functions) and the issue 16 trial's seed.py and
-test_checkers.py (line format `0x<hex>\\tfunction\\t<name>`, lower-case hex,
-names `seed_<hex>`, no duplicate address). Run: python3 -I test_seed.py
+Expected values come from the client's own tables through ClientPE (the .pdata
+function starts plus the pointer-only functions) and the seed file's rules (line
+format `0x<hex>\\tfunction\\t<name>`, lower-case hex, names `seed_<hex>`, no
+duplicate address). Run: python3 -I test_seed.py
 """
 
 import os
@@ -24,6 +24,7 @@ PLANTED_ONE = 0x140001010
 PLANTED_TWO = 0x140001020
 
 
+@cs.needs_client
 class SeedLinesTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -31,20 +32,20 @@ class SeedLinesTest(unittest.TestCase):
         cls.lines = seed.seed_lines(cls.pe)
 
     def test_the_seed_is_every_pdata_start_and_every_pointer_only_function(self):
-        # issue 24 test list, item 2
+        # the seed is exactly these two sets
         starts = set(self.pe.function_starts())
         pointer_only = set(self.pe.pointer_only_functions())
         self.assertFalse(starts & pointer_only)  # pointer-only targets lie outside every .pdata range
         self.assertEqual({a for a, _k, _n in self.lines}, starts | pointer_only)
-        self.assertEqual(len(self.lines), 23254 + len(pointer_only))  # issue 16 trial: 23,254 starts
+        self.assertEqual(len(self.lines), 23254 + len(pointer_only))  # 23,254 starts
 
     def test_lines_are_sorted_with_no_duplicate_address(self):
         addresses = [a for a, _k, _n in self.lines]
         self.assertEqual(addresses, sorted(addresses))
-        self.assertEqual(len(addresses), len(set(addresses)))  # issue 16 trial: test_checkers.check_lines
+        self.assertEqual(len(addresses), len(set(addresses)))  # one line per address
 
     def test_each_line_is_a_function_named_seed_and_its_hex_address(self):
-        # issue 24 test list, item 2; issue 16 trial: names are seed_<address>
+        # names are seed_<address>
         for address, kind, name in self.lines:
             self.assertEqual(kind, "function")
             self.assertEqual(name, "seed_%x" % address)
@@ -54,6 +55,7 @@ class SeedLinesTest(unittest.TestCase):
         self.assertNotIn(seed.PLANTED_UNMAPPED, {a for a, _k, _n in self.lines})
 
 
+@cs.needs_client
 class SeedFileTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -65,7 +67,7 @@ class SeedFileTest(unittest.TestCase):
         self.dir = Path(self._dir.name)
 
     def test_write_seed_writes_one_tab_separated_line_per_function_in_lower_case_hex(self):
-        # issue 16 trial: test_checkers.test_cli_file (no CR, final newline)
+        # no CR, final newline
         path = self.dir / "seed.tsv"
         seed.write_seed(self.lines, path)
         data = path.read_bytes()
