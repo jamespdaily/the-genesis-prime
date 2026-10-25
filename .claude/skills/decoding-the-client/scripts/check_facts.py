@@ -47,9 +47,10 @@ def load(path: Path) -> dict[str, Record]:
     raise NotImplementedError
 
 
-def record_problems(records: dict[str, Record], function_entries: set[str]) -> list[Problem]:
+def record_problems(records: dict[str, Record], function_entries: set[str] | None) -> list[Problem]:
     """Each record's fields, grade, gap, name and wording, against the rules above.
-    function_entries holds the keys known to be a function's entry."""
+    function_entries holds the keys known to be a function's entry; None when
+    they are unknown, and then no name rule is checked."""
     raise NotImplementedError
 
 
@@ -67,7 +68,7 @@ def coverage_problems(records: dict[str, Record], cited: dict[str, list[str]]) -
 def main(argv: list[str]) -> int:
     """Checks the fact file against the repository. The name rule needs the
     client at $WILDSTAR_CLIENT_EXE to know the function entries; without it,
-    main says the rule was not checked."""
+    main says on stderr that the rule was not checked. Each problem goes to stdout."""
     raise NotImplementedError
 
 
