@@ -20,6 +20,8 @@ import seed  # noqa: E402
 from client_pe import ClientPE  # noqa: E402
 
 LINE = re.compile(r"^0x[0-9a-f]+\tfunction\tseed_[0-9a-f]+\n$")
+PLANTED_ONE = 0x140001010
+PLANTED_TWO = 0x140001020
 
 
 class SeedLinesTest(unittest.TestCase):
@@ -89,35 +91,35 @@ class SeedFileTest(unittest.TestCase):
     def test_read_seed_accepts_the_good_lines_the_planted_ones_are_made_from(self):
         # proves the planted cases below fail only because of their one bad line
         path = self.dir / "good.tsv"
-        path.write_text("0x140001010\tfunction\tseed_140001010\n0x140001020\tfunction\tseed_140001020\n")
+        path.write_text(f"0x{PLANTED_ONE:x}\tfunction\tseed_{PLANTED_ONE:x}\n0x{PLANTED_TWO:x}\tfunction\tseed_{PLANTED_TWO:x}\n")
         self.assertEqual(
             seed.read_seed(path),
-            [(0x140001010, "function", "seed_140001010"), (0x140001020, "function", "seed_140001020")],
+            [(PLANTED_ONE, "function", f"seed_{PLANTED_ONE:x}"), (PLANTED_TWO, "function", f"seed_{PLANTED_TWO:x}")],
         )
 
     def _refused(self, text):
         path = self.dir / "bad.tsv"
-        path.write_text("0x140001010\tfunction\tseed_140001010\n" + text)
+        path.write_text(f"0x{PLANTED_ONE:x}\tfunction\tseed_{PLANTED_ONE:x}\n" + text)
         with self.assertRaises(ValueError):
             seed.read_seed(path)
 
     def test_read_seed_refuses_a_line_with_two_fields(self):
-        self._refused("0x140001020\tfunction\n")
+        self._refused(f"0x{PLANTED_TWO:x}\tfunction\n")
 
     def test_read_seed_refuses_a_line_with_four_fields(self):
-        self._refused("0x140001020\tfunction\tseed_140001020\textra\n")
+        self._refused(f"0x{PLANTED_TWO:x}\tfunction\tseed_{PLANTED_TWO:x}\textra\n")
 
     def test_read_seed_refuses_an_address_without_the_0x_prefix(self):
-        self._refused("140001020\tfunction\tseed_140001020\n")
+        self._refused(f"{PLANTED_TWO:x}\tfunction\tseed_{PLANTED_TWO:x}\n")
 
     def test_read_seed_refuses_an_address_that_is_not_hex(self):
         self._refused("0x14000zz20\tfunction\tseed_x\n")
 
     def test_read_seed_refuses_a_duplicate_address(self):
-        self._refused("0x140001010\tfunction\tother_name\n")
+        self._refused(f"0x{PLANTED_ONE:x}\tfunction\tother_name\n")
 
     def test_read_seed_refuses_a_name_with_a_space(self):
-        self._refused("0x140001020\tfunction\tseed 140001020\n")
+        self._refused(f"0x{PLANTED_TWO:x}\tfunction\tseed {PLANTED_TWO:x}\n")
 
 
 if __name__ == "__main__":
