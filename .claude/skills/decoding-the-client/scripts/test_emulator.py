@@ -57,15 +57,15 @@ class EmulatorTest(unittest.TestCase):
         cls.qp.ask("seed_report")  # the project is open
         cls.a_inputs = formula_a_inputs()
         cls.b_inputs = formula_b_inputs()
-        cls.a_runs = [cls.run(FORMULA_A, x) for x in cls.a_inputs]
-        cls.b_runs = [cls.run(FORMULA_B, x) for x in cls.b_inputs]
+        cls.a_runs = [cls.emulate_once(FORMULA_A, x) for x in cls.a_inputs]
+        cls.b_runs = [cls.emulate_once(FORMULA_B, x) for x in cls.b_inputs]
 
     @classmethod
     def tearDownClass(cls):
         cls.qp.close()
 
     @classmethod
-    def run(cls, function: int, argument):
+    def emulate_once(cls, function: int, argument):
         reply = cls.qp.ask("emulate", function=hx(function), args=[argument])
         return reply.answer["result"], reply.answer["steps"], reply.ms
 

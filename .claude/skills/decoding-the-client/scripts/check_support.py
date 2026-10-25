@@ -277,7 +277,9 @@ def draw_questions(pe, idx) -> list[dict]:
     cands = [
         t
         for t in range(rdata.va, rdata.va + rdata.raw_size)
-        if any(r.kind in ("rip-data", "rip-lea") for r in idx.refs_to(t))
+        # issue 16's index filed call [rip+x] and jmp [rip+x] under rip-data; this
+        # index names them call-mem and jmp-mem, so all four count to repeat its draw
+        if any(r.kind in ("rip-data", "rip-lea", "call-mem", "jmp-mem") for r in idx.refs_to(t))
     ]
     taken = set()
     for _ in range(2):
