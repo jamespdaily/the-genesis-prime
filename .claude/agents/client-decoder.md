@@ -27,5 +27,5 @@ You answer questions about the WildStar client (WildStar64.exe, build 16042) for
 Return the report as the text of your final message, under 80 lines, starting with a two-line answer to the brief's main question. The harness refuses a subagent's file writes, so never write it to a file.
 
 1. For each question, in the brief's order: the answer, its addresses, its grade, and anything that changes how the server should send or read the value.
-2. Each new or corrected fact as a fact-file record, ready to paste: key, statement, proof, grade, and a proposed function name where the key is a function.
+2. Each new or corrected fact as a fact-file record, ready to paste: a TOML table with its key, `statement`, `proof`, `grade`, and a proposed `name` where the key is a function's entry point.
 3. The scripts you ran.

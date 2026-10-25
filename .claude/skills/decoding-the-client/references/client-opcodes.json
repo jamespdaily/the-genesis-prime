@@ -1,0 +1,5664 @@
+{
+ "opcodes": {
+  "0x0003": {
+   "size": 56,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0015": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0036": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x003D": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0061": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0068": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0070": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0072": {
+   "size": null,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0073": {
+   "size": null,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0076": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x007E": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0091": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0092": {
+   "size": 288,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0093": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0094": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0096": {
+   "size": null,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0097": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0098": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0099": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x009A": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x009B": {
+   "size": 20,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x009D": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00A9": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00AA": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00AD": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00AE": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00AF": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00B0": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00B1": {
+   "size": 48,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00B2": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00B3": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00B5": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00B6": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00B7": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00B8": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00B9": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00BA": {
+   "size": null,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00BB": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00BC": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00BD": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00BE": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00BF": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00C0": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00C1": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00C2": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00C3": {
+   "size": 2,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00C4": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00C5": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00C6": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00C7": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x00C8": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00C9": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00CA": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00CB": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00CC": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00CD": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00CE": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00D1": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00D2": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00D3": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00D5": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00D6": {
+   "size": 104,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00D7": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00D8": {
+   "size": 68,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00D9": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00DA": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00DC": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00DD": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00DE": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00DF": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00E0": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00E1": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00E2": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00E3": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00E4": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00E6": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00E7": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00E8": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00E9": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00EA": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00EB": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00EC": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00ED": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00EE": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00F0": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00F1": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00F2": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00F3": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00F4": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00F5": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00F6": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00F7": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00F8": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00F9": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00FA": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00FB": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00FC": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00FD": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x00FE": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x00FF": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0100": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0101": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0102": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0103": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0104": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0105": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0106": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0109": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x010A": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x010B": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x010C": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x010D": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x010E": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x010F": {
+   "size": null,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0110": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0111": {
+   "size": null,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0112": {
+   "size": 72,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0113": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0114": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0116": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0117": {
+   "size": 104,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x011B": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x011C": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x011D": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x011E": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0122": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0123": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0124": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0125": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0126": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0127": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0129": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x012A": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x012B": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x012C": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x012D": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x012E": {
+   "size": 80,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x012F": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0130": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0131": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0132": {
+   "size": 88,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0133": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0134": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0135": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0136": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0137": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0138": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0139": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x013A": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x013B": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x013C": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x013D": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x013E": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0140": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0141": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0142": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0143": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0144": {
+   "size": 56,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0145": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0148": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0149": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x014A": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x014B": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x014C": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x014D": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x014E": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x014F": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0150": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0151": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0152": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0153": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0154": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0155": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0157": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0158": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x015A": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x015B": {
+   "size": 36,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x015C": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x015D": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x015E": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x015F": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0160": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0162": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0163": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0164": {
+   "size": 36,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0166": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0167": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0168": {
+   "size": 136,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0169": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x016A": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x016B": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x016C": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x016D": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x016E": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x016F": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0170": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0171": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0172": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0173": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0174": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0175": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0176": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0177": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0178": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0179": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x017A": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x017B": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x017C": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x017D": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x017E": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x017F": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0180": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0181": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0182": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0183": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0184": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0185": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0186": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0187": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0188": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0189": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x018A": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x018B": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x018C": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x018D": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x018E": {
+   "size": 80,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x018F": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0190": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0191": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0192": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0193": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0194": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0195": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0196": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0197": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0198": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0199": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x019A": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x019B": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x019C": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x019D": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x019E": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x019F": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01A0": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01A1": {
+   "size": 2,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01A2": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01A3": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01A4": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01A5": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01A6": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01A7": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01A8": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01A9": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01AA": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01AB": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01AC": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01AD": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01AE": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01AF": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01B0": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01B2": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01B3": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01B4": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01B5": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01B6": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x01B7": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01B8": {
+   "size": 104,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x01BA": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01BB": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01BC": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01BD": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01BE": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01BF": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01C0": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01C1": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x01C2": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01C3": {
+   "size": 48,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01C4": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x01C6": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01C8": {
+   "size": 112,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01CA": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01CD": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01CE": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01CF": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01D0": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01D2": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01D3": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01D4": {
+   "size": 56,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x01D9": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01DA": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x01EF": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0210": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0211": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0212": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0213": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0214": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0215": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0216": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0217": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0218": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0219": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x021A": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x021B": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x021C": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x021D": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x021E": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x021F": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0220": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0221": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0222": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0223": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0224": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0225": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0226": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0227": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0228": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0229": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x022A": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x022B": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x022C": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x022D": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x022E": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x022F": {
+   "size": 28,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0230": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0231": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0232": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0233": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0237": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x023B": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x023C": {
+   "size": 40,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x023D": {
+   "size": 64,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x023E": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x023F": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0240": {
+   "size": 28,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0241": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0244": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0247": {
+   "size": 72,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0248": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0249": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x024A": {
+   "size": 64,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x024B": {
+   "size": 64,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x024C": {
+   "size": 80,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x024D": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0252": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0253": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0255": {
+   "size": 136,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0256": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0257": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0258": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0259": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x025A": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x025B": {
+   "size": 56,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x025C": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x025E": {
+   "size": 1288,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x025F": {
+   "size": 44,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0260": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0261": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0262": {
+   "size": 288,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0263": {
+   "size": 36,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0264": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0265": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0267": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0269": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x026A": {
+   "size": 80,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x026B": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x033D": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x033E": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x033F": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0347": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0348": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0349": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x034A": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x034B": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x034C": {
+   "size": 28,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x034D": {
+   "size": 64,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x034E": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x034F": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0350": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0351": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0352": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0355": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0356": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0357": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0358": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0359": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x035A": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x035B": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x035C": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x035D": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x035E": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x035F": {
+   "size": 56,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0360": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0361": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0362": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0363": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0364": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0365": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0366": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x036A": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x036F": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x037E": {
+   "size": 20,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x037F": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x038B": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x038C": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x038F": {
+   "size": 40,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0397": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0398": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0399": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x039A": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x039B": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x039C": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x039D": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x039E": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x039F": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03A0": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03A1": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03A2": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03A3": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03A4": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03A5": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03A6": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03A7": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03AA": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03AC": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03AD": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03AE": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03AF": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03B0": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03B1": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03B2": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03B3": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03B4": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03B5": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03B7": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03BA": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03BB": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03BC": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03BD": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03BE": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03BF": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03C0": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03C1": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03C2": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03C3": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03C4": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03C6": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03C7": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03C8": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03C9": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03CA": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03CB": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03CD": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03CF": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03D0": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03D1": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03D2": {
+   "size": 64,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03D3": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03D4": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03DB": {
+   "size": 56,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03DC": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03E0": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03E1": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03E6": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03E7": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03E8": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03EC": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03ED": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03EE": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03EF": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x03F0": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03F1": {
+   "size": 40,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x03F2": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0400": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0405": {
+   "size": 216,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0406": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0408": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0410": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0411": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0412": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0414": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0416": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x041A": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x041D": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x041F": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0422": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0424": {
+   "size": 208,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0427": {
+   "size": 104,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0428": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x042A": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x042B": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x042D": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x042E": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x042F": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0431": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0432": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0436": {
+   "size": 96,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0437": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0438": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0439": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x043A": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x043B": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x043E": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0441": {
+   "size": 56,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0443": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0446": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0447": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x044A": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x044C": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x044F": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0450": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0453": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0456": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0459": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x045A": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x045B": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x045C": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x045E": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x045F": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0460": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0461": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0462": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0463": {
+   "size": 40,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0466": {
+   "size": 96,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0467": {
+   "size": 64,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0468": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0469": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x046F": {
+   "size": 184,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0470": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0471": {
+   "size": 56,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0473": {
+   "size": 64,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0476": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0477": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0478": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0479": {
+   "size": 96,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x047A": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0480": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0481": {
+   "size": 104,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0487": {
+   "size": 72,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0489": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x048A": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x048B": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x048D": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x048F": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0490": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0491": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0493": {
+   "size": 808,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0495": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0497": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x049F": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04A0": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04A1": {
+   "size": 72,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04A2": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04A3": {
+   "size": 104,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04A5": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04A6": {
+   "size": 64,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04A8": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04AC": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04AE": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04AF": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04B1": {
+   "size": 48,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04B2": {
+   "size": 48,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04B3": {
+   "size": 48,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04B6": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04BA": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04BD": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04C1": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04C3": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04C5": {
+   "size": 416,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04C9": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04CA": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04CF": {
+   "size": 64,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04D0": {
+   "size": 64,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04D4": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04DA": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04DB": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04DD": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04DE": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04DF": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04E1": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x04E6": {
+   "size": 64,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04E7": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04EA": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04EC": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04ED": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04F5": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x04FE": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0501": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0504": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0506": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0507": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0508": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x050A": {
+   "size": 48,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x050B": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x050D": {
+   "size": 648,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x050E": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0510": {
+   "size": 136,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0512": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0513": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0514": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0515": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0516": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0518": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0519": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x051F": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0522": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0523": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0525": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0526": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0527": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0529": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x052A": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x052B": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x052C": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x052D": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x052E": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x052F": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0531": {
+   "size": 56,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0533": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0536": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0538": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x053A": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x053B": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x053C": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0546": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0547": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0548": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0549": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x054A": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x054B": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x054C": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x054D": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x054E": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0550": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0551": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0552": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0553": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0554": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0555": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x055E": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x055F": {
+   "size": 112,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0560": {
+   "size": 120,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0561": {
+   "size": 112,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0562": {
+   "size": 112,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0563": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0564": {
+   "size": 112,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0565": {
+   "size": 120,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0566": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0567": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0568": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0569": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x056A": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x056B": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x056C": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x056D": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x056E": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x056F": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0570": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0571": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0579": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x057A": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x057B": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x057C": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x058C": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x058F": {
+   "size": 48,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0591": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0592": {
+   "size": 680,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0594": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0597": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0598": {
+   "size": 96,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0599": {
+   "size": 120,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x059C": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x059D": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x059F": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05A0": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05A1": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05A2": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05A3": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x05A7": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05A8": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05B0": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05B2": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05B4": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05B5": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05B6": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05B8": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05BC": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05BE": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05BF": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05C0": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05C4": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05C6": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05C8": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05CA": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05CC": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05CF": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05D1": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05D3": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05D5": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05D9": {
+   "size": 64,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05DA": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05DC": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05DF": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05E1": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05E3": {
+   "size": 76,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05E5": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05E6": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05E7": {
+   "size": 72,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05E8": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05E9": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05EA": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05ED": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05EE": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05EF": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05F1": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05F2": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x05F3": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05F8": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x05F9": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0600": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0602": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0604": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0606": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x060A": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x060D": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0612": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0614": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0616": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0617": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x061A": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x061F": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0621": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0623": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0624": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0628": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x062A": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0634": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0635": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0636": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0637": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0638": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0639": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x063A": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x063B": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x063D": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x063E": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x063F": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0640": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0642": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x064C": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x064D": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0667": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0669": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x066A": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x066C": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x066D": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x066E": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x066F": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0670": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0671": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0672": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0673": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0674": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0675": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0676": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0677": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0678": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0679": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x067A": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x067B": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x067C": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x067D": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x067E": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x067F": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0680": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0681": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0687": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0688": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0689": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x068A": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x068B": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x068C": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x068D": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x068E": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x068F": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0693": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0694": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06B2": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x06B3": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06B4": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06B5": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06B6": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06B7": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06B8": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06B9": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06BA": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06BB": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06BC": {
+   "size": 28,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06BD": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x06BE": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06BF": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06C5": {
+   "size": 48,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x06D1": {
+   "size": 40,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x06DA": {
+   "size": 56,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x06DB": {
+   "size": 72,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06DC": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x06DD": {
+   "size": 120,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06DE": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06DF": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06E7": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x06E8": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x06EA": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06EE": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x06F1": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06F5": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06F6": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06F7": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06F9": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06FA": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x06FB": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06FD": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06FE": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x06FF": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0700": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0701": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0715": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0717": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0718": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0719": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x071A": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x071B": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x071C": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x071D": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x071E": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x071F": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0720": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0721": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0723": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0724": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0737": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0738": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x073A": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x074A": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0753": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0754": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0755": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0757": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0758": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0759": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x075A": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x075B": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x075C": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x075F": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0760": {
+   "size": 88,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0761": {
+   "size": 40,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0762": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0763": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0765": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0767": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0768": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0769": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x076A": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x076B": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x076C": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x076D": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x076E": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x076F": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0770": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0775": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x077D": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x077E": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x077F": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0784": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0785": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0786": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0788": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x078C": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x078E": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x078F": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0793": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0795": {
+   "size": 1016,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0799": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x079A": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x079E": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07A1": {
+   "size": 56,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07A4": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07A5": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07B4": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07B6": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07C6": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07C7": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07C8": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07C9": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07CA": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07CB": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07CC": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07CD": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07CE": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07CF": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07D0": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07D3": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07D5": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07DB": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07DC": {
+   "size": 56,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07DD": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07DF": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07E0": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07E3": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x07E4": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07E5": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07EA": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07ED": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x07F2": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07F4": {
+   "size": 88,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07F5": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07F6": {
+   "size": 72,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07F7": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07F8": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07F9": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07FA": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07FB": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07FC": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07FD": {
+   "size": 56,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07FE": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x07FF": {
+   "size": 80,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0801": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0802": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0804": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0805": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x080E": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x080F": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0810": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0811": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0812": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0813": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0814": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0815": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0816": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0817": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0818": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0819": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x081A": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x081B": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x081C": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x081D": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0823": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0825": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0828": {
+   "size": 80,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x082A": {
+   "size": 48,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x082C": {
+   "size": 40,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x082D": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x082E": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x082F": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0830": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0831": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0832": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0833": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0839": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x083A": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x083C": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0845": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0846": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0848": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0849": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x084A": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x084B": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x084C": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x084D": {
+   "size": 1,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x084E": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x084F": {
+   "size": 48,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0850": {
+   "size": 12,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0851": {
+   "size": 20,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0852": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0853": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0854": {
+   "size": 80,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0855": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0856": {
+   "size": 72,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0857": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0858": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0859": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x085A": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x085B": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x085C": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x085D": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x085E": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x085F": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0860": {
+   "size": 60,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0861": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0862": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x0865": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x086F": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0876": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0879": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x087F": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0880": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0881": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0885": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0889": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x088A": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x088C": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0892": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0893": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0894": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0895": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0896": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0897": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x089A": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x089B": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x089F": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08A0": {
+   "size": 72,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08A1": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08A2": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08A3": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08A4": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08A5": {
+   "size": 80,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08A6": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08A8": {
+   "size": 20,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08AC": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08B2": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08B3": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08B4": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08B5": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08B6": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08B7": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08B8": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08BB": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08BC": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08BD": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08C7": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08CC": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08CF": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08D3": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08D7": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08F4": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08F5": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x08F6": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0902": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0905": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0908": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0909": {
+   "size": 44,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x090A": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x090B": {
+   "size": 56,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x090F": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0914": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0918": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0919": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x091B": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0928": {
+   "size": 8,
+   "client_sends": true,
+   "client_receives": true
+  },
+  "0x092C": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x092F": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0931": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0932": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0933": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0934": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0935": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0936": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0937": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0938": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0939": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x093A": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x093B": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x093C": {
+   "size": 12,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x093D": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x093E": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x093F": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0940": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0942": {
+   "size": 4,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0943": {
+   "size": 36,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x094F": {
+   "size": 24,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0951": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0954": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0956": {
+   "size": 16,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x0958": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0959": {
+   "size": 32,
+   "client_sends": true,
+   "client_receives": false
+  },
+  "0x095A": {
+   "size": 24,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0965": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0966": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0967": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0968": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0969": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x096A": {
+   "size": 48,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x096B": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x096C": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x096D": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x096E": {
+   "size": 28,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x096F": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0970": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0971": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0972": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0973": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0974": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0975": {
+   "size": 40,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0976": {
+   "size": 96,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0977": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0978": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0979": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x097A": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x097B": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x097C": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x097D": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x097E": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x097F": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0980": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0981": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0982": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0983": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0984": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0985": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0986": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0987": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0988": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0989": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x098A": {
+   "size": 4,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x098B": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x098C": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x098D": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x098E": {
+   "size": 16,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x098F": {
+   "size": 32,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0990": {
+   "size": 8,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x0991": {
+   "size": 96,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x10000": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x10100": {
+   "size": 1,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x10101": {
+   "size": 18,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x10102": {
+   "size": 128,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x10103": {
+   "size": 52,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x10201": {
+   "size": 38,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x10202": {
+   "size": 68,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x10302": {
+   "size": 180,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x10303": {
+   "size": 128,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x10402": {
+   "size": 68,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x10403": {
+   "size": 136,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x30101": {
+   "size": 176,
+   "client_sends": false,
+   "client_receives": true
+  },
+  "0x30201": {
+   "size": 72,
+   "client_sends": false,
+   "client_receives": true
+  }
+ }
+}

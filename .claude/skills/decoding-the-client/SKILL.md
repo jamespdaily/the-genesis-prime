@@ -9,22 +9,34 @@ A client fact is decoded once. It is saved as a record in the fact file, its fun
 
 ## The fact file first
 
-The fact file is [references/client-facts.md](references/client-facts.md). Search it for the address, opcode, table column, enum or Lua function before opening Ghidra. A record that answers the question ends the search; a record graded below "sure" is a lead to check, not an answer.
+The fact file is [references/client-facts.toml](references/client-facts.toml). Search it for the address, opcode, table column, enum or Lua function before opening Ghidra (`grep -n -A6 0x1403c8760`). A record that answers the question ends the search; a record graded below "sure" is a lead to check, not an answer.
 
-Each record holds:
+Each record is one TOML table, under a `# <Topic>` comment:
 
-- **Its key:** a code address in full (`0x1403ec6a0`), an opcode (`0x07F4`), a table column (`Spell4Effects.effectType`), an enum (`Spell4EffectType 3`) or a Lua function (`MailSystemLib.AtMailbox`).
-- **A plain statement** of what the client does, in one or two sentences.
-- **Its proof:** the addresses read, and what the instructions there do.
-- **Its grade:** **sure** (you read the instructions that do it), **fairly sure** (you read the code around it, or a decompile you did not check against the disassembly), or **guess** (an inference you could not check).
-- **The function's name** in the Ghidra project, when the key is a function.
+```toml
+["0x1403c8760"]
+name = "HandleExperienceGained"
+statement = """Handles 0x01AC. Adds field 0 to the total experience and subtracts field 1, \
+the rested experience, from the rest pool, then raises ExperienceGained with the reason \
+(field 3) and the unit (field 4)."""
+proof = "The handler's decompile at 0x1403c8760, reached from the in-game jump table at 0x1403f1344."
+grade = "fairly sure"
+```
 
-A test holds every client address cited in `src/`, `test/` and `dev/` to a record in the fact file.
+- **Its key:** a code address in lowercase and in full (`0x1403ec6a0`), an opcode (`0x07F4`), a table column (`Spell4Effects.effectType`), an enum (`Spell4EffectType 3`) or a Lua function (`MailSystemLib.AtMailbox`). An address with little meaning of its own, such as a vtable or a switch case, can sit inside the record of the function that owns it.
+- **statement:** what the client does, in the game's or the message's terms: arguments, fields, types, values, sizes in bits. Registers, stack and struct offsets and vtables go in the proof.
+- **proof:** the addresses read, and what the instructions there do; or the table rows, recording or live login that showed it.
+- **grade:** **sure** (you read the instructions that do it), **fairly sure** (you read the code around it, or a decompile you did not check against the disassembly), or **guess** (an inference you could not check).
+- **name:** the function's name in the Ghidra project, only when the key is a function's entry point.
+
+From the repository's root, `python3 -I .claude/skills/decoding-the-client/scripts/check_facts.py .claude/skills/decoding-the-client/references/client-facts.toml --cover src test dev` checks the file: the fields, the grades, unique keys and names, no other server's name or issue number, and that every client address the code cites is in the file and every Lua function it cites is a key.
+
+[references/client-opcodes.json](references/client-opcodes.json) is the registration function's dump: every message the client registers, with its struct size and which way it goes. Thirteen of its 1,132 numbers are above 0xFFFF, so they are not ordinary 16-bit opcodes; what they are is not yet decoded.
 
 ## Saving a fact
 
 1. Add or correct the record in the fact file, in the same change as the code that uses it.
-2. Name the function in the Ghidra project: `GHIDRA_WRITE=1 scripts/ghidra.sh RenameFunction.java <out> <address> <name>`. Use a name that says what it does in the game, such as `HandleExperienceGained`. Run nothing else on the project while it writes.
+2. Name the function in the Ghidra project: `GHIDRA_WRITE=1 scripts/ghidra.sh RenameFunction.java <out> <address> <name>`. Use a name that says what it does in the game, such as `HandleExperienceGained`. Run nothing else on the project while it writes. To apply every name in the fact file at once, run `scripts/name_functions.sh`.
 3. When the fact names a message, field or type that was a number, rename it everywhere in the same change, as the writing-gleam skill says.
 
 ## What is where

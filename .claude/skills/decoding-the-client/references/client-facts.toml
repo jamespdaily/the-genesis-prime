@@ -1,0 +1,3466 @@
+# Facts about the WildStar client, WildStar64.exe build 16042: one TOML table per fact.
+
+# Message plumbing
+
+["0x14006c290"]
+name = "RegisterMessage"
+statement = """Registers one message type. Its arguments are, in order: (2) the opcode, \
+(3) the size of the message's struct, (4) usually unused, though for 0x035B and 0x0597 it \
+holds something else (for 0x0597, a size function), (5) the writer, which the client calls \
+to send the message, and (6) the reader, which it calls to read a received one."""
+proof = """Each call's disassembly: EDX is the opcode, R8D the size, R9 argument 4, [RSP+0x20] \
+the writer and [RSP+0x28] the reader. Dumped to ~/Coding/wildstar/ghidra/register_fn.txt and \
+parsed to client-opcodes.json. ClientFallingDamage (0x00FB) is one such call, at \
+0x140070878."""
+grade = "fairly sure"
+
+["0x140c1ea30"]
+statement = """ServerEntityCreate's table of entity model readers, indexed by entity type. \
+Types 0, 8, 10, 11, 13 and 32 share one reader, 0x140095fb0."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140095fb0"]
+name = "ReadCreatureEntityModel"
+statement = """Reads the entity model that ServerEntityCreate carries for entity types 0, 8, \
+10, 11, 13 and 32: an 18-bit Creature2 id, then an 8-bit quest checklist index."""
+proof = """Its entries in the model reader table at 0x140c1ea30. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400161d0"]
+statement = """Sends one message, given the network object, the opcode and the message's \
+struct. 0x140016010 takes the same arguments; what tells the two apart is not recorded."""
+proof = """Arguments (DAT_140c635f0, opcode, &struct). The earlier notes; the instructions \
+were not re-read."""
+grade = "fairly sure"
+
+["0x140016010"]
+statement = """Sends one message, given the network object, the opcode and the message's \
+struct. 0x1400161d0 takes the same arguments; what tells the two apart is not recorded."""
+proof = """Arguments (DAT_140c635f0, opcode, &struct). The earlier notes; the instructions \
+were not re-read."""
+grade = "fairly sure"
+
+["0x1403f4900"]
+name = "SendGameMessage"
+statement = """The client's generic send, given the game, the opcode and the message's \
+struct, through the message registry. The player movement tick (0x1403a25c0) sends \
+ClientFallingDamage (0x00FB) and ClientFellThroughWorld (0x00FC) through it."""
+proof = """Arguments (game, opcode, &struct); the registry is at DAT_140c65808 +0x108. The \
+earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140014f10"]
+name = "RouteReceivedMessage"
+statement = """Routes each received message. In order: it decrypts (0x0076 and 0x03DC), then \
+offers the message to the account handler, the unlock handler and the store handler, handles \
+0x0763 itself, then passes it to the current screen's handler."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140003fb0"]
+name = "HandleAccountMessage"
+statement = """Handles the account messages, opcodes 0x0966 to 0x0980."""
+proof = """Called from the receive router 0x140014f10. The earlier notes; the instructions \
+were not re-read."""
+grade = "fairly sure"
+
+["0x140452670"]
+name = "HandleUnlockMessage"
+statement = """Handles the unlock messages, opcodes 0x0981 to 0x0985."""
+proof = """Called from the receive router 0x140014f10. The earlier notes; the instructions \
+were not re-read."""
+grade = "fairly sure"
+
+["0x14044b630"]
+name = "HandleStoreMessage"
+statement = """Handles the store messages, opcodes 0x0987 to 0x0991 except 0x098F."""
+proof = """Called from the receive router 0x140014f10. The earlier notes; the instructions \
+were not re-read."""
+grade = "fairly sure"
+
+["0x1403ec6a0"]
+name = "HandleInGameMessage"
+statement = """The in-game screen's message handler: it picks each message's handler by \
+opcode through the jump table at 0x1403f1344. It handles a creature's create, \
+ServerUnitEnteredCombat and damage at once even under the loading screen, queueing nothing."""
+proof = """The jump table's case for each opcode calls the real handler; read with \
+scripts/jump_table.py, since Ghidra often cannot follow the table. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403f1344"]
+statement = """The in-game screen handler's jump table, indexed by opcode minus 0x61. Each \
+entry is a 4-byte offset from the image base, 0x140000000, to the case for that opcode."""
+proof = """Read from WildStar64.exe on disk through the PE section table by \
+scripts/jump_table.py (IMAGE_BASE 0x140000000, TABLE 0x1403F1344, FIRST_OPCODE 0x61), which \
+Ghidra often cannot follow."""
+grade = "fairly sure"
+
+["0x1403c8760"]
+name = "HandleExperienceGained"
+statement = """Handles 0x01AC, experience gained. It adds field 0 to the player's total \
+experience, subtracts field 1, the rested part, from the rest pool, and raises the Lua event \
+ExperienceGained with the reason (field 3) and the unit (field 4)."""
+proof = """Total experience at game state +0x1678, rest pool at +0x1688. The earlier notes; \
+the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403ee1c9"]
+statement = """The in-game handler's case for ServerSpellGo (0x07F4). It looks the cast up by \
+the message's first field, the cast id (0x140561c30), and builds the cast's target nodes, \
+one per TargetInfo (0x14053d680)."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140561c30"]
+name = "FindCast"
+statement = """Finds a cast by its 32-bit cast id in one hash table for the whole world, \
+keyed by the cast id alone, not by its caster. The ServerSpellGo case (0x07F4) and the spell \
+cases after it call it with the message's first field, so a cast id must be unique across \
+every unit a client sees."""
+proof = """Arguments (global at 0x140c65b70, cast id). Called by the case at 0x1403ee1c9 and \
+by the 0x07F5 case at 0x1403ee277. The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140c65b70"]
+statement = """The global that holds the client's casts, the one table for the whole world \
+that 0x140561c30 searches by cast id. A cooldown modifier's selector 2 also tests a spell \
+through this object."""
+proof = """The cast lookup's first argument. The cooldown modifier function 0x14046b920 \
+calls its vtable +0x38 for selector 2. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1403ee277"]
+statement = """The in-game handler's case for 0x07F5, effect execute. It finds the cast by \
+field 0, the target in that cast by its unit id in field 1, then the effect by field 2, and \
+runs the effect's execute. For damage, heal and default effects that execute does nothing \
+(0x140001b70), so the message shows nothing for them."""
+proof = """Cast map lookup 0x140561c30; the target node's unit id is at +0x40, the effect's \
+id at +0x64; execute is vtable +0x10. A code comment cites 0x1403ee2ec for the same message's \
+path to a delayed effect's execute. The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140001b70"]
+name = "DoNothing"
+statement = """An empty function that returns at once. It is the execute of damage, heal and \
+default client effects, so executing those does nothing."""
+proof = """A bare RET; vtable slot +0x10 of those effect classes. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14053f340"]
+name = "HandleEffectResultAnnounce"
+statement = """Handles 0x07F8, effect result announce: finds the cast, the target and the \
+effect (by Spell4EffectId), then applies each SpellEffectResult as a hit reaction, the damage \
+and heal listeners and a combat log entry. It does not change health. It is the per-tick \
+report of damage and heal over time; the client has no tick timer of its own."""
+proof = """Reached from the in-game handler's case at 0x1403ee233; the reader is \
+0x140095810. The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140095810"]
+name = "ReadEffectResultAnnounce"
+statement = """Reads 0x07F8, effect result announce, for its handler 0x14053f340."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140718120"]
+name = "AddGoEffectToTarget"
+statement = """Adds one EffectInfo of a ServerSpellGo to a target: it builds a client effect \
+object whose class it picks by the effect's Spell4EffectType, then initialises it \
+(0x1405d6880). ForcedMove (type 3) has a class of its own, damage-like types 8, 12, 33 and \
+138 share one, and most types get the default class, whose execute does nothing."""
+proof = """It switches on the Spell4Effects row's +0x10. Type 3 gets vtable 0x140b73d40 \
+(execute at slot +0x10 is 0x1405d6c10); types 8, 12, 33 and 138 get vtable 0x140b73de0; the \
+default class's slot +0x10 is a bare RET. Recipe: find the type's case, list its vtable with \
+VTable.java and decompile slot +0x10. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1405d6880"]
+name = "InitClientEffect"
+statement = """Initialises a client effect object: its target, its cast, the caster's unit \
+id, the target's unit id and its Spell4Effects row. The cast also holds its primary \
+target's unit id."""
+proof = """+0x48 target node, +0x50 the cast (node +0x38), +0x58 the caster's unit id (cast \
++0x154), +0x5c the target's unit id (node +0x40), +0xb0 the Spell4Effects row; the cast's \
++0x158 holds its primary target's unit id. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1405d6c10"]
+name = "ExecuteForcedMove"
+statement = """Executes a ForcedMove effect: it moves its target only when that is the local \
+player (or its vehicle) and the player holds movement control. The reference point is the \
+caster when flag 1 is set, else the cast's primary target; the distance is random between \
+data bits 1 and 2. Move types 0, 3 and 11 go forward (along the facing, turned by data bits \
+7 degrees, when the mover is its own reference, else toward the reference), 1, 4 and 12 \
+backward, 2, 5 and 13 a random way, 6, 7 and 14 along its velocity, 8, 9, 10 and 15 to the \
+reference; unless flag 2 it stops short by both units' radii (and by the distance for 8 to \
+10 and 15), flag 4 faces the caster and flag 8 faces along the move, and it moves at once \
+for 0, 1, 2, 7 and 8, over the flight time (data bits 3) for 3 to 6, 9 and 10, and by a \
+third mover for 11 to 15."""
+proof = """Slot +0x10 of vtable 0x140b73d40. Movement control is the unit's +0xd50, tested at \
+0x1405d6c44 to 0x1405d6cdc. The flags are data bits 5. Distance from 0x1401ae760. A jump \
+table at 0x1405d7760 picks the mover: 0x14039fb30 (at once), 0x14039fff0 (over the flight \
+time), 0x1403a0670 (11 to 15). It runs at the go (0x14053d680, 0x140718120) for an effect \
+with no delay, or at ServerSpellEffectExecute for a delayed one (0x1403ee2ec). The earlier \
+notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14039fb30"]
+name = "MoveUnitAtOnce"
+statement = """The ForcedMove mover for move types 0, 1, 2, 7 and 8: it places the unit at \
+the move's end at once."""
+proof = """Entry of the jump table at 0x1405d7760 in 0x1405d6c10. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14039fff0"]
+name = "MoveUnitOverFlight"
+statement = """The ForcedMove mover for move types 3 to 6, 9 and 10: it carries the player \
+over the flight time (data bits 3, in ms) along a path it plans with its own collision-aware \
+planner, and uploads that path in ClientEntityCommand as a SetTimeCommand, position keys and \
+state keys, while the move is still flying. When the effect's data bits 8 is above 0 it \
+sends a SetRotationSpinCommand in place of a rotation: the rotation it faces as the move \
+starts, the flight time, a spin of dataBits08·2π/(dataBits03/1000) rad/s as a 16-bit float, \
+and an offset and blend of 0."""
+proof = """Entry of the jump table at 0x1405d7760 in 0x1405d6c10. Planner at game +0x6fc0, \
+plan 0x1407bbc40, keys 0x1407bbf40; the spin's reader 0x1407158d0, start 0x140782ea0, \
+evaluator 0x140782f40. A recorded Tactical Retreat was sent at 103361 on the client's clock \
+with keys from 103259 to 103509. 536 of the 4,645 ForcedMove rows of Spell4Effects have \
+dataBits08 above 0."""
+grade = "fairly sure"
+
+["0x1403a0670"]
+statement = """The third ForcedMove mover, for move types 11 to 15. What it does was not \
+decoded."""
+proof = """Entry of the jump table at 0x1405d7760 in 0x1405d6c10. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1401ae760"]
+name = "PickRandomBetween"
+statement = """Picks a random number between a low and a high bound. ForcedMove uses it for \
+the move's distance, between data bits 1 and 2."""
+proof = """Called from 0x1405d6c10. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x14057a630"]
+name = "HandleMovementControl"
+statement = """Handles 0x0636 ServerMovementControl, which names the unit the client \
+controls."""
+proof = """The earlier notes, which pair 0x14057a630 and 0x14057a790 with 0x0636 and 0x0639 \
+in that order; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14057a790"]
+name = "HandleMovementControlRemove"
+statement = """Handles 0x0639 ServerMovementControlRemove: the client stops moving the \
+controlled unit itself. After it, a ForcedMove effect on the player does nothing on the \
+client."""
+proof = """Clears the controlled unit's +0xd50 (the client moves it) and sets +0xd58. The \
+earlier notes, which pair 0x14057a630 and 0x14057a790 with 0x0636 and 0x0639 in that order; \
+the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14053d680"]
+name = "AddCastTargetNode"
+statement = """Called by the ServerSpellGo case for each TargetInfo: builds the cast's list \
+of target nodes, keyed by each target's unit id."""
+proof = """The list is at cast +0x48; the caster's unit id is at cast +0x154. The earlier \
+notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403da270"]
+name = "HandleEntityHealthUpdate"
+statement = """Handles 0x0937, an entity's health update. It skips the local player, whose \
+health comes from 0x092F."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400370d0"]
+name = "HandleLoginScreenMessage"
+statement = """The login screen's message handler."""
+proof = """Vtable slot 11 (+0x58) of the screen. The earlier notes, which list the login, \
+realm and character-select handlers as 0x1400370D0, 0x140045A70 and 0x140020EA0 in that \
+order; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140045a70"]
+name = "HandleRealmScreenMessage"
+statement = """The realm screen's message handler."""
+proof = """Vtable slot 11 (+0x58) of the screen. The earlier notes, which list the login, \
+realm and character-select handlers as 0x1400370D0, 0x140045A70 and 0x140020EA0 in that \
+order; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140020ea0"]
+name = "HandleCharacterSelectScreenMessage"
+statement = """The character-select screen's message handler."""
+proof = """Vtable slot 11 (+0x58) of the screen. The earlier notes, which list the login, \
+realm and character-select handlers as 0x1400370D0, 0x140045A70 and 0x140020EA0 in that \
+order; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14008b200"]
+name = "WriteClientQuestAccept"
+statement = "Writes 0x035B ClientQuestAccept."
+proof = """The decode notes' recipe for a message layout: in the registration of 0x035B, R9 holds \
+0x14008b1f0, which Ghidra shows as no function, and [RSP+0x20] holds this writer."""
+grade = "fairly sure"
+
+# Bit writers
+
+["0x14007e610"]
+name = "WriteSprintState"
+statement = """Writes 0x017E, the sprint state: one bit, 1 while sprinting."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400acf80"]
+name = "WriteStorePurchase"
+statement = """Writes a store purchase, shared by 0x082A and 0x0828; the gift, 0x0828, adds \
+the recipient's fields."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400a6830"]
+name = "WriteCustomerSurveySubmit"
+statement = """Writes 0x033F ClientCustomerSurveySubmit: a 14-bit survey id, a 32-bit \
+unsigned object id, the four 8-bit answers written as raw bytes (0x1403360d0), then the \
+comment as a wide string."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403360d0"]
+name = "WriteRawBytes"
+statement = """Writes the bytes from a start to an end address raw, in 8-, 16-, 32- then \
+64-bit pieces. Its reading side is 0x140337160."""
+proof = """Arguments (writer, start, end). The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1400885c0"]
+name = "WriteClientResurrectAccept"
+statement = """Writes 0x015A ClientResurrectAccept from a 12-byte struct: a 32-bit unit id, \
+a 7-bit rez type, then a 32-bit value. That is 71 bits, so 9 bytes."""
+proof = """It writes 32 bits from offset 0, 7 bits from offset 4 and 32 bits from offset 8. \
+Lua's Unit:Resurrect (0x140659070) fills the struct. The earlier notes; the instructions were \
+not re-read."""
+grade = "fairly sure"
+
+["0x140584840"]
+name = "SendGuildInfoRequest"
+statement = """Sends 0x076E, the guild info request: the realm id, then the 64-bit guild id. \
+It sends at most one per 1000 ms."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140336470"]
+statement = """Writes a value of any width; the bit count is passed as a constant. \
+0x1400a7110 does the same; what tells the two apart is not recorded."""
+proof = """Arguments (writer, value, bits). The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1400a7110"]
+statement = """Writes a value of any width. 0x140336470 does the same; what tells the two \
+apart is not recorded."""
+proof = """Arguments (writer, value, bits). The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x14006bd80"]
+statement = """Writes a 32-bit value. 0x1400a72a0 does the same; what tells the two apart is \
+not recorded. The ClientFallingDamage writer ends by jumping to it."""
+proof = """0x1400896f0 runs MOVSS XMM1,[RDX] then JMP 0x14006bd80. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400a72a0"]
+statement = """Writes a 32-bit value. 0x14006bd80 does the same; what tells the two apart is \
+not recorded."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400a7160"]
+name = "Write64Bits"
+statement = """Writes a 64-bit value."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140336040"]
+name = "WriteWideString"
+statement = """Writes a wide string: one bit saying the length is extended, the length in 7 \
+bits (or 15 when extended), then the UTF-16 characters. Its reading side is 0x140336a40."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140085170"]
+name = "WriteIdentity"
+statement = """Writes an identity: a 14-bit realm id, then a 64-bit id. The writers of 0x0597 \
+ClientPlayerInfoRequest and 0x04B1 ClientGuildOperation call it."""
+proof = """Called by 0x1400a2990 (0x0597) and 0x1400915f0 (0x04B1). The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14006c090"]
+statement = """Reads a value of any width; the bit count is passed as a constant. \
+0x14006be30 does the same; what tells the two apart is not recorded."""
+proof = """Arguments (reader, out, bits). The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x14006be30"]
+statement = """Reads a value of any width; the bit count is passed as a constant. \
+0x14006c090 does the same; what tells the two apart is not recorded."""
+proof = """Arguments (reader, out, bits). The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x14006c120"]
+name = "Read64Bits"
+statement = """Reads a 64-bit value."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140336c60"]
+name = "ReadBitsIntoBuffer"
+statement = """Reads a given number of bits into a buffer. The raw byte reader 0x140337160 \
+and the wide string reader 0x140336a40 call it."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140337160"]
+name = "ReadRawBytes"
+statement = """Reads a given number of bytes raw into a destination, in 8-, 16-, 32- then \
+64-bit pieces; the reading side of 0x1403360d0."""
+proof = """Arguments (reader, dest, bytes); calls 0x140336c60. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140336a40"]
+name = "ReadWideString"
+statement = """Reads a wide string: one bit saying the length is extended, the length in 7 \
+bits (or 15 when extended), then the UTF-16 characters; the reading side of 0x140336040. A \
+story actor of type 1 is read with it."""
+proof = """Calls 0x140336c60. The type-1 story actor's entry 0x140080d20 reads a wide string \
+through it. The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140336980"]
+name = "ReadNarrowString"
+statement = """Reads a narrow ASCII string: one bit saying the length is extended, the length \
+in 7 bits (or 15 when extended), then 8-bit characters. The story actor's token name and \
+quest Lua event type 1 are read with it."""
+proof = """0x14008f520 jumps to it, as the entry for type 1 of the quest Lua event table at \
+0x140c1eb98 (event reader 0x14008f530). The story actor reader 0x140080ee0 reads a u32 then \
+a narrow string through it after each actor's own fields. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400a7300"]
+name = "Write3Bits"
+statement = """Writes a 3-bit value."""
+proof = """The earlier notes, which list 0x1400a7480, 0x1400a7360 and 0x1400a7300 as writers \
+of 8, 16 and 3 bits in that order; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400a7480"]
+name = "Write8Bits"
+statement = """Writes an 8-bit value. The 0x07DC ClientAuctionsByFilterRequest writer writes \
+its 8-bit property with it."""
+proof = """Called by 0x14009a7d0. The earlier notes, which list 0x1400a7480, 0x1400a7360 and \
+0x1400a7300 as writers of 8, 16 and 3 bits in that order; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1400a7360"]
+name = "Write16Bits"
+statement = """Writes a 16-bit value."""
+proof = """The earlier notes, which list 0x1400a7480, 0x1400a7360 and 0x1400a7300 as writers \
+of 8, 16 and 3 bits in that order; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400a7250"]
+name = "WriteFlagOrByte"
+statement = """Writes a flag or a byte, given the value and its bit count."""
+proof = """Arguments (writer, value, bits). The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+# Account rewards
+
+["0x1403ed64c"]
+statement = """The 0x092C `ServerPremiumRewards` case of the message dispatch: fills the game \
+state's map of reward properties, an account tier's perks, through 0x1403ab820."""
+proof = """The comment of the earlier code's reward property type: the map is at game state \
++0x1c00."""
+grade = "fairly sure"
+
+["0x1403ab820"]
+statement = """Fills the game state's map of reward properties from `ServerPremiumRewards` \
+(0x092C), for its case 0x1403ed64c."""
+proof = "The comment of the earlier code's reward property type; the map is at game state +0x1c00."
+grade = "fairly sure"
+
+["0x14056a2b0"]
+statement = """The item trade check behind `IsAlwaysTradeable` and `IsAccountTradeable`: it fails \
+for every item unless reward property 14, Trading, holds a nonzero value, so a player sent no \
+such property cannot attach an item to a mail. A material item also needs property 12, \
+TradeskillMaterialTrading."""
+proof = """The comment of the earlier code's reward property type: the property is read at \
+0x1403a6930, and a material item is one whose Item2 +0x1c8 is nonzero."""
+grade = "fairly sure"
+
+["0x1403a6930"]
+statement = """Reads a reward property for the item trade check (0x14056a2b0), which fails \
+unless Trading, property 14, holds a nonzero value."""
+proof = "The comment of the earlier code's reward property type; the instructions were not re-read."
+grade = "fairly sure"
+
+# Challenges
+
+["0x14048e2b0"]
+name = "HandleServerChallengeResult"
+statement = """Handles 0x00C6 ServerChallengeResult, read by 0x14008ecb0 as a u14, a u5 and a \
+u32. It tests the u32 against 0, then looks up a text with it and uses it as data + 1; it is \
+taken as unsigned."""
+proof = """The packet schema's comment: the handler's offsets 0, 4 and 8 match the layout, and no \
+signed use was found; the comment gives the sign medium confidence."""
+grade = "guess"
+
+# Character creation and selection
+
+["0x140023e90"]
+statement = """Refuses a character creation whose path is above 3, though the client's path \
+fields are 3 bits wide and can hold up to 7."""
+proof = """The comments of the earlier code's path type and character creation check; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14006dae1"]
+statement = """The call in the message registration run that registers 0x00DC ServerCharacterCreate, \
+a struct of 16 bytes, with the reader 0x14007fd50."""
+proof = "The packet schema's comment on ServerCharacterCreate."
+grade = "fairly sure"
+
+["0x14007fd50"]
+name = "ReadServerCharacterCreate"
+statement = """Reads 0x00DC ServerCharacterCreate: a u64 character id, a u32 world id and a u6 \
+result of `PreGameLib.CodeEnumCharacterModifyResults`."""
+proof = "The packet schema's comment on ServerCharacterCreate; registered at 0x14006dae1."
+grade = "fairly sure"
+
+["0x14003e5b0"]
+statement = "Where the client registers `PreGameLib.CodeEnumCharacterModifyResults`, whose table is 0x140c37d70."
+proof = "The comments of the earlier code's character create and delete results."
+grade = "fairly sure"
+
+["0x140c37d70"]
+statement = """The table of `PreGameLib.CodeEnumCharacterModifyResults`, the names and numbers of \
+character create and delete results."""
+proof = "The comments of the earlier code's character create and delete results; registered at 0x14003e5b0."
+grade = "fairly sure"
+
+["PreGameLib.CodeEnumCharacterModifyResults"]
+statement = """Names the results of creating and deleting a character, which `ServerCharacterCreate` \
+and `ServerCharacterDeleteResult` carry in 6 bits: DeleteOk 0, DeleteFailed 1, \
+DeleteFailed_GuildMaster 2, CreateOk 3, CreateFailed 4, CreateFailed_UniqueName 6, \
+CreateFailed_InvalidName 10, CreateFailed_Internal 12, DeleteFailed_CharacterOnline 42 and \
+CreateFailed_InsufficientFunds 57. `CharacterSelect.lua` removes a character from its list on \
+DeleteOk and shows an error for any other delete result."""
+proof = """The comments of the earlier code: registered at 0x14003e5b0, table 0x140c37d70, read \
+by 0x14007fd50. `CharacterSelect.lua` lines 758 to 805."""
+grade = "fairly sure"
+
+["PreGameLib.CodeEnumCharacterCreationStart"]
+statement = """Names where a CharacterCreation row starts its character, from the row's \
+`characterCreationStartEnum`. `Character.lua` names PreTutorial, Nexus and Level50, and the \
+table holds them as 4, 3 and 5: rows of 4 start at experience 0 (level 1), rows of 3 at 1,710 \
+(level 3) and rows of 5 at 26,360,090 (level 50), costing 1 of account currency 13. The values \
+0, 1, 2 and 99 appear in the table with no client name seen."""
+proof = """The comment of the earlier code's creation start type: CharacterCreation holds 64 rows \
+of 0, 14 of 1, 5 of 2, 131 of 3, 67 of 4, 67 of 5 and 2 of 99, and their start experience \
+matches the XpPerLevel minimums."""
+grade = "fairly sure"
+
+["PreGameLib.CodeEnumCharacterSelectResults"]
+statement = """Names why the pick of a character failed, as `ServerCharacterSelectFail` carries \
+it; `CharacterSelect.lua` shows a text for each. Among them are a pick the client cannot start, \
+2, and a pick refused because another character of the account is still in the world, 4."""
+proof = """The earlier code's select failure type and `CharacterSelect.lua`; the citation does \
+not say where the numbers were read, and the client's registration of them was not read."""
+grade = "guess"
+
+# Chat
+
+["0x140691f00"]
+name = "ChatChannelSend"
+statement = """The Lua method `ChatChannel:Send`: sends a typed line through 0x140401e40 without \
+checking it against the word filter or its length."""
+proof = """The comments of the earlier code's line check, which traced the call into \
+0x140401e40 and found no call of the filter."""
+grade = "fairly sure"
+
+["0x140401e40"]
+name = "BuildClientChat"
+statement = """Builds a typed line into 0x01C3 ClientChat, or into 0x01D4 for a whisper, and \
+sends it; it never calls the word filter."""
+proof = "The comments of the earlier code's line check; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140402f20"]
+name = "HandleServerChat"
+statement = """Handles 0x01C8 ServerChat. It runs the word filter at level 2, which holds class 2 \
+words only, over a received line when the console variable `chat.filter` is on (its default) or \
+the channel's profanity flag is set, and the display builder 0x140408850 scrambles each matched \
+word."""
+proof = """The comments of the earlier code's line check: `chat.filter` is 0x140c45f50 and the \
+flag is set by `ChatChannel:SetProfanity` (0x1406920a0)."""
+grade = "fairly sure"
+
+["0x140c45f50"]
+statement = """The console variable `chat.filter`, on by default: while it is on, received chat is \
+masked by the word filter at level 2."""
+proof = "The comments of the earlier code's line check, beside the `ServerChat` handler 0x140402f20."
+grade = "fairly sure"
+
+["0x1406920a0"]
+name = "ChatChannelSetProfanity"
+statement = """The Lua method `ChatChannel:SetProfanity`: sets a channel's profanity flag, which \
+makes the client mask class 2 words in the lines it receives on it. `ChatLog.lua` line 437 sets \
+it on every channel from the "Profanity Filter" option."""
+proof = "The comments of the earlier code's line check; `ChatLog.lua` line 437."
+grade = "fairly sure"
+
+["0x140408850"]
+name = "BuildChatDisplayLine"
+statement = """Builds a received chat line for display, replacing each word the filter matched \
+with random letters a to z. `ChatLog.lua` line 2682 draws those in the alien font ("Weak filter. \
+Note only profanity is scrambled.")."""
+proof = "The comments of the earlier code's line check; `ChatLog.lua` line 2682."
+grade = "fairly sure"
+
+["0x140c89730"]
+statement = """The client's UserText table of text lengths: index 7, `Chat`, allows a line of 1 \
+to 500 UTF-16 units. The client does not check a line's length before sending it."""
+proof = "The comment of the earlier code's line length constants."
+grade = "fairly sure"
+
+["0x140c1ec30"]
+statement = """The chat format writer table: format types 1 (Alien), 7 (Profanity) and 11 (Loot) \
+map to the writer 0x14007d010, which writes the format's seed as one 32-bit value."""
+proof = """The packet schema's chat format comments: `ADD RAX,0x20` at 0x14007d082 in the \
+writer. A seed above 14 bits round-trips through `ServerChat` and `ClientChat`."""
+grade = "fairly sure"
+
+["0x140c1ec90"]
+statement = """The chat format reader table: format types 1 (Alien), 7 (Profanity) and 11 (Loot) \
+map to the reader 0x14007ab50, which reads the format's seed as one 32-bit value."""
+proof = """The packet schema's chat format comments: `MOV R8D,0x20` in the reader. A seed above \
+14 bits round-trips through `ServerChat` and `ClientChat`."""
+grade = "fairly sure"
+
+["0x140c65890"]
+statement = """The client's word filter global. It keeps three sets of words by \
+`user_text_filter_class_enum` and checks the one for the level it is asked about: level 0 \
+(Strict) holds classes 0, 1 and 2, level 1 (Standard) classes 1 and 2, and level 2 (Low) class \
+2 only. The filter is built from the WordFilter rows of the text file's language (English 1); \
+type 0 matches a whole word, 1 is a regular expression, 2 a word's start, 3 a word's end and 4 \
+anywhere inside a word."""
+proof = """The comment of the earlier code's word filter: vtable 0x140b78288, built by \
+0x14079c5f0. `WordFilter.tbl` holds 4,165 rows, 486 English, and no row of type 1 or 2 in any \
+language. `FriendsList.lua` line 21 checks friendship texts at level 0."""
+grade = "fairly sure"
+
+["ChatSystemLib.ChatChannel"]
+statement = """The `ChatSystemLib.ChatChannel_*` values name a chat channel's type, as a message's \
+`chat_channel_id` carries it: System 2, Debug 3, Say 4, Yell 5, character Whisper 6, Party 7, \
+Emote 8, Trade 11, Guild 15, GuildOfficer 16, Society 17, Custom 18, WarParty 29, \
+WarPartyOfficer 30, Instance 32, Nexus 33, AccountWhisper 34 and Community 47."""
+proof = """The earlier code's channel type, which says the client names each value; the numbers \
+were not read from the client's registration. ChatChannel \
+row 18 is the custom channel."""
+grade = "guess"
+
+["ChatSystemLib.ChatChannelResult"]
+statement = """The `ChatSystemLib.ChatChannelResult_*` values name why a chat line or channel \
+request was refused, and the client shows its own text for each: DoesNotExist 1 ("That channel \
+does not exist"), NotInGroup 8, NotInGuild 9, NotInSociety 10, NotGuildOfficer 11, \
+NotInWarParty 15, NotWarPartyOfficer 16 and InvalidMessageText 17 ("You may not send that \
+message. It contains invalid text.")."""
+proof = """The earlier code's refusal type and the slash command notes; the numbers were not read from the client's registration."""
+grade = "guess"
+
+# Combat formulas
+
+["0x140453b60"]
+name = "RatingToPercentage"
+statement = """Turns a rating into a percentage, for every rating. Each point adds k percent, where k \
+is the formula's datafloat0 over the unit's level times datafloat01, starting from dataint0, up to \
+datafloat02; past that, each point adds less, along a cosine whose scale is datafloat03. The result \
+is min(base + p / 100, dataint01 / 100)."""
+proof = """Its 21 callers and its arguments: datafloat01, datafloat0, level, datafloat02, dataint0, \
+base, rating, datafloat03, dataint01. The formula's results matched the client's character sheet \
+to two decimals for one level 8 character: critical hit chance 8.52%, severity 167.89%, \
+strikethrough 5.08%."""
+grade = "fairly sure"
+
+["0x140453c50"]
+name = "RatingDiminishingReturnsState"
+statement = """Gives a rating's diminishing-returns state, Lua's eDRState: 0 below the knee, 1 past \
+the knee, 2 past the cap. It is the twin of 0x140453b60."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140200220"]
+name = "LookUpGameFormula"
+statement = """Looks up a GameFormula row by id, such as 1231. A row holds dataint0, dataint01 and \
+datafloat0 to datafloat03."""
+proof = """The id constant 0x4cf at a call; the row's dataint0 at +4, dataint01 at +8 and \
+datafloat0 to datafloat03 from +0x18."""
+grade = "fairly sure"
+
+["0x140463700"]
+name = "GetCriticalHitChance"
+statement = """Gives a unit's critical hit chance, from GameFormula 1231. Its diminishing-returns twin \
+is 0x1404638e0."""
+proof = """The formula id passed to 0x140200220. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1404638e0"]
+name = "GetCriticalHitChanceDiminishingReturnsState"
+statement = """Gives the diminishing-returns state of a unit's critical hit chance (GameFormula \
+1231), the twin of 0x140463700."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140463e80"]
+name = "GetCriticalHitSeverity"
+statement = """Gives a unit's critical hit severity, from GameFormula 1232. Its diminishing-returns \
+twin is 0x140464060."""
+proof = """The formula id passed to 0x140200220. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x140464060"]
+name = "GetCriticalHitSeverityDiminishingReturnsState"
+statement = """Gives the diminishing-returns state of a unit's critical hit severity (GameFormula \
+1232), the twin of 0x140463e80."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14064ce70"]
+name = "LuaGetCritChance"
+statement = """Lua `GetCritChance`: returns the critical hit chance times 100 as `nAmount`, and its \
+`eDRState`. Its Lua binding table row is at 0x140c5ab10."""
+proof = """The binding table row at 0x140c5ab10 names it. The earlier notes; the instructions were \
+not re-read."""
+grade = "fairly sure"
+
+# Friendship
+
+["FriendshipLib.GetLocations"]
+statement = """Asks where friends are: its binding 0x14070e070 calls the sender 0x1405de9c0 of \
+0x03BF ClientFriendshipGetLocations, which sends only for 1 to 255 distinct ids. \
+`FriendsList.lua` calls it only from `OnUpdateLocationsTimer`, for the friends it shows online: \
+when the list is built, once 10 s after that, and on a click on the friends tab, never on \
+reopening the window."""
+proof = """The earlier notes and `FriendsList.lua` lines 279, 485, 488, 630 to 647, 751 to 753 and \
+877. A live login with two clients showed a friend accepted as mutual as "Online" until a click \
+on the Rivals tab and then the Friends tab sent ClientFriendshipGetLocations."""
+grade = "fairly sure"
+
+["FriendshipLib.IsLoaded"]
+statement = """Says whether the friends list has loaded. Only the 0x03BE list handler 0x1405dfab0 \
+sets it, and fires "FriendshipLoaded"; a friend's add and the 0x0599 answer leave it. \
+`FriendsList.lua` draws nothing until it is true."""
+proof = """The earlier notes: binding 0x14070dfb0 reads game state +0x6ac4 (friend manager \
++0x28c), set at 0x1405dfdc8. `FriendsList.lua` line 469."""
+grade = "fairly sure"
+
+["FriendshipLib.GetById"]
+statement = """Returns a character friend's Lua table, which 0x1405dab80 builds, as \
+`FriendshipLib.GetList` does. Its `bTemporary` is true when the friendship id is below 2^48 \
+(unsigned), and `FriendsList.lua` line 788 then shows the name as "(Temporary) <name>"."""
+proof = """The earlier notes: binding 0x14070dcc0, `GetList` 0x14070ddc0, and the unsigned \
+compare `friendship_id < 0x1000000000000` at 0x1405dac1f."""
+grade = "fairly sure"
+
+["FriendshipLib.SetFriendPrivateData"]
+statement = """Sets the private note of an account friendship: its binding 0x14070ef80 calls the \
+sender 0x1405df990 of 0x039D ClientFriendshipAccountSetPrivateData, always passing the literal \
+2 for the message's uint32."""
+proof = """The earlier notes, and the earlier code's comment that names the literal 2 at \
+0x14070f03b inside the binding."""
+grade = "fairly sure"
+
+["FriendshipLib.AccountPresenceState"]
+statement = """Names an account's presence: Available 0, Away 1, Busy 2 and Invisible 3. The \
+client sends it in 3 bits."""
+proof = """The earlier code's presence type; the earlier notes give the client's registration \
+of these enums at 0x14070f700."""
+grade = "fairly sure"
+
+["0x1403f08c9"]
+statement = """The in-game screen handler's case for 0x03BE, the character friend list, handled \
+on the friend manager by 0x1405dfab0."""
+proof = """The earlier notes: the friend manager is game state +0x6838; the instructions were \
+not re-read."""
+grade = "fairly sure"
+
+["0x1403f08df"]
+statement = """The in-game screen handler's case for 0x03B5, a character friend added."""
+proof = """The earlier notes, which list the cases for 0x03BE, 0x03B5 and 0x03C6 in that order; \
+the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403f094d"]
+statement = """The in-game screen handler's case for 0x03C6, a character friend's level \
+update."""
+proof = """The earlier notes, which list the cases for 0x03BE, 0x03B5 and 0x03C6 in that order; \
+the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405dfab0"]
+name = "HandleFriendList"
+statement = """Handles 0x03BE, the character friend list. It is the only code that marks the \
+friend list loaded, which `FriendshipLib.IsLoaded` reads, and it fires the Lua event \
+"FriendshipLoaded"."""
+proof = """The earlier notes: it sets game state +0x6ac4 (friend manager +0x28c) at \
+0x1405dfdc8; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405dfe00"]
+name = "HandleFriendAdd"
+statement = """Handles a character friend added. It carries no zone, does not mark the friend \
+list loaded, marks the new friend loaded itself, and the client then sends 0x0597 type 2 for \
+it. The notes call its message 0x03B5 in the handler list and 0x03BE once elsewhere, where \
+0x03BE is the list."""
+proof = """The earlier notes: it sets the friend's +0x100 to 1; the instructions were not \
+re-read."""
+grade = "guess"
+
+["0x1405e02a0"]
+name = "HandleFriendLevelUpdate"
+statement = "The friend manager's handler of a character friend's level update."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405e0080"]
+name = "HandleFriendTypeUpdate"
+statement = "The friend manager's handler of a character friend's type update."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405e05d0"]
+name = "HandleFriendInviteList"
+statement = "The friend manager's handler of the friend invite list."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405e01d0"]
+name = "HandleFriendLastOnline"
+statement = """Handles 0x03CA, a character friend's last online. It always marks the friend's \
+online state changed and asks the friend's player info again (0x0597 type 2) before it tests \
+the float: exactly 0.0 or -0.0 clears the last-online time, and any other value sets it to now \
+plus that many days. It never touches the second 0x0599 flag, so `fLastOnline` follows the \
+0x0599 answer (0x1405e2a30)."""
+proof = """The earlier notes: it sets +0xfc, calls 0x1405df4e0, writes the time at +0xc8 and \
+never writes +0xf8; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405da9f0"]
+name = "ConstructFriend"
+statement = """Builds a character friend, 0x118 bytes: the 64-bit friendship id, a 32-bit local \
+id (the Lua `nId`), a name of 33 wide characters, the realm name, an identity, the last-online \
+time, type, note, class, path (default 4), level, WorldZone id (zeroed), faction, the two \
+0x0599 flags, an online-changed flag and a loaded flag."""
+proof = """The earlier notes: +0 friendship id, +8 local id, +0xc name, +0x4e realm name, +0xb8 \
+identity (realm u32, id u64), +0xc8 last-online time, +0xd0 type, +0xd8 note, +0xe0 class, \
++0xe4 path, +0xe8 level, +0xec WorldZone id, +0xf0 faction, +0xf4 / +0xf8 the 0x0599 flags, \
++0xfc online changed, +0x100 loaded; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405dab80"]
+name = "BuildFriendLuaTable"
+statement = """Builds a character friend's Lua table. It sets `bTemporary` when the friendship \
+id, read unsigned, is below 2^48 (0x1000000000000), and FriendsList.lua line 788 then shows the \
+name as "(Temporary) <name>". `nClassId` and `nPathId` need the first 0x0599 flag, \
+`fLastOnline` is 0 exactly when the second is 0, and `strWorldZone` is set only when the \
+friend's zone has a name (0x1405da960)."""
+proof = """The earlier notes: the compare is at 0x1405dac1f; `nLevel` is +0xe8, the flags +0xf4 \
+and +0xf8; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14070dcc0"]
+name = "FriendshipLibGetById"
+statement = """The Lua `FriendshipLib.GetById`, which builds the friend's table with \
+0x1405dab80."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14070ddc0"]
+name = "FriendshipLibGetList"
+statement = """The Lua `FriendshipLib.GetList`, which builds each friend's table with \
+0x1405dab80."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405e2a30"]
+name = "FillFriendFromPlayerInfo"
+statement = """The 0x0597 request's callback for the 0x0599 answer, which fills a character \
+friend: name, flags, path, class, level (the answer's 32-bit level), faction and last-online \
+time; it carries no zone. A non-zero result code gives the name text 108, "Unknown", and clears \
+the flags. 0x1405e2c10 fills the realm name."""
+proof = """The earlier notes: the level is `[R9+0x28]`, from the u32 at message +0x6c, written \
+to friend +0xe8 at 0x1405e2b32; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405e2c10"]
+name = "FillFriendRealmName"
+statement = """The callback of a friend's realm-name lookup: fills the Lua `strRealmName` and \
+nothing else."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1403f87b0"]
+name = "LookUpFriendRealmName"
+statement = """Looks up the realm name for a friend's pending 0x0597 request (types 2, 3 and 1, \
+0x1403f8660). When the realm is in the client's realm map it calls its callback 0x1405e2c10 at \
+once and sends nothing; else it queues the request and sends 0x059C."""
+proof = """The earlier notes: the realm map is `DAT_140c635f0`+0x15e0; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1405e0bd0"]
+name = "HandleAccountFriendList"
+statement = """Handles 0x03A3, the account friend list, on the friend manager. It skips an entry \
+whose account id it already holds. A nonzero last-online float clears the account friend's \
+characters and sets its presence to 3, invisible."""
+proof = """The earlier notes: the account friend holds its last-online FILETIME at +8 (0 for \
+never or online), its presence at +0x40 and its characters' vector and count at +0x68 and \
++0x70; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405e1140"]
+name = "HandleAccountFriendCharacterRemoved"
+statement = "Handles 0x039A, a character removed from an account friend."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405e1860"]
+name = "HandleAccountFriendLastOnline"
+statement = """Handles 0x03B1, an account friend's last online. A nonzero float clears the \
+account friend's characters and sets its presence to 3, invisible."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405e1080"]
+name = "HandleAccountFriendUpdate"
+statement = """Handles 0x0399: sets the account friend's presence, then adds or updates its \
+characters. It never removes a character."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405e1540"]
+statement = "The friend manager's handler of 0x03AA, an account-friend message."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405e0f80"]
+statement = "The friend manager's handler of 0x03B0, an account-friend message."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405e1a00"]
+statement = "The friend manager's handler of 0x03B2, an account-friend message."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405e1b40"]
+statement = "The friend manager's handler of 0x03A4, an account-friend message."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1401e83a0"]
+name = "TimeToDaysFromNow"
+statement = """Reads a stored time back as days from now, (time - now), negative for the past. \
+Its pair 0x1401e82f0 sets a time to now plus a float number of days."""
+proof = """The earlier notes: times are ticks, 864e9 to a day, and 0x1401e82f0 takes the days in \
+XMM1; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405dc440"]
+name = "BuildAccountFriendLuaTable"
+statement = """Builds an account friend's Lua table, with no `bTemporary`. `fLastOnline` is 0 \
+when the friend has characters or its time is 0, else the days since a past time as a positive \
+number, and 1e-6 for a time now or in the future. FriendsList.lua shows an account friend \
+online when `arCharacters[1]` exists, and its `HelperConvertToTime` shows 0 as "Online"."""
+proof = "The earlier notes and the earlier code's comments; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405dcee0"]
+name = "SetAccountFriendOffline"
+statement = """Clears an account friend's characters and sets its presence to 3, invisible, when \
+0x03A3 or 0x03B1 carries a nonzero last-online float."""
+proof = """The earlier notes, which cite it in brackets after that behaviour without saying \
+whether it does it; the instructions were not re-read."""
+grade = "guess"
+
+["0x14070f700"]
+name = "RegisterFriendshipLibEnums"
+statement = """Registers FriendshipLib's enums: AccountPresenceState_Available 0, _Away 1, _Busy \
+2 and _Invisible 3. The client sends a presence in 3 bits."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405df990"]
+name = "SendFriendPrivateData"
+statement = """Sends 0x039D. The Lua `FriendshipLib.SetFriendPrivateData` (0x14070ef80) calls it \
+with the literal 2 for its 32-bit value."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14070ef80"]
+name = "FriendshipLibSetFriendPrivateData"
+statement = """The Lua `FriendshipLib.SetFriendPrivateData`: sends 0x039D through 0x1405df990, \
+passing the literal 2 for its 32-bit value."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405e09e0"]
+name = "HandleFriendLocations"
+statement = """Handles 0x03C0, read by 0x14009c1d0. It stores each WorldZone id in its friend, \
+and in an account friend's characters (0x1405dce30), then fires the Lua event \
+"FriendshipLocation" (0x140427960). It is the only code that sets a friend's zone, so Last Seen \
+shows a zone only after a 0x03C0, and "Online" until then."""
+proof = """The earlier notes: it writes friend +0xec, which the constructor 0x1405da9f0 zeroes \
+and neither the add handler 0x1405dfe00 nor the 0x0599 answer writes; FriendsList.lua shows \
+`strWorldZone` when it is set and `Friends_Online` when not (lines 962-969). The instructions \
+were not re-read."""
+grade = "fairly sure"
+
+["0x14009c1d0"]
+name = "ReadFriendLocations"
+statement = """The reader of 0x03C0: an 8-bit count, then that many 64-bit friendship ids, then \
+that many 32-bit WorldZone ids (zone ids, not world ids)."""
+proof = "The earlier notes: the friends recording carries zone 0x248; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405dce30"]
+name = "SetAccountFriendCharacterZone"
+statement = """Stores a WorldZone id in an account friend's characters, for the 0x03C0 handler \
+0x1405e09e0."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140427960"]
+statement = """The function through which the 0x03C0 handler 0x1405e09e0 fires the Lua event \
+"FriendshipLocation"."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405da960"]
+name = "LookUpWorldZoneName"
+statement = """Gives a WorldZone id's name, falling back to the parent zone's when the text is \
+empty, and null when no row has the id. Id 0 has no row; the lowest is 12."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405de9c0"]
+name = "SendFriendLocationsRequest"
+statement = """Sends 0x03BF `ClientFriendshipGetLocations`, only for 1 to 255 distinct friendship \
+ids."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14070e070"]
+name = "FriendshipLibGetLocations"
+statement = """The Lua `FriendshipLib.GetLocations`, which sends 0x03BF through 0x1405de9c0. \
+FriendsList.lua calls it only from `OnUpdateLocationsTimer`, for the friends it shows online: \
+when the friends list is built, 10 s after that, and on a click on the friends tab, never on \
+reopening the window or adding a friend."""
+proof = """The earlier notes; FriendsList.lua lines 279, 485, 488, 494, 630-647, 751-753 and \
+877, and SocialPanel.lua lines 91-112, 176 and 258-276. A live login confirmed that closing and \
+reopening the window asked nothing, and clicking Rivals then Friends asked and showed the \
+zone."""
+grade = "fairly sure"
+
+["0x14070dfb0"]
+name = "FriendshipLibIsLoaded"
+statement = """The Lua `FriendshipLib.IsLoaded`: true once the friend list has been loaded, \
+which only the 0x03BE list handler 0x1405dfab0 sets (at 0x1405dfdc8). The add handler and the \
+0x0599 answer leave it. FriendsList.lua draws nothing until it is true."""
+proof = """The earlier notes: it reads game state +0x6ac4 (friend manager +0x28c) != 0; \
+FriendsList.lua line 469. The instructions were not re-read."""
+grade = "fairly sure"
+
+# Globals
+
+["0x140c635f0"]
+statement = """The network object, passed to every send."""
+proof = """The first argument of 0x1400161d0 and 0x140016010. Its +0x15e0 holds the client's \
+realm map. The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140c65908"]
+statement = """The store state: it holds the current order id and the real currency that \
+0x0988 sets."""
+proof = """+0x1c8 current order id, +0x30 real currency from 0x0988. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140c7aac0"]
+statement = """The language file's header: it holds the language id (1 is English) and the \
+locale name ("en-US")."""
+proof = """+0x8 language id, +0x18 locale name. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x140c65898"]
+statement = """The game state: it holds the current player, whose record holds its realm id \
+and character id."""
+proof = """+0x78 current player; player +0x1a0 realm id, +0x1a8 character id. The earlier \
+notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+# Groups
+
+["0x1403f04f2"]
+statement = """The in-game screen handler's case for 0x041F, a group invite received."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1403f051e"]
+statement = """The in-game screen handler's case for 0x0424, a request to join the player's \
+group. It keeps the group id and the requester's name as the pending request, sets to 1 the \
+last bit the 0x0453 answer sends, and raises the Lua event `Group_JoinRequest`."""
+proof = """The earlier notes: the group id goes to game state +0x6c30, the name pointer to \
++0x6c40, and +0x6c48 is set to 1; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403f056a"]
+statement = """The in-game screen handler's case for 0x0427, joining a group."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1403f05c2"]
+statement = """The in-game screen handler's case for 0x0405, a group member added."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140083710"]
+name = "ReadGroupMemberAdd"
+statement = "The reader of 0x0405, a group member added."
+proof = "The earlier notes, from the message registration table; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140084390"]
+name = "ReadGroupInviteReceived"
+statement = "The reader of 0x041F, a group invite received."
+proof = "The earlier notes, from the message registration table; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1400843f0"]
+name = "ReadGroupJoinRequest"
+statement = "The reader of 0x0424, a request to join the player's group."
+proof = "The earlier notes, from the message registration table; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1400844f0"]
+name = "ReadGroupJoin"
+statement = """The reader of 0x0427, joining a group: a 14-bit and a 64-bit value, then a group \
+(0x140082950)."""
+proof = "The earlier notes, from the message registration table; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1400828a0"]
+name = "ReadGroupMember"
+statement = """Reads one group member: a 14-bit identity realm and 64-bit id, 32-bit flags, the \
+member's character (0x140082420), then a 32-bit group index. 0x0405, 0x041F, 0x0424 and 0x0427 \
+reach the character reader through it."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140082420"]
+name = "ReadGroupCharacter"
+statement = """Reads one group member's character, 0xa8 bytes in memory: a wide-string name, \
+three 14-bit values, a 2-bit, two 7-bit, a 3-bit, a 17-bit and a 16-bit value, five 24-bit stat \
+entries (0x1400823c0), an identity, a 32-bit value, twelve 16-bit values, a world location \
+(0x1400a8bf0), one bit, two 32-bit values, then a 32-bit count of entries (0x1400ad150). The \
+client does not name the fields after the name."""
+proof = """The bit-count constants in the reader. A recorded group session decodes with this \
+layout and re-encodes to the same bytes."""
+grade = "fairly sure"
+
+["0x140082950"]
+name = "ReadGroup"
+statement = """Reads a group: a 64-bit group id, flags, member count, maximum size, loot bits, \
+the members, the leader's identity, a realm and marker info."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140082b00"]
+name = "ReadGroupMemberList"
+statement = """Reads the member list of 0x041F: two 32-bit indexes and a 32-bit count of \
+member characters."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1400823c0"]
+name = "ReadGroupStatEntry"
+statement = """Reads one 24-bit stat entry of a group member's character: a 16-bit and an 8-bit \
+value."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1400a8bf0"]
+name = "ReadWorldLocation"
+statement = """Reads a world location: a 14-bit realm, a 15-bit zone, a 32-bit map and a 32-bit \
+phase. The group character reader and the 0x0467 reader call it."""
+proof = "The earlier notes and the bit-count constants the earlier schema cites; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1400ad150"]
+statement = """Reads one entry of the list that ends a group member's character: a 15-bit and a \
+16-bit value."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140742e10"]
+name = "GroupLibAcceptRequest"
+statement = """The Lua `GroupLib.AcceptRequest`: sends 0x0453 for the pending join request with \
+the answer 1."""
+proof = """The earlier notes: the pending request is read from game state +0x6c30 and written \
+by 0x140084a10; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140742ea0"]
+name = "GroupLibDenyRequest"
+statement = """The Lua `GroupLib.DenyRequest`: sends 0x0453 for the pending join request with \
+the answer 0."""
+proof = """The earlier notes: the pending request is read from game state +0x6c30 and written \
+by 0x140084a10; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140084a10"]
+name = "WriteGroupJoinRequestAnswer"
+statement = """Writes 0x0453, the answer to a join request: a 64-bit group id, the answer as one \
+bit, the requester's name as a wide string, then one more bit, which the 0x0424 case \
+(0x1403f051e) sets to 1."""
+proof = """The earlier notes and the bit-count constants of the writer. A recorded group \
+session sends the last bit as 1."""
+grade = "fairly sure"
+
+["0x1400841d0"]
+name = "ReadGroupMemberWorldLocation"
+statement = """The reader of 0x0467: a 64-bit group id, an identity (14-bit realm and 64-bit id), \
+a world location (0x1400a8bf0), then one bit."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140084030"]
+name = "ReadGroupMemberPositions"
+statement = """The reader of 0x0469: a 64-bit group id, a 15-bit world, a 32-bit count, then \
+column by column: every identity (0x1400852f0), every position (0x1400a8a30, three floats), \
+every 32-bit zone id and every 32-bit flags."""
+proof = """The earlier notes. Every recorded 0x0469 in two group sessions carries one update, \
+so the recordings do not show the column order."""
+grade = "fairly sure"
+
+["0x1400852f0"]
+statement = "Reads one identity in the 0x0469 reader 0x140084030."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1400a8a30"]
+statement = "Reads one position, three floats, in the 0x0469 reader 0x140084030."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140603380"]
+name = "HandleGroupMemberStatUpdate"
+statement = """Handles 0x0466, a group member's stat update. Its twelve 16-bit packed floats are \
+copied into the member's record by 0x140607490."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140607490"]
+name = "CopyGroupMemberStats"
+statement = """Copies the twelve 16-bit packed floats of 0x0466 into the group member's \
+record."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["GroupLib.Join"]
+statement = """Asks to join a named player's group, sending 0x0422 ClientGroupRequestJoin, as \
+`/join` does; the player menu's Join button calls it."""
+proof = """`ContextMenuPlayer.lua` line 718, and the comment of the earlier social recording \
+test on `/join` (0x14063bdc0)."""
+grade = "fairly sure"
+
+["GroupLib.AcceptRequest"]
+statement = """Accepts a request to join the player's group: its binding 0x140742e10 sends 0x0453 \
+ClientGroupRequestJoinResponse with the answer 1. `GroupLib.DenyRequest` (0x140742ea0) sends it \
+with the answer 0."""
+proof = """The earlier notes: both send from game state +0x6c30. The instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["GroupLib.GetInvite"]
+statement = """Returns the pending group invite; it marks as the leader the member at the \
+leader's place in the invite's member list, counted from 0."""
+proof = """The comment of the earlier code's invite send, beside 0x1406021e0, which reads the \
+inviter by its place in the same list."""
+grade = "fairly sure"
+
+["0x1406021e0"]
+statement = """Takes a group invite's inviter's name from the inviter's place in the invite's \
+member list, counted from 0."""
+proof = "The comment of the earlier code's invite send; the instructions were not re-read."
+grade = "fairly sure"
+
+["GroupLib.LootRule"]
+statement = """Names how a group shares the loot of a kill: FreeForAll 0, RoundRobin 1, \
+NeedBeforeGreed 2 and Master 3, which `GroupDisplay.lua` shows with its `Group_MasterLoot` \
+text."""
+proof = """The earlier code's loot rule type and `GroupDisplay.lua`; the citation does not say \
+where the numbers were read, and the client's registration of them was not read."""
+grade = "guess"
+
+["GroupLib.HarvestLootRule"]
+statement = """Names how a group shares what its members harvest: RoundRobin 0, which \
+`GroupDisplay.lua` shows with its `Group_RoundRobin` text, and FirstTagger 1, shown with its \
+`Group_FFA` text."""
+proof = """The earlier code's harvest loot rule type and `GroupDisplay.lua`; the citation does \
+not say where the numbers were read, and the client's registration of them was not read."""
+grade = "guess"
+
+["GroupLib.GroupInviteResult"]
+statement = """The `GroupLib.GroupInviteResult_*` values name how a group invite or join request \
+ended, as 0x0422's answers carry it: Sent 0, Declined 1, Accepted 2, PlayerNotFound 5, \
+Grouped 6, Pending 7, ExpiredInviter 8, ExpiredInvitee 10, InvitedYou 11, Full 13, \
+NotInvitingSelf 15, GroupNotFound 17, NotAcceptingRequests 18, Busy 19, SentToLeader 20, \
+LeaderOffline 21 and WrongFaction 22."""
+proof = """The earlier code's invite result type, which says the client names each value; the numbers were not read from the client's registration."""
+grade = "guess"
+
+# Items and vendors
+
+["0x1403b7300"]
+name = "HandleServerItemMove"
+statement = """Handles `ServerItemMove`, reading an item's place as its index in the first byte \
+and its location in the second."""
+proof = "The comment of the earlier code's item place encoding; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1403b74e0"]
+name = "HandleServerItemSwap"
+statement = """Handles `ServerItemSwap`, reading each item's place as its index in the first byte \
+and its location in the second. It ignores a swap unless one item moves to where the other is."""
+proof = """The comments of the earlier code's item move and item place encoding; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14008de20"]
+name = "ReadServerItemError"
+statement = "Reads 0x056A ServerItemError's `error_code` in 32 bits, a GenericError."
+proof = """The packet schema's comment on ServerItemError. A recorded ServerItemError written \
+with a 64-bit code failed the client's round trip."""
+grade = "fairly sure"
+
+["0x1404445d0"]
+name = "BuildItemRecord"
+statement = """Builds an item's record from its Item2 row. When the row's flags have 0x4000 \
+(deprecated), it reads the quality, the ItemSpecial and most other fields from Item2 row 74201, \
+the placeholder that GameFormula 1214's dataint0 names; the family, type, category and power \
+level stay the item's own."""
+proof = """The earlier notes; the instructions were not re-read. Item2 table: 13,086 rows carry \
+flag 0x4000."""
+grade = "fairly sure"
+
+["0x14041d200"]
+name = "ComputePowerLevelCurve"
+statement = """Works out game formula 1078's curve at an item's power level, in 32-bit floats: \
+e to the power of dataFloat01 times the level above dataInt0, times dataFloat0, plus that level \
+to the power of dataFloat03 times dataFloat02. The vendor price helper 0x14040bee0 calls it."""
+proof = """The earlier notes and the earlier code's comments on the vendor amount; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14040bee0"]
+name = "ComputeVendorValue"
+statement = """An item's vendor value: game formula 1078 (0x14041d200) on its power level minus \
+the formula's dataint0, times its quality (1 when the quality is 0), times its category's, \
+family's and type's vendor multipliers, in 32-bit floats, cut to a whole number and at least 1. \
+Repairs and sales use the same value."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14040d160"]
+name = "ComputeBuyPrice"
+statement = """An item's buy price: the explicit price its Item2 row names, where Item2 flag \
+0x200 moves the price's currency."""
+proof = """The earlier notes: the explicit price is read at Item2 record +0x88 and +0x90; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14040bfb0"]
+name = "ComputeSellPrice"
+statement = "An item's sell price, from game formula 1026: 15% of the item's vendor value."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14047aba0"]
+name = "ScaleVendorCreditPrice"
+statement = """Scales an item's price in credits, and credits only, by the vendor's multiplier: \
+the first float of ServerVendorItemsUpdated for what the player pays for the vendor's items, \
+the second for what the vendor pays for the player's. The scaled price is cut to a whole \
+number, as the client shows it."""
+proof = """The earlier notes and the earlier code's comments on the vendor price; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14041bf80"]
+name = "ItemGetBuyPrice"
+statement = """The Lua `Item:GetBuyPrice`. Its credit price is scaled by the first float of \
+ServerVendorItemsUpdated (0x14047aba0)."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14041bcc0"]
+name = "ItemGetSellPrice"
+statement = """The Lua `Item:GetSellPrice`. Its credit price is scaled by the second float of \
+ServerVendorItemsUpdated (0x14047aba0)."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1403db9a0"]
+name = "HandleVendorItemsUpdated"
+statement = """Handles ServerVendorItemsUpdated. It ignores the message unless its `guid` is the \
+unit the player is interacting with; the field `unknown2` opens the vendor window and \
+`unknown3` replaces the item list."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140456960"]
+statement = """One of the two places, with 0x140555040, where create flag 0x04 \
+(HasInteractionPrereq) enables interaction slot 0x31, the vendor. Without the flag the client \
+offers no vendor option."""
+proof = """The earlier notes, which name 0x140456960 and 0x140555040 together without saying \
+which does what; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140555040"]
+statement = """One of the two places, with 0x140456960, where create flag 0x04 \
+(HasInteractionPrereq) enables interaction slot 0x31, the vendor. Without the flag the client \
+offers no vendor option."""
+proof = """The earlier notes, which name 0x140456960 and 0x140555040 together without saying \
+which does what; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403a71f0"]
+name = "SendEntityInteract"
+statement = """Sends ClientEntityInteract with the game state, the unit and the interaction \
+type; type 0x31 opens a vendor."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1403998e0"]
+name = "UseItem"
+statement = """The shared "use item" entry: equips an item that can be equipped, else checks \
+and casts its ItemSpecial spell. When the item's record has no spell it returns 0x17 \
+(ItemNoSpellId) and reports nothing."""
+proof = "The earlier notes: it has 13 callers; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140398cc0"]
+name = "SendItemUse"
+statement = """Sends ClientItemUse (0x0943). It refuses with CastResult 0x19 when the item's \
+Item2 MaxCharges is not 0 and the item holds 0 charges, so an item with charges to hold but \
+none held cannot be used."""
+proof = """The earlier notes: the charges are item +0x7c, the SharedItem `charges` field; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403a12a0"]
+name = "ReportCastFailure"
+statement = """Reports a failed use or cast by raising the Lua event "SpellCastFailed", which \
+FloatText.lua shows as a floater over the player, never in chat. It stays quiet when there is \
+no spell and for result codes 2 and 3."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1406d9bf0"]
+name = "HandleBagItemRightClick"
+statement = """The bag's right-click on an item (DDBagItem): calls the use-item entry \
+0x1403998e0 and ignores its result."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140419dd0"]
+name = "ItemCanDelete"
+statement = """The Lua `Item:CanDelete`: false when the item's Item2 flags have 0x10000, or its \
+other Item2 flags have 0x100 and a field of the item is 0."""
+proof = """The earlier notes: the flags are read at Item2 record +0x14c (0x10000) and +0x154 \
+(0x100), the item's field at +0x20; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403c70e0"]
+name = "HandleCombatReward"
+statement = """Handles ServerCombatReward: a `stat` from 0 to 0x15 is a currency id minus 1, and \
+`new_value` is that currency's new total, which it sets through 0x1403b5730."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1403b5730"]
+statement = """Called by the ServerCombatReward handler 0x1403c70e0 to set a currency's new \
+total."""
+proof = """The earlier notes, which cite it in brackets after the new total without saying what \
+it does; the instructions were not re-read."""
+grade = "guess"
+
+# Lua bindings and enums
+
+["0x140b69830"]
+statement = """AccountItemLib's binding table: {name, function} rows."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140b69d80"]
+statement = """StorefrontLib's binding table: {name, function} rows."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1404f2860"]
+name = "RegisterStorefrontEnums"
+statement = """Registers StorefrontLib's Lua enums, among them CodeEnumStoreError."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14044c840"]
+statement = """The store handler's case for 0x0991: it raises the Lua event \
+StorePurchaseVirtualCurrencyPackageResult."""
+proof = """Inside the store handler 0x14044b630. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x14050cbf0"]
+name = "GetRestXpKillCreaturePool"
+statement = """Lua's GetRestXpKillCreaturePool: the rest pool times (1 + 1 / GameFormula row \
+341's datafloat0). Row 341 is 0.5, so kills get a 50% rested bonus."""
+proof = """The rest pool is game state +0x1688. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x140659070"]
+name = "UnitResurrect"
+statement = """Lua's Unit:Resurrect(eRezType, n): sends 0x015A ClientResurrectAccept with the \
+unit's id, the rez type and n, unless the rez type is 64 (WakeHereServiceToken). The Death \
+addon passes n as 0, with a comment that it should be the caster's unit id."""
+proof = """Its binding table row is at 0x140c5b340. It fills the 12-byte struct that \
+0x1400885c0 writes. The Death addon's call is ui/Death/death.lua:377. The earlier notes; \
+the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400f06f0"]
+name = "RegisterLuaEnumRow"
+statement = """Registers one row of a Lua enum: its name and its value. The loops that call \
+it read a table of {name pointer, 32-bit value} rows."""
+proof = """R8 is the name, R9D the value. Before such a loop a LEA loads the row table and a \
+counter holds the row count; recipe: Strings.java on the enum's name, Refs.java to find the \
+registering function, then EnumTable.java <out> <table addr> <count> 16."""
+grade = "fairly sure"
+
+["0x140056d60"]
+name = "ReadLuaIntegerArgument"
+statement = """Reads Lua argument n as an integer."""
+proof = """The earlier notes, which list 0x140056d60, 0x140056bb0 and 0x140056ab0 as int, \
+string and typed object in that order; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140056bb0"]
+name = "ReadLuaStringArgument"
+statement = """Reads Lua argument n as a string."""
+proof = """The earlier notes, which list 0x140056d60, 0x140056bb0 and 0x140056ab0 as int, \
+string and typed object in that order; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140056ab0"]
+name = "ReadLuaTypedObjectArgument"
+statement = """Reads Lua argument n as an object of a named type, such as "Game.Money"."""
+proof = """The earlier notes, which list 0x140056d60, 0x140056bb0 and 0x140056ab0 as int, \
+string and typed object in that order; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140c36d50"]
+statement = """CodeEnumEquippedItems' table of {name pointer, 32-bit value} rows, 31 of them: \
+Chest 0 to BankBag9 30. Slots 12 to 14 are DEPRECATED3 to DEPRECATED1."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140c34140"]
+statement = """CodeEnumSpellEffectType's table of {name pointer, 32-bit value} rows, 150 of \
+them, registered by 0x1405e8230."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405e8230"]
+statement = """Registers the Lua enum CodeEnumSpellEffectType from its 150-row table at \
+0x140c34140."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140649e20"]
+name = "UnitGetType"
+statement = """Lua's Unit:GetType(): gives a unit's entity type name from a table of 37 names \
+indexed by its type id. Ids 0 to 36 are NonPlayer, Chest, Destructible, Vehicle, Door, \
+Harvest, Corpse, Mount, Collectible, Taxi, Simple, Platform, Mailbox, Turret, InstancePortal, \
+Plug, Residence, StructuredPlug, PinataLoot, BindPoint, Player, HiddenSpell, Trigger, Ghost, \
+Pet, Esper Pet, World object, Scanner, Camera, Trap, DestructibleDoor, Pickup, \
+SimpleCollidable, HousingMannequin, HousingHarvestPlug, HousingPlant, Lockbox. Any other id \
+gives "Unknown", and no unit gives an empty string."""
+proof = """It reads the type id from the unit's record at +0x80, compares it unsigned against \
+0x24, and indexes a stack array of 37 string pointers it builds (a table, not a switch). \
+Ghidra's decompile mislabels the first entries; the names come from the disassembly."""
+grade = "fairly sure"
+
+# Mail
+
+["MailSystemLib.AtMailbox"]
+statement = """Says whether the player stands within 20 m of any mailbox, with no click needed. \
+The client allows items, credits and cash on delivery in a mail only while it is true; the \
+range is GameFormula 237's first float, 20."""
+proof = """The live login notes for mail, and the comment of the earlier code's mailbox range \
+check, which reads GameFormula 237."""
+grade = "fairly sure"
+
+# Matching
+
+["0x140098e10"]
+name = "WriteClientMatchingRoleCheckResponse"
+statement = """Writes 0x05B2 ClientMatchingRoleCheckResponse: a 5-bit match type, 32-bit roles \
+and a 1-bit answer (1 accepted, 0 declined), 38 bits in 5 bytes. The match type is the ready \
+match type the last 0x05E3 gave, 16 for none, and the roles are Matching role flags (Tank 1, \
+Healer 2, DPS 4)."""
+proof = """The earlier notes and the packet schema's decode of this writer. Both recorded bodies \
+in the instances-and-store recording, `30 00 00 00 20`, read as type 16, roles 1 and accepted."""
+grade = "fairly sure"
+
+["0x1405c36e0"]
+name = "SendMatchingRoleCheckResponse"
+statement = """Sends 0x05B2 ClientMatchingRoleCheckResponse for the Lua `ConfirmRole` \
+(0x140769620), with the chosen roles masked by the player's class: classes 1, 2 and 5 keep \
+mask 5 (Tank and DPS), and classes 3, 4 and 7 keep mask 6 (Healer and DPS)."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140769620"]
+name = "ConfirmRole"
+statement = """The Lua binding `ConfirmRole`, which answers a matching role check by sending \
+0x05B2 through 0x1405c36e0."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1407697a0"]
+name = "DeclineRoleCheck"
+statement = "The Lua binding `DeclineRoleCheck`, which declines a matching role check."
+proof = """The earlier notes, which name it beside `ConfirmRole`; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1405c3e40"]
+name = "HandleMatchingQueueStatus"
+statement = """Handles 0x05E3: it stores \
+whether the player has joined a queue and the ready match type, 16 when there is none."""
+proof = """The earlier notes: +0x10c is joined and +0x110 the ready match type, 0x10 for none. \
+The instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405c0e90"]
+name = "HandleMatchingRoleCheckStarted"
+statement = "Handles 0x05F1."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+# Message layouts
+
+["0x14009a7d0"]
+name = "WriteClientAuctionsByFilterRequest"
+statement = """Writes 0x07DC ClientAuctionsByFilterRequest: three u14, a u32 count and that many u32, \
+a u32 count and that many auction filters (each written by 0x14009a620), a u32, a u3, an 8-bit \
+property (written by 0x1400a7480) and a u32."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly."""
+grade = "fairly sure"
+
+["0x14009a620"]
+name = "WriteAuctionFilter"
+statement = """Writes one auction filter: a 3-bit type, then the entry of the table at 0x140c1e9e0 \
+that the type picks. The table has 7 entries, and the client fails a type of 7 or more."""
+proof = """The bit-count constant of the type and the indexed call through the table, read in the \
+function's disassembly; the table read from the file on disk as an array of code pointers."""
+grade = "fairly sure"
+
+["0x140c1e9e0"]
+statement = """The auction filter's writer table, 7 entries indexed by the filter's 3-bit type: \
+0 and 1 are 0x14009a250 (an 8-bit property and a u32), 2 is 0x14007ec70 (two u32), 3 is \
+0x14009a310 (two u4), 4 is 0x14009a4a0 (a 5-bit rune type and a u32 minimum), 5 is 0x14007d840 \
+(a u64) and 6 is 0x14007c3d0 (three u14 and a u32)."""
+proof = """Read from the file on disk as an array of code pointers; each entry's bit counts read \
+from its disassembly."""
+grade = "fairly sure"
+
+["0x14009a250"]
+name = "WriteAuctionFilterProperty"
+statement = """Writes auction filter types 0 and 1: an 8-bit property, then a u32 value."""
+proof = """Entries 0 and 1 of the table at 0x140c1e9e0, read from the file on disk; the bit-count \
+constants read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14007ec70"]
+name = "WriteTwoUnsigned32Variant"
+statement = """Writes two u32. It is entry 2 of the auction filter table (0x140c1e9e0) and entry 0 \
+of the who parameter table (0x140c1ed80)."""
+proof = """Both tables read from the file on disk as arrays of code pointers; the bit-count \
+constants read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14009a310"]
+name = "WriteTwoUnsigned4Variant"
+statement = """Writes auction filter type 3: two u4."""
+proof = """Entry 3 of the table at 0x140c1e9e0, read from the file on disk; the bit-count constants \
+read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14009a4a0"]
+name = "WriteAuctionFilterRune"
+statement = """Writes auction filter type 4: a 5-bit rune type, then a 32-bit minimum."""
+proof = """Entry 4 of the table at 0x140c1e9e0, read from the file on disk; the bit-count constants \
+read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14007d840"]
+name = "WriteSingleUnsigned64Variant"
+statement = """Writes auction filter type 5: one u64."""
+proof = """Entry 5 of the table at 0x140c1e9e0, read from the file on disk; the bit-count constant \
+read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14007c3d0"]
+name = "WriteThreeUnsigned14AndUnsigned32Variant"
+statement = """Writes auction filter type 6: three u14, then a u32."""
+proof = """Entry 6 of the table at 0x140c1e9e0, read from the file on disk; the bit-count constants \
+read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14008b9d0"]
+name = "WriteClientCharacterAppearanceChange"
+statement = """Writes 0x0144 ClientCharacterAppearanceChange: a u5, a u2, a u32 count, that many u32 \
+labels and as many u32 values, a u32 count and that many floats, then one bit."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly."""
+grade = "fairly sure"
+
+["0x1400915f0"]
+name = "WriteClientGuildOperation"
+statement = """Writes 0x04B1 ClientGuildOperation: an identity (written by 0x140085170: a 14-bit realm \
+and a 64-bit id), then the operation's body through 0x140090b40."""
+proof = """The calls and bit-count constants read in order in the function's disassembly."""
+grade = "fairly sure"
+
+["0x140090b40"]
+name = "WriteGuildOperationBody"
+statement = """Writes the body of 0x04B1 ClientGuildOperation after its identity: a u32, a u64, a \
+wide string and a u6."""
+proof = """The bit-count constants and the wide string writer call, read in order in the function's \
+disassembly; called by the 0x04B1 writer 0x1400915f0."""
+grade = "fairly sure"
+
+["0x14009ea00"]
+name = "WriteClientHousingPlaceDecor"
+statement = """Writes 0x04E6 ClientHousingPlaceDecor: an identity, a u64, a u32, a u3 and seven \
+floats (the position, then the rotation's four)."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly."""
+grade = "fairly sure"
+
+["0x14009d0a0"]
+name = "WriteDecorInfo"
+statement = """Writes one housing decor record: an identity, a u64, a u32 type, a u32 mannequin as one \
+value, u32 flags, a u32 hook and a u32 plot, a float scale, seven floats, two u32, a u64 and a u14. \
+The writers of 0x04F5 (0x14009da00) and 0x050D (0x14009ddd0) call it."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly, and the calls to it from 0x14009da00 and 0x14009ddd0."""
+grade = "fairly sure"
+
+["0x14009da00"]
+name = "WriteMessage04F5"
+statement = """Writes 0x04F5, whose layout comes from the decor record writer 0x14009d0a0."""
+proof = """Its call to 0x14009d0a0, read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14009ddd0"]
+name = "WriteMessage050D"
+statement = """Writes 0x050D, whose layout comes from the decor record writer 0x14009d0a0."""
+proof = """Its call to 0x14009d0a0, read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14008a9f0"]
+name = "WriteClientRequestActionSetChanges"
+statement = """Writes 0x00B1 ClientRequestActionSetChanges: a u4 count and that many u32, a u3, a u5 \
+count and that many action tiers (each written by 0x14008a810), then a u7 count and that many u16."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly."""
+grade = "fairly sure"
+
+["0x14008a810"]
+name = "WriteActionTier"
+statement = """Writes one action tier of 0x00B1 ClientRequestActionSetChanges: a u18, then a u8."""
+proof = """The bit-count constants read in the function's disassembly; called by the 0x00B1 writer \
+0x14008a9f0."""
+grade = "fairly sure"
+
+["0x14007f270"]
+name = "WriteClientWhoRequest"
+statement = """Writes 0x0959 ClientWhoRequest: a u32 count and that many who parameters (each written \
+by 0x14007f0c0), then a u32 count and that many u32."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly."""
+grade = "fairly sure"
+
+["0x14007f0c0"]
+name = "WriteWhoParameter"
+statement = """Writes one who parameter: a 4-bit type, then the entry of the table at 0x140c1ed80 that \
+the type picks. The table has 9 entries, and the client fails a type of 9 or more."""
+proof = """The bit-count constant of the type and the indexed call through the table, read in the \
+function's disassembly; the table read from the file on disk as an array of code pointers."""
+grade = "fairly sure"
+
+["0x140c1ed80"]
+statement = """The who parameter's writer table, 9 entries indexed by the parameter's 4-bit type: 0 is \
+0x14007ec70 (two u32); 1, 3 and 8 are 0x14007a610 (a u14); 2 is 0x14007edf0 (a u3); 4 is \
+0x14007eea0 (a u15); 5 and 6 are 0x14007ae80 (a wide string); 7 is 0x14007efa0 (a wide string, a \
+u14, a u3, a u14, a u15 and a u14)."""
+proof = """Read from the file on disk as an array of code pointers; each entry's bit counts read \
+from its disassembly."""
+grade = "fairly sure"
+
+["0x14007a610"]
+name = "WriteSingleUnsigned14"
+statement = """Writes one u14. It is entry 1, 3 and 8 of the who parameter table (0x140c1ed80), and \
+the writer of 0x078E ClientTitleSet, the title id, which the client sends only from its Lua \
+`CharacterTitle.SetTitle` (0x14072c8c0); `SetTitle(nil)` sends 0 to clear the title."""
+proof = """The who parameter table read from the file on disk; the 0x078E registration's writer; the \
+bit-count constant read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14007edf0"]
+name = "WriteSingleUnsigned3"
+statement = """Writes who parameter type 2: one u3."""
+proof = """Entry 2 of the table at 0x140c1ed80, read from the file on disk; the bit-count constant \
+read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14007eea0"]
+name = "WriteSingleUnsigned15"
+statement = """Writes who parameter type 4: one u15."""
+proof = """Entry 4 of the table at 0x140c1ed80, read from the file on disk; the bit-count constant \
+read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14007ae80"]
+name = "WriteSingleWideString"
+statement = """Writes who parameter types 5 and 6: one wide string."""
+proof = """Entries 5 and 6 of the table at 0x140c1ed80, read from the file on disk; its call to the \
+wide string writer read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14007efa0"]
+name = "WriteWhoParameterVariant7"
+statement = """Writes who parameter type 7: a wide string, a u14, a u3, a u14, a u15 and a u14."""
+proof = """Entry 7 of the table at 0x140c1ed80, read from the file on disk; the bit-count constants \
+read in order in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14007f660"]
+name = "ReadServerWhoResponse"
+statement = """Reads 0x095A ServerWhoResponse: a u32 count, that many players (each read by \
+0x14007f410), then a u2."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly."""
+grade = "fairly sure"
+
+["0x14007f410"]
+name = "ReadWhoPlayer"
+statement = """Reads one player of 0x095A ServerWhoResponse: two wide strings, a u32, a u5, a u5, a \
+u2, a u14, a u3 and a u15."""
+proof = """The bit-count constants read in order in the function's disassembly; called by the 0x095A \
+reader 0x14007f660."""
+grade = "fairly sure"
+
+["0x1400a5d70"]
+statement = """Writes the craft stats in 0x084F as one u64, 8 bytes; what each byte means is not \
+decoded."""
+proof = """The bit-count constant read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x1400a46b0"]
+statement = """Reads the craft stats in 0x0854 as one u64, 8 bytes, the reading side of 0x1400a5d70; \
+what each byte means is not decoded."""
+proof = """The bit-count constant read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x140087090"]
+name = "ReadServerChatList"
+statement = """Reads 0x01C0 ServerChatList: a u14, a u64, a u32 count, that many wide strings, as many \
+u32, then one bit. Nothing found in the client shows what the last bit means."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly."""
+grade = "fairly sure"
+
+["0x140092470"]
+name = "ReadServerGuildBankTabInventory"
+statement = """Reads 0x047A ServerGuildBankTabInventory: an identity, a u9, a u32 count, then that many \
+items, each read by 0x14008c0d0."""
+proof = """The bit-count constants and calls read in order in the function's disassembly; each item \
+takes 0xA8 bytes in memory."""
+grade = "fairly sure"
+
+["0x14008c0d0"]
+name = "ReadSharedItem"
+statement = """Reads one shared item, with no 6-bit update reason after it. The 6-bit count that \
+follows the item's glyphs counts the entries of the list after it, not the glyphs."""
+proof = """The bit-count constants read in order in the function's disassembly."""
+grade = "fairly sure"
+
+["0x140092230"]
+name = "ReadServerGuildRankChange"
+statement = """Reads 0x04C5 ServerGuildRankChange: an identity, then exactly 10 guild ranks, each read \
+by 0x1400901b0."""
+proof = """The loop count and calls read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x1400901b0"]
+name = "ReadGuildRank"
+statement = """Reads one guild rank of 0x04C5 ServerGuildRankChange: a wide string, a u32 and three \
+u64."""
+proof = """The bit-count constants read in order in the function's disassembly; called by the 0x04C5 \
+reader 0x140092230."""
+grade = "fairly sure"
+
+["0x140092e00"]
+name = "ReadServerRecruitmentGuildsRecruiters"
+statement = """Reads 0x076D: a u32 count, then that many guilds' recruiters, each read by \
+0x140091450."""
+proof = """The bit-count constant and the call read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x140091450"]
+name = "ReadGuildRecruiters"
+statement = """Reads one guild's recruiters in 0x076D: a u64, a bit, a u32 count, that many wide \
+strings and as many bits."""
+proof = """The bit-count constants read in order in the function's disassembly; called by the 0x076D \
+reader 0x140092e00."""
+grade = "fairly sure"
+
+["0x14009e3d0"]
+name = "ReadServerHousingResidences"
+statement = """Reads 0x04DF ServerHousingResidences: a u32 count, then that many residences, each read \
+by 0x14009ccc0."""
+proof = """The bit-count constant and the call read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14009ccc0"]
+name = "ReadHousingResidence"
+statement = """Reads one housing residence of 0x04DF: an identity, three u64, a u14, a u32, a wide \
+string, twelve u32, 64 raw bytes and one bit."""
+proof = """The bit-count constants and calls read in order in the function's disassembly; called by \
+the 0x04DF reader 0x14009e3d0."""
+grade = "fairly sure"
+
+["0x140099440"]
+name = "ReadServerMatchingPvpKillNotification"
+statement = """Reads 0x05E7 ServerMatchingPvpKillNotification: a u2 opponent type and that opponent, \
+a second u2 opponent type and that opponent, a u2 and a u3. Each opponent is read by the entry of \
+the table at 0x140c1e990 that its type picks."""
+proof = """The bit-count constants and the indexed calls read in order in the function's \
+disassembly."""
+grade = "fairly sure"
+
+["0x140c1e990"]
+statement = """The pvp kill opponent's reader table, indexed by its 2-bit type: 0 is 0x1400993d0 (an \
+identity and a u5), 1 is 0x140080e80 (a u32 and a u18) and 2 is 0x1400807f0 (one bit). The client \
+fails a type of 3 or more."""
+proof = """Read from the file on disk as an array of code pointers; each entry's bit counts read \
+from its disassembly."""
+grade = "fairly sure"
+
+["0x1400993d0"]
+name = "ReadIdentityAndUnsigned5Variant"
+statement = """Reads pvp kill opponent type 0: an identity, then a u5."""
+proof = """Entry 0 of the table at 0x140c1e990, read from the file on disk; the calls and bit-count \
+constants read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x140080e80"]
+name = "ReadUnsigned32AndUnsigned18Variant"
+statement = """Reads a u32, then a u18. It is entry 1 of the pvp kill opponent table (0x140c1e990) and \
+entry 4 of the story actor table (0x140c1ecf0)."""
+proof = """Both tables read from the file on disk as arrays of code pointers; the bit-count constants \
+read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x1400807f0"]
+name = "ReadSingleBit"
+statement = """Reads one bit. It is entry 2 of the pvp kill opponent table (0x140c1e990) and entry 3 \
+of the quest Lua event table (0x140c1eb98)."""
+proof = """Both tables read from the file on disk as arrays of code pointers; the bit-count constant \
+read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14008d8b0"]
+name = "ReadServerPathExplorerScavengerHuntClueAddUnitList"
+statement = """Reads 0x06B9 ServerPathExplorerScavengerHuntClueAddUnitList: a u14, a u32 count, then \
+that many u32."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly."""
+grade = "fairly sure"
+
+["0x14008bf00"]
+name = "ReadServerPlayedResponse"
+statement = """Reads 0x0694 ServerPlayedResponse: a u64, then three u32."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly."""
+grade = "fairly sure"
+
+["0x14007bfb0"]
+name = "ReadServerPublicEventUnitAdd"
+statement = """Reads 0x08BB ServerPublicEventUnitAdd: a u32, a u32 count, then that many pairs of a u32 \
+and a u3."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly."""
+grade = "fairly sure"
+
+["0x140080ee0"]
+name = "ReadStoryActor"
+statement = """Reads one story actor, in 0x073A, 0x0753 and 0x075A to 0x075C: a 3-bit type, the entry \
+of the table at 0x140c1ecf0 that the type picks, then a u32 and a narrow ASCII string (read by \
+0x140336980). The table has 6 entries, and the client fails a type of 6 or more."""
+proof = """The bit-count constants and the indexed call read in order in the function's disassembly; \
+the table read from the file on disk as an array of code pointers."""
+grade = "fairly sure"
+
+["0x140c1ecf0"]
+statement = """The story actor's reader table, 6 entries indexed by the actor's 3-bit type: 0 is \
+0x140080d30 (a u18), 1 is 0x140080d20 (a wide string), 2 is 0x140080d50 (a u21), 3 is 0x140080d70 \
+(a player), 4 is 0x140080e80 (a u32 and a u18) and 5 is 0x14007ab50 (a u32)."""
+proof = """Read from the file on disk as an array of code pointers; each entry's bit counts read \
+from its disassembly."""
+grade = "fairly sure"
+
+["0x140080d30"]
+name = "ReadSingleUnsigned18"
+statement = """Reads one u18. It is entry 0 of the story actor table (0x140c1ecf0) and entry 4 of the \
+quest Lua event table (0x140c1eb98)."""
+proof = """Both tables read from the file on disk as arrays of code pointers; the bit-count constant \
+read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x140080d20"]
+name = "ReadStoryActorWideString"
+statement = """Reads story actor type 1: one wide string, through the wide string reader \
+0x140336a40."""
+proof = """Entry 1 of the table at 0x140c1ecf0, read from the file on disk; its call read in the \
+function's disassembly."""
+grade = "fairly sure"
+
+["0x140080d50"]
+name = "ReadSingleUnsigned21"
+statement = """Reads story actor type 2: one u21."""
+proof = """Entry 2 of the table at 0x140c1ecf0, read from the file on disk; the bit-count constant \
+read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x140080d70"]
+name = "ReadStoryActorPlayer"
+statement = """Reads story actor type 3, a player: a u32, a wide string, a u32, a u2, two u5, a u14, a \
+u3 and a u14."""
+proof = """Entry 3 of the table at 0x140c1ecf0, read from the file on disk; the bit-count constants \
+read in order in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14007ab50"]
+name = "ReadSingleUnsigned32"
+statement = """Reads one u32. It is the reader of chat format types 1 (alien), 7 (profanity) and 11 \
+(loot) in the format reader table at 0x140c1ec90, so their seed is 32 bits; entry 5 of the story \
+actor table (0x140c1ecf0); and types 0 and 2 of the quest Lua event table (0x140c1eb98). Its \
+writing side for the chat formats is 0x14007d010, from the writer table at 0x140c1ec30."""
+proof = """`MOV R8D,0x20` in the function; the writer 0x14007d010 adds 0x20 bits (`ADD RAX,0x20` at \
+0x14007d082). The three tables read from the file on disk as arrays of code pointers."""
+grade = "fairly sure"
+
+["0x14008f530"]
+name = "ReadServerQuestLuaEvent"
+statement = """Reads 0x0359 ServerQuestLuaEvent: a u14 event id, a u32 count, then for each event a u32 \
+type and the entry of the table at 0x140c1eb98 that the type picks. Its handler is 0x1406128b0."""
+proof = """The bit-count constants and the indexed call read in order in the function's disassembly; \
+the table read from the file on disk as an array of code pointers."""
+grade = "fairly sure"
+
+["0x140c1eb98"]
+statement = """The quest Lua event's reader table, indexed by the event's type: 0 and 2 are \
+0x14007ab50 (a u32), 1 is 0x14008f520 (a narrow ASCII string), 3 is 0x1400807f0 (one bit), 4 is \
+0x140080d30 (a u18) and 5 is 0x14007c3a0 (a u15)."""
+proof = """Read from the file on disk as an array of code pointers; each entry's bit counts read \
+from its disassembly."""
+grade = "fairly sure"
+
+["0x14008f520"]
+name = "ReadQuestLuaEventNarrowString"
+statement = """Reads quest Lua event type 1: one narrow ASCII string, by jumping to the narrow string \
+reader 0x140336980."""
+proof = """Entry 1 of the table at 0x140c1eb98, read from the file on disk; its jump read in the \
+function's disassembly."""
+grade = "fairly sure"
+
+["0x14007c3a0"]
+name = "ReadSingleUnsigned15"
+statement = """Reads quest Lua event type 5: one u15."""
+proof = """Entry 5 of the table at 0x140c1eb98, read from the file on disk; the bit-count constant \
+read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x1406128b0"]
+name = "HandleServerQuestLuaEvent"
+statement = """Handles 0x0359 ServerQuestLuaEvent: it builds the Lua event's arguments with the type \
+letters i, s, U, b, o and Q, where o and Q look up an item and a quest. Type 2 is taken to be the \
+'U' case, a unit id, from its order among the cases."""
+proof = """The letter constants in the function (0x55 is 'U'). The jump table at 0x140612c7c, which \
+maps each type to its case, was not read."""
+grade = "guess"
+
+["0x14008ecb0"]
+name = "ReadServerChallengeResult"
+statement = """Reads 0x00C6 ServerChallengeResult: a u14, a u5 and a u32."""
+proof = """The bit-count constants passed to the bit helpers, read in order in the function's \
+disassembly. Its handler 0x14048e2b0 uses offsets 0, 4 and 8, which match this layout; it tests \
+the u32 against 0, looks up a text with it and uses it as data + 1, and no use shows its sign."""
+grade = "fairly sure"
+
+# Movement and input
+
+["0x140070878"]
+statement = """The call in the message registration run (0x14006c290) that registers 0x00FB \
+ClientFallingDamage, how hard the player landed, written at 0x1400896f0 as one 32-bit float. \
+The client computes no fall damage itself. The movement tick sends it at the end of a tick \
+whose summed impact severity is above 0, unless the controlled unit is a ghost; each collision \
+adds ((velocity lost - lo) / (hi - lo))², so 1.0 is a landing at the lethal speed."""
+proof = """The packet schema's comment: `MOVSS XMM1,[RDX]` then `JMP 0x14006bd80`; sent from \
+0x1403a25c0 by the call at 0x1403a62f1 through 0x1403f4900; severity at state +0x90; ghost unit \
+type 0x17; the sum at 0x1407bab32 in 0x1407ba940. The recordings hold five, among them \
+`6AF89440` (4.6553)."""
+grade = "fairly sure"
+
+["0x14007155c"]
+statement = """Where the client registers 0x00FC ClientFellThroughWorld, written at 0x14008b880 as \
+one bit, `no_ground_above`, then three 32-bit floats, 97 bits in 13 bytes. The movement tick \
+sends it once when the player falls below the floor less 1.0 less its body height; \
+`ServerPlayerChanged`, and `ServerEntityDeathState` for the controlled unit when alive, arm it \
+again. The client waits for no reply."""
+proof = """The packet schema's comment: sent from 0x1403a25c0 by the call at 0x1403a5f15, one-shot \
+flag at game +0x1B80, re-armed through 0x1403b5ad0 and 0x1403db870. The character_basics \
+recording's `4D52778BBB600B89BB74778901` reads as 1, then (-6005.1436, -1069.5114, -1501.8239)."""
+grade = "fairly sure"
+
+["0x1407158d0"]
+name = "ReadSetRotationSpinCommand"
+statement = """Reads `SetRotationSpinCommand`, a turn of the yaw at a steady rate: `rotation`, \
+where it starts, its x the yaw in radians; `flight_time`, how long it turns in ms; `spin`, the \
+rate in rad/s as a 16-bit float; `offset`, how many ms before the command's time it started; \
+and `blend`, which only smooths how the client draws it."""
+proof = """The packet schema's comment on `SetRotationSpinCommand`, checked against this reader \
+and the evaluator 0x140782f40; the 16-bit float is 0x1401c9770."""
+grade = "fairly sure"
+
+["0x140782ea0"]
+statement = "Starts a rotation spin, which 0x140782f40 then evaluates."
+proof = "The comment of the earlier code's rotation course; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140782f40"]
+statement = """Works out a spinning unit's rotation: the yaw it started at plus 0.001·spin radians \
+for each millisecond it has turned, from `offset` ms before the command's time up to \
+`flight_time`, wrapped to [−π, π) as v − ⌊(v + π)/2π⌋·2π. The pitch and roll stay as they \
+were, and the unit then keeps facing where the spin ended."""
+proof = "The comments of the earlier code's rotation course and its spin evaluation."
+grade = "fairly sure"
+
+["0x1401c9770"]
+statement = "The 16-bit float form of a rotation spin's `spin` rate."
+proof = "The packet schema's comment on `SetRotationSpinCommand`; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140715c00"]
+statement = """Uses a rotation spin's `blend`, which only smooths how the client draws the turn \
+and does not change where the unit faces."""
+proof = "The packet schema's comment on `SetRotationSpinCommand`; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1407bbc40"]
+statement = """Plans a forced move's path, such as a knockback's, with the client's own \
+collision-aware planner, which 0x1407bbf40 turns into position keys; the client uploads them as \
+`SetPositionKeys` and `SetStateKeys` among its other commands (0x14039fff0)."""
+proof = "The comment of the earlier code's movement handling: the planner is at game +0x6fc0."
+grade = "fairly sure"
+
+["0x1407bbf40"]
+statement = """Builds the position keys of a planned forced move, spaced so that the line between \
+two keys is the path: a knockback 20 m back over 1,000 ms that peaks 5 m up halfway has 11 \
+keys."""
+proof = """The comments of the earlier code's movement handling and course sampling, and its test \
+of a knockback's keys."""
+grade = "fairly sure"
+
+["0x14057a2c0"]
+statement = """The timer that uploads the player's movement commands; a message's own `time` is \
+the client's clock when it sent it, and each key's time is on the same clock. A forced move is \
+uploaded while it is still flying."""
+proof = """The comment of the earlier code's movement handling. A Tactical Retreat in a live login \
+was sent at 103361 on the client's clock with keys from 103259 to 103509."""
+grade = "fairly sure"
+
+["0x14079ab90"]
+statement = """The client's fit of server time to local time, through which it reads the keys of \
+a `ServerEntityCommand` or `ServerEntityCreate` (0x14057a830)."""
+proof = "The comments of the earlier code's movement handling and create message."
+grade = "fairly sure"
+
+["0x140783690"]
+statement = """Samples a type 0 key course: between two keys the unit is on the straight line \
+between them."""
+proof = "The comment of the earlier code's course following; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140398360"]
+name = "CheckSprintInput"
+statement = """Checks the sprint input each frame, from the player movement tick 0x1403a25c0. \
+The input ids it checks are InputAction.tbl ids: 0x18 to 0x1D are the moves, 0x21 is \
+SprintModifier."""
+proof = """The input check is vtable slot 200 on +0x7588. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403980a0"]
+name = "StartSprint"
+statement = """Starts a sprint. Out of combat it returns silently unless the player.moveSpeed \
+setting is Run (1); with the default, Sprint (2), the player is meant to sprint at all times \
+out of combat, under "Sprint - Tier 2" (Spell4 80529). In combat it picks spell 1316 \
+(GameFormula row 415; row 1227 out of combat), checks the cast, then sends 0x017E with 1."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403981c0"]
+name = "StopSprint"
+statement = """Stops a sprint, sending 0x017E with 0."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14093ddc0"]
+name = "RegisterMoveSpeedSetting"
+statement = """Registers the player.moveSpeed setting, default 2. CodeEnumMoveSpeed is Walk \
+0, Run 1, Sprint 2. Its change callback is 0x1404dafb0."""
+proof = """The setting's value slots are at 0x140c45df0, filled at run time. The earlier \
+notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1404dafb0"]
+name = "HandleMoveSpeedSettingChange"
+statement = """Runs when the player.moveSpeed setting changes: sends 0x063B with the new \
+value and raises the Lua event PlayerMovementSpeedUpdate."""
+proof = """Registered as the setting's change callback by 0x14093ddc0. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14007d010"]
+name = "WriteSingle32BitValue"
+statement = """Writes one 32-bit value. It is the writer of 0x063B \
+ClientPlayerMovementSpeedUpdate (the player.moveSpeed setting) and of 0x0248 \
+ClientCombatLogDisableOthers, and the chat format writer for types 1 (Alien), 7 (Profanity) \
+and 11 (Loot), so their seed is 32 bits."""
+proof = """ADD RAX,0x20 at 0x14007d082. Registration shares it between 0x063B and 0x0248. The \
+format writer table at 0x140c1ec30 maps types 1, 7 and 11 to it; the reader table at \
+0x140c1ec90 maps them to 0x14007ab50 (MOV R8D,0x20)."""
+grade = "fairly sure"
+
+["0x1403b67e0"]
+name = "HandleInstanceSettings"
+statement = """Handles 0x00F1 ServerInstanceSettings. It sends 0x00D5, then 0x063B with the \
+current player.moveSpeed setting."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403a25c0"]
+name = "UpdatePlayerMovement"
+statement = """The player movement tick, run each frame once loading is done. It checks the \
+sprint input (0x140398360) and reads the player.moveSpeed setting; what it does with Walk \
+was not decoded. At a tick's end it may send ClientFallingDamage (0x00FB) and \
+ClientFellThroughWorld (0x00FC) through 0x1403f4900, and it reports where a spin ended with \
+its next SetRotationCommand."""
+proof = """Reads player.moveSpeed at 0x1403a43d3 and 0x1403a4413. Sends 0x00FB at 0x1403a62f1 \
+and 0x00FC at 0x1403a5f15. The loading screen's update 0x1400344d0 sends ClientEnteredWorld \
+from 0x1403e8000, and the tick runs only after it. The earlier notes; the instructions were \
+not re-read."""
+grade = "fairly sure"
+
+["0x1400896f0"]
+name = "WriteClientFallingDamage"
+statement = """Writes 0x00FB ClientFallingDamage: one 32-bit float, how hard the player \
+landed, which the client turns into no damage itself. The movement tick sends it at the end \
+of a tick whose summed impact severity is above 0, unless the controlled unit is a ghost \
+(unit type 0x17). 1.0 is a landing at the lethal speed, and the sum is not clamped."""
+proof = """Registered at 0x140070878; MOVSS XMM1,[RDX] then JMP 0x14006bd80. The call is at \
+0x1403a62f1 in 0x1403a25c0, through 0x1403f4900; the summed severity is the tick state's \
++0x90, added to at 0x1407bab32. Recordings hold 6AF89440 (4.6553), 3A7DF83D, E2132C3D, \
+8797C03C and 4FE73A3D."""
+grade = "fairly sure"
+
+["0x1407ba940"]
+statement = """Handles a collision of the player during the movement tick: for each one it \
+adds pow((velocity lost - lo) / (hi - lo), 2) to the tick's impact severity, which \
+ClientFallingDamage carries. What else it does was not recorded."""
+proof = """The addition is at 0x1407bab32. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x14008b880"]
+name = "WriteClientFellThroughWorld"
+statement = """Writes 0x00FC ClientFellThroughWorld: one bit, 1 when no solid geometry was \
+found above the player (0 when some was and the player was put on it), then x, y and z as \
+32-bit floats; 97 bits in 13 bytes. The movement tick sends it once when the controller \
+falls below the floor less 1.0 less its body height; y is that height, x and z the unit's. \
+ServerPlayerChanged (0x019B) arms it again, as does ServerEntityDeathState (0x088C) for the \
+controlled unit when it is not dead; the client waits for no reply."""
+proof = """Registered at 0x14007155c. The call is at 0x1403a5f15 in 0x1403a25c0, behind the \
+one-shot flag at game +0x1B80, re-armed through 0x1403b5ad0 and 0x1403db870. A recorded \
+message, 4D52778BBB600B89BB74778901, reads as 1, then (-6005.1436, -1069.5114, \
+-1501.8239)."""
+grade = "fairly sure"
+
+["0x1403b5ad0"]
+statement = """Reached from ServerPlayerChanged (0x019B). It arms ClientFellThroughWorld \
+again, and marks that the client holds a unit of its own; while it holds none the client \
+drops a ServerTutorial."""
+proof = """It re-arms the one-shot flag at game +0x1B80. The tutorial drop is at \
+0x140437a10, whose own-unit state ServerChangeWorld's 0x1403b6de0 clears and this sets. The \
+earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403db870"]
+statement = """Reached from ServerEntityDeathState (0x088C) for the controlled unit when it \
+is not dead: it arms ClientFellThroughWorld again."""
+proof = """It re-arms the one-shot flag at game +0x1B80. The earlier notes; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+# Player info and the name cache
+
+["0x1400a2990"]
+name = "WriteClientPlayerInfoRequest"
+statement = """Writes 0x0597 ClientPlayerInfoRequest: a 4-bit request type, then an identity (written \
+by 0x140085170: a 14-bit realm and a 64-bit id)."""
+proof = """The bit-count constant and the call read in the function's disassembly; it is the writer \
+in the 0x0597 registration."""
+grade = "fairly sure"
+
+["0x140084d40"]
+name = "ClientPlayerInfoRequestSize"
+statement = """Gives the size of 0x0597 ClientPlayerInfoRequest, 82 bits; it writes nothing."""
+proof = """It is the R9 argument of the 0x0597 registration call to 0x14006c290, which is not the \
+writer there."""
+grade = "fairly sure"
+
+["0x1400a2eb0"]
+name = "ReadPlayerInfoBasic"
+statement = """Reads 0x0598, the basic player info: a 3-bit result code, a 14-bit realm, a 64-bit id, a \
+16-bit character count and that many raw UTF-16 characters of the name (the client's buffer holds \
+32), then a 14-bit faction."""
+proof = """The bit-count constants and the raw read read in order in the function's disassembly."""
+grade = "fairly sure"
+
+["0x1400a2f90"]
+name = "ReadPlayerInfoFull"
+statement = """Reads 0x0599, the full player info: the basic layout of 0x0598, then a 1-bit flag, a \
+3-bit path, a 14-bit class, a 32-bit level, a second 1-bit flag and a 32-bit float of days since \
+last online. A character friend's Lua table gives its class and path only when the first flag is \
+set, and an `fLastOnline` of 0 exactly when the second is clear (0x1405dab80)."""
+proof = """The bit-count constants read in order in the function's disassembly; the friend's flag \
+fields at +0xf4 and +0xf8, read in 0x1405dab80."""
+grade = "fairly sure"
+
+["0x1403f3b50"]
+name = "HandlePlayerInfoBasic"
+statement = """Handles 0x0598, the basic player info: it caches the name (0x1403f8590) only when the \
+result code is 0, then runs the pending name lookups' callbacks. The in-game screen handler's case \
+for 0x0598 at 0x1403ec793 calls it."""
+proof = """The in-game screen handler's jump table entry for 0x0598, whose case at 0x1403ec793 calls \
+this function; the result code test and the cache call read in its disassembly."""
+grade = "fairly sure"
+
+["0x1403f3d30"]
+name = "HandlePlayerInfoFull"
+statement = """Handles 0x0599, the full player info: it runs the basic handler's code first, then \
+completes the pending friend, rival and neighbour requests. The in-game screen handler's case for \
+0x0599 at 0x1403ec7a5 calls it."""
+proof = """The in-game screen handler's jump table entry for 0x0599, whose case at 0x1403ec7a5 calls \
+this function."""
+grade = "fairly sure"
+
+["0x1403f82f0"]
+name = "LookUpPlayerName"
+statement = """Looks up a player's name, taking the game state, a request type, an identity, an out \
+buffer of 0x21 characters, a key pair and a callback. When the name is cached it returns 1 and the \
+name; otherwise it queues a pending lookup and sends 0x0597, unless one is already pending for that \
+identity. The callback gets the owner, the result code, the identity and a user value."""
+proof = """The function's disassembly: the pending list at game state +0x6808. About 27 callers, \
+each passing the request type as a literal in EDX."""
+grade = "fairly sure"
+
+["0x1403f8660"]
+name = "RequestPlayerInfo"
+statement = """Asks a player's info with 0x0597 without checking the name cache; its pending requests \
+are completed only by the full answer, 0x0599. One reading has it used for request types 2 and 3 \
+(the friends list, 0x1405df4e0 and kin) and 4 (housing neighbours, 0x1404ba660 and 0x1404bb790); \
+another for types 2, 3 and 1, the friend's requests, beside its realm-name lookup 0x1403f87b0."""
+proof = """The function's disassembly: the pending list at game state +0x6810. The two type lists \
+come from two separate readings of its callers in the earlier notes, which do not agree."""
+grade = "guess"
+
+["0x1405df4e0"]
+name = "RequestFriendPlayerInfo"
+statement = """Asks a character friend's player info again, with 0x0597 request type 2, through \
+0x1403f8660. The handler of 0x03CA, a character friend's last online (0x1405e01d0), calls it before \
+it reads the days."""
+proof = """Its call to 0x1403f8660 with type 2; the call from 0x1405e01d0 before the float test."""
+grade = "fairly sure"
+
+["0x1404ba660"]
+statement = """One of the two housing neighbour functions that ask a neighbour's player info with \
+0x0597 request type 4, through 0x1403f8660; the other is 0x1404bb790."""
+proof = """Its call to 0x1403f8660 with type 4. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1404bb790"]
+statement = """One of the two housing neighbour functions that ask a neighbour's player info with \
+0x0597 request type 4, through 0x1403f8660; the other is 0x1404ba660."""
+proof = """Its call to 0x1403f8660 with type 4. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1403f8590"]
+name = "CachePlayerName"
+statement = """Inserts a name into the client's player name cache, keyed by realm (u32) and id (u64). \
+It never overwrites a cached name, and nothing expires."""
+proof = """The function's disassembly: the map at game state +0x67e8."""
+grade = "fairly sure"
+
+["0x1403e1400"]
+statement = """Builds the player name cache's map, among other game state. It also sets the costume \
+index to 0xFFFFFFFF, meaning none, which Lua is given as a signed number, -1."""
+proof = """The map at game state +0x67e8 built here; Lua pushes the costume index with `CVTDQ2PD`, a \
+signed conversion."""
+grade = "fairly sure"
+
+["0x1403e3350"]
+statement = """Destroys the player name cache's map, the teardown of what 0x1403e1400 builds."""
+proof = """The map at game state +0x67e8 destroyed here. The earlier notes; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x140400e10"]
+name = "BuildPlayerInfoFull"
+statement = """Builds the client's full player info object from 0x0599. A days-since-last-online of 0 or \
+more is stored as time 0, no time; a negative one becomes the time now plus that many days, \
+through 0x1401e82f0."""
+proof = """The sign test and the call to 0x1401e82f0 read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x1401e82f0"]
+name = "SetTimeFromDays"
+statement = """Sets a time to now plus a float number of days, in 100 ns ticks (864000000000 a day), \
+so a negative number is a time in the past; 0x1401e83a0 reads it back as days from now. The \
+callers keep 0.0 as time 0, no time, which the account friend built for Lua (0x1405dc440) gives as \
+an `fLastOnline` of 0 and `FriendsList.lua` shows as online. A positive number is a time to come, \
+which that account friend shows as 1e-6 days, \"1 Min\"."""
+proof = """The days arrive in XMM1 and are multiplied by 864e9 ticks. The account friend's Lua table \
+in 0x1405dc440 and `HelperConvertToTime` in `FriendsList.lua`."""
+grade = "fairly sure"
+
+["0x1406b33f0"]
+statement = """With 0x14062a080, gives Lua a mail's `strSenderName`: it looks the sender up with \
+request type 0, shows text 108 \"Unknown\" until the name is cached, and the lookup's callback \
+raises `RefreshMail` only when the result code is 0. Listed first of the pair, it is likely the \
+builder of the mail info and 0x14062a080 the callback."""
+proof = """The earlier notes; the instructions were not re-read, and they do not say which of the \
+two addresses is which."""
+grade = "guess"
+
+["0x14062a080"]
+statement = """With 0x1406b33f0, gives Lua a mail's `strSenderName`: the sender is looked up with \
+request type 0, text 108 \"Unknown\" is shown until the name is cached, and the lookup's callback \
+raises `RefreshMail` only when the result code is 0. Listed second of the pair, it is likely the \
+callback."""
+proof = """The earlier notes; the instructions were not re-read, and they do not say which of the \
+two addresses is which."""
+grade = "guess"
+
+# Prerequisites
+
+["0x1404a1ca0"]
+name = "EvaluatePrerequisite"
+statement = "Evaluates a prerequisite."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1404a2100"]
+name = "EvaluatePrerequisiteClause"
+statement = """Evaluates one prerequisite clause, by a switch over its type. A clause has a \
+type, a comparison, an `objectId` and a `value`, and checks a subject unit A, sometimes against \
+another unit B."""
+proof = """The earlier notes: the comparison is at clause +4, `objectId` at +8 and `value` at \
++0xc; the jump table is at 0x1404a4848. Ghidra's case labels on this switch are wrong: read the \
+jump table from the file, then dump the case with DumpRange.java. The instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1404a4848"]
+statement = """The jump table of the prerequisite clause switch 0x1404a2100, indexed by clause \
+type minus 1; each entry is a 4-byte offset from the image base. Type 50, index 49, is the case \
+at 0x1404a2ab4."""
+proof = """The earlier notes; read from the file with the jump-table script \
+(`jump_table.py --table 1404a4848 <type - 1>`), since Ghidra's case labels on this switch are \
+wrong."""
+grade = "fairly sure"
+
+["0x1404a2090"]
+name = "CompareIntegers"
+statement = """The prerequisite compare helper for integers. Comparison codes: 1 `==`, 2 `!=`, \
+3 `>`, 4 `>=`, 5 `<`, 6 `<=`; 0 names no comparison."""
+proof = """The earlier notes; the instructions were not re-read. Prerequisite table: rows 391, \
+624, 6863 and 76 are level checks with codes 3, 4, 5 and 6; row 421's three checks have code 0; \
+920 level checks and 197 vital checks have codes 3 to 6."""
+grade = "fairly sure"
+
+["0x1404a2010"]
+name = "CompareFloats"
+statement = """The prerequisite compare helper for floats, with the integer helper's codes: 1 \
+`==`, 2 `!=`, 3 `>`, 4 `>=`, 5 `<`, 6 `<=`."""
+proof = """The earlier notes; the instructions were not re-read. Prerequisite table: rows 5985, \
+7174 and 7168 are vital checks on vital 6 with codes 3, 4 and 5."""
+grade = "fairly sure"
+
+["0x1404699f0"]
+name = "HasBuffFromCaster"
+statement = """Prerequisite type 50: unit A has a buff of the Spell4 named by `value` from caster \
+B. `objectId` is ignored. Comparison 1 is "has it", 2 "has not"."""
+proof = """The earlier notes: the switch's case for type 50 is 0x1404a2ab4, which calls it; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1404a4f60"]
+name = "CountSpellStacks"
+statement = """Prerequisite type 59: the stack count of the Spell4 named by `objectId` on unit A, \
+from any caster, compared with `value`."""
+proof = """The earlier notes: the switch's case for type 59 is 0x1404a2c05, which calls it; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140469a70"]
+name = "HasSpellGroupBuffFromCaster"
+statement = """Prerequisite type 130: unit A has a buff from caster B whose spell is in the spell \
+group `objectId` names (Spell4GroupList). `value` is ignored."""
+proof = """The earlier notes: the switch's case for type 130 is 0x1404a2bd8, which calls it; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1404a4e30"]
+name = "CompareVitalPercent"
+statement = """Prerequisite type 71: vital `objectId` of unit A as a percent of its maximum, \
+compared with `value`. Vitals: 1 Health, 3 Shield, 6 to 11 resources, 15 Focus."""
+proof = """The earlier notes: the switch's case for type 71 is 0x1404a23ad, which calls it; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1404a2523"]
+statement = """The prerequisite switch's inline case for type 56: unit A is under crowd-control \
+state `value` (0 Stun, 8 Knockdown, 20 Tether), for states below 0x1c."""
+proof = """The earlier notes: it reads the qword at A +0x2d8 + `value` * 0x10; the instructions \
+were not re-read."""
+grade = "fairly sure"
+
+["0x1404a34f6"]
+statement = """The prerequisite switch's case for type 240: the current world's `World.type` \
+equals `objectId`."""
+proof = """The earlier notes: it calls vtable slot +0x2e8 of the evaluator's context with the \
+comparison and `objectId`; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1404a44d9"]
+statement = """The prerequisite switch's case for type 245: the player has unlocked the dye \
+`objectId` names (DyeColorRamp)."""
+proof = """The earlier notes: it calls the context's vtable slot +0x698; the instructions were \
+not re-read."""
+grade = "fairly sure"
+
+# Quests and unit visibility
+
+["0x1405fb350"]
+name = "HandleServerQuestInit"
+statement = """Handles 0x035F ServerQuestInit. It copies each active quest's flags into the \
+quest's done mask as they are, never working the done bits out from the progress: 0x2 is the \
+tracked bit and 1 << (index + 2) the bit of each finished objective at index 0 to 5. The \
+client keeps quest messages whenever they arrive, as do 0x1405fb670 and 0x1405fb830."""
+proof = """The comments of the earlier code's quest flags and world entry: the copy into +0x44 \
+is at 0x1405fb5b2 to 0x1405fb5b8."""
+grade = "fairly sure"
+
+["0x1405fb5b2"]
+statement = """The copy, from 0x1405fb5b2 to 0x1405fb5b8 in the `ServerQuestInit` handler \
+0x1405fb350, of a QuestActive entry's flags into the quest's done mask, unchanged."""
+proof = "The comment of the earlier code's quest flags: the mask is at +0x44."
+grade = "fairly sure"
+
+["0x1405fcb80"]
+statement = "Toggles an active quest's tracked bit, 0x2, which shows it in the quest tracker."
+proof = "The comment of the earlier code's tracked flag; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14049f3d0"]
+statement = """Prerequisite type 43: reads a quest's done mask to tell whether an objective is \
+done, and whether a sequential objective is available. A quest sent only its tracked bit leaves \
+every sequential objective behind a finished one unavailable after a login."""
+proof = """The comments of the earlier code's quest flags and activation creatures: Creature2 \
+`prerequisiteIdAnimState` 41818, 41828 and 41829 show the mines' prompts of quest 10518 only \
+while their objective is open, and quest 10518 at [5, 1, 0, 0, 0, 0] left the Bigger Sim-Mine \
+with no prompt."""
+grade = "fairly sure"
+
+["0x140612c7c"]
+statement = """The jump table of the quest Lua event handler 0x1406128b0, which builds the Lua \
+arguments with the letters i, s, U, b, o and Q. Type 2, a u32 unit id read by 0x14007ab50, is \
+taken as the 'U' case by its order among them."""
+proof = "The packet schema's comment on `LuaEventDataUnit`, which says the jump table was not read."
+grade = "guess"
+
+["0x14046c4d0"]
+name = "EvaluateUnitAnimStatePrerequisite"
+statement = """Evaluates a unit's Creature2 `prerequisiteIdAnimState`. A unit that fails it is \
+hidden and offers no prompt."""
+proof = """The earlier notes: the prerequisite is read from creature +0x9c (raw offset 0x148), \
+and a hidden unit has unit +0x1900 == 1; the instructions were not re-read. Creature2 table: \
+4,309 creatures carry one, and 303 of those include a BaseFaction clause."""
+grade = "fairly sure"
+
+["0x140479560"]
+name = "BuildUnitActivationEntries"
+statement = """Builds a unit's activation entries, its interaction list. It returns early for a \
+hidden unit, so the unit gets no F prompt. Entry 26 is Collect, set when the Creature2 \
+`CreationTypeEnum` is 8; 39 is Interact; 49 (0x31) is Vendor, shown only when create flag 0x04 \
+is set; 50 is Spell."""
+proof = """The earlier notes: the early return is at 0x140479706; the entries live at unit \
++0x1914 + k × 0x48, named by the template at 0x140c48150 (wide name at entry +0x38); the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140c48150"]
+statement = """The template that names a unit's activation entries: 26 Collect, 39 Interact, 49 \
+Vendor and 50 Spell."""
+proof = """The earlier notes: each entry's wide name is at entry +0x38; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x1403971c0"]
+name = "RaiseInteractiveUnitChanged"
+statement = "Raises the Lua event `InteractiveUnitChanged`, which shows the F prompt."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14049c6a0"]
+name = "CheckBaseFactionPrerequisite"
+statement = """The prerequisite BaseFaction clause: compares the player's faction with the \
+clause's value. 166 is Dominion and 167 Exile."""
+proof = """The earlier notes: it reads player +0x110; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14049f5b0"]
+name = "CheckQuestChecklistPrerequisite"
+statement = """Prerequisite type 94, the quest checklist clause. With 0x140551730 it reads the \
+unit's checklist index from the create message's Simple model."""
+proof = """The earlier notes, which give the pair 0x14049f5b0 → 0x140551730 one meaning; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140551730"]
+statement = """Called by the type 94 prerequisite clause 0x14049f5b0, which reads the unit's \
+quest checklist index from the create message's Simple model."""
+proof = """The earlier notes, which give the pair 0x14049f5b0 → 0x140551730 one meaning without \
+saying which part this function does; the instructions were not re-read."""
+grade = "guess"
+
+["0x14008f100"]
+name = "ReadQuestObjectiveUpdate"
+statement = """The reader of 0x0361 `ServerQuestObjectiveUpdate`: a 15-bit quest id, a 32-bit \
+objective index and a 32-bit progress."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405fb830"]
+name = "HandleQuestObjectiveUpdate"
+statement = """Handles 0x0361 `ServerQuestObjectiveUpdate` through 0x1406115a0. It takes the \
+message whenever it arrives."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1406115a0"]
+name = "StoreObjectiveProgress"
+statement = """Stores 0x0361's 32-bit value as the objective's raw progress, as sent, and sets or \
+clears the objective's done bit in the quest as the progress reaches its count."""
+proof = """The earlier notes: the progress is at [obj+0x1c]; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405517a0"]
+name = "CountObjectiveProgress"
+statement = """Picks how an objective's progress counts. For objective types 10, 13, 14 and 18 \
+the progress is a bit mask and the client counts its set bits (0x140575a90); for every other \
+type it reads the raw value (0x140575a80)."""
+proof = """The earlier notes: the bit count is the objective's vtable slot +0x48, the raw value \
+slot +0x40; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140575a80"]
+name = "ReadObjectiveProgressValue"
+statement = """Returns an objective's raw progress, the count for every objective type but 10, \
+13, 14 and 18."""
+proof = "The earlier notes: it is the objective's vtable slot +0x40; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140575a90"]
+name = "CountObjectiveProgressBits"
+statement = """Counts the set bits of an objective's progress, the count for objective types 10, \
+13, 14 and 18. `Quest:GetVisibleObjectiveData` shows this count out of the objective's count."""
+proof = "The earlier notes: it is the objective's vtable slot +0x48, a popcount; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140575ae0"]
+name = "TestObjectiveProgressBit"
+statement = "Tests one bit of an objective's progress."
+proof = "The earlier notes: it is the objective's vtable slot +0x50; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14079d700"]
+name = "WriteObjectiveProgress"
+statement = """Writes an objective's progress from `ServerQuestObjectiveUpdate` or a \
+`QuestActive` entry. It takes any value, up or down, with no clamp; the client never counts \
+held items itself."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1406652e0"]
+name = "QuestGetVisibleObjectiveData"
+statement = """The Lua `Quest:GetVisibleObjectiveData`. With an objective count of 2 or more and \
+objective flag 0x400 clear, its progress text (0x140611490) shows a percent, \
+trunc(progress * (100.0 / count)), so the progress it is sent is a raw count, never a percent."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140611490"]
+name = "BuildObjectiveProgressText"
+statement = """Builds an objective's progress text for `Quest:GetVisibleObjectiveData`: with a \
+count of 2 or more and objective flag 0x400 clear, a percent, \
+trunc(progress * (100.0 / count))."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140551840"]
+name = "GetObjectiveCount"
+statement = "Returns an objective's count, which `Quest:DisplayObjectiveProgressBar` reads."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1406691b0"]
+name = "QuestDisplayObjectiveProgressBar"
+statement = """The Lua `Quest:DisplayObjectiveProgressBar(index)`: true when the objective's \
+count (0x140551840) is 2 or more and its flag 0x400 is clear."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405fbc40"]
+name = "GetQuestState"
+statement = """Returns a quest's state, given the quest manager and the quest id. An active quest \
+at state 1 reads as 2 (achieved) when every objective without flag 0x20 (optional) has its done \
+bit, index + 2, set in the quest's mask; a required objective past index 5 keeps it at 1. A \
+quest not active reads 3 when it is in the completed set, else the state another map holds, \
+else 0."""
+proof = """The earlier notes: the mask is at quest +0x6c; the instructions were not re-read. \
+Quest2 has six objective columns, so no quest in the tables has an objective past index 5."""
+grade = "fairly sure"
+
+["0x1405fb670"]
+statement = """A quest message handler that reads the quest's state before it applies an \
+objective update, so an update that arrives while the quest is still achieved replays the \
+achieved sounds. It takes the message whenever it arrives."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405fbdc0"]
+name = "SetQuestState"
+statement = """Sets a quest's state, with a switch over the new state, 0 to 7. A move from \
+achieved (2) back to accepted (1) runs with no assert."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14039c8a0"]
+name = "UseQuestItem"
+statement = """Uses an item that offers a quest. When the quest can be taken and its flags have \
+0x800, it sends ClientQuestAccept (0x035B) with the item and the quest id, or ClientQuestRetry \
+(0x0365) when the quest's state is 4; without the flag it opens the quest's dialog. A quest \
+already at state 1 to 3 shows a floater."""
+proof = """The earlier notes: the quest is read at item record +0x1b0 and its flags at +0xc; \
+the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405a8b30"]
+name = "TestQuestAnimHidden"
+statement = """The Creature2 quest-anim hide test: `questAnimStateId` is a quest id and \
+`questAnimObjectiveIndex` an objective index, -1 for none. The unit is hidden, with no prompt, \
+unless the quest is at state 1; with an index, the objective must also be open and in order \
+(0x140550c00), and for the bit-count types the unit hides once bit (checklist index & 31) is set \
+(0x140611680). For objective type 32 it keeps no memory of a used unit, and the client does not \
+take a unit away when it is collected."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140550c00"]
+name = "IsObjectiveOpenInOrder"
+statement = """Tells whether a quest objective is open and in order, which the quest-anim hide \
+test 0x1405a8b30 needs for a unit with an objective index."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140611680"]
+name = "TestChecklistBit"
+statement = """Tests bit (checklist index & 31) of an objective's progress, for the bit-count \
+objective types; the quest-anim hide test 0x1405a8b30 hides the unit once it is set."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14046c580"]
+name = "PickActivationSpell"
+statement = """Picks a unit's activation spell: the first of Creature2 \
+`spell4IdActivate00..03` whose prerequisite is 0 or passes, else the spell GameFormula row \
+0x19e names."""
+proof = """The earlier notes: the fallback is GameFormula 0x19e's +4; the instructions were not \
+re-read."""
+grade = "fairly sure"
+
+["0x14039d4a0"]
+name = "ActivateUnit"
+statement = """The F key's activation of a unit: sends ClientActivateUnitCast (0x0097) through \
+0x14039c430 when the unit has an activation spell (0x14046c580), else ClientActivateUnit \
+(0x00B3)."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14039c430"]
+name = "SendActivateUnitCast"
+statement = """Sends ClientActivateUnitCast (0x0097), for a unit the F key activates with a \
+spell."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1404165e0"]
+name = "ItemGetVirtualItems"
+statement = """The Lua `Item.GetVirtualItems`. Its quest branch (0x1405fcd70) lists the quests' \
+virtual items, shown under the bag's "Show Quest Items"."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405fcd70"]
+name = "ListQuestVirtualItems"
+statement = """The quest branch of `Item.GetVirtualItems`: each open type-32 objective with a \
+count becomes {VirtualItem id, raw progress, quest id}. It needs no message but \
+`ServerQuestObjectiveUpdate` (0x0361), or `QuestActive` at login."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+# Signed and unsigned fields
+
+["0x140450970"]
+statement = """Computes the store order's three UTC offsets as -(Bias + StandardBias), so \
+they are signed."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14069a980"]
+statement = """Guild bank money: a deposit sends the negated amount, so the field is \
+signed."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14040aa40"]
+statement = """Prints the random roll's result, minimum and maximum with %d, so all three are \
+signed."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14053f6a5"]
+statement = """An unsigned compare of an effect's time remaining in the 0x0812 handler \
+(ServerSpellUpdateEffectDuration); 0xFFFFFFFF means the effect never ends. One source says \
+EffectInfo's time remaining is compared unsigned too; another says that was carried over \
+from 0x0812 and EffectInfo's own consumer was not read."""
+proof = """The earlier notes, and code comments that disagree on whether EffectInfo's \
+consumer was read; the instructions were not re-read."""
+grade = "guess"
+
+# Slash commands
+
+["0x14011b780"]
+name = "DispatchSlashCommand"
+statement = "Finds the handler of a typed slash command by the command's text, and runs it."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1404050c0"]
+name = "RegisterChatSlashCommands"
+statement = "Registers the chat slash commands, such as `/chjoin` and `/chleave`."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14063bdc0"]
+name = "HandleJoinCommand"
+statement = """The `/join` command (text 475086, "join"): asks to join a named player's group, \
+sending 0x0422 ClientGroupRequestJoin with the name and a realm, as the player menu's Join \
+button does through `GroupLib.Join`. It joins no chat channel."""
+proof = """The earlier notes: the send is at 0x14063bf26. The stopper session of the social \
+recording holds `/join harvest` twice, each sent as ClientGroupRequestJoin for a player named \
+"harvest" with no realm. `ContextMenuPlayer.lua` line 718 calls `GroupLib.Join`."""
+grade = "fairly sure"
+
+["0x140406040"]
+name = "HandleChatJoinCommand"
+statement = "The `/chjoin` command: joins a custom chat channel by sending 0x01BA ClientChatJoin."
+proof = """The earlier notes. The stopper session of the instances-and-store recording holds \
+`/chjoin harvest`, a custom channel (type 18) with no password, sent as ClientChatJoin."""
+grade = "fairly sure"
+
+["0x140406390"]
+name = "HandleChatLeaveCommand"
+statement = """The `/chleave` command (text 215884): sends 0x01BE ClientChatLeave for the channel \
+its first argument names. It looks the argument up among the channels' command strings, not \
+their names; a custom channel's command is its slot number, so `/chleave harvest` finds nothing \
+and shows "That channel does not exist" (ChatResult 1), while `/chleave 1` sends it."""
+proof = """The earlier notes: map lookup 0x140404300, filled by 0x140407e40. ChatChannel row 18 \
+gives the custom channel's command as "$1c". In the stopper session of the instances-and-store \
+recording, a `/chleave harvest` typed after `/chjoin harvest` sent no ClientChatLeave, and later \
+lines still went to the channel."""
+grade = "fairly sure"
+
+["0x140404300"]
+name = "FindChatChannelByCommand"
+statement = """Looks a chat channel up by its command string in the map of the channels' \
+commands; `/chleave` finds its channel through it, never by the channel's name."""
+proof = """The earlier notes, which call it the map lookup of `/chleave` (0x140406390); the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140407e40"]
+statement = "Fills the map of chat channels' command strings that `/chleave` looks its argument up in."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140407990"]
+statement = """One of the two places, with 0x140407600, where the client picks a custom chat \
+channel's slot number itself when `ServerChatJoin` sends order 0; that number becomes the \
+channel's command."""
+proof = """The earlier notes, which cite both addresses together without saying which does \
+what; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140407600"]
+statement = """One of the two places, with 0x140407990, where the client picks a custom chat \
+channel's slot number itself when `ServerChatJoin` sends order 0; that number becomes the \
+channel's command."""
+proof = """The earlier notes, which cite both addresses together without saying which does \
+what; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140692bc0"]
+name = "ChatChannelLeave"
+statement = """The Lua method `ChatChannel:Leave`, behind the chat window's leave button: sends \
+0x01BE ClientChatLeave for its channel."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1404039f0"]
+name = "HandleServerChatJoin"
+statement = "Handles 0x01BC, which tells the client of a chat channel it joined."
+proof = """The earlier notes: reader 0x140086ee0. The instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140086ee0"]
+name = "ReadServerChatJoin"
+statement = "Reads 0x01BC, `ServerChatJoin`, for its handler 0x1404039f0."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140409b60"]
+name = "HandleWhoCommand"
+statement = """The `/who` command: reads `<parameter> [and|or <parameter>]...` from the words split \
+at spaces. A word after a parameter that is neither "and" nor "or" posts an error to the System \
+channel and sends nothing, so `/who Gob Watcher` sends no 0x0959 ClientWhoRequest, while \
+`/who "Gob Watcher"` does. The client keeps no cooldown of its own between who requests."""
+proof = """The earlier notes: the error is posted at 0x140409e69. In the stopper session of the \
+social recording, `/who Gob Watcher` sent nothing, `/who` alone sent ClientWhoRequest with no \
+parameters, and `/who "Gob watcher"` in the instances-and-store recording sent one quoted name \
+parameter."""
+grade = "fairly sure"
+
+# Spells and the global cooldown
+
+["0x14056880b"]
+statement = """Where the client copies a Spell4 row's `globalCooldownEnum` into its spell record. \
+The value decides whether casting the spell starts the global cooldown (0 or 1, when the spell \
+has a global cooldown time) and whether the spell waits for it (0 or 2, a press during it being \
+refused with `SpellGlobalCooldown`); the client keeps one global cooldown."""
+proof = """The comment of the earlier code's global cooldown type: the record field is +0x24, \
+started by `CMP [record+0x24],1; JA` at 0x14046b0ac in 0x14046afc0 and waited on by `TEST \
+[record+0x24],0xfffffffd; JNZ` at 0x1403b150e. Spell4 holds 28,695 rows of 0, 5,820 of 1, 1,862 \
+of 2 and 30,214 of 3."""
+grade = "fairly sure"
+
+["0x140398c61"]
+statement = """Skips restarting the client's own global cooldown for a press it queued. The client \
+sends a press during its global cooldown only when 500 ms or less is left \
+(`player.abilityQueueMax`), marks it with its result 317, Queued, and expects the server to \
+cast it when the global cooldown ends; with more left it refuses the press itself and sends \
+nothing."""
+proof = """The comment of the earlier code's spell press: 0x1403b14c0 returns result 317. The \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403ee2ec"]
+statement = """Where the client, at `ServerSpellEffectExecute` for a delayed forced move, moves its \
+own player itself while it holds movement control. An undelayed forced move starts at the go \
+(0x14053d680, 0x140718120, effect 0x1405d6c10)."""
+proof = "The comment of the earlier code's effect support check; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1405d6c44"]
+statement = """The forced move effect's test, from 0x1405d6c44 to 0x1405d6cdc, that the client \
+holds its player's movement control before it moves the player itself. It plans the path with \
+its own collision-aware planner and reports it as position and state keys."""
+proof = "The comment of the earlier code's effect support check; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x14057a830"]
+statement = """Reads the movement keys of a `ServerEntityCommand` or a `ServerEntityCreate` by \
+their distance from the message's `time`, through the client's fit of server time to local \
+time (0x14079ab90). It plays a server's keys unclamped."""
+proof = """The comments of the earlier code's movement and effect support check. A knockback a \
+server drove with its own keys launched the player about 4,000 m up in the instances-and-store \
+recording."""
+grade = "fairly sure"
+
+["0x14046afc0"]
+name = "StartGlobalCooldownOnPress"
+statement = """Starts the client's own global cooldown when it sends a `ClientCastSpell` press. The \
+client keeps one global cooldown, the type-0 entry of its cooldown list. Only a spell whose Spell4 \
+`globalCooldownEnum` is 0 or 1 and that has a global cooldown time starts it; the test is at \
+0x14046b0ac."""
+proof = """`CMP [record+0x24],1; JA` at 0x14046b0ac; the cooldown list at player +0x1608. Record \
++0x24 is copied from the Spell4 column at 0x14056880b. Spell4 rows by enum value: 28,695 for 0, \
+5,820 for 1 (interrupts and escapes, whose tooltips say the ability ignores the global cooldown), \
+1,862 for 2 (channels and consumables), 30,214 for 3."""
+grade = "fairly sure"
+
+["0x1403b14c0"]
+name = "CheckSpellPress"
+statement = """The client's check of a spell press. A spell whose `globalCooldownEnum` is 0 or 2 waits \
+for the global cooldown, tested at 0x1403b150e. With 500 ms or less of it left \
+(`player.abilityQueueMax`) it returns 317 `Queued` instead of 14 and sends the press, without \
+restarting its own global cooldown for it; with more left the press is refused and never sent."""
+proof = """`TEST [record+0x24],0xfffffffd; JNZ` at 0x1403b150e; the restart skipped at 0x140398c61 \
+for a queued press."""
+grade = "fairly sure"
+
+["0x14046a3d0"]
+name = "SetGlobalCooldownFromServer"
+statement = """Sets the global cooldown from a type-0 `ServerSpellCooldownStart`, matched by the \
+type alone. When the message's spell id is not zero, it applies the player's cooldown modifiers \
+to the duration again."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405a5010"]
+name = "HandleServerSpellCastResult"
+statement = """Handles `ServerSpellCastResult`. For every result except 13 it clears the global \
+cooldown, by calling 0x14046aa00 with the player, 0 and 0."""
+proof = """The result test and the call read in the function's disassembly."""
+grade = "fairly sure"
+
+["0x14046aa00"]
+statement = """Called with the player, 0 and 0, it clears the global cooldown; the cast result \
+handler 0x1405a5010 calls it so."""
+proof = """The call from 0x1405a5010. The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14053fca0"]
+name = "InterruptStartingCast"
+statement = """Interrupts a cast that is starting. When the spell starts the global cooldown, by the \
+same `globalCooldownEnum` test, it clears it."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403c2c10"]
+name = "BuildCombatOptionsCasting"
+statement = """Builds the casting options that `ClientCombatOptions` carries. Value 8 is hold to \
+continue casting."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1405d9930"]
+name = "ExecuteModifySpellCooldown"
+statement = """Executes the ModifySpellCooldown effect (type 73), which the client has a class of its \
+own for. Its `dataBits00` to `dataBits03` are the selector, the id, the operation and a float."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14046b920"]
+name = "ApplyCooldownModifier"
+statement = """Applies one cooldown modifier (selector, id, operation, float) to each running \
+cooldown except type 3. Selectors 0 and 1 match two ids of the spell's record, 2 a test on the \
+spell, and 3 one of three ids of the spell. Operations: 0 multiplies but never lengthens, 1 \
+multiplies, 2 adds (clamped to 0 and 0x7fffffff), 3 sets."""
+proof = """Arguments (player, modifier); the cooldown list at player +0x1608. Selectors 0 and 1 \
+match the spell record's +0x70 fields +4 and +0, 2 a test through vtable +0x38 of the global at \
+0x140c65b70, 3 one of three ids at the spell's +0x38."""
+grade = "fairly sure"
+
+["0x14046a890"]
+name = "ApplyStoredCooldownModifiers"
+statement = """Applies the player's stored cooldown modifiers to a cooldown duration the server sends, \
+with the same selectors and operations as 0x14046b920. So a duration the server has already \
+shortened is shortened again."""
+proof = """Arguments (player, spell, duration); the modifier array at player +0x1610, its count at \
++0x1618."""
+grade = "fairly sure"
+
+["0x140482430"]
+statement = """The getter of a 32-bit unit value, slot 23 of the vtable at 0x140b66fd0; 0x140482200 is \
+its setter. It may be the shield bar's absorption, stat 22 of `ServerEntityStatUpdateInteger`: an \
+earlier reading took it so. The client has no handler for the Absorption effect (type 29), so the \
+absorbing is done by the server."""
+proof = """The value at +0x4c; slots 23 and 25 of the vtable at 0x140b66fd0. The earlier notes; the \
+instructions were not re-read."""
+grade = "guess"
+
+["0x140482200"]
+statement = """The setter of the 32-bit unit value that 0x140482430 gets, slot 25 of the vtable at \
+0x140b66fd0. It may be the shield bar's absorption, stat 22 of `ServerEntityStatUpdateInteger`: an \
+earlier reading took it so."""
+proof = """The value at +0x4c. The earlier notes; the instructions were not re-read."""
+grade = "guess"
+
+# Startup
+
+["0x14000ac90"]
+name = "StartClient"
+statement = """Client startup. It splits the command line and requires the first argument to \
+be /auth or -auth, followed by a non-empty second argument; otherwise it starts the old \
+launcher (0x1400112c0). So a launcher must pass only the arguments as the command line, with \
+no program path."""
+proof = """It splits with CommandLineToArgvW and tests argv[0] and argv[1]. The earlier notes; \
+the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400112c0"]
+name = "StartOldLauncher"
+statement = """Starts ..\\WildStar.exe, the old NCSoft launcher, passing /steam if the client \
+was given it. If that fails it shows "Failed to start WildStar.exe", then exits. Startup \
+calls it when the command line is not /auth, and after some startup errors."""
+proof = """Called from 0x14000ac90. The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400b1c20"]
+name = "HandleStsLoginReply"
+statement = """CNpStsConnectionManager's login reply handler. It finds the pending request \
+record for the reply; when no handler is registered for it, it deletes the record \
+(0x1400b1ed0) and then reads the freed record at 0x1400b1e21. That use after free is the \
+client's own: an access violation at 0x1400b1e21 when the game closes comes from it."""
+proof = """Slot 9 of vtable 0x140b560e0. The read at 0x1400b1e21 is of the freed record's \
++0x48. The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400b1ed0"]
+name = "DeletePendingRequest"
+statement = """Deletes one of CNpStsConnectionManager's pending request records. The login \
+reply handler 0x1400b1c20 calls it, then reads the freed record."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+# Telegraphs
+
+["0x140c649b0"]
+statement = """The global that holds the loaded TelegraphDamage table. No bit of a record's \
+`telegraphDamageFlags` filters which caster or target a telegraph hits: every read of it is display \
+code. Bits 0x20, 0x80, 0x400, 0x800, 0x8000, 0x10000 and 0x20000 are not read by the telegraph \
+code."""
+proof = """A record is 100 bytes: `telegraphDamageFlags` +0x44, `targetTypeFlags` +0x48, `phaseFlags` \
++0x4c, `prerequisiteIdCaster` +0x50, `displayFlags` +0x58, `displayGroup` +0x60. A whole-program \
+scan for a test of +0x44 found only display code."""
+grade = "fairly sure"
+
+["0x1402419e0"]
+name = "LoadTelegraphDamageTable"
+statement = """Loads the TelegraphDamage table into the global at 0x140c649b0."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140241c40"]
+name = "LookUpTelegraphDamage"
+statement = """Looks up a TelegraphDamage record by id, in the table at 0x140c649b0."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14055e180"]
+name = "BuildSpellTelegraphList"
+statement = """Builds a spell's list of TelegraphDamage records from its Spell4Telegraph rows."""
+proof = """The list at spell entry +0x60. The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140542d90"]
+name = "CanSpawnCastTelegraph"
+statement = """Decides at cast whether a telegraph spawns. Flag 0x40 or 0x100 makes none; otherwise \
+cast state 2 needs `displayFlags` bit 4, state 3 bit 8, and the caster must meet \
+`prerequisiteIdCaster`. So a 0x40 telegraph is never shown: it is for the server only."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x140546e60"]
+name = "SpawnCastTelegraph"
+statement = """Spawns a cast's telegraph. Flag 0x2000 times it from the cast's phase (`phaseFlags`); \
+0x4000 places it at the telegraph positions the server sent for the cast, keyed by telegraph and \
+unit id; else 0x1000 places one at each unit position the server sent, filtered by \
+`targetTypeFlags`; else `targetTypeFlags` places it: 1 the caster, 0 or 2 the primary target, 4 \
+each implicit target, 8 the field position. Flag 0x40000 picks the per-cast list."""
+proof = """The telegraph positions at cast +0x378, the unit positions at cast +0x358. The earlier \
+notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14054b1b0"]
+name = "UpdateAndDrawTelegraph"
+statement = """Updates and draws a telegraph each frame. Flag 0x100 gives it no end time; 0x4000 \
+skips the record's position offset; 0x800000 and 0x2000000 control the ramp and the fill; \
+0x1000000 draws no wave."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14054d170"]
+name = "BuildTelegraphShape"
+statement = """Builds a telegraph's shape; 0x14054da10 ramps its parameters. Between the two, a \
+telegraph without flag 0x200 is drawn padded by the local player's radius."""
+proof = """The earlier notes; the instructions were not re-read, and they do not say which of the two \
+does the padding."""
+grade = "fairly sure"
+
+["0x14054da10"]
+name = "RampTelegraphParameters"
+statement = """Ramps a telegraph's shape parameters, beside the shape builder 0x14054d170. Between the \
+two, a telegraph without flag 0x200 is drawn padded by the local player's radius."""
+proof = """The earlier notes; the instructions were not re-read, and they do not say which of the two \
+does the padding."""
+grade = "fairly sure"
+
+["0x14053a210"]
+name = "DrawLocalPlayerPreCastTelegraph"
+statement = """Draws the local player's telegraph before a cast: it skips 0x40 records and draws 0x100 \
+ones."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x14054cf70"]
+name = "TelegraphDisplayCategory"
+statement = """Gives a telegraph's display category (ally, enemy, player or NPC) from the caster unit \
+and console variables, not from the telegraph's flags."""
+proof = """The earlier notes; the instructions were not re-read."""
+grade = "fairly sure"
+
+# The decoding-the-client skill says how to read, add and check them.
+
+
+
+# The store
+
+["0x140005bf0"]
+statement = """Stores a pending account item's 5-bit gift state, the field of \
+`ServerPendingAccountItemAdd` that the client reads as giftable when it is 7 and not when it is 6."""
+proof = """The earlier notes: it stores the state at +0x40, which 0x1404e2120 tests. The \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1404e2120"]
+name = "GetPendingAccountItemGroups"
+statement = """The Lua binding `GetPendingAccountItemGroups`. A group's `canGift` is false when \
+any of its pending items has gift state 6, and true when they hold 7: each item's state is \
+ANDed into the group's `canGift`."""
+proof = """The earlier notes; the state is read at +0x40, stored by 0x140005bf0. In the \
+instances-and-store recording every pending item came with gift state 6, and the client sent \
+no gift."""
+grade = "fairly sure"
+
+["0x1404e4ea0"]
+statement = """An account entitlement count, one of the pair 0x1404e4ea0 and 0x1403d2140. Both \
+gift buttons need entitlement 9, TwoStepVerification, and entitlement 49, FraudCheck, blocks \
+them (`AccountInventory.lua` lines 888 to 890, `Storefront.lua` lines 2600 to 2625)."""
+proof = """The earlier notes, which give both addresses in one row as "Entitlement count" \
+without saying which is which; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1403d2140"]
+statement = """An account entitlement count, one of the pair 0x1404e4ea0 and 0x1403d2140, which \
+the gift buttons' entitlement checks read."""
+proof = """The earlier notes, which give both addresses in one row as "Entitlement count" \
+without saying which is which; the instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1404e5190"]
+name = "GiftPendingItemGroupToCharacter"
+statement = "The Lua binding `GiftPendingItemGroupToCharacter`: gives a pending item group to a character."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1404e52d0"]
+name = "GiftPendingItemGroupToAccount"
+statement = "The Lua binding `GiftPendingItemGroupToAccount`: gives a pending item group to an account."
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1404f1150"]
+name = "PurchaseOffer"
+statement = """The Lua binding `StorefrontLib.PurchaseOffer`: buys a store offer by sending \
+either 0x0828 (through 0x1404507e0) or 0x082A (through 0x140450720)."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1404507e0"]
+name = "SendClientStorefrontPurchaseGift"
+statement = """Sends 0x0828, one of the two \
+messages `StorefrontLib.PurchaseOffer` sends."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140450720"]
+name = "SendClientStorefrontPurchaseCharacter"
+statement = """Sends 0x082A, one of the \
+two messages `StorefrontLib.PurchaseOffer` sends."""
+proof = "The earlier notes; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x140450280"]
+statement = """Gives an offer's Lua `bItemsAreGiftable`, whether its items may be given as a \
+gift."""
+proof = """The earlier notes, in the row of `StorefrontLib.PurchaseOffer`; the instructions were \
+not re-read."""
+grade = "fairly sure"
+
+["StorefrontLib.PurchaseOffer"]
+statement = """Buys a store offer: its binding 0x1404f1150 sends 0x0828 or 0x082A."""
+proof = """The earlier notes: binding 0x1404f1150, senders 0x1404507e0 and 0x140450720. The \
+instructions were not re-read."""
+grade = "fairly sure"
+
+# Titles
+
+["0x14072c8c0"]
+name = "SetTitle"
+statement = """The Lua `CharacterTitle.SetTitle`: sends 0x078E ClientTitleSet, the only sender of \
+it, and `SetTitle(nil)` sends 0 to clear the title. It sends only for a title the client holds \
+as usable (0x1403ca2f0)."""
+proof = "The comment of the earlier code's title handling: writer 0x14007a610."
+grade = "fairly sure"
+
+["0x1403ca2f0"]
+statement = "Tells whether the player holds a title as usable, which `CharacterTitle.SetTitle` checks before sending."
+proof = "The comment of the earlier code's title handling; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1403edf1a"]
+statement = """The 0x0189 `ServerTitleSet` case: finds the unit among those the client holds \
+(0x1403d90d0), ignores an unknown one, stores the title and redraws the unit's nameplate."""
+proof = "The comment of the earlier code's title handling; reader 0x14007ad00."
+grade = "fairly sure"
+
+["0x14007ad00"]
+name = "ReadServerTitleSet"
+statement = "Reads 0x0189 ServerTitleSet: the unit and its title, 0 for none."
+proof = "The comment of the earlier code's title handling; the instructions were not re-read."
+grade = "fairly sure"
+
+["0x1403d90d0"]
+statement = "Finds a unit by its id among the units the client holds."
+proof = """The comment of the earlier code's title handling, as the `ServerTitleSet` case \
+0x1403edf1a uses it."""
+grade = "fairly sure"
+
+# World entry and loading
+
+["0x1403b6de0"]
+name = "HandleServerChangeWorld"
+statement = """Handles `ServerChangeWorld`: removes every unit, drops the client's own unit and \
+shows the loading screen, so the client loads the world again and later sends \
+`ClientEnteredWorld` again."""
+proof = """The comments of the earlier code's world entry and lost-map handling, and its failure \
+test of a map that stops after entry."""
+grade = "fairly sure"
+
+["0x140437a10"]
+statement = """Drops a `ServerTutorial` while the client holds no unit of its own: \
+`ServerChangeWorld` (0x1403b6de0) clears that unit and `ServerPlayerChanged` (0x1403b5ad0) sets \
+it. The interface's `TutorialPrompts.lua` also registers its handler only once its document has \
+loaded."""
+proof = "The comment of the earlier code's world entry; the instructions were not re-read."
+grade = "fairly sure"
+
+["GameLib.CodeEnumTutorialCategory"]
+statement = """Names the Tutorial table's categories; `TutorialMenu.lua` names category 29, the \
+zone tutorials, `GameLib.CodeEnumTutorialCategory.Zones`."""
+proof = "The comment of the earlier code's zone tutorial category and `TutorialMenu.lua`."
+grade = "fairly sure"
+
+["0x1403e8000"]
+name = "SendClientEnteredWorld"
+statement = """Sends `ClientEnteredWorld` only once the world, the player's own unit \
+(`ServerPlayerChanged`) and the terrain around it have loaded. The loading screen's per-frame \
+update 0x1400344d0 runs it."""
+proof = """The comments of the earlier code's map arrival state and lost-map handling; the \
+instructions were not re-read."""
+grade = "fairly sure"
+
+["0x1400344d0"]
+name = "UpdateLoadingScreen"
+statement = """The loading screen's per-frame update, which runs 0x1403e8000 to send \
+`ClientEnteredWorld` once loading is done. While it shows, the movement tick 0x1403a25c0 does \
+not run, so a loading player can neither move nor fight back, yet the client handles a \
+creature's create, `ServerUnitEnteredCombat` and damage at once, queueing nothing."""
+proof = """The comment of the earlier code's map arrival state, which names the dispatcher \
+0x1403ec6a0; the instructions were not re-read."""
+grade = "fairly sure"
