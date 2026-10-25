@@ -1,0 +1,15 @@
+--- a/erts/emulator/beam/erl_gc.c
++++ b/erts/emulator/beam/erl_gc.c
+@@ -788,8 +788,11 @@
+ 
+     if (!ERTS_SCHEDULER_IS_DIRTY(esdp)) {
+ 	check_for_possibly_long_gc(p, ygen_usage);
+-	if (p->flags & (F_DIRTY_MAJOR_GC|F_DIRTY_MINOR_GC))
++	if (p->flags & (F_DIRTY_MAJOR_GC|F_DIRTY_MINOR_GC)) {
++	    /* https://github.com/erlang/otp/issues/11923 */
++	    p->live_hf_end = ERTS_INVALID_HFRAG_PTR;
+ 	    goto delay_gc_before_start;
++	}
+     }
+ 
+     if (p->abandoned_heap)

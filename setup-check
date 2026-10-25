@@ -1,0 +1,8 @@
+#!/bin/sh
+# Runs the setup check (setup_check/setup_check.py), which needs Python 3.13.
+if ! command -v python3.13 >/dev/null 2>&1; then
+  echo "missing: Python 3.13 (found: nothing)"
+  echo "  fix: brew install python@3.13"
+  exit 1
+fi
+exec python3.13 -I "$(dirname "$0")/setup_check/setup_check.py" "$@"
