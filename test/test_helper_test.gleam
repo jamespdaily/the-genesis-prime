@@ -12,6 +12,7 @@ import gleam/erlang/atom
 import gleam/erlang/process.{type Pid}
 import gleam/result
 import owned_test
+import unitest
 
 pub fn a_process_linked_to_the_body_is_dead_after_the_body_returns_test() -> Nil {
   use <- owned_test.run(5000)
@@ -56,6 +57,29 @@ pub fn a_body_that_crashes_fails_with_the_crash_message_test() -> Nil {
     })
   assert panic_message(reason) == Ok("the test body crashed")
 }
+
+pub fn a_body_that_skips_is_skipped_not_crashed_test() -> Nil {
+  use <- owned_test.run(5000)
+  let reason =
+    exit_reason_of(fn() {
+      owned_test.run(5000, fn() {
+        use <- unitest.guard(False)
+        Nil
+      })
+    })
+  assert is_skip(reason)
+    as "a skip inside the helper reached the runner as a crash, not a skip"
+}
+
+fn is_skip(reason: process.ExitReason) -> Bool {
+  case reason {
+    process.Abnormal(reason:) -> is_skip_reason(reason)
+    process.Normal | process.Killed -> False
+  }
+}
+
+@external(erlang, "owned_test_ffi", "is_skip")
+fn is_skip_reason(reason: Dynamic) -> Bool
 
 fn is_dead_within(pid: Pid, timeout: Int) -> Bool {
   let monitor = process.monitor(pid)
