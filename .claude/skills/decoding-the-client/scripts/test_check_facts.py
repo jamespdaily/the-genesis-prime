@@ -277,6 +277,10 @@ class GradeAgainstProofTest(Refusal):
         # item 4: a test file
         self.assertEqual(self.refused_proof("test_emulator.py"), [])
 
+    def test_a_sure_record_whose_proof_names_bytes_read_at_an_address_is_accepted(self):
+        # SKILL.md: sure means "the instructions or rows were read"; data is read as bytes
+        self.assertEqual(self.refused_proof(f"Bytes at {PLANTED_A}: 24-byte entries"), [])
+
     def test_a_fairly_sure_record_needs_no_instruction_or_test_in_its_proof(self):
         # SKILL.md: "Fairly sure: read, with a named gap"; only "sure" is held to the proof
         self.assertEqual(self.refused_proof("Read by hand.", grade="fairly sure", gap="one branch unread"), [])
