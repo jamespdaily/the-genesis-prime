@@ -672,12 +672,12 @@ class QueryProcessTest(PlantedTestCase):
             with self.subTest(variable=name):
                 machine = self.plant(without_variables=(name,))
                 missing = self.only(setup_check.check_query_process(machine))
-                self.assertIn(name, self.text(missing))
+                self.assertIn(name.lower(), self.text(missing))
                 self.assertIn(name + "=", missing.fix)
 
     def test_an_unset_genesis_pyghidra_python_is_named_with_the_value_to_set(self):
         missing = self.only(setup_check.check_query_process(self.plant(pyghidra_python="unset")))
-        self.assertIn("GENESIS_PYGHIDRA_PYTHON", self.text(missing))
+        self.assertIn("genesis_pyghidra_python", self.text(missing))
         self.assertIn("GENESIS_PYGHIDRA_PYTHON=", missing.fix)
 
     def test_a_genesis_pyghidra_python_that_cannot_run_is_named_with_its_variable(self):
@@ -685,7 +685,7 @@ class QueryProcessTest(PlantedTestCase):
             with self.subTest(kind=kind):
                 machine = self.plant(pyghidra_python=kind)
                 missing = self.only(setup_check.check_query_process(machine))
-                self.assertIn("GENESIS_PYGHIDRA_PYTHON", self.text(missing))
+                self.assertIn("genesis_pyghidra_python", self.text(missing))
                 self.assertIn(machine.env["GENESIS_PYGHIDRA_PYTHON"], missing.part + missing.found)
                 self.assertIn("GENESIS_PYGHIDRA_PYTHON", missing.fix)
 

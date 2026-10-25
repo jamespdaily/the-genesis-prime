@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 # The full check, run locally and in CI (.github/workflows/check.yml).
 #
-# Parts, independent ones side by side; a part that fails is named, and the
+# First the setup check (./setup-check): it names every part this machine is
+# missing, and when it fails nothing else runs. Before it, this script reads
+# $GENESIS_HOME/env.sh (default ~/.genesis-prime/env.sh) and, unless
+# GENESIS_NO_CLIENT=1, puts $GENESIS_OTP_DIR/bin first on PATH
+# (setup_check/environment.sh).
+#
+# Then the parts, independent ones side by side; a part that fails is named, and the
 # script exits non-zero:
 #   format         gleam format --check src test dev
 #   gleam-build    gleam build --warnings-as-errors
@@ -12,6 +18,7 @@
 #                  psql -v ON_ERROR_STOP=1 --single-transaction
 #   squirrel       gleam run -m squirrel check, against that database
 #   client-suite   the client query process's fast unit tests
+#   setup-suite    the setup check's own tests
 #   fact-checker   check_facts.py over the fact file
 #
 # The database is on the Postgres named by PGHOST, PGPORT and PGUSER (defaults
@@ -27,15 +34,25 @@
 
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 
+# The machine's settings (env.sh) and the patched OTP first on PATH, before any part.
+. setup_check/environment.sh
+
 : "${PGHOST:=/tmp}"
 : "${PGPORT:=5433}"
 : "${PGUSER:=postgres}"
 export PGHOST PGPORT PGUSER
 
+# The setup check comes first: when it fails, nothing else runs.
+if ! ./setup-check; then
+  echo
+  echo "check FAILED: the setup check failed, so no other part ran"
+  exit 1
+fi
+
 started=$(date +%s)
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
-parts="format gleam-build glinter gleam-test migrations squirrel client-suite fact-checker"
+parts="format gleam-build glinter gleam-test migrations squirrel client-suite setup-suite fact-checker"
 
 cleanup() {
   if [ -f "$work/database_created" ]; then
@@ -136,6 +153,7 @@ in_background gleam_chain
 in_background step migrations prepare_database
 in_background step client-suite python3.13 -I -m unittest discover \
   -s .claude/skills/decoding-the-client/scripts -p 'test_*.py'
+in_background step setup-suite python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
 in_background step fact-checker facts_with_the_client_named
 wait
 
