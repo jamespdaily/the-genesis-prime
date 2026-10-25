@@ -33,8 +33,6 @@ avoid_panic = "off"
 # modules are shared across test modules, so no other module calls them.
 "test/**/*.gleam" = ["unused_exports"]
 "test/*.gleam" = ["unused_exports"]
-# Only tests read the client archive indexes; no module in src calls them.
-"src/genesis_prime/client_archive.gleam" = ["unused_exports"]
 
 # Modules that may have effects; every other module is a pure rule.
 [tools.code_rules]
