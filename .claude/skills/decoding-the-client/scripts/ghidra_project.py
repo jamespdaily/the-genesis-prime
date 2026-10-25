@@ -5,10 +5,15 @@ analysis and saves the project. Every later open reads the saved project and
 runs no analysis.
 """
 
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import seed
 from ghidra_env import Settings
+
+PROJECT_NAME = "WildStar"
+PROGRAM_NAME = "WildStar64.exe"
 
 
 @dataclass
@@ -29,16 +34,90 @@ class Opened:
     analysed_now: bool
     seed_report: SeedReport | None  # set only when analysed_now
     seconds: float
+    project: object = None
+    consumer: object = None
 
     def close(self) -> None:
-        raise NotImplementedError
+        self.program.release(self.consumer)
+        self.project.close()
+
+
+def _consume(project):
+    import pyghidra
+
+    return pyghidra.consume_program(project, "/" + PROGRAM_NAME)
 
 
 def open_project(settings: Settings, seed_path: Path | None) -> Opened:
     """Starts Ghidra through PyGhidra (once per process) and opens the project."""
-    raise NotImplementedError
+    started = time.monotonic()
+    import pyghidra
+
+    if not pyghidra.started():
+        pyghidra.start(install_dir=settings.ghidra_dir)
+    from ghidra.program.util import GhidraProgramUtilities
+
+    settings.project_dir.mkdir(parents=True, exist_ok=True)
+    project = pyghidra.open_project(settings.project_dir, PROJECT_NAME, create=True)
+    try:
+        report = None
+        if project.getProjectData().getFile("/" + PROGRAM_NAME) is None:
+            report = _import_and_analyse(project, settings, seed_path)
+        program, consumer = _consume(project)
+    except BaseException:
+        project.close()
+        raise
+    if not GhidraProgramUtilities.isAnalyzed(program):
+        program.release(consumer)
+        project.close()
+        raise RuntimeError(
+            "the project in %s holds an import that was never analysed; delete the directory to start again"
+            % settings.project_dir
+        )
+    return Opened(program, report is not None, report, time.monotonic() - started, project, consumer)
+
+
+def _import_and_analyse(project, settings: Settings, seed_path: Path | None) -> SeedReport:
+    """Import, seed, analyse, save; the project is reopened from disk afterwards."""
+    import pyghidra
+
+    loader = pyghidra.program_loader().project(project).source(str(settings.client_exe)).projectFolderPath("/")
+    with loader.load() as results:
+        results.save(pyghidra.task_monitor())
+    program, consumer = _consume(project)
+    try:
+        lines = seed.read_seed(seed_path) if seed_path is not None else []
+        report = apply_seed(program, lines)
+        pyghidra.analyze(program)
+        program.save("Analysed", pyghidra.task_monitor())
+    finally:
+        program.release(consumer)
+    return report
 
 
 def apply_seed(program, lines: list[tuple[int, str, str]]) -> SeedReport:
     """Creates each seeded function and names it, before analysis runs."""
-    raise NotImplementedError
+    import pyghidra
+    from ghidra.app.cmd.disassemble import DisassembleCommand
+    from ghidra.app.cmd.function import CreateFunctionCmd
+    from ghidra.program.model.symbol import SourceType
+
+    report = SeedReport(len(lines))
+    memory = program.getMemory()
+    functions = program.getFunctionManager()
+    listing = program.getListing()
+    space = program.getAddressFactory().getDefaultAddressSpace()
+    with pyghidra.transaction(program, "Apply the seed"):
+        for address, _kind, name in lines:
+            entry = space.getAddress(address)
+            if not memory.contains(entry):
+                report.unmapped.append(address)
+            elif functions.getFunctionAt(entry) is not None:
+                report.already_present += 1
+            elif (
+                listing.getInstructionAt(entry) is not None or DisassembleCommand(entry, None, True).applyTo(program)
+            ) and CreateFunctionCmd(name, entry, None, SourceType.IMPORTED).applyTo(program):
+                report.created += 1
+            else:
+                report.failed.append(address)
+    return report
