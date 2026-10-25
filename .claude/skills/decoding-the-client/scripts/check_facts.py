@@ -185,6 +185,21 @@ def coverage_problems(records: dict[str, Record], cited: dict[str, list[str]]) -
     ]
 
 
+def function_entries(pe, records: dict[str, Record]) -> set[str]:
+    """The keys known to be a function's entry: every .pdata start and pointer-only
+    function, and every named key in a code section outside all .pdata functions.
+    A leaf function has no .pdata entry, so its name is taken at its word; a name
+    inside a .pdata function or outside code is still refused."""
+    entries = {"0x%x" % a for a in pe.function_starts()} | {"0x%x" % a for a in pe.pointer_only_functions()}
+    for key, r in records.items():
+        if r.name and _ADDRESS_RE.fullmatch(key):
+            address = int(key, 16)
+            section = pe.section_of(address)
+            if section is not None and section.executable and pe.root_of(address) is None:
+                entries.add(key)
+    return entries
+
+
 def main(argv: list[str]) -> int:
     """Checks the fact file against the repository. The name rule needs the
     client at $WILDSTAR_CLIENT_EXE to know the function entries; without it,
@@ -200,8 +215,7 @@ def main(argv: list[str]) -> int:
         sys.path.insert(0, str(SCRIPTS))
         from client_pe import ClientPE
 
-        pe = ClientPE(Path(exe))
-        entries = {"0x%x" % a for a in pe.function_starts()} | {"0x%x" % a for a in pe.pointer_only_functions()}
+        entries = function_entries(ClientPE(Path(exe)), records)
     else:
         print("the name rule was not checked: WILDSTAR_CLIENT_EXE names no file", file=sys.stderr)
     problems = record_problems(records, entries) + coverage_problems(records, cited_addresses(REPOSITORY))

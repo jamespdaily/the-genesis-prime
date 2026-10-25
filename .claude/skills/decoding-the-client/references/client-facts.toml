@@ -1,14 +1,431 @@
-# The client's facts, one table per fact, grouped by topic. See scripts/check_facts.py
-# for the fields and their rules.
+# The client's facts, one table per fact, grouped by topic. scripts/check_facts.py names
+# the fields and their rules.
 
 # The image and its sections
 
+["0x140000000"]
+statement = "The client's image base, where the file's DOS header ('MZ') is mapped. The image is a 64-bit (PE32+, AMD64) executable of eight sections, 0xeb1000 bytes when loaded, entered at 0x1400088c0."
+proof = "File offset 0: 'MZ'; e_lfanew 0x158 -> 'PE\\0\\0'; machine 0x8664, 8 sections, optional header magic 0x20b; ImageBase 0x140000000, AddressOfEntryPoint 0x88c0, SizeOfImage 0xeb1000, SectionAlignment 0x1000, FileAlignment 0x200, SizeOfHeaders 0x400. Read by a fresh header parse of WildStar64.exe; test_client_pe.py test_the_image_base_is_0x140000000 checks the base."
+grade = "sure"
+
+["0x140001000"]
+statement = "The start of the .text section, the client's main code: 9792556 bytes of virtual size (to 0x140957c2c), 9793024 bytes of file data from file offset 1024 (to 0x140957e00), marked code, executable and readable."
+proof = "Section header 1: name .text, VirtualAddress 0x1000, VirtualSize 0x956c2c (9792556), PointerToRawData 0x400 (1024), SizeOfRawData 0x956e00 (9793024), Characteristics 0x60000020. test_client_pe.py test_the_text_section_has_the_pe_headers_numbers and test_a_section_ends_where_its_virtual_size_ends check it."
+grade = "sure"
+
+["0x1409571e8"]
+statement = "An instruction inside the .text section, not a section bound: it loads a global pointer in a short routine that starts at 0x1409571d0 and ends at 0x1409571ff. .text's virtual size ends at 0x140957c2c and its file data at 0x140957e00."
+proof = "llvm-objdump: 0x1409571d0 cmp qword [0x140c55268], 0; 0x1409571d8 lea rax, [0x140b5e6e8]; 0x1409571df mov [0x140c55260], rax; 0x1409571e6 je 0x1409571ff; 0x1409571e8 mov rcx, [0x140c63750]; 0x1409571ef lea rdx, [0x140c55268]; 0x1409571f6 add rcx, 8; 0x1409571fa jmp 0x14019d990; 0x1409571ff rep ret. Ghidra function_at 0x1409571e8 returns null and ClientPE.root_of returns None (no .pdata entry covers it). Section header: .text VirtualAddress 0x1000 + VirtualSize 0x956c2c = 0x140957c2c; + SizeOfRawData 0x956e00 = 0x140957e00."
+grade = "sure"
+
+["0x140957fff"]
+statement = "The last byte of the gap between the end of .text (virtual size ends at 0x140957c2c, file data at 0x140957e00) and the BINK section at 0x140958000; no section's virtual range holds it."
+proof = "Section headers: .text 0x140001000 + 0x956c2c = 0x140957c2c (raw end 0x140957e00); BINK VirtualAddress 0x958000. test_client_pe.py test_an_address_outside_every_section_has_no_section checks section_of(0x140957fff) is None."
+grade = "sure"
+
+["0x140958000"]
+statement = "The start of the BINK section, a second code section: 3420 bytes of virtual size (to 0x140958d5c), 3584 bytes of file data from file offset 9794048, marked code, executable and readable."
+proof = "Section header 2: name BINK, VirtualAddress 0x958000, VirtualSize 0xd5c (3420), PointerToRawData 9794048, SizeOfRawData 0xe00 (3584), Characteristics 0x60000020. Checked by test_client_pe.py (every section against a second reading of the header)."
+grade = "sure"
+
 # Imports
 
-# Switch tables
+["0x140959298"]
+statement = "The import address slot for kernel32.dll SetErrorMode, imported by name. The client calls it once, from its entry point, with 0."
+proof = "Import descriptor 0 (KERNEL32.dll), IAT 0x140959178, entry 36: hint 1290, name SetErrorMode; 0x140959178 + 36*8 = 0x140959298. Ghidra refs_to: one READ from 0x1400088df in 0x1400088c0; llvm-objdump 0x1400088dd xor ecx, ecx; 0x1400088df call [0x140959298]. test_client_pe.py test_imports_are_384_slots_named_dll_bang_name_in_lower_case checks the name."
+grade = "sure"
+
+["0x1409598f8"]
+statement = "The import address slot for user32.dll ShowCursor, imported by name. One client function calls it twice: ShowCursor(TRUE) when it clears a cursor-hidden flag and ShowCursor(FALSE) when it sets that flag."
+proof = "Import descriptor 1 (USER32.dll), IAT 0x140959728, entry 58: hint 799, name ShowCursor; 0x140959728 + 58*8 = 0x1409598f8. Ghidra refs_to: READ from 0x14000a061 and 0x14000a0bb, both in 0x140009d00; llvm-objdump 0x14000a05c mov ecx, 1; 0x14000a061 call [0x1409598f8]; 0x14000a067 and dword [rdi+0x40], ~0x800; 0x14000a0b9 xor ecx, ecx; 0x14000a0bb call [0x1409598f8]; 0x14000a0c1 or dword [rdi+0x40], 0x800. test_client_pe.py checks the name."
+grade = "sure"
+
+["0x140959a78"]
+statement = "The import address slot for ws2_32.dll ordinal 115, imported by number, not name. Ordinal 115 is WSAStartup in Windows' ws2_32.dll, and the client calls it as WSAStartup is called, asking for Winsock version 2.2 (0x202) with a result buffer."
+proof = "Import descriptor 15 (WS2_32.dll), lookup table 0xc0c510: entry 0x8000000000000073 (ordinal flag set, ordinal 115). Ghidra refs_to: one READ from 0x14033a5f6 in 0x14033a5a0; llvm-objdump 0x14033a5ec lea rdx, [rsp+0x70]; 0x14033a5f1 mov ecx, 0x202; 0x14033a5f6 call [0x140959a78]; 0x14033a5fc test eax, eax. test_client_pe.py checks the slot is named ws2_32.dll!#115."
+grade = "fairly sure"
+gap = "The ordinal-to-name mapping (115 = WSAStartup) comes from Windows' ws2_32.dll export table, not from the client; reading ws2_32.dll's exports would settle it."
 
 # Strings and pointers
 
+["0x140b46b48"]
+statement = "The ASCII string 'DialogResponseType_ViewQuestIncomplete' in .rdata. Its one use is as the key under which the DialogResponse Lua library stores the number 8."
+proof = "File bytes at 0x140b46b48: 'DialogResponseType_ViewQuestIncomplete\\0' (38 characters). Ghidra string_refs and refs_to: one reference, from 0x14072f318 in 0x14072ee90. llvm-objdump 0x14072f2fb mov rcx, 0x4020000000000000 (8.0); 0x14072f305 mov [rax], rcx; 0x14072f308 mov dword [rax+8], 3 (number); 0x14072f318 lea rdx, [0x140b46b48]; 0x14072f31f mov r8d, 0x26; 0x14072f328 call 0x140062650; 0x14072f34b call 0x14005ea50 (table at top-2, key, value at top-1). The client's UI/Dialog Lua reads DialogResponse.DialogResponseType_* values. test_client_refs.py checks the one reference."
+grade = "fairly sure"
+gap = "The Lua helpers 0x140062650 (make string), 0x14005ea50 (table store) are named from how they are used with Lua 5.1 type tags 3 and 4, not read."
+
+["0x140b47ec8"]
+statement = "The ASCII string 'Lighting' in .rdata. Its one use is as the key under which HousingLib.RemodelOptionTypeInterior stores the number 5."
+proof = "File bytes at 0x140b47ec8: 'Lighting\\0', followed at 0x140b47ed4 by 'Trim'. Ghidra string_refs: one reference, from 0x140738e19 in 0x140737da0. llvm-objdump 0x140738e13 mov r8d, 8; 0x140738e19 lea rdx, [0x140b47ec8]; 0x140738e23 call 0x140058710 (push the key); 0x140738e2c mov rcx, 0x4014000000000000 (5.0); 0x140738e39 mov dword [rax+8], 3; 0x140738e48 mov edx, -3; 0x140738e4d call 0x1400580e0 (the table) then 0x14005ea50 stores key and value. Client Lua UI/Housing/HousingRemodel.lua uses HousingLib.RemodelOptionTypeInterior.Wallpaper..Music. test_client_pe.py checks it is in .rdata and has no .pdata root; test_client_refs.py checks the one reference."
+grade = "fairly sure"
+gap = "The Lua helpers 0x140058710 (push string), 0x1400580e0 (stack slot) and 0x14005ea50 (table store) are named from use, not read."
+
+["0x140b6d240"]
+statement = "An 8-byte pointer in .rdata to the function at 0x14077ed70, the seventh of 23 consecutive code pointers starting at 0x140b6d210. A base relocation covers it, and it is the only reference to that function anywhere in the client."
+proof = "File qword at 0x140b6d240 = 0x14077ed70. Base relocation table: a type 10 (DIR64) entry at 0x140b6d240. A scan of every DIR64 relocation finds no other pointer to 0x14077ed70; Ghidra refs_to 0x14077ed70: one DATA reference from 0x140b6d240; callers: none. The qwords from 0x140b6d210 to 0x140b6d2c8 all point into .text (slot 6 of 23); no RTTI locator precedes them. test_client_refs.py test_the_pointer_only_function_0x14077ed70_has_one_reference_a_pointer_from_0x140b6d240 checks it."
+grade = "sure"
+
+["0x140b79d14"]
+statement = "A 32-bit float constant 1/360 (0.0027777778) in .rdata. DegreesToRadians at 0x1408296a0 multiplies by it to count whole turns; it is read from 11 places in 9 functions."
+proof = "File bytes 61 0b 36 3b = 0x3b360b61 = 0.0027777778. llvm-objdump 0x1408296a3 mulss xmm1, [0x140b79d14]. Ghidra refs_to: 11 READ references in 9 functions, including 0x1408296a3. formulas_by_hand.py C_1_OVER_360 holds the same bytes; test_emulator.py checks the formula."
+grade = "sure"
+
+["0x140b79d50"]
+statement = "A 32-bit float constant pi/180 (0.017453292) in .rdata. DegreesToRadians at 0x1408296a0 multiplies by it last; it is read from 5 places in 4 functions."
+proof = "File bytes 35 fa 8e 3c = 0x3c8efa35 = 0.017453292. llvm-objdump 0x1408296ba mulss xmm0, [0x140b79d50]; 0x1408296c2 ret. Ghidra refs_to: 5 READ references in 4 functions, including 0x1408296ba. formulas_by_hand.py C_PI_OVER_180 holds the same bytes; test_emulator.py plants a one-ulp change to it."
+grade = "sure"
+
+["0x14072f318"]
+statement = "The instruction in the DialogResponse Lua library's registration that loads the key 'DialogResponseType_ViewQuestIncomplete' (38 characters), stored with the number 8 in the DialogResponse table."
+proof = "llvm-objdump 0x14072f2fb mov rcx, 0x4020000000000000 (8.0) pushed as a number; 0x14072f318 lea rdx, [0x140b46b48]; 0x14072f31f mov r8d, 0x26; 0x14072f328 call 0x140062650; 0x14072f34b call 0x14005ea50. Ghidra function_at 0x14072f318: 0x14072ee90. test_client_refs.py checks this is the string's one reference."
+grade = "fairly sure"
+gap = "The Lua helpers 0x140062650 and 0x14005ea50 are named from use, not read."
+
+["0x140738e19"]
+statement = "The instruction in the HousingLib Lua library's registration that loads the key 'Lighting' (8 characters), stored with the number 5 in HousingLib.RemodelOptionTypeInterior."
+proof = "llvm-objdump 0x140738e13 mov r8d, 8; 0x140738e19 lea rdx, [0x140b47ec8]; 0x140738e23 call 0x140058710; 0x140738e2c mov rcx, 0x4014000000000000 (5.0); 0x140738e4d call 0x1400580e0 with -3, then the table store 0x14005ea50. Ghidra function_at 0x140738e19: 0x140737da0. test_client_refs.py checks this is the string's one reference."
+grade = "fairly sure"
+gap = "The Lua helpers 0x140058710, 0x1400580e0 and 0x14005ea50 are named from use, not read."
+
 # Functions reached through the call graph
 
-# Formulas
+["0x1400088c0"]
+statement = "The client's process entry point. It sets up the stack-protection cookie, sets a start-up flag, makes C runtime errors show a message box, calls SetErrorMode(0), runs a set-up step that queries the process's own security information, refuses to run below Windows 5.1 SP3 (XP SP3), or on Windows 5.2 below SP2, with a message box in English, German, French and Chinese and exit code 1, then jumps to the C runtime's start-up, which sets up the cookie again and runs the program."
+proof = "llvm-objdump 0x1400088c0 sub rsp, 0x28; 0x1400088c4 call 0x1407dc118 (reads cookie 0x140c0f7b0, compares 0x2b992ddfa232, mixes GetSystemTimeAsFileTime, GetCurrentThreadId, GetCurrentProcessId, QueryPerformanceCounter); 0x1400088c9 mov ecx, 2; 0x1400088ce mov dword [0x140c63734], 1; 0x1400088d8 call 0x1407dc1cc (Ghidra _set_error_mode: accepts 0..2, 3 returns the mode); 0x1400088df call [SetErrorMode] with ecx 0; 0x1400088e5 call 0x1401933b0 (GetCurrentProcess, ADVAPI32 GetSecurityInfo, LocalAlloc); 0x1400088ea call 0x1400086b0 (0x140193b70 with (5,1,3), then (5,2,0) and (5,2,2); on failure MessageBoxW with the text at 0x1409d6ab0 or 0x1409d6f70, caption 'WildStar', then ExitProcess(1)); 0x1400088f3 jmp 0x1407dc104 (call 0x1407dc118; jmp 0x1407dbf4c). PE AddressOfEntryPoint 0x88c0. test_client_pe.py test_the_entry_point_is_a_function_start checks it is a function start."
+grade = "fairly sure"
+gap = "0x1401933b0 (what it does with the security information), 0x140193b70 (taken as a Windows version check from its arguments and messages) and the C runtime start at 0x1407dbf4c are not read in full."
+name = "ClientEntryPoint"
+
+["0x1404a4e30"]
+statement = "Prerequisite type 71: a unit's vital as a percentage of its maximum, compared with the prerequisite's value. With no unit it is false. Otherwise it takes current * 100 / maximum for the vital named by the object id (a Vital table id) as a 32-bit float and compares it with the value (read as an unsigned integer, made float) by the comparison: 1 equal, 2 not equal, 3 greater than, 4 at least, 5 less than, 6 at most; any other comparison is false. Nothing guards a zero maximum: 0/0 gives NaN, which counts as equal and fails every other comparison."
+proof = "llvm-objdump 0x1404a4e48 test rdx, rdx -> 0x1404a4e4d xor eax, eax; ret. 0x1404a4e6f call 0x140466520 (unit, object id); 0x1404a4e74 mov eax, [rsp+0x70]; 0x1404a4e83 cvtsi2ss xmm6, rax; 0x1404a4e88 mulss xmm7, [0x140b7a0dc] (100.0, bytes 00 00 c8 42); 0x1404a4e90 call 0x1404667c0 (unit, object id); 0x1404a4e9a divss xmm7, xmm0; 0x1404a4eba jmp 0x1404a2010 (comparison, percent, value). 0x1404a2010: dec edx; cmp edx, 5; ja -> 0; jump table 0x1404a206c: ucomiss/jne (1), ucomiss/je (2), comiss/seta (3), comiss/setae (4), comiss value,percent/seta (5), setae (6). Caller 0x1404a2100 (the prerequisite evaluator; its nested case prints 'Nested Prereq Id') reaches it from switch case 0x47 at 0x1404a23bf with comparison, object id and value from the condition. Getter switches 0x140466520 and 0x1404667c0 have cases 1-3, 5-11, 15, 16, 20-24, 27-29, matching Vital.tbl ids (1 Health, 2 Breath, 3 Shield Capacity, 22-24 PublicResource0-2, 27-29 Resource8-10)."
+grade = "fairly sure"
+gap = "0x140466520 (current vital) and 0x1404667c0 (maximum vital) are read as switches, not each case; which Prerequisite.tbl columns feed comparison, object id and value is unread."
+name = "CheckPrerequisiteVitalPercent"
+
+["0x14063e550"]
+statement = "The handler of the slash command GetSpec. It prints 'Current character spec index is %d.' (text 444830) to chat, with the player's spec index counted from 1, or 0 when there is no game state."
+proof = "Registered by 0x14063ae00: 0x14063b416 mov edx, 0x6c98d (text 444813 'GetSpec' in en-US.bin); 0x14063b41b call 0x14034bdd0 (binary search of the language table, returns the wide text); 0x14063b427 lea r8, [0x14063e550]; 0x14063b43b call 0x1400ec4b0 (adds a name -> handler entry to a string-keyed tree); the same function registers text 0xbd1e 'stuck'. Handler: 0x14063e556 mov edx, 0x6c99e; 0x14063e55b call 0x14034bdd0; 0x14063e560 mov rcx, [0x140c65898]; 0x14063e56c test rcx, rcx; 0x14063e571 movzx ecx, byte [rcx+0x6dec]; 0x14063e578 inc ecx; 0x14063e585 call 0x14018efa0 (wide format); 0x14063e5a2 lea edx, [r8+2] (2); 0x14063e5a9 call 0x140003890, which calls 0x1404045c0, the builder of the Lua event 'ChatMessage'. Texts read from ClientDataEN.archive en-US.bin."
+grade = "fairly sure"
+gap = "What chat channel type 2 is, and that the byte read is the spec index (only the message text says so), are unread."
+name = "SlashCommandGetSpec"
+
+["0x140001c30"]
+statement = "Returns the first 8-byte value of a record the object points to, or 0 when that pointer is null. Nothing calls it directly: 40 tables of code pointers hold it."
+proof = "llvm-objdump 0x140001c30 mov rax, [rcx+0x2a8]; 0x140001c37 test rax, rax; 0x140001c3a je 0x140001c40; 0x140001c3c mov rax, [rax]; 0x140001c3f ret; 0x140001c40 rep ret. Ghidra callers: none; refs_to: 40 DATA references, 0x140b54ea0 to 0x140b72160, each covered by a DIR64 relocation; the seven sampled sit at slot 18 or 20 of runs of 71 to 78 code pointers. ClientPE.root_of returns None (no .pdata entry) and pointer_only_functions holds it."
+grade = "fairly sure"
+gap = "What the record and its first field are; the classes whose tables hold it have no RTTI, so a caller of one of those slots would settle it."
+name = "function_140001c30"
+
+["0x14077ed70"]
+statement = "Resets an object's display state. When a global client object exists it sets a four-float value to (1, 1, 1, 1), a float to 1.0 and clears a block of fields; then, unless that global's mode is 2, it sets the four floats to (0.8, 0, 0, 1) and that float to 0. With no global object it only sets (0.8, 0, 0, 1) and 0."
+proof = "llvm-objdump 0x14077ed70 mov rax, [0x140c65970]; 0x14077ed79 test rax, rax; je 0x14077edea; 0x14077ed7e movaps xmm0, [0x140b7b240] (1.0, 1.0, 1.0, 1.0); 0x14077ed85 mov dword [rcx+0xf0], 1.0; 0x14077ed92 movaps [rcx+0xd0], xmm0; stores of 0 to rcx+0x90..0xc3, 0xe0..0xef, 0xf8..0x107 and 0x108; 0x14077ede4 cmp dword [rax+8], 2; je ret; 0x14077edea movaps xmm0, [0x140b7ad40] (0.8, 0, 0, 1.0); 0x14077edf1 mov [rcx+0xf0], 0; 0x14077edf7 movaps [rcx+0xd0], xmm0; 0x14077edfe rep ret. Its only reference is the pointer at 0x140b6d240 (slot 6 of 23); the neighbouring function 0x14077ee00 returns the icon name Icon_ItemMisc_UI_Item_Donut or Icon_ItemMisc_gadget_0001 by the same global's mode."
+grade = "fairly sure"
+gap = "What the global at 0x140c65970 is, what its mode 2 means, and that the four floats are a colour; the class has no RTTI, so a caller of its slot 6 would settle it."
+name = "function_14077ed70"
+
+["0x14072ee90"]
+statement = "Registers the DialogResponse Lua library. It makes the metatable 'Game.DialogResponse', which is its own __index and holds the methods GetText, GetType, GetUniqueId, GetQuestId, GetRewardId, Select and __gc; registers the table DialogResponse with the function is; and stores the response types in it: ViewVending 0, ViewTraining 1, ViewTradeskillTraining 2, ViewCraftingStation 3, ViewGuildRegistrar 4, ViewWarPartyRegistrar 5, ViewQuestAccept 6, ViewQuestComplete 7, ViewQuestIncomplete 8, Goodbye 9, QuestComplete 10, QuestAccept 11, QuestIncomplete 12, QuestMoreInfo 13, each named DialogResponseType_<name>. It returns 1."
+proof = "Ghidra decompile: 0x1400569b0(L, 'Game.DialogResponse'); __index set; a loop over the name/function pairs at 0x140c5ee40 (GetText 0x14072f7b0, GetType, GetUniqueId, GetQuestId, GetRewardId, Select, __gc 0x14072f5e0); 0x140057020(L, 'DialogResponse', 0x140b746f0 = {is 0x14072f620}); then 14 pairs of a number pushed with type tag 3 (0.0, 1.0 ... 13.0, doubles 0x0 to 0x402a000000000000) and a key string with its length, stored by 0x14005ea50 into the table below them. Reached from 0x14050a6bb in 0x14050a3c0, which passes it with the name 'DialogResponse' to 0x1400f2440. The client's UI/Dialog/Dialog.lua compares DialogResponse.DialogResponseType_ViewVending, _Goodbye, _QuestComplete and _QuestMoreInfo."
+grade = "fairly sure"
+gap = "The Lua helpers 0x1400569b0, 0x140057020, 0x140062650 and 0x14005ea50 are named from use (Lua 5.1 type tags, luaL_register shape), not read."
+name = "RegisterDialogResponseLuaLibrary"
+
+["0x140737da0"]
+statement = "Registers the HousingLib Lua library: the metatable 'Game.Housing', the table HousingLib with its functions (IsHousingWorld first), and its enum tables, among them CodeEnumDecorHookType, HousingUpkeepType, NeighborPermissionLevel, ResidencePrivileges, ResidencePrivacyLevel, DecorCategoryLimit, ResidenceCustomizationMode, DecorControlMode, RemodelOptionTypeInterior (Wallpaper 1, Floor 2, Ceiling 3, Trim 4, Lighting 5, Music 6), RemodelOptionTypeExterior and RemodelOptionTypeCommunity, and the names PropertyRenameCost, HousingResult_* and HousingPlugFacing. It sets the global HousingLib and returns 1."
+proof = "Ghidra decompile: 0x1400569b0(L, 'Game.Housing'); 0x140057020(L, 'HousingLib', 0x140b747a0 = {IsHousingWorld 0x140731a20, IsResidenceOwner, ...}); for each enum a key pushed by 0x140058710, a new table by 0x14005c1b0 (type tag 5), then key/number pairs stored by 0x14005ea50 into the table at -3; RemodelOptionTypeInterior: 'Wallpaper' 1.0, 'Floor' 2.0, 'Ceiling' 3.0, 'Trim' (0x140b47ed4) 4.0, 'Lighting' 5.0, 'Music' 6.0. Ends 0x140058a40(L, -10002, 'HousingLib') (the Lua 5.1 globals index). Reached from 0x14050a798 in 0x14050a3c0 with the name 'HousingLib'. The client's UI/Housing/HousingRemodel.lua uses HousingLib.RemodelOptionTypeInterior.Wallpaper..Music."
+grade = "fairly sure"
+gap = "The Lua helpers are named from use, not read; the values of the other enum tables are listed by name only here."
+name = "RegisterHousingLibLuaLibrary"
+
+["0x140001b30"]
+statement = "A call-through helper: it takes a function pointer as its first argument and tail-calls that function with the caller's second to sixth arguments, each moved down one place. It holds no jump table."
+proof = "0x140001b30 mov [rsp+8], rbx; 0x140001b35 push rdi; 0x140001b36 sub rsp, 0x30; 0x140001b3a mov rax, [rsp+0x68] (sixth argument); 0x140001b42 mov r9, [rsp+0x60] (fifth); 0x140001b4a..0x140001b56 rdx->rcx, r8->rdx, r9->r8; 0x140001b59 mov [rsp+0x60], rax (sixth becomes fifth); 0x140001b5e mov rax, rdi (first argument); 0x140001b61..0x140001b6a restore rbx, rdi and rsp; 0x140001b6b jmp rax. .pdata gives the function 0x140001b30..0x140001b6e. Ghidra decompiles it as (*param_1)(param_2, param_3, param_4, param_5); refs_to lists 67 data references (lea of its address), no direct callers. test_jump_tables.py checks that the jmp is not a switch."
+grade = "sure"
+name = "InvokeFunctionPointer"
+
+["0x140001b6b"]
+statement = "The tail jump of InvokeFunctionPointer (0x140001b30) to the function pointer it was passed. It is the function's last instruction and reads no jump table."
+proof = "0x140001b5e mov rax, rdi (the first argument, saved at 0x140001b4d mov rdi, rcx); 0x140001b6b jmp rax; the 3-byte instruction ends at 0x140001b6e, the end of the .pdata range 0x140001b30..0x140001b6e. No bounds check or table load precedes it; Ghidra switch_targets returns []. test_jump_tables.py (test_a_computed_jump_that_is_not_a_switch_is_not_found_and_says_why) checks it."
+grade = "sure"
+
+["0x140003fb0"]
+statement = "Handles game messages with ids 2406 to 2432 (0x966 to 0x980) through a 27-case switch on the message id, given the handler object, the connection, the id and the decoded message. It returns 0 when it handled the message and 1 for any other id and for id 2418. Message 2416 raises the UI event AccountOperationResults with two values from the message; message 2432 stores a new value and raises WalletUpdate when it changed; message 2411 merges a list of 64-bit keys into the handler's list. The message receiver at 0x140014f10 calls it with the id it decoded; the second argument is unused."
+proof = "0x140003fba add r8d, -0x966; 0x140003fc7 cmp r8d, 0x1a; 0x140003fcb ja 0x1400043ef; 0x140003fdd mov edx, [rcx+r8*4+0x4400] (rcx = image base); 0x140003fe5 add rdx, rcx; 0x140003fe8 jmp rdx. Decompiled: case 0x970 calls 0x1400ea3e0(ui, 'AccountOperationResults', fmt, msg[0], msg[1]); case 0x980 compares and stores msg[0] then calls 0x1400ea3e0(ui, 'WalletUpdate', ...); case 0x972 and default return 1. Caller: 0x14001527e passes the id's slot to the decoder, 0x1400152a3 mov edi, [rbp+0x68]; 0x1400152ab jmp 0x14001559a; 0x1400155b4 mov r8d, edi; 0x1400155b7 call 0x140003fb0; a negative result is logged with the message's name from 0x140335f10 ('Base Message Id #%d' / name table / 'Invalid or foreign Message Id #%d'). test_jump_tables.py checks the switch shape."
+grade = "fairly sure"
+gap = "Only messages 2411, 2416, 2418 and 2432 were read; what the other 23 handlers (0x140004470 .. 0x140007180) do with their messages, and so whether the whole group is account traffic, is unread."
+name = "HandleMessages0966To0980"
+
+["0x140003fe8"]
+statement = "The jump of a 27-case switch on the message id in HandleMessages0966To0980 (0x140003fb0): case k handles id 2406 + k. Ids outside 2406..2432 go to the default 0x1400043ef. The table is 27 four-byte image-relative entries at 0x140004400, all 27 targets distinct."
+proof = "0x140003fba add r8d, 0xfffff69a (-0x966); 0x140003fc7 cmp r8d, 0x1a; 0x140003fcb ja 0x1400043ef; 0x140003fd1 lea rcx, [0x140000000]; 0x140003fdd mov edx, [rcx+r8*4+0x4400]; 0x140003fe5 add rdx, rcx; 0x140003fe8 jmp rdx. The 27 entries read from the file match Ghidra switch_targets (27 addresses, 0x140003fea..0x1400043da). test_jump_tables.py (test_the_27_case_switch_has_its_jmp_default_and_case_count, test_the_27_case_switch_targets_are_the_table_entries_in_the_file) checks it."
+grade = "sure"
+
+["0x1400040fd"]
+statement = "Case 5 of HandleMessages0966To0980's switch, message id 2411 (0x96b): it tail-calls the handler 0x140004f60 with the handler object and the message, which adds each 64-bit key in the message's list that the handler does not already hold to its list, and returns 0."
+proof = "Table entry 5 at 0x140004414 is RVA 0x40fd. 0x1400040fd mov rdx, rbx (the message); 0x140004100 mov rcx, rdi (the handler object); 0x140004103..0x140004111 restore and pop; 0x140004112 jmp 0x140004f60. 0x140004f60 decompiled: for each of the message's count entries (40 bytes each) it searches the handler's list for the entry's first 8-byte key and calls 0x1400073f0 to append it when absent; returns 0. test_jump_tables.py (test_case_5_of_the_27_case_switch_goes_to_0x1400040fd, test_a_changed_table_entry_changes_exactly_that_target) checks the target."
+grade = "sure"
+
+["0x1400043ef"]
+statement = "The default of HandleMessages0966To0980's switch: for a message id outside 2406..2432 it returns 1, meaning not handled."
+proof = "0x140003fcb ja 0x1400043ef; 0x1400043ef mov eax, 1; 0x1400043f4 mov rbx, [rsp+0x68]; 0x1400043f9 add rsp, 0x50; 0x1400043fd pop rdi; 0x1400043fe ret. No table entry points here (case 12, id 2418, has its own block 0x1400043da that also returns 1). test_jump_tables.py checks the default."
+grade = "sure"
+
+["0x140004400"]
+statement = "The jump table of HandleMessages0966To0980's 27-case switch: 27 four-byte offsets from the image base, entry k for message id 2406 + k. It sits in .text right after the function's code, and the function's .pdata ranges cover it."
+proof = "Read by 0x140003fdd mov edx, [rcx+r8*4+0x4400] with rcx = 0x140000000. Bytes: d7420000 f1420000 88410000 4e410000 e3400000 fd400000 ... ea3f0000, i.e. 0x1400042d7, 0x1400042f1, 0x140004188, 0x14000414e, 0x1400040e3, 0x1400040fd, ... 0x140003fea. File offset 0x3800 (14336): .text has virtual address 0x140001000 and raw offset 0x400, so entry 5 is at 14356. .pdata of 0x140003fb0 includes the range 0x140004400..0x14000446c (27 x 4 bytes); Ghidra function_at returns null. refs_to: 0x140003fdd and an unwind record at 0x140dc74d4. test_jump_tables.py checks the entries."
+grade = "sure"
+
+["0x1400bc619"]
+statement = "The jump of an 8-case switch on a zone-kit slot number (0 to 7) in function 0x1400bc580, which sets the zone-kit value of a slot. Each case builds once, then updates, a static object named for its slot: ZoneKit 0 World, 1 HousingMusic, 2 ClientEvent, 3 WorldProp, 4 PlayerPath, 5 Dead, 6 Visuals, 7 StoreMusic; every case then continues to 0x1400bc7a8, which stores the entry looked up for the value in the slot's place. A slot above 7 skips the switch and goes to 0x1400bc7a8 directly. The table is 8 four-byte image-relative entries at 0x1400bc884. Ghidra recovers none of the 8 targets."
+proof = "0x1400bc592 mov esi, r8d (value); 0x1400bc598 movsxd rbx, edx (slot); slot 0 first updates a field and calls 0x14001a770 when the value changed; 0x1400bc5ff cmp ebx, 7; 0x1400bc602 ja 0x1400bc7a8; 0x1400bc608 lea rdx, [0x140000000]; 0x1400bc60f mov ecx, [rdx+rbx*4+0xbc884]; 0x1400bc616 add rcx, rdx; 0x1400bc619 jmp rcx. Table bytes give 0x1400bc61b, 0x1400bc64d, 0x1400bc67f, 0x1400bc6b1, 0x1400bc6e3, 0x1400bc715, 0x1400bc744, 0x1400bc773. Each case tests a guard bit (1, 2, 4 .. 0x80) of 0x140c8cd58, calls 0x1401ad620 with a wide name string (0x140a14250 'ZoneKit 0 World' .. 0x140a14360 'ZoneKit 7 StoreMusic'), then 0x1400bc7a1 call 0x1401ada40 with the value and falls into 0x1400bc7a8. Ghidra switch_targets returns []. test_query_process.py (test_ghidra_agrees_with_the_jump_table_reader_on_299_of_302_switches) lists it among the three that differ."
+grade = "fairly sure"
+gap = "What 0x1401ad620 and 0x1401ada40 do with the named object, and what game table the value indexes, are unread."
+
+["0x1403ec6a0"]
+statement = "Handles the game's world messages: given the handler object, a connection id, the message id and the decoded message, it returns 1 (not handled) unless the connection id is the current world connection's; otherwise it dispatches on the message id through a 2,322-case switch covering ids 97 to 2418 (0x61 to 0x972). 645 of those ids have a handler, many of which raise UI events (for example MatchEntered, GuildChange, ItemAuctionWon, FriendshipResult). An id with no case is turned into its message name (or 'Message Id #<id>') and passed to a report call that is empty in this build, and the function returns 1."
+proof = "0x1403ec6ba mov ebx, r8d (id); 0x1403ec6bd mov r8, [rcx+0x7928]; 0x1403ec6cd test r8, r8 / 0x1403ec6dc cmp edx, [r8+0x98]: either fails to 0x1403ec6d2 mov eax, 1; 0x1403ec6e5..0x1403ec6f6 copy the global at 0x140c636a8 into the handler object (purpose unread); 0x1403ec6eb lea eax, [rbx-0x61]; 0x1403ec6fc cmp eax, 0x911; 0x1403ec701 ja 0x1403f12d2; 0x1403ec719 jmp rcx. The same connection check (id at the connection object's 0x98 against the second argument) and the same name lookup 0x140335f10 are used by the message receiver 0x140014f10 that calls HandleMessages0966To0980 with the decoded id. Case blocks (0x1403ec71b..0x1403f12d2) load 66 printable strings, among them event names such as MatchEntered and GuildChange, and make 44 calls to 0x1400ea3e0, the UI event raiser that HandleMessages0966To0980 calls with 'WalletUpdate'. Table: 2,322 entries, 1,677 to the default, 636 distinct targets. It is reached only through a function table at 0x140b668d8 (refs_to), no direct callers."
+grade = "fairly sure"
+gap = "The caller that passes the id in was not traced through the function table at 0x140b668d8; the id is read as the message id from the shared connection check and the message-name lookup in the default, not from a call site."
+name = "HandleWorldMessage"
+
+["0x1403ec719"]
+statement = "The jump of HandleWorldMessage's 2,322-case switch on the message id: case k handles id 97 + k, ids 97 to 2418. Ids outside that range go to the default 0x1403f12d2. The table is 2,322 four-byte image-relative entries at 0x1403f1344 with 636 distinct targets; 1,677 entries are the default. Ghidra recovers none of its targets."
+proof = "0x1403ec6eb lea eax, [rbx-0x61]; 0x1403ec6fc cmp eax, 0x911; 0x1403ec701 ja 0x1403f12d2; 0x1403ec707 lea r9, [0x140000000]; 0x1403ec70e mov ecx, [r9+rax*4+0x3f1344]; 0x1403ec716 add rcx, r9; 0x1403ec719 jmp rcx. Entries read from the file with client_pe: 636 distinct, from 0x1403ec71b to 0x1403f12d2, 1,677 equal to 0x1403f12d2. Ghidra switch_targets returns []. test_jump_tables.py (test_the_2322_case_switch_has_636_distinct_targets, test_the_2322_case_switch_targets_are_the_table_entries_in_the_file) and test_query_process.py (test_ghidra_agrees_with_the_jump_table_reader_on_299_of_302_switches) check it."
+grade = "sure"
+
+["0x1403f12d2"]
+statement = "The default of HandleWorldMessage's switch, also the target of 1,677 table entries: it builds the message's name (or 'Message Id #<id>' when the client holds no name table), passes it with code 11 to a report function that does nothing in this build, frees the text and returns 1, meaning not handled."
+proof = "0x1403f12d2 cmp qword [0x140c65828], 0; 0x1403f12e0 mov edx, ebx; 0x1403f12e2 call 0x140335f10 (name lookup: 'Base Message Id #%d' below 3, the name table entry, or 'Invalid or foreign Message Id #%d'); else 0x1403f12e9 lea rdx, [0x140af23f8] ('Message Id #%d'), 0x1403f12f3 call 0x14018ee90; 0x1403f1305 lea ecx, [rdx+0xb]; 0x1403f1308 call 0x1400035b0 (0x1400035b0 mov [rsp+0x20], r9; xor eax, eax; ret); 0x1403f1316 call 0x14018b900 (free); 0x1403f131b mov ebx, 1; 0x1403f1341 ret. test_jump_tables.py checks the default."
+grade = "sure"
+
+["0x1403f1344"]
+statement = "The jump table of HandleWorldMessage's 2,322-case switch: 2,322 four-byte offsets from the image base, entry k for message id 97 + k. It sits in .text right after the function's code, and the function's .pdata ranges cover it."
+proof = "Read by 0x1403ec70e mov ecx, [r9+rax*4+0x3f1344] with r9 = 0x140000000. .pdata of 0x1403ec6a0 includes the range 0x1403f1344..0x1403f378c (0x2448 = 2,322 x 4 bytes); the word after it is not an entry (0xcccccccc padding). Ghidra function_at returns null; refs_to: 0x1403ec70e and an unwind record at 0x140e03708. test_jump_tables.py (test_the_2322_case_switch_targets_are_the_table_entries_in_the_file) checks the entries."
+grade = "sure"
+
+["0x140612b08"]
+statement = "The jump of a 6-case switch on the number of arguments (0 to 5) in function 0x1406128b0, which raises a UI event a server message names by its LuaEvent table id. That function builds a type letter for each of up to five arguments (i, s, U, b, o, Q for types 0 to 5), fails if the LuaEvent row's parameters text does not begin with those letters, and then each case raises the row's eventName with that many arguments (case 0 with an empty format). The default 0x140612c13 is the shared clean-up. The table is 6 four-byte image-relative entries at 0x140612c94. Ghidra recovers only the first target."
+proof = "0x1406128d9 call 0x140211f40 (looks up the message's first value in the 'LuaEvent' table; LuaEvent.tbl columns: ID, eventName, parameters, record 0x18 bytes); 0x140612988..0x140612992 a second switch (table 0x140612c7c) appends 'i' 's' 'U' 'b' 'o' 'Q'; 0x140612a66 and 0x140612ae0 call 0x14018f0e0 on the row's parameters and eventName texts; 0x140612a7e..0x140612aaa compare; 0x140612ae9 sub r14, rbx (letter count); 0x140612aec cmp r14, 5; 0x140612af0 ja 0x140612c13; 0x140612afd mov eax, [rcx+r14*4+0x612c94]; 0x140612b05 add rax, rcx; 0x140612b08 jmp rax. Table gives 0x140612b0a, 0x140612b29, 0x140612b48, 0x140612b70, 0x140612b9e, 0x140612bd5; each calls 0x1400ea3e0 with the name, the letters (case 0: 0x1409d143a, an empty text) and 0..5 values, then reaches 0x140612c13. Ghidra switch_targets returns only 0x140612b0a. test_query_process.py (test_ghidra_agrees_with_the_jump_table_reader_on_299_of_302_switches) lists it among the three that differ."
+grade = "fairly sure"
+gap = "Which server message reaches 0x1406128b0 is unread: it has no direct callers, only function-table entries at 0x140bf1938, 0x140bf1974 and 0x140bf1994."
+
+["0x140009d00"]
+statement = "The client's main window procedure. On WM_DESTROY it posts quit; before the window object exists it calls DefWindowProcW. Otherwise it keeps the window at least 640 by 480, takes the mouse capture on a button press and releases it when no button is left down, hides the system cursor over the client area and shows it outside (WM_SETCURSOR), clips the cursor to the window on activation in one window mode, raises timer resolution and sets above-normal priority while the application is active (normal priority when not), refuses a suspend query, and passes every message on to the window object's own handler."
+proof = "Decompiled signature LRESULT (HWND, UINT, WPARAM, LPARAM). msg 2 (WM_DESTROY) -> PostQuitMessage(0); no object -> DefWindowProcW (import 0x1409597c8). 0x24 (WM_GETMINMAXINFO) raises min track size to 0x280 x 0x1e0; 0x201/0x204/0x207 SetCapture, 0x202/0x205/0x208 ReleaseCapture when no button bits; 0x20 (WM_SETCURSOR) ShowCursor at 0x14000a061 and 0x14000a0bb; 7 (WM_SETFOCUS) SetForegroundWindow, GetWindowRect, ClipCursor; 0x1c (WM_ACTIVATEAPP) timeBeginPeriod/timeEndPeriod and SetPriorityClass 0x8000 or 0x20; 0x218 (WM_POWERBROADCAST) with wParam 0 returns 0x424d5144 (BROADCAST_QUERY_DENY); 0x112 (WM_SYSCOMMAND) swallows some commands; then calls the window object's handler. 0x140008966 lea rax, [0x140009d00] is stored next to class style 0xb in the window-class record built in 0x140008910 (RegisterClassW is imported). .pdata ranges 0x140009d00..0x14000a30e. test_client_refs.py checks that the two ShowCursor calls lie in it."
+grade = "sure"
+name = "MainWindowProc"
+
+["0x14000a061"]
+statement = "In MainWindowProc's WM_SETCURSOR handling, the call to ShowCursor(TRUE) that shows the system cursor again when the cursor is outside the client area and the client had hidden it; the hidden flag is then cleared."
+proof = "0x14000a053 test dword [rdi+0x40], 0x800; 0x14000a05a je 0x14000a06e; 0x14000a05c mov ecx, 1; 0x14000a061 call [0x1409598f8] (user32.dll!ShowCursor, import table read by client_pe); 0x14000a067 and dword [rdi+0x40], 0xfffff7ff. Reached when the cursor point fails the client-rectangle tests at 0x14000a040..0x14000a051. Ghidra refs_to 0x1409598f8: READ from 0x14000a061 in 0x140009d00. test_client_refs.py (test_the_showcursor_slot_is_referenced_by_two_calls_and_a_jmp_through_it) checks it as a call-mem reference in 0x140009d00."
+grade = "sure"
+
+["0x14000a0bb"]
+statement = "In MainWindowProc's WM_SETCURSOR handling, the call to ShowCursor(FALSE) that hides the system cursor while it is over the client area (or the window holds the mouse capture), if the client has not hidden it already; the hidden flag is then set."
+proof = "0x14000a097..0x14000a0aa tell the window object whether to show its own cursor; 0x14000a0b0 test dword [rdi+0x40], 0x800; 0x14000a0b7 jne 0x14000a0c8; 0x14000a0b9 xor ecx, ecx; 0x14000a0bb call [0x1409598f8] (user32.dll!ShowCursor); 0x14000a0c1 or dword [rdi+0x40], 0x800. Ghidra refs_to 0x1409598f8: READ from 0x14000a0bb in 0x140009d00. test_client_refs.py (test_the_showcursor_slot_is_referenced_by_two_calls_and_a_jmp_through_it) checks it."
+grade = "sure"
+
+["0x1402801f3"]
+statement = "A tail jump through the ShowCursor import slot, ending a small function at 0x1402801d0 that sets an object's cursor-shown flag and calls ShowCursor with the new value only when the flag turns on or off. The function has no .pdata entry, so by .pdata the jump lies outside every function; it is reached only through a function table."
+proof = "0x1402801d0 xor r8d, r8d; 0x1402801d3 test edx, edx; 0x1402801d8 sete al; 0x1402801db cmp [rcx+0x2170], r8d; 0x1402801e2 sete r8b; 0x1402801e6 cmp r8d, eax; 0x1402801e9 je 0x1402801fa (ret); 0x1402801eb mov [rcx+0x2170], edx; 0x1402801f1 mov ecx, edx; 0x1402801f3 jmp [0x1409598f8] (user32.dll!ShowCursor). client_pe root_of(0x1402801f3) is None. Ghidra: function seed_1402801d0 (seeded), no callers, one data reference from 0x140b61450 (a function-table slot); refs_to 0x1409598f8 lists it as INDIRECTION. test_client_refs.py (test_the_showcursor_slot_is_referenced_by_two_calls_and_a_jmp_through_it) checks it as jmp-mem outside every .pdata function."
+grade = "sure"
+
+["0x1408296a0"]
+statement = "Converts an angle in degrees to radians as a 32-bit float: (x - trunc(x / 360)) * pi / 180. It subtracts the count of whole turns, not 360 times it, so it does not wrap at 360 degrees: 720 gives 718 degrees in radians. A quotient beyond the 32-bit integer range truncates to -2147483648, as the CPU does."
+proof = "0x1408296a0 movaps xmm1, xmm0; 0x1408296a3 mulss xmm1, [0x140b79d14] (bytes 610b363b = 0.0027777778, 1/360); 0x1408296ab cvttss2si eax, xmm1; 0x1408296af movd xmm2, eax; 0x1408296b3 cvtdq2ps xmm2, xmm2; 0x1408296b6 subss xmm0, xmm2; 0x1408296ba mulss xmm0, [0x140b79d50] (bytes 35fa8e3c = 0.017453292, pi/180); 0x1408296c2 ret. No .pdata entry (leaf). emulate: 180.0 -> 0x40490fdb (pi), 720.0 -> 0x41487ee0 (12.5315), -90.0 -> 0xbfc90fdb. Callers: 0x1408688f0 (two sites). test_emulator.py checks it against formulas_by_hand.py formula_b."
+grade = "sure"
+name = "DegreesToRadians"
+
+["0x140882470"]
+statement = "Returns the index (0 to 63) of the highest set bit of a 64-bit value, and 0xffffffff (-1) for 0. It tests the upper 32 bits first and otherwise searches the lower 32 bits, narrowing by 16, 8, 4, 2 and 1 bits."
+proof = "0x140882470 mov rdx, rcx; 0x140882473 mov eax, 0x20; 0x140882478 shr rdx, 0x20; 0x14088247c test edx, edx; 0x14088247e je 0x1408824c4; 0x140882480..0x1408824b7 test 0xffff0000/0xff000000/0xf0000000/0xc0000000 and shift by 16/8/4/2, subtracting; 0x1408824ba test edx, edx; js; 0x1408824be dec eax; 0x1408824c0 add eax, 0x1f; ret. Low half 0x1408824c4..0x14088250e ends dec eax; dec eax (when not negative); ret. No .pdata entry (leaf). emulate: 0 -> 0xffffffff, 1 -> 0, 0x80000000 -> 31, 2^32 -> 32, 2^63 -> 63. Callers: 0x140881ec0, 0x140881f60 (two sites), 0x1408821b0. test_emulator.py checks it against formulas_by_hand.py formula_a."
+grade = "sure"
+name = "HighestSetBitIndex64"
+
+["0x1408824c4"]
+statement = "In HighestSetBitIndex64, the start of the search of the lower 32 bits, taken when the value's upper 32 bits are zero; it begins from 32, or from 31 when the lower 32 bits are zero too, so that 0 returns -1."
+proof = "0x14088247c test edx, edx; 0x14088247e je 0x1408824c4; 0x1408824c4 test ecx, ecx; 0x1408824c6 mov edx, 0x1f; 0x1408824cb cmove eax, edx (eax was 0x20 from 0x140882473); then 0x1408824ce test ecx, 0xffff0000 ... 0x14088250c dec eax; 0x14088250e ret. emulate 0 -> 0xffffffff. formulas_by_hand.py formula_a follows these lines; test_emulator.py checks it."
+grade = "sure"
+
+["0x140663030"]
+statement = "Pushes a quest onto the Lua stack as a full userdata that holds the quest pointer and carries the 'Game.Quest' metatable, and returns 1 (one value pushed). A null quest pushes nothing and returns 0. Every Lua function that hands a quest to the UI goes through it."
+proof = "0x140663040 test rdx, rdx; 0x140663043 jne / 0x140663045 xor eax, eax; ret (null quest returns 0). 0x140663057 call 0x140059170 with size 8 (lua_newuserdata: pushes a type-7 value and returns the block, Lua 5.1 layout); 0x140663069 mov [rax], rbx stores the quest pointer; 0x14066305c lea of 'Game.Quest', 0x140663063 mov r8d, 0xa, 0x140663073 call 0x140062650 (luaS_newlstr: the Lua 5.1 string hash, 'memory allocation error: block too big'); 0x140663090 mov [rsp+0x28], 4 (TValue tag string); 0x140663081 lea of the registry (global state +0xa0); 0x140663098 call 0x14005e8e0 (luaV_gettable: 'loop in gettable'); 0x14066309d add [rdi+0x10], 0x10 (top++); 0x1406630a2 mov edx, -2; 0x1406630aa call 0x140058bf0 (lua_setmetatable); 0x1406630b4 mov eax, 1. Its 18 callers by the query process: the 17 .pdata functions test_client_refs.py names plus 0x140420230. Checked by test_client_refs.py and test_query_process.py (caller lists only)."
+grade = "sure"
+name = "PushQuest"
+
+["0x140420230"]
+statement = "The push slot of the quest argument marshaller: takes the next 8-byte quest pointer from an argument cursor, advances the cursor, and pushes the quest to Lua through PushQuest. It is the middle entry of a three-entry table whose first entry returns the type letter 'Q' and whose last reads a 'Game.Quest' userdata back from the Lua stack. It has no .pdata entry."
+proof = "0x140420230 add [r8], 8; 0x140420234 mov rcx, rdx (the Lua state); 0x140420237 mov rdx, [r8]; 0x14042023a mov rdx, [rdx-8]; 0x14042023e jmp 0x140663030. Table at 0x140b66d78: 0x140420220 (mov al, 0x51; ret), 0x140420230, 0x140420250 (0x14042025c lea of 'Game.Quest', 0x140420268 call 0x140056ab0 = luaL_checkudata, 0x14042027b stores the pointer through the cursor). client_pe.root_of(0x140420230) is None; Ghidra names it seed_140420230. Cited in test_query_process.py."
+grade = "sure"
+name = "PushQuestArgument"
+
+["0x14042023e"]
+statement = "The tail-call jump from the quest argument marshaller's push slot into PushQuest. It lies in code with no .pdata entry, so the .pdata reference index counts it in no function, while Ghidra's seeded project puts it in 0x140420230."
+proof = "0x14042023e jmp 0x140663030 (llvm-objdump). client_pe.root_of(0x14042023e) is None; the query process's callers of 0x140663030 list it as the site of 0x140420230. test_client_refs.py asserts it is not among the index's call sites."
+grade = "sure"
+
+["0x140409330"]
+statement = "Adds one chat link's object to the Lua table of a chat message segment, by link type: 4, 8, 9 and 11 add the item as uItem (each type finds the item a different way: by item id, from item data carried in the link, by item GUID, by an id in a client map); 5 adds the quest as uQuest; 6 adds the archive article as uArchiveArticle; 10 adds tNavPoint with tPosition, nMapZoneId and strZoneName. Type 7 and any type outside 4 to 11 add nothing and return 0; the handled types return 1. It is called while building arMessageSegments for a ChatMessage event."
+proof = "0x140409365 add eax, -4; 0x140409368 cmp eax, 7; 0x14040936b ja 0x140409813 (xor eax, eax: return 0); 0x140409384 jmp through the table at 0x140409834; switch_targets of 0x140409384 gives 8 targets, case 7 = 0x140409813. Case 5: 0x140409510 call 0x1405a8a40 (quest by id), 0x140409520 call 0x140663030, 0x140409529 lea L'uQuest', then 0x1400fb540 sets the field. Case 6: 0x140409539 call 0x14040b420 (string 'uArchiveArticle'). Case 10 strings 'tPosition', 'nMapZoneId', 'strZoneName', 'tNavPoint'; cases 4, 8, 9, 11 string 'uItem'. Caller 0x140408850 is called by 0x1404045c0, which holds 'arMessageSegments' and 'ChatMessage'; 0x140409860 beside it sets 'bAlien', 'bRolePlay', 'bProfanity', 'strText'. Cited in test_client_refs.py."
+grade = "sure"
+name = "AddChatLinkToSegment"
+
+["0x1404165e0"]
+statement = "The Lua item library function GetVirtualItems: returns an array of the player's virtual items, each entry a table filled with the item's data plus the object that owns it: queOwner (a quest), pmOwner (a path mission), clgOwner (a challenge) or peoOwner (a public event objective)."
+proof = "Registered as 'GetVirtualItems' at 0x140b669d0/0x140b669d8, a table registered by 0x140413a20 beside the 'Game.ItemData' class. Body: new table (0x14005c1b0 then type 5), per owner list a new entry table filled by 0x140416130; quest branch 0x140416727 call 0x1405a8a40, 0x140416737 call 0x140663030, 0x140416740 L'queOwner'; strings 'pmOwner' at 0x14041686e, 'clgOwner' at 0x140416aaa, 'peoOwner' at 0x140416f96. Cited in test_client_refs.py."
+grade = "fairly sure"
+gap = "The entry fields 0x140416130 writes and the exact source list each owner type is read from are not read; decompiling 0x140416130 and the owner managers would settle them."
+name = "LuaItemGetVirtualItems"
+
+["0x140419ac0"]
+statement = "The Lua item method GetGivenQuest: reads the item at argument 1 and pushes the quest that item gives, as a Game.Quest. It pushes nil when the argument is no item or the quest id names no known quest."
+proof = "Registered as 'GetGivenQuest' at 0x140c58d40/0x140c58d48, in the 79-entry 'Game.ItemData' method table registered by 0x140413a20. 0x140419ac6 mov edx, 1; 0x140419ace call 0x140417bf0; 0x140419ad6 jne / 0x140419adc mov [rdx+8], eax (nil) when null; 0x140419aef mov edx, [rax+0x1b0] (quest id from the item record); 0x140419af5 call 0x1405a8a40 (quest by id); 0x140419b03 nil when not found; 0x140419b20 call 0x140663030. Cited in test_client_refs.py."
+grade = "sure"
+name = "LuaItemGetGivenQuest"
+
+["0x14050f800"]
+statement = "The DialogSys Lua function GetViewableQuest(nQuestId): searches the client's 11 dialog entry lists for an entry of kind 6, 7, 8, 10, 11 or 13 whose quest id equals the argument, then pushes that quest as a Game.Quest. It returns no value when no entry matches or the quest is unknown."
+proof = "Registered as 'GetViewableQuest' at 0x140b6a7f0/0x140b6a7f8, in the 'DialogSys' table registered by 0x14050f270. 0x14050f800 calls 0x140056d60 with index 1 (checked integer); loops 11 lists from the global at 0x140c7dcd0, testing kind < 0xe and bit set in 0x2dc0 (kinds 6, 7, 8, 10, 11, 13) and the entry id equal to the argument; then 0x1405a8a40 (quest by id) and 0x14050f896 call 0x140663030; return 0 when the loop ends. Cited in test_client_refs.py."
+grade = "fairly sure"
+gap = "That the 11 lists are dialog entries and what the kinds mean is inferred from the DialogSys registration; reading who fills the global at 0x140c7dcd0 would settle it."
+name = "LuaDialogSysGetViewableQuest"
+
+["0x140664840"]
+statement = "The Lua function Quest.GetActiveQuest: pushes the quest the client holds as the active quest, as a Game.Quest; pushes nil when no active quest id is set, and nothing when the id names no known quest."
+proof = "Registered as 'GetActiveQuest' at 0x140b6fcd0/0x140b6fcd8, in the 'Quest' static table registered by 0x1406625d0 with 'Game.Quest'. 0x140664846 mov edx, [0x140c65c38]; 0x14066484f test edx, edx; 0x140664857 mov [rax+8], edx (nil) and 0x14066485f lea eax, [rdx+1] (returns 1); 0x140664868 call 0x1405a8a40; 0x140664878 jmp 0x140663030. Cited in test_client_refs.py."
+grade = "sure"
+name = "LuaQuestGetActiveQuest"
+
+["0x140664880"]
+statement = "The Lua function Quest.GetCallbackList(bShowAll): returns an array of the quests in the quest manager's callback set. Unless the argument is true, a quest whose level is below the player's level minus 10 is left out (the player's effective level when set, else the level)."
+proof = "Registered as 'GetCallbackList' at 0x140b6fce0/0x140b6fce8, Quest static table. Reads argument 1 as a boolean (nil or false = false), creates a table, walks the ordered map at the quest manager (0x140c65b80) member 0x48; each node: 0x1405a8a40 quest lookup, level filter against the player record (0x3c then 0x38, minus 10) unless the boolean is true, 0x14066498c call 0x140663030 and 0x1400fb470 appends; returns the table. Cited in test_client_refs.py."
+grade = "fairly sure"
+gap = "That the map at the quest manager is the callback set is inferred from the Lua name; the field read as the quest level is not tied to a table column."
+name = "LuaQuestGetCallbackList"
+
+["0x140672840"]
+statement = "Adds arImbuements to an item's detail table: for each quest in the item's imbuement chain, an entry with strObjective, strName, bComplete, bActive and queImbuement (the quest), plus the reward from the ItemImbuementReward table (such as nAddedRuneSlots, nAddedLevels, eNewQuality, strSpecial, eProperty and nValue). It returns false when the item has no imbuement row."
+proof = "Called by 0x14066e6d0 when its section flag 0x10 is set (one of the item detail sections). Strings 'strObjective' 0x140672a79, 'strName' 0x140672ad2, 'bComplete' 0x140672b37, 'bActive' 0x140672c04, 'queImbuement' 0x140672cb9, 'nAddedRuneSlots' 0x140672d6f, 'arImbuements' 0x140672e0d, 'nAddedLevels' 0x140672e7a, 'eNewQuality' 0x140672ed8, 'strSpecial' 0x140672f29, 'eProperty' 0x14067306a, 'nValue' 0x1406730a9; 0x140672ce8 lea of u'ItemImbuementReward' passed to the table lookup; quest per entry 0x1405a8a40 then 0x140672cb0 call 0x140663030. Cited in test_client_refs.py."
+grade = "fairly sure"
+gap = "The table the imbuement chain row comes from (looked up by 0x14020b060) and the exact reward fields per reward kind are not read."
+name = "AddItemImbuementsToDetails"
+
+["0x140680180"]
+statement = "The Game.PathMission Lua method GetSettlerSheriffInfo: for a settler player's sheriff mission (mission type 26), returns a table of 8 entries, each with strDescription, bIsComplete and queObjective (the quest), plus arTitles. It returns nil for any other mission or path."
+proof = "Registered as 'GetSettlerSheriffInfo' at 0x140c5c780/0x140c5c788, in the 54-entry 'Game.PathMission' table registered by 0x140679e50. Gate: player path record type 1 and mission type 0x1a, else nil. Loop of 8 (uVar13 < 8) writing 'strDescription' 0x140680399, 'bIsComplete' 0x1406803f8, quest via 0x1405a8a40 and 0x1406804a0 call 0x140663030, 'queObjective' 0x1406804a9; then 'arTitles' 0x140680547. Cited in test_client_refs.py."
+grade = "fairly sure"
+gap = "That path type 1 is Settler and mission type 26 is the sheriff mission is read from the Lua name, not from a table or enum."
+name = "LuaPathMissionGetSettlerSheriffInfo"
+
+["0x1406a30d0"]
+statement = "The Game.Contract Lua method GetQuest: pushes the contract's quest as a Game.Quest; pushes nil when the argument is no contract or the contract has no data, and returns no value when the quest id is 0 or unknown."
+proof = "Registered as 'GetQuest' at 0x140c5d620/0x140c5d628, in the 'Game.Contract' table registered by 0x1406a2ec0. 0x1406a30d6 lea 'Game.Contract' for 0x140056ab0 (luaL_checkudata, index 1); nil when null; quest id read from the contract data, 0x1405a8a40, 0x1406a311c call 0x140663030. Cited in test_client_refs.py."
+grade = "sure"
+name = "LuaContractGetQuest"
+
+["0x1406ee640"]
+statement = "Builds a Lua array of rewards from a reward list, one table per reward, its kind in eType: 0 an item (itemReward, nCount), 1 a spell (splReward), 3 a quest (queReward), 2 a title (strTitleName), 4 a schematic (sbpReward). A reward with a nonzero gate is included only when a check on it passes. With no player it returns an empty table. PathEpisode:GetRewards, PathMission:GetRewardData and PlayerPathLib.GetPathLevelData use it."
+proof = "eType values: 0x1406ee79d xor r9d (0, before 'itemReward'/'nCount'), 0x1406ee8cd mov r9d, 1 ('splReward'), 0x1406ee9bc mov r9d, 3 ('queReward', quest via 0x1405a8a40 and 0x1406ee9e3 call 0x140663030), 0x1406eea88 mov r9d, 2 ('strTitleName'), 0x1406eebb5 mov r9d, 4 ('sbpReward'). Callers 0x140679c10 ('GetRewards' at 0x140c5c468, 'Game.PathEpisode'), 0x14067be90 ('GetRewardData' at 0x140c5c518), 0x1406ee2c0 ('GetPathLevelData' at 0x140b72388, 'PlayerPathLib'). Cited in test_client_refs.py."
+grade = "fairly sure"
+gap = "The gate check is a call through the object at 0x140c659a0 whose meaning is not read; the reward record layout is not tied to a table."
+name = "PushRewardList"
+
+["0x140708120"]
+statement = "The GameLib Lua function GetInteractHintArrowObject: returns a table with eHintArrowType, nExtraData and objTarget, where objTarget depends on the type: 0 a unit, 1 a quest (Game.Quest), 3, 4 and 7 objects looked up by id in client maps, 6 another looked-up object, 8 a table the client builds, 9 a table holding tPosition. Other types put a plain value in objTarget."
+proof = "Registered as 'GetInteractHintArrowObject' at 0x140b73480/0x140b73488, in the 241-entry 'GameLib' table registered by 0x140709460. Strings 'eHintArrowType' 0x1407081b9, 'nExtraData' 0x140708206, then the switch at 0x140708251 on the hint type; case 1: quest id nonzero, 0x1405a8a40, 0x140708448 call 0x140663030, 'objTarget'; case 9 'tPosition'. Cited in test_client_refs.py."
+grade = "fairly sure"
+gap = "The object kinds for types 0, 3, 4, 6, 7 and 8 come from helpers (0x140432ac0, 0x140432c80, 0x140432d60, 0x140649870, 0x1404330e0, 0x140705250) that are not read."
+name = "LuaGameLibGetInteractHintArrowObject"
+
+["0x14072dc90"]
+statement = "The Game.Episode Lua method GetVisibleQuests(bShowCompleted, bShowOutLevel, bSortByName): returns an array of the episode's quests the quest log shows. Unless the first flag is set, a quest in state 3 is left out; unless the second is set, a quest below the player's level minus 10 is left out; the third sorts by quest title instead of level. An episode with nothing visible returns an empty table."
+proof = "Registered as 'GetVisibleQuests' at 0x140c5ed70/0x140c5ed78, in the 'Game.Episode' table registered by 0x14072d2a0. 0x14072dc9e 'Game.Episode' for 0x140056ab0; three booleans read from arguments 2, 3 and 4; quest state from 0x1405fbc40; level floor from the player record minus 10; the third flag's sort compares titles with 0x14018e220, else levels; each kept quest pushed with 0x14072e135 call 0x140663030 into the array. Cited in test_client_refs.py."
+grade = "fairly sure"
+gap = "The argument names are chosen from what each flag does; what state 3 and state 4 mean in the quest state enum is not read."
+name = "LuaEpisodeGetVisibleQuests"
+
+["0x14072e210"]
+statement = "The Game.Episode Lua method GetTrackedQuests(nFilter, bFlag): returns an array of the episode's quests that are tracked, have a timer still running, or are in state 4."
+proof = "Registered as 'GetTrackedQuests' at 0x140c5ed80/0x140c5ed88. 0x14072e217 'Game.Episode' for 0x140056ab0; argument 2 read as a number (or numeric string), argument 3 as a boolean, both passed to the episode's quest lister; per quest kept when 0x14054f480 is nonzero, or 0x14054f4f0 minus the time at 0x140c636a8 is positive, or 0x1405fbc40 returns 4; 0x14072e3d4 call 0x140663030. Cited in test_client_refs.py."
+grade = "fairly sure"
+gap = "That 0x14054f480 tests tracking and 0x14054f4f0 returns a timer end are inferred from the Lua name; what the two arguments mean to the quest lister is not read."
+name = "LuaEpisodeGetTrackedQuests"
+
+["0x14072e480"]
+statement = "The Game.Episode Lua method GetQuest(n): pushes the episode quest the episode returns for the integer argument, as a Game.Quest, and returns no value when there is none."
+proof = "Registered as 'GetQuest' at 0x140c5ed90/0x140c5ed98. 0x14072e48a lea 'Game.Episode', 0x14072e499 call 0x140056ab0; 0x14072e4a6 mov edx, 2, 0x14072e4ae call 0x140056d60 (checked integer); 0x14072e4bb call through the episode object (slot 0x88); 0x14072e4c5 je; 0x14072e4d7 jmp 0x140663030; on null 0x14072e4e2 calls the object's second slot and 0x14072e4e5 xor eax, eax. Cited in test_client_refs.py."
+grade = "fairly sure"
+gap = "Whether n is a quest id or a position in the episode is decided by the episode object's method, which is not read."
+name = "LuaEpisodeGetQuest"
+
+["0x14072ea40"]
+statement = "The Game.Episode Lua method GetAllQuests(nFilter): returns an array of the episode's quests, leaving out a quest in state 6 unless its quest record has flag bit 2 (value 4) set."
+proof = "Registered as 'GetAllQuests' at 0x140c5edc0/0x140c5edc8. 0x14072ea48 'Game.Episode' for 0x140056ab0; argument 2 read as a number, passed to the episode's quest lister; per quest 0x1405fbc40 state, kept unless state 6 with the record flag 4 clear; 0x14072eba7 call 0x140663030 into the array. Cited in test_client_refs.py."
+grade = "sure"
+name = "LuaEpisodeGetAllQuests"
+
+["0x14074a750"]
+statement = "The QuestLib Lua function GetQuest(n): pushes the quest at zero-based position n (default 0) of the quest manager's ordered quest map, as a Game.Quest; returns no value when n is at or past the number of quests."
+proof = "Registered as 'GetQuest' at 0x140b75340/0x140b75348, in the 'QuestLib' table registered by 0x14074a9c0. 0x14074a756 to 0x14074a79a find the add-on context whose Lua state matches; 0x14074a7a8 lea edx, [r8+1] (argument 1, default 0), 0x14074a7ac call 0x1400f26a0; 0x14074a7bb cmp eax, [rcx+0x10] (quest count) and jl; 0x14074a7c0 xor eax, eax; 0x14074a7ca call 0x1405fc730 (walks the map n nodes, 0x1405fc79d reads the quest id and jmp 0x1405a8a40); 0x14074a7da jmp 0x140663030. Cited in test_client_refs.py."
+grade = "sure"
+name = "LuaQuestLibGetQuest"
+
+["0x140764a20"]
+statement = "Fills one ContentFinderLib quest-info table: hubSuggested, epiSuggested, queSuggested (the quest, as a Game.Quest), bCanCall, bInProgress, nRecommendedGroupSize, tLocation, and tFactionInfo with strName, nLevel and nCurrent. ContentFinderLib.FindQuests and ContentFinderLib.GetSuggestedContent call it."
+proof = "Strings 'hubSuggested' 0x140764a97, 'epiSuggested' 0x140764ac5, 'queSuggested' 0x140764b01 (after 0x1405a8a40 and 0x140764af8 call 0x140663030), 'bCanCall' 0x140764b52, 'bInProgress' 0x140764c28, 'nRecommendedGroupSize' 0x140764ce1, 'tLocation' 0x140764d24, 'strName' 0x140764de6, 'nLevel' 0x140764e24, 'nCurrent' 0x140764e63, 'tFactionInfo' 0x140764e8e. Callers 0x1407655c0 ('FindQuests' at 0x140b76258) and 0x140765b00 ('GetSuggestedContent' at 0x140b76268, 'tQuestInfo'), table registered by 0x140765f00 as 'ContentFinderLib'. Cited in test_client_refs.py."
+grade = "sure"
+name = "FillContentFinderQuestInfo"
+
+["0x140283670"]
+statement = "Sets up the UI sprite renderer and loads the UI fonts: takes a pooled 352-byte block for the batch state, loads the shaders Shaders\\SpriteVS.sho and Shaders\\SpritePS.sho, then finds every UI\\Fonts\\*.ttf, reads each into memory and registers it with Windows by AddFontMemResourceEx. A font it cannot read or register is logged under the Gfx category ('Trouble reading fonts', 'Trouble loading fonts') and reported as an error, and loading goes on with the next font. It returns the failing result of a shader load, the step after it, or the font search, else 0."
+proof = "0x1402836b3 call 0x140288100; strings 'Shaders\\\\SpriteVS.sho' 0x1402836de and 'Shaders\\\\SpritePS.sho' 0x140283819; 'UI\\\\Fonts\\\\*.ttf' 0x1402838ad passed with flags 2 to 0x1402838be call 0x1401b54e0; per file 0x140283947 call 0x1401b6d00, then AddFontMemResourceEx with the buffer's data and size; on failure GetLastError, log 0x1401a3130 with category 0xe ('Gfx' at 0x140c2cee0) and messages '%d -4 %d %d %s' / '%d -5 %d %s %x', then 0x1401971e0 with 'Trouble reading fonts' / 'Trouble loading fonts' (message pointers are stored plus 0x12fa640). callees: five internal functions and five imports, checked by test_client_refs.py and test_query_process.py."
+grade = "sure"
+name = "InitSpriteRendererAndFonts"
+
+["0x1401971e0"]
+statement = "Reports an error: formats the message, logs it under its category, and, when it is not nested inside another report and the call site's report count is under the limit (unlimited by default) and no debugger is attached, raises a crash report with exception code 0xCFFF0001, exiting the process with code 1 when that report says so. It always returns 0, so the DebugBreak its callers place after a nonzero result never runs."
+proof = "Reentrant lock on 0x140c67400/0x140c67408 with GetCurrentThreadId; nesting count 0x140c63730; vsnwprintf of the message (pointer stored plus 0x12fa640); log call 0x1401a3130; 0x14019730e cmp [rsi], eax against 0x140c1e44c (0xffffffff); 0x140197316 category name from the table at 0x140c2ce70 when below 0x83, else 'Unknown'; format '(%s) Error: %s\\n'; 0x14019735a IsDebuggerPresent; 0x140197397 RtlCaptureContext; 0x1401973b7 mov [rsp+0x50], 0xcfff0001; 0x1401973e3 call 0x140192440; 0x1401973ea jne / 0x1401973ee ExitProcess(1); 0x140197470 xor eax, eax on every path. In the callee list checked by test_client_refs.py."
+grade = "fairly sure"
+gap = "What 0x140192440 does with the exception record (crash reporter dialog or upload) is not read."
+name = "ReportError"
+
+["0x1401a3130"]
+statement = "Writes a log message: takes a category (0 to 130), a level, a message and its arguments; drops the message when the level is negative or above the category's set level (every category above 130 drops), formats it into a 4096-character buffer and writes it, returning 1 when written and 0 when dropped. Before the C runtime starts it prints 'WARNING! Log called before CRT startup' instead."
+proof = "0x1401a3130: level < 0 returns 0; 0x1401a3167 test of 0x140c674a0, else 0x1401a3170 'WARNING! Log called before CRT startup' to OutputDebugStringA; category < 0x83 indexes the levels at 0x140c674a8, else -1; level above it returns 0; vsnwprintf into 0xfff characters with the message pointer minus 0x12fa640; call 0x1401a2460; return 1. In the callee list checked by test_client_refs.py."
+grade = "sure"
+name = "LogMessage"
+
+["0x1401b54e0"]
+statement = "Lists the files matching a wildcard path into a new file list, from the loose files on disk and from each registered file source, returning a Windows result code (E_INVALIDARG for a null path or output). Flag 1 is passed to every search, flag 2 adds a search under an extra root when one is set, and flag 4 skips the registered sources."
+proof = "0x1401b54e0 returns 0x80070057 when the path or output is null; flag 2 path through 0x1401b5360 and 0x1401cffa0; 0x1401b5110 builds the full path; 0x1401cffa0 reaches 0x1401d1190, whose imports are FindFirstFileW, FindNextFileW and FindClose (query process callees); unless flag 4, loops the sources at the file system object (0x140c63788) member 0x850 for 0x858 entries, calling each source's search slot 0x38; results merged by 0x1401d02a0; an empty result is a new empty list (0x140b5f120). In the callee list checked by test_client_refs.py."
+grade = "fairly sure"
+gap = "That the registered sources are the client's archive files is not read; reading what registers entries in the list at the file system object would settle it."
+name = "FindFiles"
+
+["0x1401b6d00"]
+statement = "Opens a file through the client file system and returns its whole contents as an in-memory buffer object, with a Windows result code (E_INVALIDARG for a null output)."
+proof = "0x1401b6d00 returns 0x80070057 for a null output; 0x1401b5b50 opens the path on the file system object (0x140c63788) with modes 1 and 3; 0x1401c5690 makes the buffer object; the open file's slot 0x48 fills it; the file is released and the buffer returned. In 0x140283670 the result's size (slot 0x10) and data (slot 0x20) go to AddFontMemResourceEx. In the callee list checked by test_client_refs.py."
+grade = "fairly sure"
+gap = "The open file's fill method (slot 0x48) and 0x1401b5b50's mode arguments are not read."
+name = "ReadFileToMemory"
+
+["0x140288100"]
+statement = "Takes a 352-byte block from a lock-guarded free list, or allocates a new one from the heap when the list is empty."
+proof = "Lock on 0x140c79b18/0x140c79b20 with GetCurrentThreadId (spin 0x400 then 0x14019fb60); head 0x140c79b38: when null, unlock (SetEvent on waiters) and 0x14018b280(0x160, flags); else pop the head (0x140c79b38 = *head) and unlock. In the callee list checked by test_client_refs.py."
+grade = "sure"
+name = "AllocPooledBlock352"
+
+["0x1403a81e0"]
+statement = "Starts the stun breakout when a stun lasting the given milliseconds lands on the player and a breakout key set is active: reads GameFormula row 1108 for the tick interval (default 100 ms) and a fraction (default 0.8), counts the stun's ticks (duration / interval) and the ticks needed to break it ((duration - trunc((1 - fraction) * duration)) / interval), starts the breakout tick timer, and fires the Lua event ActivateCCStateStun with the key set."
+proof = "0x1403a81ea: returns unless the key set (game object 0x6388) is nonzero; 0x140200220(0x454) GameFormula lookup ('GameFormula' at 0x140a6a408), integer default 100, float default at 0x140b79e8c = 0x3f4ccccd (0.8); 1.0 at 0x140b79ed0; ticks = duration / interval; needed = (duration - (int)((1.0 - f) * duration)) / interval, stored twice; timer 0x140195960 with callback 0x1403a84d0 ('StunVGPressed', 'UpdateCCStateStun'); call 0x1400ea3e0 with 'ActivateCCStateStun' and format 'i'. Caller 0x14045de60 calls it for CC state 0 (u'Stun') with the stun's duration."
+grade = "fairly sure"
+gap = "That the game object value is the set of breakout direction keys is read from the timer callback's key-bit tests (bits 1, 2, 4, 8), not from a table; the GameFormula columns are not named."
+name = "StartStunBreakout"
+
+["0x14055a260"]
+statement = "Decides whether mouse lock is on, from four mouse-lock settings and the current input state; GameLib.IsMouseLockOn returns its result. It is off unless the mouse-lock option bit is set, the game is not in state 4, and every linked entry is in state 4; then an explicit setting of 1 forces it on and any other nonzero explicit setting off, and otherwise the default setting applies, subject to per-input-state tables."
+proof = "0x14055a264 the options object 0x140c635f0 with bit 0x2000; game object state != 4 and the linked entries all at 4, else return 0; input state from 0x140c63750 clamped by 0x140c4d420 (4) and 0x140c4d3a0 (4) indexing byte tables 0x140c4d430 and 0x140c4d3b0; returns setting[3] == 1, setting[1], or setting[2] == 1 by branch. Caller 0x140702c10 is 'IsMouseLockOn' at 0x140b729e0/0x140b729e8 in GameLib and pushes the result as a boolean. Asked as question 4 in check_support.py."
+grade = "fairly sure"
+gap = "What the four settings, the game state 4 and the linked entries are is not read; the function writing the settings at the game object would name them."
+name = "IsMouseLockOn"

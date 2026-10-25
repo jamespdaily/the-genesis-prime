@@ -429,6 +429,38 @@ class CoverageProblemsTest(unittest.TestCase):
         self.assertEqual(self.problems(record(), cited={}), [])
 
 
+LEAF_FUNCTION = 0x1408296A0  # a leaf function: no .pdata entry (formulas_by_hand.py)
+PDATA_START = 0x140003FB0  # a .pdata start (test_jump_tables.py)
+INSIDE_PDATA_FUNCTION = 0x140003FE8  # the switch jump inside it
+RDATA_CONSTANT = 0x140B79D14  # a constant in .rdata (formulas_by_hand.py)
+
+
+class FunctionEntriesTest(unittest.TestCase):
+    """item 2's name rule on the real client: .pdata lists no leaf function."""
+
+    @classmethod
+    def setUpClass(cls):
+        from client_pe import ClientPE
+
+        cls.pe = ClientPE(cs.client_exe())
+
+    def entries(self, *keys: int) -> set[str]:
+        records = {"0x%x" % k: record(key="0x%x" % k, name="Named") for k in keys}
+        return check_facts.function_entries(self.pe, records)
+
+    def test_a_pdata_start_is_an_entry_with_or_without_a_record(self):
+        self.assertIn("0x%x" % PDATA_START, self.entries())
+
+    def test_a_named_leaf_function_outside_every_pdata_function_is_an_entry(self):
+        self.assertIn("0x%x" % LEAF_FUNCTION, self.entries(LEAF_FUNCTION))
+
+    def test_a_named_address_inside_a_pdata_function_is_not_an_entry(self):
+        self.assertNotIn("0x%x" % INSIDE_PDATA_FUNCTION, self.entries(INSIDE_PDATA_FUNCTION))
+
+    def test_a_named_address_outside_code_is_not_an_entry(self):
+        self.assertNotIn("0x%x" % RDATA_CONSTANT, self.entries(RDATA_CONSTANT))
+
+
 class MainTest(unittest.TestCase):
     def run_main(self, argv=()) -> tuple[int, str]:
         out = io.StringIO()

@@ -83,7 +83,7 @@ class ClientPETest(unittest.TestCase):
     def test_an_address_outside_every_section_has_no_section(self):
         self.assertIsNone(self.pe.section_of(0x1BFFFF000))  # seed.PLANTED_UNMAPPED
         self.assertIsNone(self.pe.section_of(0x13FFFFFFF))  # one below the image
-        self.assertIsNone(self.pe.section_of(0x140957FFF))  # the page gap before BINK (PE header: .text raw data ends at 0x1409571e8, BINK starts at 0x140958000)
+        self.assertIsNone(self.pe.section_of(0x140957FFF))  # the page gap before BINK (PE header: .text ends at 0x140957c2c, its file data at 0x140957e00; BINK starts at 0x140958000)
 
     def test_read_returns_the_files_bytes_at_a_known_address(self):
         # issue 16 trial: the 16 bytes at two function starts
