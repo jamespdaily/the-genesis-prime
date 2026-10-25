@@ -1,10 +1,9 @@
 """How the fast suite treats the client and Ghidra: which tests skip, and when.
 
-Expected values come from the approved test list's client-suite item and the
-"Progress" comment on the step's issue (issue 8): a test that opens
-WildStar64.exe skips only when GENESIS_NO_CLIENT=1 (which only CI sets), through
-the one decorator check_support.needs_client, and on any other machine a
-missing client fails it; a test that needs a Ghidra install, a JDK or a seeded
+The rule fixed here: a test that opens WildStar64.exe skips only when
+GENESIS_NO_CLIENT=1 (which only CI sets), through the one decorator
+check_support.needs_client, and on any other machine a missing
+client fails it; a test that needs a Ghidra install, a JDK or a seeded
 project is an integration test, gated by check_support.integration_only like
 test_query_process.py's. The decorator is run in a subprocess on a planted
 test class with a client path that points nowhere; the other tests read this
@@ -167,7 +166,7 @@ class EveryTestThatNeedsGhidraIsAnIntegrationTest(unittest.TestCase):
         self.assertEqual(problems, [], "these tests need Ghidra and run in the fast suite")
 
     def test_the_three_ghidra_reading_tests_are_integration_tests(self):
-        # the approved list's client-suite item: the 3 tests of test_ghidra_env.py that read GENESIS_GHIDRA_DIR
+        # the 3 tests of test_ghidra_env.py that read GENESIS_GHIDRA_DIR
         tree = ast.parse((Path(__file__).resolve().parent / "test_ghidra_env.py").read_text())
         gated = {
             f"{cls.name}.{m.name}"

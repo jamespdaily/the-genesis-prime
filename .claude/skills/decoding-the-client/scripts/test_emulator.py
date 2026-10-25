@@ -4,7 +4,7 @@ Integration tests: they run only when GENESIS_INTEGRATION=1 (see
 test_query_process.py for the environment). They open the project built by
 check_support.seeded_project().
 
-Interface the tests fix, for the build step to document in ghidra_query.py:
+The request and reply, as ghidra_query.py documents them:
   {"kind": "emulate", "function": "0x140882470", "args": [x, ...]}
   -> {"result": {"rax": <unsigned int>, "xmm0_low": <unsigned int>}, "steps": n}
 Each argument is a JSON integer (an integer register) or a JSON float (an XMM
@@ -36,7 +36,7 @@ A_EDGES = [0, 1, 2**32 - 1, 2**32, 2**63, 2**64 - 1]
 B_EDGES = [0.0, -0.0, 360.0, -360.0, 720.0]
 # 1e12 / 360 is past cvttss2si's int32 range. The CPU gives the integer
 # indefinite value 0x80000000; Ghidra 12.2's p-code wraps the truncation to 32
-# bits instead (issue 24, approved as a known gap).
+# bits instead (a known gap of the emulator).
 B_OVERFLOW = f32(1e12)
 B_OVERFLOW_GHIDRA_BITS = 0x50823C05  # the hand formula fed the wrapped value -1,517,189,376
 B_OVERFLOW_CPU_BITS = 0x50825100  # formula_b(1e12): the CPU's rule
@@ -75,7 +75,6 @@ class EmulatorTest(unittest.TestCase):
         reply = cls.qp.ask("emulate", function=hx(function), args=[argument])
         return reply.answer["result"], reply.answer["steps"], reply.ms
 
-    # item 12
     def test_formula_a_returns_the_index_of_the_highest_set_bit_as_the_hand_transcription_does(self):
         for x, (result, steps, _ms) in zip(self.a_inputs, self.a_runs):
             with self.subTest(x=hex(x)):
@@ -89,7 +88,6 @@ class EmulatorTest(unittest.TestCase):
         caught = [x for x, (result, _s, _m) in zip(self.a_inputs, self.a_runs) if result["rax"] & M32 != planted(x)]
         self.assertGreaterEqual(len(caught), 1)
 
-    # item 13
     def test_formula_b_reads_the_clients_constants_and_returns_the_float_the_hand_transcription_does(self):
         for x, (result, steps, _ms) in zip(self.b_inputs, self.b_runs):
             with self.subTest(x=repr(x)):
@@ -110,7 +108,6 @@ class EmulatorTest(unittest.TestCase):
         result, _steps, _ms = self.emulate_once(FORMULA_B, B_OVERFLOW)
         self.assertEqual(result["xmm0_low"] & M32, B_OVERFLOW_GHIDRA_BITS)
 
-    # item 14
     def test_the_time_per_emulated_call_is_recorded_for_both_formulas(self):
         a = statistics.median(ms for _r, _s, ms in self.a_runs)
         b = statistics.median(ms for _r, _s, ms in self.b_runs)

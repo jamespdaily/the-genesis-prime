@@ -2,10 +2,10 @@
 
 - RawPE: a minimal PE parse written for the tests, the independent reading
   that client_pe.py is checked against.
-- the cached PE and reference index, the ten questions of issue 16, and the
-  expected answer of each from the index.
+- the cached PE and reference index, the ten fixed questions (QUESTIONS_16), and
+  the expected answer of each from the index.
 - QueryProcess: the query process started as a subprocess, JSON lines in and out.
-- Watcher: the socket watcher of the issue 16 trial (netwatch.py).
+- Watcher: samples the sockets of a process tree and flags any remote address.
 - seeded_project(): one analysed project, built once per test run.
 
 Every path but the client's comes from the environment:
@@ -73,19 +73,19 @@ def hx(n: int) -> str:
 
 
 # Addresses used by more than one test. Each is measured on WildStar64.exe
-# (SHA-256 565c2fa1...fe0b10) by the issue 16 trial's checkers.
-FN_CONTROL_SWITCH = 0x140003FB0  # issue 16 trial: 27-case switch, jmp rdx at 0x140003fe8
+# (SHA-256 565c2fa1...fe0b10).
+FN_CONTROL_SWITCH = 0x140003FB0  # 27-case switch, jmp rdx at 0x140003fe8 (fact file record 0x140003fb0)
 JMP_CONTROL_SWITCH = 0x140003FE8
-FN_BIG_SWITCH = 0x1403EC6A0  # issue 16 trial: 2,322 cases, jmp rcx at 0x1403ec719
+FN_BIG_SWITCH = 0x1403EC6A0  # 2,322 cases, jmp rcx at 0x1403ec719 (fact file record 0x1403ec6a0)
 JMP_BIG_SWITCH = 0x1403EC719
 FN_NOT_A_SWITCH = 0x140001B30  # contains `jmp rax` at 0x140001b6b (llvm-objdump), no table
 JMP_NOT_A_SWITCH = 0x140001B6B
-POINTER_ONLY_A = 0x14077ED70  # issue 16 trial: one relocated pointer, from 0x140b6d240
+POINTER_ONLY_A = 0x14077ED70  # one relocated pointer, from 0x140b6d240 (fact file record 0x14077ed70)
 POINTER_ONLY_B = 0x140001C30
-IAT_SHOWCURSOR = 0x1409598F8  # issue 16 trial: user32.dll!ShowCursor
-IAT_SETERRORMODE = 0x140959298  # issue 16 trial: kernel32.dll!SetErrorMode
-IAT_WS2_115 = 0x140959A78  # issue 16 trial: ws2_32.dll!#115
-SWITCH_JMP_DIFFERENCES = (0x1400BC619, 0x1403EC719, 0x140612B08)  # issue 16: where Ghidra and the reader differ
+IAT_SHOWCURSOR = 0x1409598F8  # user32.dll!ShowCursor (fact file record 0x1409598f8)
+IAT_SETERRORMODE = 0x140959298  # kernel32.dll!SetErrorMode (fact file record 0x140959298)
+IAT_WS2_115 = 0x140959A78  # ws2_32.dll!#115 (fact file record 0x140959a78)
+SWITCH_JMP_DIFFERENCES = (0x1400BC619, 0x1403EC719, 0x140612B08)  # where Ghidra and the reader differ (fact file records at these addresses)
 
 
 # ---------------------------------------------------------------- raw PE
@@ -197,7 +197,7 @@ def all_found_switches() -> list:
 
 # ---------------------------------------------------------------- the ten questions
 
-# Issue 16's ten questions, as its questions.py drew them with random.Random(16).
+# The ten fixed questions, as draw_questions draws them with random.Random(16).
 QUESTIONS_16 = [
     {"id": 1, "kind": "bytes", "address": 0x1404A4E30},
     {"id": 2, "kind": "bytes", "address": 0x14063E550},
@@ -243,9 +243,9 @@ def _ascii_string_at(blob: bytes, section_va: int, addr: int):
 
 
 def draw_questions(pe, idx) -> list[dict]:
-    """Ported from issue 16's questions.py: random.Random(16), two questions of
-    each kind in the order bytes, callers, callees, string refs, imports;
-    candidate lists sorted before every draw."""
+    """Draw the ten questions with random.Random(16): two questions of each kind
+    in the order bytes, callers, callees, string refs, imports; candidate lists
+    sorted before every draw."""
     rng = random.Random(16)
     starts = sorted(pe.function_starts())
     qs = []
@@ -282,8 +282,8 @@ def draw_questions(pe, idx) -> list[dict]:
     cands = [
         t
         for t in range(rdata.va, rdata.va + rdata.raw_size)
-        # issue 16's index filed call [rip+x] and jmp [rip+x] under rip-data; this
-        # index names them call-mem and jmp-mem, so all four count to repeat its draw
+        # this index names call [rip+x] and jmp [rip+x] references call-mem and jmp-mem;
+        # counting them with rip-data and rip-lea reproduces QUESTIONS_16
         if any(r.kind in ("rip-data", "rip-lea", "call-mem", "jmp-mem") for r in idx.refs_to(t))
     ]
     taken = set()
@@ -501,8 +501,7 @@ def query_environment(project_dir: Path, ghidra_dir: Path | None = None) -> dict
 
 def query_command(seed: Path | None = None) -> list[str]:
     # No -I: the script puts its own directory on sys.path to import its siblings.
-    # `--seed PATH` is new in the interface: it is used only when the project
-    # does not exist yet; main() takes it in the build step.
+    # `--seed PATH` is used only when the project does not exist yet.
     cmd = [require_env("GENESIS_PYGHIDRA_PYTHON"), str(SCRIPTS / "ghidra_query.py")]
     if seed is not None:
         cmd += ["--seed", str(seed)]
@@ -616,8 +615,8 @@ def _outside(line: str) -> bool:
 
 class Watcher(threading.Thread):
     """Samples every socket of a process tree and flags any remote address off
-    this machine (ported from the issue 16 trial's netwatch.py). It stops when
-    the root exits or finish() is called, after at least one sample."""
+    this machine. It stops when the root exits or finish() is called, after at
+    least one sample."""
 
     def __init__(self, root: int, interval: float = 1.0):
         super().__init__(daemon=True)

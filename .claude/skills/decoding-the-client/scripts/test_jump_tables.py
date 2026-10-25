@@ -1,7 +1,7 @@
 """jump_tables.read_function against WildStar64.exe.
 
-Expected values come from the issue 16 trial's jumptable.py and
-test_checkers.py, measured on WildStar64.exe (SHA-256 565c2fa1...fe0b10), and
+Expected values come from llvm-objdump and Ghidra on WildStar64.exe (SHA-256
+565c2fa1...fe0b10), as the fact file records them at the switch addresses, and
 from check_support.RawPE, which reads each table's 4-byte entries (RVAs from
 the image base) straight from the file. Run: python3 -I test_jump_tables.py
 """
@@ -35,7 +35,7 @@ class JumpTableTest(unittest.TestCase):
         cls.raw = cs.raw_pe()
 
     def test_the_27_case_switch_has_its_jmp_default_and_case_count(self):
-        # issue 16 trial: function 0x140003fb0, jmp rdx at 0x140003fe8, 27 cases, default 0x1400043ef
+        # function 0x140003fb0, jmp rdx at 0x140003fe8, 27 cases, default 0x1400043ef (fact file records)
         t = table_at(read_function(self.pe, cs.FN_CONTROL_SWITCH), cs.JMP_CONTROL_SWITCH)
         self.assertTrue(t.found)
         self.assertIsNone(t.reason)
@@ -44,18 +44,18 @@ class JumpTableTest(unittest.TestCase):
         self.assertEqual(len(t.targets), 27)
 
     def test_the_27_case_switch_targets_are_the_table_entries_in_the_file(self):
-        # the table is at 0x140004400 (issue 16 trial); each entry is a 4-byte RVA
+        # the table is at 0x140004400 (fact file record 0x140004400); each entry is a 4-byte RVA
         t = table_at(read_function(self.pe, cs.FN_CONTROL_SWITCH), cs.JMP_CONTROL_SWITCH)
         want = [self.raw.base + self.raw.u32(0x140004400 + 4 * k) for k in range(27)]
         self.assertEqual(t.targets, want)
 
     def test_case_5_of_the_27_case_switch_goes_to_0x1400040fd(self):
         t = table_at(read_function(self.pe, cs.FN_CONTROL_SWITCH), cs.JMP_CONTROL_SWITCH)
-        self.assertEqual(t.targets[5], 0x1400040FD)  # issue 16 trial
+        self.assertEqual(t.targets[5], 0x1400040FD)  # fact file record 0x1400040fd
 
     def test_the_2322_case_switch_has_636_distinct_targets(self):
-        # issue 16 trial: function 0x1403ec6a0, jmp rcx at 0x1403ec719, cmp 0x911 (2,322 cases),
-        # table at 0x1403f1344, default 0x1403f12d2, 636 distinct targets
+        # function 0x1403ec6a0, jmp rcx at 0x1403ec719, cmp 0x911 (2,322 cases), table at
+        # 0x1403f1344, default 0x1403f12d2, 636 distinct targets (fact file records)
         t = table_at(read_function(self.pe, cs.FN_BIG_SWITCH), cs.JMP_BIG_SWITCH)
         self.assertTrue(t.found)
         self.assertEqual(t.case_count, 2322)
@@ -89,7 +89,7 @@ class JumpTableTest(unittest.TestCase):
             self.assertEqual(self.pe.root_of(t.jmp), cs.FN_CONTROL_SWITCH)
 
     def test_a_changed_table_entry_changes_exactly_that_target(self):
-        # planted (issue 16 trial: plant.py): XOR 0x10 into the 4-byte entry 5 of the table at
+        # planted: XOR 0x10 into the 4-byte entry 5 of the table at
         # 0x140004400, file offset 14356 (RVA 0x40fd -> 0x40ed). The reader must see it, and only it.
         original = table_at(read_function(self.pe, cs.FN_CONTROL_SWITCH), cs.JMP_CONTROL_SWITCH).targets
         with tempfile.TemporaryDirectory() as d:

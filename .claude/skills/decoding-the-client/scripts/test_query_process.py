@@ -4,16 +4,16 @@ Integration tests: they run only when GENESIS_INTEGRATION=1, and need
 GENESIS_GHIDRA_DIR, JAVA_HOME and GENESIS_PYGHIDRA_PYTHON (see check_support).
 Each class that needs the saved project opens the one built by
 check_support.seeded_project() (import, seed, analysis: about 3 minutes, once
-per run); the unseeded project of item 5 is built by its own class.
+per run); the unseeded project is built by UnseededProjectTest.
 
-Interface the tests fix, for the build step to add to ghidra_query.py:
+The interface, as ghidra_query.py documents it:
 - `--seed PATH` on the command line; used only when the project does not exist yet.
 - `seed_report` answers null exactly when the open ran no analysis ("analysed_now"
   is false); on the first start it answers
   {"lines", "created", "already_present", "failed": [hex], "unmapped": [hex]}.
 
-Item numbers are the issue 24 test list's. Expected values come from the issue
-16 trial's checkers (pe.py, refs.py, jumptable.py, questions.py, netwatch.py)
+Expected values come from check_support's independent readings of WildStar64.exe
+(RawPE, the reference index, the jump table reader) and the fact file's records,
 measured on WildStar64.exe, SHA-256 565c2fa1...fe0b10.
 Run: GENESIS_INTEGRATION=1 python3 -I test_query_process.py
 """
@@ -88,14 +88,14 @@ class FirstStartTest(unittest.TestCase):
         self.assertIsNotNone(self.report)
 
     def test_every_seed_line_has_one_outcome_and_the_counts_add_up(self):
-        # item 3: created + already present + failed + unmapped == the number of lines
+        # created + already present + failed + unmapped == the number of lines
         r = self.report
         self.assertEqual(r["lines"], len(self.project.seed_lines))
         self.assertEqual(r["created"] + r["already_present"] + len(r["failed"]) + len(r["unmapped"]), r["lines"])
         print("seed report:", {k: (v if isinstance(v, int) else len(v)) for k, v in r.items()})
 
     def test_the_planted_line_outside_every_section_is_reported_unmapped(self):
-        # item 3 planted: seed.PLANTED_UNMAPPED lies outside every section; every other line is in .text
+        # planted: seed.PLANTED_UNMAPPED lies outside every section; every other line is in .text
         self.assertEqual(self.report["unmapped"], [hx(seed.PLANTED_UNMAPPED)])
         self.assertNotIn(hx(seed.PLANTED_UNMAPPED), self.report["failed"])
 
@@ -114,7 +114,7 @@ class ReopenTest(unittest.TestCase):
             qp.close()
         # "analysed_now" is false exactly when the seed report is null
         self.assertIsNone(reply.answer)
-        print("reopened project: first answer after %.1f s (REA took 179 s per session, issue 16)" % seconds)
+        print("reopened project: first answer after %.1f s" % seconds)
         self.assertLess(seconds, 30)
 
 
@@ -134,7 +134,6 @@ class QueriesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.qp.close()
 
-    # item 6
     def test_each_of_the_ten_questions_is_answered_as_the_index_says_in_at_most_15_ms(self):
         medians = {}
         for q in cs.QUESTIONS_16:
@@ -147,7 +146,7 @@ class QueriesTest(unittest.TestCase):
                     times.append(reply.ms)
                     got = cs.normalise_answer(q, reply.answer)
                     if q["kind"] == "callers":
-                        # approved on issue 24: the call sites must be exactly the index's; the calling
+                        # the call sites must be exactly the index's; the calling
                         # function is compared only where .pdata names it. The seed makes functions the
                         # index cannot name, such as 0x140420230, which tail-jumps to 0x140663030 at 0x14042023e
                         sites = cs.caller_sites(reply.answer)
@@ -169,9 +168,8 @@ class QueriesTest(unittest.TestCase):
                 self.assertLessEqual(medians[q["id"]], 15.0, "question %d" % q["id"])
         print("median ms per question:", {k: round(v, 2) for k, v in medians.items()})
 
-    # item 7
     def test_the_callees_of_0x140283670_name_the_five_imports_as_dll_bang_name_in_one_request(self):
-        # issue 16 trial; REA could not do this (issue 16, q5)
+        # fact file record 0x140283670
         answer = self.qp.ask("callees", function="0x140283670").answer
         self.assertEqual(
             sorted(answer["imports"]),
@@ -188,7 +186,6 @@ class QueriesTest(unittest.TestCase):
             [0x1401971E0, 0x1401A3130, 0x1401B54E0, 0x1401B6D00, 0x140288100],
         )
 
-    # item 8
     def test_the_27_case_switch_targets_are_the_jump_table_readers_27_targets(self):
         want = [t for t in read_function(self.pe, cs.FN_CONTROL_SWITCH) if t.jmp == cs.JMP_CONTROL_SWITCH][0].targets
         self.assertEqual(len(want), 27)
@@ -196,7 +193,7 @@ class QueriesTest(unittest.TestCase):
         self.assertEqual({int(a, 16) for a in got}, set(want))
 
     def test_the_pointer_only_function_0x14077ed70_is_a_function(self):
-        # issue 16 trial: pointer-only, one relocated pointer; the seed names it seed_<address>
+        # pointer-only, one relocated pointer (fact file record 0x14077ed70); the seed names it seed_<address>
         answer = self.qp.ask("function_at", address=hx(cs.POINTER_ONLY_A)).answer
         self.assertIsNotNone(answer)
         self.assertEqual(int(answer["start"], 16), cs.POINTER_ONLY_A)
@@ -207,7 +204,7 @@ class QueriesTest(unittest.TestCase):
         self.assertIn(0x140B6D240, [int(r["from"], 16) for r in refs])
 
     def test_function_at_an_address_inside_a_function_names_its_start(self):
-        # the jmp of the 27-case switch lies in function 0x140003fb0 (issue 16 trial)
+        # the jmp of the 27-case switch lies in function 0x140003fb0 (fact file record 0x140003fb0)
         answer = self.qp.ask("function_at", address=hx(cs.JMP_CONTROL_SWITCH)).answer
         self.assertEqual(int(answer["start"], 16), cs.FN_CONTROL_SWITCH)
 
@@ -215,14 +212,14 @@ class QueriesTest(unittest.TestCase):
         self.assertIsNone(self.qp.ask("function_at", address="0x140b47ec8").answer)  # the string "Lighting"
 
     def test_the_seed_made_every_pdata_start_and_pointer_only_function_a_function(self):
-        # issue 24 item 2; the planted unmapped address is not a function
+        # the planted unmapped address is not a function
         functions = {int(a, 16) for a in self.qp.ask("functions").answer}
         seeded = {a for a, _k, _n in self.project.seed_lines} - {seed.PLANTED_UNMAPPED}
         self.assertLessEqual(seeded, functions)
         self.assertNotIn(seed.PLANTED_UNMAPPED, functions)
 
     def test_bytes_returns_the_files_bytes_as_hex(self):
-        # issue 16 trial: 16 bytes at 0x1404a4e30
+        # 16 bytes at 0x1404a4e30 (fact file record 0x1404a4e30)
         self.assertEqual(
             self.qp.ask("bytes", address="0x1404a4e30", length=16).answer, "48895c24084889742410574883ec4041"
         )
@@ -408,10 +405,10 @@ class UnseededProjectTest(unittest.TestCase):
         cls.qp.close()
 
     def test_an_unseeded_import_finds_24970_functions(self):
-        self.assertEqual(len(self.functions), 24970)  # issue 16: plain Ghidra, 12.1.4 and 12.2
+        self.assertEqual(len(self.functions), 24970)  # plain Ghidra, 12.1.4 and 12.2
 
     def test_ghidra_agrees_with_the_jump_table_reader_on_299_of_302_switches(self):
-        # issue 16: the three that differ are the jmps at 0x1400bc619, 0x1403ec719 and 0x140612b08
+        # the three that differ are the jmps at 0x1400bc619, 0x1403ec719 and 0x140612b08 (fact file records)
         switches = cs.all_found_switches()
         self.assertEqual(len(switches), 302)
         differ = []

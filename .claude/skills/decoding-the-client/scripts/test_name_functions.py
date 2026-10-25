@@ -1,7 +1,6 @@
 """name_functions: the fact file's names, saved into the Ghidra project.
 
-Expected values come from the issue 7 approved test list, item 6 ("Names in
-Ghidra"), and the docstrings of name_functions.py: name_pairs gives (address,
+Expected values come from the docstrings of name_functions.py: name_pairs gives (address,
 name) for each record keyed by an address that has a name, sorted; apply_names
 is read-only unless told to write, and reports for each pair the name the
 project held and why it could not be named. Planted: the records, and the
@@ -44,12 +43,10 @@ def record(key: str, name: str | None) -> Record:
 
 class NamePairsTest(unittest.TestCase):
     def test_a_record_keyed_by_an_address_with_a_name_gives_its_address_and_name(self):
-        # item 6
         pairs = name_functions.name_pairs({PLANTED_LOW: record(PLANTED_LOW, "CastSpell")})
         self.assertEqual(pairs, [(int(PLANTED_LOW, 16), "CastSpell")])
 
     def test_pairs_are_sorted_by_address_whatever_the_order_of_the_records(self):
-        # item 6: "sorted"
         records = {
             PLANTED_HIGH: record(PLANTED_HIGH, "Later"),
             PLANTED_LOW: record(PLANTED_LOW, "Earlier"),
@@ -60,7 +57,7 @@ class NamePairsTest(unittest.TestCase):
         )
 
     def test_a_record_keyed_by_something_else_is_left_out(self):
-        # item 6: records keyed by something else are left out, even with a name
+        # records keyed by something else are left out, even with a name
         records = {
             "Spell4.damageScale": record("Spell4.damageScale", "NotAFunction"),
             "CMSG_EXAMPLE": record("CMSG_EXAMPLE", "AlsoNot"),
@@ -69,7 +66,7 @@ class NamePairsTest(unittest.TestCase):
         self.assertEqual(name_functions.name_pairs(records), [(int(PLANTED_LOW, 16), "Kept")])
 
     def test_a_record_keyed_by_an_address_without_a_name_is_left_out(self):
-        # item 6: records without a name are left out
+        # records without a name are left out
         records = {PLANTED_NO_NAME: record(PLANTED_NO_NAME, None), PLANTED_LOW: record(PLANTED_LOW, "Kept")}
         self.assertEqual(name_functions.name_pairs(records), [(int(PLANTED_LOW, 16), "Kept")])
 
@@ -154,7 +151,6 @@ class NamesInGhidraTest(unittest.TestCase):
         return [(int(address, 16), "genesis_test_name_%x" % int(address, 16)) for address in self.held()]
 
     def test_a_read_only_run_reports_no_failure_and_changes_no_name(self):
-        # item 6
         before = self.held()
         pairs = self.picked_pairs()
         run = self.drive({"pairs": pairs, "write": False})
@@ -164,7 +160,6 @@ class NamesInGhidraTest(unittest.TestCase):
         self.assertEqual(self.held(), before)  # nor on a fresh open
 
     def test_a_write_run_renames_and_a_later_read_only_run_finds_each_name_in_place(self):
-        # item 6
         pairs = self.picked_pairs()
         wanted = {hx(a): n for a, n in pairs}
         written = self.drive({"pairs": pairs, "write": True})
