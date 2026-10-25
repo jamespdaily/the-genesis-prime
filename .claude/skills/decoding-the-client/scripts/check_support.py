@@ -348,6 +348,17 @@ def expected_value(question: dict, pe, idx):
     return {r.source: pe.root_of(r.source) for r in idx.refs_to(slot)}
 
 
+def expected_caller_sites(question: dict, pe, idx) -> dict:
+    """Call site -> its .pdata function, or None where no .pdata entry holds the
+    site. A jmp to the entry counts as a call, as Ghidra counts it."""
+    return {r.source: pe.root_of(r.source) for r in idx.refs_to(question["function"]) if r.kind in ("call", "jmp")}
+
+
+def caller_sites(answer) -> dict:
+    """The query process's callers answer as call site -> calling function."""
+    return {_addr(site): _addr(e["function"]) for e in answer for site in e["sites"]}
+
+
 def _none_last(pair):
     return (pair[0], -1 if pair[1] is None else pair[1])
 

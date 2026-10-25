@@ -3,12 +3,18 @@
 One line per function: `0x<address>\\tfunction\\t<name>`. Until the fact file
 names them, functions are named `seed_<address>`: every .pdata start, and
 every function reached only through a relocated pointer.
+
+Usage: python3 -I seed.py OUT  (reads the client at $WILDSTAR_CLIENT_EXE)
 """
 
+import os
 import re
+import sys
 from pathlib import Path
 
-from client_pe import ClientPE
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from client_pe import ClientPE  # noqa: E402
 
 PLANTED_UNMAPPED = 0x1BFFFF000  # outside every section; used only by tests
 _ADDRESS = re.compile(r"0x[0-9a-fA-F]{1,16}")
@@ -45,3 +51,9 @@ def read_seed(path: Path) -> list[tuple[int, str, str]]:
         seen.add(address)
         lines.append((address, kind, name))
     return lines
+
+
+if __name__ == "__main__":
+    lines = seed_lines(ClientPE(Path(os.environ["WILDSTAR_CLIENT_EXE"])))
+    write_seed(lines, Path(sys.argv[1]))
+    print("%d seed lines written to %s" % (len(lines), sys.argv[1]))

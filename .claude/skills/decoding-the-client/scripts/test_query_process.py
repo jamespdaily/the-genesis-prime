@@ -146,7 +146,17 @@ class QueriesTest(unittest.TestCase):
                     reply = self.qp.ask(kind, **arguments)
                     times.append(reply.ms)
                     got = cs.normalise_answer(q, reply.answer)
-                    if q["kind"] == "import":
+                    if q["kind"] == "callers":
+                        # approved on issue 24: the call sites must be exactly the index's; the calling
+                        # function is compared only where .pdata names it. The seed makes functions the
+                        # index cannot name, such as 0x140420230, which tail-jumps to 0x140663030 at 0x14042023e
+                        sites = cs.caller_sites(reply.answer)
+                        index_sites = cs.expected_caller_sites(q, self.pe, self.idx)
+                        self.assertEqual(set(sites), set(index_sites))
+                        for site, function in index_sites.items():
+                            if function is not None:
+                                self.assertEqual(sites[site], function, hex(site))
+                    elif q["kind"] == "import":
                         # a site outside every .pdata function (0x1402801f3 for ShowCursor) may sit in a
                         # function Ghidra made from the seed; the sites themselves must be exactly the index's
                         self.assertEqual(set(got), set(want))

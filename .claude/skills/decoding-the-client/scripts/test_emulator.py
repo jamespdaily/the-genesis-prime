@@ -33,7 +33,13 @@ FORMULA_A = 0x140882470
 FORMULA_B = 0x1408296A0
 
 A_EDGES = [0, 1, 2**32 - 1, 2**32, 2**63, 2**64 - 1]
-B_EDGES = [0.0, -0.0, 360.0, -360.0, 720.0, f32(1e12)]  # 1e12 is past cvttss2si's range: the indefinite value
+B_EDGES = [0.0, -0.0, 360.0, -360.0, 720.0]
+# 1e12 / 360 is past cvttss2si's int32 range. The CPU gives the integer
+# indefinite value 0x80000000; Ghidra 12.2's p-code wraps the truncation to 32
+# bits instead (issue 24, approved as a known gap).
+B_OVERFLOW = f32(1e12)
+B_OVERFLOW_GHIDRA_BITS = 0x50823C05  # the hand formula fed the wrapped value -1,517,189,376
+B_OVERFLOW_CPU_BITS = 0x50825100  # formula_b(1e12): the CPU's rule
 
 
 def formula_a_inputs() -> list[int]:
@@ -97,6 +103,12 @@ class EmulatorTest(unittest.TestCase):
             x for x, (result, _s, _m) in zip(self.b_inputs, self.b_runs) if result["xmm0_low"] & M32 != f32_bits(planted(x))
         ]
         self.assertGreaterEqual(len(caught), 1)
+
+    def test_ghidras_emulator_wraps_an_out_of_range_cvttss2si_where_the_cpu_gives_0x80000000(self):
+        # a known gap, kept as a test so a fix in Ghidra shows up here
+        self.assertEqual(f32_bits(formula_b(B_OVERFLOW)), B_OVERFLOW_CPU_BITS)
+        result, _steps, _ms = self.emulate_once(FORMULA_B, B_OVERFLOW)
+        self.assertEqual(result["xmm0_low"] & M32, B_OVERFLOW_GHIDRA_BITS)
 
     # item 14
     def test_the_time_per_emulated_call_is_recorded_for_both_formulas(self):
