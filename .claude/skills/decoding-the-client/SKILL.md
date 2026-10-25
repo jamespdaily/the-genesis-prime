@@ -27,7 +27,9 @@ grade = "fairly sure"
 - **statement:** what the client does, in the game's or the message's terms: arguments, fields, types, values, sizes in bits. Registers, stack and struct offsets and vtables go in the proof.
 - **proof:** the addresses read, and what the instructions there do; or the table rows, recording or live login that showed it.
 - **grade:** **sure** (you read the instructions that do it), **fairly sure** (you read the code around it, or a decompile you did not check against the disassembly), or **guess** (an inference you could not check).
-- **name:** the function's name in the Ghidra project, only when the key is a function's entry point.
+- **name:** the function's name in the Ghidra project, only when the key is a function's entry point. `scripts/name_functions.sh` applies the names of records graded "sure" or "fairly sure"; a "guess" record's name waits until its function is read.
+
+**Most records are leads, not facts.** Every record graded "guess" without its own reason came from earlier notes and code comments that nobody has read against the client. A sample of 30 such entries showed where they point is reliable and their detail is not: the main claim held in 29, but 12 needed a detail corrected and 2 had a wrong function name. Before relying on one, read the code it names, then rewrite the record and raise its grade.
 
 From the repository's root, `python3 -I .claude/skills/decoding-the-client/scripts/check_facts.py .claude/skills/decoding-the-client/references/client-facts.toml --cover src test dev` checks the file: the fields, the grades, unique keys and names, no other server's name or issue number, and that every client address the code cites is in the file and every Lua function it cites is a key.
 
