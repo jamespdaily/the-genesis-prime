@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(~/Projects/the-eldan-experiment/**)",
+      "Read(//Users/jimd/Projects/the-eldan-experiment/**)",
+      "Edit(~/Projects/the-eldan-experiment/**)",
+      "Edit(//Users/jimd/Projects/the-eldan-experiment/**)",
+      "Bash(*the-eldan-experiment*)"
+    ]
+  }
+}
