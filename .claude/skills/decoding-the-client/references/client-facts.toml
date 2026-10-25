@@ -1,0 +1,14 @@
+# The client's facts, one table per fact, grouped by topic. See scripts/check_facts.py
+# for the fields and their rules.
+
+# The image and its sections
+
+# Imports
+
+# Switch tables
+
+# Strings and pointers
+
+# Functions reached through the call graph
+
+# Formulas
