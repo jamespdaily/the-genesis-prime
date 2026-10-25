@@ -20,7 +20,7 @@ tom = ">= 2.1.0 and < 3.0.0"
 simplifile = ">= 2.7.0 and < 3.0.0"
 
 [tools.glinter]
-include = ["src/", "test/"]
+include = ["src/", "test/", "dev/"]
 warnings_as_errors = true
 
 [tools.glinter.rules]
