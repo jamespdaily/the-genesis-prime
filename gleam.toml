@@ -22,6 +22,20 @@ simplifile = ">= 2.7.0 and < 3.0.0"
 include = ["src/", "test/"]
 warnings_as_errors = true
 
+[tools.glinter.rules]
+# The writing-gleam skill allows `let assert` and `panic` with a message where
+# a crash is the intended result; `panic_without_message` stays on.
+assert_ok_pattern = "off"
+avoid_panic = "off"
+
+[tools.glinter.ignore]
+# The test runner finds public `_test` functions by name, and test-support
+# modules are shared across test modules, so no other module calls them.
+"test/**/*.gleam" = ["unused_exports"]
+"test/*.gleam" = ["unused_exports"]
+# Only tests read the client archive indexes; no module in src calls them.
+"src/genesis_prime/client_archive.gleam" = ["unused_exports"]
+
 # Modules that may have effects; every other module is a pure rule.
 [tools.code_rules]
 effectful_modules = [

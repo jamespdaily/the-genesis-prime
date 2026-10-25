@@ -7,7 +7,7 @@ import gleam/string
 
 /// A planted file at a made-up path, its lines joined by newlines, so a test
 /// states each line number by counting its list.
-pub fn file(path: String, lines: List(String)) -> SourceFile {
+pub fn file(path path: String, lines lines: List(String)) -> SourceFile {
   SourceFile(path:, text: string.join(lines, "\n") <> "\n")
 }
 

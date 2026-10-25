@@ -42,6 +42,11 @@ import formulas_by_hand  # noqa: E402
 DEFAULT_CLIENT_EXE = "/Users/jimd/Coding/wildstar/client/WildStar/Client64/WildStar64.exe"
 DEFAULT_OBJDUMP = "/opt/homebrew/opt/llvm/bin/llvm-objdump"
 
+# Only CI sets GENESIS_NO_CLIENT=1, because it has no client; on any other machine a
+# test that opens the client fails when the file is missing, so no test skips by accident.
+NO_CLIENT = os.environ.get("GENESIS_NO_CLIENT") == "1"
+needs_client = unittest.skipIf(NO_CLIENT, "the client is not on this machine: GENESIS_NO_CLIENT=1")
+
 INTEGRATION = os.environ.get("GENESIS_INTEGRATION") == "1"
 integration_only = unittest.skipUnless(
     INTEGRATION, "the Ghidra integration tests run only when GENESIS_INTEGRATION=1"
