@@ -19,6 +19,9 @@ from client_pe import ClientPE  # noqa: E402
 from jump_tables import read_function  # noqa: E402
 
 
+PLANTED_TARGET = 0x1400040ED
+
+
 def table_at(jump_tables, jmp):
     (found,) = [t for t in jump_tables if t.jmp == jmp]
     return found
@@ -94,7 +97,7 @@ class JumpTableTest(unittest.TestCase):
         self.assertEqual(len(planted), 27)
         self.assertEqual([i for i, (a, b) in enumerate(zip(original, planted)) if a != b], [5])
         self.assertEqual(original[5], 0x1400040FD)
-        self.assertEqual(planted[5], 0x1400040ED)
+        self.assertEqual(planted[5], PLANTED_TARGET)
 
 
 if __name__ == "__main__":

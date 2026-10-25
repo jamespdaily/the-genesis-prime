@@ -234,6 +234,16 @@ class WordingTest(Refusal):
                     found = problems_of(record(**fields))
                     self.assertRefused([(p.where, p.what) for p in found], "Spell4.damageScale", field)
 
+    def test_an_import_by_ordinal_is_not_an_issue_number(self):
+        # item 3 refuses issue numbers; `ws2_32.dll!#115` is how the client's import
+        # table names an ordinal import (test_client_pe.py)
+        self.assertEqual(problems_of(record(proof=f"{TEST_PROOF}; the slot holds ws2_32.dll!#115")), [])
+
+    def test_a_register_name_is_matched_in_lower_case_only(self):
+        # item 3: a register is written lower-case by the disassembler; "SP" in a
+        # statement is an ordinary abbreviation
+        self.assertEqual(problems_of(record(statement="Adds the SP cost to the ability.")), [])
+
     def test_a_decision_record_named_in_any_field_is_refused(self):
         # item 3: "decision record"
         for field, fields in (
