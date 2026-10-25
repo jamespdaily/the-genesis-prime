@@ -1,0 +1,16 @@
+# Showing other players
+
+- **`gleam run -m genesis_prime/live_walkers` walks simulated players around the real client**. Run it once the client is in the world. It copies the development character as walkers, logs them in, walks them in circles for two minutes, then deletes them.
+- **The walkers keep their pace in a busy place**. Each sends a move every 129 ms by a deadline and drops what it hears meanwhile, so the 120 s walk takes about 120 s and "every walker finishes" passes. It once read its socket until 129 ms passed with no message, so with the walkers hearing each other the walk took 212.0 s, past the tool's 180 s limit. A walker's report counts its late steps; a count above a few means the machine fell behind.
+- **The walkers also chat**. From 10 seconds in, one line every 4 seconds, in turn: say, Nexus, and a whisper to Gob Stopper. Each line names its walker and turn, so a missing one is easy to spot.
+- **The chat window shows Nexus and Trade only once the client prints "Joined player channel Nexus".** Without that line, the client refuses `/n` with "you are not viewing [Nexus]" and hides Nexus lines. One login in eight showed no join line; log in again before suspecting the server.
+- **Restarting the chat service sends no new join.** The link announces the players it holds as restored, and the service sends a restored player no join. To test a join again, log in again.
+- **The client saves which channels each chat tab shows**, by channel type, under `tViewedChannels` in `%APPDATA%\NCSOFT\WildStar\AddonSaveData\tesdbbbbbbb\<realm name>\Gob Stopper_bbbbbbbbbbbbdbbb\ChatLog_0_Char.xml` on the PC. A channel missing from that list is added when its join arrives; one saved as `-` stays hidden. Edit it only while the client is closed, and keep a copy.
+- **Windows Defender blocks a `playtest do` script that reads a file's raw bytes**, such as `[IO.File]::ReadAllBytes`, as malicious. Use `Format-Hex -Path` instead.
+- **Enter at the recording's spot to see the walkers fight**. Each walker presses Shred every 3 seconds, and Grund attacks the walkers that pass within 15 units, so their health, shields and deaths show. Grund attacks the player too.
+- **Enter at a quiet spot to see the walkers without a fight.** Set character 1's place to (-4778.9, -905.97, -1502.7) before entering, and put it back to the recording's spot afterwards.
+- **Walkers copy the character's items, with fresh ids from the item id counter**, so they enter with its maximum health and wear its gear. They enter at full health, so a heal on them is all overheal and shows only as its green number.
+- **To read a walker's health, enter at the recording's spot.** A walker's nameplate shows its health only once it is hurt, and Tab never selects one. There Grund and the poachers fight the walkers; crop their nameplates from the full screenshot.
+- **Shots come 0.7 s apart, so they show a walker's path and pose, not a stutter shorter than that.**
+- **O and the window's X do not redraw the friends list**. The client draws it, and asks for locations, only when the Social panel is first built in a session, on a tab click, or on a Contacts toggle. To see a change, click Rivals, then Friends.
+- **`/unfriend` is not a client command.** Remove a friend through the row's menu: Social Lists, then Remove Friend.

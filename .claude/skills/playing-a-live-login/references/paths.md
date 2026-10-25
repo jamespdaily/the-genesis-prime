@@ -1,0 +1,9 @@
+# Paths
+
+- **L (`0x26`) opens the log; its Path Log tab is at `playtest click 564 573`.** It shows the active path, its rank and experience, and the other three paths, locked or unlocked.
+- **The Activate dialog's button needs a held click.** `playtest click`'s short press does nothing there. A drag that starts and ends on the button, `[EldanMouse]::Drag(x, y, x, y)`, holds it about 150 ms and registers. [items-and-vendors.md](items-and-vendors.md) defines `EldanMouse`.
+- **The client blocks unlock and cooldown requests by itself when the account has no service tokens.** Its unlock and cooldown dialogs then offer only "Purchase Service Tokens", and a locked path offers "Unlock", not "Activate". So refusals 163 to 167 never reach the server in a live login; test them against the `paths` recording.
+- **Before activating a path, the client warns of the 30-minute wait** itself. Straight after a change, a second change offers only a token bypass of the cooldown.
+- **To show another path unlocked, set its row's `unlocked` in `character.path` while the server is stopped**, as no command unlocks one without tokens.
+- **A path reward's title shows in the Character window, which C does not open.** Open it from the main menu: `playtest click 36 2127`, then Character at `playtest click 126 981`. Change Titles is at `playtest click 720 633`, its list at `639 777`, the first title in the list at `465 882` and Clear title at `972 780`. The name at the top of the window takes the title only when the server answers with `ServerTitleSet`, so it shows the server's answer. Escape closes the whole window, not only the title list.
+- **A new path ability shows as "You unlocked a Path Action!"**, with an arrow at the empty path action slot beside the X slot, and an earned title as "You have earned the title ..." in the middle of the screen, which fades within a few seconds.
