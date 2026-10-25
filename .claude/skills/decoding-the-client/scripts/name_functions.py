@@ -94,7 +94,11 @@ def main() -> int:
     finally:
         opened.close()
     failures = [o for o in outcomes if o.failed]
-    print("%s %d, failed %d" % ("named" if write else "would name", len(outcomes) - len(failures), len(failures)))
+    in_place = sum(1 for o in outcomes if not o.failed and o.found == o.name)
+    print(
+        "%s %d, already in place %d, failed %d"
+        % ("named" if write else "would name", len(outcomes) - len(failures) - in_place, in_place, len(failures))
+    )
     for o in failures:
         print("%s %s: %s" % (o.address, o.name, o.failed))
     return 1 if failures else 0
