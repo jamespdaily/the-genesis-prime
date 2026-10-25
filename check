@@ -3,7 +3,7 @@
 #
 # Parts, independent ones side by side; a part that fails is named, and the
 # script exits non-zero:
-#   format         gleam format --check src test
+#   format         gleam format --check src test dev
 #   gleam-build    gleam build --warnings-as-errors
 #   glinter        gleam run -m glinter                 (after gleam-build)
 #   gleam-test     gleam test                           (after gleam-build)
@@ -131,7 +131,7 @@ print(check_support.client_exe())')
   return "$status"
 }
 
-in_background step format gleam format --check src test
+in_background step format gleam format --check src test dev
 in_background gleam_chain
 in_background step migrations prepare_database
 in_background step client-suite python3.13 -I -m unittest discover \
