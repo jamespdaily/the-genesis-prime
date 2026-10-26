@@ -22,6 +22,7 @@
 //// step; the spawn list, and so every id and position used below, comes from
 //// `workload.spawn_list` on a fixed workload.
 
+import genesis_prime/topology/heap_limit
 import genesis_prime/topology/map_process
 import genesis_prime/topology/measurement
 import genesis_prime/topology/owner.{type Owner}
@@ -137,14 +138,19 @@ fn start_prototype_c(
   workload: Workload,
   key: Reference,
 ) -> Result(actor.Started(Owner), actor.StartError) {
-  map_process.start(workload, key, map_process.SenderPool)
+  map_process.start(workload, key, map_process.SenderPool, heap_limit.no_limits)
 }
 
 fn start_prototype_b(
   workload: Workload,
   key: Reference,
 ) -> Result(actor.Started(Owner), actor.StartError) {
-  map_process.start(workload, key, map_process.SendsItself)
+  map_process.start(
+    workload,
+    key,
+    map_process.SendsItself,
+    heap_limit.no_limits,
+  )
 }
 
 /// 1000 health and 100 hits of 7 take 700: every hit lands, the remaining

@@ -167,6 +167,7 @@ fn door(
       send_to_unit(table:, unit_id:, message: unit_process.Attack(sent_at:))
     },
     owner_processes: processes,
+    sender_processes: fn() { [] },
     messages_handled: fn() { measurement.counter_value(handled) },
     memory_words: fn() {
       list.fold(processes(), table.memory_words(table), fn(words, pid) {

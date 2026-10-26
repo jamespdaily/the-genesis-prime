@@ -2,7 +2,9 @@
 -export([monotonic_microseconds/0, enable_scheduler_wall_time/0,
          set_high_priority/0, plain_arguments/0,
          scheduler_wall_time/0, set_schedulers_online/1, core_count/0, schedulers_online/0,
-         process_memory_words/1, message_queue_length/1, new_counter/0,
+         process_memory_words/1, message_queue_length/1,
+         process_heap_and_queue/1, binary_bytes/0, ets_bytes/0,
+         set_max_heap_size/1, new_counter/0,
          increment/1, counter_value/1, put_spawn_list/2, get_spawn_list/1,
          erase_spawn_list/1, table_new/0, table_memory_words/1,
          table_insert/3, table_delete/2, table_delete_owned/3,
@@ -59,6 +61,31 @@ message_queue_length(Pid) ->
         {message_queue_len, Length} -> {ok, Length};
         undefined -> {error, nil}
     end.
+
+%% `total_heap_size` in words and `message_queue_len` of a process, read in one
+%% call, as `{ok, {HeapWords, Queue}}`, or `{error, nil}` when it is not alive.
+process_heap_and_queue(Pid) ->
+    case erlang:process_info(Pid, [total_heap_size, message_queue_len]) of
+        [{total_heap_size, HeapWords}, {message_queue_len, Queue}] ->
+            {ok, {HeapWords, Queue}};
+        undefined ->
+            {error, nil}
+    end.
+
+%% `erlang:memory(binary)` in bytes.
+binary_bytes() ->
+    erlang:memory(binary).
+
+%% `erlang:memory(ets)` in bytes.
+ets_bytes() ->
+    erlang:memory(ets).
+
+%% Sets the calling process's `max_heap_size` to `Words` with `kill` and
+%% `error_logger` on and `include_shared_binaries` off. Returns `nil`.
+set_max_heap_size(Words) ->
+    process_flag(max_heap_size,
+                 #{size => Words, kill => true, error_logger => true}),
+    nil.
 
 new_counter() ->
     counters:new(1, [write_concurrency]).

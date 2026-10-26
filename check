@@ -3,9 +3,9 @@
 #
 # First the setup check (./setup-check): it names every part this machine is
 # missing, and when it fails nothing else runs. Before it, this script reads
-# $GENESIS_HOME/env.sh (default ~/.genesis-prime/env.sh) and, unless
-# GENESIS_NO_CLIENT=1, puts $GENESIS_OTP_DIR/bin first on PATH
-# (setup_check/environment.sh).
+# $GENESIS_HOME/env.sh (default ~/.genesis-prime/env.sh) and puts
+# $GENESIS_OTP_DIR/bin first on PATH, unless GENESIS_NO_CLIENT=1 and
+# GENESIS_OTP_DIR is unset (setup_check/environment.sh).
 #
 # Then the parts, independent ones side by side; a part that fails is named, and the
 # script exits non-zero:
@@ -27,7 +27,8 @@
 # when PGHOST is a socket directory, it uses PGTCPHOST (default ::1).
 #
 # GENESIS_NO_CLIENT=1, which only CI sets, marks a machine without the client;
-# everywhere else a missing client fails the part that reads it.
+# everywhere else a missing client fails the part that reads it. It does not
+# turn off the patched OTP: CI sets GENESIS_OTP_DIR to the build it caches.
 #
 # gleam holds a lock on its build directory, so the gleam parts run one after
 # another in a single chain; every other part runs beside the chain.

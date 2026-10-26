@@ -1,12 +1,14 @@
 //// One load run: one or more maps of a prototype and their players started
 //// together, a warm-up, a measured stretch, and what the run counted.
 
+import genesis_prime/topology/heap_limit.{type HeapLimits}
+import genesis_prime/topology/heap_sampler.{type Sampled}
 import genesis_prime/topology/latency.{type Histogram}
 import genesis_prime/topology/map_process.{type Sending}
 import genesis_prime/topology/measurement
 import genesis_prime/topology/owner.{type Owner}
 import genesis_prime/topology/per_unit
-import genesis_prime/topology/player.{type Player}
+import genesis_prime/topology/player.{type Player, type Report}
 import genesis_prime/topology/unit
 import genesis_prime/topology/workload.{type Workload}
 import gleam/dict
@@ -14,6 +16,7 @@ import gleam/erlang/process
 import gleam/erlang/reference
 import gleam/int
 import gleam/list
+import gleam/option.{type Option}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor
@@ -56,13 +59,28 @@ pub const short_timing =
     first_judged_sample: 5,
   )
 
+/// Whether a run reads the heap of each owner process.
+pub type Sampling {
+  /// The run reads only the owners' queues, once each timing interval, so its
+  /// conditions are those of a run before the heap sampler existed.
+  NotSampled
+  /// The run also starts the heap sampler with the prototypes. Its kills and
+  /// replacements cover the whole run, warm-up included, and its peaks cover
+  /// the measured stretch. Only a map process prototype is sampled: the owners
+  /// of `PerUnit` are one process for each unit, too many to read every 100
+  /// milliseconds without disturbing the run, so `run` refuses it with
+  /// `PerUnit`.
+  SampleHeaps
+}
+
 /// Which prototype a run measures.
 pub type Prototype {
   /// One process per unit.
   PerUnit
-  /// One map process, and who sends its deliveries: the map process itself is
-  /// prototype B, a pool of senders is prototype C.
-  MapProcess(sending: Sending)
+  /// One map process, who sends its deliveries, and the heap limits of its
+  /// processes: the map process itself sending is prototype B, a pool of
+  /// senders is prototype C. `heap_limit.no_limits` sets none.
+  MapProcess(sending: Sending, heap_limits: HeapLimits)
 }
 
 /// Whether the owners kept up with the load.
@@ -71,8 +89,9 @@ pub type Pace {
   KeptUp
   /// A judged sample's queue exceeded what the load sends in one second.
   FellBehind
-  /// The owners kept up, but a player did not report within
-  /// `report_deadline_milliseconds`: the updates sent to it outran it. The
+  /// The owners kept up, but a player did not report: its process had ended,
+  /// or the updates sent to it outran it and it did not answer within
+  /// `report_deadline_milliseconds`. The
   /// choosing rule's ceiling reads only the owners, so this counts as kept up
   /// there, and its latency covers only the players that reported.
   PlayersFellBehind
@@ -113,6 +132,10 @@ pub type RunResult {
     /// `FellBehind` when any map fell behind, otherwise `PlayersFellBehind`
     /// when any map's players did not all report, otherwise `KeptUp`.
     pace: Pace,
+    /// What the heap sampler found, over all maps' owners together: the peaks
+    /// over the measured stretch, the kills and replacements over the whole
+    /// run; none when the run was `NotSampled`.
+    sampled: Option(Sampled),
   )
 }
 
@@ -141,8 +164,8 @@ fn pace(
 pub fn name_of(prototype: Prototype) -> String {
   case prototype {
     PerUnit -> "A one process per unit"
-    MapProcess(sending: map_process.SendsItself) -> "B one map process"
-    MapProcess(sending: map_process.SenderPool) ->
+    MapProcess(sending: map_process.SendsItself, ..) -> "B one map process"
+    MapProcess(sending: map_process.SenderPool, ..) ->
       "C map process with sender pool"
   }
 }
@@ -166,17 +189,29 @@ type MapRun {
 /// maps' prototypes first and the players' factory after them, tells each
 /// player to begin on its own map's owner, which joins its connection, runs
 /// the warm-up, counts through the measured stretch while sampling each map's
-/// owners' summed queue each interval, and stops everything. Each map's spawn
-/// list is kept under a key made for the run and erased at the end. One map is
-/// a run of the prototype alone.
+/// owners' summed queue each interval and, when `sampling` is `SampleHeaps`,
+/// the heap and queue of each owner process every 100 milliseconds (from the
+/// start of the run, with the peaks forgotten at the measured stretch), and
+/// stops everything. Each map's spawn list is kept under a key made for the
+/// run and erased at the end. One map is a run of the prototype alone.
 pub fn run(
   prototype prototype: Prototype,
   workload workload: Workload,
   maps maps: Int,
   schedulers schedulers: Int,
   timing timing: Timing,
+  sampling sampling: Sampling,
 ) -> RunResult {
   assert maps >= 1 as "a run has at least one map"
+  let sampling_is_possible = case sampling, prototype {
+    SampleHeaps, PerUnit -> False
+    SampleHeaps, MapProcess(..)
+    | NotSampled, PerUnit
+    | NotSampled, MapProcess(..)
+    -> True
+  }
+  assert sampling_is_possible
+    as "a run of the one-process-per-unit prototype cannot sample heaps"
   measurement.set_schedulers_online(schedulers)
   let planned =
     int.range(0, maps, [], fn(taken, map_index) {
@@ -236,6 +271,10 @@ pub fn run(
       MapRun(workload: map_workload, key:, spawn_list:, door:, players:)
     })
   let players = list.flat_map(map_runs, fn(map_run) { map_run.players })
+  let sampler = case sampling {
+    SampleHeaps -> option.Some(heap_sampler.start(doors))
+    NotSampled -> option.None
+  }
   list.each(map_runs, fn(map_run) {
     list.each(map_run.players, player.begin(_, map_run.door))
   })
@@ -244,9 +283,14 @@ pub fn run(
   list.each(players, player.reset_counts)
   let handled_before = messages_handled(doors)
   let scheduler_before = measurement.scheduler_time()
+  case sampler {
+    option.Some(sampler) -> heap_sampler.begin_measuring(sampler)
+    option.None -> Nil
+  }
   let samples = sample_queues(doors, timing)
   let scheduler_after = measurement.scheduler_time()
   let handled_after = messages_handled(doors)
+  let sampled = option.map(sampler, heap_sampler.stop)
   let memory_words =
     doors
     |> list.map(fn(door) { door.memory_words() })
@@ -267,22 +311,11 @@ pub fn run(
     True -> FellBehind
     False -> KeptUp
   }
-  let asked =
-    list.map(map_runs, fn(map_run) {
-      list.map(map_run.players, player.ask_report)
-    })
-  let deadline =
-    measurement.monotonic_microseconds()
-    / 1000
-    + report_deadline_milliseconds(owners_pace)
   let reports_by_map =
-    list.map(asked, fn(replies) {
-      list.map(replies, fn(reply) {
-        let left = deadline - measurement.monotonic_microseconds() / 1000
-        process.receive(reply, int.max(left, 0))
-      })
-      |> result.values
-    })
+    collect_reports(
+      players_by_map: list.map(map_runs, fn(map_run) { map_run.players }),
+      within_milliseconds: report_deadline_milliseconds(owners_pace),
+    )
   let reports = list.flatten(reports_by_map)
   owner.stop_supervisor(supervisor.pid)
   list.each(map_runs, fn(map_run) { measurement.erase_spawn_list(map_run.key) })
@@ -329,7 +362,32 @@ pub fn run(
     memory_words_per_unit: int.to_float(memory_words) /. int.to_float(units),
     map_paces:,
     pace: run_pace(map_paces),
+    sampled:,
   )
+}
+
+/// Asks every player for its counts and collects the answers, one list for
+/// each list of players, in the order of `players_by_map`. All players are
+/// asked first, and the answers have `within_milliseconds` together. A player
+/// that has not answered by then, or whose process has ended, is left out; a
+/// monitor shows the end at once, so a player that crashed is not waited for.
+pub fn collect_reports(
+  players_by_map players_by_map: List(List(Player)),
+  within_milliseconds within_milliseconds: Int,
+) -> List(List(Report)) {
+  let asked =
+    list.map(players_by_map, fn(players) {
+      list.map(players, player.ask_report)
+    })
+  let deadline =
+    measurement.monotonic_microseconds() / 1000 + within_milliseconds
+  list.map(asked, fn(replies) {
+    list.map(replies, fn(reply) {
+      let left = deadline - measurement.monotonic_microseconds() / 1000
+      player.await_report(reply, within_milliseconds: int.max(left, 0))
+    })
+    |> result.values
+  })
 }
 
 /// The pace of the whole run: `FellBehind` when any map fell behind, otherwise
@@ -359,7 +417,8 @@ fn start_prototype(
 ) -> Result(actor.Started(Owner), actor.StartError) {
   case prototype {
     PerUnit -> per_unit.start(workload, key)
-    MapProcess(sending:) -> map_process.start(workload, key, sending)
+    MapProcess(sending:, heap_limits:) ->
+      map_process.start(workload, key, sending, heap_limits)
   }
 }
 

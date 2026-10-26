@@ -8,7 +8,9 @@ Settings come from the environment; on a development machine
 $GENESIS_HOME/env.sh (default ~/.genesis-prime/env.sh) sets them, and
 ./setup-check and the full check read it (setup_check/environment.sh).
 GENESIS_NO_CLIENT=1 marks a machine without the client, such as CI: the
-client, the client query process and the patched OTP are not checked there.
+client and the client query process are not checked there. The patched OTP is
+checked there only when GENESIS_OTP_DIR is set, as CI does for the build it
+caches.
 
 Usage: ./setup-check
 """
@@ -16,6 +18,7 @@ Usage: ./setup-check
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -100,12 +103,14 @@ OTP_VERSION_COMMAND = (
 
 
 def check_erlang(machine: Machine) -> list[Missing]:
-    """OTP as pinned, and on a machine with the client the patched build the
-    full check runs on (GENESIS_OTP_DIR, with its patch marker)."""
+    """OTP as pinned, and the patched build the full check runs on
+    (GENESIS_OTP_DIR, with its patch marker, and the erl found on PATH being
+    that build's), except where GENESIS_NO_CLIENT=1 and GENESIS_OTP_DIR is
+    unset."""
     missing = _tool(machine, "erlang", "Erlang/OTP", ["erl", "-noshell", "-eval", OTP_VERSION_COMMAND], r"^(\d+(?:\.\d+)*)\s*$")
-    if _no_client(machine):
+    if _no_client(machine) and not machine.env.get("GENESIS_OTP_DIR"):
         return missing
-    return missing + _patched_otp(machine)
+    return missing + _patched_otp(machine) + _erl_on_path(machine)
 
 
 def _otp_dir(machine: Machine) -> Path:
@@ -140,6 +145,22 @@ def _patched_otp(machine: Machine) -> list[Missing]:
             continue
         missing.append(Missing("Patched OTP %s with %s" % (version, patch.name), found, fix))
     return missing
+
+
+def _erl_on_path(machine: Machine) -> list[Missing]:
+    """The erl PATH finds first is the file bin/erl of the build in
+    GENESIS_OTP_DIR, symbolic links resolved on both sides. Nothing to say when
+    the build has no bin/erl or PATH finds no erl: the checks above name those."""
+    directory = _otp_dir(machine)
+    patched = directory / "bin" / "erl"
+    found = shutil.which("erl", path=machine.env.get("PATH", ""))
+    if not patched.is_file() or found is None:
+        return []
+    if Path(found).resolve() == patched.resolve():
+        return []
+    fix = "put the patched OTP's bin first on PATH, as setup_check/environment.sh does (PATH=%s:$PATH)" % (directory / "bin")
+    return [Missing("the erl on PATH from the patched OTP at %s" % patched,
+                    "%s resolves to %s, not %s" % (found, Path(found).resolve(), patched.resolve()), fix)]
 
 
 def check_rebar(machine: Machine) -> list[Missing]:

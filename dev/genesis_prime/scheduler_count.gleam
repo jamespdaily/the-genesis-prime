@@ -24,6 +24,7 @@
 //// - the choosing rule, which runs after `one-map`, `maps` and `time` when all
 ////   three ran.
 
+import genesis_prime/topology/heap_limit
 import genesis_prime/topology/latency
 import genesis_prime/topology/map_process
 import genesis_prime/topology/measurement
@@ -186,7 +187,7 @@ fn contender_of(schedulers schedulers: Int) -> Contender {
     name: contender_name(schedulers:),
     run: fn(players, visibility_range, timing) {
       run.run(
-        prototype: run.MapProcess(map_process.SenderPool),
+        prototype: run.MapProcess(map_process.SenderPool, heap_limit.no_limits),
         workload: workload_for(
           players:,
           creatures: creature_count,
@@ -195,6 +196,7 @@ fn contender_of(schedulers schedulers: Int) -> Contender {
         maps: 1,
         schedulers:,
         timing:,
+        sampling: run.NotSampled,
       )
     },
   )
@@ -267,7 +269,10 @@ fn many_maps(counts counts: List(Int)) -> List(ManyMaps) {
           schedulers:,
           visibility_range:,
           result: run.run(
-            prototype: run.MapProcess(map_process.SenderPool),
+            prototype: run.MapProcess(
+              map_process.SenderPool,
+              heap_limit.no_limits,
+            ),
             workload: workload_for(
               players: players_per_map,
               creatures: creatures_per_map,
@@ -276,6 +281,7 @@ fn many_maps(counts counts: List(Int)) -> List(ManyMaps) {
             maps: map_count,
             schedulers:,
             timing: run.short_timing,
+            sampling: run.NotSampled,
           ),
         )
       })

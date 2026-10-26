@@ -16,6 +16,9 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # A cold run builds the patched OTP in 146 seconds on the runner and the
+    # whole cold job takes 3 minutes 11 seconds (run 40316762854), so 10
+    # minutes is more than 3 times the cold job.
     timeout-minutes: 10
     services:
       postgres:
@@ -30,6 +33,8 @@ jobs:
           --health-timeout 5s
           --health-retries 15
     env:
+      # No client on this machine; the patched OTP is still required, from
+      # GENESIS_OTP_DIR (set below), and first on PATH for ./check.
       GENESIS_NO_CLIENT: "1"
       PGHOST: localhost
       PGPORT: "5432"
@@ -45,4 +50,35 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
+      - name: Name the patched OTP
+        run: |
+          echo "GENESIS_OTP_DIR=$HOME/patched-otp" >> "$GITHUB_ENV"
+          echo "OTP_VERSION=$(awk '$1 == "erlang" { print $2 }' .tool-versions)" >> "$GITHUB_ENV"
+          # The runner image, so a new image builds afresh; the env context
+          # holds only what the workflow sets, so it is copied in here.
+          echo "IMAGE_OS=$ImageOS" >> "$GITHUB_ENV"
+      # Rebuilt only when the OTP version, a patch or the build script changes.
+      # Saved right after the build, so a failing check does not lose it.
+      - name: Restore the patched OTP
+        id: otp
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.GENESIS_OTP_DIR }}
+          key: patched-otp-${{ runner.os }}-${{ env.IMAGE_OS }}-${{ env.OTP_VERSION }}-${{ hashFiles('setup_check/*.patch', 'setup_check/build_patched_otp.sh') }}
+      - name: Install what the OTP build needs
+        if: steps.otp.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libncurses-dev libssl-dev
+      - name: Build the patched OTP
+        if: steps.otp.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: setup_check/build_patched_otp.sh
+      - name: Save the patched OTP
+        if: steps.otp.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.GENESIS_OTP_DIR }}
+          key: ${{ steps.otp.outputs.cache-primary-key }}
       - run: ./check

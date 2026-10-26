@@ -8,6 +8,7 @@
 //// restart rebuilds nothing, because there is nothing to rebuild; deliveries
 //// that were waiting in the dead sender's mailbox are lost.
 
+import genesis_prime/topology/heap_limit.{type HeapLimit}
 import genesis_prime/topology/update.{type Delivery}
 import gleam/erlang/process.{type Subject}
 import gleam/list
@@ -23,18 +24,28 @@ pub type Message {
   Probe(reply_with: Subject(Nil))
 }
 
-/// The child specification for a sender registered under `name`. The map
-/// process reaches the sender through the name, so a restarted sender is
-/// reached too.
+/// The child specification for a sender registered under `name`, killed when
+/// its heap passes `limit`. The map process reaches the sender through the
+/// name, so a restarted sender is reached too.
 pub fn supervised(
   name name: process.Name(Message),
+  limit limit: HeapLimit,
 ) -> ChildSpecification(Subject(Message)) {
-  supervision.worker(fn() { start(name) })
+  supervision.worker(fn() { start(name, limit) })
 }
 
-/// Starts a sender registered under `name`.
-fn start(name: process.Name(Message)) -> actor.StartResult(Subject(Message)) {
-  actor.new(Nil)
+/// Starts a sender registered under `name`, which sets `limit` on itself in
+/// its initialiser.
+fn start(
+  name: process.Name(Message),
+  limit: HeapLimit,
+) -> actor.StartResult(Subject(Message)) {
+  actor.new_with_initialiser(5000, fn(self) {
+    heap_limit.apply(limit)
+    actor.initialised(Nil)
+    |> actor.returning(self)
+    |> Ok
+  })
   |> actor.named(name)
   |> actor.on_message(handle)
   |> actor.start

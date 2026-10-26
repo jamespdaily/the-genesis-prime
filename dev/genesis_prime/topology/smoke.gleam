@@ -4,6 +4,7 @@
 ////
 //// Run it with `gleam run -m genesis_prime/topology/smoke`.
 
+import genesis_prime/topology/heap_limit
 import genesis_prime/topology/latency
 import genesis_prime/topology/map_process
 import genesis_prime/topology/measurement
@@ -29,8 +30,8 @@ pub fn main() -> Nil {
     )
   let prototypes = [
     run.PerUnit,
-    run.MapProcess(map_process.SendsItself),
-    run.MapProcess(map_process.SenderPool),
+    run.MapProcess(map_process.SendsItself, heap_limit.no_limits),
+    run.MapProcess(map_process.SenderPool, heap_limit.no_limits),
   ]
   list.each(prototypes, fn(prototype) {
     print(
@@ -41,6 +42,7 @@ pub fn main() -> Nil {
         maps: 1,
         schedulers: cores,
         timing:,
+        sampling: run.NotSampled,
       ),
     )
   })

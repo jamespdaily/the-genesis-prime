@@ -27,6 +27,11 @@ pub type Owner {
     /// The processes that own units at this moment, whose message queues the
     /// harness samples. After a crash this is the rebuilt processes.
     owner_processes: fn() -> List(Pid),
+    /// The owner processes that only carry out deliveries for another owner
+    /// process and own no units: prototype C's senders, none for the others.
+    /// Every other owner process is a map process, or for prototype A a
+    /// unit's. After a crash this is the rebuilt processes.
+    sender_processes: fn() -> List(Pid),
     /// Messages the owners have handled since the prototype started.
     messages_handled: fn() -> Int,
     /// Words of memory the owners hold for their units: process memory, and

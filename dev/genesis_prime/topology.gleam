@@ -25,6 +25,7 @@
 //// - `crash`: the time from an owner's death to its rebuilt process answering.
 //// - the choosing rule, which runs after `all-cores` and `time` when both ran.
 
+import genesis_prime/topology/heap_limit
 import genesis_prime/topology/map_process
 import genesis_prime/topology/measurement
 import genesis_prime/topology/per_unit
@@ -46,8 +47,8 @@ import gleam/string
 /// The three prototypes, in the order they are run and printed.
 const prototypes = [
   run.PerUnit,
-  run.MapProcess(map_process.SendsItself),
-  run.MapProcess(map_process.SenderPool),
+  run.MapProcess(map_process.SendsItself, heap_limit.no_limits),
+  run.MapProcess(map_process.SenderPool, heap_limit.no_limits),
 ]
 
 /// The creatures on the map in every run.
@@ -163,6 +164,7 @@ fn contender_of(
         maps: 1,
         schedulers:,
         timing:,
+        sampling: run.NotSampled,
       )
     },
   )
@@ -302,13 +304,23 @@ fn crash_cost(schedulers: Int) -> Nil {
     #(
       "B the map process",
       repeat(crash_repeats, fn() {
-        map_process.crash_cost(crash_workload, key, map_process.SendsItself)
+        map_process.crash_cost(
+          crash_workload,
+          key,
+          map_process.SendsItself,
+          heap_limit.no_limits,
+        )
       }),
     ),
     #(
       "C the map process, with senders",
       repeat(crash_repeats, fn() {
-        map_process.crash_cost(crash_workload, key, map_process.SenderPool)
+        map_process.crash_cost(
+          crash_workload,
+          key,
+          map_process.SenderPool,
+          heap_limit.no_limits,
+        )
       }),
     ),
   ]
