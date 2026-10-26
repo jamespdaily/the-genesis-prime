@@ -14,10 +14,14 @@ import gleam/result
 /// fails is restarted alone, and 3 restarts in 5 seconds, the server's choice
 /// for its top level: a fault that survives three rebuilds from storage in
 /// that time is not transient, so the whole server stops and its caller sees
-/// it. A test that plants children under the same settings starts from it.
+/// it. It also ends when a child marked significant ends, however it ends, so
+/// a process whose loss a restart cannot repair stops the server in the same
+/// way (`shutdown.supervised` is one). A test that plants children under the
+/// same settings starts from it.
 pub fn supervisor() -> Builder {
   static_supervisor.new(static_supervisor.OneForOne)
   |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
+  |> static_supervisor.auto_shutdown(static_supervisor.AnySignificant)
 }
 
 /// The top supervisor with the database pool as its first child, so the pool

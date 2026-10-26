@@ -72,7 +72,7 @@ fn start(
     arguments: [
       "-noshell",
       "-eval",
-      "{ok, _} = application:ensure_all_started(genesis_prime), planted_shutdown:main().",
+      "genesis_prime@@main:run(planted_shutdown).",
     ],
     environment: [
       #(planted_shutdown.drain_variable, int.to_string(drain_ms)),

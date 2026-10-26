@@ -122,13 +122,17 @@ type Registered {
 }
 
 /// The coordinator as a child of the top supervisor. It holds the
-/// registrations in memory, so a restart empties them and the processes that
-/// registered before it must register again.
+/// registrations in memory, which nothing can rebuild, so it is never
+/// restarted: it is significant and temporary, and when it ends the supervisor
+/// ends with it (the top supervisor sets `AnySignificant`), which stops the
+/// node for its host to restart. A supervisor without that setting rejects it.
 pub fn supervised(
   settings: Settings,
 ) -> supervision.ChildSpecification(Subject(Message)) {
   supervision.worker(fn() { start(settings) })
   |> supervision.timeout(ms: 1000)
+  |> supervision.restart(supervision.Temporary)
+  |> supervision.significant(True)
 }
 
 fn start(
