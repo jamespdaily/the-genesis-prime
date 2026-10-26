@@ -108,6 +108,30 @@ pub fn a_new_account_has_no_permissions_test() -> Nil {
   assert uses_of(database, jim) == [] as "a new account has used no command"
 }
 
+pub fn a_saved_permission_name_the_code_does_not_know_is_read_as_other_and_gives_no_right_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let jim = account(database, "jim")
+  let sam = account(database, "sam")
+  let assert Ok(_) =
+    pog.query("insert into permission (account_id, name) values ($1, $2)")
+    |> pog.parameter(pog.int(jim))
+    |> pog.parameter(pog.text("teleport"))
+    |> pog.execute(on: database.connection)
+    as "a row of a name the code does not know is saved, as an older or newer server could have saved it"
+  assert permissions_of(database, jim) == set.from_list([Other("teleport")])
+    as "the issue: a name read that the code does not know is Other(name), decoded at the edge and not lost"
+  assert use_command(
+      database:,
+      by: jim,
+      command: GrantPermission(target: sam, permission: Grant),
+    )
+    == Ok(Refused(MissingPermission(required: Grant)))
+    as "named permissions grant exactly what is listed: an unknown name is not `grant`"
+  assert permissions_of(database, sam) == set.new()
+    as "the refused grant writes no permission row"
+}
+
 // Test 3.
 
 pub fn granting_gives_the_target_the_permission_and_logs_the_use_test() -> Nil {
