@@ -14,10 +14,16 @@ import pog
 const default_pool_size = 10
 
 /// How long Postgres lets one statement of the pool's connections run, in
-/// milliseconds, before it cancels the statement. It is below the 5 seconds at
-/// which a game worker is killed (`game/service.answer_deadline_ms`), so a
-/// statement that is too slow is cancelled, and rolled back, before the player
-/// is told it failed. 4 seconds; no measurement chose it.
+/// milliseconds, before it cancels the statement and rolls it back. A game
+/// worker is killed at 5 seconds (`game/service.answer_deadline_ms`), and a
+/// write that was reported failed must have committed nothing, so a request
+/// waits at most `checkout_wait_bound_ms` for a connection, then runs at most
+/// this long, and `margin_ms` is left before the worker's deadline: the three
+/// add up to less than it. The statement's own timeout in `pog` is its default
+/// of 5000 ms from the start of the call, which the functions squirrel
+/// generates do not let a caller change; `pgo` closes the connection of a
+/// statement that has run that long, after this limit has cancelled it. 4
+/// seconds; no measurement chose it.
 pub const statement_timeout_ms = 4000
 
 /// The queue target of the pool, in milliseconds: how long a request may wait
@@ -26,25 +32,31 @@ pub const statement_timeout_ms = 4000
 pub const queue_target_ms = 50
 
 /// The queue interval of the pool, in milliseconds: how often the pool looks
-/// at its queue. 100 ms, a tenth of `pgo`'s default, so a request that cannot
-/// get a connection is refused after at most `checkout_wait_bound_ms`; no
-/// measurement chose it.
+/// at its queue. 100 ms, a tenth of `pgo`'s default, so that `pgo` refuses a
+/// request that cannot get a connection after at most `checkout_wait_bound_ms`;
+/// no measurement chose it.
 pub const queue_interval_ms = 100
 
-/// How long a request to the pool may wait in the queue for a connection that
-/// makes no progress before the pool refuses it, in milliseconds: three of
-/// the pool's queue intervals (`queue_interval_ms`), which is the longest a
-/// request waited in a pool whose every connection was held and never given
-/// back (`pgo_pool.erl`, the poll of `handle_info`, `timeout/4` and
-/// `drop_slow/3`).
+/// How long a request waits in the pool's queue, at most, when every
+/// connection of the pool is held and none is given back, in milliseconds:
+/// three queue intervals. The pool polls its queue each interval; the first
+/// poll after a request arrives records it, the second finds no progress and
+/// notes the delay, and the third finds the delay above the target and refuses
+/// every request that has waited more than twice the target (`pgo_pool.erl`,
+/// `handle_info` for the poll, `timeout/4` and `drop_slow/3`). A pool of one
+/// connection held by a transaction refused a request after 292 ms of the
+/// 300. `pgo` offers no bound for a pool whose connections are given back and
+/// taken again: its wait for a connection (`pgo_pool.erl`, `checkout_call/4`)
+/// has no timeout, and the `timeout` of a query counts from the checkout.
 pub const checkout_wait_bound_ms = 300
 
-/// The time kept between the end of a statement's longest life and the
-/// moment a worker is killed: the wait for a connection, the statement's
-/// limit and this add up to less than the worker's deadline, so a worker
-/// that was killed never had a statement left running. 700 ms covers a
-/// round trip to Postgres, the start of a worker and the commit.
-pub const margin_ms = 700
+/// The time kept between the end of a statement's longest life and the moment
+/// a worker is killed, in milliseconds: the wait for a connection, the
+/// statement's limit and this add up to less than the worker's deadline, so a
+/// worker that was killed never had a statement left running. 600 ms covers a
+/// round trip to Postgres, the start of a worker and the commit; no
+/// measurement chose it.
+pub const margin_ms = 600
 
 /// What a pool needs to start. `name` is the name the pool registers and
 /// that its users find it by, made once by whoever starts the tree, so two
@@ -155,6 +167,8 @@ fn config(settings: Settings) -> pog.Config {
   |> pog.user(settings.user)
   |> pog.password(settings.password)
   |> pog.pool_size(settings.pool_size)
+  |> pog.queue_target(queue_target_ms)
+  |> pog.queue_interval(queue_interval_ms)
   |> pog.ip_version(ip_version)
   |> pog.connection_parameter(
     name: "statement_timeout",
