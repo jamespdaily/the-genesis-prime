@@ -14,6 +14,7 @@
 //// rebuilt stops every map, which no registry remembers.
 
 import genesis_prime/connection/clock
+import genesis_prime/connection/named_send
 import genesis_prime/map/delivery.{type Delivery}
 import genesis_prime/map/heap_limit.{type HeapLimits}
 import genesis_prime/map/sender
@@ -244,7 +245,7 @@ fn find(
     process.named(registry) |> result.replace_error(RegistryNotAnswering),
   )
   let reply = process.new_subject()
-  process.send(process.named_subject(registry), Find(world_id:, reply:))
+  named_send.send(process.named_subject(registry), Find(world_id:, reply:))
   case process.receive(reply, within_ms) {
     Ok(Ok(map)) -> Ok(map)
     Ok(Error(why)) -> Error(MapNotStarted(why))

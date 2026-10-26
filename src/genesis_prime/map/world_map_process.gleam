@@ -15,6 +15,7 @@
 //// The map process monitors the connection of each player that joined and
 //// takes the player's unit off the map when the connection ends.
 
+import genesis_prime/connection/named_send
 import genesis_prime/map/delivery.{type Delivery}
 import genesis_prime/map/heap_limit.{type HeapLimits}
 import genesis_prime/map/sender
@@ -209,7 +210,7 @@ pub fn join(
 ) -> Result(PlayerUnit, JoinError) {
   use <- bool.guard(when: !registered(map), return: Error(NotAnswering))
   let reply = process.new_subject()
-  process.send(map, Join(newcomer:, connection:, reply:))
+  named_send.send(map, Join(newcomer:, connection:, reply:))
   case process.receive(reply, within_ms) {
     Ok(Ok(unit)) -> Ok(unit)
     Ok(Error(refused)) -> Error(Refused(refused))
@@ -218,8 +219,10 @@ pub fn join(
 }
 
 /// Whether a request to the map can be sent: a map reached by its name has a
-/// process under the name, which a map between two lives does not, and sending
-/// to a name with none is a crash of the sender.
+/// process under the name, which a map between two lives does not. The request
+/// is sent with `named_send`, which drops it when the process ends between this
+/// check and the send, so no end of the map crashes the asker; the check is for
+/// an answer at once instead of at the asker's deadline.
 fn registered(map: Subject(Message)) -> Bool {
   case process.subject_name(map) {
     Ok(name) -> result.is_ok(process.named(name))
@@ -239,7 +242,7 @@ pub fn leave(
 ) -> Result(Nil, Nil) {
   use <- bool.guard(when: !registered(map), return: Error(Nil))
   let reply = process.new_subject()
-  process.send(map, Leave(connection:, reply:))
+  named_send.send(map, Leave(connection:, reply:))
   process.receive(reply, within_ms)
 }
 
@@ -251,7 +254,7 @@ pub fn units(
 ) -> Result(List(PlayerUnit), Nil) {
   use <- bool.guard(when: !registered(map), return: Error(Nil))
   let reply = process.new_subject()
-  process.send(map, Units(reply:))
+  named_send.send(map, Units(reply:))
   process.receive(reply, within_ms)
 }
 
