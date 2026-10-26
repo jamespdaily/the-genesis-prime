@@ -1,6 +1,6 @@
 -- Every use of a command by an account, oldest first.
 select
-  account_id,
+  account_id as "account_id!",
   command,
   arguments,
   outcome,

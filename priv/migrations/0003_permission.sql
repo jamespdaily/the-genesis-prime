@@ -10,19 +10,23 @@ create table permission (
 
 -- One row for each use of a command, allowed or refused. `account_id` is the
 -- account that used it, `command` the command's name and `arguments` what it
--- was given, as text. `outcome` is `allowed` or `refused`; a refused use also
--- names why in `refusal` (`missing_permission` or `unknown_permission`) and
--- the permission it is about in `refusal_permission`, and an allowed use has
+-- was given, as text. The first grant of a permission is made by the database's
+-- operator and not by an account, so only `first_grant` has no `account_id`,
+-- and its `arguments` name the account given the permission. `outcome` is
+-- `allowed` or `refused`; a refused use also names why in `refusal`
+-- (`missing_permission`, `unknown_permission` or `first_grant_over`) and the
+-- permission it is about in `refusal_permission`, and an allowed use has
 -- neither.
 create table game_master_use (
   id bigint generated always as identity primary key,
-  account_id bigint not null references account (id),
+  account_id bigint references account (id),
   command text not null check (command <> ''),
   arguments text not null,
   outcome text not null check (outcome in ('allowed', 'refused')),
-  refusal text check (refusal in ('missing_permission', 'unknown_permission')),
+  refusal text check (refusal in ('missing_permission', 'unknown_permission', 'first_grant_over')),
   refusal_permission text,
   used_at timestamptz not null default now(),
+  check (account_id is not null or command = 'first_grant'),
   check (
     (outcome = 'allowed' and refusal is null and refusal_permission is null)
     or (outcome = 'refused' and refusal is not null and refusal_permission is not null)

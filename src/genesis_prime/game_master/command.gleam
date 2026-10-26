@@ -6,6 +6,7 @@
 //// refused (`game_master/store`).
 
 import genesis_prime/game_master/permission.{type Permission}
+import gleam/option.{type Option}
 import gleam/set.{type Set}
 
 /// Why a rule refused a command.
@@ -14,6 +15,9 @@ pub type Refusal {
   MissingPermission(required: Permission)
   /// The command names a permission this code has none for, by its name.
   UnknownPermission(name: String)
+  /// A first grant of the permission was asked for after an account holds it,
+  /// so the first grant is over.
+  FirstGrantOver(permission: Permission)
 }
 
 /// How a use of a command ended.
@@ -28,9 +32,16 @@ pub type Use {
   Use(account: Int, command: String, arguments: String)
 }
 
-/// A use read back from the log, with how it ended.
+/// A use read back from the log, with how it ended. `actor` is the account
+/// that used the command, and none for a first grant, which the database's
+/// operator makes (`store.give_first`).
 pub type LoggedUse {
-  LoggedUse(used: Use, outcome: Outcome)
+  LoggedUse(
+    actor: Option(Int),
+    command: String,
+    arguments: String,
+    outcome: Outcome,
+  )
 }
 
 /// Whether an account's permissions hold the one a command requires: `Ok`, or

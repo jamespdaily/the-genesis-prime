@@ -82,6 +82,63 @@ on conflict do nothing;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `operator_uses` query
+/// defined in `./src/genesis_prime/game_master/sql/operator_uses.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type OperatorUsesRow {
+  OperatorUsesRow(
+    command: String,
+    arguments: String,
+    outcome: String,
+    refusal: Option(String),
+    refusal_permission: Option(String),
+  )
+}
+
+/// Every use made by the database's operator and not by an account, oldest
+/// first: the first grants.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn operator_uses(
+  db: pog.Connection,
+) -> Result(pog.Returned(OperatorUsesRow), pog.QueryError) {
+  let decoder = {
+    use command <- decode.field(0, decode.string)
+    use arguments <- decode.field(1, decode.string)
+    use outcome <- decode.field(2, decode.string)
+    use refusal <- decode.field(3, decode.optional(decode.string))
+    use refusal_permission <- decode.field(4, decode.optional(decode.string))
+    decode.success(OperatorUsesRow(
+      command:,
+      arguments:,
+      outcome:,
+      refusal:,
+      refusal_permission:,
+    ))
+  }
+
+  "-- Every use made by the database's operator and not by an account, oldest
+-- first: the first grants.
+select
+  command,
+  arguments,
+  outcome,
+  refusal,
+  refusal_permission
+from game_master_use
+where account_id is null
+order by id;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `permissions_of_account` query
 /// defined in `./src/genesis_prime/game_master/sql/permissions_of_account.sql`.
 ///
@@ -139,6 +196,60 @@ values ($1, $2, $3, 'allowed');
   |> pog.parameter(pog.int(arg_1))
   |> pog.parameter(pog.text(arg_2))
   |> pog.parameter(pog.text(arg_3))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// Records a first grant that gave a permission. The database's operator made
+/// it, so no account is named; `arguments` names the account that was given
+/// the permission.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn record_first_grant(
+  db: pog.Connection,
+  arg_1: String,
+) -> Result(pog.Returned(Nil), pog.QueryError) {
+  let decoder = decode.map(decode.dynamic, fn(_) { Nil })
+
+  "-- Records a first grant that gave a permission. The database's operator made
+-- it, so no account is named; `arguments` names the account that was given
+-- the permission.
+insert into game_master_use (command, arguments, outcome)
+values ('first_grant', $1, 'allowed');
+"
+  |> pog.query
+  |> pog.parameter(pog.text(arg_1))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// Records a first grant that was refused because an account holds the
+/// permission already. `arguments` names the account that was to be given it,
+/// and the permission is the one that was held.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn record_refused_first_grant(
+  db: pog.Connection,
+  arg_1: String,
+  arg_2: String,
+) -> Result(pog.Returned(Nil), pog.QueryError) {
+  let decoder = decode.map(decode.dynamic, fn(_) { Nil })
+
+  "-- Records a first grant that was refused because an account holds the
+-- permission already. `arguments` names the account that was to be given it,
+-- and the permission is the one that was held.
+insert into game_master_use (
+  command, arguments, outcome, refusal, refusal_permission
+)
+values ('first_grant', $1, 'refused', 'first_grant_over', $2);
+"
+  |> pog.query
+  |> pog.parameter(pog.text(arg_1))
+  |> pog.parameter(pog.text(arg_2))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
@@ -246,7 +357,7 @@ pub fn uses_of_account(
 
   "-- Every use of a command by an account, oldest first.
 select
-  account_id,
+  account_id as \"account_id!\",
   command,
   arguments,
   outcome,

@@ -41,7 +41,11 @@ pub fn permissions_of(
 /// Carries out a command's decision and records its use, in one transaction:
 /// `apply` writes each effect in order when the rule allowed the command, and
 /// one row of the log is written either way. After the commit it writes one
-/// info line through the logging module. It gives how the use ended.
+/// info line through the logging module. It gives how the use ended. When an
+/// effect fails after the rule allowed the command, the transaction is rolled
+/// back, so no row is written; the failure is then logged at warning, naming
+/// the account, the command, its arguments and the failure, so no use goes
+/// unlogged.
 pub fn carry_out(
   connection connection: pog.Connection,
   used used: Use,
@@ -61,7 +65,13 @@ pub fn apply_grant(
 
 /// Gives an account a permission when no account holds it yet. No account
 /// uses a command to do it, so a database that has no game master can get its
-/// first. It writes the permission row only.
+/// first. The permission row and the row of the log (command `first_grant`,
+/// no acting account, the arguments written `account=<account id>
+/// permission=<permission name>`) are
+/// written in one transaction, and one info line is written through the
+/// logging module. A first grant after an account holds the permission writes
+/// no permission row but is logged as refused (`FirstGrantOver`) and gives
+/// `AlreadyHeld`.
 pub fn give_first(
   connection connection: pog.Connection,
   account account: Int,
@@ -76,4 +86,12 @@ pub fn uses_of(
   account account: Int,
 ) -> Result(List(LoggedUse), StoreError) {
   todo as "read the account's log rows into logged uses"
+}
+
+/// Every use made by the database's operator and not by an account, oldest
+/// first: the first grants, allowed and refused.
+pub fn operator_uses(
+  connection connection: pog.Connection,
+) -> Result(List(LoggedUse), StoreError) {
+  todo as "read the log rows that have no account into logged uses"
 }

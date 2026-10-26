@@ -30,7 +30,8 @@ pub fn rule(
 }
 
 /// The use the log records for an account's use of a command: the command's
-/// name, `grant` or `revoke`, and its arguments as text.
+/// name, `grant` or `revoke`, and its arguments as text, written
+/// `target=<account id> permission=<permission name>`.
 pub fn to_use(account account: Int, command command: Command) -> Use {
   todo as "the use of the command with the arguments written as text"
 }
