@@ -666,7 +666,7 @@ name = "SendWorldMessage"
 statement = "The network object's send-by-id method: looks up the message's serialiser by id and sends the message on the given connection; an unknown id is logged as 'Message Id', 'Base Message Id' or 'Invalid or foreign Message Id' with its number. The message name table it would print from holds no names in this build."
 proof = "Slot 0xf0 of the class table at 0x140b647b0 (entry 0x140b648a0); global object 0x140c65808. Decompiled: slot 0x130 looks up the id; connection by index in the array at object 0xa8 (count 0xb0); 0x140333fc0 queues the send; the profile zone 'H Network_SendMessageById'. Name table pointer 0x140c65828 = 0x140c1f210 (set in 0x14006c290 and 0x1400a8190), 0xd2f entries of 16 bytes; bytes read over all 0xd2f entries: only 214 nonzero 8-byte words, all in the first word of an entry (size limits such as 0x7d000), every name word zero."
 grade = "fairly sure"
-gap = "The connection's send path 0x140333fc0 is not read."
+gap = "The connection's send path 0x140333fc0 (QueueMessageSend) is read only from Ghidra's decompile."
 name = "NetworkSendMessageById"
 
 ["0x1403b67e0"]
@@ -890,7 +890,7 @@ grade = "sure"
 statement = "Opens the connection to the auth server: the address is the auth host text (argument Auth) with default port 23115, the connection is of kind 0 and becomes the login's auth connection, the login screen is told 'NetworkStatus', and the connection is started with the client's base cipher key. Called when the NC platform reports event 14 (HandleNcPlatformEvent) and when a login is submitted with amode 1 (SubmitLogin)."
 proof = "0x1400393f5 movzx ebp, word [0x140c3adbc]; 0x1400393fc mov rdx, [rcx+0x16f8] (the auth host, set from 0x1400189e0); 0x140039456 call 0x140334f90; 0x140039486 call 0x140029f00 with kind 0 (decompiled); the result kept at the login object's 0xe8; 'NetworkStatus' to the screen object; 0x140039591 mov r8, [r8+0x1630]; 0x140039598 call 0x14002a050. Callers: 0x140037341 in 0x140037220 and 0x1400386ef in 0x140038570."
 grade = "fairly sure"
-gap = "What the cipher started by 0x14002a050 does is not read."
+gap = "The kind-0 argument to 0x140029f00 and the login object's 0xe8 are read from Ghidra's decompile, not the instructions; the cipher 0x14002a050 starts is read (StartConnectionCipher)."
 name = "ConnectToAuthServer"
 
 ["0x140029f00"]
@@ -952,7 +952,7 @@ gap = "Read from Ghidra's decompile; what 0x14003e380 does with the object beyon
 name = "HandleLoginGameServerHello"
 
 ["0x140020bc0"]
-statement = "Starts character select on a game connection: keeps the connection, loads the character-select interface (strata such as CharacterSelection and AccountServices) and sends message 0x7e0 with one byte, 0."
+statement = "Starts character select on a game connection: keeps the connection, loads the character-select interface (strata such as CharacterSelection and AccountServices) and sends message 0x7e0 with a one-byte record, 0, which the message's writer leaves out, so the body on the wire is empty."
 proof = "Decompiled: the connection kept at the object's 0xb8; 0x14003db40 with L'AccountServices', L'Navigation', L'DefaultStratum', L'TempBlocker' and L'Character', L'CharacterSelection', L'AccountServices', L'Credits', L'MicroStore'; network slot 0x108 with 0x7e0 and a zero byte, sent as 0x244. Callers include 0x140038120 (after login) and 0x140046340 (after a realm switch)."
 grade = "fairly sure"
 gap = "Read from Ghidra's decompile; what 0x7e0 asks for is not read; the callers 0x140033d60, 0x140045b70, 0x140047730 and 0x1403b6a80 (returns to character select) are not read."
@@ -1065,3 +1065,226 @@ proof = "Decompiled: argument loop for L'patcher' (0x1409f5708); default 'wildst
 grade = "fairly sure"
 gap = "Read from Ghidra's decompile; the echo loop itself is not read."
 name = "TraceRouteToPatcher"
+
+# Framing and cipher
+
+["0x1403309a0"]
+statement = "The network object's message registration method: registers a message id with its record size, its sizer, its writer, its reader and its mode. A message with no writer cannot be sent and one with no reader cannot be received. A second registration of an id is reported as an error."
+proof = "Slot 0 of the class table at 0x140b647b0 (bytes at 0x140b647b0: 0x1403309a0). Decompiled: a 0xa8-byte entry keeps the id at 0x10, the record size (third argument) at 0x20, the sizer (fourth) at 0x28, the writer (fifth, stack 0x20) at 0x30, the reader (sixth, stack 0x28) at 0x38 and the mode (seventh, stack 0x30) at 0x60; lookups (slot 0x130) hand out the entry from 0x18, which is why WriteMessageFrame reads the size at 8, sizer at 0x10, writer at 0x18, reader at 0x20 and mode at 0x48; 'Duplicate message registration id: %s' on a second id. The registrations in 0x14006c290 call it as 0x14006c2ea call [rax]."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not the instructions; the meaning of modes other than 0 is not read."
+name = "RegisterMessage"
+
+["0x1403355e0"]
+statement = "Writes one message as a frame: a 32-bit length, then the 16-bit message id, then the body from the message's writer, packed least significant bit first, so both header fields are little-endian. The length counts the whole frame in bytes, its own 4 bytes and the id's 2 included. A frame ends on a byte boundary, padded with zero bits. A frame over the message's size limit (MessageSizeLimit: 131070 bytes for every message in this decode) is logged and not written, and one over nine tenths of the limit is logged as a warning. A message registered with mode 3 is written with no header; every message in this decode has mode 0."
+proof = "Decompiled: bits start at 0x10 (the id) and the sizer at descriptor 0x10 adds the body; 0x20 more unless the mode at descriptor 0x48 is 1 or 3; bytes = (bits + 7) >> 3; limit from the table at 0x140c65828 entry (id - 3), 0x1fffe when it is 0; over the limit: LogMessage and return 1; over limit * 0.9 (bytes at 0x140b79eb0: 0.9 as a float) a level-1 log. Then, unless the mode is 3, 0x140336380 (WriteBits) with the byte count and width 0x20, and with the id (as 16 bits) and width 0x10; the writer at descriptor 0x18; afterwards a part-written byte is closed (bit offset cleared, byte pointer + 1). In mode 0 the bits written after the header are checked against the sizer's count. Called by SerialiseMessageById 0x140332920 (into a memory buffer) and QueueMessageSend 0x140333fc0 (into the connection's send stream)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not the instructions; what modes 1 and 3 are for, and whether anything fills the message table's limits at run time, is not read."
+name = "WriteMessageFrame"
+
+["0x140336380"]
+statement = "Writes an unsigned value of 1 to 64 bits into a bit stream at the current bit position, least significant bit first, so a byte-aligned 16- or 32-bit value lands as little-endian bytes. A stream without room for it grows first."
+proof = "Decompiled: room = (buffer end - byte pointer) * 8 - bit offset, else 0x140336470; by (width + 7) >> 3: 0x1403367d0 (1 byte), 0x140336860 (2), 0x1403368f0 (3 or 4), 0x1400a7540 (5 to 8). 0x1403368f0 decompiled: the 32-bit word at the byte pointer keeps its bits below the bit offset, then ors (value masked to width) << bit offset; a fifth byte when it spills; byte pointer += (offset + width) >> 3, offset = (offset + width) & 7. 0x140336860 the same on a 16-bit word."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the 1-byte and 5-to-8-byte writers are not read."
+name = "WriteBits"
+
+["0x1403365e0"]
+statement = "Writes raw bytes into a bit stream: first moves to the next whole byte if a byte is part-written, then copies the bytes, growing the stream into new chunks as needed."
+proof = "Decompiled: a nonzero bit offset is cleared and the byte pointer advanced by one; memcpy into the current chunk, and while the bytes do not fit, fill it, take a new chunk (0x140338550) and go on."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "WriteRawBytes"
+
+["0x140336fa0"]
+statement = "Reads the next 32 bits of a received bit stream, least significant bit first, without moving past them; the bits may span received chunks. Fails when fewer than 32 bits have arrived."
+proof = "Decompiled: fast path 0x14001b320 with width 0x20 when the current chunk holds them; else gathers bit by bit across chunks linked at 0x38; returns 0x80070026 when the chain ends first; the stream's byte pointer and bit offset are not written."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "PeekUint32"
+
+["0x140335ec0"]
+statement = "The size limit, in bytes of the whole frame, that the client applies to a message it sends or receives: the message table's limit for the id, or 131070 (0x1FFFE) when the table gives none and for ids below 3. Ids past the table get 131070 in id spaces 1 and 3 and 0 otherwise. The table gives no limit for messages 3, 0x76, 0x244, 0x38c, 0x3db, 0x3dc, 0x58f, 0x592 or 0x7e0, so each may be up to 131070 bytes."
+proof = "Decompiled: id < 3 -> 0x1fffe; id < 0xd2f (0x140c1e564): the first dword of the 16-byte entry at 0x140c65828 + (id - 3) * 16, 0x1fffe when 0; else 0x1fffe when ((id >> 16) - 1) & ~2 == 0, else 0. Bytes at 0x140c1f210 + (id - 3) * 16 read as 16 zero bytes for each of the nine ids listed. WriteMessageFrame repeats the same rule inline."
+grade = "fairly sure"
+gap = "Whether anything writes the message table at run time is not read; a byte read of 0x140c1f210 in a running client would settle it."
+name = "MessageSizeLimit"
+
+["0x140332920"]
+statement = "The network object's serialise-by-id method: writes a message, looked up by id, as one whole frame (WriteMessageFrame: length, id, body) into a memory buffer, for a sender to encrypt and wrap in message 0x244. Returns 0 on success, 9 when the frame is over its size limit, 0xc on another failure and 0xb for an unknown id."
+proof = "Slot 0x108 of the class table at 0x140b647b0. Decompiled: slot 0x130 looks up the id; a stream with class table 0x140b64640 over the buffer at the first argument (its 0x30 reset to 0x20, so the buffer is rewritten from its start); 0x1403355e0; result 1 -> 9, other nonzero -> 0xc; unknown id: log 'Message Id #%d' and 0xb."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "SerialiseMessageById"
+
+["0x140333fc0"]
+statement = "Queues a message on a connection: writes its frame into the connection's send stream (WriteMessageFrame) and puts the connection on the network object's list to send. A frame over its size limit is dropped; any other write failure is reported on the connection as error 0xc."
+proof = "Decompiled: 0x1403355e0 on the connection's 0x60 stream; result 1 -> return; other nonzero -> 0x1403315a0 with the connection's 0x10 and 0xc; on success linked at the network object's 0xf0 through the connection's 0x308 and 0x310."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what 0x1403315a0 does with error 0xc and how the send list reaches WSASend (0x14033c989) is not read."
+name = "QueueMessageSend"
+
+["0x140339db0"]
+statement = "Reads a connection's socket until it would block: each recv fills a new buffer chunk and the chunk is appended to the connection's received data, which the frame reader then parses. A socket closed by the server or a read error closes the connection."
+proof = "Decompiled: 0x140339dfb call [0x140959a90] (ws2_32.dll ordinal 16, recv) with the socket at the connection's 0x110, the chunk's buffer and size from 0x140338550; result > 0: chunk end = start + result, 0x140337f20 appends it at the connection's 0x198, byte and read counters at 0x1b0 and 0x1e8; 0 -> state 1 and close; < 0 with ordinal 111 (WSAGetLastError) 0x2733 (would block) -> stop; other errors -> 'recv' logged, state 5. 0x14033bf90 is the overlapped path through WSARecv (0x14033c02e)."
+grade = "fairly sure"
+gap = "Ordinals 16 and 111 are read as recv and WSAGetLastError from Windows' ws2_32.dll export table, not from the client; which of the two receive paths the client uses is not read."
+name = "ReceiveSocketBytes"
+
+["0x1403321a0"]
+statement = "Reads every whole frame a connection has received: it peeks the next frame's 32-bit length, and while fewer bytes than that length have arrived (counted across the received chunks) it stops and waits for more; otherwise it reads the frame (ReadMessageFrame) and goes on with the next. So a frame may span socket reads and one read may hold several frames. A frame that fails to read is counted and reported to the connection's owner, which may close the connection."
+proof = "Decompiled: the connection by index from the network object's array at 0xa8 (count 0xb0); 0x140336fa0 (PeekUint32) on its stream at 0x28; bytes available = current chunk end - position, plus each later chunk (linked at 0x38) until the length is reached, else return; 0x140331990; a part-read byte is closed after the frame; results 8, 9 and 0xe add one to the connection's 0xc; the owner (network object 0x78) slot 8 gets the result, and slot 0x28 closes the connection when it returns a negative."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what the owner does with each failure is not read."
+name = "ReadConnectionMessages"
+
+["0x140331990"]
+statement = "Reads one received frame: its 32-bit length, then its 16-bit message id, and looks the message up. A frame longer than the message's size limit (MessageSizeLimit), or with an unknown id, or with no reader, is logged and skipped to its end. Otherwise the message's reader reads the body into a record and the record goes to the connection's owner; ids 0, 1 and 2 are the network layer's own."
+proof = "Decompiled: 0x140336d60 (or an inline fast path) reads widths 0x20 and 0x10; the id gets 0x10000 when the connection's 0x20 is 1; slot 0x130 looks it up; 0x140335ec0 gives the limit, length <= limit passes, over limit * 0.9 a warning; the record from 0x1403374e0 sized by descriptor 8; reader at descriptor 0x20; id 0 -> slot 0xf0, 1 -> 0x140333790, 2 -> nothing, others -> the owner's slot 0x10 (or 0x18 in a foreign id space); every failure skips length - bytes read with 0x1403370c0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what sets the connection's 0x20 (the second id space) is not read."
+name = "ReadMessageFrame"
+
+["0x140331620"]
+statement = "Parses one whole frame held in memory, the decrypted body of message 0x76 or 0x3dc: its 32-bit length must be at least 6; it reads the 32-bit length and the 16-bit message id, looks the message up and reads its body with the message's reader into a record. An unknown id or one with no reader is logged and fails."
+proof = "Slot 0x100 of the class table at 0x140b647b0. Decompiled: no buffer -> 0xe; *buffer < 6 -> 5; a stream (class table 0x140b64918) over buffer .. buffer + *buffer; 0x140336c60 with 0x20 then 0x10; the id to the caller's id slot; slot 0x130; reader at descriptor 0x20 into a record from 0x1403374e0; reader failure -> 8."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "ParseWrappedMessage"
+
+["0x140014f10"]
+statement = "The game's handler for a message received on a connection. It accepts message 3 (the hello) arriving bare only from the auth connection. Message 0x76 it decrypts with the auth connection's cipher and message 0x3dc with the game connection's (DecryptMessageBody over the inner frame after its 4-byte length), then parses the inner frame (ParseWrappedMessage) and handles the inner message. Any other message arriving bare is reported as an error and dropped. A handled message then goes to the game's message handlers in turn."
+proof = "Slot 2 of the class table at 0x140b55100 (bytes at 0x140b55110: 0x140014f10), which the game constructor puts at game 0x100 (0x14000a4bf mov qword ptr [rbx+0x100], rax), so its 0x1620 and 0x1628 are game 0x1720 (the auth connection, 0x140029fd7 mov [rax+0x1720], rsi) and game 0x1728 (the game connection, 0x140029fc7 mov [rax+0x1728], rsi). Decompiled: id 3 needs game 0x1720 set and the connection index to be its 0x98, else ReportError and return 1; 0x76 takes game 0x1720, 0x3dc game 0x1728; 0x14001524b mov rax, [rcx+0x1620]; 0x140015257 mov rax, [rax+0x10] (the cipher); 0x140015260 mov r8d, [rdi] (the inner length); 0x140015263 mov rcx, [rax+0x18]; 0x140015267 lea rdx, [rdi+0x4]; 0x14001526b sub r8d, 0x4; 0x14001526f call [rax+0x20] (DecryptMessageBody); then network slot 0x100 (0x140331620) gives the inner id and record; any other id: ReportError and return 1. Afterwards 0x763 is handled here and the rest goes to the handler list at game 0x15b0 (slot 0x58 each)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the decrypt call; that every received message reaches this handler, and so that the game server's hello comes inside 0x3dc, is not traced; a recording of the real exchange would confirm it."
+name = "HandleServerMessage"
+
+["0x140079ef0"]
+statement = "Sizes message 0x244's body: moves to the next whole byte, then counts the inner frame's own length in bytes (4 bytes for no inner frame)."
+proof = "0x140079ef0 mov rax, [rdx]; 0x140079ef3 add rax, 0x7; 0x140079ef7 and rax, -0x8; 0x140079efb cmp rax, [rdx]; 0x140079f00 inc qword ptr [r8]; 0x140079f0e mov ecx, [rcx] (the inner frame's first dword); 0x140079f10 lea rax, [rax+rcx*8]; 0x140079f17 add [r8], rcx; null: 0x140079f1b add rax, 0x20; 0x140079f22 add qword ptr [r8], 0x4. Registered as 0x244's sizer at 0x14006c2cb lea r9, [0x140079ef0]."
+grade = "sure"
+name = "SizeWholeFrameBody"
+
+["0x140079f30"]
+statement = "Writes message 0x244's body: the inner frame copied byte for byte, from its 32-bit length to the end that length gives; four zero bytes for no inner frame."
+proof = "Decompiled: record = a pointer to the inner frame; 0x1403365e0 (WriteRawBytes) from it to it + its first dword; null: an 8-byte zero local, 4 bytes written. Registered as 0x244's writer at 0x14006c2a4 lea rcx, [0x140079f30] stored at 0x14006c2c6 mov [rsp+0x20], rcx."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "WriteWholeFrameBody"
+
+["0x140079f70"]
+statement = "Reads the body of message 0x76 or 0x3dc: peeks the inner frame's 32-bit length and copies that many bytes, the length included, into the record, so the record is the whole inner frame. A length of 0 gives no inner frame and skips 4 bytes."
+proof = "Decompiled: 0x140336fa0 (PeekUint32) for the length; 0 -> record null, 0x1403370c0 skips 4; else 0x1403374e0 allocates the length and 0x140337250 copies that many bytes. Registered as the reader of 0x76 (0x14006c2f2 lea rcx, [0x140079f70]; 0x14006c301 mov [rsp+0x28], rcx) and of 0x3dc (0x14006c31f lea rcx, [0x140079f70]; 0x14006c331 mov [rsp+0x28], rcx)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "ReadWholeFrameBody"
+
+["0x14007e180"]
+statement = "Sizes message 0x38c's body: 5 bits, then to the next whole byte, then the inner frame's own length in bytes (4 bytes for no inner frame)."
+proof = "0x14007e180 add qword ptr [rdx], 0x5; 0x14007e187 lea r9, [rax+0x7]; 0x14007e18b and r9, -0x8; 0x14007e194 inc qword ptr [r8]; 0x14007e19a mov rax, [rcx+0x8] (the inner frame); 0x14007e1a3 mov ecx, [rax]; 0x14007e1a5 lea rax, [r9+rcx*8]; null: 0x14007e1b0 lea rax, [r9+0x20]. Registered at 0x14006d547 lea r9, [0x14007e180]."
+grade = "sure"
+name = "SizeMessage038CBody"
+
+["0x14007e1c0"]
+statement = "Writes message 0x38c's body: the record's first value in 5 bits, then the inner frame copied byte for byte from the next whole byte (WriteRawBytes), from its 32-bit length to the end that length gives."
+proof = "0x14007e1d1 movsxd rdx, dword ptr [rdx] (record word 0); 0x14007e20b and [rdx], rax (keep bits below the offset); 0x14007e215 and eax, 0x1f; 0x14007e21b or [rdx], rax; 0x14007e249 add rax, 0x5 (offset + 5); 0x14007e278 mov rdx, [rdi+0x8] (record 8, the inner frame); 0x14007e284 mov r8d, dword ptr [rdx]; 0x14007e287 add r8, rdx; 0x14007e28a call 0x1403365e0; the slow path 0x14007e26f call 0x140336470 writes the 5 bits when the chunk is short. Registered at 0x14006d538 lea rcx, [0x14007e1c0]."
+grade = "sure"
+name = "WriteMessage038CBody"
+
+["opcode.0x244"]
+statement = "Message 0x244 (580), client to server: the encrypted wrapper that every message the client sends travels in. Its body is one whole inner frame: the inner 32-bit length (counting its own 4 bytes, little-endian, in the clear), then the inner 16-bit id and body, encrypted with the connection's cipher (EncryptMessageBody over the inner length minus 4 bytes). On the wire: 32-bit length (6 + the inner length), 16-bit id 0x244, the inner frame. The inner message is 0x38c on the world connection (SendWorldMessage) and the message itself during login and character select (0x592, 0x58f, 0x7e0, 0x7a4). The client has no reader for 0x244, so it never accepts one."
+proof = "Registered first in 0x14006c290: 0x14006c2d2 mov edx, 0x244; 0x14006c2d7 mov r8d, 0x8 (the record is one pointer); 0x14006c2cb lea r9, [0x140079ef0] (sizer); writer 0x140079f30 at 0x14006c2c6 mov [rsp+0x20], rcx; 0x14006c2bd mov qword ptr [rsp+0x28], 0x0 (no reader); 0x14006c2b5 mov dword ptr [rsp+0x30], 0x0 (mode 0); 0x14006c2ea call [rax] (RegisterMessage). Every sender serialises the inner frame (SerialiseMessageById), calls the cipher's encrypt slot with the frame + 4 and its size - 4 and sends 0x244 with a pointer to it: e.g. 0x1403f4a7b in SendWorldMessage and 0x14003a8ec in SendAuthLoginRequest; the 0x244 sends are at 0x1403f4aa7, 0x14003a91d, 0x140038261, 0x140020d88, 0x140045874, 0x140046488 and 15 more sites, all mov r8d, 0x244 before call [rax+0xf0]."
+grade = "fairly sure"
+gap = "The writer 0x140079f30 and the encrypt call's arguments at each sender are read from Ghidra's decompile; a recording of the real client's first 0x244 would confirm the bytes."
+
+["opcode.0x38c"]
+statement = "Message 0x38c (908), client to world server: carries one world message. Body: a 5-bit value (3 from SendWorldMessage, 0xb from its twin 0x1403f4740), zero bits to the next byte, then the world message's whole frame (its 32-bit length, 16-bit id and body). It is sent inside message 0x244, so on the wire after 0x244's header come 0x38c's 32-bit length in the clear and then, encrypted, 0x38c's id, the value's byte and the world message's frame. The client has no reader for 0x38c."
+proof = "Registered at 0x14006d55c mov edx, 0x38c; 0x14006d561 mov r8d, 0x10 (record: a 32-bit value, then a pointer at 8); 0x14006d547 lea r9, [0x14007e180] (sizer); 0x14006d538 lea rcx, [0x14007e1c0] (writer, stored at 0x14006d557 mov [rsp+0x20], rcx); 0x14006d54e mov qword ptr [rsp+0x28], 0x0 (no reader); 0x14006d53f mov dword ptr [rsp+0x30], 0x0 (mode 0). SendWorldMessage's record: 0x1403f4a10 mov dword ptr [rbp-0x50], 0x3 and the serialised world frame's data pointer at 8 (decompiled)."
+grade = "fairly sure"
+gap = "What the values 3 and 0xb select is not read; the record's pointer at 8 is read from SendWorldMessage's decompile."
+
+["opcode.0x76"]
+statement = "Message 0x76 (118), auth server to client: the encrypted wrapper for auth-server messages. Its body is one whole inner frame: the inner 32-bit length (counting its own 4 bytes, little-endian, in the clear), then the inner 16-bit id and body, encrypted. The client decrypts it with the auth connection's cipher (DecryptMessageBody over the inner length minus 4 bytes), parses the inner frame and handles the inner message (HandleServerMessage). The only message the client accepts bare from the auth server is the hello, message 3."
+proof = "Registered at 0x14006c306 lea edx, [r9+0x76] with 0x14006c2ef xor r9d, r9d (no sizer); 0x14006c311 mov qword ptr [rsp+0x20], 0x0 (no writer); 0x14006c30a lea r8d, [r9+0x8]; reader 0x140079f70 (ReadWholeFrameBody) at 0x14006c301 mov [rsp+0x28], rcx; 0x14006c2f9 mov dword ptr [rsp+0x30], 0x0 (mode 0). Decrypted and parsed by 0x140014f10 (see its record)."
+grade = "fairly sure"
+gap = "Rests on HandleServerMessage's decompile; a recording of a real auth exchange would confirm it."
+
+["opcode.0x3dc"]
+statement = "Message 0x3dc (988), game server to client: the encrypted wrapper for game-server messages, the server's hello included, since the client accepts message 3 bare only from the auth server. Its body is one whole inner frame: the inner 32-bit length (counting its own 4 bytes, little-endian, in the clear), then the inner 16-bit id and body, encrypted. The client decrypts it with the game connection's cipher (DecryptMessageBody over the inner length minus 4 bytes), parses the inner frame and handles the inner message (HandleServerMessage). The game connection's cipher holds the base key from the hand-off until the client sends 0x58f, and the session key after."
+proof = "Registered at 0x14006c33d mov edx, 0x3dc with 0x14006c326 xor r9d, r9d (no sizer); 0x14006c342 mov qword ptr [rsp+0x20], 0x0 (no writer); 0x14006c336 lea r8d, [r9+0x8]; reader 0x140079f70 at 0x14006c331 mov [rsp+0x28], rcx; 0x14006c329 mov dword ptr [rsp+0x30], 0x0 (mode 0). Decrypted with the connection at game 0x1728 by 0x140014f10. The game connection is keyed with game 0x1630 at 0x1400380ce mov r8, [rax+0x1630]; 0x1400380d5 call 0x14002a050 (HandleMessage03DB) and 0x1400462db (HandleMessage07A1), and re-keyed after 0x58f at 0x1400382c8 call 0x14002a050."
+grade = "fairly sure"
+gap = "That the game server's hello arrives inside 0x3dc is inferred from HandleServerMessage's decompile; a recording of a real game-server exchange would settle it."
+
+["0x14002a050"]
+statement = "Starts a connection's cipher with a 64-bit key: drops any cipher the connection had and builds a new one from the key (NewConnectionCipher); a failure is reported as an error. One cipher object serves both ways on a connection: the client encrypts what it sends with it (EncryptMessageBody) and decrypts what it receives (DecryptMessageBody). Called with the base key when a connection opens (ConnectToAuthServer, HandleMessage03DB, HandleMessage07A1) and with the session key right after 0x58f is sent (HandleLoginGameServerHello, HandleRealmSwitchServerHello)."
+proof = "0x14002a05f lea rbx, [rcx+0x10] (the connection's cipher slot); 0x14002a066 mov rcx, [rbx]; 0x14002a070 call 0x14018b900 (frees the old one); 0x14002a075 mov qword ptr [rbx], 0x0; 0x14002a07c mov r8, rsi (the key, the third argument, kept from 0x14002a063 mov rsi, r8); 0x14002a07f mov rcx, rbx; 0x14002a082 call 0x1400c2eb0; 0x14002a08b jns 0x14002a16e, else ReportError. Senders call the object's 0x10 slot with its 0x8 as context (a scan of the disassembly for that pattern finds 21 sites, among them 0x140038231 and 0x1403f4a7b); HandleServerMessage calls its 0x20 slot with its 0x18 (0x14001526f call [rax+0x20]). Ghidra callers: 0x140039598 (ConnectToAuthServer), 0x1400380d5 (HandleMessage03DB), 0x1400462e9 (HandleMessage07A1), 0x1400382c8 (HandleLoginGameServerHello) and 0x1400464e7 (HandleRealmSwitchServerHello), and no others."
+grade = "sure"
+name = "StartConnectionCipher"
+
+["0x1400c2eb0"]
+statement = "Builds a connection cipher from a 64-bit key: expands the key into sixteen 64-bit words and hands them to a new cipher object (InitConnectionCipher). With x = key + 0x718DA9074F2DEB91, each word in turn is x * 0xAA7F8EA9 (64-bit, wrapping), and x becomes that word + key before the next. A key of 0 is refused."
+proof = "0x1400c2ed3 test r8, r8; 0x1400c2ed6 je 0x1400c2f52 (0x80004005); 0x1400c2ed8 mov rax, 0x718da9074f2deb91; 0x1400c2ee2 mov r9d, 0xaa7f8ea9 (zero-extended, so the multiplier is 0x00000000aa7f8ea9); 0x1400c2ef0 add rax, r8; 0x1400c2efd imul rax, r9; loop 0x1400c2f01 mov [rcx], rax; 0x1400c2f04 add rax, r8; 0x1400c2f0b imul rax, r9; 0x1400c2f0f dec rdx (16 passes from 0x1400c2ef8 mov edx, 0x10); 0x1400c2f19 call 0x14018b280 (0xb0 bytes); 0x1400c2f2d call 0x1400c2bd0 with the words at the stack's 0x20. Run on Ghidra's p-code emulator from 0x1400c2ed8 to 0x1400c2f14 for the keys 0xd283f5b34a8dc685, 0xac9a7c6ed16e5bee and 1: the 16 words matched the formula."
+grade = "sure"
+name = "NewConnectionCipher"
+
+["0x1400c2bd0"]
+statement = "Fills a new 176-byte connection cipher object: a count of 2, the encrypt routine (EncryptMessageBody) and the decrypt routine (DecryptMessageBody) each with the object as its context, the sixteen key words, and a 64-bit chaining start h: h starts at 0x718DA9074F2DEB91 and, for each key word in order, becomes (h + word) * 0xAA7F8EA9. The encrypt and decrypt routines only read the object, so each message is ciphered from the same start, with no state carried from one message to the next."
+proof = "0x1400c2bd0 mov dword ptr [rcx], 0x2; 0x1400c2bd6 mov [rcx+0x8], rcx; 0x1400c2bda lea rax, [0x1400c2d10]; 0x1400c2be1 mov [rcx+0x10], rax; 0x1400c2be5 mov [rcx+0x18], rcx; 0x1400c2be9 lea rax, [0x1400c2de0]; 0x1400c2bf0 mov [rcx+0x20], rax; 0x1400c2c01 mov [rcx+0xa8], rax (0x718da9074f2deb91); words to 0x28..0xa0 (0x1400c2c0f..0x1400c2ca0); 0x1400c2c25 mov r11d, 0xaa7f8ea9; loop 0x1400c2cb0..0x1400c2cfc: add, imul r11, store at 0xa8, four words a pass, four passes (0x1400c2c17 mov r10d, 0x4); returns the object. Neither 0x1400c2d10 nor 0x1400c2de0 stores to the object. Run on Ghidra's p-code emulator for the base key and a session key: the object's count, routines, context, words and h (0x7d546d1d1994c849 for the base key) matched."
+grade = "sure"
+name = "InitConnectionCipher"
+
+["0x1400c2d10"]
+statement = "Encrypts n bytes in place with a connection cipher (key words K[0..15], chaining start h). Let i = n * 0xAA7F8EAA (32-bit, wrapping; only i mod 16 is used, so it starts at 10n mod 16) and p = h. Each whole 8-byte little-endian word w becomes c = K[i mod 16] xor w xor p, then p = c and i = i + 1. The last n mod 8 bytes are each xored with the byte at the same position of K[i mod 16] and of p (little-endian), with i and p as the words left them. With n = 0 nothing changes. It is not a standard cipher."
+proof = "0x1400c2d1f mov r10, [rcx+0xa8] (h); 0x1400c2d2c shr ebx, 0x3 (words); 0x1400c2d35 imul r9d, r9d, -0x55807156 (n * 0xaa7f8eaa); loop 0x1400c2d50 mov eax, r9d; 0x1400c2d53 inc r9d; 0x1400c2d5a and eax, 0xf; 0x1400c2d5d mov rcx, [rdi+rax*8+0x28]; 0x1400c2d62 xor rcx, [r8-0x8]; 0x1400c2d66 xor rcx, r10; 0x1400c2d69 mov [r8-0x8], rcx; 0x1400c2d6d mov r10, rcx; 0x1400c2d70 mov [rsp+0x8], rcx; tail: 0x1400c2d7a and r11d, 0x7; 0x1400c2d8a and ecx, 0xf; 0x1400c2dba and ecx, 0x7; 0x1400c2dbd movzx ecx, byte ptr [rcx+r10+0x28]; 0x1400c2dc3 xor cl, byte ptr [r9+rax-0x1] (byte j of p at the stack's 0x8); 0x1400c2dc8 xor byte ptr [rax-0x1], cl. Run on Ghidra's p-code emulator for the base key and a session key over random bodies of 0, 1, 7, 8, 9, 15, 16, 17, 31, 100, 1000 and 53248 bytes: every output matched the formula."
+grade = "sure"
+name = "EncryptMessageBody"
+
+["0x1400c2de0"]
+statement = "Decrypts n bytes in place with a connection cipher, undoing EncryptMessageBody: with i and p started the same way, each whole 8-byte word c becomes K[i mod 16] xor c xor p, then p = c (the ciphertext word) and i = i + 1; the last n mod 8 bytes are xored as in encryption."
+proof = "0x1400c2deb mov r10, [rcx+0xa8]; 0x1400c2df8 shr esi, 0x3; 0x1400c2e01 imul r9d, r9d, -0x55807156; loop 0x1400c2e20 mov rdx, [r8] (c); 0x1400c2e29 and eax, 0xf; 0x1400c2e30 mov rcx, [rdi+rax*8+0x28]; 0x1400c2e35 xor rcx, rdx; 0x1400c2e38 xor rcx, r10; 0x1400c2e3b mov r10, rdx; 0x1400c2e3e mov [r8-0x8], rcx; 0x1400c2e4c mov [rsp+0x10], rdx (last c for the tail); tail 0x1400c2e80..0x1400c2e9e as in 0x1400c2d10. Run on Ghidra's p-code emulator after 0x1400c2d10 on the same lengths and keys: every input came back."
+grade = "sure"
+name = "DecryptMessageBody"
+
+["0x14000a6db"]
+statement = "Computes the client's base cipher key, kept in the game object at 0x1630: 0xD283F5B34A8DC685. It is fixed for the build: ((0x718DA9074F2DEB91 + 0x5B88D61139619662) * 0xAA7F8EA9 + 16042) * 0x718DA9074F2DEB91 + 0x064F77F4AB4E81A0, all 64-bit and wrapping, where 16042 is the build. It keys the auth connection and each new game connection, and is folded into the session key after 0x58f."
+proof = "In the game object's constructor 0x14000a490: 0x14000a502 mov rdi, 0x718da9074f2deb91; 0x14000a545 mov qword ptr [rbx+0x1630], rdi; 0x14000a6db mov rax, qword ptr [rbx+0x1630]; 0x14000a6e2 mov rcx, 0x5b88d61139619662; 0x14000a6ec add rax, rcx; 0x14000a6ef mov ecx, 0xaa7f8ea9; 0x14000a6f4 imul rax, rcx; 0x14000a6f8 mov rcx, 0x64f77f4ab4e81a0; 0x14000a702 add rax, 0x3eaa; 0x14000a708 imul rax, rdi; 0x14000a70c add rax, rcx; 0x14000a70f mov qword ptr [rbx+0x1630], rax. Between 0x14000a502 and 0x14000a708 rdi is not written (three calls, rdi callee-saved). 0x14001935f mov ecx, 0x1758; 0x140019374 call 0x14000a490; 0x140019379 mov [0x140c635f0], rax (the game object). Every instruction in the client naming offset 0x1630: the readers 0x1400380ce, 0x14003827e, 0x140039591, 0x1400462db, 0x1400464a7; the other writers are to other objects: 0x14035204a in 0x140351a20, 0x1403b611c in 0x1403b5f80 (the world object, which it writes up to offset 0x751c), 0x14042210e in another class's constructor 0x1404218a0 on its own object, and 0x14000fcd7 movaps xmmword ptr [rbp+0x1630], xmm0 in 0x14000b690 on a stack local (0x14000b692 lea rbp, [rsp-0x19e0]). Run on Ghidra's p-code emulator from 0x14000a6db to 0x14000a716: 0xd283f5b34a8dc685."
+grade = "fairly sure"
+gap = "A write to game 0x1630 through a block copy or a computed offset is not excluded by the instruction search; reading game 0x1630 in a running client would settle it."
+
+# Test vectors from the client's own code, run on Ghidra's p-code emulator
+
+["vector.0x1400c2eb0.base_key"]
+statement = "The key schedule (NewConnectionCipher) and InitConnectionCipher under the base key 0xD283F5B34A8DC685 give the sixteen key words 0x5e5632d58e9ac486, 0x3e99523e2158e443, 0x8ca81d11b739ae08, 0x696c006343452715, 0xbb4864fac37046aa, 0x87d80e73e857c607, 0xc84b2b519ef3706c, 0xbb8d2b5a1e55f319, 0x96f2844490ad2d4e, 0x7068e86380d7004b, 0xe1ef14e2ecfe9f50, 0xf13a1a4082d65f9d, 0x75a929e1a3220872, 0x3e071ed02065a30f, 0x836922f247accab4, 0x6a6f8be7ea7e7ca1 and the chaining start h = 0x7d546d1d1994c849. Under the session key 0xE096253F50C8934E: words 0x515164e35aba7337, 0xed91845a751813cd, 0x58f29bb112644ad3, 0x2f69b4787833f1c9, 0x884f11770cef9e2f, 0xa25f159d990f0185, 0x616b9052e68b494b, 0xb21f1b4f14a07f01, 0xf972af89c5b5e827, 0xee8e29f4f305663d, 0xe2dbb2021d59d6c3, 0x6825e2cab3fc7339, 0xf4ba115652a9311f, 0xc300ab52d52221f5, 0x2bef6d51a2b9d33b, 0x53178e8aedecae71 and h = 0x8c35ff38c10b4d11."
+proof = "Ghidra's p-code emulator (client_emulator._Machine, driven by a scratch script outside the repository). The base key itself came from running the client: 0x14000a6db mov rax, qword ptr [rbx+0x1630] through 0x14000a70f mov qword ptr [rbx+0x1630], rax (stopped at 0x14000a716), with rbx planted so that rbx+0x1630 falls in the emulator's 64 KiB stack block holding 0x718da9074f2deb91, and rdi = 0x718da9074f2deb91. The words: 0x1400c2ed8 mov rax, 0x718da9074f2deb91 through 0x1400c2f0f dec rdx, stopped at 0x1400c2f14, with r8 = the key and rsp = STACK_BASE + 0x8000; the 16 words read from rsp + 0x20. h: 0x1400c2bd0 run with rcx = a 0xb0-byte object at STACK_BASE + 0x100 and rdx = the words planted at STACK_BASE + 0x200; h read from object + 0xa8. A hand model of the formulas in the NewConnectionCipher and InitConnectionCipher records gives the same values."
+grade = "sure"
+
+["vector.0x14003827c.session_fold"]
+statement = "The session-key fold, from the base key 0xD283F5B34A8DC685 and a 16-byte session key: key bytes 01 02 03 .. 10 give 0xE096253F50C8934E; sixteen 00 bytes give 0x9A868DE642EF9906; sixteen ff bytes give 0xBF22CC71B69A0136."
+proof = "Ghidra's p-code emulator (scratch script outside the repository) ran HandleLoginGameServerHello's instructions 0x14003827c xor ebx, ebx through 0x1400382c4 imul r8, r10, stopped before 0x1400382c8 call 0x14002a050, with rcx = a planted game base whose 0x1630 holds the base key and 0x1638..0x1647 the 16 key bytes (both in the emulator's stack block), and rdi = a planted address whose 0xf0 reads as 0; the result read from r8. A hand model of (h + byte) * 0xaa7f8ea9 from 0x718da9074f2deb91, then (h + base) * 0xaa7f8ea9, gives the same values."
+grade = "sure"
+
+["vector.0x1400c2d10.base_key"]
+statement = "EncryptMessageBody under the base key 0xD283F5B34A8DC685, on the bytes 00 01 02 .. (byte i = i mod 256) of length n, gives: n = 0: nothing; 1: 19; 7: 25b96584484319; 8: cf0d0c94cc5a0424; 9: 195668f6fb7cbd9b8c; 15: 25b96584484319b234433a911e659a; 16: cf0d0c94cc5a042484e05ebefe059315; 17: 195668f6fb7cbd9b8c00b47fb76b8965ee; 100: 07e43b8a5deca0ec44ede6013209c69304630afec4083f658125c667980f1b8bd30cc6e75d0394d9f48689eca130bdc8707d17986727e27ce9385349bc91b3292fbd8b842de6a330241099ee5ff974417ceff20a1ab18a9a3191ed1225ecb8acfbb6ffb2. For n = 53248 the input's SHA-256 is c0fdd63b4c643d6a8c1ce86942a2115e2b3c85207f47e7a911189c4885067b01 and the output's 63d2c158a7981dcefd2b8925a04fffc93dc0211804253c60b4f642e92cd5a637."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): the cipher object built as in vector.0x1400c2eb0.base_key (key schedule range and 0x1400c2bd0, object at STACK_BASE + 0x100); then 0x1400c2d10 (from 0x1400c2d1f mov r10, [rcx+0xa8] to its ret) run with rcx = the object, rdx = the body planted at STACK_BASE + 0x1000 and r8 = n; the output read back from the same bytes. Every output equals a hand model of the EncryptMessageBody record's formula."
+grade = "sure"
+
+["vector.0x1400c2d10.session_key"]
+statement = "EncryptMessageBody under the session key 0xE096253F50C8934E (folded from key bytes 01 02 .. 10), on the bytes 00 01 02 .. (byte i = i mod 256) of length n, gives: n = 0: nothing; 1: d2; 7: 5a0582246e6a58; 8: 263fb398df9e62da; 9: d29a50df3e48e869e3; 15: 5a0582246e6a58ea5373283b2d7c49; 16: 263fb398df9e62dae325a1e68917fd38; 17: d29a50df3e48e869e3e0a667f8a7c30eec; 100: 36a4bc07b555417203cbb3ff4d71c193d00cf8f15bd60c66f1661e598d293711ce769528ff1dabc2137e9dd6819b852e189c1647e4c35c32510bc0915270755e26393888f5516248a3636ab6e398bdea20785cf7065619e5b1d035d422bf2e95fe2fb8bb. For n = 53248 the input's SHA-256 is c0fdd63b4c643d6a8c1ce86942a2115e2b3c85207f47e7a911189c4885067b01 and the output's cb0d1a36a8094e0cf3824bc5d0929eeb8e81f64be2484d0c87bcb7965fb67f7b."
+proof = "As vector.0x1400c2d10.base_key, with the session key from vector.0x14003827c.session_fold (the client's fold run on the emulator) fed to the key schedule range 0x1400c2ed8..0x1400c2f14 and 0x1400c2bd0; 0x1400c2d10 run with rcx = the object, rdx = the body planted at STACK_BASE + 0x1000, r8 = n. Every output equals a hand model of the EncryptMessageBody record's formula."
+grade = "sure"
+
+["vector.0x1400c2de0.length_17"]
+statement = "DecryptMessageBody gives back the bytes 00 01 02 .. 10 (17 bytes) from 195668f6fb7cbd9b8c00b47fb76b8965ee under the base key 0xD283F5B34A8DC685, and from d29a50df3e48e869e3e0a667f8a7c30eec under the session key 0xE096253F50C8934E."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): the cipher objects built as in vector.0x1400c2eb0.base_key; the 17 ciphertext bytes (the length-17 outputs of vector.0x1400c2d10.base_key and vector.0x1400c2d10.session_key) planted at STACK_BASE + 0x1000; 0x1400c2de0 (from 0x1400c2deb mov r10, [rcx+0xa8] to its ret) run with rcx = the object, rdx = the bytes and r8 = 17; read back as 000102030405060708090a0b0c0d0e0f10 under each key."
+grade = "sure"
+
+["opcode.0x7e0"]
+statement = "Message 0x7e0 (2016), client to game server, sent when character select starts: its body is empty. The client fills a one-byte record with 0, but the message's sizer counts no bits and its writer writes nothing, so the frame is only the header: 06 00 00 00 e0 07. The client has no reader for it."
+proof = "Registered at 0x14006d782 mov edx, 0x7e0; 0x14006d787 mov r8d, 0x1 (a one-byte record); 0x14006d76d lea r9, [0x140001b70] (sizer); 0x14006d75e lea rcx, [0x140001ba0] stored at 0x14006d77d mov [rsp+0x20], rcx (writer); 0x14006d774 mov qword ptr [rsp+0x28], 0x0 (no reader); 0x14006d765 mov dword ptr [rsp+0x30], 0x0 (mode 0). Sizer: 0x140001b70 ret 0x0 (adds nothing). Writer: 0x140001ba0 xor eax, eax; 0x140001ba2 ret (writes nothing, succeeds). So WriteMessageFrame counts 16 + 0 + 32 bits = 6 bytes."
+grade = "sure"
+
+["vector.opcode.0x7e0.frame"]
+statement = "Message 0x7e0 as the client sends it inside 0x244 under the base key 0xD283F5B34A8DC685 is the 12 bytes 0c 00 00 00 44 02 06 00 00 00 03 89: the 0x244 frame's length 12 and id 0x244, then the inner frame's length 6 in the clear and its id e0 07 encrypted to 03 89."
+proof = "Ghidra's p-code emulator (scratch script outside the repository), on a stream planted in the emulator's stack block (stream object with its chunk pointer at 8 and bit offset at 0x10 zero; chunk end at 0x18 and write pointer at 0x20 over 64 zero bytes): WriteBits 0x140336380 run with (stream, 6, 0x20) then (stream, 0x7e0, 0x10), its one call (0x140336413 call to the 4-byte writer, 0x1403363f9 to the 2-byte one) followed on the emulator, gave 06000000e007; EncryptMessageBody 0x1400c2d10 run on its bytes 4..5 (rcx = the base-key object built as in vector.0x1400c2eb0.base_key, rdx = the planted frame + 4, r8 = 2) gave 0389; WriteBits on a fresh stream with (12, 0x20) then (0x244, 0x10) gave 0c0000004402. By hand: n = 2 starts at key word 4 (0xbb4864fac37046aa) with p = h (0x7d546d1d1994c849): e0 xor aa xor 49 = 03, 07 xor 46 xor c8 = 89."
+grade = "fairly sure"
+gap = "The frame is assembled from the client's routines run one by one, with WriteMessageFrame's order (length, id, sizer and writer, no padding for a whole-byte frame), 0x244's whole-frame copy (WriteWholeFrameBody) and the senders' cipher call (frame + 4, size - 4) taken from their decodes; the whole path from StartCharacterSelect 0x140020bc0 through SerialiseMessageById and QueueMessageSend cannot run on the emulator, because the network object (0x140c65808), its registration table and its buffers exist only in a running client and the path allocates memory. A recording of the real client's 0x7e0 would settle it."

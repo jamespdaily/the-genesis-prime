@@ -20,6 +20,7 @@ glance = ">= 7.0.0 and < 8.0.0"
 glexer = ">= 2.5.0 and < 3.0.0"
 tom = ">= 2.1.0 and < 3.0.0"
 simplifile = ">= 2.7.0 and < 3.0.0"
+gleam_crypto = ">= 1.6.0 and < 2.0.0"
 
 [tools.glinter]
 include = ["src/", "test/", "dev/"]
