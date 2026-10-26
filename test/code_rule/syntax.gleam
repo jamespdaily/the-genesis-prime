@@ -2,6 +2,7 @@
 //// found and every byte offset turned into a line number.
 
 import code_rule/source.{type SourceFile}
+import database_support
 import glance.{type Expression, type Statement}
 import gleam/bit_array
 import gleam/list
@@ -9,8 +10,22 @@ import gleam/option.{type Option, None, Some}
 import gleam/string
 
 /// The parsed module. A file that does not parse stops the test with the
-/// file's path, because every rule reads a parsed module.
+/// file's path, because every rule reads a parsed module. The parse is kept
+/// for the run under the file's path and given again to every rule that asks
+/// for the same text, so the repository's files are parsed once however many
+/// rules read them.
 pub fn parse(file: SourceFile) -> glance.Module {
+  let #(text, module) =
+    database_support.once("parsed:" <> file.path, fn() {
+      #(file.text, parse_text(file))
+    })
+  case text == file.text {
+    True -> module
+    False -> parse_text(file)
+  }
+}
+
+fn parse_text(file: SourceFile) -> glance.Module {
   let assert Ok(module) = glance.module(file.text)
     as { "the source does not parse: " <> file.path }
   module

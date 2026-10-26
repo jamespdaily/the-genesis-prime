@@ -98,6 +98,8 @@ pub fn a_module_path_named_by_kind_is_reported_once_per_file_in_order_test() -> 
 }
 
 pub fn no_folder_or_module_under_src_is_named_by_kind_test() -> Nil {
+  // Deadline: the body took 82 to 106 ms in three runs alone, so 5 s is more
+  // than 3 times that.
   use <- owned_test.run(5000)
   assert module_path.named_by_kind(repository.sources(["src"])) == []
 }

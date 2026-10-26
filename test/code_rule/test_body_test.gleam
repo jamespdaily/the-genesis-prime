@@ -97,6 +97,8 @@ pub fn a_private_function_and_a_public_function_that_is_not_a_test_are_ignored_t
 }
 
 pub fn every_test_in_the_test_directory_starts_inside_the_helper_test() -> Nil {
+  // Deadline: the body took 159 to 173 ms in three runs alone, so 5 s is more
+  // than 3 times that.
   use <- owned_test.run(5000)
   let files = repository.sources(["test"])
   assert list.flat_map(files, test_body.breaches) == []

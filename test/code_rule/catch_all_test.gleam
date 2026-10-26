@@ -155,6 +155,8 @@ pub fn a_case_that_names_every_constructor_is_not_a_breach_test() -> Nil {
 }
 
 pub fn no_case_in_src_or_test_has_a_catch_all_beside_a_growing_type_test() -> Nil {
+  // Deadline: the body took 374 to 392 ms in three runs alone, so 5 s is more
+  // than 3 times that.
   use <- owned_test.run(5000)
   let files = repository.sources(["src", "test"])
   assert list.flat_map(files, catch_all.breaches) == []
