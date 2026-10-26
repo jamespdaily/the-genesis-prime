@@ -597,3 +597,99 @@ grade = "sure"
 statement = "The client's version resource: file version and product version 1.7.8.16042, also given as the strings FileVersion and ProductVersion '1.7.8.16042'."
 proof = "VS_FIXEDFILEINFO signature 0xfeef04bd at file offset 0xcee048 in .rsrc (virtual 0x140e58248): dwFileVersionMS 0x00010007, LS 0x00080000 | 0x3eaa = 1.7.8.16042; product the same; StringFileInfo entries FileVersion and ProductVersion '1.7.8.16042' (UTF-16 at 0x140e583fc and 0x140e58438)."
 grade = "sure"
+
+["opcode.0x637"]
+statement = "Message 0x637 (1591), client to server: the player's movement commands. Fields: the client clock in milliseconds when sent, the number of commands, and the commands. It is sent only by FlushPlayerMovementCommands, at most once per movement send interval (125 ms until the server sets it with message 0xf1, then 25 to 1000 ms), only while the player unit is under client control, and only when the queued commands hold a change; a player standing still sends none. A dash flushes it on every movement update while the dash lasts."
+proof = "0x14057a333 mov edx, 0x637; 0x14057a340 mov eax, [0x140c636a8] (the clock) stored first; 0x14057a34d mov [rbp-0x3c], ecx (the count from 0x140799e80's output); 0x14057a357 the command pointer; 0x14057a35b call 0x1403f4900. Registered in 0x1400a8190 with size 0x10 and routines 0x1400b04c0, 0x1400b0560, 0x1400b06f0. No other send site passes 0x637: the immediate ids before every call of 0x1403f4900 and 0x1403f4740 were collected from the disassembly. Sending rule: see the records of 0x14057a2c0, 0x140799e80 and 0x1403a25c0."
+grade = "fairly sure"
+gap = "The wire layout of the commands (routines 0x1400b0560 and 0x1400b06f0) is not read, nor the message's id in the outer wrapping (0x1403f4900 nests it in message 0x38c, sent as 0x244)."
+
+["opcode.0xf1"]
+statement = "Message 0xf1 (241), server to client, read as four fields of 2, 32, 8 and 32 bits. Its handler stores the first three, and the fourth is the player's movement send interval in milliseconds: values below 25 become 25 and above 1000 become 1000. Until it arrives the interval is 125 ms."
+proof = "Registered in 0x14006c290 as (0xf1, size 0x10, reader 0x1400a37d0); the reader calls 0x14006c090 with widths 2 (record offset 0), 0x20 (offset 4), 0x14006be30 with 8 (offset 8), 0x14006c090 with 0x20 (offset 0xc). HandleWorldMessage's jump table entry for 241 is 0x1403ec80b: 0x1403ec811 call 0x1403b67e0. There 0x1403b69b0 mov eax, [r14+0xc]; 0x1403b69b4 cmp eax, 0x19; jae; 0x1403b69b9 mov dword [0x140c3a004], 0x19; 0x1403b69c5 mov ecx, 0x3e8; 0x1403b69ca cmp eax, ecx; 0x1403b69cc cmova eax, ecx; 0x1403b69cf mov [0x140c3a004], eax. Bytes at 0x140c3a004: 7d000000 (125)."
+grade = "fairly sure"
+gap = "That the width arguments of 0x14006c090 and 0x14006be30 are bit counts is inferred from the values and the bit arithmetic in the readers, which Ghidra's signatures drop; what the first three fields mean is not read."
+
+["0x140c3a004"]
+statement = "The player's movement send interval in milliseconds: 125 in the file, set by server message 0xf1 and kept between 25 and 1000. FlushPlayerMovementCommands re-arms itself after this interval; each queued batch of commands is stamped with the clock plus twice this interval; a unit's server-time estimate takes a new sample only when half this interval has passed since the last."
+proof = "Bytes at 0x140c3a004: 7d000000. Writes: 0x1403b69b9 and 0x1403b69cf (the clamp in 0x1403b67e0). Reads: 0x14057a3a8 mov edx, [0x140c3a004] then 0x14057a3d2 call 0x140195960 (the timer, due time = the scheduler's time plus this argument); 0x14057a4c1 in 0x14057a450 (the same re-arm when control is taken); 0x14057a1b4 mov r8d, [0x140c3a004]; 0x14057a1c0 lea esi, [rax + 2*r8] with eax the clock at 0x140c636a8; 0x14079abd2 mov eax, [0x140c3a004]; 0x14079abd8 shr eax. The clock is milliseconds: 0x14018cddc stores 0x14018cdf0's count of performance-counter ticks divided by the divisor 0x140c88498, which 0x14018ccf0 sets to the counter frequency divided by 1000, rounded."
+grade = "sure"
+
+["0x14057a2c0"]
+statement = "Sends the player's queued movement commands, as a self-repeating timer. When there is no player unit or it is not under client control, it clears the queue and stops the timer. Otherwise it collapses the queue (CollapseMovementCommands) and, when any command is left to send, sends message 0x637 with the clock, the count and the commands; it sends message 0x63a with the old and new value when a unit state value has changed; then it re-arms itself to run again after the movement send interval. UpdatePlayerMovement also calls it directly to send at once."
+proof = "0x14057a2e0 cmp dword [rax+0xd50], 0 (the player unit at game object 0x6490, its client-control flag); not set: 0x14079a4f0 clears the queue at game 0x7088 and 0x140195d70 stops the timer at game 0x7030. 0x14057a2f8 add rcx, 0x7088; 0x14057a312 call 0x140799e80; 0x14057a329 test ecx, ecx; je (no send when nothing is left); 0x14057a333 mov edx, 0x637; 0x14057a35b call 0x1403f4900. 0x14057a367 mov edi, [rax+0x17e8]; 0x14057a373 cmp edi, eax (game 0x7150); 0x14057a37d mov edx, 0x63a; 0x14057a38f call 0x1403f4900. Re-arm: callback 0x14057a2c0 stored, 0x14057a3a8 mov edx, [0x140c3a004]; 0x14057a3ae lea rcx, [rbx+0x7030]; 0x14057a3d2 call 0x140195960. Callers: 0x1403988d0 (2 sites), 0x1403a25c0 (4 sites), 0x14053a990; armed by 0x14057a450."
+grade = "sure"
+name = "FlushPlayerMovementCommands"
+
+["0x14057a190"]
+statement = "Appends a batch of movement commands to the player's send queue, first adding a time command (type 0) whose time is the clock plus twice the movement send interval, then the batch's commands, each 0x48 bytes; it empties the batch. Does nothing when the send timer is not set up."
+proof = "Decompiled: returns unless game object 0x7040 is set; 0x14057a1b4 mov r8d, [0x140c3a004]; 0x14057a1c0 lea esi, [rax + 2*r8] (rax the clock 0x140c636a8); grows the array at game 0x7098 (count 0x7088, capacity 0x708c) by doubling from 8, entry size 0x48; new entry type 0 with the time at entry offset 8; memcpy of count x 0x48 bytes from the batch; batch count and its second word set to 0. Callers: 0x14039daf0, 0x14039fb30, 0x14039fff0, 0x1403a0670, 0x1403a25c0, 0x14046bb00, 0x14046bd10, 0x14047fc40, 0x14057a450, 0x1405b3fc0."
+grade = "sure"
+name = "QueuePlayerMovementCommands"
+
+["0x140799e80"]
+statement = "Collapses the player's movement command queue into the commands to send. Commands fall in 8 classes by type (type 0, the time command, in none). For each class it drops a new command equal to the previous one of its class, and a middle command its neighbours predict (MovementCommandIsRedundant); a time command is kept only when a command after it is kept. It returns the kept commands and leaves in the queue the latest command of each class, for the next comparison. When nothing changed since the last send the result is empty."
+proof = "Decompiled: per-entry class from the table at 0x140b50f70 (bytes read: type 0 -> 8, 1 -> 0, 2..7 -> 1, 8..10 -> 2, 11..13 -> 3, 14..21 -> 4, 22..23 -> 5, 24..26 -> 6, 27..29 -> 7); entries before the queue's kept count (queue word 2) start not-to-send; chains of the same class: 0x1407999e0 on (older, middle, newer) clears the middle; per class tail 0x140799880(previous, last) clears the last; reverse pass marks a type-0 entry to send when a later entry of its group is sent; the send array (count 0x48-byte entries) goes to the output, the kept array becomes the queue with its count stored in queue words 0, 1 and 2. Called by 0x14057a2c0 at 0x14057a312."
+grade = "fairly sure"
+gap = "The pass that builds the per-class chains (decompiled lines with the predecessor array) is read from Ghidra's decompile only, not checked by emulation."
+name = "CollapseMovementCommands"
+
+["0x140799880"]
+statement = "Tells whether two movement commands are equal: same type, and for types 1, 10, 13, 21, 24, 26 and 27 the same 32-bit value; for 2, 14 and 19 the same three values and flag; for 8 and 11 the same packed vector and flag; for 18 and 22 their two fields; type 29 always equal; other types never equal."
+proof = "Decompiled switch on the first word: cases 1, 0xa, 0xd, 0x15, 0x18, 0x1a compare word 2; 2, 0xe, 0x13 compare the 8 bytes at word 2, word 4 and word 5; 8, 0xb compare words 4, 2 and the short at word 3; 0x12 words 3 and 2; 0x16 word 3 and the short at word 2; 0x1b word 2; 0x1d returns true; default false."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not from the instructions or by emulation; what each command type means beyond 0 (time), 1 (platform unit), 2 (position), 8 and 11 (packed vectors), 14 (rotation) is not read."
+name = "MovementCommandsEqual"
+
+["0x1407999e0"]
+statement = "Tells whether the middle of three movement commands of one type can be left out: true when all three are equal, or when the middle one lies close to the value its neighbours give by linear interpolation in time: for positions (type 2) within 0.1 world units, for the packed vectors (types 8 and 11) within 1, for rotations (type 14) within an angle step, for type 22 within a small threshold; only when the middle command's interpolate flag is set."
+proof = "Decompiled: types differ -> false; equal times -> true; both pairs equal (0x140799880) -> true; type 2 with word 5 set: squared distance from the time interpolation < the float at 0x140b79d3c (bytes 0ad7233c = 0.01, so 0.1 units); types 8 and 0xb with word 4 set: after unpacking (0x1401adb90), squared distance < the float at 0x140b79ed0 (1.0); type 0xe with word 5 set: per-axis angle test against 0x140c3b438 scaled; type 0x16 with word 3 set: absolute difference < 0x140b79da4."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not by emulation; the rotation and type 22 thresholds are not worked out as numbers."
+name = "MovementCommandIsRedundant"
+
+["0x1403a25c0"]
+statement = "Updates the player's own movement once per game update, while the player unit exists, is the controlled unit and is under client control: it moves the unit and builds a batch of movement commands (platform, position, two packed vectors, rotation (left out in one unit state), state flags and mode), applies it to the unit and queues it to be sent (QueuePlayerMovementCommands). It sends the queue at once (FlushPlayerMovementCommands) while a dash is in progress, when a dash ends, before reporting a fall (message 0xfb) and before message 0xfc."
+proof = "Early returns 0x1403a25c0..: game 0x6490 null, not equal to game 0x6488, unit 0xd50 zero, unit 0xdf4 == 1, unit 0x16e8 null. Batch: entries type 1 (word 2 the platform id), 2 (position, word 0x17 the interpolate flag), 8 and 0xb (0x1401c9800 packs a vector), then 0x14079a780 (type 0xe, skipped when unit 0x1620 is set), 0x14079a810 (type 0x18), 0x14079a990 (type 0x1b); 0x1405b3b80 applies it; 0x1403a62b3 call 0x14057a190. Direct sends: 0x14057a2c0 called when game 0x78d8 is set (set to 1 with 'DashCastSuccess' in 0x14039eff0), when the dash window from GameFormula rows 0x10c and 0x11b ends (game 0x78d8 cleared), before 0x1403f4900 with 0xfb and before 0xfc. Caller: 0x1403e85d0 at 0x1403e8942, a method of the game object (data ref 0x140b668b0), which calls it on every pass after 0x140641350 succeeds."
+grade = "fairly sure"
+gap = "That 0x1403e85d0 runs once per rendered frame is inferred from its role (it also drives the renderer) and not traced to the main loop; the meaning of command types 8, 11, 24 and 27 is not read."
+name = "UpdatePlayerMovement"
+
+["0x1403f4900"]
+statement = "Sends a message to the world server: serialises the message by id, wraps it in message 0x38c with the value 3, encrypts that, and sends it as message 0x244 on the world connection. Does nothing without a world connection; a serialise failure is reported as an error."
+proof = "Decompiled: returns unless game 0x7928 and the network object 0x140c65808 are set; network slot 0x108 (0x140332920, serialise by id) into game 0x7960; 0x1403f4a10 mov dword [rbp-0x50], 0x3; slot 0x108 with 0x38c; the connection's cipher at its 0x10 runs over the body after its first 4 bytes; slot 0xf0 (0x140332580) with id 0x244 and the connection index at its 0x98. 0x1403f4740 is the same with 0xb in place of 3 and no check of the network object. 327 callers (345 sites)."
+grade = "fairly sure"
+gap = "What the values 3 and 0xb in message 0x38c select is not read."
+name = "SendWorldMessage"
+
+["0x140332580"]
+statement = "The network object's send-by-id method: looks up the message's serialiser by id and sends the message on the given connection; an unknown id is logged as 'Message Id', 'Base Message Id' or 'Invalid or foreign Message Id' with its number. The message name table it would print from holds no names in this build."
+proof = "Slot 0xf0 of the class table at 0x140b647b0 (entry 0x140b648a0); global object 0x140c65808. Decompiled: slot 0x130 looks up the id; connection by index in the array at object 0xa8 (count 0xb0); 0x140333fc0 queues the send; the profile zone 'H Network_SendMessageById'. Name table pointer 0x140c65828 = 0x140c1f210 (set in 0x14006c290 and 0x1400a8190), 0xd2f entries of 16 bytes; bytes read over all 0xd2f entries: only 214 nonzero 8-byte words, all in the first word of an entry (size limits such as 0x7d000), every name word zero."
+grade = "fairly sure"
+gap = "The connection's send path 0x140333fc0 is not read."
+name = "NetworkSendMessageById"
+
+["0x1403b67e0"]
+statement = "The handler of server message 0xf1: stores its first two values and three flags of its third, sets the player's movement send interval from its fourth (kept between 25 and 1000 ms), and answers with messages 0xd5 and 0x63b."
+proof = "HandleWorldMessage case 241: 0x1403ec80b..0x1403ec811 call 0x1403b67e0 with the message. Decompiled: game 0x6424 = word 0, 0x6428 = word 1, 0x642c/0x6430/0x6434 = bits 1, 8 and 4 of byte 8; clamp at 0x1403b69b0..0x1403b69cf into 0x140c3a004; 0x1403f4900 with 0xd5 (game 0x7ba0) and 0x63b."
+grade = "fairly sure"
+gap = "What the first three fields and the replies 0xd5 and 0x63b mean is not read."
+name = "HandleMessage00F1"
+
+["0x140c46410"]
+statement = "The setting lod.viewDistance: the distance to which the world is drawn, a float with default 640, minimum 256 and maximum 1024. The client's hardware check picks 256, 640 or 1024 for low, medium and high machines. Each game update the client copies it into the world's render settings, lowering it when free memory is short but not below the smaller of 256 and the setting."
+proof = "Initializer 0x14093fe60: 0x14093fe8b lea rdx, [0x140c46418] (the name 'lod.viewDistance' at 0x140b02578); 0x14093fe96 movss xmm8, [0x140c44cf0] (640.0) stored to 0x140c46430..0x140c4644c; 0x14093fe70 movss xmm6, [0x140c44c60] (256.0) to 0x140c46444; 0x14093fe7d movss xmm7, [0x140c44bd0] (1024.0) to 0x140c46448. Presets in 0x140017250: records 0x140c3b108, 0x140c3b078, 0x140c3af68, the float at record offset 8 = 0x43800000 (256), 0x44200000 (640), 0x44800000 (1024), applied at 0x140017685..0x140017696. 0x14043ddb0 (called by 0x1403e85d0 and 0x1403e70d0) keeps the effective value at game 0x72f0, floored by the smaller of the setting and 256 (0x140c44c60), and writes it to the render settings record's third word."
+grade = "fairly sure"
+gap = "How the renderer uses the value (terrain, props, units) is not read; whether units beyond it are hidden would be settled by reading the renderer's use of the settings record's third word."
+
+["Creature2.creature2AoiSizeEnum"]
+statement = "A per-creature area-of-interest size class, 0 to 5: of 56,369 creatures, 140 have 0, 1,925 have 1, 48,223 have 2, 5,649 have 3, 355 have 4 and 77 have 5. The client holds no distance for these classes and no range in which it expects to be told about units; which units the client is told about is decided by the server."
+proof = "Creature2.tbl from ClientData: 173 columns, record size 696, 56,369 records; column 5 'creature2AoiSizeEnum' type 3 (uint32) at record offset 20; the counts are from every row. In the client the name string 0x140a78e80 is pointed to only by the Creature2 column schema at 0x140a4efc0; no code reads the record's offset 20 by that name. Searches of the client's strings for aoi, interest, visib, cull, draw, view, stream with range, dist or radius found only lod.viewDistance, lod.clutterDistance, lod.farFogDistance, donutDrawDistance, ui.showHintArrowDistance and an unreferenced 'AoiDump.csv' / 'creatureId, count' pair among profiler report formats near 0x140b29b38. No table among the 384 in ClientData has a visibility, view or streaming range column."
+grade = "guess"
+gap = "A search that found nothing settles nothing. Settled by reading the client's handlers for unit creation and removal for any distance test, or by a recording that logs each unit's distance from the player when the server creates and removes it, grouped by this column."
+
+["Creature2.donutDrawDistance"]
+statement = "A per-creature draw distance in world units: -1 (none) for 55,977 of 56,369 creatures; the rest range from 0 to 200, most often 30, 10, 15 and 25."
+proof = "Creature2.tbl from ClientData: column 'donutDrawDistance' type 4 (float); value counts from every row: -1.0 55,977, 1.0 83, 30.0 76, 10.0 42, 15.0 41, 25.0 36, 60.0 23, 0.0 22, 20.0 13, 40.0 11, 5.0 9, 50.0 8, 128.0 6, 200.0 6, 150.0 5, 3.0 3, 64.0 3, 35.0 2, 100.0 2, 24.0 1."
+grade = "guess"
+gap = "What the client does with it (a ring drawn around the unit, or hiding the unit beyond it) is not read; settled by finding the client's reader of this column."
