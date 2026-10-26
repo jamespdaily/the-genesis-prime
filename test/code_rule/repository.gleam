@@ -12,9 +12,18 @@ import tom
 @external(erlang, "repository_ffi", "tracked_files")
 fn tracked_files() -> String
 
+@external(erlang, "repository_ffi", "note_tree_read")
+fn note_tree_read() -> Nil
+
+/// How many times the source tree has been read from disk in this VM, so a
+/// test can show that every rule shares one read.
+@external(erlang, "repository_ffi", "tree_reads")
+pub fn tree_reads() -> Int
+
 /// Every `.gleam` file under each directory, which must hold at least one, so
 /// a rule checked over the repository cannot pass by finding nothing.
 pub fn sources(under directories: List(String)) -> List(SourceFile) {
+  note_tree_read()
   let files = list.flat_map(directories, source.files)
   let assert [_, ..] = files as "no Gleam source found under the directories"
   files
