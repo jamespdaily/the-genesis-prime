@@ -5,6 +5,8 @@
 //// can be played again; the code rules refuse the seeded generator in `src/`,
 //// so the server that is released has only `Strong`.
 
+import gleam/crypto
+
 /// Where a draw of random bytes comes from.
 pub type RandomSource {
   /// The operating system's strong source: bytes nobody can predict.
@@ -15,6 +17,9 @@ pub type RandomSource {
 }
 
 /// `count` random bytes from the source.
-pub fn bytes(source _source: RandomSource, count _count: Int) -> BitArray {
-  panic as "shape only: not built"
+pub fn bytes(source source: RandomSource, count count: Int) -> BitArray {
+  case source {
+    Strong -> crypto.strong_random_bytes(count)
+    Supplied(draw:) -> draw(count)
+  }
 }

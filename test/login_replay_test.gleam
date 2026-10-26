@@ -9,13 +9,13 @@
 ////   the replay at that byte, named by its offset in the stream of what the
 ////   server sent.
 //// - A login whose random values were drawn fresh cannot: the live recording of
-////   2026-10-26 (`test/recording/2026-10-26-login/`, made with the real client
-////   against an unseeded server) replays up to the reply that carries the
-////   server's SRP value B, whose bytes (the salt, and B, which depends on the
-////   server's secret b) differ on a new server, and there the replay stops with
-////   the offset of the first byte that differs. The reply is the XML of the
-////   STS library (`Reply`, `KeyData`) as the recording holds it; the live
-////   account is `jimtest`, and the replay supplies no password.
+////   the first session with the real client (`live_folder`, made against an
+////   unseeded server) replays up to the reply that carries the server's SRP
+////   value B. Its bytes (the salt, and B, which depends on the server's secret
+////   b) differ on a new server, and there the replay stops with the offset of
+////   the first byte that differs. The reply is the XML of the STS library
+////   (`Reply`, `KeyData`) as the recording holds it; the live account is
+////   `jimtest`, and the replay supplies no password.
 ////
 //// Every wait is for bytes the server writes or for the socket to close; the
 //// deadlines are for a server that does not answer, never a pause. The new

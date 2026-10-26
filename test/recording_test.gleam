@@ -231,7 +231,7 @@ pub fn a_recording_names_its_seed_and_one_without_a_seed_reads_as_unseeded_test(
     as "a recording without a seed reads as unseeded"
 
   // The live recording of the first session with the real client (the relay's
-  // own header of 2026-10-26: build 16042, role, the commit that was checked
+  // own header: build 16042, role, the commit that was checked
   // out) was made before a seed existed, and still reads, as unseeded.
   let folder = "test/recording/2026-10-26-login/"
   let assert Ok(sts) = recording.read(from: folder <> "sts-001.recording")

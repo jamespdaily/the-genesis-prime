@@ -26,7 +26,6 @@ import genesis_prime/login/sts_wire
 import genesis_prime/telemetry/log
 import gleam/bit_array
 import gleam/bool
-import gleam/crypto
 import gleam/erlang/process.{type Name}
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -45,6 +44,9 @@ pub type Services {
   )
 }
 
+/// How many random bytes make the server's SRP secret.
+const secret_bytes = 32
+
 /// The services of a running server: accounts in Postgres through
 /// `connection`, game tokens in the hand-off `game_tokens`, and random bytes
 /// from `random`. A database that fails ends the connection's process, which
@@ -52,7 +54,7 @@ pub type Services {
 pub fn services(
   connection connection: pog.Connection,
   game_tokens game_tokens: Name(handoff.Message(Identity)),
-  random _random: RandomSource,
+  random random: RandomSource,
 ) -> Services {
   Services(
     find_account: fn(name) {
@@ -61,7 +63,7 @@ pub fn services(
       found
     },
     issue_game_token: fn(identity) { handoff.issue(game_tokens, identity) },
-    draw_secret: fn() { crypto.strong_random_bytes(32) },
+    draw_secret: fn() { random_source.bytes(random, secret_bytes) },
   )
 }
 

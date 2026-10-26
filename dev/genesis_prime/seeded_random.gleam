@@ -15,6 +15,7 @@
 import genesis_prime/login/random_source.{type RandomSource}
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/int
+import gleam/otp/actor
 import gleam/otp/supervision
 
 const mask = 0xFFFF_FFFF_FFFF_FFFF
@@ -24,24 +25,54 @@ const mask = 0xFFFF_FFFF_FFFF_FFFF
 pub const largest_seed = 0xFFFF_FFFF_FFFF_FFFF
 
 /// The messages the source process receives.
-pub type Message {
+pub opaque type Message {
   Draw(count: Int, reply: Subject(BitArray))
 }
 
+/// How long the top of the tree waits for the source process to stop before it
+/// is killed, in milliseconds. It holds nothing that must be saved.
+const shutdown_ms = 1000
+
+/// How long a caller waits for a draw, in milliseconds. The source answers from
+/// memory, so an answer later than this means the process is gone, which ends
+/// the caller.
+const call_ms = 5000
+
 /// The source process as a child of a supervisor, registered under `name`,
-/// drawing the sequence of `seed`.
+/// drawing the sequence of `seed`, a number up to `largest_seed`.
 pub fn supervised(
-  name _name: Name(Message),
-  seed _seed: Int,
+  name name: Name(Message),
+  seed seed: Int,
 ) -> supervision.ChildSpecification(Subject(Message)) {
-  panic as "shape only: not built"
+  supervision.worker(fn() {
+    actor.new(seed)
+    |> actor.on_message(handle)
+    |> actor.named(name)
+    |> actor.start
+  })
+  |> supervision.timeout(ms: shutdown_ms)
+}
+
+/// Draws the bytes the message asks for from the generator's state, answers
+/// with them and goes on with the advanced state.
+fn handle(state: Int, message: Message) -> actor.Next(Int, Message) {
+  let Draw(count:, reply:) = message
+  let #(drawn, state) = bytes(state:, count:)
+  process.send(reply, drawn)
+  actor.continue(state)
 }
 
 /// The source of the process registered under `name`, for the settings of the
 /// login: each draw asks the process, so every draw of the server comes from
 /// the one sequence.
-pub fn source(name _name: Name(Message)) -> RandomSource {
-  panic as "shape only: not built"
+pub fn source(name name: Name(Message)) -> RandomSource {
+  random_source.Supplied(draw: fn(count) {
+    actor.call(
+      process.named_subject(name),
+      waiting: call_ms,
+      sending: fn(reply) { Draw(count:, reply:) },
+    )
+  })
 }
 
 /// The next 64-bit value and the advanced state.

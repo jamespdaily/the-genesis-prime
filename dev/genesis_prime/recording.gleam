@@ -8,14 +8,21 @@
 //// them. Each chunk carries its direction and the microseconds from the
 //// connection's start, read from the monotonic clock, so the times never go
 //// backwards and mean nothing outside the file. The header holds the client's
-//// build, the date, the role the connection reached and the commit of the
-//// server code that was checked out when it was recorded.
+//// build, the date, the role the connection reached, the commit of the
+//// server code that was checked out when it was recorded, and the seed of the
+//// server's random source when the session ran on the dev start
+//// (`genesis_prime/seeded_server`), which a replay starts its server with.
+//// A server that draws its random values from the operating system leaves no
+//// seed, and its recording cannot be played again past its first random value.
 ////
 //// The layout, with every integer unsigned and big-endian:
-//// - header: the four bytes `GREC`, the format version (1 byte, 1), the
+//// - header: the four bytes `GREC`, the format version (1 byte, 1 or 2), the
 ////   client's build (32 bits), the year (16 bits), the month (8 bits, 1 to
-////   12), the day (8 bits), the role as text, the commit as text. A text is
-////   its length in bytes (16 bits) and then that many bytes of UTF-8.
+////   12), the day (8 bits), the role as text, the commit as text, and, in
+////   version 2 only, the seed (64 bits). A text is its length in bytes (16
+////   bits) and then that many bytes of UTF-8. A recording with a seed is
+////   written as version 2 and one without as version 1, so the files made
+////   before the seed existed read as unseeded, byte for byte as they were.
 //// - then any number of chunks, each: the direction (8 bits, 0 for client to
 ////   server, 1 for server to client), the microseconds from the connection's
 ////   start (64 bits), the length (32 bits) and that many bytes.
@@ -38,7 +45,7 @@ import gleam/bit_array
 import gleam/bool
 import gleam/int
 import gleam/list
-import gleam/option.{type Option}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/time/calendar.{type Date, Date}
 import simplifile.{type FileError}
@@ -46,8 +53,11 @@ import simplifile.{type FileError}
 /// The four bytes every recording starts with.
 const magic = <<"GREC":utf8>>
 
-/// The format version this module writes and reads.
-const format_version = 1
+/// The format version of a recording without a seed, and of one with a seed.
+/// Both are read; each is written for the recordings that fit it.
+const version_without_seed = 1
+
+const version_with_seed = 2
 
 /// Which of the server's roles a connection reached, as the client names the
 /// ports: the NC platform login (STS, port 6600 by default), the auth server
@@ -155,16 +165,30 @@ fn encode_header(header: Header) -> Result(BitArray, RecordingError) {
   use year <- result.try(fit(field: "year", value: year, bits: 16))
   use role <- result.try(encode_text("role", role_name(role)))
   use commit <- result.try(encode_text("commit", commit))
-  Ok(<<
+  use #(version, seed) <- result.map(encode_seed(header.seed))
+  <<
     magic:bits,
-    format_version:size(8),
+    version:size(8),
     build:size(32),
     year:size(16),
     month_number:size(8),
     day:size(8),
     role:bits,
     commit:bits,
-  >>)
+    seed:bits,
+  >>
+}
+
+/// The format version a header's seed calls for, and the bytes of the seed
+/// that follow the commit: none without a seed.
+fn encode_seed(seed: Option(Int)) -> Result(#(Int, BitArray), RecordingError) {
+  case seed {
+    None -> Ok(#(version_without_seed, <<>>))
+    Some(seed) -> {
+      use seed <- result.map(fit(field: "seed", value: seed, bits: 64))
+      #(version_with_seed, <<seed:size(64)>>)
+    }
+  }
 }
 
 fn encode_chunk(chunk: Chunk) -> Result(BitArray, RecordingError) {
@@ -237,8 +261,8 @@ fn decode_version(
 ) -> Result(Recording, RecordingError) {
   case bytes {
     <<version:size(8), after_version:bytes>> ->
-      case version == format_version {
-        True -> decode_header(after_version, total)
+      case version == version_without_seed || version == version_with_seed {
+        True -> decode_header(bytes: after_version, total:, version:)
         False -> Error(UnsupportedVersion(version:))
       }
     _ -> Error(Truncated(offset: offset(total, bytes)))
@@ -246,8 +270,9 @@ fn decode_version(
 }
 
 fn decode_header(
-  bytes: BitArray,
-  total: Int,
+  bytes bytes: BitArray,
+  total total: Int,
+  version version: Int,
 ) -> Result(Recording, RecordingError) {
   case bytes {
     <<
@@ -264,15 +289,30 @@ fn decode_header(
         |> result.replace_error(UnknownRole(name:)),
       )
       use #(commit, after_commit) <- result.try(decode_text(after_role, total))
+      use #(seed, after_seed) <- result.try(decode_seed(
+        bytes: after_commit,
+        total:,
+        version:,
+      ))
       use chunks <- result.map(
-        decode_chunks(bytes: after_commit, total:, chunks: []),
+        decode_chunks(bytes: after_seed, total:, chunks: []),
       )
-      Recording(
-        header: Header(build:, date:, role:, commit:, seed: option.None),
-        chunks:,
-      )
+      Recording(header: Header(build:, date:, role:, commit:, seed:), chunks:)
     }
     _ -> Error(Truncated(offset: offset(total, bytes)))
+  }
+}
+
+/// The seed after the commit, which only version 2 holds.
+fn decode_seed(
+  bytes bytes: BitArray,
+  total total: Int,
+  version version: Int,
+) -> Result(#(Option(Int), BitArray), RecordingError) {
+  case version == version_with_seed, bytes {
+    False, _ -> Ok(#(None, bytes))
+    True, <<seed:size(64), after:bytes>> -> Ok(#(Some(seed), after))
+    True, _ -> Error(Truncated(offset: offset(total, bytes)))
   }
 }
 

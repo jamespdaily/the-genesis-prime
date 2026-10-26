@@ -2,8 +2,9 @@
 //// the next: the game token the STS login issues and the auth login redeems
 //// in 0x592, and the session key the auth login issues and the game server
 //// redeems in 0x58F (opcode.0x592, opcode.0x58f). A key is 16 random bytes
-//// from the operating system's strong source, kept with what it stands for
-//// until it is redeemed once or its expiry passes. A restart empties the
+//// from the settings' random source, the operating system's strong one in a
+//// running server, kept with what it stands for until it is redeemed once or
+//// its expiry passes. A restart empties the
 //// hand-off: a login in flight fails and the client logs in again.
 ////
 //// The process owns its keys; every other process asks it by message. It
@@ -11,7 +12,6 @@
 //// an arbitrary start.
 
 import genesis_prime/login/random_source.{type RandomSource}
-import gleam/crypto
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/otp/actor
@@ -45,6 +45,9 @@ pub type Refusal {
   /// The key was issued, and its expiry has passed.
   Expired
 }
+
+/// How many random bytes make a key.
+const key_bytes = 16
 
 /// How long the top of the tree waits for a hand-off to stop before it is
 /// killed, in milliseconds. It holds nothing that must be saved.
@@ -88,7 +91,7 @@ fn handle(
         dict.filter(state.keys, fn(_, issued) {
           !has_expired(settings: state.settings, now:, issued_at: issued.0)
         })
-      let key = crypto.strong_random_bytes(16)
+      let key = random_source.bytes(state.settings.random, key_bytes)
       process.send(reply, key)
       actor.continue(State(..state, keys: dict.insert(live, key, #(now, held))))
     }

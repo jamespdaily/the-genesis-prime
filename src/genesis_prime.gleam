@@ -50,19 +50,76 @@ const default_game_port = 24_000
 
 const default_realm_name = "GenesisPrime"
 
-/// Starts the server's supervision tree, then keeps the calling process alive
-/// while the tree runs, until SIGTERM stops the server in order and ends the
-/// node. The server runs as one node and uses no Erlang distribution, so it
-/// stops at once, saying so, when the VM runs it. The database pool's settings
-/// come from PGHOST, PGPORT, PGUSER, PGDATABASE and PGPASSWORD, and the game
-/// tables from the folder named by GENESIS_TABLE_DIR; the server stops at once,
-/// saying which is missing or wrong, when one it needs is, or when a table
-/// does not load. The login's ports come from GENESIS_STS_PORT and
-/// GENESIS_AUTH_PORT (6600 and 23115 when unset), where 0 takes a free port;
-/// GENESIS_GAME_ADDRESS, GENESIS_GAME_PORT and GENESIS_REALM_NAME name what a
-/// client that logged in is handed to. Debug lines are written when GENESIS_DEBUG is 1, and not
-/// otherwise.
+/// Starts the released server: the settings `release_settings` reads from the
+/// environment, run until SIGTERM stops the server in order.
 pub fn main() -> Nil {
+  run(settings: release_settings(get: envoy.get))
+}
+
+/// The settings of the released server: everything `settings` reads from the
+/// environment, and the operating system's strong random source, which no
+/// setting changes.
+pub fn release_settings(
+  get get: fn(String) -> Result(String, Nil),
+) -> server.Settings {
+  settings(get:, random: random_source.Strong)
+}
+
+/// The settings the server starts with, read from the environment through `get`,
+/// with the login drawing its random bytes from `random`. The database pool's
+/// settings come from PGHOST, PGPORT, PGUSER, PGDATABASE and PGPASSWORD, and the
+/// game tables from the folder named by GENESIS_TABLE_DIR; the server stops at
+/// once, saying which is missing or wrong, when one it needs is. The login's
+/// ports come from GENESIS_STS_PORT and GENESIS_AUTH_PORT (6600 and 23115 when
+/// unset), where 0 takes a free port; GENESIS_GAME_ADDRESS, GENESIS_GAME_PORT
+/// and GENESIS_REALM_NAME name what a client that logged in is handed to.
+pub fn settings(
+  get get: fn(String) -> Result(String, Nil),
+  random random: RandomSource,
+) -> server.Settings {
+  let pool_settings = case
+    pool.from_environment(name: process.new_name("database_pool"), get:)
+  {
+    Ok(settings) -> settings
+    Error(error) -> panic as pool.describe(error)
+  }
+  let table_folder = case get("GENESIS_TABLE_DIR") {
+    Ok(folder) -> folder
+    Error(Nil) ->
+      panic as "GENESIS_TABLE_DIR is not set; the server loads the client's game tables from the folder it names"
+  }
+  server.Settings(
+    pool: pool_settings,
+    tables: server.TableSettings(
+      key: reference.new(),
+      folder: table_folder,
+      entries: table.entries(),
+      requirements: requirement.all(),
+    ),
+    shutdown: shutdown.new(drain_deadline_ms:, flush_deadline_ms:),
+    snapshot: snapshot.settings(process.new_name("snapshot")),
+    login: service.settings(
+      sts_port: port(get, "GENESIS_STS_PORT", default_sts_port),
+      auth_port: port(get, "GENESIS_AUTH_PORT", default_auth_port),
+      game_server: Endpoint(
+        address: address(get, "GENESIS_GAME_ADDRESS", default_game_address),
+        port: port(get, "GENESIS_GAME_PORT", default_game_port),
+      ),
+      realm_name: get("GENESIS_REALM_NAME")
+        |> result.unwrap(default_realm_name),
+      expected_files_digest: None,
+      random:,
+    ),
+  )
+}
+
+/// Starts the server's supervision tree with `settings`, then keeps the calling
+/// process alive while the tree runs, until SIGTERM stops the server in order
+/// and ends the node. The server runs as one node and uses no Erlang
+/// distribution, so it stops at once, saying so, when the VM runs it, and when
+/// a table does not load. Debug lines are written when GENESIS_DEBUG is 1, and
+/// not otherwise.
+pub fn run(settings settings: server.Settings) -> Nil {
   let node_name = atom.to_string(node.name(node.self()))
   case node_name == node_without_distribution {
     True -> Nil
@@ -73,57 +130,23 @@ pub fn main() -> Nil {
         <> "); the server runs as one node and uses none, so start it without -name or -sname"
       }
   }
-  let pool_settings = case
-    pool.from_environment(
-      name: process.new_name("database_pool"),
-      get: envoy.get,
-    )
-  {
-    Ok(settings) -> settings
-    Error(error) -> panic as pool.describe(error)
-  }
   log.configure(debug: envoy.get("GENESIS_DEBUG") == Ok("1"))
-  let table_folder = case envoy.get("GENESIS_TABLE_DIR") {
-    Ok(folder) -> folder
-    Error(Nil) ->
-      panic as "GENESIS_TABLE_DIR is not set; the server loads the client's game tables from the folder it names"
-  }
-  let shutdown_settings = shutdown.new(drain_deadline_ms:, flush_deadline_ms:)
-  let settings =
-    server.Settings(
-      pool: pool_settings,
-      tables: server.TableSettings(
-        key: reference.new(),
-        folder: table_folder,
-        entries: table.entries(),
-        requirements: requirement.all(),
-      ),
-      shutdown: shutdown_settings,
-      snapshot: snapshot.settings(process.new_name("snapshot")),
-      login: service.settings(
-        sts_port: port("GENESIS_STS_PORT", default_sts_port),
-        auth_port: port("GENESIS_AUTH_PORT", default_auth_port),
-        game_server: Endpoint(
-          address: address("GENESIS_GAME_ADDRESS", default_game_address),
-          port: port("GENESIS_GAME_PORT", default_game_port),
-        ),
-        realm_name: envoy.get("GENESIS_REALM_NAME")
-          |> result.unwrap(default_realm_name),
-        expected_files_digest: None,
-        random: random_source.Strong,
-      ),
-    )
   let started = case server.start(settings) {
     Ok(started) -> started
     Error(error) -> panic as server.describe(error)
   }
-  shutdown.run(tree: started.pid, settings: shutdown_settings)
+  shutdown.run(tree: started.pid, settings: settings.shutdown)
 }
 
-/// A port from the environment, or its default when the variable is not set;
-/// the server stops at once, saying so, when the variable is not a port.
-fn port(variable: String, default: Int) -> Int {
-  case envoy.get(variable) {
+/// A port from the environment through `get`, or its default when the variable
+/// is not set; the server stops at once, saying so, when the variable is not a
+/// port.
+fn port(
+  get: fn(String) -> Result(String, Nil),
+  variable: String,
+  default: Int,
+) -> Int {
+  case get(variable) {
     Error(Nil) -> default
     Ok(text) ->
       case int.parse(text) {
@@ -134,11 +157,16 @@ fn port(variable: String, default: Int) -> Int {
   }
 }
 
-/// An IPv4 address from the environment as the number the client reads
-/// (127.0.0.1 is 0x7F000001), or the default's when the variable is not set;
-/// the server stops at once, saying so, when the variable is not an address.
-fn address(variable: String, default: String) -> Int {
-  let text = envoy.get(variable) |> result.unwrap(default)
+/// An IPv4 address from the environment through `get` as the number the client
+/// reads (127.0.0.1 is 0x7F000001), or the default's when the variable is not
+/// set; the server stops at once, saying so, when the variable is not an
+/// address.
+fn address(
+  get: fn(String) -> Result(String, Nil),
+  variable: String,
+  default: String,
+) -> Int {
+  let text = get(variable) |> result.unwrap(default)
   let parts = string.split(text, ".") |> list.try_map(int.parse)
   case parts {
     Ok([first, second, third, fourth])
@@ -154,28 +182,4 @@ fn address(variable: String, default: String) -> Int {
     Ok(_) | Error(Nil) ->
       panic as { variable <> " is " <> text <> ", which is not an IPv4 address" }
   }
-}
-
-/// The settings of the released server: everything `main` reads from the
-/// environment, and the operating system's strong random source, which no
-/// setting changes.
-pub fn release_settings(
-  get get: fn(String) -> Result(String, Nil),
-) -> server.Settings {
-  settings(get:, random: random_source.Strong)
-}
-
-/// The settings the server starts with, read from the environment through `get`,
-/// with the login drawing its random bytes from `random`.
-pub fn settings(
-  get _get: fn(String) -> Result(String, Nil),
-  random _random: RandomSource,
-) -> server.Settings {
-  panic as "shape only: not built"
-}
-
-/// Starts the server's tree with `settings` and keeps the calling process alive
-/// until SIGTERM stops it in order, as `main` does.
-pub fn run(settings _settings: server.Settings) -> Nil {
-  panic as "shape only: not built"
 }
