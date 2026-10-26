@@ -1001,6 +1001,57 @@ pub fn a_reload_that_the_database_cannot_do_either_ends_the_connection_as_an_out
     as "what the write did is not known and the list cannot be read, so the connection ends and the next login reads the store"
 }
 
+pub fn a_command_that_got_no_answer_ends_the_connection_and_is_never_answered_as_unavailable_test() -> Nil {
+  use <- owned_test.run(5000)
+  let mine = [own(11, "Ab Cd")]
+  list.each(
+    [
+      #(select.Creating, "a create"),
+      #(Renaming(11), "a rename"),
+      #(Deleting(11), "a delete"),
+    ],
+    fn(waiting) {
+      let #(status, what) = waiting
+      let #(state, effects) =
+        select.decide(
+          State(..idle(mine), status:),
+          Stored(select.Unknown),
+          context(),
+        )
+      assert effects == [select.Abandon(select.WriteNotAnswered)]
+        as {
+          what
+          <> " that was sent and got no answer in the longest a write can take may or may not have been done: the connection ends with a logged error, so the client connects again and lists the store's characters, and the player is told nothing that may be untrue"
+        }
+      assert state.status == status
+        as { what <> ": nothing is decided about the characters" }
+    },
+  )
+}
+
+pub fn a_list_that_got_no_answer_ends_the_connection_as_an_outage_test() -> Nil {
+  use <- owned_test.run(5000)
+  let loading =
+    State(
+      account_id: character_support.account_id,
+      characters: [],
+      status: Loading,
+    )
+  let #(_, effects) = select.decide(loading, Stored(select.Unknown), context())
+  assert effects == [select.Abandon(select.ListNotLoaded)]
+    as "the connection cannot go on without the list, and the next login reads the store"
+  let #(reloading, _) =
+    select.decide(
+      State(..idle([own(11, "Ab Cd")]), status: select.Creating),
+      Stored(Unavailable),
+      context(),
+    )
+  let #(_, effects) =
+    select.decide(reloading, Stored(select.Unknown), context())
+  assert effects == [select.Abandon(select.ListNotReloaded)]
+    as "what the write did is not known and the list cannot be read, so the connection ends"
+}
+
 pub fn a_request_while_the_list_is_read_again_closes_the_connection_test() -> Nil {
   use <- owned_test.run(5000)
   let #(reloading, _) =
