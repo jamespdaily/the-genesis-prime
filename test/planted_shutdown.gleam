@@ -45,10 +45,13 @@ pub const connection_variable = "PLANTED_CONNECTION"
 pub const flush_variable = "PLANTED_FLUSH"
 
 /// Whether the planted program kills the shutdown coordinator once the tree is
-/// up: `killed` or `lives`.
+/// up: `killed`, `gone` or `lives`. `gone` also keeps the entry point running
+/// after the coordinator has ended, until a SIGTERM ends the node.
 pub const coordinator_variable = "PLANTED_COORDINATOR"
 
 pub const coordinator_killed = "killed"
+
+pub const coordinator_gone = "gone"
 
 pub const coordinator_lives = "lives"
 
@@ -311,14 +314,27 @@ pub fn main() -> Nil {
     as "the planted saving worker did not start"
   let port = start_listener(settings:, ignores_close:)
   io.println(listening(port))
-  case envoy.get(coordinator_variable) == Ok(coordinator_killed) {
-    True -> {
+  case envoy.get(coordinator_variable) {
+    Ok(value) if value == coordinator_killed -> {
       io.println(coordinator_killed_line)
       let assert Ok(coordinator) = process.named(settings.name)
         as "the shutdown coordinator is not running"
       process.kill(coordinator)
     }
-    False -> Nil
+    Ok(value) if value == coordinator_gone -> {
+      // The entry point is unlinked from the tree, so the tree ending with the
+      // coordinator does not end the entry point, which then runs with no
+      // coordinator, as it does in the moment the coordinator is away.
+      process.unlink(tree.pid)
+      let assert Ok(coordinator) = process.named(settings.name)
+        as "the shutdown coordinator is not running"
+      let monitor = process.monitor(coordinator)
+      process.kill(coordinator)
+      process.new_selector()
+      |> process.select_specific_monitor(monitor, fn(_down) { Nil })
+      |> process.selector_receive_forever
+    }
+    Ok(_) | Error(Nil) -> Nil
   }
   shutdown.run(tree: tree.pid, settings:)
 }

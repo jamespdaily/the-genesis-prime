@@ -298,6 +298,22 @@ pub fn a_clean_stop_writes_no_failed_to_eval_line_and_ends_with_status_0_test() 
   )
 }
 
+pub fn a_sigterm_with_no_coordinator_logs_an_error_and_ends_the_node_with_status_1_test() -> Nil {
+  use <- owned_test.run(child_deadline_ms)
+  // The contract is the one `shutdown.run` states: a SIGTERM that finds no
+  // coordinator ends the node without the ordered stop, with status 1, and
+  // says so as an error. The planted entry point runs on after the coordinator
+  // has ended, so the SIGTERM finds none.
+  let #(lines, status) =
+    stop_one(coordinator: planted_shutdown.coordinator_gone)
+  assert logged(lines:, level: "error", containing: [
+    "shutdown coordinator was not running",
+  ])
+    as "a SIGTERM that found no coordinator did not log an error"
+  assert status == 1
+    as "a SIGTERM that found no coordinator did not end the node with status 1"
+}
+
 pub fn a_connection_that_will_not_drain_is_closed_at_the_deadline_and_the_flush_still_runs_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
   use database <- template_database.run
