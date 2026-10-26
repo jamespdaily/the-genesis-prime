@@ -99,7 +99,10 @@ pub fn facts() -> Facts {
       under: reference.new(),
       from: client_tables.folder(),
       entries: tables(),
-      requirements: [],
+      requirements: list.append(
+        customisation.requirements(),
+        character_slots.requirements(),
+      ),
     )
     as "the client's tables did not load"
   let assert Ok(creation) =
@@ -202,7 +205,10 @@ pub fn start_with(
           key: reference.new(),
           folder: client_tables.folder(),
           entries: tables(),
-          requirements: [],
+          requirements: list.append(
+            customisation.requirements(),
+            character_slots.requirements(),
+          ),
         ),
         login:,
         game:,

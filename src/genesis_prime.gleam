@@ -2,6 +2,8 @@
 
 import envoy
 import genesis_prime/character/character.{type Place}
+import genesis_prime/character/character_slots
+import genesis_prime/character/customisation
 import genesis_prime/character/starting_place
 import genesis_prime/database/pool
 import genesis_prime/game/service as game_service
@@ -61,9 +63,8 @@ const default_realm_name = "GenesisPrime"
 const default_realm_id = 1
 
 /// The WorldLocation2 row every new character starts at: world 3400,
-/// Map\PreTutorialExile. It stands in until a retail record or a recording
-/// gives the start of each CharacterCreation row; the client's tables hold no
-/// start for a row.
+/// Map\PreTutorialExile. A stand-in for the start of each CharacterCreation
+/// row, which the client's tables do not hold.
 const starting_location_id = 50_177
 
 /// Where a character made from a CharacterCreation row starts: the one
@@ -124,10 +125,12 @@ pub fn main() -> Nil {
         key: reference.new(),
         folder: table_folder,
         entries: table.entries(),
-        requirements: list.append(
+        requirements: list.flatten([
           requirement.all(),
           starting_place.requirements(location_id: starting_location_id),
-        ),
+          customisation.requirements(),
+          character_slots.requirements(),
+        ]),
       ),
       shutdown: shutdown_settings,
       snapshot: snapshot_settings,

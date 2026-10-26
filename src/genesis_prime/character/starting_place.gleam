@@ -1,7 +1,7 @@
 //// Where a new character starts: one WorldLocation2 row of the client's
-//// table, read from the loaded tables. The server's one starting row stands in
-//// until a retail record or a recording gives the start of each
-//// CharacterCreation row; the row's id is a setting made where the server is
+//// table, read from the loaded tables. The server's one starting row is a
+//// stand-in for the start of each CharacterCreation row, which the client's
+//// tables do not hold; the row's id is a setting made where the server is
 //// wired, so no rule holds a coordinate.
 
 import genesis_prime/character/character.{type Place, Place}

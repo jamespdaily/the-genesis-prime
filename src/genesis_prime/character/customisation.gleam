@@ -45,9 +45,26 @@ pub type LabelProblem {
   LabelOfAnotherFaction(label_id: Int)
 }
 
-/// The rows the server requires of the tables for `of`.
+/// The rows the server requires of the tables for `of`: a CustomizationParameter
+/// row for every parameter a CustomizationParameterMap row names. A map row
+/// whose parameter is missing would count no bone values for its part, so the
+/// load fails instead.
 pub fn requirements() -> List(store.Requirement) {
-  []
+  [
+    store.Requirement(
+      from_table: "CustomizationParameterMap",
+      column: "customizationParameterId",
+      to_table: "CustomizationParameter",
+      missing: fn(tables) {
+        customization_parameter_map.all(tables)
+        |> list.map(fn(row) { row.customization_parameter_id })
+        |> list.unique
+        |> list.filter(fn(id) {
+          result.is_error(customization_parameter.get(tables, id))
+        })
+      },
+    ),
+  ]
 }
 
 /// A customisation with no race, no label and no room for a request, for a
@@ -63,19 +80,18 @@ pub fn empty() -> Customisation {
 
 /// The counts and labels of the loaded tables. A bone value is counted for
 /// each part (sclX to posZ) that the CustomizationParameter row of a map row
-/// sets, which is a part with a value other than 0.
+/// sets, which is a part with a value other than 0. The load checked that the
+/// row exists (`requirements`).
 pub fn of(tables tables: Tables) -> Customisation {
   let bone_counts =
     list.fold(
       customization_parameter_map.all(tables),
       dict.new(),
       fn(counts, row) {
-        let parts = case
+        let assert Ok(parameter) =
           customization_parameter.get(tables, row.customization_parameter_id)
-        {
-          Ok(parameter) -> parts_set(parameter)
-          Error(Nil) -> 0
-        }
+          as "the load checked that every parameter a map row names has a row"
+        let parts = parts_set(parameter)
         dict.upsert(counts, #(row.race_id, row.gender_enum), fn(found) {
           case found {
             Some(count) -> count + parts
