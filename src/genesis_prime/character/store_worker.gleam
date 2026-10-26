@@ -89,8 +89,33 @@ fn describe(error: actor.StartError) -> String {
 
 /// Carries out the command in a worker and waits up to `within_ms`
 /// milliseconds for the answer. A worker that does not start, ends without
-/// answering or is too slow gives `Unavailable`.
+/// answering or is too slow gives `Unavailable`, and so does a supervisor of
+/// workers that is not running, as while it is being rebuilt.
 pub fn run(
+  workers workers: Workers,
+  db db: pog.Connection,
+  command command: Command,
+  within_ms within_ms: Int,
+) -> Answer {
+  case process.named(workers.factory) {
+    Error(Nil) -> {
+      log.warning(
+        log.Who(
+          account: None,
+          actor: None,
+          place: Some(log.Process("store_worker")),
+          message: None,
+          peer: None,
+        ),
+        "the supervisor of the store workers is not running, so the command is not carried out",
+      )
+      Unavailable
+    }
+    Ok(_) -> start_and_wait(workers:, db:, command:, within_ms:)
+  }
+}
+
+fn start_and_wait(
   workers workers: Workers,
   db db: pog.Connection,
   command command: Command,
