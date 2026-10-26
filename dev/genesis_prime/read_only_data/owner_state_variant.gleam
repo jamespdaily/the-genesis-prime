@@ -46,8 +46,11 @@ fn start_holder(tables: PerTable(Table)) -> Holder {
       let stop = process.new_subject()
       process.send(ready, stop)
       process.receive_forever(stop)
-      // The tables are used after the wait so the process keeps them.
-      let _words = client_table.map(tables, measurement.heap_words)
+      // The tables are used after the wait so the process keeps them. One
+      // row each is enough; measuring a whole copy here would walk every
+      // term and outlast the stop's deadline.
+      let _rows =
+        client_table.map(tables, fn(table) { table_data.row_at(table, 1) })
       Nil
     })
   let assert Ok(stop) = process.receive(ready, 120_000)
