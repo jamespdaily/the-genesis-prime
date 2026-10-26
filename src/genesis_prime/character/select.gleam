@@ -114,6 +114,10 @@ pub type Status {
   /// The player chose a character: the client leaves character select for the
   /// world, so no request is taken until the entry is refused.
   Entering
+  /// A write was answered `Unavailable`, so it may or may not have been done.
+  /// The server waits for the account's characters again, and the player is
+  /// sent `owed`, the failure of the request, with the list the store holds.
+  Reloading(owed: ServerMessage)
 }
 
 /// An account's character select.
@@ -185,9 +189,24 @@ pub type Refusal {
   NameTaken
   /// The character is not one of the account's.
   NotYourCharacter(character_id: Int)
+  /// The character is disabled, so it cannot be played.
+  CharacterDisabled(character_id: Int)
+  /// The character must be renamed before it can be played.
+  CharacterRequiresRename(character_id: Int)
   /// The database could not do what was asked: an outside failure, not the
   /// player's mistake.
   StoreUnavailable
+}
+
+/// The database did not answer when character select needed the account's
+/// characters: an outside failure the connection cannot go on without, never
+/// the player's breach.
+pub type Outage {
+  /// The characters of the account could not be loaded for the list.
+  ListNotLoaded
+  /// The characters could not be loaded again after a write that was answered
+  /// `Unavailable`, so the server cannot tell what that write did.
+  ListNotReloaded
 }
 
 /// A message or an answer that a correct client and server never produce.
@@ -216,6 +235,8 @@ pub type Effect {
   Log(Refusal)
   /// Log the breach and close the connection.
   Close(Breach)
+  /// Log the outage as an error and close the connection.
+  Abandon(Outage)
 }
 
 /// Character select of an account that has not started.
@@ -242,20 +263,26 @@ fn start(state: State) -> #(State, List(Effect)) {
     NotStarted -> #(State(..state, status: Loading), [
       Store(LoadCharacters(account_id: state.account_id)),
     ])
-    Loading | Idle | Creating | Renaming(_) | Deleting(_) | Entering -> #(
-      state,
-      [Close(StartedTwice)],
-    )
+    Loading
+    | Idle
+    | Creating
+    | Renaming(_)
+    | Deleting(_)
+    | Entering
+    | Reloading(_) -> #(state, [Close(StartedTwice)])
   }
 }
 
 fn world_entry_refused(state: State) -> #(State, List(Effect)) {
   case state.status {
     Entering -> #(State(..state, status: Idle), [])
-    NotStarted | Loading | Idle | Creating | Renaming(_) | Deleting(_) -> #(
-      state,
-      [Close(AnswerNobodyAskedFor(state.status))],
-    )
+    NotStarted
+    | Loading
+    | Idle
+    | Creating
+    | Renaming(_)
+    | Deleting(_)
+    | Reloading(_) -> #(state, [Close(AnswerNobodyAskedFor(state.status))])
   }
 }
 
@@ -274,9 +301,10 @@ fn requested(
         PlayRequested(play) -> start_playing(state:, request: play)
       }
     NotStarted -> #(state, [Close(RequestBeforeStart)])
-    Loading | Creating | Renaming(_) | Deleting(_) | Entering -> #(state, [
-      Close(RequestWhileBusy(state.status)),
-    ])
+    Loading | Creating | Renaming(_) | Deleting(_) | Entering | Reloading(_) -> #(
+      state,
+      [Close(RequestWhileBusy(state.status))],
+    )
   }
 }
 
@@ -435,7 +463,7 @@ fn answered(
     Creating -> created(state:, answer:)
     Renaming(id) -> renamed(state:, id:, answer:)
     Deleting(id) -> deleted(state:, id:, answer:)
-    NotStarted | Idle | Entering -> unexpected(state, answer)
+    NotStarted | Idle | Entering | Reloading(_) -> unexpected(state, answer)
   }
 }
 
@@ -621,7 +649,9 @@ fn create_failure(refusal: Refusal) -> CreateCharacterResult {
     | CreationNotOffered(_)
     | PathOutOfRange(_)
     | TooManyCustomisations(_)
-    | NotYourCharacter(_) -> create_failed
+    | NotYourCharacter(_)
+    | CharacterDisabled(_)
+    | CharacterRequiresRename(_) -> create_failed
     NoStartingPlace(_) | StoreUnavailable -> create_failed_internal
   }
   CreateCharacterResult(character_id: 0, field_2: 0, result:)
@@ -642,7 +672,9 @@ fn rename_result(refusal: Refusal) -> Int {
     | PathOutOfRange(_)
     | TooManyCustomisations(_)
     | NoStartingPlace(_)
-    | NotYourCharacter(_) -> rename_failed
+    | NotYourCharacter(_)
+    | CharacterDisabled(_)
+    | CharacterRequiresRename(_) -> rename_failed
   }
 }
 
@@ -701,7 +733,23 @@ pub fn describe_refusal(refusal refusal: Refusal) -> String {
     NameTaken -> "another character has the name"
     NotYourCharacter(character_id:) ->
       "the character " <> int.to_string(character_id) <> " is not the account's"
+    CharacterDisabled(character_id:) ->
+      "the character " <> int.to_string(character_id) <> " is disabled"
+    CharacterRequiresRename(character_id:) ->
+      "the character "
+      <> int.to_string(character_id)
+      <> " must be renamed before it can be played"
     StoreUnavailable -> "the database could not do it"
+  }
+}
+
+/// The sentence the log line of an outage holds.
+pub fn describe_outage(outage outage: Outage) -> String {
+  case outage {
+    ListNotLoaded ->
+      "the database did not give the account's characters for the list"
+    ListNotReloaded ->
+      "the database did not give the account's characters again after a write it did not answer, so what the write did is not known"
   }
 }
 
@@ -733,5 +781,6 @@ fn describe_status(status: Status) -> String {
       <> int.to_string(character_id)
       <> " to be deleted"
     Entering -> "entering the world"
+    Reloading(_) -> "waiting for the account's characters after a write failed"
   }
 }

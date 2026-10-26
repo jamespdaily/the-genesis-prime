@@ -746,7 +746,7 @@ fn answer_every_effect(
         let #(next, _) = select.decide(state, WorldEntryRefused, context())
         next
       }
-      Send(_) | Log(_) | Close(_) -> state
+      Send(_) | Log(_) | Close(_) | select.Abandon(_) -> state
     }
   })
 }
@@ -817,7 +817,11 @@ fn writes_of(effect effect: select.Effect, own_ids own_ids: List(Int)) -> Int {
         as "a character of another account entered the world"
       1
     }
-    Store(select.LoadCharacters(_)) | Send(_) | Log(_) | Close(_) -> 0
+    Store(select.LoadCharacters(_))
+    | Send(_)
+    | Log(_)
+    | Close(_)
+    | select.Abandon(_) -> 0
   }
 }
 
@@ -826,7 +830,8 @@ fn sent(effects: List(select.Effect)) -> List(ServerMessage) {
   list.filter_map(effects, fn(effect) {
     case effect {
       Send(message) -> Ok(message)
-      Store(_) | BeginWorldEntry(_) | Log(_) | Close(_) -> Error(Nil)
+      Store(_) | BeginWorldEntry(_) | Log(_) | Close(_) | select.Abandon(_) ->
+        Error(Nil)
     }
   })
 }
@@ -836,7 +841,8 @@ fn stored(effects: List(select.Effect)) -> List(select.Command) {
   list.filter_map(effects, fn(effect) {
     case effect {
       Store(command) -> Ok(command)
-      Send(_) | BeginWorldEntry(_) | Log(_) | Close(_) -> Error(Nil)
+      Send(_) | BeginWorldEntry(_) | Log(_) | Close(_) | select.Abandon(_) ->
+        Error(Nil)
     }
   })
 }
@@ -845,6 +851,6 @@ fn stored(effects: List(select.Effect)) -> List(select.Command) {
 fn writes_or_enters(effect: select.Effect) -> Bool {
   case effect {
     Store(_) | BeginWorldEntry(_) -> True
-    Send(_) | Log(_) | Close(_) -> False
+    Send(_) | Log(_) | Close(_) | select.Abandon(_) -> False
   }
 }

@@ -83,6 +83,8 @@ pub type EndReason {
   CharacterSelectBreach(select.Breach)
   /// The world entry was asked for something it takes at no time.
   WorldEntryBreach(world_entry.Breach)
+  /// The database did not give the characters character select needed.
+  StoreAway(select.Outage)
   /// The map did not answer, so the character may or may not be on it.
   MapAway
   /// A message of the answer could not be built.
@@ -387,13 +389,18 @@ fn apply_select(
             | select.TooManyCustomisations(_)
             | select.NoStartingPlace(_)
             | select.NameTaken
-            | select.NotYourCharacter(_) -> WarningLevel
+            | select.NotYourCharacter(_)
+            | select.CharacterDisabled(_)
+            | select.CharacterRequiresRename(_) -> WarningLevel
           },
           select.describe_refusal(refusal),
         ),
       ])
       select.Close(breach) -> #(select_state, entry_state, [
         End(CharacterSelectBreach(breach)),
+      ])
+      select.Abandon(outage) -> #(select_state, entry_state, [
+        End(StoreAway(outage)),
       ])
       select.BeginWorldEntry(character) ->
         apply_entry(
@@ -611,6 +618,7 @@ pub fn describe(reason reason: EndReason) -> String {
     SessionKeyRefused -> "the session key is unknown, used already or expired"
     CharacterSelectBreach(breach) -> select.describe_breach(breach)
     WorldEntryBreach(breach) -> world_entry.describe_breach(breach)
+    StoreAway(outage) -> select.describe_outage(outage)
     MapAway ->
       "the map did not answer in time, so the connection ends and the map takes the unit off with it"
     AnswerNotBuilt -> "a message of the answer could not be built"
@@ -637,7 +645,7 @@ fn describe_decoding(error: bit_stream.DecodeError) -> String {
 /// player's doing.
 pub fn level_of(reason reason: EndReason) -> Level {
   case reason {
-    AnswerNotBuilt | MapAway -> ErrorLevel
+    AnswerNotBuilt | MapAway | StoreAway(_) -> ErrorLevel
     BadWrapper
     | UnexpectedMessage(_)
     | MalformedMessage(..)

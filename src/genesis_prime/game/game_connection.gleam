@@ -324,6 +324,7 @@ fn message_of(reason: game_session.EndReason) -> Option(log.Message) {
     | game_session.CharacterSelectBreach(_)
     | game_session.WorldEntryBreach(_)
     | game_session.MapAway
+    | game_session.StoreAway(_)
     | game_session.AnswerNotBuilt -> None
   }
 }
