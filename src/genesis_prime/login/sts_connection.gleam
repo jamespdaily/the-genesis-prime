@@ -18,7 +18,9 @@ import genesis_prime/connection/socket_owner.{
 import genesis_prime/login/account.{type Account, type Identity}
 import genesis_prime/login/account_store
 import genesis_prime/login/handoff
-import genesis_prime/login/random_source.{type RandomSource, Draw}
+import genesis_prime/login/random_source.{
+  type Connection as Origin, type RandomSource, Draw,
+}
 import genesis_prime/login/rc4
 import genesis_prime/login/sts_message
 import genesis_prime/login/sts_session
@@ -37,12 +39,12 @@ pub type Services {
   Services(
     /// The account of a lower-case name, or none.
     find_account: fn(String) -> Result(Account, Nil),
-    /// A new game token for an identity, asked for by the connection of the
-    /// given peer address: 16 bytes.
-    issue_game_token: fn(Identity, Option(String)) -> BitArray,
-    /// 32 random bytes for the server's SRP value, drawn by the connection of
-    /// the given peer address for the login of the account found, if any.
-    draw_secret: fn(Option(String), Option(Account)) -> BitArray,
+    /// A new game token for an identity, asked for by the given connection:
+    /// 16 bytes.
+    issue_game_token: fn(Identity, Option(Origin)) -> BitArray,
+    /// 32 random bytes for the server's SRP value, drawn by the given
+    /// connection for the login of the account found, if any.
+    draw_secret: fn(Option(Origin), Option(Account)) -> BitArray,
   )
 }
 
@@ -64,13 +66,13 @@ pub fn services(
         as "the database answered the account lookup"
       found
     },
-    issue_game_token: fn(identity, peer) {
-      handoff.issue(game_tokens, identity, peer)
+    issue_game_token: fn(identity, origin) {
+      handoff.issue(game_tokens, identity, origin)
     },
-    draw_secret: fn(peer, account) {
+    draw_secret: fn(origin, account) {
       random_source.bytes(
         random,
-        Draw(count: secret_bytes, connection: peer, account:),
+        Draw(count: secret_bytes, connection: origin, account:),
       )
     },
   )
@@ -101,6 +103,7 @@ pub opaque type Connection {
     receiving: Option(rc4.Stream),
     sending: Option(rc4.Stream),
     peer: Option(String),
+    origin: Option(Origin),
     account: Option(Int),
     ended: Bool,
   )
@@ -125,6 +128,7 @@ pub fn new(
     receiving: None,
     sending: None,
     peer:,
+    origin: None,
     account: None,
     ended: False,
   )
@@ -222,7 +226,7 @@ fn run_effects(
               connection.session,
               found,
               connection.services.draw_secret(
-                connection.peer,
+                connection.origin,
                 option.from_result(found),
               ),
             )
@@ -235,7 +239,7 @@ fn run_effects(
         }
         sts_session.IssueGameToken(identity) -> {
           let token =
-            connection.services.issue_game_token(identity, connection.peer)
+            connection.services.issue_game_token(identity, connection.origin)
           let #(session, more) =
             sts_session.game_token_issued(connection.session, token)
           log.info(

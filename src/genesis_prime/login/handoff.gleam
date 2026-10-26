@@ -13,7 +13,9 @@
 //// reads the monotonic clock the settings give it, in whole milliseconds from
 //// an arbitrary start.
 
-import genesis_prime/login/random_source.{type RandomSource, Draw}
+import genesis_prime/login/random_source.{
+  type Connection, type RandomSource, Draw,
+}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{type Option, None}
@@ -36,7 +38,7 @@ pub type Settings(held) {
 
 /// The messages a hand-off receives.
 pub opaque type Message(held) {
-  Issue(held: held, connection: Option(String), reply: Subject(BitArray))
+  Issue(held: held, connection: Option(Connection), reply: Subject(BitArray))
   Redeem(key: BitArray, reply: Subject(Result(held, Refusal)))
 }
 
@@ -126,12 +128,15 @@ fn has_expired(
   now - issued_at >= settings.expiry_milliseconds
 }
 
-/// Issues a new key for `held` on behalf of `connection`, the peer address of
-/// the connection that asks, and drops the keys already expired.
+/// Issues a new key for `held` on behalf of `connection`, the connection that
+/// asks, and drops the keys already expired. The hand-off process makes the
+/// draw, naming that connection; a source that is not the strong one answers it
+/// by a call to its own process, which only the dev start and the tests give
+/// the server, and the release's strong source makes no call.
 pub fn issue(
   name name: Name(Message(held)),
   held held: held,
-  connection connection: Option(String),
+  connection connection: Option(Connection),
 ) -> BitArray {
   actor.call(process.named_subject(name), waiting: call_ms, sending: fn(reply) {
     Issue(held:, connection:, reply:)

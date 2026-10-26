@@ -17,6 +17,7 @@ import genesis_prime/connection/socket_owner.{
 import genesis_prime/login/account.{type Identity}
 import genesis_prime/login/auth_session
 import genesis_prime/login/handoff
+import genesis_prime/login/random_source.{type Connection as Origin}
 import genesis_prime/telemetry/log
 import gleam/erlang/process.{type Name}
 import gleam/int
@@ -29,9 +30,9 @@ pub type Services {
   Services(
     /// Redeems a game token of 16 bytes, once.
     redeem_game_token: fn(BitArray) -> Result(Identity, Nil),
-    /// A new session key for an identity, asked for by the connection of the
-    /// given peer address: 16 bytes.
-    issue_session_key: fn(Identity, Option(String)) -> BitArray,
+    /// A new session key for an identity, asked for by the given connection:
+    /// 16 bytes.
+    issue_session_key: fn(Identity, Option(Origin)) -> BitArray,
   )
 }
 
@@ -45,8 +46,8 @@ pub fn services(
     redeem_game_token: fn(key) {
       handoff.redeem(game_tokens, key) |> result.replace_error(Nil)
     },
-    issue_session_key: fn(identity, peer) {
-      handoff.issue(session_keys, identity, peer)
+    issue_session_key: fn(identity, origin) {
+      handoff.issue(session_keys, identity, origin)
     },
   )
 }
@@ -57,6 +58,7 @@ pub opaque type Connection {
     services: Services,
     session: auth_session.Session,
     peer: Option(String),
+    origin: Option(Origin),
     account: Option(Int),
   )
 }
@@ -77,7 +79,13 @@ pub fn new(
 ) -> Output {
   let #(session, effects) = auth_session.start(settings)
   run(
-    connection: Connection(services:, session:, peer:, account: None),
+    connection: Connection(
+      services:,
+      session:,
+      peer:,
+      origin: None,
+      account: None,
+    ),
     effects:,
     sent: [],
   )
@@ -115,7 +123,7 @@ fn run(
         }
         auth_session.IssueSessionKey(identity) -> {
           let key =
-            connection.services.issue_session_key(identity, connection.peer)
+            connection.services.issue_session_key(identity, connection.origin)
           let #(session, more) =
             auth_session.session_key_issued(connection.session, key)
           log.info(

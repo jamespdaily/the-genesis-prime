@@ -11,9 +11,10 @@
 //// waits in the operating system's buffers. A chunk is what one receive of the
 //// socket returns, and its time is read when the pipe handles it.
 ////
-//// Beside the recording it writes the address it connected to the server from
-//// (`session.write_connection`), which is the peer address the server sees for
-//// this connection, so a replay can find the draws the connection made.
+//// Beside the recording it writes the key of the connection (`session.write_connection`):
+//// its role, the address it connected to the server from, which is the peer
+//// address the server sees for this connection, and its incarnation, so a replay
+//// can find the draws the connection made.
 ////
 //// A failure the operator can act on, such as a server that is not there, is
 //// printed with the file's name and ends the connection. A file that cannot
@@ -130,7 +131,8 @@ fn begin(connection: Connection) -> actor.Next(State, Message) {
       let assert Ok(Nil) =
         session.write_connection(
           recording_path: connection.path,
-          connection: address,
+          role: connection.header.role,
+          peer: address,
         )
         as "the connection's address was not written beside the recording"
       io.println("recording " <> connection.path)

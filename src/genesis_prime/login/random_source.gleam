@@ -5,22 +5,38 @@
 //// which connection makes it, so a recording can keep a connection's draws
 //// apart from every other connection's, and a replay can give the replayed
 //// connection those draws again. The code rules refuse building `Supplied`
-//// anywhere in `src/` but here, so the server that is released has only
-//// `Strong`.
+//// anywhere in `src/`, this module included, so the server that is released has
+//// only `Strong`.
 
 import genesis_prime/login/account.{type Account}
 import gleam/crypto
 import gleam/option.{type Option}
 
+/// The listener a connection reached, which names the login's two services.
+pub type Role {
+  Sts
+  Auth
+}
+
+/// One connection of a login listener, told apart from every other connection
+/// the server has had. A peer address alone does not do it: the same client
+/// address and port can reach both listeners at once, and a port is used again
+/// after its connection closed. So a connection is named by the listener it
+/// reached, its peer address as text, and `started`, a reading of the runtime's
+/// strictly increasing counter when the connection began, which orders the
+/// connections of one listener and peer.
+pub type Connection {
+  Connection(role: Role, peer: String, started: Int)
+}
+
 /// One draw: how many bytes are wanted, the connection that wants them, and
 /// the account the draw is for, when it is for the login of one.
 ///
-/// `connection` is the connection's peer address as text, which no other open
-/// connection of the server has at the same time, and none when the socket has
-/// no peer. `account` is the row the login found, so a record of the draws
-/// holds the salt and verifier its login read.
+/// `connection` is none when the socket has no peer. `account` is the row the
+/// login found, so a record of the draws holds the salt and verifier its login
+/// read.
 pub type Draw {
-  Draw(count: Int, connection: Option(String), account: Option(Account))
+  Draw(count: Int, connection: Option(Connection), account: Option(Account))
 }
 
 /// Where a draw of random bytes comes from.
