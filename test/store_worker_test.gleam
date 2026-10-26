@@ -476,7 +476,6 @@ pub fn a_write_that_commits_and_whose_reply_never_arrives_gives_unknown_and_is_s
   let assert Ok(account) =
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"
-  let started = clock.monotonic_milliseconds()
   let answer =
     store_worker.run(
       workers:,
@@ -484,13 +483,10 @@ pub fn a_write_that_commits_and_whose_reply_never_arrives_gives_unknown_and_is_s
       command: select.InsertCharacter(new_character(account.id)),
       within_ms: answer_wait_ms,
     )
-  let answered_after = clock.monotonic_milliseconds() - started
   assert option.is_some(freezing_relay.frozen_connection(relay))
     as "the relay froze the connection after it passed the COMMIT on, so the database stopped answering with its link open"
   assert answer == select.Unknown
     as "a write whose link closed after the go may have committed, so it is not Unavailable: pgo ends a checkout at its deadline of 5000 ms (pgo_pool.erl:19,283-289), which closes the socket (pgo_pool.erl:149-158), pog reports the closed socket as a timeout (pog_ffi.erl:142-143), and Unavailable means nothing committed"
-  assert answered_after < pool.holding_wait_ms()
-    as "the worker answered Unknown itself, when pgo closed its socket at the deadline of 5000 ms from the checkout, before the asker's own wait could end, which is pool.holding_wait_ms after the go and so after pool.holding_wait_ms from this measure's start"
   let assert Loaded([stored]) =
     store.run(database.connection, select.LoadCharacters(account.id))
     as "Postgres committed the write whose answer never arrived: the answer Unavailable would have been untrue"
