@@ -31,6 +31,15 @@ pub fn modules(
   })
 }
 
+/// The `module` and `reason` of each `{ module, reason }` table in one list
+/// under `[tools.code_rules]`. A list that is absent is empty.
+pub fn listings(
+  project_file project_file: String,
+  key key: String,
+) -> List(#(String, String)) {
+  todo as "read each module and its reason"
+}
+
 fn entries(project_file: String, key: String) -> List(tom.Toml) {
   let assert Ok(parsed) = tom.parse(project_file)
     as "the project file does not parse"

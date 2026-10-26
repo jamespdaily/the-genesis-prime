@@ -42,6 +42,21 @@ effectful_modules = [
   { module = "genesis_prime", reason = "starts the supervision tree and keeps the node alive" },
   { module = "genesis_prime/server", reason = "the top supervisor" },
 ]
+# The game domains: each top-level folder or module under src/genesis_prime/.
+domains = [
+  { module = "genesis_prime/server", reason = "the top supervisor that starts and restarts every other process" },
+  { module = "genesis_prime/client_archive", reason = "reads the client's archive files, the only source of game data" },
+  { module = "genesis_prime/connection", reason = "owns a player's socket, with framing and the cipher" },
+  { module = "genesis_prime/message", reason = "the generated codec for every packet layout" },
+  { module = "genesis_prime/login", reason = "the auth server on port 23115" },
+  { module = "genesis_prime/character", reason = "character select on the game connection" },
+  { module = "genesis_prime/map", reason = "the map process that owns a map's state" },
+  { module = "genesis_prime/table", reason = "the client's game tables, loaded once at start" },
+  { module = "genesis_prime/database", reason = "the connection pool to Postgres" },
+  { module = "genesis_prime/telemetry", reason = "metrics and logs of the running server" },
+  { module = "genesis_prime/game_master", reason = "game master commands, each checked against the account's permission and logged" },
+  { module = "genesis_prime/coverage", reason = "the coverage measure of what the client's tables require against what the server handles" },
+]
 # Erlang functions a rule module's externals may call.
 pure_erlang = []
 # Modules that may make an atom from a string or read a term from bytes.
