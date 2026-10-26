@@ -26,14 +26,18 @@ pub fn breaches(file: SourceFile) -> List(Breach) {
   |> list.filter_map(fn(positioned) {
     let #(found, position) = positioned
     let text = token.to_source(found)
-    case string.starts_with(text, "//"), reason(text) {
-      True, Ok(reason) ->
-        Ok(Breach(
-          path: file.path,
-          line: syntax.line_of(file.text, position.byte_offset),
-          rule: "a comment that " <> reason,
-        ))
-      True, Error(Nil) | False, _ -> Error(Nil)
+    case string.starts_with(text, "//") {
+      True ->
+        case reason(text) {
+          Ok(reason) ->
+            Ok(Breach(
+              path: file.path,
+              line: syntax.line_of(file.text, position.byte_offset),
+              rule: "a comment that " <> reason,
+            ))
+          Error(Nil) -> Error(Nil)
+        }
+      False -> Error(Nil)
     }
   })
 }
