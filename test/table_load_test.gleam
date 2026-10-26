@@ -126,11 +126,11 @@ pub fn a_table_file_that_is_missing_fails_the_load_naming_the_file_test() -> Nil
     as "LocalizedText.tbl is not in the folder, so reading it fails with enoent"
 }
 
-fn localized_text_file(rows: List(List(planted_table.Cell))) -> BitArray {
+pub fn localized_text_file(rows: List(List(planted_table.Cell))) -> BitArray {
   planted_table.bytes(planted_table.table(localized_text.schema, rows))
 }
 
-fn localized_text_row(id: Int, version: Int) -> List(planted_table.Cell) {
+pub fn localized_text_row(id: Int, version: Int) -> List(planted_table.Cell) {
   planted_table.row(localized_text.schema, [
     #("ID", Integer(id)),
     #("version", Integer(version)),
@@ -190,7 +190,7 @@ pub fn a_failed_load_leaves_no_persistent_term_behind_test() -> Nil {
     as "the load erased LocalizedText's term, written before Creature2 failed"
 }
 
-fn creature2_file(
+pub fn creature2_file(
   localized_text_id_name: Int,
   more: List(#(String, planted_table.Cell)),
 ) -> BitArray {
@@ -207,7 +207,7 @@ fn creature2_file(
 
 /// The rule that Creature2's `localizedTextIdName` names a LocalizedText row,
 /// as a requirement written with the generated modules.
-fn creature2_names_a_localized_text() -> store.Requirement {
+pub fn creature2_names_a_localized_text() -> store.Requirement {
   store.Requirement(
     from_table: "Creature2",
     column: "localizedTextIdName",

@@ -5,6 +5,8 @@
 //// planted by giving the lookup or a string offset directly.
 
 import envoy
+import genesis_prime/table
+import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file.{type Column, type Schema}
 import gleam/bit_array
 import gleam/bool
@@ -293,3 +295,20 @@ fn with_folder(base: String, body: fn(String) -> a) -> a
 /// How many persistent terms are stored under a load's key.
 @external(erlang, "planted_table_ffi", "persistent_terms_under")
 pub fn persistent_terms_under(key: Reference) -> Int
+
+/// A folder with a file of no rows for every table of the client, each laid out
+/// by the table's own schema, so the server's whole load reads it: a start of
+/// the server that must load the tables needs no client files. The folder is
+/// removed afterwards.
+pub fn in_empty_tables_folder(body: fn(String) -> a) -> a {
+  in_folder(
+    list.map(table.entries(), fn(entry) {
+      #(store.file(entry), bytes(empty_table(entry)))
+    }),
+    body,
+  )
+}
+
+fn empty_table(entry: store.Entry) -> Planted {
+  table(schema: store.schema(entry), rows: [])
+}
