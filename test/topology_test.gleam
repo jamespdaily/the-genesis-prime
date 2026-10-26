@@ -1,6 +1,7 @@
-//// Both process-topology prototypes must be right before they are measured.
+//// Every process-topology prototype must be right before it is measured.
 //// Each check runs against prototype A (one process per unit,
-//// `per_unit.start`) and prototype B (one map process, `map_process.start`).
+//// `per_unit.start`), prototype B (one map process that sends its own
+//// updates) and prototype C (one map process with a pool of senders).
 ////
 //// No expected value here is a client fact. Each is a game rule the
 //// prototypes share, fixed by the plan and shape comments on the topology
@@ -117,6 +118,28 @@ pub fn a_move_reaches_every_player_in_range_and_none_outside_in_prototype_b_test
   assert_moves_reach_exactly_the_players_in_range(start_prototype_b)
 }
 
+pub fn a_creature_hit_by_100_players_at_once_in_prototype_c_loses_the_sum_of_the_hits_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert_hits_sum_below_health(start_prototype_c)
+}
+
+pub fn a_creature_hit_by_more_than_its_health_at_once_in_prototype_c_dies_exactly_once_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert_hits_sum_above_health(start_prototype_c)
+}
+
+pub fn a_move_reaches_every_player_in_range_and_none_outside_in_prototype_c_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert_moves_reach_exactly_the_players_in_range(start_prototype_c)
+}
+
+fn start_prototype_c(
+  workload: Workload,
+  key: Reference,
+) -> Result(actor.Started(Owner), actor.StartError) {
+  map_process.start(workload, key, map_process.SenderPool)
+}
+
 fn start_prototype_b(
   workload: Workload,
   key: Reference,
@@ -182,10 +205,10 @@ fn filter_map_landed(outcome: HitOutcome) -> Result(Int, Nil) {
 ///
 /// To be sure no second `Died` arrives late, one more attack is sent after
 /// the 100 replies, and the test waits for its reply. Everything about the
-/// creature, the `Died` updates and the replies, is sent by the one process
-/// that owns the creature (the map process in B, the creature's own process in
-/// A), and a process's messages to one receiver arrive in the order they were
-/// sent. The test process is the receiver of every connection, so the reply to
+/// creature, the `Died` updates and the replies, is sent by one process (the
+/// map process in B, the creature's own process in A, the sender chosen by the
+/// creature's id in C), and a process's messages to one receiver arrive in the
+/// order they were sent. The test process is the receiver of every connection, so the reply to
 /// the last attack arrives after every earlier update and reply, and none
 /// can arrive after it.
 fn hit_creature_together(
@@ -284,7 +307,8 @@ fn note_hits(hits: Hits, event: Event) -> Hits {
 /// To know nothing more is coming, a marker move of the mover onto player 2's
 /// spawn position follows, and the test waits for it on player 2's
 /// connection. All of the mover's updates are sent by one process (the map
-/// process in B, the mover's own process in A), and the test process is the
+/// process in B, the mover's own process in A, the sender chosen by the
+/// mover's id in C), and the test process is the
 /// receiver of every connection, so when the marker's update arrives every
 /// earlier update of the mover has arrived.
 fn assert_moves_reach_exactly_the_players_in_range(start: Starter) -> Nil {
