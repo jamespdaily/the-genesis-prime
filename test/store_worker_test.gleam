@@ -13,12 +13,15 @@ import genesis_prime/connection/clock
 import genesis_prime/database/pool
 import genesis_prime/login/account_store
 import genesis_prime/map/position.{Position}
+import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/otp/static_supervisor
+import map_support
 import owned_test
 import pog
+import supervisor_children
 import template_database
 
 const answer_wait_ms = 5000
@@ -331,11 +334,44 @@ pub fn a_write_the_database_ends_at_the_transactions_limit_gives_unavailable_and
     as "a write that was reported failed committed nothing"
 }
 
+/// Asks until Postgres runs an insert of a character in a session other than
+/// the one that asks: the write has been sent, so its worker holds a
+/// connection and was told to go. Gives up after `within_ms` milliseconds,
+/// which a timer announces.
+fn wait_for_the_insert_to_run(
+  connection connection: pog.Connection,
+  within_ms within_ms: Int,
+) -> Bool {
+  let expired = process.new_subject()
+  let _timer = process.send_after(expired, within_ms, Nil)
+  insert_runs_until(connection, expired)
+}
+
+fn insert_runs_until(
+  connection: pog.Connection,
+  expired: process.Subject(Nil),
+) -> Bool {
+  let assert Ok(pog.Returned(rows: [running], ..)) =
+    pog.query(
+      "select count(*) from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid() and state = 'active' and query ilike '%insert into character (%'",
+    )
+    |> pog.returning(decode.at([0], decode.int))
+    |> pog.execute(on: connection)
+    as "pg_stat_activity was read"
+  case running > 0, process.receive(expired, 0) {
+    True, _ -> True
+    False, Ok(Nil) -> False
+    False, Error(Nil) -> insert_runs_until(connection, expired)
+  }
+}
+
 pub fn a_write_that_has_no_answer_when_the_longest_wait_ends_is_unknown_and_not_unavailable_test() -> Nil {
   use <- owned_test.run(60_000)
   use database <- template_database.run
   let workers = start_workers()
-  // No limit of the database ends the write, so the asker's longest wait does.
+  // The statement is sent and runs, and its worker then stops, so nothing
+  // answers: neither the database's limits nor the worker's own timeout
+  // reports back, as when a stalled network holds up the answer.
   let one =
     start_slow_pool(
       database:,
@@ -346,15 +382,29 @@ pub fn a_write_that_has_no_answer_when_the_longest_wait_ends_is_unknown_and_not_
   let assert Ok(account) =
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"
-  let started = clock.monotonic_milliseconds()
-  let answer =
-    store_worker.run(
-      workers:,
-      db: one,
-      command: select.InsertCharacter(new_character(account.id)),
-      within_ms: 100,
-    )
-  let waited = clock.monotonic_milliseconds() - started
+  let answered = process.new_subject()
+  process.spawn(fn() {
+    let started = clock.monotonic_milliseconds()
+    let answer =
+      store_worker.run(
+        workers:,
+        db: one,
+        command: select.InsertCharacter(new_character(account.id)),
+        within_ms: 100,
+      )
+    process.send(answered, #(answer, clock.monotonic_milliseconds() - started))
+  })
+  assert wait_for_the_insert_to_run(database.connection, answer_wait_ms)
+    as "the write was sent to the database"
+  let assert Ok(factory) = process.named(workers.factory)
+    as "the workers' supervisor runs"
+  let assert [worker] = supervisor_children.in_start_order(factory)
+    as "one worker carries the write out"
+  map_support.suspend(worker)
+  let assert Ok(#(answer, waited)) =
+    process.receive(answered, pool.holding_wait_ms() + answer_wait_ms)
+    as "the asker gave an answer"
+  process.kill(worker)
   assert answer == select.Unknown
     as "a write that was sent and has no answer may have committed, so it is not reported failed: the connection ends and the client lists again"
   assert waited >= pool.holding_wait_ms()
