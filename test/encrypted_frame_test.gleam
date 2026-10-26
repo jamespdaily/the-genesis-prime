@@ -9,7 +9,8 @@
 import connection_vectors as vectors
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{
-  AuthWrapper, BadFrame, ClientWrapper, GameWrapper, NotAWrapper,
+  AuthWrapper, BadFrame, ClientWrapper, CreateCharacterWrapper, GameWrapper,
+  NotAWrapper,
 }
 import genesis_prime/connection/frame.{Frame}
 import gleam/bit_array
@@ -178,4 +179,26 @@ pub fn a_wrapper_around_an_inner_frame_too_big_for_its_outer_frame_is_not_writte
     )
     == Error(frame.LengthOverLimit(131_071))
     as "WriteMessageFrame 0x1403355e0 does not write a frame over the size limit 131070 (0x140335ec0), and the wrapper's frame is 6 bytes longer than its inner frame"
+}
+
+pub fn the_create_character_carrier_is_message_0x25c_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert encrypted_frame.message_id(CreateCharacterWrapper) == 0x025C
+    as "opcode.0x25c: registered at 0x14006d638 mov edx, 0x25c"
+}
+
+pub fn a_create_character_frame_is_ciphered_after_its_length_inside_0x25c_test() -> Nil {
+  use <- owned_test.run(5000)
+  let inner = inner_of_counting_bytes(17)
+  let expected = <<
+    0x1B, 0, 0, 0, 0x5C, 0x02, 0x15, 0, 0, 0, 0xD2, 0x9A, 0x50, 0xDF, 0x3E, 0x48,
+    0xE8, 0x69, 0xE3, 0xE0, 0xA6, 0x67, 0xF8, 0xA7, 0xC3, 0x0E, 0xEC,
+  >>
+  assert encrypted_frame.wrap(CreateCharacterWrapper, inner, session_cipher())
+    == Ok(expected)
+    as "opcode.0x25c: the frame inside is written as inside 0x244, its length 21 in the clear, then the n = 17 session-key vector d29a50df3e48e869e3e0a667f8a7c30eec"
+  let assert Ok(#([outer], <<>>)) = frame.decode(expected)
+    as "the bytes are one frame"
+  assert encrypted_frame.unwrap(outer, session_cipher()) == Ok(inner)
+    as "DecryptMessageBody 0x1400c2de0 undoes the cipher over the frame after its length"
 }

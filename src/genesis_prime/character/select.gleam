@@ -62,11 +62,9 @@ pub type Status {
   Renaming(character_id: Int)
   /// The server waits for the store to delete a character.
   Deleting(character_id: Int)
-  /// The player chose a character and the server waits for it to enter the
-  /// world.
+  /// The player chose a character: the client leaves character select for the
+  /// world, so no request is taken until the entry is refused.
   Entering
-  /// The player is in the world; character select takes no more messages.
-  Entered
 }
 
 /// An account's character select.

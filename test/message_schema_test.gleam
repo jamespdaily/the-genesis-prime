@@ -1,0 +1,95 @@
+//// The schema reader and the generator on the field kinds the messages of
+//// character select need: arrays of unsigned values and floats, a list counted
+//// by an earlier list, and a value the schema fixes. Each case is a planted
+//// schema; the real schema's own check is `message_codec_test` and the full
+//// check's generator comparison.
+
+import genesis_prime/message_generator
+import genesis_prime/message_schema.{
+  ArrayOfFloat32, ArrayOfUnsigned, Constant, UnknownCountField,
+  UnsignedArrayCountedBy, WrongTypeOfKey,
+}
+import gleam/list
+import gleam/string
+import owned_test
+
+fn schema_with(fields: String) -> String {
+  "[[message]]\nid = 0x0001\nname = \"planted\"\ndirection = \"client_to_server\"\nevidence = \"opcode.0x1\"\nsummary = \"a planted message\"\nfields = [\n"
+  <> fields
+  <> "\n]\n\n[[record]]\nname = \"planted_record\"\nevidence = \"x\"\nsummary = \"a planted record\"\nfields = [\n  { name = \"id\", kind = \"unsigned\", bits = 8, evidence = \"x\" },\n]\n"
+}
+
+fn field_kinds(text: String) -> List(message_schema.Kind) {
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the planted schema parses"
+  let assert [message] = schema.messages
+    as "the planted schema holds one message"
+  list.map(message.fields, fn(field) { field.kind })
+}
+
+pub fn the_reader_knows_arrays_of_values_floats_and_fixed_values_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert field_kinds(schema_with(
+      "  { name = \"labels\", kind = \"array\", count_bits = 4, element = \"unsigned\", element_bits = 32, evidence = \"x\" },
+  { name = \"values\", kind = \"array\", counted_by = \"labels\", element = \"unsigned\", element_bits = 16, evidence = \"x\" },
+  { name = \"bones\", kind = \"array\", count_bits = 32, element = \"float32\", evidence = \"x\" },
+  { name = \"tag\", kind = \"constant\", bits = 6, value = 20, evidence = \"x\" },",
+    ))
+    == [
+      ArrayOfUnsigned(count_bits: 4, bits: 32),
+      UnsignedArrayCountedBy(counted_by: "labels", bits: 16),
+      ArrayOfFloat32(count_bits: 32),
+      Constant(bits: 6, value: 20),
+    ]
+}
+
+pub fn a_list_counted_by_a_field_that_is_not_an_earlier_array_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(schema_with(
+      "  { name = \"values\", kind = \"array\", counted_by = \"labels\", element = \"unsigned\", element_bits = 32, evidence = \"x\" },
+  { name = \"labels\", kind = \"array\", count_bits = 4, element = \"unsigned\", element_bits = 32, evidence = \"x\" },",
+    ))
+    == Error(UnknownCountField(field: "values", counted_by: "labels"))
+    as "a decoder reads the fields in order, so the count must be read before the list it counts"
+  assert message_schema.parse(schema_with(
+      "  { name = \"labels\", kind = \"unsigned\", bits = 4, evidence = \"x\" },
+  { name = \"values\", kind = \"array\", counted_by = \"labels\", element = \"unsigned\", element_bits = 32, evidence = \"x\" },",
+    ))
+    == Error(UnknownCountField(field: "values", counted_by: "labels"))
+    as "a plain value is a count, not a list the length of which another list may take"
+}
+
+pub fn a_fixed_value_that_does_not_fit_its_bits_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(schema_with(
+      "  { name = \"tag\", kind = \"constant\", bits = 2, value = 4, evidence = \"x\" },",
+    ))
+    == Error(WrongTypeOfKey("tag", "value"))
+    as "a 2-bit value holds 0 to 3"
+}
+
+pub fn a_fixed_value_is_written_by_the_encoder_and_is_no_field_of_the_type_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(schema) =
+    message_schema.parse(schema_with(
+      "  { name = \"kind\", kind = \"constant\", bits = 6, value = 20, evidence = \"x\" },
+  { name = \"id\", kind = \"unsigned\", bits = 32, evidence = \"x\" },",
+    ))
+    as "the planted schema parses"
+  let assert [file, _record] = message_generator.generate(schema)
+    as "one message and one record are two modules"
+  assert string.contains(
+    file.text,
+    "bit_stream.write_constant(\"kind\", 20, 6)",
+  )
+    as "the encoder writes the fixed value"
+  assert string.contains(
+    file.text,
+    "use reader <- result.try(bit_stream.read_constant(reader, \"kind\", 6, 20))",
+  )
+    as "the decoder refuses any other"
+  assert !string.contains(file.text, "kind: Int")
+    as "the type holds no field for it"
+  assert string.contains(file.text, "Planted(id: Int)")
+    as "the type holds the field that is not fixed"
+}
