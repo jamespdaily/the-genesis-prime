@@ -6,6 +6,7 @@
 //// refused (`game_master/store`).
 
 import genesis_prime/game_master/permission.{type Permission}
+import gleam/bool
 import gleam/option.{type Option}
 import gleam/set.{type Set}
 
@@ -50,5 +51,6 @@ pub fn require(
   permissions permissions: Set(Permission),
   required required: Permission,
 ) -> Result(Nil, Refusal) {
-  todo as "Ok when the set holds the permission, MissingPermission otherwise"
+  use <- bool.guard(when: set.contains(permissions, required), return: Ok(Nil))
+  Error(MissingPermission(required:))
 }

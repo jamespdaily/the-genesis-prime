@@ -19,8 +19,8 @@ pub type GiveFirstPermissionRow {
 }
 
 /// Gives an account a permission only while no account holds it, and returns
-/// the account id when it did. The advisory lock on the permission's name
-/// makes two first grants of it wait for one another, so both cannot find it
+/// the account id when it did. It runs after `lock_first_grant` in the same
+/// transaction, so two first grants of one permission cannot both find it
 /// unheld.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
@@ -37,15 +37,11 @@ pub fn give_first_permission(
   }
 
   "-- Gives an account a permission only while no account holds it, and returns
--- the account id when it did. The advisory lock on the permission's name
--- makes two first grants of it wait for one another, so both cannot find it
+-- the account id when it did. It runs after `lock_first_grant` in the same
+-- transaction, so two first grants of one permission cannot both find it
 -- unheld.
-with locked as (
-  select pg_advisory_xact_lock(hashtext($2::text))
-)
 insert into permission (account_id, name)
 select $1::bigint, $2::text
-from locked
 where not exists (select 1 from permission where name = $2::text)
 returning account_id as \"account_id!\";
 "
@@ -78,6 +74,46 @@ on conflict do nothing;
   |> pog.query
   |> pog.parameter(pog.int(arg_1))
   |> pog.parameter(pog.text(arg_2))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `lock_first_grant` query
+/// defined in `./src/genesis_prime/game_master/sql/lock_first_grant.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type LockFirstGrantRow {
+  LockFirstGrantRow(locked: Int)
+}
+
+/// Takes, until the transaction ends, the lock that makes first grants of one
+/// permission wait for one another. It is its own statement, run before
+/// `give_first_permission`, so the next statement sees what a first grant that
+/// held the lock has committed.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn lock_first_grant(
+  db: pog.Connection,
+  arg_1: String,
+) -> Result(pog.Returned(LockFirstGrantRow), pog.QueryError) {
+  let decoder = {
+    use locked <- decode.field(0, decode.int)
+    decode.success(LockFirstGrantRow(locked:))
+  }
+
+  "-- Takes, until the transaction ends, the lock that makes first grants of one
+-- permission wait for one another. It is its own statement, run before
+-- `give_first_permission`, so the next statement sees what a first grant that
+-- held the lock has committed.
+select 1 as \"locked!\"
+from (select pg_advisory_xact_lock(hashtext($1::text))) as lock;
+"
+  |> pog.query
+  |> pog.parameter(pog.text(arg_1))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

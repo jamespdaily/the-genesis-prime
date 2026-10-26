@@ -13,11 +13,17 @@ pub type Permission {
 
 /// The name a permission is saved under and typed as.
 pub fn to_name(permission permission: Permission) -> String {
-  todo as "the name of each permission"
+  case permission {
+    Grant -> "grant"
+    Other(name:) -> name
+  }
 }
 
 /// The permission of a saved or typed name, `Other` when the code has none by
 /// that name.
 pub fn from_name(name name: String) -> Permission {
-  todo as "Grant for its name, Other for any other"
+  case name {
+    "grant" -> Grant
+    _ -> Other(name:)
+  }
 }
