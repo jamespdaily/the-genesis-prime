@@ -32,8 +32,8 @@ pub fn supervisor_with_pool(pool_settings: pool.Settings) -> Builder {
 /// snapshot process, which writes the runtime's numbers to the log, is given
 /// by `snapshot_settings` and starts after the pool.
 pub fn start(
-  pool_settings: pool.Settings,
-  snapshot_settings: snapshot.Settings,
+  pool_settings pool_settings: pool.Settings,
+  snapshot_settings snapshot_settings: snapshot.Settings,
 ) -> Result(actor.Started(Supervisor), actor.StartError) {
   supervisor_with_pool(pool_settings)
   |> static_supervisor.add(snapshot.supervised(snapshot_settings))

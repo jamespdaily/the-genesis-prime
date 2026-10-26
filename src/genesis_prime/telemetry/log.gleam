@@ -73,24 +73,24 @@ type Level {
 }
 
 /// Writes a line at error level: a bug, always looked into.
-pub fn error(who: Who, text: String) -> Nil {
+pub fn error(who who: Who, text text: String) -> Nil {
   emit(ErrorLevel, who, text, dict.new())
 }
 
 /// Writes a line at warning level: an outside failure the server recovered
 /// from.
-pub fn warning(who: Who, text: String) -> Nil {
+pub fn warning(who who: Who, text text: String) -> Nil {
   emit(WarningLevel, who, text, dict.new())
 }
 
 /// Writes a line at info level: start, stop, login or logout.
-pub fn info(who: Who, text: String) -> Nil {
+pub fn info(who who: Who, text text: String) -> Nil {
   emit(InfoLevel, who, text, dict.new())
 }
 
 /// Writes a line at debug level: per-message detail. Nothing is written
 /// unless `configure` turned debug on.
-pub fn debug(who: Who, text: String) -> Nil {
+pub fn debug(who who: Who, text text: String) -> Nil {
   emit(DebugLevel, who, text, dict.new())
 }
 
@@ -98,9 +98,9 @@ pub fn debug(who: Who, text: String) -> Nil {
 /// the metadata key `numbers`, each under its name. A number's name is the
 /// writer's own text, never client input.
 pub fn info_with_numbers(
-  who: Who,
-  text: String,
-  numbers: Dict(String, Number),
+  who who: Who,
+  text text: String,
+  numbers numbers: Dict(String, Number),
 ) -> Nil {
   emit(InfoLevel, who, text, numbers)
 }

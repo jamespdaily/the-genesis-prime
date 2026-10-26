@@ -53,13 +53,13 @@ pub fn stop(capture: Capture) -> Nil {
 /// milliseconds for it, in the order it wrote them. A line another process
 /// wrote is skipped.
 pub fn next_from(
-  capture: Capture,
+  capture capture: Capture,
   from from: Pid,
   within within: Int,
 ) -> Result(Event, Nil) {
   case process.receive(capture.events, within) {
     Ok(event) if event.from == from -> Ok(event)
-    Ok(_) -> next_from(capture, from:, within:)
+    Ok(_) -> next_from(capture:, from:, within:)
     Error(Nil) -> Error(Nil)
   }
 }

@@ -47,7 +47,7 @@ fn skip_text(
 }
 
 /// Whether the code holds the name as a whole name, not inside a longer one.
-pub fn names(code: String, name: String) -> Bool {
+pub fn names(code code: String, name name: String) -> Bool {
   case string.split(code, name) {
     [] | [_] -> False
     [first, ..rest] -> whole_name_follows(name:, before: first, after: rest)
@@ -97,7 +97,7 @@ fn is_name_character(grapheme: String) -> Bool {
 /// Whether the code holds the prefix, such as `logger:`, anywhere a name
 /// could start: not after a character of a longer name or a colon, so
 /// `my_logger:info` and `a:logger:info` do not hold `logger:`.
-pub fn starts_name(code: String, prefix: String) -> Bool {
+pub fn starts_name(code code: String, prefix prefix: String) -> Bool {
   case string.split(code, prefix) {
     [] | [_] -> False
     [first, ..rest] -> name_starts_after(prefix:, before: first, after: rest)

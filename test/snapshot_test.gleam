@@ -61,9 +61,9 @@ pub fn a_snapshot_is_written_at_each_interval_with_every_number_test() -> Nil {
     )
   let assert Ok(started) = snapshot.start(settings)
     as "the snapshot process did not start"
-  let assert Ok(first) = next_snapshot(capture, started.pid)
+  let assert Ok(first) = next_snapshot(capture:, pid: started.pid)
     as "the first snapshot was not written"
-  let assert Ok(second) = next_snapshot(capture, started.pid)
+  let assert Ok(second) = next_snapshot(capture:, pid: started.pid)
     as "the second snapshot was not written"
   list.each([first, second], fn(snapshot) {
     assert snapshot.level == "info"
@@ -101,7 +101,7 @@ pub fn a_registered_kind_reports_its_largest_mailbox_and_heap_in_the_next_snapsh
     as "the snapshot process did not start"
 
   // Before the kind is registered, no snapshot reports it.
-  let assert Ok(before) = next_snapshot(capture, started.pid)
+  let assert Ok(before) = next_snapshot(capture:, pid: started.pid)
     as "the snapshot before the registration was not written"
   assert dict.keys(numbers_of(before))
     |> list.all(fn(key) { !is_about_kind(key, "busy") })
@@ -115,7 +115,8 @@ pub fn a_registered_kind_reports_its_largest_mailbox_and_heap_in_the_next_snapsh
     snapshot: settings.name,
     kind: snapshot.Kind(name: "busy", processes: fn() { [small, large] }),
   )
-  let assert Ok(after) = next_snapshot_with(capture, started.pid, "busy")
+  let assert Ok(after) =
+    next_snapshot_with(capture:, pid: started.pid, kind: "busy")
     as "no snapshot after the registration reported the kind"
   let numbers = numbers_of(after)
   assert dict.get(numbers, "busy_largest_queue") == Ok(Whole(7))
@@ -133,22 +134,25 @@ fn numbers_of(snapshot: Event) -> Dict(String, Field) {
 }
 
 /// The next line the snapshot process wrote.
-fn next_snapshot(capture: log_capture.Capture, pid: Pid) -> Result(Event, Nil) {
+fn next_snapshot(
+  capture capture: log_capture.Capture,
+  pid pid: Pid,
+) -> Result(Event, Nil) {
   log_capture.next_from(capture, from: pid, within: line_wait_ms)
 }
 
 /// The next line the snapshot process wrote that reports the kind, skipping
 /// the lines written before the kind was registered.
 fn next_snapshot_with(
-  capture: log_capture.Capture,
-  pid: Pid,
-  kind: String,
+  capture capture: log_capture.Capture,
+  pid pid: Pid,
+  kind kind: String,
 ) -> Result(Event, Nil) {
-  case next_snapshot(capture, pid) {
+  case next_snapshot(capture:, pid:) {
     Ok(snapshot) ->
       case list.any(dict.keys(numbers_of(snapshot)), is_about_kind(_, kind)) {
         True -> Ok(snapshot)
-        False -> next_snapshot_with(capture, pid, kind)
+        False -> next_snapshot_with(capture:, pid:, kind:)
       }
     Error(Nil) -> Error(Nil)
   }

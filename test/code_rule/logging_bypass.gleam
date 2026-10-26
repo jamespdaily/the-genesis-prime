@@ -91,26 +91,30 @@ pub fn secret_fields(file: SourceFile) -> List(Breach) {
   |> list.filter(fn(definition) {
     list.contains(logging_types, definition.definition.name)
   })
-  |> list.flat_map(fn(definition) {
-    list.flat_map(definition.definition.variants, fn(variant) {
-      list.filter_map(variant.fields, fn(field) {
-        case field {
-          glance.LabelledVariantField(item:, label:) ->
-            case names_a_secret(label) {
-              True ->
-                Ok(Breach(
-                  path: file.path,
-                  line: syntax.line_of(file.text, type_start(item)),
-                  rule: "a logging type with a field for a secret: " <> label,
-                ))
-              False -> Error(Nil)
-            }
-          glance.UnlabelledVariantField(..) -> Error(Nil)
-        }
-      })
-    })
-  })
+  |> list.flat_map(fn(definition) { definition.definition.variants })
+  |> list.flat_map(fn(variant) { variant.fields })
+  |> list.filter_map(secret_field(file, _))
   |> list.sort(fn(first, second) { int.compare(first.line, second.line) })
+}
+
+/// The breach a field is, when its label names a secret.
+fn secret_field(
+  file: SourceFile,
+  field: glance.VariantField,
+) -> Result(Breach, Nil) {
+  case field {
+    glance.LabelledVariantField(item:, label:) ->
+      case names_a_secret(label) {
+        True ->
+          Ok(Breach(
+            path: file.path,
+            line: syntax.line_of(file.text, type_start(item)),
+            rule: "a logging type with a field for a secret: " <> label,
+          ))
+        False -> Error(Nil)
+      }
+    glance.UnlabelledVariantField(..) -> Error(Nil)
+  }
 }
 
 fn names_a_secret(label: String) -> Bool {
