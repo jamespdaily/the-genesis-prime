@@ -324,3 +324,60 @@ pub fn the_database_holds_as_many_customisation_values_as_labels_test() -> Nil {
     as "opcode.0x25b: one value for each label; a row with other counts is no character the client's list could hold"
   Nil
 }
+
+pub fn a_name_that_differs_only_in_case_is_a_name_another_character_has_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  add_accounts(database.connection)
+  let first = saved(database.connection, "Ab Cd")
+  list.each(["ab cd", "AB CD", "aB cD"], fn(name) {
+    assert store.run(
+        database.connection,
+        select.InsertCharacter(
+          NewCharacter(
+            ..new_character(name),
+            account_id: character_support.account_id + 1,
+          ),
+        ),
+      )
+      == NameInUse
+      as "Jim's decision on the world issue: names are unique regardless of case"
+  })
+  assert listed(database.connection, character_support.account_id) == [first]
+    as "the name is shown as it was typed"
+  assert listed(database.connection, character_support.account_id + 1) == []
+    as "nothing was saved for the other account"
+}
+
+pub fn a_rename_to_a_name_that_differs_only_in_case_is_refused_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  add_accounts(database.connection)
+  let first = saved(database.connection, "Ab Cd")
+  let _second = saved(database.connection, "Ef Gh")
+  assert store.run(
+      database.connection,
+      select.RenameStored(character_support.account_id, first.id, "eF gH"),
+    )
+    == NameInUse
+    as "Jim's decision on the world issue: names are unique regardless of case"
+  assert list.map(
+      listed(database.connection, character_support.account_id),
+      fn(found) { found.name },
+    )
+    == ["Ab Cd", "Ef Gh"]
+    as "no name changed"
+}
+
+pub fn a_rename_that_changes_only_the_case_of_the_characters_own_name_is_allowed_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  add_accounts(database.connection)
+  let character = saved(database.connection, "Ab Cd")
+  assert store.run(
+      database.connection,
+      select.RenameStored(character_support.account_id, character.id, "ab cd"),
+    )
+    == Renamed(Character(..character, name: "ab cd"))
+    as "a character is not another character, so it may take its own name in another case, which is shown as typed"
+}

@@ -282,3 +282,82 @@ pub fn a_malformed_message_ends_the_connection_with_the_reason_logged_and_nothin
     as "the reason is logged, naming the message by its number"
   assert characters_of(database:, account:) == [] as "nothing was written"
 }
+
+/// A create request for the row the tests make characters from.
+fn create_request(
+  running running: game_server.Running,
+  name name: String,
+) -> BitArray {
+  let assert Ok(body) =
+    create_character.encode(
+      CreateCharacter(
+        creation_id: running.facts.creation.id,
+        name:,
+        path: 1,
+        customisation_labels: [1, 2],
+        customisation_values: [3, 4],
+        bone_values: [0x3F800000],
+      ),
+    )
+    as "0x25B encodes"
+  body
+}
+
+pub fn a_name_another_character_has_in_other_case_is_refused_on_create_and_rename_over_tcp_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
+  use database <- template_database.run
+  let running = game_server.start(database:, answer_deadline_ms: 5000)
+  let assert Ok(account) =
+    account_store.create(database.connection, "jim", "secret")
+    as "the account is created"
+  let game =
+    game_client.connect(
+      port: running.game_port,
+      session_key: issued_key(running:, account:),
+      account_name: "jim",
+    )
+  game_client.send(game:, message_id: 0x07E0, body: <<>>)
+  let assert [_listed] = game_client.read(game:, count: 1)
+    as "the character list"
+  game_client.send_create(
+    game:,
+    body: create_request(running:, name: "Zed Mara"),
+  )
+  let assert [first] = game_client.read(game:, count: 1) as "the create result"
+  let assert Ok(first_result) = create_character_result.decode(first.body)
+    as "0xDC decodes"
+  assert first_result.result == 3 as "opcode.0xdc: result 3 means created"
+  game_client.send_create(
+    game:,
+    body: create_request(running:, name: "zed mara"),
+  )
+  let assert [second] = game_client.read(game:, count: 1)
+    as "the second create result"
+  let assert Ok(second_result) = create_character_result.decode(second.body)
+    as "0xDC decodes"
+  assert second_result.result == 6
+    as "PreGameLib.CodeEnumCharacterModifyResults: 6 is CreateFailed_UniqueName; names are unique regardless of case (Jim's decision)"
+  game_client.send_create(game:, body: create_request(running:, name: "Ab Cd"))
+  let assert [third] = game_client.read(game:, count: 1)
+    as "the third create result"
+  let assert Ok(third_result) = create_character_result.decode(third.body)
+    as "0xDC decodes"
+  assert third_result.result == 3 as "a name no character has is created"
+  let assert Ok(rename) =
+    rename_character.encode(RenameCharacter(
+      character_id: third_result.character_id,
+      name: "ZED MARA",
+    ))
+    as "0x786 encodes"
+  game_client.send(game:, message_id: 0x0786, body: rename)
+  let assert [renamed] = game_client.read(game:, count: 1)
+    as "the rename result"
+  let assert Ok(renamed_message) = rename_character_result.decode(renamed.body)
+    as "0x14B decodes"
+  assert renamed_message.result == 16
+    as "PreGameLib.CodeEnumCharacterModifyResults: 16 is RenameFailed_UniqueName; names are unique regardless of case (Jim's decision)"
+  assert list.map(characters_of(database:, account:), fn(stored) { stored.name })
+    == ["Zed Mara", "Ab Cd"]
+    as "the names are shown as they were typed, and the refused ones changed nothing"
+}
