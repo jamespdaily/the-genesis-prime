@@ -75,6 +75,12 @@ pub opaque type Message {
   Unexpected(received: Dynamic)
 }
 
+/// A character that entered a map: its unit, and the map process that holds
+/// it, which the character's connection watches so it ends when the map does.
+pub type Entered {
+  Entered(unit: PlayerUnit, map: Pid)
+}
+
 /// Why a character did not enter a map.
 pub type EnterError {
   /// The map of the world could not be started.
@@ -145,18 +151,25 @@ fn start_registry(settings: Settings) -> actor.StartResult(Subject(Message)) {
 }
 
 /// Joins a character's unit to the map of the world, starting the map when the
-/// world has none, and waits up to `within_ms` milliseconds for the unit. The
-/// connection receives the map's deliveries on `connection`.
+/// world has none, and waits up to `within_ms` milliseconds for the unit and
+/// the map process that holds it. The connection receives the map's deliveries
+/// on `connection`.
 pub fn enter(
   registry registry: Name(Message),
   world_id world_id: Int,
   newcomer newcomer: Newcomer,
   connection connection: Subject(Delivery),
   within_ms within_ms: Int,
-) -> Result(PlayerUnit, EnterError) {
+) -> Result(Entered, EnterError) {
   use map <- result.try(find(registry:, world_id:, within_ms:))
-  world_map_process.join(map:, newcomer:, connection:, within_ms:)
-  |> result.map_error(MapRefused)
+  let assert Ok(name) = process.subject_name(map)
+    as "the registry hands out the maps by name"
+  let assert Ok(pid) = process.named(name) as "the map is registered"
+  use unit <- result.try(
+    world_map_process.join(map:, newcomer:, connection:, within_ms:)
+    |> result.map_error(MapRefused),
+  )
+  Ok(Entered(unit:, map: pid))
 }
 
 /// The map of a world, which the registry starts when the world has none.
@@ -237,6 +250,7 @@ fn start_map(
     world_map_process.Settings(
       world_id:,
       map: process.new_name("map"),
+      senders: world_map_process.new_sender_names(),
       snapshot: state.settings.snapshot,
       heap_limits: state.settings.heap_limits,
     )

@@ -85,6 +85,9 @@ pub type EndReason {
   WorldEntryBreach(world_entry.Breach)
   /// The database did not give the characters character select needed.
   StoreAway(select.Outage)
+  /// The map process that held the character's unit ended, and a map that
+  /// starts again is empty, so the unit is gone.
+  MapEnded
   /// The map did not answer, so the character may or may not be on it.
   MapAway
   /// A message of the answer could not be built.
@@ -567,6 +570,17 @@ pub fn map_answered(
   }
 }
 
+/// The effects of the end of the map process that holds the character's unit,
+/// which the connection watches from the moment the map joined the unit: the
+/// connection ends, because a map that starts again holds none of its players.
+pub fn map_ended(
+  session session: Session,
+  context context: Context,
+) -> #(Session, List(Effect)) {
+  let _ = context
+  #(session, [])
+}
+
 /// The effects of a delivery from the map: a unit in range appeared (0x262
 /// creates it) or went (0x355 removes it).
 pub fn delivered(
@@ -619,6 +633,8 @@ pub fn describe(reason reason: EndReason) -> String {
     CharacterSelectBreach(breach) -> select.describe_breach(breach)
     WorldEntryBreach(breach) -> world_entry.describe_breach(breach)
     StoreAway(outage) -> select.describe_outage(outage)
+    MapEnded ->
+      "the map that held the character's unit ended, and a map that starts again is empty, so the connection ends and the player enters again"
     MapAway ->
       "the map did not answer in time, so the connection ends and the map takes the unit off with it"
     AnswerNotBuilt -> "a message of the answer could not be built"
@@ -640,13 +656,15 @@ fn describe_decoding(error: bit_stream.DecodeError) -> String {
 }
 
 /// How serious the log line of an end is: a message the server could not
-/// build is a bug, and so is a map that did not answer, which is an outside
-/// failure the server cannot repair; every other end is a client's or a
-/// player's doing.
+/// build is a bug; a map that did not answer and a database that gave no list
+/// are outside failures the server cannot repair, logged as errors; a map that
+/// ended is an outside failure the server recovered from, a warning, as is
+/// every end that is a client's or a player's doing.
 pub fn level_of(reason reason: EndReason) -> Level {
   case reason {
     AnswerNotBuilt | MapAway | StoreAway(_) -> ErrorLevel
-    BadWrapper
+    MapEnded
+    | BadWrapper
     | UnexpectedMessage(_)
     | MalformedMessage(..)
     | SessionKeyRefused

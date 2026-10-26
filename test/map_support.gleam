@@ -34,6 +34,7 @@ pub fn settings(
   world_map_process.Settings(
     world_id:,
     map: process.new_name("map"),
+    senders: world_map_process.new_sender_names(),
     snapshot:,
     heap_limits: limits,
   )

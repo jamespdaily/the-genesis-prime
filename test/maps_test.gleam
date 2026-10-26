@@ -13,6 +13,7 @@ import genesis_prime/telemetry/snapshot
 import gleam/dict
 import gleam/erlang/process.{type Pid}
 import gleam/otp/static_supervisor
+import gleam/result
 import log_capture.{Fields}
 import map_support
 import owned_test
@@ -40,11 +41,11 @@ fn start_maps() -> #(maps.Settings, Pid) {
   #(settings, subtree)
 }
 
-fn enter(
+fn entered(
   settings settings: maps.Settings,
   world_id world_id: Int,
   character_id character_id: Int,
-) -> Result(PlayerUnit, maps.EnterError) {
+) -> Result(maps.Entered, maps.EnterError) {
   maps.enter(
     registry: settings.registry,
     world_id:,
@@ -52,6 +53,15 @@ fn enter(
     connection: process.new_subject(),
     within_ms: event_wait_ms,
   )
+}
+
+fn enter(
+  settings settings: maps.Settings,
+  world_id world_id: Int,
+  character_id character_id: Int,
+) -> Result(PlayerUnit, maps.EnterError) {
+  entered(settings:, world_id:, character_id:)
+  |> result.map(fn(entered) { entered.unit })
 }
 
 pub fn a_character_entering_a_world_with_no_map_starts_the_map_test() -> Nil {

@@ -27,7 +27,7 @@ import genesis_prime/login/account.{type Identity}
 import genesis_prime/login/handoff
 import genesis_prime/map/delivery.{type Delivery}
 import genesis_prime/map/maps
-import genesis_prime/map/unit.{type Newcomer, type PlayerUnit}
+import genesis_prime/map/unit.{type Newcomer}
 import genesis_prime/map/world_map_process
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/loader/store.{type Tables}
@@ -49,7 +49,7 @@ pub type Services {
     /// Joins a character's unit to the map of its world, with the subject its
     /// connection receives the map's deliveries on.
     enter_map: fn(Int, Newcomer, Subject(Delivery)) ->
-      Result(PlayerUnit, maps.EnterError),
+      Result(maps.Entered, maps.EnterError),
     /// The facts the rules read, as they are when it is called.
     context: fn() -> game_session.Context,
   )
@@ -294,10 +294,10 @@ fn join_map(
 /// of a character that is on it already, or no answer from the map or its
 /// registry, which includes a map that could not start.
 fn map_answer(
-  entered: Result(PlayerUnit, maps.EnterError),
+  entered: Result(maps.Entered, maps.EnterError),
 ) -> game_session.MapAnswer {
   case entered {
-    Ok(unit) -> game_session.MapJoined(unit)
+    Ok(maps.Entered(unit:, ..)) -> game_session.MapJoined(unit)
     Error(maps.MapRefused(world_map_process.Refused(_))) ->
       game_session.MapRefusedCharacter
     Error(maps.MapRefused(world_map_process.NotAnswering))
@@ -324,6 +324,7 @@ fn message_of(reason: game_session.EndReason) -> Option(log.Message) {
     | game_session.CharacterSelectBreach(_)
     | game_session.WorldEntryBreach(_)
     | game_session.MapAway
+    | game_session.MapEnded
     | game_session.StoreAway(_)
     | game_session.AnswerNotBuilt -> None
   }

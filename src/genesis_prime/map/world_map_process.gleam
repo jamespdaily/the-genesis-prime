@@ -50,17 +50,27 @@ const shutdown_milliseconds = 1000
 const initialisation_milliseconds = 5000
 
 /// What a map starts with. `world_id` is the World row the map is of. `map` is
-/// the name the map process registers under, and `snapshot` the name of the
-/// snapshot process the map registers its processes with, each made once by
-/// whoever starts the tree. `heap_limits` are the ceilings of the map process
-/// and each sender.
+/// the name the map process registers under, `senders` the names of its
+/// senders, one for each scheduler online (`new_sender_names`), and `snapshot`
+/// the name of the snapshot process the map registers its processes with, each
+/// made once by whoever starts the tree and kept for a map that starts again.
+/// `heap_limits` are the ceilings of the map process and each sender.
 pub type Settings {
   Settings(
     world_id: Int,
     map: Name(Message),
+    senders: List(Name(sender.Message)),
     snapshot: Name(snapshot.Message),
     heap_limits: HeapLimits,
   )
+}
+
+/// The names of the senders of one map: one for each scheduler online. A name
+/// makes an atom the runtime never frees, so whoever starts maps makes a
+/// world's names once and gives them to every map it starts for the world.
+pub fn new_sender_names() -> List(Name(sender.Message)) {
+  list.repeat(Nil, schedulers_online())
+  |> list.map(fn(_) { process.new_name("map_sender") })
 }
 
 /// Every message the map process receives. Its selector covers all of them;
@@ -104,9 +114,7 @@ type State {
 /// fault that survives them ends the map, which the next entry starts again.
 /// The supervisor is linked to the calling process.
 pub fn start(settings settings: Settings) -> actor.StartResult(Supervisor) {
-  let sender_names =
-    list.repeat(Nil, schedulers_online())
-    |> list.map(fn(_) { process.new_name("map_sender") })
+  let sender_names = settings.senders
   let map_child =
     supervision.worker(fn() { start_map(settings:, sender_names:) })
     |> supervision.timeout(ms: shutdown_milliseconds)

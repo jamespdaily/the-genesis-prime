@@ -45,6 +45,7 @@ import genesis_prime/message/unit_is_player
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import log_capture
 import owned_test
@@ -161,7 +162,10 @@ fn join_as_observer(
         connection: deliveries,
         within_ms: wait_ms,
       )
-    process.send(started, #(entered, stop))
+    process.send(started, #(
+      result.map(entered, fn(entered) { entered.unit }),
+      stop,
+    ))
     keep(
       selector: process.new_selector()
         |> process.select_map(deliveries, fn(received) { Some(received) })
