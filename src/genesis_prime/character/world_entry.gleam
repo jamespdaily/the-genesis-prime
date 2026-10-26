@@ -33,9 +33,14 @@ import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 /// moves at the same rate.
 const movement_send_interval_milliseconds = 125
 
-/// The value of message 0x162 when a character cannot enter: PreGameLib.
-/// CodeEnumCharacterSelectResults' Failed.
+/// The value of message 0x162 when a character cannot enter because its world
+/// is not one the client can load: PreGameLib.CodeEnumCharacterSelectResults'
+/// Failed.
 const play_failed = 2
+
+/// The value of message 0x162 when the map refuses a character that is on it
+/// already: PreGameLib.CodeEnumCharacterSelectResults' FailedCharacterInWorld.
+const play_failed_character_in_world = 4
 
 /// The facts the rule reads beyond its state: `realm_id` is the realm the
 /// connection is on, which the player's unit carries, and `world_exists` tells
@@ -127,7 +132,7 @@ fn begin(
             newcomer: character.newcomer(character),
           ),
         ])
-        False -> #(Waiting, refused())
+        False -> #(Waiting, refused(play_failed))
       }
     AwaitingMap(_) | AwaitingTerrain(_) | Entered -> #(state, [
       Close(BeganTwice),
@@ -135,10 +140,11 @@ fn begin(
   }
 }
 
-/// What the player is sent when the character cannot enter: message 0x162, on
-/// which the client returns to idle character select, and the end of the entry.
-fn refused() -> List(Effect) {
-  [Send(PlayRefused(PlayCharacterRefused(field_1: play_failed))), Failed]
+/// What the player is sent when the character cannot enter: message 0x162 with
+/// the result, on which the client returns to idle character select, and the
+/// end of the entry.
+fn refused(result: Int) -> List(Effect) {
+  [Send(PlayRefused(PlayCharacterRefused(field_1: result))), Failed]
 }
 
 /// The messages the client needs once the character has a unit, in the order
@@ -222,7 +228,7 @@ pub fn unit_create(
 
 fn map_refused(state: State) -> #(State, List(Effect)) {
   case state {
-    AwaitingMap(_) -> #(Waiting, refused())
+    AwaitingMap(_) -> #(Waiting, refused(play_failed_character_in_world))
     Waiting | AwaitingTerrain(_) | Entered -> #(state, [
       Close(AnswerNobodyAskedFor),
     ])
