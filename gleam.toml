@@ -49,6 +49,9 @@ avoid_panic = "off"
 # parameters are `arg_1` and the like, and its row types are the account
 # store's to use.
 "src/genesis_prime/login/sql.gleam" = ["unused_exports", "label_possible"]
+# squirrel generates this module from `src/genesis_prime/game_master/sql/*.sql`,
+# on the same terms as the login's.
+"src/genesis_prime/game_master/sql.gleam" = ["unused_exports", "label_possible"]
 # The test runner finds public `_test` functions by name, and test-support
 # modules are shared across test modules, so no other module calls them.
 "test/**/*.gleam" = ["unused_exports"]
@@ -74,6 +77,8 @@ effectful_modules = [
   { module = "genesis_prime/table/loader/store", reason = "reads the table files and keeps the loaded tables in persistent terms" },
   { module = "genesis_prime/login/sql", reason = "the queries squirrel generates, run through the pool" },
   { module = "genesis_prime/login/account_store", reason = "reads and writes the accounts in Postgres" },
+  { module = "genesis_prime/game_master/sql", reason = "the queries squirrel generates, run through the pool" },
+  { module = "genesis_prime/game_master/store", reason = "reads and writes the permissions and the log of game master commands in Postgres, and writes one log line for each use" },
   { module = "genesis_prime/login/handoff", reason = "the process that holds one-time keys until the next connection redeems them" },
   { module = "genesis_prime/login/service", reason = "the login subtree's supervisor" },
   { module = "genesis_prime/login/sts_connection", reason = "carries out one STS connection's effects: the account store, the hand-off, RC4 and the log" },
