@@ -5,20 +5,32 @@
 import genesis_prime/connection/frame.{type Frame}
 import gleam/list
 
-/// Reads until `count` frames have arrived. `have` is what was read before;
-/// `next` reads more, and its error ends the wait.
+/// Reads until `count` frames have arrived, whole and in order, however the
+/// reads cut them. `have` is what was read before; `next` reads more, and its
+/// error ends the wait.
 pub fn read(
   have have: BitArray,
   count count: Int,
   next next: fn() -> Result(BitArray, Nil),
 ) -> Result(List(Frame), Nil) {
+  collect(have:, found: [], count:, next:)
+}
+
+fn collect(
+  have have: BitArray,
+  found found: List(Frame),
+  count count: Int,
+  next next: fn() -> Result(BitArray, Nil),
+) -> Result(List(Frame), Nil) {
   let assert Ok(#(frames, leftover)) = frame.decode(have)
     as "the server wrote bytes that are frames"
-  case list.length(frames) >= count {
-    True -> Ok(frames)
+  let found = list.append(found, frames)
+  case list.length(found) >= count {
+    True -> Ok(found)
     False ->
       case next() {
-        Ok(bytes) -> read(have: <<leftover:bits, bytes:bits>>, count:, next:)
+        Ok(bytes) ->
+          collect(have: <<leftover:bits, bytes:bits>>, found:, count:, next:)
         Error(Nil) -> Error(Nil)
       }
   }

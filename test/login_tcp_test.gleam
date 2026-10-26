@@ -14,6 +14,7 @@
 //// Every wait is for bytes the server writes or for the socket to close; the
 //// deadlines are for a server that does not answer, never a pause.
 
+import frame_reader
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{AuthWrapper}
 import genesis_prime/connection/frame.{type Frame}
@@ -314,16 +315,12 @@ fn read_frames(
   have have: BitArray,
   count count: Int,
 ) -> List(Frame) {
-  let assert Ok(#(frames, leftover)) = frame.decode(have)
-    as "the server wrote bytes that are frames"
-  case list.length(frames) >= count {
-    True -> frames
-    False -> {
-      let assert Ok(bytes) = tcp_client.receive_some(client, wait_ms)
-        as "the auth server did not write the frames"
-      read_frames(client:, have: <<leftover:bits, bytes:bits>>, count:)
-    }
-  }
+  let assert Ok(frames) =
+    frame_reader.read(have:, count:, next: fn() {
+      tcp_client.receive_some(client, wait_ms)
+    })
+    as "the auth server did not write the frames"
+  frames
 }
 
 /// A frame from the auth server as the client reads it: a 0x76 wrapper is
