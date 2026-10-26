@@ -93,6 +93,7 @@ effectful_modules = [
   { module = "genesis_prime/login/sts_connection", reason = "carries out one STS connection's effects: the account store, the hand-off, RC4 and the log" },
   { module = "genesis_prime/login/auth_connection", reason = "carries out one auth connection's effects: the hand-offs and the log" },
   { module = "genesis_prime/character/store_worker", reason = "starts a supervised worker for each command of character select, with a deadline for its answer" },
+  { module = "genesis_prime/game/sessions", reason = "the registry of the game connection that holds each account's slot, a child of the game subtree" },
   { module = "genesis_prime/game/service", reason = "the game subtree's supervisor" },
   { module = "genesis_prime/game/game_connection", reason = "carries out one game connection's effects: the session keys, the store, the maps and the log" },
   { module = "genesis_prime/login/rc4", reason = "OTP's crypto holds the state of each RC4 stream" },
