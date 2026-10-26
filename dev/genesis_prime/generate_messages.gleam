@@ -3,6 +3,7 @@
 //// writes nothing and exits non-zero naming each committed file that differs
 //// from what the schema generates; the full check runs it that way.
 
+import argv
 import genesis_prime/message_generator.{
   type GeneratedFile, type Mismatch, Edited, GeneratedFile, Missing, Stale,
 }
@@ -17,17 +18,13 @@ const schema_path = "src/genesis_prime/message/schema.toml"
 
 const directory = "src/genesis_prime/message"
 
-/// The arguments given after `--` on the command line.
-@external(erlang, "generate_messages_ffi", "plain_arguments")
-fn plain_arguments() -> List(String)
-
 /// Ends the program with a status.
 @external(erlang, "erlang", "halt")
 fn halt(status: Int) -> Nil
 
 /// Generates the codec, or checks the committed one.
 pub fn main() -> Nil {
-  case plain_arguments() {
+  case argv.load().arguments {
     [] -> generate()
     ["check"] -> check()
     _ -> {

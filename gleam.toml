@@ -13,6 +13,7 @@ pog = ">= 4.1.0 and < 5.0.0"
 envoy = ">= 1.2.0 and < 2.0.0"
 
 [dev_dependencies]
+argv = ">= 1.1.0 and < 2.0.0"
 unitest = ">= 1.6.1 and < 2.0.0"
 glinter = ">= 2.19.2 and < 3.0.0"
 squirrel = ">= 4.7.0 and < 5.0.0"
