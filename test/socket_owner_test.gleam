@@ -134,9 +134,10 @@ pub fn a_sender_at_the_clients_fastest_legitimate_rate_for_ten_seconds_is_never_
       }),
     )
   let client = listening.connect(running)
-  // video.framerateMax is at most 180 and a dash sends one movement frame per
-  // game update, so 180 frames a second is the client's fastest legitimate
-  // sending: frame number n is sent at n * 1000 / 180 ms.
+  // video.framerateMax is at most 180 (0x140c3fea0, 0x1400094f0) and a dash
+  // sends one movement frame per game update (0x1403a25c0), so 180 frames a
+  // second is the client's fastest legitimate sending: frame number n is sent
+  // at n * 1000 / 180 ms.
   let frames_in_ten_seconds = 1800
   numbers(1, frames_in_ten_seconds + 1)
   |> list.fold(0, fn(sent_at, number) {

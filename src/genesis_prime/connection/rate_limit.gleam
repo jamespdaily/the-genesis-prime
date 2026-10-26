@@ -25,16 +25,17 @@ pub type RateExceeded {
 pub const margin = 4
 
 /// The most frames a second a client sends while it dashes: one movement
-/// frame (message 0x637) per game update, and the client runs at most
-/// `video.framerateMax` game updates a second, a setting of 15 to 180 with
-/// every set clamped to it, 120 by default. With vertical sync on the client
-/// sets no limit of its own.
+/// frame (message 0x637) per game update (`opcode.0x637`, 0x1403a25c0), and
+/// the client runs at most `video.framerateMax` game updates a second
+/// (0x1400094f0), a setting of 15 to 180 with every set clamped to it, 120 by
+/// default (0x140c3fea0). With vertical sync on the client sets no limit of
+/// its own (0x140c3b1c0, 0x1400094f0).
 const fastest_frames_per_second = 180
 
 /// The rate of a legitimate client with the margin applied: 4 times the
 /// fastest sending, and a burst of one second of it, the most a delayed
 /// network can deliver together, since the client caps the time of a frame at
-/// one second.
+/// one second (0x1400097d0).
 pub fn client_rate() -> Rate {
   let frames_per_second = fastest_frames_per_second * margin
   Rate(frames_per_second:, burst: frames_per_second)

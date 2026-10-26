@@ -4,9 +4,9 @@
 //// sending rates in the fact file: the movement send interval of
 //// `0x140c3a004` is 125 ms until server message `0xf1` sets it, and `0xf1`
 //// keeps it between 25 and 1000 ms (`opcode.0xf1`, `opcode.0x637`). A dash
-//// sends one movement frame per game update, and the client's frame limiter
-//// runs at most `video.framerateMax` updates a second, a setting of 15 to 180
-//// that defaults to 120.
+//// sends one movement frame per game update (0x1403a25c0), and the client's
+//// frame limiter (0x1400094f0) runs at most `video.framerateMax` updates a
+//// second, a setting of 15 to 180 that defaults to 120 (0x140c3fea0).
 
 import genesis_prime/connection/rate_limit.{Rate}
 import gleam/int
