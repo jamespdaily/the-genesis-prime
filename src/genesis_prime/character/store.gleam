@@ -144,14 +144,20 @@ fn delete(
 /// statement timeout (`pool.statement_timeout_ms`): query_canceled.
 const query_canceled = "57014"
 
+/// The code of Postgres's error for a transaction it ended at the pool's
+/// transaction timeout (`pool.transaction_timeout_ms`): transaction_timeout.
+/// Postgres rolls the transaction back, so nothing of it committed.
+const transaction_timeout = "25P04"
+
 /// What a failed statement means: a database that is away or slow, or one that
-/// cancelled a statement at its limit, is an outside failure the server
-/// recovers from; a name another character has is the player's own; anything
+/// cancelled a statement or ended a transaction at its limit, is an outside
+/// failure the server recovers from; a name another character has is the player's own; anything
 /// else is a mistake in a statement or the migration.
 fn failed(error: pog.QueryError) -> Answer {
   case error {
     pog.ConnectionUnavailable | pog.QueryTimeout -> Unavailable
     pog.PostgresqlError(code:, ..) if code == query_canceled -> Unavailable
+    pog.PostgresqlError(code:, ..) if code == transaction_timeout -> Unavailable
     pog.ConstraintViolated(constraint:, ..) if constraint == name_constraint ->
       NameInUse
     pog.ConstraintViolated(..)

@@ -326,9 +326,9 @@ pub fn a_write_the_database_ends_at_the_transactions_limit_gives_unavailable_and
     )
   let waited = clock.monotonic_milliseconds() - started
   assert answer == Unavailable
-    as "a write the database ended at the transaction's limit (error 25P03, which ends the session) is reported failed, and is not a crash of the asker"
+    as "a write the database ended at the transaction's limit is reported failed, and is not a crash of the asker: Postgres ends the session (error 25P04, transaction_timeout) and closes the socket, so the store sees a closed connection"
   assert waited >= 300 && waited < 1500
-    as "the answer is the database's, at the transaction's limit, and not a guess at the asker's deadline"
+    as "the answer comes when the database closes the connection at the transaction's limit, and is not a guess at the asker's deadline"
   assert store.run(database.connection, select.LoadCharacters(account.id))
     == Loaded([])
     as "a write that was reported failed committed nothing"

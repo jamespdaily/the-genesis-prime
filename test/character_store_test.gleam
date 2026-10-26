@@ -416,6 +416,36 @@ pub fn a_statement_that_runs_past_the_databases_limit_gives_unavailable_and_comm
     as "the cancelled save committed nothing, so a failure answered to the player is true"
 }
 
+pub fn a_statement_that_fails_with_the_transaction_timeout_error_gives_unavailable_and_commits_nothing_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  add_accounts(database.connection)
+  // A trigger raises the error Postgres names transaction_timeout (25P04,
+  // errcodes.h), so the save fails with that code as an error of the
+  // statement; Postgres itself ends the session when the limit passes.
+  list.each(
+    [
+      "create function transaction_timeout_error() returns trigger language plpgsql as $$ begin raise exception 'transaction timeout' using errcode = '25P04'; end $$",
+      "create trigger transaction_timeout_error before insert on character for each row execute function transaction_timeout_error()",
+    ],
+    fn(statement) {
+      let assert Ok(_) =
+        pog.query(statement) |> pog.execute(on: database.connection)
+        as "the failing save was planted"
+      Nil
+    },
+  )
+  assert store.run_held(
+      db: database.connection,
+      command: select.InsertCharacter(new_character("Ab Cd")),
+      connection_held: fn() { store.Go },
+    )
+    == Unavailable
+    as "a transaction the database ended at its limit was rolled back, so the outside failure is reported and nothing committed"
+  assert listed(database.connection, character_support.account_id) == []
+    as "the save that was reported failed committed nothing"
+}
+
 pub fn a_write_whose_caller_withholds_the_word_to_go_sends_no_statement_and_is_unavailable_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
