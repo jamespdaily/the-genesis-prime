@@ -476,3 +476,36 @@ pub fn a_first_grant_is_written_through_the_logging_module_at_info_test() -> Nil
   )
     as "the line names the account given the permission"
 }
+
+pub fn only_one_of_many_concurrent_first_grants_is_given_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use database <- template_database.run
+  let accounts =
+    list.map(["jim", "sam", "lee", "kim", "ann", "bob", "cat", "dan"], fn(name) {
+      account(database, name)
+    })
+  let results = process.new_subject()
+  list.each(accounts, fn(account) {
+    process.spawn(fn() {
+      process.send(
+        results,
+        store.give_first(
+          connection: database.connection,
+          account:,
+          permission: Grant,
+        ),
+      )
+    })
+  })
+  let outcomes =
+    list.map(accounts, fn(_) {
+      let assert Ok(outcome) = process.receive(results, 20_000)
+        as "every first grant answers"
+      outcome
+    })
+  assert list.count(outcomes, fn(outcome) { outcome == Ok(Nil) }) == 1
+    as "test 5: the first grant is given only while no account holds `grant`, so one of many at once is given"
+  assert list.count(outcomes, fn(outcome) { outcome == Error(AlreadyHeld) })
+    == 7
+    as "test 5: every other is refused"
+}
