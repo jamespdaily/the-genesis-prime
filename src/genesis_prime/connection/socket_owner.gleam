@@ -19,6 +19,12 @@
 //// connection reads raw bytes, because its protocol is text with its own
 //// framing and then RC4.
 ////
+//// A conversation can also be woken by messages other processes send to the
+//// owner (`Waking`): a game connection is told of the players that come into
+//// range by the map's deliveries. What it selects is handled in the owner's
+//// process, in order with what the socket reads, so the connection's state is
+//// still its owner's alone.
+////
 //// A request of the shutdown coordinator to close ends the connection like a
 //// client that leaves: the socket is closed, the line is logged and the owner
 //// stops normally. A handler that is busy holds the request until it returns.
@@ -115,6 +121,9 @@ pub opaque type Message {
   ServerStopping
   /// The socket reported something.
   SocketEvent(event: socket.Event)
+  /// What a waking conversation's selector selected, already turned into the
+  /// conversation's reaction.
+  Woken(reaction: Reaction)
 }
 
 /// What the owner is doing: waiting for the acceptor to give it the socket,
@@ -132,7 +141,14 @@ type Reader {
 }
 
 type State {
-  State(settings: Settings, socket: Socket, who: Who, status: Status)
+  State(
+    settings: Settings,
+    self: Subject(Message),
+    socket: Socket,
+    who: Who,
+    status: Status,
+    waking: Bool,
+  )
 }
 
 /// Who the socket owner's lines are from: the process, by its name, and the
@@ -217,9 +233,11 @@ pub fn start(
     let state =
       State(
         settings:,
+        self: subject,
         socket:,
         who: owner_who(socket.peer(socket)),
         status: AwaitingSocket,
+        waking: False,
       )
     Ok(
       actor.initialised(state)
@@ -260,6 +278,9 @@ fn handle_message(
       actor.stop_abnormal(
         "the socket reported before it was given to its owner",
       )
+    Woken(reaction:), Reading(..) -> carry_out(state, reaction, settle)
+    Woken(..), AwaitingSocket ->
+      actor.stop_abnormal("a conversation woke before the owner had one")
   }
 }
 
@@ -398,14 +419,52 @@ fn deliver(
 fn next_reads(state: State) -> actor.Next(State, Message) {
   case state.settings.flow_control {
     socket.ActiveOnce -> arm(state)
-    socket.ActiveCount(..) -> actor.continue(state)
+    socket.ActiveCount(..) -> settle(state)
+  }
+}
+
+/// Goes on with the conversation the state holds: when it is woken by other
+/// processes, the owner selects what it selects as well as the socket and its
+/// own messages, and a conversation that is not goes back to the base
+/// selector. The selector is made again each time because each reaction brings
+/// a conversation with its own state, and its selector maps what it selects
+/// with that state.
+fn settle(state: State) -> actor.Next(State, Message) {
+  case state.status {
+    Reading(conversation: Waking(wake:, ..), ..) ->
+      actor.continue(State(..state, waking: True))
+      |> actor.with_selector(selector(state:, wake: Some(wake)))
+    Reading(conversation: Conversation(..), ..) | AwaitingSocket ->
+      case state.waking {
+        True ->
+          actor.continue(State(..state, waking: False))
+          |> actor.with_selector(selector(state:, wake: None))
+        False -> actor.continue(state)
+      }
+  }
+}
+
+/// What the owner selects: its own messages, the socket's events and, for a
+/// woken conversation, what it selects.
+fn selector(
+  state state: State,
+  wake wake: Option(Selector(Reaction)),
+) -> Selector(Message) {
+  let base =
+    process.new_selector()
+    |> process.select(state.self)
+    |> socket.select(SocketEvent)
+  case wake {
+    Some(wake) ->
+      process.merge_selector(base, process.map_selector(wake, Woken))
+    None -> base
   }
 }
 
 /// Asks the socket for the next reads in the owner's flow control.
 fn arm(state: State) -> actor.Next(State, Message) {
   case socket.arm(state.socket, state.settings.flow_control) {
-    Ok(Nil) -> actor.continue(state)
+    Ok(Nil) -> settle(state)
     Error(socket.Closed) ->
       end_connection(state, log.info, "the client closed the socket")
     Error(reason) ->

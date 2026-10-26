@@ -1,8 +1,8 @@
 //// The system clock as a Windows FILETIME, which is how the client reads the
 //// server's time (opcode.0x117: "the server's time as a 64-bit Windows
-//// FILETIME"). A FILETIME counts 100-nanosecond intervals since 1601-01-01
-//// UTC, which is 11,644,473,600 seconds before the Unix epoch (Microsoft's
-//// definition of FILETIME and of the Unix epoch's offset from it).
+//// FILETIME"). A FILETIME counts 100-nanosecond intervals from the start of the
+//// year 1601 in UTC, which is 11,644,473,600 seconds before the Unix epoch
+//// (Microsoft's definition of FILETIME and of the Unix epoch's offset from it).
 
 import genesis_prime/connection/clock
 import gleam/time/timestamp
@@ -12,7 +12,7 @@ pub fn the_unix_epoch_is_a_filetime_of_116444736000000000_test() -> Nil {
   use <- owned_test.run(5000)
   assert clock.filetime_of(unix_seconds: 0, nanoseconds: 0)
     == 116_444_736_000_000_000
-    as "11,644,473,600 seconds of 10,000,000 intervals each separate 1601-01-01 from 1970-01-01"
+    as "11,644,473,600 seconds of 10,000,000 intervals each separate the start of 1601 from the Unix epoch"
 }
 
 pub fn a_second_is_10_million_intervals_and_100_nanoseconds_one_test() -> Nil {

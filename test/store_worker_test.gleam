@@ -81,17 +81,17 @@ pub fn a_worker_that_has_not_answered_by_the_deadline_gives_unavailable_test() -
   // A transaction holds the pool's only connection until the test lets it go,
   // so the worker's statement waits for a connection it cannot have.
   let holding = process.new_subject()
-  let release = process.new_subject()
   process.spawn(fn() {
+    let release = process.new_subject()
     let _ =
       pog.transaction(one, fn(_transaction) {
-        process.send(holding, Nil)
+        process.send(holding, release)
         let _ = process.receive(release, 30_000)
         Ok(Nil)
       })
     Nil
   })
-  let assert Ok(Nil) = process.receive(holding, answer_wait_ms)
+  let assert Ok(release) = process.receive(holding, answer_wait_ms)
     as "the transaction holds the connection"
   assert store_worker.run(
       workers:,

@@ -33,6 +33,10 @@ import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 /// moves at the same rate.
 const movement_send_interval_milliseconds = 125
 
+/// The value of message 0x162 when a character cannot enter: PreGameLib.
+/// CodeEnumCharacterSelectResults' Failed.
+const play_failed = 2
+
 /// The facts the rule reads beyond its state: `realm_id` is the realm the
 /// connection is on, which the player's unit carries, and `world_exists` tells
 /// whether a World row has the id, because the client fails to load a world
@@ -134,7 +138,7 @@ fn begin(
 /// What the player is sent when the character cannot enter: message 0x162, on
 /// which the client returns to idle character select, and the end of the entry.
 fn refused() -> List(Effect) {
-  [Send(PlayRefused(PlayCharacterRefused(field_1: 0))), Failed]
+  [Send(PlayRefused(PlayCharacterRefused(field_1: play_failed))), Failed]
 }
 
 /// The messages the client needs once the character has a unit, in the order

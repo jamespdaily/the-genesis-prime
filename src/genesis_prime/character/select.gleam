@@ -45,37 +45,36 @@ import gleam/int
 import gleam/list
 import gleam/result
 
-/// The result of message 0xDC for a character that was created (opcode.0xdc).
-const create_created = 3
+/// The results of messages 0xDC, 0x14B and 0xE6, each named by its name in
+/// PreGameLib.CodeEnumCharacterModifyResults, the enum the client's Lua reads
+/// them as.
+const delete_ok = 0
 
-/// The result of message 0xDC for a name that is empty or breaks the name rule:
-/// the code the client's own CreateCharacter raises for the same refusal
-/// (LuaCreateCharacter 0x140023E90, code 10).
-const create_name_refused = 10
+const delete_failed = 1
 
-/// The result of message 0x14B for a character that was renamed (opcode.0x14b).
-const rename_renamed = 18
+const create_ok = 3
 
-/// The result of message 0x14B for a name the rule refuses: the result the
-/// client's own RenameCharacter answers itself with for the same refusal
-/// (LuaRenameCharacter 0x140024DD0, result 15).
-const rename_name_refused = 15
+const create_failed = 4
 
-/// The result of message 0xE6 for a character that was deleted (opcode.0xe6).
-const delete_deleted = 0
+const create_failed_unique_name = 6
 
-/// The result of a request that failed in a way no client record gives a
-/// result for. Any create result but 3 (created) and 6 raises the client's
-/// general error text (HandleMessage00DC 0x140021FB0), a rename result other
-/// than 18 renames nothing and a delete result other than 0 deletes nothing
-/// (opcode.0x14b, opcode.0xe6); what the client's Lua makes of each number is
-/// not read, so every such failure is 1.
-const other_failure = 1
+const create_failed_invalid_name = 10
 
-/// The value of message 0x162, which the client takes as a refusal whatever
-/// it holds (opcode.0x162: the 3-bit value is not read by the client's code
-/// that was decoded).
-const play_refused_value = 0
+const create_failed_internal = 12
+
+const rename_failed = 13
+
+const rename_failed_internal = 14
+
+const rename_failed_invalid_name = 15
+
+const rename_failed_unique_name = 16
+
+const rename_ok = 18
+
+/// The value of message 0x162: PreGameLib.CodeEnumCharacterSelectResults'
+/// Failed.
+const select_failed = 2
 
 /// The most customisation values a character holds: the character list reads
 /// their count in 4 bits (ReadCharacterListEntry 0x14007F720).
@@ -85,8 +84,8 @@ const most_customisations = 15
 /// for each input. `creation` is the client's CharacterCreation table by id.
 /// `start` is where a character made from a row starts, and none when the
 /// server has no starting place for it. `level_of` is the level an amount of
-/// experience gives, by the client's XpPerLevel table (a character starts with
-/// the row's `xp`). `server_time` is the server's time as a Windows FILETIME,
+/// experience gives, as the client works it (GetLevelForExperience
+/// 0x140029820; a character starts with the row's `xp`). `server_time` is the server's time as a Windows FILETIME,
 /// and `realm_id` the realm the connection is on.
 pub type Context {
   Context(
@@ -415,7 +414,7 @@ fn start_playing(
   case owned(state, id) {
     Error(Nil) -> #(state, [
       Log(NotYourCharacter(id)),
-      Send(PlayRefused(PlayCharacterRefused(field_1: play_refused_value))),
+      Send(PlayRefused(PlayCharacterRefused(field_1: select_failed))),
     ])
     Ok(chosen) -> #(State(..state, status: Entering), [BeginWorldEntry(chosen)])
   }
@@ -503,7 +502,7 @@ fn created(
           CreateResult(CreateCharacterResult(
             character_id: new.id,
             field_2: 0,
-            result: create_created,
+            result: create_ok,
           )),
         ),
       ],
@@ -541,7 +540,7 @@ fn renamed(
       [
         Send(
           RenameResult(RenameCharacterResult(
-            result: rename_renamed,
+            result: rename_ok,
             character_id: character.id,
             name: character.name,
           )),
@@ -591,9 +590,7 @@ fn deleted(
         status: Idle,
       ),
       [
-        Send(
-          DeleteResult(DeleteCharacterResult(result: delete_deleted, field_2: 0)),
-        ),
+        Send(DeleteResult(DeleteCharacterResult(result: delete_ok, field_2: 0))),
       ],
     )
     NotFound -> delete_refused(state, NotYourCharacter(id))
@@ -611,37 +608,41 @@ fn delete_refused(state: State, refusal: Refusal) -> #(State, List(Effect)) {
 }
 
 /// The one result of message 0xDC each refusal is answered with, in one
-/// place: a name the rule refuses is the client's own code 10, every other
-/// refusal is `other_failure`.
+/// place. A name the rule refuses is the client's own InvalidName, and a name
+/// another character has is UniqueName. A row, path or customisation the
+/// client's own creation never sends is the general CreateFailed. What the
+/// server cannot do (no starting place, a database that failed) is Internal,
+/// never the player's mistake.
 fn create_failure(refusal: Refusal) -> CreateCharacterResult {
   let result = case refusal {
-    NameRefused(_) -> create_name_refused
+    NameRefused(_) -> create_failed_invalid_name
+    NameTaken -> create_failed_unique_name
     CreationUnknown(_)
     | CreationNotOffered(_)
     | PathOutOfRange(_)
     | TooManyCustomisations(_)
-    | NoStartingPlace(_)
-    | NameTaken
-    | NotYourCharacter(_)
-    | StoreUnavailable -> other_failure
+    | NotYourCharacter(_) -> create_failed
+    NoStartingPlace(_) | StoreUnavailable -> create_failed_internal
   }
   CreateCharacterResult(character_id: 0, field_2: 0, result:)
 }
 
-/// The one result of message 0x14B each refusal is answered with: a name the
-/// rule refuses is the client's own result 15, every other refusal is
-/// `other_failure`, never 18, which renames.
+/// The one result of message 0x14B each refusal is answered with: never
+/// RenameOk, which renames. A name the rule refuses is the client's own
+/// RenameFailed_InvalidName, a name another character has is UniqueName and a
+/// database that failed is Internal; any other refusal is the general
+/// RenameFailed.
 fn rename_result(refusal: Refusal) -> Int {
   case refusal {
-    NameRefused(_) -> rename_name_refused
+    NameRefused(_) -> rename_failed_invalid_name
+    NameTaken -> rename_failed_unique_name
+    StoreUnavailable -> rename_failed_internal
     CreationUnknown(_)
     | CreationNotOffered(_)
     | PathOutOfRange(_)
     | TooManyCustomisations(_)
     | NoStartingPlace(_)
-    | NameTaken
-    | NotYourCharacter(_)
-    | StoreUnavailable -> other_failure
+    | NotYourCharacter(_) -> rename_failed
   }
 }
 
@@ -656,9 +657,10 @@ fn rename_failure(
   )
 }
 
-/// The result of message 0xE6 for every refusal: not 0, which deletes.
+/// The result of message 0xE6 for every refusal: DeleteFailed, never
+/// DeleteOk, which deletes.
 fn delete_failure() -> DeleteCharacterResult {
-  DeleteCharacterResult(result: other_failure, field_2: 0)
+  DeleteCharacterResult(result: delete_failed, field_2: 0)
 }
 
 /// The sentence the log line of a refusal holds.

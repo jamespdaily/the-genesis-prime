@@ -513,7 +513,7 @@ pub fn a_refusal_is_logged_as_a_warning_and_a_store_that_failed_as_an_error_test
     create_character.encode(
       CreateCharacter(
         creation_id: 277,
-        name: "Ab",
+        name: "A B",
         path: 2,
         customisation_labels: [],
         customisation_values: [],
@@ -526,7 +526,7 @@ pub fn a_refusal_is_logged_as_a_warning_and_a_store_that_failed_as_an_error_test
   assert list.any(effects, fn(effect) {
     case effect {
       Log(game_session.WarningLevel, text) ->
-        text == select.describe_refusal(select.NameRefused(name.TooShort(2)))
+        text == select.describe_refusal(select.NameRefused(name.TooShort(3)))
       Send(_)
       | RedeemSessionKey(_)
       | Store(_)

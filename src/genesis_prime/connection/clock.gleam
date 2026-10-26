@@ -4,6 +4,8 @@
 //// as a Windows FILETIME. A rule takes the time as an input; only a process
 //// reads a clock.
 
+import gleam/time/timestamp
+
 /// A source of the current time in whole milliseconds, read by the process
 /// that owns a connection. A test gives its own, so a rate limit is tested
 /// without waiting.
@@ -15,17 +17,29 @@ pub type Clock =
 pub fn monotonic_milliseconds() -> Int
 
 /// The system time as a Windows FILETIME: the number of 100-nanosecond
-/// intervals since 1601-01-01 UTC, which is what the client reads the server's
-/// time as (opcode.0x117).
+/// intervals since the start of the year 1601 in UTC, which is what the client
+/// reads the server's time as (opcode.0x117).
 pub fn system_filetime() -> Int {
-  todo as "the system clock as a FILETIME"
+  let #(seconds, nanoseconds) =
+    timestamp.system_time() |> timestamp.to_unix_seconds_and_nanoseconds
+  filetime_of(unix_seconds: seconds, nanoseconds:)
 }
 
-/// The FILETIME of a time given as whole seconds since 1970-01-01 UTC and the
+/// The seconds between the start of the year 1601 and the Unix epoch
+/// (Microsoft's definition of FILETIME, which counts from 1601 in UTC).
+const seconds_from_1601_to_1970 = 11_644_473_600
+
+/// The 100-nanosecond intervals in a second.
+const intervals_per_second = 10_000_000
+
+/// The FILETIME of a time given as whole seconds since the Unix epoch and the
 /// nanoseconds after them.
 pub fn filetime_of(
   unix_seconds unix_seconds: Int,
   nanoseconds nanoseconds: Int,
 ) -> Int {
-  todo as "a Unix time as a FILETIME"
+  { unix_seconds + seconds_from_1601_to_1970 }
+  * intervals_per_second
+  + nanoseconds
+  / 100
 }

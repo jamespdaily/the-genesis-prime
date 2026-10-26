@@ -9,9 +9,13 @@
 
 import genesis_prime/character/character.{type Place}
 import genesis_prime/character/store_worker
+import genesis_prime/connection/clock
+import genesis_prime/connection/listener
 import genesis_prime/database/pool
+import genesis_prime/game/game_connection
 import genesis_prime/login/account.{type Identity}
 import genesis_prime/login/handoff
+import genesis_prime/map/heap_limit
 import genesis_prime/map/maps
 import genesis_prime/shutdown
 import genesis_prime/table/character_creation.{type CharacterCreation}
@@ -20,6 +24,16 @@ import genesis_prime/telemetry/snapshot
 import gleam/erlang/process.{type Name}
 import gleam/otp/static_supervisor.{type Supervisor}
 import gleam/otp/supervision
+
+/// How many restarts the subtree allows in `restart_period_seconds`: the
+/// service subtrees' 3 in 5 seconds.
+const restart_intensity = 3
+
+const restart_period_seconds = 5
+
+/// How long a connection waits for the store or a map to answer, in
+/// milliseconds. 5 seconds; no measurement chose it.
+const answer_deadline_ms = 5000
 
 /// What the subtree starts with. `port` is the game listener's port, where 0
 /// takes a free port, and `opened` is called with the port that is open.
@@ -43,15 +57,29 @@ pub type Settings {
 
 /// Settings for a game listener on `port` whose maps register with the
 /// snapshot process named `snapshot`: names of their own made here, the
-/// measured heap ceilings, the system clock and a deadline of 5 seconds for an
-/// answer, which no measurement chose; the port reports nothing when it opens.
+/// measured heap ceilings, the system clock and `answer_deadline_ms` for an
+/// answer; the port reports nothing when it opens.
 pub fn settings(
   port port: Int,
   realm_id realm_id: Int,
   start start: fn(CharacterCreation) -> Result(Place, Nil),
   snapshot snapshot: Name(snapshot.Message),
 ) -> Settings {
-  todo as "settings of the game subtree"
+  Settings(
+    port:,
+    opened: fn(_port) { Nil },
+    realm_id:,
+    start:,
+    clock: clock.system_filetime,
+    answer_deadline_ms:,
+    maps: maps.Settings(
+      registry: process.new_name("maps"),
+      factory: process.new_name("maps_factory"),
+      snapshot:,
+      heap_limits: heap_limit.measured,
+    ),
+    workers: store_worker.Workers(factory: process.new_name("store_workers")),
+  )
 }
 
 /// The game's subtree as a child of the top supervisor. `pool` is the pool the
@@ -65,5 +93,34 @@ pub fn supervised(
   session_keys session_keys: Name(handoff.Message(Identity)),
   shutdown shutdown: shutdown.Settings,
 ) -> supervision.ChildSpecification(Supervisor) {
-  todo as "the game's subtree"
+  let services =
+    game_connection.services(game_connection.Settings(
+      session_keys:,
+      workers: settings.workers,
+      db: pool.connection(pool),
+      registry: settings.maps.registry,
+      tables:,
+      start: settings.start,
+      realm_id: settings.realm_id,
+      clock: settings.clock,
+      answer_deadline_ms: settings.answer_deadline_ms,
+    ))
+  static_supervisor.new(static_supervisor.OneForOne)
+  |> static_supervisor.restart_tolerance(
+    intensity: restart_intensity,
+    period: restart_period_seconds,
+  )
+  |> static_supervisor.add(maps.supervised(settings.maps))
+  |> static_supervisor.add(store_worker.supervised(settings.workers))
+  |> static_supervisor.add(listener.supervised(
+    listener.Settings(
+      ..listener.protocol_settings(
+        port: settings.port,
+        protocol: game_connection.protocol(services),
+        shutdown:,
+      ),
+      listening: settings.opened,
+    ),
+  ))
+  |> static_supervisor.supervised
 }

@@ -17,17 +17,25 @@ import genesis_prime/character/character.{type Place}
 import genesis_prime/character/select
 import genesis_prime/character/store_worker
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/connection/socket_owner.{type Protocol}
+import genesis_prime/connection/socket_owner.{
+  type Conversation, type Protocol, type Reaction, BytesRead, FrameRead, Frames,
+  Protocol, Reaction, Waking,
+}
+import genesis_prime/game/game_context
 import genesis_prime/game/game_session
 import genesis_prime/login/account.{type Identity}
 import genesis_prime/login/handoff
 import genesis_prime/map/delivery.{type Delivery}
 import genesis_prime/map/maps
 import genesis_prime/map/unit.{type Newcomer, type PlayerUnit}
+import genesis_prime/map/world_map_process
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/loader/store.{type Tables}
+import genesis_prime/telemetry/log
 import gleam/erlang/process.{type Name, type Subject}
-import gleam/option.{type Option}
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
 import pog
 
 /// What a connection asks the rest of the server for.
@@ -64,7 +72,36 @@ pub type Settings {
 
 /// The services of a running server.
 pub fn services(settings settings: Settings) -> Services {
-  todo as "the services of a running server"
+  Services(
+    redeem_session_key: fn(key) {
+      handoff.redeem(settings.session_keys, key) |> result.replace_error(Nil)
+    },
+    run_store: fn(command) {
+      store_worker.run(
+        workers: settings.workers,
+        db: settings.db,
+        command:,
+        within_ms: settings.answer_deadline_ms,
+      )
+    },
+    enter_map: fn(world_id, newcomer, deliveries) {
+      maps.enter(
+        registry: settings.registry,
+        world_id:,
+        newcomer:,
+        connection: deliveries,
+        within_ms: settings.answer_deadline_ms,
+      )
+    },
+    context: fn() {
+      game_context.build(
+        tables: settings.tables,
+        start: settings.start,
+        realm_id: settings.realm_id,
+        server_time: settings.clock(),
+      )
+    },
+  )
 }
 
 /// One connection's state.
@@ -87,7 +124,19 @@ pub type Output {
 /// A new connection and its first output: the hello. `peer` is the client's
 /// address as text, which names it in the log until the key names an account.
 pub fn new(services services: Services, peer peer: Option(String)) -> Output {
-  todo as "a new connection"
+  let #(session, effects) = game_session.start()
+  run(
+    connection: Connection(
+      services:,
+      session:,
+      deliveries: process.new_subject(),
+      peer:,
+      account: None,
+    ),
+    effects:,
+    context: services.context(),
+    sent: [],
+  )
 }
 
 /// Takes a frame the socket's owner cut.
@@ -95,7 +144,15 @@ pub fn receive(
   connection connection: Connection,
   frame frame: Frame,
 ) -> Output {
-  todo as "a frame"
+  let context = connection.services.context()
+  let #(session, effects) =
+    game_session.receive(connection.session, frame, context)
+  run(
+    connection: Connection(..connection, session:),
+    effects:,
+    context:,
+    sent: [],
+  )
 }
 
 /// Takes a delivery from the map.
@@ -103,11 +160,171 @@ pub fn delivered(
   connection connection: Connection,
   delivery delivery: Delivery,
 ) -> Output {
-  todo as "a delivery"
+  let context = connection.services.context()
+  let #(session, effects) =
+    game_session.delivered(connection.session, delivery, context)
+  run(
+    connection: Connection(..connection, session:),
+    effects:,
+    context:,
+    sent: [],
+  )
+}
+
+/// Carries out the effects in order. What an effect asks of another process is
+/// asked and answered here, and the answer is fed back to the rule, whose
+/// effects come before the ones that were left.
+fn run(
+  connection connection: Connection,
+  effects effects: List(game_session.Effect),
+  context context: game_session.Context,
+  sent sent: List(BitArray),
+) -> Output {
+  case effects {
+    [] -> Output(connection:, send: list.reverse(sent), close: False)
+    [effect, ..rest] ->
+      case effect {
+        game_session.Send(bytes) ->
+          run(connection:, effects: rest, context:, sent: [bytes, ..sent])
+        game_session.RedeemSessionKey(key) -> {
+          let redeemed = connection.services.redeem_session_key(key)
+          let #(session, more) =
+            game_session.session_key_redeemed(connection.session, redeemed)
+          let connection = case redeemed {
+            Ok(identity) -> {
+              log.info(
+                who(Some(identity.id), connection.peer, None),
+                "the player reached the game server with a session key",
+              )
+              Connection(..connection, session:, account: Some(identity.id))
+            }
+            Error(Nil) -> Connection(..connection, session:)
+          }
+          run(connection:, effects: list.append(more, rest), context:, sent:)
+        }
+        game_session.Store(command) -> {
+          let answer = connection.services.run_store(command)
+          let #(session, more) =
+            game_session.stored(connection.session, answer, context)
+          run(
+            connection: Connection(..connection, session:),
+            effects: list.append(more, rest),
+            context:,
+            sent:,
+          )
+        }
+        game_session.JoinMap(world_id:, newcomer:) -> {
+          let answer =
+            connection.services.enter_map(
+              world_id,
+              newcomer,
+              connection.deliveries,
+            )
+            |> map_answer
+          let #(session, more) =
+            game_session.map_answered(connection.session, answer, context)
+          run(
+            connection: Connection(..connection, session:),
+            effects: list.append(more, rest),
+            context:,
+            sent:,
+          )
+        }
+        game_session.Log(level:, text:) -> {
+          write(level)(who(connection.account, connection.peer, None), text)
+          run(connection:, effects: rest, context:, sent:)
+        }
+        game_session.End(reason) -> {
+          write(game_session.level_of(reason))(
+            who(connection.account, connection.peer, message_of(reason)),
+            "the game connection ended: " <> game_session.describe(reason),
+          )
+          Output(connection:, send: list.reverse(sent), close: True)
+        }
+      }
+  }
+}
+
+/// What the map's answer to a join means to the rule: a unit, the map's refusal
+/// of a character that is on it already, or no answer from the map or its
+/// registry, which includes a map that could not start.
+fn map_answer(
+  entered: Result(PlayerUnit, maps.EnterError),
+) -> game_session.MapAnswer {
+  case entered {
+    Ok(unit) -> game_session.MapJoined(unit)
+    Error(maps.MapRefused(world_map_process.Refused(_))) ->
+      game_session.MapRefusedCharacter
+    Error(maps.MapRefused(world_map_process.NotAnswering))
+    | Error(maps.MapNotStarted(_))
+    | Error(maps.RegistryNotAnswering) -> game_session.MapNotAnswering
+  }
+}
+
+fn write(level: game_session.Level) -> fn(log.Who, String) -> Nil {
+  case level {
+    game_session.WarningLevel -> log.warning
+    game_session.ErrorLevel -> log.error
+  }
+}
+
+/// The client message an end is about, when it is about one.
+fn message_of(reason: game_session.EndReason) -> Option(log.Message) {
+  case reason {
+    game_session.UnexpectedMessage(message_id:)
+    | game_session.MalformedMessage(message_id:, ..) ->
+      Some(log.Numbered(message_id))
+    game_session.BadWrapper
+    | game_session.SessionKeyRefused
+    | game_session.CharacterSelectBreach(_)
+    | game_session.WorldEntryBreach(_)
+    | game_session.MapAway
+    | game_session.AnswerNotBuilt -> None
+  }
+}
+
+/// Who the connection's log lines are about: the account once the key has
+/// named it, and the client's peer address.
+fn who(
+  account: Option(Int),
+  peer: Option(String),
+  message: Option(log.Message),
+) -> log.Who {
+  log.Who(
+    account:,
+    actor: None,
+    place: Some(log.Process("game_connection")),
+    message:,
+    peer:,
+  )
 }
 
 /// What a listener serves for the game: frames, a connection of this module
 /// for each client that connects, which writes the hello as it connects.
 pub fn protocol(services services: Services) -> Protocol {
-  todo as "the game's protocol"
+  Protocol(mode: Frames, connect: fn(peer) { reaction(new(services:, peer:)) })
+}
+
+fn conversation(connection: Connection) -> Conversation {
+  Waking(
+    handle: fn(input) {
+      case input {
+        FrameRead(frame:) -> reaction(receive(connection:, frame:))
+        BytesRead(..) ->
+          Reaction(send: [], close: True, next: conversation(connection))
+      }
+    },
+    wake: process.new_selector()
+      |> process.select_map(connection.deliveries, fn(delivery) {
+        reaction(delivered(connection:, delivery:))
+      }),
+  )
+}
+
+fn reaction(output: Output) -> Reaction {
+  Reaction(
+    send: output.send,
+    close: output.close,
+    next: conversation(output.connection),
+  )
 }
