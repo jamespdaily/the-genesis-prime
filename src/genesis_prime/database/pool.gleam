@@ -29,6 +29,14 @@ const default_pool_size = 10
 /// seconds; no measurement chose it.
 pub const statement_timeout_ms = 4000
 
+/// How long Postgres lets one transaction of the pool's connections run, in
+/// milliseconds, from its start to its commit, before it ends the session
+/// and rolls the transaction back (PostgreSQL 17 and later,
+/// `transaction_timeout`). 4.5 seconds, half a second above
+/// `statement_timeout_ms`, which PostgreSQL's documentation requires for the
+/// statement's limit to count; no measurement chose it.
+pub const transaction_timeout_ms = 4500
+
 /// The queue target of the pool, in milliseconds: how long a request may wait
 /// for a connection before the pool counts the queue slow. `pgo`'s own
 /// default; no measurement chose it.
