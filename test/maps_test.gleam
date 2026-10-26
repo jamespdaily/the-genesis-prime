@@ -527,8 +527,8 @@ fn wait_for_the_registry_to_watch(
   wait_until_the_registry_watches(registry:, process:, watching: True)
 }
 
-/// Waits until the registry no longer monitors the process, which it stops
-/// doing when no asker waits for the process to end any more, for at most
+/// Waits until the registry does not monitor the process, which it stops
+/// doing when no asker waits for the process to end, for at most
 /// `event_wait_ms`.
 fn wait_for_the_registry_to_stop_watching(
   registry registry: Pid,
@@ -725,8 +725,8 @@ pub fn the_askers_of_a_world_whose_old_map_is_ending_each_get_their_own_deadline
   assert list.sort([first.unit.id, second.unit.id], int.compare) == [1, 2]
     as "both joined the one map that was started, a map that starts again starts empty"
   // The registry answers a later entry after it has answered every asker it
-  // still held, so the map's answer to the one that gave up would have been
-  // sent by now.
+  // held, so the map's answer to the one that gave up would have been sent
+  // before this answer.
   let assert Ok(_) = enter(settings:, world_id: 7, character_id: 15)
     as "a later asker for the same world is served"
   assert !list.contains(what_reached(listening:), True)
