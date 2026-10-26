@@ -38,6 +38,12 @@ import tcp_client
 /// milliseconds.
 const close_wait_ms = 2000
 
+/// How long a test waits for a message of the runtime that must not come, in
+/// milliseconds: a read of an owner that keeps no flow control arrives within
+/// microseconds, so this is long enough to see one. The only wait of a test
+/// that is not for an event.
+const quiet_wait_ms = 200
+
 /// The bytes of a frame that claims `length` bytes and holds `held` body
 /// bytes of them.
 fn claiming(length length: Int, held held: Int) -> BitArray {
@@ -79,7 +85,7 @@ pub fn a_frame_one_byte_over_the_size_limit_ends_the_connection_and_closes_the_s
   let running = listening.start(listening.config())
   let client = listening.connect(running)
   // A frame claiming 131,071 bytes, whole: one more than the client's limit.
-  let _ = tcp_client.send(client, claiming(length: 131_071, held: 131_065))
+  tcp_client.send_if_open(client, claiming(length: 131_071, held: 131_065))
   assert tcp_client.await_close(client, close_wait_ms)
     as "MessageSizeLimit 0x140335ec0: 131,071 is over the limit, so the server closes the connection"
   assert process.receive(running.frames, 0) == Error(Nil)
@@ -101,7 +107,7 @@ pub fn a_burst_one_over_the_bucket_ends_the_connection_and_closes_the_socket_tes
     )
   let client = listening.connect(running)
   let one = listening.frame_of(message_id: 0x0637, size: 0)
-  let _ = tcp_client.send(client, bit_array.concat([one, one, one, one]))
+  tcp_client.send_if_open(client, bit_array.concat([one, one, one, one]))
   assert list.length(received(running, 3)) == 3
     as "token bucket: a burst of 3 passes a bucket of 3"
   assert tcp_client.await_close(client, close_wait_ms)
@@ -146,7 +152,12 @@ pub fn a_sender_at_the_clients_fastest_legitimate_rate_for_ten_seconds_is_never_
 
 pub fn an_owner_in_active_once_mode_holds_at_most_one_read_while_it_is_busy_test() -> Nil {
   use <- owned_test.run(10_000)
-  let running = listening.start(Config(..listening.config(), hold: True))
+  let running =
+    listening.start(
+      Config(..listening.config(), hold: True, owner: fn(settings) {
+        Settings(..settings, flow_control: socket.ActiveOnce)
+      }),
+    )
   let client = listening.connect(running)
   send(client, listening.frame_of(message_id: 1, size: 1000))
   let assert Ok(Received(owner: owner, release: release_first, ..)) =
@@ -160,6 +171,8 @@ pub fn an_owner_in_active_once_mode_holds_at_most_one_read_while_it_is_busy_test
   })
   assert 3 * 1006 < socket_watch.read_buffer_bytes(owner)
     as "the three frames fit in one read of the socket, so one read holds them all"
+  assert socket_watch.await_reads(1, quiet_wait_ms) == Error(Nil)
+    as "{active, once}: the runtime sends no read until the owner asks again, and the owner is busy"
   assert socket_watch.mailbox_length(owner) <= 1
     as "{active, once}: the runtime sends one read and no more until the owner asks again"
   process.send(release_first, Nil)
@@ -167,8 +180,8 @@ pub fn an_owner_in_active_once_mode_holds_at_most_one_read_while_it_is_busy_test
     as "{active, once}: when the owner asks again the runtime sends the waiting bytes as one read"
   let second = next_frame(running)
   assert second.frame.message_id == 2
-  let third = reply_after(running, second, 3)
-  let fourth = reply_after(running, third, 4)
+  let third = reply_after(running:, previous: second, message_id: 3)
+  let fourth = reply_after(running:, previous: third, message_id: 4)
   assert socket_watch.await_reads(1, 0) == Error(Nil)
     as "{active, once}: the three frames came in the one read, and the runtime sent no other while the owner was busy"
   process.send(fourth.release, Nil)
@@ -183,9 +196,9 @@ fn next_frame(running: listening.Running) -> Received {
 /// Frees the owner from `previous` and returns the next frame, which must be
 /// the message with this id.
 fn reply_after(
-  running: listening.Running,
-  previous: Received,
-  message_id: Int,
+  running running: listening.Running,
+  previous previous: Received,
+  message_id message_id: Int,
 ) -> Received {
   process.send(previous.release, Nil)
   let received = next_frame(running)
@@ -220,8 +233,8 @@ pub fn an_owner_in_active_n_mode_holds_at_most_n_reads_while_it_is_busy_test() -
   process.send(release_first, Nil)
   let second = next_frame(running)
   assert second.frame.message_id == 2
-  let third = reply_after(running, second, 3)
-  let fourth = reply_after(running, third, 4)
+  let third = reply_after(running:, previous: second, message_id: 3)
+  let fourth = reply_after(running:, previous: third, message_id: 4)
   process.send(fourth.release, Nil)
 }
 
@@ -230,7 +243,7 @@ pub fn an_owner_whose_heap_passes_its_ceiling_is_killed_and_its_socket_closed_te
   let running =
     listening.start(
       Config(..listening.config(), owner: fn(settings) {
-        Settings(..settings, heap_ceiling_words: 4096)
+        Settings(..settings, heap_ceiling_words: 8192)
       }),
     )
   let client = listening.connect(running)
@@ -239,9 +252,9 @@ pub fn an_owner_whose_heap_passes_its_ceiling_is_killed_and_its_socket_closed_te
     as "the first frame was not handed on"
   let monitor = process.monitor(owner)
   // The start of a frame that is within the size limit and never ends: its
-  // bytes stay with the owner, about 12,000 words of shared binary against a
-  // ceiling of 4,096.
-  let _ = tcp_client.send(client, claiming(length: 131_070, held: 100_000))
+  // bytes stay with the owner, about 12,500 words of shared binary, on top of the 4,200 words an owner holding nothing needs (its heap and the binary of its last read), against a
+  // ceiling of 8,192.
+  tcp_client.send_if_open(client, claiming(length: 131_070, held: 100_000))
   assert listening.await_down(monitor) == Ok(process.Killed)
     as "max_heap_size with kill: a process that needs more than its ceiling is killed, shared binaries counted"
   assert tcp_client.await_close(client, close_wait_ms)
@@ -264,7 +277,7 @@ pub fn a_decode_failure_ends_the_connection_closes_the_socket_and_logs_the_reaso
   let assert Ok(Received(owner: owner, ..)) = listening.next(running)
     as "the first frame was not handed on"
   let monitor = process.monitor(owner)
-  let _ = tcp_client.send(client, <<131_071:size(32)-little>>)
+  tcp_client.send_if_open(client, <<131_071:size(32)-little>>)
   assert listening.await_down(monitor) == Ok(process.Normal)
     as "the project rules: a decode failure ends the connection, not the server"
   assert tcp_client.await_close(client, close_wait_ms)

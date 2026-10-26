@@ -28,7 +28,7 @@ pub fn a_connection_under_the_cap_is_accepted_and_the_one_past_it_is_refused_tes
   let third = listening.connect(running)
   assert tcp_client.await_close(third, close_wait_ms)
     as "a cap of 2 serves 2 connections, so the third is refused by closing it"
-  let _ = tcp_client.send(third, listening.frame_of(message_id: 3, size: 0))
+  tcp_client.send_if_open(third, listening.frame_of(message_id: 3, size: 0))
   assert process.receive(running.frames, 0) == Error(Nil)
     as "a refused connection never reaches the handler"
   tcp_client.close(first)

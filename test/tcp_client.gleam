@@ -13,6 +13,11 @@ pub fn connect(port: Int) -> Result(Client, Nil)
 @external(erlang, "tcp_client_ffi", "send")
 pub fn send(client: Client, bytes: BitArray) -> Result(Nil, Nil)
 
+/// Sends the bytes, and does nothing when the server has already closed the
+/// connection, which a test of a limit expects.
+@external(erlang, "tcp_client_ffi", "send_if_open")
+pub fn send_if_open(client: Client, bytes: BitArray) -> Nil
+
 /// Waits up to `within_ms` for the server to close or reset the connection,
 /// reading and discarding what it sends meanwhile: true once it has, false
 /// when the time passes with the connection still open.

@@ -1,5 +1,5 @@
 -module(tcp_client_ffi).
--export([connect/1, send/2, await_close/2, close/1]).
+-export([connect/1, send/2, send_if_open/2, await_close/2, close/1]).
 
 -spec connect(non_neg_integer()) -> {ok, port()} | {error, nil}.
 connect(Port) ->
@@ -15,6 +15,11 @@ send(Socket, Bytes) ->
         ok -> {ok, nil};
         {error, _Reason} -> {error, nil}
     end.
+
+-spec send_if_open(port(), binary()) -> nil.
+send_if_open(Socket, Bytes) ->
+    _ = gen_tcp:send(Socket, Bytes),
+    nil.
 
 %% Reads and discards what the server sends until the socket is closed or
 %% reset, which is `true`, or until `Within` milliseconds pass with the socket

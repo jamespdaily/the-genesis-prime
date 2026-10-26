@@ -7,6 +7,8 @@
 //// is exact integer arithmetic: a rate of `n` frames a second gives `n`
 //// thousandths a millisecond. Time is an input, never read here.
 
+import gleam/int
+
 /// The most frames a connection may send: `frames_per_second` on average, and
 /// at most `burst` at once.
 pub type Rate {
@@ -22,27 +24,61 @@ pub type RateExceeded {
 /// allows, 4, the margin the heap ceilings use.
 pub const margin = 4
 
-/// The rate of a legitimate client with the margin applied.
+/// The most frames a second a client sends while it dashes: one movement
+/// frame (message 0x637) per game update, and the client runs at most
+/// `video.framerateMax` game updates a second, a setting of 15 to 180 with
+/// every set clamped to it, 120 by default. With vertical sync on the client
+/// sets no limit of its own.
+const fastest_frames_per_second = 180
+
+/// The rate of a legitimate client with the margin applied: 4 times the
+/// fastest sending, and a burst of one second of it, the most a delayed
+/// network can deliver together, since the client caps the time of a frame at
+/// one second.
 pub fn client_rate() -> Rate {
-  todo as "the client's fastest legitimate sending, times the margin"
+  let frames_per_second = fastest_frames_per_second * margin
+  Rate(frames_per_second:, burst: frames_per_second)
 }
 
-/// A connection's tokens and the time they were last counted.
+const thousandths_per_token = 1000
+
+/// A connection's tokens, in thousandths, and the time they were last counted.
 pub opaque type Bucket {
   Bucket(rate: Rate, thousandths: Int, counted_at: Int)
 }
 
 /// A full bucket of this rate at the given time, in milliseconds.
 pub fn new(rate rate: Rate, now_milliseconds now_milliseconds: Int) -> Bucket {
-  todo as "a full bucket"
+  Bucket(
+    rate:,
+    thousandths: rate.burst * thousandths_per_token,
+    counted_at: now_milliseconds,
+  )
 }
 
 /// Takes one token for a frame arriving at `now_milliseconds`, after the
 /// tokens that came back since the last time. A bucket with less than a whole
-/// token refuses the frame and the connection ends.
+/// token refuses the frame and the connection ends. A time before the last
+/// count brings no tokens back.
 pub fn take(
   bucket bucket: Bucket,
   now_milliseconds now_milliseconds: Int,
 ) -> Result(Bucket, RateExceeded) {
-  todo as "refill, then take one token"
+  let elapsed = int.max(now_milliseconds - bucket.counted_at, 0)
+  let thousandths =
+    int.min(
+      bucket.thousandths + elapsed * bucket.rate.frames_per_second,
+      bucket.rate.burst * thousandths_per_token,
+    )
+  case thousandths >= thousandths_per_token {
+    True ->
+      Ok(
+        Bucket(
+          ..bucket,
+          thousandths: thousandths - thousandths_per_token,
+          counted_at: int.max(now_milliseconds, bucket.counted_at),
+        ),
+      )
+    False -> Error(RateExceeded(rate: bucket.rate))
+  }
 }

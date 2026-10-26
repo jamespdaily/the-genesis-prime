@@ -1,0 +1,112 @@
+-module(genesis_prime_socket_ffi).
+-export([listen/1, listening_port/1, accept/1, give_to/2, arm_once/1, arm_count/2, close/1,
+         peer/1, monotonic_milliseconds/0, limit_heap/1,
+         keep_messages_off_heap/0, log_info/2, log_warning/2, data_tag/0,
+         closed_tag/0, error_tag/0, passive_tag/0]).
+
+%% The connections a listening socket holds for the acceptor while it is busy.
+%% It is above the connection cap (`capacity:connection_cap`), so a crowd of
+%% clients that connect together is not dropped before the acceptor reaches
+%% them. The operating system lowers it to its own limit when that is smaller.
+-define(BACKLOG, 1024).
+
+-spec listen(non_neg_integer()) -> {ok, port()} | {error, term()}.
+listen(Port) ->
+    result(gen_tcp:listen(Port, [binary, {packet, raw}, {active, false},
+                                 {reuseaddr, true}, {nodelay, true},
+                                 {backlog, ?BACKLOG}])).
+
+-spec listening_port(port()) -> {ok, non_neg_integer()} | {error, term()}.
+listening_port(Socket) ->
+    result(inet:port(Socket)).
+
+-spec accept(port()) -> {ok, port()} | {error, term()}.
+accept(Listening) ->
+    result(gen_tcp:accept(Listening)).
+
+-spec give_to(port(), pid()) -> {ok, nil} | {error, term()}.
+give_to(Socket, Owner) ->
+    unit(gen_tcp:controlling_process(Socket, Owner)).
+
+-spec arm_once(port()) -> {ok, nil} | {error, term()}.
+arm_once(Socket) ->
+    unit(inet:setopts(Socket, [{active, once}])).
+
+-spec arm_count(port(), pos_integer()) ->
+    {ok, nil} | {error, term()}.
+arm_count(Socket, Reads) ->
+    unit(inet:setopts(Socket, [{active, Reads}])).
+
+-spec close(port()) -> nil.
+close(Socket) ->
+    gen_tcp:close(Socket),
+    nil.
+
+
+-spec peer(port()) -> binary().
+peer(Socket) ->
+    case inet:peername(Socket) of
+        {ok, {Address, Port}} ->
+            iolist_to_binary([inet:ntoa(Address), ":", integer_to_list(Port)]);
+        {error, _Reason} ->
+            <<"unknown">>
+    end.
+
+-spec monotonic_milliseconds() -> integer().
+monotonic_milliseconds() ->
+    erlang:monotonic_time(millisecond).
+
+%% Sets the calling process's heap ceiling: killed when it needs more than
+%% `Words`, shared binaries counted, and the runtime logs the kill.
+-spec limit_heap(pos_integer()) -> nil.
+limit_heap(Words) ->
+    process_flag(max_heap_size,
+                 #{size => Words, kill => true, error_logger => true,
+                   include_shared_binaries => true}),
+    nil.
+
+%% The calling process's waiting messages are kept off its heap.
+-spec keep_messages_off_heap() -> nil.
+keep_messages_off_heap() ->
+    process_flag(message_queue_data, off_heap),
+    nil.
+
+-spec log_info(binary(), binary()) -> nil.
+log_info(Message, Peer) ->
+    log(info, Message, Peer).
+
+-spec log_warning(binary(), binary()) -> nil.
+log_warning(Message, Peer) ->
+    log(warning, Message, Peer).
+
+log(Level, Message, Peer) ->
+    logger:log(Level, "~ts", [Message],
+               #{peer => Peer, domain => [genesis_prime, connection]}),
+    nil.
+
+%% The tags of the messages `gen_tcp` sends a socket's owner.
+-spec data_tag() -> tcp.
+data_tag() -> tcp.
+
+-spec closed_tag() -> tcp_closed.
+closed_tag() -> tcp_closed.
+
+-spec error_tag() -> tcp_error.
+error_tag() -> tcp_error.
+
+-spec passive_tag() -> tcp_passive.
+passive_tag() -> tcp_passive.
+
+result({ok, Value}) -> {ok, Value};
+result({error, Reason}) -> {error, reason(Reason)}.
+
+unit(ok) -> {ok, nil};
+unit({error, Reason}) -> {error, reason(Reason)}.
+
+%% A `gen_tcp` error as the Gleam type `socket.Reason`.
+reason(closed) -> closed;
+reason(timeout) -> timeout;
+reason(eaddrinuse) -> address_in_use;
+reason(econnreset) -> connection_reset;
+reason(Posix) when is_atom(Posix) -> {other, atom_to_binary(Posix)};
+reason(Other) -> {other, iolist_to_binary(io_lib:format("~p", [Other]))}.

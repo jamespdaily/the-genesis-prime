@@ -11,6 +11,7 @@
 import genesis_prime/connection/rate_limit.{Rate}
 import gleam/int
 import gleam/list
+import gleam/result
 import owned_test
 
 /// A monotonic time that is negative, as the runtime's can be.
@@ -19,15 +20,15 @@ const start = -9_000_000
 /// Takes `count` tokens in a row at one instant; the bucket after them, or the
 /// number that were taken before one was refused.
 fn take_at_once(
-  bucket: rate_limit.Bucket,
-  now: Int,
-  count: Int,
+  bucket bucket: rate_limit.Bucket,
+  now now: Int,
+  count count: Int,
 ) -> Result(rate_limit.Bucket, Int) {
   numbers(1, count)
   |> list.try_fold(bucket, fn(bucket, taken) {
     case rate_limit.take(bucket:, now_milliseconds: now) {
       Ok(bucket) -> Ok(bucket)
-      Error(_) -> Error(taken - 1)
+      Error(rate_limit.RateExceeded(..)) -> Error(taken - 1)
     }
   })
 }
@@ -36,12 +37,9 @@ pub fn a_full_bucket_lets_a_burst_through_and_refuses_the_frame_after_it_test() 
   use <- owned_test.run(5000)
   let rate = Rate(frames_per_second: 10, burst: 5)
   let bucket = rate_limit.new(rate:, now_milliseconds: start)
-  assert case take_at_once(bucket, start, 5) {
-    Ok(_) -> True
-    Error(_) -> False
-  }
+  assert result.is_ok(take_at_once(bucket: bucket, now: start, count: 5))
     as "token bucket: a full bucket holds `burst` tokens, so `burst` frames at one instant all pass"
-  assert case take_at_once(bucket, start, 6) {
+  assert case take_at_once(bucket: bucket, now: start, count: 6) {
       Ok(_) -> -1
       Error(taken) -> taken
     }
@@ -67,16 +65,16 @@ pub fn tokens_come_back_at_the_rate_test() -> Nil {
   let rate = Rate(frames_per_second: 10, burst: 3)
   let assert Ok(emptied) =
     rate_limit.new(rate:, now_milliseconds: start)
-    |> take_at_once(start, 3)
+    |> take_at_once(now: start, count: 3)
   assert case rate_limit.take(bucket: emptied, now_milliseconds: start + 99) {
       Ok(_) -> True
-      Error(_) -> False
+      Error(rate_limit.RateExceeded(..)) -> False
     }
     == False
     as "token bucket: 10 frames a second is 1 token per 100 ms, so after 99 ms the bucket is still empty"
   assert case rate_limit.take(bucket: emptied, now_milliseconds: start + 100) {
     Ok(_) -> True
-    Error(_) -> False
+    Error(rate_limit.RateExceeded(..)) -> False
   }
     as "token bucket: after 100 ms one token is back"
 }
@@ -85,7 +83,7 @@ pub fn a_bucket_never_holds_more_than_its_burst_test() -> Nil {
   use <- owned_test.run(5000)
   let rate = Rate(frames_per_second: 10, burst: 3)
   let bucket = rate_limit.new(rate:, now_milliseconds: start)
-  assert case take_at_once(bucket, start + 60_000, 4) {
+  assert case take_at_once(bucket: bucket, now: start + 60_000, count: 4) {
       Ok(_) -> -1
       Error(taken) -> taken
     }
@@ -97,8 +95,11 @@ pub fn the_doubled_rate_at_a_windows_edge_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let rate = Rate(frames_per_second: 10, burst: 10)
   let bucket = rate_limit.new(rate:, now_milliseconds: start)
-  let assert Ok(after_first_second) = take_at_once(bucket, start + 999, 10)
-  assert case take_at_once(after_first_second, start + 1001, 10) {
+  let assert Ok(after_first_second) =
+    take_at_once(bucket: bucket, now: start + 999, count: 10)
+  assert case
+      take_at_once(bucket: after_first_second, now: start + 1001, count: 10)
+    {
       Ok(_) -> -1
       Error(taken) -> taken
     }
@@ -111,10 +112,10 @@ pub fn a_time_before_the_last_count_takes_no_tokens_back_test() -> Nil {
   let rate = Rate(frames_per_second: 10, burst: 2)
   let assert Ok(emptied) =
     rate_limit.new(rate:, now_milliseconds: start)
-    |> take_at_once(start, 2)
+    |> take_at_once(now: start, count: 2)
   assert case rate_limit.take(bucket: emptied, now_milliseconds: start - 500) {
       Ok(_) -> True
-      Error(_) -> False
+      Error(rate_limit.RateExceeded(..)) -> False
     }
     == False
     as "the monotonic clock never runs back, so an earlier time refills nothing and a bucket can never gain tokens from it"
@@ -133,7 +134,7 @@ pub fn sending_at_exactly_the_rate_for_ten_seconds_is_never_refused_test() -> Ni
     })
   assert case outcome {
     Ok(_) -> True
-    Error(_) -> False
+    Error(rate_limit.RateExceeded(..)) -> False
   }
     as "a sender that keeps to the rate exactly is never refused"
 }
