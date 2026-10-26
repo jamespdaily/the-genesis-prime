@@ -139,8 +139,8 @@ const silence_limit_ms = 30_000
 const report_end = "report-end"
 
 /// Starts the child, waits for its report and runs `body` with the node, or
-/// with why there is no report. The child's input is closed, and the epmd the
-/// child may have started is killed, however `body` ends.
+/// with why there is no report. The child is ended and its exit waited for, and
+/// the epmd the child may have started is killed, however `body` ends.
 pub fn run(start: Start, body: fn(Result(Node, Failure)) -> a) -> a {
   use tables <- planted_table.in_empty_tables_folder
   let epmd_port = free_port()
@@ -155,10 +155,11 @@ pub fn run(start: Start, body: fn(Result(Node, Failure)) -> a) -> a {
   )
 }
 
-/// Ends the child and the epmd made for it, whatever state they are in; ending
-/// what has ended already does nothing.
+/// Ends the child, waits for its operating system process to exit, then kills
+/// the epmd made for it and waits for that to stop answering; ending what has
+/// ended already does nothing.
 pub fn clean_up(process process: Process, epmd_port epmd_port: Int) -> Nil {
-  close(process)
+  end_child(process)
   kill_epmd(epmd_port)
 }
 
@@ -336,9 +337,11 @@ fn ask(process: Process, line: String) -> Nil
 @external(erlang, "released_node_ffi", "next_event")
 fn next_event(process: Process, within: Int) -> Event
 
-/// Closes the child's input, so it ends; nothing when it has ended already.
-@external(erlang, "released_node_ffi", "close")
-fn close(process: Process) -> Nil
+/// Tells the child to stop and waits for its operating system process to exit,
+/// killing it when it does not; nothing when it has ended already. Crashes
+/// when the process is still there after the kill.
+@external(erlang, "released_node_ffi", "end_child")
+fn end_child(process: Process) -> Nil
 
 /// A port on the loopback that nothing listens on.
 @external(erlang, "released_node_ffi", "free_port")
@@ -355,7 +358,8 @@ fn accepts_connections(port: Int) -> Bool
 fn names_at(port: Int) -> List(String)
 
 /// Kills the epmd on `port`, if there is one, once no node is registered with
-/// it. A child that is still ending is registered until its VM is gone, so
-/// the kill is asked again, up to a deadline.
+/// it. A child's node is registered until epmd notices its VM is gone, so a
+/// refused kill is asked again, up to a deadline, when it crashes naming the
+/// nodes epmd still lists.
 @external(erlang, "released_node_ffi", "kill_epmd")
 fn kill_epmd(port: Int) -> Nil

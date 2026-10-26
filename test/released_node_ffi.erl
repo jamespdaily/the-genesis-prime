@@ -2,7 +2,7 @@
 -export([
     open/2,
     next_event/2,
-    close/1,
+    end_child/1,
     ask/2,
     free_port/0,
     with_cleanup/2,
@@ -17,9 +17,17 @@
 %%   Event: Line(text) is {line, Text}, ExitStatus(status) is {exit_status,
 %%   Status} and Silent is silent.
 
-%% How long the epmd of a child may take to let go of a node that is ending,
+%% How long a child may take to end once it is told to stop, in milliseconds,
+%% before it is killed, and how long it may then take to be gone. Its exit
+%% status announces the end, so these are deadlines for a child that hangs,
+%% never a wait.
+-define(CHILD_STOP_DEADLINE_MS, 10000).
+-define(CHILD_KILL_DEADLINE_MS, 5000).
+
+%% How long the epmd of a child may take to let go of a node that has ended,
 %% in milliseconds, and how often it is asked again. No message announces that
 %% the epmd has dropped the node, so the kill is asked until it is allowed.
+%% The same deadline holds for the epmd to stop answering once it is killed.
 -define(KILL_DEADLINE_MS, 10000).
 -define(KILL_RETRY_MS, 50).
 
@@ -80,16 +88,45 @@ ask(Port, Line) ->
     true = port_command(Port, [Line, $\n]),
     nil.
 
-%% Closes the child's input, which ends it. A child that has ended has closed
-%% its port already.
--spec close(port()) -> nil.
-close(Port) ->
-    case erlang:port_info(Port) of
+%% Ends the child and waits for its operating system process to exit, which
+%% its port reports as an exit status. The child is told to stop on its input,
+%% the one way every program of it ends, and is killed when it has not exited
+%% by the deadline; either way the exit is waited for, and a child that is
+%% still there after the kill is an error. A child that has ended has closed
+%% its port already, and nothing is done.
+-spec end_child(port()) -> nil.
+end_child(Port) ->
+    case erlang:port_info(Port, os_pid) of
         undefined ->
             nil;
-        _ ->
-            port_close(Port),
-            nil
+        {os_pid, OsPid} ->
+            _ = catch port_command(Port, [<<"stop">>, $\n]),
+            case await_exit(Port, ?CHILD_STOP_DEADLINE_MS) of
+                {exit_status, _} ->
+                    nil;
+                timeout ->
+                    _ = os:cmd("kill -9 " ++ integer_to_list(OsPid)),
+                    case await_exit(Port, ?CHILD_KILL_DEADLINE_MS) of
+                        {exit_status, _} ->
+                            nil;
+                        timeout ->
+                            error({child_would_not_end, OsPid, ?CHILD_STOP_DEADLINE_MS})
+                    end
+            end
+    end.
+
+%% The exit status of the port's process, or timeout when it has not exited
+%% within Within milliseconds. What the child still writes is dropped.
+await_exit(Port, Within) ->
+    Deadline = erlang:monotonic_time(millisecond) + Within,
+    await_exit_by(Port, Deadline).
+
+await_exit_by(Port, Deadline) ->
+    Remaining = max(Deadline - erlang:monotonic_time(millisecond), 0),
+    receive
+        {Port, {exit_status, Status}} -> {exit_status, Status};
+        {Port, {data, _}} -> await_exit_by(Port, Deadline)
+    after Remaining -> timeout
     end.
 
 %% A port on the loopback with nothing listening, chosen by listening on port
@@ -138,28 +175,77 @@ names_at(Port) ->
             []
     end.
 
-%% Kills the epmd on the port, if there is one. epmd refuses while a node is
-%% registered with it, and a child that is ending is registered until its VM
-%% is gone, so the kill is asked again until it is allowed or the deadline
-%% passes, which is an error.
+%% Kills the epmd on the port, if there is one, once the node that was
+%% registered with it has left. epmd refuses while a node is registered
+%% ("Killing not allowed - living nodes in database", exit status 1, from
+%% `epmd_cli.c`), and drops a node only when it notices the node's connection
+%% closed, a moment after the node's process has exited. So a refusal is asked
+%% again until the deadline, when it is an error that names the nodes epmd
+%% still lists. Once killed, epmd is waited for until it stops accepting
+%% connections.
 -spec kill_epmd(inet:port_number()) -> nil.
 kill_epmd(Port) ->
     Deadline = erlang:monotonic_time(millisecond) + ?KILL_DEADLINE_MS,
     kill_epmd(Port, Deadline).
 
 kill_epmd(Port, Deadline) ->
-    Output = epmd(Port, "-kill"),
-    case {string:find(Output, "Killed"), string:find(Output, "Cannot connect")} of
-        {nomatch, nomatch} ->
+    {Status, Output} = run_epmd(Port, "-kill"),
+    case {Status, kill_answer(Output)} of
+        {1, no_epmd} ->
+            nil;
+        {0, killed} ->
+            await_epmd_gone(Port, Deadline);
+        {1, refused} ->
             case erlang:monotonic_time(millisecond) < Deadline of
                 true ->
                     timer:sleep(?KILL_RETRY_MS),
                     kill_epmd(Port, Deadline);
                 false ->
-                    error({epmd_would_not_be_killed, Port, Output})
+                    error(
+                        iolist_to_binary(
+                            io_lib:format(
+                                "epmd on port ~b would not be killed within ~b ms: "
+                                "it still lists the nodes ~p",
+                                [Port, ?KILL_DEADLINE_MS, names_at(Port)]
+                            )
+                        )
+                    )
             end;
         _ ->
-            nil
+            error({epmd_failed, Port, "-kill", Status, Output})
+    end.
+
+%% What `epmd -kill` said: that it killed epmd, that there is no epmd on the
+%% port, that epmd refused because a node is registered, or something else.
+kill_answer(Output) ->
+    case
+        {
+            string:find(Output, "Killed"),
+            string:find(Output, "Cannot connect"),
+            string:find(Output, "living nodes")
+        }
+    of
+        {nomatch, nomatch, nomatch} -> other;
+        {nomatch, nomatch, _} -> refused;
+        {nomatch, _, nomatch} -> no_epmd;
+        {_, nomatch, nomatch} -> killed;
+        _ -> other
+    end.
+
+%% Waits for the port to stop accepting connections: epmd answers the kill and
+%% then exits, so it can accept a connection for a moment after.
+await_epmd_gone(Port, Deadline) ->
+    case accepts_connections(Port) of
+        false ->
+            nil;
+        true ->
+            case erlang:monotonic_time(millisecond) < Deadline of
+                true ->
+                    timer:sleep(?KILL_RETRY_MS),
+                    await_epmd_gone(Port, Deadline);
+                false ->
+                    error({epmd_still_answers_after_kill, Port})
+            end
     end.
 
 %% The output of one epmd command on the port. epmd exits with 0 when it
@@ -222,8 +308,9 @@ report(Planted, Program) ->
     io:format("report-end~n"),
     answer(Tree, Program).
 
-%% A lingering child does not end on the end of its input, which is what a
-%% test's cleanup does first today: it ends when it is told to stop.
+%% A child ends when its input closes or when it is told to stop, which is how
+%% a test's cleanup ends it and waits for its exit. A lingering child ends only
+%% when told to stop, so it is alive and registered with its epmd until then.
 answer(Tree, Program) ->
     case io:get_line("") of
         eof when Program =:= lingering ->
