@@ -54,6 +54,8 @@ effectful_modules = [
   { module = "genesis_prime", reason = "starts the supervision tree and keeps the node alive" },
   { module = "genesis_prime/server", reason = "the top supervisor" },
   { module = "genesis_prime/database/pool", reason = "the pool of connections to Postgres, a child of the top supervisor" },
+  { module = "genesis_prime/telemetry/log", reason = "writes each line through Erlang's logger" },
+  { module = "genesis_prime/telemetry/snapshot", reason = "the snapshot process, a child of the top supervisor" },
   { module = "genesis_prime/table/loader/store", reason = "reads the table files and keeps the loaded tables in persistent terms" },
 ]
 # The game domains: each top-level folder or module under src/genesis_prime/.
