@@ -21,7 +21,7 @@ const expiry_milliseconds = 1000
 
 fn identity() -> Identity {
   let assert Ok(user_id) = guid.from_wire(<<0:size(128)>>) as "16 bytes"
-  Identity(name: "jim", user_id:)
+  Identity(id: 7, name: "jim", user_id:)
 }
 
 fn settings(clock: login_clock.Clock) -> service.Settings {

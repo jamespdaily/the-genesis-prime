@@ -9,11 +9,13 @@ import gleam/bool
 import gleam/list
 import gleam/string
 
-/// An account saved in the database. `salt` and `verifier` are the SRP
+/// An account saved in the database. `id` is the number the log names the
+/// account by. `salt` and `verifier` are the SRP
 /// values from `srp.verifier`, never the password; `created` is the creation
 /// time as RFC 3339 text in UTC.
 pub type Account {
   Account(
+    id: Int,
     name: String,
     user_id: Guid,
     salt: BitArray,
@@ -25,7 +27,7 @@ pub type Account {
 /// Who a login is for, once it has passed a check: what a hand-off holds
 /// between one connection and the next.
 pub type Identity {
-  Identity(name: String, user_id: Guid)
+  Identity(id: Int, name: String, user_id: Guid)
 }
 
 /// Why a typed name cannot name an account.
@@ -63,5 +65,5 @@ fn utf16_units(text: String) -> Int {
 
 /// What an account holds of the player's identity.
 pub fn identity(account account: Account) -> Identity {
-  Identity(name: account.name, user_id: account.user_id)
+  Identity(id: account.id, name: account.name, user_id: account.user_id)
 }

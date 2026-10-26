@@ -12,8 +12,12 @@ import genesis_prime/login/rc4
 import genesis_prime/login/sts_connection.{type Output}
 import genesis_prime/login/sts_message
 import gleam/bit_array
+import gleam/dict
+import gleam/erlang/process
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
+import gleam/string
+import log_capture.{Text, Whole}
 import login_vectors as vector
 import message_support
 import owned_test
@@ -32,6 +36,7 @@ fn services() -> sts_connection.Services {
       case name == vector.name {
         True ->
           Ok(Account(
+            id: 7,
             name:,
             user_id: user_id(),
             salt: vector.salt(),
@@ -70,14 +75,14 @@ fn key_data() -> BitArray {
 
 fn after_the_exchange() -> Output {
   let started =
-    sts_connection.receive(sts_connection.new(services()), login_start())
+    sts_connection.receive(sts_connection.new(services(), None), login_start())
   sts_connection.receive(started.connection, key_data())
 }
 
 pub fn the_first_reply_is_the_vectors_key_data_test() -> Nil {
   use <- owned_test.run(5000)
   let output =
-    sts_connection.receive(sts_connection.new(services()), login_start())
+    sts_connection.receive(sts_connection.new(services(), None), login_start())
   assert output.send
     == [
       sts_message.encode(sts_message.KeyDataAnswer(
@@ -96,7 +101,8 @@ pub fn a_request_that_arrives_in_two_reads_is_answered_once_it_is_whole_test() -
   let assert Ok(second) =
     bit_array.slice(whole, 30, bit_array.byte_size(whole) - 30)
     as "the rest"
-  let waiting = sts_connection.receive(sts_connection.new(services()), first)
+  let waiting =
+    sts_connection.receive(sts_connection.new(services(), None), first)
   assert waiting.send == [] as "a half request is not answered"
   let answered = sts_connection.receive(waiting.connection, second)
   assert list.length(answered.send) == 1
@@ -162,7 +168,7 @@ pub fn a_request_in_the_clear_after_the_exchange_ends_the_connection_test() -> N
 pub fn bytes_that_are_not_a_request_end_the_connection_test() -> Nil {
   use <- owned_test.run(5000)
   let output =
-    sts_connection.receive(sts_connection.new(services()), <<
+    sts_connection.receive(sts_connection.new(services(), None), <<
       "GET / HTTP/1.1\r\n\r\n":utf8,
     >>)
   assert output.close && output.send == []
@@ -173,7 +179,7 @@ pub fn a_request_of_no_known_command_ends_the_connection_test() -> Nil {
   use <- owned_test.run(5000)
   let output =
     sts_connection.receive(
-      sts_connection.new(services()),
+      sts_connection.new(services(), None),
       scripted_client.request(
         sequence: Some(1),
         protocol: "Auth",
@@ -189,7 +195,7 @@ pub fn an_account_that_does_not_exist_gets_the_refusal_and_the_connection_closes
   use <- owned_test.run(5000)
   let output =
     sts_connection.receive(
-      sts_connection.new(services()),
+      sts_connection.new(services(), None),
       scripted_client.request(
         sequence: Some(1),
         protocol: "Auth",
@@ -208,10 +214,63 @@ pub fn an_account_that_does_not_exist_gets_the_refusal_and_the_connection_closes
 pub fn a_connection_that_ended_answers_nothing_more_test() -> Nil {
   use <- owned_test.run(5000)
   let ended =
-    sts_connection.receive(sts_connection.new(services()), <<
+    sts_connection.receive(sts_connection.new(services(), None), <<
       "GET / HTTP/1.1\r\n\r\n":utf8,
     >>)
   let again = sts_connection.receive(ended.connection, login_start())
   assert again.send == [] && again.close
     as "after a connection ends it takes no more"
+}
+
+pub fn the_line_of_an_account_that_is_not_found_carries_the_peer_and_no_account_test() -> Nil {
+  use <- owned_test.run(5000)
+  let capture = log_capture.start()
+  let _ended =
+    sts_connection.receive(
+      sts_connection.new(services(), Some("192.0.2.1:50000")),
+      scripted_client.request(
+        sequence: Some(1),
+        protocol: "Auth",
+        command: "LoginStart",
+        body: "<Request>\n<LoginName>nobody</LoginName>\n<NetAddress>1.2.3.4</NetAddress>\n</Request>\n",
+      ),
+    )
+  let assert Ok(line) =
+    log_capture.next_from(capture:, from: process.self(), within: 2000)
+    as "the connection did not log why it ended"
+  assert line.level == "warning"
+    as "designing-processes: an outside failure the server recovered from is a warning"
+  assert dict.get(line.metadata, "peer") == Ok(Text("192.0.2.1:50000"))
+    as "designing-processes: every line carries who and where; a connection with no login is known by its peer"
+  assert dict.get(line.metadata, "account") == Error(Nil)
+    as "no account is known before the login finds one"
+}
+
+pub fn the_line_of_a_login_that_failed_after_the_account_was_found_carries_its_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  let capture = log_capture.start()
+  let started =
+    sts_connection.receive(
+      sts_connection.new(services(), Some("192.0.2.1:50000")),
+      login_start(),
+    )
+  let _ended =
+    sts_connection.receive(
+      started.connection,
+      scripted_client.request(
+        sequence: Some(2),
+        protocol: "Auth",
+        command: "KeyData",
+        body: "<Request>\n<KeyData>AAEC</KeyData>\n</Request>\n",
+      ),
+    )
+  let assert Ok(line) =
+    log_capture.next_from(capture:, from: process.self(), within: 2000)
+    as "the connection did not log why it ended"
+  assert dict.get(line.metadata, "account") == Ok(Whole(7))
+    as "designing-processes: the line carries the account once the login has found it"
+  assert dict.get(line.metadata, "peer") == Ok(Text("192.0.2.1:50000"))
+    as "and the peer, which names the connection"
+  assert !string.contains(line.formatted, "secret")
+    as "designing-processes: never a password or a key in a log line"
 }

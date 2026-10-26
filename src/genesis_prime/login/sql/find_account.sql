@@ -1,6 +1,7 @@
 -- The account of a lower-case name, if there is one. Its GUID and its
 -- creation time are returned as text.
 select
+  id,
   name,
   salt,
   verifier,

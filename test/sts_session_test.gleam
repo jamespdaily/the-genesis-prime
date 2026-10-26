@@ -37,6 +37,7 @@ fn user_id() -> guid.Guid {
 
 fn account() -> Account {
   Account(
+    id: 7,
     name: vector.name,
     user_id: user_id(),
     salt: vector.salt(),
@@ -205,7 +206,8 @@ pub fn a_game_token_is_issued_for_the_logged_in_identity_test() -> Nil {
         ),
       ),
     )
-  assert effects == [IssueGameToken(Identity(name: "jim", user_id: user_id()))]
+  assert effects
+    == [IssueGameToken(Identity(id: 7, name: "jim", user_id: user_id()))]
     as "StsConnLib64.MT.dll!0x180004ac0 and opcode.0x592: the token the reply holds is the second GUID of the login request, which is checked against the STS login"
 }
 

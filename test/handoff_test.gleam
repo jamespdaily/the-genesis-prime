@@ -26,7 +26,7 @@ const event_wait_ms = 1000
 
 fn identity(name: String) -> Identity {
   let assert Ok(user_id) = guid.from_wire(<<0:size(128)>>) as "16 bytes"
-  Identity(name:, user_id:)
+  Identity(id: 7, name:, user_id:)
 }
 
 /// A hand-off under a supervisor of the test, on the test's clock, and the

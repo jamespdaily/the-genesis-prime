@@ -10,13 +10,18 @@
 //// and closes the socket when `close` is set.
 
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/connection/socket_owner.{
+  type Conversation, type Protocol, type Reaction, BytesRead, Conversation,
+  FrameRead, Frames, Protocol, Reaction,
+}
 import genesis_prime/login/account.{type Identity}
 import genesis_prime/login/auth_session
 import genesis_prime/login/handoff
-import genesis_prime/login/log
+import genesis_prime/telemetry/log
 import gleam/erlang/process.{type Name}
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// What a connection asks the rest of the server for.
@@ -45,7 +50,12 @@ pub fn services(
 
 /// One connection's state.
 pub opaque type Connection {
-  Connection(services: Services, session: auth_session.Session, who: String)
+  Connection(
+    services: Services,
+    session: auth_session.Session,
+    peer: Option(String),
+    account: Option(Int),
+  )
 }
 
 /// What a connection hands back: itself, the bytes to write to the socket in
@@ -54,15 +64,20 @@ pub type Output {
   Output(connection: Connection, send: List(BitArray), close: Bool)
 }
 
-/// A new connection and its first output: the hello. `who` names the peer in
-/// the log until the login names an account.
+/// A new connection and its first output: the hello. `peer` is the client's
+/// address as text, which names it in the log until the login names an
+/// account.
 pub fn new(
   services services: Services,
   settings settings: auth_session.Settings,
-  who who: String,
+  peer peer: Option(String),
 ) -> Output {
   let #(session, effects) = auth_session.start(settings)
-  run(connection: Connection(services:, session:, who:), effects:, sent: [])
+  run(
+    connection: Connection(services:, session:, peer:, account: None),
+    effects:,
+    sent: [],
+  )
 }
 
 /// Takes a frame the socket's owner cut.
@@ -100,33 +115,79 @@ fn run(
           let #(session, more) =
             auth_session.session_key_issued(connection.session, key)
           log.info(
+            who(Some(identity.id), connection.peer),
             "the auth login finished and the client was handed to the game server",
-            identity.name,
           )
           run(
-            connection: Connection(..connection, session:, who: identity.name),
+            connection: Connection(
+              ..connection,
+              session:,
+              account: Some(identity.id),
+            ),
             effects: list.append(more, rest),
             sent:,
           )
         }
         auth_session.LogDigestMismatch(received:, expected:) -> {
           log.warning(
+            who(connection.account, connection.peer),
             "the client's file digest is "
               <> int.to_string(received)
               <> ", not the expected "
               <> int.to_string(expected)
               <> "; the login goes on",
-            connection.who,
           )
           run(connection:, effects: rest, sent:)
         }
         auth_session.End(reason) -> {
           log.warning(
+            who(connection.account, connection.peer),
             "the auth connection ended: " <> auth_session.describe(reason),
-            connection.who,
           )
           Output(connection:, send: list.reverse(sent), close: True)
         }
       }
   }
+}
+
+/// Who the connection's log lines are about: the account once the login has
+/// named it, and the client's peer address.
+fn who(account: Option(Int), peer: Option(String)) -> log.Who {
+  log.Who(
+    account:,
+    actor: None,
+    place: Some(log.Process("auth_connection")),
+    message: None,
+    peer:,
+  )
+}
+
+/// What a listener serves for the auth login: frames, a connection of this
+/// module for each client that connects, which writes the hello as it
+/// connects.
+pub fn protocol(
+  services services: Services,
+  settings settings: auth_session.Settings,
+) -> Protocol {
+  Protocol(mode: Frames, connect: fn(peer) {
+    reaction(new(services:, settings:, peer:))
+  })
+}
+
+fn conversation(connection: Connection) -> Conversation {
+  Conversation(handle: fn(input) {
+    case input {
+      FrameRead(frame:) -> reaction(receive(connection:, frame:))
+      BytesRead(..) ->
+        Reaction(send: [], close: True, next: conversation(connection))
+    }
+  })
+}
+
+fn reaction(output: Output) -> Reaction {
+  Reaction(
+    send: output.send,
+    close: output.close,
+    next: conversation(output.connection),
+  )
 }

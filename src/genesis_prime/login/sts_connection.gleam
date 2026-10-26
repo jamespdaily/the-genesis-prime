@@ -11,14 +11,18 @@
 //// the socket gives it the bytes read, writes the bytes it returns and closes
 //// the socket when `close` is set.
 
+import genesis_prime/connection/socket_owner.{
+  type Conversation, type Protocol, type Reaction, BytesRead, Conversation,
+  FrameRead, Protocol, RawBytes, Reaction,
+}
 import genesis_prime/login/account.{type Account, type Identity}
 import genesis_prime/login/account_store
 import genesis_prime/login/handoff
-import genesis_prime/login/log
 import genesis_prime/login/rc4
 import genesis_prime/login/sts_message
 import genesis_prime/login/sts_session
 import genesis_prime/login/sts_wire
+import genesis_prime/telemetry/log
 import gleam/bit_array
 import gleam/bool
 import gleam/crypto
@@ -83,7 +87,8 @@ pub opaque type Connection {
     received: BitArray,
     receiving: Option(rc4.Stream),
     sending: Option(rc4.Stream),
-    account_name: String,
+    peer: Option(String),
+    account: Option(Int),
     ended: Bool,
   )
 }
@@ -94,15 +99,20 @@ pub type Output {
   Output(connection: Connection, send: List(BitArray), close: Bool)
 }
 
-/// A connection that has received nothing.
-pub fn new(services services: Services) -> Connection {
+/// A connection that has received nothing. `peer` is the client's address as
+/// text, which names it in the log until its login names an account.
+pub fn new(
+  services services: Services,
+  peer peer: Option(String),
+) -> Connection {
   Connection(
     services:,
     session: sts_session.new(),
     received: <<>>,
     receiving: None,
     sending: None,
-    account_name: "unknown",
+    peer:,
+    account: None,
     ended: False,
   )
 }
@@ -191,6 +201,9 @@ fn run_effects(
           start_cipher(connection:, key:, rest:, sent:, pending:)
         sts_session.FindAccount(name) -> {
           let found = connection.services.find_account(name)
+          let account =
+            result.map(found, fn(found_account) { found_account.id })
+            |> option.from_result
           let #(session, more) =
             sts_session.account_found(
               connection.session,
@@ -198,7 +211,7 @@ fn run_effects(
               connection.services.draw_secret(),
             )
           run_effects(
-            connection: Connection(..connection, session:, account_name: name),
+            connection: Connection(..connection, session:, account:),
             effects: list.append(more, rest),
             sent:,
             pending:,
@@ -209,8 +222,8 @@ fn run_effects(
           let #(session, more) =
             sts_session.game_token_issued(connection.session, token)
           log.info(
+            who(Some(identity.id), connection.peer),
             "the STS login finished and a game token was issued",
-            identity.name,
           )
           run_effects(
             connection: Connection(..connection, session:),
@@ -283,8 +296,8 @@ fn end(
   sent sent: List(BitArray),
 ) -> Output {
   log.warning(
+    who(connection.account, connection.peer),
     "the STS connection ended: " <> describe(reason),
-    connection.account_name,
   )
   Output(
     connection: Connection(..connection, ended: True),
@@ -303,4 +316,43 @@ fn describe(reason: EndReason) -> String {
       "bytes arrived after the request that starts the cipher"
     NoCipher -> "this server has no RC4 cipher"
   }
+}
+
+/// Who the connection's log lines are about: the account once the login has
+/// found it, and the client's peer address.
+fn who(account: Option(Int), peer: Option(String)) -> log.Who {
+  log.Who(
+    account:,
+    actor: None,
+    place: Some(log.Process("sts_connection")),
+    message: None,
+    peer:,
+  )
+}
+
+/// What a listener serves for the STS login: the socket read as raw bytes,
+/// because the protocol is CRLF text and then RC4, and one connection of this
+/// module for each client that connects.
+pub fn protocol(services services: Services) -> Protocol {
+  Protocol(mode: RawBytes, connect: fn(peer) {
+    Reaction(send: [], close: False, next: conversation(new(services:, peer:)))
+  })
+}
+
+fn conversation(connection: Connection) -> Conversation {
+  Conversation(handle: fn(input) {
+    case input {
+      BytesRead(bytes:) -> reaction(receive(connection:, bytes:))
+      FrameRead(..) ->
+        Reaction(send: [], close: True, next: conversation(connection))
+    }
+  })
+}
+
+fn reaction(output: Output) -> Reaction {
+  Reaction(
+    send: output.send,
+    close: output.close,
+    next: conversation(output.connection),
+  )
 }

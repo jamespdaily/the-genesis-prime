@@ -96,7 +96,7 @@ type Heard {
 
 fn connect(server: Server) -> StsClient {
   StsClient(
-    connection: sts_connection.new(server.sts),
+    connection: sts_connection.new(server.sts, None),
     receiving: None,
     sending: None,
     next_sequence: 1,
@@ -394,7 +394,7 @@ pub fn a_player_logs_in_through_sts_and_auth_and_is_handed_a_session_key_test() 
   assert login.user_id == guid.to_text(account.user_id)
     as "the STS login's UserId is the account's GUID"
 
-  let hello = auth_connection.new(server.auth, auth_settings(), "peer")
+  let hello = auth_connection.new(server.auth, auth_settings(), None)
   let assert [hello_bytes] = hello.send as "the hello is the first write"
   let assert Ok(#([hello_frame], <<>>)) = frame.decode(hello_bytes)
     as "the hello is one frame"
@@ -438,7 +438,7 @@ pub fn two_logins_get_different_tokens_and_session_keys_test() -> Nil {
     as "each RequestGameToken issues a fresh token"
   let keys =
     list.flat_map([first, second], fn(login) {
-      let hello = auth_connection.new(server.auth, auth_settings(), "peer")
+      let hello = auth_connection.new(server.auth, auth_settings(), None)
       let answered =
         auth_connection.receive(
           hello.connection,
@@ -526,7 +526,7 @@ pub fn a_game_token_is_used_once_and_the_second_use_gets_no_session_key_test() -
   let assert Ok(_) = account_store.create(database.connection, "jim", "secret")
     as "the account is created"
   let login = sts_login(server:, name: "jim", password: "secret", seed: 3)
-  let first = auth_connection.new(server.auth, auth_settings(), "peer")
+  let first = auth_connection.new(server.auth, auth_settings(), None)
   let answered =
     auth_connection.receive(
       first.connection,
@@ -534,7 +534,7 @@ pub fn a_game_token_is_used_once_and_the_second_use_gets_no_session_key_test() -
     )
   assert list.length(handed_keys(read_writes(answered.send))) == 1
     as "the first use is handed a key"
-  let second = auth_connection.new(server.auth, auth_settings(), "peer")
+  let second = auth_connection.new(server.auth, auth_settings(), None)
   let refused =
     auth_connection.receive(
       second.connection,
@@ -553,7 +553,7 @@ pub fn a_build_other_than_16042_gets_no_session_key_and_spends_no_token_test() -
   let assert Ok(_) = account_store.create(database.connection, "jim", "secret")
     as "the account is created"
   let login = sts_login(server:, name: "jim", password: "secret", seed: 4)
-  let wrong = auth_connection.new(server.auth, auth_settings(), "peer")
+  let wrong = auth_connection.new(server.auth, auth_settings(), None)
   let refused =
     auth_connection.receive(
       wrong.connection,
@@ -561,7 +561,7 @@ pub fn a_build_other_than_16042_gets_no_session_key_and_spends_no_token_test() -
     )
   assert refused.close && refused.send == []
     as "CheckAuthServerVersion 0x140037b70: the client's build is 16042, and another ends the connection with nothing sent"
-  let right = auth_connection.new(server.auth, auth_settings(), "peer")
+  let right = auth_connection.new(server.auth, auth_settings(), None)
   let answered =
     auth_connection.receive(
       right.connection,
@@ -584,7 +584,7 @@ pub fn a_token_the_server_never_issued_gets_no_session_key_test() -> Nil {
       token: "00112233-4455-6677-8899-aabbccddeeff",
       name: "jim",
     )
-  let hello = auth_connection.new(server.auth, auth_settings(), "peer")
+  let hello = auth_connection.new(server.auth, auth_settings(), None)
   let refused =
     auth_connection.receive(
       hello.connection,

@@ -3,9 +3,7 @@
     mod_pow/3,
     parse_xml/1,
     rc4_start/1,
-    rc4_crypt/2,
-    log_info/2,
-    log_warning/2
+    rc4_crypt/2
 ]).
 
 %% Base to the power of Exponent modulo Modulus, as whole numbers.
@@ -60,16 +58,3 @@ rc4_start(Key) ->
 -spec rc4_crypt(term(), binary()) -> binary().
 rc4_crypt(State, Bytes) ->
     crypto:crypto_update(State, Bytes).
-
--spec log_info(binary(), binary()) -> nil.
-log_info(Message, Account) ->
-    logger:log(info, Message, metadata(Account)),
-    nil.
-
--spec log_warning(binary(), binary()) -> nil.
-log_warning(Message, Account) ->
-    logger:log(warning, Message, metadata(Account)),
-    nil.
-
-metadata(Account) ->
-    #{account => Account, process => login}.

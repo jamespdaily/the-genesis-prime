@@ -54,7 +54,7 @@ fn token_bytes() -> BitArray {
 
 fn identity() -> account.Identity {
   let assert Ok(user_id) = guid.from_wire(user_id_bytes()) as "16 bytes"
-  Identity(name: "jim", user_id:)
+  Identity(id: 7, name: "jim", user_id:)
 }
 
 /// The login request of vector.opcode.0x592.body, with the fields the rule
@@ -333,7 +333,7 @@ pub fn a_token_issued_to_another_identity_ends_the_connection_test() -> Nil {
   let #(_, effects) =
     auth_session.token_redeemed(
       waiting_for_the_token(),
-      Ok(Identity(name: "jim", user_id: other_id)),
+      Ok(Identity(id: 7, name: "jim", user_id: other_id)),
     )
   assert effects == [End(IdentityMismatch)]
     as "the decision on the login issue: the first GUID is the UserId from LoginFinish, so it must be the token's account"

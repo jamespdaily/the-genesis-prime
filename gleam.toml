@@ -79,7 +79,6 @@ effectful_modules = [
   { module = "genesis_prime/login/sts_connection", reason = "carries out one STS connection's effects: the account store, the hand-off, RC4 and the log" },
   { module = "genesis_prime/login/auth_connection", reason = "carries out one auth connection's effects: the hand-offs and the log" },
   { module = "genesis_prime/login/rc4", reason = "OTP's crypto holds the state of each RC4 stream" },
-  { module = "genesis_prime/login/log", reason = "writes to Erlang logger" },
 ]
 # The game domains: each top-level folder or module under src/genesis_prime/.
 domains = [

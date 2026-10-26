@@ -48,7 +48,14 @@ pub fn create(
     Ok(pog.Returned(rows: [row], ..)) ->
       case guid.from_text(row.user_id) {
         Ok(user_id) ->
-          Ok(Account(name:, user_id:, salt:, verifier:, created: row.created))
+          Ok(Account(
+            id: row.id,
+            name:,
+            user_id:,
+            salt:,
+            verifier:,
+            created: row.created,
+          ))
         Error(guid.NotSixteenBytes(_)) | Error(guid.NotGuidText(_)) ->
           panic as "the database gave an account a user_id that is not a GUID"
       }
@@ -73,6 +80,7 @@ pub fn find(
             Ok(user_id) ->
               Ok(
                 Ok(Account(
+                  id: row.id,
                   name: row.name,
                   user_id:,
                   salt: row.salt,
