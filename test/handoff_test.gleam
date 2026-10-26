@@ -81,7 +81,7 @@ pub fn a_key_is_redeemed_once_test() -> Nil {
 pub fn a_key_that_was_never_issued_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let name = started(login_clock.new())
-  let _ = handoff.issue(name, identity("jim"))
+  let _key = handoff.issue(name, identity("jim"))
   assert handoff.redeem(name, <<9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9>>)
     == Error(Unknown)
     as "the login issue's test 5: an unknown key is refused"
@@ -118,7 +118,7 @@ pub fn an_expired_key_is_dropped_when_the_next_key_is_issued_test() -> Nil {
   let name = started(clock)
   let stale = handoff.issue(name, identity("stale"))
   login_clock.set(clock, expiry_milliseconds * 5)
-  let _ = handoff.issue(name, identity("fresh"))
+  let _key = handoff.issue(name, identity("fresh"))
   assert handoff.redeem(name, stale) == Error(Unknown)
     as "designing-processes: a producer never outruns its consumer, so keys that nobody redeemed do not pile up: issuing drops the expired"
 }

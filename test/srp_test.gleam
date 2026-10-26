@@ -34,14 +34,14 @@ fn sha256(bytes: BitArray) -> BitArray {
 /// holds, for i from 0 to 15, G[2i], H[2i], G[2i+1], H[2i+1] at 4i to 4i+3,
 /// where G and H are the SHA-256 of E and of F.
 fn session_key_of(e e: BitArray, f f: BitArray) -> BitArray {
-  interleave(sha256(e), sha256(f), 0, <<>>)
+  interleave(g: sha256(e), h: sha256(f), index: 0, built: <<>>)
 }
 
 fn interleave(
-  g: BitArray,
-  h: BitArray,
-  index: Int,
-  built: BitArray,
+  g g: BitArray,
+  h h: BitArray,
+  index index: Int,
+  built built: BitArray,
 ) -> BitArray {
   case index {
     16 -> built
@@ -52,7 +52,7 @@ fn interleave(
         as "H has 32 bytes"
       let assert <<g0, g1>> = g_pair as "a pair"
       let assert <<h0, h1>> = h_pair as "a pair"
-      interleave(g, h, index + 1, <<built:bits, g0, h0, g1, h1>>)
+      interleave(g:, h:, index: index + 1, built: <<built:bits, g0, h0, g1, h1>>)
     }
   }
 }
@@ -159,9 +159,14 @@ pub fn a_client_value_of_zero_is_rejected_test() -> Nil {
 
 pub fn a_client_value_that_is_not_below_n_is_rejected_test() -> Nil {
   use <- owned_test.run(5000)
-  let n = srp.number_bytes(srp.group_prime())
-  let at_n = <<128:size(32)-little, n:bits, 32:size(32)-little, 0:size(256)>>
-  assert srp.prove(challenge(), at_n) == Error(srp.ClientValueRejected)
+  let prime_bytes = srp.number_bytes(srp.group_prime())
+  let at_prime = <<
+    128:size(32)-little,
+    prime_bytes:bits,
+    32:size(32)-little,
+    0:size(256),
+  >>
+  assert srp.prove(challenge(), at_prime) == Error(srp.ClientValueRejected)
     as "StsConnLib64.MT.dll!0x18002d4e0: the client's A is g^a mod N, below N, so a value of N or more is not a client's"
 }
 

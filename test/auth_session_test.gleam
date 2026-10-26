@@ -111,7 +111,7 @@ fn good_request() -> LoginRequest {
 
 /// The frame the client sends for a login request: the request's message in a
 /// 0x244 wrapper under the base key.
-fn sent(request request: LoginRequest) -> Frame {
+fn sent(request: LoginRequest) -> Frame {
   let assert Ok(body) = login_request.encode(request) as "the request encodes"
   wrapped(Frame(0x0592, body))
 }

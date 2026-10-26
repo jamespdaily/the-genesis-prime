@@ -14,10 +14,11 @@ import pog
 /// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
 pub type CreateAccountRow {
-  CreateAccountRow(user_id: String)
+  CreateAccountRow(user_id: String, created: String)
 }
 
-/// Adds an account and returns the GUID the database gave it.
+/// Adds an account and returns the GUID the database gave it and its creation
+/// time, as text.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
@@ -30,13 +31,17 @@ pub fn create_account(
 ) -> Result(pog.Returned(CreateAccountRow), pog.QueryError) {
   let decoder = {
     use user_id <- decode.field(0, decode.string)
-    decode.success(CreateAccountRow(user_id:))
+    use created <- decode.field(1, decode.string)
+    decode.success(CreateAccountRow(user_id:, created:))
   }
 
-  "-- Adds an account and returns the GUID the database gave it.
+  "-- Adds an account and returns the GUID the database gave it and its creation
+-- time, as text.
 insert into account (name, salt, verifier)
 values ($1, $2, $3)
-returning user_id::text as \"user_id!\";
+returning
+  user_id::text as \"user_id!\",
+  to_char(created_at at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') as \"created!\";
 "
   |> pog.query
   |> pog.parameter(pog.text(arg_1))

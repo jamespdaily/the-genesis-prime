@@ -3,12 +3,10 @@
 
 /// An event of a login the server expects, such as a client that logged in:
 /// info level.
-pub fn info(message message: String, account account: String) -> Nil {
-  todo as "log at info level"
-}
+@external(erlang, "genesis_prime_login_ffi", "log_info")
+pub fn info(message message: String, account account: String) -> Nil
 
 /// An outside failure the server recovered from, such as a client that
 /// refused to prove its password: warning level.
-pub fn warning(message message: String, account account: String) -> Nil {
-  todo as "log at warning level"
-}
+@external(erlang, "genesis_prime_login_ffi", "log_warning")
+pub fn warning(message message: String, account account: String) -> Nil

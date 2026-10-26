@@ -7,9 +7,13 @@
 //// hand-off: a login in flight fails and the client logs in again.
 ////
 //// The process owns its keys; every other process asks it by message. It
-//// reads the monotonic clock the settings give it.
+//// reads the monotonic clock the settings give it, in whole milliseconds from
+//// an arbitrary start.
 
-import gleam/erlang/process.{type Name}
+import gleam/crypto
+import gleam/dict.{type Dict}
+import gleam/erlang/process.{type Name, type Subject}
+import gleam/otp/actor
 import gleam/otp/supervision
 
 /// What a hand-off starts with. `name` is the name the hand-off registers and
@@ -26,8 +30,8 @@ pub type Settings(held) {
 
 /// The messages a hand-off receives.
 pub opaque type Message(held) {
-  Issue(held: held, reply: process.Subject(BitArray))
-  Redeem(key: BitArray, reply: process.Subject(Result(held, Refusal)))
+  Issue(held: held, reply: Subject(BitArray))
+  Redeem(key: BitArray, reply: Subject(Result(held, Refusal)))
 }
 
 /// Why a key is refused.
@@ -39,22 +43,81 @@ pub type Refusal {
   Expired
 }
 
-/// The monotonic clock in milliseconds, the default for `Settings.clock`
-/// (`erlang:monotonic_time/1`).
-pub fn monotonic_milliseconds() -> Int {
-  todo as "the monotonic clock"
+/// How long the top of the tree waits for a hand-off to stop before it is
+/// killed, in milliseconds. It holds nothing that must be saved.
+const shutdown_ms = 1000
+
+/// How long a caller waits for the hand-off to answer, in milliseconds. A
+/// hand-off answers from memory, so an answer later than this means the
+/// process is gone, which ends the caller.
+const call_ms = 5000
+
+/// The keys held: when each was issued, and what it stands for.
+type State(held) {
+  State(settings: Settings(held), keys: Dict(BitArray, #(Int, held)))
 }
 
 /// The hand-off as a child of a supervisor: restarted whenever it ends.
 pub fn supervised(
   settings settings: Settings(held),
-) -> supervision.ChildSpecification(process.Subject(Message(held))) {
-  todo as "the hand-off's child specification"
+) -> supervision.ChildSpecification(Subject(Message(held))) {
+  supervision.worker(fn() { start(settings) })
+  |> supervision.timeout(ms: shutdown_ms)
+}
+
+fn start(
+  settings: Settings(held),
+) -> Result(actor.Started(Subject(Message(held))), actor.StartError) {
+  actor.new(State(settings:, keys: dict.new()))
+  |> actor.on_message(handle)
+  |> actor.named(settings.name)
+  |> actor.start
+}
+
+fn handle(
+  state: State(held),
+  message: Message(held),
+) -> actor.Next(State(held), Message(held)) {
+  let now = state.settings.clock()
+  case message {
+    Issue(held:, reply:) -> {
+      let live =
+        dict.filter(state.keys, fn(_, issued) {
+          !has_expired(settings: state.settings, now:, issued_at: issued.0)
+        })
+      let key = crypto.strong_random_bytes(16)
+      process.send(reply, key)
+      actor.continue(State(..state, keys: dict.insert(live, key, #(now, held))))
+    }
+    Redeem(key:, reply:) -> {
+      let answer = case dict.get(state.keys, key) {
+        Error(Nil) -> Error(Unknown)
+        Ok(#(issued_at, held)) ->
+          case has_expired(settings: state.settings, now:, issued_at:) {
+            True -> Error(Expired)
+            False -> Ok(held)
+          }
+      }
+      process.send(reply, answer)
+      actor.continue(State(..state, keys: dict.delete(state.keys, key)))
+    }
+  }
+}
+
+/// A key is valid for `expiry_milliseconds` after it is issued.
+fn has_expired(
+  settings settings: Settings(held),
+  now now: Int,
+  issued_at issued_at: Int,
+) -> Bool {
+  now - issued_at >= settings.expiry_milliseconds
 }
 
 /// Issues a new key for `held`, and drops the keys already expired.
 pub fn issue(name name: Name(Message(held)), held held: held) -> BitArray {
-  todo as "issue a key"
+  actor.call(process.named_subject(name), waiting: call_ms, sending: fn(reply) {
+    Issue(held:, reply:)
+  })
 }
 
 /// Redeems a key once: what it was issued for, or why it is refused.
@@ -62,5 +125,7 @@ pub fn redeem(
   name name: Name(Message(held)),
   key key: BitArray,
 ) -> Result(held, Refusal) {
-  todo as "redeem a key"
+  actor.call(process.named_subject(name), waiting: call_ms, sending: fn(reply) {
+    Redeem(key:, reply:)
+  })
 }

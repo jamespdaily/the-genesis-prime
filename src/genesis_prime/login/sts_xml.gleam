@@ -6,6 +6,10 @@
 //// when it is empty. A body must end with a line feed or it has no root
 //// element.
 
+import gleam/bit_array
+import gleam/list
+import gleam/string
+
 /// An element read from a body: its name, its text and its children. The
 /// text of an element with children is whatever lies between them.
 pub type Element {
@@ -19,8 +23,8 @@ pub type XmlError {
   NoRootElement
   /// The body is not well-formed XML.
   NotWellFormed
-  /// The body has a document type, which the library never writes and which
-  /// could declare entities.
+  /// The body holds `<!`, a document type, a comment or a CDATA section, none
+  /// of which the library writes and which could declare entities.
   HasDocumentType
 }
 
@@ -32,16 +36,77 @@ pub type Node {
   Parent(name: String, children: List(Node))
   /// An element with nothing in it: `<Name/>`.
   Empty(name: String)
+  /// An element with nothing in it but attributes: `<Name a="1" b="2"/>`.
+  Tag(name: String, attributes: List(#(String, String)))
 }
 
 /// The root element of a body.
 pub fn parse(body body: BitArray) -> Result(Element, XmlError) {
-  todo as "read the root element"
+  case body {
+    <<>> -> Error(NoRootElement)
+    _ ->
+      case ends_with_line_feed(body) {
+        True ->
+          case bit_array.to_string(body) {
+            Ok(text) ->
+              case string.contains(text, "<!") {
+                True -> Error(HasDocumentType)
+                False -> read_root(body)
+              }
+            Error(Nil) -> Error(NotWellFormed)
+          }
+        False -> Error(NoRootElement)
+      }
+  }
 }
+
+fn ends_with_line_feed(body: BitArray) -> Bool {
+  case bit_array.slice(body, bit_array.byte_size(body) - 1, 1) {
+    Ok(<<10>>) -> True
+    _ -> False
+  }
+}
+
+@external(erlang, "genesis_prime_login_ffi", "parse_xml")
+fn read_root(body: BitArray) -> Result(Element, XmlError)
 
 /// The text a node renders to, as the library writes it.
 pub fn render(node node: Node) -> String {
-  todo as "write a node"
+  case node {
+    Text(name:, text:) ->
+      "<" <> name <> ">" <> escape(text) <> "</" <> name <> ">\n"
+    Parent(name:, children:) ->
+      "<"
+      <> name
+      <> ">\n"
+      <> string.concat(list.map(children, render))
+      <> "</"
+      <> name
+      <> ">\n"
+    Empty(name:) -> "<" <> name <> "/>\n"
+    Tag(name:, attributes:) ->
+      "<"
+      <> name
+      <> string.concat(
+        list.map(attributes, fn(attribute) {
+          " " <> attribute.0 <> "=\"" <> escape_attribute(attribute.1) <> "\""
+        }),
+      )
+      <> "/>\n"
+  }
+}
+
+/// `&` as `&amp;` and `<` as `&lt;`, the escapes the library writes
+/// (StsConnLib64.MT.dll!0x180029470).
+fn escape(text: String) -> String {
+  text
+  |> string.replace("&", "&amp;")
+  |> string.replace("<", "&lt;")
+}
+
+/// The escapes of text, and a quote as `&quot;` so it does not end the value.
+fn escape_attribute(text: String) -> String {
+  escape(text) |> string.replace("\"", "&quot;")
 }
 
 /// The first child of an element with this name.
@@ -49,5 +114,5 @@ pub fn child(
   element element: Element,
   name name: String,
 ) -> Result(Element, Nil) {
-  todo as "find a child"
+  list.find(element.children, fn(candidate) { candidate.name == name })
 }

@@ -33,7 +33,7 @@ pub fn the_bytes_00_to_1f_encrypt_to_the_vectors_bytes_test() -> Nil {
 pub fn the_stream_runs_on_across_calls_test() -> Nil {
   use <- owned_test.run(5000)
   let stream = started()
-  let _ = rc4.crypt(stream, counting_bytes_to_1f())
+  let _written = rc4.crypt(stream, counting_bytes_to_1f())
   assert rc4.crypt(stream, <<0, 0, 0, 0>>) == message_support.hex("64470a37")
     as "vector.StsConnLib64.MT.dll!0x1800f7420.rc4: the next four zero bytes encrypt to 64470a37 on the same state"
 }

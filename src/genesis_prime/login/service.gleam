@@ -21,5 +21,9 @@ pub type Settings {
 pub fn supervised(
   settings settings: Settings,
 ) -> supervision.ChildSpecification(Supervisor) {
-  todo as "the subtree's child specification"
+  static_supervisor.new(static_supervisor.OneForOne)
+  |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
+  |> static_supervisor.add(handoff.supervised(settings.game_tokens))
+  |> static_supervisor.add(handoff.supervised(settings.session_keys))
+  |> static_supervisor.supervised
 }

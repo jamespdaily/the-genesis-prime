@@ -43,9 +43,10 @@ avoid_panic = "off"
 # `get` and `all`. Only the registry and the tests call them until an engine
 # does, which is no defect in generated code.
 "src/genesis_prime/table/*.gleam" = ["unused_exports"]
-# squirrel generates this module from `src/genesis_prime/login/sql/*.sql`; the
-# account store calls the two queries it holds and nothing else needs the rest.
-"src/genesis_prime/login/sql.gleam" = ["unused_exports"]
+# squirrel generates this module from `src/genesis_prime/login/sql/*.sql`; its
+# parameters are `arg_1` and the like, and its row types are the account
+# store's to use.
+"src/genesis_prime/login/sql.gleam" = ["unused_exports", "label_possible"]
 # The test runner finds public `_test` functions by name, and test-support
 # modules are shared across test modules, so no other module calls them.
 "test/**/*.gleam" = ["unused_exports"]
@@ -65,6 +66,8 @@ effectful_modules = [
   { module = "genesis_prime/login/account_store", reason = "reads and writes the accounts in Postgres" },
   { module = "genesis_prime/login/handoff", reason = "the process that holds one-time keys until the next connection redeems them" },
   { module = "genesis_prime/login/service", reason = "the login subtree's supervisor" },
+  { module = "genesis_prime/login/sts_connection", reason = "carries out one STS connection's effects: the account store, the hand-off, RC4 and the log" },
+  { module = "genesis_prime/login/auth_connection", reason = "carries out one auth connection's effects: the hand-offs and the log" },
   { module = "genesis_prime/login/rc4", reason = "OTP's crypto holds the state of each RC4 stream" },
   { module = "genesis_prime/login/log", reason = "writes to Erlang logger" },
 ]

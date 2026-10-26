@@ -222,9 +222,20 @@ pub fn a_first_line_that_is_not_a_post_of_two_names_is_refused_test() -> Nil {
   })
 }
 
+pub fn bytes_that_cannot_begin_a_request_are_refused_as_soon_as_they_differ_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert sts_wire.decode(<<"G":utf8>>) == Error(sts_wire.BadRequestLine)
+    as "StsConnLib64.MT.dll!0x180022cb0: a request's first line begins POST, so a first byte that is not P is not a request's"
+  assert sts_wire.decode(<<"POSX":utf8>>) == Error(sts_wire.BadRequestLine)
+    as "StsConnLib64.MT.dll!0x180022cb0: POST and a space begin the line"
+  assert sts_wire.decode(<<"POS":utf8>>) == Ok(#([], <<"POS":utf8>>))
+    as "a prefix of POST waits for more bytes"
+  assert sts_wire.decode(<<>>) == Ok(#([], <<>>)) as "no bytes wait for more"
+}
+
 pub fn a_head_that_does_not_end_within_the_limit_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
-  let endless = string.repeat("a", sts_wire.head_limit + 1)
+  let endless = "POST " <> string.repeat("a", sts_wire.head_limit)
   assert sts_wire.decode(<<endless:utf8>>) == Error(sts_wire.HeadTooLong)
     as "the server holds at most head_limit bytes of a head, far above the client's longest head, under 80 bytes (POST /Auth/RequestGameToken STS/1.0 with its two headers)"
 }
@@ -232,7 +243,7 @@ pub fn a_head_that_does_not_end_within_the_limit_is_refused_test() -> Nil {
 pub fn a_body_longer_than_the_limit_is_refused_when_its_head_arrives_test() -> Nil {
   use <- owned_test.run(5000)
   assert decode_all("POST /Auth/KeyData STS/1.0\r\ns:2\r\nl:4097\r\n\r\n")
-    == Error(sts_wire.BodyTooLong(4097))
+    == Error(sts_wire.BodyTooLong(sts_wire.body_limit + 1))
     as "the server holds at most body_limit (4096) bytes of a body, above the client's longest, KeyData at 265 bytes, and refuses before the body is waited for"
 }
 

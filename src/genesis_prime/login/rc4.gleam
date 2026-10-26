@@ -19,11 +19,16 @@ pub type StartError {
 
 /// A new stream under `key`, at its first byte.
 pub fn start(key key: BitArray) -> Result(Stream, StartError) {
-  todo as "start a stream"
+  case key {
+    <<>> -> Error(EmptyKey)
+    _ -> start_stream(key)
+  }
 }
 
 /// The bytes ciphered with the stream's next bytes; the same call
 /// deciphers.
-pub fn crypt(stream stream: Stream, bytes bytes: BitArray) -> BitArray {
-  todo as "cipher the bytes"
-}
+@external(erlang, "genesis_prime_login_ffi", "rc4_crypt")
+pub fn crypt(stream stream: Stream, bytes bytes: BitArray) -> BitArray
+
+@external(erlang, "genesis_prime_login_ffi", "rc4_start")
+fn start_stream(key: BitArray) -> Result(Stream, StartError)
