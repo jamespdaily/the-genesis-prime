@@ -462,40 +462,21 @@ pub fn a_worker_that_ends_without_answering_after_it_was_told_to_go_is_unknown_a
     as "a worker that was told to go and ended without answering may have sent its statement, so nothing is known to be uncommitted"
 }
 
-/// A pool of one connection to the test's database through a relay that
-/// freezes the connection that sends an insert of a character: the insert
-/// reaches Postgres and nothing passes either way after it, while the relay's
-/// new connections work as before.
-fn start_pool_through_freezing_relay(
-  database database: template_database.Database,
-) -> #(pog.Connection, freezing_relay.Relay) {
-  let assert Ok(relay) =
-    freezing_relay.start(
-      to: freezing_relay.Target(
-        host: database.settings.tcp_host,
-        port: database.settings.port,
-      ),
-      freezing_on: "insert into character (",
-    )
-    as "the freezing relay started"
-  let pool_name = process.new_name("pool_through_the_freezing_relay")
-  let assert Ok(_) =
-    template_database.config(for: database, pool_name:, pool_size: 1)
-    |> pog.host(relay.host)
-    |> pog.port(relay.port)
-    |> pog.start
-    as "the pool of one connection through the relay started"
-  #(pog.named_connection(pool_name), relay)
-}
-
-pub fn a_write_whose_database_stops_answering_after_the_go_gives_unknown_and_not_unavailable_test() -> Nil {
+pub fn a_write_that_commits_and_whose_reply_never_arrives_gives_unknown_and_is_stored_test() -> Nil {
   use <- owned_test.run(60_000)
   use database <- template_database.run
   let workers = start_workers()
-  let #(one, relay) = start_pool_through_freezing_relay(database:)
+  // The relay passes the whole exchange of the COMMIT to Postgres, which
+  // commits, and then neither side hears of the other.
+  let #(one, relay) =
+    freezing_relay.start_pool(
+      for: database,
+      freezing: freezing_relay.After("commit"),
+    )
   let assert Ok(account) =
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"
+  let started = clock.monotonic_milliseconds()
   let answer =
     store_worker.run(
       workers:,
@@ -503,17 +484,28 @@ pub fn a_write_whose_database_stops_answering_after_the_go_gives_unknown_and_not
       command: select.InsertCharacter(new_character(account.id)),
       within_ms: answer_wait_ms,
     )
+  let answered_after = clock.monotonic_milliseconds() - started
   assert option.is_some(freezing_relay.frozen_connection(relay))
-    as "the relay froze the connection after the insert was sent, so the database stopped answering with its link open"
+    as "the relay froze the connection after it passed the COMMIT on, so the database stopped answering with its link open"
   assert answer == select.Unknown
     as "a write whose link closed after the go may have committed, so it is not Unavailable: pgo ends a checkout at its deadline of 5000 ms (pgo_pool.erl:19,283-289), which closes the socket (pgo_pool.erl:149-158), pog reports the closed socket as a timeout (pog_ffi.erl:142-143), and Unavailable means nothing committed"
+  assert answered_after < pool.holding_wait_ms()
+    as "the worker answered Unknown itself, when pgo closed its socket at the deadline of 5000 ms from the checkout, before the asker's own wait could end, which is pool.holding_wait_ms after the go and so after pool.holding_wait_ms from this measure's start"
+  let assert Loaded([stored]) =
+    store.run(database.connection, select.LoadCharacters(account.id))
+    as "Postgres committed the write whose answer never arrived: the answer Unavailable would have been untrue"
+  assert stored.name == "Ab Cd"
 }
 
-pub fn after_a_write_whose_database_stopped_answering_the_pool_of_one_serves_the_next_command_on_a_new_connection_test() -> Nil {
+pub fn after_a_write_whose_reply_never_arrived_the_pool_of_one_serves_the_next_command_on_a_new_connection_test() -> Nil {
   use <- owned_test.run(60_000)
   use database <- template_database.run
   let workers = start_workers()
-  let #(one, relay) = start_pool_through_freezing_relay(database:)
+  let #(one, relay) =
+    freezing_relay.start_pool(
+      for: database,
+      freezing: freezing_relay.After("commit"),
+    )
   let assert Ok(account) =
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"
@@ -525,15 +517,15 @@ pub fn after_a_write_whose_database_stopped_answering_the_pool_of_one_serves_the
       within_ms: answer_wait_ms,
     )
   let assert Some(frozen) = freezing_relay.frozen_connection(relay)
-    as "the relay froze the connection after the insert was sent"
-  assert store_worker.run(
+    as "the relay froze the connection after it passed the COMMIT on"
+  let assert Loaded([_]) =
+    store_worker.run(
       workers:,
       db: one,
       command: select.LoadCharacters(account_id: account.id),
       within_ms: 10_000,
     )
-    == Loaded([])
-    as "the pool's deadline of 5000 ms freed the frozen connection (pgo_pool.erl:149-158), so the next command is answered, and the write that never committed is not listed"
+    as "the pool's deadline of 5000 ms freed the frozen connection (pgo_pool.erl:149-158), so the next command is answered, and it lists the write that committed"
   assert freezing_relay.opened(relay) > frozen
     as "the answer came over a connection opened after the frozen one, which the pool made again when it ended the first (pgo_connection.erl:83-96)"
 }
