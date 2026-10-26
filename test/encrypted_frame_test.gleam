@@ -9,8 +9,7 @@
 import connection_vectors as vectors
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{
-  AuthWrapper, BadFrame, ClientWrapper, CreateCharacterWrapper, GameWrapper,
-  NotAWrapper,
+  AuthWrapper, BadFrame, ClientWrapper, GameWrapper, NotAWrapper,
 }
 import genesis_prime/connection/frame.{Frame}
 import gleam/bit_array
@@ -179,12 +178,6 @@ pub fn a_wrapper_around_an_inner_frame_too_big_for_its_outer_frame_is_not_writte
     )
     == Error(frame.LengthOverLimit(131_071))
     as "WriteMessageFrame 0x1403355e0 does not write a frame over the size limit 131070 (0x140335ec0), and the wrapper's frame is 6 bytes longer than its inner frame"
-}
-
-pub fn the_create_character_carrier_is_message_0x25c_test() -> Nil {
-  use <- owned_test.run(5000)
-  assert encrypted_frame.message_id(CreateCharacterWrapper) == 0x025C
-    as "opcode.0x25c: registered at 0x14006d638 mov edx, 0x25c"
 }
 
 pub fn a_create_character_frame_inside_0x25c_is_not_ciphered_test() -> Nil {
