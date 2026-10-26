@@ -23,7 +23,7 @@ import genesis_prime/recording.{
 import genesis_prime/recording/clock
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/time/calendar.{Date}
 import message_support
 import owned_test
@@ -173,11 +173,89 @@ pub fn a_recording_reads_back_as_it_was_written_test() -> Nil {
   Nil
 }
 
+pub fn a_recording_names_its_seed_and_one_without_a_seed_reads_as_unseeded_test() -> Nil {
+  use <- owned_test.run(30_000)
+
+  // The layout of a seeded recording, written out by hand from the doc comment
+  // of the recording module: magic, version 2, build 16042, the date, the role
+  // `sts`, the commit `abc`, the seed 0x0102030405060708 in 64 bits, then one
+  // client-to-server chunk at 258 microseconds holding 1, 2, 3.
+  let seeded_vector =
+    Recording(
+      header: Header(
+        build: 16_042,
+        date: Date(2026, calendar.October, 26),
+        role: Sts,
+        commit: "abc",
+        seed: Some(0x0102030405060708),
+      ),
+      chunks: [Chunk(ClientToServer, 258, <<1, 2, 3>>)],
+    )
+  let seeded_layout = <<
+    "GREC":utf8, 2, 0x00, 0x00, 0x3E, 0xAA, 0x07, 0xEA, 10, 26, 0, 3, "sts":utf8,
+    0, 3, "abc":utf8, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0x01, 0x02, 0,
+    0, 0, 3, 1, 2, 3,
+  >>
+  assert recording.encode(seeded_vector) == Ok(seeded_layout)
+    as "the bytes are the documented layout, the seed after the commit"
+  assert recording.decode(seeded_layout) == Ok(seeded_vector)
+    as "the documented layout reads as the seeded recording"
+
+  // The ends of the seed's range, 0 and 64 bits of ones, are seeds; one bit
+  // more or a negative number does not fit the header.
+  let with_seed = fn(seed) {
+    Recording(..seeded_vector, header: Header(..seeded_vector.header, seed:))
+  }
+  list.each([0, 0xFFFF_FFFF_FFFF_FFFF], fn(seed) {
+    let written = with_seed(Some(seed))
+    let assert Ok(bytes) = recording.encode(written)
+      as "a seed of 64 bits encodes"
+    assert recording.decode(bytes) == Ok(written)
+      as "the seed reads back as it was written"
+  })
+  assert recording.encode(with_seed(Some(0x1_0000_0000_0000_0000)))
+    == Error(recording.OutOfRange("seed", 0x1_0000_0000_0000_0000))
+    as "a seed of more than 64 bits does not fit"
+  assert recording.encode(with_seed(Some(-1)))
+    == Error(recording.OutOfRange("seed", -1))
+    as "a negative seed does not fit"
+
+  // A recording made without a seed is the version-1 layout, byte for byte,
+  // and reads as unseeded.
+  let unseeded = with_seed(None)
+  let assert Ok(unseeded_bytes) = recording.encode(unseeded)
+    as "an unseeded recording encodes"
+  let assert <<"GREC":utf8, 1, _:bytes>> = unseeded_bytes
+    as "an unseeded recording is written as format version 1"
+  assert recording.decode(unseeded_bytes) == Ok(unseeded)
+    as "a recording without a seed reads as unseeded"
+
+  // The live recording of the first session with the real client (the relay's
+  // own header of 2026-10-26: build 16042, role, the commit that was checked
+  // out) was made before a seed existed, and still reads, as unseeded.
+  let folder = "test/recording/2026-10-26-login/"
+  let assert Ok(sts) = recording.read(from: folder <> "sts-001.recording")
+    as "the live STS recording reads"
+  assert sts.header
+    == Header(
+      build: 16_042,
+      date: Date(2026, calendar.October, 26),
+      role: Sts,
+      commit: "3c630b8e0a5287f7757bee4795d4a805605828f9",
+      seed: None,
+    )
+    as "the live STS recording is unseeded"
+  let assert Ok(auth) = recording.read(from: folder <> "auth-001.recording")
+    as "the live auth recording reads"
+  assert auth.header == Header(..sts.header, role: Auth)
+    as "the live auth recording is unseeded, of the same session"
+}
+
 /// A recording of random fields, each within its width in the file, and the
 /// advanced state: any build of 32 bits, any year of 16 bits, a day up to the
-/// 28th, any role, a commit of up to 60 characters of any width in UTF-8, and
-/// up to 12 chunks of up to 300 bytes, of any direction, none timed before the
-/// one before it.
+/// 28th, any role, a commit of up to 60 characters of any width in UTF-8, a
+/// seed of up to 64 bits or none, and up to 12 chunks of up to 300 bytes, of
+/// any direction, none timed before the one before it.
 fn random_recording(state: Int) -> #(Recording, Int) {
   let #(build, state) = message_support.unsigned(state:, bits: 32)
   let #(year, state) = message_support.unsigned(state:, bits: 16)
@@ -194,8 +272,14 @@ fn random_recording(state: Int) -> #(Recording, Int) {
   let #(commit, state) = message_support.text(state:, longest: 60)
   let #(chunk_count, state) = seeded.up_to(state:, most: 12)
   let #(chunks, state) = random_chunks(state:, count: chunk_count)
+  let #(seeded_number, state) = seeded.up_to(state:, most: 1)
+  let #(seed_value, state) = message_support.unsigned(state:, bits: 64)
+  let seed = case seeded_number {
+    0 -> None
+    _ -> Some(seed_value)
+  }
   let header =
-    Header(build:, date: Date(year, month, day + 1), role:, commit:, seed: None)
+    Header(build:, date: Date(year, month, day + 1), role:, commit:, seed:)
   #(Recording(header:, chunks:), state)
 }
 
