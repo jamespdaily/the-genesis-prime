@@ -2,10 +2,12 @@
 //// tracked paths and its guidance files.
 
 import code_rule/source.{type SourceFile}
+import gleam/dict
 import gleam/list
 import gleam/result
 import gleam/string
 import simplifile
+import tom
 
 @external(erlang, "repository_ffi", "tracked_files")
 fn tracked_files() -> String
@@ -50,4 +52,15 @@ fn directory_entries(directory: String) -> List(String) {
   simplifile.read_directory(directory)
   |> result.unwrap([])
   |> list.sort(string.compare)
+}
+
+/// Every key of the client's fact file.
+pub fn fact_keys() -> List(String) {
+  let assert Ok(text) =
+    simplifile.read(
+      ".claude/skills/decoding-the-client/references/client-facts.toml",
+    )
+    as "the fact file could not be read"
+  let assert Ok(facts) = tom.parse(text) as "the fact file is TOML"
+  dict.keys(facts)
 }

@@ -52,8 +52,8 @@ pub type DecodeError {
   InnerFrameTooShort(length: Int)
 }
 
-/// A body being written: the whole bytes so far, the bits of the last byte not
-/// yet whole, and the first error.
+/// A body being written: the whole bytes written, the bits that do not fill
+/// a byte, and the first error.
 pub opaque type Writer {
   Writer(
     whole_bytes: BitArray,
@@ -81,24 +81,32 @@ pub fn finish(writer: Writer) -> Result(BitArray, EncodeError) {
 /// Writes an unsigned value in `bits` bits, 1 to 64; a value that is negative
 /// or does not fit is an error.
 pub fn write_unsigned(
-  writer: Writer,
-  field: String,
-  value: Int,
-  bits: Int,
+  writer writer: Writer,
+  field field: String,
+  value value: Int,
+  bits bits: Int,
 ) -> Writer {
   todo
 }
 
 /// Writes the bits of a 32-bit float, kept as the number they are (ReadFloat
 /// 0x14006c1c0): no conversion, so every bit pattern round-trips.
-pub fn write_float32_bits(writer: Writer, field: String, bits: Int) -> Writer {
+pub fn write_float32_bits(
+  writer writer: Writer,
+  field field: String,
+  bits bits: Int,
+) -> Writer {
   todo
 }
 
 /// Writes a wide text: one bit that is set when it has more than 127 UTF-16
 /// units, their count in 7 bits or 15 bits, then each unit in 16 bits
 /// (WriteWideText 0x140336040).
-pub fn write_wide_text(writer: Writer, field: String, text: String) -> Writer {
+pub fn write_wide_text(
+  writer writer: Writer,
+  field field: String,
+  text text: String,
+) -> Writer {
   todo
 }
 
@@ -106,35 +114,39 @@ pub fn write_wide_text(writer: Writer, field: String, text: String) -> Writer {
 /// units and a terminating zero in 16 bits each (WriteCountedWideText
 /// 0x1400c2f70). `max_units` is the most units the message allows.
 pub fn write_counted_wide_text(
-  writer: Writer,
-  field: String,
-  text: String,
-  max_units: Int,
+  writer writer: Writer,
+  field field: String,
+  text text: String,
+  max_units max_units: Int,
 ) -> Writer {
   todo
 }
 
 /// Writes a GUID: 16 bytes in their order (WriteGuid 0x1400a8780).
-pub fn write_guid(writer: Writer, field: String, guid: BitArray) -> Writer {
+pub fn write_guid(
+  writer writer: Writer,
+  field field: String,
+  guid guid: BitArray,
+) -> Writer {
   todo
 }
 
 /// Writes raw bytes at the bit position, with no move to a byte boundary, in
 /// order (WriteBytesAsBits 0x1403360d0); there must be exactly `count`.
 pub fn write_raw_bytes(
-  writer: Writer,
-  field: String,
-  bytes: BitArray,
-  count: Int,
+  writer writer: Writer,
+  field field: String,
+  bytes bytes: BitArray,
+  count count: Int,
 ) -> Writer {
   todo
 }
 
 /// Writes a server's address in 32 bits and its port in 16.
 pub fn write_endpoint(
-  writer: Writer,
-  field: String,
-  endpoint: Endpoint,
+  writer writer: Writer,
+  field field: String,
+  endpoint endpoint: Endpoint,
 ) -> Writer {
   todo
 }
@@ -142,9 +154,9 @@ pub fn write_endpoint(
 /// Writes a whole inner frame, its 32-bit length counting its own 4 bytes
 /// included, after moving to the next whole byte (WriteRawBytes 0x1403365e0).
 pub fn write_whole_frame(
-  writer: Writer,
-  field: String,
-  frame: BitArray,
+  writer writer: Writer,
+  field field: String,
+  frame frame: BitArray,
 ) -> Writer {
   todo
 }
@@ -152,21 +164,21 @@ pub fn write_whole_frame(
 /// Writes the items' count in `count_bits` bits, then each item through
 /// `write_item`.
 pub fn write_array(
-  writer: Writer,
-  field: String,
-  items: List(a),
-  count_bits: Int,
-  write_item: fn(Writer, a) -> Writer,
+  writer writer: Writer,
+  field field: String,
+  items items: List(a),
+  count_bits count_bits: Int,
+  write_item write_item: fn(Writer, a) -> Writer,
 ) -> Writer {
   todo
 }
 
 /// Writes a count of texts in `count_bits` bits, then each as a wide text.
 pub fn write_wide_texts(
-  writer: Writer,
-  field: String,
-  texts: List(String),
-  count_bits: Int,
+  writer writer: Writer,
+  field field: String,
+  texts texts: List(String),
+  count_bits count_bits: Int,
 ) -> Writer {
   todo
 }
@@ -184,8 +196,8 @@ pub fn finish_reading(reader: Reader) -> Result(Nil, DecodeError) {
 
 /// Reads an unsigned value of `bits` bits, 1 to 64.
 pub fn read_unsigned(
-  reader: Reader,
-  bits: Int,
+  reader reader: Reader,
+  bits bits: Int,
 ) -> Result(#(Int, Reader), DecodeError) {
   todo
 }
@@ -206,8 +218,8 @@ pub fn read_wide_text(
 
 /// Reads a counted wide text with at most `max_units` units.
 pub fn read_counted_wide_text(
-  reader: Reader,
-  max_units: Int,
+  reader reader: Reader,
+  max_units max_units: Int,
 ) -> Result(#(String, Reader), DecodeError) {
   todo
 }
@@ -219,8 +231,8 @@ pub fn read_guid(reader: Reader) -> Result(#(BitArray, Reader), DecodeError) {
 
 /// Reads `count` raw bytes at the bit position, in order.
 pub fn read_raw_bytes(
-  reader: Reader,
-  count: Int,
+  reader reader: Reader,
+  count count: Int,
 ) -> Result(#(BitArray, Reader), DecodeError) {
   todo
 }
@@ -243,17 +255,17 @@ pub fn read_whole_frame(
 /// Reads a count in `count_bits` bits, then that many items through
 /// `read_item`.
 pub fn read_array(
-  reader: Reader,
-  count_bits: Int,
-  read_item: fn(Reader) -> Result(#(a, Reader), DecodeError),
+  reader reader: Reader,
+  count_bits count_bits: Int,
+  read_item read_item: fn(Reader) -> Result(#(a, Reader), DecodeError),
 ) -> Result(#(List(a), Reader), DecodeError) {
   todo
 }
 
 /// Reads a count of texts in `count_bits` bits, then that many wide texts.
 pub fn read_wide_texts(
-  reader: Reader,
-  count_bits: Int,
+  reader reader: Reader,
+  count_bits count_bits: Int,
 ) -> Result(#(List(String), Reader), DecodeError) {
   todo
 }
