@@ -566,8 +566,8 @@ fn loaded(
     Loaded(characters) -> #(State(..state, characters:, status: Idle), [
       Send(CharacterListed(character_list(characters:, context:))),
     ])
-    Unavailable -> #(state, [Abandon(ListNotLoaded)])
-    Inserted(_) | Renamed(_) | Deleted(_) | NameInUse | NotFound | Unknown ->
+    Unavailable | Unknown -> #(state, [Abandon(ListNotLoaded)])
+    Inserted(_) | Renamed(_) | Deleted(_) | NameInUse | NotFound ->
       unexpected(state, answer)
   }
 }
@@ -588,8 +588,8 @@ fn reloaded(
       Send(owed),
       Send(CharacterListed(character_list(characters:, context:))),
     ])
-    Unavailable -> #(state, [Abandon(ListNotReloaded)])
-    Inserted(_) | Renamed(_) | Deleted(_) | NameInUse | NotFound | Unknown ->
+    Unavailable | Unknown -> #(state, [Abandon(ListNotReloaded)])
+    Inserted(_) | Renamed(_) | Deleted(_) | NameInUse | NotFound ->
       unexpected(state, answer)
   }
 }
@@ -658,9 +658,16 @@ fn created(
     NameInUse -> create_refused(state, NameTaken)
     Unavailable ->
       reload(state:, owed: CreateResult(create_failure(StoreUnavailable)))
-    Loaded(_) | Renamed(_) | Deleted(_) | NotFound | Unknown ->
-      unexpected(state, answer)
+    Unknown -> write_not_answered(state)
+    Loaded(_) | Renamed(_) | Deleted(_) | NotFound -> unexpected(state, answer)
   }
+}
+
+/// A write got no answer in the longest time a write can take, so what it did
+/// is not known and the player is told nothing about it: the connection ends,
+/// and the client's next connection lists the characters the store holds.
+fn write_not_answered(state: State) -> #(State, List(Effect)) {
+  #(state, [Abandon(WriteNotAnswered)])
 }
 
 fn create_refused(state: State, refusal: Refusal) -> #(State, List(Effect)) {
@@ -708,7 +715,8 @@ fn renamed(
           refusal: StoreUnavailable,
         )),
       )
-    Loaded(_) | Inserted(_) | Deleted(_) | Unknown -> unexpected(state, answer)
+    Unknown -> write_not_answered(state)
+    Loaded(_) | Inserted(_) | Deleted(_) -> unexpected(state, answer)
   }
 }
 
@@ -758,7 +766,8 @@ fn deleted(
     NotFound -> delete_refused(state, NotYourCharacter(id))
     Unavailable ->
       reload(state:, owed: DeleteResult(delete_failure(StoreUnavailable)))
-    Loaded(_) | Inserted(_) | Renamed(_) | NameInUse | Unknown ->
+    Unknown -> write_not_answered(state)
+    Loaded(_) | Inserted(_) | Renamed(_) | NameInUse ->
       unexpected(state, answer)
   }
 }
