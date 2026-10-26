@@ -36,7 +36,6 @@ import genesis_prime/connection/socket.{type FlowControl, type Socket}
 import genesis_prime/shutdown
 import genesis_prime/telemetry/log.{type Who}
 import gleam/erlang/process.{type Subject}
-import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 
@@ -235,8 +234,7 @@ fn handle_message(
   message: Message,
 ) -> actor.Next(State, Message) {
   case message, state.status {
-    SocketGiven, AwaitingSocket ->
-      todo as "run the protocol's connect step, write its sends, and start reading in its mode"
+    SocketGiven, AwaitingSocket -> connect(state)
     SocketGiven, Reading(..) -> actor.continue(state)
     ServerStopping, _ ->
       end_connection(state, log.info, "the server is stopping")
@@ -258,6 +256,71 @@ fn handle_message(
   }
 }
 
+/// Runs the protocol's connect step for the client that connected, carries out
+/// its reaction and starts reading in the protocol's mode.
+fn connect(state: State) -> actor.Next(State, Message) {
+  let protocol = state.settings.protocol
+  let reaction = protocol.connect(socket.peer(state.socket))
+  let now = state.settings.clock()
+  let reader = case protocol.mode {
+    Frames ->
+      FrameReader(inbound.new(rate: state.settings.rate, now_milliseconds: now))
+    RawBytes ->
+      RawReader(rate_limit.new(rate: state.settings.rate, now_milliseconds: now))
+  }
+  carry_out(
+    State(..state, status: Reading(reader:, conversation: reaction.next)),
+    reaction,
+    arm,
+  )
+}
+
+/// Writes what a reaction sends, in order, then closes the socket when the
+/// reaction says to, and otherwise goes on with `then`, with the reaction's
+/// conversation in place. A write that fails ends the connection.
+fn carry_out(
+  state: State,
+  reaction: Reaction,
+  then: fn(State) -> actor.Next(State, Message),
+) -> actor.Next(State, Message) {
+  case write_all(state.socket, reaction.send) {
+    Error(reason) ->
+      end_connection(
+        state,
+        log.warning,
+        "the socket failed writing: " <> socket.describe(reason),
+      )
+    Ok(Nil) ->
+      case reaction.close {
+        True ->
+          end_connection(state, log.info, "the connection's logic closed it")
+        False -> then(with_conversation(state, reaction.next))
+      }
+  }
+}
+
+fn write_all(
+  socket: Socket,
+  writes: List(BitArray),
+) -> Result(Nil, socket.Reason) {
+  case writes {
+    [] -> Ok(Nil)
+    [bytes, ..rest] ->
+      case socket.send(socket, bytes) {
+        Ok(Nil) -> write_all(socket, rest)
+        Error(reason) -> Error(reason)
+      }
+  }
+}
+
+fn with_conversation(state: State, conversation: Conversation) -> State {
+  case state.status {
+    Reading(reader:, ..) ->
+      State(..state, status: Reading(reader:, conversation:))
+    AwaitingSocket -> state
+  }
+}
+
 /// Hands what the socket read to the connection's conversation, in the
 /// protocol's mode, writes what it sends and asks the socket for more, unless
 /// a limit ended the connection or the conversation closed it.
@@ -267,7 +330,69 @@ fn receive(
   conversation conversation: Conversation,
   bytes bytes: BitArray,
 ) -> actor.Next(State, Message) {
-  todo as "cut or pass the bytes, take tokens, run the conversation, write its sends"
+  case reader {
+    FrameReader(inbound:) -> {
+      let #(inbound, effects) =
+        inbound.receive(
+          inbound:,
+          received: bytes,
+          now_milliseconds: state.settings.clock(),
+        )
+      deliver(
+        State(
+          ..state,
+          status: Reading(reader: FrameReader(inbound:), conversation:),
+        ),
+        effects,
+      )
+    }
+    RawReader(bucket:) ->
+      case rate_limit.take(bucket:, now_milliseconds: state.settings.clock()) {
+        Error(exceeded) ->
+          end_connection(
+            state,
+            log.warning,
+            inbound.describe(reason: inbound.TooFast(exceeded:)),
+          )
+        Ok(bucket) -> {
+          let state =
+            State(
+              ..state,
+              status: Reading(reader: RawReader(bucket:), conversation:),
+            )
+          carry_out(state, conversation.handle(BytesRead(bytes:)), next_reads)
+        }
+      }
+  }
+}
+
+/// Hands each frame the inbound rule delivered to the conversation, in order,
+/// and ends the connection at the rule's `End` effect, after the frames before
+/// it.
+fn deliver(
+  state: State,
+  effects: List(inbound.Effect),
+) -> actor.Next(State, Message) {
+  case effects, state.status {
+    [], _ -> next_reads(state)
+    [inbound.End(reason:), ..], _ ->
+      end_connection(state, log.warning, inbound.describe(reason:))
+    [inbound.Deliver(frame:), ..rest], Reading(conversation:, ..) ->
+      carry_out(state, conversation.handle(FrameRead(frame:)), fn(state) {
+        deliver(state, rest)
+      })
+    [_, ..], AwaitingSocket -> actor.continue(state)
+  }
+}
+
+/// Asks for the next read once the owner has taken what it was given: at once
+/// in `ActiveOnce`, and when the runtime says the reads are used up
+/// otherwise.
+fn next_reads(state: State) -> actor.Next(State, Message) {
+  case state.settings.flow_control {
+    socket.ActiveOnce -> arm(state)
+    socket.ActiveCount(..) -> actor.continue(state)
+  }
 }
 
 /// Asks the socket for the next reads in the owner's flow control.

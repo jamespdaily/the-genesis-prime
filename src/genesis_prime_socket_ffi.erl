@@ -1,5 +1,5 @@
 -module(genesis_prime_socket_ffi).
--export([listen/1, listening_port/1, accept/1, give_to/2, arm_once/1, arm_count/2, close/1,
+-export([listen/1, listening_port/1, accept/1, give_to/2, arm_once/1, arm_count/2, send/2, close/1,
          peer/1, monotonic_milliseconds/0, limit_heap/1,
          keep_messages_off_heap/0, data_tag/0,
          closed_tag/0, error_tag/0, passive_tag/0]).
@@ -10,10 +10,17 @@
 %% them. The operating system lowers it to its own limit when that is smaller.
 -define(BACKLOG, 1024).
 
+%% How long a write may wait for a peer that does not read, in milliseconds. The
+%% socket owner writes in its own process, so a peer that never reads would
+%% hold it; past this the write fails and the socket closes.
+-define(SEND_TIMEOUT_MS, 5000).
+
 -spec listen(non_neg_integer()) -> {ok, port()} | {error, term()}.
 listen(Port) ->
     result(gen_tcp:listen(Port, [binary, {packet, raw}, {active, false},
                                  {reuseaddr, true}, {nodelay, true},
+                                 {send_timeout, ?SEND_TIMEOUT_MS},
+                                 {send_timeout_close, true},
                                  {backlog, ?BACKLOG}])).
 
 -spec listening_port(port()) -> {ok, non_neg_integer()} | {error, term()}.
@@ -36,6 +43,12 @@ arm_once(Socket) ->
     {ok, nil} | {error, term()}.
 arm_count(Socket, Reads) ->
     unit(inet:setopts(Socket, [{active, Reads}])).
+
+%% Writes the bytes, which returns once the runtime has taken them; a peer that
+%% does not read for ?SEND_TIMEOUT_MS fails the write and closes the socket.
+-spec send(port(), binary()) -> {ok, nil} | {error, term()}.
+send(Socket, Bytes) ->
+    unit(gen_tcp:send(Socket, Bytes)).
 
 -spec close(port()) -> nil.
 close(Socket) ->
