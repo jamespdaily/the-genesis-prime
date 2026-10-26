@@ -22,7 +22,10 @@ emit(Level, Who, Text, Numbers) ->
     nil.
 
 %% Sets logger's primary level: debug when the argument is true, info
-%% otherwise.
+%% otherwise. It also sets the formatter of the default handler to write each
+%% line on one line with its level, its text and every metadata key this
+%% module sets, as `key=value`, because logger's own formatter writes the text
+%% alone. A node with no default handler is left as it is.
 -spec configure(boolean()) -> nil.
 configure(Debug) ->
     Level = case Debug of
@@ -30,7 +33,22 @@ configure(Debug) ->
                 false -> info
             end,
     ok = logger:set_primary_config(level, Level),
+    _ = logger:update_handler_config(
+          default, formatter,
+          {logger_formatter, #{single_line => true, template => template()}}),
     nil.
+
+%% The metadata keys `metadata/2` sets, in the order a line prints them.
+keys() ->
+    [account, character, unit, process, map, message_name, message_number,
+     numbers].
+
+%% The template of the default handler's formatter: the time, the level, the
+%% text, each key the line has as ` key=value`, and the end of the line.
+template() ->
+    [time, " ", level, " ", msg]
+    ++ [{Key, [" ", atom_to_list(Key), "=", Key], []} || Key <- keys()]
+    ++ ["\n"].
 
 level(error_level) -> error;
 level(warning_level) -> warning;
@@ -48,12 +66,12 @@ actor({some, {character, Id}}) -> [{character, Id}];
 actor({some, {unit, Id}}) -> [{unit, Id}];
 actor(none) -> [].
 
-place({some, {process, Name}}) -> [{process, Name}];
+place({some, {process, Name}}) -> [{process, text(Name)}];
 place({some, {map, Id}}) -> [{map, Id}];
 place(none) -> [].
 
 message({some, {named, Name, Number}}) ->
-    [{message_name, Name}, {message_number, Number}];
+    [{message_name, text(Name)}, {message_number, Number}];
 message({some, {numbered, Number}}) -> [{message_number, Number}];
 message(none) -> [].
 
@@ -62,3 +80,8 @@ numbers(Numbers) ->
     [{numbers, maps:map(fun(_Name, {count, Count}) -> Count;
                            (_Name, {ratio, Ratio}) -> Ratio
                         end, Numbers)}].
+
+%% A text as a string, the form logger's formatter writes as itself in a
+%% template; a binary it writes as `<<"...">>`.
+text(Text) ->
+    unicode:characters_to_list(Text).

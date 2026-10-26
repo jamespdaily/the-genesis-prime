@@ -1,43 +1,73 @@
 -module(log_capture_ffi).
--export([add/1, remove/1, log/2]).
+-export([install/0, receive_from/1, stop_receiving/1, log/2]).
 
 %% The Gleam types of test/log_capture.gleam:
 %%   Event(level, text, from, metadata, formatted) is
 %%     {event, Level, Text, From, Metadata, Formatted}
-%%   Handle(id)                         is {handle, Id}
 %%   Field: Whole(N) is {whole, N}, Fraction(F) is {fraction, F},
 %%          Text(T) is {text, T}, Fields(D) is {fields, D}
 %% A Gleam subject is {subject, Pid, Tag}, and a message sent to it is
 %% {Tag, Message}.
 
-%% Adds a logger handler that sends every line it is given, as an event, to
-%% the subject. Returns the handle that removes it.
-add(Subject) ->
-    Id = list_to_atom("log_capture_" ++ integer_to_list(erlang:unique_integer([positive]))),
-    ok = logger:add_handler(Id, ?MODULE, #{level => all, config => #{subject => Subject}}),
-    {handle, Id}.
+-define(HANDLER, log_capture_handler).
+-define(RECEIVERS, log_capture_receivers).
 
-remove({handle, Id}) ->
-    _ = logger:remove_handler(Id),
+%% Adds the one logger handler of the run, and the table of the subjects that
+%% receive what it captures. The table belongs to a process of its own that
+%% lives as long as the node. Logger's own handler changes are not safe to
+%% make while another process changes the level (a handler change writes back
+%% the primary configuration it read before it started), so a test never adds
+%% or removes a handler: it registers a subject.
+install() ->
+    Owner = spawn(fun() ->
+                          ets:new(?RECEIVERS, [named_table, public, set]),
+                          receive stop -> ok end
+                  end),
+    wait_for_table(Owner),
+    ok = logger:add_handler(?HANDLER, ?MODULE, #{level => all, config => #{}}),
+    nil.
+
+wait_for_table(Owner) ->
+    case ets:whereis(?RECEIVERS) of
+        undefined ->
+            true = is_process_alive(Owner),
+            timer:sleep(1),
+            wait_for_table(Owner);
+        _ ->
+            ok
+    end.
+
+%% Sends every line logged from now on to the subject.
+receive_from({subject, _Pid, Tag} = Subject) ->
+    ets:insert(?RECEIVERS, {Tag, Subject}),
+    nil.
+
+stop_receiving({subject, _Pid, Tag}) ->
+    ets:delete(?RECEIVERS, Tag),
     nil.
 
 %% The handler callback of logger: runs in the process that wrote the line.
-%% A handler that fails is removed by logger, so a failure here is caught and
-%% leaves the line uncaptured. A handler whose receiver has ended removes
-%% itself, from a process of its own, as logger does not allow it from inside
-%% the callback.
-log(#{level := Level, msg := Msg, meta := Meta} = Event, #{id := Id, config := #{subject := {subject, Pid, Tag}}}) ->
-    case is_process_alive(Pid) of
-        true ->
-            try
-                From = maps:get(pid, Meta, self()),
-                Pid ! {Tag, {event, atom_to_binary(Level), text(Msg), From, fields(Meta),
-                            formatted(Event)}}
-            catch
-                _:_ -> ok
-            end;
-        false ->
-            spawn(fun() -> logger:remove_handler(Id) end)
+%% It sends the line, as an event, to each registered subject whose process is
+%% alive and forgets the others. A failure here is caught, because logger
+%% removes a handler that fails.
+log(#{level := Level, msg := Msg, meta := Meta} = LogEvent, _Config) ->
+    try
+        case ets:tab2list(?RECEIVERS) of
+            [] ->
+                ok;
+            Receivers ->
+                Event = {event, atom_to_binary(Level), text(Msg),
+                         maps:get(pid, Meta, self()), fields(Meta),
+                         formatted(LogEvent)},
+                lists:foreach(fun({Tag, {subject, Pid, _} = Subject}) ->
+                                      case is_process_alive(Pid) of
+                                          true -> Pid ! {Tag, Event};
+                                          false -> stop_receiving(Subject)
+                                      end
+                              end, Receivers)
+        end
+    catch
+        _:_ -> ok
     end,
     ok.
 
@@ -61,7 +91,9 @@ text({Format, Arguments}) when is_list(Format) ->
 text(_) -> <<>>.
 
 %% The metadata entries whose values the Gleam side reads: whole numbers,
-%% floats, texts and maps of them. Others, such as a pid or a mfa, are left out.
+%% floats, texts (binaries, or printable lists, which is how logger's own
+%% formatter reads a text) and maps of them. Others, such as a pid or a mfa,
+%% are left out.
 fields(Map) ->
     maps:from_list([{key(Key), Field}
                     || {Key, Value} <- maps:to_list(Map),
@@ -71,6 +103,11 @@ field(Value) when is_integer(Value) -> {ok, {whole, Value}};
 field(Value) when is_float(Value) -> {ok, {fraction, Value}};
 field(Value) when is_binary(Value) -> {ok, {text, Value}};
 field(Value) when is_map(Value) -> {ok, {fields, fields(Value)}};
+field(Value) when is_list(Value) ->
+    case io_lib:printable_unicode_list(Value) of
+        true -> {ok, {text, unicode:characters_to_binary(Value)}};
+        false -> error
+    end;
 field(_) -> error.
 
 key(Key) when is_atom(Key) -> atom_to_binary(Key);

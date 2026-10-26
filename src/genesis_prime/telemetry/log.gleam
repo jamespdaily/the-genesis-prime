@@ -107,8 +107,13 @@ pub fn info_with_numbers(
 
 /// Sets which lines are written, from the start argument that says whether
 /// debug is on: with it off, info and above are written, and with it on,
-/// debug too. It sets the level of logger itself, which belongs to the whole
-/// node, so the server's entry point calls it once, before the tree starts.
+/// debug too. It also sets the formatter of the node's default handler, so
+/// each line is written on one line with its time, level and text, then each
+/// key of who and where the line has as `key=value` and its `numbers` as a
+/// map; logger's own formatter writes the text alone, so no metadata would
+/// reach a reader. It sets the level and the formatter of logger itself, which
+/// belong to the whole node, so the server's entry point calls it once, before
+/// the tree starts.
 @external(erlang, "log_ffi", "configure")
 pub fn configure(debug debug: Bool) -> Nil
 

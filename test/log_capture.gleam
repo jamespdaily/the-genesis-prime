@@ -1,12 +1,15 @@
-//// Captures the lines the server logs during a test, through a logger handler
-//// that sends each line to the test as an event, so a test waits for the
-//// line it needs and never for a fixed time. The handler sees every line of
-//// the node, including those of tests running beside this one, so a test asks
-//// for the lines of the process it started.
+//// Captures the lines the server logs during a test, through one logger
+//// handler for the whole run that sends each line to every test that is
+//// capturing, as an event, so a test waits for the line it needs and never
+//// for a fixed time. The handler sees every line of the node, including those
+//// of tests running beside this one, so a test asks for the lines of the
+//// process it started. A test never adds or removes a handler, because
+//// logger's handler changes can write back a level another process has just
+//// set, which the test that turns debug on would lose.
 ////
-//// Logger's level belongs to the whole node. `start` brings it to info, once
-//// per run, so no test depends on OTP's default level; the one test that
-//// turns debug on and off is `log_test`'s.
+//// Logger's level belongs to the whole node. The first `start` of a run
+//// brings it to info and installs the handler, so no test depends on OTP's
+//// default level; the one test that turns debug on and off is `log_test`'s.
 
 import database_support
 import genesis_prime/telemetry/log
@@ -36,24 +39,26 @@ pub type Field {
   Fields(Dict(String, Field))
 }
 
-type Handle
-
 /// A running capture, ended by `stop`.
 pub opaque type Capture {
-  Capture(handle: Handle, events: Subject(Event))
+  Capture(events: Subject(Event))
 }
 
 /// Starts capturing every line logged after the call, delivered to the process
 /// that calls it.
 pub fn start() -> Capture {
-  database_support.once("log_level_info", fn() { log.configure(debug: False) })
+  database_support.once("log_capture", fn() {
+    log.configure(debug: False)
+    install()
+  })
   let events = process.new_subject()
-  Capture(handle: add(events), events:)
+  receive_from(events)
+  Capture(events:)
 }
 
-/// Stops capturing.
+/// Stops capturing. A capture whose process has ended stops by itself.
 pub fn stop(capture: Capture) -> Nil {
-  remove(capture.handle)
+  stop_receiving(capture.events)
 }
 
 /// The next line the process `from` wrote, waiting up to `within`
@@ -71,8 +76,11 @@ pub fn next_from(
   }
 }
 
-@external(erlang, "log_capture_ffi", "add")
-fn add(events: Subject(Event)) -> Handle
+@external(erlang, "log_capture_ffi", "install")
+fn install() -> Nil
 
-@external(erlang, "log_capture_ffi", "remove")
-fn remove(handle: Handle) -> Nil
+@external(erlang, "log_capture_ffi", "receive_from")
+fn receive_from(events: Subject(Event)) -> Nil
+
+@external(erlang, "log_capture_ffi", "stop_receiving")
+fn stop_receiving(events: Subject(Event)) -> Nil
