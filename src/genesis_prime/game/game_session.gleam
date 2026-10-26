@@ -15,6 +15,7 @@
 //// does not decode ends the connection. A message no rule handles is logged
 //// once for each message number and the connection goes on.
 
+import genesis_prime/character/customisation
 import genesis_prime/character/select
 import genesis_prime/character/server_message.{type ServerMessage}
 import genesis_prime/character/world_entry
@@ -220,7 +221,7 @@ fn routed(
       }
     RedeemingKey(_) -> end(session, UnexpectedMessage(inner.message_id))
     Playing(select: select_state, entry: entry_state) ->
-      case player_input(session:, inner:) {
+      case player_input(session:, inner:, context:) {
         Error(reason) -> end(session, reason)
         Ok(Unhandled) -> unhandled(session, inner.message_id)
         Ok(ToSelect(input)) ->
@@ -260,6 +261,7 @@ type PlayerInput {
 fn player_input(
   session session: Session,
   inner inner: Frame,
+  context context: Context,
 ) -> Result(PlayerInput, EndReason) {
   case inner.message_id {
     0x07E0 ->
@@ -274,6 +276,14 @@ fn player_input(
         False -> Error(UnexpectedMessage(created.message_id))
         True ->
           create_character.decode(created.body)
+          |> result.try(fn(request) {
+            customisation.within_limits(
+              context.select.customisation,
+              labels: list.length(request.customisation_labels),
+              bones: list.length(request.bone_values),
+            )
+            |> result.replace(request)
+          })
           |> decoded(created.message_id, fn(request) {
             ToSelect(select.Requested(select.CreateRequested(request)))
           })
@@ -394,7 +404,10 @@ fn apply_select(
             | select.NameTaken
             | select.NotYourCharacter(_)
             | select.CharacterDisabled(_)
-            | select.CharacterRequiresRename(_) -> WarningLevel
+            | select.CharacterRequiresRename(_)
+            | select.BoneCountWrong(..)
+            | select.LabelRefused(_)
+            | select.AccountFull(_) -> WarningLevel
           },
           select.describe_refusal(refusal),
         ),

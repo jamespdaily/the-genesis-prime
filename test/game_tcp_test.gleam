@@ -116,16 +116,14 @@ pub fn a_player_logs_in_and_lists_creates_renames_and_deletes_characters_over_tc
   // 0x25B inside 0x25C: a character made from the client's own row.
   let row = running.facts.creation
   let assert Ok(create) =
-    create_character.encode(
-      CreateCharacter(
-        creation_id: row.id,
-        name: "Zed Mara",
-        path: 1,
-        customisation_labels: [1, 2],
-        customisation_values: [3, 4],
-        bone_values: [0x3F800000],
-      ),
-    )
+    create_character.encode(CreateCharacter(
+      creation_id: row.id,
+      name: "Zed Mara",
+      path: 1,
+      customisation_labels: [1, 2],
+      customisation_values: [3, 4],
+      bone_values: list.repeat(0x3F800000, running.facts.bone_count),
+    ))
     as "0x25B encodes"
   game_client.send_create(game:, body: create)
   let assert [created] = game_client.read(game:, count: 1)
@@ -289,16 +287,14 @@ fn create_request(
   name name: String,
 ) -> BitArray {
   let assert Ok(body) =
-    create_character.encode(
-      CreateCharacter(
-        creation_id: running.facts.creation.id,
-        name:,
-        path: 1,
-        customisation_labels: [1, 2],
-        customisation_values: [3, 4],
-        bone_values: [0x3F800000],
-      ),
-    )
+    create_character.encode(CreateCharacter(
+      creation_id: running.facts.creation.id,
+      name:,
+      path: 1,
+      customisation_labels: [1, 2],
+      customisation_values: [3, 4],
+      bone_values: list.repeat(0x3F800000, running.facts.bone_count),
+    ))
     as "0x25B encodes"
   body
 }
@@ -360,4 +356,57 @@ pub fn a_name_another_character_has_in_other_case_is_refused_on_create_and_renam
   assert list.map(characters_of(database:, account:), fn(stored) { stored.name })
     == ["Zed Mara", "Ab Cd"]
     as "the names are shown as they were typed, and the refused ones changed nothing"
+}
+
+pub fn a_create_with_the_wrong_number_of_bone_values_is_refused_and_one_with_too_many_ends_the_connection_over_tcp_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
+  use database <- template_database.run
+  let capture = log_capture.start()
+  let running = game_server.start(database:, answer_deadline_ms: 5000)
+  let assert Ok(account) =
+    account_store.create(database.connection, "jim", "secret")
+    as "the account is created"
+  let game =
+    game_client.connect(
+      port: running.game_port,
+      session_key: issued_key(running:, account:),
+      account_name: "jim",
+    )
+  game_client.send(game:, message_id: 0x07E0, body: <<>>)
+  let assert [_listed] = game_client.read(game:, count: 1)
+    as "the character list"
+  let row = running.facts.creation
+  let request = fn(bones) {
+    let assert Ok(body) =
+      create_character.encode(CreateCharacter(
+        creation_id: row.id,
+        name: "Zed Mara",
+        path: 1,
+        customisation_labels: [1],
+        customisation_values: [1],
+        bone_values: list.repeat(0x3F800000, bones),
+      ))
+      as "0x25B encodes"
+    body
+  }
+  game_client.send_create(game:, body: request(running.facts.bone_count + 1))
+  let assert [refused] = game_client.read(game:, count: 1)
+    as "the create result"
+  let assert Ok(refused_message) = create_character_result.decode(refused.body)
+    as "0xDC decodes"
+  assert refused_message.result == 4
+    as "opcode.0x25b.counts: a request with a number of bone values the race and sex do not have is refused with CreateFailed, 4"
+  assert characters_of(database:, account:) == [] as "nothing was written"
+  game_client.send_create(game:, body: request(49))
+  assert game_client.closed(game)
+    as "opcode.0x25b.counts: 48 is the most the client sends, so 49 bone values is bad input and ends the connection"
+  let assert Ok(_) =
+    log_capture.next_matching(
+      capture:,
+      within: wait_ms,
+      matching: warning_about("bone_values"),
+    )
+    as "the reason is logged, naming the field"
+  Nil
 }

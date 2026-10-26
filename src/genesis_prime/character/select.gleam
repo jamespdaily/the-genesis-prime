@@ -19,6 +19,9 @@
 import genesis_prime/character/character.{
   type Character, type NewCharacter, type Place, Appearance, NewCharacter,
 }
+import genesis_prime/character/customisation.{
+  type Customisation, type LabelProblem,
+}
 import genesis_prime/character/name.{type NameError}
 import genesis_prime/character/server_message.{
   type ServerMessage, CharacterListed, CreateResult, DeleteResult, PlayRefused,
@@ -56,6 +59,8 @@ const create_ok = 3
 
 const create_failed = 4
 
+const create_failed_account_full = 9
+
 const create_failed_unique_name = 6
 
 const create_failed_invalid_name = 10
@@ -90,12 +95,16 @@ const most_customisations = 15
 /// server has no starting place for it. `level_of` is the level an amount of
 /// experience gives, as the client works it (GetLevelForExperience
 /// 0x140029820; a character starts with the row's `xp`). `server_time` is the server's time as a Windows FILETIME,
-/// and `realm_id` the realm the connection is on.
+/// and `realm_id` the realm the connection is on. `customisation` is what the
+/// client's tables say a create request may carry and `character_slots` how
+/// many characters an account may hold.
 pub type Context {
   Context(
     creation: fn(Int) -> Result(CharacterCreation, Nil),
     start: fn(CharacterCreation) -> Result(Place, Nil),
     level_of: fn(Int) -> Int,
+    customisation: Customisation,
+    character_slots: Int,
     server_time: Int,
     realm_id: Int,
   )
@@ -190,6 +199,13 @@ pub type Refusal {
   TooManyCustomisations(count: Int)
   /// The server has no place for a character of the row to start in.
   NoStartingPlace(creation_id: Int)
+  /// The request holds a number of bone values other than the race and sex's
+  /// own, which the real client never sends.
+  BoneCountWrong(expected: Int, given: Int)
+  /// The request's labels are not ones the real client sends.
+  LabelRefused(LabelProblem)
+  /// The account holds as many characters as it has slots.
+  AccountFull(slots: Int)
   NameTaken
   /// The character is not one of the account's.
   NotYourCharacter(character_id: Int)
@@ -317,7 +333,14 @@ fn start_creating(
   request request: CreateCharacter,
   context context: Context,
 ) -> #(State, List(Effect)) {
-  case plan_creation(account_id: state.account_id, request:, context:) {
+  case
+    plan_creation(
+      account_id: state.account_id,
+      characters: state.characters,
+      request:,
+      context:,
+    )
+  {
     Ok(new) -> #(State(..state, status: Creating), [
       Store(InsertCharacter(new)),
     ])
@@ -336,6 +359,7 @@ fn start_creating(
 /// server starts it at.
 fn plan_creation(
   account_id account_id: Int,
+  characters characters: List(Character),
   request request: CreateCharacter,
   context context: Context,
 ) -> Result(NewCharacter, Refusal) {
@@ -347,6 +371,7 @@ fn plan_creation(
     |> result.replace_error(CreationUnknown(request.creation_id)),
   )
   use Nil <- result.try(check_offered(row))
+  use Nil <- result.try(check_slots(characters:, context:))
   use Nil <- result.try(case request.path > 3 {
     True -> Error(PathOutOfRange(request.path))
     False -> Ok(Nil)
@@ -356,6 +381,15 @@ fn plan_creation(
     True -> Error(TooManyCustomisations(customisations))
     False -> Ok(Nil)
   })
+  use Nil <- result.try(check_bones(request:, row:, context:))
+  use Nil <- result.try(
+    customisation.check_labels(
+      context.customisation,
+      request.customisation_labels,
+      row.faction_id,
+    )
+    |> result.map_error(LabelRefused),
+  )
   use place <- result.try(
     context.start(row) |> result.replace_error(NoStartingPlace(row.id)),
   )
@@ -377,6 +411,38 @@ fn plan_creation(
       bone_values: request.bone_values,
     ),
   ))
+}
+
+/// An account may hold as many characters as it has slots: the Hybrid
+/// system's CharacterSlots value (`character_slots`). The client only hides its
+/// create entry when the account is full, so the server's own check refuses.
+fn check_slots(
+  characters characters: List(Character),
+  context context: Context,
+) -> Result(Nil, Refusal) {
+  use <- bool.guard(
+    when: list.length(characters) >= context.character_slots,
+    return: Error(AccountFull(context.character_slots)),
+  )
+  Ok(Nil)
+}
+
+/// The real client sends one bone value for each entry of the bone list of the
+/// race and sex of the row it was asked to create from, so any other number is
+/// not its request (opcode.0x25b.counts).
+fn check_bones(
+  request request: CreateCharacter,
+  row row: CharacterCreation,
+  context context: Context,
+) -> Result(Nil, Refusal) {
+  let expected =
+    customisation.bone_count(context.customisation, row.race_id, row.sex)
+  let given = list.length(request.bone_values)
+  use <- bool.guard(
+    when: given != expected,
+    return: Error(BoneCountWrong(expected:, given:)),
+  )
+  Ok(Nil)
 }
 
 /// A row is offered to an account when it is enabled, needs no entitlement and
@@ -709,7 +775,10 @@ fn create_failure(refusal: Refusal) -> CreateCharacterResult {
     | TooManyCustomisations(_)
     | NotYourCharacter(_)
     | CharacterDisabled(_)
-    | CharacterRequiresRename(_) -> create_failed
+    | CharacterRequiresRename(_)
+    | BoneCountWrong(..)
+    | LabelRefused(_) -> create_failed
+    AccountFull(_) -> create_failed_account_full
     NoStartingPlace(_) | StoreUnavailable -> create_failed_internal
   }
   CreateCharacterResult(character_id: 0, field_2: 0, result:)
@@ -732,7 +801,10 @@ fn rename_result(refusal: Refusal) -> Int {
     | NoStartingPlace(_)
     | NotYourCharacter(_)
     | CharacterDisabled(_)
-    | CharacterRequiresRename(_) -> rename_failed
+    | CharacterRequiresRename(_)
+    | BoneCountWrong(..)
+    | LabelRefused(_)
+    | AccountFull(_) -> rename_failed
   }
 }
 
@@ -788,6 +860,25 @@ pub fn describe_refusal(refusal refusal: Refusal) -> String {
     NoStartingPlace(creation_id:) ->
       "the server has no starting place for the CharacterCreation row "
       <> int.to_string(creation_id)
+    BoneCountWrong(expected:, given:) ->
+      "the request holds "
+      <> int.to_string(given)
+      <> " bone values, and the race and sex have "
+      <> int.to_string(expected)
+    LabelRefused(customisation.LabelRepeated(label_id:)) ->
+      "the customisation label " <> int.to_string(label_id) <> " is given twice"
+    LabelRefused(customisation.LabelUnknown(label_id:)) ->
+      "the customisation label "
+      <> int.to_string(label_id)
+      <> " is not in the client's table"
+    LabelRefused(customisation.LabelOfAnotherFaction(label_id:)) ->
+      "the customisation label "
+      <> int.to_string(label_id)
+      <> " is for the other faction"
+    AccountFull(slots:) ->
+      "the account holds "
+      <> int.to_string(slots)
+      <> " characters, as many as it has slots"
     NameTaken -> "another character has the name"
     NotYourCharacter(character_id:) ->
       "the character " <> int.to_string(character_id) <> " is not the account's"

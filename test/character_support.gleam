@@ -5,9 +5,11 @@
 import genesis_prime/character/character.{
   type Character, Appearance, Character, Place,
 }
+import genesis_prime/character/customisation.{Customisation}
 import genesis_prime/character/select
 import genesis_prime/map/position.{Position}
 import genesis_prime/table/character_creation.{type CharacterCreation}
+import gleam/dict
 import gleam/list
 
 /// The account the characters belong to unless a test says another.
@@ -100,6 +102,8 @@ pub fn context(rows rows: List(CharacterCreation)) -> select.Context {
   select.Context(
     creation: fn(id) { list.find(rows, fn(row) { row.id == id }) },
     start: fn(_row) { Ok(start_place()) },
+    customisation: customisation(),
+    character_slots: 100,
     level_of: fn(experience) {
       case experience >= 26_360_090 {
         True -> 50
@@ -108,5 +112,18 @@ pub fn context(rows rows: List(CharacterCreation)) -> select.Context {
     },
     server_time:,
     realm_id:,
+  )
+}
+
+/// What the planted tables say a request may carry: the planted CharacterCreation
+/// row's race 1 and sex 1 have 2 bone values, labels 1 and 2 are for no faction,
+/// label 3 is for faction 166 and label 4 for faction 167 (the planted row's),
+/// and a request holds at most 27 labels and 48 bone values.
+pub fn customisation() -> customisation.Customisation {
+  Customisation(
+    bone_counts: dict.from_list([#(#(1, 1), 2)]),
+    label_factions: dict.from_list([#(1, 0), #(2, 0), #(3, 166), #(4, 167)]),
+    most_bones: 48,
+    most_labels: 27,
   )
 }

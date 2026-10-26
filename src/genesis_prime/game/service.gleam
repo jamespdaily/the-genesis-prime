@@ -8,6 +8,8 @@
 //// in order.
 
 import genesis_prime/character/character.{type Place}
+import genesis_prime/character/character_slots
+import genesis_prime/character/customisation.{type Customisation}
 import genesis_prime/character/store_worker
 import genesis_prime/connection/clock
 import genesis_prime/connection/listener
@@ -40,7 +42,9 @@ pub const answer_deadline_ms = 5000
 /// `realm_id` is the realm the connections are on, `start` the place a
 /// character made from a CharacterCreation row starts at, read from the
 /// loaded tables, `clock` the system
-/// time as a Windows FILETIME and `answer_deadline_ms` how long a connection
+/// time as a Windows FILETIME, `customisation` and `character_slots` what the
+/// loaded tables say a create request may carry and how many characters an
+/// account may hold, made once at start, and `answer_deadline_ms` how long a connection
 /// waits for the store or a map. `maps` and `workers` are the names of the
 /// processes the connections ask.
 pub type Settings {
@@ -49,6 +53,8 @@ pub type Settings {
     opened: fn(Int) -> Nil,
     realm_id: Int,
     start: fn(Tables, CharacterCreation) -> Result(Place, Nil),
+    customisation: fn(Tables) -> Customisation,
+    character_slots: fn(Tables) -> Int,
     clock: fn() -> Int,
     answer_deadline_ms: Int,
     maps: maps.Settings,
@@ -71,6 +77,8 @@ pub fn settings(
     opened: fn(_port) { Nil },
     realm_id:,
     start:,
+    customisation: customisation.of,
+    character_slots: character_slots.hybrid,
     clock: clock.system_filetime,
     answer_deadline_ms:,
     maps: maps.Settings(
@@ -102,6 +110,8 @@ pub fn supervised(
       registry: settings.maps.registry,
       tables:,
       start: settings.start,
+      customisation: settings.customisation(tables),
+      character_slots: settings.character_slots(tables),
       realm_id: settings.realm_id,
       clock: settings.clock,
       answer_deadline_ms: settings.answer_deadline_ms,

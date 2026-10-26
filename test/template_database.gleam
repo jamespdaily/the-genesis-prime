@@ -6,6 +6,7 @@
 //// the test starts run against the database as they do against the server's.
 
 import database_support.{type Settings}
+import genesis_prime/character/customisation
 import genesis_prime/database/pool
 import genesis_prime/game/service as game_service
 import genesis_prime/login/service
@@ -108,11 +109,15 @@ pub fn tree_settings(pool_settings: pool.Settings) -> server.Settings {
       realm_name: "test",
       expected_files_digest: None,
     ),
-    game: game_service.settings(
-      port: 0,
-      realm_id: 1,
-      start: fn(_tables, _row) { Error(Nil) },
-      snapshot: snapshot_settings.name,
+    game: game_service.Settings(
+      ..game_service.settings(
+        port: 0,
+        realm_id: 1,
+        start: fn(_tables, _row) { Error(Nil) },
+        snapshot: snapshot_settings.name,
+      ),
+      customisation: fn(_tables) { customisation.empty() },
+      character_slots: fn(_tables) { 0 },
     ),
   )
 }

@@ -7,6 +7,8 @@
 
 import client_tables
 import genesis_prime/character/character.{type Place, Place}
+import genesis_prime/character/character_slots
+import genesis_prime/character/customisation
 import genesis_prime/game/service as game_service
 import genesis_prime/login/account
 import genesis_prime/login/auth_session
@@ -17,8 +19,12 @@ import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
 import genesis_prime/shutdown
 import genesis_prime/table/character_creation.{type CharacterCreation}
+import genesis_prime/table/character_customization_label
+import genesis_prime/table/customization_parameter
+import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/reward_property_premium_modifier
 import genesis_prime/table/world
 import genesis_prime/table/xp_per_level
 import gleam/erlang/process.{type Name}
@@ -38,12 +44,15 @@ pub const server_time = 0x01D9F00000000000
 /// The realm the connections are on in these tests.
 pub const realm_id = 0x99
 
-/// The facts of the client's tables the tests plant their expectations on.
+/// The facts of the client's tables the tests plant their expectations on:
+/// `bone_count` is the bone values a create request for the row's race and sex
+/// carries (opcode.0x25b.counts).
 pub type Facts {
   Facts(
     creation: CharacterCreation,
     world_id: Int,
     experience_levels: List(#(Int, Int)),
+    bone_count: Int,
   )
 }
 
@@ -64,7 +73,11 @@ pub type Running {
 fn tables() -> List(table_store.Entry) {
   [
     character_creation.entry(),
+    character_customization_label.entry(),
+    customization_parameter.entry(),
+    customization_parameter_map.entry(),
     game_formula.entry(),
+    reward_property_premium_modifier.entry(),
     world.entry(),
     xp_per_level.entry(),
   ]
@@ -99,6 +112,11 @@ pub fn facts() -> Facts {
   let assert [first_world, ..] = world.all(tables) as "World.tbl holds rows"
   Facts(
     creation:,
+    bone_count: customisation.bone_count(
+      customisation.of(tables),
+      creation.race_id,
+      creation.sex,
+    ),
     world_id: first_world.id,
     experience_levels: xp_per_level.all(tables)
       |> list.filter(fn(row) { row.id <= 50 })
@@ -156,6 +174,8 @@ pub fn start(
       opened: fn(port) { process.send(ports, #("game", port)) },
       realm_id:,
       start: fn(_tables, _row) { Ok(start_place(world_id: facts.world_id)) },
+      customisation: customisation.of,
+      character_slots: character_slots.hybrid,
       clock: fn() { server_time },
       answer_deadline_ms:,
     )

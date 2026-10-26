@@ -16,6 +16,7 @@ import environment
 import genesis_prime/character/character.{
   type Character, Appearance, Character, NewCharacter,
 }
+import genesis_prime/character/customisation
 import genesis_prime/character/name.{TooShort}
 import genesis_prime/character/select.{
   type State, AnswerNobodyAskedFor, BeginWorldEntry, Close, CreateRequested,
@@ -43,6 +44,9 @@ import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/table/character_creation
+import genesis_prime/table/character_customization_label
+import genesis_prime/table/customization_parameter
+import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/loader/store as table_store
 import gleam/erlang/reference
 import gleam/int
@@ -762,10 +766,16 @@ pub fn every_row_of_the_clients_character_creation_table_makes_a_character_of_it
     table_store.load(
       under: reference.new(),
       from: client_tables.folder(),
-      entries: [character_creation.entry()],
+      entries: [
+        character_creation.entry(),
+        character_customization_label.entry(),
+        customization_parameter.entry(),
+        customization_parameter_map.entry(),
+      ],
       requirements: [],
     )
     as "the CharacterCreation table did not load from the client's files"
+  let counts = customisation.of(tables)
   let rows = character_creation.all(tables)
   let offered =
     list.filter(rows, fn(row) {
@@ -776,12 +786,25 @@ pub fn every_row_of_the_clients_character_creation_table_makes_a_character_of_it
   assert offered != []
     as "CharacterCreation.tbl holds rows that are enabled and need no entitlement and no currency, so an account can make a character"
   list.each(offered, fn(row) {
-    let request = CreateCharacter(..create_request(), creation_id: row.id)
+    let request =
+      CreateCharacter(
+        ..create_request(),
+        creation_id: row.id,
+        customisation_labels: [1],
+        customisation_values: [1],
+        bone_values: list.repeat(
+          0x3F800000,
+          customisation.bone_count(counts, row.race_id, row.sex),
+        ),
+      )
     let #(_, effects) =
       select.decide(
         idle([]),
         Requested(CreateRequested(request)),
-        character_support.context(rows: rows),
+        select.Context(
+          ..character_support.context(rows: rows),
+          customisation: counts,
+        ),
       )
     let assert [Store(select.InsertCharacter(new))] = effects
       as "a row that is offered makes a character"
@@ -1040,4 +1063,104 @@ pub fn a_disabled_character_that_must_also_be_renamed_is_refused_as_disabled_tes
     )
   assert sent(effects) == [PlayRefused(PlayCharacterRefused(field_1: 3))]
     as "a rename does not make a disabled character playable, so the player is told it is disabled"
+}
+
+fn create_with(
+  bone_values bone_values: List(Int),
+  labels labels: List(Int),
+  characters characters: List(Character),
+  slots slots: Int,
+) -> #(State, List(select.Effect)) {
+  select.decide(
+    idle(characters),
+    Requested(CreateRequested(
+      CreateCharacter(
+        ..create_request(),
+        customisation_labels: labels,
+        customisation_values: list.map(labels, fn(_) { 1 }),
+        bone_values:,
+      ),
+    )),
+    select.Context(..context(), character_slots: slots),
+  )
+}
+
+pub fn a_number_of_bone_values_other_than_the_race_and_sexs_is_refused_with_result_4_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each([[], [0x3F800000], [1, 2, 3]], fn(bones) {
+    let #(state, effects) =
+      create_with(bone_values: bones, labels: [1], characters: [], slots: 2)
+    assert_failed_without_a_write(
+      effects:,
+      refusal: select.BoneCountWrong(expected: 2, given: list.length(bones)),
+      result: 4,
+      why: "opcode.0x25b.counts: the real client sends one float for each entry of the race and sex's bone list, here 2, so another number is not its request",
+    )
+    assert state == idle([])
+  })
+  let #(_, effects) =
+    create_with(
+      bone_values: [0x3F800000, 0xBF000000],
+      labels: [1],
+      characters: [],
+      slots: 2,
+    )
+  assert stored(effects) != []
+    as "opcode.0x25b.counts: the race and sex's own number is accepted"
+}
+
+pub fn labels_the_client_does_not_send_are_refused_with_result_4_test() -> Nil {
+  use <- owned_test.run(5000)
+  let bones = [0x3F800000, 0xBF000000]
+  let refused = fn(labels, refusal, why) {
+    let #(_, effects) =
+      create_with(bone_values: bones, labels:, characters: [], slots: 2)
+    assert_failed_without_a_write(effects:, refusal:, result: 4, why:)
+  }
+  refused(
+    [1, 2, 1],
+    select.LabelRefused(customisation.LabelRepeated(1)),
+    "opcode.0x25b.counts: each label at most once",
+  )
+  refused(
+    [9],
+    select.LabelRefused(customisation.LabelUnknown(9)),
+    "opcode.0x25b.counts: only a label the CharacterCustomizationLabel table holds",
+  )
+  refused(
+    [3],
+    select.LabelRefused(customisation.LabelOfAnotherFaction(3)),
+    "opcode.0x25b.counts: only a label whose faction2Id is 0 or the character's faction, here 167 (label 3 is for 166)",
+  )
+  let #(_, effects) =
+    create_with(bone_values: bones, labels: [1, 4], characters: [], slots: 2)
+  assert stored(effects) != []
+    as "labels for no faction and for the character's faction are accepted"
+}
+
+pub fn an_account_that_holds_as_many_characters_as_it_has_slots_is_refused_with_result_9_test() -> Nil {
+  use <- owned_test.run(5000)
+  let bones = [0x3F800000, 0xBF000000]
+  let #(state, effects) =
+    create_with(
+      bone_values: bones,
+      labels: [1],
+      characters: [own(11, "Ab Cd"), own(12, "Ef Gh")],
+      slots: 2,
+    )
+  assert_failed_without_a_write(
+    effects:,
+    refusal: select.AccountFull(2),
+    result: 9,
+    why: "lua.CharacterSelection.OnLoadFromCharacter: the client offers a create only while the slots exceed the characters; the server's own check answers CreateFailed_AccountFull, 9",
+  )
+  assert state == idle([own(11, "Ab Cd"), own(12, "Ef Gh")])
+  let #(_, effects) =
+    create_with(
+      bone_values: bones,
+      labels: [1],
+      characters: [own(11, "Ab Cd")],
+      slots: 2,
+    )
+  assert stored(effects) != [] as "an account with a free slot may create"
 }

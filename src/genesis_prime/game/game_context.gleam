@@ -3,6 +3,7 @@
 //// settings of the game server.
 
 import genesis_prime/character/character.{type Place}
+import genesis_prime/character/customisation.{type Customisation}
 import genesis_prime/character/select
 import genesis_prime/character/world_entry
 import genesis_prime/game/game_session.{type Context, Context}
@@ -25,11 +26,14 @@ const lowest_highest_level = 1
 /// The context for one input. `server_time` is the time as a Windows
 /// FILETIME, `realm_id` the realm the connection is on and `start` the place a
 /// character made from a CharacterCreation row starts at. The CharacterCreation
-/// table gives the rows, the XpPerLevel and GameFormula tables the level an
+/// `customisation` and `character_slots` are made once from the tables. The
+/// CharacterCreation table gives the rows, the XpPerLevel and GameFormula tables the level an
 /// experience gives and the World table the worlds that exist.
 pub fn build(
   tables tables: Tables,
   start start: fn(CharacterCreation) -> Result(Place, Nil),
+  customisation customisation: Customisation,
+  character_slots character_slots: Int,
   realm_id realm_id: Int,
   server_time server_time: Int,
 ) -> Context {
@@ -38,6 +42,8 @@ pub fn build(
       creation: fn(id) { character_creation.get(tables, id) },
       start:,
       level_of: fn(experience) { level_of(tables:, experience:) },
+      customisation:,
+      character_slots:,
       server_time:,
       realm_id:,
     ),

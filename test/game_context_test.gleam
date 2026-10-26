@@ -11,12 +11,18 @@
 import client_tables
 import environment
 import genesis_prime/character/character.{Place}
+import genesis_prime/character/character_slots
+import genesis_prime/character/customisation
 import genesis_prime/game/game_context
 import genesis_prime/game/game_session.{type Context}
 import genesis_prime/map/position.{Position}
 import genesis_prime/table/character_creation
+import genesis_prime/table/character_customization_label
+import genesis_prime/table/customization_parameter
+import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/reward_property_premium_modifier
 import genesis_prime/table/world
 import genesis_prime/table/xp_per_level
 import gleam/erlang/reference
@@ -35,7 +41,11 @@ fn loaded() -> table_store.Tables {
       from: client_tables.folder(),
       entries: [
         character_creation.entry(),
+        character_customization_label.entry(),
+        customization_parameter.entry(),
+        customization_parameter_map.entry(),
         game_formula.entry(),
+        reward_property_premium_modifier.entry(),
         world.entry(),
         xp_per_level.entry(),
       ],
@@ -51,6 +61,8 @@ fn context(tables: table_store.Tables) -> Context {
     start: fn(_row) {
       Ok(Place(world_id: 8, world_zone_id: 9, position: Position(0.0, 0.0, 0.0)))
     },
+    customisation: customisation.of(tables),
+    character_slots: character_slots.hybrid(tables),
     realm_id:,
     server_time:,
   )

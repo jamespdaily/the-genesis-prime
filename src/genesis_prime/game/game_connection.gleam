@@ -14,6 +14,7 @@
 //// process ends.
 
 import genesis_prime/character/character.{type Place}
+import genesis_prime/character/customisation.{type Customisation}
 import genesis_prime/character/select
 import genesis_prime/character/store_worker
 import genesis_prime/connection/frame.{type Frame}
@@ -66,6 +67,8 @@ pub type Settings {
     registry: Name(maps.Message),
     tables: Tables,
     start: fn(Tables, CharacterCreation) -> Result(Place, Nil),
+    customisation: Customisation,
+    character_slots: Int,
     realm_id: Int,
     clock: fn() -> Int,
     answer_deadline_ms: Int,
@@ -99,6 +102,8 @@ pub fn services(settings settings: Settings) -> Services {
       game_context.build(
         tables: settings.tables,
         start: fn(row) { settings.start(settings.tables, row) },
+        customisation: settings.customisation,
+        character_slots: settings.character_slots,
         realm_id: settings.realm_id,
         server_time: settings.clock(),
       )

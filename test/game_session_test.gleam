@@ -273,7 +273,7 @@ pub fn a_create_request_inside_0x25c_is_decoded_and_given_to_character_select_te
         path: 2,
         customisation_labels: [1, 2],
         customisation_values: [3, 4],
-        bone_values: [0x3F800000],
+        bone_values: [0x3F800000, 0xBF000000],
       ),
     )
     as "0x25B encodes"
@@ -517,7 +517,7 @@ pub fn a_refusal_is_logged_as_a_warning_and_a_store_that_failed_as_an_error_test
         path: 2,
         customisation_labels: [],
         customisation_values: [],
-        bone_values: [],
+        bone_values: [0x3F800000, 0xBF000000],
       ),
     )
     as "0x25B encodes"
@@ -544,7 +544,7 @@ pub fn a_refusal_is_logged_as_a_warning_and_a_store_that_failed_as_an_error_test
         path: 2,
         customisation_labels: [],
         customisation_values: [],
-        bone_values: [],
+        bone_values: [0x3F800000, 0xBF000000],
       ),
     )
     as "0x25B encodes"
@@ -620,7 +620,7 @@ pub fn a_write_answered_unavailable_reads_the_characters_again_and_then_answers_
         path: 2,
         customisation_labels: [],
         customisation_values: [],
-        bone_values: [],
+        bone_values: [0x3F800000, 0xBF000000],
       ),
     )
     as "0x25B encodes"
@@ -667,4 +667,63 @@ pub fn the_end_of_the_map_that_holds_the_unit_ends_the_connection_as_a_warning_t
   assert game_session.describe(game_session.MapEnded) != ""
   let #(_, effects) = game_session.map_ended(session)
   assert effects == [] as "a connection that has ended takes no more"
+}
+
+fn create_body(labels labels: Int, bones bones: Int) -> BitArray {
+  let assert Ok(body) =
+    create_character.encode(CreateCharacter(
+      creation_id: 277,
+      name: "Ab Cd",
+      path: 2,
+      customisation_labels: list.repeat(1, labels),
+      customisation_values: list.repeat(1, labels),
+      bone_values: list.repeat(0x3F800000, bones),
+    ))
+    as "0x25B encodes"
+  body
+}
+
+pub fn a_create_request_with_more_bone_values_or_labels_than_the_client_can_send_does_not_decode_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) =
+    game_session.receive(
+      idle([]),
+      create_frame(body: create_body(labels: 1, bones: 49)),
+      context(),
+    )
+  assert effects
+    == [
+      End(MalformedMessage(
+        message_id: 0x025B,
+        error: bit_stream.UnexpectedValue("bone_values", 49),
+      )),
+    ]
+    as "opcode.0x25b.counts: 48 bone values is the most the client sends, so 49 is bad input at the edge and ends the connection"
+  let #(_, effects) =
+    game_session.receive(
+      idle([]),
+      create_frame(body: create_body(labels: 28, bones: 2)),
+      context(),
+    )
+  assert effects
+    == [
+      End(MalformedMessage(
+        message_id: 0x025B,
+        error: bit_stream.UnexpectedValue("customisation_labels", 28),
+      )),
+    ]
+    as "opcode.0x25b.counts: CharacterCustomizationLabel has 27 rows and each label is sent once, so 28 labels is bad input"
+  let #(_, effects) =
+    game_session.receive(
+      idle([]),
+      create_frame(body: create_body(labels: 15, bones: 48)),
+      context(),
+    )
+  assert !list.any(effects, fn(effect) {
+    case effect {
+      End(_) -> True
+      _ -> False
+    }
+  })
+    as "the most the client sends, 48 bone values, is decoded; the rule decides what is made of it"
 }
