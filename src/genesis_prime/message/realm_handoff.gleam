@@ -2,8 +2,8 @@
 //// never edited by hand.
 ////
 //// Message 0x07A1 (realm_handoff), server to client: the game server's
-//// hand-off to another realm's server: its address, the session key and the
-//// realm's name. Its fields are listed in `schema.toml` with the client's
+//// hand-off to another realm's server, with its address, the session key and
+//// the realm's name. Its fields are listed in `schema.toml` with the client's
 //// evidence, and the fact file's `opcode.0x7a1` names the message.
 
 import genesis_prime/message/bit_stream.{

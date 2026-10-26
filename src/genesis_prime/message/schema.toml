@@ -71,7 +71,7 @@ id = 0x03DB
 name = "game_server_handoff"
 direction = "server_to_client"
 evidence = "opcode.0x3db"
-summary = "the auth server's hand-off to a game server: its address, the session key and the realm's name"
+summary = "the auth server's hand-off to a game server, with its address, the session key and the realm's name"
 fields = [
   { name = "game_server", kind = "endpoint", evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
   { name = "session_key", kind = "guid", evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
@@ -144,7 +144,7 @@ id = 0x07A1
 name = "realm_handoff"
 direction = "server_to_client"
 evidence = "opcode.0x7a1"
-summary = "the game server's hand-off to another realm's server: its address, the session key and the realm's name"
+summary = "the game server's hand-off to another realm's server, with its address, the session key and the realm's name"
 fields = [
   { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x1400a2110" },
   { name = "session_key", kind = "guid", evidence = "0x1400a2110", named_by = "opcode.0x7a1" },

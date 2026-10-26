@@ -2,9 +2,9 @@
 //// never edited by hand.
 ////
 //// Message 0x03DB (game_server_handoff), server to client: the auth server's
-//// hand-off to a game server: its address, the session key and the realm's
-//// name. Its fields are listed in `schema.toml` with the client's evidence,
-//// and the fact file's `opcode.0x3db` names the message.
+//// hand-off to a game server, with its address, the session key and the
+//// realm's name. Its fields are listed in `schema.toml` with the client's
+//// evidence, and the fact file's `opcode.0x3db` names the message.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type EncodeError, type Endpoint,
