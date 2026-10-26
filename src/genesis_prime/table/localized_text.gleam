@@ -1,7 +1,7 @@
 //// STUB of the generated module for the client table LocalizedText: the types and signatures only.
 
-import genesis_prime/table/store
-import genesis_prime/table/tbl_file
+import genesis_prime/table/loader/store
+import genesis_prime/table/loader/tbl_file
 
 pub type LocalizedText {
   LocalizedText(
@@ -39,8 +39,6 @@ pub const schema =
       ),
     ],
   )
-
-const index = 151
 
 pub fn entry() -> store.Entry {
   todo

@@ -1,7 +1,7 @@
 //// STUB of the generated module for the client table Creature2: the types and signatures only.
 
-import genesis_prime/table/store
-import genesis_prime/table/tbl_file
+import genesis_prime/table/loader/store
+import genesis_prime/table/loader/tbl_file
 
 pub type Creature2 {
   Creature2(
@@ -647,8 +647,6 @@ pub const schema =
       ),
     ],
   )
-
-const index = 51
 
 pub fn entry() -> store.Entry {
   todo

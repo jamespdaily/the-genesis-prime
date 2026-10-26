@@ -21,10 +21,10 @@ import client_tables
 import environment
 import genesis_prime/table/creature2
 import genesis_prime/table/item2
+import genesis_prime/table/loader/store
 import genesis_prime/table/localized_text
 import genesis_prime/table/spell4
 import genesis_prime/table/spline2_node
-import genesis_prime/table/store
 import gleam/erlang/reference
 import gleam/list
 import owned_test

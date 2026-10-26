@@ -3,6 +3,8 @@
 //// repository lacks, and a generated file the generator no longer writes.
 
 import gleam/dict.{type Dict}
+import gleam/list
+import gleam/string
 
 /// One way the committed code differs from what the generator writes.
 pub type Difference {
@@ -25,5 +27,32 @@ pub fn between(
   generated generated: Dict(String, String),
   committed committed: Dict(String, String),
 ) -> List(Difference) {
-  todo
+  let from_generated =
+    dict.to_list(generated)
+    |> list.filter_map(fn(file) {
+      case dict.get(committed, file.0) {
+        Error(Nil) -> Ok(Missing(file.0))
+        Ok(text) if text != file.1 -> Ok(Changed(file.0))
+        Ok(_) -> Error(Nil)
+      }
+    })
+  let from_committed =
+    dict.to_list(committed)
+    |> list.filter_map(fn(file) {
+      case
+        dict.has_key(generated, file.0),
+        string.starts_with(file.1, generated_marker)
+      {
+        False, True -> Ok(Extra(file.0))
+        _, _ -> Error(Nil)
+      }
+    })
+  list.append(from_generated, from_committed)
+  |> list.sort(fn(first, second) { string.compare(path(first), path(second)) })
+}
+
+fn path(difference: Difference) -> String {
+  case difference {
+    Changed(path:) | Missing(path:) | Extra(path:) -> path
+  }
 }

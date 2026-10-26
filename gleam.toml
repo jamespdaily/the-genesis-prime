@@ -31,6 +31,10 @@ assert_ok_pattern = "off"
 avoid_panic = "off"
 
 [tools.glinter.ignore]
+# A generated table module exports what the engines use: its row type, `schema`,
+# `get` and `all`. Only the registry and the tests call them until an engine
+# does, which is no defect in generated code.
+"src/genesis_prime/table/*.gleam" = ["unused_exports"]
 # The test runner finds public `_test` functions by name, and test-support
 # modules are shared across test modules, so no other module calls them.
 "test/**/*.gleam" = ["unused_exports"]
@@ -41,7 +45,7 @@ avoid_panic = "off"
 effectful_modules = [
   { module = "genesis_prime", reason = "starts the supervision tree and keeps the node alive" },
   { module = "genesis_prime/server", reason = "the top supervisor" },
-  { module = "genesis_prime/table/store", reason = "reads the table files and keeps the loaded tables in persistent terms" },
+  { module = "genesis_prime/table/loader/store", reason = "reads the table files and keeps the loaded tables in persistent terms" },
 ]
 # The game domains: each top-level folder or module under src/genesis_prime/.
 domains = [

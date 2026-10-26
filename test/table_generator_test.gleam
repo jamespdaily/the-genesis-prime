@@ -18,7 +18,7 @@
 //// - a record's size is what the placement rule gives
 ////   (`game_table.schema`); a file whose header says another is refused.
 
-import genesis_prime/table/tbl_file.{type Schema, Column, Schema}
+import genesis_prime/table/loader/tbl_file.{type Schema, Column, Schema}
 import genesis_prime/table_generator
 import genesis_prime/table_generator/difference.{Changed, Extra, Missing}
 import genesis_prime/table_generator/module_text
@@ -279,7 +279,7 @@ pub fn a_file_the_repository_wrote_by_hand_is_not_a_difference_test() -> Nil {
   let committed =
     dict.from_list([
       #("genesis_prime/table/a.gleam", text),
-      #("genesis_prime/table/store.gleam", "//// Reads the tables.\n"),
+      #("genesis_prime/table/loader/store.gleam", "//// Reads the tables.\n"),
     ])
   assert difference.between(generated:, committed:) == []
     as "a committed file without the marker is the repository's own"

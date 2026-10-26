@@ -28,9 +28,9 @@ import client_tables
 import environment
 import genesis_prime/table
 import genesis_prime/table/creature2
+import genesis_prime/table/loader/store
+import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/localized_text
-import genesis_prime/table/store
-import genesis_prime/table/tbl_file
 import gleam/bit_array
 import gleam/erlang/reference
 import gleam/int
@@ -58,7 +58,7 @@ fn counted_by_the_file(file: String) -> #(Int, List(Int)) {
   let assert <<
     _:bytes-size(0x30),
     record_count:size(64)-little,
-    _:bytes-size(8),
+    _:bytes-size(16),
     lookup_count:size(64)-little,
     lookup_offset:size(64)-little,
     _:bits,
@@ -67,15 +67,19 @@ fn counted_by_the_file(file: String) -> #(Int, List(Int)) {
   let assert Ok(lookup) =
     bit_array.slice(bytes, 0x60 + lookup_offset, lookup_count * 4)
     as "the lookup lies outside the file"
-  #(record_count, ids_of_lookup(lookup, 0, []))
+  #(record_count, ids_of_lookup(lookup:, id: 0, found: []))
 }
 
-fn ids_of_lookup(lookup: BitArray, id: Int, found: List(Int)) -> List(Int) {
+fn ids_of_lookup(
+  lookup lookup: BitArray,
+  id id: Int,
+  found found: List(Int),
+) -> List(Int) {
   case lookup {
     <<0xFFFFFFFF:size(32)-little, rest:bits>> ->
-      ids_of_lookup(rest, id + 1, found)
+      ids_of_lookup(lookup: rest, id: id + 1, found:)
     <<_:size(32)-little, rest:bits>> ->
-      ids_of_lookup(rest, id + 1, [id, ..found])
+      ids_of_lookup(lookup: rest, id: id + 1, found: [id, ..found])
     _ -> list.reverse(found)
   }
 }

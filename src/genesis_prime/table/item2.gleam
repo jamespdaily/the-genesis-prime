@@ -1,7 +1,7 @@
 //// STUB of the generated module for the client table Item2: the types and signatures only.
 
-import genesis_prime/table/store
-import genesis_prime/table/tbl_file
+import genesis_prime/table/loader/store
+import genesis_prime/table/loader/tbl_file
 
 pub type Item2 {
   Item2(
@@ -180,8 +180,6 @@ pub const schema =
       ),
     ],
   )
-
-const index = 122
 
 pub fn entry() -> store.Entry {
   todo

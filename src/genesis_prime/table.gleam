@@ -1,7 +1,7 @@
 //// Every game table of the client, loaded together: one entry per table file
 //// and the load that reads them all.
 
-import genesis_prime/table/store
+import genesis_prime/table/loader/store
 import gleam/erlang/reference.{type Reference}
 
 /// The entry of every table in the client, in file-name order.

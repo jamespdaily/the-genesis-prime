@@ -1,7 +1,7 @@
 //// STUB of the generated module for the client table Spline2Node: the types and signatures only.
 
-import genesis_prime/table/store
-import genesis_prime/table/tbl_file
+import genesis_prime/table/loader/store
+import genesis_prime/table/loader/tbl_file
 
 pub type Spline2Node {
   Spline2Node(
@@ -44,8 +44,6 @@ pub const schema =
       tbl_file.Column(name: "fovy", column_type: tbl_file.Float32),
     ],
   )
-
-const index = 327
 
 pub fn entry() -> store.Entry {
   todo

@@ -4,8 +4,9 @@
 //// data, and the id lookup array), from a schema and rows of cells. A fault is
 //// planted by giving the lookup or a string offset directly.
 
-import genesis_prime/table/tbl_file.{type Column, type Schema}
+import genesis_prime/table/loader/tbl_file.{type Column, type Schema}
 import gleam/bit_array
+import gleam/bool
 import gleam/erlang/reference.{type Reference}
 import gleam/int
 import gleam/list
@@ -41,13 +42,16 @@ const signature = 0x4454424C
 const header_size = 0x60
 
 /// A table with the right lookup and header.
-pub fn table(schema: Schema, rows: List(List(Cell))) -> Planted {
+pub fn table(schema schema: Schema, rows rows: List(List(Cell))) -> Planted {
   Planted(schema:, rows:, lookup: None, header_record_size: None)
 }
 
 /// A record of the schema with a zero, a false or an empty string in every
 /// column, except the columns named, which take the cell given.
-pub fn row(schema: Schema, with changes: List(#(String, Cell))) -> List(Cell) {
+pub fn row(
+  schema schema: Schema,
+  with changes: List(#(String, Cell)),
+) -> List(Cell) {
   list.map(schema.columns, fn(column) {
     case list.key_find(changes, column.name) {
       Ok(cell) -> cell
@@ -89,7 +93,7 @@ pub fn bytes(planted: Planted) -> BitArray {
     |> bit_array.concat
   let records_size = record_size * list.length(planted.rows)
   let #(records, strings) =
-    write_records(planted.rows, fields, record_size, records_size)
+    write_records(rows: planted.rows, fields:, record_size:, records_size:)
   let block = bit_array.append(records, strings)
   let block_offset = round_up(names_offset + bit_array.byte_size(names), 16)
   let lookup = lookup_entries(planted)
@@ -172,27 +176,27 @@ fn type_code(column: Column) -> Int {
 /// The records, and the string data after them. A string field holds its
 /// offset from the record block's start.
 fn write_records(
-  rows: List(List(Cell)),
-  fields: List(tbl_file.Field),
-  record_size: Int,
-  records_size: Int,
+  rows rows: List(List(Cell)),
+  fields fields: List(tbl_file.Field),
+  record_size record_size: Int,
+  records_size records_size: Int,
 ) -> #(BitArray, BitArray) {
   let #(records, strings) =
     list.fold(rows, #([], <<>>), fn(state, cells) {
       let #(records, strings) = state
       let #(record, strings) =
-        write_record(cells, fields, record_size, records_size, strings)
+        write_record(cells:, fields:, record_size:, records_size:, strings:)
       #([record, ..records], strings)
     })
   #(bit_array.concat(list.reverse(records)), strings)
 }
 
 fn write_record(
-  cells: List(Cell),
-  fields: List(tbl_file.Field),
-  record_size: Int,
-  records_size: Int,
-  strings: BitArray,
+  cells cells: List(Cell),
+  fields fields: List(tbl_file.Field),
+  record_size record_size: Int,
+  records_size records_size: Int,
+  strings strings: BitArray,
 ) -> #(BitArray, BitArray) {
   let #(bytes, strings) =
     list.fold(list.zip(fields, cells), #(<<>>, strings), fn(state, pair) {
@@ -206,7 +210,13 @@ fn write_record(
               bit_array.append(padded, <<value:size(64)-little>>),
               strings,
             )
-            _ -> #(bit_array.append(padded, <<value:size(32)-little>>), strings)
+            tbl_file.Integer32
+            | tbl_file.Float32
+            | tbl_file.Boolean32
+            | tbl_file.Utf16Text -> #(
+              bit_array.append(padded, <<value:size(32)-little>>),
+              strings,
+            )
           }
         Float(value) -> #(
           bit_array.append(padded, <<value:float-size(32)-little>>),
@@ -233,10 +243,8 @@ fn write_record(
 }
 
 fn bool_value(value: Bool) -> Int {
-  case value {
-    True -> 1
-    False -> 0
-  }
+  use <- bool.guard(when: value, return: 1)
+  0
 }
 
 /// The lookup: the row index of each id from 0 to the highest, or
