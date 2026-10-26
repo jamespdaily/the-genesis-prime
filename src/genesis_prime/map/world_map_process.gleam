@@ -82,6 +82,9 @@ pub opaque type Message {
     reply: Subject(Result(PlayerUnit, JoinRefused)),
   )
   Units(reply: Subject(List(PlayerUnit)))
+  /// A connection leaves: its unit comes off the map, and the reply says it
+  /// has.
+  Leave(connection: Subject(Delivery), reply: Subject(Nil))
   /// A monitored connection ended.
   ConnectionDown(process.Down)
   Unexpected(received: Dynamic)
@@ -227,15 +230,40 @@ fn registered(map: Subject(Message)) -> Bool {
   }
 }
 
+/// Takes the unit of a connection off the map and waits up to `within_ms`
+/// milliseconds for the map to say it has, so the connection can end knowing
+/// the unit is gone. A connection that has no unit on the map has left already.
+/// The map that does not answer, or has no process under its name, is an
+/// error.
+pub fn leave(
+  map map: Subject(Message),
+  connection connection: Subject(Delivery),
+  within_ms within_ms: Int,
+) -> Result(Nil, Nil) {
+  case registered(map) {
+    False -> Error(Nil)
+    True -> {
+      let reply = process.new_subject()
+      process.send(map, Leave(connection:, reply:))
+      process.receive(reply, within_ms)
+    }
+  }
+}
+
 /// The units the map holds, waiting up to `within_ms` milliseconds for the
 /// answer.
 pub fn units(
   map map: Subject(Message),
   within_ms within_ms: Int,
 ) -> Result(List(PlayerUnit), Nil) {
-  let reply = process.new_subject()
-  process.send(map, Units(reply:))
-  process.receive(reply, within_ms)
+  case registered(map) {
+    False -> Error(Nil)
+    True -> {
+      let reply = process.new_subject()
+      process.send(map, Units(reply:))
+      process.receive(reply, within_ms)
+    }
+  }
 }
 
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
@@ -244,6 +272,11 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
       actor.continue(join_unit(state:, newcomer:, connection:, reply:))
     Units(reply:) -> {
       process.send(reply, world_map.units(state.map))
+      actor.continue(state)
+    }
+    Leave(connection:, reply:) -> {
+      let state = connection_left(state:, connection:)
+      process.send(reply, Nil)
       actor.continue(state)
     }
     ConnectionDown(process.ProcessDown(monitor:, ..)) ->
@@ -296,6 +329,32 @@ fn join_unit(
       process.send(reply, Ok(unit))
       carry_out(state:, effects:)
       state
+    }
+  }
+}
+
+/// Takes the unit of a connection that said it leaves off the map, stops
+/// watching the connection and tells the players in range.
+fn connection_left(
+  state state: State,
+  connection connection: Subject(Delivery),
+) -> State {
+  let held =
+    dict.to_list(state.connections)
+    |> list.find(fn(entry) { entry.1 == connection })
+  case held {
+    Error(Nil) -> state
+    Ok(#(unit_id, _)) -> {
+      let watching =
+        dict.to_list(state.monitors)
+        |> list.find(fn(entry) { entry.1 == unit_id })
+      case watching {
+        Error(Nil) -> state
+        Ok(#(monitor, _)) -> {
+          process.demonitor_process(monitor)
+          connection_ended(state:, monitor:)
+        }
+      }
     }
   }
 }

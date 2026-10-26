@@ -383,3 +383,50 @@ fn suspend(pid: Pid) -> Nil
 
 @external(erlang, "map_support_ffi", "resume")
 fn resume(pid: Pid) -> Nil
+
+pub fn a_connection_that_leaves_has_its_unit_off_the_map_before_the_map_answers_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(settings, _) = start_map(world_id: 7, limits: map_support.no_limits())
+  let leaving = process.new_subject()
+  let staying = process.new_subject()
+  let unit = join(settings:, character_id: 11, x: 0.0, connection: leaving)
+  let other = join(settings:, character_id: 12, x: 1.0, connection: staying)
+  assert world_map_process.leave(
+      map: map_of(settings),
+      connection: leaving,
+      within_ms: event_wait_ms,
+    )
+    == Ok(Nil)
+    as "the map answers a connection that leaves"
+  assert world_map_process.units(map_of(settings), event_wait_ms) == Ok([other])
+    as "the unit is off the map when the answer comes, so a connection that ends next ends with no unit on the map"
+  let assert Ok(delivery.Appeared(_)) = process.receive(staying, event_wait_ms)
+    as "the staying player was told of the leaving player when it joined"
+  assert process.receive(staying, event_wait_ms)
+    == Ok(delivery.Disappeared(unit_id: unit.id))
+    as "the players in range are told the unit left, as when its connection ends"
+  assert world_map_process.leave(
+      map: map_of(settings),
+      connection: leaving,
+      within_ms: event_wait_ms,
+    )
+    == Ok(Nil)
+    as "a connection with no unit on the map has left already"
+}
+
+pub fn a_map_with_no_process_under_its_name_gives_no_answer_to_a_leave_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let settings =
+    map_support.settings(
+      world_id: 7,
+      snapshot: map_support.start_snapshot(),
+      limits: map_support.no_limits(),
+    )
+  assert world_map_process.leave(
+      map: map_of(settings),
+      connection: process.new_subject(),
+      within_ms: 100,
+    )
+    == Error(Nil)
+    as "designing-processes: a request to a map that is away is an answer, not a crash of the asker"
+}

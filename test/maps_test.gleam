@@ -14,6 +14,7 @@ import genesis_prime/telemetry/snapshot
 import gleam/dict
 import gleam/erlang/process.{type Pid}
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/otp/static_supervisor
 import gleam/result
 import log_capture.{Fields}
@@ -359,4 +360,41 @@ pub fn entering_gives_up_at_one_deadline_not_at_one_wait_for_each_step_test() ->
     as "the map did not answer in time"
   assert elapsed < 1400
     as "designing-processes: a connection waits at most the one deadline it was given for the registry and the map together; each step with its own wait would hold it for 1600 ms"
+}
+
+pub fn a_character_on_a_map_of_any_world_is_found_by_its_id_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(settings, _) = start_maps()
+  assert maps.character_on_a_map(
+      registry: settings.registry,
+      character_ids: [11, 12],
+      within_ms: event_wait_ms,
+    )
+    == None
+    as "with no map running no character is on one"
+  let assert Ok(_) = enter(settings:, world_id: 7, character_id: 21)
+    as "a character entered world 7"
+  let assert Ok(_) = enter(settings:, world_id: 8, character_id: 12)
+    as "a character entered world 8"
+  assert maps.character_on_a_map(
+      registry: settings.registry,
+      character_ids: [11, 12],
+      within_ms: event_wait_ms,
+    )
+    == Some(12)
+    as "the character of the account that is on the map of world 8 is found, in whichever world"
+  assert maps.character_on_a_map(
+      registry: settings.registry,
+      character_ids: [11],
+      within_ms: event_wait_ms,
+    )
+    == None
+    as "a character that is on no map is not found"
+  assert maps.character_on_a_map(
+      registry: process.new_name("no_maps_here"),
+      character_ids: [12],
+      within_ms: 100,
+    )
+    == None
+    as "a registry that is away holds no character the caller knows of"
 }
