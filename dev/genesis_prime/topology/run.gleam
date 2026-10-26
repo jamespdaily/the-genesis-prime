@@ -8,7 +8,7 @@ import genesis_prime/topology/map_process.{type Sending}
 import genesis_prime/topology/measurement
 import genesis_prime/topology/owner.{type Owner}
 import genesis_prime/topology/per_unit
-import genesis_prime/topology/player.{type Player}
+import genesis_prime/topology/player.{type Player, type Report}
 import genesis_prime/topology/unit
 import genesis_prime/topology/workload.{type Workload}
 import gleam/dict
@@ -89,8 +89,9 @@ pub type Pace {
   KeptUp
   /// A judged sample's queue exceeded what the load sends in one second.
   FellBehind
-  /// The owners kept up, but a player did not report within
-  /// `report_deadline_milliseconds`: the updates sent to it outran it. The
+  /// The owners kept up, but a player did not report: its process had ended,
+  /// or the updates sent to it outran it and it did not answer within
+  /// `report_deadline_milliseconds`. The
   /// choosing rule's ceiling reads only the owners, so this counts as kept up
   /// there, and its latency covers only the players that reported.
   PlayersFellBehind
@@ -310,22 +311,11 @@ pub fn run(
     True -> FellBehind
     False -> KeptUp
   }
-  let asked =
-    list.map(map_runs, fn(map_run) {
-      list.map(map_run.players, player.ask_report)
-    })
-  let deadline =
-    measurement.monotonic_microseconds()
-    / 1000
-    + report_deadline_milliseconds(owners_pace)
   let reports_by_map =
-    list.map(asked, fn(replies) {
-      list.map(replies, fn(reply) {
-        let left = deadline - measurement.monotonic_microseconds() / 1000
-        process.receive(reply, int.max(left, 0))
-      })
-      |> result.values
-    })
+    collect_reports(
+      players_by_map: list.map(map_runs, fn(map_run) { map_run.players }),
+      within_milliseconds: report_deadline_milliseconds(owners_pace),
+    )
   let reports = list.flatten(reports_by_map)
   owner.stop_supervisor(supervisor.pid)
   list.each(map_runs, fn(map_run) { measurement.erase_spawn_list(map_run.key) })
@@ -374,6 +364,30 @@ pub fn run(
     pace: run_pace(map_paces),
     sampled:,
   )
+}
+
+/// Asks every player for its counts and collects the answers, one list for
+/// each list of players, in the order of `players_by_map`. All players are
+/// asked first, and the answers have `within_milliseconds` together. A player
+/// that has not answered by then, or whose process has ended, is left out; a
+/// monitor shows the end at once, so a player that crashed is not waited for.
+pub fn collect_reports(
+  players_by_map players_by_map: List(List(Player)),
+  within_milliseconds within_milliseconds: Int,
+) -> List(List(Report)) {
+  let asked =
+    list.map(players_by_map, fn(players) {
+      list.map(players, player.ask_report)
+    })
+  let deadline =
+    measurement.monotonic_microseconds() / 1000 + within_milliseconds
+  list.map(asked, fn(replies) {
+    list.map(replies, fn(reply) {
+      let left = deadline - measurement.monotonic_microseconds() / 1000
+      player.await_report(reply, within_milliseconds: int.max(left, 0))
+    })
+    |> result.values
+  })
 }
 
 /// The pace of the whole run: `FellBehind` when any map fell behind, otherwise

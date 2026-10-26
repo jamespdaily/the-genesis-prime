@@ -47,6 +47,18 @@ pub type HeapLimits {
 /// No limit for the map process and none for the senders.
 pub const no_limits = HeapLimits(map: no_limit, sender: no_limit)
 
+/// The limits measured for prototype C: 8,388,608 words (2^23, 64 MB of 8-byte
+/// words) for the map process and 131,072 words (2^17, 1 MB) for each sender.
+/// They are `for_peak` of the largest heaps sampled at 10,000 creatures and
+/// 100, 400 and 800 players at visibility ranges of 100 and 640 metres: 1,103,592
+/// words for the map process and 32,317 words for a sender. A run of 800
+/// players at both ranges with these limits killed and replaced nothing.
+///
+/// Only the heap ceiling's `check` runs at these limits. Every other trial
+/// runs at `no_limits`, so its conditions stay those it was measured under.
+pub const measured =
+  HeapLimits(map: Words(count: 8_388_608), sender: Words(count: 131_072))
+
 /// Makes the limit chosen by the rule from the largest peak a kind of process
 /// reached, in words: four times the peak, rounded up to a power of two words.
 /// A peak is a reading of `total_heap_size` every 100 milliseconds, and the

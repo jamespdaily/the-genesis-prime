@@ -23,8 +23,8 @@
 ////   a map process or a sender was killed or replaced for any reason.
 ////
 //// `check` takes its limits from the `peaks` run when both run in one command.
-//// Run alone it takes them after its name, as `check <map words> <sender
-//// words>`, so the limits Jim approved are the ones checked.
+//// Run alone it takes the limits after its name, as `check <map words> <sender
+//// words>`, and with none named it checks `heap_limit.measured`.
 
 import genesis_prime/topology/heap_limit.{type HeapLimit, type HeapLimits}
 import genesis_prime/topology/heap_sampler.{type Sampled}
@@ -66,7 +66,8 @@ const word_bytes = 8
 type Plan {
   /// The `peaks` part alone.
   PeaksOnly
-  /// The `check` part alone, at the limits given after its name.
+  /// The `check` part alone, at the limits given after its name, or at
+  /// `heap_limit.measured` when none are given.
   CheckOnly(limits: HeapLimits)
   /// `peaks`, then `check` at the limits the rule chose from `peaks`.
   PeaksThenCheck
@@ -76,8 +77,8 @@ type Plan {
 type UsageError {
   /// A word that is neither `peaks` nor `check`.
   UnknownPart(word: String)
-  /// `check` alone without two limits after it.
-  CheckNeedsTwoLimits
+  /// `check` alone with one limit, or with more than two, after it.
+  CheckNeedsTwoLimitsOrNone
   /// A limit that is not a whole number of words of at least 1.
   NotAWordCount(word: String)
 }
@@ -123,13 +124,14 @@ pub fn main() -> Nil {
 fn usage_text(error: UsageError) -> String {
   let problem = case error {
     UnknownPart(word:) -> "unknown part: " <> word
-    CheckNeedsTwoLimits -> "check alone needs two limits after it"
+    CheckNeedsTwoLimitsOrNone ->
+      "check alone takes two limits after it, or none"
     NotAWordCount(word:) ->
       "not a whole number of words of at least 1: " <> word
   }
   problem
   <> "\nusage: gleam run -m genesis_prime/heap_ceiling [-- peaks [check]]"
-  <> "\n       gleam run -m genesis_prime/heap_ceiling -- check <map words> <sender words>"
+  <> "\n       gleam run -m genesis_prime/heap_ceiling -- check [<map words> <sender words>]"
 }
 
 /// The plan the arguments after `--` name.
@@ -137,12 +139,13 @@ fn plan_from(arguments: List(String)) -> Result(Plan, UsageError) {
   case arguments {
     [] | ["peaks", "check"] -> Ok(PeaksThenCheck)
     ["peaks"] -> Ok(PeaksOnly)
+    ["check"] -> Ok(CheckOnly(limits: heap_limit.measured))
     ["check", map_word, sender_word] -> {
       use map <- result.try(limit_from(map_word))
       use sender <- result.try(limit_from(sender_word))
       Ok(CheckOnly(limits: heap_limit.HeapLimits(map:, sender:)))
     }
-    ["check", ..] -> Error(CheckNeedsTwoLimits)
+    ["check", ..] -> Error(CheckNeedsTwoLimitsOrNone)
     ["peaks", other, ..] -> Error(UnknownPart(word: other))
     [other, ..] -> Error(UnknownPart(word: other))
   }

@@ -18,6 +18,7 @@ import genesis_prime/topology/heap_sampler
 import genesis_prime/topology/map_process
 import genesis_prime/topology/measurement
 import genesis_prime/topology/owner.{type Owner}
+import genesis_prime/topology/player
 import genesis_prime/topology/position.{Position}
 import genesis_prime/topology/run
 import genesis_prime/topology/update
@@ -28,6 +29,7 @@ import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/option
+import gleam/otp/factory_supervisor
 import gleam/result
 import owned_test
 
@@ -108,11 +110,9 @@ pub fn a_map_process_past_its_heap_ceiling_is_killed_and_rebuilt_test() -> Nil {
 
 pub fn a_sender_killed_during_a_runs_warm_up_is_counted_as_killed_test() -> Nil {
   // A run takes about 1.5 seconds. When the kill lands while the map is being
-  // rebuilt, a player sends to the unregistered map name and crashes, its
-  // report never comes, and the run waits its whole 30-second report deadline
-  // (`run.report_deadline_kept_up_milliseconds`), so the body's deadline is
-  // longer than that.
-  use <- owned_test.run(45_000)
+  // rebuilt, a player sends to the unregistered map name and crashes; the run
+  // sees its process end and does not wait for its report.
+  use <- owned_test.run(10_000)
   measurement.enable_scheduler_wall_time()
   let assert Ok(sender_ceiling) = heap_limit.words(sender_ceiling_words)
     as "the ceiling can be made"
@@ -137,6 +137,52 @@ pub fn a_sender_killed_during_a_runs_warm_up_is_counted_as_killed_test() -> Nil 
     as "a run that samples heaps reports what it sampled"
   assert sampled.killed.senders >= 1
     as "a sender killed by its ceiling in the warm-up is counted, not only one killed in the measured stretch"
+}
+
+/// How long the dead player test lets the players answer, in milliseconds.
+const report_deadline_milliseconds = 5000
+
+pub fn a_player_that_has_died_is_not_waited_for_and_counts_as_not_reporting_test() -> Nil {
+  // A player that sends while a rebuilt map's name is unregistered crashes,
+  // and the run still holds the handle of the dead process. The expected
+  // values are the game rule of the run's report: a player that is gone
+  // answers nothing, so it is left out of the reports at once, while a player
+  // that is alive answers.
+  use <- owned_test.run(20_000)
+  let workload = Workload(..workload.default(), players: 2, creatures: 0)
+  let assert Ok(factory) = factory_supervisor.start(player.factory(workload))
+    as "the players' supervisor starts"
+  let assert [first, second, ..] =
+    workload.spawn_list(workload)
+    |> list.map(fn(unit) {
+      let assert Ok(started) =
+        factory_supervisor.start_child(factory.data, unit)
+        as "a player starts"
+      started.data
+    })
+    as "the workload has two players"
+  let assert Ok(dead_pid) = process.subject_owner(second.control)
+    as "a player's control subject belongs to its process"
+  let dead_monitor = process.monitor(dead_pid)
+  process.kill(dead_pid)
+  let assert Ok(_down) =
+    process.new_selector()
+    |> process.select_specific_monitor(dead_monitor, fn(down) { down })
+    |> process.selector_receive(within: 2000)
+    as "the killed player did not end"
+
+  let started_at = measurement.monotonic_microseconds()
+  let reports =
+    run.collect_reports(
+      players_by_map: [[first, second]],
+      within_milliseconds: report_deadline_milliseconds,
+    )
+  let waited_milliseconds =
+    { measurement.monotonic_microseconds() - started_at } / 1000
+  assert list.map(reports, list.length) == [1]
+    as "the player that is alive reports and the dead one does not"
+  assert waited_milliseconds < report_deadline_milliseconds / 5
+    as "a dead player's report is not waited for until the deadline"
 }
 
 pub fn a_process_that_ends_for_a_reason_other_than_a_kill_is_counted_as_replaced_test() -> Nil {
@@ -192,6 +238,22 @@ pub fn the_ceiling_for_a_peak_is_four_times_the_peak_rounded_up_to_a_power_of_tw
     as "4 times a power of two is that power of two, not the next one up"
   assert Ok(heap_limit.for_peak(1)) == heap_limit.words(4)
     as "the smallest peak, 1 word, gives 4 words"
+}
+
+pub fn the_measured_limits_are_the_rule_applied_to_the_measured_peaks_test() -> Nil {
+  use <- owned_test.run(1000)
+  // The largest sampled heaps at 10,000 creatures and up to 800 players, the
+  // same peaks as the rule's test above.
+  assert heap_limit.measured
+    == HeapLimits(
+      map: heap_limit.for_peak(1_103_592),
+      sender: heap_limit.for_peak(32_317),
+    )
+    as "the measured limits are four times each peak, rounded up to a power of two"
+  assert heap_limit.to_words(heap_limit.measured.map) == option.Some(8_388_608)
+    as "the map limit is 8,388,608 words"
+  assert heap_limit.to_words(heap_limit.measured.sender) == option.Some(131_072)
+    as "the sender limit is 131,072 words"
 }
 
 pub fn a_heap_limit_below_one_word_cannot_be_built_test() -> Nil {

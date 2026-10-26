@@ -15,6 +15,7 @@ import gleam/int
 import gleam/option.{type Option}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
+import gleam/result
 
 /// Every message a player process can receive. Its selector covers all of
 /// them; anything else is logged.
@@ -115,13 +116,43 @@ pub fn reset_counts(player: Player) -> Nil {
   process.send(player.control, ResetCounts)
 }
 
-/// Asks a player for its counts. The answer comes on the returned subject,
-/// behind every update already waiting in the player's mailbox, so a player
-/// that has fallen behind answers late or not at all.
-pub fn ask_report(player: Player) -> Subject(Report) {
+/// A report asked of a player and not yet answered: where the answer comes
+/// and a monitor of the player's process, so that a player that has ended is
+/// known at once.
+pub opaque type Asked {
+  Asked(reply: Subject(Report), player_ended: process.Monitor)
+}
+
+/// Asks a player for its counts. The answer comes behind every update already
+/// waiting in the player's mailbox, so a player that has fallen behind answers
+/// late or not at all; read it with `await_report`.
+pub fn ask_report(player: Player) -> Asked {
   let reply = process.new_subject()
+  let assert Ok(pid) = process.subject_owner(player.control)
+    as "a player's control subject belongs to its process"
+  let player_ended = process.monitor(pid)
   process.send(player.control, ReportTo(reply_with: reply))
-  reply
+  Asked(reply:, player_ended:)
+}
+
+/// Waits up to `within_milliseconds` for the report that was asked, and stops
+/// the monitor. A player whose process has ended, before or during the wait,
+/// has no report and is not waited for, and neither is one that has not
+/// answered in time: both are an error.
+pub fn await_report(
+  asked asked: Asked,
+  within_milliseconds within_milliseconds: Int,
+) -> Result(Report, Nil) {
+  let report =
+    process.new_selector()
+    |> process.select_map(asked.reply, Ok)
+    |> process.select_specific_monitor(asked.player_ended, fn(_down) {
+      Error(Nil)
+    })
+    |> process.selector_receive(within: within_milliseconds)
+    |> result.flatten
+  process.demonitor_process(asked.player_ended)
+  report
 }
 
 fn schedule(
