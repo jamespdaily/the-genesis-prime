@@ -1,3 +1,5 @@
 __pycache__/
 build/
 erl_crash.dump
+# An auth login request carries the player's hardware descriptions, so auth recordings stay local.
+test/recording/*/auth-*.recording
