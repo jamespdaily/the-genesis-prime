@@ -54,23 +54,46 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_test() -> Nil
     |> list.sort(string.compare)
   assert paths
     == [
+      "src/genesis_prime/message/character_list.gleam",
+      "src/genesis_prime/message/character_list_entry.gleam",
       "src/genesis_prime/message/character_select_start.gleam",
+      "src/genesis_prime/message/choose_realm.gleam",
       "src/genesis_prime/message/client_wrapper.gleam",
+      "src/genesis_prime/message/close_notice.gleam",
+      "src/genesis_prime/message/create_character.gleam",
+      "src/genesis_prime/message/create_character_carrier.gleam",
+      "src/genesis_prime/message/create_character_result.gleam",
+      "src/genesis_prime/message/delete_character.gleam",
+      "src/genesis_prime/message/delete_character_result.gleam",
+      "src/genesis_prime/message/disconnect_notice.gleam",
       "src/genesis_prime/message/enter_world.gleam",
       "src/genesis_prime/message/game_hello_reply.gleam",
       "src/genesis_prime/message/game_server_handoff.gleam",
+      "src/genesis_prime/message/item_visual.gleam",
       "src/genesis_prime/message/login_accepted.gleam",
       "src/genesis_prime/message/login_request.gleam",
+      "src/genesis_prime/message/max_character_level.gleam",
       "src/genesis_prime/message/movement_send_interval.gleam",
+      "src/genesis_prime/message/ping.gleam",
+      "src/genesis_prime/message/play_character.gleam",
+      "src/genesis_prime/message/play_character_refused.gleam",
+      "src/genesis_prime/message/player_entered_world.gleam",
+      "src/genesis_prime/message/pong.gleam",
       "src/genesis_prime/message/realm_entry.gleam",
       "src/genesis_prime/message/realm_handoff.gleam",
       "src/genesis_prime/message/realm_list.gleam",
       "src/genesis_prime/message/realm_select_start.gleam",
+      "src/genesis_prime/message/rename_character.gleam",
+      "src/genesis_prime/message/rename_character_result.gleam",
       "src/genesis_prime/message/server_hello.gleam",
+      "src/genesis_prime/message/terrain_loaded.gleam",
       "src/genesis_prime/message/text_group.gleam",
+      "src/genesis_prime/message/unit_create_player.gleam",
+      "src/genesis_prime/message/unit_destroyed.gleam",
+      "src/genesis_prime/message/unit_is_player.gleam",
       "src/genesis_prime/message/world_message.gleam",
     ]
-    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list"
+    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list, the 18 messages and 2 records of character select and entering the world, and the network layer's 3 messages (ping, pong and close notice)"
 }
 
 pub fn the_committed_codec_is_what_the_schema_generates_test() -> Nil {

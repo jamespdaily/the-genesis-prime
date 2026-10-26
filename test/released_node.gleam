@@ -116,7 +116,7 @@ pub type Failure {
 }
 
 /// A running child: its operating system process, the epmd port made for it,
-/// the ports its login's listeners were told to open (STS and auth) and its
+/// the ports its listeners were told to open (STS, auth and game) and its
 /// report.
 pub type Node {
   Node(
@@ -124,6 +124,7 @@ pub type Node {
     epmd_port: Int,
     sts_port: Int,
     auth_port: Int,
+    game_port: Int,
     report: Report,
   )
 }
@@ -159,16 +160,24 @@ pub fn run(start: Start, body: fn(Result(Node, Failure)) -> a) -> a {
   let epmd_port = free_port()
   let sts_port = free_port()
   let auth_port = free_port()
+  let game_port = free_port()
   let process =
     open(
       arguments(start),
-      environment(start:, epmd_port:, tables:, sts_port:, auth_port:),
+      environment(
+        start:,
+        epmd_port:,
+        tables:,
+        sts_port:,
+        auth_port:,
+        game_port:,
+      ),
     )
   with_cleanup(
     fn() {
       read_report(process)
       |> result.map(fn(report) {
-        Node(process:, epmd_port:, sts_port:, auth_port:, report:)
+        Node(process:, epmd_port:, sts_port:, auth_port:, game_port:, report:)
       })
       |> body
     },
@@ -241,7 +250,7 @@ fn arguments(start: Start) -> List(String) {
 }
 
 /// The database's settings in the names the server reads them by, a folder of
-/// the game tables, the child's own epmd port and the ports of its login's
+/// the game tables, the child's own epmd port and the ports of its
 /// listeners.
 fn environment(
   start start: Start,
@@ -249,6 +258,7 @@ fn environment(
   tables tables: String,
   sts_port sts_port: Int,
   auth_port auth_port: Int,
+  game_port game_port: Int,
 ) -> List(#(String, String)) {
   let settings = start.database.settings
   let password = case settings.password {
@@ -265,6 +275,7 @@ fn environment(
       #("ERL_EPMD_PORT", int.to_string(epmd_port)),
       #("GENESIS_STS_PORT", int.to_string(sts_port)),
       #("GENESIS_AUTH_PORT", int.to_string(auth_port)),
+      #("GENESIS_GAME_PORT", int.to_string(game_port)),
     ],
     password,
   ])

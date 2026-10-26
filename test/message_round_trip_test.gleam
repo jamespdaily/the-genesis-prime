@@ -9,12 +9,15 @@
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/character_select_start.{CharacterSelectStart}
 import genesis_prime/message/client_wrapper.{ClientWrapper}
+import genesis_prime/message/close_notice.{CloseNotice}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/game_server_handoff.{GameServerHandoff}
 import genesis_prime/message/login_accepted.{LoginAccepted}
 import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
+import genesis_prime/message/ping.{Ping}
+import genesis_prime/message/pong.{Pong}
 import genesis_prime/message/realm_entry.{type RealmEntry, RealmEntry}
 import genesis_prime/message/realm_handoff.{RealmHandoff}
 import genesis_prime/message/realm_list.{RealmList}
@@ -282,14 +285,21 @@ pub fn enter_world_round_trips_test() -> Nil {
     name: "message 0xad",
     seed: 20_261_107,
     draw: fn(state) {
-      let #(field_1, state) = message_support.unsigned(state:, bits: 15)
-      let #(field_2, state) = message_support.unsigned(state:, bits: 32)
-      let #(field_3, state) = message_support.unsigned(state:, bits: 32)
-      let #(field_4, state) = message_support.unsigned(state:, bits: 32)
+      let #(world_id, state) = message_support.unsigned(state:, bits: 15)
+      let #(position_x, state) = message_support.unsigned(state:, bits: 32)
+      let #(position_y, state) = message_support.unsigned(state:, bits: 32)
+      let #(position_z, state) = message_support.unsigned(state:, bits: 32)
       let #(field_5, state) = message_support.unsigned(state:, bits: 32)
       let #(field_6, state) = message_support.unsigned(state:, bits: 32)
       #(
-        EnterWorld(field_1:, field_2:, field_3:, field_4:, field_5:, field_6:),
+        EnterWorld(
+          world_id:,
+          position_x:,
+          position_y:,
+          position_z:,
+          field_5:,
+          field_6:,
+        ),
         state,
       )
     },
@@ -466,5 +476,44 @@ pub fn world_message_round_trips_test() -> Nil {
     },
     encode: world_message.encode,
     decode: world_message.decode,
+  )
+}
+
+pub fn ping_round_trips_test() -> Nil {
+  use <- owned_test.run(60_000)
+  round_trips(
+    name: "message 0x0",
+    seed: 20_261_114,
+    draw: fn(state) {
+      let #(sequence_number, state) = message_support.up_to(state:, most: 19)
+      #(Ping(sequence_number:), state)
+    },
+    encode: ping.encode,
+    decode: ping.decode,
+  )
+}
+
+pub fn pong_round_trips_test() -> Nil {
+  use <- owned_test.run(60_000)
+  round_trips(
+    name: "message 0x1",
+    seed: 20_261_115,
+    draw: fn(state) {
+      let #(sequence_number, state) = message_support.unsigned(state:, bits: 8)
+      #(Pong(sequence_number:), state)
+    },
+    encode: pong.encode,
+    decode: pong.decode,
+  )
+}
+
+pub fn close_notice_round_trips_test() -> Nil {
+  use <- owned_test.run(60_000)
+  round_trips(
+    name: "message 0x2",
+    seed: 20_261_116,
+    draw: fn(state) { #(CloseNotice, state) },
+    encode: close_notice.encode,
+    decode: close_notice.decode,
   )
 }

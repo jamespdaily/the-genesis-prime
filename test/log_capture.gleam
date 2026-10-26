@@ -76,6 +76,25 @@ pub fn next_from(
   }
 }
 
+/// The next line, from any process, for which `matching` is true, waiting up
+/// to `within` milliseconds for it. For a test that does not know the process
+/// that writes the line it needs, such as a connection's owner over TCP; a
+/// line that does not match is skipped.
+pub fn next_matching(
+  capture capture: Capture,
+  within within: Int,
+  matching matching: fn(Event) -> Bool,
+) -> Result(Event, Nil) {
+  case process.receive(capture.events, within) {
+    Ok(event) ->
+      case matching(event) {
+        True -> Ok(event)
+        False -> next_matching(capture:, within:, matching:)
+      }
+    Error(Nil) -> Error(Nil)
+  }
+}
+
 @external(erlang, "log_capture_ffi", "install")
 fn install() -> Nil
 

@@ -9,6 +9,9 @@
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import gleam/result
 
+/// The message's number.
+pub const message_id = 0x0592
+
 /// The body of message 0x0592, its fields in wire order. A field named
 /// `field_N` is the Nth of the body and has no use the client's code shows.
 pub type LoginRequest {

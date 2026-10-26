@@ -47,9 +47,9 @@ pub fn the_snapshot_process_is_the_top_supervisors_child_after_the_pool_test() -
   let settings = template_database.tree_settings(pool_settings)
   let assert Ok(started) = server.start(settings)
     as "the top supervisor did not start"
-  let assert [pool_pid, snapshot_pid, _shutdown_pid, _login_pid] =
+  let assert [pool_pid, snapshot_pid, _shutdown_pid, _login_pid, _game_pid] =
     supervisor_children.in_start_order(started.pid)
-    as "the top supervisor does not have the pool, the snapshot process, the shutdown coordinator and the login subtree"
+    as "the top supervisor does not have the pool, the snapshot process, the shutdown coordinator, the login subtree and the game subtree"
   assert process.named(pool_settings.name) == Ok(pool_pid)
     as "the first child is not the pool"
   assert process.named(settings.snapshot.name) == Ok(snapshot_pid)

@@ -21,6 +21,7 @@
 //// whose event no message announces, and each says why.
 
 import genesis_prime/database/pool
+import genesis_prime/game/service as game_service
 import genesis_prime/server
 import gleam/dynamic/decode
 import gleam/erlang/process.{type Name, type Pid, type Subject}
@@ -318,4 +319,128 @@ fn start_reporting(
   })
   |> actor.on_message(fn(state, _message: Nil) { actor.continue(state) })
   |> actor.start
+}
+
+pub fn the_pools_connections_stop_a_statement_before_the_game_workers_deadline_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let settings = pool_settings(database, "pool_statement_limit")
+  let assert Ok(_) =
+    server.supervisor_with_pool(settings) |> static_supervisor.start
+    as "the planted top supervisor did not start"
+  let assert Ok(pog.Returned(rows: [limit], ..)) =
+    pog.query("select current_setting('statement_timeout')")
+    |> pog.returning(decode.at([0], decode.string))
+    |> pog.execute(on: pool.connection(settings))
+    as "the setting was read"
+  assert limit == "4s"
+    as "designing-processes: a write past the worker's deadline of 5 seconds (game/service) may still commit, so Postgres cancels a statement at 4 seconds, before the worker is killed"
+  assert pool.statement_timeout_ms < game_service.answer_deadline_ms
+    as "the pool's limit is below the workers' deadline"
+}
+
+pub fn the_pools_connections_end_a_whole_transaction_before_the_asker_gives_up_waiting_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let settings = pool_settings(database, "pool_transaction_limit")
+  let assert Ok(_) =
+    server.supervisor_with_pool(settings) |> static_supervisor.start
+    as "the planted top supervisor did not start"
+  let assert Ok(pog.Returned(rows: [limit], ..)) =
+    pog.query("select current_setting('transaction_timeout')")
+    |> pog.returning(decode.at([0], decode.string))
+    |> pog.execute(on: pool.connection(settings))
+    as "the setting was read"
+  assert limit == "4500ms"
+    as "PostgreSQL 17 and later: transaction_timeout ends a transaction, its statements and its commit together, which statement_timeout does not bound; 4500 ms is the value the pool sets"
+  assert pool.transaction_timeout_ms > pool.statement_timeout_ms
+    as "PostgreSQL's documentation of transaction_timeout: when it is not above statement_timeout the statement's limit is ignored"
+  assert pool.holding_wait_ms() == pool.transaction_timeout_ms + pool.margin_ms
+    as "the asker's longest wait for the answer of a worker that holds a connection is the transaction's limit and the margin"
+}
+
+pub fn a_transaction_whose_statements_are_each_within_the_statement_limit_but_together_past_the_transaction_limit_is_ended_and_commits_nothing_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let settings = pool_settings(database, "pool_transaction_ends")
+  let assert Ok(_) =
+    server.supervisor_with_pool(settings) |> static_supervisor.start
+    as "the planted top supervisor did not start"
+  let assert Ok(_) =
+    pog.query("create table pool_scratch (id integer not null)")
+    |> pog.execute(on: database.connection)
+    as "the scratch table was made"
+  // Each sleep of 2.5 seconds is within the statement's limit of 4 seconds, and
+  // the two together pass the transaction's limit of 4.5 seconds.
+  assert pool.statement_timeout_ms == 4000
+    && pool.transaction_timeout_ms == 4500
+    as "the limits the test is built on: each statement under one, the two together over the other"
+  let carried_out =
+    pog.transaction(pool.connection(settings), fn(transaction) {
+      use _ <- result.try(run_in(transaction, "select 1 from pg_sleep(2.5)"))
+      use _ <- result.try(run_in(
+        transaction,
+        "insert into pool_scratch (id) values (1)",
+      ))
+      use _ <- result.try(run_in(transaction, "select 1 from pg_sleep(2.5)"))
+      Ok(Nil)
+    })
+  let assert Error(pog.TransactionQueryError(_)) = carried_out
+    as "PostgreSQL 17 and later: transaction_timeout ends the transaction at 4.5 seconds, in its second sleep, though no statement passed 4 seconds: the transaction does not commit"
+  let assert Ok(pog.Returned(rows: [stored], ..)) =
+    pog.query("select count(*) from pool_scratch")
+    |> pog.returning(decode.at([0], decode.int))
+    |> pog.execute(on: database.connection)
+    as "the scratch table was read"
+  assert stored == 0
+    as "a transaction the database ended was rolled back: its insert is not stored"
+}
+
+/// Runs a statement in a transaction, giving the error of the statement.
+fn run_in(
+  transaction: pog.Connection,
+  statement: String,
+) -> Result(pog.Returned(Nil), pog.QueryError) {
+  pog.query(statement) |> pog.execute(on: transaction)
+}
+
+pub fn a_request_that_waits_for_a_connection_for_most_of_a_second_is_served_and_not_refused_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let settings =
+    template_database.pool_settings(
+      for: database,
+      pool_name: process.new_name("pool_of_one_burst"),
+      pool_size: 1,
+    )
+  let assert Ok(_) =
+    server.supervisor_with_pool(settings) |> static_supervisor.start
+    as "the planted top supervisor did not start"
+  let connection = pool.connection(settings)
+  // A transaction holds the pool's only connection for 700 ms, which a burst of
+  // writes can do, and a read waits for it in the pool's queue. `pgo` refuses a
+  // request whose wait passes twice its queue target at the third poll of a
+  // queue that is slow (`pgo_pool.erl`, `drop_slow/3`); with `pgo`'s own queue
+  // interval of 1000 ms that poll is past this wait.
+  let holding = process.new_subject()
+  let released = process.new_subject()
+  process.spawn(fn() {
+    let release = process.new_subject()
+    let assert Ok(_) =
+      pog.transaction(connection, fn(_transaction) {
+        process.send(holding, release)
+        let _timer = process.send_after(release, 700, Nil)
+        let assert Ok(Nil) = process.receive(release, 30_000)
+          as "the connection was let go"
+        Ok(Nil)
+      })
+      as "the transaction ran"
+    process.send(released, Nil)
+  })
+  let assert Ok(_) = process.receive(holding, event_wait_ms)
+    as "the transaction holds the connection"
+  assert read_one(connection) == Ok([1])
+    as "a read that waited for the connection for 700 ms got it: the queue sheds load only at its own, longer, interval"
+  assert process.receive(released, event_wait_ms) == Ok(Nil)
+    as "the transaction ended"
 }

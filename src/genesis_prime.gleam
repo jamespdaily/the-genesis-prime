@@ -1,13 +1,20 @@
 //// The server's entry point.
 
 import envoy
+import genesis_prime/character/character.{type Place}
+import genesis_prime/character/character_slots
+import genesis_prime/character/customisation
+import genesis_prime/character/starting_place
 import genesis_prime/database/pool
+import genesis_prime/game/service as game_service
 import genesis_prime/login/service
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
 import genesis_prime/shutdown
 import genesis_prime/table
+import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/loader/requirement
+import genesis_prime/table/loader/store.{type Tables}
 import genesis_prime/telemetry/log
 import genesis_prime/telemetry/snapshot
 import gleam/erlang/atom
@@ -49,6 +56,27 @@ const default_game_port = 24_000
 
 const default_realm_name = "GenesisPrime"
 
+/// The realm id the game connections are on: the client takes the id in the
+/// character list as the game's current realm when a character is played
+/// (opcode.0x117), and no client data names the server's realm, so the id is
+/// the server's own choice.
+const default_realm_id = 1
+
+/// The WorldLocation2 row every new character starts at: world 3400,
+/// Map\PreTutorialExile. A stand-in for the start of each CharacterCreation
+/// row, which the client's tables do not hold.
+const starting_location_id = 50_177
+
+/// Where a character made from a CharacterCreation row starts: the one
+/// starting row, whichever the CharacterCreation row is. The place is chosen
+/// where the settings are made, so the rules never hold a coordinate.
+fn starting_place(
+  tables: Tables,
+  _row: CharacterCreation,
+) -> Result(Place, Nil) {
+  starting_place.place(tables:, location_id: starting_location_id)
+}
+
 /// Starts the server's supervision tree, then keeps the calling process alive
 /// while the tree runs, until SIGTERM stops the server in order and ends the
 /// node. The server runs as one node and uses no Erlang distribution, so it
@@ -88,6 +116,8 @@ pub fn main() -> Nil {
       panic as "GENESIS_TABLE_DIR is not set; the server loads the client's game tables from the folder it names"
   }
   let shutdown_settings = shutdown.new(drain_deadline_ms:, flush_deadline_ms:)
+  let snapshot_settings = snapshot.settings(process.new_name("snapshot"))
+  let game_port = port("GENESIS_GAME_PORT", default_game_port)
   let settings =
     server.Settings(
       pool: pool_settings,
@@ -95,20 +125,31 @@ pub fn main() -> Nil {
         key: reference.new(),
         folder: table_folder,
         entries: table.entries(),
-        requirements: requirement.all(),
+        requirements: list.flatten([
+          requirement.all(),
+          starting_place.requirements(location_id: starting_location_id),
+          customisation.requirements(),
+          character_slots.requirements(),
+        ]),
       ),
       shutdown: shutdown_settings,
-      snapshot: snapshot.settings(process.new_name("snapshot")),
+      snapshot: snapshot_settings,
       login: service.settings(
         sts_port: port("GENESIS_STS_PORT", default_sts_port),
         auth_port: port("GENESIS_AUTH_PORT", default_auth_port),
         game_server: Endpoint(
           address: address("GENESIS_GAME_ADDRESS", default_game_address),
-          port: port("GENESIS_GAME_PORT", default_game_port),
+          port: game_port,
         ),
         realm_name: envoy.get("GENESIS_REALM_NAME")
           |> result.unwrap(default_realm_name),
         expected_files_digest: None,
+      ),
+      game: game_service.settings(
+        port: game_port,
+        realm_id: default_realm_id,
+        start: starting_place,
+        snapshot: snapshot_settings.name,
       ),
     )
   let started = case server.start(settings) {

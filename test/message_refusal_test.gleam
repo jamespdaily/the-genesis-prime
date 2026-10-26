@@ -13,6 +13,8 @@ import genesis_prime/message/game_server_handoff.{GameServerHandoff}
 import genesis_prime/message/login_accepted.{LoginAccepted}
 import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
+import genesis_prime/message/ping.{Ping}
+import genesis_prime/message/pong
 import genesis_prime/message/realm_entry.{RealmEntry}
 import genesis_prime/message/realm_handoff.{RealmHandoff}
 import genesis_prime/message/realm_list.{RealmList}
@@ -149,18 +151,18 @@ pub fn an_enter_world_value_wider_than_15_bits_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let world =
     EnterWorld(
-      field_1: 0x1234,
-      field_2: 0,
-      field_3: 0,
-      field_4: 0,
+      world_id: 0x1234,
+      position_x: 0,
+      position_y: 0,
+      position_z: 0,
       field_5: 0,
       field_6: 0,
     )
-  assert enter_world.encode(EnterWorld(..world, field_1: 0x8000))
-    == Error(bit_stream.ValueDoesNotFit("field_1", 15, 0x8000))
-    as "ReadMessage00ADBody 0x14007e9e0: a 15-bit value"
-  assert enter_world.encode(EnterWorld(..world, field_4: 0x1_0000_0000))
-    == Error(bit_stream.ValueDoesNotFit("field_4", 32, 0x1_0000_0000))
+  assert enter_world.encode(EnterWorld(..world, world_id: 0x8000))
+    == Error(bit_stream.ValueDoesNotFit("world_id", 15, 0x8000))
+    as "ReadMessage00ADBody 0x14007e9e0: a 15-bit value, the World id (opcode.0xad)"
+  assert enter_world.encode(EnterWorld(..world, position_z: 0x1_0000_0000))
+    == Error(bit_stream.ValueDoesNotFit("position_z", 32, 0x1_0000_0000))
     as "ReadFloat 0x14006c1c0: a float is 32 bits"
 }
 
@@ -271,4 +273,18 @@ pub fn a_wrapper_whose_inner_frame_length_is_not_its_size_is_refused_test() -> N
     ))
     == Error(bit_stream.InnerFrameDisagrees("inner_frame"))
     as "WriteMessage038CBody 0x14007e1c0 copies the inner frame by its length"
+}
+
+pub fn a_ping_number_of_20_or_more_is_refused_in_both_directions_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert ping.encode(Ping(sequence_number: 20))
+    == Error(bit_stream.ValueAtOrAboveLimit("sequence_number", 20, 20))
+    as "opcode.0x0: a ping's number is 0 to 19 (SendNetworkPings takes it mod 20), so 20 is not one the server writes"
+  assert ping.decode(<<20>>)
+    == Error(bit_stream.UnexpectedValue("sequence_number", 20))
+    as "opcode.0x0: the client never sends 20, so a ping with it does not decode"
+  assert ping.decode(<<19>>) == Ok(Ping(sequence_number: 19))
+    as "opcode.0x0: 19 is the largest number a ping holds"
+  assert pong.decode(<<20>>) == Ok(pong.Pong(sequence_number: 20))
+    as "opcode.0x1: the client's pong handler ignores a number of 20 or more, so a pong with one is accepted"
 }

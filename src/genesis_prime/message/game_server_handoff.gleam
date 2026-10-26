@@ -11,6 +11,9 @@ import genesis_prime/message/bit_stream.{
 }
 import gleam/result
 
+/// The message's number.
+pub const message_id = 0x03DB
+
 /// The body of message 0x03DB, its fields in wire order. A field named
 /// `field_N` is the Nth of the body and has no use the client's code shows.
 pub type GameServerHandoff {

@@ -19,6 +19,12 @@
 //// connection reads raw bytes, because its protocol is text with its own
 //// framing and then RC4.
 ////
+//// A conversation can also be woken by messages other processes send to the
+//// owner (`Waking`): a game connection is told of the players that come into
+//// range by the map's deliveries. What it selects is handled in the owner's
+//// process, in order with what the socket reads, so the connection's state is
+//// still its owner's alone.
+////
 //// A request of the shutdown coordinator to close ends the connection like a
 //// client that leaves: the socket is closed, the line is logged and the owner
 //// stops normally. A handler that is busy holds the request until it returns.
@@ -35,7 +41,7 @@ import genesis_prime/connection/rate_limit.{type Rate}
 import genesis_prime/connection/socket.{type FlowControl, type Socket}
 import genesis_prime/shutdown
 import genesis_prime/telemetry/log.{type Who}
-import gleam/erlang/process.{type Subject}
+import gleam/erlang/process.{type Selector, type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 
@@ -77,7 +83,14 @@ pub type Reaction {
 /// One connection's logic and its state, which lives in the function's
 /// closure. It runs in the socket owner's process.
 pub type Conversation {
+  /// A conversation that answers what the socket reads.
   Conversation(handle: fn(Input) -> Reaction)
+  /// A conversation that is also woken by messages other processes send to
+  /// the owner, such as a map's deliveries. `wake` selects those messages,
+  /// each mapped to the reaction the conversation makes of it; it is made with
+  /// the conversation's own state, so each reaction's next conversation brings
+  /// its own.
+  Waking(handle: fn(Input) -> Reaction, wake: Selector(Reaction))
 }
 
 /// What a listener serves: the mode its sockets are read in, and the step that
@@ -108,6 +121,9 @@ pub opaque type Message {
   ServerStopping
   /// The socket reported something.
   SocketEvent(event: socket.Event)
+  /// What a waking conversation's selector selected, already turned into the
+  /// conversation's reaction.
+  Woken(reaction: Reaction)
 }
 
 /// What the owner is doing: waiting for the acceptor to give it the socket,
@@ -125,7 +141,14 @@ type Reader {
 }
 
 type State {
-  State(settings: Settings, socket: Socket, who: Who, status: Status)
+  State(
+    settings: Settings,
+    self: Subject(Message),
+    socket: Socket,
+    who: Who,
+    status: Status,
+    waking: Bool,
+  )
 }
 
 /// Who the socket owner's lines are from: the process, by its name, and the
@@ -195,7 +218,7 @@ pub fn start(
   shutdown shutdown: shutdown.Settings,
 ) -> actor.StartResult(Subject(Message)) {
   actor.new_with_initialiser(start_deadline_ms, fn(subject) {
-    limit_heap(settings.heap_ceiling_words)
+    limit_heap(settings.heap_ceiling_words, True)
     keep_messages_off_heap()
     shutdown.register(
       settings: shutdown,
@@ -210,9 +233,11 @@ pub fn start(
     let state =
       State(
         settings:,
+        self: subject,
         socket:,
         who: owner_who(socket.peer(socket)),
         status: AwaitingSocket,
+        waking: False,
       )
     Ok(
       actor.initialised(state)
@@ -253,6 +278,9 @@ fn handle_message(
       actor.stop_abnormal(
         "the socket reported before it was given to its owner",
       )
+    Woken(reaction:), Reading(..) -> carry_out(state, reaction, settle)
+    Woken(..), AwaitingSocket ->
+      actor.stop_abnormal("a conversation woke before the owner had one")
   }
 }
 
@@ -391,14 +419,52 @@ fn deliver(
 fn next_reads(state: State) -> actor.Next(State, Message) {
   case state.settings.flow_control {
     socket.ActiveOnce -> arm(state)
-    socket.ActiveCount(..) -> actor.continue(state)
+    socket.ActiveCount(..) -> settle(state)
+  }
+}
+
+/// Goes on with the conversation the state holds: when it is woken by other
+/// processes, the owner selects what it selects as well as the socket and its
+/// own messages, and a conversation that is not goes back to the base
+/// selector. The selector is made again each time because each reaction brings
+/// a conversation with its own state, and its selector maps what it selects
+/// with that state.
+fn settle(state: State) -> actor.Next(State, Message) {
+  case state.status {
+    Reading(conversation: Waking(wake:, ..), ..) ->
+      actor.continue(State(..state, waking: True))
+      |> actor.with_selector(selector(state:, wake: Some(wake)))
+    Reading(conversation: Conversation(..), ..) | AwaitingSocket ->
+      case state.waking {
+        True ->
+          actor.continue(State(..state, waking: False))
+          |> actor.with_selector(selector(state:, wake: None))
+        False -> actor.continue(state)
+      }
+  }
+}
+
+/// What the owner selects: its own messages, the socket's events and, for a
+/// woken conversation, what it selects.
+fn selector(
+  state state: State,
+  wake wake: Option(Selector(Reaction)),
+) -> Selector(Message) {
+  let base =
+    process.new_selector()
+    |> process.select(state.self)
+    |> socket.select(SocketEvent)
+  case wake {
+    Some(wake) ->
+      process.merge_selector(base, process.map_selector(wake, Woken))
+    None -> base
   }
 }
 
 /// Asks the socket for the next reads in the owner's flow control.
 fn arm(state: State) -> actor.Next(State, Message) {
   case socket.arm(state.socket, state.settings.flow_control) {
-    Ok(Nil) -> actor.continue(state)
+    Ok(Nil) -> settle(state)
     Error(socket.Closed) ->
       end_connection(state, log.info, "the client closed the socket")
     Error(reason) ->
@@ -424,8 +490,8 @@ fn end_connection(
 
 /// Sets the calling process's heap ceiling in words, killing it when it needs
 /// more, shared binaries counted, and logging the kill.
-@external(erlang, "genesis_prime_socket_ffi", "limit_heap")
-fn limit_heap(words: Int) -> Nil
+@external(erlang, "heap_limit_ffi", "limit")
+fn limit_heap(words: Int, include_shared_binaries: Bool) -> Nil
 
 /// Keeps the calling process's waiting messages off its heap.
 @external(erlang, "genesis_prime_socket_ffi", "keep_messages_off_heap")

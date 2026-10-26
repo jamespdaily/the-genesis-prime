@@ -19,6 +19,34 @@ fields = [
 ]
 
 [[message]]
+id = 0x0000
+name = "ping"
+direction = "client_to_server"
+evidence = "opcode.0x0"
+summary = "the network layer's ping, which travels bare on every connection and which the server answers at once with a pong carrying the same number"
+fields = [
+  { name = "sequence_number", kind = "unsigned_below", bits = 8, limit = 20, evidence = "opcode.0x0", named_by = "opcode.0x0" },
+]
+
+[[message]]
+id = 0x0001
+name = "pong"
+direction = "both"
+evidence = "opcode.0x1"
+summary = "the network layer's pong, the answer to a ping with the ping's number, which travels bare; the client ignores a number of 20 or more"
+fields = [
+  { name = "sequence_number", kind = "unsigned", bits = 8, evidence = "opcode.0x1", named_by = "opcode.0x1" },
+]
+
+[[message]]
+id = 0x0002
+name = "close_notice"
+direction = "client_to_server"
+evidence = "opcode.0x2"
+summary = "the network layer's notice that the client is closing a connection, which travels bare with an empty body and gets no answer"
+fields = []
+
+[[message]]
 id = 0x0592
 name = "login_request"
 direction = "client_to_server"
@@ -109,12 +137,12 @@ id = 0x00AD
 name = "enter_world"
 direction = "server_to_client"
 evidence = "opcode.0xad"
-summary = "the game server's answer after the player chose a character, with which the client enters the world"
+summary = "the game server's answer after the player chose a character, with the world the client loads and the position it loads it at"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 15, evidence = "0x14007e9e0" },
-  { name = "field_2", kind = "float32", evidence = "0x14007e9e0" },
-  { name = "field_3", kind = "float32", evidence = "0x14007e9e0" },
-  { name = "field_4", kind = "float32", evidence = "0x14007e9e0" },
+  { name = "world_id", kind = "unsigned", bits = 15, evidence = "0x14007e9e0", named_by = "opcode.0xad" },
+  { name = "position_x", kind = "float32", evidence = "0x14007e9e0", named_by = "opcode.0xad" },
+  { name = "position_y", kind = "float32", evidence = "0x14007e9e0", named_by = "opcode.0xad" },
+  { name = "position_z", kind = "float32", evidence = "0x14007e9e0", named_by = "opcode.0xad" },
   { name = "field_5", kind = "float32", evidence = "0x14007e9e0" },
   { name = "field_6", kind = "float32", evidence = "0x14007e9e0" },
 ]
@@ -190,6 +218,248 @@ fields = [
   { name = "inner_frame", kind = "whole_frame", evidence = "0x14007e1c0" },
 ]
 
+[[message]]
+id = 0x0117
+name = "character_list"
+direction = "server_to_client"
+evidence = "opcode.0x117"
+summary = "the account's character list the client shows in character select, with the creation choices the server enables and disables"
+fields = [
+  { name = "server_time", kind = "unsigned", bits = 64, evidence = "0x14007fab0", named_by = "opcode.0x117" },
+  { name = "characters", kind = "array", count_bits = 32, element = "character_list_entry", evidence = "0x14007fab0", named_by = "opcode.0x117" },
+  { name = "enabled_creation_ids", kind = "array", count_bits = 32, element = "unsigned", element_bits = 32, evidence = "0x14007fab0", named_by = "opcode.0x117" },
+  { name = "disabled_creation_ids", kind = "array", count_bits = 32, element = "unsigned", element_bits = 32, evidence = "0x14007fab0", named_by = "opcode.0x117" },
+  { name = "realm_id", kind = "unsigned", bits = 14, evidence = "0x14007fab0", named_by = "opcode.0x117" },
+  { name = "pending_removal_realm_id", kind = "unsigned", bits = 14, evidence = "0x1400852f0", named_by = "opcode.0x117" },
+  { name = "pending_removal_character_id", kind = "unsigned", bits = 64, evidence = "0x1400852f0", named_by = "opcode.0x117" },
+  { name = "pending_removal_time", kind = "unsigned", bits = 32, evidence = "0x14007fab0", named_by = "opcode.0x117" },
+  { name = "reservations", kind = "unsigned", bits = 32, evidence = "0x14007fab0", named_by = "opcode.0x117" },
+  { name = "field_10", kind = "unsigned", bits = 32, evidence = "0x14007fab0" },
+  { name = "field_11", kind = "unsigned", bits = 32, evidence = "0x14007fab0" },
+  { name = "faction_restriction", kind = "unsigned", bits = 14, evidence = "0x14007fab0", named_by = "opcode.0x117" },
+  { name = "free_level_50_available", kind = "unsigned", bits = 1, evidence = "0x14007fab0", named_by = "opcode.0x117" },
+]
+
+[[message]]
+id = 0x025B
+name = "create_character"
+direction = "client_to_server"
+evidence = "opcode.0x25b"
+summary = "the request to create a character, which the client sends inside message 0x25C"
+fields = [
+  { name = "creation_id", kind = "unsigned", bits = 32, evidence = "0x14007eb30", named_by = "opcode.0x25b" },
+  { name = "name", kind = "wide_text", evidence = "0x14007eb30", named_by = "opcode.0x25b" },
+  { name = "path", kind = "unsigned", bits = 3, evidence = "0x14007eb30", named_by = "opcode.0x25b" },
+  { name = "customisation_labels", kind = "array", count_bits = 32, element = "unsigned", element_bits = 32, evidence = "0x14007eb30", named_by = "opcode.0x25b" },
+  { name = "customisation_values", kind = "array", counted_by = "customisation_labels", element = "unsigned", element_bits = 32, evidence = "0x14007eb30", named_by = "opcode.0x25b" },
+  { name = "bone_values", kind = "array", count_bits = 32, element = "float32", evidence = "0x14007eb30", named_by = "opcode.0x25b" },
+]
+
+[[message]]
+id = 0x025C
+name = "create_character_carrier"
+direction = "client_to_server"
+evidence = "opcode.0x25c"
+summary = "carries the whole frame of the create-character request, its bytes after the length ciphered"
+fields = [
+  { name = "inner_frame", kind = "whole_frame", evidence = "0x140079f30", named_by = "opcode.0x25c" },
+]
+
+[[message]]
+id = 0x00DC
+name = "create_character_result"
+direction = "server_to_client"
+evidence = "opcode.0xdc"
+summary = "the result of a create-character request, with the new character's id"
+fields = [
+  { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x14007fd50", named_by = "opcode.0xdc" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x14007fd50" },
+  { name = "result", kind = "unsigned", bits = 6, evidence = "0x14007fd50", named_by = "opcode.0xdc" },
+]
+
+[[message]]
+id = 0x07DD
+name = "play_character"
+direction = "client_to_server"
+evidence = "opcode.0x7dd"
+summary = "the request to play a character, after which the client waits for message 0xAD or 0x162"
+fields = [
+  { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x14007d840", named_by = "opcode.0x7dd" },
+]
+
+[[message]]
+id = 0x0162
+name = "play_character_refused"
+direction = "server_to_client"
+evidence = "opcode.0x162"
+summary = "the answer that playing the chosen character failed"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 3, evidence = "0x14007fdc0" },
+]
+
+[[message]]
+id = 0x0352
+name = "delete_character"
+direction = "client_to_server"
+evidence = "opcode.0x352"
+summary = "the request to delete a character, after which the client waits for message 0xE6"
+fields = [
+  { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x14007d840", named_by = "opcode.0x352" },
+]
+
+[[message]]
+id = 0x00E6
+name = "delete_character_result"
+direction = "server_to_client"
+evidence = "opcode.0xe6"
+summary = "the result of a delete-character request; the client removes the character from its list on result 0"
+fields = [
+  { name = "result", kind = "unsigned", bits = 6, evidence = "0x14007fcf0", named_by = "opcode.0xe6" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x14007fcf0" },
+]
+
+[[message]]
+id = 0x0786
+name = "rename_character"
+direction = "client_to_server"
+evidence = "opcode.0x786"
+summary = "the request to rename a character, after which the client waits for message 0x14B"
+fields = [
+  { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x14007e540", named_by = "opcode.0x786" },
+  { name = "name", kind = "wide_text", evidence = "0x14007e540", named_by = "opcode.0x786" },
+]
+
+[[message]]
+id = 0x014B
+name = "rename_character_result"
+direction = "server_to_client"
+evidence = "opcode.0x14b"
+summary = "the result of a rename request; on result 18 the client gives the listed character the name"
+fields = [
+  { name = "result", kind = "unsigned", bits = 6, evidence = "0x140080460", named_by = "opcode.0x14b" },
+  { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x140080460", named_by = "opcode.0x14b" },
+  { name = "name", kind = "wide_text", evidence = "0x140080460", named_by = "opcode.0x14b" },
+]
+
+[[message]]
+id = 0x0036
+name = "max_character_level"
+direction = "server_to_client"
+evidence = "opcode.0x36"
+summary = "the highest character level the account has reached, which the client keeps in character select"
+fields = [
+  { name = "highest_level", kind = "unsigned", bits = 32, evidence = "0x14007ab50", named_by = "opcode.0x36" },
+]
+
+[[message]]
+id = 0x036A
+name = "disconnect_notice"
+direction = "server_to_client"
+evidence = "opcode.0x36a"
+summary = "tells the client it is being disconnected, with the reason it shows as a text"
+fields = [
+  { name = "reason", kind = "unsigned", bits = 5, evidence = "opcode.0x36a", named_by = "opcode.0x36a" },
+]
+
+[[message]]
+id = 0x07DF
+name = "choose_realm"
+direction = "client_to_server"
+evidence = "opcode.0x7df"
+summary = "the client's choice of a realm in realm select; for the current realm it starts character select on the same connection"
+fields = [
+  { name = "realm_id", kind = "unsigned", bits = 32, evidence = "0x14007d010", named_by = "opcode.0x7df" },
+]
+
+[[message]]
+id = 0x0262
+name = "unit_create_player"
+direction = "server_to_client"
+evidence = "opcode.0x262"
+summary = "creates a unit of type 20, a player character, in the world; the lists the client's reader allows are sent empty"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "unit_type", kind = "constant", bits = 6, value = 20, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x1400962d0", named_by = "0x1400962d0" },
+  { name = "realm_id", kind = "unsigned", bits = 14, evidence = "0x1400962d0", named_by = "0x1400962d0" },
+  { name = "name", kind = "wide_text", evidence = "0x1400962d0", named_by = "0x1400962d0" },
+  { name = "race_id", kind = "unsigned", bits = 5, evidence = "0x1400962d0", named_by = "0x1400962d0" },
+  { name = "class_id", kind = "unsigned", bits = 5, evidence = "0x1400962d0", named_by = "0x1400962d0" },
+  { name = "gender", kind = "unsigned", bits = 2, evidence = "0x1400962d0", named_by = "0x1400962d0" },
+  { name = "field_9", kind = "unsigned", bits = 64, evidence = "0x1400962d0" },
+  { name = "field_10", kind = "array", count_bits = 8, element = "unsigned", element_bits = 32, evidence = "0x1400962d0" },
+  { name = "field_11", kind = "wide_text", evidence = "0x1400962d0" },
+  { name = "field_12", kind = "unsigned", bits = 4, evidence = "0x1400962d0" },
+  { name = "field_13", kind = "array", count_bits = 5, element = "unsigned", element_bits = 64, evidence = "0x1400962d0" },
+  { name = "field_14", kind = "array", count_bits = 6, element = "unsigned", element_bits = 32, evidence = "0x1400962d0" },
+  { name = "path", kind = "unsigned", bits = 3, evidence = "0x1400962d0", named_by = "0x1400962d0" },
+  { name = "field_16", kind = "unsigned", bits = 8, evidence = "0x1400962d0" },
+  { name = "field_17", kind = "unsigned", bits = 14, evidence = "0x1400962d0" },
+  { name = "field_18", kind = "unsigned", bits = 8, evidence = "0x140096fa0" },
+  { name = "no_tagged_entries", kind = "constant", bits = 5, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "field_20", kind = "unsigned", bits = 32, evidence = "0x140096fa0" },
+  { name = "no_kind_entries", kind = "constant", bits = 5, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "no_timed_entries", kind = "constant", bits = 8, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "item_visuals", kind = "array", count_bits = 7, element = "item_visual", evidence = "0x140096fa0", named_by = "0x1400ab890" },
+  { name = "no_other_entries", kind = "constant", bits = 9, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "field_25", kind = "unsigned", bits = 32, evidence = "0x140096fa0" },
+  { name = "field_26", kind = "unsigned", bits = 14, evidence = "0x140096fa0" },
+  { name = "field_27", kind = "unsigned", bits = 14, evidence = "0x140096fa0" },
+  { name = "field_28", kind = "unsigned", bits = 32, evidence = "0x140096fa0" },
+  { name = "field_29", kind = "unsigned", bits = 64, evidence = "0x140096fa0" },
+  { name = "first_tag", kind = "constant", bits = 2, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "field_31", kind = "unsigned", bits = 1, evidence = "0x140096fa0" },
+  { name = "second_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "field_33", kind = "unsigned", bits = 64, evidence = "0x140096fa0" },
+  { name = "field_34", kind = "unsigned", bits = 14, evidence = "0x140096fa0" },
+  { name = "third_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "field_36", kind = "unsigned", bits = 32, evidence = "0x140096fa0" },
+  { name = "field_37", kind = "unsigned", bits = 18, evidence = "0x140096fa0" },
+  { name = "field_38", kind = "unsigned", bits = 14, evidence = "0x140096fa0" },
+  { name = "field_39", kind = "unsigned", bits = 17, evidence = "0x140096fa0" },
+  { name = "field_40", kind = "unsigned", bits = 15, evidence = "0x140096fa0" },
+]
+
+[[message]]
+id = 0x019B
+name = "unit_is_player"
+direction = "server_to_client"
+evidence = "opcode.0x19b"
+summary = "tells the client which unit is the player, so the camera and control follow it"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x14007a040", named_by = "opcode.0x19b" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x14007a040" },
+]
+
+[[message]]
+id = 0x00F2
+name = "terrain_loaded"
+direction = "client_to_server"
+evidence = "opcode.0xf2"
+summary = "sent once while the world loads, when the terrain near the player is ready and the world has had message 0xF1"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 15, evidence = "0x14007eea0" },
+]
+
+[[message]]
+id = 0x0061
+name = "player_entered_world"
+direction = "server_to_client"
+evidence = "opcode.0x61"
+summary = "tells the client the player has entered the world, which the end of loading waits for; its body is empty"
+fields = []
+
+[[message]]
+id = 0x0355
+name = "unit_destroyed"
+direction = "server_to_client"
+evidence = "opcode.0x355"
+summary = "removes a unit from the world"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x14007c340", named_by = "opcode.0x355" },
+  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x14007c340" },
+]
+
 [[record]]
 name = "realm_entry"
 evidence = "0x1400ac130"
@@ -221,4 +491,47 @@ summary = "one group of texts of the realm list"
 fields = [
   { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x1400ac590" },
   { name = "texts", kind = "array", count_bits = 8, element = "wide_text", evidence = "0x1400ac590", named_by = "0x1400ac590" },
+]
+
+[[record]]
+name = "item_visual"
+evidence = "0x1400ab890"
+summary = "one item visual of a character: the slot, the display, the colour set and the dye"
+fields = [
+  { name = "slot", kind = "unsigned", bits = 7, evidence = "0x1400ab890", named_by = "0x1400ab890" },
+  { name = "display_id", kind = "unsigned", bits = 15, evidence = "0x1400ab890", named_by = "0x1400ab890" },
+  { name = "item_color_set_id", kind = "unsigned", bits = 14, evidence = "0x1400ab890", named_by = "0x1400ab890" },
+  { name = "dye", kind = "unsigned", bits = 32, evidence = "0x1400ab890", named_by = "0x1400ab890" },
+]
+
+[[record]]
+name = "character_list_entry"
+evidence = "0x14007f720"
+summary = "one character of the character list"
+fields = [
+  { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "name", kind = "wide_text", evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "gender", kind = "unsigned", bits = 2, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "race_id", kind = "unsigned", bits = 5, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "class_id", kind = "unsigned", bits = 5, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "faction_id", kind = "unsigned", bits = 32, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "level", kind = "unsigned", bits = 32, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "body_visuals", kind = "array", count_bits = 32, element = "item_visual", evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "worn_visuals", kind = "array", count_bits = 32, element = "item_visual", evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "world_id", kind = "unsigned", bits = 15, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "world_zone_id", kind = "unsigned", bits = 15, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "field_12", kind = "unsigned", bits = 14, evidence = "0x14007f720" },
+  { name = "position_x", kind = "float32", evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "position_y", kind = "float32", evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "position_z", kind = "float32", evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "field_16", kind = "float32", evidence = "0x14007f720" },
+  { name = "field_17", kind = "float32", evidence = "0x14007f720" },
+  { name = "path", kind = "unsigned", bits = 3, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "disabled", kind = "unsigned", bits = 1, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "requires_rename", kind = "unsigned", bits = 1, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "field_21", kind = "unsigned", bits = 32, evidence = "0x14007f720" },
+  { name = "customisation_labels", kind = "array", count_bits = 4, element = "unsigned", element_bits = 32, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "customisation_values", kind = "array", counted_by = "customisation_labels", element = "unsigned", element_bits = 32, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "bone_values", kind = "array", count_bits = 32, element = "float32", evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "last_logged_out_days", kind = "float32", evidence = "0x14007f720", named_by = "0x14007f720" },
 ]

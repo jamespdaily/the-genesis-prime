@@ -1,6 +1,6 @@
 -module(genesis_prime_socket_ffi).
 -export([listen/1, listening_port/1, accept/1, give_to/2, arm_once/1, arm_count/2, send/2, close/1,
-         peer/1, monotonic_milliseconds/0, limit_heap/1,
+         peer/1, monotonic_milliseconds/0,
          keep_messages_off_heap/0, data_tag/0,
          closed_tag/0, error_tag/0, passive_tag/0]).
 
@@ -70,15 +70,6 @@ peer(Socket) ->
 -spec monotonic_milliseconds() -> integer().
 monotonic_milliseconds() ->
     erlang:monotonic_time(millisecond).
-
-%% Sets the calling process's heap ceiling: killed when it needs more than
-%% `Words`, shared binaries counted, and the runtime logs the kill.
--spec limit_heap(pos_integer()) -> nil.
-limit_heap(Words) ->
-    process_flag(max_heap_size,
-                 #{size => Words, kill => true, error_logger => true,
-                   include_shared_binaries => true}),
-    nil.
 
 %% The calling process's waiting messages are kept off its heap.
 -spec keep_messages_off_heap() -> nil.

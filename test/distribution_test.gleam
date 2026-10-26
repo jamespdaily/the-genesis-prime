@@ -42,9 +42,11 @@ const child_deadline_ms = 60_000
 /// held, fails `only_the_games_ports_listen_test`. The server's tree starts the
 /// STS listener (the client's port 6600, `0x14000d3ca`) and the auth listener
 /// (23115, `0x140c3adbc`), each on the port the child was told, since a test
-/// shares no fixed port; the game listener does not exist yet.
+/// shares no fixed port; and the game listener, which the auth login hands a
+/// client to (opcode.0x3db names its address and port), on the port the child
+/// was told in GENESIS_GAME_PORT.
 fn expected_listening_ports(node: Node) -> List(Int) {
-  [node.sts_port, node.auth_port]
+  [node.sts_port, node.auth_port, node.game_port]
 }
 
 pub fn a_node_started_as_a_release_starts_it_has_no_distribution_test() -> Nil {
@@ -134,7 +136,7 @@ pub fn a_listener_the_server_did_not_start_is_caught_test() -> Nil {
       int.compare,
     )
     == node.report.listening_ports
-    as "what the node holds is the two planted ports and the login's two"
+    as "what the node holds is the two planted ports and the three the server starts"
   assert missing == []
 }
 

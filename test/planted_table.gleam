@@ -298,17 +298,42 @@ pub fn persistent_terms_under(key: Reference) -> Int
 
 /// A folder with a file of no rows for every table of the client, each laid out
 /// by the table's own schema, so the server's whole load reads it: a start of
-/// the server that must load the tables needs no client files. The folder is
-/// removed afterwards.
+/// the server that must load the tables needs no client files. The rows the
+/// server requires are planted, the WorldLocation2 row of the starting place,
+/// the World row it names and the Hybrid system's CharacterSlots row. The folder is removed afterwards.
 pub fn in_empty_tables_folder(body: fn(String) -> a) -> a {
   in_folder(
     list.map(table.entries(), fn(entry) {
-      #(store.file(entry), bytes(empty_table(entry)))
+      #(store.file(entry), bytes(required_rows_only(entry)))
     }),
     body,
   )
 }
 
-fn empty_table(entry: store.Entry) -> Planted {
-  table(schema: store.schema(entry), rows: [])
+/// The WorldLocation2 row of the server's starting place (50177, in world 3400),
+/// the World row 3400 and the Hybrid system's CharacterSlots row (117, 2 slots),
+/// which every other table lacks.
+fn required_rows_only(entry: store.Entry) -> Planted {
+  let schema = store.schema(entry)
+  case schema.table {
+    "WorldLocation2" ->
+      table(schema:, rows: [
+        row(schema:, with: [
+          #("ID", Integer(50_177)),
+          #("worldId", Integer(3400)),
+        ]),
+      ])
+    "World" ->
+      table(schema:, rows: [row(schema:, with: [#("ID", Integer(3400))])])
+    "RewardPropertyPremiumModifier" ->
+      table(schema:, rows: [
+        row(schema:, with: [
+          #("ID", Integer(117)),
+          #("premiumSystemEnum", Integer(1)),
+          #("rewardPropertyId", Integer(29)),
+          #("modifierValueInt", Integer(2)),
+        ]),
+      ])
+    _ -> table(schema:, rows: [])
+  }
 }

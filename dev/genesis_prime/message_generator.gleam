@@ -85,6 +85,7 @@ fn message_module(message: Message) -> String {
   let direction = case message.direction {
     message_schema.ClientToServer -> "client to server"
     message_schema.ServerToClient -> "server to client"
+    message_schema.Both -> "either direction"
   }
   let head =
     wrap(
@@ -101,7 +102,7 @@ fn message_module(message: Message) -> String {
         <> message.evidence
         <> "` names the message.",
     )
-  let type_doc = case message.fields {
+  let type_doc = case held(message.fields) {
     [] ->
       wrap(
         "///",
@@ -115,7 +116,7 @@ fn message_module(message: Message) -> String {
           <> ", its fields in wire order. A field named `field_N` is the Nth of the body and has no use the client's code shows.",
       )
   }
-  let unused = case message.fields {
+  let unused = case held(message.fields) {
     [] -> "_"
     _ -> ""
   }
@@ -142,6 +143,11 @@ fn message_module(message: Message) -> String {
     list.flatten([
       header(head),
       imports(message.fields, ["DecodeError", "EncodeError"]),
+      [
+        "/// The message's number.",
+        "pub const message_id = " <> hex_id(message.id),
+        "",
+      ],
       type_doc,
       type_declaration(type_name, message.fields),
       [""],
@@ -263,13 +269,13 @@ fn imports(fields: List(Field), types: List(String)) -> List(String) {
 }
 
 fn type_declaration(type_name: String, fields: List(Field)) -> List(String) {
-  let declaration = case fields {
+  let declaration = case held(fields) {
     [] -> ["  " <> type_name]
     _ ->
       call(
         indent: 2,
         head: type_name,
-        arguments: list.map(fields, fn(field) {
+        arguments: list.map(held(fields), fn(field) {
           field.name <> ": " <> field_type(field.kind)
         }),
         tail: "",
@@ -280,7 +286,9 @@ fn type_declaration(type_name: String, fields: List(Field)) -> List(String) {
 
 fn field_type(kind: Kind) -> String {
   case kind {
-    message_schema.Unsigned(..) | message_schema.Float32 -> "Int"
+    message_schema.Unsigned(..)
+    | message_schema.UnsignedBelow(..)
+    | message_schema.Float32 -> "Int"
     message_schema.WideText | message_schema.CountedWideText(..) -> "String"
     message_schema.Guid
     | message_schema.RawBytes(..)
@@ -288,7 +296,22 @@ fn field_type(kind: Kind) -> String {
     message_schema.Endpoint -> "Endpoint"
     message_schema.ArrayOfWideText(..) -> "List(String)"
     message_schema.ArrayOfRecord(record:, ..) -> "List(" <> camel(record) <> ")"
+    message_schema.ArrayOfUnsigned(..)
+    | message_schema.ArrayOfFloat32(..)
+    | message_schema.UnsignedArrayCountedBy(..) -> "List(Int)"
+    message_schema.Constant(..) -> "Int"
   }
+}
+
+/// The fields a generated type holds: every field but the constants, which the
+/// encoder writes and the decoder checks.
+fn held(fields: List(Field)) -> List(Field) {
+  list.filter(fields, fn(field) {
+    case field.kind {
+      message_schema.Constant(..) -> False
+      _ -> True
+    }
+  })
 }
 
 /// The pipeline step that writes a field of the value held in `owner`.
@@ -300,6 +323,12 @@ fn write_step(field: Field, owner: String) -> List(String) {
       name,
       value,
       int.to_string(bits),
+    ])
+    message_schema.UnsignedBelow(bits:, limit:) -> #("write_unsigned_below", [
+      name,
+      value,
+      int.to_string(bits),
+      int.to_string(limit),
     ])
     message_schema.Float32 -> #("write_float32_bits", [name, value])
     message_schema.WideText -> #("write_wide_text", [name, value])
@@ -327,6 +356,24 @@ fn write_step(field: Field, owner: String) -> List(String) {
       int.to_string(count_bits),
       record <> ".write",
     ])
+    message_schema.ArrayOfUnsigned(count_bits:, bits:) -> #(
+      "write_unsigned_array",
+      [name, value, int.to_string(count_bits), int.to_string(bits)],
+    )
+    message_schema.ArrayOfFloat32(count_bits:) -> #("write_float32_array", [
+      name,
+      value,
+      int.to_string(count_bits),
+    ])
+    message_schema.UnsignedArrayCountedBy(counted_by:, bits:) -> #(
+      "write_unsigned_array_like",
+      [name, value, owner <> "." <> counted_by, int.to_string(bits)],
+    )
+    message_schema.Constant(bits:, value: constant) -> #("write_constant", [
+      name,
+      int.to_string(constant),
+      int.to_string(bits),
+    ])
   }
   call(indent: 2, head: "|> bit_stream." <> function, arguments:, tail: "")
 }
@@ -337,6 +384,12 @@ fn read_step(field: Field) -> List(String) {
     message_schema.Unsigned(bits:) -> #("read_unsigned", [
       "reader",
       int.to_string(bits),
+    ])
+    message_schema.UnsignedBelow(bits:, limit:) -> #("read_unsigned_below", [
+      "reader",
+      "\"" <> field.name <> "\"",
+      int.to_string(bits),
+      int.to_string(limit),
     ])
     message_schema.Float32 -> #("read_float32_bits", ["reader"])
     message_schema.WideText -> #("read_wide_text", ["reader"])
@@ -360,12 +413,30 @@ fn read_step(field: Field) -> List(String) {
       int.to_string(count_bits),
       record <> ".read",
     ])
+    message_schema.ArrayOfUnsigned(count_bits:, bits:) -> #(
+      "read_unsigned_array",
+      ["reader", int.to_string(count_bits), int.to_string(bits)],
+    )
+    message_schema.ArrayOfFloat32(count_bits:) -> #("read_float32_array", [
+      "reader",
+      int.to_string(count_bits),
+    ])
+    message_schema.UnsignedArrayCountedBy(counted_by:, bits:) -> #(
+      "read_unsigned_array_like",
+      ["reader", counted_by, int.to_string(bits)],
+    )
+    message_schema.Constant(bits:, value:) -> #("read_constant", [
+      "reader",
+      "\"" <> field.name <> "\"",
+      int.to_string(bits),
+      int.to_string(value),
+    ])
   }
-  use_line(
-    pattern: "#(" <> field.name <> ", reader)",
-    call_head: "bit_stream." <> function,
-    arguments:,
-  )
+  let pattern = case field.kind {
+    message_schema.Constant(..) -> "reader"
+    _ -> "#(" <> field.name <> ", reader)"
+  }
+  use_line(pattern:, call_head: "bit_stream." <> function, arguments:)
 }
 
 fn read_steps(fields: List(Field)) -> List(String) {
@@ -391,7 +462,7 @@ fn decode_body(fields: List(Field), type_name: String) -> List(String) {
 
 /// `Ok(Name(field:, ..))`, on one line when it fits.
 fn construct(fields: List(Field), type_name: String) -> List(String) {
-  let labels = list.map(fields, fn(field) { field.name <> ":" })
+  let labels = list.map(held(fields), fn(field) { field.name <> ":" })
   let one = "  Ok(" <> type_name <> "(" <> string.join(labels, ", ") <> "))"
   case string.length(one) <= width {
     True -> [one]
@@ -409,7 +480,7 @@ fn construct_with_reader(
   fields: List(Field),
   type_name: String,
 ) -> List(String) {
-  let labels = list.map(fields, fn(field) { field.name <> ":" })
+  let labels = list.map(held(fields), fn(field) { field.name <> ":" })
   let one =
     "  Ok(#(" <> type_name <> "(" <> string.join(labels, ", ") <> "), reader))"
   case string.length(one) <= width {
