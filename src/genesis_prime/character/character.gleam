@@ -4,8 +4,12 @@
 //// when it is made.
 
 import genesis_prime/map/position.{type Position}
-import genesis_prime/map/unit.{type Newcomer}
-import genesis_prime/message/character_list_entry.{type CharacterListEntry}
+import genesis_prime/map/unit.{type Newcomer, Newcomer}
+import genesis_prime/message/character_list_entry.{
+  type CharacterListEntry, CharacterListEntry,
+}
+import genesis_prime/message/float32
+import gleam/bool
 
 /// Where a character stands: the World row it is in, the world zone and the
 /// position (the three numbers message 0x117 and message 0xAD carry).
@@ -69,11 +73,51 @@ pub type NewCharacter {
 /// item visuals, no last logout time and the fields whose meaning the client's
 /// code does not show set to 0.
 pub fn list_entry(character character: Character) -> CharacterListEntry {
-  todo as "the character as an entry of the character list"
+  CharacterListEntry(
+    character_id: character.id,
+    name: character.name,
+    gender: character.gender,
+    race_id: character.race_id,
+    class_id: character.class_id,
+    faction_id: character.faction_id,
+    level: character.level,
+    body_visuals: [],
+    worn_visuals: [],
+    world_id: character.place.world_id,
+    world_zone_id: character.place.world_zone_id,
+    field_12: 0,
+    position_x: float32.to_bits(character.place.position.x),
+    position_y: float32.to_bits(character.place.position.y),
+    position_z: float32.to_bits(character.place.position.z),
+    field_16: 0,
+    field_17: 0,
+    path: character.path,
+    disabled: bit(character.disabled),
+    requires_rename: bit(character.requires_rename),
+    field_21: 0,
+    customisation_labels: character.appearance.customisation_labels,
+    customisation_values: character.appearance.customisation_values,
+    bone_values: character.appearance.bone_values,
+    last_logged_out_days: 0,
+  )
+}
+
+/// A flag as the single bit the client's list holds.
+fn bit(flag: Bool) -> Int {
+  use <- bool.guard(when: flag, return: 1)
+  0
 }
 
 /// The character as it joins a map: the facts observers need to create its
 /// unit, and where it stands.
 pub fn newcomer(character character: Character) -> Newcomer {
-  todo as "the character as a newcomer of a map"
+  Newcomer(
+    character_id: character.id,
+    name: character.name,
+    race_id: character.race_id,
+    class_id: character.class_id,
+    gender: character.gender,
+    path: character.path,
+    position: character.place.position,
+  )
 }

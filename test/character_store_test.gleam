@@ -291,7 +291,7 @@ pub fn the_database_holds_as_many_customisation_values_as_labels_test() -> Nil {
   use database <- template_database.run
   let attempt =
     pog.query(
-      "insert into character (character_support.account_id, name, creation_id, gender, race_id, class_id, faction_id, experience, level, path, world_id, world_zone_id, position_x, position_y, position_z, customisation_labels, customisation_values, bone_values) values (1, 'Ab Cd', 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, '{1,2}', '{3}', '{}')",
+      "insert into character (account_id, name, creation_id, gender, race_id, class_id, faction_id, experience, level, path, world_id, world_zone_id, position_x, position_y, position_z, customisation_labels, customisation_values, bone_values) values (1, 'Ab Cd', 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, '{1,2}', '{3}', '{}')",
     )
     |> pog.returning(decode.success(Nil))
     |> pog.execute(on: database.connection)

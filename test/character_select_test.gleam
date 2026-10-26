@@ -27,7 +27,8 @@ import genesis_prime/character/select.{
   WorldEntryRefused,
 }
 import genesis_prime/character/server_message.{
-  CharacterListed, CreateResult, DeleteResult, PlayRefused, RenameResult,
+  type ServerMessage, CharacterListed, CreateResult, DeleteResult, PlayRefused,
+  RenameResult,
 }
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/create_character.{
@@ -75,13 +76,7 @@ fn create_request() -> CreateCharacter {
 /// The result of the create answer in a list of effects, or a stop when the
 /// effects hold none.
 fn create_result_of(effects: List(select.Effect)) -> Int {
-  let assert [Send(CreateResult(answer))] =
-    list.filter(effects, fn(effect) {
-      case effect {
-        Send(CreateResult(_)) -> True
-        _ -> False
-      }
-    })
+  let assert [CreateResult(answer)] = sent(effects)
     as "one create answer is sent"
   answer.result
 }
@@ -93,13 +88,7 @@ fn assert_failed_without_a_write(
 ) -> Nil {
   assert list.contains(effects, Log(refusal))
     as { why <> ": the reason is logged" }
-  assert !list.any(effects, fn(effect) {
-    case effect {
-      Store(_) -> True
-      _ -> False
-    }
-  })
-    as { why <> ": nothing is written" }
+  assert stored(effects) == [] as { why <> ": nothing is written" }
   let result = create_result_of(effects)
   assert result != 3 as { why <> ": the answer is not the result for created" }
 }
@@ -458,13 +447,7 @@ pub fn a_rename_to_a_name_another_character_has_is_refused_test() -> Nil {
   let renaming = State(..idle([own(11, "Ab Cd")]), status: Renaming(11))
   let #(state, effects) = select.decide(renaming, Stored(NameInUse), context())
   assert list.contains(effects, Log(NameTaken)) as "the reason is logged"
-  let assert [Send(RenameResult(answer))] =
-    list.filter(effects, fn(effect) {
-      case effect {
-        Send(_) -> True
-        _ -> False
-      }
-    })
+  let assert [RenameResult(answer)] = sent(effects)
     as "one rename answer is sent"
   assert answer.result != 18 as "opcode.0x14b: only result 18 renames"
   assert state == idle([own(11, "Ab Cd")]) as "the character keeps its name"
@@ -497,13 +480,7 @@ pub fn a_delete_the_store_could_not_do_is_answered_with_a_result_other_than_0_te
   use <- owned_test.run(5000)
   let deleting = State(..idle([own(11, "Ab Cd")]), status: Deleting(11))
   let #(state, effects) = select.decide(deleting, Stored(NotFound), context())
-  let assert [Send(DeleteResult(answer))] =
-    list.filter(effects, fn(effect) {
-      case effect {
-        Send(_) -> True
-        _ -> False
-      }
-    })
+  let assert [DeleteResult(answer)] = sent(effects)
     as "one delete answer is sent"
   assert answer.result != 0
     as "opcode.0xe6: only result 0 removes the character"
@@ -532,12 +509,7 @@ pub fn a_request_for_a_character_of_another_account_is_refused_and_writes_nothin
   list.each([rename, delete, play], fn(effects) {
     assert list.contains(effects, Log(NotYourCharacter(99)))
       as "the character is not in the account's list, so the reason is logged"
-    assert !list.any(effects, fn(effect) {
-      case effect {
-        Store(_) | BeginWorldEntry(_) -> True
-        _ -> False
-      }
-    })
+    assert !list.any(effects, writes_or_enters)
       as "nothing is written and no world is entered"
   })
   let assert [_, Send(RenameResult(renamed))] = rename
@@ -546,13 +518,9 @@ pub fn a_request_for_a_character_of_another_account_is_refused_and_writes_nothin
   let assert [_, Send(DeleteResult(deleted))] = delete
     as "the delete is answered"
   assert deleted.result != 0 as "opcode.0xe6: only result 0 deletes"
-  assert list.any(play, fn(effect) {
-    case effect {
-      Send(PlayRefused(_)) -> True
-      _ -> False
-    }
-  })
+  let assert [PlayRefused(_)] = sent(play)
     as "opcode.0x162: playing a character that cannot be played is answered with the refusal"
+  Nil
 }
 
 pub fn playing_the_accounts_own_character_starts_the_world_entry_test() -> Nil {
@@ -744,7 +712,7 @@ fn answer_every_effect(
         let #(next, _) = select.decide(state, WorldEntryRefused, context())
         next
       }
-      _ -> state
+      Send(_) | Log(_) | Close(_) -> state
     }
   })
 }
@@ -815,6 +783,34 @@ fn writes_of(effect effect: select.Effect, own_ids own_ids: List(Int)) -> Int {
         as "a character of another account entered the world"
       1
     }
-    _ -> 0
+    Store(select.LoadCharacters(_)) | Send(_) | Log(_) | Close(_) -> 0
+  }
+}
+
+/// The messages a list of effects sends, in order.
+fn sent(effects: List(select.Effect)) -> List(ServerMessage) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      Send(message) -> Ok(message)
+      Store(_) | BeginWorldEntry(_) | Log(_) | Close(_) -> Error(Nil)
+    }
+  })
+}
+
+/// The commands a list of effects asks the store.
+fn stored(effects: List(select.Effect)) -> List(select.Command) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      Store(command) -> Ok(command)
+      Send(_) | BeginWorldEntry(_) | Log(_) | Close(_) -> Error(Nil)
+    }
+  })
+}
+
+/// Whether an effect writes to the store or starts a world entry.
+fn writes_or_enters(effect: select.Effect) -> Bool {
+  case effect {
+    Store(_) | BeginWorldEntry(_) -> True
+    Send(_) | Log(_) | Close(_) -> False
   }
 }

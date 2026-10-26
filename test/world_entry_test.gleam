@@ -215,7 +215,7 @@ fn sent_numbers(effects: List(world_entry.Effect)) -> List(Int) {
           as "a message the rule sends encodes"
         Ok(number)
       }
-      _ -> Error(Nil)
+      JoinMap(..) | Failed | Close(_) -> Error(Nil)
     }
   })
 }
@@ -279,13 +279,7 @@ fn run_inputs(
         False -> state
       }
       // After a breach the connection is closed: nothing more is fed.
-      let closed =
-        list.any(effects, fn(effect) {
-          case effect {
-            Close(_) -> True
-            _ -> False
-          }
-        })
+      let closed = list.any(effects, is_close)
       let sent = list.append(sent, sent_numbers(effects))
       case closed {
         True -> #(sent, random)
@@ -323,4 +317,11 @@ pub fn each_breach_has_its_own_sentence_for_the_log_test() -> Nil {
     "0xF2",
   )
     as "the sentence names the client's message"
+}
+
+fn is_close(effect: world_entry.Effect) -> Bool {
+  case effect {
+    Close(_) -> True
+    JoinMap(..) | Send(_) | Failed -> False
+  }
 }

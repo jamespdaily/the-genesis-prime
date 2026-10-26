@@ -3,13 +3,236 @@
 //// character's statements name its account, so an account never reaches a
 //// character of another.
 
-import genesis_prime/character/select.{type Answer, type Command}
+import genesis_prime/character/character.{
+  type Character, type NewCharacter, Appearance, Character, Place,
+}
+import genesis_prime/character/select.{
+  type Answer, type Command, Deleted, Inserted, Loaded, NameInUse, NotFound,
+  Renamed, Unavailable,
+}
+import genesis_prime/character/sql
+import genesis_prime/map/position.{Position}
+import gleam/list
 import pog
+
+/// The unique constraint on a character's name, named by Postgres after the
+/// table and the column (`priv/migrations/0002_character.sql`).
+const name_constraint = "character_name_key"
 
 /// Carries out a command of character select against the database and says
 /// how it went. A name another character has is `NameInUse`; an account with no
-/// such character is `NotFound`; anything the database could not do is
-/// `Unavailable`.
+/// such character is `NotFound`; a database that cannot be reached or does not
+/// answer in time is `Unavailable`. Any other failure of a statement is a bug
+/// in the statement or the migration and crashes the caller.
 pub fn run(db db: pog.Connection, command command: Command) -> Answer {
-  todo as "runs a command of character select"
+  case command {
+    select.LoadCharacters(account_id:) -> load(db:, account_id:)
+    select.InsertCharacter(new) -> insert(db:, new:)
+    select.RenameStored(account_id:, character_id:, name:) ->
+      rename(db:, account_id:, character_id:, name:)
+    select.DeleteStored(account_id:, character_id:) ->
+      delete(db:, account_id:, character_id:)
+  }
+}
+
+fn load(db db: pog.Connection, account_id account_id: Int) -> Answer {
+  case sql.characters_of_account(db, account_id) {
+    Ok(returned) ->
+      Loaded(list.map(returned.rows, fn(row) { from_list_row(row) }))
+    Error(error) -> failed(error)
+  }
+}
+
+fn insert(db db: pog.Connection, new new: NewCharacter) -> Answer {
+  let result =
+    sql.insert_character(
+      db,
+      new.account_id,
+      new.name,
+      new.creation_id,
+      new.gender,
+      new.race_id,
+      new.class_id,
+      new.faction_id,
+      new.experience,
+      new.level,
+      new.path,
+      new.place.world_id,
+      new.place.world_zone_id,
+      new.place.position.x,
+      new.place.position.y,
+      new.place.position.z,
+      new.appearance.customisation_labels,
+      new.appearance.customisation_values,
+      new.appearance.bone_values,
+    )
+  case result {
+    Ok(pog.Returned(rows: [row], ..)) -> Inserted(from_insert_row(row))
+    Ok(pog.Returned(..)) ->
+      panic as "an insert of one character returned another number of rows"
+    Error(error) -> failed(error)
+  }
+}
+
+fn rename(
+  db db: pog.Connection,
+  account_id account_id: Int,
+  character_id character_id: Int,
+  name name: String,
+) -> Answer {
+  case sql.rename_character(db, character_id, account_id, name) {
+    Ok(pog.Returned(rows: [row], ..)) -> Renamed(from_rename_row(row))
+    Ok(pog.Returned(rows: [], ..)) -> NotFound
+    Ok(pog.Returned(..)) ->
+      panic as "a rename of one character returned another number of rows"
+    Error(error) -> failed(error)
+  }
+}
+
+fn delete(
+  db db: pog.Connection,
+  account_id account_id: Int,
+  character_id character_id: Int,
+) -> Answer {
+  case sql.delete_character(db, character_id, account_id) {
+    Ok(pog.Returned(rows: [row], ..)) -> Deleted(row.id)
+    Ok(pog.Returned(rows: [], ..)) -> NotFound
+    Ok(pog.Returned(..)) ->
+      panic as "a delete of one character returned another number of rows"
+    Error(error) -> failed(error)
+  }
+}
+
+/// What a failed statement means: a database that is away or slow is an outside
+/// failure the server recovers from; a name another character has is the
+/// player's own; anything else is a mistake in a statement or the migration.
+fn failed(error: pog.QueryError) -> Answer {
+  case error {
+    pog.ConnectionUnavailable | pog.QueryTimeout -> Unavailable
+    pog.ConstraintViolated(constraint:, ..) if constraint == name_constraint ->
+      NameInUse
+    pog.ConstraintViolated(..)
+    | pog.PostgresqlError(..)
+    | pog.UnexpectedArgumentCount(..)
+    | pog.UnexpectedArgumentType(..)
+    | pog.UnexpectedResultType(..) ->
+      panic as "a character statement failed in a way the server does not expect: the statement or the migration is wrong"
+  }
+}
+
+fn from_list_row(row: sql.CharactersOfAccountRow) -> Character {
+  character_of(
+    id: row.id,
+    account_id: row.account_id,
+    name: row.name,
+    creation_id: row.creation_id,
+    gender: row.gender,
+    race_id: row.race_id,
+    class_id: row.class_id,
+    faction_id: row.faction_id,
+    experience: row.experience,
+    level: row.level,
+    path: row.path,
+    world_id: row.world_id,
+    world_zone_id: row.world_zone_id,
+    position: Position(x: row.position_x, y: row.position_y, z: row.position_z),
+    labels: row.customisation_labels,
+    values: row.customisation_values,
+    bones: row.bone_values,
+    requires_rename: row.requires_rename,
+    disabled: row.disabled,
+  )
+}
+
+fn from_insert_row(row: sql.InsertCharacterRow) -> Character {
+  character_of(
+    id: row.id,
+    account_id: row.account_id,
+    name: row.name,
+    creation_id: row.creation_id,
+    gender: row.gender,
+    race_id: row.race_id,
+    class_id: row.class_id,
+    faction_id: row.faction_id,
+    experience: row.experience,
+    level: row.level,
+    path: row.path,
+    world_id: row.world_id,
+    world_zone_id: row.world_zone_id,
+    position: Position(x: row.position_x, y: row.position_y, z: row.position_z),
+    labels: row.customisation_labels,
+    values: row.customisation_values,
+    bones: row.bone_values,
+    requires_rename: row.requires_rename,
+    disabled: row.disabled,
+  )
+}
+
+fn from_rename_row(row: sql.RenameCharacterRow) -> Character {
+  character_of(
+    id: row.id,
+    account_id: row.account_id,
+    name: row.name,
+    creation_id: row.creation_id,
+    gender: row.gender,
+    race_id: row.race_id,
+    class_id: row.class_id,
+    faction_id: row.faction_id,
+    experience: row.experience,
+    level: row.level,
+    path: row.path,
+    world_id: row.world_id,
+    world_zone_id: row.world_zone_id,
+    position: Position(x: row.position_x, y: row.position_y, z: row.position_z),
+    labels: row.customisation_labels,
+    values: row.customisation_values,
+    bones: row.bone_values,
+    requires_rename: row.requires_rename,
+    disabled: row.disabled,
+  )
+}
+
+/// A character from the columns of one of its rows.
+fn character_of(
+  id id: Int,
+  account_id account_id: Int,
+  name name: String,
+  creation_id creation_id: Int,
+  gender gender: Int,
+  race_id race_id: Int,
+  class_id class_id: Int,
+  faction_id faction_id: Int,
+  experience experience: Int,
+  level level: Int,
+  path path: Int,
+  world_id world_id: Int,
+  world_zone_id world_zone_id: Int,
+  position position: position.Position,
+  labels labels: List(Int),
+  values values: List(Int),
+  bones bones: List(Int),
+  requires_rename requires_rename: Bool,
+  disabled disabled: Bool,
+) -> Character {
+  Character(
+    id:,
+    account_id:,
+    name:,
+    creation_id:,
+    gender:,
+    race_id:,
+    class_id:,
+    faction_id:,
+    experience:,
+    level:,
+    path:,
+    place: Place(world_id:, world_zone_id:, position:),
+    appearance: Appearance(
+      customisation_labels: labels,
+      customisation_values: values,
+      bone_values: bones,
+    ),
+    requires_rename:,
+    disabled:,
+  )
 }

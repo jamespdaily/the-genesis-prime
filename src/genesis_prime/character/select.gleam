@@ -17,19 +17,69 @@
 //// is refused. The store's statements also name the account.
 
 import genesis_prime/character/character.{
-  type Character, type NewCharacter, type Place,
+  type Character, type NewCharacter, type Place, Appearance, NewCharacter,
 }
 import genesis_prime/character/name.{type NameError}
-import genesis_prime/character/server_message.{type ServerMessage}
+import genesis_prime/character/server_message.{
+  type ServerMessage, CharacterListed, CreateResult, DeleteResult, PlayRefused,
+  RenameResult,
+}
+import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/create_character.{type CreateCharacter}
+import genesis_prime/message/create_character_result.{
+  type CreateCharacterResult, CreateCharacterResult,
+}
 import genesis_prime/message/delete_character.{type DeleteCharacter}
+import genesis_prime/message/delete_character_result.{
+  type DeleteCharacterResult, DeleteCharacterResult,
+}
 import genesis_prime/message/play_character.{type PlayCharacter}
+import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/rename_character.{type RenameCharacter}
+import genesis_prime/message/rename_character_result.{
+  type RenameCharacterResult, RenameCharacterResult,
+}
 import genesis_prime/table/character_creation.{type CharacterCreation}
+import gleam/bool
+import gleam/int
+import gleam/list
+import gleam/result
+
+/// The result of message 0xDC for a character that was created (opcode.0xdc).
+const create_created = 3
+
+/// The result of message 0xDC for a name that is empty or breaks the name rule:
+/// the code the client's own CreateCharacter raises for the same refusal
+/// (LuaCreateCharacter 0x140023E90, code 10).
+const create_name_refused = 10
+
+/// The result of message 0x14B for a character that was renamed (opcode.0x14b).
+const rename_renamed = 18
+
+/// The result of message 0x14B for a name the rule refuses: the result the
+/// client's own RenameCharacter answers itself with for the same refusal
+/// (LuaRenameCharacter 0x140024DD0, result 15).
+const rename_name_refused = 15
+
+/// The result of message 0xE6 for a character that was deleted (opcode.0xe6).
+const delete_deleted = 0
+
+/// The result of a request that failed in a way no client record gives a
+/// result for. Any create result but 3 (created) and 6 raises the client's
+/// general error text (HandleMessage00DC 0x140021FB0), a rename result other
+/// than 18 renames nothing and a delete result other than 0 deletes nothing
+/// (opcode.0x14b, opcode.0xe6); what the client's Lua makes of each number is
+/// not read, so every such failure is 1.
+const other_failure = 1
+
+/// The value of message 0x162, which the client takes as a refusal whatever
+/// it holds (opcode.0x162: the 3-bit value is not read by the client's code
+/// that was decoded).
+const play_refused_value = 0
 
 /// The most customisation values a character holds: the character list reads
 /// their count in 4 bits (ReadCharacterListEntry 0x14007F720).
-pub const most_customisations = 15
+const most_customisations = 15
 
 /// The facts the rule reads beyond its state, made by the connection's handler
 /// for each input. `creation` is the client's CharacterCreation table by id.
@@ -171,7 +221,7 @@ pub type Effect {
 
 /// Character select of an account that has not started.
 pub fn new(account_id account_id: Int) -> State {
-  todo as "character select of an account"
+  State(account_id:, characters: [], status: NotStarted)
 }
 
 /// The state and the effects after an input.
@@ -180,15 +230,506 @@ pub fn decide(
   input input: Input,
   context context: Context,
 ) -> #(State, List(Effect)) {
-  todo as "the rule of character select"
+  case input {
+    Started -> start(state)
+    Requested(request) -> requested(state:, request:, context:)
+    Stored(answer) -> answered(state:, answer:, context:)
+    WorldEntryRefused -> world_entry_refused(state)
+  }
+}
+
+fn start(state: State) -> #(State, List(Effect)) {
+  case state.status {
+    NotStarted -> #(State(..state, status: Loading), [
+      Store(LoadCharacters(account_id: state.account_id)),
+    ])
+    Loading | Idle | Creating | Renaming(_) | Deleting(_) | Entering -> #(
+      state,
+      [Close(StartedTwice)],
+    )
+  }
+}
+
+fn world_entry_refused(state: State) -> #(State, List(Effect)) {
+  case state.status {
+    Entering -> #(State(..state, status: Idle), [])
+    NotStarted | Loading | Idle | Creating | Renaming(_) | Deleting(_) -> #(
+      state,
+      [Close(AnswerNobodyAskedFor(state.status))],
+    )
+  }
+}
+
+fn requested(
+  state state: State,
+  request request: Request,
+  context context: Context,
+) -> #(State, List(Effect)) {
+  case state.status {
+    Idle ->
+      case request {
+        CreateRequested(create) ->
+          start_creating(state:, request: create, context:)
+        RenameRequested(rename) -> start_renaming(state:, request: rename)
+        DeleteRequested(delete) -> start_deleting(state:, request: delete)
+        PlayRequested(play) -> start_playing(state:, request: play)
+      }
+    NotStarted -> #(state, [Close(RequestBeforeStart)])
+    Loading | Creating | Renaming(_) | Deleting(_) | Entering -> #(state, [
+      Close(RequestWhileBusy(state.status)),
+    ])
+  }
+}
+
+fn start_creating(
+  state state: State,
+  request request: CreateCharacter,
+  context context: Context,
+) -> #(State, List(Effect)) {
+  case plan_creation(account_id: state.account_id, request:, context:) {
+    Ok(new) -> #(State(..state, status: Creating), [
+      Store(InsertCharacter(new)),
+    ])
+    Error(refusal) -> #(state, [
+      Log(refusal),
+      Send(CreateResult(create_failure(refusal))),
+    ])
+  }
+}
+
+/// The character a create request makes, or why it cannot be made: the name
+/// passes the client's rule, the CharacterCreation row exists and is one the
+/// account may make a character from, the path is 0 to 3 and the customisation
+/// fits the character list. A new character has the row's class, race, sex and
+/// faction, its experience and the level that gives, and the place the
+/// server starts it at.
+fn plan_creation(
+  account_id account_id: Int,
+  request request: CreateCharacter,
+  context context: Context,
+) -> Result(NewCharacter, Refusal) {
+  use Nil <- result.try(
+    name.check(request.name) |> result.map_error(NameRefused),
+  )
+  use row <- result.try(
+    context.creation(request.creation_id)
+    |> result.replace_error(CreationUnknown(request.creation_id)),
+  )
+  use Nil <- result.try(check_offered(row))
+  use Nil <- result.try(case request.path > 3 {
+    True -> Error(PathOutOfRange(request.path))
+    False -> Ok(Nil)
+  })
+  let customisations = list.length(request.customisation_labels)
+  use Nil <- result.try(case customisations > most_customisations {
+    True -> Error(TooManyCustomisations(customisations))
+    False -> Ok(Nil)
+  })
+  use place <- result.try(
+    context.start(row) |> result.replace_error(NoStartingPlace(row.id)),
+  )
+  Ok(NewCharacter(
+    account_id:,
+    name: request.name,
+    creation_id: row.id,
+    gender: row.sex,
+    race_id: row.race_id,
+    class_id: row.class_id,
+    faction_id: row.faction_id,
+    experience: row.xp,
+    level: context.level_of(row.xp),
+    path: request.path,
+    place:,
+    appearance: Appearance(
+      customisation_labels: request.customisation_labels,
+      customisation_values: request.customisation_values,
+      bone_values: request.bone_values,
+    ),
+  ))
+}
+
+/// A row is offered to an account when it is enabled, needs no entitlement and
+/// costs no account currency: the client offers a row that is enabled here or
+/// by the server (opcode.0x117), refuses one with an entitlementIdRequired to
+/// an account without it and one that costs account currency to an account
+/// that cannot pay (LuaCreateCharacter 0x140023E90), and an account holds
+/// neither an entitlement nor currency.
+fn check_offered(row: CharacterCreation) -> Result(Nil, Refusal) {
+  use <- bool.guard(
+    when: row.enabled
+      && row.entitlement_id_required == 0
+      && row.account_currency_amount_cost == 0,
+    return: Ok(Nil),
+  )
+  Error(CreationNotOffered(row.id))
+}
+
+fn start_renaming(
+  state state: State,
+  request request: RenameCharacter,
+) -> #(State, List(Effect)) {
+  let id = request.character_id
+  case owned(state, id) {
+    Error(Nil) -> #(state, [
+      Log(NotYourCharacter(id)),
+      Send(RenameResult(rename_failure(request, NotYourCharacter(id)))),
+    ])
+    Ok(_) ->
+      case name.check(request.name) {
+        Error(why) -> #(state, [
+          Log(NameRefused(why)),
+          Send(RenameResult(rename_failure(request, NameRefused(why)))),
+        ])
+        Ok(Nil) -> #(State(..state, status: Renaming(id)), [
+          Store(RenameStored(
+            account_id: state.account_id,
+            character_id: id,
+            name: request.name,
+          )),
+        ])
+      }
+  }
+}
+
+fn start_deleting(
+  state state: State,
+  request request: DeleteCharacter,
+) -> #(State, List(Effect)) {
+  let id = request.character_id
+  case owned(state, id) {
+    Error(Nil) -> #(state, [
+      Log(NotYourCharacter(id)),
+      Send(DeleteResult(delete_failure())),
+    ])
+    Ok(_) -> #(State(..state, status: Deleting(id)), [
+      Store(DeleteStored(account_id: state.account_id, character_id: id)),
+    ])
+  }
+}
+
+fn start_playing(
+  state state: State,
+  request request: PlayCharacter,
+) -> #(State, List(Effect)) {
+  let id = request.character_id
+  case owned(state, id) {
+    Error(Nil) -> #(state, [
+      Log(NotYourCharacter(id)),
+      Send(PlayRefused(PlayCharacterRefused(field_1: play_refused_value))),
+    ])
+    Ok(chosen) -> #(State(..state, status: Entering), [BeginWorldEntry(chosen)])
+  }
+}
+
+/// The account's character with the id, from the list character select holds.
+fn owned(state: State, id: Int) -> Result(Character, Nil) {
+  list.find(state.characters, fn(character) { character.id == id })
+}
+
+fn answered(
+  state state: State,
+  answer answer: Answer,
+  context context: Context,
+) -> #(State, List(Effect)) {
+  case state.status {
+    Loading -> loaded(state:, answer:, context:)
+    Creating -> created(state:, answer:)
+    Renaming(id) -> renamed(state:, id:, answer:)
+    Deleting(id) -> deleted(state:, id:, answer:)
+    NotStarted | Idle | Entering -> unexpected(state, answer)
+  }
+}
+
+fn unexpected(state: State, _answer: Answer) -> #(State, List(Effect)) {
+  #(state, [Close(AnswerNobodyAskedFor(state.status))])
+}
+
+fn loaded(
+  state state: State,
+  answer answer: Answer,
+  context context: Context,
+) -> #(State, List(Effect)) {
+  case answer {
+    Loaded(characters) -> #(State(..state, characters:, status: Idle), [
+      Send(CharacterListed(character_list(characters:, context:))),
+    ])
+    Inserted(_)
+    | Renamed(_)
+    | Deleted(_)
+    | NameInUse
+    | NotFound
+    | Unavailable -> unexpected(state, answer)
+  }
+}
+
+/// Message 0x117 for the characters: the server's time, the characters and
+/// the realm, with nothing enabled or disabled beyond the rows' own enabled
+/// column, no removal pending, no reservations, no restriction and none of the
+/// values whose meaning the client's code does not show.
+fn character_list(
+  characters characters: List(Character),
+  context context: Context,
+) -> character_list.CharacterList {
+  CharacterList(
+    server_time: context.server_time,
+    characters: list.map(characters, character.list_entry),
+    enabled_creation_ids: [],
+    disabled_creation_ids: [],
+    realm_id: context.realm_id,
+    pending_removal_realm_id: 0,
+    pending_removal_character_id: 0,
+    pending_removal_time: 0,
+    reservations: 0,
+    field_10: 0,
+    field_11: 0,
+    faction_restriction: 0,
+    free_level_50_available: 0,
+  )
+}
+
+fn created(
+  state state: State,
+  answer answer: Answer,
+) -> #(State, List(Effect)) {
+  case answer {
+    Inserted(new) -> #(
+      State(
+        ..state,
+        characters: list.append(state.characters, [new]),
+        status: Idle,
+      ),
+      [
+        Send(
+          CreateResult(CreateCharacterResult(
+            character_id: new.id,
+            field_2: 0,
+            result: create_created,
+          )),
+        ),
+      ],
+    )
+    NameInUse -> create_refused(state, NameTaken)
+    Unavailable -> create_refused(state, StoreUnavailable)
+    Loaded(_) | Renamed(_) | Deleted(_) | NotFound -> unexpected(state, answer)
+  }
+}
+
+fn create_refused(state: State, refusal: Refusal) -> #(State, List(Effect)) {
+  #(State(..state, status: Idle), [
+    Log(refusal),
+    Send(CreateResult(create_failure(refusal))),
+  ])
+}
+
+fn renamed(
+  state state: State,
+  id id: Int,
+  answer answer: Answer,
+) -> #(State, List(Effect)) {
+  case answer {
+    Renamed(character) -> #(
+      State(
+        ..state,
+        characters: list.map(state.characters, fn(listed) {
+          case listed.id == character.id {
+            True -> character
+            False -> listed
+          }
+        }),
+        status: Idle,
+      ),
+      [
+        Send(
+          RenameResult(RenameCharacterResult(
+            result: rename_renamed,
+            character_id: character.id,
+            name: character.name,
+          )),
+        ),
+      ],
+    )
+    NameInUse -> rename_refused(state:, id:, refusal: NameTaken)
+    NotFound -> rename_refused(state:, id:, refusal: NotYourCharacter(id))
+    Unavailable -> rename_refused(state:, id:, refusal: StoreUnavailable)
+    Loaded(_) | Inserted(_) | Deleted(_) -> unexpected(state, answer)
+  }
+}
+
+fn rename_refused(
+  state state: State,
+  id id: Int,
+  refusal refusal: Refusal,
+) -> #(State, List(Effect)) {
+  let name = case owned(state, id) {
+    Ok(character) -> character.name
+    Error(Nil) -> ""
+  }
+  #(State(..state, status: Idle), [
+    Log(refusal),
+    Send(
+      RenameResult(RenameCharacterResult(
+        result: rename_result(refusal),
+        character_id: id,
+        name:,
+      )),
+    ),
+  ])
+}
+
+fn deleted(
+  state state: State,
+  id id: Int,
+  answer answer: Answer,
+) -> #(State, List(Effect)) {
+  case answer {
+    Deleted(character_id) -> #(
+      State(
+        ..state,
+        characters: list.filter(state.characters, fn(listed) {
+          listed.id != character_id
+        }),
+        status: Idle,
+      ),
+      [
+        Send(
+          DeleteResult(DeleteCharacterResult(result: delete_deleted, field_2: 0)),
+        ),
+      ],
+    )
+    NotFound -> delete_refused(state, NotYourCharacter(id))
+    Unavailable -> delete_refused(state, StoreUnavailable)
+    Loaded(_) | Inserted(_) | Renamed(_) | NameInUse ->
+      unexpected(state, answer)
+  }
+}
+
+fn delete_refused(state: State, refusal: Refusal) -> #(State, List(Effect)) {
+  #(State(..state, status: Idle), [
+    Log(refusal),
+    Send(DeleteResult(delete_failure())),
+  ])
+}
+
+/// The one result of message 0xDC each refusal is answered with, in one
+/// place: a name the rule refuses is the client's own code 10, every other
+/// refusal is `other_failure`.
+fn create_failure(refusal: Refusal) -> CreateCharacterResult {
+  let result = case refusal {
+    NameRefused(_) -> create_name_refused
+    CreationUnknown(_)
+    | CreationNotOffered(_)
+    | PathOutOfRange(_)
+    | TooManyCustomisations(_)
+    | NoStartingPlace(_)
+    | NameTaken
+    | NotYourCharacter(_)
+    | StoreUnavailable -> other_failure
+  }
+  CreateCharacterResult(character_id: 0, field_2: 0, result:)
+}
+
+/// The one result of message 0x14B each refusal is answered with: a name the
+/// rule refuses is the client's own result 15, every other refusal is
+/// `other_failure`, never 18, which renames.
+fn rename_result(refusal: Refusal) -> Int {
+  case refusal {
+    NameRefused(_) -> rename_name_refused
+    CreationUnknown(_)
+    | CreationNotOffered(_)
+    | PathOutOfRange(_)
+    | TooManyCustomisations(_)
+    | NoStartingPlace(_)
+    | NameTaken
+    | NotYourCharacter(_)
+    | StoreUnavailable -> other_failure
+  }
+}
+
+fn rename_failure(
+  request: RenameCharacter,
+  refusal: Refusal,
+) -> RenameCharacterResult {
+  RenameCharacterResult(
+    result: rename_result(refusal),
+    character_id: request.character_id,
+    name: request.name,
+  )
+}
+
+/// The result of message 0xE6 for every refusal: not 0, which deletes.
+fn delete_failure() -> DeleteCharacterResult {
+  DeleteCharacterResult(result: other_failure, field_2: 0)
 }
 
 /// The sentence the log line of a refusal holds.
 pub fn describe_refusal(refusal refusal: Refusal) -> String {
-  todo as "the log text of a refusal"
+  case refusal {
+    NameRefused(name.Empty) -> "the name is empty"
+    NameRefused(name.TooShort(characters:)) ->
+      "the name has "
+      <> int.to_string(characters)
+      <> " characters, fewer than the client's rule allows"
+    NameRefused(name.TooLong(characters:)) ->
+      "the name has "
+      <> int.to_string(characters)
+      <> " characters, more than the client's rule allows"
+    NameRefused(name.NotALetter(character:)) ->
+      "the name holds "
+      <> character
+      <> ", which is neither a letter nor a space"
+    NameRefused(name.SpaceAtAnEnd) -> "the name starts or ends with a space"
+    NameRefused(name.SpacesNotOne(spaces:)) ->
+      "the name holds "
+      <> int.to_string(spaces)
+      <> " spaces, and the client's rule asks for one"
+    CreationUnknown(creation_id:) ->
+      "no CharacterCreation row has the id " <> int.to_string(creation_id)
+    CreationNotOffered(creation_id:) ->
+      "the CharacterCreation row "
+      <> int.to_string(creation_id)
+      <> " is not enabled, or needs an entitlement or account currency"
+    PathOutOfRange(path:) -> "the path " <> int.to_string(path) <> " is above 3"
+    TooManyCustomisations(count:) ->
+      "the character has "
+      <> int.to_string(count)
+      <> " customisations, more than the character list holds"
+    NoStartingPlace(creation_id:) ->
+      "the server has no starting place for the CharacterCreation row "
+      <> int.to_string(creation_id)
+    NameTaken -> "another character has the name"
+    NotYourCharacter(character_id:) ->
+      "the character " <> int.to_string(character_id) <> " is not the account's"
+    StoreUnavailable -> "the database could not do it"
+  }
 }
 
 /// The sentence the log line of a breach holds.
 pub fn describe_breach(breach breach: Breach) -> String {
-  todo as "the log text of a breach"
+  case breach {
+    RequestBeforeStart ->
+      "a request came before the client started character select (message 0x7E0)"
+    RequestWhileBusy(status:) ->
+      "a request came while character select was " <> describe_status(status)
+    AnswerNobodyAskedFor(status:) ->
+      "an answer came while character select was " <> describe_status(status)
+    StartedTwice -> "the client started character select twice"
+  }
+}
+
+fn describe_status(status: Status) -> String {
+  case status {
+    NotStarted -> "not started"
+    Loading -> "waiting for the account's characters"
+    Idle -> "idle"
+    Creating -> "waiting for a character to be created"
+    Renaming(character_id:) ->
+      "waiting for the character "
+      <> int.to_string(character_id)
+      <> " to be renamed"
+    Deleting(character_id:) ->
+      "waiting for the character "
+      <> int.to_string(character_id)
+      <> " to be deleted"
+    Entering -> "entering the world"
+  }
 }

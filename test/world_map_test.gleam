@@ -151,7 +151,7 @@ pub fn the_players_told_of_a_newcomer_are_exactly_those_a_full_scan_finds_in_ran
         list.flat_map(effects, fn(effect) {
           case effect.delivery {
             Appeared(unit) if unit.id == newcomer_unit.id -> effect.to
-            _ -> []
+            Appeared(_) | Disappeared(_) -> []
           }
         })
         |> list.sort(int.compare)
@@ -161,7 +161,7 @@ pub fn the_players_told_of_a_newcomer_are_exactly_those_a_full_scan_finds_in_ran
         list.flat_map(effects, fn(effect) {
           case effect.delivery {
             Appeared(unit) if unit.id != newcomer_unit.id -> [unit.id]
-            _ -> []
+            Appeared(_) | Disappeared(_) -> []
           }
         })
         |> list.sort(int.compare)

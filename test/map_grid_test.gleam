@@ -2,8 +2,8 @@
 //// coordinates over the cell size on each axis (cells on the negative side have
 //// negative numbers); `near` finds exactly the units within range, which is
 //// checked against a full scan of every unit on a fixed seed, as the topology
-//// trial checked it (#28, measure 1: a move reaches every player in range and
-//// no player outside it).
+//// trial checked it: a move reaches every player in range and no player
+//// outside it.
 
 import genesis_prime/map/grid.{Cell}
 import genesis_prime/map/position.{Position}

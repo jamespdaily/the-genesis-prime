@@ -1,7 +1,7 @@
 //// The maps of the game: one map for each world that has a player, started when
 //// the first character of the world enters. The expected values come from the
-//// issue's plan (#40: a map process started for a character's world), #28 and
-//// #34 (a map is one subtree, rest for one, 3 restarts in 5 seconds, and a map
+//// step's plan (a map process started for a character's world), the supervision
+//// choice (a map is one subtree, rest for one, 3 restarts in 5 seconds, and a map
 //// subtree is started again when it ends) and the designing-processes skill
 //// (one world can have many maps; a request carries a deadline).
 

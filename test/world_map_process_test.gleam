@@ -1,10 +1,10 @@
 //// The process that owns one world's map and its senders. A player's connection
 //// asks it to join; it holds the player's unit and tells the players in range
-//// through the sender pool. The expected values come from the issue's plan
-//// (#40: a map process for a character's world holding the player's unit,
-//// with the sender pool #28 chose, the heap ceilings #31 chose, the supervisor
-//// settings #34 chose and a registration with the snapshot #44 made), the
-//// designing-processes skill (cleanup that must happen runs in a process that
+//// through the sender pool. The expected values come from the step's plan (a
+//// map process for a character's world holding the player's unit, with the
+//// sender pool the topology trial chose, the heap ceilings the heap-ceiling
+//// trial chose, the supervisor settings of the supervision choice and a
+//// registration with the snapshot), the designing-processes skill (cleanup that must happen runs in a process that
 //// monitors the dying one; every process starts under a supervisor; a
 //// restarted map starts empty) and the topology trial's crash cost (rest for
 //// one: a sender that crashes takes the map with it, the map alone does not
@@ -132,7 +132,7 @@ pub fn a_player_out_of_range_is_told_nothing_test() -> Nil {
   // Everything said about the third unit passes through one sender, in order:
   // that it appeared, then that it went. When the near player has heard both,
   // the sender has sent everything it was going to send about that unit, so a
-  // delivery to the far player would be in its mailbox by now.
+  // delivery to the far player would be in its mailbox already.
   assert process.receive(near_connection, event_wait_ms) == Ok(Appeared(third))
   assert process.receive(near_connection, event_wait_ms)
     == Ok(Disappeared(third.id))
@@ -216,9 +216,17 @@ pub fn a_map_is_one_supervisor_that_restarts_rest_for_one_3_in_5_seconds_test() 
 
 pub fn every_process_of_a_map_is_supervised_test() -> Nil {
   use <- owned_test.run(30_000)
+  let snapshot = map_support.start_snapshot()
   let watch = spawn_watch.begin()
-  let #(_, supervisor) = start_map(world_id: 7, limits: map_support.no_limits())
-  assert spawn_watch.unsupervised(watch, supervisor) == []
+  let settings =
+    map_support.settings(
+      world_id: 7,
+      snapshot:,
+      limits: map_support.no_limits(),
+    )
+  let assert Ok(started) = world_map_process.start(settings)
+    as "the map did not start"
+  assert spawn_watch.unsupervised(watch, started.pid) == []
     as "designing-processes: every process starts under a supervisor"
 }
 

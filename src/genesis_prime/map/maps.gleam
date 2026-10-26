@@ -5,23 +5,47 @@
 ////
 //// The registry process holds which world has which map, and monitors each map
 //// it started, so a map that ended is forgotten and started again on the next
-//// entry. The maps themselves are children of a factory supervisor, each one
-//// map supervisor (`world_map_process.supervised`), temporary: a map whose
-//// restarts are used up is not started again by its supervisor but by the
-//// next entry. The registry starts first and the factory after it, rest for
-//// one, so a registry that is rebuilt stops every map, which no registry
-//// remembers.
+//// entry. It only finds a world's map and answers with it: the character then
+//// joins the map itself, so a join never holds the registry. The maps
+//// themselves are children of a factory supervisor, each one map supervisor
+//// (`world_map_process.start`), temporary: a map whose restarts are used up is
+//// not started again by its supervisor but by the next entry. The registry
+//// starts first and the factory after it, rest for one, so a registry that is
+//// rebuilt stops every map, which no registry remembers.
 
 import genesis_prime/map/delivery.{type Delivery}
 import genesis_prime/map/heap_limit.{type HeapLimits}
 import genesis_prime/map/unit.{type Newcomer, type PlayerUnit}
 import genesis_prime/map/world_map_process
+import genesis_prime/telemetry/log
 import genesis_prime/telemetry/snapshot
-import gleam/erlang/process.{type Name, type Subject}
+import gleam/dict.{type Dict}
+import gleam/dynamic.{type Dynamic}
+import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
+import gleam/option.{None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor.{type Supervisor}
 import gleam/otp/supervision.{type ChildSpecification}
+import gleam/result
+
+/// How many restarts the maps' subtree allows in `restart_period_seconds`: the
+/// service subtrees' 3 in 5 seconds.
+const restart_intensity = 3
+
+/// The period of the subtree's restart limit, in seconds.
+const restart_period_seconds = 5
+
+/// How long the registry has to stop, in milliseconds: it saves nothing.
+const registry_shutdown_milliseconds = 1000
+
+/// How long a map's supervisor has to stop, in milliseconds. A supervisor
+/// stops its children in turn, each of which has a second to stop, so this
+/// is generous.
+const map_shutdown_milliseconds = 10_000
+
+/// How long the registry has to start, in milliseconds.
+const start_deadline_milliseconds = 5000
 
 /// What the maps start with, each made once by whoever starts the tree: the
 /// registry's name, the name of the factory supervisor that starts the maps,
@@ -38,14 +62,17 @@ pub type Settings {
   )
 }
 
-/// Every message the registry receives.
+/// Every message the registry receives. Its selector covers all of them;
+/// anything else is logged.
 pub opaque type Message {
-  Enter(
+  /// Finds the map of a world, starting it when the world has none.
+  Find(
     world_id: Int,
-    newcomer: Newcomer,
-    connection: Subject(Delivery),
-    reply: Subject(Result(PlayerUnit, EnterError)),
+    reply: Subject(Result(Subject(world_map_process.Message), actor.StartError)),
   )
+  /// A map's supervisor ended.
+  MapEnded(process.Down)
+  Unexpected(received: Dynamic)
 }
 
 /// Why a character did not enter a map.
@@ -58,12 +85,63 @@ pub type EnterError {
   RegistryNotAnswering
 }
 
+/// A map the registry started: the name its process is reached by and its
+/// supervisor, whose end the registry is told of.
+type Running {
+  Running(
+    map: Subject(world_map_process.Message),
+    supervisor: Pid,
+    monitor: Monitor,
+  )
+}
+
+type State {
+  State(settings: Settings, maps: Dict(Int, Running))
+}
+
 /// The maps' subtree as a child of the game's supervisor: the registry, then
-/// the factory supervisor of the maps, rest for one.
+/// the factory supervisor of the maps, rest for one, 3 restarts in 5 seconds.
 pub fn supervised(
   settings settings: Settings,
 ) -> ChildSpecification(Supervisor) {
-  todo as "the child specification of the maps' subtree"
+  let registry =
+    supervision.worker(fn() { start_registry(settings) })
+    |> supervision.timeout(ms: registry_shutdown_milliseconds)
+  let factory =
+    factory_supervisor.worker_child(world_map_process.start)
+    |> factory_supervisor.named(settings.factory)
+    |> factory_supervisor.restart_tolerance(
+      intensity: restart_intensity,
+      period: restart_period_seconds,
+    )
+    |> factory_supervisor.timeout(ms: map_shutdown_milliseconds)
+    |> factory_supervisor.restart_strategy(supervision.Temporary)
+    |> factory_supervisor.supervised
+  static_supervisor.new(static_supervisor.RestForOne)
+  |> static_supervisor.restart_tolerance(
+    intensity: restart_intensity,
+    period: restart_period_seconds,
+  )
+  |> static_supervisor.add(registry)
+  |> static_supervisor.add(factory)
+  |> static_supervisor.supervised
+}
+
+fn start_registry(settings: Settings) -> actor.StartResult(Subject(Message)) {
+  actor.new_with_initialiser(start_deadline_milliseconds, fn(self) {
+    let selector =
+      process.new_selector()
+      |> process.select(self)
+      |> process.select_monitors(MapEnded)
+      |> process.select_other(Unexpected)
+    actor.initialised(State(settings:, maps: dict.new()))
+    |> actor.selecting(selector)
+    |> actor.returning(self)
+    |> Ok
+  })
+  |> actor.named(settings.registry)
+  |> actor.on_message(handle)
+  |> actor.start
 }
 
 /// Joins a character's unit to the map of the world, starting the map when the
@@ -76,5 +154,111 @@ pub fn enter(
   connection connection: Subject(Delivery),
   within_ms within_ms: Int,
 ) -> Result(PlayerUnit, EnterError) {
-  todo as "a character enters the map of its world"
+  use map <- result.try(find(registry:, world_id:, within_ms:))
+  world_map_process.join(map:, newcomer:, connection:, within_ms:)
+  |> result.map_error(MapRefused)
+}
+
+/// The map of a world, which the registry starts when the world has none.
+fn find(
+  registry registry: Name(Message),
+  world_id world_id: Int,
+  within_ms within_ms: Int,
+) -> Result(Subject(world_map_process.Message), EnterError) {
+  case process.named(registry) {
+    Error(Nil) -> Error(RegistryNotAnswering)
+    Ok(_) -> {
+      let reply = process.new_subject()
+      process.send(process.named_subject(registry), Find(world_id:, reply:))
+      case process.receive(reply, within_ms) {
+        Ok(Ok(map)) -> Ok(map)
+        Ok(Error(why)) -> Error(MapNotStarted(why))
+        Error(Nil) -> Error(RegistryNotAnswering)
+      }
+    }
+  }
+}
+
+fn handle(state: State, message: Message) -> actor.Next(State, Message) {
+  case message {
+    Find(world_id:, reply:) -> {
+      let #(state, found) = running_map(state:, world_id:)
+      process.send(reply, found)
+      actor.continue(state)
+    }
+    MapEnded(process.ProcessDown(monitor:, ..)) ->
+      actor.continue(
+        State(
+          ..state,
+          maps: dict.filter(state.maps, fn(_world_id, running) {
+            running.monitor != monitor
+          }),
+        ),
+      )
+    MapEnded(process.PortDown(..)) -> actor.continue(state)
+    Unexpected(..) -> {
+      log.error(
+        log.Who(
+          account: None,
+          actor: None,
+          place: Some(log.Process("maps")),
+          message: None,
+          peer: None,
+        ),
+        "the maps' registry received a message it does not handle",
+      )
+      actor.continue(state)
+    }
+  }
+}
+
+/// The map of a world that is running, or a new one. A map whose supervisor has
+/// ended but whose end the registry has not been told of yet is no map that
+/// is running.
+fn running_map(
+  state state: State,
+  world_id world_id: Int,
+) -> #(State, Result(Subject(world_map_process.Message), actor.StartError)) {
+  case dict.get(state.maps, world_id) {
+    Ok(running) ->
+      case process.is_alive(running.supervisor) {
+        True -> #(state, Ok(running.map))
+        False -> start_map(state:, world_id:)
+      }
+    Error(Nil) -> start_map(state:, world_id:)
+  }
+}
+
+fn start_map(
+  state state: State,
+  world_id world_id: Int,
+) -> #(State, Result(Subject(world_map_process.Message), actor.StartError)) {
+  let settings =
+    world_map_process.Settings(
+      world_id:,
+      map: process.new_name("map"),
+      snapshot: state.settings.snapshot,
+      heap_limits: state.settings.heap_limits,
+    )
+  case
+    factory_supervisor.start_child(
+      factory_supervisor.get_by_name(state.settings.factory),
+      settings,
+    )
+  {
+    Ok(started) -> {
+      let map = process.named_subject(settings.map)
+      let running =
+        Running(
+          map:,
+          supervisor: started.pid,
+          monitor: process.monitor(started.pid),
+        )
+      #(
+        State(..state, maps: dict.insert(state.maps, world_id, running)),
+        Ok(map),
+      )
+    }
+    Error(why) -> #(state, Error(why))
+  }
 }

@@ -72,7 +72,7 @@ pub fn unwrap(
   cipher cipher: Cipher,
 ) -> Result(Frame, WrapError) {
   case outer.message_id {
-    0x0244 | 0x0076 | 0x03DC ->
+    0x0244 | 0x0076 | 0x03DC | 0x025C ->
       case outer.body {
         <<length:bytes-size(4), after_the_length:bytes>> ->
           frame.parse(<<
