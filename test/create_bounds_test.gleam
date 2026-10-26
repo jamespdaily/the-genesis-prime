@@ -127,7 +127,14 @@ fn is_created(effects: List(Effect)) -> Bool {
   list.any(effects, fn(effect) {
     case effect {
       Store(select.InsertCharacter(_)) -> True
-      _ -> False
+      Store(select.LoadCharacters(_))
+      | Store(select.RenameStored(..))
+      | Store(select.DeleteStored(..))
+      | Send(_)
+      | select.BeginWorldEntry(_)
+      | Log(_)
+      | select.Close(_)
+      | select.Abandon(_) -> False
     }
   })
 }
@@ -137,7 +144,12 @@ fn result_of(effects: List(Effect)) -> Int {
     list.filter_map(effects, fn(effect) {
       case effect {
         Send(CreateResult(_) as message) -> Ok(message)
-        _ -> Error(Nil)
+        Send(_)
+        | Store(_)
+        | select.BeginWorldEntry(_)
+        | Log(_)
+        | select.Close(_)
+        | select.Abandon(_) -> Error(Nil)
       }
     })
     as "one create answer is sent"

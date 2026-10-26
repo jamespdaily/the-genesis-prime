@@ -5,7 +5,7 @@
 //// never ciphered, on every connection and in every state of it (records
 //// opcode.0x0, opcode.0x1, opcode.0x2; ReadMessageFrame 0x140331990 handles
 //// ids 0 to 2 before any wrapper is looked at; the live login recorded in
-//// test/recording/2026-10-26-login/auth-001.recording holds the client's first
+//// the auth connection's recording of the live login (test/recording, auth-001.recording) holds the client's first
 //// ping on the auth connection, 07 00 00 00 00 00 00). The tests skip where
 //// `GENESIS_NO_CLIENT=1`, because the server they start loads the client's
 //// tables.
@@ -83,7 +83,7 @@ fn auth_connection(running running: game_server.Running) -> Client {
   socket
 }
 
-/// A game connection that has read the hello and not yet sent 0x58F.
+/// A game connection that has read the hello and has not sent 0x58F.
 fn game_connection_before_the_key(
   running running: game_server.Running,
 ) -> Client {

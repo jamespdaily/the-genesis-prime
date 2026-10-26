@@ -121,7 +121,8 @@ pub fn a_second_login_ends_the_first_connection_with_0x36a_reason_19_and_then_li
   let character =
     saved_character(database:, running:, account:, name: "Zed Mara")
   let first = signed_in(running:, account:)
-  let _ = listed(game: first)
+  assert listed(game: first).characters != []
+    as "the first connection lists the account's character"
   play(game: first, character:)
   let assert [_, _, _, _] = game_client.read(game: first, count: 4)
     as "the first connection entered the world: 0xAD, 0x262, 0x19B and 0xF1"
@@ -158,11 +159,12 @@ pub fn the_slot_is_freed_when_a_connection_dies_test() -> Nil {
   let running = game_server.start(database:, answer_deadline_ms: 5000)
   let account = account_of(database:, name: "jim")
   let first = signed_in(running:, account:)
-  let _ = listed(game: first)
+  assert listed(game: first).characters == []
+    as "the first connection lists the account's characters"
   game_client.close(first)
   let second = signed_in(running:, account:)
-  let _ = listed(game: second)
-  Nil
+  assert listed(game: second).characters == []
+    as "opcode.0x117: the slot of a connection that died is free, so the second login is answered with the list"
 }
 
 pub fn connections_of_different_accounts_do_not_affect_each_other_test() -> Nil {
@@ -174,9 +176,10 @@ pub fn connections_of_different_accounts_do_not_affect_each_other_test() -> Nil 
   let ann = account_of(database:, name: "ann")
   let first = signed_in(running:, account: jim)
   let second = signed_in(running:, account: ann)
-  let _ = listed(game: first)
-  let _ = listed(game: second)
-  Nil
+  assert listed(game: first).characters == []
+    as "the first account is answered with its list, with no notice of a login of another account before it"
+  assert listed(game: second).characters == []
+    as "the second account is answered with its list"
 }
 
 pub fn a_character_of_the_account_still_on_the_map_is_listed_as_pending_removal_and_blocks_the_rest_test() -> Nil {

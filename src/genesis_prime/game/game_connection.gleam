@@ -109,13 +109,20 @@ pub fn services(settings settings: Settings) -> Services {
       )
     },
     leave_map: fn(map, connection) {
-      let _ =
+      case
         world_map_process.leave(
           map:,
           connection:,
           within_ms: settings.answer_deadline_ms,
         )
-      Nil
+      {
+        Ok(Nil) -> Nil
+        Error(Nil) ->
+          log.warning(
+            log.nobody,
+            "a connection that is ending could not take its unit off the map: the map did not answer, so the map takes the unit off when the connection ends",
+          )
+      }
     },
     character_in_world: fn(character_ids) {
       maps.character_on_a_map(
@@ -366,7 +373,8 @@ fn redeem(
         connection.services.take_over(identity.id, connection.notices)
       {
         Ok(Nil) -> game_session.SlotFree
-        Error(_) -> game_session.SlotNotFreed
+        Error(sessions.RegistryNotAnswering)
+        | Error(sessions.PreviousNotEnding) -> game_session.SlotNotFreed
       }
       let #(session, claimed) = game_session.account_claimed(session, claim)
       #(
@@ -390,7 +398,12 @@ fn ask_store(
   let in_world = case answer {
     select.Loaded(characters) ->
       found_in_world(connection:, characters:, context:)
-    _ -> connection.in_world
+    select.Inserted(_)
+    | select.Renamed(_)
+    | select.Deleted(_)
+    | select.NameInUse
+    | select.NotFound
+    | select.Unavailable -> connection.in_world
   }
   let #(session, more) =
     game_session.stored(
@@ -444,7 +457,12 @@ fn join_map(
     game_session.map_answered(connection.session, map_answer(entered), context)
   let #(map_monitor, map_via) = case entered {
     Ok(maps.Entered(map:, via:, ..)) -> #(Some(process.monitor(map)), Some(via))
-    Error(_) -> #(connection.map_monitor, connection.map_via)
+    Error(maps.MapNotStarted(_))
+    | Error(maps.MapRefused(_))
+    | Error(maps.RegistryNotAnswering) -> #(
+      connection.map_monitor,
+      connection.map_via,
+    )
   }
   #(Connection(..connection, session:, map_monitor:, map_via:), more)
 }

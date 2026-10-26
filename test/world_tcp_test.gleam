@@ -398,8 +398,8 @@ pub fn a_map_that_ends_closes_the_connection_of_the_player_on_it_and_logs_a_warn
   let game = signed_in(running:, account:)
   let assert [_, _, _, _] = play(game:, character:, answers: 4)
     as "the world messages"
-  // The map's process ends and its supervisor starts it again: empty, with the
-  // first unit id free, which the connection's unit is no longer on.
+  // The map's process ends and its supervisor restarts it empty, with the
+  // first unit id free, which the connection's unit is not on.
   let assert Ok(factory) = process.named(running.game.maps.factory)
     as "the factory supervisor is registered under its name"
   let assert [map_subtree] = supervisor_children.in_start_order(factory)

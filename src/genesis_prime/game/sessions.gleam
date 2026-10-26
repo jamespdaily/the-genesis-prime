@@ -101,17 +101,7 @@ fn start(name: Name(Message)) -> actor.StartResult(Subject(Message)) {
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   case message {
     Claim(account_id:, notice:, owner:, reply:) -> {
-      let held = dict.get(state.holders, account_id)
-      let previous = case held {
-        Ok(Holder(previous:, monitor:)) -> {
-          process.demonitor_process(monitor)
-          case process.is_alive(previous.owner) {
-            True -> Some(previous)
-            False -> None
-          }
-        }
-        Error(Nil) -> None
-      }
+      let previous = release(state:, account_id:)
       let holder =
         Holder(
           previous: Previous(notice:, owner:),
@@ -147,6 +137,21 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   }
 }
 
+/// The connection that holds the account's slot, when it is alive, which is no
+/// longer watched: its slot is about to be taken.
+fn release(state state: State, account_id account_id: Int) -> Option(Previous) {
+  case dict.get(state.holders, account_id) {
+    Error(Nil) -> None
+    Ok(Holder(previous:, monitor:)) -> {
+      process.demonitor_process(monitor)
+      option.from_result(case process.is_alive(previous.owner) {
+        True -> Ok(previous)
+        False -> Error(Nil)
+      })
+    }
+  }
+}
+
 /// Takes the account's slot for the calling connection, whose notices arrive on
 /// `notice`, and when another connection held it, tells that connection to
 /// end and waits for it to end. All within one deadline of `within_ms`
@@ -176,18 +181,16 @@ fn claim(
   notice notice: Subject(Notice),
   within_ms within_ms: Int,
 ) -> Result(Option(Previous), NotFreed) {
-  case process.named(registry) {
-    Error(Nil) -> Error(RegistryNotAnswering)
-    Ok(_) -> {
-      let reply = process.new_subject()
-      process.send(
-        process.named_subject(registry),
-        Claim(account_id:, notice:, owner: process.self(), reply:),
-      )
-      process.receive(reply, within_ms)
-      |> result.replace_error(RegistryNotAnswering)
-    }
-  }
+  use _ <- result.try(
+    process.named(registry) |> result.replace_error(RegistryNotAnswering),
+  )
+  let reply = process.new_subject()
+  process.send(
+    process.named_subject(registry),
+    Claim(account_id:, notice:, owner: process.self(), reply:),
+  )
+  process.receive(reply, within_ms)
+  |> result.replace_error(RegistryNotAnswering)
 }
 
 /// Tells the connection to end and waits for its process to end.

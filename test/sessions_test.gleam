@@ -59,14 +59,11 @@ fn connect(
         claimed,
         sessions.take_over(registry:, account_id:, notice:, within_ms:),
       )
-      case process.receive_forever(notice) {
-        sessions.TakeOver -> {
-          process.send(told, Nil)
-          case on_notice {
-            Ends -> Nil
-            Ignores -> process.sleep_forever()
-          }
-        }
+      let sessions.TakeOver = process.receive_forever(notice)
+      process.send(told, Nil)
+      case on_notice {
+        Ends -> Nil
+        Ignores -> process.sleep_forever()
       }
     })
   Connection(pid:, claimed:, told:)

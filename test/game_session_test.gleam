@@ -630,7 +630,14 @@ pub fn a_write_answered_unavailable_reads_the_characters_again_and_then_answers_
   assert list.any(effects, fn(effect) {
     case effect {
       Store(select.InsertCharacter(_)) -> True
-      _ -> False
+      Store(select.LoadCharacters(_))
+      | Store(select.RenameStored(..))
+      | Store(select.DeleteStored(..))
+      | Send(_)
+      | RedeemSessionKey(_)
+      | game_session.JoinMap(..)
+      | Log(_, _)
+      | End(_) -> False
     }
   })
     as "the create asks the store"
@@ -723,7 +730,11 @@ pub fn a_create_request_with_more_bone_values_or_labels_than_the_client_can_send
   assert !list.any(effects, fn(effect) {
     case effect {
       End(_) -> True
-      _ -> False
+      Send(_)
+      | RedeemSessionKey(_)
+      | Store(_)
+      | game_session.JoinMap(..)
+      | Log(_, _) -> False
     }
   })
     as "the most the client sends, 48 bone values, is decoded; the rule decides what is made of it"

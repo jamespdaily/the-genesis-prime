@@ -22,6 +22,7 @@ import genesis_prime/map/unit.{type Newcomer, type PlayerUnit}
 import genesis_prime/map/world_map.{type JoinRefused, type WorldMap, Deliver}
 import genesis_prime/telemetry/log
 import genesis_prime/telemetry/snapshot
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
@@ -206,17 +207,13 @@ pub fn join(
   connection connection: Subject(Delivery),
   within_ms within_ms: Int,
 ) -> Result(PlayerUnit, JoinError) {
-  case registered(map) {
-    False -> Error(NotAnswering)
-    True -> {
-      let reply = process.new_subject()
-      process.send(map, Join(newcomer:, connection:, reply:))
-      case process.receive(reply, within_ms) {
-        Ok(Ok(unit)) -> Ok(unit)
-        Ok(Error(refused)) -> Error(Refused(refused))
-        Error(Nil) -> Error(NotAnswering)
-      }
-    }
+  use <- bool.guard(when: !registered(map), return: Error(NotAnswering))
+  let reply = process.new_subject()
+  process.send(map, Join(newcomer:, connection:, reply:))
+  case process.receive(reply, within_ms) {
+    Ok(Ok(unit)) -> Ok(unit)
+    Ok(Error(refused)) -> Error(Refused(refused))
+    Error(Nil) -> Error(NotAnswering)
   }
 }
 
@@ -240,14 +237,10 @@ pub fn leave(
   connection connection: Subject(Delivery),
   within_ms within_ms: Int,
 ) -> Result(Nil, Nil) {
-  case registered(map) {
-    False -> Error(Nil)
-    True -> {
-      let reply = process.new_subject()
-      process.send(map, Leave(connection:, reply:))
-      process.receive(reply, within_ms)
-    }
-  }
+  use <- bool.guard(when: !registered(map), return: Error(Nil))
+  let reply = process.new_subject()
+  process.send(map, Leave(connection:, reply:))
+  process.receive(reply, within_ms)
 }
 
 /// The units the map holds, waiting up to `within_ms` milliseconds for the
@@ -256,14 +249,10 @@ pub fn units(
   map map: Subject(Message),
   within_ms within_ms: Int,
 ) -> Result(List(PlayerUnit), Nil) {
-  case registered(map) {
-    False -> Error(Nil)
-    True -> {
-      let reply = process.new_subject()
-      process.send(map, Units(reply:))
-      process.receive(reply, within_ms)
-    }
-  }
+  use <- bool.guard(when: !registered(map), return: Error(Nil))
+  let reply = process.new_subject()
+  process.send(map, Units(reply:))
+  process.receive(reply, within_ms)
 }
 
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {

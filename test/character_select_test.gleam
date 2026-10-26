@@ -927,7 +927,13 @@ pub fn a_write_answered_unavailable_is_followed_by_a_reload_before_the_failure_i
         }
       assert case state.status {
         select.Reloading(_) -> True
-        _ -> False
+        select.NotStarted
+        | Loading
+        | Idle
+        | select.Creating
+        | Renaming(_)
+        | Deleting(_)
+        | select.Entering -> False
       }
         as { what <> ": the server waits for the characters" }
     },

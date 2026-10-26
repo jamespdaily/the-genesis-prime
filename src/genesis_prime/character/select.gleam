@@ -644,7 +644,7 @@ fn loaded(
 }
 
 /// The answer to the read after a write that was answered `Unavailable`: the
-/// characters the store holds now, and with them the failure the player is
+/// characters the store holds, and with them the failure the player is
 /// owed, then the list, so the client's list is the store's. A store that is
 /// away again leaves the server not knowing what the write did, so the
 /// connection ends.
@@ -914,7 +914,20 @@ fn rename_failure(
 fn delete_failure(refusal: Refusal) -> DeleteCharacterResult {
   let result = case refusal {
     CharacterOnline(_) -> delete_failed_character_online
-    _ -> delete_failed
+    NameRefused(_)
+    | CreationUnknown(_)
+    | CreationNotOffered(_)
+    | PathOutOfRange(_)
+    | TooManyCustomisations(_)
+    | NoStartingPlace(_)
+    | BoneCountWrong(..)
+    | LabelRefused(_)
+    | AccountFull(_)
+    | NameTaken
+    | NotYourCharacter(_)
+    | CharacterDisabled(_)
+    | CharacterRequiresRename(_)
+    | StoreUnavailable -> delete_failed
   }
   DeleteCharacterResult(result:, field_2: 0)
 }

@@ -2,7 +2,7 @@
 //// answered with the pong that carries its number, a pong and a close notice
 //// are accepted with no answer, and every other frame is not the network
 //// layer's (records opcode.0x0, opcode.0x1, opcode.0x2; ReadMessageFrame
-//// 0x140331990). The frame the live login recorded on 2026-10-26 is the
+//// 0x140331990). The frame the live login recorded is the
 //// client's own first ping, 07 00 00 00 00 00 00.
 
 import genesis_prime/connection/frame.{Frame}

@@ -207,30 +207,33 @@ pub fn character_on_a_map(
   character_ids character_ids: List(Int),
   within_ms within_ms: Int,
 ) -> Option(Int) {
-  case process.named(registry) {
-    Error(Nil) -> None
-    Ok(_) -> {
-      let reply = process.new_subject()
-      process.send(process.named_subject(registry), AllMaps(reply:))
-      case process.receive(reply, within_ms) {
-        Error(Nil) -> None
-        Ok(names) ->
-          list.find_map(names, fn(name) {
-            use units <- result.try(world_map_process.units(
-              map: process.named_subject(name),
-              within_ms:,
-            ))
-            list.find_map(units, fn(unit) {
-              case list.contains(character_ids, unit.character_id) {
-                True -> Ok(unit.character_id)
-                False -> Error(Nil)
-              }
-            })
-          })
-          |> option.from_result
-      }
-    }
-  }
+  option.from_result({
+    use _ <- result.try(process.named(registry))
+    let reply = process.new_subject()
+    process.send(process.named_subject(registry), AllMaps(reply:))
+    use names <- result.try(
+      process.receive(reply, within_ms) |> result.replace_error(Nil),
+    )
+    list.find_map(names, fn(name) {
+      character_on_the_map(name:, character_ids:, within_ms:)
+    })
+  })
+}
+
+/// The first of the characters that the map holds a unit of.
+fn character_on_the_map(
+  name name: Name(world_map_process.Message),
+  character_ids character_ids: List(Int),
+  within_ms within_ms: Int,
+) -> Result(Int, Nil) {
+  use units <- result.try(world_map_process.units(
+    map: process.named_subject(name),
+    within_ms:,
+  ))
+  list.find(list.map(units, fn(unit) { unit.character_id }), list.contains(
+    character_ids,
+    _,
+  ))
 }
 
 /// The name of the map of a world, which the registry starts when the world
@@ -240,17 +243,15 @@ fn find(
   world_id world_id: Int,
   within_ms within_ms: Int,
 ) -> Result(Name(world_map_process.Message), EnterError) {
-  case process.named(registry) {
+  use _ <- result.try(
+    process.named(registry) |> result.replace_error(RegistryNotAnswering),
+  )
+  let reply = process.new_subject()
+  process.send(process.named_subject(registry), Find(world_id:, reply:))
+  case process.receive(reply, within_ms) {
+    Ok(Ok(map)) -> Ok(map)
+    Ok(Error(why)) -> Error(MapNotStarted(why))
     Error(Nil) -> Error(RegistryNotAnswering)
-    Ok(_) -> {
-      let reply = process.new_subject()
-      process.send(process.named_subject(registry), Find(world_id:, reply:))
-      case process.receive(reply, within_ms) {
-        Ok(Ok(map)) -> Ok(map)
-        Ok(Error(why)) -> Error(MapNotStarted(why))
-        Error(Nil) -> Error(RegistryNotAnswering)
-      }
-    }
   }
 }
 
