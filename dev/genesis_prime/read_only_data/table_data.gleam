@@ -5,7 +5,7 @@
 //// is a binary of the table's average string length, different for every row.
 
 import genesis_prime/read_only_data/client_table.{
-  type ClientTable, type PerTable,
+  type ClientTable, type ColumnKind, type PerTable,
 }
 
 /// One row: a tuple of its columns, the id first.
@@ -24,12 +24,16 @@ pub type Source =
 
 /// Builds the rows of all three measured tables.
 pub fn build_source() -> Source {
-  todo as "body in the build commit"
+  client_table.map(client_table.measured(), build_rows)
 }
 
 /// Builds the synthetic rows of one table, ids 1 to its row count in order.
-pub fn build_rows(table: ClientTable) -> List(Row) {
-  todo as "body in the build commit"
+fn build_rows(table: ClientTable) -> List(Row) {
+  build(
+    client_table.kinds(table),
+    client_table.average_text_bytes(table),
+    table.rows,
+  )
 }
 
 /// Puts a table's rows, ids from 1 with no gap, in one tuple.
@@ -51,3 +55,8 @@ pub fn row_in(map: RowMap, id: Int) -> Row
 /// The id of a row, its first element.
 @external(erlang, "read_only_data_ffi", "id_of")
 pub fn id_of(row: Row) -> Int
+
+/// The Erlang helper that builds the rows: `kinds` are the column types in
+/// order and `text_bytes` the bytes of every string.
+@external(erlang, "read_only_data_ffi", "build_rows")
+fn build(kinds: List(ColumnKind), text_bytes: Int, count: Int) -> List(Row)

@@ -23,16 +23,18 @@ schedulers_online() ->
     erlang:system_info(schedulers_online).
 
 -spec collect_process(pid()) -> nil.
-collect_process(_Pid) ->
-    error(todo_body_in_the_build_commit).
+collect_process(Pid) ->
+    erlang:garbage_collect(Pid),
+    nil.
 
 -spec process_memory_bytes(pid()) -> non_neg_integer().
-process_memory_bytes(_Pid) ->
-    error(todo_body_in_the_build_commit).
+process_memory_bytes(Pid) ->
+    {memory, Bytes} = process_info(Pid, memory),
+    Bytes.
 
 -spec binary_memory_bytes() -> non_neg_integer().
 binary_memory_bytes() ->
-    error(todo_body_in_the_build_commit).
+    erlang:memory(binary).
 
 %% Count rows, ids 1 to Count in order. A row has one element per kind, in
 %% order; element 1 is the id. An integer is a value from the id and the
@@ -40,61 +42,96 @@ binary_memory_bytes() ->
 %% binary of TextBytes bytes of UTF-16 little-endian, different for every id.
 -spec build_rows([column_kind()], non_neg_integer(), non_neg_integer()) ->
           [tuple()].
-build_rows(_Kinds, _TextBytes, _Count) ->
-    error(todo_body_in_the_build_commit).
+build_rows(Kinds, TextBytes, Count) ->
+    Filler = binary:copy(<<$a, 0>>, max(0, (TextBytes - 4) div 2)),
+    Indexed = lists:enumerate(Kinds),
+    [row(Id, Indexed, TextBytes, Filler) || Id <- lists:seq(1, Count)].
 
 %% The rows, ids from 1 with no gap, as one tuple: the row of id N is element N.
 -spec table_of([tuple()]) -> tuple().
-table_of(_Rows) ->
-    error(todo_body_in_the_build_commit).
+table_of(Rows) ->
+    list_to_tuple(Rows).
 
 -spec map_of([tuple()]) -> #{integer() => tuple()}.
-map_of(_Rows) ->
-    error(todo_body_in_the_build_commit).
+map_of(Rows) ->
+    maps:from_list([{id_of(Row), Row} || Row <- Rows]).
 
 -spec row_at(tuple(), pos_integer()) -> tuple().
-row_at(_Table, _Id) ->
-    error(todo_body_in_the_build_commit).
+row_at(Table, Id) ->
+    element(Id, Table).
 
 -spec row_in(#{integer() => tuple()}, integer()) -> tuple().
-row_in(_Map, _Id) ->
-    error(todo_body_in_the_build_commit).
+row_in(Map, Id) ->
+    maps:get(Id, Map).
 
 -spec id_of(tuple()) -> integer().
-id_of(_Row) ->
-    error(todo_body_in_the_build_commit).
+id_of(Row) ->
+    element(1, Row).
 
 %% A binary of Count entries of 4 bytes: the table index in the first byte
 %% (entry N is for table N rem 3, in the order of RowCounts) and in the other
 %% three a random id from 1 to that table's row count. The generator is
 %% `rand` with the `exsss` algorithm seeded from Seed.
 -spec read_stream([pos_integer()], pos_integer(), integer()) -> binary().
-read_stream(_RowCounts, _Count, _Seed) ->
-    error(todo_body_in_the_build_commit).
+read_stream(RowCounts, Count, Seed) ->
+    Tables = length(RowCounts),
+    Counts = list_to_tuple(RowCounts),
+    read_stream(0, Count, Tables, Counts, rand:seed_s(exsss, Seed), <<>>).
 
--spec persistent_term_put(reference(), tuple()) -> nil.
-persistent_term_put(_Key, _Table) ->
-    error(todo_body_in_the_build_commit).
+-spec persistent_term_put(reference(), term()) -> nil.
+persistent_term_put(Key, Table) ->
+    persistent_term:put(Key, Table),
+    nil.
 
 -spec persistent_term_erase(reference()) -> nil.
-persistent_term_erase(_Key) ->
-    error(todo_body_in_the_build_commit).
+persistent_term_erase(Key) ->
+    persistent_term:erase(Key),
+    nil.
 
 %% The bytes the runtime reports persistent terms hold, from
 %% `persistent_term:info()`.
 -spec persistent_term_bytes() -> non_neg_integer().
 persistent_term_bytes() ->
-    error(todo_body_in_the_build_commit).
+    maps:get(memory, persistent_term:info()).
 
 %% A public `set` table, unnamed, keyed on element 1, with read_concurrency.
 -spec new_table() -> ets:tid().
 new_table() ->
-    error(todo_body_in_the_build_commit).
+    ets:new(read_only_data, [set, public, {keypos, 1}, {read_concurrency, true}]).
 
 -spec insert_rows(ets:tid(), [tuple()]) -> nil.
-insert_rows(_Table, _Rows) ->
-    error(todo_body_in_the_build_commit).
+insert_rows(Table, Rows) ->
+    true = ets:insert(Table, Rows),
+    nil.
 
 -spec table_memory_words(ets:tid()) -> non_neg_integer().
-table_memory_words(_Table) ->
-    error(todo_body_in_the_build_commit).
+table_memory_words(Table) ->
+    ets:info(Table, memory).
+
+%% Entry Index of the stream: table Index rem Tables, then a random id.
+read_stream(Count, Count, _Tables, _Counts, _State, Stream) ->
+    Stream;
+read_stream(Index, Count, Tables, Counts, State, Stream) ->
+    Table = Index rem Tables,
+    {Id, Next} = rand:uniform_s(element(Table + 1, Counts), State),
+    read_stream(Index + 1, Count, Tables, Counts, Next,
+                <<Stream/bitstring, Table:8, Id:24>>).
+
+%% One row: element 1 is the id, and every other element is a value of its
+%% column's kind made from the id and the column's position.
+row(Id, Indexed, TextBytes, Filler) ->
+    list_to_tuple([cell(Kind, Id, Column, TextBytes, Filler)
+                   || {Column, Kind} <- Indexed]).
+
+cell(integer32, Id, 1, _TextBytes, _Filler) ->
+    Id;
+cell(integer32, Id, Column, _TextBytes, _Filler) ->
+    (Id * 31 + Column * 7) rem 1000003;
+cell(float32, Id, Column, _TextBytes, _Filler) ->
+    (Id rem 1000) * 0.5 + Column;
+cell(boolean32, Id, _Column, _TextBytes, _Filler) ->
+    Id rem 2 =:= 0;
+cell(integer64, Id, Column, _TextBytes, _Filler) ->
+    Id * 4294967311 + Column;
+cell(utf16_text, Id, _Column, TextBytes, Filler) ->
+    binary:part(<<Id:32/little, Filler/binary>>, 0, TextBytes).
