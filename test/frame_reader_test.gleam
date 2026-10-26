@@ -23,7 +23,7 @@ fn second() -> Frame {
   Frame(message_id: 0x03DB, body: <<9, 8, 7, 6, 5, 4, 3, 2, 1>>)
 }
 
-fn encoded(of sent: Frame) -> BitArray {
+fn encoded(sent: Frame) -> BitArray {
   let assert Ok(bytes) = frame.encode(sent.message_id, sent.body)
     as "the frame is within the size limit"
   bytes
