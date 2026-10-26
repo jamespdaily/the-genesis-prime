@@ -28,7 +28,7 @@ pub fn breaches(file: SourceFile) -> List(Breach) {
 
 /// The line without its comment, its strings and its quoted atoms.
 fn code_of(line: String) -> String {
-  code_loop(string.to_graphemes(line), Code, "")
+  skip_text(graphemes: string.to_graphemes(line), reading: Code, kept: "")
 }
 
 type Reading {
@@ -38,24 +38,33 @@ type Reading {
   CharacterLiteral
 }
 
-fn code_loop(
-  graphemes: List(String),
-  reading: Reading,
-  code: String,
+/// The code in the graphemes, read in the state `reading` after `kept`.
+fn skip_text(
+  graphemes graphemes: List(String),
+  reading reading: Reading,
+  kept kept: String,
 ) -> String {
   case graphemes, reading {
-    [], _ -> code
-    ["%", ..], Code -> code
-    ["$", ..rest], Code -> code_loop(rest, CharacterLiteral, code)
-    ["\"", ..rest], Code -> code_loop(rest, Quoted("\""), code <> " ")
-    ["'", ..rest], Code -> code_loop(rest, Quoted("'"), code <> " ")
-    [grapheme, ..rest], Code -> code_loop(rest, Code, code <> grapheme)
-    [_, ..rest], CharacterLiteral -> code_loop(rest, Code, code <> " ")
-    ["\\", ..rest], Quoted(closing:) -> code_loop(rest, Escaped(closing:), code)
+    [], _ -> kept
+    ["%", ..], Code -> kept
+    ["$", ..rest], Code ->
+      skip_text(graphemes: rest, reading: CharacterLiteral, kept: kept)
+    ["\"", ..rest], Code ->
+      skip_text(graphemes: rest, reading: Quoted("\""), kept: kept <> " ")
+    ["'", ..rest], Code ->
+      skip_text(graphemes: rest, reading: Quoted("'"), kept: kept <> " ")
+    [grapheme, ..rest], Code ->
+      skip_text(graphemes: rest, reading: Code, kept: kept <> grapheme)
+    [_, ..rest], CharacterLiteral ->
+      skip_text(graphemes: rest, reading: Code, kept: kept <> " ")
+    ["\\", ..rest], Quoted(closing:) ->
+      skip_text(graphemes: rest, reading: Escaped(closing:), kept: kept)
     [grapheme, ..rest], Quoted(closing:) if grapheme == closing ->
-      code_loop(rest, Code, code)
-    [_, ..rest], Quoted(closing:) -> code_loop(rest, Quoted(closing:), code)
-    [_, ..rest], Escaped(closing:) -> code_loop(rest, Quoted(closing:), code)
+      skip_text(graphemes: rest, reading: Code, kept: kept)
+    [_, ..rest], Quoted(closing:) ->
+      skip_text(graphemes: rest, reading: Quoted(closing:), kept: kept)
+    [_, ..rest], Escaped(closing:) ->
+      skip_text(graphemes: rest, reading: Quoted(closing:), kept: kept)
   }
 }
 
@@ -63,22 +72,26 @@ fn code_loop(
 fn names(code: String, name: String) -> Bool {
   case string.split(code, name) {
     [] | [_] -> False
-    [first, ..rest] -> whole_name_follows(name, first, rest)
+    [first, ..rest] -> whole_name_follows(name:, before: first, after: rest)
   }
 }
 
 /// `before` is the code up to a match of `name`, and `after` the pieces of
 /// code that follow each match.
 fn whole_name_follows(
-  name: String,
-  before: String,
-  after: List(String),
+  name name: String,
+  before before: String,
+  after after: List(String),
 ) -> Bool {
   case after {
     [] -> False
     [next, ..others] ->
       { !ends_in_name(before) && !starts_with_name(next) }
-      || whole_name_follows(name, before <> name <> next, others)
+      || whole_name_follows(
+        name:,
+        before: before <> name <> next,
+        after: others,
+      )
   }
 }
 
