@@ -41,3 +41,9 @@ pub fn receive(
   count: Int,
   within_ms: Int,
 ) -> Result(BitArray, Nil)
+
+/// Reads the bytes the server wrote that are there, at least one, waiting at
+/// most `within_ms` for the first: an error when the time passes or the server
+/// closed the connection with nothing more to read.
+@external(erlang, "tcp_client_ffi", "receive_some")
+pub fn receive_some(client: Client, within_ms: Int) -> Result(BitArray, Nil)

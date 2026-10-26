@@ -1,5 +1,5 @@
 -module(tcp_client_ffi).
--export([connect/1, own_address/1, send/2, send_if_open/2, 'receive'/3, await_close/2, close/1]).
+-export([connect/1, own_address/1, send/2, send_if_open/2, 'receive'/3, receive_some/2, await_close/2, close/1]).
 
 -spec connect(non_neg_integer()) -> {ok, port()} | {error, nil}.
 connect(Port) ->
@@ -34,6 +34,14 @@ send_if_open(Socket, Bytes) ->
     {ok, binary()} | {error, nil}.
 'receive'(Socket, Count, Within) ->
     case gen_tcp:recv(Socket, Count, Within) of
+        {ok, Bytes} -> {ok, Bytes};
+        {error, _Reason} -> {error, nil}
+    end.
+
+%% What the server wrote that is there, at least one byte.
+-spec receive_some(port(), non_neg_integer()) -> {ok, binary()} | {error, nil}.
+receive_some(Socket, Within) ->
+    case gen_tcp:recv(Socket, 0, Within) of
         {ok, Bytes} -> {ok, Bytes};
         {error, _Reason} -> {error, nil}
     end.
