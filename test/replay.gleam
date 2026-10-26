@@ -12,7 +12,13 @@
 //// that differs ends the replay, with its offset in the stream of everything
 //// the server sent.
 
-import genesis_prime/recording.{type Recording}
+import genesis_prime/recording.{
+  type Chunk, type Recording, ClientToServer, ServerToClient,
+}
+import genesis_prime/recording/clock
+import gleam/bit_array
+import gleam/bool
+import gleam/result
 import mug
 
 /// The server a replay connects to.
@@ -44,9 +50,176 @@ pub type Failure {
 /// one chunk takes at most `deadline_ms` milliseconds. The connection is closed
 /// when the replay ends.
 pub fn run(
-  _recording: Recording,
-  _target: Target,
-  _deadline_ms: Int,
+  recording recording: Recording,
+  target target: Target,
+  deadline_ms deadline_ms: Int,
 ) -> Result(Nil, Failure) {
-  panic as "shape only: not built"
+  let options =
+    mug.new(target.host, port: target.port)
+    |> mug.timeout(deadline_ms)
+    |> mug.ip_version_preference(mug.Ipv4Preferred)
+  use socket <- result.try(
+    mug.connect(options) |> result.map_error(NotConnected),
+  )
+  let outcome =
+    replay_chunks(
+      socket:,
+      chunks: recording.chunks,
+      position: Position(chunk: 0, offset: 0),
+      pending: <<>>,
+      deadline_ms:,
+    )
+  case mug.shutdown(socket) {
+    Ok(Nil) | Error(mug.Closed) | Error(mug.Enotconn) -> outcome
+    Error(error) ->
+      panic as {
+        "the replay's connection did not shut down: "
+        <> mug.describe_error(error)
+      }
+  }
+}
+
+/// How far the replay has come: the position of the next chunk, and how many
+/// bytes of the server's stream the chunks before it hold.
+type Position {
+  Position(chunk: Int, offset: Int)
+}
+
+/// Replays `chunks` from `position`. `pending` holds the bytes the server has
+/// sent that no chunk has taken yet.
+fn replay_chunks(
+  socket socket: mug.Socket,
+  chunks chunks: List(Chunk),
+  position position: Position,
+  pending pending: BitArray,
+  deadline_ms deadline_ms: Int,
+) -> Result(Nil, Failure) {
+  case chunks {
+    [] -> Ok(Nil)
+    [chunk, ..later] -> {
+      let next = Position(..position, chunk: position.chunk + 1)
+      case chunk.direction {
+        ClientToServer ->
+          case mug.send(socket, chunk.bytes) {
+            Ok(Nil) ->
+              replay_chunks(
+                socket:,
+                chunks: later,
+                position: next,
+                pending:,
+                deadline_ms:,
+              )
+            Error(error) -> Error(NotSent(chunk: position.chunk, error:))
+          }
+        ServerToClient -> {
+          let deadline = clock.microseconds() + deadline_ms * 1000
+          use pending <- result.try(await_chunk(
+            socket:,
+            expected: chunk.bytes,
+            position:,
+            pending:,
+            deadline:,
+          ))
+          let size = bit_array.byte_size(chunk.bytes)
+          replay_chunks(
+            socket:,
+            chunks: later,
+            position: Position(..next, offset: position.offset + size),
+            pending:,
+            deadline_ms:,
+          )
+        }
+      }
+    }
+  }
+}
+
+/// Waits until `pending` holds the bytes of `expected`, taking what the server
+/// sends. Returns what is left after them. A byte that differs, the deadline
+/// (a reading of the clock in microseconds) and a close each end the wait.
+fn await_chunk(
+  socket socket: mug.Socket,
+  expected expected: BitArray,
+  position position: Position,
+  pending pending: BitArray,
+  deadline deadline: Int,
+) -> Result(BitArray, Failure) {
+  case first_difference(expected:, received: pending, index: 0) {
+    Ok(#(index, recorded, received)) ->
+      Error(Differs(
+        chunk: position.chunk,
+        offset: position.offset + index,
+        expected: recorded,
+        received:,
+      ))
+    Error(Nil) -> {
+      let size = bit_array.byte_size(expected)
+      let held = bit_array.byte_size(pending)
+      case held >= size {
+        True -> {
+          let assert Ok(rest) = bit_array.slice(pending, size, held - size)
+            as "the bytes after the chunk are inside what was received"
+          Ok(rest)
+        }
+        False ->
+          receive_more(socket:, expected:, position:, pending:, deadline:)
+      }
+    }
+  }
+}
+
+/// Takes the next bytes the server sends, within the deadline, and goes on
+/// waiting for the chunk with them added to `pending`.
+fn receive_more(
+  socket socket: mug.Socket,
+  expected expected: BitArray,
+  position position: Position,
+  pending pending: BitArray,
+  deadline deadline: Int,
+) -> Result(BitArray, Failure) {
+  let missing_from = position.offset + bit_array.byte_size(pending)
+  let wait_ms = { deadline - clock.microseconds() + 999 } / 1000
+  use <- bool.guard(
+    wait_ms <= 0,
+    Error(DeadlinePassed(chunk: position.chunk, offset: missing_from)),
+  )
+  case mug.receive(socket, timeout_milliseconds: wait_ms) {
+    Ok(bytes) ->
+      await_chunk(
+        socket:,
+        expected:,
+        position:,
+        pending: <<pending:bits, bytes:bits>>,
+        deadline:,
+      )
+    Error(mug.Timeout) ->
+      Error(DeadlinePassed(chunk: position.chunk, offset: missing_from))
+    Error(mug.Closed) ->
+      Error(ServerClosed(chunk: position.chunk, offset: missing_from))
+    Error(error) ->
+      Error(NotReceived(chunk: position.chunk, offset: missing_from, error:))
+  }
+}
+
+/// The first position at which `expected` and `received` hold different bytes,
+/// within the shorter of the two, with the two bytes; nothing when one is the
+/// beginning of the other.
+fn first_difference(
+  expected expected: BitArray,
+  received received: BitArray,
+  index index: Int,
+) -> Result(#(Int, Int, Int), Nil) {
+  case expected, received {
+    <<recorded, expected_rest:bytes>>, <<received_byte, received_rest:bytes>> ->
+      case recorded == received_byte {
+        True ->
+          first_difference(
+            expected: expected_rest,
+            received: received_rest,
+            index: index + 1,
+          )
+        False -> Ok(#(index, recorded, received_byte))
+      }
+    _, _ -> Error(Nil)
+  }
 }

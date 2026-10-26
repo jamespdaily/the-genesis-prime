@@ -18,38 +18,69 @@ pub type Bind {
   AllInterfaces
 }
 
-/// Starts listening on `port`, or on a free port when it is 0.
-pub fn listen(_bind: Bind, _port: Int) -> Result(Listener, mug.Error) {
-  panic as "shape only: not built"
+/// The options of `gen_tcp:listen/2` this module sets. A constructor without a
+/// field is the atom of its name in lower case, and one with a field is the
+/// tuple of that atom and the field, which is how Erlang writes the option.
+type ListenOption {
+  Binary
+  Inet
+  Active(Bool)
+  Reuseaddr(Bool)
+  Nodelay(Bool)
+  Backlog(Int)
+  Ip(#(Int, Int, Int, Int))
 }
+
+/// How many connections may wait to be accepted.
+const backlog = 128
+
+/// Starts listening on `port`, or on a free port when it is 0. The sockets it
+/// accepts give bytes, hold what they receive until `mug` asks for it, and
+/// send at once.
+pub fn listen(bind bind: Bind, port port: Int) -> Result(Listener, mug.Error) {
+  let address = case bind {
+    Loopback -> #(127, 0, 0, 1)
+    AllInterfaces -> #(0, 0, 0, 0)
+  }
+  gen_tcp_listen(port, [
+    Inet,
+    Binary,
+    Active(False),
+    Reuseaddr(True),
+    Nodelay(True),
+    Backlog(backlog),
+    Ip(address),
+  ])
+}
+
+@external(erlang, "gen_tcp", "listen")
+fn gen_tcp_listen(
+  port: Int,
+  options: List(ListenOption),
+) -> Result(Listener, mug.Error)
 
 /// The port a listener listens on.
-pub fn port(_listener: Listener) -> Result(Int, mug.Error) {
-  panic as "shape only: not built"
-}
+@external(erlang, "inet", "port")
+pub fn port(listener: Listener) -> Result(Int, mug.Error)
 
 /// Waits for the next connection for as long as it takes.
-pub fn accept(_listener: Listener) -> Result(mug.Socket, mug.Error) {
-  panic as "shape only: not built"
-}
+@external(erlang, "gen_tcp", "accept")
+pub fn accept(listener: Listener) -> Result(mug.Socket, mug.Error)
 
 /// Waits up to `within` milliseconds for the next connection; the error is
 /// `mug.Timeout` when none comes.
+@external(erlang, "gen_tcp", "accept")
 pub fn accept_within(
-  _listener: Listener,
-  within _within: Int,
-) -> Result(mug.Socket, mug.Error) {
-  panic as "shape only: not built"
-}
+  listener: Listener,
+  within within: Int,
+) -> Result(mug.Socket, mug.Error)
 
 /// Makes `pid` the process that owns the socket, so the messages of an active
 /// socket go to it. Only the socket's current owner can call it.
-pub fn hand_over(_socket: mug.Socket, to _pid: Pid) -> Result(Nil, mug.Error) {
-  panic as "shape only: not built"
-}
+@external(erlang, "recording_socket_ffi", "hand_over")
+pub fn hand_over(socket: mug.Socket, to pid: Pid) -> Result(Nil, mug.Error)
 
 /// Turns off the delay that holds a small send back to join the next one, so
 /// the relay adds none to the exchange it carries.
-pub fn send_at_once(_socket: mug.Socket) -> Result(Nil, mug.Error) {
-  panic as "shape only: not built"
-}
+@external(erlang, "recording_socket_ffi", "send_at_once")
+pub fn send_at_once(socket: mug.Socket) -> Result(Nil, mug.Error)

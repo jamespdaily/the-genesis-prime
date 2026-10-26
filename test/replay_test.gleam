@@ -60,7 +60,11 @@ pub fn a_replay_sends_the_clients_chunks_in_order_and_waits_for_each_server_chun
   let peer =
     planted_peer.start(script: recording.chunks, wait_ms: event_wait_ms)
 
-  assert replay.run(recording, Target("127.0.0.1", peer.port), event_wait_ms)
+  assert replay.run(
+      recording:,
+      target: Target("127.0.0.1", peer.port),
+      deadline_ms: event_wait_ms,
+    )
     == Ok(Nil)
     as "the server answers as recorded, so the replay reaches the end"
 
@@ -90,7 +94,11 @@ pub fn a_server_that_answers_one_byte_differently_fails_the_replay_at_that_byte_
     })
   let peer = planted_peer.start(script: answered, wait_ms: event_wait_ms)
 
-  assert replay.run(recording, Target("127.0.0.1", peer.port), event_wait_ms)
+  assert replay.run(
+      recording:,
+      target: Target("127.0.0.1", peer.port),
+      deadline_ms: event_wait_ms,
+    )
     == Error(Differs(
       chunk: 4,
       offset: 552,

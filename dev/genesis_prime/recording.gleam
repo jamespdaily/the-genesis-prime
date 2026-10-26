@@ -34,8 +34,19 @@
 //// is committed, and the replay of that flow would have to be given the secret
 //// to send; no recorded flow has one.
 
-import gleam/time/calendar.{type Date}
+import gleam/bit_array
+import gleam/bool
+import gleam/int
+import gleam/list
+import gleam/result
+import gleam/time/calendar.{type Date, Date}
 import simplifile.{type FileError}
+
+/// The four bytes every recording starts with.
+const magic = <<"GREC":utf8>>
+
+/// The format version this module writes and reads.
+const format_version = 1
 
 /// Which of the server's roles a connection reached, as the client names the
 /// ports: the NC platform login (STS, port 6600 by default), the auth server
@@ -101,53 +112,260 @@ pub type RecordingError {
 
 /// The name of a role as the file and the command line write it: `sts`,
 /// `auth` or `game`.
-pub fn role_name(_role: Role) -> String {
-  panic as "shape only: not built"
+pub fn role_name(role: Role) -> String {
+  case role {
+    Sts -> "sts"
+    Auth -> "auth"
+    Game -> "game"
+  }
 }
 
 /// The role a name stands for, as `role_name` writes it.
-pub fn role_from_name(_name: String) -> Result(Role, Nil) {
-  panic as "shape only: not built"
-}
-
-/// The bytes of a header, as the file starts.
-pub fn encode_header(_header: Header) -> Result(BitArray, RecordingError) {
-  panic as "shape only: not built"
-}
-
-/// The bytes of one chunk, as the file holds it.
-pub fn encode_chunk(_chunk: Chunk) -> Result(BitArray, RecordingError) {
-  panic as "shape only: not built"
+pub fn role_from_name(name: String) -> Result(Role, Nil) {
+  case name {
+    "sts" -> Ok(Sts)
+    "auth" -> Ok(Auth)
+    "game" -> Ok(Game)
+    _ -> Error(Nil)
+  }
 }
 
 /// The bytes of a whole recording: its header and then each chunk.
-pub fn encode(_recording: Recording) -> Result(BitArray, RecordingError) {
-  panic as "shape only: not built"
+pub fn encode(recording: Recording) -> Result(BitArray, RecordingError) {
+  use header <- result.try(encode_header(recording.header))
+  list.try_fold(recording.chunks, header, fn(written, chunk) {
+    use bytes <- result.map(encode_chunk(chunk))
+    <<written:bits, bytes:bits>>
+  })
+}
+
+fn encode_header(header: Header) -> Result(BitArray, RecordingError) {
+  let Header(build:, date:, role:, commit:) = header
+  let Date(year:, month:, day:) = date
+  let month_number = calendar.month_to_int(month)
+  use <- bool.guard(
+    !calendar.is_valid_date(date),
+    Error(InvalidDate(year:, month: month_number, day:)),
+  )
+  use build <- result.try(fit(field: "build", value: build, bits: 32))
+  use year <- result.try(fit(field: "year", value: year, bits: 16))
+  use role <- result.try(encode_text("role", role_name(role)))
+  use commit <- result.try(encode_text("commit", commit))
+  Ok(<<
+    magic:bits,
+    format_version:size(8),
+    build:size(32),
+    year:size(16),
+    month_number:size(8),
+    day:size(8),
+    role:bits,
+    commit:bits,
+  >>)
+}
+
+fn encode_chunk(chunk: Chunk) -> Result(BitArray, RecordingError) {
+  let Chunk(direction:, microseconds:, bytes:) = chunk
+  use <- bool.guard(microseconds < 0, Error(NegativeTime(microseconds:)))
+  use microseconds <- result.try(fit(
+    field: "microseconds",
+    value: microseconds,
+    bits: 64,
+  ))
+  use length <- result.try(fit(
+    field: "length",
+    value: bit_array.byte_size(bytes),
+    bits: 32,
+  ))
+  Ok(<<
+    direction_byte(direction):size(8),
+    microseconds:size(64),
+    length:size(32),
+    bytes:bits,
+  >>)
+}
+
+/// The value, when it fits `bits` bits as an unsigned number.
+fn fit(
+  field field: String,
+  value value: Int,
+  bits bits: Int,
+) -> Result(Int, RecordingError) {
+  use <- bool.guard(
+    value < 0 || value >= int.bitwise_shift_left(1, bits),
+    Error(OutOfRange(field:, value:)),
+  )
+  Ok(value)
+}
+
+/// A text as the file holds it: its length in bytes and then its UTF-8 bytes.
+fn encode_text(
+  field: String,
+  text: String,
+) -> Result(BitArray, RecordingError) {
+  let bytes = bit_array.from_string(text)
+  use length <- result.map(fit(
+    field:,
+    value: bit_array.byte_size(bytes),
+    bits: 16,
+  ))
+  <<length:size(16), bytes:bits>>
+}
+
+fn direction_byte(direction: Direction) -> Int {
+  case direction {
+    ClientToServer -> 0
+    ServerToClient -> 1
+  }
 }
 
 /// The recording a file's bytes hold, or the first thing wrong with them.
-pub fn decode(_bytes: BitArray) -> Result(Recording, RecordingError) {
-  panic as "shape only: not built"
+pub fn decode(bytes: BitArray) -> Result(Recording, RecordingError) {
+  let total = bit_array.byte_size(bytes)
+  case bytes {
+    <<"GREC":utf8, after_magic:bytes>> -> decode_version(after_magic, total)
+    _ -> Error(NotARecording)
+  }
+}
+
+fn decode_version(
+  bytes: BitArray,
+  total: Int,
+) -> Result(Recording, RecordingError) {
+  case bytes {
+    <<version:size(8), after_version:bytes>> ->
+      case version == format_version {
+        True -> decode_header(after_version, total)
+        False -> Error(UnsupportedVersion(version:))
+      }
+    _ -> Error(Truncated(offset: offset(total, bytes)))
+  }
+}
+
+fn decode_header(
+  bytes: BitArray,
+  total: Int,
+) -> Result(Recording, RecordingError) {
+  case bytes {
+    <<
+      build:size(32),
+      year:size(16),
+      month:size(8),
+      day:size(8),
+      after_date:bytes,
+    >> -> {
+      use date <- result.try(decode_date(year:, month:, day:))
+      use #(name, after_role) <- result.try(decode_text(after_date, total))
+      use role <- result.try(
+        role_from_name(name)
+        |> result.replace_error(UnknownRole(name:)),
+      )
+      use #(commit, after_commit) <- result.try(decode_text(after_role, total))
+      use chunks <- result.map(
+        decode_chunks(bytes: after_commit, total:, chunks: []),
+      )
+      Recording(header: Header(build:, date:, role:, commit:), chunks:)
+    }
+    _ -> Error(Truncated(offset: offset(total, bytes)))
+  }
+}
+
+fn decode_date(
+  year year: Int,
+  month month: Int,
+  day day: Int,
+) -> Result(Date, RecordingError) {
+  let invalid = InvalidDate(year:, month:, day:)
+  use month <- result.try(
+    calendar.month_from_int(month) |> result.replace_error(invalid),
+  )
+  let date = Date(year:, month:, day:)
+  case calendar.is_valid_date(date) {
+    True -> Ok(date)
+    False -> Error(invalid)
+  }
+}
+
+fn decode_text(
+  bytes: BitArray,
+  total: Int,
+) -> Result(#(String, BitArray), RecordingError) {
+  case bytes {
+    <<length:size(16), text:bytes-size(length), after:bytes>> ->
+      case bit_array.to_string(text) {
+        Ok(text) -> Ok(#(text, after))
+        Error(Nil) -> Error(NotText(offset: offset(total, bytes)))
+      }
+    _ -> Error(Truncated(offset: offset(total, bytes)))
+  }
+}
+
+fn decode_chunks(
+  bytes bytes: BitArray,
+  total total: Int,
+  chunks chunks: List(Chunk),
+) -> Result(List(Chunk), RecordingError) {
+  case bytes {
+    <<>> -> Ok(list.reverse(chunks))
+    <<
+      direction:size(8),
+      microseconds:size(64),
+      length:size(32),
+      data:bytes-size(length),
+      after:bytes,
+    >> ->
+      case direction_from_byte(direction) {
+        Ok(direction) ->
+          decode_chunks(bytes: after, total:, chunks: [
+            Chunk(direction:, microseconds:, bytes: data),
+            ..chunks
+          ])
+        Error(error) -> Error(error)
+      }
+    _ -> Error(Truncated(offset: offset(total, bytes)))
+  }
+}
+
+fn direction_from_byte(value: Int) -> Result(Direction, RecordingError) {
+  case value {
+    0 -> Ok(ClientToServer)
+    1 -> Ok(ServerToClient)
+    _ -> Error(UnknownDirection(value:))
+  }
+}
+
+/// How many bytes of the file come before `rest`, the part of it still to read.
+fn offset(total: Int, rest: BitArray) -> Int {
+  total - bit_array.byte_size(rest)
 }
 
 /// Creates a file at `path` holding the header and no chunk. A file already at
 /// `path` is never overwritten.
 pub fn create(
-  at _path: String,
-  header _header: Header,
+  at path: String,
+  header header: Header,
 ) -> Result(Nil, RecordingError) {
-  panic as "shape only: not built"
+  use bytes <- result.try(encode_header(header))
+  use Nil <- result.try(case simplifile.create_file(path) {
+    Ok(Nil) -> Ok(Nil)
+    Error(simplifile.Eexist) -> Error(AlreadyExists(path:))
+    Error(error) -> Error(FileFailed(error:))
+  })
+  simplifile.write_bits(path, bytes) |> result.map_error(FileFailed)
 }
 
 /// Adds one chunk to the end of the file at `path`, which `create` made.
 pub fn append(
-  to _path: String,
-  chunk _chunk: Chunk,
+  to path: String,
+  chunk chunk: Chunk,
 ) -> Result(Nil, RecordingError) {
-  panic as "shape only: not built"
+  use bytes <- result.try(encode_chunk(chunk))
+  simplifile.append_bits(path, bytes) |> result.map_error(FileFailed)
 }
 
 /// The recording in the file at `path`.
-pub fn read(from _path: String) -> Result(Recording, RecordingError) {
-  panic as "shape only: not built"
+pub fn read(from path: String) -> Result(Recording, RecordingError) {
+  use bytes <- result.try(
+    simplifile.read_bits(path) |> result.map_error(FileFailed),
+  )
+  decode(bytes)
 }

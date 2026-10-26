@@ -27,7 +27,7 @@ pub fn start(script script: List(Chunk), wait_ms wait_ms: Int) -> Peer {
   let listening = process.new_subject()
   let report = process.new_subject()
   process.spawn(fn() {
-    let assert Ok(socket) = listener.listen(listener.Loopback, 0)
+    let assert Ok(socket) = listener.listen(bind: listener.Loopback, port: 0)
       as "the planted peer did not listen"
     let assert Ok(port) = listener.port(socket)
       as "the planted peer has no port"

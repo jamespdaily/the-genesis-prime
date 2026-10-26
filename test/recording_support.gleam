@@ -60,7 +60,7 @@ pub fn new_folder() -> String {
 /// folder after.
 pub fn run(body: fn(Session) -> a) -> a {
   let folder = new_folder()
-  let assert Ok(server) = listener.listen(listener.Loopback, 0)
+  let assert Ok(server) = listener.listen(bind: listener.Loopback, port: 0)
     as "the planted server did not listen"
   let assert Ok(server_port) = listener.port(server)
     as "the planted server has no port"
