@@ -2,6 +2,7 @@
 //// tracked paths and its guidance files.
 
 import code_rule/source.{type SourceFile, SourceFile}
+import database_support
 import gleam/dict
 import gleam/list
 import gleam/result
@@ -20,11 +21,25 @@ fn note_tree_read() -> Nil
 @external(erlang, "repository_ffi", "tree_reads")
 pub fn tree_reads() -> Int
 
+/// The directories whose Gleam source the rules read.
+const tree_directories = ["src", "test"]
+
 /// Every `.gleam` file under each directory, which must hold at least one, so
-/// a rule checked over the repository cannot pass by finding nothing.
+/// a rule checked over the repository cannot pass by finding nothing. The
+/// directories are `src` and `test`, read from disk once per run and shared by
+/// every rule; a directory outside them holds nothing.
 pub fn sources(under directories: List(String)) -> List(SourceFile) {
-  note_tree_read()
-  let files = list.flat_map(directories, source.files)
+  let tree =
+    database_support.once("source_tree", fn() {
+      note_tree_read()
+      list.flat_map(tree_directories, source.files)
+    })
+  let files =
+    list.flat_map(directories, fn(directory) {
+      list.filter(tree, fn(file) {
+        string.starts_with(file.path, directory <> "/")
+      })
+    })
   let assert [_, ..] = files as "no Gleam source found under the directories"
   files
 }
