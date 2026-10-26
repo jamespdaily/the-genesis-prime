@@ -9,8 +9,7 @@
 import connection_vectors as vectors
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{
-  AuthWrapper, BadFrame, ClientWrapper, CreateCharacterWrapper, GameWrapper,
-  NotAWrapper,
+  AuthWrapper, BadFrame, ClientWrapper, GameWrapper, NotAWrapper,
 }
 import genesis_prime/connection/frame.{Frame}
 import gleam/bit_array
@@ -181,24 +180,37 @@ pub fn a_wrapper_around_an_inner_frame_too_big_for_its_outer_frame_is_not_writte
     as "WriteMessageFrame 0x1403355e0 does not write a frame over the size limit 131070 (0x140335ec0), and the wrapper's frame is 6 bytes longer than its inner frame"
 }
 
-pub fn the_create_character_carrier_is_message_0x25c_test() -> Nil {
+pub fn a_create_character_frame_inside_0x25c_is_not_ciphered_test() -> Nil {
   use <- owned_test.run(5000)
-  assert encrypted_frame.message_id(CreateCharacterWrapper) == 0x025C
-    as "opcode.0x25c: registered at 0x14006d638 mov edx, 0x25c"
-}
-
-pub fn a_create_character_frame_is_ciphered_after_its_length_inside_0x25c_test() -> Nil {
-  use <- owned_test.run(5000)
-  let inner = inner_of_counting_bytes(17)
+  let assert Ok(plain_0x25b_frame) =
+    frame.encode(0x025B, <<1, 2, 3, 4, 5, 6, 7>>)
+    as "0x25B frames"
+  // opcode.0x25c: 0x140079f30 copies the frame's raw bytes into 0x25C's body.
+  let assert Ok(carrier) = frame.encode(0x025C, plain_0x25b_frame)
+    as "0x25C frames"
+  let assert <<length:bytes-size(4), after_the_length:bytes>> = carrier
+    as "a frame has its length first"
+  // opcode.0x25c: the one cipher call, 0x140024b0c, runs over the whole 0x25C
+  // frame after its length, so the cipher's chain runs on from 0x25C's id
+  // into the 0x25B frame.
   let expected = <<
-    0x1B, 0, 0, 0, 0x5C, 0x02, 0x15, 0, 0, 0, 0xD2, 0x9A, 0x50, 0xDF, 0x3E, 0x48,
-    0xE8, 0x69, 0xE3, 0xE0, 0xA6, 0x67, 0xF8, 0xA7, 0xC3, 0x0E, 0xEC,
+    length:bits,
+    cipher.encrypt(session_cipher(), after_the_length):bits,
   >>
-  assert encrypted_frame.wrap(CreateCharacterWrapper, inner, session_cipher())
-    == Ok(expected)
-    as "opcode.0x25c: the frame inside is written as inside 0x244, its length 21 in the clear, then the n = 17 session-key vector d29a50df3e48e869e3e0a667f8a7c30eec"
-  let assert Ok(#([outer], <<>>)) = frame.decode(expected)
+  let assert Ok(carried) = frame.encode(0x0244, expected) as "0x244 frames"
+  assert encrypted_frame.wrap(
+      ClientWrapper,
+      Frame(0x025C, plain_0x25b_frame),
+      session_cipher(),
+    )
+    == Ok(carried)
+    as "opcode.0x25c: 0x244 carries the 0x25C frame ciphered once, over 0x25C's id and the plain 0x25B frame in one pass"
+  let assert Ok(#([outer], <<>>)) = frame.decode(carried)
     as "the bytes are one frame"
-  assert encrypted_frame.unwrap(outer, session_cipher()) == Ok(inner)
-    as "DecryptMessageBody 0x1400c2de0 undoes the cipher over the frame after its length"
+  let assert Ok(opened) = encrypted_frame.unwrap(outer, session_cipher())
+    as "one decryption opens the 0x25C frame"
+  assert opened == Frame(0x025C, plain_0x25b_frame)
+    as "opcode.0x25c: the body of 0x25C is the 0x25B frame as it stands"
+  assert frame.parse(opened.body) == Ok(Frame(0x025B, <<1, 2, 3, 4, 5, 6, 7>>))
+    as "opcode.0x25c: no second decryption is needed to read the 0x25B frame"
 }

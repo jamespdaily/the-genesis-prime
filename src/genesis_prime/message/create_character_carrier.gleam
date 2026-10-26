@@ -2,9 +2,9 @@
 //// never edited by hand.
 ////
 //// Message 0x025C (create_character_carrier), client to server: carries the
-//// whole frame of the create-character request, its bytes after the length
-//// ciphered. Its fields are listed in `schema.toml` with the client's
-//// evidence, and the fact file's `opcode.0x25c` names the message.
+//// whole frame of the create-character request in plain bytes. Its fields are
+//// listed in `schema.toml` with the client's evidence, and the fact file's
+//// `opcode.0x25c` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import gleam/result

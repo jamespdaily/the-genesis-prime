@@ -260,7 +260,7 @@ id = 0x025C
 name = "create_character_carrier"
 direction = "client_to_server"
 evidence = "opcode.0x25c"
-summary = "carries the whole frame of the create-character request, its bytes after the length ciphered"
+summary = "carries the whole frame of the create-character request in plain bytes"
 fields = [
   { name = "inner_frame", kind = "whole_frame", evidence = "0x140079f30", named_by = "opcode.0x25c" },
 ]

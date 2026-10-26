@@ -1,9 +1,6 @@
 //// The messages that carry another message's whole frame, with the bytes
 //// after the inner frame's 4-byte length ciphered: 0x0244 from the client,
-//// 0x0076 from the auth server, 0x03DC from a game server and 0x025C from the
-//// client, which carries the create-character request (opcode record 0x25C:
-//// the client ciphers the 0x025B frame after its length, and the 0x025C
-//// frame that holds it is ciphered again inside 0x0244). The body of each
+//// 0x0076 from the auth server and 0x03DC from a game server. The body of each
 //// is one inner frame: its 32-bit length in the clear, then its 16-bit id and
 //// body encrypted with the connection's cipher over the inner length minus 4
 //// bytes (opcode records 0x244, 0x76 and 0x3DC; WriteWholeFrameBody
@@ -24,8 +21,6 @@ pub type Wrapper {
   AuthWrapper
   /// 0x03DC, game server to client.
   GameWrapper
-  /// 0x025C, client to game server: the create-character request.
-  CreateCharacterWrapper
 }
 
 /// Why a frame could not be wrapped or unwrapped.
@@ -42,7 +37,6 @@ pub fn message_id(wrapper wrapper: Wrapper) -> Int {
     ClientWrapper -> 0x0244
     AuthWrapper -> 0x0076
     GameWrapper -> 0x03DC
-    CreateCharacterWrapper -> 0x025C
   }
 }
 
@@ -72,7 +66,7 @@ pub fn unwrap(
   cipher cipher: Cipher,
 ) -> Result(Frame, WrapError) {
   case outer.message_id {
-    0x0244 | 0x0076 | 0x03DC | 0x025C ->
+    0x0244 | 0x0076 | 0x03DC ->
       case outer.body {
         <<length:bytes-size(4), after_the_length:bytes>> ->
           frame.parse(<<

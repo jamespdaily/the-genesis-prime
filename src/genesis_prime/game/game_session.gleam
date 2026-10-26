@@ -11,7 +11,9 @@
 ////
 //// The rule decodes each client message into a typed value at this edge and
 //// hands it to the rule of its feature: `select` for 0x7E0, 0x25C, 0x352,
-//// 0x786 and 0x7DD, and `world_entry` for 0xF2 inside 0x38C. A message that
+//// 0x786 and 0x7DD, and `world_entry` for 0xF2 inside 0x38C. The 0x25B create
+//// request inside 0x25C is one plain frame: the client ciphers once, over the
+//// whole 0x25C frame inside 0x244 (opcode.0x25c). A message that
 //// does not decode ends the connection. A message no rule handles is logged
 //// once for each message number and the connection goes on.
 
@@ -244,7 +246,7 @@ fn routed(
       }
     RedeemingKey(_) -> end(session, UnexpectedMessage(inner.message_id))
     Playing(select: select_state, entry: entry_state) ->
-      case player_input(session:, inner:, context:) {
+      case player_input(inner:, context:) {
         Error(reason) -> end(session, reason)
         Ok(Unhandled) -> unhandled(session, inner.message_id)
         Ok(ToSelect(input)) ->
@@ -282,7 +284,6 @@ type PlayerInput {
 /// Decodes the message of a playing connection into the input of the rule it
 /// belongs to, or says why it ends the connection.
 fn player_input(
-  session session: Session,
   inner inner: Frame,
   context context: Context,
 ) -> Result(PlayerInput, EndReason) {
@@ -292,8 +293,7 @@ fn player_input(
       |> decoded(inner.message_id, fn(_) { ToSelect(select.Started) })
     0x025C -> {
       use created <- result.try(
-        encrypted_frame.unwrap(inner, session.cipher)
-        |> result.replace_error(BadWrapper),
+        frame.parse(inner.body) |> result.replace_error(BadWrapper),
       )
       case created.message_id == create_character.message_id {
         False -> Error(UnexpectedMessage(created.message_id))
