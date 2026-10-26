@@ -278,8 +278,8 @@ pub fn a_character_that_is_on_the_map_is_refused_the_second_time_and_the_player_
     as "opcode.0x162: a world that refuses a character answers 0x162, on which the client returns to idle character select"
   let assert Ok(refusal) = play_character_refused.decode(refused.body)
     as "0x162 decodes"
-  assert refusal.field_1 == 2
-    as "PreGameLib.CodeEnumCharacterSelectResults: 2 is Failed"
+  assert refusal.field_1 == 4
+    as "PreGameLib.CodeEnumCharacterSelectResults: 4 is FailedCharacterInWorld, the refusal of a character that is on the map already"
   let assert Ok(body) =
     play_character.encode(PlayCharacter(character_id: character.id))
     as "0x7DD encodes"

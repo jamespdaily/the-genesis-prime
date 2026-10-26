@@ -185,8 +185,8 @@ pub fn a_map_that_refuses_the_character_sends_the_player_back_to_character_selec
   let #(state, effects) =
     world_entry.decide(AwaitingMap(chosen()), MapRefused, context())
   assert effects
-    == [Send(PlayRefused(PlayCharacterRefused(field_1: 2))), Failed]
-    as "opcode.0x162: playing the chosen character failed; the client returns to idle character select"
+    == [Send(PlayRefused(PlayCharacterRefused(field_1: 4))), Failed]
+    as "opcode.0x162: the value is PreGameLib.CodeEnumCharacterSelectResults 4, FailedCharacterInWorld, for a character that is on the map already; the client returns to idle character select"
   assert state == Waiting
 }
 
