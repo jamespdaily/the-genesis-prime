@@ -1,8 +1,9 @@
 //// The server's entry point started in an operating system process of its
 //// own, the way a release starts it, so a test can ask what that node is and
 //// what it opens. The child is an Erlang VM with the build's code paths and
-//// no `-name` or `-sname`, running `genesis_prime:main`, with the database
-//// settings of one test's own database in its environment.
+//// no `-name` or `-sname`, running `genesis_prime:main` after starting the
+//// project's OTP applications as Gleam's generated entry point does, with the
+//// database settings of one test's own database in its environment.
 ////
 //// The child tells the test what it is in one report, written after the top
 //// supervisor has finished starting every child (a call to the supervisor

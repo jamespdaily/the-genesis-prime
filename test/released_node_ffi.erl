@@ -300,9 +300,19 @@ query_through_pool() ->
             io_lib:format("pools ~0p", [Pools])
     end.
 
-%% Starts the entry point and returns the top supervisor, once its children
-%% have started.
+%% Starts the applications the way Gleam's generated entry point does
+%% (`genesis_prime@@main:run_module`: `application:ensure_all_started` of the
+%% project's application, before `main`), then the entry point, and returns the
+%% top supervisor once its children have started. The applications start in
+%% this process, so the one spawn the trace waits for is the entry point's.
 start_server() ->
+    case application:ensure_all_started(genesis_prime) of
+        {ok, _} ->
+            ok;
+        {error, StartReason} ->
+            io:format("stopped ~s~n", [reason_text(StartReason)]),
+            halt(1)
+    end,
     Main = spawn(fun() ->
         receive
             go -> genesis_prime:main()
