@@ -6,6 +6,7 @@
 //// child also starts an unlinked process and one whose child does not.
 
 import genesis_prime/server
+import genesis_prime/telemetry/snapshot
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/otp/actor
 import gleam/otp/static_supervisor
@@ -24,7 +25,8 @@ pub fn every_process_the_server_starts_is_in_the_top_supervisors_tree_test() -> 
       pool_size: 2,
     )
   let watch = spawn_watch.begin()
-  let assert Ok(started) = server.start(settings)
+  let assert Ok(started) =
+    server.start(settings, snapshot.settings(process.new_name("snapshot")))
     as "the top supervisor did not start"
   assert spawn_watch.unsupervised(watch, started.pid) == []
 }
