@@ -132,6 +132,8 @@ pub fn a_support_module_and_a_file_outside_game_master_are_never_a_breach_test()
 }
 
 pub fn every_command_module_in_the_tree_takes_the_account_permissions_test() -> Nil {
+  // Deadline: the body took 85 to 97 ms in three runs alone, so 5 s is more
+  // than 3 times that.
   use <- owned_test.run(5000)
   let files = repository.sources(["src"])
   assert list.any(files, fn(file) {
