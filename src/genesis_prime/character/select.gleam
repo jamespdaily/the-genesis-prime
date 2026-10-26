@@ -170,6 +170,10 @@ pub type Answer {
   NotFound
   /// The database could not do it.
   Unavailable
+  /// The command was sent to the database and nothing came back in the longest
+  /// time a command can take, so the server cannot tell what it did. Only the
+  /// store's worker gives it, never the store.
+  Unknown
 }
 
 /// What can happen to character select.
@@ -227,6 +231,9 @@ pub type Outage {
   /// The characters could not be loaded again after a write that was answered
   /// `Unavailable`, so the server cannot tell what that write did.
   ListNotReloaded
+  /// A write that was sent to the database got no answer in the longest time a
+  /// write can take, so the server cannot tell whether it was done.
+  WriteNotAnswered
 }
 
 /// A message or an answer that a correct client and server never produce.
@@ -560,7 +567,7 @@ fn loaded(
       Send(CharacterListed(character_list(characters:, context:))),
     ])
     Unavailable -> #(state, [Abandon(ListNotLoaded)])
-    Inserted(_) | Renamed(_) | Deleted(_) | NameInUse | NotFound ->
+    Inserted(_) | Renamed(_) | Deleted(_) | NameInUse | NotFound | Unknown ->
       unexpected(state, answer)
   }
 }
@@ -582,7 +589,7 @@ fn reloaded(
       Send(CharacterListed(character_list(characters:, context:))),
     ])
     Unavailable -> #(state, [Abandon(ListNotReloaded)])
-    Inserted(_) | Renamed(_) | Deleted(_) | NameInUse | NotFound ->
+    Inserted(_) | Renamed(_) | Deleted(_) | NameInUse | NotFound | Unknown ->
       unexpected(state, answer)
   }
 }
@@ -651,7 +658,8 @@ fn created(
     NameInUse -> create_refused(state, NameTaken)
     Unavailable ->
       reload(state:, owed: CreateResult(create_failure(StoreUnavailable)))
-    Loaded(_) | Renamed(_) | Deleted(_) | NotFound -> unexpected(state, answer)
+    Loaded(_) | Renamed(_) | Deleted(_) | NotFound | Unknown ->
+      unexpected(state, answer)
   }
 }
 
@@ -700,7 +708,7 @@ fn renamed(
           refusal: StoreUnavailable,
         )),
       )
-    Loaded(_) | Inserted(_) | Deleted(_) -> unexpected(state, answer)
+    Loaded(_) | Inserted(_) | Deleted(_) | Unknown -> unexpected(state, answer)
   }
 }
 
@@ -750,7 +758,7 @@ fn deleted(
     NotFound -> delete_refused(state, NotYourCharacter(id))
     Unavailable ->
       reload(state:, owed: DeleteResult(delete_failure(StoreUnavailable)))
-    Loaded(_) | Inserted(_) | Renamed(_) | NameInUse ->
+    Loaded(_) | Inserted(_) | Renamed(_) | NameInUse | Unknown ->
       unexpected(state, answer)
   }
 }
@@ -918,6 +926,8 @@ pub fn describe_outage(outage outage: Outage) -> String {
       "the database did not give the account's characters for the list"
     ListNotReloaded ->
       "the database did not give the account's characters again after a write it did not answer, so what the write did is not known"
+    WriteNotAnswered ->
+      "a write was sent to the database and no answer came in the longest time a write can take, so what it did is not known"
   }
 }
 
