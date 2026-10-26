@@ -34,13 +34,14 @@ pub type Config {
   )
 }
 
-/// A running listener: the port it was given, its supervisor, the frames its
-/// handler reports, and the settings of the shutdown coordinator it
+/// A running listener: the port it was given, its supervisor, its acceptor, the
+/// frames its handler reports, and the settings of the shutdown coordinator it
 /// registered with, started beside it.
 pub type Running {
   Running(
     port: Int,
     supervisor: Pid,
+    acceptor: Pid,
     frames: Subject(Received),
     shutdown: shutdown.Settings,
   )
@@ -84,7 +85,7 @@ pub fn start(config: Config) -> Running {
       ..defaults,
       connection_cap: config.connection_cap,
       owner: config.owner(defaults.owner),
-      listening: fn(port) { process.send(ports, port) },
+      listening: fn(port) { process.send(ports, #(port, process.self())) },
     )
   let assert Ok(started) =
     server.supervisor()
@@ -92,9 +93,15 @@ pub fn start(config: Config) -> Running {
     |> static_supervisor.add(listener.supervised(settings))
     |> static_supervisor.start
     as "the listener did not start"
-  let assert Ok(port) = process.receive(ports, event_wait_ms)
+  let assert Ok(#(port, acceptor)) = process.receive(ports, event_wait_ms)
     as "the listener did not report its port"
-  Running(port:, supervisor: started.pid, frames:, shutdown: coordinator)
+  Running(
+    port:,
+    supervisor: started.pid,
+    acceptor:,
+    frames:,
+    shutdown: coordinator,
+  )
 }
 
 /// Connects a client to the listener.
