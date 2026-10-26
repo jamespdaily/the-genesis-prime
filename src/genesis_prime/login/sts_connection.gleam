@@ -249,14 +249,11 @@ fn start_cipher(
 ) -> Step {
   let bytes_waiting =
     !list.is_empty(pending) || bit_array.byte_size(connection.received) > 0
-  use <- bool.guard(
-    when: bytes_waiting,
-    return: Finished(end(connection:, reason: BytesAfterTheCipher, sent:)),
-  )
-  case start_streams(key) {
-    Error(rc4.Unsupported) | Error(rc4.EmptyKey) ->
+  case bytes_waiting, start_streams(key) {
+    True, _ -> Finished(end(connection:, reason: BytesAfterTheCipher, sent:))
+    False, Error(rc4.Unsupported) | False, Error(rc4.EmptyKey) ->
       Finished(end(connection:, reason: NoCipher, sent:))
-    Ok(#(receiving, sending)) ->
+    False, Ok(#(receiving, sending)) ->
       run_effects(
         connection: Connection(
           ..connection,
