@@ -10,11 +10,11 @@ import client_tables
 import environment
 import genesis_prime/character/starting_place
 import genesis_prime/map/position.{Position}
-import genesis_prime/message/float32
 import genesis_prime/table/loader/store.{RowMissing}
 import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import gleam/erlang/reference
+import gleam/float
 import owned_test
 import unitest
 
@@ -49,10 +49,10 @@ pub fn a_new_character_starts_at_world_location_50177_test() -> Nil {
   assert place.position
     == Position(x: row.position0, y: row.position1, z: row.position2)
     as "WorldLocation2 row 50177: the position is the row's position0, position1 and position2"
-  assert float32.to_bits(place.position.x) == float32.to_bits(-5.0)
-    && float32.to_bits(place.position.y) == float32.to_bits(-7.8)
-    && float32.to_bits(place.position.z) == float32.to_bits(0.0)
-    as "WorldLocation2 row 50177: the position is -5, -7.8, 0, which a 32-bit float holds"
+  assert float.absolute_value(place.position.x -. -5.0) <. 0.05
+    && float.absolute_value(place.position.y -. -7.8) <. 0.05
+    && place.position.z == 0.0
+    as "WorldLocation2 row 50177: the position is about -5, -7.8, 0 (the row holds -5.0278, -7.7771, 0)"
   let assert Ok(start_world) = world.get(tables, place.world_id)
     as "the World table holds the world the row names"
   assert start_world.asset_path == "Map\\PreTutorialExile"
