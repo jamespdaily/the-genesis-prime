@@ -19,25 +19,11 @@ pub fn breaches(
       Breach(
         path: file.path,
         line: 1,
-        rule: "a schema file that is not a schema: " <> describe(error),
+        rule: "a schema file that is not a schema: "
+          <> message_schema.describe(error),
       ),
     ]
     Ok(schema) -> owners_breaches(file:, schema:, fact_keys:)
-  }
-}
-
-fn describe(error: message_schema.SchemaError) -> String {
-  case error {
-    message_schema.NotToml -> "it is not TOML"
-    message_schema.MissingKey(table:, key:) -> table <> " has no " <> key
-    message_schema.WrongTypeOfKey(table:, key:) ->
-      table <> " has a " <> key <> " of the wrong type"
-    message_schema.UnknownKind(field:, kind:) ->
-      field <> " has the unknown kind " <> kind
-    message_schema.UnknownDirection(message:, direction:) ->
-      message <> " has the unknown direction " <> direction
-    message_schema.UnknownRecord(field:, record:) ->
-      field <> " names the unknown record " <> record
   }
 }
 

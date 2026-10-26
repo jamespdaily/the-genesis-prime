@@ -4,7 +4,11 @@
 //// module reads it for the generator and for the rule that every field names
 //// its evidence.
 
+import gleam/dict.{type Dict}
+import gleam/list
 import gleam/option.{type Option}
+import gleam/result
+import tom.{type Toml}
 
 /// Every message and every record the schema holds.
 pub type Schema {
@@ -76,15 +80,252 @@ pub type Kind {
 
 /// Why the schema file is not a schema.
 pub type SchemaError {
+  /// The text is not TOML.
   NotToml
+  /// A table lacks a key it needs.
   MissingKey(table: String, key: String)
+  /// A key holds a value of another type, or outside the range the key allows.
   WrongTypeOfKey(table: String, key: String)
+  /// A field's kind is none the generator writes.
   UnknownKind(field: String, kind: String)
+  /// A message's direction is neither `client_to_server` nor
+  /// `server_to_client`.
   UnknownDirection(message: String, direction: String)
+  /// An array field names a record the schema does not hold.
   UnknownRecord(field: String, record: String)
 }
 
 /// Reads the text of the schema file.
 pub fn parse(text: String) -> Result(Schema, SchemaError) {
-  todo
+  use document <- result.try(tom.parse(text) |> result.replace_error(NotToml))
+  use record_tables <- result.try(tables(
+    table: document,
+    owner: "schema",
+    key: "record",
+  ))
+  use message_tables <- result.try(tables(
+    table: document,
+    owner: "schema",
+    key: "message",
+  ))
+  use record_names <- result.try(
+    list.try_map(record_tables, fn(table) {
+      string_of(table:, owner: "record", key: "name")
+    }),
+  )
+  use records <- result.try(
+    list.try_map(record_tables, parse_record(_, record_names)),
+  )
+  use messages <- result.try(
+    list.try_map(message_tables, parse_message(_, record_names)),
+  )
+  Ok(Schema(messages:, records:))
+}
+
+fn parse_message(
+  table: Dict(String, Toml),
+  record_names: List(String),
+) -> Result(Message, SchemaError) {
+  use name <- result.try(string_of(table:, owner: "message", key: "name"))
+  use id <- result.try(int_of(table:, owner: name, key: "id"))
+  use direction_name <- result.try(string_of(
+    table:,
+    owner: name,
+    key: "direction",
+  ))
+  use direction <- result.try(case direction_name {
+    "client_to_server" -> Ok(ClientToServer)
+    "server_to_client" -> Ok(ServerToClient)
+    other -> Error(UnknownDirection(message: name, direction: other))
+  })
+  use evidence <- result.try(string_of(table:, owner: name, key: "evidence"))
+  use summary <- result.try(string_of(table:, owner: name, key: "summary"))
+  use fields <- result.try(parse_fields(
+    owner: table,
+    owner_name: name,
+    record_names:,
+  ))
+  Ok(Message(id:, name:, direction:, evidence:, summary:, fields:))
+}
+
+fn parse_record(
+  table: Dict(String, Toml),
+  record_names: List(String),
+) -> Result(Record, SchemaError) {
+  use name <- result.try(string_of(table:, owner: "record", key: "name"))
+  use evidence <- result.try(string_of(table:, owner: name, key: "evidence"))
+  use summary <- result.try(string_of(table:, owner: name, key: "summary"))
+  use fields <- result.try(parse_fields(
+    owner: table,
+    owner_name: name,
+    record_names:,
+  ))
+  Ok(Record(name:, evidence:, summary:, fields:))
+}
+
+fn parse_fields(
+  owner owner: Dict(String, Toml),
+  owner_name owner_name: String,
+  record_names record_names: List(String),
+) -> Result(List(Field), SchemaError) {
+  use field_tables <- result.try(tables(
+    table: owner,
+    owner: owner_name,
+    key: "fields",
+  ))
+  list.try_map(field_tables, parse_field(table: _, owner_name:, record_names:))
+}
+
+fn parse_field(
+  table table: Dict(String, Toml),
+  owner_name owner_name: String,
+  record_names record_names: List(String),
+) -> Result(Field, SchemaError) {
+  use name <- result.try(string_of(table:, owner: owner_name, key: "name"))
+  use kind_name <- result.try(string_of(table:, owner: name, key: "kind"))
+  use kind <- result.try(parse_kind(
+    table:,
+    field: name,
+    kind: kind_name,
+    record_names:,
+  ))
+  Ok(Field(
+    name:,
+    kind:,
+    evidence: optional_string(table, "evidence"),
+    named_by: optional_string(table, "named_by"),
+  ))
+}
+
+fn parse_kind(
+  table table: Dict(String, Toml),
+  field field: String,
+  kind kind: String,
+  record_names record_names: List(String),
+) -> Result(Kind, SchemaError) {
+  case kind {
+    "unsigned" -> {
+      use bits <- result.try(int_in(
+        table:,
+        owner: field,
+        key: "bits",
+        least: 1,
+        most: 64,
+      ))
+      Ok(Unsigned(bits:))
+    }
+    "float32" -> Ok(Float32)
+    "wide_text" -> Ok(WideText)
+    "counted_wide_text" -> {
+      use max_units <- result.try(int_in(
+        table:,
+        owner: field,
+        key: "max_units",
+        least: 1,
+        most: 65_534,
+      ))
+      Ok(CountedWideText(max_units:))
+    }
+    "guid" -> Ok(Guid)
+    "endpoint" -> Ok(Endpoint)
+    "raw_bytes" -> {
+      use count <- result.try(int_in(
+        table:,
+        owner: field,
+        key: "count",
+        least: 1,
+        most: 65_535,
+      ))
+      Ok(RawBytes(count:))
+    }
+    "whole_frame" -> Ok(WholeFrame)
+    "array" -> {
+      use count_bits <- result.try(int_in(
+        table:,
+        owner: field,
+        key: "count_bits",
+        least: 1,
+        most: 64,
+      ))
+      use element <- result.try(string_of(table:, owner: field, key: "element"))
+      case element, list.contains(record_names, element) {
+        "wide_text", _ -> Ok(ArrayOfWideText(count_bits:))
+        _, True -> Ok(ArrayOfRecord(count_bits:, record: element))
+        _, False -> Error(UnknownRecord(field:, record: element))
+      }
+    }
+    other -> Error(UnknownKind(field:, kind: other))
+  }
+}
+
+fn tables(
+  table table: Dict(String, Toml),
+  owner owner: String,
+  key key: String,
+) -> Result(List(Dict(String, Toml)), SchemaError) {
+  case tom.get_array(table, [key]) {
+    Ok(items) ->
+      list.try_map(items, fn(item) {
+        tom.as_table(item) |> result.replace_error(WrongTypeOfKey(owner, key))
+      })
+    Error(tom.NotFound(_)) -> Error(MissingKey(owner, key))
+    Error(tom.WrongType(..)) -> Error(WrongTypeOfKey(owner, key))
+  }
+}
+
+fn string_of(
+  table table: Dict(String, Toml),
+  owner owner: String,
+  key key: String,
+) -> Result(String, SchemaError) {
+  case tom.get_string(table, [key]) {
+    Ok(value) -> Ok(value)
+    Error(tom.NotFound(_)) -> Error(MissingKey(owner, key))
+    Error(tom.WrongType(..)) -> Error(WrongTypeOfKey(owner, key))
+  }
+}
+
+fn int_of(
+  table table: Dict(String, Toml),
+  owner owner: String,
+  key key: String,
+) -> Result(Int, SchemaError) {
+  case tom.get_int(table, [key]) {
+    Ok(value) -> Ok(value)
+    Error(tom.NotFound(_)) -> Error(MissingKey(owner, key))
+    Error(tom.WrongType(..)) -> Error(WrongTypeOfKey(owner, key))
+  }
+}
+
+fn int_in(
+  table table: Dict(String, Toml),
+  owner owner: String,
+  key key: String,
+  least least: Int,
+  most most: Int,
+) -> Result(Int, SchemaError) {
+  use value <- result.try(int_of(table:, owner:, key:))
+  case value >= least && value <= most {
+    True -> Ok(value)
+    False -> Error(WrongTypeOfKey(owner, key))
+  }
+}
+
+fn optional_string(table: Dict(String, Toml), key: String) -> Option(String) {
+  tom.get_string(table, [key]) |> option.from_result
+}
+
+/// What is wrong with the schema file, in a sentence.
+pub fn describe(error: SchemaError) -> String {
+  case error {
+    NotToml -> "the file is not TOML"
+    MissingKey(table:, key:) -> table <> " has no " <> key
+    WrongTypeOfKey(table:, key:) ->
+      table <> " has a " <> key <> " of the wrong type or outside its range"
+    UnknownKind(field:, kind:) -> field <> " has the unknown kind " <> kind
+    UnknownDirection(message:, direction:) ->
+      message <> " has the unknown direction " <> direction
+    UnknownRecord(field:, record:) ->
+      field <> " names the record " <> record <> ", which the schema lacks"
+  }
 }
