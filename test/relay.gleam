@@ -3,7 +3,8 @@
 //// port has nothing listening, so a connection to it is refused as it is
 //// when the server is down. `forward` starts it listening on that same port and
 //// passing every connection through to the target, as it is when the server
-//// is back. A relay belongs to the process that makes it, and stops with it.
+//// is back. What a relay starts is linked to the process that calls `forward`,
+//// and stops with it.
 
 /// The Postgres server a relay passes connections to. `host` is a TCP host
 /// name or address; an address with a colon is IPv6.
@@ -30,11 +31,13 @@ pub type Failure {
 /// A relay for `target` that refuses connections: a free port on the loopback
 /// is chosen and nothing listens on it.
 pub fn refusing(to target: Target) -> Result(Relay, Failure) {
-  todo as "choose a free port and leave it unlistened"
+  refusing_ffi(target.host, target.port)
 }
 
 /// Starts `relay` listening on its port and passing each connection through to
 /// its target, until the process that called this ends.
-pub fn forward(relay: Relay) -> Result(Nil, Failure) {
-  todo as "listen on the relay's port and pass connections through"
-}
+@external(erlang, "relay_ffi", "forward")
+pub fn forward(relay: Relay) -> Result(Nil, Failure)
+
+@external(erlang, "relay_ffi", "refusing")
+fn refusing_ffi(host: String, port: Int) -> Result(Relay, Failure)
