@@ -10,6 +10,7 @@
 
 import genesis_prime/topology/update.{type Delivery}
 import gleam/erlang/process.{type Subject}
+import gleam/list
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 
@@ -32,9 +33,7 @@ pub fn supervised(
 }
 
 /// Starts a sender registered under `name`.
-pub fn start(
-  name: process.Name(Message),
-) -> actor.StartResult(Subject(Message)) {
+fn start(name: process.Name(Message)) -> actor.StartResult(Subject(Message)) {
   actor.new(Nil)
   |> actor.named(name)
   |> actor.on_message(handle)
@@ -54,9 +53,8 @@ pub fn send(
 fn handle(state: Nil, message: Message) -> actor.Next(Nil, Message) {
   case message {
     Send(delivery:, recipients:) -> {
-      let _ = delivery
-      let _ = recipients
-      todo as "body in the build commit"
+      list.each(recipients, fn(recipient) { process.send(recipient, delivery) })
+      actor.continue(state)
     }
     Probe(reply_with:) -> {
       process.send(reply_with, Nil)

@@ -50,14 +50,18 @@ pub fn write(
       let old_cell = cell_of(row: old, cell_size:)
       case old_cell == cell_of(row:, cell_size:) {
         True -> Nil
-        False -> delete(table, cell_key(old_cell, row.kind, row.unit_id))
+        False ->
+          delete(
+            table,
+            cell_key(cell: old_cell, kind: row.kind, unit_id: row.unit_id),
+          )
       }
     }
     Error(Nil) -> Nil
   }
   let cell = cell_of(row:, cell_size:)
   insert(table, PositionKey(row.unit_id), row)
-  insert(table, cell_key(cell, row.kind, row.unit_id), row)
+  insert(table, cell_key(cell:, kind: row.kind, unit_id: row.unit_id), row)
 }
 
 /// Removes a unit's rows when `owner` is still the process that owns them. A
@@ -72,7 +76,7 @@ pub fn delete_unit(
     Ok(row) -> {
       delete_owned(
         table,
-        cell_key(cell_of(row:, cell_size:), row.kind, unit_id),
+        cell_key(cell: cell_of(row:, cell_size:), kind: row.kind, unit_id:),
         owner,
       )
       delete_owned(table, PositionKey(unit_id), owner)
@@ -119,7 +123,7 @@ type Key {
   CellKey(kind: Kind, x: Int, y: Int, unit_id: Int)
 }
 
-fn cell_key(cell: Cell, kind: Kind, unit_id: Int) -> Key {
+fn cell_key(cell cell: Cell, kind kind: Kind, unit_id unit_id: Int) -> Key {
   CellKey(kind:, x: cell.x, y: cell.y, unit_id:)
 }
 

@@ -166,7 +166,7 @@ fn start_named(
   sending sending: Sending,
 ) -> Result(#(actor.Started(Owner), process.Name(Message)), actor.StartError) {
   let name = process.new_name("topology_map")
-  let sender_names = new_sender_names(sending)
+  let sender_names = new_sender_names(sending:)
   let handled = measurement.new_counter()
   let map_child =
     supervision.worker(fn() {
@@ -203,7 +203,9 @@ fn new_sender_names(
 ) -> List(process.Name(sender.Message)) {
   case sending {
     SendsItself -> []
-    SenderPool -> todo as "body in the build commit"
+    SenderPool ->
+      list.repeat(Nil, measurement.schedulers_online())
+      |> list.map(fn(_) { process.new_name("topology_sender") })
   }
 }
 
@@ -212,7 +214,13 @@ fn new_sender_names(
 fn route_to(sender_names: List(process.Name(sender.Message))) -> Route {
   case sender_names {
     [] -> Direct
-    [_, ..] -> todo as "body in the build commit"
+    [_, ..] ->
+      Pooled(
+        senders: list.index_map(sender_names, fn(sender_name, index) {
+          #(index, process.named_subject(sender_name))
+        })
+        |> dict.from_list,
+      )
   }
 }
 
@@ -229,8 +237,16 @@ fn start_map(
       State(
         workload:,
         units:,
-        players: index(units, unit.Player, workload.visibility_range),
-        creatures: index(units, unit.Creature, workload.visibility_range),
+        players: index(
+          units:,
+          kind: unit.Player,
+          cell_size: workload.visibility_range,
+        ),
+        creatures: index(
+          units:,
+          kind: unit.Creature,
+          cell_size: workload.visibility_range,
+        ),
         connections: dict.new(),
         slices: divide_into_slices(units),
         next_slice: 0,
@@ -253,7 +269,11 @@ fn start_map(
 }
 
 /// The grid over the units of one kind.
-fn index(units: Dict(Int, Unit), kind: unit.Kind, cell_size: Float) -> Grid {
+fn index(
+  units units: Dict(Int, Unit),
+  kind kind: unit.Kind,
+  cell_size cell_size: Float,
+) -> Grid {
   dict.fold(units, grid.new(cell_size), fn(index, unit_id, unit) {
     case unit.kind == kind {
       True -> grid.insert(index, unit_id, unit.position)
@@ -376,10 +396,16 @@ fn deliver(
   case state.route {
     Direct ->
       list.each(recipients, fn(recipient) { process.send(recipient, delivery) })
-    Pooled(..) -> {
-      let _ = unit_id
-      todo as "body in the build commit"
-    }
+    Pooled(senders:) ->
+      case recipients {
+        [] -> Nil
+        [_, ..] -> {
+          let assert Ok(chosen) =
+            dict.get(senders, unit_id % dict.size(senders))
+            as "a sender is stored under each number below the pool size"
+          sender.send(chosen, delivery, recipients)
+        }
+      }
   }
 }
 
