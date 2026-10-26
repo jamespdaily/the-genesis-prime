@@ -284,13 +284,14 @@ collect(Opened, Output) ->
 %% supervisor is answered once its children have started, so the answer is the
 %% signal that the tree is up. When the entry point ends first, its reason is
 %% written and the VM ends with status 1.
--spec report(non_neg_integer(), server | idle | lingering) -> no_return().
+-spec report(non_neg_integer(), server | idle | lingering | connecting) -> no_return().
 report(Planted, Program) ->
     Tree =
         case Program of
             server -> start_server();
             idle -> none;
-            lingering -> none
+            lingering -> none;
+            connecting -> none
         end,
     _Sockets = [
         begin
@@ -299,6 +300,7 @@ report(Planted, Program) ->
         end
      || _ <- lists:seq(1, Planted)
     ],
+    _Connecting = [plant_connect() || Program =:= connecting],
     io:format("node ~s~n", [node()]),
     io:format("net_kernel ~s~n", [service(net_kernel)]),
     io:format("epmd_client ~s~n", [service(erl_epmd)]),
@@ -307,6 +309,55 @@ report(Planted, Program) ->
     ]),
     io:format("report-end~n"),
     answer(Tree, Program).
+
+%% An address nothing answers: 10.255.255.1 is in a private range no network
+%% routes to a host, so a connect to it is sent and never answered, until the
+%% connect's own timeout, set here far past any test.
+-define(DROPPED_ADDRESS, {10, 255, 255, 1}).
+-define(DROPPED_PORT, 9).
+-define(CONNECT_TIMEOUT_MS, 600000).
+
+%% How long a planted connect may take to be seen in progress, in
+%% milliseconds, and how often it is looked for meanwhile. A connect is in
+%% progress from the moment its process opens the socket until its answer or
+%% timeout, and no message announces the start, so it is looked for; the
+%% deadline is for a connect that ended at once (a network that refuses the
+%% address), never a wait.
+-define(PLANT_DEADLINE_MS, 5000).
+-define(PLANT_RETRY_MS, 5).
+
+%% Starts a process that connects to an address that drops packets, and
+%% returns once its socket is seen connecting: open, with no peer. When the
+%% connect ends first, the child ends with an error that says so.
+plant_connect() ->
+    Connector = spawn(fun() ->
+        _ = gen_tcp:connect(?DROPPED_ADDRESS, ?DROPPED_PORT, [], ?CONNECT_TIMEOUT_MS),
+        receive
+        after infinity -> ok
+        end
+    end),
+    Deadline = erlang:monotonic_time(millisecond) + ?PLANT_DEADLINE_MS,
+    await_connecting(Connector, Deadline).
+
+await_connecting(Connector, Deadline) ->
+    Connecting = [
+        Socket
+     || Socket <- erlang:ports(),
+        erlang:port_info(Socket, name) =:= {name, "tcp_inet"},
+        erlang:port_info(Socket, connected) =:= {connected, Connector},
+        {ok, States} <- [prim_inet:getstatus(Socket)],
+        lists:member(connecting, States)
+    ],
+    case {Connecting, erlang:monotonic_time(millisecond) < Deadline} of
+        {[_], _} ->
+            ok;
+        {[], true} ->
+            timer:sleep(?PLANT_RETRY_MS),
+            await_connecting(Connector, Deadline);
+        {[], false} ->
+            io:format("stopped the planted connect was not in progress~n"),
+            halt(1)
+    end.
 
 %% A child ends when its input closes or when it is told to stop, which is how
 %% a test's cleanup ends it and waits for its exit. A lingering child ends only
@@ -437,14 +488,18 @@ service(Name) ->
         _ -> running
     end.
 
-%% The ports of the node's listening TCP sockets: a socket with an address of
-%% its own and no peer, which is what a listening socket is and a connected one
-%% is not.
+%% The ports of the node's listening TCP sockets: a socket whose states
+%% (`inet:info/1`, `states`) include `listen`. A socket with an address of its
+%% own and no peer is not enough: one that is still connecting has both, as
+%% the server's database pool's sockets do while it opens its connections. A
+%% socket that has closed meanwhile reports the state `closed` and is not
+%% counted.
 listening_ports() ->
     lists:usort([
         Port
      || Socket <- erlang:ports(),
         erlang:port_info(Socket, name) =:= {name, "tcp_inet"},
-        {error, enotconn} =:= inet:peername(Socket),
+        #{states := States} <- [inet:info(Socket)],
+        lists:member(listen, States),
         {ok, {_, Port}} <- [inet:sockname(Socket)]
     ]).

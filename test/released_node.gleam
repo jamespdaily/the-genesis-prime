@@ -38,11 +38,17 @@ pub type Naming {
 /// what a node started in a given way is without the server's own checks
 /// of that start. `Lingering` is `Idle` that does not end when its input
 /// closes, only when it is told to stop, so a test can hold a child alive and
-/// registered with its epmd while the cleanup runs.
+/// registered with its epmd while the cleanup runs. `Connecting` is `Idle`
+/// with one connect in progress to an address that drops packets, held by a
+/// process of its own: a socket that is open, has an address of its own and
+/// has no peer yet, as the server's pool has while it opens its connections.
+/// The child reports only once the connect is in progress, and ends with an
+/// error when it is not.
 pub type Program {
   Server
   Idle
   Lingering
+  Connecting
 }
 
 /// What to start: the test's own database for the server's pool, how the
@@ -223,6 +229,7 @@ fn arguments(start: Start) -> List(String) {
     Server -> "server"
     Idle -> "idle"
     Lingering -> "lingering"
+    Connecting -> "connecting"
   }
   let expression =
     "released_node_ffi:report("
