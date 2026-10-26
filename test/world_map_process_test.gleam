@@ -430,3 +430,33 @@ pub fn a_map_with_no_process_under_its_name_gives_no_answer_to_a_leave_test() ->
     == Error(Nil)
     as "designing-processes: a request to a map that is away is an answer, not a crash of the asker"
 }
+
+pub fn a_sender_with_no_process_under_its_name_is_not_a_crash_of_the_map_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(settings, supervisor) =
+    start_map(world_id: 7, limits: map_support.no_limits())
+  let assert Ok(map_before) = process.named(settings.map)
+    as "the map is registered under its name"
+  // Every sender is alive but has no name, as a sender is between two lives:
+  // the map reaches it by name.
+  let assert [map_process, ..senders] =
+    list.reverse(supervisor_children.in_start_order(supervisor))
+    as "the map and its senders are running"
+  assert map_process == map_before
+  list.each(senders, map_support.unregister_name)
+  let first_connection = process.new_subject()
+  let first =
+    join(settings:, character_id: 11, x: 0.0, connection: first_connection)
+  let second =
+    join(
+      settings:,
+      character_id: 12,
+      x: 60.0,
+      connection: process.new_subject(),
+    )
+  assert world_map_process.units(map_of(settings), event_wait_ms)
+    == Ok([first, second])
+    as "designing-processes: a send to a name that has no process is no crash of the process that sends: the map that told the players in range still holds both units"
+  assert process.named(settings.map) == Ok(map_before)
+    as "the map was not restarted"
+}

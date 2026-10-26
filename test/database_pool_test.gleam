@@ -345,7 +345,7 @@ pub fn the_wait_for_a_connection_the_statement_limit_and_the_margin_end_before_t
     + pool.statement_timeout_ms
     + pool.margin_ms
     < game_service.answer_deadline_ms
-    as "a write that was reported failed has committed nothing: a worker is killed at its deadline, so the longest a write can wait for a connection and then run must end, with a margin, before it"
+    as "a write that was reported failed has committed nothing: a worker that has no connection is killed at its deadline, and one that has a connection is waited for up to the statement's limit and the margin, so the longest wait for a connection and then the wait for the answer must end before the asker's deadline"
   assert pool.checkout_wait_bound_ms == 3 * pool.queue_interval_ms
     as "pgo_pool.erl: a request that waits in a pool whose connections are all held is refused at the third poll after it arrived, so at most 3 queue intervals"
 }
