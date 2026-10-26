@@ -22,7 +22,7 @@ fn start_registry() -> Name(sessions.Message) {
   let name = process.new_name("sessions")
   let assert Ok(_) =
     static_supervisor.new(static_supervisor.OneForOne)
-    |> static_supervisor.add(sessions.supervised(name))
+    |> static_supervisor.add(sessions.supervised(name:, eviction_ms: 1000))
     |> static_supervisor.start
     as "the registry did not start"
   name

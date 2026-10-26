@@ -5,7 +5,7 @@
 //// entitlement and does not carry the client's gmode, so every account has the
 //// Hybrid system's value (RewardPropertyPremiumModifier.rewardPropertyId).
 
-import genesis_prime/table/loader/store.{type Tables}
+import genesis_prime/table/loader/store.{type Requirement, type Tables}
 import genesis_prime/table/reward_property_premium_modifier
 import gleam/list
 
@@ -19,6 +19,11 @@ const base_tier = 0
 /// The id of the CharacterSlots reward property
 /// (AccountItemLib.CodeEnumRewardProperty).
 const character_slots_property = 29
+
+/// The rows the server requires of the tables for `hybrid`.
+pub fn requirements() -> List(Requirement) {
+  []
+}
 
 /// The characters an account may hold: the sum of the integer values of the
 /// Hybrid system's CharacterSlots rows at the base tier that name no

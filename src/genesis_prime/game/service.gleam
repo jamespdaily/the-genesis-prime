@@ -23,8 +23,10 @@ import genesis_prime/map/maps
 import genesis_prime/shutdown
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/loader/store.{type Tables}
+import genesis_prime/table/world
 import genesis_prime/telemetry/snapshot
 import gleam/erlang/process.{type Name}
+import gleam/list
 import gleam/otp/static_supervisor.{type Supervisor}
 import gleam/otp/supervision
 
@@ -38,6 +40,22 @@ const restart_period_seconds = 5
 /// milliseconds. 5 seconds; no measurement chose it.
 pub const answer_deadline_ms = 5000
 
+/// How long a connection that is told its account logged in again has to take
+/// its unit off the map and say so, in milliseconds. 2 seconds; no measurement
+/// chose it.
+pub const leave_deadline_ms = 2000
+
+/// How long the sessions' registry waits for a connection that was told to
+/// end before it kills the connection, in milliseconds. A second more than
+/// the time the connection has to leave the map, so a connection that leaves
+/// politely is never killed in the act. 3 seconds; no measurement chose it.
+pub const eviction_deadline_ms = 3000
+
+/// How long a new connection waits for its account's slot, in milliseconds:
+/// the eviction deadline and a second more, so the registry's kill comes
+/// before the new connection gives up. 4 seconds; no measurement chose it.
+pub const claim_deadline_ms = 4000
+
 /// What the subtree starts with. `port` is the game listener's port, where 0
 /// takes a free port, and `opened` is called with the port that is open.
 /// `realm_id` is the realm the connections are on, `start` the place a
@@ -46,8 +64,11 @@ pub const answer_deadline_ms = 5000
 /// time as a Windows FILETIME, `customisation` and `character_slots` what the
 /// loaded tables say a create request may carry and how many characters an
 /// account may hold, made once at start, and `answer_deadline_ms` how long a connection
-/// waits for the store or a map. `maps` and `workers` are the names of the
-/// processes the connections ask.
+/// waits for the store or a map. `leave_deadline_ms`, `eviction_deadline_ms` and
+/// `claim_deadline_ms` are the three deadlines of a second login (the constants
+/// of the same names say why each is what it is). `worlds` gives the worlds
+/// that can have a map, whose names are made once at start. `maps`, `sessions`
+/// and `workers` are the names of the processes the connections ask.
 pub type Settings {
   Settings(
     port: Int,
@@ -58,6 +79,10 @@ pub type Settings {
     character_slots: fn(Tables) -> Int,
     clock: fn() -> Int,
     answer_deadline_ms: Int,
+    leave_deadline_ms: Int,
+    eviction_deadline_ms: Int,
+    claim_deadline_ms: Int,
+    worlds: fn(Tables) -> List(Int),
     maps: maps.Settings,
     sessions: Name(sessions.Message),
     workers: store_worker.Workers,
@@ -66,8 +91,9 @@ pub type Settings {
 
 /// Settings for a game listener on `port` whose maps register with the
 /// snapshot process named `snapshot`: names of their own made here, the
-/// measured heap ceilings, the system clock and `answer_deadline_ms` for an
-/// answer; the port reports nothing when it opens.
+/// measured heap ceilings, the system clock, `answer_deadline_ms` for an
+/// answer and the deadlines of a second login; every world of the World table
+/// can have a map. The port reports nothing when it opens.
 pub fn settings(
   port port: Int,
   realm_id realm_id: Int,
@@ -83,6 +109,10 @@ pub fn settings(
     character_slots: character_slots.hybrid,
     clock: clock.system_filetime,
     answer_deadline_ms:,
+    leave_deadline_ms:,
+    eviction_deadline_ms:,
+    claim_deadline_ms:,
+    worlds: world_ids,
     maps: maps.Settings(
       registry: process.new_name("maps"),
       factory: process.new_name("maps_factory"),
@@ -92,6 +122,11 @@ pub fn settings(
     sessions: process.new_name("game_sessions"),
     workers: store_worker.Workers(factory: process.new_name("store_workers")),
   )
+}
+
+/// Every world the World table holds.
+fn world_ids(tables: Tables) -> List(Int) {
+  list.map(world.all(tables), fn(row) { row.id })
 }
 
 /// The game's subtree as a child of the top supervisor. `pool` is the pool the
@@ -119,14 +154,22 @@ pub fn supervised(
       realm_id: settings.realm_id,
       clock: settings.clock,
       answer_deadline_ms: settings.answer_deadline_ms,
+      leave_deadline_ms: settings.leave_deadline_ms,
+      claim_deadline_ms: settings.claim_deadline_ms,
     ))
   static_supervisor.new(static_supervisor.OneForOne)
   |> static_supervisor.restart_tolerance(
     intensity: restart_intensity,
     period: restart_period_seconds,
   )
-  |> static_supervisor.add(sessions.supervised(settings.sessions))
-  |> static_supervisor.add(maps.supervised(settings.maps))
+  |> static_supervisor.add(sessions.supervised(
+    name: settings.sessions,
+    eviction_ms: settings.eviction_deadline_ms,
+  ))
+  |> static_supervisor.add(maps.supervised(
+    settings: settings.maps,
+    worlds: settings.worlds(tables),
+  ))
   |> static_supervisor.add(store_worker.supervised(settings.workers))
   |> static_supervisor.add(listener.supervised(
     listener.Settings(

@@ -48,6 +48,7 @@ fn services() -> game_connection.Services {
       process.send(abandoned, Loaded([]))
       Loaded([])
     },
+    watch_sessions: fn() { Ok(process.monitor(process.self())) },
     take_over: fn(_account_id, _notice) { Ok(Nil) },
     leave_map: fn(_map, _connection) { Nil },
     character_in_world: fn(_character_ids) { None },

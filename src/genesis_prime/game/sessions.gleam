@@ -76,6 +76,7 @@ type State {
 /// The registry as a child of the game's subtree. A restart rebuilds it empty.
 pub fn supervised(
   name name: Name(Message),
+  eviction_ms _eviction_ms: Int,
 ) -> ChildSpecification(Subject(Message)) {
   supervision.worker(fn() { start(name) })
   |> supervision.timeout(ms: shutdown_milliseconds)

@@ -48,6 +48,10 @@ pub type Services {
     /// Carries out a command of character select against the database and
     /// gives its answer.
     run_store: fn(select.Command) -> select.Answer,
+    /// Starts watching the sessions' registry, which forgets every holder when
+    /// it starts again; the monitor's end is the end of the connection. An
+    /// error when no registry is running.
+    watch_sessions: fn() -> Result(Monitor, Nil),
     /// Takes the account's slot for this connection, whose notices arrive on
     /// the subject, and ends the connection that held it.
     take_over: fn(Int, Subject(sessions.Notice)) ->
@@ -83,6 +87,8 @@ pub type Settings {
     realm_id: Int,
     clock: fn() -> Int,
     answer_deadline_ms: Int,
+    leave_deadline_ms: Int,
+    claim_deadline_ms: Int,
   )
 }
 
@@ -99,6 +105,9 @@ pub fn services(settings settings: Settings) -> Services {
         command:,
         within_ms: settings.answer_deadline_ms,
       )
+    },
+    watch_sessions: fn() {
+      process.named(settings.sessions) |> result.map(process.monitor)
     },
     take_over: fn(account_id, notice) {
       sessions.take_over(

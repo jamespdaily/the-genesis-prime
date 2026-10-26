@@ -300,6 +300,7 @@ pub fn main() -> Nil {
         ),
         customisation: fn(_tables) { customisation.empty() },
         character_slots: fn(_tables) { 0 },
+        worlds: fn(_tables) { [] },
       ),
     ))
     as "the planted program's tree did not start"

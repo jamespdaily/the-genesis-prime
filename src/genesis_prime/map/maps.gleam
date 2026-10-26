@@ -126,6 +126,7 @@ type State {
 /// the factory supervisor of the maps, rest for one, 3 restarts in 5 seconds.
 pub fn supervised(
   settings settings: Settings,
+  worlds _worlds: List(Int),
 ) -> ChildSpecification(Supervisor) {
   let registry =
     supervision.worker(fn() { start_registry(settings) })

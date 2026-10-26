@@ -45,6 +45,11 @@ pub type LabelProblem {
   LabelOfAnotherFaction(label_id: Int)
 }
 
+/// The rows the server requires of the tables for `of`.
+pub fn requirements() -> List(store.Requirement) {
+  []
+}
+
 /// A customisation with no race, no label and no room for a request, for a
 /// server that loads no game tables and so refuses every create request.
 pub fn empty() -> Customisation {

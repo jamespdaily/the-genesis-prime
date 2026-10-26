@@ -118,6 +118,7 @@ pub fn tree_settings(pool_settings: pool.Settings) -> server.Settings {
       ),
       customisation: fn(_tables) { customisation.empty() },
       character_slots: fn(_tables) { 0 },
+      worlds: fn(_tables) { [] },
     ),
   )
 }

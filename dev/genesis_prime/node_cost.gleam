@@ -398,6 +398,7 @@ pub fn start_server() -> Result(Nil, Nil) {
         ),
         customisation: fn(_tables) { customisation.empty() },
         character_slots: fn(_tables) { 0 },
+        worlds: fn(_tables) { [] },
       ),
     )
   case server.start(tree) {

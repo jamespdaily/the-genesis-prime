@@ -70,6 +70,7 @@ effectful_modules = [
   { module = "genesis_prime/server", reason = "the top supervisor" },
   { module = "genesis_prime/database/pool", reason = "the pool of connections to Postgres, a child of the top supervisor" },
   { module = "genesis_prime/connection/clock", reason = "reads the monotonic clock and the system clock" },
+  { module = "genesis_prime/connection/named_send", reason = "sends a message to a registered process through the runtime" },
   { module = "genesis_prime/connection/socket", reason = "the TCP sockets, through gen_tcp" },
   { module = "genesis_prime/connection/socket_owner", reason = "the process that owns one client's socket" },
   { module = "genesis_prime/connection/acceptor", reason = "the process that accepts clients on a listening socket" },

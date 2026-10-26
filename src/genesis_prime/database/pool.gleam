@@ -20,6 +20,32 @@ const default_pool_size = 10
 /// is told it failed. 4 seconds; no measurement chose it.
 pub const statement_timeout_ms = 4000
 
+/// The queue target of the pool, in milliseconds: how long a request may wait
+/// for a connection before the pool counts the queue slow. `pgo`'s own
+/// default; no measurement chose it.
+pub const queue_target_ms = 50
+
+/// The queue interval of the pool, in milliseconds: how often the pool looks
+/// at its queue. 100 ms, a tenth of `pgo`'s default, so a request that cannot
+/// get a connection is refused after at most `checkout_wait_bound_ms`; no
+/// measurement chose it.
+pub const queue_interval_ms = 100
+
+/// How long a request to the pool may wait in the queue for a connection that
+/// makes no progress before the pool refuses it, in milliseconds: three of
+/// the pool's queue intervals (`queue_interval_ms`), which is the longest a
+/// request waited in a pool whose every connection was held and never given
+/// back (`pgo_pool.erl`, the poll of `handle_info`, `timeout/4` and
+/// `drop_slow/3`).
+pub const checkout_wait_bound_ms = 300
+
+/// The time kept between the end of a statement's longest life and the
+/// moment a worker is killed: the wait for a connection, the statement's
+/// limit and this add up to less than the worker's deadline, so a worker
+/// that was killed never had a statement left running. 700 ms covers a
+/// round trip to Postgres, the start of a worker and the commit.
+pub const margin_ms = 700
+
 /// What a pool needs to start. `name` is the name the pool registers and
 /// that its users find it by, made once by whoever starts the tree, so two
 /// pools in one node never share it. `host` is a TCP host name or address
