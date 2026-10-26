@@ -1,7 +1,7 @@
 //// Prototype B: one process owns every unit of the map, with a grid index in
 //// its state. Moves and attacks are messages to it, and it thinks for the
-//// creatures itself, a tenth of them every 100 milliseconds, so each creature
-//// thinks once a second.
+//// creatures itself, a hundredth of them every 10 milliseconds, so each
+//// creature thinks once a second and no one message holds the map for long.
 ////
 //// The supervision tree is one supervisor with one child, the map process,
 //// registered under a name made for the run. The map process is rebuilt from
@@ -36,8 +36,10 @@ const restart_period_seconds = 5
 const shutdown_milliseconds = 5000
 
 /// How many parts the creatures' think is divided into, one part every
-/// 100 milliseconds.
-const think_slices = 10
+/// `slice_interval_milliseconds`: about 100 thinks a part at 10,000
+/// creatures, so no one message holds the map, and the moves behind it, for
+/// long.
+const think_slices = 100
 
 /// A cost planted in the prototype to show that the harness can see one.
 pub type PlantedCost {
@@ -88,7 +90,7 @@ type State {
 const initialisation_milliseconds = 60_000
 
 /// The time between two slices of creature thinking, in milliseconds.
-const slice_interval_milliseconds = 100
+const slice_interval_milliseconds = 10
 
 /// Starts the prototype: the supervisor and the map process, built from the
 /// spawn list kept under `spawn_list_key`. Players' connections join
@@ -266,7 +268,12 @@ fn await_rebuilt(name: process.Name(Message), victim: Pid) -> Nil {
 }
 
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
-  measurement.increment(state.handled)
+  // A slice is counted by its thinks, in `think`, not as a message itself.
+  case message {
+    Slice -> Nil
+    Move(..) | Attack(..) | Return(..) | Join(..) | Probe(..) ->
+      measurement.increment(state.handled)
+  }
   case message {
     Move(unit_id:, position:, sent_at:) ->
       actor.continue(move(state:, unit_id:, position:, sent_at:))

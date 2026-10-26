@@ -183,6 +183,7 @@ fn pace_name(result: RunResult) -> String {
   case result.pace {
     run.KeptUp -> "KeptUp"
     run.FellBehind -> "FellBehind"
+    run.PlayersFellBehind -> "PlayersFellBehind"
   }
 }
 

@@ -59,7 +59,15 @@ pub type Pace {
   KeptUp
   /// A judged sample's queue exceeded what the load sends in one second.
   FellBehind
+  /// The owners kept up, but a player did not report within
+  /// `report_deadline_milliseconds`: the updates sent to it outran it. The
+  /// choosing rule's ceiling reads only the owners, so this counts as kept up
+  /// there, and its latency covers only the players that reported.
+  PlayersFellBehind
 }
+
+/// How long the players together have to report after the measured stretch.
+const report_deadline_milliseconds = 30_000
 
 /// What one run counted over its measured stretch.
 pub type RunResult {
@@ -164,7 +172,17 @@ pub fn run(
   let scheduler_after = measurement.scheduler_time()
   let handled_after = door.messages_handled()
   let memory_words = door.memory_words()
-  let reports = list.map(players, player.report(_, waiting: 30_000))
+  let asked = list.map(players, player.ask_report)
+  let deadline =
+    measurement.monotonic_microseconds() / 1000 + report_deadline_milliseconds
+  let answers =
+    list.map(asked, fn(reply) {
+      let left = deadline - measurement.monotonic_microseconds() / 1000
+      process.receive(reply, int.max(left, 0))
+    })
+  let reports = result.values(answers)
+  let owners_pace =
+    pace(queue_samples:, load_per_second: load_per_second(workload))
   owner.stop_supervisor(supervisor.pid)
   measurement.erase_spawn_list(key)
 
@@ -186,7 +204,10 @@ pub fn run(
     queue_samples:,
     memory_words_per_unit: int.to_float(memory_words)
       /. int.to_float(workload.players + workload.creatures),
-    pace: pace(queue_samples:, load_per_second: load_per_second(workload)),
+    pace: case owners_pace, list.length(reports) == list.length(players) {
+      KeptUp, False -> PlayersFellBehind
+      KeptUp, True | FellBehind, _ | PlayersFellBehind, _ -> owners_pace
+    },
   )
 }
 

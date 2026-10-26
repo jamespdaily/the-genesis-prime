@@ -72,6 +72,7 @@ fn print(prototype: Prototype, result: RunResult) -> Nil {
     <> case result.pace {
       run.KeptUp -> "KeptUp"
       run.FellBehind -> "FellBehind"
+      run.PlayersFellBehind -> "PlayersFellBehind"
     },
   )
 }

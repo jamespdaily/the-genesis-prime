@@ -115,10 +115,13 @@ pub fn reset_counts(player: Player) -> Nil {
   process.send(player.control, ResetCounts)
 }
 
-/// Asks a player for its counts, waiting up to `waiting` milliseconds; a
-/// player that does not answer crashes the asker.
-pub fn report(player player: Player, waiting waiting: Int) -> Report {
-  process.call(player.control, waiting, ReportTo)
+/// Asks a player for its counts. The answer comes on the returned subject,
+/// behind every update already waiting in the player's mailbox, so a player
+/// that has fallen behind answers late or not at all.
+pub fn ask_report(player: Player) -> Subject(Report) {
+  let reply = process.new_subject()
+  process.send(player.control, ReportTo(reply_with: reply))
+  reply
 }
 
 fn schedule(
