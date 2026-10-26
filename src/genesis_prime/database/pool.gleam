@@ -130,4 +130,8 @@ fn config(settings: Settings) -> pog.Config {
   |> pog.password(settings.password)
   |> pog.pool_size(settings.pool_size)
   |> pog.ip_version(ip_version)
+  |> pog.connection_parameter(
+    name: "statement_timeout",
+    value: int.to_string(statement_timeout_ms),
+  )
 }

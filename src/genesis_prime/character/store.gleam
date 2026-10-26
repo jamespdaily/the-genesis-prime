@@ -104,12 +104,18 @@ fn delete(
   }
 }
 
-/// What a failed statement means: a database that is away or slow is an outside
-/// failure the server recovers from; a name another character has is the
-/// player's own; anything else is a mistake in a statement or the migration.
+/// The code of Postgres's error for a statement it cancelled at the pool's
+/// statement timeout (`pool.statement_timeout_ms`): query_canceled.
+const query_canceled = "57014"
+
+/// What a failed statement means: a database that is away or slow, or one that
+/// cancelled a statement at its limit, is an outside failure the server
+/// recovers from; a name another character has is the player's own; anything
+/// else is a mistake in a statement or the migration.
 fn failed(error: pog.QueryError) -> Answer {
   case error {
     pog.ConnectionUnavailable | pog.QueryTimeout -> Unavailable
+    pog.PostgresqlError(code:, ..) if code == query_canceled -> Unavailable
     pog.ConstraintViolated(constraint:, ..) if constraint == name_constraint ->
       NameInUse
     pog.ConstraintViolated(..)
