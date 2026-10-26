@@ -11,10 +11,13 @@
 //// kill at the deadline cannot come after the statement was sent. Once the
 //// asker has told the worker to go, it does not kill it at the deadline, which
 //// could be mid-statement, but waits for its answer up to `pool.holding_wait_ms`,
-//// in which Postgres cancels a statement that is still running
-//// (`pool.statement_timeout_ms`): the answer is what happened, committed or
-//// cancelled. A worker that is not told to go within `go_wait_milliseconds`
-//// sends nothing and gives `Unavailable`. A worker that ends without answering,
+//// in which Postgres ends a transaction that is still running
+//// (`pool.transaction_timeout_ms`): the answer is what happened, committed or
+//// ended. A worker that has not answered by then leaves the outcome unknown:
+//// the answer is `Unknown`, never `Unavailable`, which says nothing committed,
+//// and the connection ends so that the client lists the store's characters
+//// again. A worker that is not told to go within `go_wait_milliseconds` sends
+//// nothing and gives `Unavailable`. A worker that ends without answering,
 //// such as one whose statement crashed, gives `Unavailable` at once.
 //// A worker holds nothing between commands, so none is restarted.
 ////
@@ -24,7 +27,9 @@
 //// list is read at once and may miss it, and the next list shows it
 //// (`game/sessions`).
 
-import genesis_prime/character/select.{type Answer, type Command, Unavailable}
+import genesis_prime/character/select.{
+  type Answer, type Command, Unavailable, Unknown,
+}
 import genesis_prime/character/store
 import genesis_prime/database/pool
 import genesis_prime/telemetry/log
@@ -138,7 +143,8 @@ fn describe(error: actor.StartError) -> String {
 /// ends without answering or holds no connection by the deadline gives
 /// `Unavailable`, and so does a supervisor of workers that is not running, as
 /// while it is being rebuilt. A worker that held a connection is never killed
-/// at the deadline, so a write answered `Unavailable` committed nothing.
+/// at the deadline, so a write answered `Unavailable` committed nothing; one
+/// that has no answer within `pool.holding_wait_ms` is `Unknown`.
 pub fn run(
   workers workers: Workers,
   db db: pog.Connection,
@@ -226,11 +232,13 @@ fn wait_for_connection(
 }
 
 /// Waits up to `pool.holding_wait_ms` for the answer of a worker that was told
-/// to go. The worker is not killed when the time is up: its statement may be
-/// running, and it ends by itself when `pgo` times the statement out.
+/// to go. The worker is not killed when the time is up: its transaction may be
+/// at its commit, and it ends by itself when Postgres ends the transaction. An
+/// answer that has not come by then is `Unknown`.
 fn wait_for_answer(selector selector: process.Selector(Report)) -> Answer {
   case process.selector_receive(selector, within: pool.holding_wait_ms()) {
     Ok(Answered(answer)) -> answer
-    Ok(Gone) | Ok(Holding(..)) | Error(Nil) -> Unavailable
+    Ok(Gone) | Ok(Holding(..)) -> Unavailable
+    Error(Nil) -> Unknown
   }
 }

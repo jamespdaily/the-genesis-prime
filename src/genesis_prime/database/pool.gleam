@@ -14,66 +14,41 @@ import pog
 const default_pool_size = 10
 
 /// How long Postgres lets one statement of the pool's connections run, in
-/// milliseconds, before it cancels the statement and rolls it back. A write
-/// that was reported failed must have committed nothing, so a game worker is
-/// killed at its deadline (`game/service.answer_deadline_ms`) only while it has
-/// no connection: nothing was sent to Postgres. A worker that has a
-/// connection is waited for until its statement ends, at most this long, plus
-/// `margin_ms` (`holding_wait_ms`), and its answer says whether the write
-/// committed or was cancelled. A request waits at most `checkout_wait_bound_ms`
-/// for a connection, so that wait, this limit and the margin add up to less
-/// than the worker's deadline. The statement's own timeout in `pog` is its
-/// default of 5000 ms from the start of the call, which the functions squirrel
-/// generates do not let a caller change; `pgo` closes the connection of a
-/// statement that has run that long, after this limit has cancelled it. 4
-/// seconds; no measurement chose it.
+/// milliseconds, before it cancels the statement and rolls it back. A
+/// statement that is cancelled leaves its connection open and its error says
+/// why (query_canceled, 57014). The transaction as a whole is bounded by
+/// `transaction_timeout_ms`, above this. The statement's own timeout in `pog` is
+/// its default of 5000 ms from the start of the call, which the functions
+/// squirrel generates do not let a caller change; `pgo` closes the connection of
+/// a statement that has run that long. 4 seconds; no measurement chose it.
 pub const statement_timeout_ms = 4000
 
 /// How long Postgres lets one transaction of the pool's connections run, in
 /// milliseconds, from its start to its commit, before it ends the session
 /// and rolls the transaction back (PostgreSQL 17 and later,
-/// `transaction_timeout`). 4.5 seconds, half a second above
+/// `transaction_timeout`; the setting also covers a statement that is not in a
+/// transaction). `statement_timeout_ms` bounds each statement, not the sum of a
+/// transaction's statements and its commit, so this is what bounds a write whose
+/// statement waits and then commits. 4.5 seconds, half a second above
 /// `statement_timeout_ms`, which PostgreSQL's documentation requires for the
 /// statement's limit to count; no measurement chose it.
 pub const transaction_timeout_ms = 4500
 
-/// The queue target of the pool, in milliseconds: how long a request may wait
-/// for a connection before the pool counts the queue slow. `pgo`'s own
-/// default; no measurement chose it.
-const queue_target_ms = 50
-
-/// The queue interval of the pool, in milliseconds: how often the pool looks
-/// at its queue. 100 ms, a tenth of `pgo`'s default, so that `pgo` refuses a
-/// request that cannot get a connection after at most `checkout_wait_bound_ms`;
-/// no measurement chose it.
-pub const queue_interval_ms = 100
-
-/// How long a request waits in the pool's queue, at most, when every
-/// connection of the pool is held and none is given back, in milliseconds:
-/// three queue intervals. The pool polls its queue each interval; the first
-/// poll after a request arrives records it, the second finds no progress and
-/// notes the delay, and the third finds the delay above the target and refuses
-/// every request that has waited more than twice the target (`pgo_pool.erl`,
-/// `handle_info` for the poll, `timeout/4` and `drop_slow/3`). A pool of one
-/// connection held by a transaction refused a request after 292 ms of the
-/// 300. `pgo` offers no bound for a pool whose connections are given back and
-/// taken again: its wait for a connection (`pgo_pool.erl`, `checkout_call/4`)
-/// has no timeout, and the `timeout` of a query counts from the checkout.
-pub const checkout_wait_bound_ms = 300
-
-/// The time given, after a statement's limit, for the answer of a worker that
+/// The time given, after a transaction's limit, for the answer of a worker that
 /// holds a connection to arrive, in milliseconds: it covers the round trip to
-/// Postgres that carries the cancellation, the commit or the rollback, and the
+/// Postgres that carries the end of the session or the rollback, and the
 /// worker's reply. 600 ms; no measurement chose it.
 pub const margin_ms = 600
 
 /// How long the asker of a worker that holds a connection waits for its
 /// answer, in milliseconds, counted from the moment the worker says it holds
-/// it: the statement's limit and the margin. The asker's deadline does not
-/// apply from then on, because Postgres ends the statement within this time,
-/// so the worker's answer is the truth about the write.
+/// it: the transaction's limit and the margin, the longest a write can take
+/// from the moment it is sent. The asker's deadline does not apply from then
+/// on, because Postgres ends the transaction within this time, so the worker's
+/// answer is the truth about the write. An answer that has not come by then
+/// leaves the write's outcome unknown.
 pub fn holding_wait_ms() -> Int {
-  statement_timeout_ms + margin_ms
+  transaction_timeout_ms + margin_ms
 }
 
 /// What a pool needs to start. `name` is the name the pool registers and
@@ -172,7 +147,10 @@ pub fn connection(settings: Settings) -> pog.Connection {
 }
 
 /// `pog`'s configuration for the settings. A host with a colon is an IPv6
-/// address, which `pog` must be told of.
+/// address, which `pog` must be told of. The pool's queue target (50 ms) and
+/// queue interval (1000 ms) are `pog`'s defaults: a write that has no connection
+/// is killed by its asker before it sends anything, so the queue's refusals are
+/// not what keeps a failed write from having committed.
 fn config(settings: Settings) -> pog.Config {
   let ip_version = case string.contains(settings.host, ":") {
     True -> pog.Ipv6
@@ -185,11 +163,13 @@ fn config(settings: Settings) -> pog.Config {
   |> pog.user(settings.user)
   |> pog.password(settings.password)
   |> pog.pool_size(settings.pool_size)
-  |> pog.queue_target(queue_target_ms)
-  |> pog.queue_interval(queue_interval_ms)
   |> pog.ip_version(ip_version)
   |> pog.connection_parameter(
     name: "statement_timeout",
     value: int.to_string(statement_timeout_ms),
+  )
+  |> pog.connection_parameter(
+    name: "transaction_timeout",
+    value: int.to_string(transaction_timeout_ms),
   )
 }
