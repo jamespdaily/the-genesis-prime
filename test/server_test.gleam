@@ -9,7 +9,6 @@
 //// started them.
 
 import genesis_prime/server
-import genesis_prime/telemetry/snapshot
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/otp/actor
 import gleam/otp/static_supervisor
@@ -30,7 +29,7 @@ pub fn every_process_the_server_starts_is_in_the_top_supervisors_tree_test() -> 
     )
   let watch = spawn_watch.begin()
   let assert Ok(started) =
-    server.start(settings, snapshot.settings(process.new_name("snapshot")))
+    server.start(template_database.tree_settings(settings))
     as "the top supervisor did not start"
   assert spawn_watch.unsupervised(watch, started.pid) == []
 }
@@ -44,16 +43,15 @@ pub fn the_snapshot_process_is_the_top_supervisors_child_after_the_pool_test() -
       pool_name: process.new_name("server_test_snapshot_pool"),
       pool_size: 2,
     )
-  let snapshot_settings =
-    snapshot.settings(process.new_name("server_test_snapshot"))
-  let assert Ok(started) = server.start(pool_settings, snapshot_settings)
+  let settings = template_database.tree_settings(pool_settings)
+  let assert Ok(started) = server.start(settings)
     as "the top supervisor did not start"
-  let assert [pool_pid, snapshot_pid] =
+  let assert [pool_pid, snapshot_pid, _shutdown_pid] =
     supervisor_children.in_start_order(started.pid)
-    as "the top supervisor does not have the pool and the snapshot process"
+    as "the top supervisor does not have the pool, the snapshot process and the shutdown coordinator"
   assert process.named(pool_settings.name) == Ok(pool_pid)
     as "the first child is not the pool"
-  assert process.named(snapshot_settings.name) == Ok(snapshot_pid)
+  assert process.named(settings.snapshot.name) == Ok(snapshot_pid)
     as "the second child is not the snapshot process"
 }
 

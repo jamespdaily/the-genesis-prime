@@ -7,6 +7,7 @@
 
 import gleam/bit_array
 import gleam/bool
+import gleam/int
 import gleam/list
 import gleam/result
 import gleam/string
@@ -569,3 +570,67 @@ fn gap() -> row
 /// Puts the rows, and the gaps among them, in one tuple.
 @external(erlang, "tbl_file_ffi", "table_of")
 fn table_of(rows: List(row)) -> Table(row)
+
+/// A sentence that says why a file is not accepted as its table, for the
+/// message the server stops with.
+pub fn describe_error(error: FileError) -> String {
+  case error {
+    TooShort -> "it ends inside the header"
+    BadSignature -> "it does not start with the table signature"
+    OutsideFile(part:) -> "the " <> describe_part(part) <> " lies outside it"
+    NotText(part:) -> "the " <> describe_part(part) <> " is not UTF-16 text"
+    UnknownColumnType(column:, code:) ->
+      "column "
+      <> column
+      <> " has the unknown type code "
+      <> int.to_string(code)
+    TableNameDiffers(expected:, found:) ->
+      "it holds the table " <> found <> ", not " <> expected
+    RecordSizeDiffers(expected:, found:) ->
+      "its record size is "
+      <> int.to_string(found)
+      <> ", not "
+      <> int.to_string(expected)
+    ColumnCountDiffers(expected:, found:) ->
+      "it has "
+      <> int.to_string(found)
+      <> " columns, not "
+      <> int.to_string(expected)
+    ColumnDiffers(position:, expected:, found:) ->
+      "its column "
+      <> int.to_string(position)
+      <> " is "
+      <> found.name
+      <> ", not "
+      <> expected.name
+      <> ", or has another type"
+    LookupPointsOutside(id:, row:) ->
+      "the lookup of id "
+      <> int.to_string(id)
+      <> " names row "
+      <> int.to_string(row)
+      <> ", which is past the records"
+    LookupDisagrees(id:, found:) ->
+      "the lookup of id "
+      <> int.to_string(id)
+      <> " names a record that holds id "
+      <> int.to_string(found)
+    RecordsNotInLookup(expected:, found:) ->
+      "the lookup names "
+      <> int.to_string(found)
+      <> " records, not "
+      <> int.to_string(expected)
+    BadRecord(row:, error: _) ->
+      "record " <> int.to_string(row) <> " cannot be decoded"
+  }
+}
+
+fn describe_part(part: Part) -> String {
+  case part {
+    TableName -> "table name"
+    ColumnTable -> "column table"
+    ColumnName(column:) -> "name of column " <> int.to_string(column)
+    RecordBlock -> "record block"
+    Lookup -> "lookup"
+  }
+}

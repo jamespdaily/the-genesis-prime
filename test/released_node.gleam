@@ -1,12 +1,15 @@
 //// The server's entry point started in an operating system process of its
 //// own, the way a release starts it, so a test can ask what that node is and
 //// what it opens. The child is an Erlang VM with the build's code paths and
-//// no `-name` or `-sname`, running `genesis_prime:main`, with the database
-//// settings of one test's own database in its environment.
+//// no `-name` or `-sname`, running `genesis_prime:main` after starting the
+//// project's OTP applications as Gleam's generated entry point does, with the
+//// database settings of one test's own database in its environment.
 ////
 //// The child tells the test what it is in one report, written after the top
 //// supervisor has finished starting every child (a call to the supervisor
-//// returns only then), and then waits for its input to close before it ends.
+//// returns only then), and then answers each survey the test asks for, a
+//// second report of what the node is by then, until its input closes, when it
+//// ends.
 //// The test that started a child owns it: the child's input closes when the
 //// test's process ends, however that happens, and the child ends with it.
 ////
@@ -19,6 +22,7 @@ import gleam/list
 import gleam/option
 import gleam/result
 import gleam/string
+import planted_table
 import template_database
 
 /// How the child is started. `Unnamed` is how a release starts the server:
@@ -73,6 +77,24 @@ pub type Report {
   )
 }
 
+/// Whether a query through the child's database pool was answered.
+pub type Query {
+  Answered
+  Unanswered(why: String)
+}
+
+/// What the child reports when the test asks for a survey, after its report.
+/// - `query` is whether a `select 1` through the server's pool was answered.
+///   The survey waits for that answer or for the end of the top supervisor,
+///   whichever comes first, so the rest is read after one of those events.
+/// - `tree` is whether the top supervisor of the entry point is still
+///   running; `Stopped` once it has ended, and for a child that started no
+///   entry point.
+/// - `applications` are the names of the started OTP applications, sorted.
+pub type Survey {
+  Survey(query: Query, tree: Service, applications: List(String))
+}
+
 /// Why a child gave no report.
 pub type Failure {
   /// The child's VM ended before its report, with its exit status and what
@@ -117,11 +139,12 @@ const report_end = "report-end"
 /// with why there is no report. The child's input is closed, and the epmd the
 /// child may have started is killed, however `body` ends.
 pub fn run(start: Start, body: fn(Result(Node, Failure)) -> a) -> a {
+  use tables <- planted_table.in_empty_tables_folder
   let epmd_port = free_port()
-  let process = open(arguments(start), environment(start, epmd_port))
+  let process = open(arguments(start), environment(start:, epmd_port:, tables:))
   with_cleanup(
     fn() {
-      read_report(process, [])
+      read_report(process)
       |> result.map(fn(report) { Node(process:, epmd_port:, report:) })
       |> body
     },
@@ -130,6 +153,15 @@ pub fn run(start: Start, body: fn(Result(Node, Failure)) -> a) -> a {
       kill_epmd(epmd_port)
     },
   )
+}
+
+/// Asks the child for a survey of what it is: the child waits until a query
+/// through its pool is answered or its top supervisor ends, and writes the
+/// survey as that wait ends.
+pub fn survey(node: Node) -> Result(Survey, Failure) {
+  ask(node.process, "survey")
+  read_lines(from: node.process, until: "survey-end", seen: [])
+  |> result.try(parse_survey)
 }
 
 /// The ports in `observed` that are not in `expected`, and the ports in
@@ -177,9 +209,13 @@ fn arguments(start: Start) -> List(String) {
   list.flatten([["-noshell"], naming, ["-eval", expression]])
 }
 
-/// The database's settings in the names the server reads them by, and the
-/// child's own epmd port.
-fn environment(start: Start, epmd_port: Int) -> List(#(String, String)) {
+/// The database's settings in the names the server reads them by, a folder of
+/// the game tables and the child's own epmd port.
+fn environment(
+  start start: Start,
+  epmd_port epmd_port: Int,
+  tables tables: String,
+) -> List(#(String, String)) {
   let settings = start.database.settings
   let password = case settings.password {
     option.Some(password) -> [#("PGPASSWORD", password)]
@@ -191,21 +227,28 @@ fn environment(start: Start, epmd_port: Int) -> List(#(String, String)) {
       #("PGPORT", int.to_string(settings.port)),
       #("PGUSER", settings.user),
       #("PGDATABASE", start.database.name),
+      #("GENESIS_TABLE_DIR", tables),
       #("ERL_EPMD_PORT", int.to_string(epmd_port)),
     ],
     password,
   ])
 }
 
-/// Reads the child's lines up to the end of its report. `seen` holds the lines
-/// read before this call, newest first.
-fn read_report(
-  process: Process,
-  seen: List(String),
-) -> Result(Report, Failure) {
+/// Reads the child's lines up to the end of its report.
+fn read_report(process: Process) -> Result(Report, Failure) {
+  read_lines(from: process, until: report_end, seen: []) |> result.try(parse)
+}
+
+/// Reads the child's lines up to `end`, which is not among them. `seen` holds
+/// the lines read before this call, newest first.
+fn read_lines(
+  from process: Process,
+  until end: String,
+  seen seen: List(String),
+) -> Result(List(String), Failure) {
   case next_event(process, silence_limit_ms) {
-    Line(line) if line == report_end -> parse(list.reverse(seen))
-    Line(line) -> read_report(process, [line, ..seen])
+    Line(line) if line == end -> Ok(list.reverse(seen))
+    Line(line) -> read_lines(from: process, until: end, seen: [line, ..seen])
     ExitStatus(status) -> Error(Exited(status:, output: list.reverse(seen)))
     Silent -> Error(NotReady(output: list.reverse(seen)))
   }
@@ -220,6 +263,22 @@ fn parse(lines: List(String)) -> Result(Report, Failure) {
   use listening <- result.try(field(lines, "listening"))
   use listening_ports <- result.map(ports(listening))
   Report(node:, net_kernel:, epmd_client:, listening_ports:)
+}
+
+fn parse_survey(lines: List(String)) -> Result(Survey, Failure) {
+  use query <- result.try(field(lines, "query"))
+  use tree <- result.try(field(lines, "tree"))
+  use tree <- result.try(service(tree))
+  use applications <- result.map(field(lines, "applications"))
+  Survey(
+    query: case query {
+      "ok" -> Answered
+      why -> Unanswered(why:)
+    },
+    tree:,
+    applications: string.split(applications, " ")
+      |> list.filter(fn(word) { word != "" }),
+  )
 }
 
 /// What follows `name` and a space on the line that starts with them, empty
@@ -260,6 +319,10 @@ fn open(
   arguments: List(String),
   environment: List(#(String, String)),
 ) -> Process
+
+/// Writes one line to the child's input.
+@external(erlang, "released_node_ffi", "ask")
+fn ask(process: Process, line: String) -> Nil
 
 /// The next event from the child, waiting at most `within` milliseconds.
 @external(erlang, "released_node_ffi", "next_event")
