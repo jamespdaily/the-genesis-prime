@@ -1,0 +1,24 @@
+//// A client socket for tests: connects to a listener on this machine, sends
+//// bytes and waits for the server to close it. The bytes a test sends are
+//// the client's own frames, built with `frame.encode`.
+
+/// A connected client socket.
+pub type Client
+
+/// Connects to the port on this machine's loopback address.
+@external(erlang, "tcp_client_ffi", "connect")
+pub fn connect(port: Int) -> Result(Client, Nil)
+
+/// Sends the bytes; fails when the server has closed the connection.
+@external(erlang, "tcp_client_ffi", "send")
+pub fn send(client: Client, bytes: BitArray) -> Result(Nil, Nil)
+
+/// Waits up to `within_ms` for the server to close or reset the connection,
+/// reading and discarding what it sends meanwhile: true once it has, false
+/// when the time passes with the connection still open.
+@external(erlang, "tcp_client_ffi", "await_close")
+pub fn await_close(client: Client, within_ms: Int) -> Bool
+
+/// Closes the client's end.
+@external(erlang, "tcp_client_ffi", "close")
+pub fn close(client: Client) -> Nil
