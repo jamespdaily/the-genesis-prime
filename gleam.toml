@@ -13,6 +13,7 @@ pog = ">= 4.1.0 and < 5.0.0"
 simplifile = ">= 2.7.0 and < 3.0.0"
 envoy = ">= 1.2.0 and < 2.0.0"
 gleam_crypto = ">= 1.6.0 and < 2.0.0"
+xmlm = ">= 1.0.1 and < 2.0.0"
 
 [dev_dependencies]
 argv = ">= 1.1.0 and < 2.0.0"
@@ -26,9 +27,8 @@ mug = ">= 3.1.0 and < 4.0.0"
 gleam_time = ">= 1.11.0 and < 2.0.0"
 
 [erlang]
-# `crypto` is the OTP application behind SHA-256, modular powers and RC4;
-# `xmerl` reads the XML bodies of the STS login.
-extra_applications = ["crypto", "xmerl"]
+# `crypto` is the OTP application behind SHA-256, modular powers and RC4.
+extra_applications = ["crypto"]
 
 [tools.glinter]
 include = ["src/", "test/", "dev/"]
@@ -104,7 +104,6 @@ pure_erlang = [
   "tbl_file_ffi:row",
   "tbl_file_ffi:rows",
   "genesis_prime_login_ffi:mod_pow",
-  "genesis_prime_login_ffi:parse_xml",
 ]
 # Modules that may make an atom from a string or read a term from bytes.
 atom_or_term = []
