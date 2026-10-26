@@ -29,9 +29,11 @@
 
 import genesis_prime/database/pool
 import genesis_prime/server
+import genesis_prime/shutdown
 import genesis_prime/telemetry/snapshot
 import genesis_prime/topology/trial
 import gleam/erlang/process.{type Name, type Pid, type Subject}
+import gleam/erlang/reference
 import gleam/float
 import gleam/int
 import gleam/io
@@ -349,9 +351,9 @@ fn stop_distribution() -> Nil
 fn start_peer() -> Result(Peer, Nil)
 
 /// Starts the server's top supervisor on the node that runs this, with a pool
-/// of one connection to the Postgres of PGHOST's usual address. The pool opens
-/// its connection in the background, so the start does not wait for Postgres
-/// and the measure is of the tree. Called on the peer by
+/// of one connection to the Postgres of PGHOST's usual address and no game
+/// table to load. The pool opens its connection in the background, so the
+/// start does not wait for Postgres and the measure is of the tree. Called on the peer by
 /// `dev/node_cost_ffi.erl`.
 pub fn start_server() -> Result(Nil, Nil) {
   let settings =
@@ -364,7 +366,19 @@ pub fn start_server() -> Result(Nil, Nil) {
       password: option.None,
       pool_size: 1,
     )
-  case server.start(settings, snapshot.settings(process.new_name("snapshot"))) {
+  let tree =
+    server.Settings(
+      pool: settings,
+      tables: server.TableSettings(
+        key: reference.new(),
+        folder: "",
+        entries: [],
+        requirements: [],
+      ),
+      shutdown: shutdown.new(drain_deadline_ms: 1000, flush_deadline_ms: 1000),
+      snapshot: snapshot.settings(process.new_name("snapshot")),
+    )
+  case server.start(tree) {
     Ok(_) -> Ok(Nil)
     Error(_) -> Error(Nil)
   }

@@ -734,6 +734,16 @@ class DistributionTest(PlantedTestCase):
         self.settings(machine, ".git/vm.args", "-sname dependency\n")
         self.assertEqual(setup_check.check_distribution(machine), [])
 
+    def test_the_releases_committed_vm_args_holds_no_name_or_sname(self):
+        """The release keeps its VM flags in release/vm.args (issue #43), which the
+        check above reads; the tests above show a planted -name or -sname is
+        found, so an empty result for this repository is the release's flags
+        turning distribution off."""
+        flags = REPOSITORY / "release" / "vm.args"
+        self.assertTrue(flags.is_file(), "the release's VM flags are not committed at release/vm.args")
+        machine = Machine(env={}, repository=REPOSITORY, run=lambda argv: (0, ""))
+        self.assertEqual(setup_check.check_distribution(machine), [])
+
     def test_the_check_runs_where_genesis_no_client_is_1_too(self):
         machine = self.plant(with_client=False, no_client_flag=True)
         self.settings(machine, "vm.args", "-sname genesis\n")

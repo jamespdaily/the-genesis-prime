@@ -22,6 +22,7 @@ import gleam/list
 import gleam/option
 import gleam/result
 import gleam/string
+import planted_table
 import template_database
 
 /// How the child is started. `Unnamed` is how a release starts the server:
@@ -138,8 +139,9 @@ const report_end = "report-end"
 /// with why there is no report. The child's input is closed, and the epmd the
 /// child may have started is killed, however `body` ends.
 pub fn run(start: Start, body: fn(Result(Node, Failure)) -> a) -> a {
+  use tables <- planted_table.in_empty_tables_folder
   let epmd_port = free_port()
-  let process = open(arguments(start), environment(start, epmd_port))
+  let process = open(arguments(start), environment(start:, epmd_port:, tables:))
   with_cleanup(
     fn() {
       read_report(process)
@@ -207,9 +209,13 @@ fn arguments(start: Start) -> List(String) {
   list.flatten([["-noshell"], naming, ["-eval", expression]])
 }
 
-/// The database's settings in the names the server reads them by, and the
-/// child's own epmd port.
-fn environment(start: Start, epmd_port: Int) -> List(#(String, String)) {
+/// The database's settings in the names the server reads them by, a folder of
+/// the game tables and the child's own epmd port.
+fn environment(
+  start start: Start,
+  epmd_port epmd_port: Int,
+  tables tables: String,
+) -> List(#(String, String)) {
   let settings = start.database.settings
   let password = case settings.password {
     option.Some(password) -> [#("PGPASSWORD", password)]
@@ -221,6 +227,7 @@ fn environment(start: Start, epmd_port: Int) -> List(#(String, String)) {
       #("PGPORT", int.to_string(settings.port)),
       #("PGUSER", settings.user),
       #("PGDATABASE", start.database.name),
+      #("GENESIS_TABLE_DIR", tables),
       #("ERL_EPMD_PORT", int.to_string(epmd_port)),
     ],
     password,
