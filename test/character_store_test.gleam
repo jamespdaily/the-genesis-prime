@@ -381,3 +381,37 @@ pub fn a_rename_that_changes_only_the_case_of_the_characters_own_name_is_allowed
     == Renamed(Character(..character, name: "ab cd"))
     as "a character is not another character, so it may take its own name in another case, which is shown as typed"
 }
+
+pub fn a_statement_that_runs_past_the_databases_limit_gives_unavailable_and_commits_nothing_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let pool_name = process.new_name("slow_statement_pool")
+  let assert Ok(_) =
+    template_database.config(for: database, pool_name:, pool_size: 1)
+    |> pog.start
+    as "the pool of one connection started"
+  let one = pog.named_connection(pool_name)
+  add_accounts(one)
+  // The pool's only connection takes the session's limit, so the save the
+  // trigger slows runs past it.
+  list.each(
+    [
+      "create function slow_insert() returns trigger language plpgsql as $$ begin perform pg_sleep(2); return new; end $$",
+      "create trigger slow_insert before insert on character for each row execute function slow_insert()",
+      "set statement_timeout = 300",
+    ],
+    fn(statement) {
+      let assert Ok(_) = pog.query(statement) |> pog.execute(on: one)
+        as "the slow save was planted"
+      Nil
+    },
+  )
+  assert store.run(one, select.InsertCharacter(new_character("Ab Cd")))
+    == Unavailable
+    as "a statement the database cancelled at its limit is an outside failure the server recovers from, not a bug in the statement"
+  let assert Ok(_) =
+    pog.query("set statement_timeout = 0") |> pog.execute(on: one)
+    as "the limit was lifted"
+  assert listed(one, character_support.account_id) == []
+    as "the cancelled save committed nothing, so a failure answered to the player is true"
+}

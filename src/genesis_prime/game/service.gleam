@@ -33,7 +33,7 @@ const restart_period_seconds = 5
 
 /// How long a connection waits for the store or a map to answer, in
 /// milliseconds. 5 seconds; no measurement chose it.
-const answer_deadline_ms = 5000
+pub const answer_deadline_ms = 5000
 
 /// What the subtree starts with. `port` is the game listener's port, where 0
 /// takes a free port, and `opened` is called with the port that is open.

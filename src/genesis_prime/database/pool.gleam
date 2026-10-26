@@ -13,6 +13,13 @@ import pog
 /// number: `pog`'s own default.
 const default_pool_size = 10
 
+/// How long Postgres lets one statement of the pool's connections run, in
+/// milliseconds, before it cancels the statement. It is below the 5 seconds at
+/// which a game worker is killed (`game/service.answer_deadline_ms`), so a
+/// statement that is too slow is cancelled, and rolled back, before the player
+/// is told it failed. 4 seconds; no measurement chose it.
+pub const statement_timeout_ms = 4000
+
 /// What a pool needs to start. `name` is the name the pool registers and
 /// that its users find it by, made once by whoever starts the tree, so two
 /// pools in one node never share it. `host` is a TCP host name or address

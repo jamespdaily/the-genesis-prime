@@ -21,6 +21,7 @@
 //// whose event no message announces, and each says why.
 
 import genesis_prime/database/pool
+import genesis_prime/game/service as game_service
 import genesis_prime/server
 import gleam/dynamic/decode
 import gleam/erlang/process.{type Name, type Pid, type Subject}
@@ -318,4 +319,22 @@ fn start_reporting(
   })
   |> actor.on_message(fn(state, _message: Nil) { actor.continue(state) })
   |> actor.start
+}
+
+pub fn the_pools_connections_stop_a_statement_before_the_game_workers_deadline_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let settings = pool_settings(database, "pool_statement_limit")
+  let assert Ok(_) =
+    server.supervisor_with_pool(settings) |> static_supervisor.start
+    as "the planted top supervisor did not start"
+  let assert Ok(pog.Returned(rows: [limit], ..)) =
+    pog.query("select current_setting('statement_timeout')")
+    |> pog.returning(decode.at([0], decode.string))
+    |> pog.execute(on: pool.connection(settings))
+    as "the setting was read"
+  assert limit == "4s"
+    as "designing-processes: a write past the worker's deadline of 5 seconds (game/service) may still commit, so Postgres cancels a statement at 4 seconds, before the worker is killed"
+  assert pool.statement_timeout_ms < game_service.answer_deadline_ms
+    as "the pool's limit is below the workers' deadline"
 }
