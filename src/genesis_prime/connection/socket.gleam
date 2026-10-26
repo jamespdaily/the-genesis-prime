@@ -110,11 +110,6 @@ fn arm_count(socket: Socket, reads: Int) -> Result(Nil, Reason)
 @external(erlang, "genesis_prime_socket_ffi", "close")
 pub fn close(socket socket: Socket) -> Nil
 
-/// The peer's address and port as text, for the log, or `unknown` when the
-/// socket is closed.
-@external(erlang, "genesis_prime_socket_ffi", "peer")
-pub fn peer(socket socket: Socket) -> String
-
 /// Adds the socket's events to a selector, each mapped to a message.
 pub fn select(
   selector selector: Selector(message),

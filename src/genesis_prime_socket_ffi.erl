@@ -1,7 +1,7 @@
 -module(genesis_prime_socket_ffi).
 -export([listen/1, listening_port/1, accept/1, give_to/2, arm_once/1, arm_count/2, close/1,
-         peer/1, monotonic_milliseconds/0, limit_heap/1,
-         keep_messages_off_heap/0, log_info/2, log_warning/2, data_tag/0,
+         monotonic_milliseconds/0, limit_heap/1,
+         keep_messages_off_heap/0, data_tag/0,
          closed_tag/0, error_tag/0, passive_tag/0]).
 
 %% The connections a listening socket holds for the acceptor while it is busy.
@@ -43,15 +43,6 @@ close(Socket) ->
     nil.
 
 
--spec peer(port()) -> binary().
-peer(Socket) ->
-    case inet:peername(Socket) of
-        {ok, {Address, Port}} ->
-            iolist_to_binary([inet:ntoa(Address), ":", integer_to_list(Port)]);
-        {error, _Reason} ->
-            <<"unknown">>
-    end.
-
 -spec monotonic_milliseconds() -> integer().
 monotonic_milliseconds() ->
     erlang:monotonic_time(millisecond).
@@ -69,19 +60,6 @@ limit_heap(Words) ->
 -spec keep_messages_off_heap() -> nil.
 keep_messages_off_heap() ->
     process_flag(message_queue_data, off_heap),
-    nil.
-
--spec log_info(binary(), binary()) -> nil.
-log_info(Message, Peer) ->
-    log(info, Message, Peer).
-
--spec log_warning(binary(), binary()) -> nil.
-log_warning(Message, Peer) ->
-    log(warning, Message, Peer).
-
-log(Level, Message, Peer) ->
-    logger:log(Level, "~ts", [Message],
-               #{peer => Peer, domain => [genesis_prime, connection]}),
     nil.
 
 %% The tags of the messages `gen_tcp` sends a socket's owner.

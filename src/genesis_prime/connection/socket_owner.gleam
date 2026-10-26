@@ -17,11 +17,12 @@ import genesis_prime/connection/capacity
 import genesis_prime/connection/clock.{type Clock}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/inbound.{type Inbound}
-import genesis_prime/connection/log
 import genesis_prime/connection/rate_limit.{type Rate}
 import genesis_prime/connection/socket.{type FlowControl, type Socket}
+import genesis_prime/telemetry/log.{type Who}
 import gleam/erlang/process.{type Subject}
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/otp/actor
 
 /// How long the owner has to start, in milliseconds.
@@ -62,8 +63,18 @@ type Status {
 }
 
 type State {
-  State(settings: Settings, socket: Socket, peer: String, status: Status)
+  State(settings: Settings, socket: Socket, status: Status)
 }
+
+/// Who the socket owner's lines are from: the process, by its name. A
+/// connection has no account until it logs in.
+const owner_who =
+  log.Who(
+    account: None,
+    actor: None,
+    place: Some(log.Process("socket_owner")),
+    message: None,
+  )
 
 /// The reads the runtime hands an owner before it asks for more: 32. At 800
 /// connections each sending 120 frames a second, a server's CPU time was
@@ -98,13 +109,7 @@ pub fn start(
       process.new_selector()
       |> process.select(subject)
       |> socket.select(SocketEvent)
-    let state =
-      State(
-        settings:,
-        socket:,
-        peer: socket.peer(socket),
-        status: AwaitingSocket,
-      )
+    let state = State(settings:, socket:, status: AwaitingSocket)
     Ok(
       actor.initialised(state)
       |> actor.selecting(selector)
@@ -208,11 +213,11 @@ fn arm(state: State) -> actor.Next(State, Message) {
 /// normally.
 fn end_connection(
   state: State,
-  write: fn(String, String) -> Nil,
+  write: fn(Who, String) -> Nil,
   why: String,
 ) -> actor.Next(State, Message) {
   socket.close(state.socket)
-  write("connection ended: " <> why, state.peer)
+  write(owner_who, "connection ended: " <> why)
   actor.stop()
 }
 

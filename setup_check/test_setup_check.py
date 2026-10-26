@@ -21,6 +21,12 @@ Expected values and their sources:
   "archive_index.header" (PACK header 0x230 bytes, block table at 0x240, AIDX
   header 16 bytes with the build at its offset 8) and the client's own build
   16042 (client_archive.target_build, GetVersionInfo 0x1406f8360).
+- Erlang distribution: a VM turns it on with the `-name` or `-sname` flag (Erlang
+  reference manual, "Distributed Erlang"; `erl` flags), which a release reads
+  from its vm.args; a vm.args line that starts with `#` is a comment (Erlang
+  system principles, "Releases", vm.args). The server runs as one node and uses
+  no distribution (issue #30, closing summary). No file of that name is in the
+  repository, so the check passes where there is none.
 - Postgres 18: Jim's choice on issue #13 ("with Postgres 18 as the version
   checked"); the clock tolerance is 1 second, from the issue's test list.
 
@@ -667,6 +673,73 @@ class ManifestTest(PlantedTestCase):
 
     def test_a_tracked_manifest_toml_is_not_missing(self):
         self.assertEqual(setup_check.check_manifest(self.plant()), [])
+
+
+# ---------------------------------------------------------------- distribution
+
+
+class DistributionTest(PlantedTestCase):
+    def settings(self, machine: Machine, path: str, text: str):
+        file = machine.repository / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(text)
+
+    def test_a_repository_with_no_release_settings_has_nothing_missing(self):
+        self.assertEqual(setup_check.check_distribution(self.plant()), [])
+
+    def test_a_vm_args_with_a_sname_line_is_named_with_its_file_line_and_text(self):
+        machine = self.plant()
+        self.settings(machine, "vm.args", "-setcookie planted\n-sname genesis\n+K true\n")
+        missing = self.only(setup_check.check_distribution(machine))
+        self.assert_part(missing, "distribution")
+        self.assert_found(missing, "vm.args line 2")
+        self.assert_found(missing, "-sname genesis")
+        self.assert_fix(missing, "-sname")
+
+    def test_a_vm_args_src_with_a_name_line_in_a_folder_is_named_with_its_path(self):
+        machine = self.plant()
+        self.settings(machine, "rel/vm.args.src", "## the node\n-name genesis@${HOST}\n")
+        missing = self.only(setup_check.check_distribution(machine))
+        self.assert_found(missing, "rel/vm.args.src line 2")
+        self.assert_found(missing, "-name genesis@${HOST}")
+
+    def test_an_indented_name_line_turns_distribution_on_too(self):
+        machine = self.plant()
+        self.settings(machine, "config/vm.args", "  -name genesis@127.0.0.1\n")
+        self.assert_found(self.only(setup_check.check_distribution(machine)), "config/vm.args line 1")
+
+    def test_every_file_and_every_line_that_turns_it_on_is_named(self):
+        machine = self.plant()
+        self.settings(machine, "vm.args", "-sname one\n-name two\n")
+        self.settings(machine, "rel/vm.args.src", "-sname three\n")
+        result = setup_check.check_distribution(machine)
+        self.assertEqual(len(result), 3, result)
+        found = " | ".join(missing.found for missing in result)
+        for expected in ("vm.args line 1", "vm.args line 2", "rel/vm.args.src line 1"):
+            self.assertIn(expected, found)
+
+    def test_settings_that_do_not_turn_distribution_on_have_nothing_missing(self):
+        machine = self.plant()
+        self.settings(
+            machine,
+            "vm.args",
+            "# -name commented\n## -sname commented\n\n-setcookie planted\n+K true\n-kernel net_ticktime 60\n"
+            "-namespace x\n-snames x\n",
+        )
+        self.assertEqual(setup_check.check_distribution(machine), [])
+
+    def test_a_vm_args_under_build_or_git_is_not_the_releases(self):
+        machine = self.plant()
+        self.settings(machine, "build/packages/some_package/vm.args", "-sname dependency\n")
+        self.settings(machine, ".git/vm.args", "-sname dependency\n")
+        self.assertEqual(setup_check.check_distribution(machine), [])
+
+    def test_the_check_runs_where_genesis_no_client_is_1_too(self):
+        machine = self.plant(with_client=False, no_client_flag=True)
+        self.settings(machine, "vm.args", "-sname genesis\n")
+        result = setup_check.check_all(machine)
+        self.assertEqual(len(result), 1, result)
+        self.assert_part(result[0], "distribution")
 
 
 # ---------------------------------------------------------------- 5. Postgres

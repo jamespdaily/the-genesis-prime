@@ -29,6 +29,7 @@
 
 import genesis_prime/database/pool
 import genesis_prime/server
+import genesis_prime/telemetry/snapshot
 import genesis_prime/topology/trial
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/float
@@ -363,7 +364,7 @@ pub fn start_server() -> Result(Nil, Nil) {
       password: option.None,
       pool_size: 1,
     )
-  case server.start(settings) {
+  case server.start(settings, snapshot.settings(process.new_name("snapshot"))) {
     Ok(_) -> Ok(Nil)
     Error(_) -> Error(Nil)
   }

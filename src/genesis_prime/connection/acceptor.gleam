@@ -9,11 +9,12 @@
 //// exits. It restarts with a new listening socket.
 
 import genesis_prime/connection/capacity
-import genesis_prime/connection/log
 import genesis_prime/connection/socket.{type ListenSocket, type Socket}
 import genesis_prime/connection/socket_owner
+import genesis_prime/telemetry/log
 import gleam/erlang/process.{type Subject}
 import gleam/int
+import gleam/option.{None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision
@@ -24,6 +25,16 @@ const shutdown_ms = 1000
 
 /// How long the acceptor has to open its socket and start, in milliseconds.
 const start_deadline_ms = 5000
+
+/// Who the acceptor's lines are from: the process, by its name. A client that
+/// has not logged in has no account.
+const acceptor_who =
+  log.Who(
+    account: None,
+    actor: None,
+    place: Some(log.Process("acceptor")),
+    message: None,
+  )
 
 /// What the acceptor needs to start.
 pub type Settings {
@@ -64,6 +75,7 @@ fn start(settings: Settings) -> actor.StartResult(Subject(Message)) {
         let assert Ok(port) = socket.listening_port(listen)
           as "a listening socket has a port"
         log.info(
+          acceptor_who,
           "listening on port "
             <> int.to_string(port)
             <> ", "
@@ -71,7 +83,6 @@ fn start(settings: Settings) -> actor.StartResult(Subject(Message)) {
             cap: settings.connection_cap,
             ceiling_words: settings.heap_ceiling_words,
           ),
-          "none",
         )
         settings.listening(port)
         process.send(subject, Accept)
@@ -116,16 +127,15 @@ fn handle_message(
 /// its cap or the owner did not start.
 fn admit(settings: Settings, client: Socket) -> Nil {
   let connections = factory_supervisor.get_by_name(settings.connections)
-  let peer = socket.peer(client)
   case
     factory_supervisor.count_children(connections) >= settings.connection_cap
   {
     True -> {
       log.warning(
+        acceptor_who,
         "connection refused: the listener is at its cap of "
           <> int.to_string(settings.connection_cap)
           <> " connections",
-        peer,
       )
       socket.close(client)
     }
@@ -136,18 +146,18 @@ fn admit(settings: Settings, client: Socket) -> Nil {
             Ok(Nil) -> Nil
             Error(reason) ->
               log.warning(
+                acceptor_who,
                 "connection could not be given to its owner: "
                   <> socket.describe(reason),
-                peer,
               )
           }
           socket_owner.socket_given(started.data)
         }
         Error(error) -> {
           log.warning(
+            acceptor_who,
             "connection refused: its owner did not start: "
               <> describe_start_error(error),
-            peer,
           )
           socket.close(client)
         }

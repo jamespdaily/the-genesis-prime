@@ -24,12 +24,13 @@ import genesis_prime/connection/rate_limit.{Rate}
 import genesis_prime/connection/socket
 import genesis_prime/connection/socket_owner.{Settings}
 import gleam/bit_array
+import gleam/dict
 import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/string
 import listening.{type Received, Config, Received}
-import log_capture
+import log_capture.{Text}
 import owned_test
 import socket_watch
 import tcp_client
@@ -271,7 +272,7 @@ pub fn an_owner_whose_heap_passes_its_ceiling_is_killed_and_its_socket_closed_te
 
 pub fn a_decode_failure_ends_the_connection_closes_the_socket_and_logs_the_reason_test() -> Nil {
   use <- owned_test.run(10_000)
-  log_capture.start()
+  let capture = log_capture.start()
   let running = listening.start(listening.config())
   let client = listening.connect(running)
   send(client, listening.frame_of(message_id: 1, size: 4))
@@ -283,12 +284,16 @@ pub fn a_decode_failure_ends_the_connection_closes_the_socket_and_logs_the_reaso
     as "the project rules: a decode failure ends the connection, not the server"
   assert tcp_client.await_close(client, close_wait_ms)
     as "a decode failure closes the socket"
-  assert log_capture.await(owner, close_wait_ms)
-    == Ok(log_capture.Line(
-      log_capture.WarningLevel,
-      "connection ended: frame length 131071 is over the limit of 131070 bytes",
-    ))
+  let assert Ok(line) =
+    log_capture.next_from(capture, from: owner, within: close_wait_ms)
+    as "the owner logged no line about the end of its connection"
+  assert line.level == "warning"
     as "the project rules: the reason is logged, as a warning, an outside failure the server recovered from (designing-processes, Logging)"
+  assert line.text
+    == "connection ended: frame length 131071 is over the limit of 131070 bytes"
+    as "the project rules: the reason is logged"
+  assert dict.get(line.metadata, "process") == Ok(Text("socket_owner"))
+    as "designing-processes, Logging: every line carries who and where, here the process"
 }
 
 pub fn a_client_that_closes_ends_its_owner_normally_test() -> Nil {

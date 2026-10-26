@@ -2,6 +2,7 @@
 //// is started under it.
 
 import genesis_prime/database/pool
+import genesis_prime/telemetry/snapshot
 import gleam/otp/actor
 import gleam/otp/static_supervisor.{type Builder, type Supervisor}
 
@@ -27,9 +28,14 @@ pub fn supervisor_with_pool(pool_settings: pool.Settings) -> Builder {
 /// Starts the top supervisor with the database pool and every other child
 /// the server runs, each added here with its restart and shutdown settings.
 /// The pool is given by `pool_settings`; it opens its connections in the
-/// background, so the tree starts whether or not Postgres is reachable.
+/// background, so the tree starts whether or not Postgres is reachable. The
+/// snapshot process, which writes the runtime's numbers to the log, is given
+/// by `snapshot_settings` and starts after the pool.
 pub fn start(
-  pool_settings: pool.Settings,
+  pool_settings pool_settings: pool.Settings,
+  snapshot_settings snapshot_settings: snapshot.Settings,
 ) -> Result(actor.Started(Supervisor), actor.StartError) {
-  supervisor_with_pool(pool_settings) |> static_supervisor.start
+  supervisor_with_pool(pool_settings)
+  |> static_supervisor.add(snapshot.supervised(snapshot_settings))
+  |> static_supervisor.start
 }
