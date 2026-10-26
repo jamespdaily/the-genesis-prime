@@ -24,7 +24,7 @@ import environment
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{type EngineDeclaration, EngineDeclaration}
 import genesis_prime/coverage/measurement.{
-  type Measurement, Measured, TypeLine, Unmeasured,
+  type Measurement, type TypeLine, Measured, TypeLine, Unmeasured,
 }
 import genesis_prime/table
 import genesis_prime/table/creature2
@@ -75,6 +75,14 @@ fn measured_over_planted_objectives(
   measured
 }
 
+/// The declaration of the engine with this name.
+fn engine_named(name: String) -> EngineDeclaration {
+  let assert Ok(found) =
+    list.find(engine.all(), fn(declaration) { declaration.name == name })
+    as { "no engine is named " <> name }
+  found
+}
+
 fn lines(measured: Measurement) -> List(#(Int, Int, Float)) {
   let assert Measured(types:, ..) = measured
     as "the engine's source is a table, so it is measured"
@@ -88,7 +96,10 @@ const planted_types = [7, 0, 2, 7, 5, 7, 0, 9, 2, 7, 0]
 pub fn types_are_counted_by_rows_heaviest_first_with_ties_by_type_number_test() -> Nil {
   use <- owned_test.run(10_000)
   let measured =
-    measured_over_planted_objectives(engine.quest_objectives(), planted_types)
+    measured_over_planted_objectives(
+      engine_named("Quest objectives"),
+      planted_types,
+    )
   assert lines(measured)
     == [#(7, 4, 0.5), #(2, 2, 0.25), #(5, 1, 0.125), #(9, 1, 0.125)]
     as "the rule: most rows first; 5 and 9 have one row each, so the lower type number comes first; each share is rows over the 8 non-zero rows"
@@ -123,7 +134,7 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
       requirements: [],
     )
     as "a planted Prerequisite table loads"
-  let measured = measurement.measure(engine.prerequisites(), tables)
+  let measured = measurement.measure(engine_named("Prerequisites"), tables)
   store.unload(tables)
   assert lines(measured)
     == [#(4, 4, 0.5), #(5, 2, 0.25), #(6, 1, 0.125), #(7, 1, 0.125)]
@@ -137,7 +148,8 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
 
 pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
   use <- owned_test.run(10_000)
-  let declared = EngineDeclaration(..engine.quest_objectives(), handled: [7, 2])
+  let declared =
+    EngineDeclaration(..engine_named("Quest objectives"), handled: [7, 2])
   let assert Measured(types:, breaches:, ..) =
     measured_over_planted_objectives(declared, planted_types)
     as "the planted table is measured"
@@ -155,7 +167,7 @@ pub fn a_handled_type_is_marked_and_every_other_keeps_its_share_test() -> Nil {
 pub fn a_declared_type_no_row_uses_is_a_breach_test() -> Nil {
   use <- owned_test.run(10_000)
   let declared =
-    EngineDeclaration(..engine.quest_objectives(), handled: [7, 99, 0])
+    EngineDeclaration(..engine_named("Quest objectives"), handled: [7, 99, 0])
   let assert Measured(types:, breaches:, ..) =
     measured_over_planted_objectives(declared, planted_types)
     as "the planted table is measured"
@@ -229,9 +241,9 @@ pub fn every_engine_declares_its_area_and_the_type_columns_its_table_has_test() 
 /// the record count at 0x30, the record block's offset at 0x40 (counted from
 /// 0x60) and each column's offset in the record by the client's layout.
 fn counted_by_the_file(
-  file: String,
-  schema: Schema,
-  columns: List(String),
+  file file: String,
+  schema schema: Schema,
+  columns columns: List(String),
 ) -> #(Int, Int) {
   let bytes = client_tables.read(file)
   let assert <<
@@ -269,6 +281,17 @@ fn counted_by_the_file(
   #(list.length(values) - zeros, zeros)
 }
 
+fn heaviest_first(types: List(TypeLine)) -> Bool {
+  list.window_by_2(types)
+  |> list.all(fn(pair) {
+    let #(heavier, lighter) = pair
+    heavier.rows > lighter.rows
+    || {
+      heavier.rows == lighter.rows && heavier.type_number < lighter.type_number
+    }
+  })
+}
+
 pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_rows_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_present())
@@ -283,7 +306,7 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
           measured
           as { table <> " is a table the client has, so it is measured" }
         let #(non_zero, zero) =
-          counted_by_the_file(table, schema_of(table), columns)
+          counted_by_the_file(file: table, schema: schema_of(table), columns:)
         assert non_zero > 0 as { table <> ": the client's file has types" }
         assert int.sum(list.map(types, fn(line) { line.rows })) == non_zero
           as {
@@ -294,15 +317,7 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
           as { table <> ": the total of the non-zero rows" }
         assert zero_values == zero
           as { table <> ": the zero values the file holds, counted apart" }
-        assert list.window_by_2(types)
-          |> list.all(fn(pair) {
-            let #(heavier, lighter) = pair
-            heavier.rows > lighter.rows
-            || {
-              heavier.rows == lighter.rows
-              && heavier.type_number < lighter.type_number
-            }
-          })
+        assert heaviest_first(types)
           as { table <> ": heaviest first, ties by the lower type number" }
         assert breaches == []
           as { table <> ": every declared type is one some row uses" }
@@ -327,7 +342,7 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
 
 fn quest_objectives_over(types: List(Int)) -> Measurement {
   measurement.from_values(
-    EngineDeclaration(..engine.quest_objectives(), handled: [7, 2]),
+    EngineDeclaration(..engine_named("Quest objectives"), handled: [7, 2]),
     types,
   )
 }
@@ -359,7 +374,10 @@ pub fn the_totals_give_each_engine_its_types_rows_zeros_and_handled_types_test()
   let text =
     checklist.totals([
       quest_objectives_over(planted_types),
-      Unmeasured(engine: engine.messages(), needed: "the ids"),
+      Unmeasured(
+        engine: engine_named("Client message routing"),
+        needed: "the ids",
+      ),
     ])
   assert text
     == string.join(
@@ -378,7 +396,10 @@ pub fn an_engine_whose_cases_are_not_recorded_says_what_is_needed_test() -> Nil 
   use <- owned_test.run(10_000)
   let text =
     checklist.render([
-      Unmeasured(engine: engine.messages(), needed: "the 645 ids"),
+      Unmeasured(
+        engine: engine_named("Client message routing"),
+        needed: "the 645 ids",
+      ),
     ])
   assert string.starts_with(text, "## Client message routing (#51)\n")
     as "the heading names the engine and its area issue"

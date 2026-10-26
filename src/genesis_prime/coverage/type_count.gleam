@@ -1,6 +1,12 @@
 //// Counting how many rows of the client's data use each type of one engine's
 //// kind: the weight each type adds to the engine's work.
 
+import gleam/dict
+import gleam/int
+import gleam/list
+import gleam/option.{None, Some}
+import gleam/order
+
 /// One type and the rows that use it.
 pub type TypeCount {
   TypeCount(
@@ -30,5 +36,32 @@ pub type Count {
 /// columns gives every column's value of every row): each non-zero value is a
 /// row of its type, and each zero is counted apart.
 pub fn count(values: List(Int)) -> Count {
-  todo as "counts the types"
+  let zero_values = list.count(values, fn(value) { value == 0 })
+  let used = list.filter(values, fn(value) { value != 0 })
+  let rows = list.length(used)
+  let types =
+    list.fold(used, dict.new(), fn(counts, value) {
+      dict.upsert(counts, value, fn(found) {
+        case found {
+          Some(so_far) -> so_far + 1
+          None -> 1
+        }
+      })
+    })
+    |> dict.to_list
+    |> list.sort(fn(first, second) {
+      case int.compare(second.1, first.1) {
+        order.Eq -> int.compare(first.0, second.0)
+        order.Lt -> order.Lt
+        order.Gt -> order.Gt
+      }
+    })
+    |> list.map(fn(entry) {
+      TypeCount(
+        type_number: entry.0,
+        rows: entry.1,
+        share: int.to_float(entry.1) /. int.to_float(rows),
+      )
+    })
+  Count(types:, rows:, zero_values:)
 }
