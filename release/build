@@ -1,0 +1,11 @@
+#!/bin/sh
+# Builds the release: Gleam's Erlang shipment in build/erlang-shipment, with
+# the VM flags (vm.args) and the start script beside it. Run it with the
+# patched OTP first on PATH, the one the release runs on.
+
+set -eu
+
+cd "$(dirname "$0")/.."
+
+gleam export erlang-shipment
+cp release/vm.args release/start build/erlang-shipment/

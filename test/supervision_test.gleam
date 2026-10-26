@@ -18,7 +18,6 @@
 //// worker. The planted services are those of `planted_service`.
 
 import genesis_prime/server
-import genesis_prime/telemetry/snapshot
 import gleam/erlang/process.{type Subject}
 import gleam/otp/static_supervisor
 import owned_test
@@ -106,7 +105,7 @@ pub fn the_top_supervisors_settings_are_one_for_one_with_three_restarts_in_five_
       pool_size: 2,
     )
   let assert Ok(started) =
-    server.start(settings, snapshot.settings(process.new_name("snapshot")))
+    server.start(template_database.tree_settings(settings))
     as "the top supervisor did not start"
   assert supervisor_flags.read(started.pid)
     == Flags(strategy: static_supervisor.OneForOne, intensity: 3, period: 5)

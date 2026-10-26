@@ -6,6 +6,7 @@
 
 import genesis_prime/table/loader/tbl_file
 import gleam/erlang/reference.{type Reference}
+import gleam/int
 import gleam/list
 import gleam/result
 import simplifile
@@ -21,6 +22,7 @@ pub opaque type Tables {
 /// module makes its own.
 pub opaque type Entry {
   Entry(
+    schema: tbl_file.Schema,
     table: String,
     file: String,
     put: fn(BitArray, Reference) -> Result(Nil, tbl_file.FileError),
@@ -50,6 +52,33 @@ pub type LoadError {
   RowMissing(from_table: String, column: String, to_table: String, id: Int)
 }
 
+/// A sentence that says why a load failed, naming the tables, for the message
+/// the server stops with.
+pub fn describe(error: LoadError) -> String {
+  case error {
+    TableFileUnreadable(file:, reason:) ->
+      "the file "
+      <> file
+      <> ".tbl could not be read: "
+      <> simplifile.describe_error(reason)
+    TableFileInvalid(table:, error:) ->
+      "the file of the table "
+      <> table
+      <> " is not accepted: "
+      <> tbl_file.describe_error(error)
+    RowMissing(from_table:, column:, to_table:, id:) ->
+      "the table "
+      <> from_table
+      <> " column "
+      <> column
+      <> " names id "
+      <> int.to_string(id)
+      <> ", which the table "
+      <> to_table
+      <> " has no row for"
+  }
+}
+
 /// An entry for a generated table module. A table's term is stored under its
 /// load's key and the table's name.
 pub fn entry(
@@ -59,6 +88,7 @@ pub fn entry(
   id id: fn(row) -> Int,
 ) -> Entry {
   Entry(
+    schema:,
     table: schema.table,
     file: schema.file,
     put: fn(bytes, key) {
@@ -67,6 +97,11 @@ pub fn entry(
     },
     ids: fn(tables) { list.map(rows(tables:, table: schema.table), id) },
   )
+}
+
+/// The schema the entry's file is read by.
+pub fn schema(entry: Entry) -> tbl_file.Schema {
+  entry.schema
 }
 
 /// The name of the entry's file, without `.tbl`.

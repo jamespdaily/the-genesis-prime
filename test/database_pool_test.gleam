@@ -22,7 +22,6 @@
 
 import genesis_prime/database/pool
 import genesis_prime/server
-import genesis_prime/telemetry/snapshot
 import gleam/dynamic/decode
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/otp/actor
@@ -55,7 +54,7 @@ pub fn the_pool_starts_before_every_other_child_test() -> Nil {
   // The tree `server.start` starts lists the pool first.
   let settings = pool_settings(database, "pool_first")
   let assert Ok(started) =
-    server.start(settings, snapshot.settings(process.new_name("snapshot")))
+    server.start(template_database.tree_settings(settings))
     as "the top supervisor did not start"
   let assert [first, ..] = supervisor_children.in_start_order(started.pid)
     as "the top supervisor has no child"
@@ -117,7 +116,7 @@ pub fn the_tree_starts_with_the_database_away_and_a_query_gets_an_error_test() -
   let settings = through(pool_settings(database, "pool_away"), away)
 
   let assert Ok(started) =
-    server.start(settings, snapshot.settings(process.new_name("snapshot")))
+    server.start(template_database.tree_settings(settings))
     as "the tree did not start with the database away"
   assert process.is_alive(started.pid)
   let assert Ok(pool_pid) = process.named(settings.name)
@@ -136,8 +135,7 @@ pub fn the_database_coming_back_is_used_within_the_pools_reconnect_time_test() -
   let assert Ok(away) = relay.refusing(to: target_of(database))
     as "the relay did not get a port"
   let settings = through(pool_settings(database, "pool_back"), away)
-  let assert Ok(_) =
-    server.start(settings, snapshot.settings(process.new_name("snapshot")))
+  let assert Ok(_) = server.start(template_database.tree_settings(settings))
     as "the tree did not start with the database away"
   let connection = pool.connection(settings)
   assert read_one(connection) == Error(pog.ConnectionUnavailable)
@@ -199,11 +197,9 @@ pub fn two_trees_with_different_pool_settings_do_not_share_a_pool_test() -> Nil 
   use second_database <- template_database.run
   let first = pool_settings(first_database, "pool_first_tree")
   let second = pool_settings(second_database, "pool_second_tree")
-  let assert Ok(_) =
-    server.start(first, snapshot.settings(process.new_name("snapshot")))
+  let assert Ok(_) = server.start(template_database.tree_settings(first))
     as "the first tree did not start"
-  let assert Ok(_) =
-    server.start(second, snapshot.settings(process.new_name("snapshot")))
+  let assert Ok(_) = server.start(template_database.tree_settings(second))
     as "the second tree did not start"
 
   assert first_database.name != second_database.name

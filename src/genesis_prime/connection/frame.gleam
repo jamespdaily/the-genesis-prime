@@ -72,28 +72,41 @@ pub fn encode(
 pub fn decode(
   received received: BitArray,
 ) -> Result(#(List(Frame), BitArray), FrameError) {
+  case split(received:) {
+    #(frames, Ok(rest)) -> Ok(#(frames, rest))
+    #(_, Error(error)) -> Error(error)
+  }
+}
+
+/// Like `decode`, but a bad frame does not hide the whole frames before it:
+/// the frames that arrived whole in order, and then either the bytes left over
+/// or the error that stopped the cut. A connection hands on the frames that
+/// were the client's and then ends on the error.
+pub fn split(
+  received received: BitArray,
+) -> #(List(Frame), Result(BitArray, FrameError)) {
   collect(received, [])
 }
 
 fn collect(
   received: BitArray,
   found: List(Frame),
-) -> Result(#(List(Frame), BitArray), FrameError) {
+) -> #(List(Frame), Result(BitArray, FrameError)) {
   case received {
     <<length:size(32)-little, _:bits>> ->
       case check_length(length) {
-        Error(error) -> Error(error)
+        Error(error) -> #(list.reverse(found), Error(error))
         Ok(Nil) ->
           case received {
             <<whole:bytes-size(length), rest:bytes>> ->
               case read(whole) {
                 Ok(frame) -> collect(rest, [frame, ..found])
-                Error(error) -> Error(error)
+                Error(error) -> #(list.reverse(found), Error(error))
               }
-            _ -> Ok(#(list.reverse(found), received))
+            _ -> #(list.reverse(found), Ok(received))
           }
       }
-    _ -> Ok(#(list.reverse(found), received))
+    _ -> #(list.reverse(found), Ok(received))
   }
 }
 

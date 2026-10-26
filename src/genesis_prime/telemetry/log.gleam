@@ -1,7 +1,7 @@
 //// The one place the server writes a log line, over Erlang's logger. Every
 //// line takes a `Who`, so each carries who and where as metadata under a
-//// fixed key: `account`, `character` or `unit`, `process` or `map`, and
-//// `message_name` and `message_number`. `Who` has no field for a password, a
+//// fixed key: `account`, `character` or `unit`, `process` or `map`,
+//// `message_name` and `message_number`, and `peer`. `Who` has no field for a password, a
 //// session key or any other secret, so none can be logged through here, and
 //// a code rule refuses a call to `logger`, `io:format` or `io:fwrite` from
 //// anywhere else in `src/`.
@@ -16,7 +16,7 @@ import gleam/option.{type Option, None}
 
 /// Who and where a line is about. Each part is optional, because a line
 /// about the server itself has no account and a line about a login has no
-/// character.
+/// character. A connection that has not logged in is known by its peer alone.
 pub type Who {
   Who(
     /// The account the line is about.
@@ -27,6 +27,9 @@ pub type Who {
     place: Option(Place),
     /// The client message the line is about.
     message: Option(Message),
+    /// The remote address and port of the client's connection, as text,
+    /// under the metadata key `peer`.
+    peer: Option(String),
   )
 }
 
@@ -60,9 +63,10 @@ pub type Number {
   Ratio(Float)
 }
 
-/// A line about nobody in particular: no account, no actor, no place and no
-/// message.
-pub const nobody = Who(account: None, actor: None, place: None, message: None)
+/// A line about nobody in particular: no account, no actor, no place, no
+/// message and no peer.
+pub const nobody =
+  Who(account: None, actor: None, place: None, message: None, peer: None)
 
 /// The levels of logger that the functions of this module write at.
 type Level {
