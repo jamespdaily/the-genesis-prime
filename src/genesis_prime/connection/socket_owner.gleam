@@ -195,7 +195,7 @@ pub fn start(
   shutdown shutdown: shutdown.Settings,
 ) -> actor.StartResult(Subject(Message)) {
   actor.new_with_initialiser(start_deadline_ms, fn(subject) {
-    limit_heap(settings.heap_ceiling_words)
+    limit_heap(settings.heap_ceiling_words, True)
     keep_messages_off_heap()
     shutdown.register(
       settings: shutdown,
@@ -424,8 +424,8 @@ fn end_connection(
 
 /// Sets the calling process's heap ceiling in words, killing it when it needs
 /// more, shared binaries counted, and logging the kill.
-@external(erlang, "genesis_prime_socket_ffi", "limit_heap")
-fn limit_heap(words: Int) -> Nil
+@external(erlang, "heap_limit_ffi", "limit")
+fn limit_heap(words: Int, include_shared_binaries: Bool) -> Nil
 
 /// Keeps the calling process's waiting messages off its heap.
 @external(erlang, "genesis_prime_socket_ffi", "keep_messages_off_heap")

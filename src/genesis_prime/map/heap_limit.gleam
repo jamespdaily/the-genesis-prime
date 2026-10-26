@@ -39,11 +39,12 @@ pub const measured =
 pub fn apply(limit limit: HeapLimit) -> Nil {
   case limit {
     NoLimit -> Nil
-    Words(count:) -> limit_heap(count)
+    Words(count:) -> limit_heap(count, False)
   }
 }
 
 /// Sets the calling process's heap ceiling in words, killing it when it needs
-/// more and logging the kill.
+/// more and logging the kill, counting the binaries it shares with other
+/// processes only when asked.
 @external(erlang, "heap_limit_ffi", "limit")
-fn limit_heap(words: Int) -> Nil
+fn limit_heap(words: Int, include_shared_binaries: Bool) -> Nil
