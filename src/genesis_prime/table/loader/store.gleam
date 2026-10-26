@@ -21,6 +21,7 @@ pub opaque type Tables {
 /// module makes its own.
 pub opaque type Entry {
   Entry(
+    schema: tbl_file.Schema,
     table: String,
     file: String,
     put: fn(BitArray, Reference) -> Result(Nil, tbl_file.FileError),
@@ -50,6 +51,12 @@ pub type LoadError {
   RowMissing(from_table: String, column: String, to_table: String, id: Int)
 }
 
+/// A sentence that says why a load failed, naming the tables, for the message
+/// the server stops with.
+pub fn describe(error: LoadError) -> String {
+  panic as "describe is not built yet"
+}
+
 /// An entry for a generated table module. A table's term is stored under its
 /// load's key and the table's name.
 pub fn entry(
@@ -59,6 +66,7 @@ pub fn entry(
   id id: fn(row) -> Int,
 ) -> Entry {
   Entry(
+    schema:,
     table: schema.table,
     file: schema.file,
     put: fn(bytes, key) {
@@ -67,6 +75,11 @@ pub fn entry(
     },
     ids: fn(tables) { list.map(rows(tables:, table: schema.table), id) },
   )
+}
+
+/// The schema the entry's file is read by.
+pub fn schema(entry: Entry) -> tbl_file.Schema {
+  entry.schema
 }
 
 /// The name of the entry's file, without `.tbl`.

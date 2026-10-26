@@ -7,7 +7,10 @@
 
 import database_support.{type Settings}
 import genesis_prime/database/pool
+import genesis_prime/server
+import genesis_prime/shutdown
 import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
+import gleam/erlang/reference
 import gleam/int
 import gleam/otp/actor
 import gleam/result
@@ -74,6 +77,22 @@ pub fn pool_settings(
     user: database.settings.user,
     password: database.settings.password,
     pool_size:,
+  )
+}
+
+/// The settings of the whole tree around a pool, for a test that starts it with
+/// `server.start`: no game table is read, and the shutdown has deadlines of 1
+/// second, which a test that does not stop the server never meets.
+pub fn tree_settings(pool_settings: pool.Settings) -> server.Settings {
+  server.Settings(
+    pool: pool_settings,
+    tables: server.TableSettings(
+      key: reference.new(),
+      folder: "",
+      entries: [],
+      requirements: [],
+    ),
+    shutdown: shutdown.new(drain_deadline_ms: 1000, flush_deadline_ms: 1000),
   )
 }
 

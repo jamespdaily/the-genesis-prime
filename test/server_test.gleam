@@ -24,7 +24,8 @@ pub fn every_process_the_server_starts_is_in_the_top_supervisors_tree_test() -> 
       pool_size: 2,
     )
   let watch = spawn_watch.begin()
-  let assert Ok(started) = server.start(settings)
+  let assert Ok(started) =
+    server.start(template_database.tree_settings(settings))
     as "the top supervisor did not start"
   assert spawn_watch.unsupervised(watch, started.pid) == []
 }

@@ -2,6 +2,9 @@
 //// is started under it.
 
 import genesis_prime/database/pool
+import genesis_prime/shutdown
+import genesis_prime/table/loader/store
+import gleam/erlang/reference.{type Reference}
 import gleam/otp/actor
 import gleam/otp/static_supervisor.{type Builder, type Supervisor}
 
@@ -24,12 +27,50 @@ pub fn supervisor_with_pool(pool_settings: pool.Settings) -> Builder {
   supervisor() |> static_supervisor.add(pool.supervised(pool_settings))
 }
 
-/// Starts the top supervisor with the database pool and every other child
-/// the server runs, each added here with its restart and shutdown settings.
-/// The pool is given by `pool_settings`; it opens its connections in the
-/// background, so the tree starts whether or not Postgres is reachable.
+/// What the game tables are loaded from: the folder of the client's `.tbl`
+/// files, the tables to read from it, the rows the server requires of them,
+/// and the key the loaded tables' persistent terms are stored under.
+pub type TableSettings {
+  TableSettings(
+    key: Reference,
+    folder: String,
+    entries: List(store.Entry),
+    requirements: List(store.Requirement),
+  )
+}
+
+/// Everything the tree is started with, each made once by whoever starts it.
+pub type Settings {
+  Settings(
+    pool: pool.Settings,
+    tables: TableSettings,
+    shutdown: shutdown.Settings,
+  )
+}
+
+/// Why the tree did not start.
+pub type StartError {
+  /// A game table could not be loaded, so nothing was started.
+  TablesNotLoaded(store.LoadError)
+  /// The top supervisor or one of its children did not start.
+  TreeNotStarted(actor.StartError)
+}
+
+/// A sentence that says why the tree did not start, for the message the
+/// server stops with.
+pub fn describe(error: StartError) -> String {
+  panic as "describe is not built yet"
+}
+
+/// Loads the game tables, then starts the top supervisor with the database
+/// pool as its first child and the shutdown coordinator after it, and every
+/// other child the server runs, each added here with its restart and shutdown
+/// settings. The tables load first, once, so a child that reads them is given
+/// them as a start argument; a load that fails starts nothing. The pool opens
+/// its connections in the background, so the tree starts whether or not
+/// Postgres is reachable.
 pub fn start(
-  pool_settings: pool.Settings,
-) -> Result(actor.Started(Supervisor), actor.StartError) {
-  supervisor_with_pool(pool_settings) |> static_supervisor.start
+  settings: Settings,
+) -> Result(actor.Started(Supervisor), StartError) {
+  panic as "start is not built yet"
 }
