@@ -93,17 +93,23 @@ pub fn measured_run(
   let result = contender.run(players, visibility_range, timing)
   io.println(
     string.pad_end(contender.name, 32, " ")
-    <> pad_start(int.to_string(result.players), 5)
+    <> pad_start(text: int.to_string(result.players), width: 5)
     <> " players "
-    <> pad_start(int.to_string(result.creatures), 6)
+    <> pad_start(text: int.to_string(result.creatures), width: 6)
     <> " creatures range "
-    <> pad_start(two_places(visibility_range), 7)
+    <> pad_start(text: two_places(visibility_range), width: 7)
     <> ": p50 "
-    <> pad_start(int.to_string(latency.percentile(result.latency, 50.0)), 8)
+    <> pad_start(
+      text: int.to_string(latency.percentile(result.latency, 50.0)),
+      width: 8,
+    )
     <> " p99 "
-    <> pad_start(int.to_string(latency.percentile(result.latency, 99.0)), 8)
+    <> pad_start(
+      text: int.to_string(latency.percentile(result.latency, 99.0)),
+      width: 8,
+    )
     <> " max "
-    <> pad_start(int.to_string(latency.maximum(result.latency)), 8)
+    <> pad_start(text: int.to_string(latency.maximum(result.latency)), width: 8)
     <> " us, moves "
     <> int.to_string(result.moves_sent)
     <> " updates "
@@ -145,7 +151,7 @@ pub fn climb_and_confirm(
 /// Short runs of one contender at each of `player_counts`, lowest first,
 /// stopping after the first run that fell behind; the runs, in the order they
 /// ran. A contender that keeps up with every count gives every count's run.
-pub fn climb(
+fn climb(
   contender contender: Contender,
   visibility_range visibility_range: Float,
   player_counts player_counts: List(Int),
@@ -183,7 +189,7 @@ fn climb_counts(
 
 /// Full-length reruns of the highest player count of `climbed` that kept up
 /// and the first that fell behind, each when there is one.
-pub fn confirm(
+fn confirm(
   contender contender: Contender,
   climbed climbed: List(Measured),
   visibility_range visibility_range: Float,
@@ -211,7 +217,7 @@ pub fn confirm(
 
 /// The ceiling `confirmed`, the confirmation runs of one contender at one
 /// range, show.
-pub fn ceiling_of(
+fn ceiling_of(
   contender contender: Contender,
   visibility_range visibility_range: Float,
   confirmed confirmed: List(Measured),
@@ -247,7 +253,7 @@ pub fn keeps_up_at(ceiling ceiling: Ceiling, players players: Int) -> Bool {
 /// Rounds in which every contender runs once at short timing, the first to run
 /// rotating by one contender from round to round so each starts about as often
 /// as the others. Prints each run's time per message.
-pub fn paired_rounds(
+fn paired_rounds(
   contenders contenders: List(Contender),
   rounds rounds: Int,
   players players: Int,
@@ -340,7 +346,7 @@ fn result_of(round: List(Measured), contender: String) -> RunResult {
 }
 
 /// Microseconds of scheduler busy time per message the owners handled.
-pub fn microseconds_per_message(result: RunResult) -> Float {
+fn microseconds_per_message(result: RunResult) -> Float {
   int.to_float(result.busy_microseconds)
   /. int.to_float(int.max(1, result.messages_handled))
 }
@@ -364,24 +370,30 @@ pub fn print_latency(
   )
   io.println(
     string.pad_end(kind, 32, " ")
-    <> pad_start("players", 9)
-    <> pad_start("p50", 10)
-    <> pad_start("p99", 10)
-    <> pad_start("max", 10)
-    <> pad_start("arrivals", 12)
+    <> pad_start(text: "players", width: 9)
+    <> pad_start(text: "p50", width: 10)
+    <> pad_start(text: "p99", width: 10)
+    <> pad_start(text: "max", width: 10)
+    <> pad_start(text: "arrivals", width: 12)
     <> "  pace",
   )
   list.each(sorted_by_creatures_and_players(runs), fn(found) {
     io.println(
       string.pad_end(found.contender, 32, " ")
-      <> pad_start(int.to_string(found.result.players), 9)
+      <> pad_start(text: int.to_string(found.result.players), width: 9)
       <> pad_start(
-        int.to_string(latency.percentile(found.result.latency, 50.0)),
-        10,
+        text: int.to_string(latency.percentile(found.result.latency, 50.0)),
+        width: 10,
       )
-      <> pad_start(int.to_string(p99_of(found.result)), 10)
-      <> pad_start(int.to_string(latency.maximum(found.result.latency)), 10)
-      <> pad_start(int.to_string(latency.count(found.result.latency)), 12)
+      <> pad_start(text: int.to_string(p99_of(found.result)), width: 10)
+      <> pad_start(
+        text: int.to_string(latency.maximum(found.result.latency)),
+        width: 10,
+      )
+      <> pad_start(
+        text: int.to_string(latency.count(found.result.latency)),
+        width: 12,
+      )
       <> "  "
       <> pace_name(found.result.pace),
     )
@@ -403,11 +415,11 @@ pub fn print_ceiling(
     io.println(
       string.pad_end(ceiling.contender, 32, " ")
       <> " range "
-      <> pad_start(two_places(ceiling.visibility_range), 7)
+      <> pad_start(text: two_places(ceiling.visibility_range), width: 7)
       <> " m: kept up at "
-      <> players_text(ceiling.kept_up_at, "no count")
+      <> players_text(players: ceiling.kept_up_at, none: "no count")
       <> ", fell behind at "
-      <> players_text(ceiling.fell_behind_at, "no count"),
+      <> players_text(players: ceiling.fell_behind_at, none: "no count"),
     )
   })
 }
@@ -419,7 +431,7 @@ pub fn print_memory(suffix suffix: String, runs runs: List(Measured)) -> Nil {
   list.each(sorted_by_creatures_and_players(runs), fn(found) {
     io.println(
       string.pad_end(found.contender, 32, " ")
-      <> pad_start(int.to_string(found.result.players), 5)
+      <> pad_start(text: int.to_string(found.result.players), width: 5)
       <> " players: "
       <> two_places(found.result.memory_words_per_unit)
       <> " words per unit",
@@ -446,7 +458,7 @@ fn sorted_by_creatures_and_players(runs: List(Measured)) -> List(Measured) {
 }
 
 /// A player count as text, or `none` when there is no count.
-pub fn players_text(players: Option(Int), none: String) -> String {
+pub fn players_text(players players: Option(Int), none none: String) -> String {
   case players {
     option.Some(players) -> int.to_string(players) <> " players"
     option.None -> none
@@ -489,12 +501,12 @@ pub fn narrow_by_cpu(
     standings:,
     measure: fn(standing) { standing.microseconds_per_message },
     too_far: fn(value, lowest) {
-      percent_above(value, lowest) >. resolution_percent
+      percent_above(value:, lowest:) >. resolution_percent
     },
     reason: fn(standing, lowest) {
       two_places(standing.microseconds_per_message)
       <> " us/message is "
-      <> signed(percent_above(standing.microseconds_per_message, lowest))
+      <> signed(percent_above(value: standing.microseconds_per_message, lowest:))
       <> "% above the lowest, "
       <> two_places(lowest)
       <> " us/message"
@@ -504,7 +516,7 @@ pub fn narrow_by_cpu(
 
 /// The standings whose `measure` is not too far above the lowest `measure`
 /// among them, in their order, and the others with why they were dropped.
-pub fn narrow(
+fn narrow(
   standings standings: List(Timed),
   measure measure: fn(Timed) -> Float,
   too_far too_far: fn(Float, Float) -> Bool,
@@ -525,7 +537,7 @@ pub fn narrow(
 }
 
 /// Prints a step's title and who it dropped and why.
-pub fn print_narrowed(title: String, narrowed: Narrowed) -> Nil {
+pub fn print_narrowed(title title: String, narrowed narrowed: Narrowed) -> Nil {
   io.println(title)
   case narrowed.dropped {
     [] -> io.println("   none dropped")
@@ -537,7 +549,7 @@ pub fn print_narrowed(title: String, narrowed: Narrowed) -> Nil {
 }
 
 /// How many percent of `lowest` the `value` is above it.
-pub fn percent_above(value: Float, lowest: Float) -> Float {
+fn percent_above(value value: Float, lowest lowest: Float) -> Float {
   { value -. lowest } /. lowest *. 100.0
 }
 
@@ -562,21 +574,21 @@ pub fn median(values: List(Float)) -> Float {
 }
 
 /// The smallest of `values`, which are not empty.
-pub fn minimum(values: List(Float)) -> Float {
+fn minimum(values: List(Float)) -> Float {
   let assert Ok(smallest) = list.first(list.sort(values, float.compare))
     as "no values"
   smallest
 }
 
 /// The largest of `values`, which are not empty.
-pub fn maximum(values: List(Float)) -> Float {
+fn maximum(values: List(Float)) -> Float {
   let assert Ok(largest) = list.last(list.sort(values, float.compare))
     as "no values"
   largest
 }
 
 /// The sample standard deviation of `values`, which hold at least two.
-pub fn standard_deviation(values: List(Float)) -> Float {
+fn standard_deviation(values: List(Float)) -> Float {
   let count = int.to_float(list.length(values))
   let mean = float.sum(values) /. count
   let squares =
@@ -593,7 +605,7 @@ pub fn two_places(value: Float) -> String {
 }
 
 /// A float to two places with a leading `+` when it is not negative.
-pub fn signed(value: Float) -> String {
+fn signed(value: Float) -> String {
   case value >=. 0.0 {
     True -> "+" <> two_places(value)
     False -> two_places(value)
@@ -601,6 +613,6 @@ pub fn signed(value: Float) -> String {
 }
 
 /// Text padded on the left with spaces to `width`.
-pub fn pad_start(text: String, width: Int) -> String {
+pub fn pad_start(text text: String, width width: Int) -> String {
   string.pad_start(text, width, " ")
 }

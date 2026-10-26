@@ -24,10 +24,20 @@
 //// - the choosing rule, which runs after `one-map`, `maps` and `time` when all
 ////   three ran.
 
+import genesis_prime/topology/latency
+import genesis_prime/topology/map_process
+import genesis_prime/topology/measurement
 import genesis_prime/topology/run.{type RunResult}
 import genesis_prime/topology/trial.{
-  type Ceiling, type Contender, type Narrowed, type Timed,
+  type Ceiling, type Contender, type Narrowed, type Timed, Contender,
 }
+import genesis_prime/topology/workload.{type Workload, Workload}
+import gleam/int
+import gleam/io
+import gleam/list
+import gleam/option
+import gleam/result
+import gleam/string
 
 /// The scheduler counts compared: 1; 4, a small service host; 8, this
 /// machine's performance cores, leaving out its 4 efficiency cores; and 12,
@@ -104,47 +114,217 @@ type Choice {
 /// tables and the choosing rule's pick. The harness process runs at high
 /// priority, and every core is online again at the end.
 pub fn main() -> Nil {
-  todo as "body in the build commit"
+  let chosen = case measurement.plain_arguments() {
+    [] -> parts
+    named -> named
+  }
+  list.each(chosen, fn(part) {
+    assert list.contains(parts, part)
+      as "a part is one of one-map, maps and time"
+  })
+  let runs = fn(part) { list.contains(chosen, part) }
+  measurement.set_high_priority()
+  measurement.enable_scheduler_wall_time()
+  let cores = measurement.core_count()
+  let counts = counts_for(cores:)
+
+  let one_map_found = case runs("one-map") {
+    True -> option.Some(one_map(counts:))
+    False -> option.None
+  }
+  let many_maps_found = case runs("maps") {
+    True -> option.Some(many_maps(counts:))
+    False -> option.None
+  }
+  let timed = case runs("time") {
+    True -> option.Some(time_per_message(counts:))
+    False -> option.None
+  }
+  case one_map_found, many_maps_found, timed {
+    option.Some(one_map), option.Some(many_maps), option.Some(timed) ->
+      choose(counts:, one_map:, many_maps:, timed:)
+    option.Some(_), option.Some(_), option.None
+    | option.Some(_), option.None, _
+    | option.None, _, _
+    -> Nil
+  }
+  measurement.set_schedulers_online(cores)
 }
 
 /// The counts of `scheduler_counts` that are at most `cores`, lowest first,
 /// then `cores` itself when it is not among them. This machine's performance
 /// cores are 8 of its 12.
 fn counts_for(cores cores: Int) -> List(Int) {
-  todo as "body in the build commit"
+  let listed = list.filter(scheduler_counts, fn(count) { count <= cores })
+  case list.contains(listed, cores) {
+    True -> listed
+    False -> list.append(listed, [cores])
+  }
 }
 
 /// The name a count is printed under and found by in every table, such as
 /// "C, 4 schedulers".
 fn contender_name(schedulers schedulers: Int) -> String {
-  todo as "body in the build commit"
+  "C, " <> int.to_string(schedulers) <> " schedulers"
+}
+
+/// The workload of one map at `players` players, `creatures` creatures and the
+/// visibility range `visibility_range`.
+fn workload_for(
+  players players: Int,
+  creatures creatures: Int,
+  visibility_range visibility_range: Float,
+) -> Workload {
+  Workload(..workload.default(), players:, creatures:, visibility_range:)
 }
 
 /// Prototype C on `schedulers` schedulers as a contender: one map at
 /// `creature_count` creatures, with the sender pool of prototype C
 /// (`map_process.SenderPool`).
 fn contender_of(schedulers schedulers: Int) -> Contender {
-  todo as "body in the build commit"
+  Contender(
+    name: contender_name(schedulers:),
+    run: fn(players, visibility_range, timing) {
+      run.run(
+        prototype: run.MapProcess(map_process.SenderPool),
+        workload: workload_for(
+          players:,
+          creatures: creature_count,
+          visibility_range:,
+        ),
+        maps: 1,
+        schedulers:,
+        timing:,
+      )
+    },
+  )
 }
 
 /// The one-map part: for each count and each range, the climb and its
 /// confirmation, then the ceilings table. The ceilings, one per count and
 /// range.
 fn one_map(counts counts: List(Int)) -> List(Ceiling) {
-  todo as "body in the build commit"
+  let climbs =
+    list.flat_map(counts, fn(schedulers) {
+      list.map(visibility_ranges, fn(visibility_range) {
+        trial.climb_and_confirm(
+          contender: contender_of(schedulers:),
+          visibility_range:,
+          player_counts:,
+        )
+      })
+    })
+  list.each(visibility_ranges, fn(visibility_range) {
+    let at_range =
+      list.filter(climbs, fn(found) {
+        found.visibility_range == visibility_range
+      })
+    let suffix =
+      ", one map, range " <> trial.two_places(visibility_range) <> " m"
+    io.println(
+      "\n== one map, range "
+      <> trial.two_places(visibility_range)
+      <> " m, short runs",
+    )
+    trial.print_latency(
+      "contender",
+      suffix,
+      list.flat_map(at_range, fn(found) { found.short }),
+    )
+    io.println(
+      "\n== one map, range "
+      <> trial.two_places(visibility_range)
+      <> " m, full runs",
+    )
+    trial.print_latency(
+      "contender",
+      suffix,
+      list.flat_map(at_range, fn(found) { found.full }),
+    )
+  })
+  let ceilings = list.map(climbs, fn(found) { found.ceiling })
+  trial.print_ceiling(", one map", ceilings)
+  ceilings
 }
 
 /// The maps part: for each count and each range, one short run of `map_count`
 /// maps of `players_per_map` players and `creatures_per_map` creatures each,
 /// then the table of `print_maps`. The runs, one per count and range.
 fn many_maps(counts counts: List(Int)) -> List(ManyMaps) {
-  todo as "body in the build commit"
+  io.println(
+    "\n== maps: "
+    <> int.to_string(map_count)
+    <> " maps of "
+    <> int.to_string(players_per_map)
+    <> " players and "
+    <> int.to_string(creatures_per_map)
+    <> " creatures each, short runs",
+  )
+  let runs =
+    list.flat_map(counts, fn(schedulers) {
+      list.map(visibility_ranges, fn(visibility_range) {
+        ManyMaps(
+          schedulers:,
+          visibility_range:,
+          result: run.run(
+            prototype: run.MapProcess(map_process.SenderPool),
+            workload: workload_for(
+              players: players_per_map,
+              creatures: creatures_per_map,
+              visibility_range:,
+            ),
+            maps: map_count,
+            schedulers:,
+            timing: run.short_timing,
+          ),
+        )
+      })
+    })
+  print_maps(runs:)
+  runs
 }
 
 /// Prints p99 latency, maximum latency, pace and how many maps fell behind for
 /// each of `runs`.
 fn print_maps(runs runs: List(ManyMaps)) -> Nil {
-  todo as "body in the build commit"
+  io.println(
+    "latency: microseconds from a move's send to its arrival at a player in range, all maps merged",
+  )
+  io.println(
+    string.pad_end("contender", 32, " ")
+    <> trial.pad_start(text: "range", width: 9)
+    <> trial.pad_start(text: "players", width: 9)
+    <> trial.pad_start(text: "p99", width: 10)
+    <> trial.pad_start(text: "max", width: 10)
+    <> "  "
+    <> string.pad_end("pace", 18, " ")
+    <> "maps fell behind",
+  )
+  list.each(runs, fn(found) {
+    let fell_behind =
+      list.count(found.result.map_paces, fn(pace) { pace == run.FellBehind })
+    io.println(
+      string.pad_end(contender_name(schedulers: found.schedulers), 32, " ")
+      <> trial.pad_start(
+        text: trial.two_places(found.visibility_range),
+        width: 9,
+      )
+      <> trial.pad_start(text: int.to_string(found.result.players), width: 9)
+      <> trial.pad_start(
+        text: int.to_string(trial.p99_of(found.result)),
+        width: 10,
+      )
+      <> trial.pad_start(
+        text: int.to_string(latency.maximum(found.result.latency)),
+        width: 10,
+      )
+      <> "  "
+      <> string.pad_end(trial.pace_name(found.result.pace), 18, " ")
+      <> int.to_string(fell_behind)
+      <> " of "
+      <> int.to_string(found.result.maps),
+    )
+  })
 }
 
 /// The time part: `time_rounds` paired rounds, rotating the starting count, of
@@ -153,7 +333,21 @@ fn print_maps(runs runs: List(ManyMaps)) -> Nil {
 /// count's median, minimum, maximum and standard deviation of the time per
 /// message and its median p99 and memory.
 fn time_per_message(counts counts: List(Int)) -> List(Timed) {
-  todo as "body in the build commit"
+  io.println(
+    "\n== time: scheduler busy microseconds per message handled, "
+    <> int.to_string(comparison_players)
+    <> " players, "
+    <> int.to_string(creature_count)
+    <> " creatures, "
+    <> int.to_string(time_rounds)
+    <> " paired short rounds (busy time includes the players' own work)",
+  )
+  trial.time_per_message(
+    contenders: list.map(counts, fn(schedulers) { contender_of(schedulers:) }),
+    rounds: time_rounds,
+    players: comparison_players,
+    visibility_range: workload.default().visibility_range,
+  )
 }
 
 /// The choosing rule, from the one-map, maps and time parts. It does not depend
@@ -178,7 +372,107 @@ fn choose(
   many_maps many_maps: List(ManyMaps),
   timed timed: List(Timed),
 ) -> Nil {
-  todo as "body in the build commit"
+  io.println(
+    "\n== The choosing rule (latency, time per message and memory are medians of "
+    <> int.to_string(time_rounds)
+    <> " paired short rounds at "
+    <> int.to_string(comparison_players)
+    <> " players, "
+    <> int.to_string(creature_count)
+    <> " creatures, "
+    <> trial.two_places(workload.default().visibility_range)
+    <> " m)",
+  )
+  let left = counts_left(counts:, one_map:, many_maps:)
+  io.println(
+    "1. out: did not keep up at "
+    <> int.to_string(ceiling_floor_players)
+    <> " players in one map or in "
+    <> int.to_string(map_count)
+    <> " maps, at every range",
+  )
+  list.each(list.sort(counts, int.compare), fn(schedulers) {
+    let name = contender_name(schedulers:)
+    let ranges =
+      list.map(visibility_ranges, fn(visibility_range) {
+        let kept_up_at =
+          list.find(one_map, fn(ceiling) {
+            ceiling.contender == name
+            && ceiling.visibility_range == visibility_range
+          })
+          |> result.map(fn(ceiling) { ceiling.kept_up_at })
+          |> result.unwrap(option.None)
+        let maps_pace =
+          list.find(many_maps, fn(found) {
+            found.schedulers == schedulers
+            && found.visibility_range == visibility_range
+          })
+          |> result.map(fn(found) { trial.pace_name(found.result.pace) })
+          |> result.unwrap("not run")
+        trial.two_places(visibility_range)
+        <> " m: one map kept up at "
+        <> trial.players_text(players: kept_up_at, none: "no count")
+        <> ", "
+        <> int.to_string(map_count)
+        <> " maps "
+        <> maps_pace
+      })
+      |> string.join("; ")
+    io.println(
+      "   "
+      <> name
+      <> case list.contains(left, schedulers) {
+        True -> " stays in ("
+        False -> " is out ("
+      }
+      <> ranges
+      <> ")",
+    )
+  })
+  case pick(left:, timed:) {
+    NoCountKeepsUp ->
+      io.println(
+        "Every count is out: none keeps up at "
+        <> int.to_string(ceiling_floor_players)
+        <> " players.",
+      )
+    Picked(schedulers:, by_latency:, by_cpu:) -> {
+      list.each(left, fn(count) {
+        let standing = standing_of(count:, timed:)
+        io.println(
+          "   "
+          <> standing.contender
+          <> ": p99 "
+          <> int.to_string(standing.p99_microseconds)
+          <> " us, "
+          <> trial.two_places(standing.microseconds_per_message)
+          <> " us/message, "
+          <> trial.two_places(standing.memory_words_per_unit)
+          <> " words per unit",
+        )
+      })
+      trial.print_narrowed(
+        title: "2. dropped by p99 latency (at least "
+          <> int.to_string(latency_tie_microseconds)
+          <> " us above the lowest)",
+        narrowed: by_latency,
+      )
+      trial.print_narrowed(
+        title: "3. dropped by time per message (more than "
+          <> trial.two_places(resolution_percent)
+          <> "% above the lowest)",
+        narrowed: by_cpu,
+      )
+      io.println(
+        "   fewest schedulers among "
+        <> string.join(
+          list.map(by_cpu.left, fn(standing) { standing.contender }),
+          ", ",
+        ),
+      )
+      io.println("Pick: " <> contender_name(schedulers:))
+    }
+  }
 }
 
 /// The counts that did not fall out at the first step of the rule, lowest
@@ -188,17 +482,66 @@ fn counts_left(
   one_map one_map: List(Ceiling),
   many_maps many_maps: List(ManyMaps),
 ) -> List(Int) {
-  todo as "body in the build commit"
+  list.sort(counts, int.compare)
+  |> list.filter(fn(schedulers) {
+    let name = contender_name(schedulers:)
+    list.all(visibility_ranges, fn(visibility_range) {
+      let one_map_keeps_up =
+        list.any(one_map, fn(ceiling) {
+          ceiling.contender == name
+          && ceiling.visibility_range == visibility_range
+          && trial.keeps_up_at(ceiling, ceiling_floor_players)
+        })
+      let maps_keep_up =
+        list.any(many_maps, fn(found) {
+          found.schedulers == schedulers
+          && found.visibility_range == visibility_range
+          && kept_up(found)
+        })
+      one_map_keeps_up && maps_keep_up
+    })
+  })
+}
+
+/// The standing of a count in the time part's results.
+fn standing_of(count count: Int, timed timed: List(Timed)) -> Timed {
+  let assert Ok(standing) =
+    list.find(timed, fn(standing) {
+      standing.contender == contender_name(schedulers: count)
+    })
+    as "the time part ran every count"
+  standing
 }
 
 /// The choice among the standings of the counts that are left, lowest count
 /// first: the rule's second and third steps, and the fewest schedulers among
 /// the counts the third leaves. `NoCountKeepsUp` when `left` is empty.
 fn pick(left left: List(Int), timed timed: List(Timed)) -> Choice {
-  todo as "body in the build commit"
+  case list.sort(left, int.compare) {
+    [] -> NoCountKeepsUp
+    [_, ..] as sorted -> {
+      let standings =
+        list.map(sorted, fn(count) { standing_of(count:, timed:) })
+      let by_latency =
+        trial.narrow_by_latency(
+          standings:,
+          tie_microseconds: latency_tie_microseconds,
+        )
+      let by_cpu =
+        trial.narrow_by_cpu(standings: by_latency.left, resolution_percent:)
+      let assert Ok(winner) =
+        list.find(sorted, fn(count) {
+          list.any(by_cpu.left, fn(standing) {
+            standing.contender == contender_name(schedulers: count)
+          })
+        })
+        as "the narrowing steps always leave the lowest"
+      Picked(schedulers: winner, by_latency:, by_cpu:)
+    }
+  }
 }
 
 /// Whether the map or maps of `found` kept up: its pace is not `FellBehind`.
 fn kept_up(found: ManyMaps) -> Bool {
-  todo as "body in the build commit"
+  found.result.pace != run.FellBehind
 }

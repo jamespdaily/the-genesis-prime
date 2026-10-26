@@ -80,8 +80,11 @@ pub fn default() -> Workload {
 /// The workload of map `map_index`, counted from 0, when several maps run side
 /// by side: the same arguments with the seed moved on by the index, so every
 /// map has a different spawn list and the same index always gives the same one.
-pub fn for_map(workload: Workload, map_index: Int) -> Workload {
-  todo as "body in the build commit"
+pub fn for_map(
+  workload workload: Workload,
+  map_index map_index: Int,
+) -> Workload {
+  Workload(..workload, seed: workload.seed + map_index)
 }
 
 /// Every unit the map starts with, the same list for the same workload. The

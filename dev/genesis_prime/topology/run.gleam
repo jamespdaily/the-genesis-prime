@@ -3,12 +3,22 @@
 
 import genesis_prime/topology/latency.{type Histogram}
 import genesis_prime/topology/map_process.{type Sending}
+import genesis_prime/topology/measurement
 import genesis_prime/topology/owner.{type Owner}
 import genesis_prime/topology/per_unit
+import genesis_prime/topology/player.{type Player}
+import genesis_prime/topology/unit
 import genesis_prime/topology/workload.{type Workload}
+import gleam/dict
+import gleam/erlang/process
 import gleam/erlang/reference
+import gleam/int
 import gleam/list
 import gleam/otp/actor
+import gleam/otp/factory_supervisor
+import gleam/otp/static_supervisor
+import gleam/otp/supervision
+import gleam/result
 
 /// How long each stretch of a run lasts, in milliseconds.
 pub type Timing {
@@ -137,6 +147,18 @@ pub fn name_of(prototype: Prototype) -> String {
   }
 }
 
+/// One map of a run: its workload, the key its spawn list is kept under, the
+/// units it starts with and the owner its players act through.
+type MapRun {
+  MapRun(
+    workload: Workload,
+    key: reference.Reference,
+    spawn_list: List(unit.Unit),
+    door: Owner,
+    players: List(Player),
+  )
+}
+
 /// Runs the load once, with `schedulers` schedulers online, on `maps` maps
 /// side by side, and returns what it counted. `workload` is the load of one
 /// map; map `n` (counted from 0) runs `workload.for_map(workload, n)`, so the
@@ -154,7 +176,180 @@ pub fn run(
   schedulers schedulers: Int,
   timing timing: Timing,
 ) -> RunResult {
-  todo as "body in the build commit"
+  assert maps >= 1 as "a run has at least one map"
+  measurement.set_schedulers_online(schedulers)
+  let planned =
+    int.range(0, maps, [], fn(taken, map_index) {
+      let map_workload = workload.for_map(workload:, map_index:)
+      let spawn_list = workload.spawn_list(map_workload)
+      let key = reference.new()
+      measurement.put_spawn_list(
+        key,
+        dict.from_list(list.map(spawn_list, fn(unit) { #(unit.id, unit) })),
+      )
+      [#(map_workload, key, spawn_list), ..taken]
+    })
+    |> list.reverse
+  let door_ready = process.new_subject()
+  let factory_ready = process.new_subject()
+  let prototype_children =
+    list.map(planned, fn(plan) {
+      let #(map_workload, key, _) = plan
+      supervision.supervisor(fn() {
+        start_prototype(prototype:, workload: map_workload, key:)
+      })
+      |> owner.reporting(door_ready)
+    })
+  let players_child =
+    player.factory(workload)
+    |> factory_supervisor.supervised
+    |> owner.reporting(factory_ready)
+  let assert Ok(supervisor) =
+    list.fold(
+      prototype_children,
+      static_supervisor.new(static_supervisor.RestForOne),
+      static_supervisor.add,
+    )
+    |> static_supervisor.add(players_child)
+    |> static_supervisor.start
+    as "the run's supervisor did not start"
+  let doors =
+    list.map(planned, fn(_) {
+      let assert Ok(door) = process.receive(door_ready, 5000)
+        as "a prototype did not report its owner"
+      door
+    })
+  let assert Ok(factory) = process.receive(factory_ready, 5000)
+    as "the players' supervisor did not report itself"
+  let map_runs =
+    list.zip(planned, doors)
+    |> list.map(fn(pair) {
+      let #(#(map_workload, key, spawn_list), door) = pair
+      let players =
+        spawn_list
+        |> list.filter(fn(unit) { unit.kind == unit.Player })
+        |> list.map(fn(unit) {
+          let assert Ok(started) = factory_supervisor.start_child(factory, unit)
+            as "a player did not start"
+          started.data
+        })
+      MapRun(workload: map_workload, key:, spawn_list:, door:, players:)
+    })
+  let players = list.flat_map(map_runs, fn(map_run) { map_run.players })
+  list.each(map_runs, fn(map_run) {
+    list.each(map_run.players, player.begin(_, map_run.door))
+  })
+  process.sleep(timing.warm_up_milliseconds)
+
+  list.each(players, player.reset_counts)
+  let handled_before = messages_handled(doors)
+  let scheduler_before = measurement.scheduler_time()
+  let samples = sample_queues(doors, timing)
+  let scheduler_after = measurement.scheduler_time()
+  let handled_after = messages_handled(doors)
+  let memory_words =
+    doors
+    |> list.map(fn(door) { door.memory_words() })
+    |> int.sum
+  let queues_by_map = case samples {
+    [] -> list.map(doors, fn(_) { [] })
+    [_, ..] -> list.transpose(samples)
+  }
+  let owners_paces =
+    list.map2(map_runs, queues_by_map, fn(map_run, queue_samples) {
+      pace(
+        queue_samples:,
+        load_per_second: load_per_second(map_run.workload),
+        timing:,
+      )
+    })
+  let owners_pace = case list.contains(owners_paces, FellBehind) {
+    True -> FellBehind
+    False -> KeptUp
+  }
+  let asked =
+    list.map(map_runs, fn(map_run) {
+      list.map(map_run.players, player.ask_report)
+    })
+  let deadline =
+    measurement.monotonic_microseconds()
+    / 1000
+    + report_deadline_milliseconds(owners_pace)
+  let reports_by_map =
+    list.map(asked, fn(replies) {
+      list.map(replies, fn(reply) {
+        let left = deadline - measurement.monotonic_microseconds() / 1000
+        process.receive(reply, int.max(left, 0))
+      })
+      |> result.values
+    })
+  let reports = list.flatten(reports_by_map)
+  owner.stop_supervisor(supervisor.pid)
+  list.each(map_runs, fn(map_run) { measurement.erase_spawn_list(map_run.key) })
+
+  let map_paces =
+    list.zip(list.zip(owners_paces, reports_by_map), map_runs)
+    |> list.map(fn(found) {
+      let #(#(map_owners_pace, map_reports), map_run) = found
+      case
+        map_owners_pace,
+        list.length(map_reports) == list.length(map_run.players)
+      {
+        KeptUp, False -> PlayersFellBehind
+        KeptUp, True | FellBehind, _ | PlayersFellBehind, _ -> map_owners_pace
+      }
+    })
+  let units =
+    int.sum(
+      list.map(map_runs, fn(map_run) {
+        map_run.workload.players + map_run.workload.creatures
+      }),
+    )
+  RunResult(
+    prototype:,
+    maps:,
+    players: int.sum(
+      list.map(map_runs, fn(map_run) { map_run.workload.players }),
+    ),
+    creatures: int.sum(
+      list.map(map_runs, fn(map_run) { map_run.workload.creatures }),
+    ),
+    schedulers:,
+    moves_sent: int.sum(list.map(reports, fn(report) { report.moves_sent })),
+    updates_received: int.sum(
+      list.map(reports, fn(report) { report.updates_received }),
+    ),
+    busy_microseconds: scheduler_after.busy_microseconds
+      - scheduler_before.busy_microseconds,
+    messages_handled: handled_after - handled_before,
+    latency: list.fold(reports, latency.new(), fn(merged, report) {
+      latency.merge(merged, report.latency)
+    }),
+    queue_samples: list.map(samples, int.sum),
+    memory_words_per_unit: int.to_float(memory_words) /. int.to_float(units),
+    map_paces:,
+    pace: run_pace(map_paces),
+  )
+}
+
+/// The pace of the whole run: `FellBehind` when any map fell behind, otherwise
+/// `PlayersFellBehind` when any map's players did not all report, otherwise
+/// `KeptUp`.
+fn run_pace(map_paces: List(Pace)) -> Pace {
+  case
+    list.contains(map_paces, FellBehind),
+    list.contains(map_paces, PlayersFellBehind)
+  {
+    True, _ -> FellBehind
+    False, True -> PlayersFellBehind
+    False, False -> KeptUp
+  }
+}
+
+/// The messages every map's owners have handled since their prototypes started,
+/// added up.
+fn messages_handled(doors: List(Owner)) -> Int {
+  int.sum(list.map(doors, fn(door) { door.messages_handled() }))
 }
 
 fn start_prototype(
@@ -169,8 +364,9 @@ fn start_prototype(
 }
 
 /// How long the players together have to report after a run whose owners
-/// had the given pace, `FellBehind` when any map's owners fell behind. A pace of `PlayersFellBehind` is never an argument:
-/// it is decided from the reports this deadline collects.
+/// had the given pace: `FellBehind` when the owners of any map fell behind. A
+/// pace of `PlayersFellBehind` is never an argument: it is decided from the
+/// reports this deadline collects.
 fn report_deadline_milliseconds(owners_pace: Pace) -> Int {
   case owners_pace {
     KeptUp | PlayersFellBehind -> report_deadline_kept_up_milliseconds
@@ -182,5 +378,19 @@ fn report_deadline_milliseconds(owners_pace: Pace) -> Int {
 /// for the length of the measured stretch: one list per sample, holding each
 /// map's queue in map order. `doors` holds each map's owner in map order.
 fn sample_queues(doors: List(Owner), timing: Timing) -> List(List(Int)) {
-  todo as "body in the build commit"
+  let samples =
+    timing.measure_milliseconds / timing.sample_interval_milliseconds
+  int.range(0, samples, [], fn(taken, _) {
+    process.sleep(timing.sample_interval_milliseconds)
+    let queues =
+      list.map(doors, fn(door) {
+        door.owner_processes()
+        |> list.map(fn(pid) {
+          measurement.message_queue_length(pid) |> result.unwrap(0)
+        })
+        |> int.sum
+      })
+    [queues, ..taken]
+  })
+  |> list.reverse
 }

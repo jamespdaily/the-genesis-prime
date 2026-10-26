@@ -179,7 +179,7 @@ fn contenders_on(schedulers schedulers: Int) -> List(Contender) {
 fn all_cores(schedulers schedulers: Int) -> AllCores {
   let climbs =
     list.flat_map(visibility_ranges, fn(visibility_range) {
-      list.map(contenders_on(schedulers), fn(contender) {
+      list.map(contenders_on(schedulers:), fn(contender) {
         trial.climb_and_confirm(contender:, visibility_range:, player_counts:)
       })
     })
@@ -223,7 +223,7 @@ fn one_core() -> Nil {
   )
   let runs =
     list.flat_map(one_core_player_counts, fn(players) {
-      list.map(contenders_on(1), fn(contender) {
+      list.map(contenders_on(schedulers: 1), fn(contender) {
         trial.measured_run(
           contender:,
           players:,
@@ -266,7 +266,7 @@ fn time_per_message(schedulers schedulers: Int) -> List(Timed) {
     <> " paired short rounds (busy time includes the players' own work)",
   )
   trial.time_per_message(
-    contenders: contenders_on(schedulers),
+    contenders: contenders_on(schedulers:),
     rounds: time_rounds,
     players: comparison_players,
     visibility_range: workload.default().visibility_range,
@@ -376,7 +376,7 @@ fn choose(all_cores all_cores: AllCores, timed timed: List(Timed)) -> Nil {
       |> list.map(fn(ceiling) {
         trial.two_places(ceiling.visibility_range)
         <> " m: kept up at "
-        <> trial.players_text(ceiling.kept_up_at, "no count")
+        <> trial.players_text(players: ceiling.kept_up_at, none: "no count")
       })
       |> string.join("; ")
     io.println(
@@ -410,16 +410,16 @@ fn choose(all_cores all_cores: AllCores, timed timed: List(Timed)) -> Nil {
         )
       })
       trial.print_narrowed(
-        "2. dropped by p99 latency (at least "
+        title: "2. dropped by p99 latency (at least "
           <> int.to_string(latency_tie_microseconds)
           <> " us above the lowest)",
-        by_latency,
+        narrowed: by_latency,
       )
       trial.print_narrowed(
-        "3. dropped by time per message (more than "
+        title: "3. dropped by time per message (more than "
           <> trial.two_places(resolution_percent)
           <> "% above the lowest)",
-        by_cpu,
+        narrowed: by_cpu,
       )
       io.println(
         "4. lowest memory per unit among "
