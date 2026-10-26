@@ -2,6 +2,7 @@
 
 import envoy
 import genesis_prime/character/character.{type Place}
+import genesis_prime/character/starting_place
 import genesis_prime/database/pool
 import genesis_prime/game/service as game_service
 import genesis_prime/login/service
@@ -11,6 +12,7 @@ import genesis_prime/shutdown
 import genesis_prime/table
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/loader/requirement
+import genesis_prime/table/loader/store.{type Tables}
 import genesis_prime/telemetry/log
 import genesis_prime/telemetry/snapshot
 import gleam/erlang/atom
@@ -58,14 +60,20 @@ const default_realm_name = "GenesisPrime"
 /// the server's own choice.
 const default_realm_id = 1
 
-/// Where a character made from a CharacterCreation row starts: none. This is a
-/// placeholder that waits for the client's evidence of a starting place, which
-/// no table or code decoded for character creation holds. No coordinate is
-/// invented, so a create request is refused with its reason logged until the
-/// evidence gives a place. The place is chosen where the settings are made, so
-/// the rules never hold a coordinate.
-fn no_starting_place(_row: CharacterCreation) -> Result(Place, Nil) {
-  Error(Nil)
+/// The WorldLocation2 row every new character starts at: world 3400,
+/// Map\PreTutorialExile. It stands in until a retail record or a recording
+/// gives the start of each CharacterCreation row; the client's tables hold no
+/// start for a row.
+const starting_location_id = 50_177
+
+/// Where a character made from a CharacterCreation row starts: the one
+/// starting row, whichever the CharacterCreation row is. The place is chosen
+/// where the settings are made, so the rules never hold a coordinate.
+fn starting_place(
+  tables: Tables,
+  _row: CharacterCreation,
+) -> Result(Place, Nil) {
+  starting_place.place(tables:, location_id: starting_location_id)
 }
 
 /// Starts the server's supervision tree, then keeps the calling process alive
@@ -116,7 +124,10 @@ pub fn main() -> Nil {
         key: reference.new(),
         folder: table_folder,
         entries: table.entries(),
-        requirements: requirement.all(),
+        requirements: list.append(
+          requirement.all(),
+          starting_place.requirements(location_id: starting_location_id),
+        ),
       ),
       shutdown: shutdown_settings,
       snapshot: snapshot_settings,
@@ -134,7 +145,7 @@ pub fn main() -> Nil {
       game: game_service.settings(
         port: game_port,
         realm_id: default_realm_id,
-        start: no_starting_place,
+        start: starting_place,
         snapshot: snapshot_settings.name,
       ),
     )

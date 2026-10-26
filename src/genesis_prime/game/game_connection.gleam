@@ -55,7 +55,9 @@ pub type Services {
   )
 }
 
-/// What the services of a running server are made from.
+/// What the services of a running server are made from. `start` is the place
+/// a character made from a CharacterCreation row starts at, read from the
+/// loaded tables.
 pub type Settings {
   Settings(
     session_keys: Name(handoff.Message(Identity)),
@@ -63,7 +65,7 @@ pub type Settings {
     db: pog.Connection,
     registry: Name(maps.Message),
     tables: Tables,
-    start: fn(CharacterCreation) -> Result(Place, Nil),
+    start: fn(Tables, CharacterCreation) -> Result(Place, Nil),
     realm_id: Int,
     clock: fn() -> Int,
     answer_deadline_ms: Int,
@@ -96,7 +98,7 @@ pub fn services(settings settings: Settings) -> Services {
     context: fn() {
       game_context.build(
         tables: settings.tables,
-        start: settings.start,
+        start: fn(row) { settings.start(settings.tables, row) },
         realm_id: settings.realm_id,
         server_time: settings.clock(),
       )

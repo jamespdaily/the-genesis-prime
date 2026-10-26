@@ -293,7 +293,7 @@ pub fn main() -> Nil {
       game: game_service.settings(
         port: 0,
         realm_id: 1,
-        start: fn(_row) { Error(Nil) },
+        start: fn(_tables, _row) { Error(Nil) },
         snapshot: snapshot_settings.name,
       ),
     ))

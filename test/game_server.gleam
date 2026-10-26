@@ -155,7 +155,7 @@ pub fn start(
       ..defaults.game,
       opened: fn(port) { process.send(ports, #("game", port)) },
       realm_id:,
-      start: fn(_row) { Ok(start_place(world_id: facts.world_id)) },
+      start: fn(_tables, _row) { Ok(start_place(world_id: facts.world_id)) },
       clock: fn() { server_time },
       answer_deadline_ms:,
     )

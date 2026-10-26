@@ -38,7 +38,8 @@ const answer_deadline_ms = 5000
 /// What the subtree starts with. `port` is the game listener's port, where 0
 /// takes a free port, and `opened` is called with the port that is open.
 /// `realm_id` is the realm the connections are on, `start` the place a
-/// character made from a CharacterCreation row starts at, `clock` the system
+/// character made from a CharacterCreation row starts at, read from the
+/// loaded tables, `clock` the system
 /// time as a Windows FILETIME and `answer_deadline_ms` how long a connection
 /// waits for the store or a map. `maps` and `workers` are the names of the
 /// processes the connections ask.
@@ -47,7 +48,7 @@ pub type Settings {
     port: Int,
     opened: fn(Int) -> Nil,
     realm_id: Int,
-    start: fn(CharacterCreation) -> Result(Place, Nil),
+    start: fn(Tables, CharacterCreation) -> Result(Place, Nil),
     clock: fn() -> Int,
     answer_deadline_ms: Int,
     maps: maps.Settings,
@@ -62,7 +63,7 @@ pub type Settings {
 pub fn settings(
   port port: Int,
   realm_id realm_id: Int,
-  start start: fn(CharacterCreation) -> Result(Place, Nil),
+  start start: fn(Tables, CharacterCreation) -> Result(Place, Nil),
   snapshot snapshot: Name(snapshot.Message),
 ) -> Settings {
   Settings(
