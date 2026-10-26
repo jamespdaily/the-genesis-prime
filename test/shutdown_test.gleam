@@ -199,6 +199,105 @@ pub fn sigterm_stops_in_order_and_ends_the_node_with_status_0_test() -> Nil {
     as "a clean stop logged an error"
 }
 
+/// How many nodes a test stops. An entry point that waits with
+/// `process.sleep_forever` after asking `init` to stop crashes in some stops
+/// only: the wait loads the `timer` module through the code server, which
+/// `init` has stopped by then, unless `init` kills the process first. `init`
+/// reports the crash as an expression that failed. 14 of 30 starts of such an
+/// entry point reported it, and none of 40 with `timer` loaded beforehand. 25
+/// stops miss such an entry point fewer than once in 500 runs.
+const stops_that_catch_a_failed_eval = 25
+
+/// How many of those nodes run at the same time.
+const stops_at_once = 5
+
+/// A node stopped by SIGTERM: what it wrote, its stderr among it, and its exit
+/// status.
+type Stopped =
+  #(List(String), Int)
+
+/// Starts a node with the planted `coordinator`, waits until it runs and stops
+/// it by SIGTERM. Each node has a database of its own, and is started and read
+/// by the process that calls this, which is the one that owns its output.
+fn stop_one(coordinator coordinator: String) -> Stopped {
+  use database <- template_database.run
+  use child <- start(
+    database,
+    drain_ms: long_drain_ms,
+    connection: planted_shutdown.all_close,
+    flush: planted_shutdown.flush_saves,
+    coordinator:,
+  )
+  let _port = until_running(child)
+  released_child.terminate(child)
+  let assert Ok(ended) = released_child.lines_until_exit(child)
+    as "the child did not end after SIGTERM"
+  ended
+}
+
+/// What a worker that stops one node tells the test.
+type Worker {
+  Ended(Stopped)
+  Crashed
+}
+
+/// Stops `stops_that_catch_a_failed_eval` nodes, `stops_at_once` at a time,
+/// each in a process of its own, and gives what each wrote and its status.
+fn stop_many(coordinator coordinator: String) -> List(Stopped) {
+  list.repeat(Nil, times: stops_that_catch_a_failed_eval)
+  |> list.sized_chunk(into: stops_at_once)
+  |> list.flat_map(fn(batch) {
+    let reply = process.new_subject()
+    let workers =
+      list.map(batch, fn(_) {
+        let worker =
+          process.spawn_unlinked(fn() {
+            process.send(reply, Ended(stop_one(coordinator:)))
+            process.sleep_forever()
+          })
+        #(worker, process.monitor(worker))
+      })
+    let selector =
+      list.fold(
+        workers,
+        process.new_selector() |> process.select(reply),
+        fn(selector, worker) {
+          process.select_specific_monitor(selector, worker.1, fn(_down) {
+            Crashed
+          })
+        },
+      )
+    let stopped =
+      list.map(batch, fn(_) {
+        case process.selector_receive(selector, within: child_deadline_ms) {
+          Ok(Ended(stopped)) -> stopped
+          Ok(Crashed) -> panic as "a node's stop crashed its worker"
+          Error(Nil) -> panic as "a node's stop ran past its deadline"
+        }
+      })
+    list.each(workers, fn(worker) { process.kill(worker.0) })
+    stopped
+  })
+}
+
+pub fn a_clean_stop_writes_no_failed_to_eval_line_and_ends_with_status_0_test() -> Nil {
+  use <- owned_test.run(child_deadline_ms * 2)
+  // The child's stderr is read with its stdout, line by line. The expression
+  // `-eval` runs is the one `release/start` runs; OTP's `init` reports an
+  // expression that does not end normally as `Error! Failed to eval: ...`
+  // (`init:start_it/1`), here because the entry point crashed after asking
+  // `init` to stop.
+  list.each(
+    stop_many(coordinator: planted_shutdown.coordinator_lives),
+    fn(stopped) {
+      let #(lines, status) = stopped
+      assert !list.any(lines, string.contains(_, "Failed to eval"))
+        as "a clean stop wrote a Failed to eval line to stderr"
+      assert status == 0 as "a clean stop ends the node with status 0"
+    },
+  )
+}
+
 pub fn a_connection_that_will_not_drain_is_closed_at_the_deadline_and_the_flush_still_runs_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
   use database <- template_database.run
