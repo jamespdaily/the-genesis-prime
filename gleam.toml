@@ -10,16 +10,17 @@ gleam_stdlib = ">= 1.0.5 and < 2.0.0"
 gleam_erlang = ">= 1.3.0 and < 2.0.0"
 gleam_otp = ">= 1.3.0 and < 2.0.0"
 pog = ">= 4.1.0 and < 5.0.0"
+simplifile = ">= 2.7.0 and < 3.0.0"
 envoy = ">= 1.2.0 and < 2.0.0"
 
 [dev_dependencies]
+argv = ">= 1.1.0 and < 2.0.0"
 unitest = ">= 1.6.1 and < 2.0.0"
 glinter = ">= 2.19.2 and < 3.0.0"
 squirrel = ">= 4.7.0 and < 5.0.0"
 glance = ">= 7.0.0 and < 8.0.0"
 glexer = ">= 2.5.0 and < 3.0.0"
 tom = ">= 2.1.0 and < 3.0.0"
-simplifile = ">= 2.7.0 and < 3.0.0"
 gleam_crypto = ">= 1.6.0 and < 2.0.0"
 
 [tools.glinter]
@@ -33,6 +34,10 @@ assert_ok_pattern = "off"
 avoid_panic = "off"
 
 [tools.glinter.ignore]
+# A generated table module exports what the engines use: its row type, `schema`,
+# `get` and `all`. Only the registry and the tests call them until an engine
+# does, which is no defect in generated code.
+"src/genesis_prime/table/*.gleam" = ["unused_exports"]
 # The test runner finds public `_test` functions by name, and test-support
 # modules are shared across test modules, so no other module calls them.
 "test/**/*.gleam" = ["unused_exports"]
@@ -47,6 +52,7 @@ effectful_modules = [
   { module = "genesis_prime", reason = "starts the supervision tree and keeps the node alive" },
   { module = "genesis_prime/server", reason = "the top supervisor" },
   { module = "genesis_prime/database/pool", reason = "the pool of connections to Postgres, a child of the top supervisor" },
+  { module = "genesis_prime/table/loader/store", reason = "reads the table files and keeps the loaded tables in persistent terms" },
 ]
 # The game domains: each top-level folder or module under src/genesis_prime/.
 domains = [
@@ -64,7 +70,13 @@ domains = [
   { module = "genesis_prime/coverage", reason = "the coverage measure of what the client's tables require against what the server handles" },
 ]
 # Erlang functions a rule module's externals may call.
-pure_erlang = []
+pure_erlang = [
+  "tbl_file_ffi:utf16_text",
+  "tbl_file_ffi:gap",
+  "tbl_file_ffi:table_of",
+  "tbl_file_ffi:row",
+  "tbl_file_ffi:rows",
+]
 # Modules that may make an atom from a string or read a term from bytes.
 atom_or_term = []
 
