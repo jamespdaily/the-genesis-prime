@@ -11,6 +11,10 @@
 //// waits in the operating system's buffers. A chunk is what one receive of the
 //// socket returns, and its time is read when the pipe handles it.
 ////
+//// Beside the recording it writes the address it connected to the server from
+//// (`session.write_connection`), which is the peer address the server sees for
+//// this connection, so a replay can find the draws the connection made.
+////
 //// A failure the operator can act on, such as a server that is not there, is
 //// printed with the file's name and ends the connection. A file that cannot
 //// be written crashes the process, so no byte is passed on that is not on disk.
@@ -20,6 +24,7 @@ import genesis_prime/recording.{
 }
 import genesis_prime/recording/clock
 import genesis_prime/recording/listener
+import genesis_prime/recording/session
 import gleam/erlang/process.{type Subject}
 import gleam/io
 import gleam/otp/actor
@@ -120,6 +125,14 @@ fn begin(connection: Connection) -> actor.Next(State, Message) {
       let assert Ok(Nil) =
         recording.create(at: connection.path, header: connection.header)
         as "the recording file was not created"
+      let assert Ok(address) = listener.local_address(server)
+        as "the connection to the server has an address"
+      let assert Ok(Nil) =
+        session.write_connection(
+          recording_path: connection.path,
+          connection: address,
+        )
+        as "the connection's address was not written beside the recording"
       io.println("recording " <> connection.path)
       let ready = case
         listener.send_at_once(connection.client),

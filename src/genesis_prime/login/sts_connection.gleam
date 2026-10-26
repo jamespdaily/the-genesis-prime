@@ -67,10 +67,10 @@ pub fn services(
     issue_game_token: fn(identity, peer) {
       handoff.issue(game_tokens, identity, peer)
     },
-    draw_secret: fn(_peer, _account) {
+    draw_secret: fn(peer, account) {
       random_source.bytes(
         random,
-        Draw(count: secret_bytes, connection: None, account: None),
+        Draw(count: secret_bytes, connection: peer, account:),
       )
     },
   )

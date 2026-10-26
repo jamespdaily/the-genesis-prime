@@ -71,7 +71,21 @@ pub type Reference {
 /// Every named reference in the module's functions, in the order the
 /// expressions are found.
 pub fn references(module: glance.Module) -> List(Reference) {
-  list.flat_map(expressions(module), fn(expression) {
+  references_in(expressions(module))
+}
+
+/// Every named reference in the module's constants, in the order the
+/// expressions are found.
+pub fn constant_references(module: glance.Module) -> List(Reference) {
+  references_in(
+    list.flat_map(module.constants, fn(definition) {
+      from_expression(definition.definition.value)
+    }),
+  )
+}
+
+fn references_in(expressions: List(Expression)) -> List(Reference) {
+  list.flat_map(expressions, fn(expression) {
     case expression {
       glance.FieldAccess(
         location:,

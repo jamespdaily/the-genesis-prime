@@ -89,7 +89,7 @@ fn handle(
 ) -> actor.Next(State(held), Message(held)) {
   let now = state.settings.clock()
   case message {
-    Issue(held:, connection: _connection, reply:) -> {
+    Issue(held:, connection:, reply:) -> {
       let live =
         dict.filter(state.keys, fn(_, issued) {
           !has_expired(settings: state.settings, now:, issued_at: issued.0)
@@ -97,7 +97,7 @@ fn handle(
       let key =
         random_source.bytes(
           state.settings.random,
-          Draw(count: key_bytes, connection: None, account: None),
+          Draw(count: key_bytes, connection:, account: None),
         )
       process.send(reply, key)
       actor.continue(State(..state, keys: dict.insert(live, key, #(now, held))))
