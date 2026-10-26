@@ -113,10 +113,10 @@ fn read_until(
   }
 }
 
-/// What the child writes from now until it ends, and the status it ends with,
+/// What the child writes to its end, and the status it ends with,
 /// or why it gave no end.
 pub fn lines_until_exit(child: Child) -> Result(#(List(String), Int), Failure) {
-  case lines_until(child, fn(_line) { False }) {
+  case lines_until(child, until: fn(_line) { False }) {
     Error(Exited(status:, output:)) -> Ok(#(output, status))
     Error(NotReady(output:)) -> Error(NotReady(output:))
     Ok(_) -> panic as "a read with no end ended on a line"

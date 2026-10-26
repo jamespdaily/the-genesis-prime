@@ -68,7 +68,7 @@ fn start(
       "logger_level",
       "info",
       "-eval",
-      "planted_shutdown:main().",
+      "{ok, _} = application:ensure_all_started(genesis_prime), planted_shutdown:main().",
     ],
     environment: [
       #(planted_shutdown.drain_variable, int.to_string(drain_ms)),
@@ -101,9 +101,9 @@ fn until_running(child: Child) -> Int {
 /// Connects to the listener and reads up to the line that says the connection
 /// `number` is registered with the shutdown.
 fn connect_and_wait_for_registration(
-  child: Child,
-  port: Int,
-  number: Int,
+  child child: Child,
+  port port: Int,
+  number number: Int,
 ) -> planted_shutdown.Socket {
   let socket = planted_shutdown.connect(port)
   let assert Ok(_) =
@@ -153,8 +153,8 @@ pub fn sigterm_stops_in_order_and_ends_the_node_with_status_0_test() -> Nil {
     flush: planted_shutdown.flush_saves,
   )
   let port = until_running(child)
-  let first = connect_and_wait_for_registration(child, port, 1)
-  let second = connect_and_wait_for_registration(child, port, 2)
+  let first = connect_and_wait_for_registration(child:, port:, number: 1)
+  let second = connect_and_wait_for_registration(child:, port:, number: 2)
 
   released_child.terminate(child)
   let assert Ok(#(lines, status)) = released_child.lines_until_exit(child)
@@ -203,8 +203,8 @@ pub fn a_connection_that_will_not_drain_is_closed_at_the_deadline_and_the_flush_
     flush: planted_shutdown.flush_saves,
   )
   let port = until_running(child)
-  let first = connect_and_wait_for_registration(child, port, 1)
-  let second = connect_and_wait_for_registration(child, port, 2)
+  let first = connect_and_wait_for_registration(child:, port:, number: 1)
+  let second = connect_and_wait_for_registration(child:, port:, number: 2)
 
   released_child.terminate(child)
   let assert Ok(#(lines, status)) = released_child.lines_until_exit(child)
@@ -225,7 +225,7 @@ pub fn a_connection_that_will_not_drain_is_closed_at_the_deadline_and_the_flush_
   assert list.contains(lines, planted_shutdown.flush_written)
     as "the flush did not run after the connection was closed at the deadline"
   assert saved_values(database) == [planted_shutdown.saved_value]
-  assert logged(lines, level: "WARNING", containing: ["did not close"])
+  assert logged(lines:, level: "WARNING", containing: ["did not close"])
     as "a connection ended at the deadline was not logged as a warning"
   assert status == 0
     as "a connection that would not drain is an outside failure the server recovered from, so the stop is clean"
@@ -241,13 +241,13 @@ pub fn a_flush_that_fails_is_logged_as_an_error_and_the_shutdown_still_completes
     flush: planted_shutdown.flush_fails,
   )
   let port = until_running(child)
-  let first = connect_and_wait_for_registration(child, port, 1)
+  let first = connect_and_wait_for_registration(child:, port:, number: 1)
 
   released_child.terminate(child)
   let assert Ok(#(lines, status)) = released_child.lines_until_exit(child)
     as "the child did not end after SIGTERM"
 
-  assert logged(lines, level: "ERROR", containing: [
+  assert logged(lines:, level: "ERROR", containing: [
     planted_shutdown.saver_name,
     planted_shutdown.flush_failure_reason,
   ])
@@ -263,6 +263,7 @@ pub fn a_flush_that_fails_is_logged_as_an_error_and_the_shutdown_still_completes
 }
 
 pub fn the_exit_status_is_0_for_a_clean_stop_and_1_for_any_failed_step_test() -> Nil {
+  use <- owned_test.run(5000)
   assert shutdown.exit_status(Stopped(failures: [])) == 0
   assert shutdown.exit_status(
       Stopped(failures: [FlushFailed(worker: "a worker", reason: "a reason")]),
@@ -280,7 +281,7 @@ pub fn the_exit_status_is_0_for_a_clean_stop_and_1_for_any_failed_step_test() ->
 /// Whether the child wrote a line holding every one of `containing` as a log
 /// line of `level`: the logger writes its level on the line before the message.
 fn logged(
-  lines: List(String),
+  lines lines: List(String),
   level level: String,
   containing parts: List(String),
 ) -> Bool {
@@ -302,7 +303,7 @@ pub fn a_child_the_supervisor_restarts_does_not_run_the_shutdown_order_test() ->
     |> static_supervisor.add(shutdown.supervised(settings))
     |> static_supervisor.add(
       supervision.worker(fn() {
-        planted_shutdown.saver(settings, name: "a planted saver", flush: fn() {
+        planted_shutdown.saver(settings:, name: "a planted saver", flush: fn() {
           process.send(flushes, Nil)
           Ok(Nil)
         })

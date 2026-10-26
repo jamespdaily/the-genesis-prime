@@ -24,13 +24,13 @@ import gleam/erlang/process
 import gleam/erlang/reference
 import gleam/int
 import gleam/list
+import gleam/result
 import gleam/string
 import owned_test
-import planted_table
+import planted_table.{Integer}
 import pog
 import released_child
 import released_shipment
-import table_load_test
 import template_database
 
 /// How long a test waits for the release to start, ask it to stop and end: the
@@ -111,11 +111,11 @@ pub fn a_start_with_a_required_row_missing_fails_naming_both_tables_and_starts_n
   use <- owned_test.run(30_000)
   use database <- template_database.run
   use folder <- planted_table.in_folder([
-    #("Creature2", table_load_test.creature2_file(14_610, [])),
+    #("Creature2", creature2_file(14_610)),
     #(
       "LocalizedText",
-      table_load_test.localized_text_file([
-        table_load_test.localized_text_row(1, 7),
+      localized_text_file([
+        localized_text_row(1, 7),
       ]),
     ),
   ])
@@ -133,7 +133,7 @@ pub fn a_start_with_a_required_row_missing_fails_naming_both_tables_and_starts_n
         key:,
         folder:,
         entries: [creature2.entry(), localized_text.entry()],
-        requirements: [table_load_test.creature2_names_a_localized_text()],
+        requirements: [creature2_names_a_localized_text()],
       ),
       shutdown: shutdown.new(drain_deadline_ms: 1000, flush_deadline_ms: 1000),
     ))
@@ -155,6 +155,43 @@ pub fn a_start_with_a_required_row_missing_fails_naming_both_tables_and_starts_n
     as "the tree started: the database pool is running"
   assert planted_table.persistent_terms_under(key) == 0
     as "the failed load left its tables behind"
+}
+
+fn localized_text_row(id: Int, version: Int) -> List(planted_table.Cell) {
+  planted_table.row(localized_text.schema, [
+    #("ID", Integer(id)),
+    #("version", Integer(version)),
+  ])
+}
+
+fn localized_text_file(rows: List(List(planted_table.Cell))) -> BitArray {
+  planted_table.bytes(planted_table.table(localized_text.schema, rows))
+}
+
+/// A Creature2 file of one row, id 1, whose `localizedTextIdName` is the id.
+fn creature2_file(localized_text_id_name: Int) -> BitArray {
+  planted_table.bytes(
+    planted_table.table(creature2.schema, [
+      planted_table.row(creature2.schema, [
+        #("ID", Integer(1)),
+        #("localizedTextIdName", Integer(localized_text_id_name)),
+      ]),
+    ]),
+  )
+}
+
+/// The rule that Creature2's `localizedTextIdName` names a LocalizedText row.
+fn creature2_names_a_localized_text() -> store.Requirement {
+  store.Requirement(
+    from_table: "Creature2",
+    column: "localizedTextIdName",
+    to_table: "LocalizedText",
+    missing: fn(tables) {
+      creature2.all(tables)
+      |> list.map(fn(row) { row.localized_text_id_name })
+      |> list.filter(fn(id) { result.is_error(localized_text.get(tables, id)) })
+    },
+  )
 }
 
 /// The database's clock, as text, read before the release starts.

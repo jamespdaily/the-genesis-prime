@@ -1,0 +1,10 @@
+## The release's VM flags, read by release/start.
+##
+## The server runs as one node and uses no Erlang distribution: this file sets
+## no -name and no -sname, and ./setup-check refuses one that does.
+
+## No Erlang shell: the server is started by a host, not by a person.
+-noshell
+
+## Log at info, so the log tells when the server runs and when it stops.
+-kernel logger_level info

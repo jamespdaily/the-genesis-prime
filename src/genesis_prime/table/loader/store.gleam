@@ -6,6 +6,7 @@
 
 import genesis_prime/table/loader/tbl_file
 import gleam/erlang/reference.{type Reference}
+import gleam/int
 import gleam/list
 import gleam/result
 import simplifile
@@ -54,7 +55,28 @@ pub type LoadError {
 /// A sentence that says why a load failed, naming the tables, for the message
 /// the server stops with.
 pub fn describe(error: LoadError) -> String {
-  panic as "describe is not built yet"
+  case error {
+    TableFileUnreadable(file:, reason:) ->
+      "the file "
+      <> file
+      <> ".tbl could not be read: "
+      <> simplifile.describe_error(reason)
+    TableFileInvalid(table:, error:) ->
+      "the file of the table "
+      <> table
+      <> " is not accepted: "
+      <> tbl_file.describe_error(error)
+    RowMissing(from_table:, column:, to_table:, id:) ->
+      "the table "
+      <> from_table
+      <> " column "
+      <> column
+      <> " names id "
+      <> int.to_string(id)
+      <> ", which the table "
+      <> to_table
+      <> " has no row for"
+  }
 }
 
 /// An entry for a generated table module. A table's term is stored under its

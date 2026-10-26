@@ -7,6 +7,7 @@ import genesis_prime/table/loader/store
 import gleam/erlang/reference.{type Reference}
 import gleam/otp/actor
 import gleam/otp/static_supervisor.{type Builder, type Supervisor}
+import gleam/result
 
 /// The top supervisor before any child is added: one for one, so a child that
 /// fails is restarted alone, and 3 restarts in 5 seconds, the server's choice
@@ -59,7 +60,16 @@ pub type StartError {
 /// A sentence that says why the tree did not start, for the message the
 /// server stops with.
 pub fn describe(error: StartError) -> String {
-  panic as "describe is not built yet"
+  case error {
+    TablesNotLoaded(error) ->
+      "a game table did not load: " <> store.describe(error)
+    TreeNotStarted(actor.InitTimeout) ->
+      "the supervision tree did not start in time"
+    TreeNotStarted(actor.InitFailed(reason)) ->
+      "the supervision tree did not start: " <> reason
+    TreeNotStarted(actor.InitExited(_)) ->
+      "a process of the supervision tree ended as it started"
+  }
 }
 
 /// Loads the game tables, then starts the top supervisor with the database
@@ -72,5 +82,25 @@ pub fn describe(error: StartError) -> String {
 pub fn start(
   settings: Settings,
 ) -> Result(actor.Started(Supervisor), StartError) {
-  panic as "start is not built yet"
+  let tables = settings.tables
+  use loaded <- result.try(
+    store.load(
+      under: tables.key,
+      from: tables.folder,
+      entries: tables.entries,
+      requirements: tables.requirements,
+    )
+    |> result.map_error(TablesNotLoaded),
+  )
+  case
+    supervisor_with_pool(settings.pool)
+    |> static_supervisor.add(shutdown.supervised(settings.shutdown))
+    |> static_supervisor.start
+  {
+    Ok(started) -> Ok(started)
+    Error(error) -> {
+      store.unload(loaded)
+      Error(TreeNotStarted(error))
+    }
+  }
 }

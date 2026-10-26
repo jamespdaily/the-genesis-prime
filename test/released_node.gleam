@@ -120,7 +120,7 @@ const report_end = "report-end"
 pub fn run(start: Start, body: fn(Result(Node, Failure)) -> a) -> a {
   use tables <- planted_table.in_empty_tables_folder
   let epmd_port = free_port()
-  let process = open(arguments(start), environment(start, epmd_port, tables))
+  let process = open(arguments(start), environment(start:, epmd_port:, tables:))
   with_cleanup(
     fn() {
       read_report(process, [])
@@ -182,9 +182,9 @@ fn arguments(start: Start) -> List(String) {
 /// The database's settings in the names the server reads them by, a folder of
 /// the game tables and the child's own epmd port.
 fn environment(
-  start: Start,
-  epmd_port: Int,
-  tables: String,
+  start start: Start,
+  epmd_port epmd_port: Int,
+  tables tables: String,
 ) -> List(#(String, String)) {
   let settings = start.database.settings
   let password = case settings.password {

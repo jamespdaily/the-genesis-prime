@@ -22,8 +22,6 @@ import gleam/erlang/reference
 import gleam/int
 import gleam/io
 import gleam/otp/actor
-import gleam/result
-import gleam/string
 import pog
 
 /// A TCP socket: a listening one, a connected one, or the test's end of a
@@ -111,7 +109,7 @@ pub opaque type SaverMessage {
 /// from 1 in the order accepted, registered as a `Connection`; the connection
 /// number `ignores_close` never closes when told to. Gives the port.
 pub fn start_listener(
-  settings: Settings,
+  settings settings: Settings,
   ignores_close ignores_close: Int,
 ) -> Int {
   let port = process.new_subject()
@@ -119,13 +117,16 @@ pub fn start_listener(
     actor.new_with_initialiser(5000, fn(subject) {
       let #(socket, listening_port) = listen()
       shutdown.register(
-        settings,
-        shutdown.Listener(name: "planted listener", stop_accepting: fn() {
-          actor.call(subject, waiting: 5000, sending: StopAccepting)
-        }),
+        settings:,
+        participant: shutdown.Listener(
+          name: "planted listener",
+          stop_accepting: fn() {
+            actor.call(subject, waiting: 5000, sending: StopAccepting)
+          },
+        ),
       )
       process.spawn_unlinked(fn() {
-        accept_each(settings, socket, ignores_close, 1)
+        accept_each(settings:, listener: socket, ignores_close:, number: 1)
       })
       process.send(port, listening_port)
       Ok(
@@ -151,33 +152,40 @@ pub fn start_listener(
 }
 
 fn accept_each(
-  settings: Settings,
-  listener: Socket,
-  ignores_close: Int,
-  number: Int,
+  settings settings: Settings,
+  listener listener: Socket,
+  ignores_close ignores_close: Int,
+  number number: Int,
 ) -> Nil {
   case accept(listener) {
     Error(Nil) -> Nil
     Ok(socket) -> {
       let assert Ok(started) =
-        start_connection(settings, socket, number, number == ignores_close)
+        start_connection(
+          settings:,
+          socket:,
+          number:,
+          ignores_close: number == ignores_close,
+        )
         as "a planted connection did not start"
       give(socket, started.pid)
-      accept_each(settings, listener, ignores_close, number + 1)
+      accept_each(settings:, listener:, ignores_close:, number: number + 1)
     }
   }
 }
 
 fn start_connection(
-  settings: Settings,
-  socket: Socket,
-  number: Int,
-  ignores_close: Bool,
+  settings settings: Settings,
+  socket socket: Socket,
+  number number: Int,
+  ignores_close ignores_close: Bool,
 ) -> Result(actor.Started(Subject(ConnectionMessage)), actor.StartError) {
   actor.new_with_initialiser(5000, fn(subject) {
     shutdown.register(
-      settings,
-      shutdown.Connection(close: fn() { process.send(subject, Close) }),
+      settings:,
+      participant: shutdown.Connection(close: fn() {
+        process.send(subject, Close)
+      }),
     )
     io.println(connection_registered(number))
     Ok(actor.initialised(socket) |> actor.returning(subject))
@@ -200,14 +208,14 @@ fn start_connection(
 /// A saving worker that registers as a `SavingWorker` named `name`, and
 /// answers a flush with what `flush` returns, run in the worker.
 pub fn saver(
-  settings: Settings,
+  settings settings: Settings,
   name name: String,
   flush flush: fn() -> Result(Nil, NotFlushed),
 ) -> Result(actor.Started(Subject(SaverMessage)), actor.StartError) {
   actor.new_with_initialiser(5000, fn(subject) {
     shutdown.register(
-      settings,
-      shutdown.SavingWorker(name:, flush: fn() {
+      settings:,
+      participant: shutdown.SavingWorker(name:, flush: fn() {
         actor.call(subject, waiting: 5000, sending: Flush)
       }),
     )
@@ -253,7 +261,7 @@ pub fn main() -> Nil {
     as "the planted program's tree did not start"
   watch_for_the_end_of(tree.pid)
   let assert Ok(_) =
-    saver(settings, name: saver_name, flush: fn() {
+    saver(settings:, name: saver_name, flush: fn() {
       case flush_fails {
         True -> {
           io.println(flush_started)
@@ -263,14 +271,14 @@ pub fn main() -> Nil {
       }
     })
     as "the planted saving worker did not start"
-  let port = start_listener(settings, ignores_close:)
+  let port = start_listener(settings:, ignores_close:)
   io.println(listening(port))
   shutdown.run(tree: tree.pid, settings:)
 }
 
 /// Writes `tree_stopped` when the process ends.
 fn watch_for_the_end_of(tree: process.Pid) -> Nil {
-  let _ =
+  let _watcher =
     process.spawn_unlinked(fn() {
       let monitor = process.monitor(tree)
       process.new_selector()
@@ -294,8 +302,22 @@ fn save(connection: pog.Connection) -> Result(Nil, NotFlushed) {
       <> " as unsaved",
     )
     |> pog.execute(on: connection)
-    |> result.map_error(fn(error) { NotFlushed(reason: string.inspect(error)) })
-  result.map(written, fn(_returned) { io.println(flush_written) })
+  case written {
+    Ok(_returned) -> {
+      io.println(flush_written)
+      Ok(Nil)
+    }
+    Error(pog.ConnectionUnavailable) ->
+      Error(NotFlushed(reason: "the database is unreachable"))
+    Error(pog.QueryTimeout) -> Error(NotFlushed(reason: "the save timed out"))
+    Error(pog.PostgresqlError(message:, ..))
+    | Error(pog.ConstraintViolated(message:, ..)) ->
+      Error(NotFlushed(reason: message))
+    Error(pog.UnexpectedArgumentCount(..))
+    | Error(pog.UnexpectedArgumentType(..))
+    | Error(pog.UnexpectedResultType(_)) ->
+      Error(NotFlushed(reason: "the planted statement is malformed"))
+  }
 }
 
 fn number_from(variable: String) -> Int {
