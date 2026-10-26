@@ -28,6 +28,7 @@
 //// through the one Erlang file `dev/node_cost_ffi.erl`.
 
 import genesis_prime/database/pool
+import genesis_prime/game/service as game_service
 import genesis_prime/login/service
 import genesis_prime/message/bit_stream
 import genesis_prime/server
@@ -368,6 +369,7 @@ pub fn start_server() -> Result(Nil, Nil) {
       password: option.None,
       pool_size: 1,
     )
+  let snapshot_settings = snapshot.settings(process.new_name("snapshot"))
   let tree =
     server.Settings(
       pool: settings,
@@ -378,13 +380,19 @@ pub fn start_server() -> Result(Nil, Nil) {
         requirements: [],
       ),
       shutdown: shutdown.new(drain_deadline_ms: 1000, flush_deadline_ms: 1000),
-      snapshot: snapshot.settings(process.new_name("snapshot")),
+      snapshot: snapshot_settings,
       login: service.settings(
         sts_port: 0,
         auth_port: 0,
         game_server: bit_stream.Endpoint(address: 0x7F000001, port: 0),
         realm_name: "node_cost",
         expected_files_digest: option.None,
+      ),
+      game: game_service.settings(
+        port: 0,
+        realm_id: 1,
+        start: fn(_row) { Error(Nil) },
+        snapshot: snapshot_settings.name,
       ),
     )
   case server.start(tree) {

@@ -12,6 +12,7 @@ import genesis_prime/message/play_character_refused.{type PlayCharacterRefused}
 import genesis_prime/message/player_entered_world.{type PlayerEnteredWorld}
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
+import genesis_prime/message/unit_destroyed.{type UnitDestroyed}
 import genesis_prime/message/unit_is_player.{type UnitIsPlayer}
 import gleam/result
 
@@ -38,6 +39,8 @@ pub type ServerMessage {
   MovementIntervalSet(MovementSendInterval)
   /// Message 0x61.
   PlayerEntered(PlayerEnteredWorld)
+  /// Message 0x355.
+  UnitRemoved(UnitDestroyed)
 }
 
 /// The message's number and the bytes of its body, or the first field that
@@ -84,6 +87,8 @@ pub fn encode(
         player_entered_world.message_id,
         player_entered_world.encode(body),
       )
+    UnitRemoved(body) ->
+      numbered(unit_destroyed.message_id, unit_destroyed.encode(body))
   }
 }
 

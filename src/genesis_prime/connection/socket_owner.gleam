@@ -35,7 +35,7 @@ import genesis_prime/connection/rate_limit.{type Rate}
 import genesis_prime/connection/socket.{type FlowControl, type Socket}
 import genesis_prime/shutdown
 import genesis_prime/telemetry/log.{type Who}
-import gleam/erlang/process.{type Subject}
+import gleam/erlang/process.{type Selector, type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 
@@ -77,7 +77,14 @@ pub type Reaction {
 /// One connection's logic and its state, which lives in the function's
 /// closure. It runs in the socket owner's process.
 pub type Conversation {
+  /// A conversation that answers what the socket reads.
   Conversation(handle: fn(Input) -> Reaction)
+  /// A conversation that is also woken by messages other processes send to
+  /// the owner, such as a map's deliveries. `wake` selects those messages,
+  /// each mapped to the reaction the conversation makes of it; it is made with
+  /// the conversation's own state, so each reaction's next conversation brings
+  /// its own.
+  Waking(handle: fn(Input) -> Reaction, wake: Selector(Reaction))
 }
 
 /// What a listener serves: the mode its sockets are read in, and the step that

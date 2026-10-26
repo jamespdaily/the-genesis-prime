@@ -15,6 +15,7 @@
 
 import envoy
 import genesis_prime/database/pool
+import genesis_prime/game/service as game_service
 import genesis_prime/login/service
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
@@ -269,6 +270,8 @@ pub fn main() -> Nil {
     )
     as "the planted program's pool settings are not in the environment"
   let settings = shutdown.new(drain_deadline_ms:, flush_deadline_ms: 5000)
+  let snapshot_settings =
+    snapshot.settings(process.new_name("planted_snapshot"))
   let assert Ok(tree) =
     server.start(server.Settings(
       pool: pool_settings,
@@ -279,13 +282,19 @@ pub fn main() -> Nil {
         requirements: [],
       ),
       shutdown: settings,
-      snapshot: snapshot.settings(process.new_name("planted_snapshot")),
+      snapshot: snapshot_settings,
       login: service.settings(
         sts_port: 0,
         auth_port: 0,
         game_server: Endpoint(address: 0x7F000001, port: 0),
         realm_name: "planted",
         expected_files_digest: None,
+      ),
+      game: game_service.settings(
+        port: 0,
+        realm_id: 1,
+        start: fn(_row) { Error(Nil) },
+        snapshot: snapshot_settings.name,
       ),
     ))
     as "the planted program's tree did not start"

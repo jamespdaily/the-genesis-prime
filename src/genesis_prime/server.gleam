@@ -2,6 +2,7 @@
 //// is started under it.
 
 import genesis_prime/database/pool
+import genesis_prime/game/service as game_service
 import genesis_prime/login/service
 import genesis_prime/shutdown
 import genesis_prime/table/loader/store
@@ -54,6 +55,7 @@ pub type Settings {
     shutdown: shutdown.Settings,
     snapshot: snapshot.Settings,
     login: service.Settings,
+    game: game_service.Settings,
   )
 }
 
@@ -82,7 +84,7 @@ pub fn describe(error: StartError) -> String {
 
 /// Loads the game tables, then starts the top supervisor with the database
 /// pool as its first child, then the snapshot process that writes the
-/// runtime's numbers to the log, then the shutdown coordinator, then the login's subtree with its hand-offs and its two listeners, and every
+/// runtime's numbers to the log, then the shutdown coordinator, then the login's subtree with its hand-offs and its two listeners, then the game's subtree with the maps and the game listener, and every
 /// other child the server runs, each added here with its restart and shutdown
 /// settings. The tables load first, once, so a child that reads them is given
 /// them as a start argument; a load that fails starts nothing. The pool opens
@@ -108,6 +110,13 @@ pub fn start(
     |> static_supervisor.add(service.supervised(
       settings: settings.login,
       pool: settings.pool,
+      shutdown: settings.shutdown,
+    ))
+    |> static_supervisor.add(game_service.supervised(
+      settings: settings.game,
+      pool: settings.pool,
+      tables: loaded,
+      session_keys: settings.login.session_keys.name,
       shutdown: settings.shutdown,
     ))
     |> static_supervisor.start

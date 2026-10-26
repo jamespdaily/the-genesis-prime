@@ -176,7 +176,7 @@ fn joined(
 /// Message 0x262 for a player's unit: its id, the character's id, name, race,
 /// class, gender and path, the connection's realm and nothing else: no item
 /// visuals, and every value the client's code does not give a meaning is 0.
-fn unit_create(
+pub fn unit_create(
   unit unit: PlayerUnit,
   realm_id realm_id: Int,
 ) -> UnitCreatePlayer {
