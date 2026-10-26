@@ -14,7 +14,7 @@
 ////   running node is killed and the clock stops when its replacement answers
 ////   a ping; against `fresh_node_runs` times, a fresh peer node of this
 ////   project (OTP's `peer` module, started with this project's code path) is
-////   started and the clock stops when `genesis_prime/server.start()` has
+////   started and the clock stops when `genesis_prime/server.start` has
 ////   returned on it and the node answers a call. The median, the smallest and
 ////   the largest are printed for each.
 //// - Message round trip: one small message and its reply, `round_trips` times
@@ -27,6 +27,7 @@
 //// peer nodes are stopped as soon as each measure is taken. Both are done
 //// through the one Erlang file `dev/node_cost_ffi.erl`.
 
+import genesis_prime/database/pool
 import genesis_prime/server
 import genesis_prime/topology/trial
 import gleam/erlang/process.{type Name, type Pid, type Subject}
@@ -34,6 +35,7 @@ import gleam/float
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option
 import gleam/otp/actor
 import gleam/otp/static_supervisor.{type Supervisor}
 import gleam/otp/supervision
@@ -223,7 +225,7 @@ fn restart_in_node_runs() -> List(Int) {
 }
 
 /// Times, in nanoseconds, starting a fresh peer node with this project's code
-/// path, until `genesis_prime/server.start()` has returned on it and the node
+/// path, until `genesis_prime/server.start` has returned on it and the node
 /// answers a call. The node is stopped after the clock does.
 fn time_fresh_node() -> Int {
   let started = monotonic_nanoseconds()
@@ -345,11 +347,33 @@ fn stop_distribution() -> Nil
 @external(erlang, "node_cost_ffi", "start_peer")
 fn start_peer() -> Result(Peer, Nil)
 
+/// Starts the server's top supervisor on the node that runs this, with a pool
+/// of one connection to the Postgres of PGHOST's usual address. The pool opens
+/// its connection in the background, so the start does not wait for Postgres
+/// and the measure is of the tree. Called on the peer by
+/// `dev/node_cost_ffi.erl`.
+pub fn start_server() -> Result(Nil, Nil) {
+  let settings =
+    pool.Settings(
+      name: process.new_name("node_cost_pool"),
+      host: "127.0.0.1",
+      port: 5432,
+      database: "postgres",
+      user: "postgres",
+      password: option.None,
+      pool_size: 1,
+    )
+  case server.start(settings) {
+    Ok(_) -> Ok(Nil)
+    Error(_) -> Error(Nil)
+  }
+}
+
 /// Stops a peer node and waits for it to be gone.
 @external(erlang, "node_cost_ffi", "stop_peer")
 fn stop_peer(peer: Peer) -> Nil
 
-/// Calls `genesis_prime/server.start()` on the peer, in a process that stays
+/// Calls `start_server` on the peer, in a process that stays
 /// alive, so the supervisor it starts stays up. Error when the start fails.
 @external(erlang, "node_cost_ffi", "start_server_on_peer")
 fn start_server_on_peer(peer: Peer) -> Result(Nil, Nil)

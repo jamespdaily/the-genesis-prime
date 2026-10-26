@@ -65,7 +65,7 @@ stop_peer({Controller, _Node}) ->
     ok = peer:stop(Controller),
     nil.
 
-%% Calls the server's `start` in a process on the peer that stays alive until
+%% Calls the Gleam `start_server` of `genesis_prime/node_cost` in a process on the peer that stays alive until
 %% the node stops, so the supervisor it starts stays up. The process reports
 %% the outcome of the start and then waits.
 -spec start_server_on_peer(peer()) -> {ok, nil} | {error, nil}.
@@ -74,7 +74,7 @@ start_server_on_peer({_Controller, Node}) ->
     Ref = make_ref(),
     spawn(Node,
           fun() ->
-              Outcome = case genesis_prime@server:start() of
+              Outcome = case genesis_prime@node_cost:start_server() of
                             {ok, _Started} -> ok;
                             {error, _Reason} -> error
                         end,

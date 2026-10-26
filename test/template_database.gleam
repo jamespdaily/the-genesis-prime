@@ -6,6 +6,7 @@
 //// the test starts run against the database as they do against the server's.
 
 import database_support.{type Settings}
+import genesis_prime/database/pool
 import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
 import gleam/int
 import gleam/otp/actor
@@ -54,6 +55,24 @@ pub fn config(
     for: database.settings,
     database: database.name,
     pool_name:,
+    pool_size:,
+  )
+}
+
+/// The settings of a pool of `pool_size` connections to the test's own
+/// database, for a tree the test starts with `server.start`.
+pub fn pool_settings(
+  for database: Database,
+  pool_name pool_name: Name(pog.Message),
+  pool_size pool_size: Int,
+) -> pool.Settings {
+  pool.Settings(
+    name: pool_name,
+    host: database.settings.tcp_host,
+    port: database.settings.port,
+    database: database.name,
+    user: database.settings.user,
+    password: database.settings.password,
     pool_size:,
   )
 }
