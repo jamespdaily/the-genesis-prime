@@ -573,12 +573,11 @@ pub fn map_answered(
 /// The effects of the end of the map process that holds the character's unit,
 /// which the connection watches from the moment the map joined the unit: the
 /// connection ends, because a map that starts again holds none of its players.
-pub fn map_ended(
-  session session: Session,
-  context context: Context,
-) -> #(Session, List(Effect)) {
-  let _ = context
-  #(session, [])
+pub fn map_ended(session session: Session) -> #(Session, List(Effect)) {
+  case session.stage {
+    Ended -> #(session, [])
+    AwaitingKey | RedeemingKey(_) | Playing(..) -> end(session, MapEnded)
+  }
 }
 
 /// The effects of a delivery from the map: a unit in range appeared (0x262

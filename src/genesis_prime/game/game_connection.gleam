@@ -32,7 +32,7 @@ import genesis_prime/map/world_map_process
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/loader/store.{type Tables}
 import genesis_prime/telemetry/log
-import gleam/erlang/process.{type Name, type Subject}
+import gleam/erlang/process.{type Monitor, type Name, type Subject}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
@@ -114,6 +114,7 @@ type Connection {
     deliveries: Subject(Delivery),
     peer: Option(String),
     account: Option(Int),
+    map_monitor: Option(Monitor),
   )
 }
 
@@ -134,6 +135,7 @@ fn new(services services: Services, peer peer: Option(String)) -> Output {
       deliveries: process.new_subject(),
       peer:,
       account: None,
+      map_monitor: None,
     ),
     effects:,
     context: services.context(),
@@ -168,6 +170,28 @@ fn delivered(
     context:,
     sent: [],
   )
+}
+
+/// Takes the end of the map process that holds the player's unit.
+fn map_went_down(connection connection: Connection) -> Output {
+  let #(session, effects) = game_session.map_ended(connection.session)
+  run(
+    connection: Connection(..connection, session:, map_monitor: None),
+    effects:,
+    context: connection.services.context(),
+    sent: [],
+  )
+}
+
+/// Takes a message that nothing the connection waits for sent: a reply that
+/// came after the deadline of its wait, from the store's worker, the registry
+/// or the map. It is logged and dropped, and the connection goes on.
+fn late_reply(connection connection: Connection) -> Output {
+  log.warning(
+    who(account: connection.account, peer: connection.peer, message: None),
+    "a late reply, or another message the connection does not wait for, arrived and was dropped",
+  )
+  Output(connection:, send: [], close: False)
 }
 
 /// Carries out the effects in order. What an effect asks of another process is
@@ -275,19 +299,24 @@ fn ask_store(
   #(Connection(..connection, session:), more)
 }
 
-/// Asks the map to join the character's unit and tells the rule the answer.
+/// Asks the map to join the character's unit and tells the rule the answer. A
+/// map that holds the unit is watched from then on: a map that starts again is
+/// empty, so its end is the end of this connection.
 fn join_map(
   connection connection: Connection,
   world_id world_id: Int,
   newcomer newcomer: Newcomer,
   context context: game_session.Context,
 ) -> #(Connection, List(game_session.Effect)) {
-  let answer =
+  let entered =
     connection.services.enter_map(world_id, newcomer, connection.deliveries)
-    |> map_answer
   let #(session, more) =
-    game_session.map_answered(connection.session, answer, context)
-  #(Connection(..connection, session:), more)
+    game_session.map_answered(connection.session, map_answer(entered), context)
+  let map_monitor = case entered {
+    Ok(maps.Entered(map:, ..)) -> Some(process.monitor(map))
+    Error(_) -> connection.map_monitor
+  }
+  #(Connection(..connection, session:, map_monitor:), more)
 }
 
 /// What the map's answer to a join means to the rule: a unit, the map's refusal
@@ -361,11 +390,29 @@ fn conversation(connection: Connection) -> Conversation {
           Reaction(send: [], close: True, next: conversation(connection))
       }
     },
-    wake: process.new_selector()
-      |> process.select_map(connection.deliveries, fn(delivery) {
-        reaction(delivered(connection:, delivery:))
-      }),
+    wake: wake(connection),
   )
+}
+
+/// What the owner of the connection's socket is woken by besides the socket:
+/// the map's deliveries, the end of the map that holds the player's unit and
+/// any other message, which can only be a reply that came after the wait for it
+/// was over. The last is selected only here, so that the owner's process logs
+/// it through the telemetry module instead of its actor library discarding it.
+fn wake(connection: Connection) -> process.Selector(Reaction) {
+  let selector =
+    process.new_selector()
+    |> process.select_map(connection.deliveries, fn(delivery) {
+      reaction(delivered(connection:, delivery:))
+    })
+    |> process.select_other(fn(_message) { reaction(late_reply(connection:)) })
+  case connection.map_monitor {
+    Some(monitor) ->
+      process.select_specific_monitor(selector, monitor, fn(_down) {
+        reaction(map_went_down(connection:))
+      })
+    None -> selector
+  }
 }
 
 fn reaction(output: Output) -> Reaction {

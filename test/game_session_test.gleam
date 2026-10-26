@@ -658,13 +658,13 @@ pub fn the_end_of_the_map_that_holds_the_unit_ends_the_connection_as_a_warning_t
       game_session.MapJoined(playing_unit()),
       context(),
     )
-  let #(session, effects) = game_session.map_ended(session, context())
+  let #(session, effects) = game_session.map_ended(session)
   assert effects == [End(game_session.MapEnded)]
     as "a map that starts again is empty, so the unit the connection joined is gone, and the connection ends so the player enters again"
   assert game_session.level_of(game_session.MapEnded)
     == game_session.WarningLevel
     as "designing-processes: an outside failure the server recovered from is a warning"
   assert game_session.describe(game_session.MapEnded) != ""
-  let #(_, effects) = game_session.map_ended(session, context())
+  let #(_, effects) = game_session.map_ended(session)
   assert effects == [] as "a connection that has ended takes no more"
 }
