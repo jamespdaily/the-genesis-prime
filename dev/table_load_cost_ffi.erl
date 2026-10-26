@@ -1,5 +1,5 @@
 -module(table_load_cost_ffi).
--export([total_memory/0, collect_all/0, resident_bytes/0, getenv/1]).
+-export([total_memory/0, collect_all/0, resident_bytes/0]).
 
 %% The bytes of memory the runtime reports in all, from `erlang:memory(total)`.
 -spec total_memory() -> non_neg_integer().
@@ -17,11 +17,3 @@ collect_all() ->
 resident_bytes() ->
     Output = os:cmd("ps -o rss= -p " ++ os:getpid()),
     list_to_integer(string:trim(Output)) * 1024.
-
-%% The value of an environment variable, or an error when it is not set.
--spec getenv(binary()) -> {ok, binary()} | {error, nil}.
-getenv(Name) ->
-    case os:getenv(unicode:characters_to_list(Name)) of
-        false -> {error, nil};
-        Value -> {ok, unicode:characters_to_binary(Value)}
-    end.

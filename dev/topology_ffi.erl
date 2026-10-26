@@ -1,6 +1,6 @@
 -module(topology_ffi).
 -export([monotonic_microseconds/0, enable_scheduler_wall_time/0,
-         set_high_priority/0, plain_arguments/0,
+         set_high_priority/0,
          scheduler_wall_time/0, set_schedulers_online/1, core_count/0, schedulers_online/0,
          process_memory_words/1, message_queue_length/1,
          process_heap_and_queue/1, binary_bytes/0, ets_bytes/0,
@@ -20,9 +20,6 @@ enable_scheduler_wall_time() ->
 set_high_priority() ->
     process_flag(priority, high),
     nil.
-
-plain_arguments() ->
-    [unicode:characters_to_binary(Argument) || Argument <- init:get_plain_arguments()].
 
 %% The counters of the normal schedulers that are online, as
 %% `{SchedulerId, Busy, Total}`, in microseconds. The runtime lists its dirty
