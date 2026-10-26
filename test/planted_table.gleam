@@ -310,8 +310,9 @@ pub fn in_empty_tables_folder(body: fn(String) -> a) -> a {
   )
 }
 
-/// The WorldLocation2 row of the server's starting place (50177, in world 3400),
-/// the World row 3400 and the Hybrid system's CharacterSlots row (117, 2 slots),
+/// The WorldLocation2 row of the server's starting place (WorldLocation2.50230:
+/// world 1537, zone 4813, at 4605.650, -7.571, 494.996),
+/// the World row 1537 and the Hybrid system's CharacterSlots row (117, 2 slots),
 /// which every other table lacks.
 fn required_rows_only(entry: store.Entry) -> Planted {
   let schema = store.schema(entry)
@@ -319,12 +320,16 @@ fn required_rows_only(entry: store.Entry) -> Planted {
     "WorldLocation2" ->
       table(schema:, rows: [
         row(schema:, with: [
-          #("ID", Integer(50_177)),
-          #("worldId", Integer(3400)),
+          #("ID", Integer(50_230)),
+          #("worldId", Integer(1537)),
+          #("worldZoneId", Integer(4813)),
+          #("position0", Float(4605.65)),
+          #("position1", Float(-7.571)),
+          #("position2", Float(494.996)),
         ]),
       ])
     "World" ->
-      table(schema:, rows: [row(schema:, with: [#("ID", Integer(3400))])])
+      table(schema:, rows: [row(schema:, with: [#("ID", Integer(1537))])])
     "RewardPropertyPremiumModifier" ->
       table(schema:, rows: [
         row(schema:, with: [

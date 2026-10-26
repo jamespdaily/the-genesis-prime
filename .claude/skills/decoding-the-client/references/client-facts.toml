@@ -1199,7 +1199,7 @@ name = "HandleCharacterSelectMessage"
 statement = "Message 0xad (173), game server to client, after the player chose a character (0x7dd): enter the world. Body: the World id (15 bits: the World row whose asset the client loads and whose loading picture it shows), then five 32-bit floats (each sent as its IEEE 754 single-precision bits), the first three the position x, y and z the world loads at. The client takes it only while it waits after 0x7dd; it keeps the six values, shows the world's loading screen and enters the world on the same connection, which becomes the world connection; no new server connection is opened. A World id with no row fails the load: the client shows an error (text 0x7a6af) and character select stops. The client has no writer for it."
 proof = "Registered at 0x14006d8eb mov edx, 0xad; 0x14006d8e4 lea r8d, [r9+0x18] (record size); 0x14006d8cd lea rcx, [0x14007e9e0] stored at 0x14006d8df (reader); 0x14006d8f0 mov qword ptr [rsp+0x20], 0x0 (no writer); widths in ReadMessage00ADBody. 0x140020ea0 sends it to 0x140022480, which needs state 4, keeps the six words at the character-select object's 0x1c8..0x1dc and calls 0x140034330 with the character-select connection (object 0xb8) and the kept character record; 0x140034330 calls 0x1403e7ea0, which stores that connection at game 0x7928 (0x1403e7ee9 mov qword ptr [rdi+0x7928], r14). Emulator: vector.opcode.0xad.body. The values sit at the character-select object's 0x1c8..0x1dc, inside the kept character record that starts at 0x178, so StartWorldSession 0x140034330 reads the World id as the record's word 0x50: ShowWorldLoadingScreen 0x1400360f0 and LoadWorld 0x1403e70d0 look it up with GetWorldRow 0x14024acc0 (the 'World' table); SetWorldConnection logs the record's 0x50 and the floats at 0x54..0x5c and passes those three to LoadWorld, which fails without a row; HandleMessage00AD then calls 0x1400232f0 with 0x7a6af."
 grade = "fairly sure"
-gap = "The meaning of the World id and the position is read from Ghidra's decompile of the routines named; the last two floats (kept at 0x1d8 and 0x1dc) are passed to no routine read here."
+gap = "The meaning of the World id and the position is read from Ghidra's decompile of the routines named; the last two floats (kept at 0x1d8 and 0x1dc) do not reach LoadWorld on entry from character select (record 0x1403e7fd1), and no other reader of them is read."
 
 ["0x140022480"]
 statement = "Handles message 0xad: keeps its six values, builds the world session on the character-select connection with the chosen character's world and position, and moves character select to its finished state."
@@ -3001,3 +3001,167 @@ statement = "Character select's handling of a character of the account still in 
 proof = "UI/PreGame/CharacterSelection/CharacterSelect.lua in ClientData.archive: line 79 ApolloTimer.Create(0.5, true, 'OnRemoveCountdown'); lines 188, 268-272 (DisabledBlocker on every character but nCharacterIndex, which is force-selected), 311-313 (timer started), 324, 366, 383, 406 (create entries blocked), 540-565 (the countdown, nCharacterRemoveTime - 500 per tick, / 1000 for seconds); texts CharacterSelect_LogOffName 615937 'Logging Off $1n', CharacterSelect_LogOffMessage 615894, CharacterSelect_SelectErrorFailedCharacterInWorld 570352 (LocalizedEnum.tbl, en-US.bin). HandleMessage0117 0x140021540 (decompiled): the realm and character id kept, the remove time plus the clock base kept, and nCharacterRemoveTime (the raw 32-bit value) and nCharacterIndex (the matching character's place from 1) put in the CharacterList event's third table only when the realm, the id and the time are non-zero and a listed character has the id."
 grade = "fairly sure"
 gap = "The Lua is read from the archive with a scratch extractor. What retail did to the first session when the second logged in (disconnect it with 0x36a, and with which reason, or let it play on) is not in the client; a retail recording of a double login would settle it."
+
+# Entering a world: terrain, the player unit's look and level, and the level-up reminder
+
+["World.assetPath"]
+statement = "The folder of a world's map files, for example Map\\PreTutorialExile. The world's terrain is the files named '<folder's last part>.<four hex digits>.area' in that folder (with '.tex' files beside them), and an optional '<last part>.map'. A World row whose folder the client's archive does not hold loads without any error, as a world with no terrain. World 3400 (Map\\PreTutorialExile) is such a row: ClientData.index has no Map\\PreTutorialExile folder (the name occurs only as UI\\Maps\\PreTutorialExile, the zone map art), so the client enters it with no ground, sky or zone. World 1537 (Map\\ExileArkShipTutorial) has 205 area files and World 3460 (Map\\NewPlayerExperience) has 108; WorldLocation2 has 259 rows in 1537, 161 in 3460 and one (50177) in 3400."
+proof = "LoadWorld 0x1403e70d0 passes the row's word 8 (assetPath) and its part after the last backslash to CreateWorldAsset 0x1402d9ab0, which calls OpenWorldAsset 0x1402db830: 0x1402db8f9 lea r8, [0x140af0cb0] (the text '%s\\%s.map'), 0x1402db90f call 0x14001b370, 0x1402db93d call 0x1402db980. LoadWorldMapFile 0x1402db980: 0x1402dbab8 call 0x1401b5b50 opens the .map; with nothing opened it stores 0 at 0x638 and returns 0 (decompiled). ParseAreaFileName 0x1402dca80 accepts only '<name>.<4 hex>.area' (0x1402dcaf1 cmp word ptr [rbx+2*rdi], 0x2e; 0x1402dcb7a cmp eax, 0x80; 0x1402dcb81 cmp edx, 0x80; 0x1402dcb89 lea rdx, [0x140af0df0] '.area'). Archive: a scratch walk of Patch/ClientData.index (header per archive_index.header, directories per 0x1401bcea0, each subdirectory entry read as name offset then block index): Map holds ExileArkShipTutorial (415 files, 205 .area) and NewPlayerExperience but no PreTutorialExile; a byte search of the index finds 'PreTutorialExile' once, among the UI\\Maps folders. World.tbl rows 3400, 1537, 3460 and WorldLocation2.tbl counts read with a scratch reader. Live, 2026-10-26: the client entered world 3400 with plain grey ground and sky."
+grade = "fairly sure"
+gap = "How the area files are listed and streamed around the player (ParseAreaFileName is reached through a table at 0x140b62da0) is not traced, nor where the sky and lighting come from without terrain (the world setup loads WorldSky rows 1 and 35 when a world flag is set, 0x140353b34 and 0x140353b57). A live entry into world 1537 or 3460 at one of its WorldLocation2 rows would settle that terrain, sky and zone then load."
+
+["0x1402d9ab0"]
+statement = "Creates a world's asset object from the world's folder and name and opens it (OpenWorldAsset); fails when the asset system is not set up or the object cannot be made."
+proof = "Called by LoadWorld 0x1403e70d0 with the World row's assetPath, its last part, and again with '<last part>_Low' when the row's flag bit 0 is clear. Decompiled: global 0x140c657f8 null -> 0x80004005; a 0x800-byte object built by 0x1402db400; 0x1402db830 with the folder and name."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "CreateWorldAsset"
+
+["0x1402db830"]
+statement = "Opens a world's asset: keeps the folder and the name, builds the path '<folder>\\<name>.map', notes whether the archive has it, and loads the map file (LoadWorldMapFile)."
+proof = "0x1402db8af lea rcx, [rsi+0x218] (the name); 0x1402db8f9 lea r8, [0x140af0cb0] ('%s\\%s.map'); 0x1402db900 lea rcx, [rsi+0x420]; 0x1402db90f call 0x14001b370; 0x1402db927 call 0x1401b5110 (the archive lookup, its result kept as a flag at 0x628); 0x1402db93d call 0x1402db980."
+grade = "fairly sure"
+gap = "What 0x1401b5110 looks the path up in is not read."
+name = "OpenWorldAsset"
+
+["0x1402db980"]
+statement = "Loads a world's '.map' file: with no such file in the archive it records none and succeeds, so a world with no map files loads with no error."
+proof = "0x1402dbab8 call 0x1401b5b50 with the '.map' path; decompiled: a null result stores 0 at the object's 0x638 and returns 0; otherwise 0x1402dbaee mov qword ptr [rsi+0x638], rax and the file's reader is set up (0x1402dbb24 call 0x1401c5690)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the calls; what the .map file holds is not read."
+name = "LoadWorldMapFile"
+
+["0x1402dca80"]
+statement = "Takes a file name as one of the world's terrain areas when it is '<world name>.<four hex digits>.area' (case ignored for '.area'): the low two hex digits and the high two are the area's grid place, each at most 0x80; it then registers the area. Any other name is refused."
+proof = "0x1402dcae4 call 0x14018e3e0 (the name compared with the world name kept at 0x218); 0x1402dcaf1 cmp word ptr [rbx+2*rdi], 0x2e; four calls of 0x1407dff44 (hex digit tests) at 0x1402dcb04, 0x1402dcb15, 0x1402dcb26, 0x1402dcb37; 0x1402dcb5b call 0x1407e1968 (base 16); 0x1402dcb7a cmp eax, 0x80; 0x1402dcb81 cmp edx, 0x80; 0x1402dcb89 lea rdx, [0x140af0df0] ('.area'); 0x1402dcb90 call 0x14018e2c0; 0x1402dcba7 call qword ptr [rax+0x78]. Referenced from the table at 0x140b62da0. Archive names such as ExileArkShipTutorial.3a37.area fit it."
+grade = "fairly sure"
+gap = "Which of the two bytes is x and which is z is fitted from the data (area_file.cell), not read; what slot 0x78 does with the area is not read."
+name = "ParseAreaFileName"
+
+["0x1403e7fd1"]
+statement = "On entering a world from character select, the client loads the world with message 0xad's World id and only its first three floats as the position (x, y, z), with 0 as the fourth position word: the fourth and fifth floats of 0xad do not reach LoadWorld."
+proof = "In SetWorldConnection 0x1403e7ea0, with the kept character record: 0x1403e7fa6 movss xmm0, dword ptr [rsi+0x5c]; 0x1403e7fab movss xmm2, dword ptr [rsi+0x58]; 0x1403e7fb0 mov edx, dword ptr [rsi+0x50]; 0x1403e7fb3 xorps xmm1, xmm1; 0x1403e7fbe movss xmm3, dword ptr [rsi+0x54]; 0x1403e7fc3 unpcklps xmm2, xmm1; 0x1403e7fc6 unpcklps xmm3, xmm0; 0x1403e7fc9 unpcklps xmm3, xmm2; 0x1403e7fcc movaps xmmword ptr [rsp+0x40], xmm3; 0x1403e7fd1 call 0x1403e70d0. LoadWorld copies the four words to the world's start position (0x7260..0x726c)."
+grade = "sure"
+
+["0x140458140"]
+statement = "Sets a new unit's stats from message 0x262's tagged list (the 5-bit count and the 5-bit/2-bit entries): each entry's 5-bit value is the stat and its 2-bit tag the value's form (0, a 32-bit integer; 1, a float; 2, two 32-bit integers). Stat 10 is the unit's level, set without any event; stat 0, 11, 19 to 22 and others set further unit values; a stat above 25 is reported. A stat the list leaves out keeps the unit's starting value, so a player unit created with no stat 10 is level 1 (0x1404543c1)."
+proof = "Called by InitUnitFromCreate 0x140456960 with record 0x88 and the count at record 0x81. Decompiled: a switch on the entry's first word (0x1404581e8 cmp eax, 0x19; 0x1404581fc jmp rcx): case 10 stores the integer at the unit's 0x38, the word ApplyUnitStat 0x1403d9a60 reads as the level (0x1403d9e8a mov r14d, dword ptr [rbx+0x38]); tag 1 values feed cases 1 to 9 and 23 to 25. The three tag readers are the 0x262 record's (0x14007ab50, 0x140080c60, 0x14007a040)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the switch; the other stats' meanings are not read, and that tag 1 is a float is inferred from its use; the reader 0x140080c60's width is in the 0x262 record."
+name = "SetUnitStatsFromCreate"
+
+["0x1404543c1"]
+statement = "A new unit starts at level 1: the unit constructor sets the level word to 1, and only stat 10 (in message 0x262's stats, or the stat change of message 0x935) changes it."
+proof = "Unit constructor 0x140454380 (called by HandleMessage0262 0x1403d9760): 0x1404543c1 mov qword ptr [rcx+0x38], 0x1 (the level word 1, the next word 0). The level word is read by ApplyUnitStat at 0x1403d9e8a mov r14d, dword ptr [rbx+0x38] and by GetPendingLevelUpUnlockList at 0x1404b0f2b mov ecx, dword ptr [rdx+0x38]; SetUnitStatsFromCreate 0x140458140 writes it for stat 10."
+grade = "sure"
+
+["0x1403d9a60"]
+statement = "Applies one stat change to a unit, given the stat, an integer value and a float value. For the player's unit and stat 10 (level) with the integer value: a level above the unit's level sets it, queues the level's Communicator messages for each level passed and, 2000 ms later, runs the level-up fanfare, which raises PlayerLevelChange; a lower level sets it and raises PlayerLevelChange at once. Message 0x935's case is its only direct caller and passes an integer of 0."
+proof = "0x1403d9add cmp r14d, 0x1a / 0x1403d9af9 jmp rcx (stats 0 to 26). Case 10: 0x1403d9e8a mov r14d, dword ptr [rbx+0x38] (the old level); 0x1403d9e96 call qword ptr [rax+0x30] (sets the level to the integer, kept in ebp from r9d at 0x1403d9a8e); 0x1403d9ec0 cmp r14d, ebp; 0x1403d9ec5 lea rax, [0x14045edd0]; 0x1403d9ede mov edx, 0x7d0; 0x1403d9ef6 call 0x140195960 (the timer); 0x1403d9f0a call 0x14043b4a0 per level; a fall: 0x1403d9f44 lea rdx, [0x140afc3f8] ('PlayerLevelChange'), 0x1403d9f56 call 0x1400ea3e0. Callers: a scan of every E8 and E9 call and every RIP-relative lea in .text finds one, 0x1403ed542 in message 0x935's case."
+grade = "fairly sure"
+gap = "A call through a pointer would not be found by the scan; another caller that passes a real integer level is not found, so how the server raises a player's level is not read."
+name = "ApplyUnitStat"
+
+["0x1400975b0"]
+statement = "Reads message 0x935's body: a 32-bit unit id, a 5-bit stat and a float value."
+proof = "0x1400975d5 mov r8d, 0x20 / 0x1400975de call 0x14006c090; 0x1400975eb mov r8d, 0x5 / 0x1400975f4 call 0x14006c090; 0x140097604 call 0x14006c1c0 (ReadFloat). Registered with 0x935 at 0x140074c78 (0x140074c5a lea rcx, [0x1400975b0])."
+grade = "sure"
+name = "ReadMessage0935Body"
+
+["opcode.0x935"]
+statement = "Message 0x935 (2357), game server to client: a unit's stat changed. Body: the unit id (32 bits), the stat (5 bits) and the value (a float). The client finds the unit (an unknown id does nothing) and applies the stat with the float and an integer of 0 (ApplyUnitStat), so a stat 10 (level) sent this way does not raise the level."
+proof = "Registered at 0x140074c78 mov edx, 0x935; 0x140074c71 lea r8d, [r9+0xc] (record size); reader 0x1400975b0. HandleWorldMessage's jump table entry for 0x935 is 0x1403ed517: 0x1403ed51c call 0x1403d90d0 (FindUnit with the first word); 0x1403ed524 je 0x1403ec71b; 0x1403ed52a movss xmm0, dword ptr [rdi+0x8]; 0x1403ed52f xor r9d, r9d; 0x1403ed532 mov r8d, dword ptr [rdi+0x4]; 0x1403ed542 call 0x1403d9a60."
+grade = "fairly sure"
+gap = "Whether the client has a writer for it is not checked; which stats retail sent this way is not in the client."
+
+["0x14045edd0"]
+statement = "The player's level-up fanfare, run 2000 ms after a level rise: builds the text of localized text 2673 with the new level, marks the unit's faction changed, plays the level-up effects, queues the level's Communicator messages and raises PlayerLevelChange with the level and two values of the level's XpPerLevel row. Text 2673 is used nowhere else."
+proof = "Only reference: 0x1403d9ec5 lea rax, [0x14045edd0] in ApplyUnitStat. 0x14045ee11 mov edx, 0xa71 / 0x14045ee16 call 0x14034bdd0 (localized text); 0x14045ee1b mov r9d, dword ptr [rsi+0x38]; 0x14045ee1f lea rdx, [0x140b07e30] ('%s %d'). Decompiled: 0x14024dfc0 with the level (its row words 0x10 and 0xc), 'PlayerLevelChange' (the text at 0x140afc3f8). A scan of .text for the bytes ba710a0000 finds only 0x14045ee11."
+grade = "fairly sure"
+gap = "Text 2673 is not looked up in en-US.bin; that 0x14024dfc0 is the XpPerLevel lookup is inferred."
+name = "RunLevelUpFanfare"
+
+["0x1404b0e70"]
+statement = "Lists the player's pending level-up unlocks (GameLib.GetPendingLevelUpUnlocks): with a player, and only when the client holds an entry for the player's character id, it takes for the Level system the LevelUpUnlock rows from level 1 up to the player unit's level, and for the Path system those up to the path level, leaves out every unlock marked viewed, and keeps each whose prerequisite passes. A new level-1 character with nothing marked viewed has the level-1 Level unlocks pending."
+proof = "Called by the GameLib function 0x1407033e0 (GetPendingLevelUpUnlocks, its name 0x140b43200 paired with it at 0x140b731e0). 0x1404b0e99 mov r9, qword ptr [rbp+0x88] (a map keyed by character id); 0x1404b0eac mov r8, qword ptr [rdx+0x1a8] (the player unit's character id, set by InitUnitFromCreate from 0x262); 0x1404b0f2b mov ecx, dword ptr [rdx+0x38] (the unit's level); 0x1404b0fd7 mov rax, qword ptr [rbp+0x68] (the viewed set). Decompiled: the path level from 0x140c65970 slot 0x10; two systems; per row the viewed set and 0x1404af7d0 (the prerequisite)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the loads; what fills the per-character entry and the viewed set (a server message, or the client's own settings through MarkLevelUpUnlockViewed) is not read."
+name = "GetPendingLevelUpUnlockList"
+
+["LevelUpUnlock.level"]
+statement = "The level at which an unlock is offered in its system (levelUpUnlockSystemEnum 0 Level, 1 Path). Level-system rows at level 1 are 28 and 29 (type 23, new action bar slot), 193, 194 (prerequisite 4106) and 195 (type 28, new general feature); rows with level -1 are never offered by level."
+proof = "LevelUpUnlock.tbl read with a scratch reader (columns ID, levelUpUnlockSystemEnum, level, levelUpUnlockTypeId, localizedTextIdDescription, displayIcon, prerequisiteId, levelUpUnlockValue). GetPendingLevelUpUnlockList 0x1404b0e70 compares the level as unsigned, so -1 is above every level."
+grade = "fairly sure"
+gap = "The rows are read from the file; the type names are from the displayIcon column, not the type table."
+
+["0x140703ce0"]
+statement = "GameLib.IsTutorialZone(id): true when the map zone with that id has flag 4. MapZone rows with it include 31 ExileArkShipTutorial, 39 DominionArkShipTutorial, 480 PreTutorialExile, 481 PreTutorialDominion, 542 NPEUMain and 545 NPEUExile; no map zone (id 0) is not a tutorial zone."
+proof = "The pointer at 0x140b72d08 follows the name 'IsTutorialZone' (0x140b72d00). 0x140703cff call 0x140448420 (the map zone for the argument); 0x140703d0f call qword ptr [rdx+0x40] (its flags); 0x140703d1b shr eax, 0x2; 0x140703d25 and eax, 0x1; with no map zone it returns false (decompiled). MapZone.tbl flags column read with a scratch reader."
+grade = "fairly sure"
+gap = "That slot 0x40 returns MapZone.flags is inferred from the rows; 0x140448420 is not read."
+name = "GameLibIsTutorialZone"
+
+["lua.LevelUpUnlocks.OnCloseToReminder"]
+statement = "The 'Level Up!' reminder with its 'See Rewards' button, shown beside the minimap: LevelUpUnlocks shows it when the addon starts with a player (or on CharacterCreated) and GameLib.GetPendingLevelUpUnlocks returns any unlock, on PlayerLevelChange and on PathLevelUp; it shows nothing while GameLib.IsTutorialZone holds for the current zone map's id, which is 0 when there is no current zone map. So a level-1 character entering a world with no zone (no terrain) sees it, and one entering a tutorial zone does not."
+proof = "UI/LevelUpUnlocks/LevelUpUnlocks.lua (the client's UI addon, extracted copy in ui-extract): lines 174-190 (PathLevelUp, PlayerLevelChange, CharacterCreated handlers; Initialize when GameLib.GetPlayerUnit()), 203-208 (Initialize: GetPendingLevelUpUnlocks non-empty -> OnCloseToReminder), 217-227, 421-441 (OnCloseToReminder: GetCurrentZoneMap, IsTutorialZone(nZoneId) returns early, else loads the LevelUpUnlockReminder form). Live 2026-10-26 in world 3400: the box 'Level Up!' / 'See Rewards' showed beside the minimap on entering, while the server had sent no 0x935 and no path experience, so neither event was raised; the player unit was level 1 (0x1404543c1) with level-1 unlocks pending (0x1404b0e70)."
+grade = "fairly sure"
+gap = "The form's XML is not extracted, so its texts are read from the screenshot. That the current zone map is none without terrain is inferred; a live entry at a tutorial-zone location of world 1537 or 3460 would settle that the reminder then stays hidden."
+
+["0x1404586e0"]
+statement = "Sets a new unit's movement from message 0x262: the 32-bit value before the kind list starts the unit's server-time estimate, then each entry of the kind list (5-bit kind, 0 to 29) is a movement command applied in order; a command that fails fails the unit's creation. Kind 2 sets the position (three floats and a bit). A unit created with no kind 2 has no position from the server, and message 0x19b then takes the player unit's position as the world's start."
+proof = "Called by InitUnitFromCreate 0x140456960 with record word 0x90, the list at record 0x98 and its count at 0x94. Decompiled: 0x14079ab90 with the 32-bit value and the client clock (a 16-sample time fit); per entry (0x48 bytes) 0x1405b4ab0, whose first test is 0x1405b4ab7 cmp r11d, 0x1d; failure reported with 0x141e02480. CheckWorldLoaded 0x1403e8000 builds a kind 2 with AppendSetPositionCommand 0x14079a5d0 and applies it with the same 0x1405b4ab0. HandleMessage019B copies the unit's 0x11e0..0x11ec to the world's 0x7260 (decompiled)."
+grade = "fairly sure"
+gap = "The other 29 kinds and the unit's position with no kind 2 (likely 0, 0, 0) are not read; a test that runs 0x262 with and without a kind 2 on the emulator, or a live entry, would settle where the unit then stands."
+name = "ApplyCreateMovementCommands"
+
+["0x1400ad350"]
+statement = "Reads a kind 2 movement command (set position) in message 0x262's kind list: three floats (x, y, z) and one bit."
+proof = "Entry 2 of the kind reader table at 0x140c1f070: bytes at 0x140c1f080 are 50d30a4001000000. 0x1400ad378, 0x1400ad388 and 0x1400ad398 call 0x14006c1c0 (ReadFloat) for record 0, 4 and 8; 0x1400ad3a5 mov r8d, 0x1 / 0x1400ad3ae call 0x14006c090 for record 0xc."
+grade = "sure"
+name = "ReadMoveCommandSetPosition"
+
+["0x14079a5d0"]
+statement = "Appends a set-position movement command (kind 2) with a position and a value to a command list."
+proof = "Decompiled: grows the 0x48-byte entry array; entry word 0 = 2; words at 8, 0xc, 0x10 = the position's three floats; word 0x14 = the third argument. Called by CheckWorldLoaded 0x1403e8000 with the world's start position and 0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "AppendSetPositionCommand"
+
+["0x140458db0"]
+statement = "Puts message 0x262's item visuals on a new unit: for each, the slot, the display and the dye (a dye's unset parts are filled from the item colour set's ramp) go to the unit's actor. 0x262 carries no customisation labels or values: in the world a player unit's look comes only from race and gender (DescribeUnitModel), the 6-bit list of 32-bit values in the player data (copied when the race and gender have such a list) and these item visuals."
+proof = "Called by InitUnitFromCreate 0x140456960 with the list at record 0xb8 and its count at 0xb0 (the 7-bit list ReadItemVisual reads), after the actor is built (0x1404674c0). Decompiled: per 16-byte entry the ItemColorSet row (0x140a6ad70) and 0x1401dc0d0; 0x140466d20 with slot, display and dye, which passes them to the actor at the unit's 0xcc0 and does nothing when there is none. The 6-bit list: InitUnitFromCreate case 20 copies it when 0x1400323e0 (a list per race below 17 and gender below 3) is not empty."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what the actor does with each slot is not read."
+name = "SetUnitItemVisualsFromCreate"
+
+["CharacterCustomization.itemSlotId"]
+statement = "The item slot a customisation choice dresses: each row maps a race, a gender and one or two (label, value) pairs to an item slot and an ItemDisplay. The slots are the body slots of ItemSlot: 24 BodySkin, 25 BodyFace, 26 BodyEye, 27 BodyEar, 28 BodyHair, 29 BodyTatoo, 30 BodyTail, 31 BodyHand, 39 BodyFacialHair. For race 3, gender 0, label 2 value 1 is BodySkin display 19."
+proof = "CharacterCustomization.tbl (ID, raceId, gender, itemSlotId, itemDisplayId, flags, characterCustomizationLabelId00/01, value00/01) and ItemSlot.tbl (ID, EnumName) read with a scratch reader; row 128 is race 3, gender 0, slot 24, display 19, label 2, value 1."
+grade = "fairly sure"
+gap = "The rows are read; the client reads the table only through its generic table interface (descriptor 0x140a69720), so the code that turns labels into visuals is not found."
+
+["opcode.0x262.body"]
+statement = "A player unit created with no body item visuals renders with a black body: the server must send, in 0x262's item visuals, the body slots (BodySkin, BodyFace, BodyHair and the rest) that the character's customisation labels and values select in CharacterCustomization."
+proof = "Live 2026-10-26 in world 3400: the player, created from 0x262 with race 3, gender 0 and no item visuals, showed a black body while one hand piece showed shaded and textured, so the scene's light reached that piece. 0x262 has no labels or values (SetUnitItemVisualsFromCreate 0x140458db0), so the client has no other source for the body slots."
+grade = "guess"
+gap = "Not read in the client: what the actor shows for an empty BodySkin slot. Settled by a live entry with the visuals built from the stored labels and values (CharacterCustomization rows for race, gender, label and value), or by a recording of a retail 0x262."
+
+# Where a new Exile character starts in the arkship world
+
+["area_file.cell"]
+statement = "An area file's four hex digits name the 512-unit square of the world it holds: the first two are the row, 64 plus floor(z / 512), and the last two the column, 64 plus floor(x / 512), where x and z are a position's first and third floats. World 1537's 205 area files lie in rows 0x3a to 0x45 (z from -3072 to 3072) and columns 0x37 to 0x4d (x from -4608 to 7168), not every square between. The Cryo Awakening Protocol room at x 4605.65, z 233 to 495 lies in ExileArkShipTutorial.4048.area, beside 4049."
+proof = "Data fit with scratch readers (game_table.file for WorldLocation2.tbl; the file names under ClientData/Map): in world 1537 all 259 WorldLocation2 rows fall in an existing area square read this way, and 245 with the digit pairs swapped; over every world whose map folder holds area files, 28,758 of 29,551 rows fit this way and 19,464 swapped. ParseAreaFileName 0x1402dca80 takes the digits as two numbers, each at most 0x80."
+grade = "fairly sure"
+gap = "Fitted to the rows, not read in the client: the code that places an area by its digits (the call ParseAreaFileName makes through slot 0x78) and the 512-unit size and 64 offset. The 793 rows that fit no file are not examined. Reading that call's target would settle it."
+
+["MapZone.worldZoneId"]
+statement = "The world zone a map zone stands for. MapZone 480 PreTutorialExile, named 'Cryo Awakening Protocol' and flagged a tutorial zone (flag 4), has world zone 4813 'Cryo Awakening Protocol', and MapZoneWorldJoin row 454 joins it to world 1537; its MapZoneHex cells are the full rectangle of columns 774 to 783 and rows 594 to 601. Map zone 481 PreTutorialDominion has world zone 4844, whose 14 WorldLocation2 rows are in world 1634. World 1537's other joined map zones are 151 Cryogenics, 156 Bridge, 157 Docking Bay and 159 Greenhouse, all 'The Gambler's Ruin' with flags 6 (tutorial), under map zone 31 ExileArkShipTutorial, which has no world zone; the join's row 148 names a map zone 158 that MapZone does not hold."
+proof = "MapZone.tbl, MapZoneWorldJoin.tbl, MapZoneHex.tbl, WorldZone.tbl and WorldLocation2.tbl read with a scratch reader (game_table.file), names from LocalizedText through ClientDataEN/en-US.bin. WorldZone 4813 has parent 799 'The Gambler's Ruin' and flags 0x12. A linear fit of the arkship map zones' hex ranges against their zones' WorldLocation2 rows gives about 48 units a column and 53 a row, putting x 4605.65 at column 778.5, the rectangle's middle, and z 495 near row 601, its last."
+grade = "fairly sure"
+gap = "How the client picks the current map zone (0x140448420, by the player's world zone or by the hex under the player) and the hex size are not read; GameLibIsTutorialZone 0x140703ce0 tests flag 4 of the map zone it finds. A live entry at WorldLocation2 row 50230 with no Level Up reminder shown would settle that the room counts as map zone 480."
+
+["WorldLocation2.50230"]
+statement = "The likeliest start of a new Exile Novice (PreTutorial) character: WorldLocation2 row 50230, world 1537, WorldZone 4813 'Cryo Awakening Protocol', at (4605.650, -7.571, 494.996) with facing (0, 0, 0, 1). The Exile pre-tutorial is public event 780 'Cryo Awakening Protocol' (world 1537, zone 4813, minimum level 1) and quest 10045 of the same name (zone 4813, level 1, receiver row 50246). The event's five objectives, in id order, point at rows 50232 'Walk into the scanner' (z 466.9), 50244 the rings (z 420.3), 50245 the display (z 376.5), 50246 Noelia's avatar (z 353.5) and 50249 'Jump up the platforms to reach the exit' (z 265.5), all at x 4605.65 to 4605.78, so the course runs toward lower z. Rows 50230, 50580 and 50582 share x 4605.650 and z 494.996, 28 units before the first objective, at heights -7.571, -6.990 and -5.990; 50230 is the lowest, 0.21 above the scanner row's -7.777. Dominion characters have the same event as 821 in world 1634, zone 4844."
+proof = "PublicEvent.tbl rows 780 and 821, PublicEventObjective.tbl rows 4894, 4896, 4897, 4898 and 4913, Quest2.tbl row 10045 and WorldLocation2.tbl read with a scratch reader (game_table.file); texts from ClientDataEN/en-US.bin. A scan of every 32-bit integer column of every other table finds 50230, 50580 and 50582 only in columns that hold other kinds of id (creature, spell, visual, sound), and no location column in any table names them. World 1537's map folder holds ExileArkShipTutorial.4048.area, the square of this position (area_file.cell)."
+grade = "guess"
+gap = "No client table or code names where the pre-tutorial begins (CharacterCreation.characterCreationStartEnum): the choice of 50230 over 50580 and 50582, that there is floor at its height, and that the identity facing looks toward the scanner are inferred from the layout. A live entry at 50230 (standing on the floor with the scanner ahead) or a retail recording of a new Novice Exile's message 0xad would settle it."

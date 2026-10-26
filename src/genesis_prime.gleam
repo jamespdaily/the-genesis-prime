@@ -62,10 +62,11 @@ const default_realm_name = "GenesisPrime"
 /// the server's own choice.
 const default_realm_id = 1
 
-/// The WorldLocation2 row every new character starts at: world 3400,
-/// Map\PreTutorialExile. A stand-in for the start of each CharacterCreation
+/// The WorldLocation2 row every new character starts at: world 1537,
+/// Map\ExileArkShipTutorial, zone 4813 "Cryo Awakening Protocol"
+/// (WorldLocation2.50230). A stand-in for the start of each CharacterCreation
 /// row, which the client's tables do not hold.
-const starting_location_id = 50_177
+const starting_location_id = 50_230
 
 /// Where a character made from a CharacterCreation row starts: the one
 /// starting row, whichever the CharacterCreation row is. The place is chosen
