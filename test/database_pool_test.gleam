@@ -359,13 +359,43 @@ pub fn the_pools_connections_end_a_whole_transaction_before_the_asker_gives_up_w
     as "the asker's longest wait for the answer of a worker that holds a connection is the transaction's limit and the margin"
 }
 
-pub fn the_wait_for_a_connection_the_statement_limit_and_the_margin_end_before_the_workers_deadline_test() -> Nil {
-  use <- owned_test.run(5000)
-  assert pool.checkout_wait_bound_ms
-    + pool.statement_timeout_ms
-    + pool.margin_ms
-    < game_service.answer_deadline_ms
-    as "a write that was reported failed has committed nothing: a worker that has no connection is killed at its deadline, and one that has a connection is waited for up to the statement's limit and the margin, so the longest wait for a connection and then the wait for the answer must end before the asker's deadline"
-  assert pool.checkout_wait_bound_ms == 3 * pool.queue_interval_ms
-    as "pgo_pool.erl: a request that waits in a pool whose connections are all held is refused at the third poll after it arrived, so at most 3 queue intervals"
+pub fn a_request_that_waits_for_a_connection_for_most_of_a_second_is_served_and_not_refused_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let settings =
+    template_database.pool_settings(
+      for: database,
+      pool_name: process.new_name("pool_of_one_burst"),
+      pool_size: 1,
+    )
+  let assert Ok(_) =
+    server.supervisor_with_pool(settings) |> static_supervisor.start
+    as "the planted top supervisor did not start"
+  let connection = pool.connection(settings)
+  // A transaction holds the pool's only connection for 700 ms, which a burst of
+  // writes can do, and a read waits for it in the pool's queue. `pgo` refuses a
+  // request whose wait passes twice its queue target at the third poll of a
+  // queue that is slow (`pgo_pool.erl`, `drop_slow/3`); with `pgo`'s own queue
+  // interval of 1000 ms that poll is past this wait.
+  let holding = process.new_subject()
+  let released = process.new_subject()
+  process.spawn(fn() {
+    let release = process.new_subject()
+    let assert Ok(_) =
+      pog.transaction(connection, fn(_transaction) {
+        process.send(holding, release)
+        let _timer = process.send_after(release, 700, Nil)
+        let assert Ok(Nil) = process.receive(release, 30_000)
+          as "the connection was let go"
+        Ok(Nil)
+      })
+      as "the transaction ran"
+    process.send(released, Nil)
+  })
+  let assert Ok(_) = process.receive(holding, event_wait_ms)
+    as "the transaction holds the connection"
+  assert read_one(connection) == Ok([1])
+    as "a read that waited for the connection for 700 ms got it: the queue sheds load only at its own, longer, interval"
+  assert process.receive(released, event_wait_ms) == Ok(Nil)
+    as "the transaction ended"
 }

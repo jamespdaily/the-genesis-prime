@@ -11,7 +11,6 @@ import genesis_prime/character/store
 import genesis_prime/character/store_worker.{Workers}
 import genesis_prime/connection/clock
 import genesis_prime/database/pool
-import genesis_prime/game/service as game_service
 import genesis_prime/login/account_store
 import genesis_prime/map/position.{Position}
 import gleam/erlang/process
@@ -186,7 +185,7 @@ pub fn workers_whose_supervisor_is_not_running_give_unavailable_and_not_a_crash_
     as "designing-processes: a request to a process that is away is an outside failure the asker handles, not a crash of the asker"
 }
 
-pub fn a_write_that_waits_for_a_connection_is_refused_within_the_pools_bound_and_commits_nothing_test() -> Nil {
+pub fn a_write_that_has_no_connection_at_the_deadline_is_killed_before_it_sends_anything_and_commits_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   use database <- template_database.run
   let workers = start_workers()
@@ -222,23 +221,21 @@ pub fn a_write_that_waits_for_a_connection_is_refused_within_the_pools_bound_and
   })
   let assert Ok(release) = process.receive(holding, answer_wait_ms)
     as "the transaction holds the connection"
-  let started = clock.monotonic_milliseconds()
   let answer =
     store_worker.run(
       workers:,
       db: one,
       command: select.InsertCharacter(new_character(account.id)),
-      within_ms: game_service.answer_deadline_ms,
+      within_ms: 500,
     )
-  let waited = clock.monotonic_milliseconds() - started
   process.send(release, Nil)
   assert answer == Unavailable
-    as "a write that cannot get a connection is reported failed"
-  assert waited <= pool.checkout_wait_bound_ms + pool.margin_ms
-    as "designing-processes: the pool refuses a request that waits for a connection after its checkout bound, so the worker is never killed at its deadline with a write that has begun: the wait, the statement's limit and the margin end before the worker's deadline"
-  assert store.run(database.connection, select.LoadCharacters(account.id))
-    == Loaded([])
-    as "a write that was reported failed committed nothing"
+    as "a write that has no connection by the deadline is reported failed"
+  // The pool serves its queue in order, so once a read through the same pool
+  // is answered, a write the killed worker had left in the queue would have
+  // been carried out.
+  assert store.run(one, select.LoadCharacters(account.id)) == Loaded([])
+    as "designing-processes: a worker that held no connection was killed before it sent its statement, so nothing of the write committed"
 }
 
 pub fn a_write_that_holds_its_connection_and_runs_past_the_deadline_is_not_killed_and_reports_what_happened_test() -> Nil {
