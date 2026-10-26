@@ -61,12 +61,14 @@ fn new_character(account_id: Int) -> character.NewCharacter {
 }
 
 /// A pool of one connection to the test's database whose every insert of a
-/// character takes `sleep` seconds, and whose connection cancels a statement
-/// that runs `limit_ms` milliseconds.
+/// character takes `sleep` seconds, whose connection cancels a statement that
+/// runs `limit_ms` milliseconds and ends a transaction that runs
+/// `transaction_limit_ms` milliseconds. A limit of 0 is no limit.
 fn start_slow_pool(
   database database: template_database.Database,
   sleep sleep: String,
   limit_ms limit_ms: Int,
+  transaction_limit_ms transaction_limit_ms: Int,
 ) -> pog.Connection {
   let pool_name = process.new_name("slow_insert_pool")
   let assert Ok(_) =
@@ -81,6 +83,7 @@ fn start_slow_pool(
         <> "); return new; end $$",
       "create trigger slow_insert before insert on character for each row execute function slow_insert()",
       "set statement_timeout = " <> int.to_string(limit_ms),
+      "set transaction_timeout = " <> int.to_string(transaction_limit_ms),
     ],
     fn(statement) {
       let assert Ok(_) = pog.query(statement) |> pog.execute(on: one)
@@ -242,7 +245,13 @@ pub fn a_write_that_holds_its_connection_and_runs_past_the_deadline_is_not_kille
   use <- owned_test.run(60_000)
   use database <- template_database.run
   let workers = start_workers()
-  let one = start_slow_pool(database:, sleep: "0.8", limit_ms: 5000)
+  let one =
+    start_slow_pool(
+      database:,
+      sleep: "0.8",
+      limit_ms: 5000,
+      transaction_limit_ms: 0,
+    )
   let assert Ok(account) =
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"
@@ -264,7 +273,13 @@ pub fn a_write_the_database_cancels_after_the_deadline_gives_unavailable_and_com
   use <- owned_test.run(60_000)
   use database <- template_database.run
   let workers = start_workers()
-  let one = start_slow_pool(database:, sleep: "2", limit_ms: 300)
+  let one =
+    start_slow_pool(
+      database:,
+      sleep: "2",
+      limit_ms: 300,
+      transaction_limit_ms: 0,
+    )
   let assert Ok(account) =
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"
@@ -284,4 +299,69 @@ pub fn a_write_the_database_cancels_after_the_deadline_gives_unavailable_and_com
   assert store.run(database.connection, select.LoadCharacters(account.id))
     == Loaded([])
     as "a write that was reported failed committed nothing"
+}
+
+pub fn a_write_the_database_ends_at_the_transactions_limit_gives_unavailable_and_commits_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use database <- template_database.run
+  let workers = start_workers()
+  // The statement's own limit is far off, so only the transaction's ends it.
+  let one =
+    start_slow_pool(
+      database:,
+      sleep: "2",
+      limit_ms: 0,
+      transaction_limit_ms: 300,
+    )
+  let assert Ok(account) =
+    account_store.create(database.connection, "jim", "secret")
+    as "the account is created"
+  let started = clock.monotonic_milliseconds()
+  let answer =
+    store_worker.run(
+      workers:,
+      db: one,
+      command: select.InsertCharacter(new_character(account.id)),
+      within_ms: 100,
+    )
+  let waited = clock.monotonic_milliseconds() - started
+  assert answer == Unavailable
+    as "a write the database ended at the transaction's limit (error 25P03, which ends the session) is reported failed, and is not a crash of the asker"
+  assert waited >= 300 && waited < 1500
+    as "the answer is the database's, at the transaction's limit, and not a guess at the asker's deadline"
+  assert store.run(database.connection, select.LoadCharacters(account.id))
+    == Loaded([])
+    as "a write that was reported failed committed nothing"
+}
+
+pub fn a_write_that_has_no_answer_when_the_longest_wait_ends_is_unknown_and_not_unavailable_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use database <- template_database.run
+  let workers = start_workers()
+  // No limit of the database ends the write, so the asker's longest wait does.
+  let one =
+    start_slow_pool(
+      database:,
+      sleep: "30",
+      limit_ms: 0,
+      transaction_limit_ms: 0,
+    )
+  let assert Ok(account) =
+    account_store.create(database.connection, "jim", "secret")
+    as "the account is created"
+  let started = clock.monotonic_milliseconds()
+  let answer =
+    store_worker.run(
+      workers:,
+      db: one,
+      command: select.InsertCharacter(new_character(account.id)),
+      within_ms: 100,
+    )
+  let waited = clock.monotonic_milliseconds() - started
+  assert answer == select.Unknown
+    as "a write that was sent and has no answer may have committed, so it is not reported failed: the connection ends and the client lists again"
+  assert waited >= pool.holding_wait_ms()
+    as "the asker waits for the answer up to the longest a write can take, which is the transaction's limit and the margin"
+  assert waited < pool.holding_wait_ms() + 1000
+    as "the wait ends at that ceiling and is not for ever"
 }

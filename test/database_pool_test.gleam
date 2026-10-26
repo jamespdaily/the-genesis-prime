@@ -339,6 +339,26 @@ pub fn the_pools_connections_stop_a_statement_before_the_game_workers_deadline_t
     as "the pool's limit is below the workers' deadline"
 }
 
+pub fn the_pools_connections_end_a_whole_transaction_before_the_asker_gives_up_waiting_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let settings = pool_settings(database, "pool_transaction_limit")
+  let assert Ok(_) =
+    server.supervisor_with_pool(settings) |> static_supervisor.start
+    as "the planted top supervisor did not start"
+  let assert Ok(pog.Returned(rows: [limit], ..)) =
+    pog.query("select current_setting('transaction_timeout')")
+    |> pog.returning(decode.at([0], decode.string))
+    |> pog.execute(on: pool.connection(settings))
+    as "the setting was read"
+  assert limit == "4500ms"
+    as "PostgreSQL 17 and later: transaction_timeout ends a transaction, its statements and its commit together, which statement_timeout does not bound; 4500 ms is the value the pool sets"
+  assert pool.transaction_timeout_ms > pool.statement_timeout_ms
+    as "PostgreSQL's documentation of transaction_timeout: when it is not above statement_timeout the statement's limit is ignored"
+  assert pool.holding_wait_ms() == pool.transaction_timeout_ms + pool.margin_ms
+    as "the asker's longest wait for the answer of a worker that holds a connection is the transaction's limit and the margin"
+}
+
 pub fn the_wait_for_a_connection_the_statement_limit_and_the_margin_end_before_the_workers_deadline_test() -> Nil {
   use <- owned_test.run(5000)
   assert pool.checkout_wait_bound_ms
