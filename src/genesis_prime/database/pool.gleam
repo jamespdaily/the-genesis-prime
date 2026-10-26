@@ -17,10 +17,12 @@ const default_pool_size = 10
 /// milliseconds, before it cancels the statement and rolls it back. A
 /// statement that is cancelled leaves its connection open and its error says
 /// why (query_canceled, 57014). The transaction as a whole is bounded by
-/// `transaction_timeout_ms`, above this. The statement's own timeout in `pog` is
-/// its default of 5000 ms from the start of the call, which the functions
-/// squirrel generates do not let a caller change; `pgo` closes the connection of
-/// a statement that has run that long. 4 seconds; no measurement chose it.
+/// `transaction_timeout_ms`, above this. A statement inside a transaction has no
+/// timeout of the client's, so this setting is the only limit on it. A statement
+/// outside a transaction has `pog`'s default client timeout of 5000 ms from the
+/// start of the call, which the functions squirrel generates do not let a
+/// caller change, and this limit is below it. 4 seconds; no measurement chose
+/// it.
 pub const statement_timeout_ms = 4000
 
 /// How long Postgres lets one transaction of the pool's connections run, in
