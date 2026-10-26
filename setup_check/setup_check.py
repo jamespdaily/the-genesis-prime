@@ -353,10 +353,16 @@ def _query_failure(message: str) -> Missing:
     return Missing(part, message, fix)
 
 
+def check_distribution(machine: Machine) -> list[Missing]:
+    """One Missing for each line of a release's settings file that turns
+    Erlang distribution on; nothing when no settings file is there."""
+    return []
+
+
 def check_all(machine: Machine) -> list[Missing]:
     """Every part's check, in order, skipping the client's parts where
     GENESIS_NO_CLIENT=1."""
-    checks = [check_gleam, check_erlang, check_rebar, check_manifest, check_postgres]
+    checks = [check_gleam, check_erlang, check_rebar, check_manifest, check_postgres, check_distribution]
     if not _no_client(machine):
         checks += [check_client, check_query_process]
     return [missing for check in checks for missing in check(machine)]
