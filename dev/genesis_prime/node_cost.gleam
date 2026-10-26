@@ -28,9 +28,17 @@
 //// through the one Erlang file `dev/node_cost_ffi.erl`.
 
 import genesis_prime/server
+import genesis_prime/topology/trial
 import gleam/erlang/process.{type Name, type Pid, type Subject}
+import gleam/float
+import gleam/int
+import gleam/io
+import gleam/list
 import gleam/otp/actor
 import gleam/otp/static_supervisor.{type Supervisor}
+import gleam/otp/supervision
+import gleam/result
+import gleam/string
 
 /// How many times the restart of the planted world subtree is timed.
 const restart_runs = 10
@@ -82,12 +90,48 @@ type Summary {
 /// this node against the start of a fresh node, and the round trip within this
 /// node against the round trip to a peer node.
 pub fn main() -> Nil {
-  todo as "body in the build commit"
+  io.println(
+    "node cost, in microseconds: median (smallest to largest) of the runs",
+  )
+  print_summary(
+    "restart of the world subtree in this node, "
+      <> int.to_string(restart_runs)
+      <> " runs",
+    summarise(restart_in_node_runs()),
+  )
+  let assert Ok(_node) = start_distribution()
+    as "this node could not become distributed; the reason is printed above"
+  print_summary(
+    "start of a fresh node to its first answer, "
+      <> int.to_string(fresh_node_runs)
+      <> " runs",
+    summarise(fresh_node_runs_times()),
+  )
+  print_summary(
+    "round trip between two processes in this node, "
+      <> int.to_string(round_trips)
+      <> " runs",
+    summarise(round_trips_in_node(round_trips)),
+  )
+  let assert Ok(peer) = start_peer() as "the peer node did not start"
+  let to_peer = round_trips_to_peer(peer, round_trips)
+  stop_peer(peer)
+  print_summary(
+    "round trip to a process in a peer node, "
+      <> int.to_string(round_trips)
+      <> " runs",
+    summarise(to_peer),
+  )
+  stop_distribution()
 }
 
 /// A world with a fresh worker name and fresh start subjects.
 fn new_world() -> World {
-  todo as "body in the build commit"
+  World(
+    worker: process.new_name("node_cost_world_worker"),
+    supervisors: process.new_subject(),
+    workers: process.new_subject(),
+  )
 }
 
 /// Starts a top supervisor with the real top supervisor's settings
@@ -96,7 +140,11 @@ fn new_world() -> World {
 fn start_node_with_world(
   world: World,
 ) -> Result(actor.Started(Supervisor), actor.StartError) {
-  todo as "body in the build commit"
+  server.supervisor()
+  |> static_supervisor.add(
+    supervision.supervisor(fn() { start_world_subtree(world) }),
+  )
+  |> static_supervisor.start
 }
 
 /// Starts the planted world subtree's supervisor and reports its pid on
@@ -104,7 +152,15 @@ fn start_node_with_world(
 fn start_world_subtree(
   world: World,
 ) -> Result(actor.Started(Supervisor), actor.StartError) {
-  todo as "body in the build commit"
+  use subtree <- result.map(
+    static_supervisor.new(static_supervisor.OneForOne)
+    |> static_supervisor.add(
+      supervision.worker(fn() { start_world_worker(world) }),
+    )
+    |> static_supervisor.start,
+  )
+  process.send(world.supervisors, subtree.pid)
+  subtree
 }
 
 /// Starts the planted world subtree's worker under `world.worker`, answering
@@ -112,62 +168,161 @@ fn start_world_subtree(
 fn start_world_worker(
   world: World,
 ) -> Result(actor.Started(Subject(Ping)), actor.StartError) {
-  todo as "body in the build commit"
+  actor.new_with_initialiser(deadline_ms, fn(subject) {
+    process.send(world.workers, process.self())
+    Ok(actor.initialised(Nil) |> actor.returning(subject))
+  })
+  |> actor.on_message(fn(state, message) {
+    let Ping(reply:) = message
+    process.send(reply, Pong)
+    actor.continue(state)
+  })
+  |> actor.named(world.worker)
+  |> actor.start
 }
 
 /// Times, in nanoseconds, killing the planted world subtree's supervisor until
 /// the replacement worker answers a ping: the clock starts at the kill and
 /// stops at the first `Pong` from the new worker.
 fn time_restart_in_node(world: World) -> Int {
-  todo as "body in the build commit"
+  let assert Ok(node) = start_node_with_world(world)
+    as "the planted node did not start"
+  let assert Ok(subtree) = process.receive(world.supervisors, deadline_ms)
+    as "the world subtree did not report its start"
+  let assert Ok(first_worker) = process.receive(world.workers, deadline_ms)
+    as "the world worker did not report its start"
+  let started = monotonic_nanoseconds()
+  process.kill(subtree)
+  let assert Ok(replacement) = process.receive(world.workers, deadline_ms)
+    as "the world worker was not replaced"
+  let Pong =
+    process.call(process.named_subject(world.worker), deadline_ms, Ping)
+  let elapsed = monotonic_nanoseconds() - started
+  assert replacement != first_worker as "the world worker was not replaced"
+  stop_node(node.pid)
+  elapsed
+}
+
+/// Stops a supervisor started by this process and waits until it is gone.
+fn stop_node(node: Pid) -> Nil {
+  let monitor = process.monitor(node)
+  process.unlink(node)
+  process.send_exit(node)
+  let assert Ok(Nil) =
+    process.new_selector()
+    |> process.select_specific_monitor(monitor, fn(_down) { Nil })
+    |> process.selector_receive(within: deadline_ms)
+    as "the planted node did not stop"
+  Nil
 }
 
 /// The `restart_runs` times of restarting the planted world subtree in a
 /// running node, in nanoseconds.
 fn restart_in_node_runs() -> List(Int) {
-  todo as "body in the build commit"
+  repeat(restart_runs, fn() { time_restart_in_node(new_world()) })
 }
 
 /// Times, in nanoseconds, starting a fresh peer node with this project's code
 /// path, until `genesis_prime/server.start()` has returned on it and the node
 /// answers a call. The node is stopped after the clock does.
 fn time_fresh_node() -> Int {
-  todo as "body in the build commit"
+  let started = monotonic_nanoseconds()
+  let assert Ok(peer) = start_peer() as "the peer node did not start"
+  let assert Ok(Nil) = start_server_on_peer(peer)
+    as "the server did not start on the peer"
+  let _answering_node = ask_node_name(peer)
+  let elapsed = monotonic_nanoseconds() - started
+  stop_peer(peer)
+  elapsed
 }
 
 /// The `fresh_node_runs` times of starting a fresh peer node, in nanoseconds.
 fn fresh_node_runs_times() -> List(Int) {
-  todo as "body in the build commit"
+  repeat(fresh_node_runs, time_fresh_node)
 }
 
 /// Times each of `count` round trips, in nanoseconds, of a `Ping` and its
 /// `Pong` between this process and a worker process in this node.
 fn round_trips_in_node(count: Int) -> List(Int) {
-  todo as "body in the build commit"
+  let ready = process.new_subject()
+  let worker = process.spawn_unlinked(fn() { serve_pings(ready) })
+  let assert Ok(target) = process.receive(ready, deadline_ms)
+    as "the ping worker did not start"
+  let times = time_round_trips(target, count)
+  process.kill(worker)
+  times
 }
 
 /// Times each of `count` round trips, in nanoseconds, of a `Ping` and its
 /// `Pong` between this process and a worker process in `peer`'s node.
 fn round_trips_to_peer(peer: Peer, count: Int) -> List(Int) {
-  todo as "body in the build commit"
+  let ready = process.new_subject()
+  let _worker = spawn_on(peer_node(peer), fn() { serve_pings(ready) })
+  let assert Ok(target) = process.receive(ready, deadline_ms)
+    as "the ping worker did not start on the peer"
+  time_round_trips(target, count)
+}
+
+/// Times `count` round trips to `target`, one after the other, with one reply
+/// subject, so both measures cost the same on this side.
+fn time_round_trips(target: Subject(Ping), count: Int) -> List(Int) {
+  let reply = process.new_subject()
+  repeat(count, fn() {
+    let started = monotonic_nanoseconds()
+    process.send(target, Ping(reply:))
+    let assert Ok(Pong) = process.receive(reply, deadline_ms)
+      as "a ping was not answered"
+    monotonic_nanoseconds() - started
+  })
+}
+
+/// Runs `work` `times` times, one after the other, and keeps each result.
+fn repeat(times: Int, work: fn() -> a) -> List(a) {
+  int.range(0, times, [], fn(taken, _run) { [work(), ..taken] })
 }
 
 /// Waits for a `Ping`, answers it, and waits again, in the node it runs in. It
 /// first sends its own subject to `ready`, so the process that started it can
 /// ping it.
 fn serve_pings(ready: Subject(Subject(Ping))) -> Nil {
-  todo as "body in the build commit"
+  let mine = process.new_subject()
+  process.send(ready, mine)
+  serve_forever(mine)
+}
+
+fn serve_forever(mine: Subject(Ping)) -> Nil {
+  let Ping(reply:) = process.receive_forever(mine)
+  process.send(reply, Pong)
+  serve_forever(mine)
 }
 
 /// The median, smallest and largest of `nanoseconds`, which are not empty, in
 /// microseconds.
 fn summarise(nanoseconds: List(Int)) -> Summary {
-  todo as "body in the build commit"
+  let microseconds =
+    list.map(nanoseconds, fn(nanosecond) { int.to_float(nanosecond) /. 1000.0 })
+  let assert Ok(smallest) = list.reduce(microseconds, float.min)
+    as "no runs were timed"
+  let assert Ok(largest) = list.reduce(microseconds, float.max)
+    as "no runs were timed"
+  Summary(
+    median_microseconds: trial.median(microseconds),
+    minimum_microseconds: smallest,
+    maximum_microseconds: largest,
+  )
 }
 
 /// Prints a measure's name and its summary on one line.
 fn print_summary(name: String, summary: Summary) -> Nil {
-  todo as "body in the build commit"
+  io.println(
+    string.pad_end(name, 64, " ")
+    <> trial.two_places(summary.median_microseconds)
+    <> " us ("
+    <> trial.two_places(summary.minimum_microseconds)
+    <> " to "
+    <> trial.two_places(summary.maximum_microseconds)
+    <> ")",
+  )
 }
 
 /// The monotonic clock, in nanoseconds. It can be negative, so 0 never means

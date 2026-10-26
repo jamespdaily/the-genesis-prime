@@ -36,13 +36,22 @@ pub fn a_crash_loop_in_the_world_subtree_restarts_the_world_subtree_and_leaves_t
   let assert Ok(top) = planted_service.start_top(settings)
     as "the planted top supervisor did not start"
   let assert Ok(login_pid) =
-    planted_service.next_start(settings.starts.login, event_wait_ms)
+    planted_service.next_start(
+      starts: settings.starts.login,
+      within: event_wait_ms,
+    )
     as "the login did not report its start"
   let assert Ok(first_crasher) =
-    planted_service.next_start(settings.starts.crasher, event_wait_ms)
+    planted_service.next_start(
+      starts: settings.starts.crasher,
+      within: event_wait_ms,
+    )
     as "the crasher did not report its start"
   let assert Ok(first_grower) =
-    planted_service.next_start(settings.starts.grower, event_wait_ms)
+    planted_service.next_start(
+      starts: settings.starts.grower,
+      within: event_wait_ms,
+    )
     as "the grower did not report its start"
   let login = process.named_subject(settings.names.login)
   let crasher = process.named_subject(settings.names.crasher)
@@ -59,11 +68,12 @@ pub fn a_crash_loop_in_the_world_subtree_restarts_the_world_subtree_and_leaves_t
       seen: [first_crasher],
     )
 
-  assert planted_service.ping(login, event_wait_ms) == Ok(Nil)
+  assert planted_service.ping(login:, within: event_wait_ms) == Ok(Nil)
     as "the login did not answer after the world subtree was restarted"
   assert process.named(settings.names.login) == Ok(login_pid)
     as "the login was replaced"
-  assert planted_service.next_start(settings.starts.login, 0) == Error(Nil)
+  assert planted_service.next_start(starts: settings.starts.login, within: 0)
+    == Error(Nil)
     as "the login started again"
   assert process.is_alive(top.pid) as "the top supervisor stopped"
 
@@ -71,12 +81,17 @@ pub fn a_crash_loop_in_the_world_subtree_restarts_the_world_subtree_and_leaves_t
   // subtree: the grower starts once more only then, and the crasher's last
   // start is a new process after that.
   let assert Ok(second_grower) =
-    planted_service.next_start(settings.starts.grower, event_wait_ms)
+    planted_service.next_start(
+      starts: settings.starts.grower,
+      within: event_wait_ms,
+    )
     as "the grower did not start again with the world subtree"
   assert second_grower != first_grower
-  assert planted_service.next_start(settings.starts.grower, 0) == Error(Nil)
+  assert planted_service.next_start(starts: settings.starts.grower, within: 0)
+    == Error(Nil)
     as "the world subtree was restarted more than once by the top supervisor"
-  assert planted_service.next_start(settings.starts.crasher, 0) == Error(Nil)
+  assert planted_service.next_start(starts: settings.starts.crasher, within: 0)
+    == Error(Nil)
     as "the crasher started more often than the crashes explain"
   assert list.length(crashers) == crashes_to_exceed_world_intensity + 1
 }
@@ -94,7 +109,10 @@ pub fn a_world_fault_that_survives_every_restart_stops_the_whole_node_test() -> 
   let assert Ok(top) = planted_service.start_top(settings)
     as "the planted top supervisor did not start"
   let assert Ok(login_pid) =
-    planted_service.next_start(settings.starts.login, event_wait_ms)
+    planted_service.next_start(
+      starts: settings.starts.login,
+      within: event_wait_ms,
+    )
     as "the login did not report its start"
   let top_monitor = process.monitor(top.pid)
 
@@ -105,7 +123,8 @@ pub fn a_world_fault_that_survives_every_restart_stops_the_whole_node_test() -> 
     as "the top supervisor did not exit"
 
   assert !process.is_alive(login_pid) as "the login survived the top supervisor"
-  assert planted_service.next_start(settings.starts.login, 0) == Error(Nil)
+  assert planted_service.next_start(starts: settings.starts.login, within: 0)
+    == Error(Nil)
     as "the login was started again after the top supervisor exited"
 }
 
@@ -115,10 +134,16 @@ pub fn a_process_whose_heap_passes_its_limit_is_killed_and_the_login_stays_up_te
   let assert Ok(_top) = planted_service.start_top(settings)
     as "the planted top supervisor did not start"
   let assert Ok(login_pid) =
-    planted_service.next_start(settings.starts.login, event_wait_ms)
+    planted_service.next_start(
+      starts: settings.starts.login,
+      within: event_wait_ms,
+    )
     as "the login did not report its start"
   let assert Ok(grower_pid) =
-    planted_service.next_start(settings.starts.grower, event_wait_ms)
+    planted_service.next_start(
+      starts: settings.starts.grower,
+      within: event_wait_ms,
+    )
     as "the grower did not report its start"
   let grower_monitor = process.monitor(grower_pid)
 
@@ -127,12 +152,15 @@ pub fn a_process_whose_heap_passes_its_limit_is_killed_and_the_login_stays_up_te
   assert wait_for_down(grower_monitor, event_wait_ms) == Ok(process.Killed)
     as "the grower was not killed by its heap limit"
   let assert Ok(replacement) =
-    planted_service.next_start(settings.starts.grower, event_wait_ms)
+    planted_service.next_start(
+      starts: settings.starts.grower,
+      within: event_wait_ms,
+    )
     as "the grower was not replaced"
   assert replacement != grower_pid
   assert planted_service.ping(
-      process.named_subject(settings.names.login),
-      event_wait_ms,
+      login: process.named_subject(settings.names.login),
+      within: event_wait_ms,
     )
     == Ok(Nil)
     as "the login did not answer"
@@ -154,10 +182,13 @@ fn repeat_crashes(
     0 -> seen
     _ -> {
       planted_service.crash(crasher)
-      assert planted_service.ping(login, event_wait_ms) == Ok(Nil)
+      assert planted_service.ping(login:, within: event_wait_ms) == Ok(Nil)
         as "the login did not answer during the crash loop"
       let assert Ok(replacement) =
-        planted_service.next_start(settings.starts.crasher, event_wait_ms)
+        planted_service.next_start(
+          starts: settings.starts.crasher,
+          within: event_wait_ms,
+        )
         as "the crasher was not replaced"
       repeat_crashes(
         settings:,

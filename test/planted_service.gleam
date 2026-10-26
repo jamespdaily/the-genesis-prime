@@ -14,6 +14,9 @@ import gleam/otp/actor
 import gleam/otp/static_supervisor.{type Builder, type Supervisor}
 import gleam/otp/supervision
 
+/// How long a planted worker's initialiser may take, in milliseconds.
+const event_wait_ms = 1000
+
 /// How many restarts a supervisor allows, and in how many seconds, before it
 /// gives up and stops with its children.
 pub type Restarts {
@@ -92,7 +95,22 @@ pub type GrowMessage {
 /// a healthy world, and a heap ceiling of 100,000 words. Change a field with a
 /// record update.
 pub fn settings() -> Settings {
-  todo as "body in the build commit"
+  Settings(
+    login_restarts: Restarts(intensity: 3, period: 5),
+    world_restarts: Restarts(intensity: 3, period: 5),
+    world_fault: Healthy,
+    max_heap_words: 100_000,
+    names: Names(
+      login: process.new_name("planted_login"),
+      crasher: process.new_name("planted_crasher"),
+      grower: process.new_name("planted_grower"),
+    ),
+    starts: Starts(
+      login: process.new_subject(),
+      crasher: process.new_subject(),
+      grower: process.new_subject(),
+    ),
+  )
 }
 
 /// Starts the planted top supervisor, built from `server.supervisor()` so it
@@ -114,26 +132,37 @@ pub fn start_top(
 
 /// Sends a `Ping` to the login service and waits for its `Pong`. Error when no
 /// answer comes in `within` milliseconds.
-pub fn ping(login: Subject(LoginMessage), within: Int) -> Result(Nil, Nil) {
-  todo as "body in the build commit"
+pub fn ping(
+  login login: Subject(LoginMessage),
+  within within: Int,
+) -> Result(Nil, Nil) {
+  let reply = process.new_subject()
+  process.send(login, Ping(reply:))
+  case process.receive(reply, within:) {
+    Ok(Pong) -> Ok(Nil)
+    Error(Nil) -> Error(Nil)
+  }
 }
 
 /// Tells the world worker that crashes on request to crash, with an abnormal
 /// exit.
 pub fn crash(crasher: Subject(CrashMessage)) -> Nil {
-  todo as "body in the build commit"
+  process.send(crasher, Crash)
 }
 
 /// Tells the world worker that grows to start growing its heap without end. It
 /// stops only when the runtime kills it at the ceiling in `max_heap_words`.
 pub fn grow(grower: Subject(GrowMessage)) -> Nil {
-  todo as "body in the build commit"
+  process.send(grower, Grow)
 }
 
 /// The pid of the next start reported on one of `Starts`, waiting up to
 /// `within` milliseconds. Error when none comes.
-pub fn next_start(starts: Subject(Pid), within: Int) -> Result(Pid, Nil) {
-  todo as "body in the build commit"
+pub fn next_start(
+  starts starts: Subject(Pid),
+  within within: Int,
+) -> Result(Pid, Nil) {
+  process.receive(starts, within:)
 }
 
 /// The login subtree: a supervisor of the login service alone, with
@@ -167,7 +196,17 @@ fn restarts(builder: Builder, restarts: Restarts) -> Builder {
 fn start_login(
   settings: Settings,
 ) -> Result(actor.Started(Subject(LoginMessage)), actor.StartError) {
-  todo as "body in the build commit"
+  actor.new_with_initialiser(event_wait_ms, fn(subject) {
+    process.send(settings.starts.login, process.self())
+    Ok(actor.initialised(Nil) |> actor.returning(subject))
+  })
+  |> actor.on_message(fn(state, message) {
+    let Ping(reply:) = message
+    process.send(reply, Pong)
+    actor.continue(state)
+  })
+  |> actor.named(settings.names.login)
+  |> actor.start
 }
 
 /// Starts the crashing world worker under `names.crasher` and reports its pid
@@ -176,7 +215,20 @@ fn start_login(
 fn start_crasher(
   settings: Settings,
 ) -> Result(actor.Started(Subject(CrashMessage)), actor.StartError) {
-  todo as "body in the build commit"
+  actor.new_with_initialiser(event_wait_ms, fn(subject) {
+    case settings.world_fault {
+      Healthy -> Nil
+      CrashesAfterEveryStart -> process.send(subject, Crash)
+    }
+    process.send(settings.starts.crasher, process.self())
+    Ok(actor.initialised(Nil) |> actor.returning(subject))
+  })
+  |> actor.on_message(fn(_state, message) {
+    let Crash = message
+    actor.stop_abnormal("planted crash")
+  })
+  |> actor.named(settings.names.crasher)
+  |> actor.start
 }
 
 /// Starts the growing world worker under `names.grower`. Before it reports its
@@ -184,7 +236,23 @@ fn start_crasher(
 fn start_grower(
   settings: Settings,
 ) -> Result(actor.Started(Subject(GrowMessage)), actor.StartError) {
-  todo as "body in the build commit"
+  actor.new_with_initialiser(event_wait_ms, fn(subject) {
+    set_max_heap_size(settings.max_heap_words)
+    process.send(settings.starts.grower, process.self())
+    Ok(actor.initialised(Nil) |> actor.returning(subject))
+  })
+  |> actor.on_message(fn(_state, message) {
+    let Grow = message
+    grow_forever([])
+  })
+  |> actor.named(settings.names.grower)
+  |> actor.start
+}
+
+/// Adds to a list that it holds without end, so its heap grows until the
+/// runtime kills the process at its `max_heap_size`. It never returns.
+fn grow_forever(held: List(Int)) -> a {
+  grow_forever([0, ..held])
 }
 
 /// Sets the calling process's `max_heap_size` to `words` words, with kill on,
