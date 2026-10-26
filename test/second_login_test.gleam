@@ -1,14 +1,15 @@
 //// A second login of an account replaces the first, over TCP against the real
-//// game listener, the sessions' registry and the maps. The client is built for
-//// it: its character select blocks the list while an account's character is
-//// still in the world and handles 0x36A in every state (records
-//// lua.CharacterSelection.OnRemoveCountdown, opcode.0x36a, opcode.0x117,
-//// opcode.0x162, opcode.0xdc). The reason 19 of 0x36A is a guess: no reason
-//// says the account logged in elsewhere, and no recording shows a double login.
-//// The accounts and characters are in a database of the test's own and the
-//// client's own tables are loaded from its files, so the tests skip where
-//// `GENESIS_NO_CLIENT=1`. Every wait is for bytes the server writes or the
-//// socket closing; the deadlines are for a server that does not answer.
+//// game listener, the sessions' registry and the maps. The client handles
+//// 0x36A in every state (records lua.CharacterSelection.OnRemoveCountdown,
+//// opcode.0x36a, opcode.0x117, opcode.0x162). The server ends the old
+//// connection and takes its unit off the map before it lists for the new one,
+//// so the client's own list of a character pending removal is not needed. The
+//// reason 19 of 0x36A is a guess: no reason says the account logged in
+//// elsewhere, and no recording shows a double login. The accounts and
+//// characters are in a database of the test's own and the client's own tables
+//// are loaded from its files, so the tests skip where `GENESIS_NO_CLIENT=1`.
+//// Every wait is for bytes the server writes or the socket closing; the
+//// deadlines are for a server that does not answer.
 
 import environment
 import game_client.{type Game}
@@ -23,15 +24,9 @@ import genesis_prime/game/sessions
 import genesis_prime/login/account.{type Account}
 import genesis_prime/login/account_store
 import genesis_prime/login/handoff
-import genesis_prime/map/maps
-import genesis_prime/map/position.{Position}
-import genesis_prime/map/unit.{Newcomer}
 import genesis_prime/message/character_list
-import genesis_prime/message/create_character
-import genesis_prime/message/create_character_result
 import genesis_prime/message/disconnect_notice
 import genesis_prime/message/play_character.{PlayCharacter}
-import genesis_prime/message/play_character_refused
 import gleam/dict
 import gleam/erlang/process.{type Pid}
 import gleam/list
@@ -188,75 +183,6 @@ pub fn connections_of_different_accounts_do_not_affect_each_other_test() -> Nil 
     as "the first account is answered with its list, with no notice of a login of another account before it"
   assert listed(game: second).characters == []
     as "the second account is answered with its list"
-}
-
-pub fn a_character_of_the_account_still_on_the_map_is_listed_as_pending_removal_and_blocks_the_rest_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  use database <- template_database.run
-  let running = game_server.start(database:, answer_deadline_ms: 5000)
-  let account = account_of(database:, name: "jim")
-  let online = saved_character(database:, running:, account:, name: "Zed Mara")
-  let other = saved_character(database:, running:, account:, name: "Ab Cd")
-  // A unit of the account's character that no live connection holds: the old
-  // path, for a character the second login found still on the map.
-  let started = process.new_subject()
-  process.spawn(fn() {
-    let entered =
-      maps.enter(
-        registry: running.game.maps.registry,
-        world_id: running.facts.world_id,
-        newcomer: Newcomer(
-          character_id: online.id,
-          name: "Zed Mara",
-          race_id: 1,
-          class_id: 3,
-          gender: 1,
-          path: 1,
-          position: Position(x: 1.5, y: 2.5, z: 3.5),
-        ),
-        connection: process.new_subject(),
-        within_ms: wait_ms,
-      )
-    process.send(started, entered)
-    process.sleep_forever()
-  })
-  let assert Ok(Ok(_)) = process.receive(started, wait_ms)
-    as "the character is on the map"
-  let game = signed_in(running:, account:)
-  let list_message = listed(game:)
-  assert list_message.pending_removal_realm_id == game_server.realm_id
-    && list_message.pending_removal_character_id == online.id
-    as "opcode.0x117: the realm and the id of the character whose removal is pending"
-  assert list_message.pending_removal_time > 0
-    && list_message.pending_removal_time <= 60_000
-    as "opcode.0x117: the time until it is removed, in milliseconds, which the client counts down"
-  play(game:, character: other)
-  let assert [refused] = game_client.read(game:, count: 1)
-    as "the answer to playing another character"
-  assert refused.message_id == 0x0162
-  let assert Ok(refusal) = play_character_refused.decode(refused.body)
-    as "0x162 decodes"
-  assert refusal.field_1 == 4
-    as "PreGameLib.CodeEnumCharacterSelectResults: 4 is FailedCharacterInWorld"
-  let row = running.facts.creation
-  let assert Ok(create) =
-    create_character.encode(create_character.CreateCharacter(
-      creation_id: row.id,
-      name: "Ij Kl",
-      path: 1,
-      customisation_labels: [1],
-      customisation_values: [1],
-      bone_values: list.repeat(0x3F800000, running.facts.bone_count),
-    ))
-    as "0x25B encodes"
-  game_client.send_create(game:, body: create)
-  let assert [created] = game_client.read(game:, count: 1)
-    as "the create result"
-  let assert Ok(created_message) = create_character_result.decode(created.body)
-    as "0xDC decodes"
-  assert created_message.result == 44
-    as "PreGameLib.CodeEnumCharacterModifyResults: 44 is CreateFailed_CharacterOnline"
 }
 
 /// The process of the only map the server runs: the last child of the map's

@@ -51,7 +51,6 @@ import genesis_prime/table/loader/store as table_store
 import gleam/erlang/reference
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
 import gleam/string
 import owned_test
 import seeded
@@ -1170,106 +1169,4 @@ pub fn an_account_that_holds_as_many_characters_as_it_has_slots_is_refused_with_
       slots: 2,
     )
   assert stored(effects) != [] as "an account with a free slot may create"
-}
-
-/// One minute in the server's time, in 100-nanosecond intervals.
-const a_minute = 600_000_000
-
-fn with_a_character_in_the_world(until: Int) -> select.Context {
-  select.Context(
-    ..context(),
-    in_world: Some(select.InWorld(
-      character_id: 11,
-      until: character_support.server_time + until,
-    )),
-  )
-}
-
-pub fn the_list_names_a_character_still_in_the_world_and_the_time_until_it_is_removed_test() -> Nil {
-  use <- owned_test.run(5000)
-  let loading =
-    State(
-      account_id: character_support.account_id,
-      characters: [],
-      status: Loading,
-    )
-  let #(_, effects) =
-    select.decide(
-      loading,
-      Stored(Loaded([own(11, "Ab Cd"), own(12, "Ef Gh")])),
-      with_a_character_in_the_world(a_minute),
-    )
-  let assert [Send(CharacterListed(listed))] = effects as "the list is sent"
-  assert listed.pending_removal_realm_id == character_support.realm_id
-    && listed.pending_removal_character_id == 11
-    && listed.pending_removal_time == 60_000
-    as "opcode.0x117: the realm and the id of the listed character whose removal is pending, and the time until it in milliseconds, which the client counts down from (lua.CharacterSelection.OnRemoveCountdown)"
-  let #(_, effects) =
-    select.decide(loading, Stored(Loaded([own(11, "Ab Cd")])), context())
-  let assert [Send(CharacterListed(listed))] = effects as "the list is sent"
-  assert listed.pending_removal_realm_id == 0
-    && listed.pending_removal_character_id == 0
-    && listed.pending_removal_time == 0
-    as "opcode.0x117: with no character in the world the client is given no pending removal"
-}
-
-pub fn while_a_character_is_in_the_world_every_other_request_is_refused_with_the_online_results_test() -> Nil {
-  use <- owned_test.run(5000)
-  let state = idle([own(11, "Ab Cd"), own(12, "Ef Gh")])
-  let blocked = with_a_character_in_the_world(a_minute)
-  let #(_, play) =
-    select.decide(state, Requested(PlayRequested(PlayCharacter(12))), blocked)
-  assert play
-    == [
-      Log(select.CharacterOnline(11)),
-      Send(PlayRefused(PlayCharacterRefused(field_1: 4))),
-    ]
-    as "PreGameLib.CodeEnumCharacterSelectResults: 4 is FailedCharacterInWorld, 'Your account has another character still in the world' (lua.CharacterSelection.OnRemoveCountdown)"
-  let #(_, create) =
-    select.decide(state, Requested(CreateRequested(create_request())), blocked)
-  assert create_result_of(create) == 44
-    && list.contains(create, Log(select.CharacterOnline(11)))
-    && stored(create) == []
-    as "PreGameLib.CodeEnumCharacterModifyResults: 44 is CreateFailed_CharacterOnline"
-  let #(_, delete) =
-    select.decide(
-      state,
-      Requested(DeleteRequested(DeleteCharacter(12))),
-      blocked,
-    )
-  let assert [DeleteResult(deleted)] = sent(delete) as "the delete is answered"
-  assert deleted.result == 42 && stored(delete) == []
-    as "PreGameLib.CodeEnumCharacterModifyResults: 42 is DeleteFailed_CharacterOnline"
-  let #(_, rename) =
-    select.decide(
-      state,
-      Requested(
-        RenameRequested(RenameCharacter(character_id: 12, name: "Ij Kl")),
-      ),
-      blocked,
-    )
-  let assert [RenameResult(renamed)] = sent(rename) as "the rename is answered"
-  assert renamed.result == 43 && stored(rename) == []
-    as "PreGameLib.CodeEnumCharacterModifyResults: 43 is RenameFailed_CharacterOnline"
-}
-
-pub fn the_character_in_the_world_may_be_played_and_nothing_is_blocked_after_the_time_test() -> Nil {
-  use <- owned_test.run(5000)
-  let state = idle([own(11, "Ab Cd"), own(12, "Ef Gh")])
-  let #(_, effects) =
-    select.decide(
-      state,
-      Requested(PlayRequested(PlayCharacter(11))),
-      with_a_character_in_the_world(a_minute),
-    )
-  assert effects == [BeginWorldEntry(own(11, "Ab Cd"))]
-    as "lua.CharacterSelection.OnRemoveCountdown: the character in the world is left playable"
-  let #(_, effects) =
-    select.decide(
-      state,
-      Requested(PlayRequested(PlayCharacter(12))),
-      with_a_character_in_the_world(0),
-    )
-  assert effects == [BeginWorldEntry(own(12, "Ef Gh"))]
-    as "lua.CharacterSelection.OnRemoveCountdown: at 0 the client unblocks the list, and so does the server"
 }

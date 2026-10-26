@@ -26,7 +26,7 @@ import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor.{type Supervisor}
@@ -74,8 +74,6 @@ pub opaque type Message {
     world_id: Int,
     reply: Subject(Result(Name(world_map_process.Message), actor.StartError)),
   )
-  /// Gives the names of the maps that run.
-  AllMaps(reply: Subject(List(Name(world_map_process.Message))))
   /// A map's supervisor ended.
   MapEnded(process.Down)
   Unexpected(received: Dynamic)
@@ -235,44 +233,6 @@ pub fn enter(
   Ok(Entered(unit:, map: pid, via: process.named_subject(name)))
 }
 
-/// The first of the characters that is on a map, which a map in any world
-/// holds, or none: asked of the registry for the maps that run and then of each
-/// map, each within `within_ms` milliseconds. A registry or a map that does not
-/// answer holds no character the caller knows of.
-pub fn character_on_a_map(
-  registry registry: Name(Message),
-  character_ids character_ids: List(Int),
-  within_ms within_ms: Int,
-) -> Option(Int) {
-  option.from_result({
-    use _ <- result.try(process.named(registry))
-    let reply = process.new_subject()
-    process.send(process.named_subject(registry), AllMaps(reply:))
-    use names <- result.try(
-      process.receive(reply, within_ms) |> result.replace_error(Nil),
-    )
-    list.find_map(names, fn(name) {
-      character_on_the_map(name:, character_ids:, within_ms:)
-    })
-  })
-}
-
-/// The first of the characters that the map holds a unit of.
-fn character_on_the_map(
-  name name: Name(world_map_process.Message),
-  character_ids character_ids: List(Int),
-  within_ms within_ms: Int,
-) -> Result(Int, Nil) {
-  use units <- result.try(world_map_process.units(
-    map: process.named_subject(name),
-    within_ms:,
-  ))
-  list.find(list.map(units, fn(unit) { unit.character_id }), list.contains(
-    character_ids,
-    _,
-  ))
-}
-
 /// The name of the map of a world, which the registry starts when the world
 /// has none.
 fn find(
@@ -297,15 +257,6 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
     Find(world_id:, reply:) -> {
       let #(state, found) = running_map(state:, world_id:)
       process.send(reply, found)
-      actor.continue(state)
-    }
-    AllMaps(reply:) -> {
-      process.send(
-        reply,
-        dict.values(state.maps)
-          |> list.filter(fn(running) { process.is_alive(running.supervisor) })
-          |> list.map(fn(running) { running.map }),
-      )
       actor.continue(state)
     }
     MapEnded(process.ProcessDown(monitor:, ..)) ->

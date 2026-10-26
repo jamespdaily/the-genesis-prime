@@ -13,7 +13,7 @@
 //// socket's owner: the map takes the player's unit off the map when that
 //// process ends.
 
-import genesis_prime/character/character.{type Character, type Place}
+import genesis_prime/character/character.{type Place}
 import genesis_prime/character/customisation.{type Customisation}
 import genesis_prime/character/select
 import genesis_prime/character/store_worker
@@ -59,8 +59,6 @@ pub type Services {
     /// Takes the unit of this connection off the map it is on, and waits for the
     /// map to say it has.
     leave_map: fn(Subject(world_map_process.Message), Subject(Delivery)) -> Nil,
-    /// The first of the characters that is on a map, when one is.
-    character_in_world: fn(List(Int)) -> Option(Int),
     /// Joins a character's unit to the map of its world, with the subject its
     /// connection receives the map's deliveries on.
     enter_map: fn(Int, Newcomer, Subject(Delivery)) ->
@@ -133,13 +131,6 @@ pub fn services(settings settings: Settings) -> Services {
           )
       }
     },
-    character_in_world: fn(character_ids) {
-      maps.character_on_a_map(
-        registry: settings.registry,
-        character_ids:,
-        within_ms: settings.answer_deadline_ms,
-      )
-    },
     enter_map: fn(world_id, newcomer, deliveries) {
       maps.enter(
         registry: settings.registry,
@@ -174,7 +165,6 @@ type Connection {
     map_monitor: Option(Monitor),
     sessions_monitor: Option(Monitor),
     map_via: Option(Subject(world_map_process.Message)),
-    in_world: Option(select.InWorld),
   )
 }
 
@@ -199,7 +189,6 @@ fn new(services services: Services, peer peer: Option(String)) -> Output {
       map_monitor: None,
       sessions_monitor: None,
       map_via: None,
-      in_world: None,
     ),
     effects:,
     context: services.context(),
@@ -207,20 +196,10 @@ fn new(services services: Services, peer peer: Option(String)) -> Output {
   )
 }
 
-/// The context for an input: what the services give and the character of the
-/// account that was found still in the world when the list was read.
+/// The context for an input: what the services give, as it is when the input
+/// arrives.
 fn context_of(connection: Connection) -> game_session.Context {
-  with_in_world(connection.services.context(), connection.in_world)
-}
-
-fn with_in_world(
-  context: game_session.Context,
-  in_world: Option(select.InWorld),
-) -> game_session.Context {
-  game_session.Context(
-    ..context,
-    select: select.Context(..context.select, in_world:),
-  )
+  connection.services.context()
 }
 
 /// Takes a frame the socket's owner cut.
@@ -430,53 +409,9 @@ fn ask_store(
   context context: game_session.Context,
 ) -> #(Connection, List(game_session.Effect)) {
   let answer = connection.services.run_store(command)
-  // The characters of the account that are on a map when the list is read are
-  // still in the world: the client is told of the one and blocks the rest.
-  let in_world = case answer {
-    select.Loaded(characters) ->
-      found_in_world(connection:, characters:, context:)
-    select.Inserted(_)
-    | select.Renamed(_)
-    | select.Deleted(_)
-    | select.NameInUse
-    | select.NotFound
-    | select.Unavailable -> connection.in_world
-  }
   let #(session, more) =
-    game_session.stored(
-      connection.session,
-      answer,
-      with_in_world(context, in_world),
-    )
-  #(Connection(..connection, session:, in_world:), more)
-}
-
-/// How long a character that is still in the world has until it is removed,
-/// in milliseconds. The client's text for it says to try again 'in a minute';
-/// no value is in the client or the tables.
-const removal_milliseconds = 60_000
-
-/// The 100-nanosecond intervals of a Windows FILETIME in a millisecond.
-const intervals_per_millisecond = 10_000
-
-/// The character of the account that is still on a map, with the time it is
-/// removed.
-fn found_in_world(
-  connection connection: Connection,
-  characters characters: List(Character),
-  context context: game_session.Context,
-) -> Option(select.InWorld) {
-  connection.services.character_in_world(
-    list.map(characters, fn(character) { character.id }),
-  )
-  |> option.map(fn(character_id) {
-    select.InWorld(
-      character_id:,
-      until: context.select.server_time
-        + removal_milliseconds
-        * intervals_per_millisecond,
-    )
-  })
+    game_session.stored(connection.session, answer, context)
+  #(Connection(..connection, session:), more)
 }
 
 /// Asks the map to join the character's unit and tells the rule the answer. A

@@ -11,7 +11,6 @@ import genesis_prime/map/position.{Position}
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import gleam/dict
 import gleam/list
-import gleam/option.{None}
 
 /// The account the characters belong to unless a test says another.
 pub const account_id = 7
@@ -105,7 +104,6 @@ pub fn context(rows rows: List(CharacterCreation)) -> select.Context {
     start: fn(_row) { Ok(start_place()) },
     customisation: customisation(),
     character_slots: 100,
-    in_world: None,
     level_of: fn(experience) {
       case experience >= 26_360_090 {
         True -> 50

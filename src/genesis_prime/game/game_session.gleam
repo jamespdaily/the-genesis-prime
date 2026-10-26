@@ -428,7 +428,6 @@ fn apply_select(
             | select.NotYourCharacter(_)
             | select.CharacterDisabled(_)
             | select.CharacterRequiresRename(_)
-            | select.CharacterOnline(_)
             | select.BoneCountWrong(..)
             | select.LabelRefused(_)
             | select.AccountFull(_) -> WarningLevel

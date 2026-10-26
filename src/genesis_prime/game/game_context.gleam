@@ -13,7 +13,6 @@ import genesis_prime/table/loader/store.{type Tables}
 import genesis_prime/table/world
 import genesis_prime/table/xp_per_level
 import gleam/list
-import gleam/option.{None}
 import gleam/result
 
 /// The GameFormula row whose dataint0 is the highest character level
@@ -45,7 +44,6 @@ pub fn build(
       level_of: fn(experience) { level_of(tables:, experience:) },
       customisation:,
       character_slots:,
-      in_world: None,
       server_time:,
       realm_id:,
     ),
