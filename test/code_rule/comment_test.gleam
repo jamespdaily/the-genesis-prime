@@ -120,10 +120,9 @@ pub fn a_string_literal_holding_the_banned_words_is_not_a_breach_test() -> Nil {
 }
 
 pub fn no_comment_in_src_or_test_breaks_the_rule_test() -> Nil {
-  // Deadline: the body took 3382 to 3475 ms in three runs alone, so 15 s is
-  // more than 4 times that. Lexing every file and checking every comment is
-  // the cost.
-  use <- owned_test.run(15_000)
+  // Deadline: the body took 412 to 416 ms in three runs alone, so 5 s is more
+  // than 12 times that.
+  use <- owned_test.run(5000)
   let files = repository.sources(["src", "test"])
   assert list.flat_map(files, comment.breaches) == []
 }
