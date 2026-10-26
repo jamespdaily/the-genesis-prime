@@ -10,6 +10,7 @@
 //// runtime's total and binary memory, and the memory the operating system
 //// reports for the VM, each over its value before the load.
 
+import envoy
 import genesis_prime/read_only_data/measurement
 import genesis_prime/table
 import genesis_prime/table/loader/store
@@ -40,10 +41,10 @@ fn counters() -> Counters {
 
 /// Runs the measurement and prints it.
 pub fn main() -> Nil {
-  let folder = case getenv("GENESIS_TABLE_DIR") {
+  let folder = case envoy.get("GENESIS_TABLE_DIR") {
     Ok(folder) -> folder
     Error(Nil) ->
-      case getenv("HOME") {
+      case envoy.get("HOME") {
         Ok(home) -> home <> "/.genesis-prime/tables"
         Error(Nil) -> "tables"
       }
@@ -117,6 +118,3 @@ fn collect_all() -> Nil
 
 @external(erlang, "table_load_cost_ffi", "resident_bytes")
 fn resident_bytes() -> Int
-
-@external(erlang, "table_load_cost_ffi", "getenv")
-fn getenv(name: String) -> Result(String, Nil)

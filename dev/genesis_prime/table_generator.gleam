@@ -8,6 +8,8 @@
 //// it does nothing where `GENESIS_NO_CLIENT=1`, because there is no client to
 //// read. Both format what they write with `gleam format`.
 
+import argv
+import envoy
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table_generator/difference.{type Difference}
 import genesis_prime/table_generator/module_text
@@ -116,7 +118,7 @@ fn generate_formatted(
 ) -> Result(Dict(String, String), GenerateError) {
   use tables <- result.try(read_tables(folder))
   use generated <- result.try(generate(tables:))
-  let scratch = scratch_folder()
+  let scratch = scratch_folder(temporary_folder())
   let formatted = format_in(scratch, generated)
   use _ <- result.try(
     simplifile.delete(scratch) |> result.replace_error(Unwritable(scratch)),
@@ -240,7 +242,7 @@ fn report(differences: List(Difference)) -> String {
 /// `GENESIS_TABLE_DIR` and the `src` folder. Prints what differs and stops with
 /// an error status when the check fails.
 pub fn main() -> Nil {
-  case arguments(), getenv("GENESIS_NO_CLIENT") {
+  case argv.load().arguments, envoy.get("GENESIS_NO_CLIENT") {
     ["check"], Ok("1") ->
       io.println(
         "generated tables not compared: GENESIS_NO_CLIENT=1, no client",
@@ -259,10 +261,10 @@ pub fn main() -> Nil {
 }
 
 fn tables_folder() -> String {
-  case getenv("GENESIS_TABLE_DIR") {
+  case envoy.get("GENESIS_TABLE_DIR") {
     Ok(folder) -> folder
     Error(Nil) ->
-      case getenv("GENESIS_HOME"), getenv("HOME") {
+      case envoy.get("GENESIS_HOME"), envoy.get("HOME") {
         Ok(home), _ -> home <> "/tables"
         Error(Nil), Ok(home) -> home <> "/.genesis-prime/tables"
         Error(Nil), Error(Nil) -> "tables"
@@ -334,14 +336,12 @@ fn describe_module(error: module_text.ModuleError) -> String {
   }
 }
 
-@external(erlang, "table_generator_ffi", "arguments")
-fn arguments() -> List(String)
-
-@external(erlang, "table_generator_ffi", "getenv")
-fn getenv(name: String) -> Result(String, Nil)
+fn temporary_folder() -> String {
+  result.unwrap(envoy.get("TMPDIR"), "/tmp")
+}
 
 @external(erlang, "table_generator_ffi", "scratch_folder")
-fn scratch_folder() -> String
+fn scratch_folder(base: String) -> String
 
 @external(erlang, "table_generator_ffi", "run")
 fn run(program: String, arguments: List(String)) -> #(Int, String)

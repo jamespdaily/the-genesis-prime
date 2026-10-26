@@ -1,26 +1,10 @@
 -module(table_generator_ffi).
--export([arguments/0, getenv/1, scratch_folder/0, run/2, halt_with/1]).
+-export([scratch_folder/1, run/2, halt_with/1]).
 
-%% The arguments after the module name on the `gleam run` command line.
--spec arguments() -> [binary()].
-arguments() ->
-    [unicode:characters_to_binary(Argument) || Argument <- init:get_plain_arguments()].
-
-%% The value of an environment variable, or an error when it is not set.
--spec getenv(binary()) -> {ok, binary()} | {error, nil}.
-getenv(Name) ->
-    case os:getenv(unicode:characters_to_list(Name)) of
-        false -> {error, nil};
-        Value -> {ok, unicode:characters_to_binary(Value)}
-    end.
-
-%% Makes a folder no other call has used, and gives its path.
--spec scratch_folder() -> binary().
-scratch_folder() ->
-    Base = case os:getenv("TMPDIR") of
-               false -> "/tmp";
-               Folder -> Folder
-           end,
+%% Makes a folder no other call has used inside the base folder, and gives its
+%% path.
+-spec scratch_folder(binary()) -> binary().
+scratch_folder(Base) ->
     Name = io_lib:format("table_generator_~s_~p",
                          [os:getpid(), erlang:unique_integer([positive])]),
     Path = unicode:characters_to_binary(filename:join(Base, lists:flatten(Name))),

@@ -4,6 +4,7 @@
 //// data, and the id lookup array), from a schema and rows of cells. A fault is
 //// planted by giving the lookup or a string offset directly.
 
+import envoy
 import genesis_prime/table/loader/tbl_file.{type Column, type Schema}
 import gleam/bit_array
 import gleam/bool
@@ -11,6 +12,7 @@ import gleam/erlang/reference.{type Reference}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import simplifile
 
 /// The value of one field of a planted record.
@@ -275,7 +277,7 @@ fn lookup_entries(planted: Planted) -> List(Int) {
 /// Makes a folder of its own, writes each file into it as `<name>.tbl`, runs
 /// the body with the folder's path, and removes the folder afterwards.
 pub fn in_folder(files: List(#(String, BitArray)), body: fn(String) -> a) -> a {
-  with_folder(fn(folder) {
+  with_folder(result.unwrap(envoy.get("TMPDIR"), "/tmp"), fn(folder) {
     list.each(files, fn(file) {
       let assert Ok(Nil) =
         simplifile.write_bits(folder <> "/" <> file.0 <> ".tbl", file.1)
@@ -286,7 +288,7 @@ pub fn in_folder(files: List(#(String, BitArray)), body: fn(String) -> a) -> a {
 }
 
 @external(erlang, "planted_table_ffi", "with_folder")
-fn with_folder(body: fn(String) -> a) -> a
+fn with_folder(base: String, body: fn(String) -> a) -> a
 
 /// How many persistent terms are stored under a load's key.
 @external(erlang, "planted_table_ffi", "persistent_terms_under")

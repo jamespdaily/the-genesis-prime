@@ -1,6 +1,8 @@
 //// The runtime's own clock and counters, read by the topology benchmark. Each
-//// function calls the one Erlang file `dev/topology_ffi.erl`.
+//// function but `plain_arguments` calls the one Erlang file
+//// `dev/topology_ffi.erl`.
 
+import argv
 import genesis_prime/topology/unit.{type Unit}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Pid}
@@ -34,8 +36,9 @@ pub fn enable_scheduler_wall_time() -> Nil
 pub fn set_high_priority() -> Nil
 
 /// The arguments given after `--` on the command line.
-@external(erlang, "topology_ffi", "plain_arguments")
-pub fn plain_arguments() -> List(String)
+pub fn plain_arguments() -> List(String) {
+  argv.load().arguments
+}
 
 /// The scheduler time since accounting started, from the runtime's
 /// `scheduler_wall_time`.
