@@ -234,9 +234,10 @@ fn wait_for_connection(
 
 /// Waits up to `pool.holding_wait_ms` for the answer of a worker that was told
 /// to go. The worker is not killed when the time is up: its transaction may be
-/// at its commit, and it ends by itself when Postgres ends the transaction. A
-/// worker that ends without answering, or an answer that has not come by then,
-/// is `Unknown`: the statement may have been sent.
+/// at its commit, and it ends by itself when Postgres ends the transaction or
+/// when pgo's checkout deadline closes the socket. A worker that ends without
+/// answering, or an answer that has not come by then, is `Unknown`: the
+/// statement may have been sent.
 fn wait_for_answer(selector selector: process.Selector(Report)) -> Answer {
   case process.selector_receive(selector, within: pool.holding_wait_ms()) {
     Ok(Answered(answer)) -> answer

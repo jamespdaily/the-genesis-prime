@@ -492,7 +492,7 @@ pub fn a_write_whose_database_stops_answering_after_the_go_gives_unknown_and_not
   use <- owned_test.run(60_000)
   use database <- template_database.run
   let workers = start_workers()
-  let #(one, relay) = start_pool_through_freezing_relay(database)
+  let #(one, relay) = start_pool_through_freezing_relay(database:)
   let assert Ok(account) =
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"
@@ -513,7 +513,7 @@ pub fn after_a_write_whose_database_stopped_answering_the_pool_of_one_serves_the
   use <- owned_test.run(60_000)
   use database <- template_database.run
   let workers = start_workers()
-  let #(one, relay) = start_pool_through_freezing_relay(database)
+  let #(one, relay) = start_pool_through_freezing_relay(database:)
   let assert Ok(account) =
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"

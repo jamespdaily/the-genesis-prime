@@ -48,7 +48,7 @@ fn start_ffi(
   statement: String,
 ) -> Result(Relay, Failure)
 
-/// How many connections the relay has accepted so far.
+/// How many connections the relay has accepted.
 pub fn opened(relay: Relay) -> Int {
   opened_ffi(relay.counters)
 }
