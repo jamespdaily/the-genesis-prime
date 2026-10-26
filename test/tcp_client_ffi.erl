@@ -1,5 +1,5 @@
 -module(tcp_client_ffi).
--export([connect/1, own_address/1, send/2, send_if_open/2, await_close/2, close/1]).
+-export([connect/1, own_address/1, send/2, send_if_open/2, 'receive'/3, await_close/2, close/1]).
 
 -spec connect(non_neg_integer()) -> {ok, port()} | {error, nil}.
 connect(Port) ->
@@ -27,6 +27,16 @@ send(Socket, Bytes) ->
 send_if_open(Socket, Bytes) ->
     _ = gen_tcp:send(Socket, Bytes),
     nil.
+
+%% Exactly Count bytes the server wrote, or an error when Within milliseconds
+%% pass or the socket closes first.
+-spec 'receive'(port(), non_neg_integer(), non_neg_integer()) ->
+    {ok, binary()} | {error, nil}.
+'receive'(Socket, Count, Within) ->
+    case gen_tcp:recv(Socket, Count, Within) of
+        {ok, Bytes} -> {ok, Bytes};
+        {error, _Reason} -> {error, nil}
+    end.
 
 %% Reads and discards what the server sends until the socket is closed or
 %% reset, which is `true`, or until `Within` milliseconds pass with the socket
