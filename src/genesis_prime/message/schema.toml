@@ -1,0 +1,224 @@
+[[message]]
+id = 0x0003
+name = "server_hello"
+direction = "server_to_client"
+evidence = "opcode.0x3"
+summary = "the hello every server sends on a new connection, with the build and the message table checksum the client checks"
+fields = [
+  { name = "build", kind = "unsigned", bits = 32, evidence = "0x1400a9140", named_by = "0x140037b70" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x1400a9140" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "0x1400a9140" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x1400a9140" },
+  { name = "field_5", kind = "unsigned", bits = 64, evidence = "0x1400a9140" },
+  { name = "field_6", kind = "unsigned", bits = 16, evidence = "0x1400a9140" },
+  { name = "field_7", kind = "unsigned", bits = 5, evidence = "0x1400a9140" },
+  { name = "message_table_checksum", kind = "unsigned", bits = 32, evidence = "0x1400a9140", named_by = "0x140037b70" },
+  { name = "field_9", kind = "unsigned", bits = 32, evidence = "0x1400a9140" },
+  { name = "field_10", kind = "unsigned", bits = 64, evidence = "0x1400a9140" },
+  { name = "field_11", kind = "unsigned", bits = 32, evidence = "0x1400a9140" },
+]
+
+[[message]]
+id = 0x0592
+name = "login_request"
+direction = "client_to_server"
+evidence = "opcode.0x592"
+summary = "the login request the client sends the auth server once its hello has passed the version check"
+fields = [
+  { name = "build", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "files_digest", kind = "unsigned", bits = 64, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "account_name", kind = "counted_wide_text", max_units = 250, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "field_4", kind = "guid", evidence = "0x14007dd40" },
+  { name = "field_5", kind = "guid", evidence = "0x14007dd40" },
+  { name = "field_6", kind = "unsigned", bits = 32, evidence = "0x14007dd40" },
+  { name = "field_7", kind = "unsigned", bits = 32, evidence = "0x14007dd40" },
+  { name = "field_8", kind = "unsigned", bits = 32, evidence = "0x14007dd40" },
+  { name = "field_9", kind = "unsigned", bits = 32, evidence = "0x14007dd40" },
+  { name = "processor_manufacturer", kind = "wide_text", evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "processor_name", kind = "wide_text", evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "processor_description", kind = "wide_text", evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "processor_family", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "processor_level", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "processor_revision", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "processor_clock_speed", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "processor_core_count", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "memory_mebibytes", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "video_adapter_description", kind = "wide_text", evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "video_adapter_vendor_id", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "video_adapter_device_id", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "video_adapter_subsystem_id", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "video_adapter_revision", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "video_adapter_memory_mebibytes", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "processor_architecture", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "windows_version", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "service_pack", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "os_flags", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "realm_data_center_id", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
+]
+
+[[message]]
+id = 0x0591
+name = "login_accepted"
+direction = "server_to_client"
+evidence = "opcode.0x591"
+summary = "the auth server's answer that the login is accepted; the client keeps bit 0 of its one value"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x14007ab50" },
+]
+
+[[message]]
+id = 0x03DB
+name = "game_server_handoff"
+direction = "server_to_client"
+evidence = "opcode.0x3db"
+summary = "the auth server's hand-off to a game server, with its address, the session key and the realm's name"
+fields = [
+  { name = "game_server", kind = "endpoint", evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
+  { name = "session_key", kind = "guid", evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "0x14007d6a0" },
+  { name = "realm_name", kind = "wide_text", evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x14007d6a0" },
+  { name = "field_6", kind = "unsigned", bits = 2, evidence = "0x14007d6a0" },
+  { name = "field_7", kind = "unsigned", bits = 21, evidence = "0x14007d6a0" },
+]
+
+[[message]]
+id = 0x058F
+name = "game_hello_reply"
+direction = "client_to_server"
+evidence = "opcode.0x58f"
+summary = "the first message on a game connection, sent when the server's hello arrives, with the session key"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x14007e320" },
+  { name = "session_key", kind = "guid", evidence = "0x14007e320", named_by = "opcode.0x58f" },
+  { name = "field_3", kind = "unsigned", bits = 64, evidence = "0x14007e320" },
+  { name = "account_name", kind = "wide_text", evidence = "0x14007e320", named_by = "opcode.0x58f" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x14007e320" },
+]
+
+[[message]]
+id = 0x07E0
+name = "character_select_start"
+direction = "client_to_server"
+evidence = "opcode.0x7e0"
+summary = "sent when character select starts; its body is empty"
+fields = []
+
+[[message]]
+id = 0x00AD
+name = "enter_world"
+direction = "server_to_client"
+evidence = "opcode.0xad"
+summary = "the game server's answer after the player chose a character, with which the client enters the world"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 15, evidence = "0x14007e9e0" },
+  { name = "field_2", kind = "float32", evidence = "0x14007e9e0" },
+  { name = "field_3", kind = "float32", evidence = "0x14007e9e0" },
+  { name = "field_4", kind = "float32", evidence = "0x14007e9e0" },
+  { name = "field_5", kind = "float32", evidence = "0x14007e9e0" },
+  { name = "field_6", kind = "float32", evidence = "0x14007e9e0" },
+]
+
+[[message]]
+id = 0x07A4
+name = "realm_select_start"
+direction = "client_to_server"
+evidence = "opcode.0x7a4"
+summary = "sent when realm select starts; its body is empty"
+fields = []
+
+[[message]]
+id = 0x0761
+name = "realm_list"
+direction = "server_to_client"
+evidence = "opcode.0x761"
+summary = "the realm list the client shows during realm select, with the realms and their text groups"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 64, evidence = "0x1400ac9d0" },
+  { name = "realms", kind = "array", count_bits = 32, element = "realm_entry", evidence = "0x1400ac9d0", named_by = "opcode.0x761" },
+  { name = "text_groups", kind = "array", count_bits = 32, element = "text_group", evidence = "0x1400ac9d0", named_by = "opcode.0x761" },
+]
+
+[[message]]
+id = 0x07A1
+name = "realm_handoff"
+direction = "server_to_client"
+evidence = "opcode.0x7a1"
+summary = "the game server's hand-off to another realm's server, with its address, the session key and the realm's name"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x1400a2110" },
+  { name = "session_key", kind = "guid", evidence = "0x1400a2110", named_by = "opcode.0x7a1" },
+  { name = "realm_server", kind = "endpoint", evidence = "0x1400a2110", named_by = "opcode.0x7a1" },
+  { name = "field_4", kind = "unsigned", bits = 1, evidence = "0x1400a2110" },
+  { name = "realm_name", kind = "wide_text", evidence = "0x1400a2110", named_by = "opcode.0x7a1" },
+  { name = "field_6", kind = "unsigned", bits = 32, evidence = "0x1400a2110" },
+  { name = "field_7", kind = "unsigned", bits = 2, evidence = "0x1400a2110" },
+  { name = "field_8", kind = "unsigned", bits = 21, evidence = "0x1400a2110" },
+]
+
+[[message]]
+id = 0x00F1
+name = "movement_send_interval"
+direction = "server_to_client"
+evidence = "opcode.0xf1"
+summary = "sets the interval at which the client sends the player's movement commands"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 2, evidence = "0x1400a37d0" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x1400a37d0" },
+  { name = "field_3", kind = "unsigned", bits = 8, evidence = "0x1400a37d0" },
+  { name = "interval_milliseconds", kind = "unsigned", bits = 32, evidence = "0x1400a37d0", named_by = "opcode.0xf1" },
+]
+
+[[message]]
+id = 0x0244
+name = "client_wrapper"
+direction = "client_to_server"
+evidence = "opcode.0x244"
+summary = "the wrapper every message the client sends travels in, holding one whole inner frame"
+fields = [
+  { name = "inner_frame", kind = "whole_frame", evidence = "0x140079f30" },
+]
+
+[[message]]
+id = 0x038C
+name = "world_message"
+direction = "client_to_server"
+evidence = "opcode.0x38c"
+summary = "carries one world message from the client, as a 5-bit value and the world message's whole frame"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 5, evidence = "0x14007e1c0" },
+  { name = "inner_frame", kind = "whole_frame", evidence = "0x14007e1c0" },
+]
+
+[[record]]
+name = "realm_entry"
+evidence = "0x1400ac130"
+summary = "one realm of the realm list"
+fields = [
+  { name = "realm_id", kind = "unsigned", bits = 32, evidence = "0x1400ac130", named_by = "0x140046790" },
+  { name = "name", kind = "wide_text", evidence = "0x1400ac130", named_by = "0x140046790" },
+  { name = "note_text_id", kind = "unsigned", bits = 32, evidence = "0x1400ac130", named_by = "0x140046790" },
+  { name = "flags", kind = "unsigned", bits = 32, evidence = "0x1400ac130", named_by = "0x140046790" },
+  { name = "pvp_type", kind = "unsigned", bits = 2, evidence = "0x1400ac130", named_by = "0x140046790" },
+  { name = "status", kind = "unsigned", bits = 3, evidence = "0x1400ac130", named_by = "0x140046790" },
+  { name = "population", kind = "unsigned", bits = 3, evidence = "0x1400ac130", named_by = "0x140046790" },
+  { name = "field_8", kind = "unsigned", bits = 32, evidence = "0x1400ac130" },
+  { name = "field_9", kind = "raw_bytes", count = 16, evidence = "0x1400ac130" },
+  { name = "field_10", kind = "unsigned", bits = 14, evidence = "0x1400ac130" },
+  { name = "count", kind = "unsigned", bits = 32, evidence = "0x1400ac130", named_by = "0x140046790" },
+  { name = "last_played", kind = "wide_text", evidence = "0x1400ac130", named_by = "0x140046790" },
+  { name = "field_13", kind = "unsigned", bits = 64, evidence = "0x1400ac130" },
+  { name = "field_14", kind = "unsigned", bits = 16, evidence = "0x1400ac130" },
+  { name = "field_15", kind = "unsigned", bits = 16, evidence = "0x1400ac130" },
+  { name = "field_16", kind = "unsigned", bits = 16, evidence = "0x1400ac130" },
+  { name = "field_17", kind = "unsigned", bits = 16, evidence = "0x1400ac130" },
+]
+
+[[record]]
+name = "text_group"
+evidence = "0x1400ac590"
+summary = "one group of texts of the realm list"
+fields = [
+  { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x1400ac590" },
+  { name = "texts", kind = "array", count_bits = 8, element = "wide_text", evidence = "0x1400ac590", named_by = "0x1400ac590" },
+]
