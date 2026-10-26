@@ -17,8 +17,9 @@
 //// the answer is `Unknown`, never `Unavailable`, which says nothing committed,
 //// and the connection ends so that the client lists the store's characters
 //// again. A worker that is not told to go within `go_wait_milliseconds` sends
-//// nothing and gives `Unavailable`. A worker that ends without answering,
-//// such as one whose statement crashed, gives `Unavailable` at once.
+//// nothing and gives `Unavailable`. A worker that ends without answering
+//// before it was told to go gives `Unavailable` at once, and one that ends
+//// without answering after it was told to go gives `Unknown`.
 //// A worker holds nothing between commands, so none is restarted.
 ////
 //// A limit that is stated and not closed: a session that a second login of its
@@ -234,9 +235,10 @@ fn wait_for_connection(
 
 /// Waits up to `pool.holding_wait_ms` for the answer of a worker that was told
 /// to go. The worker is not killed when the time is up: its transaction may be
-/// at its commit, and it ends by itself when Postgres ends the transaction. A
-/// worker that ends without answering, or an answer that has not come by then,
-/// is `Unknown`: the statement may have been sent.
+/// at its commit, and it ends by itself when Postgres ends the transaction or
+/// when pgo's checkout deadline closes the socket. A worker that ends without
+/// answering, or an answer that has not come by then, is `Unknown`: the
+/// statement may have been sent.
 fn wait_for_answer(selector selector: process.Selector(Report)) -> Answer {
   case process.selector_receive(selector, within: pool.holding_wait_ms()) {
     Ok(Answered(answer)) -> answer

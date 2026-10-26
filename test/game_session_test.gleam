@@ -647,7 +647,7 @@ pub fn a_write_answered_unavailable_reads_the_characters_again_and_then_answers_
     effects,
     Store(select.LoadCharacters(character_support.account_id)),
   )
-    as "a write that was answered Unavailable may have been done, so the characters are read again"
+    as "a write that was answered Unavailable is followed by a read of the characters, so the client's list is the store's"
   assert messages(effects, session_cipher()) == []
     as "nothing is sent until the list is read"
   let #(_, effects) =

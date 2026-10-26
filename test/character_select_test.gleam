@@ -922,7 +922,7 @@ pub fn a_write_answered_unavailable_is_followed_by_a_reload_before_the_failure_i
         ]
         as {
           what
-          <> " that was answered Unavailable may have been done, so the account's characters are read again; nothing is sent until they are"
+          <> " that was answered Unavailable is followed by a read of the account's characters, so the client's list is the store's; nothing is sent until they are"
         }
       assert case state.status {
         select.Reloading(_) -> True

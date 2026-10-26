@@ -5,6 +5,7 @@
 //// in supervised workers with deadlines, and a request carries a deadline).
 //// Each test has a database of its own.
 
+import freezing_relay
 import genesis_prime/character/character.{Appearance, NewCharacter, Place}
 import genesis_prime/character/select.{Inserted, Loaded, Unavailable}
 import genesis_prime/character/store
@@ -17,6 +18,7 @@ import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/otp/static_supervisor
 import map_support
 import owned_test
@@ -301,7 +303,7 @@ pub fn a_write_the_database_cancels_after_the_deadline_gives_unavailable_and_com
     as "a write that was reported failed committed nothing"
 }
 
-pub fn a_write_the_database_ends_at_the_transactions_limit_gives_unavailable_and_commits_nothing_test() -> Nil {
+pub fn a_write_the_database_ends_at_the_transactions_limit_gives_unknown_and_commits_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   use database <- template_database.run
   let workers = start_workers()
@@ -325,13 +327,13 @@ pub fn a_write_the_database_ends_at_the_transactions_limit_gives_unavailable_and
       within_ms: 100,
     )
   let waited = clock.monotonic_milliseconds() - started
-  assert answer == Unavailable
-    as "a write the database ended at the transaction's limit is reported failed, and is not a crash of the asker: Postgres ends the session (error 25P04, transaction_timeout) and closes the socket, so the store sees a closed connection"
+  assert answer == select.Unknown
+    as "a write whose connection closed after the go may have committed, so it is not reported failed: Postgres ends the session at the transaction's limit (error 25P04, transaction_timeout) and closes the socket, which pog reports as a timeout (pog_ffi.erl:142-143), and Unavailable means nothing committed"
   assert waited >= 300 && waited < 1500
     as "the answer comes when the database closes the connection at the transaction's limit, and is not a guess at the asker's deadline"
   assert store.run(database.connection, select.LoadCharacters(account.id))
     == Loaded([])
-    as "a write that was reported failed committed nothing"
+    as "Postgres rolled back the transaction it ended, so nothing was stored"
 }
 
 /// Asks until Postgres runs an insert of a character in a session other than
@@ -458,4 +460,68 @@ pub fn a_worker_that_ends_without_answering_after_it_was_told_to_go_is_unknown_a
     as "the asker gave an answer as soon as its worker ended"
   assert answer == select.Unknown
     as "a worker that was told to go and ended without answering may have sent its statement, so nothing is known to be uncommitted"
+}
+
+pub fn a_write_that_commits_and_whose_reply_never_arrives_gives_unknown_and_is_stored_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use database <- template_database.run
+  let workers = start_workers()
+  // The relay passes the whole exchange of the COMMIT to Postgres, which
+  // commits, and then neither side hears of the other.
+  let #(one, relay) =
+    freezing_relay.start_pool(
+      for: database,
+      freezing: freezing_relay.After("commit"),
+    )
+  let assert Ok(account) =
+    account_store.create(database.connection, "jim", "secret")
+    as "the account is created"
+  let answer =
+    store_worker.run(
+      workers:,
+      db: one,
+      command: select.InsertCharacter(new_character(account.id)),
+      within_ms: answer_wait_ms,
+    )
+  assert option.is_some(freezing_relay.frozen_connection(relay))
+    as "the relay froze the connection after it passed the COMMIT on, so the database stopped answering with its link open"
+  assert answer == select.Unknown
+    as "a write whose link closed after the go may have committed, so it is not Unavailable: pgo ends a checkout at its deadline of 5000 ms (pgo_pool.erl:19,283-289), which closes the socket (pgo_pool.erl:149-158), pog reports the closed socket as a timeout (pog_ffi.erl:142-143), and Unavailable means nothing committed"
+  let assert Loaded([stored]) =
+    store.run(database.connection, select.LoadCharacters(account.id))
+    as "Postgres committed the write whose answer never arrived: the answer Unavailable would have been untrue"
+  assert stored.name == "Ab Cd"
+}
+
+pub fn after_a_write_whose_reply_never_arrived_the_pool_of_one_serves_the_next_command_on_a_new_connection_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use database <- template_database.run
+  let workers = start_workers()
+  let #(one, relay) =
+    freezing_relay.start_pool(
+      for: database,
+      freezing: freezing_relay.After("commit"),
+    )
+  let assert Ok(account) =
+    account_store.create(database.connection, "jim", "secret")
+    as "the account is created"
+  let _answer_of_the_write =
+    store_worker.run(
+      workers:,
+      db: one,
+      command: select.InsertCharacter(new_character(account.id)),
+      within_ms: answer_wait_ms,
+    )
+  let assert Some(frozen) = freezing_relay.frozen_connection(relay)
+    as "the relay froze the connection after it passed the COMMIT on"
+  let assert Loaded([_]) =
+    store_worker.run(
+      workers:,
+      db: one,
+      command: select.LoadCharacters(account_id: account.id),
+      within_ms: 10_000,
+    )
+    as "the pool's deadline of 5000 ms freed the frozen connection (pgo_pool.erl:149-158), so the next command is answered, and it lists the write that committed"
+  assert freezing_relay.opened(relay) > frozen
+    as "the answer came over a connection opened after the frozen one, which the pool made again when it ended the first (pgo_connection.erl:83-96)"
 }
