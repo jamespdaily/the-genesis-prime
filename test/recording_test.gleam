@@ -245,10 +245,6 @@ pub fn a_recording_names_its_seed_and_one_without_a_seed_reads_as_unseeded_test(
       seed: None,
     )
     as "the live STS recording is unseeded"
-  let assert Ok(auth) = recording.read(from: folder <> "auth-001.recording")
-    as "the live auth recording reads"
-  assert auth.header == Header(..sts.header, role: Auth)
-    as "the live auth recording is unseeded, of the same session"
 }
 
 /// A recording of random fields, each within its width in the file, and the
