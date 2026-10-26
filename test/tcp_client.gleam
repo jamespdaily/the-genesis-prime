@@ -9,6 +9,11 @@ pub type Client
 @external(erlang, "tcp_client_ffi", "connect")
 pub fn connect(port: Int) -> Result(Client, Nil)
 
+/// The client's own address and port as text, which is the peer address the
+/// server sees for this connection.
+@external(erlang, "tcp_client_ffi", "own_address")
+pub fn own_address(client: Client) -> String
+
 /// Sends the bytes; fails when the server has closed the connection.
 @external(erlang, "tcp_client_ffi", "send")
 pub fn send(client: Client, bytes: BitArray) -> Result(Nil, Nil)

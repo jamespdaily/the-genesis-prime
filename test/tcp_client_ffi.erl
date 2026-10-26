@@ -1,5 +1,5 @@
 -module(tcp_client_ffi).
--export([connect/1, send/2, send_if_open/2, await_close/2, close/1]).
+-export([connect/1, own_address/1, send/2, send_if_open/2, await_close/2, close/1]).
 
 -spec connect(non_neg_integer()) -> {ok, port()} | {error, nil}.
 connect(Port) ->
@@ -8,6 +8,13 @@ connect(Port) ->
         {ok, Socket} -> {ok, Socket};
         {error, _Reason} -> {error, nil}
     end.
+
+%% The client's own address and port as text, which is the peer address the
+%% server sees for this connection.
+-spec own_address(port()) -> binary().
+own_address(Socket) ->
+    {ok, {Address, Port}} = inet:sockname(Socket),
+    iolist_to_binary([inet:ntoa(Address), ":", integer_to_list(Port)]).
 
 -spec send(port(), binary()) -> {ok, nil} | {error, nil}.
 send(Socket, Bytes) ->

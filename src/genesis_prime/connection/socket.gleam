@@ -9,6 +9,7 @@
 import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process.{type Selector}
+import gleam/option.{type Option}
 
 /// A socket that waits for connections.
 pub type ListenSocket
@@ -109,6 +110,11 @@ fn arm_count(socket: Socket, reads: Int) -> Result(Nil, Reason)
 /// Closes the socket.
 @external(erlang, "genesis_prime_socket_ffi", "close")
 pub fn close(socket socket: Socket) -> Nil
+
+/// The peer's address and port as text, for the log, or `None` when the
+/// socket is closed.
+@external(erlang, "genesis_prime_socket_ffi", "peer")
+pub fn peer(socket socket: Socket) -> Option(String)
 
 /// Adds the socket's events to a selector, each mapped to a message.
 pub fn select(

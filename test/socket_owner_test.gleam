@@ -275,6 +275,7 @@ pub fn a_decode_failure_ends_the_connection_closes_the_socket_and_logs_the_reaso
   let capture = log_capture.start()
   let running = listening.start(listening.config())
   let client = listening.connect(running)
+  let client_address = tcp_client.own_address(client)
   send(client, listening.frame_of(message_id: 1, size: 4))
   let assert Ok(Received(owner: owner, ..)) = listening.next(running)
     as "the first frame was not handed on"
@@ -294,6 +295,8 @@ pub fn a_decode_failure_ends_the_connection_closes_the_socket_and_logs_the_reaso
     as "the project rules: the reason is logged"
   assert dict.get(line.metadata, "process") == Ok(Text("socket_owner"))
     as "designing-processes, Logging: every line carries who and where, here the process"
+  assert dict.get(line.metadata, "peer") == Ok(Text(client_address))
+    as "a connection that has not logged in is known by its peer address, the client's own address and port"
 }
 
 pub fn a_client_that_closes_ends_its_owner_normally_test() -> Nil {

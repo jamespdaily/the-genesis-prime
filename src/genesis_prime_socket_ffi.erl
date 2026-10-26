@@ -1,6 +1,6 @@
 -module(genesis_prime_socket_ffi).
 -export([listen/1, listening_port/1, accept/1, give_to/2, arm_once/1, arm_count/2, close/1,
-         monotonic_milliseconds/0, limit_heap/1,
+         peer/1, monotonic_milliseconds/0, limit_heap/1,
          keep_messages_off_heap/0, data_tag/0,
          closed_tag/0, error_tag/0, passive_tag/0]).
 
@@ -42,6 +42,17 @@ close(Socket) ->
     gen_tcp:close(Socket),
     nil.
 
+
+%% The peer's address and port as text, or none when the socket has no peer
+%% (it is closed or not connected).
+-spec peer(port()) -> {some, binary()} | none.
+peer(Socket) ->
+    case inet:peername(Socket) of
+        {ok, {Address, Port}} ->
+            {some, iolist_to_binary([inet:ntoa(Address), ":", integer_to_list(Port)])};
+        {error, _Reason} ->
+            none
+    end.
 
 -spec monotonic_milliseconds() -> integer().
 monotonic_milliseconds() ->
