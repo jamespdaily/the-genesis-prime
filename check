@@ -13,6 +13,9 @@
 #   gleam-build    gleam build --warnings-as-errors
 #   glinter        gleam run -m glinter                 (after gleam-build)
 #   gleam-test     gleam test                           (after gleam-build)
+#   message-codec  gleam run -m genesis_prime/generate_messages -- check
+#                  the committed message codec equals what the schema
+#                  generates                            (after gleam-build)
 #   migrations     a fresh database with a unique name, every
 #                  priv/migrations/*.sql applied in name order, each with
 #                  psql -v ON_ERROR_STOP=1 --single-transaction
@@ -53,7 +56,7 @@ fi
 started=$(date +%s)
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
-parts="format gleam-build glinter gleam-test migrations squirrel client-suite setup-suite fact-checker"
+parts="format gleam-build glinter gleam-test message-codec migrations squirrel client-suite setup-suite fact-checker"
 
 cleanup() {
   if [ -f "$work/database_created" ]; then
@@ -124,6 +127,7 @@ gleam_chain() {
   if step gleam-build gleam build --warnings-as-errors; then
     step glinter gleam run -m glinter
     step gleam-test gleam test
+    step message-codec gleam run -m genesis_prime/generate_messages -- check
   fi
   if wait_for_status migrations; then
     step squirrel squirrel_check
