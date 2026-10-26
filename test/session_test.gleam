@@ -106,11 +106,12 @@ pub fn a_login_for_an_account_that_is_not_found_leaves_no_account_in_the_folder_
     |> static_supervisor.add(draw_log.supervised(name: log_name, folder:))
     |> static_supervisor.start
     as "the log process did not start"
-  let _ =
+  let drawn =
     random_source.bytes(
       draw_log.source(log_name),
       Draw(count: 32, connection: Some("127.0.0.1:1"), account: None),
     )
+  assert bit_array.byte_size(drawn) == 32 as "the draw is as long as asked"
   let assert Ok(saved) = session.read(folder) as "the session folder reads back"
   assert saved.accounts == []
     as "a login that found no account used no row, so the folder holds none"

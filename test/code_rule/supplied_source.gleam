@@ -10,6 +10,7 @@ import glance
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 
 /// The module that defines `Supplied`, and the only one under `src/` that may
@@ -38,46 +39,77 @@ pub fn breaches(file file: SourceFile) -> List(Breach) {
         })
       let qualifiers = list.filter_map(imports, qualifier)
       let bare_names = list.flat_map(imports, bare_names)
-      let renamed =
-        list.filter_map(imports, fn(definition) {
-          let import_ = definition.definition
-          case
-            list.any(import_.unqualified_values, fn(value) {
-              value.name == constructor && value.alias != None
-            })
-          {
-            True ->
-              Ok(breach(
-                file:,
-                offset: import_.location.start,
-                what: "imports " <> constructor <> " under another name",
-              ))
-            False -> Error(Nil)
-          }
-        })
       let uses =
         list.append(
           syntax.references(module),
           syntax.constant_references(module),
         )
-        |> list.filter_map(fn(reference) {
-          case reference {
-            syntax.Qualified(location:, qualifier:, name:) ->
-              case name == constructor && list.contains(qualifiers, qualifier) {
-                True -> Ok(use_of(file:, location:))
-                False -> Error(Nil)
-              }
-            syntax.Unqualified(location:, name:) ->
-              case list.contains(bare_names, name) {
-                True -> Ok(use_of(file:, location:))
-                False -> Error(Nil)
-              }
-          }
-        })
-      list.append(renamed, uses)
+        |> list.filter_map(use_breach(
+          file:,
+          qualifiers:,
+          bare_names:,
+          reference: _,
+        ))
+      list.append(
+        list.filter_map(imports, renamed_breach(file:, definition: _)),
+        uses,
+      )
       |> list.sort(fn(first, second) { int.compare(first.line, second.line) })
     }
   }
+}
+
+/// The breach of an import that brings the constructor in under another name,
+/// at the import.
+fn renamed_breach(
+  file file: SourceFile,
+  definition definition: glance.Definition(glance.Import),
+) -> Result(Breach, Nil) {
+  let import_ = definition.definition
+  let renamed =
+    list.any(import_.unqualified_values, fn(value) {
+      value.name == constructor && value.alias != None
+    })
+  case renamed {
+    True ->
+      Ok(breach(
+        file:,
+        offset: import_.location.start,
+        what: "imports " <> constructor <> " under another name",
+      ))
+    False -> Error(Nil)
+  }
+}
+
+/// The breach of a reference that names the constructor: qualified by a name
+/// the defining module is imported as, or bare under a name it was imported by.
+fn use_breach(
+  file file: SourceFile,
+  qualifiers qualifiers: List(String),
+  bare_names bare_names: List(String),
+  reference reference: syntax.Reference,
+) -> Result(Breach, Nil) {
+  let named = case reference {
+    syntax.Qualified(location:, qualifier:, name:) ->
+      case name == constructor && list.contains(qualifiers, qualifier) {
+        True -> Ok(location)
+        False -> Error(Nil)
+      }
+    syntax.Unqualified(location:, name:) ->
+      case list.contains(bare_names, name) {
+        True -> Ok(location)
+        False -> Error(Nil)
+      }
+  }
+  result.map(named, fn(location) {
+    breach(
+      file:,
+      offset: location.start,
+      what: "builds "
+        <> constructor
+        <> ", the random source of a caller's choosing",
+    )
+  })
 }
 
 /// The name an import of the defining module is used by in a qualified
@@ -101,16 +133,6 @@ fn bare_names(definition: glance.Definition(glance.Import)) -> List(String) {
       False -> Error(Nil)
     }
   })
-}
-
-fn use_of(file file: SourceFile, location location: glance.Span) -> Breach {
-  breach(
-    file:,
-    offset: location.start,
-    what: "builds "
-      <> constructor
-      <> ", the random source of a caller's choosing",
-  )
 }
 
 fn breach(

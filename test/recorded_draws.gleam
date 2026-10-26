@@ -12,11 +12,13 @@
 
 import genesis_prime/login/random_source.{type Draw, type RandomSource}
 import gleam/bit_array
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
 import gleam/int
-import gleam/option.{None, Some}
+import gleam/option
 import gleam/otp/actor
+import gleam/result
 
 /// The process that holds the registered draws.
 pub type Draws {
@@ -26,7 +28,37 @@ pub type Draws {
 /// The process's messages.
 pub type Message {
   Register(connection: String, draws: List(BitArray), reply: Subject(Nil))
-  Next(draw: Draw, reply: Subject(Result(BitArray, String)))
+  Next(draw: Draw, reply: Subject(Result(BitArray, Refusal)))
+}
+
+/// Why a draw cannot be answered from the registered draws.
+pub type Refusal {
+  /// The draw names no connection.
+  NoConnection
+  /// No draws are registered for the connection.
+  NothingRegistered(connection: String)
+  /// The connection drew more than the recording holds.
+  Exhausted(connection: String)
+  /// The connection asked for `asked` bytes where the recording drew
+  /// `recorded`.
+  WrongSize(connection: String, asked: Int, recorded: Int)
+}
+
+fn describe(refusal: Refusal) -> String {
+  case refusal {
+    NoConnection -> "a draw with no connection"
+    NothingRegistered(connection:) ->
+      "no draws are registered for the connection " <> connection
+    Exhausted(connection:) ->
+      "the connection " <> connection <> " drew more than the recording holds"
+    WrongSize(connection:, asked:, recorded:) ->
+      "the connection "
+      <> connection
+      <> " drew "
+      <> int.to_string(asked)
+      <> " bytes where the recording drew "
+      <> int.to_string(recorded)
+  }
 }
 
 /// How long a caller waits for the process, in milliseconds. It answers from
@@ -53,56 +85,40 @@ fn handle(
       actor.continue(dict.insert(registered, connection, draws))
     }
     Next(draw:, reply:) ->
-      case draw.connection {
-        None -> {
-          process.send(reply, Error("a draw with no connection"))
+      case answer(registered, draw) {
+        Ok(#(bytes, registered)) -> {
+          process.send(reply, Ok(bytes))
           actor.continue(registered)
         }
-        Some(connection) ->
-          case dict.get(registered, connection) {
-            Error(Nil) -> {
-              process.send(
-                reply,
-                Error(
-                  "no draws are registered for the connection " <> connection,
-                ),
-              )
-              actor.continue(registered)
-            }
-            Ok([]) -> {
-              process.send(
-                reply,
-                Error(
-                  "the connection "
-                  <> connection
-                  <> " drew more than the recording holds",
-                ),
-              )
-              actor.continue(registered)
-            }
-            Ok([bytes, ..later]) ->
-              case bit_array.byte_size(bytes) == draw.count {
-                True -> {
-                  process.send(reply, Ok(bytes))
-                  actor.continue(dict.insert(registered, connection, later))
-                }
-                False -> {
-                  process.send(
-                    reply,
-                    Error(
-                      "the connection "
-                      <> connection
-                      <> " drew "
-                      <> int.to_string(draw.count)
-                      <> " bytes where the recording drew "
-                      <> int.to_string(bit_array.byte_size(bytes)),
-                    ),
-                  )
-                  actor.continue(registered)
-                }
-              }
-          }
+        Error(reason) -> {
+          process.send(reply, Error(reason))
+          actor.continue(registered)
+        }
       }
+  }
+}
+
+/// The next draw registered for the draw's connection, and the registered draws
+/// without it, or why there is none to give.
+fn answer(
+  registered: Dict(String, List(BitArray)),
+  draw: Draw,
+) -> Result(#(BitArray, Dict(String, List(BitArray))), Refusal) {
+  use connection <- result.try(option.to_result(draw.connection, NoConnection))
+  use recorded <- result.try(
+    dict.get(registered, connection)
+    |> result.replace_error(NothingRegistered(connection:)),
+  )
+  case recorded {
+    [] -> Error(Exhausted(connection:))
+    [bytes, ..later] -> {
+      let recorded_size = bit_array.byte_size(bytes)
+      use <- bool.guard(
+        recorded_size != draw.count,
+        Error(WrongSize(connection:, asked: draw.count, recorded: recorded_size)),
+      )
+      Ok(#(bytes, dict.insert(registered, connection, later)))
+    }
   }
 }
 
@@ -116,7 +132,7 @@ pub fn source(draws draws: Draws) -> RandomSource {
       })
     case answer {
       Ok(bytes) -> bytes
-      Error(reason) -> panic as reason
+      Error(refusal) -> panic as describe(refusal)
     }
   })
 }

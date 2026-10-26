@@ -141,11 +141,14 @@ fn random_bytes(state: Int) -> #(BitArray, Int) {
   seeded.bytes(state:, count: length + 1)
 }
 
-/// The recordings in the session's folder, in the order of their file names.
+/// The recordings in the session's folder, in the order of their file names;
+/// the files beside them, which hold the addresses of their connections, are not
+/// recordings.
 pub fn recordings(session: Session) -> List(Recording) {
   let assert Ok(names) = simplifile.read_directory(session.folder)
     as "the session's folder could not be listed"
-  list.sort(names, string.compare)
+  list.filter(names, string.ends_with(_, ".recording"))
+  |> list.sort(string.compare)
   |> list.map(fn(name) {
     let assert Ok(recording) = recording.read(session.folder <> "/" <> name)
       as { "the recording " <> name <> " did not read" }

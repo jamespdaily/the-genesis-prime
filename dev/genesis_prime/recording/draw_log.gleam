@@ -15,6 +15,7 @@ import genesis_prime/login/account.{type Account}
 import genesis_prime/login/guid
 import genesis_prime/login/random_source.{type Draw, type RandomSource}
 import genesis_prime/recording/session.{UsedAccount}
+import gleam/bool
 import gleam/crypto
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{None, Some}
@@ -65,26 +66,22 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
 
 /// Writes the account's row unless the log has written it already.
 fn write_account(state: State, account: Account) -> State {
-  case set.contains(state.accounts_written, account.name) {
-    True -> state
-    False -> {
-      let assert Ok(Nil) =
-        session.append_account(
-          folder: state.folder,
-          account: UsedAccount(
-            name: account.name,
-            user_id: guid.to_text(account.user_id),
-            salt: account.salt,
-            verifier: account.verifier,
-          ),
-        )
-        as "an account was not written to the session folder"
-      State(
-        ..state,
-        accounts_written: set.insert(state.accounts_written, account.name),
-      )
-    }
-  }
+  use <- bool.guard(set.contains(state.accounts_written, account.name), state)
+  let assert Ok(Nil) =
+    session.append_account(
+      folder: state.folder,
+      account: UsedAccount(
+        name: account.name,
+        user_id: guid.to_text(account.user_id),
+        salt: account.salt,
+        verifier: account.verifier,
+      ),
+    )
+    as "an account was not written to the session folder"
+  State(
+    ..state,
+    accounts_written: set.insert(state.accounts_written, account.name),
+  )
 }
 
 /// The log process as a child of a supervisor, registered under `name`, writing

@@ -204,15 +204,25 @@ fn decode_entries(
 }
 
 fn decode_draw(
-  bytes: BitArray,
-  file: String,
-  offset: Int,
+  bytes bytes: BitArray,
+  file file: String,
+  offset offset: Int,
 ) -> Result(#(Draw, BitArray), SessionError) {
   case bytes {
-    <<0, rest:bytes>> -> decode_draw_bytes(None, rest, file, offset)
+    <<0, rest:bytes>> ->
+      decode_draw_bytes(connection: None, bytes: rest, file:, offset:)
     <<1, rest:bytes>> -> {
-      use #(connection, after) <- result.try(take_text(rest, file:, offset:))
-      decode_draw_bytes(Some(connection), after, file, offset)
+      use #(connection, after) <- result.try(take_text(
+        bytes: rest,
+        file:,
+        offset:,
+      ))
+      decode_draw_bytes(
+        connection: Some(connection),
+        bytes: after,
+        file:,
+        offset:,
+      )
     }
     <<value, _:bytes>> -> Error(UnknownFlag(file:, offset:, value:))
     _ -> Error(Truncated(file:, offset:))
@@ -220,39 +230,43 @@ fn decode_draw(
 }
 
 fn decode_draw_bytes(
-  connection: Option(String),
-  bytes: BitArray,
-  file: String,
-  offset: Int,
+  connection connection: Option(String),
+  bytes bytes: BitArray,
+  file file: String,
+  offset offset: Int,
 ) -> Result(#(Draw, BitArray), SessionError) {
-  use #(drawn, rest) <- result.map(take_bytes(bytes, file:, offset:))
+  use #(drawn, rest) <- result.map(take_bytes(bytes:, file:, offset:))
   #(Draw(connection:, bytes: drawn), rest)
 }
 
 fn decode_account(
-  bytes: BitArray,
-  file: String,
-  offset: Int,
+  bytes bytes: BitArray,
+  file file: String,
+  offset offset: Int,
 ) -> Result(#(UsedAccount, BitArray), SessionError) {
-  use #(name, after_name) <- result.try(take_text(bytes, file:, offset:))
+  use #(name, after_name) <- result.try(take_text(bytes:, file:, offset:))
   use #(user_id, after_user_id) <- result.try(take_text(
-    after_name,
+    bytes: after_name,
     file:,
     offset:,
   ))
   use #(salt, after_salt) <- result.try(take_bytes(
-    after_user_id,
+    bytes: after_user_id,
     file:,
     offset:,
   ))
-  use #(verifier, rest) <- result.map(take_bytes(after_salt, file:, offset:))
+  use #(verifier, rest) <- result.map(take_bytes(
+    bytes: after_salt,
+    file:,
+    offset:,
+  ))
   #(UsedAccount(name:, user_id:, salt:, verifier:), rest)
 }
 
 /// A byte string from the front of `bytes`, and what follows it. The entry it
 /// belongs to began at `offset`.
 fn take_bytes(
-  bytes: BitArray,
+  bytes bytes: BitArray,
   file file: String,
   offset offset: Int,
 ) -> Result(#(BitArray, BitArray), SessionError) {
@@ -264,11 +278,11 @@ fn take_bytes(
 }
 
 fn take_text(
-  bytes: BitArray,
+  bytes bytes: BitArray,
   file file: String,
   offset offset: Int,
 ) -> Result(#(String, BitArray), SessionError) {
-  use #(taken, rest) <- result.try(take_bytes(bytes, file:, offset:))
+  use #(taken, rest) <- result.try(take_bytes(bytes:, file:, offset:))
   case bit_array.to_string(taken) {
     Ok(text) -> Ok(#(text, rest))
     Error(Nil) -> Error(NotText(file:, offset:))
