@@ -12,6 +12,9 @@ import genesis_prime/map/world_map.{CharacterAlreadyOnMap}
 import genesis_prime/map/world_map_process.{NotAnswering, Refused}
 import genesis_prime/telemetry/snapshot
 import gleam/dict
+import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode
+import gleam/erlang/atom
 import gleam/erlang/process.{type Pid}
 import gleam/int
 import gleam/list
@@ -521,24 +524,123 @@ fn wait_for_the_registry_to_watch(
   registry registry: Pid,
   process process: Pid,
 ) -> Bool {
+  wait_until_the_registry_watches(registry:, process:, watching: True)
+}
+
+/// Waits until the registry no longer monitors the process, which it stops
+/// doing when no asker waits for the process to end any more, for at most
+/// `event_wait_ms`.
+fn wait_for_the_registry_to_stop_watching(
+  registry registry: Pid,
+  process process: Pid,
+) -> Bool {
+  wait_until_the_registry_watches(registry:, process:, watching: False)
+}
+
+fn wait_until_the_registry_watches(
+  registry registry: Pid,
+  process process: Pid,
+  watching watching: Bool,
+) -> Bool {
   let expired = process.new_subject()
   let _timer = process.send_after(expired, event_wait_ms, Nil)
-  look_for_the_registry(registry:, process:, expired:)
+  look_for_the_registry(registry:, process:, watching:, expired:)
 }
 
 fn look_for_the_registry(
   registry registry: Pid,
   process process: Pid,
+  watching watching: Bool,
   expired expired: process.Subject(Nil),
 ) -> Bool {
   case
-    list.contains(map_support.monitored_by(process), registry),
+    list.contains(map_support.monitored_by(process), registry) == watching,
     process.receive(expired, 0)
   {
     True, _ -> True
-    False, Error(Nil) -> look_for_the_registry(registry:, process:, expired:)
+    False, Error(Nil) ->
+      look_for_the_registry(registry:, process:, watching:, expired:)
     False, Ok(Nil) -> False
   }
+}
+
+/// What a process that asked to enter world 7 and kept listening is asked
+/// for: the messages that reached it after its entry was answered.
+type Listening {
+  Asked(reply: process.Subject(List(Bool)))
+  Heard(carried_a_map: Bool)
+}
+
+/// Asks to enter world 7 as `asking_to_enter_world_7` does, in a process that
+/// then keeps what else reaches it: a reply of the registry to an asker that
+/// gave up and was answered, such as the map that started later. The answer
+/// of the entry comes on the first subject; sending a subject on the second
+/// gets, on it, whether each message that reached the process carried a map,
+/// oldest first.
+fn asking_to_enter_world_7_and_listening(
+  settings settings: maps.Settings,
+  character_id character_id: Int,
+  within_ms within_ms: Int,
+) -> #(
+  process.Subject(Result(maps.Entered, maps.EnterError)),
+  process.Subject(process.Subject(process.Subject(List(Bool)))),
+) {
+  let answered = process.new_subject()
+  let listening = process.new_subject()
+  process.spawn(fn() {
+    process.send(
+      answered,
+      maps.enter(
+        registry: settings.registry,
+        world_id: 7,
+        newcomer: map_support.newcomer(character_id:, x: 0.0),
+        connection: process.new_subject(),
+        within_ms:,
+      ),
+    )
+    let asked = process.new_subject()
+    process.send(listening, asked)
+    let selector =
+      process.new_selector()
+      |> process.select_map(asked, Asked)
+      |> process.select_other(fn(message) { Heard(carries_a_map(message)) })
+    listen(selector:, heard: [])
+  })
+  #(answered, listening)
+}
+
+fn listen(
+  selector selector: process.Selector(Listening),
+  heard heard: List(Bool),
+) -> Nil {
+  case process.selector_receive_forever(selector) {
+    Heard(carried_a_map:) -> listen(selector:, heard: [carried_a_map, ..heard])
+    Asked(reply:) -> process.send(reply, list.reverse(heard))
+  }
+}
+
+/// What reached a process that `asking_to_enter_world_7_and_listening`
+/// started, after its entry was answered: whether each message carried a map.
+fn what_reached(
+  listening listening: process.Subject(
+    process.Subject(process.Subject(List(Bool))),
+  ),
+) -> List(Bool) {
+  let assert Ok(asked) = process.receive(listening, event_wait_ms)
+    as "the asker finished its entry and listens"
+  let reply = process.new_subject()
+  process.send(asked, reply)
+  let assert Ok(heard) = process.receive(reply, event_wait_ms)
+    as "the asker reported what reached it"
+  heard
+}
+
+/// Whether a message is the registry's answer to an asker with a map: a
+/// message to a subject is the subject's tag and the registry's `Found`, which
+/// is `Ok` for a map.
+fn carries_a_map(message: Dynamic) -> Bool {
+  decode.run(message, decode.at([1, 0], atom.decoder()))
+  == Ok(atom.create("ok"))
 }
 
 /// Asks to enter world 7 from a process of its own, with `within_ms`
@@ -601,8 +703,12 @@ pub fn the_askers_of_a_world_whose_old_map_is_ending_each_get_their_own_deadline
   let #(settings, release, holder) = with_the_name_of_an_ended_map_still_held()
   let assert Ok(registry) = process.named(settings.registry)
     as "the registry is registered under its name"
-  let impatient =
-    asking_to_enter_world_7(settings:, character_id: 12, within_ms: 300)
+  let #(impatient, listening) =
+    asking_to_enter_world_7_and_listening(
+      settings:,
+      character_id: 12,
+      within_ms: 300,
+    )
   let patient =
     asking_to_enter_world_7(settings:, character_id: 13, within_ms: 5000)
   let also_patient =
@@ -618,4 +724,37 @@ pub fn the_askers_of_a_world_whose_old_map_is_ending_each_get_their_own_deadline
     as "so does the other"
   assert list.sort([first.unit.id, second.unit.id], int.compare) == [1, 2]
     as "both joined the one map that was started, a map that starts again starts empty"
+  // The registry answers a later entry after it has answered every asker it
+  // still held, so the map's answer to the one that gave up would have been
+  // sent by now.
+  let assert Ok(_) = enter(settings:, world_id: 7, character_id: 15)
+    as "a later asker for the same world is served"
+  assert !list.contains(what_reached(listening:), True)
+    as "designing-processes: an asker that gave up is dropped from the wait, so the map that starts later is not answered to it"
+}
+
+pub fn an_asker_that_gives_up_while_it_is_the_only_one_ends_the_registrys_wait_and_is_not_answered_with_the_map_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(settings, release, holder) = with_the_name_of_an_ended_map_still_held()
+  let assert Ok(registry) = process.named(settings.registry)
+    as "the registry is registered under its name"
+  let #(only, listening) =
+    asking_to_enter_world_7_and_listening(
+      settings:,
+      character_id: 12,
+      within_ms: 300,
+    )
+  assert wait_for_the_registry_to_watch(registry:, process: holder)
+    as "the registry waits for the old map of world 7 to end"
+  let assert Ok(Error(_)) = process.receive(only, 2000)
+    as "the asker is answered at its deadline"
+  assert wait_for_the_registry_to_stop_watching(registry:, process: holder)
+    as "designing-processes: the registry dropped the asker that gave up, and with no asker left stopped waiting for the old map"
+  process.send(release, Nil)
+  let assert Ok(unit) = enter(settings:, world_id: 7, character_id: 13)
+    as "a later asker for the same world is served by a new map"
+  assert unit.id == 1
+    as "the map that started is empty, so the asker that gave up joined nothing"
+  assert !list.contains(what_reached(listening:), True)
+    as "the map that started is not answered to the asker that gave up"
 }
