@@ -485,9 +485,9 @@ fn start_for_the_askers(
 }
 
 /// An asker's deadline passed while it waited for the old map of its world to
-/// end: it is answered that no map started and no longer waited for. A world
-/// that no asker waits for is no longer monitored. An asker that was answered
-/// already is not found, and its timer's message is dropped.
+/// end: it is answered that no map started and is dropped from the wait. A
+/// world that no asker waits for has its monitors removed. An asker that was
+/// answered already is not found, and its timer's message is dropped.
 fn asker_gave_up(
   state state: State,
   world_id world_id: Int,

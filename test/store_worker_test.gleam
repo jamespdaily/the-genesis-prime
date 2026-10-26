@@ -394,7 +394,10 @@ pub fn a_write_that_has_no_answer_when_the_longest_wait_ends_is_unknown_and_not_
       )
     process.send(answered, #(answer, clock.monotonic_milliseconds() - started))
   })
-  assert wait_for_the_insert_to_run(database.connection, answer_wait_ms)
+  assert wait_for_the_insert_to_run(
+    connection: database.connection,
+    within_ms: answer_wait_ms,
+  )
     as "the write was sent to the database"
   let assert Ok(factory) = process.named(workers.factory)
     as "the workers' supervisor runs"

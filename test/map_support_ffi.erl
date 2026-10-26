@@ -42,7 +42,7 @@ unregister_name(Pid) ->
     true = unregister(Name),
     nil.
 
-%% The processes that monitor `Pid` now.
+%% The processes that monitor `Pid` at the moment of the call.
 -spec monitored_by(pid()) -> [pid()].
 monitored_by(Pid) ->
     {monitored_by, Watchers} = process_info(Pid, monitored_by),
