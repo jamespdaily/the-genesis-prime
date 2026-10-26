@@ -107,6 +107,12 @@ fn arm_once(socket: Socket) -> Result(Nil, Reason)
 @external(erlang, "genesis_prime_socket_ffi", "arm_count")
 fn arm_count(socket: Socket, reads: Int) -> Result(Nil, Reason)
 
+/// Writes bytes to the socket, in order after what was written before. The
+/// call returns once the runtime has taken them, and fails when the socket is
+/// closed, the peer is gone or the peer does not read for the send timeout.
+@external(erlang, "genesis_prime_socket_ffi", "send")
+pub fn send(socket socket: Socket, bytes bytes: BitArray) -> Result(Nil, Reason)
+
 /// Closes the socket.
 @external(erlang, "genesis_prime_socket_ffi", "close")
 pub fn close(socket socket: Socket) -> Nil

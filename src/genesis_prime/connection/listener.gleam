@@ -51,6 +51,22 @@ pub fn settings(
   )
 }
 
+/// Settings for `port` with the measured connection cap and owner settings,
+/// serving `protocol`, and registering with the coordinator of `shutdown`.
+pub fn protocol_settings(
+  port port: Int,
+  protocol protocol: socket_owner.Protocol,
+  shutdown shutdown: shutdown.Settings,
+) -> Settings {
+  Settings(
+    port:,
+    connection_cap: capacity.connection_cap(),
+    owner: socket_owner.protocol_settings(protocol:),
+    listening: fn(_port) { Nil },
+    shutdown:,
+  )
+}
+
 /// The listener as a child of a supervisor. The connection supervisor starts
 /// first, so the acceptor finds it when its first client arrives.
 pub fn supervised(
