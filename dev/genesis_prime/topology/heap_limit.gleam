@@ -8,6 +8,8 @@
 //// The limit covers the process's own heap, its stack and its waiting messages
 //// (`total_heap_size`), not binaries outside the heap and not ETS tables.
 
+import genesis_prime/topology/measurement
+import gleam/bool
 import gleam/option.{type Option}
 
 /// The most words a process's heap may hold, or no limit. A word is 8 bytes on
@@ -25,12 +27,16 @@ pub const no_limit = NoLimit
 
 /// A limit of `count` words, or an error when `count` is below 1.
 pub fn words(count count: Int) -> Result(HeapLimit, Nil) {
-  todo as "body in the build commit"
+  use <- bool.guard(when: count < 1, return: Error(Nil))
+  Ok(Words(count:))
 }
 
 /// The words of a limit, or none for no limit.
 pub fn to_words(limit limit: HeapLimit) -> Option(Int) {
-  todo as "body in the build commit"
+  case limit {
+    NoLimit -> option.None
+    Words(count:) -> option.Some(count)
+  }
 }
 
 /// The limits of one prototype C: the map process's and each sender's.
@@ -46,7 +52,15 @@ pub const no_limits = HeapLimits(map: no_limit, sender: no_limit)
 /// leaves room for the load to grow before a process is killed, and a power of
 /// two is the size the runtime grows a heap in. The peak is at least 1 word.
 pub fn for_peak(peak_words peak_words: Int) -> HeapLimit {
-  todo as "body in the build commit"
+  assert peak_words >= 1 as "a peak is at least 1 word"
+  Words(count: power_of_two_from(1, at_least: 2 * peak_words))
+}
+
+/// The smallest power of two that is at least `target`, found by doubling
+/// `candidate`, a power of two.
+fn power_of_two_from(candidate: Int, at_least target: Int) -> Int {
+  use <- bool.guard(when: candidate >= target, return: candidate)
+  power_of_two_from(candidate * 2, at_least: target)
 }
 
 /// Sets the limit on the calling process, killing it with reason `killed` when
@@ -54,5 +68,8 @@ pub fn for_peak(peak_words peak_words: Int) -> HeapLimit {
 /// A process calls it first in its initialiser, so the limit covers the build
 /// of its state as well.
 pub fn apply(limit limit: HeapLimit) -> Nil {
-  todo as "body in the build commit"
+  case limit {
+    NoLimit -> Nil
+    Words(count:) -> measurement.set_max_heap_size(count)
+  }
 }

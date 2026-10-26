@@ -26,8 +26,17 @@
 //// words>`, so the limits Jim approved are the ones checked.
 
 import genesis_prime/topology/heap_limit.{type HeapLimit, type HeapLimits}
+import genesis_prime/topology/heap_sampler.{type Sampled}
+import genesis_prime/topology/map_process
+import genesis_prime/topology/measurement
 import genesis_prime/topology/run.{type RunResult}
+import genesis_prime/topology/trial
+import genesis_prime/topology/workload.{Workload}
+import gleam/int
+import gleam/io
+import gleam/list
 import gleam/option.{type Option}
+import gleam/result
 
 /// The creatures on the map in every run.
 const creature_count = 10_000
@@ -81,40 +90,233 @@ type Found {
 /// found. A bad argument prints what the arguments may be and stops. Every
 /// core is online again at the end.
 pub fn main() -> Nil {
-  todo as "body in the build commit"
+  case plan_from(measurement.plain_arguments()) {
+    Error(error) -> io.println_error(usage_text(error))
+    Ok(plan) -> {
+      measurement.set_high_priority()
+      measurement.enable_scheduler_wall_time()
+      case plan {
+        PeaksOnly -> {
+          let found = peaks()
+          print_limits(chosen_limits(found))
+        }
+        PeaksThenCheck -> {
+          let found = peaks()
+          let limits = chosen_limits(found)
+          print_limits(limits)
+          let _checked = check(limits)
+          Nil
+        }
+        CheckOnly(limits:) -> {
+          print_limits(limits)
+          let _checked = check(limits)
+          Nil
+        }
+      }
+      measurement.set_schedulers_online(measurement.core_count())
+    }
+  }
+}
+
+/// What the arguments may be, and which one was wrong.
+fn usage_text(error: UsageError) -> String {
+  let problem = case error {
+    UnknownPart(word:) -> "unknown part: " <> word
+    CheckNeedsTwoLimits -> "check alone needs two limits after it"
+    NotAWordCount(word:) ->
+      "not a whole number of words of at least 1: " <> word
+  }
+  problem
+  <> "\nusage: gleam run -m genesis_prime/heap_ceiling [-- peaks [check]]"
+  <> "\n       gleam run -m genesis_prime/heap_ceiling -- check <map words> <sender words>"
 }
 
 /// The plan the arguments after `--` name.
 fn plan_from(arguments: List(String)) -> Result(Plan, UsageError) {
-  todo as "body in the build commit"
+  case arguments {
+    [] | ["peaks", "check"] -> Ok(PeaksThenCheck)
+    ["peaks"] -> Ok(PeaksOnly)
+    ["check", map_word, sender_word] -> {
+      use map <- result.try(limit_from(map_word))
+      use sender <- result.try(limit_from(sender_word))
+      Ok(CheckOnly(limits: heap_limit.HeapLimits(map:, sender:)))
+    }
+    ["check", ..] -> Error(CheckNeedsTwoLimits)
+    ["peaks", other, ..] -> Error(UnknownPart(word: other))
+    [other, ..] -> Error(UnknownPart(word: other))
+  }
+}
+
+/// A limit from the word count written as text.
+fn limit_from(word: String) -> Result(HeapLimit, UsageError) {
+  int.parse(word)
+  |> result.try(fn(count) { heap_limit.words(count) })
+  |> result.replace_error(NotAWordCount(word:))
 }
 
 /// The `peaks` part: one full-length run for each of `player_counts` and each
 /// of `visibility_ranges`, each printed as it finishes with its sampled peaks.
 fn peaks() -> List(Found) {
-  todo as "body in the build commit"
+  io.println(
+    "\n== peaks: prototype C, "
+    <> int.to_string(creature_count)
+    <> " creatures, no heap limit",
+  )
+  list.flat_map(visibility_ranges, fn(visibility_range) {
+    list.map(player_counts, fn(players) {
+      run_found(players:, visibility_range:, limits: heap_limit.no_limits)
+    })
+  })
+}
+
+/// One full-length run of prototype C at `limits`, with the heap sampler on,
+/// printed as it finishes.
+fn run_found(
+  players players: Int,
+  visibility_range visibility_range: Float,
+  limits limits: HeapLimits,
+) -> Found {
+  let result =
+    run.run(
+      prototype: run.MapProcess(map_process.SenderPool, limits),
+      workload: Workload(
+        ..workload.default(),
+        players:,
+        creatures: creature_count,
+        visibility_range:,
+      ),
+      maps: 1,
+      schedulers: measurement.core_count(),
+      timing: run.full_timing,
+      sampling: run.SampleHeaps,
+    )
+  let found = Found(players:, visibility_range:, result:)
+  print_found(found)
+  found
+}
+
+/// What the heap sampler found in a run; a run of `heap_ceiling` always
+/// samples.
+fn sampled_of(found: Found) -> Sampled {
+  let assert option.Some(sampled) = found.result.sampled
+    as "a run of the heap ceiling samples heaps"
+  sampled
+}
+
+/// One run as a line: the sampled peaks of each kind, the runtime's binary and
+/// ETS memory, how many processes the runtime killed and the pace.
+fn print_found(found: Found) -> Nil {
+  let sampled = sampled_of(found)
+  io.println(
+    trial.pad_start(text: int.to_string(found.players), width: 5)
+    <> " players range "
+    <> trial.pad_start(text: trial.two_places(found.visibility_range), width: 7)
+    <> " m: map heap "
+    <> int.to_string(sampled.map.heap_words)
+    <> " words, queue "
+    <> int.to_string(sampled.map.queue)
+    <> "; sender heap "
+    <> int.to_string(sampled.sender.heap_words)
+    <> " words, queue "
+    <> int.to_string(sampled.sender.queue)
+    <> "; binary "
+    <> int.to_string(sampled.binary_bytes)
+    <> " bytes, ets "
+    <> int.to_string(sampled.ets_bytes)
+    <> " bytes; killed maps "
+    <> int.to_string(sampled.killed.maps)
+    <> " senders "
+    <> int.to_string(sampled.killed.senders)
+    <> "; "
+    <> trial.pace_name(found.result.pace),
+  )
+}
+
+/// The largest map heap and the largest sender heap over `found`, in words.
+fn largest_peaks(found: List(Found)) -> #(Int, Int) {
+  #(
+    list.fold(found, 0, fn(largest, one) {
+      int.max(largest, sampled_of(one).map.heap_words)
+    }),
+    list.fold(found, 0, fn(largest, one) {
+      int.max(largest, sampled_of(one).sender.heap_words)
+    }),
+  )
 }
 
 /// The choosing rule over the `peaks` runs: `heap_limit.for_peak` on the
 /// largest map peak and on the largest sender peak over all the runs.
 fn chosen_limits(found: List(Found)) -> HeapLimits {
-  todo as "body in the build commit"
+  let #(map_peak, sender_peak) = largest_peaks(found)
+  io.println(
+    "\n== choosing rule: twice the largest peak, rounded up to a power of two"
+    <> "\nlargest map heap "
+    <> int.to_string(map_peak)
+    <> " words, largest sender heap "
+    <> int.to_string(sender_peak)
+    <> " words",
+  )
+  heap_limit.HeapLimits(
+    map: heap_limit.for_peak(map_peak),
+    sender: heap_limit.for_peak(sender_peak),
+  )
 }
 
 /// Prints the limits in words and in megabytes, and how many maps at the map
 /// limit fit in a gigabyte.
 fn print_limits(limits: HeapLimits) -> Nil {
-  todo as "body in the build commit"
+  io.println(
+    "map limit: "
+    <> limit_text(limits.map)
+    <> "; maps of that limit in 1 GB: "
+    <> case maps_per_gigabyte(limits.map) {
+      option.Some(count) -> int.to_string(count)
+      option.None -> "no limit"
+    },
+  )
+  io.println("sender limit: " <> limit_text(limits.sender))
+}
+
+/// A limit as words and megabytes of `word_bytes`-byte words, or "no limit".
+fn limit_text(limit: HeapLimit) -> String {
+  case heap_limit.to_words(limit) {
+    option.None -> "no limit"
+    option.Some(words) ->
+      int.to_string(words)
+      <> " words, "
+      <> trial.two_places(
+        int.to_float(words * word_bytes) /. int.to_float(megabyte_bytes),
+      )
+      <> " MB"
+  }
 }
 
 /// How many maps of the limit fit in a gigabyte, or none for no limit.
 fn maps_per_gigabyte(limit: HeapLimit) -> Option(Int) {
-  todo as "body in the build commit"
+  heap_limit.to_words(limit)
+  |> option.map(fn(words) { gigabyte_bytes / { words * word_bytes } })
 }
 
 /// The `check` part: one full-length run at `check_players` players for each
 /// of `visibility_ranges` with `limits` set. Prints each run's kills and
 /// fails when any run killed a map process or a sender.
 fn check(limits: HeapLimits) -> List(Found) {
-  todo as "body in the build commit"
+  io.println(
+    "\n== check: prototype C, "
+    <> int.to_string(creature_count)
+    <> " creatures, "
+    <> int.to_string(check_players)
+    <> " players, at the limits",
+  )
+  let found =
+    list.map(visibility_ranges, fn(visibility_range) {
+      run_found(players: check_players, visibility_range:, limits:)
+    })
+  assert list.all(found, fn(one) {
+    let killed = sampled_of(one).killed
+    killed.maps == 0 && killed.senders == 0
+  })
+    as "a map process or a sender was killed at the chosen limits"
+  io.println("no map process and no sender was killed")
+  found
 }

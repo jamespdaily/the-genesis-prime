@@ -198,6 +198,15 @@ pub fn run(
   sampling sampling: Sampling,
 ) -> RunResult {
   assert maps >= 1 as "a run has at least one map"
+  let sampling_is_possible = case sampling, prototype {
+    SampleHeaps, PerUnit -> False
+    SampleHeaps, MapProcess(..)
+    | NotSampled, PerUnit
+    | NotSampled, MapProcess(..)
+    -> True
+  }
+  assert sampling_is_possible
+    as "a run of the one-process-per-unit prototype cannot sample heaps"
   measurement.set_schedulers_online(schedulers)
   let planned =
     int.range(0, maps, [], fn(taken, map_index) {
@@ -265,9 +274,14 @@ pub fn run(
   list.each(players, player.reset_counts)
   let handled_before = messages_handled(doors)
   let scheduler_before = measurement.scheduler_time()
+  let sampler = case sampling {
+    SampleHeaps -> option.Some(heap_sampler.start(doors))
+    NotSampled -> option.None
+  }
   let samples = sample_queues(doors, timing)
   let scheduler_after = measurement.scheduler_time()
   let handled_after = messages_handled(doors)
+  let sampled = option.map(sampler, heap_sampler.stop)
   let memory_words =
     doors
     |> list.map(fn(door) { door.memory_words() })
@@ -350,7 +364,7 @@ pub fn run(
     memory_words_per_unit: int.to_float(memory_words) /. int.to_float(units),
     map_paces:,
     pace: run_pace(map_paces),
-    sampled: todo as "body in the build commit",
+    sampled:,
   )
 }
 

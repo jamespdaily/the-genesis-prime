@@ -6,6 +6,7 @@ import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Pid}
 import gleam/erlang/reference.{type Reference}
 import gleam/list
+import gleam/result
 
 /// A counter many processes add to at once, without a lock or a message.
 pub type Counter
@@ -92,7 +93,8 @@ fn heap_and_queue_of(pid: Pid) -> Result(#(Int, Int), Nil)
 
 /// Both sizes of a process read in one call, or an error when it is not alive.
 pub fn process_size(pid: Pid) -> Result(ProcessSize, Nil) {
-  todo as "body in the build commit"
+  use #(heap_words, queue) <- result.map(heap_and_queue_of(pid))
+  ProcessSize(heap_words:, queue:)
 }
 
 /// Bytes the runtime holds in binaries, outside every process heap

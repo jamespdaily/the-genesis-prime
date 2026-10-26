@@ -64,21 +64,28 @@ message_queue_length(Pid) ->
 
 %% `total_heap_size` in words and `message_queue_len` of a process, read in one
 %% call, as `{ok, {HeapWords, Queue}}`, or `{error, nil}` when it is not alive.
-process_heap_and_queue(_Pid) ->
-    erlang:error(body_in_the_build_commit).
+process_heap_and_queue(Pid) ->
+    case erlang:process_info(Pid, [total_heap_size, message_queue_len]) of
+        [{total_heap_size, HeapWords}, {message_queue_len, Queue}] ->
+            {ok, {HeapWords, Queue}};
+        undefined ->
+            {error, nil}
+    end.
 
 %% `erlang:memory(binary)` in bytes.
 binary_bytes() ->
-    erlang:error(body_in_the_build_commit).
+    erlang:memory(binary).
 
 %% `erlang:memory(ets)` in bytes.
 ets_bytes() ->
-    erlang:error(body_in_the_build_commit).
+    erlang:memory(ets).
 
 %% Sets the calling process's `max_heap_size` to `Words` with `kill` and
 %% `error_logger` on and `include_shared_binaries` off. Returns `nil`.
-set_max_heap_size(_Words) ->
-    erlang:error(body_in_the_build_commit).
+set_max_heap_size(Words) ->
+    process_flag(max_heap_size,
+                 #{size => Words, kill => true, error_logger => true}),
+    nil.
 
 new_counter() ->
     counters:new(1, [write_concurrency]).

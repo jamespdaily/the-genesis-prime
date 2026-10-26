@@ -16,10 +16,10 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    # A cold run builds the patched OTP (about 10 to 15 minutes on the public
-    # runner's 4 cores, unmeasured) and then runs the check (about 3 minutes);
-    # 30 lets a cold build run past the 20 minutes the issue (#31) judges it by.
-    timeout-minutes: 30
+    # A cold run builds the patched OTP in 146 seconds on the runner and the
+    # whole cold job takes 3 minutes 11 seconds (run 40316762854), so 10
+    # minutes is more than 3 times the cold job.
+    timeout-minutes: 10
     services:
       postgres:
         image: postgres:18

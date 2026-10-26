@@ -15,8 +15,19 @@
 //// The sampler is linked to the process that starts it, not supervised: a run
 //// whose sampler died has nothing to report, so the run stops with it.
 
+import genesis_prime/topology/measurement
 import genesis_prime/topology/owner.{type Owner}
-import gleam/erlang/process.{type Subject}
+import gleam/dict.{type Dict}
+import gleam/erlang/process.{type Pid, type Subject}
+import gleam/int
+import gleam/list
+import gleam/otp/actor
+
+/// The time between two readings, in milliseconds.
+const reading_interval_milliseconds = 100
+
+/// How long the sampler has to start, and to answer a stop, in milliseconds.
+const deadline_milliseconds = 5000
 
 /// A running sampler, started by `start` and ended by `stop`.
 pub opaque type Sampler {
@@ -32,6 +43,23 @@ type Message {
   Down(down: process.Down)
   /// Ends the sampler and asks it to send what it found.
   Stop(reply_with: Subject(Sampled))
+}
+
+/// Which kind of process a reading is of.
+type Kind {
+  MapKind
+  SenderKind
+}
+
+/// The state of the sampler: the owners it reads, the processes it monitors
+/// and their kinds, and what it has found.
+type State {
+  State(
+    doors: List(Owner),
+    monitored: Dict(Pid, Kind),
+    found: Sampled,
+    self: Subject(Message),
+  )
 }
 
 /// The largest sizes one kind of process reached: the most words one process's
@@ -69,10 +97,141 @@ pub type Sampled {
 /// run. It reads at once, and then every 100 milliseconds. A process of an
 /// owner that is not in `Owner.sender_processes` is a map process.
 pub fn start(doors doors: List(Owner)) -> Sampler {
-  todo as "body in the build commit"
+  let assert Ok(started) =
+    actor.new_with_initialiser(deadline_milliseconds, fn(self) {
+      let selector =
+        process.new_selector()
+        |> process.select(self)
+        |> process.select_monitors(Down)
+      let state =
+        read(State(doors:, monitored: dict.new(), found: nothing(), self:))
+      schedule_reading(state)
+      actor.initialised(state)
+      |> actor.selecting(selector)
+      |> actor.returning(Sampler(requests: self))
+      |> Ok
+    })
+    |> actor.on_message(handle)
+    |> actor.start
+    as "the heap sampler did not start"
+  started.data
 }
 
 /// Reads once more, ends the sampler and returns what it found.
 pub fn stop(sampler sampler: Sampler) -> Sampled {
-  todo as "body in the build commit"
+  process.call(sampler.requests, deadline_milliseconds, Stop)
+}
+
+fn handle(state: State, message: Message) -> actor.Next(State, Message) {
+  case message {
+    Reading -> {
+      let state = read(state)
+      schedule_reading(state)
+      actor.continue(state)
+    }
+    Down(down:) -> actor.continue(note_down(state, down))
+    Stop(reply_with:) -> {
+      let state = read(state)
+      process.send(reply_with, state.found)
+      actor.stop()
+    }
+  }
+}
+
+fn schedule_reading(state: State) -> Nil {
+  let _timer =
+    process.send_after(state.self, reading_interval_milliseconds, Reading)
+  Nil
+}
+
+/// What a sampler that has read nothing has found.
+fn nothing() -> Sampled {
+  Sampled(
+    map: Peak(heap_words: 0, queue: 0),
+    sender: Peak(heap_words: 0, queue: 0),
+    binary_bytes: 0,
+    ets_bytes: 0,
+    killed: Killed(maps: 0, senders: 0),
+  )
+}
+
+/// One reading of every process the owners hold now, and of the runtime's
+/// binary and ETS memory. A process not read before is monitored first, so a
+/// process that ends before the next reading is still counted.
+fn read(state: State) -> State {
+  let processes =
+    list.flat_map(state.doors, fn(door) {
+      let senders = door.sender_processes()
+      let maps =
+        list.filter(door.owner_processes(), fn(pid) {
+          !list.contains(senders, pid)
+        })
+      list.append(
+        list.map(maps, fn(pid) { #(pid, MapKind) }),
+        list.map(senders, fn(pid) { #(pid, SenderKind) }),
+      )
+    })
+  let state =
+    list.fold(processes, state, fn(state, entry) {
+      let #(pid, kind) = entry
+      case dict.has_key(state.monitored, pid) {
+        True -> state
+        False -> {
+          let _monitor = process.monitor(pid)
+          State(..state, monitored: dict.insert(state.monitored, pid, kind))
+        }
+      }
+    })
+  let found =
+    list.fold(processes, state.found, fn(found, entry) {
+      let #(pid, kind) = entry
+      case measurement.process_size(pid) {
+        Error(Nil) -> found
+        Ok(size) ->
+          case kind {
+            MapKind -> Sampled(..found, map: larger(found.map, size))
+            SenderKind -> Sampled(..found, sender: larger(found.sender, size))
+          }
+      }
+    })
+  State(
+    ..state,
+    found: Sampled(
+      ..found,
+      binary_bytes: int.max(found.binary_bytes, measurement.binary_bytes()),
+      ets_bytes: int.max(found.ets_bytes, measurement.ets_bytes()),
+    ),
+  )
+}
+
+fn larger(peak: Peak, size: measurement.ProcessSize) -> Peak {
+  Peak(
+    heap_words: int.max(peak.heap_words, size.heap_words),
+    queue: int.max(peak.queue, size.queue),
+  )
+}
+
+/// Counts a monitored process that the runtime killed, and forgets it.
+fn note_down(state: State, down: process.Down) -> State {
+  case down {
+    process.PortDown(..) -> state
+    process.ProcessDown(pid:, reason:, ..) -> {
+      let kind = dict.get(state.monitored, pid)
+      let killed = state.found.killed
+      let killed = case reason, kind {
+        process.Killed, Ok(MapKind) -> Killed(..killed, maps: killed.maps + 1)
+        process.Killed, Ok(SenderKind) ->
+          Killed(..killed, senders: killed.senders + 1)
+        process.Killed, Error(Nil)
+        | process.Normal, _
+        | process.Abnormal(_), _
+        -> killed
+      }
+      State(
+        ..state,
+        monitored: dict.delete(state.monitored, pid),
+        found: Sampled(..state.found, killed:),
+      )
+    }
+  }
 }

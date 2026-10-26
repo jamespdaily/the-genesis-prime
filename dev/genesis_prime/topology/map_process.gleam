@@ -251,6 +251,7 @@ fn start_map(
   limit limit: HeapLimit,
 ) -> actor.StartResult(Subject(Message)) {
   actor.new_with_initialiser(initialisation_milliseconds, fn(self) {
+    heap_limit.apply(limit)
     let units = measurement.spawn_list(spawn_list_key)
     let state =
       State(

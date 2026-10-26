@@ -40,7 +40,12 @@ fn start(
   name: process.Name(Message),
   limit: HeapLimit,
 ) -> actor.StartResult(Subject(Message)) {
-  actor.new(Nil)
+  actor.new_with_initialiser(5000, fn(self) {
+    heap_limit.apply(limit)
+    actor.initialised(Nil)
+    |> actor.returning(self)
+    |> Ok
+  })
   |> actor.named(name)
   |> actor.on_message(handle)
   |> actor.start
