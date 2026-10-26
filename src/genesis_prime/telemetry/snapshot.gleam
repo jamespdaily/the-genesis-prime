@@ -54,6 +54,7 @@ const snapshot_who =
     actor: None,
     place: Some(log.Process("snapshot")),
     message: None,
+    peer: None,
   )
 
 /// What the snapshot process starts with. `name` is the name it registers and
