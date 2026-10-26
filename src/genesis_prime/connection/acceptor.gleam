@@ -6,7 +6,12 @@
 //// The acceptor waits for a client inside its message handler, so it answers
 //// no other message while it waits; it has no other message, and a stop
 //// signal from its supervisor ends it at once, because it does not trap
-//// exits. It restarts with a new listening socket.
+//// exits. It registers with the shutdown coordinator as a listener, whose
+//// request to stop accepting closes the listening socket from the
+//// coordinator's process, which ends the wait with `Closed`; nothing else
+//// closes the socket, so the acceptor then ends normally and is not started
+//// again. Any other failure of the socket ends it abnormally, and it restarts
+//// with a new listening socket.
 
 import genesis_prime/connection/capacity
 import genesis_prime/connection/socket.{type ListenSocket, type Socket}
@@ -64,12 +69,13 @@ type State {
 }
 
 /// The acceptor as a child of the listener's supervisor, restarted when it
-/// ends and given `shutdown_ms` to stop. It opens the listening socket when it
+/// ends abnormally and given `shutdown_ms` to stop. It opens the listening socket when it
 /// starts and calls `listening` with the port it got.
 pub fn supervised(
   settings settings: Settings,
 ) -> supervision.ChildSpecification(Subject(Message)) {
   supervision.worker(fn() { start(settings) })
+  |> supervision.restart(supervision.Transient)
   |> supervision.timeout(ms: shutdown_ms)
 }
 
@@ -87,6 +93,13 @@ fn start(settings: Settings) -> actor.StartResult(Subject(Message)) {
             <> capacity.describe(
             cap: settings.connection_cap,
             ceiling_words: settings.heap_ceiling_words,
+          ),
+        )
+        shutdown.register(
+          settings: settings.shutdown,
+          participant: shutdown.Listener(
+            name: "listener on port " <> int.to_string(port),
+            stop_accepting: fn() { socket.close_listening(listen) },
           ),
         )
         settings.listening(port)
@@ -121,6 +134,7 @@ fn handle_message(
       process.send(state.self, Accept)
       actor.continue(state)
     }
+    Error(socket.Closed) -> actor.stop()
     Error(reason) ->
       actor.stop_abnormal(
         "the listening socket failed: " <> socket.describe(reason),

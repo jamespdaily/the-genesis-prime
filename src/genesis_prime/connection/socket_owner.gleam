@@ -9,6 +9,10 @@
 //// cap is the listener's. The rules of the first two are in `inbound`; this
 //// process reads the clock, the socket and the handler.
 ////
+//// A request of the shutdown coordinator to close ends the connection like a
+//// client that leaves: the socket is closed, the line is logged and the owner
+//// stops normally. A handler that is busy holds the request until it returns.
+////
 //// A socket owner is a temporary child of its listener's supervisor: it is
 //// never restarted, because the client opens a new connection to log in
 //// again.
@@ -103,15 +107,23 @@ pub fn settings(handler handler: Handler) -> Settings {
 }
 
 /// Starts the owner of `socket`. It sets its heap ceiling first, counting
-/// shared binaries, and starts reading only after `socket_given`.
+/// shared binaries, registers with the shutdown coordinator as a connection,
+/// whose request to close ends the owner after it closes the socket, and starts
+/// reading only after `socket_given`.
 pub fn start(
   settings settings: Settings,
   socket socket: Socket,
-  shutdown _shutdown: shutdown.Settings,
+  shutdown shutdown: shutdown.Settings,
 ) -> actor.StartResult(Subject(Message)) {
   actor.new_with_initialiser(start_deadline_ms, fn(subject) {
     limit_heap(settings.heap_ceiling_words)
     keep_messages_off_heap()
+    shutdown.register(
+      settings: shutdown,
+      participant: shutdown.Connection(close: fn() {
+        process.send(subject, ServerStopping)
+      }),
+    )
     let selector =
       process.new_selector()
       |> process.select(subject)
@@ -152,7 +164,8 @@ fn handle_message(
       arm(State(..state, status: Reading(inbound:)))
     }
     SocketGiven, Reading(..) -> actor.continue(state)
-    ServerStopping, _ -> actor.continue(state)
+    ServerStopping, _ ->
+      end_connection(state, log.info, "the server is stopping")
     SocketEvent(socket.Received(bytes:)), Reading(inbound:) ->
       receive(state:, inbound:, bytes:)
     SocketEvent(socket.ReadsUsedUp), Reading(..) -> arm(state)
