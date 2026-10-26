@@ -399,7 +399,9 @@ pub fn a_database_that_could_not_save_is_not_the_players_mistake_test() -> Nil {
   assert list.contains(effects, Log(StoreUnavailable))
     as "an outside failure is logged as one, never as a refusal of the request"
   let #(state, effects) = select.decide(state, Stored(Loaded([])), context())
-  assert create_result_of(effects) == 12
+  let assert [CreateResult(answer), CharacterListed(_)] = sent(effects)
+    as "the create answer is sent, then the list"
+  assert answer.result == 12
     as "PreGameLib.CodeEnumCharacterModifyResults: 12 is CreateFailed_Internal, the server's failure and not the player's"
   assert state == idle([]) as "nothing was added"
 }

@@ -72,9 +72,13 @@ const rename_failed_unique_name = 16
 
 const rename_ok = 18
 
-/// The value of message 0x162: PreGameLib.CodeEnumCharacterSelectResults'
-/// Failed.
+/// The values of message 0x162, each named by its name in PreGameLib.
+/// CodeEnumCharacterSelectResults.
+const select_failed_rename = 1
+
 const select_failed = 2
+
+const select_failed_disabled = 3
 
 /// The most customisation values a character holds: the character list reads
 /// their count in 4 bits (ReadCharacterListEntry 0x14007F720).
@@ -444,6 +448,14 @@ fn start_playing(
       Log(NotYourCharacter(id)),
       Send(PlayRefused(PlayCharacterRefused(field_1: select_failed))),
     ])
+    Ok(chosen) if chosen.disabled -> #(state, [
+      Log(CharacterDisabled(id)),
+      Send(PlayRefused(PlayCharacterRefused(field_1: select_failed_disabled))),
+    ])
+    Ok(chosen) if chosen.requires_rename -> #(state, [
+      Log(CharacterRequiresRename(id)),
+      Send(PlayRefused(PlayCharacterRefused(field_1: select_failed_rename))),
+    ])
     Ok(chosen) -> #(State(..state, status: Entering), [BeginWorldEntry(chosen)])
   }
 }
@@ -463,7 +475,8 @@ fn answered(
     Creating -> created(state:, answer:)
     Renaming(id) -> renamed(state:, id:, answer:)
     Deleting(id) -> deleted(state:, id:, answer:)
-    NotStarted | Idle | Entering | Reloading(_) -> unexpected(state, answer)
+    Reloading(owed:) -> reloaded(state:, owed:, answer:, context:)
+    NotStarted | Idle | Entering -> unexpected(state, answer)
   }
 }
 
@@ -480,13 +493,45 @@ fn loaded(
     Loaded(characters) -> #(State(..state, characters:, status: Idle), [
       Send(CharacterListed(character_list(characters:, context:))),
     ])
-    Inserted(_)
-    | Renamed(_)
-    | Deleted(_)
-    | NameInUse
-    | NotFound
-    | Unavailable -> unexpected(state, answer)
+    Unavailable -> #(state, [Abandon(ListNotLoaded)])
+    Inserted(_) | Renamed(_) | Deleted(_) | NameInUse | NotFound ->
+      unexpected(state, answer)
   }
+}
+
+/// The answer to the read after a write that was answered `Unavailable`: the
+/// characters the store holds now, and with them the failure the player is
+/// owed, then the list, so the client's list is the store's. A store that is
+/// away again leaves the server not knowing what the write did, so the
+/// connection ends.
+fn reloaded(
+  state state: State,
+  owed owed: ServerMessage,
+  answer answer: Answer,
+  context context: Context,
+) -> #(State, List(Effect)) {
+  case answer {
+    Loaded(characters) -> #(State(..state, characters:, status: Idle), [
+      Send(owed),
+      Send(CharacterListed(character_list(characters:, context:))),
+    ])
+    Unavailable -> #(state, [Abandon(ListNotReloaded)])
+    Inserted(_) | Renamed(_) | Deleted(_) | NameInUse | NotFound ->
+      unexpected(state, answer)
+  }
+}
+
+/// A write was answered `Unavailable`: it may have been done after the
+/// deadline, so the failure is answered only once the account's characters
+/// have been read again.
+fn reload(
+  state state: State,
+  owed owed: ServerMessage,
+) -> #(State, List(Effect)) {
+  #(State(..state, status: Reloading(owed:)), [
+    Log(StoreUnavailable),
+    Store(LoadCharacters(account_id: state.account_id)),
+  ])
 }
 
 /// Message 0x117 for the characters: the server's time, the characters and
@@ -536,7 +581,8 @@ fn created(
       ],
     )
     NameInUse -> create_refused(state, NameTaken)
-    Unavailable -> create_refused(state, StoreUnavailable)
+    Unavailable ->
+      reload(state:, owed: CreateResult(create_failure(StoreUnavailable)))
     Loaded(_) | Renamed(_) | Deleted(_) | NotFound -> unexpected(state, answer)
   }
 }
@@ -577,7 +623,15 @@ fn renamed(
     )
     NameInUse -> rename_refused(state:, id:, refusal: NameTaken)
     NotFound -> rename_refused(state:, id:, refusal: NotYourCharacter(id))
-    Unavailable -> rename_refused(state:, id:, refusal: StoreUnavailable)
+    Unavailable ->
+      reload(
+        state:,
+        owed: RenameResult(rename_failure_of(
+          state:,
+          id:,
+          refusal: StoreUnavailable,
+        )),
+      )
     Loaded(_) | Inserted(_) | Deleted(_) -> unexpected(state, answer)
   }
 }
@@ -587,20 +641,24 @@ fn rename_refused(
   id id: Int,
   refusal refusal: Refusal,
 ) -> #(State, List(Effect)) {
+  #(State(..state, status: Idle), [
+    Log(refusal),
+    Send(RenameResult(rename_failure_of(state:, id:, refusal:))),
+  ])
+}
+
+/// The answer to a rename the store did not do: the result of the refusal
+/// with the name the character has in the list.
+fn rename_failure_of(
+  state state: State,
+  id id: Int,
+  refusal refusal: Refusal,
+) -> RenameCharacterResult {
   let name = case owned(state, id) {
     Ok(character) -> character.name
     Error(Nil) -> ""
   }
-  #(State(..state, status: Idle), [
-    Log(refusal),
-    Send(
-      RenameResult(RenameCharacterResult(
-        result: rename_result(refusal),
-        character_id: id,
-        name:,
-      )),
-    ),
-  ])
+  RenameCharacterResult(result: rename_result(refusal), character_id: id, name:)
 }
 
 fn deleted(
@@ -622,7 +680,7 @@ fn deleted(
       ],
     )
     NotFound -> delete_refused(state, NotYourCharacter(id))
-    Unavailable -> delete_refused(state, StoreUnavailable)
+    Unavailable -> reload(state:, owed: DeleteResult(delete_failure()))
     Loaded(_) | Inserted(_) | Renamed(_) | NameInUse ->
       unexpected(state, answer)
   }
