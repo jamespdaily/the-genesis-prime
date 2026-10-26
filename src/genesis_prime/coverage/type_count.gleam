@@ -26,18 +26,31 @@ pub type Count {
     types: List(TypeCount),
     /// The values that are not zero.
     rows: Int,
-    /// The values that are zero. A zero names no type: it is a column with
-    /// nothing in it, so it is left out of the types and the shares.
+    /// The zeros that mean an empty slot, left out of the types and the shares.
     zero_values: Int,
   )
 }
 
+/// What the value 0 stands for in a source.
+pub type ZeroMeans {
+  /// A column with nothing in it: no type, counted apart and left out of the
+  /// types and the shares.
+  EmptySlot
+  /// A type like any other, such as the message id 0.
+  ATypeLikeAnyOther
+}
+
 /// Counts one value per row of the type column (a table with several type
-/// columns gives every column's value of every row): each non-zero value is a
-/// row of its type, and each zero is counted apart.
-pub fn count(values: List(Int)) -> Count {
-  let zero_values = list.count(values, fn(value) { value == 0 })
-  let used = list.filter(values, fn(value) { value != 0 })
+/// columns gives every column's value of every row): each value is a row of
+/// its type, except a zero where it means an empty slot, which is counted apart.
+pub fn count(values values: List(Int), zero zero: ZeroMeans) -> Count {
+  let #(zero_values, used) = case zero {
+    EmptySlot -> #(
+      list.count(values, fn(value) { value == 0 }),
+      list.filter(values, fn(value) { value != 0 }),
+    )
+    ATypeLikeAnyOther -> #(0, values)
+  }
   let rows = list.length(used)
   let types =
     list.fold(used, dict.new(), fn(counts, value) {

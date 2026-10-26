@@ -323,13 +323,15 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
           as { table <> ": every declared type is one some row uses" }
       }
       engine.Cases(ids:, ..) -> {
-        let assert Measured(types:, ..) = measured
+        let assert Measured(types:, rows:, ..) = measured
           as "message ids that are recorded are measured"
-        assert list.length(ids) == 645
-          as "fact 0x1403f1344: 2,322 entries, 1,677 of them the default"
-        assert list.length(types) == 645 as "one row for each id with a case"
-        assert list.all(ids, fn(id) { id >= 97 && id <= 2418 })
-          as "fact 0x1403ec6a0: the switch covers ids 97 to 2418"
+        assert list.length(ids) == 352
+          as "fact 0x1403309a0: the client sends 352 ids in all"
+        assert list.length(types) == 352
+          as "one row for each id the client sends"
+        assert rows == 352 as "each id is one row"
+        assert list.all(ids, fn(id) { id >= 0 && id <= 0xFFFF })
+          as "a frame's message id is 16 bits (fact 0x140332920, WriteMessageFrame)"
       }
       engine.CasesNotRecorded(needed:, ..) -> {
         assert measured == Unmeasured(engine: declared, needed:)
@@ -407,4 +409,29 @@ pub fn an_engine_whose_cases_are_not_recorded_says_what_is_needed_test() -> Nil 
     as "no list is made from ids nobody recorded; the text says what is needed"
   assert !string.contains(text, "- [")
     as "no checklist line for an unmeasured engine"
+}
+
+pub fn the_message_checklist_says_each_id_the_client_sends_is_one_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let text =
+    checklist.render([
+      measurement.from_values(
+        EngineDeclaration(..engine_named("Client message routing"), handled: [
+          1,
+        ]),
+        [0, 1, 2, 0x244],
+      ),
+    ])
+  assert string.starts_with(text, "## Client message routing (#51)\n")
+    as "the heading names the engine and its area issue"
+  assert string.contains(
+    text,
+    "Type: the message ids the client sends to the server, one row for each id.",
+  )
+    as "the header says what a row is: an id the client sends, as the facts of its send paths give it"
+  assert string.contains(
+    text,
+    "- [ ] type 0: 1 row (25.0%)\n- [x] type 1: 1 row (25.0%)\n- [ ] type 2: 1 row (25.0%)\n- [ ] type 580: 1 row (25.0%)",
+  )
+    as "equal rows: the lower id first, and 1 is declared handled so it is checked; 580 is 0x244; a quarter each; id 0 is an id like any other, the network layer's own (fact 0x140332580)"
 }

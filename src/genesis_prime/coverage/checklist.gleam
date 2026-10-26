@@ -87,7 +87,7 @@ fn source_columns(engine: EngineDeclaration) -> String {
       list.map(columns, fn(column) { table <> "." <> column })
       |> string.join(", ")
     engine.Cases(..) | engine.CasesNotRecorded(..) ->
-      "the message ids with a case in the client's dispatcher"
+      "the message ids the client sends to the server, one row for each id"
   }
 }
 

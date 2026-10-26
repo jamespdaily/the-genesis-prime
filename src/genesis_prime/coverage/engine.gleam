@@ -2,6 +2,7 @@
 //// client's data names the types it handles, and the types it handles. The
 //// coverage measure reads these declarations.
 
+import genesis_prime/coverage/sent_message
 import genesis_prime/table/creature2
 import genesis_prime/table/loader/store
 import genesis_prime/table/prerequisite
@@ -19,10 +20,10 @@ pub type Source {
     evidence: String,
     values: fn(store.Tables) -> List(Int),
   )
-  /// The message ids that have a case in the client's message dispatcher.
+  /// The message ids a client sends, one entry for each use of an id.
   Cases(evidence: String, ids: List(Int))
-  /// The cases of the client's message dispatcher, whose ids the fact file
-  /// does not record; `needed` says what must be recorded.
+  /// A set of ids the fact file does not record; `needed` says what must be
+  /// recorded.
   CasesNotRecorded(evidence: String, needed: String)
 }
 
@@ -128,16 +129,18 @@ fn unit_types() -> EngineDeclaration {
   )
 }
 
-/// The message routing table: the ids that have a case in the client's message
-/// dispatcher. The fact file records that 645 of the 2,322 ids from 97 to 2418
-/// have a case, not which; so the source is not recorded.
+/// The message routing table: the ids of the messages the client sends, which
+/// the server must route. An id is one row. The fact file gives each send
+/// path's ids and its number of send sites, not the sites of each id, so the
+/// ids weigh the same; an id listed once for each of its sites would weigh by
+/// sites. The messages the client only receives are not this engine's.
 fn messages() -> EngineDeclaration {
   EngineDeclaration(
     name: "Client message routing",
     area_issue: 51,
-    source: CasesNotRecorded(
-      evidence: "HandleWorldMessage 0x1403ec6a0 switches on ids 97 to 2418 through 2,322 table entries at 0x1403f1344, 1,677 of them the default, so 645 ids have a case (facts 0x1403ec6a0 and 0x1403f1344)",
-      needed: "which of the dispatcher's 2,322 ids have a case (the 645 whose table entry at 0x1403f1344 is not the default 0x1403f12d2), and the ids of the auth and character-select readers, each recorded in the fact file",
+    source: Cases(
+      evidence: "the messages the client sends, from the facts of its send paths: SendWorldMessage 0x1403f4900 (245 ids), 0x1403f4740 (58), 0x140016010 (7), 0x1400161d0 (23), the 14 ids serialised directly (0x140332920), 0x244, 0x38c and the network layer's ids 0, 1 and 2 (0x140332580): 352 ids (RegisterMessage 0x1403309a0). Each id is one row: the facts give each path's ids and send sites, not the sites of each id",
+      ids: sent_message.all(),
     ),
     handled: [],
   )

@@ -58,28 +58,37 @@ pub fn from_values(
 ) -> Measurement {
   case engine.source {
     engine.CasesNotRecorded(needed:, ..) -> Unmeasured(engine:, needed:)
-    engine.TableColumns(..) | engine.Cases(..) -> {
-      let count = type_count.count(values)
-      let types =
-        list.map(count.types, fn(counted) {
-          TypeLine(
-            type_number: counted.type_number,
-            rows: counted.rows,
-            share: counted.share,
-            handled: list.contains(engine.handled, counted.type_number),
-          )
-        })
-      let breaches =
-        list.filter(engine.handled, fn(declared) {
-          !list.any(count.types, fn(counted) { counted.type_number == declared })
-        })
-      Measured(
-        engine:,
-        types:,
-        rows: count.rows,
-        zero_values: count.zero_values,
-        breaches:,
-      )
-    }
+    engine.TableColumns(..) ->
+      measured(engine:, values:, zero: type_count.EmptySlot)
+    engine.Cases(..) ->
+      measured(engine:, values:, zero: type_count.ATypeLikeAnyOther)
   }
+}
+
+fn measured(
+  engine engine: EngineDeclaration,
+  values values: List(Int),
+  zero zero: type_count.ZeroMeans,
+) -> Measurement {
+  let count = type_count.count(values:, zero:)
+  let types =
+    list.map(count.types, fn(counted) {
+      TypeLine(
+        type_number: counted.type_number,
+        rows: counted.rows,
+        share: counted.share,
+        handled: list.contains(engine.handled, counted.type_number),
+      )
+    })
+  let breaches =
+    list.filter(engine.handled, fn(declared) {
+      !list.any(count.types, fn(counted) { counted.type_number == declared })
+    })
+  Measured(
+    engine:,
+    types:,
+    rows: count.rows,
+    zero_values: count.zero_values,
+    breaches:,
+  )
 }
