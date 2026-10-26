@@ -6,6 +6,11 @@
 //// reads, so it counts the map processes and senders the runtime killed while
 //// it ran, which is what a heap limit does to a process that passes it.
 ////
+//// The sampler starts with the prototype, so its kills and replacements cover
+//// the whole run, warm-up included. Its peaks cover only the stretch after
+//// `begin_measuring`, so the warm-up's burst of load does not count toward the
+//// peaks a limit is chosen from.
+////
 //// A reading takes a process's `total_heap_size`: its heap, stack and waiting
 //// messages together, the size `max_heap_size` limits. The sampler reads the
 //// owners' process lists afresh at each reading, so a rebuilt process is read
@@ -39,6 +44,8 @@ pub opaque type Sampler {
 type Message {
   /// The timer for the next reading is due.
   Reading
+  /// Forgets the peaks so far, reads once, and replies.
+  BeginMeasuring(reply_with: Subject(Nil))
   /// A monitored process is down.
   Down(down: process.Down)
   /// Ends the sampler and asks it to send what it found.
@@ -51,11 +58,13 @@ type Kind {
   SenderKind
 }
 
-/// The state of the sampler: the owners it reads, the processes it monitors
-/// and their kinds, and what it has found.
+/// The state of the sampler: the owners it reads, the processes the owners held
+/// when it started, the processes it monitors and their kinds, and what it has
+/// found.
 type State {
   State(
     doors: List(Owner),
+    initial: List(#(Pid, Kind)),
     monitored: Dict(Pid, Kind),
     found: Sampled,
     self: Subject(Message),
@@ -76,26 +85,42 @@ pub type Killed {
   Killed(maps: Int, senders: Int)
 }
 
+/// How many of the processes the owners held when the sampler started are not
+/// among the processes they hold when it stops, whatever ended them. It counts
+/// an end the monitor does not count as a kill, and an end the sampler missed.
+pub type Replaced {
+  Replaced(maps: Int, senders: Int)
+}
+
 /// What the sampler found between its start and its stop. The binary and ETS
 /// bytes are the runtime's whole, not those of the run's processes alone, as
 /// the runtime keeps no count for a group of processes.
 pub type Sampled {
   Sampled(
-    /// The largest map process sizes, over every map of the run.
+    /// The largest map process sizes after `begin_measuring`, over every map
+    /// of the run.
     map: Peak,
-    /// The largest sender sizes, over every sender of the run.
+    /// The largest sender sizes after `begin_measuring`, over every sender of
+    /// the run.
     sender: Peak,
-    /// The most bytes `erlang:memory(binary)` held at a reading.
+    /// The most bytes `erlang:memory(binary)` held at a reading after
+    /// `begin_measuring`.
     binary_bytes: Int,
-    /// The most bytes `erlang:memory(ets)` held at a reading.
+    /// The most bytes `erlang:memory(ets)` held at a reading after
+    /// `begin_measuring`.
     ets_bytes: Int,
+    /// The kills between the sampler's start and its stop.
     killed: Killed,
+    /// The processes of the sampler's start that are gone at its stop.
+    replaced: Replaced,
   )
 }
 
 /// Starts a sampler of the processes of `doors`, one owner for each map of the
 /// run. It reads at once, and then every 100 milliseconds. A process of an
-/// owner that is not in `Owner.sender_processes` is a map process.
+/// owner that is not in `Owner.sender_processes` is a map process. The
+/// processes the owners hold now are the ones `stop` counts as replaced if they
+/// are gone.
 pub fn start(doors doors: List(Owner)) -> Sampler {
   let assert Ok(started) =
     actor.new_with_initialiser(deadline_milliseconds, fn(self) {
@@ -104,7 +129,13 @@ pub fn start(doors doors: List(Owner)) -> Sampler {
         |> process.select(self)
         |> process.select_monitors(Down)
       let state =
-        read(State(doors:, monitored: dict.new(), found: nothing(), self:))
+        read(State(
+          doors:,
+          initial: processes_of(doors),
+          monitored: dict.new(),
+          found: nothing(),
+          self:,
+        ))
       schedule_reading(state)
       actor.initialised(state)
       |> actor.selecting(selector)
@@ -115,6 +146,12 @@ pub fn start(doors doors: List(Owner)) -> Sampler {
     |> actor.start
     as "the heap sampler did not start"
   started.data
+}
+
+/// Forgets the peaks found so far and reads once, so the peaks cover only the
+/// time from now on. The kills found so far are kept.
+pub fn begin_measuring(sampler sampler: Sampler) -> Nil {
+  process.call(sampler.requests, deadline_milliseconds, BeginMeasuring)
 }
 
 /// Reads once more, ends the sampler and returns what it found.
@@ -129,10 +166,24 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
       schedule_reading(state)
       actor.continue(state)
     }
+    BeginMeasuring(reply_with:) -> {
+      let state =
+        read(
+          State(
+            ..state,
+            found: Sampled(..nothing(), killed: state.found.killed),
+          ),
+        )
+      process.send(reply_with, Nil)
+      actor.continue(state)
+    }
     Down(down:) -> actor.continue(note_down(state, down))
     Stop(reply_with:) -> {
       let state = read(state)
-      process.send(reply_with, state.found)
+      process.send(
+        reply_with,
+        Sampled(..state.found, replaced: replaced(state)),
+      )
       actor.stop()
     }
   }
@@ -152,25 +203,42 @@ fn nothing() -> Sampled {
     binary_bytes: 0,
     ets_bytes: 0,
     killed: Killed(maps: 0, senders: 0),
+    replaced: Replaced(maps: 0, senders: 0),
   )
+}
+
+/// How many of the processes the sampler started with are not held by the
+/// owners now, for each kind.
+fn replaced(state: State) -> Replaced {
+  let now = list.map(processes_of(state.doors), fn(entry) { entry.0 })
+  let gone =
+    list.filter(state.initial, fn(entry) { !list.contains(now, entry.0) })
+  Replaced(
+    maps: list.count(gone, fn(entry) { entry.1 == MapKind }),
+    senders: list.count(gone, fn(entry) { entry.1 == SenderKind }),
+  )
+}
+
+/// Every process the owners hold now, with its kind.
+fn processes_of(doors: List(Owner)) -> List(#(Pid, Kind)) {
+  list.flat_map(doors, fn(door) {
+    let senders = door.sender_processes()
+    let maps =
+      list.filter(door.owner_processes(), fn(pid) {
+        !list.contains(senders, pid)
+      })
+    list.append(
+      list.map(maps, fn(pid) { #(pid, MapKind) }),
+      list.map(senders, fn(pid) { #(pid, SenderKind) }),
+    )
+  })
 }
 
 /// One reading of every process the owners hold now, and of the runtime's
 /// binary and ETS memory. A process not read before is monitored first, so a
 /// process that ends before the next reading is still counted.
 fn read(state: State) -> State {
-  let processes =
-    list.flat_map(state.doors, fn(door) {
-      let senders = door.sender_processes()
-      let maps =
-        list.filter(door.owner_processes(), fn(pid) {
-          !list.contains(senders, pid)
-        })
-      list.append(
-        list.map(maps, fn(pid) { #(pid, MapKind) }),
-        list.map(senders, fn(pid) { #(pid, SenderKind) }),
-      )
-    })
+  let processes = processes_of(state.doors)
   let state =
     list.fold(processes, state, fn(state, entry) {
       let #(pid, kind) = entry

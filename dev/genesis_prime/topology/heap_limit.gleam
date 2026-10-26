@@ -48,12 +48,16 @@ pub type HeapLimits {
 pub const no_limits = HeapLimits(map: no_limit, sender: no_limit)
 
 /// Makes the limit chosen by the rule from the largest peak a kind of process
-/// reached, in words: twice the peak, rounded up to a power of two words. Twice
-/// leaves room for the load to grow before a process is killed, and a power of
-/// two is the size the runtime grows a heap in. The peak is at least 1 word.
+/// reached, in words: four times the peak, rounded up to a power of two words.
+/// A peak is a reading of `total_heap_size` every 100 milliseconds, and the
+/// runtime counts toward the limit the memory a collection needs while the old
+/// and the new heap exist together: a sender killed at twice its peak held
+/// 69,621 words in its kill report, 2.15 times the 32,317 words sampled. Four
+/// times leaves room for that and for the load to grow, and a power of two is
+/// the size the runtime grows a heap in. The peak is at least 1 word.
 pub fn for_peak(peak_words peak_words: Int) -> HeapLimit {
   assert peak_words >= 1 as "a peak is at least 1 word"
-  Words(count: power_of_two_from(1, at_least: 2 * peak_words))
+  Words(count: power_of_two_from(1, at_least: 4 * peak_words))
 }
 
 /// The smallest power of two that is at least `target`, found by doubling

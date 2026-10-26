@@ -19,7 +19,8 @@
 ////   gigabyte.
 //// - `check`: prototype C at `check_players` players, one full-length run at
 ////   each of `visibility_ranges`, with the limits set; it prints each run's
-////   kills and fails when a map process or a sender was killed.
+////   kills and replacements, counted from the start of the run, and fails when
+////   a map process or a sender was killed or replaced for any reason.
 ////
 //// `check` takes its limits from the `peaks` run when both run in one command.
 //// Run alone it takes them after its name, as `check <map words> <sender
@@ -204,7 +205,8 @@ fn sampled_of(found: Found) -> Sampled {
 }
 
 /// One run as a line: the sampled peaks of each kind, the runtime's binary and
-/// ETS memory, how many processes the runtime killed and the pace.
+/// ETS memory, how many processes the runtime killed, how many were replaced
+/// and the pace.
 fn print_found(found: Found) -> Nil {
   let sampled = sampled_of(found)
   io.println(
@@ -227,6 +229,10 @@ fn print_found(found: Found) -> Nil {
     <> int.to_string(sampled.killed.maps)
     <> " senders "
     <> int.to_string(sampled.killed.senders)
+    <> "; replaced maps "
+    <> int.to_string(sampled.replaced.maps)
+    <> " senders "
+    <> int.to_string(sampled.replaced.senders)
     <> "; "
     <> trial.pace_name(found.result.pace),
   )
@@ -249,7 +255,7 @@ fn largest_peaks(found: List(Found)) -> #(Int, Int) {
 fn chosen_limits(found: List(Found)) -> HeapLimits {
   let #(map_peak, sender_peak) = largest_peaks(found)
   io.println(
-    "\n== choosing rule: twice the largest peak, rounded up to a power of two"
+    "\n== choosing rule: four times the largest peak, rounded up to a power of two"
     <> "\nlargest map heap "
     <> int.to_string(map_peak)
     <> " words, largest sender heap "
@@ -299,7 +305,10 @@ fn maps_per_gigabyte(limit: HeapLimit) -> Option(Int) {
 
 /// The `check` part: one full-length run at `check_players` players for each
 /// of `visibility_ranges` with `limits` set. Prints each run's kills and
-/// fails when any run killed a map process or a sender.
+/// replacements and fails when any run killed or replaced a map process or a
+/// sender, whether in the warm-up or the measured stretch. The monitor counts a
+/// kill, and the replacement count catches a process that ended for another
+/// reason or that the monitor missed.
 fn check(limits: HeapLimits) -> List(Found) {
   io.println(
     "\n== check: prototype C, "
@@ -313,10 +322,11 @@ fn check(limits: HeapLimits) -> List(Found) {
       run_found(players: check_players, visibility_range:, limits:)
     })
   assert list.all(found, fn(one) {
-    let killed = sampled_of(one).killed
-    killed.maps == 0 && killed.senders == 0
+    let sampled = sampled_of(one)
+    sampled.killed == heap_sampler.Killed(maps: 0, senders: 0)
+    && sampled.replaced == heap_sampler.Replaced(maps: 0, senders: 0)
   })
-    as "a map process or a sender was killed at the chosen limits"
-  io.println("no map process and no sender was killed")
+    as "a map process or a sender was killed or replaced at the chosen limits"
+  io.println("no map process and no sender was killed or replaced")
   found
 }

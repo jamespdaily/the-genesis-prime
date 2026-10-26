@@ -64,10 +64,12 @@ pub type Sampling {
   /// The run reads only the owners' queues, once each timing interval, so its
   /// conditions are those of a run before the heap sampler existed.
   NotSampled
-  /// The run also starts the heap sampler for the measured stretch. Only a map
-  /// process prototype is sampled: the owners of `PerUnit` are one process for
-  /// each unit, too many to read every 100 milliseconds without disturbing
-  /// the run, so `run` refuses it with `PerUnit`.
+  /// The run also starts the heap sampler with the prototypes. Its kills and
+  /// replacements cover the whole run, warm-up included, and its peaks cover
+  /// the measured stretch. Only a map process prototype is sampled: the owners
+  /// of `PerUnit` are one process for each unit, too many to read every 100
+  /// milliseconds without disturbing the run, so `run` refuses it with
+  /// `PerUnit`.
   SampleHeaps
 }
 
@@ -129,8 +131,9 @@ pub type RunResult {
     /// `FellBehind` when any map fell behind, otherwise `PlayersFellBehind`
     /// when any map's players did not all report, otherwise `KeptUp`.
     pace: Pace,
-    /// What the heap sampler found over the measured stretch, over all maps'
-    /// owners together; none when the run was `NotSampled`.
+    /// What the heap sampler found, over all maps' owners together: the peaks
+    /// over the measured stretch, the kills and replacements over the whole
+    /// run; none when the run was `NotSampled`.
     sampled: Option(Sampled),
   )
 }
@@ -186,9 +189,10 @@ type MapRun {
 /// player to begin on its own map's owner, which joins its connection, runs
 /// the warm-up, counts through the measured stretch while sampling each map's
 /// owners' summed queue each interval and, when `sampling` is `SampleHeaps`,
-/// the heap and queue of each owner process every 100 milliseconds, and stops
-/// everything. Each map's spawn list is kept under a key made for the run and
-/// erased at the end. One map is a run of the prototype alone.
+/// the heap and queue of each owner process every 100 milliseconds (from the
+/// start of the run, with the peaks forgotten at the measured stretch), and
+/// stops everything. Each map's spawn list is kept under a key made for the
+/// run and erased at the end. One map is a run of the prototype alone.
 pub fn run(
   prototype prototype: Prototype,
   workload workload: Workload,
@@ -266,6 +270,10 @@ pub fn run(
       MapRun(workload: map_workload, key:, spawn_list:, door:, players:)
     })
   let players = list.flat_map(map_runs, fn(map_run) { map_run.players })
+  let sampler = case sampling {
+    SampleHeaps -> option.Some(heap_sampler.start(doors))
+    NotSampled -> option.None
+  }
   list.each(map_runs, fn(map_run) {
     list.each(map_run.players, player.begin(_, map_run.door))
   })
@@ -274,9 +282,9 @@ pub fn run(
   list.each(players, player.reset_counts)
   let handled_before = messages_handled(doors)
   let scheduler_before = measurement.scheduler_time()
-  let sampler = case sampling {
-    SampleHeaps -> option.Some(heap_sampler.start(doors))
-    NotSampled -> option.None
+  case sampler {
+    option.Some(sampler) -> heap_sampler.begin_measuring(sampler)
+    option.None -> Nil
   }
   let samples = sample_queues(doors, timing)
   let scheduler_after = measurement.scheduler_time()
