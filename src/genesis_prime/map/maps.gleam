@@ -14,9 +14,12 @@
 //// rebuilt stops every map, which no registry remembers. The names of every
 //// world's map processes are made once, when the server starts, and given to
 //// the registry as a start argument, so a registry or a map that starts again
-//// makes no new atoms; a map started while an earlier map of the world still
-//// holds its names waits for the earlier one to end, within the entry's
-//// deadline.
+//// makes no new atoms. A map started while an earlier map of the world still
+//// holds its names waits for the earlier one to end, but the registry does not:
+//// it monitors the processes that hold the names, keeps the askers of the world
+//// waiting, and goes on serving the other worlds. It starts the map and answers
+//// the askers when the last holder is down, and answers an asker that is still
+//// waiting at the asker's own deadline.
 
 import genesis_prime/connection/clock
 import genesis_prime/connection/named_send
@@ -78,15 +81,20 @@ pub opaque type Message {
   /// Finds the map of a world, starting it when the world has none. `by` is
   /// the monotonic time in milliseconds at which the asker gives up, which a
   /// wait for an old map to end is within.
-  Find(
-    world_id: Int,
-    by: Int,
-    reply: Subject(Result(Name(world_map_process.Message), actor.StartError)),
-  )
-  /// A map's supervisor ended.
+  Find(world_id: Int, by: Int, reply: Subject(Found))
+  /// A map's supervisor ended, or a process that held a name of a world's old
+  /// map did.
   MapEnded(process.Down)
+  /// The deadline of an asker that waits for the world's old map to end
+  /// passed; the asker is told by its reply subject.
+  AskerGaveUp(world_id: Int, reply: Subject(Found))
   Unexpected(received: Dynamic)
 }
+
+/// What the registry answers an asker: the name of the world's map, or why no
+/// map could be started.
+type Found =
+  Result(Name(world_map_process.Message), actor.StartError)
 
 /// A character that entered a map: its unit, the map process that holds it,
 /// which the character's connection watches so it ends when the map does, and
@@ -157,10 +165,30 @@ pub fn map_name(
   dict.get(names.worlds, world_id) |> result.map(fn(world) { world.map })
 }
 
-/// The registry's state: its settings, the names it was started with and the
-/// map it started for each world.
+/// An asker that waits for the old map of a world to end: where to answer, and
+/// the timer that tells the registry its deadline passed.
+type Asker {
+  Asker(reply: Subject(Found), deadline: process.Timer)
+}
+
+/// A world whose map cannot start yet because processes of an earlier map
+/// still hold the names of the world's processes: the monitors of those
+/// processes that are not down yet, and the askers waiting for them.
+type Pending {
+  Pending(holders: List(Monitor), askers: List(Asker))
+}
+
+/// The registry's state: its subject, which its timers send to, its settings,
+/// the names it was started with, the map it started for each world and the
+/// worlds that wait for an old map to end.
 type State {
-  State(settings: Settings, names: Names, maps: Dict(Int, Running))
+  State(
+    self: Subject(Message),
+    settings: Settings,
+    names: Names,
+    maps: Dict(Int, Running),
+    pending: Dict(Int, Pending),
+  )
 }
 
 /// The maps' subtree as a child of the game's supervisor: the registry, then
@@ -204,7 +232,13 @@ fn start_registry(
       |> process.select(self)
       |> process.select_monitors(MapEnded)
       |> process.select_other(Unexpected)
-    actor.initialised(State(settings:, names:, maps: dict.new()))
+    actor.initialised(State(
+      self:,
+      settings:,
+      names:,
+      maps: dict.new(),
+      pending: dict.new(),
+    ))
     |> actor.selecting(selector)
     |> actor.returning(self)
     |> Ok
@@ -269,11 +303,8 @@ fn find(
 
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   case message {
-    Find(world_id:, by:, reply:) -> {
-      let #(state, found) = running_map(state:, world_id:, by:)
-      process.send(reply, found)
-      actor.continue(state)
-    }
+    Find(world_id:, by:, reply:) ->
+      actor.continue(find_map(state:, world_id:, by:, reply:))
     MapEnded(process.ProcessDown(monitor:, ..)) ->
       actor.continue(
         State(
@@ -281,9 +312,12 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
           maps: dict.filter(state.maps, fn(_world_id, running) {
             running.monitor != monitor
           }),
-        ),
+        )
+        |> holder_ended(monitor),
       )
     MapEnded(process.PortDown(..)) -> actor.continue(state)
+    AskerGaveUp(world_id:, reply:) ->
+      actor.continue(asker_gave_up(state:, world_id:, reply:))
     Unexpected(..) -> {
       log.error(
         log.Who(
@@ -300,84 +334,204 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   }
 }
 
-/// The map of a world that is running, or a new one. A map whose supervisor has
-/// ended but whose end the registry has not been told of yet is no map that
-/// is running.
-fn running_map(
+/// Answers an asker with the map of its world when it is running, starts the
+/// map when no process of an earlier map holds a name of it, and otherwise
+/// keeps the asker waiting for the old map to end. A map whose supervisor has
+/// ended but whose end the registry has not been told of yet is no map that is
+/// running.
+fn find_map(
   state state: State,
   world_id world_id: Int,
   by by: Int,
-) -> #(State, Result(Name(world_map_process.Message), actor.StartError)) {
-  case dict.get(state.maps, world_id) {
-    Ok(running) ->
-      case process.is_alive(running.supervisor) {
-        True -> #(state, Ok(running.map))
-        False -> start_map(state:, world_id:, by:)
+  reply reply: Subject(Found),
+) -> State {
+  case dict.get(state.pending, world_id) {
+    Ok(pending) -> wait_with(state:, world_id:, pending:, by:, reply:)
+    Error(Nil) ->
+      case dict.get(state.maps, world_id) {
+        Ok(running) ->
+          case process.is_alive(running.supervisor) {
+            True -> {
+              process.send(reply, Ok(running.map))
+              state
+            }
+            False -> start_or_wait(state:, world_id:, by:, reply:)
+          }
+        Error(Nil) -> start_or_wait(state:, world_id:, by:, reply:)
       }
-    Error(Nil) -> start_map(state:, world_id:, by:)
   }
 }
 
 /// Starts a map for the world with the names the world's maps have, once no
 /// process of an earlier map of the world holds one of them. A map whose
 /// supervisor ended can still be going down, with its processes registered, and
-/// a map started while they hold the names could not register its own; the registry waits for those
-/// processes to end, until `by`. A world with no names, a factory that is not
-/// running, as when its supervisor is being rebuilt, and an old map that does
-/// not end are a map that could not start, which the next entry tries again.
-fn start_map(
+/// a map started while they hold the names could not register its own; the
+/// registry monitors those processes and the asker waits, without the registry
+/// holding up any other world. A world with no names, and a factory that is not
+/// running, as when its supervisor is being rebuilt, are a map that could not
+/// start, which the next entry tries again.
+fn start_or_wait(
   state state: State,
   world_id world_id: Int,
   by by: Int,
-) -> #(State, Result(Name(world_map_process.Message), actor.StartError)) {
+  reply reply: Subject(Found),
+) -> State {
   case dict.get(state.names.worlds, world_id) {
-    Error(Nil) -> #(
-      state,
-      Error(actor.InitFailed("the world has no names for a map")),
-    )
+    Error(Nil) -> {
+      process.send(
+        reply,
+        Error(actor.InitFailed("the world has no names for a map")),
+      )
+      state
+    }
     Ok(names) ->
-      case wait_for_the_old_map(names:, by:) {
-        Error(Nil) -> #(
-          state,
-          Error(actor.InitFailed(
-            "the earlier map of the world still holds the names of its processes",
-          )),
-        )
-        Ok(Nil) -> start_map_with(state:, world_id:, names:)
+      case holders_of(names) {
+        [] -> {
+          let #(state, started) = start_map_with(state:, world_id:, names:)
+          process.send(reply, started)
+          state
+        }
+        holders ->
+          wait_with(
+            state:,
+            world_id:,
+            pending: Pending(
+              holders: list.map(holders, process.monitor),
+              askers: [],
+            ),
+            by:,
+            reply:,
+          )
       }
   }
 }
 
-/// Waits until every process that holds a name of the world's map is down, or
-/// `by` passes, which is an error.
-fn wait_for_the_old_map(
-  names names: WorldNames,
+/// The processes that hold a name of the world's map.
+fn holders_of(names: WorldNames) -> List(Pid) {
+  list.append(
+    result.values([process.named(names.map)]),
+    result.values(list.map(names.senders, process.named)),
+  )
+}
+
+/// Adds an asker to the world's wait, with a timer that tells the registry when
+/// its deadline `by` passes.
+fn wait_with(
+  state state: State,
+  world_id world_id: Int,
+  pending pending: Pending,
   by by: Int,
-) -> Result(Nil, Nil) {
-  let holders =
-    list.append(
-      result.values([process.named(names.map)]),
-      result.values(list.map(names.senders, process.named)),
+  reply reply: Subject(Found),
+) -> State {
+  let deadline =
+    process.send_after(
+      state.self,
+      int.max(0, by - clock.monotonic_milliseconds()),
+      AskerGaveUp(world_id:, reply:),
     )
-  let monitors = list.map(holders, process.monitor)
-  let waited =
-    list.try_each(monitors, fn(monitor) {
-      process.new_selector()
-      |> process.select_specific_monitor(monitor, fn(_down) { Nil })
-      |> process.selector_receive(within: int.max(
-        0,
-        by - clock.monotonic_milliseconds(),
-      ))
-    })
-  list.each(monitors, process.demonitor_process)
-  waited
+  State(
+    ..state,
+    pending: dict.insert(
+      state.pending,
+      world_id,
+      Pending(..pending, askers: [Asker(reply:, deadline:), ..pending.askers]),
+    ),
+  )
+}
+
+/// A process that was monitored is down. When it was the last one a world
+/// waited for, the world's map starts and every asker is answered.
+fn holder_ended(state: State, monitor: Monitor) -> State {
+  dict.fold(state.pending, state, fn(state, world_id, pending) {
+    case list.contains(pending.holders, monitor) {
+      False -> state
+      True ->
+        case list.filter(pending.holders, fn(holder) { holder != monitor }) {
+          [] -> start_for_the_askers(state:, world_id:, pending:)
+          holders ->
+            State(
+              ..state,
+              pending: dict.insert(
+                state.pending,
+                world_id,
+                Pending(..pending, holders:),
+              ),
+            )
+        }
+    }
+  })
+}
+
+/// Starts the map of a world whose old map has ended and gives each asker the
+/// answer.
+fn start_for_the_askers(
+  state state: State,
+  world_id world_id: Int,
+  pending pending: Pending,
+) -> State {
+  let state = State(..state, pending: dict.delete(state.pending, world_id))
+  let #(state, started) = case dict.get(state.names.worlds, world_id) {
+    Ok(names) -> start_map_with(state:, world_id:, names:)
+    Error(Nil) -> #(
+      state,
+      Error(actor.InitFailed("the world has no names for a map")),
+    )
+  }
+  list.each(pending.askers, fn(asker) {
+    process.cancel_timer(asker.deadline)
+    process.send(asker.reply, started)
+  })
+  state
+}
+
+/// An asker's deadline passed while it waited for the old map of its world to
+/// end: it is answered that no map started and no longer waited for. A world
+/// that no asker waits for is no longer monitored. An asker that was answered
+/// already is not found, and its timer's message is dropped.
+fn asker_gave_up(
+  state state: State,
+  world_id world_id: Int,
+  reply reply: Subject(Found),
+) -> State {
+  case dict.get(state.pending, world_id) {
+    Error(Nil) -> state
+    Ok(pending) ->
+      case list.partition(pending.askers, fn(asker) { asker.reply == reply }) {
+        #([], _) -> state
+        #(_, []) -> {
+          list.each(pending.holders, process.demonitor_process)
+          answer_gave_up(reply)
+          State(..state, pending: dict.delete(state.pending, world_id))
+        }
+        #(_, askers) -> {
+          answer_gave_up(reply)
+          State(
+            ..state,
+            pending: dict.insert(
+              state.pending,
+              world_id,
+              Pending(..pending, askers:),
+            ),
+          )
+        }
+      }
+  }
+}
+
+fn answer_gave_up(reply: Subject(Found)) -> Nil {
+  process.send(
+    reply,
+    Error(actor.InitFailed(
+      "the earlier map of the world still holds the names of its processes",
+    )),
+  )
 }
 
 fn start_map_with(
   state state: State,
   world_id world_id: Int,
   names names: WorldNames,
-) -> #(State, Result(Name(world_map_process.Message), actor.StartError)) {
+) -> #(State, Found) {
   let settings =
     world_map_process.Settings(
       world_id:,
