@@ -1,6 +1,8 @@
 //// One load run: one or more maps of a prototype and their players started
 //// together, a warm-up, a measured stretch, and what the run counted.
 
+import genesis_prime/topology/heap_limit.{type HeapLimits}
+import genesis_prime/topology/heap_sampler.{type Sampled}
 import genesis_prime/topology/latency.{type Histogram}
 import genesis_prime/topology/map_process.{type Sending}
 import genesis_prime/topology/measurement
@@ -14,6 +16,7 @@ import gleam/erlang/process
 import gleam/erlang/reference
 import gleam/int
 import gleam/list
+import gleam/option.{type Option}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor
@@ -56,13 +59,26 @@ pub const short_timing =
     first_judged_sample: 5,
   )
 
+/// Whether a run reads the heap of each owner process.
+pub type Sampling {
+  /// The run reads only the owners' queues, once each timing interval, so its
+  /// conditions are those of a run before the heap sampler existed.
+  NotSampled
+  /// The run also starts the heap sampler for the measured stretch. Only a map
+  /// process prototype is sampled: the owners of `PerUnit` are one process for
+  /// each unit, too many to read every 100 milliseconds without disturbing
+  /// the run, so `run` refuses it with `PerUnit`.
+  SampleHeaps
+}
+
 /// Which prototype a run measures.
 pub type Prototype {
   /// One process per unit.
   PerUnit
-  /// One map process, and who sends its deliveries: the map process itself is
-  /// prototype B, a pool of senders is prototype C.
-  MapProcess(sending: Sending)
+  /// One map process, who sends its deliveries, and the heap limits of its
+  /// processes: the map process itself sending is prototype B, a pool of
+  /// senders is prototype C. `heap_limit.no_limits` sets none.
+  MapProcess(sending: Sending, heap_limits: HeapLimits)
 }
 
 /// Whether the owners kept up with the load.
@@ -113,6 +129,9 @@ pub type RunResult {
     /// `FellBehind` when any map fell behind, otherwise `PlayersFellBehind`
     /// when any map's players did not all report, otherwise `KeptUp`.
     pace: Pace,
+    /// What the heap sampler found over the measured stretch, over all maps'
+    /// owners together; none when the run was `NotSampled`.
+    sampled: Option(Sampled),
   )
 }
 
@@ -141,8 +160,8 @@ fn pace(
 pub fn name_of(prototype: Prototype) -> String {
   case prototype {
     PerUnit -> "A one process per unit"
-    MapProcess(sending: map_process.SendsItself) -> "B one map process"
-    MapProcess(sending: map_process.SenderPool) ->
+    MapProcess(sending: map_process.SendsItself, ..) -> "B one map process"
+    MapProcess(sending: map_process.SenderPool, ..) ->
       "C map process with sender pool"
   }
 }
@@ -166,15 +185,17 @@ type MapRun {
 /// maps' prototypes first and the players' factory after them, tells each
 /// player to begin on its own map's owner, which joins its connection, runs
 /// the warm-up, counts through the measured stretch while sampling each map's
-/// owners' summed queue each interval, and stops everything. Each map's spawn
-/// list is kept under a key made for the run and erased at the end. One map is
-/// a run of the prototype alone.
+/// owners' summed queue each interval and, when `sampling` is `SampleHeaps`,
+/// the heap and queue of each owner process every 100 milliseconds, and stops
+/// everything. Each map's spawn list is kept under a key made for the run and
+/// erased at the end. One map is a run of the prototype alone.
 pub fn run(
   prototype prototype: Prototype,
   workload workload: Workload,
   maps maps: Int,
   schedulers schedulers: Int,
   timing timing: Timing,
+  sampling sampling: Sampling,
 ) -> RunResult {
   assert maps >= 1 as "a run has at least one map"
   measurement.set_schedulers_online(schedulers)
@@ -329,6 +350,7 @@ pub fn run(
     memory_words_per_unit: int.to_float(memory_words) /. int.to_float(units),
     map_paces:,
     pace: run_pace(map_paces),
+    sampled: todo as "body in the build commit",
   )
 }
 
@@ -359,7 +381,8 @@ fn start_prototype(
 ) -> Result(actor.Started(Owner), actor.StartError) {
   case prototype {
     PerUnit -> per_unit.start(workload, key)
-    MapProcess(sending:) -> map_process.start(workload, key, sending)
+    MapProcess(sending:, heap_limits:) ->
+      map_process.start(workload, key, sending, heap_limits)
   }
 }
 

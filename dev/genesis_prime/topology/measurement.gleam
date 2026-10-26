@@ -80,6 +80,36 @@ pub fn message_queue_length(pid: Pid) -> Result(Int, Nil) {
   queue_length_of(pid)
 }
 
+/// What one reading of a process showed: the words its heap, stack and
+/// waiting messages hold together (`total_heap_size`), and how many messages
+/// wait in its mailbox.
+pub type ProcessSize {
+  ProcessSize(heap_words: Int, queue: Int)
+}
+
+@external(erlang, "topology_ffi", "process_heap_and_queue")
+fn heap_and_queue_of(pid: Pid) -> Result(#(Int, Int), Nil)
+
+/// Both sizes of a process read in one call, or an error when it is not alive.
+pub fn process_size(pid: Pid) -> Result(ProcessSize, Nil) {
+  todo as "body in the build commit"
+}
+
+/// Bytes the runtime holds in binaries, outside every process heap
+/// (`erlang:memory(binary)`).
+@external(erlang, "topology_ffi", "binary_bytes")
+pub fn binary_bytes() -> Int
+
+/// Bytes the runtime holds in ETS tables (`erlang:memory(ets)`).
+@external(erlang, "topology_ffi", "ets_bytes")
+pub fn ets_bytes() -> Int
+
+/// Sets the calling process's `max_heap_size` to `words` words with kill on
+/// and the error logger on, and shared binaries not counted. `words` is at
+/// least 1: the runtime reads 0 as no limit.
+@external(erlang, "topology_ffi", "set_max_heap_size")
+pub fn set_max_heap_size(words words: Int) -> Nil
+
 /// A counter at 0.
 @external(erlang, "topology_ffi", "new_counter")
 pub fn new_counter() -> Counter

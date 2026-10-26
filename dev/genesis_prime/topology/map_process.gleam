@@ -21,6 +21,7 @@
 //// process down with it, because the map process starts after the senders.
 
 import genesis_prime/topology/grid.{type Grid}
+import genesis_prime/topology/heap_limit.{type HeapLimit, type HeapLimits}
 import genesis_prime/topology/measurement.{type Counter}
 import genesis_prime/topology/owner.{type Owner, Owner}
 import genesis_prime/topology/position.{type Position}
@@ -125,31 +126,37 @@ const slice_interval_milliseconds = 10
 /// Starts the prototype: the supervisor, the senders `sending` calls for and
 /// then the map process, built from the spawn list kept under
 /// `spawn_list_key`. Players' connections join afterwards through the
-/// `Owner`. The supervisor is linked to the calling process; the data is the
-/// `Owner` the players act through.
+/// `Owner`. The map process is killed when its heap passes `heap_limits.map`
+/// and each sender when its heap passes `heap_limits.sender`; the supervisor
+/// rebuilds the killed process. The supervisor is linked to the calling
+/// process; the data is the `Owner` the players act through.
 pub fn start(
   workload workload: Workload,
   spawn_list_key spawn_list_key: Reference,
   sending sending: Sending,
+  heap_limits heap_limits: HeapLimits,
 ) -> Result(actor.Started(Owner), actor.StartError) {
   use #(started, _name) <- result.map(start_named(
     workload:,
     spawn_list_key:,
     sending:,
+    heap_limits:,
   ))
   started
 }
 
 /// Kills the map process, not a sender, and returns the microseconds until the
 /// rebuilt process handles a message again. It starts its own prototype with
-/// no players from the spawn list kept under `spawn_list_key` and stops it.
+/// no players from the spawn list kept under `spawn_list_key`, with
+/// `heap_limits` set on its processes, and stops it.
 pub fn crash_cost(
   workload workload: Workload,
   spawn_list_key spawn_list_key: Reference,
   sending sending: Sending,
+  heap_limits heap_limits: HeapLimits,
 ) -> Int {
   let assert Ok(#(started, name)) =
-    start_named(workload:, spawn_list_key:, sending:)
+    start_named(workload:, spawn_list_key:, sending:, heap_limits:)
     as "the prototype did not start"
   let assert Ok(victim) = process.named(name) as "the map process is running"
   let started_at = measurement.monotonic_microseconds()
@@ -164,13 +171,21 @@ fn start_named(
   workload workload: Workload,
   spawn_list_key spawn_list_key: Reference,
   sending sending: Sending,
+  heap_limits heap_limits: HeapLimits,
 ) -> Result(#(actor.Started(Owner), process.Name(Message)), actor.StartError) {
   let name = process.new_name("topology_map")
   let sender_names = new_sender_names(sending:)
   let handled = measurement.new_counter()
   let map_child =
     supervision.worker(fn() {
-      start_map(workload:, spawn_list_key:, name:, sender_names:, handled:)
+      start_map(
+        workload:,
+        spawn_list_key:,
+        name:,
+        sender_names:,
+        handled:,
+        limit: heap_limits.map,
+      )
     })
     |> supervision.timeout(ms: shutdown_milliseconds)
   let builder =
@@ -181,7 +196,10 @@ fn start_named(
     )
   use supervisor <- result.map(
     list.fold(sender_names, builder, fn(builder, sender_name) {
-      static_supervisor.add(builder, sender.supervised(sender_name))
+      static_supervisor.add(
+        builder,
+        sender.supervised(sender_name, heap_limits.sender),
+      )
     })
     |> static_supervisor.add(map_child)
     |> static_supervisor.start,
@@ -230,6 +248,7 @@ fn start_map(
   name name: process.Name(Message),
   sender_names sender_names: List(process.Name(sender.Message)),
   handled handled: Counter,
+  limit limit: HeapLimit,
 ) -> actor.StartResult(Subject(Message)) {
   actor.new_with_initialiser(initialisation_milliseconds, fn(self) {
     let units = measurement.spawn_list(spawn_list_key)
@@ -306,7 +325,8 @@ fn schedule(
 
 /// The `Owner` of a running prototype, which reaches the map process and the
 /// senders through their names, so rebuilt processes are reached too. Its
-/// owner processes are the map process and the senders.
+/// owner processes are the map process and the senders, and its sender
+/// processes the senders.
 fn door(
   supervisor supervisor: Pid,
   name name: process.Name(Message),
@@ -314,8 +334,14 @@ fn door(
   handled handled: Counter,
 ) -> Owner {
   let map = process.named_subject(name)
+  let sender_processes = fn() {
+    result.values(list.map(sender_names, process.named))
+  }
   let map_processes = fn() {
-    result.values([process.named(name), ..list.map(sender_names, process.named)])
+    case process.named(name) {
+      Ok(map_pid) -> [map_pid, ..sender_processes()]
+      Error(Nil) -> sender_processes()
+    }
   }
   Owner(
     join: fn(unit_id, connection) {
@@ -328,6 +354,7 @@ fn door(
       process.send(map, Attack(attacker_id: unit_id, sent_at:))
     },
     owner_processes: map_processes,
+    sender_processes:,
     messages_handled: fn() { measurement.counter_value(handled) },
     memory_words: fn() {
       list.fold(map_processes(), 0, fn(words, pid) {
