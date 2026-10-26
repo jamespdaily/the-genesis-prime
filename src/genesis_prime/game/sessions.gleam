@@ -1,24 +1,35 @@
-//// The game sessions of the accounts: one live game connection for each
-//// account. A second login of an account first ends the first connection, so
-//// the account's character is off the map before the new client is sent its
-//// list (the client is built for it: lua.CharacterSelection.OnRemoveCountdown,
+//// The game sessions of the accounts: every live game connection of an
+//// account, and the rule that a new one is let in only when no older one is
+//// alive. A second login of an account ends the first connection, so the
+//// account's character is off the map before the new client is sent its list
+//// (the client is built for it: lua.CharacterSelection.OnRemoveCountdown,
 //// opcode.0x36a, opcode.0x63d).
 ////
-//// The registry process holds, for each account, the connection that holds its
-//// slot, and monitors it, so a connection that ends frees its slot. Nothing
-//// calls a peer while it waits: a new connection asks the registry who held the
-//// slot, tells that connection to end by a message to it, and waits for it
-//// to end in its own process, within a deadline. A restart empties the registry:
-//// the sessions that were registered are not found by a second login until
-//// they connect again, so a second login right after a restart can leave two
-//// connections of one account, which the map refuses for one character.
+//// The registry process keeps, for each account, its holders in the order they
+//// claimed, and monitors each one until its own end arrives: a holder is never
+//// dropped because another claim came in, so a connection that is told to end
+//// and does not is still known, and every claim after it still waits for it. A
+//// claim tells every holder of the account that is not yet told to end, by a
+//// message to it, and the registry answers the claimant when it is the first
+//// holder of its account, that is when every holder before it is down. A
+//// holder that is told and has not gone down within the eviction deadline is
+//// killed, which the monitor then reports, so a claimant that waits longer
+//// than the eviction deadline always gets the slot, and an old connection never
+//// outlives its account's next login. A claimant that gave up or died is a
+//// holder like any other, and leaves the registry on its own end. A restart
+//// empties the registry: its holders are not found by a second login until
+//// they connect again, so a connection watches the registry and ends when it
+//// does (`game_connection`).
+////
+//// The wait for the answer is in the claimant's own process, within its own
+//// deadline; nothing calls a peer while it waits.
 
-import genesis_prime/connection/clock
+import genesis_prime/connection/named_send
 import genesis_prime/telemetry/log
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
-import gleam/int
+import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
@@ -36,60 +47,88 @@ pub type Notice {
   TakeOver
 }
 
-/// The connection that held an account's slot: the subject its notice goes to
-/// and the process that owns it, which the new connection waits to end.
-pub type Previous {
-  Previous(notice: Subject(Notice), owner: Pid)
-}
-
 /// Why a new connection could not take its account's slot.
 pub type NotFreed {
-  /// The registry did not answer within the deadline.
+  /// No registry runs.
   RegistryNotAnswering
-  /// The connection that held the slot did not end within the deadline.
+  /// The claim was not answered within the deadline: an older connection of the
+  /// account was still alive, or the registry did not run in time. The
+  /// registry kills a connection that does not end within its eviction
+  /// deadline, so a claimant that waits longer than that is answered.
   PreviousNotEnding
 }
 
 /// Every message the registry receives. Its selector covers all of them;
 /// anything else is logged.
 pub opaque type Message {
-  /// A connection takes the account's slot and is told who held it.
+  /// A connection takes its place among the account's holders and is answered
+  /// on `reply` when every holder before it is down.
   Claim(
     account_id: Int,
     notice: Subject(Notice),
     owner: Pid,
-    reply: Subject(Option(Previous)),
+    reply: Subject(Nil),
   )
-  /// A connection that held a slot ended.
+  /// A holder went down.
   HolderDown(process.Down)
+  /// The eviction deadline of a holder that was told to end has passed.
+  Evict(account_id: Int, owner: Pid)
   Unexpected(received: Dynamic)
 }
 
+/// A connection that holds, or waits for, a slot of an account: where to tell
+/// it to end, the process that owns it, the monitor held on it, the subject to
+/// answer it on while it waits, and the timer of its eviction once it has been
+/// told.
 type Holder {
-  Holder(previous: Previous, monitor: Monitor)
+  Holder(
+    notice: Subject(Notice),
+    owner: Pid,
+    monitor: Monitor,
+    waiting: Option(Subject(Nil)),
+    eviction: Option(process.Timer),
+  )
 }
 
+/// The registry's state: the settings it started with, its own subject for the
+/// eviction timers, the holders of each account, the oldest first, and the
+/// account each holder's process is a holder of.
 type State {
-  State(holders: Dict(Int, Holder))
+  State(
+    self: Subject(Message),
+    eviction_ms: Int,
+    accounts: Dict(Int, List(Holder)),
+    accounts_of: Dict(Pid, Int),
+  )
 }
 
-/// The registry as a child of the game's subtree. A restart rebuilds it empty.
+/// The registry as a child of the game's subtree. `eviction_ms` is how long a
+/// holder that was told to end has to go down before it is killed. A restart
+/// rebuilds the registry empty.
 pub fn supervised(
   name name: Name(Message),
-  eviction_ms _eviction_ms: Int,
+  eviction_ms eviction_ms: Int,
 ) -> ChildSpecification(Subject(Message)) {
-  supervision.worker(fn() { start(name) })
+  supervision.worker(fn() { start(name, eviction_ms) })
   |> supervision.timeout(ms: shutdown_milliseconds)
 }
 
-fn start(name: Name(Message)) -> actor.StartResult(Subject(Message)) {
+fn start(
+  name: Name(Message),
+  eviction_ms: Int,
+) -> actor.StartResult(Subject(Message)) {
   actor.new_with_initialiser(start_deadline_milliseconds, fn(self) {
     let selector =
       process.new_selector()
       |> process.select(self)
       |> process.select_monitors(HolderDown)
       |> process.select_other(Unexpected)
-    actor.initialised(State(holders: dict.new()))
+    actor.initialised(State(
+      self:,
+      eviction_ms:,
+      accounts: dict.new(),
+      accounts_of: dict.new(),
+    ))
     |> actor.selecting(selector)
     |> actor.returning(self)
     |> Ok
@@ -101,27 +140,15 @@ fn start(name: Name(Message)) -> actor.StartResult(Subject(Message)) {
 
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   case message {
-    Claim(account_id:, notice:, owner:, reply:) -> {
-      let previous = release(state:, account_id:)
-      let holder =
-        Holder(
-          previous: Previous(notice:, owner:),
-          monitor: process.monitor(owner),
-        )
-      process.send(reply, previous)
-      actor.continue(
-        State(holders: dict.insert(state.holders, account_id, holder)),
-      )
-    }
-    HolderDown(process.ProcessDown(monitor:, ..)) ->
-      actor.continue(
-        State(
-          holders: dict.filter(state.holders, fn(_account_id, holder) {
-            holder.monitor != monitor
-          }),
-        ),
-      )
+    Claim(account_id:, notice:, owner:, reply:) ->
+      actor.continue(claimed(state:, account_id:, notice:, owner:, reply:))
+    HolderDown(process.ProcessDown(pid:, ..)) ->
+      actor.continue(went_down(state:, owner: pid))
     HolderDown(process.PortDown(..)) -> actor.continue(state)
+    Evict(account_id:, owner:) -> {
+      evict(state:, account_id:, owner:)
+      actor.continue(state)
+    }
     Unexpected(..) -> {
       log.error(
         log.Who(
@@ -138,73 +165,142 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   }
 }
 
-/// The connection that holds the account's slot, when it is alive, which is no
-/// longer watched: its slot is about to be taken.
-fn release(state state: State, account_id account_id: Int) -> Option(Previous) {
-  case dict.get(state.holders, account_id) {
-    Error(Nil) -> None
-    Ok(Holder(previous:, monitor:)) -> {
-      process.demonitor_process(monitor)
-      option.from_result(case process.is_alive(previous.owner) {
-        True -> Ok(previous)
-        False -> Error(Nil)
-      })
+/// A connection claims its account's slot: every holder of the account that is
+/// not told yet is told to end, with its eviction timer started, and the
+/// claimant joins the holders after them.
+fn claimed(
+  state state: State,
+  account_id account_id: Int,
+  notice notice: Subject(Notice),
+  owner owner: Pid,
+  reply reply: Subject(Nil),
+) -> State {
+  let before =
+    dict.get(state.accounts, account_id)
+    |> result.unwrap([])
+    |> list.map(fn(holder) { told(state:, account_id:, holder:) })
+  let claimant =
+    Holder(
+      notice:,
+      owner:,
+      monitor: process.monitor(owner),
+      waiting: Some(reply),
+      eviction: None,
+    )
+  State(
+    ..state,
+    accounts: dict.insert(
+      state.accounts,
+      account_id,
+      answered(list.append(before, [claimant])),
+    ),
+    accounts_of: dict.insert(state.accounts_of, owner, account_id),
+  )
+}
+
+/// The holder, told to end and given its eviction deadline when it has not
+/// been told already.
+fn told(
+  state state: State,
+  account_id account_id: Int,
+  holder holder: Holder,
+) -> Holder {
+  case holder.eviction {
+    Some(_) -> holder
+    None -> {
+      process.send(holder.notice, TakeOver)
+      Holder(
+        ..holder,
+        eviction: Some(process.send_after(
+          state.self,
+          state.eviction_ms,
+          Evict(account_id:, owner: holder.owner),
+        )),
+      )
     }
   }
 }
 
-/// Takes the account's slot for the calling connection, whose notices arrive on
-/// `notice`, and when another connection held it, tells that connection to
-/// end and waits for it to end. All within one deadline of `within_ms`
-/// milliseconds. Ok once the slot is the caller's and no other connection of
-/// the account is left.
+/// The holders with the first one answered when it is waiting: it is the one
+/// holder no other is before, so no holder before it is alive.
+fn answered(holders: List(Holder)) -> List(Holder) {
+  case holders {
+    [Holder(waiting: Some(reply), ..) as first, ..rest] -> {
+      process.send(reply, Nil)
+      [Holder(..first, waiting: None), ..rest]
+    }
+    [_, ..] | [] -> holders
+  }
+}
+
+/// A holder went down: it leaves its account's holders, its eviction timer is
+/// cancelled, and the holder that is now first is answered when it waits.
+fn went_down(state state: State, owner owner: Pid) -> State {
+  case dict.get(state.accounts_of, owner) {
+    Error(Nil) -> state
+    Ok(account_id) -> {
+      let holders = dict.get(state.accounts, account_id) |> result.unwrap([])
+      let #(gone, left) =
+        list.partition(holders, fn(holder) { holder.owner == owner })
+      list.each(gone, fn(holder) {
+        case holder.eviction {
+          Some(timer) -> {
+            process.cancel_timer(timer)
+            Nil
+          }
+          None -> Nil
+        }
+      })
+      let accounts = case answered(left) {
+        [] -> dict.delete(state.accounts, account_id)
+        left -> dict.insert(state.accounts, account_id, left)
+      }
+      State(
+        ..state,
+        accounts:,
+        accounts_of: dict.delete(state.accounts_of, owner),
+      )
+    }
+  }
+}
+
+/// The eviction deadline of a holder passed: a holder that is still tracked has
+/// not gone down since it was told, so it is killed, and its end is what removes
+/// it.
+fn evict(
+  state state: State,
+  account_id account_id: Int,
+  owner owner: Pid,
+) -> Nil {
+  let holds =
+    dict.get(state.accounts, account_id)
+    |> result.unwrap([])
+    |> list.any(fn(holder) { holder.owner == owner })
+  case holds {
+    True -> process.kill(owner)
+    False -> Nil
+  }
+}
+
+/// Takes a place among the holders of the account for the calling connection,
+/// whose notices arrive on `notice`, and waits up to `within_ms` milliseconds
+/// for the registry to say that every older holder of the account is down. Ok
+/// once none is alive. A connection claims once: the process is a holder until
+/// it ends.
 pub fn take_over(
   registry registry: Name(Message),
   account_id account_id: Int,
   notice notice: Subject(Notice),
   within_ms within_ms: Int,
 ) -> Result(Nil, NotFreed) {
-  let deadline = clock.monotonic_milliseconds() + within_ms
-  use previous <- result.try(claim(registry:, account_id:, notice:, within_ms:))
-  case previous {
-    None -> Ok(Nil)
-    Some(previous) ->
-      end_previous(
-        previous:,
-        within_ms: int.max(0, deadline - clock.monotonic_milliseconds()),
-      )
-  }
-}
-
-fn claim(
-  registry registry: Name(Message),
-  account_id account_id: Int,
-  notice notice: Subject(Notice),
-  within_ms within_ms: Int,
-) -> Result(Option(Previous), NotFreed) {
   use _ <- result.try(
     process.named(registry) |> result.replace_error(RegistryNotAnswering),
   )
   let reply = process.new_subject()
-  process.send(
+  named_send.send(
     process.named_subject(registry),
     Claim(account_id:, notice:, owner: process.self(), reply:),
   )
   process.receive(reply, within_ms)
-  |> result.replace_error(RegistryNotAnswering)
-}
-
-/// Tells the connection to end and waits for its process to end.
-fn end_previous(
-  previous previous: Previous,
-  within_ms within_ms: Int,
-) -> Result(Nil, NotFreed) {
-  let monitor = process.monitor(previous.owner)
-  process.send(previous.notice, TakeOver)
-  let ended =
-    process.new_selector()
-    |> process.select_specific_monitor(monitor, fn(_down) { Nil })
-    |> process.selector_receive(within: within_ms)
-  process.demonitor_process(monitor)
-  result.replace_error(ended, PreviousNotEnding)
+  |> result.replace_error(PreviousNotEnding)
 }

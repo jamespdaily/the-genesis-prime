@@ -114,7 +114,7 @@ pub fn services(settings settings: Settings) -> Services {
         registry: settings.sessions,
         account_id:,
         notice:,
-        within_ms: settings.answer_deadline_ms,
+        within_ms: settings.claim_deadline_ms,
       )
     },
     leave_map: fn(map, connection) {
@@ -122,7 +122,7 @@ pub fn services(settings settings: Settings) -> Services {
         world_map_process.leave(
           map:,
           connection:,
-          within_ms: settings.answer_deadline_ms,
+          within_ms: settings.leave_deadline_ms,
         )
       {
         Ok(Nil) -> Nil
@@ -172,6 +172,7 @@ type Connection {
     peer: Option(String),
     account: Option(Int),
     map_monitor: Option(Monitor),
+    sessions_monitor: Option(Monitor),
     map_via: Option(Subject(world_map_process.Message)),
     in_world: Option(select.InWorld),
   )
@@ -196,6 +197,7 @@ fn new(services services: Services, peer peer: Option(String)) -> Output {
       peer:,
       account: None,
       map_monitor: None,
+      sessions_monitor: None,
       map_via: None,
       in_world: None,
     ),
@@ -261,9 +263,25 @@ fn map_went_down(connection connection: Connection) -> Output {
   )
 }
 
+/// Takes the end of the sessions' registry, which forgets every holder when it
+/// starts again, so the account's next login could not find this connection:
+/// the connection ends.
+fn sessions_went_down(connection connection: Connection) -> Output {
+  let #(session, effects) = game_session.sessions_ended(connection.session)
+  run(
+    connection: Connection(..connection, session:, sessions_monitor: None),
+    effects:,
+    context: context_of(connection),
+    sent: [],
+  )
+}
+
 /// Takes the notice that the account logged in again: the unit comes off the
-/// map before this connection ends, so the new connection finds the character
-/// off the map, and the player is told the account was disconnected.
+/// map, within the leave deadline, before this connection ends, so the new
+/// connection finds the character off the map, and the player is told the
+/// account was disconnected. A map that does not answer in time is logged and
+/// the connection ends all the same, which takes the unit off when the map
+/// sees it end.
 fn taken_over(connection connection: Connection) -> Output {
   case connection.map_via {
     Some(via) -> connection.services.leave_map(via, connection.deliveries)
@@ -376,18 +394,28 @@ fn redeem(
         who(account: Some(identity.id), peer: connection.peer, message: None),
         "the player reached the game server with a session key",
       )
-      // A second login of the account ends the first connection, and this one
-      // goes on only when the old one and its unit are gone.
-      let claim = case
-        connection.services.take_over(identity.id, connection.notices)
-      {
-        Ok(Nil) -> game_session.SlotFree
-        Error(sessions.RegistryNotAnswering)
-        | Error(sessions.PreviousNotEnding) -> game_session.SlotNotFreed
+      // The registry is watched before the claim, so a registry that starts
+      // again from then on ends this connection: it holds none of the holders
+      // it had. A second login of the account ends the first connection, and
+      // this one goes on only when the old one and its unit are gone.
+      let watching = connection.services.watch_sessions()
+      let claim = case watching {
+        Error(Nil) -> game_session.SlotNotFreed
+        Ok(_) ->
+          case connection.services.take_over(identity.id, connection.notices) {
+            Ok(Nil) -> game_session.SlotFree
+            Error(sessions.RegistryNotAnswering)
+            | Error(sessions.PreviousNotEnding) -> game_session.SlotNotFreed
+          }
       }
       let #(session, claimed) = game_session.account_claimed(session, claim)
       #(
-        Connection(..connection, session:, account: Some(identity.id)),
+        Connection(
+          ..connection,
+          session:,
+          account: Some(identity.id),
+          sessions_monitor: option.from_result(watching),
+        ),
         list.append(more, claimed),
       )
     }
@@ -512,6 +540,7 @@ fn message_of(reason: game_session.EndReason) -> Option(log.Message) {
     | game_session.MapAway
     | game_session.MapEnded
     | game_session.SessionTakenOver
+    | game_session.SessionsEnded
     | game_session.SessionNotFreed
     | game_session.StoreAway(_)
     | game_session.AnswerNotBuilt -> None
@@ -554,8 +583,9 @@ fn conversation(connection: Connection) -> Conversation {
 }
 
 /// What the owner of the connection's socket is woken by besides the socket:
-/// the map's deliveries, the notice of a second login of the account, the end of the map that holds the player's unit and
-/// any other message, which can only be a reply that came after the wait for it
+/// the map's deliveries, the notice of a second login of the account, the end
+/// of the map that holds the player's unit, the end of the sessions' registry
+/// and any other message, which can only be a reply that came after the wait for it
 /// was over. The last is selected only here, so that the owner's process logs
 /// it through the telemetry module instead of its actor library discarding it.
 fn wake(connection: Connection) -> process.Selector(Reaction) {
@@ -569,10 +599,17 @@ fn wake(connection: Connection) -> process.Selector(Reaction) {
       reaction(taken_over(connection:))
     })
     |> process.select_other(fn(_message) { reaction(late_reply(connection:)) })
-  case connection.map_monitor {
+  let selector = case connection.map_monitor {
     Some(monitor) ->
       process.select_specific_monitor(selector, monitor, fn(_down) {
         reaction(map_went_down(connection:))
+      })
+    None -> selector
+  }
+  case connection.sessions_monitor {
+    Some(monitor) ->
+      process.select_specific_monitor(selector, monitor, fn(_down) {
+        reaction(sessions_went_down(connection:))
       })
     None -> selector
   }

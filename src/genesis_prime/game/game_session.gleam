@@ -92,6 +92,9 @@ pub type EndReason {
   /// The connection that held the account's slot did not end in time, or the
   /// registry of the sessions did not answer.
   SessionNotFreed
+  /// The sessions' registry ended, and one that starts again holds none of the
+  /// accounts' connections, so a second login could not find this one.
+  SessionsEnded
   /// The map process that held the character's unit ended, and a map that
   /// starts again is empty, so the unit is gone.
   MapEnded
@@ -611,9 +614,15 @@ pub fn account_claimed(
   claim claim: Claim,
 ) -> #(Session, List(Effect)) {
   case session.stage, claim {
-    Ended, _ -> #(session, [])
-    _, SlotFree -> #(session, [])
-    _, SlotNotFreed -> end(session, SessionNotFreed)
+    Ended, SlotFree | Ended, SlotNotFreed -> #(session, [])
+    AwaitingKey, SlotFree | RedeemingKey(_), SlotFree | Playing(..), SlotFree -> #(
+      session,
+      [],
+    )
+    AwaitingKey, SlotNotFreed
+    | RedeemingKey(_), SlotNotFreed
+    | Playing(..), SlotNotFreed
+    -> end(session, SessionNotFreed)
   }
 }
 
@@ -635,6 +644,16 @@ pub fn taken_over(session session: Session) -> #(Session, List(Effect)) {
         ..ending
       ])
     }
+  }
+}
+
+/// The effects of the end of the sessions' registry, which the connection
+/// watches from before it claimed its account's slot: the connection ends,
+/// because a registry that starts again does not know it.
+pub fn sessions_ended(session session: Session) -> #(Session, List(Effect)) {
+  case session.stage {
+    Ended -> #(session, [])
+    AwaitingKey | RedeemingKey(_) | Playing(..) -> end(session, SessionsEnded)
   }
 }
 
@@ -704,6 +723,8 @@ pub fn describe(reason reason: EndReason) -> String {
       "the account logged in again, so the new connection ended this one"
     SessionNotFreed ->
       "the connection that held the account's slot did not end in time, or the registry of the sessions did not answer"
+    SessionsEnded ->
+      "the registry of the sessions ended and one that starts again does not know this connection, so the connection ends and the player connects again"
     MapEnded ->
       "the map that held the character's unit ended, and a map that starts again is empty, so the connection ends and the player enters again"
     MapAway ->
@@ -735,6 +756,7 @@ pub fn level_of(reason reason: EndReason) -> Level {
   case reason {
     AnswerNotBuilt | MapAway | StoreAway(_) | SessionNotFreed -> ErrorLevel
     SessionTakenOver
+    | SessionsEnded
     | MapEnded
     | BadWrapper
     | UnexpectedMessage(_)
