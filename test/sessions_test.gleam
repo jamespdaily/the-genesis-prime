@@ -19,7 +19,6 @@ import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor
-import gleam/result
 import map_support
 import owned_test
 
@@ -336,13 +335,26 @@ pub fn two_logins_in_a_chain_leave_no_connection_alive_when_the_last_is_answered
     )
   assert alive_at_the_answer(third) == Some([])
     as "the third is answered when both the first and the second are dead: a third login is never let in while an older connection of the account lives"
-  // The second was told to end by the third's claim too, so it may be killed at
-  // its own eviction deadline before it is answered; when it is answered, the
-  // first is dead.
-  assert process.receive(second.claimed, 100)
-    |> result.map(fn(claimed) { claimed.alive })
-    != Ok([first.pid])
-    as "the second is answered only when the first is dead"
+  // The second was told to end by the third's claim too, with an eviction
+  // deadline of its own, a little after the first's. So either the first's end
+  // answered it before that deadline and it ended by itself, or its deadline
+  // killed it while it waited. The third is answered only when the second is
+  // down, and the second's report was sent before it went down, so it is
+  // already here.
+  case process.receive(second.claimed, 0) {
+    Ok(claimed) -> {
+      assert claimed.result == Ok(Nil)
+        as "the second was answered: it took the slot once the first was down"
+      assert claimed.alive == []
+        as "the second is answered only when the first is dead"
+      Nil
+    }
+    Error(Nil) -> {
+      assert ended(second.pid)
+        as "the second was never answered, so it was killed at its eviction deadline while it waited"
+      Nil
+    }
+  }
 }
 
 pub fn a_claimant_that_dies_while_it_waits_leaves_no_claim_for_the_next_one_to_wait_for_test() -> Nil {
