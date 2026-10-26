@@ -36,7 +36,10 @@ fn start_maps() -> #(maps.Settings, Pid) {
   let assert Ok(started) =
     static_supervisor.new(static_supervisor.OneForOne)
     |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
-    |> static_supervisor.add(maps.supervised(settings:, worlds: [7, 8]))
+    |> static_supervisor.add(maps.supervised(
+      settings:,
+      names: maps.new_names(worlds: [7, 8]),
+    ))
     |> static_supervisor.start
     as "the maps did not start"
   let assert [subtree] = supervisor_children.in_start_order(started.pid)
@@ -184,7 +187,10 @@ pub fn the_map_of_a_world_registers_with_the_snapshot_under_its_world_test() -> 
   let assert Ok(_) =
     static_supervisor.new(static_supervisor.OneForOne)
     |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
-    |> static_supervisor.add(maps.supervised(settings:, worlds: [9]))
+    |> static_supervisor.add(maps.supervised(
+      settings:,
+      names: maps.new_names(worlds: [9]),
+    ))
     |> static_supervisor.start
     as "the maps did not start"
   let assert Ok(_) = enter(settings:, world_id: 9, character_id: 11)

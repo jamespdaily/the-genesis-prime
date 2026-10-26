@@ -168,7 +168,7 @@ pub fn supervised(
   ))
   |> static_supervisor.add(maps.supervised(
     settings: settings.maps,
-    worlds: settings.worlds(tables),
+    names: maps.new_names(worlds: settings.worlds(tables)),
   ))
   |> static_supervisor.add(store_worker.supervised(settings.workers))
   |> static_supervisor.add(listener.supervised(

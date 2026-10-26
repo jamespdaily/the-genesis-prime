@@ -108,25 +108,61 @@ type Running {
   )
 }
 
-/// The names of the processes of one world's map. A name makes an atom the
-/// runtime never frees, so they are made once, when the world's first map
-/// starts, and every map the registry starts for the world takes them.
-type Names {
-  Names(
+/// The names of the processes of one world's map.
+type WorldNames {
+  WorldNames(
     map: Name(world_map_process.Message),
     senders: List(Name(sender.Message)),
   )
 }
 
+/// The names of the processes of every world's map that can start. A name makes
+/// an atom the runtime never frees, so they are made once, when the server
+/// starts, and every map the registry starts for a world takes the world's
+/// names, however often the registry or the map starts again.
+pub opaque type Names {
+  Names(worlds: Dict(Int, WorldNames))
+}
+
+/// The names for the maps of the worlds, which whoever starts the tree makes
+/// once.
+pub fn new_names(worlds worlds: List(Int)) -> Names {
+  Names(
+    worlds: list.map(worlds, fn(world_id) {
+      #(
+        world_id,
+        WorldNames(
+          map: process.new_name("map"),
+          senders: world_map_process.new_sender_names(),
+        ),
+      )
+    })
+    |> dict.from_list,
+  )
+}
+
+/// The name the process of a world's map is registered under, or an error for
+/// a world that has no names.
+pub fn map_name(
+  names names: Names,
+  world_id world_id: Int,
+) -> Result(Name(world_map_process.Message), Nil) {
+  dict.get(names.worlds, world_id) |> result.map(fn(world) { world.map })
+}
+
 type State {
-  State(settings: Settings, maps: Dict(Int, Running), names: Dict(Int, Names))
+  State(
+    settings: Settings,
+    maps: Dict(Int, Running),
+    names: Dict(Int, WorldNames),
+  )
 }
 
 /// The maps' subtree as a child of the game's supervisor: the registry, then
 /// the factory supervisor of the maps, rest for one, 3 restarts in 5 seconds.
 pub fn supervised(
   settings settings: Settings,
-  worlds _worlds: List(Int),
+  names _names: Names,
 ) -> ChildSpecification(Supervisor) {
   let registry =
     supervision.worker(fn() { start_registry(settings) })
@@ -325,7 +361,7 @@ fn start_map(
   let names = case dict.get(state.names, world_id) {
     Ok(names) -> names
     Error(Nil) ->
-      Names(
+      WorldNames(
         map: process.new_name("map"),
         senders: world_map_process.new_sender_names(),
       )
