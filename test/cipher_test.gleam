@@ -13,7 +13,6 @@ import gleam/list
 import gleam/string
 import owned_test
 import seeded
-import unitest
 
 fn cipher_for(key: Int) -> cipher.Cipher {
   let assert Ok(built) = cipher.new(key) as "a key other than 0 builds a cipher"
@@ -196,9 +195,10 @@ pub fn decrypting_what_was_encrypted_gives_the_body_back_for_random_keys_and_bod
   let checked =
     int.range(from: 1, to: 1001, with: #(20_261_026, 0), run: fn(state, _case) {
       let #(random, checked) = state
-      let #(length, random) = seeded.up_to(random, largest_body)
-      let #(key_draw, random) = seeded.up_to(random, 0xFFFF_FFFF_FFFF_FFFE)
-      let #(body, random) = seeded.bytes(random, length)
+      let #(length, random) = seeded.up_to(state: random, most: largest_body)
+      let #(key_draw, random) =
+        seeded.up_to(state: random, most: 0xFFFF_FFFF_FFFF_FFFE)
+      let #(body, random) = seeded.bytes(state: random, count: length)
       let built = cipher_for(key_draw + 1)
       assert cipher.decrypt(built, cipher.encrypt(built, body)) == body
         as "DecryptMessageBody 0x1400c2de0 undoes EncryptMessageBody 0x1400c2d10: the emulator run gave every input back; 131064 is the largest body of a frame within the size limit 131070 (0x140335ec0) less its 6 header bytes"

@@ -12,6 +12,10 @@
 //// benchmark in `dev/genesis_prime/id_cost.gleam`). The message layer above
 //// turns the id into its own type.
 
+import gleam/bit_array
+import gleam/bool
+import gleam/list
+
 /// The bytes of a frame before its body: the 32-bit length and the 16-bit id
 /// (WriteMessageFrame 0x1403355e0 writes widths 0x20 and 0x10).
 pub const header_size = 6
@@ -49,7 +53,16 @@ pub fn encode(
   message_id message_id: Int,
   body body: BitArray,
 ) -> Result(BitArray, FrameError) {
-  todo as "encode a frame"
+  use <- bool.guard(
+    when: message_id < 0 || message_id > 0xFFFF,
+    return: Error(MessageIdOutOfRange(message_id)),
+  )
+  let length = header_size + bit_array.byte_size(body)
+  use <- bool.guard(
+    when: length > size_limit,
+    return: Error(LengthOverLimit(length)),
+  )
+  Ok(<<length:size(32)-little, message_id:size(16)-little, body:bits>>)
 }
 
 /// Splits the received bytes into their whole frames and the bytes left
@@ -59,11 +72,69 @@ pub fn encode(
 pub fn decode(
   received received: BitArray,
 ) -> Result(#(List(Frame), BitArray), FrameError) {
-  todo as "decode the received frames"
+  collect(received, [])
+}
+
+fn collect(
+  received: BitArray,
+  found: List(Frame),
+) -> Result(#(List(Frame), BitArray), FrameError) {
+  case received {
+    <<length:size(32)-little, _:bits>> ->
+      case check_length(length) {
+        Error(error) -> Error(error)
+        Ok(Nil) ->
+          case received {
+            <<whole:bytes-size(length), rest:bytes>> ->
+              case read(whole) {
+                Ok(frame) -> collect(rest, [frame, ..found])
+                Error(error) -> Error(error)
+              }
+            _ -> Ok(#(list.reverse(found), received))
+          }
+      }
+    _ -> Ok(#(list.reverse(found), received))
+  }
+}
+
+fn check_length(length: Int) -> Result(Nil, FrameError) {
+  use <- bool.guard(
+    when: length < header_size,
+    return: Error(LengthBelowHeader(length)),
+  )
+  use <- bool.guard(
+    when: length > size_limit,
+    return: Error(LengthOverLimit(length)),
+  )
+  Ok(Nil)
+}
+
+fn read(whole: BitArray) -> Result(Frame, FrameError) {
+  case whole {
+    <<_:size(32), message_id:size(16)-little, body:bytes>> ->
+      Ok(Frame(message_id:, body:))
+    _ -> Error(ShorterThanHeader(bit_array.byte_size(whole)))
+  }
 }
 
 /// Reads one frame held whole in memory, such as the inner frame of a wrapper
 /// message. Its length field must equal the number of bytes.
 pub fn parse(whole whole: BitArray) -> Result(Frame, FrameError) {
-  todo as "parse a whole frame"
+  let bytes = bit_array.byte_size(whole)
+  case whole {
+    <<length:size(32)-little, _:bits>> ->
+      case check_length(length) {
+        Error(error) -> Error(error)
+        Ok(Nil) ->
+          case bytes < header_size {
+            True -> Error(ShorterThanHeader(bytes))
+            False ->
+              case length == bytes {
+                True -> read(whole)
+                False -> Error(LengthDisagrees(length:, bytes:))
+              }
+          }
+      }
+    _ -> Error(ShorterThanHeader(bytes))
+  }
 }

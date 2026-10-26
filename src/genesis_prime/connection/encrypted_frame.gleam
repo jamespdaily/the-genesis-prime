@@ -10,6 +10,8 @@
 
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, type FrameError}
+import gleam/bit_array
+import gleam/result
 
 /// Which message carries the inner frame.
 pub type Wrapper {
@@ -31,7 +33,11 @@ pub type WrapError {
 
 /// The message id of a wrapper.
 pub fn message_id(wrapper wrapper: Wrapper) -> Int {
-  todo as "the wrapper's message id"
+  case wrapper {
+    ClientWrapper -> 0x0244
+    AuthWrapper -> 0x0076
+    GameWrapper -> 0x03DC
+  }
 }
 
 /// The bytes of the wrapper message around `inner`: the outer frame, whose
@@ -41,7 +47,15 @@ pub fn wrap(
   inner inner: Frame,
   cipher cipher: Cipher,
 ) -> Result(BitArray, FrameError) {
-  todo as "wrap an inner frame"
+  use inner_bytes <- result.try(frame.encode(inner.message_id, inner.body))
+  case inner_bytes {
+    <<length:bytes-size(4), after_the_length:bytes>> ->
+      frame.encode(message_id(wrapper:), <<
+        length:bits,
+        cipher.encrypt(cipher, after_the_length):bits,
+      >>)
+    _ -> Error(frame.ShorterThanHeader(bit_array.byte_size(inner_bytes)))
+  }
 }
 
 /// The inner frame inside a wrapper frame: reads the inner length, decrypts the
@@ -51,5 +65,18 @@ pub fn unwrap(
   outer outer: Frame,
   cipher cipher: Cipher,
 ) -> Result(Frame, WrapError) {
-  todo as "unwrap an inner frame"
+  case outer.message_id {
+    0x0244 | 0x0076 | 0x03DC ->
+      case outer.body {
+        <<length:bytes-size(4), after_the_length:bytes>> ->
+          frame.parse(<<
+            length:bits,
+            cipher.decrypt(cipher, after_the_length):bits,
+          >>)
+          |> result.map_error(BadFrame)
+        body ->
+          Error(BadFrame(frame.ShorterThanHeader(bit_array.byte_size(body))))
+      }
+    other -> Error(NotAWrapper(other))
+  }
 }

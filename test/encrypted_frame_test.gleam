@@ -16,7 +16,6 @@ import gleam/bit_array
 import gleam/int
 import owned_test
 import seeded
-import unitest
 
 fn base_cipher() -> cipher.Cipher {
   let assert Ok(built) = cipher.new(cipher.base_key)
@@ -111,9 +110,9 @@ pub fn unwrapping_what_was_wrapped_gives_the_inner_frame_back_test() -> Nil {
   let checked =
     int.range(from: 1, to: 201, with: #(7, 0), run: fn(state, _case) {
       let #(random, checked) = state
-      let #(id, random) = seeded.up_to(random, 0xFFFF)
-      let #(length, random) = seeded.up_to(random, 2000)
-      let #(body, random) = seeded.bytes(random, length)
+      let #(id, random) = seeded.up_to(state: random, most: 0xFFFF)
+      let #(length, random) = seeded.up_to(state: random, most: 2000)
+      let #(body, random) = seeded.bytes(state: random, count: length)
       let inner = Frame(id, body)
       let assert Ok(wrapped) =
         encrypted_frame.wrap(GameWrapper, inner, session_cipher())

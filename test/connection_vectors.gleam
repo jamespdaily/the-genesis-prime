@@ -3,6 +3,7 @@
 //// wrapper tests. Every input is the bytes 00 01 02 .. (byte i = i mod 256).
 
 import gleam/bit_array
+import gleam/bool
 
 /// The session key folded from the key bytes 01 02 .. 10
 /// (vector.0x14003827c.session_fold).
@@ -22,18 +23,19 @@ pub fn hex(text: String) -> BitArray {
 
 /// The bytes 00 01 02 .. of the given length (byte i = i mod 256).
 pub fn counting_bytes(length: Int) -> BitArray {
-  counting_from(0, length, <<>>)
+  counting_from(position: 0, length:, built: <<>>)
 }
 
-fn counting_from(position: Int, length: Int, built: BitArray) -> BitArray {
-  case position >= length {
-    True -> built
-    False ->
-      counting_from(position + 1, length, <<
-        built:bits,
-        { position % 256 }:size(8),
-      >>)
-  }
+fn counting_from(
+  position position: Int,
+  length length: Int,
+  built built: BitArray,
+) -> BitArray {
+  use <- bool.guard(when: position >= length, return: built)
+  counting_from(position: position + 1, length:, built: <<
+    built:bits,
+    { position % 256 }:size(8),
+  >>)
 }
 
 /// The length and encrypted bytes of each short vector under the base key

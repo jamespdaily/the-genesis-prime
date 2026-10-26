@@ -9,12 +9,12 @@ const mask = 0xFFFF_FFFF_FFFF_FFFF
 /// The next 64-bit value and the advanced state.
 pub fn next(state: Int) -> #(Int, Int) {
   let state = int.bitwise_and(state + 0x9E3779B97F4A7C15, mask)
-  let mixed = mix(state, 30, 0xBF58476D1CE4E5B9)
-  let mixed = mix(mixed, 27, 0x94D049BB133111EB)
+  let mixed = mix(value: state, shift: 30, multiplier: 0xBF58476D1CE4E5B9)
+  let mixed = mix(value: mixed, shift: 27, multiplier: 0x94D049BB133111EB)
   #(int.bitwise_exclusive_or(mixed, int.bitwise_shift_right(mixed, 31)), state)
 }
 
-fn mix(value: Int, shift: Int, multiplier: Int) -> Int {
+fn mix(value value: Int, shift shift: Int, multiplier multiplier: Int) -> Int {
   int.bitwise_and(
     int.bitwise_exclusive_or(value, int.bitwise_shift_right(value, shift))
       * multiplier,
@@ -23,21 +23,28 @@ fn mix(value: Int, shift: Int, multiplier: Int) -> Int {
 }
 
 /// A value from 0 up to and including `most`, and the advanced state.
-pub fn up_to(state: Int, most: Int) -> #(Int, Int) {
+pub fn up_to(state state: Int, most most: Int) -> #(Int, Int) {
   let #(value, state) = next(state)
   #(value % { most + 1 }, state)
 }
 
 /// `count` random bytes and the advanced state.
-pub fn bytes(state: Int, count: Int) -> #(BitArray, Int) {
-  fill(state, count, <<>>)
+pub fn bytes(state state: Int, count count: Int) -> #(BitArray, Int) {
+  fill(state:, remaining: count, built: <<>>)
 }
 
-fn fill(state: Int, remaining: Int, built: BitArray) -> #(BitArray, Int) {
+fn fill(
+  state state: Int,
+  remaining remaining: Int,
+  built built: BitArray,
+) -> #(BitArray, Int) {
   case remaining >= 8 {
     True -> {
       let #(word, state) = next(state)
-      fill(state, remaining - 8, <<built:bits, word:size(64)>>)
+      fill(state:, remaining: remaining - 8, built: <<
+        built:bits,
+        word:size(64),
+      >>)
     }
     False -> {
       let #(word, state) = next(state)

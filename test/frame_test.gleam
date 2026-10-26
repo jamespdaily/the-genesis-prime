@@ -12,7 +12,6 @@ import gleam/bit_array
 import gleam/int
 import owned_test
 import seeded
-import unitest
 
 fn encoded(message_id: Int, body: BitArray) -> BitArray {
   let assert Ok(bytes) = frame.encode(message_id:, body:)
@@ -53,9 +52,9 @@ pub fn encoding_then_decoding_gives_every_frame_back_test() -> Nil {
   let checked =
     int.range(from: 1, to: 201, with: #(1, 0), run: fn(state, _case) {
       let #(random, checked) = state
-      let #(id, random) = seeded.up_to(random, 0xFFFF)
-      let #(length, random) = seeded.up_to(random, largest_body)
-      let #(body, random) = seeded.bytes(random, length)
+      let #(id, random) = seeded.up_to(state: random, most: 0xFFFF)
+      let #(length, random) = seeded.up_to(state: random, most: largest_body)
+      let #(body, random) = seeded.bytes(state: random, count: length)
       assert frame.decode(encoded(id, body)) == Ok(#([Frame(id, body)], <<>>))
         as "a frame of id and body round-trips (0x1403355e0 writes it, 0x140331990 reads it)"
       #(random, checked + 1)
