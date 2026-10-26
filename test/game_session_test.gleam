@@ -5,8 +5,8 @@
 //// and the client answers with 0x58F inside 0x244 under it (opcode.0x3,
 //// opcode.0x3dc, opcode.0x58f, opcode.0x244), after which both ways use the
 //// cipher the session key makes (opcode.0x3dc: "re-keyed after 0x58f"); the
-//// create request is the 0x25B frame ciphered into 0x25C, which goes inside
-//// 0x244 (opcode.0x25c); a world message travels inside 0x38C (opcode.0x38c);
+//// create request is the 0x25B frame in plain bytes inside 0x25C, and the 0x25C
+//// frame is ciphered once inside 0x244 (opcode.0x25c); a world message travels inside 0x38C (opcode.0x38c);
 //// 0x7E0, 0x352, 0x786 and 0x7DD are character select's requests
 //// (opcode.0x7e0, opcode.0x352, opcode.0x786, opcode.0x7dd); and 0x262 and
 //// 0x355 create and remove a unit (opcode.0x262, opcode.0x355).
@@ -17,9 +17,7 @@ import genesis_prime/character/name
 import genesis_prime/character/select
 import genesis_prime/character/world_entry
 import genesis_prime/connection/cipher.{type Cipher}
-import genesis_prime/connection/encrypted_frame.{
-  ClientWrapper, CreateCharacterWrapper,
-}
+import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/game_session.{
   type Effect, type Session, End, Log, MalformedMessage, RedeemSessionKey, Send,
@@ -92,17 +90,13 @@ fn client_frame(
   outer
 }
 
-/// The create request the way LuaCreateCharacter sends it.
+/// The create request the way LuaCreateCharacter sends it: the 0x25B frame in
+/// plain bytes as 0x25C's body, the 0x25C frame ciphered once inside 0x244
+/// (opcode.0x25c; LuaCreateCharacter 0x140023e90, the one cipher call
+/// 0x140024b0c).
 fn create_frame(body body: BitArray) -> Frame {
-  let assert Ok(carried) =
-    encrypted_frame.wrap(
-      CreateCharacterWrapper,
-      Frame(0x025B, body),
-      session_cipher(),
-    )
-    as "0x25B wraps into 0x25C"
-  let assert Ok(#([carrier], <<>>)) = frame.decode(carried) as "one frame"
-  client_frame(cipher: session_cipher(), message_id: 0x025C, body: carrier.body)
+  let assert Ok(plain) = frame.encode(0x025B, body) as "0x25B frames"
+  client_frame(cipher: session_cipher(), message_id: 0x025C, body: plain)
 }
 
 /// A world message the way SendWorldMessage sends it: inside 0x38C.
@@ -283,6 +277,41 @@ pub fn a_create_request_inside_0x25c_is_decoded_and_given_to_character_select_te
   let assert [Store(select.InsertCharacter(new))] = effects
     as "opcode.0x25c: the 0x25B frame inside 0x25C is a create request for the account"
   assert new.account_id == character_support.account_id
+  assert new.name == "Ab Cd"
+  assert new.creation_id == 277
+}
+
+pub fn a_create_request_whose_0x25b_frame_is_plain_bytes_inside_0x25c_is_decoded_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(request) =
+    create_character.encode(
+      CreateCharacter(
+        creation_id: 277,
+        name: "Ab Cd",
+        path: 2,
+        customisation_labels: [1, 2],
+        customisation_values: [3, 4],
+        bone_values: [0x3F800000, 0xBF000000],
+      ),
+    )
+    as "0x25B encodes"
+  // 0x140079f30 writes the record's bytes with WriteRawBytes and nothing else.
+  let assert Ok(plain_0x25b_frame) = frame.encode(0x025B, request)
+    as "0x25B frames"
+  let assert Ok(carrier) = frame.encode(0x025C, plain_0x25b_frame)
+    as "0x25C frames"
+  // 0x140024b0c: the one cipher call, over the 0x25C frame after its length.
+  let assert <<length:bytes-size(4), after_the_length:bytes>> = carrier
+    as "a frame has its length first"
+  let sent = <<
+    length:bits,
+    cipher.encrypt(session_cipher(), after_the_length):bits,
+  >>
+  let assert Ok(carried) = frame.encode(0x0244, sent) as "0x244 frames"
+  let assert Ok(#([outer], <<>>)) = frame.decode(carried) as "one frame"
+  let #(_, effects) = game_session.receive(idle([]), outer, context())
+  let assert [Store(select.InsertCharacter(new))] = effects
+    as "opcode.0x25c: the cipher runs once, so the 0x25B frame inside 0x25C is read as it stands"
   assert new.name == "Ab Cd"
   assert new.creation_id == 277
 }

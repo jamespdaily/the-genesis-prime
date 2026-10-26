@@ -14,9 +14,7 @@
 
 import frame_reader
 import genesis_prime/connection/cipher.{type Cipher}
-import genesis_prime/connection/encrypted_frame.{
-  ClientWrapper, CreateCharacterWrapper,
-}
+import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/server_hello
@@ -119,24 +117,12 @@ pub fn send(
 }
 
 /// Sends a create-character request the way LuaCreateCharacter does: the 0x25B
-/// frame is ciphered after its length into 0x25C, which goes inside 0x244
-/// (opcode.0x25c).
+/// frame goes into 0x25C as plain bytes, and the whole 0x25C frame is ciphered
+/// once, after its length, inside 0x244 (opcode.0x25c; LuaCreateCharacter
+/// 0x140023e90, the one cipher call 0x140024b0c).
 pub fn send_create(game game: Game, body body: BitArray) -> Nil {
-  let assert Ok(carried) =
-    encrypted_frame.wrap(
-      CreateCharacterWrapper,
-      Frame(0x025B, body),
-      game.cipher,
-    )
-    as "0x25B wraps into 0x25C"
-  let assert Ok(#([carrier], <<>>)) = frame.decode(carried)
-    as "0x25C is one frame"
-  let assert Ok(bytes) =
-    encrypted_frame.wrap(ClientWrapper, carrier, game.cipher)
-    as "0x25C wraps into 0x244"
-  let assert Ok(Nil) = tcp_client.send(game.socket, bytes)
-    as "the server closed the connection before the create request"
-  Nil
+  let assert Ok(plain) = frame.encode(0x025B, body) as "0x25B frames"
+  send(game:, message_id: 0x025C, body: plain)
 }
 
 /// Sends a world message the way SendWorldMessage does: its whole frame inside
