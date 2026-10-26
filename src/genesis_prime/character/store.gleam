@@ -15,9 +15,10 @@ import genesis_prime/map/position.{Position}
 import gleam/list
 import pog
 
-/// The unique constraint on a character's name, named by Postgres after the
-/// table and the column (`priv/migrations/0002_character.sql`).
-const name_constraint = "character_name_key"
+/// The unique index on the lower case of a character's name
+/// (`priv/migrations/0004_character_name_case.sql`), whose violation says that
+/// another character has the name in some case.
+const name_constraint = "character_name_lower_key"
 
 /// Carries out a command of character select against the database and says
 /// how it went. A name another character has is `NameInUse`; an account with no
