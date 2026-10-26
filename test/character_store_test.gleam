@@ -24,6 +24,20 @@ import pog
 import relay
 import template_database
 
+/// Adds the account the tests' characters belong to and the account after it,
+/// with the ids the tests use: a character's account is a row of `account`.
+fn add_accounts(db: pog.Connection) -> Nil {
+  let assert Ok(_) =
+    pog.query(
+      "insert into account (id, name, salt, verifier) overriding system value values ($1, 'first', ''::bytea, ''::bytea), ($2, 'second', ''::bytea, ''::bytea)",
+    )
+    |> pog.parameter(pog.int(character_support.account_id))
+    |> pog.parameter(pog.int(character_support.account_id + 1))
+    |> pog.execute(on: db)
+    as "the accounts were added"
+  Nil
+}
+
 fn new_character(name: String) -> character.NewCharacter {
   NewCharacter(
     account_id: character_support.account_id,
@@ -65,6 +79,7 @@ fn listed(db: pog.Connection, account: Int) -> List(Character) {
 pub fn a_saved_character_reads_back_as_it_was_saved_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
+  add_accounts(database.connection)
   let character = saved(database.connection, "Ab Cd")
   assert character
     == Character(
@@ -102,6 +117,7 @@ pub fn a_saved_character_reads_back_as_it_was_saved_test() -> Nil {
 pub fn a_character_with_no_customisation_or_bones_is_saved_and_listed_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
+  add_accounts(database.connection)
   let plain =
     NewCharacter(
       ..new_character("Ab Cd"),
@@ -122,6 +138,7 @@ pub fn a_character_with_no_customisation_or_bones_is_saved_and_listed_test() -> 
 pub fn an_account_is_listed_its_own_characters_oldest_first_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
+  add_accounts(database.connection)
   let first = saved(database.connection, "Ab Cd")
   let second = saved(database.connection, "Ef Gh")
   let assert Inserted(other) =
@@ -146,6 +163,7 @@ pub fn an_account_is_listed_its_own_characters_oldest_first_test() -> Nil {
 pub fn a_name_another_character_has_is_refused_and_nothing_is_saved_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
+  add_accounts(database.connection)
   let first = saved(database.connection, "Ab Cd")
   assert store.run(
       database.connection,
@@ -166,6 +184,7 @@ pub fn a_name_another_character_has_is_refused_and_nothing_is_saved_test() -> Ni
 pub fn a_rename_changes_the_name_and_clears_the_need_to_rename_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
+  add_accounts(database.connection)
   let character = saved(database.connection, "Ab Cd")
   let assert Ok(_) =
     pog.query("update character set requires_rename = true where id = $1")
@@ -185,6 +204,7 @@ pub fn a_rename_changes_the_name_and_clears_the_need_to_rename_test() -> Nil {
 pub fn a_rename_to_a_name_another_character_has_is_refused_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
+  add_accounts(database.connection)
   let first = saved(database.connection, "Ab Cd")
   let _second = saved(database.connection, "Ef Gh")
   assert store.run(
@@ -203,6 +223,7 @@ pub fn a_rename_to_a_name_another_character_has_is_refused_test() -> Nil {
 pub fn an_account_cannot_rename_a_character_of_another_account_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
+  add_accounts(database.connection)
   let character = saved(database.connection, "Ab Cd")
   assert store.run(
       database.connection,
@@ -222,6 +243,7 @@ pub fn an_account_cannot_rename_a_character_of_another_account_test() -> Nil {
 pub fn a_deleted_character_is_gone_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
+  add_accounts(database.connection)
   let character = saved(database.connection, "Ab Cd")
   let kept = saved(database.connection, "Ef Gh")
   assert store.run(
@@ -235,6 +257,7 @@ pub fn a_deleted_character_is_gone_test() -> Nil {
 pub fn an_account_cannot_delete_a_character_of_another_account_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
+  add_accounts(database.connection)
   let character = saved(database.connection, "Ab Cd")
   assert store.run(
       database.connection,
@@ -256,6 +279,7 @@ pub fn an_account_cannot_delete_a_character_of_another_account_test() -> Nil {
 pub fn a_database_that_is_away_is_unavailable_not_a_refusal_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
+  add_accounts(database.connection)
   let assert Ok(away) =
     relay.refusing(to: relay.Target(
       host: database.settings.tcp_host,
@@ -289,9 +313,10 @@ pub fn a_database_that_is_away_is_unavailable_not_a_refusal_test() -> Nil {
 pub fn the_database_holds_as_many_customisation_values_as_labels_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
+  add_accounts(database.connection)
   let attempt =
     pog.query(
-      "insert into character (account_id, name, creation_id, gender, race_id, class_id, faction_id, experience, level, path, world_id, world_zone_id, position_x, position_y, position_z, customisation_labels, customisation_values, bone_values) values (1, 'Ab Cd', 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, '{1,2}', '{3}', '{}')",
+      "insert into character (account_id, name, creation_id, gender, race_id, class_id, faction_id, experience, level, path, world_id, world_zone_id, position_x, position_y, position_z, customisation_labels, customisation_values, bone_values) values (7, 'Ab Cd', 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 0, 0, '{1,2}', '{3}', '{}')",
     )
     |> pog.returning(decode.success(Nil))
     |> pog.execute(on: database.connection)

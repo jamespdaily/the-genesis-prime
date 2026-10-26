@@ -8,7 +8,7 @@
 -- their values, and the bone values as the bits of 32-bit floats.
 create table character (
   id bigint generated always as identity primary key,
-  account_id bigint not null,
+  account_id bigint not null references account (id),
   name text not null unique check (name <> ''),
   creation_id integer not null,
   gender smallint not null check (gender between 0 and 3),

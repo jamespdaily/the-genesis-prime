@@ -32,3 +32,18 @@ pub fn await_close(client: Client, within_ms: Int) -> Bool
 /// Closes the client's end.
 @external(erlang, "tcp_client_ffi", "close")
 pub fn close(client: Client) -> Nil
+
+/// Reads exactly `count` bytes the server wrote, waiting at most `within_ms`
+/// for them: an error when the time passes or the server closes first.
+@external(erlang, "tcp_client_ffi", "receive")
+pub fn receive(
+  client: Client,
+  count: Int,
+  within_ms: Int,
+) -> Result(BitArray, Nil)
+
+/// Reads the bytes the server wrote that are there, at least one, waiting at
+/// most `within_ms` for the first: an error when the time passes or the server
+/// closed the connection with nothing more to read.
+@external(erlang, "tcp_client_ffi", "receive_some")
+pub fn receive_some(client: Client, within_ms: Int) -> Result(BitArray, Nil)
