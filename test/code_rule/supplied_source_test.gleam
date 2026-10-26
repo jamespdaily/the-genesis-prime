@@ -1,8 +1,8 @@
 //// The supplied source rule. Expected values are the issue's test 2 and the
 //// reason for it: the released server draws every random byte of the login
-//// from the operating system's strong source, so no module under `src/` but
-//// `login/random_source.gleam` may build `Supplied`, the source that takes its
-//// bytes from a function the caller gives; `dev/` and `test/` may. Each case
+//// from the operating system's strong source, so no module under `src/`, the
+//// one that defines it included, may build `Supplied`, the source that takes
+//// its bytes from a function the caller gives; `dev/` and `test/` may. Each case
 //// is planted once in a made-up file, and the real tree is checked last.
 //// `random_source` draws from the operating system, so gleam.toml lists it as
 //// an effectful module.
@@ -93,7 +93,7 @@ pub fn matching_supplied_or_using_the_strong_source_builds_nothing_and_is_no_bre
   assert supplied_source.breaches(file) == []
 }
 
-pub fn random_source_itself_may_build_supplied_test() -> Nil {
+pub fn random_source_itself_may_not_hand_out_a_supplied_source_test() -> Nil {
   use <- owned_test.run(5000)
   let file =
     planted.file("src/genesis_prime/login/random_source.gleam", [
@@ -106,7 +106,8 @@ pub fn random_source_itself_may_build_supplied_test() -> Nil {
       "  Supplied(draw: fn(_count) { <<>> })",
       "}",
     ])
-  assert supplied_source.breaches(file) == []
+  assert planted.lines(supplied_source.breaches(file)) == [7]
+    as "the module that defines Supplied has no exception: a public function that builds one hands the server a source of its own, so only dev/ and test/ build it"
 }
 
 pub fn a_module_in_dev_or_test_may_build_supplied_test() -> Nil {
@@ -128,7 +129,7 @@ pub fn a_module_in_dev_or_test_may_build_supplied_test() -> Nil {
   )
 }
 
-pub fn no_module_in_src_builds_supplied_outside_random_source_test() -> Nil {
+pub fn no_module_in_src_builds_supplied_test() -> Nil {
   use <- owned_test.run(5000)
   let files = repository.sources(["src"])
   assert list.flat_map(files, supplied_source.breaches) == []
