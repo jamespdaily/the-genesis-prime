@@ -26,8 +26,8 @@ import gleam/list
 import gleam/string
 import owned_test
 import released_node.{
-  type Failure, type Node, Difference, Exited, Idle, Lingering, Running, Server,
-  ShortName, Start, Stopped, Unnamed,
+  type Failure, type Node, Connecting, Difference, Exited, Idle, Lingering,
+  Running, Server, ShortName, Start, Stopped, Unnamed,
 }
 import template_database
 
@@ -136,6 +136,28 @@ pub fn a_listener_the_server_did_not_start_is_caught_test() -> Nil {
     == node.report.listening_ports
     as "what the node holds is the two planted ports and the login's two"
   assert missing == []
+}
+
+/// Issue 102: the survey counted a socket that was still connecting, which has
+/// an address of its own and no peer, as listening, and CI saw two such ports
+/// (57468 and 57476) on a node whose database pool was still opening its
+/// connections. A socket listens when its states include `listen`
+/// (`inet:info/1`, `states`). The child here holds one listening socket and
+/// one connect in progress to an address that drops packets, and reports only
+/// once the connect is in progress, so the one port it reports is the
+/// listening one.
+pub fn a_socket_that_is_still_connecting_is_not_a_listening_port_test() -> Nil {
+  use <- owned_test.run(child_deadline_ms)
+  use database <- template_database.run
+  use started <- released_node.run(Start(
+    database:,
+    naming: Unnamed,
+    program: Connecting,
+    planted_listeners: 1,
+  ))
+  let node = unwrap(started)
+  assert list.length(node.report.listening_ports) == 1
+    as "the node reports the connect in progress as a listening port, or lost its listener"
 }
 
 pub fn a_game_port_that_does_not_listen_is_caught_test() -> Nil {
