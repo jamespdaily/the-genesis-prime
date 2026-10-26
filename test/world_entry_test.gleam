@@ -91,7 +91,7 @@ pub fn a_world_with_no_row_is_refused_before_the_client_is_told_to_load_it_test(
   let #(state, effects) =
     world_entry.decide(world_entry.new(), Begin(elsewhere), context())
   assert effects
-    == [Send(PlayRefused(PlayCharacterRefused(field_1: 0))), Failed]
+    == [Send(PlayRefused(PlayCharacterRefused(field_1: 2))), Failed]
     as "opcode.0xad: a World id with no row fails the load and the client stops at an error; opcode.0x162 sends it back to character select instead"
   assert state == Waiting
 }
@@ -185,7 +185,7 @@ pub fn a_map_that_refuses_the_character_sends_the_player_back_to_character_selec
   let #(state, effects) =
     world_entry.decide(AwaitingMap(chosen()), MapRefused, context())
   assert effects
-    == [Send(PlayRefused(PlayCharacterRefused(field_1: 0))), Failed]
+    == [Send(PlayRefused(PlayCharacterRefused(field_1: 2))), Failed]
     as "opcode.0x162: playing the chosen character failed; the client returns to idle character select"
   assert state == Waiting
 }

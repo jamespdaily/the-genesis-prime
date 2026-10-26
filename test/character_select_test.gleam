@@ -5,9 +5,10 @@
 //// one request while idle and waits for its answer), the client's own refusals
 //// in LuaCreateCharacter 0x140023E90 and LuaRenameCharacter 0x140024DD0, and
 //// the CharacterCreation row (opcode.0x25b: it gives class, race, sex and
-//// faction). A result the client's code does not give a meaning is tested only
-//// for what it must not be: the client shows its general error for any create
-//// result but 3 (created) and 6 (HandleMessage00DC 0x140021FB0).
+//// faction). The results of 0xdc, 0x14b and 0xe6 are values of
+//// PreGameLib.CodeEnumCharacterModifyResults and the value of 0x162 one of
+//// PreGameLib.CodeEnumCharacterSelectResults (the fact file's records of those
+//// enums), each named by the enum's own name where a test states it.
 
 import character_support
 import client_tables
@@ -38,6 +39,7 @@ import genesis_prime/message/create_character_result.{CreateCharacterResult}
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/table/character_creation
@@ -84,13 +86,17 @@ fn create_result_of(effects: List(select.Effect)) -> Int {
 fn assert_failed_without_a_write(
   effects effects: List(select.Effect),
   refusal refusal: select.Refusal,
+  result expected: Int,
   why why: String,
 ) -> Nil {
   assert list.contains(effects, Log(refusal))
     as { why <> ": the reason is logged" }
   assert stored(effects) == [] as { why <> ": nothing is written" }
-  let result = create_result_of(effects)
-  assert result != 3 as { why <> ": the answer is not the result for created" }
+  assert create_result_of(effects) == expected
+    as {
+      why
+      <> ": PreGameLib.CodeEnumCharacterModifyResults answers with the value the enum names for it"
+    }
 }
 
 pub fn starting_character_select_asks_the_store_for_the_accounts_characters_test() -> Nil {
@@ -257,6 +263,7 @@ pub fn a_creation_row_that_does_not_exist_is_refused_test() -> Nil {
   assert_failed_without_a_write(
     effects:,
     refusal: CreationUnknown(99_999),
+    result: 4,
     why: "LuaCreateCharacter 0x140023E90: a CharacterCreation row that is missing is refused",
   )
   assert state == idle([])
@@ -278,6 +285,7 @@ pub fn a_creation_row_that_is_not_enabled_is_refused_test() -> Nil {
   assert_failed_without_a_write(
     effects:,
     refusal: CreationNotOffered(277),
+    result: 4,
     why: "opcode.0x117: a row is offered when its enabled column is set or the server enables it, and this server enables none",
   )
 }
@@ -298,6 +306,7 @@ pub fn a_creation_row_that_needs_an_entitlement_is_refused_test() -> Nil {
   assert_failed_without_a_write(
     effects:,
     refusal: CreationNotOffered(277),
+    result: 4,
     why: "LuaCreateCharacter 0x140023E90: a row with an entitlementIdRequired is refused to an account without it, and an account holds none",
   )
 }
@@ -318,6 +327,7 @@ pub fn a_creation_row_that_costs_account_currency_is_refused_test() -> Nil {
   assert_failed_without_a_write(
     effects:,
     refusal: CreationNotOffered(277),
+    result: 4,
     why: "LuaCreateCharacter 0x140023E90: a row that costs account currency is refused to an account that cannot pay, and an account holds none",
   )
 }
@@ -330,6 +340,7 @@ pub fn a_path_above_3_is_refused_test() -> Nil {
   assert_failed_without_a_write(
     effects:,
     refusal: PathOutOfRange(4),
+    result: 4,
     why: "LuaCreateCharacter 0x140023E90: a path above 3 is refused",
   )
 }
@@ -348,6 +359,7 @@ pub fn more_than_15_customisations_are_refused_test() -> Nil {
   assert_failed_without_a_write(
     effects:,
     refusal: TooManyCustomisations(16),
+    result: 4,
     why: "ReadCharacterListEntry 0x14007F720: a listed character's customisation count is 4 bits, so a character with 16 could not be listed",
   )
 }
@@ -364,6 +376,7 @@ pub fn a_row_the_server_has_no_starting_place_for_is_refused_test() -> Nil {
   assert_failed_without_a_write(
     effects:,
     refusal: NoStartingPlace(277),
+    result: 12,
     why: "opcode.0xad: a character enters a world at a position, so a character with none cannot be made",
   )
 }
@@ -373,7 +386,8 @@ pub fn a_name_another_character_has_is_refused_and_not_listed_test() -> Nil {
   let creating = State(..idle([]), status: select.Creating)
   let #(state, effects) = select.decide(creating, Stored(NameInUse), context())
   assert list.contains(effects, Log(NameTaken)) as "the reason is logged"
-  assert create_result_of(effects) != 3 as "the answer is not created"
+  assert create_result_of(effects) == 6
+    as "PreGameLib.CodeEnumCharacterModifyResults: 6 is CreateFailed_UniqueName, for which the client shows its own text"
   assert state == idle([]) as "nothing was added"
 }
 
@@ -384,7 +398,8 @@ pub fn a_database_that_could_not_save_is_not_the_players_mistake_test() -> Nil {
     select.decide(creating, Stored(Unavailable), context())
   assert list.contains(effects, Log(StoreUnavailable))
     as "an outside failure is logged as one, never as a refusal of the request"
-  assert create_result_of(effects) != 3 as "the answer is not created"
+  assert create_result_of(effects) == 12
+    as "PreGameLib.CodeEnumCharacterModifyResults: 12 is CreateFailed_Internal, the server's failure and not the player's"
   assert state == idle([]) as "nothing was added"
 }
 
@@ -449,8 +464,25 @@ pub fn a_rename_to_a_name_another_character_has_is_refused_test() -> Nil {
   assert list.contains(effects, Log(NameTaken)) as "the reason is logged"
   let assert [RenameResult(answer)] = sent(effects)
     as "one rename answer is sent"
-  assert answer.result != 18 as "opcode.0x14b: only result 18 renames"
+  assert answer.result == 16
+    as "PreGameLib.CodeEnumCharacterModifyResults: 16 is RenameFailed_UniqueName"
   assert state == idle([own(11, "Ab Cd")]) as "the character keeps its name"
+}
+
+pub fn a_rename_the_store_could_not_do_is_answered_with_the_results_the_enum_names_test() -> Nil {
+  use <- owned_test.run(5000)
+  let renaming = State(..idle([own(11, "Ab Cd")]), status: Renaming(11))
+  let #(_, unavailable) =
+    select.decide(renaming, Stored(Unavailable), context())
+  let assert [RenameResult(answer)] = sent(unavailable)
+    as "one rename answer is sent"
+  assert answer.result == 14
+    as "PreGameLib.CodeEnumCharacterModifyResults: 14 is RenameFailed_Internal, the server's failure"
+  let #(_, not_found) = select.decide(renaming, Stored(NotFound), context())
+  let assert [RenameResult(answer)] = sent(not_found)
+    as "one rename answer is sent"
+  assert answer.result == 13
+    as "PreGameLib.CodeEnumCharacterModifyResults: 13 is RenameFailed"
 }
 
 pub fn a_delete_of_the_accounts_own_character_asks_the_store_test() -> Nil {
@@ -482,8 +514,8 @@ pub fn a_delete_the_store_could_not_do_is_answered_with_a_result_other_than_0_te
   let #(state, effects) = select.decide(deleting, Stored(NotFound), context())
   let assert [DeleteResult(answer)] = sent(effects)
     as "one delete answer is sent"
-  assert answer.result != 0
-    as "opcode.0xe6: only result 0 removes the character"
+  assert answer.result == 1
+    as "PreGameLib.CodeEnumCharacterModifyResults: 1 is DeleteFailed; only 0, DeleteOk, removes the character"
   assert state == idle([own(11, "Ab Cd")]) as "the character is still listed"
 }
 
@@ -514,12 +546,14 @@ pub fn a_request_for_a_character_of_another_account_is_refused_and_writes_nothin
   })
   let assert [_, Send(RenameResult(renamed))] = rename
     as "the rename is answered"
-  assert renamed.result != 18 as "opcode.0x14b: only result 18 renames"
+  assert renamed.result == 13
+    as "PreGameLib.CodeEnumCharacterModifyResults: 13 is RenameFailed, a character that is not the account's"
   let assert [_, Send(DeleteResult(deleted))] = delete
     as "the delete is answered"
-  assert deleted.result != 0 as "opcode.0xe6: only result 0 deletes"
-  let assert [PlayRefused(_)] = sent(play)
-    as "opcode.0x162: playing a character that cannot be played is answered with the refusal"
+  assert deleted.result == 1
+    as "PreGameLib.CodeEnumCharacterModifyResults: 1 is DeleteFailed"
+  assert sent(play) == [PlayRefused(PlayCharacterRefused(field_1: 2))]
+    as "opcode.0x162: playing a character that cannot be played is answered with the refusal, whose value is PreGameLib.CodeEnumCharacterSelectResults 2, Failed"
   Nil
 }
 

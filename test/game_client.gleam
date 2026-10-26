@@ -1,0 +1,178 @@
+//// A scripted client's side of a game connection, over TCP against the game
+//// listener: the hello it reads, the 0x58F it answers with, the cipher it keys
+//// from the session key, and the messages it sends and reads after that. It is
+//// written from the fact file's records (opcode.0x3, opcode.0x58f,
+//// opcode.0x244, opcode.0x3dc, opcode.0x25c, opcode.0x38c) and shares only the
+//// message codec, the frame and the cipher with the server, each tested
+//// against the client's own vectors.
+////
+//// The client reads the server's hello inside 0x3DC under the base key, sends
+//// 0x58F inside 0x244 under the base key, and keys its cipher from the session
+//// key right after sending it (HandleLoginGameServerHello 0x140038120). Every
+//// message after that goes inside 0x244 under the session key's cipher, and
+//// every message from the server arrives inside 0x3DC under it.
+
+import frame_reader
+import genesis_prime/connection/cipher.{type Cipher}
+import genesis_prime/connection/encrypted_frame.{
+  ClientWrapper, CreateCharacterWrapper,
+}
+import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/message/game_hello_reply.{GameHelloReply}
+import genesis_prime/message/server_hello
+import genesis_prime/message/world_message.{WorldMessage}
+import gleam/list
+import tcp_client.{type Client}
+
+/// How long a test waits for the server to write the bytes it must, in
+/// milliseconds.
+const wait_ms = 5000
+
+/// A connection that has sent 0x58F: the socket and the cipher the session
+/// key made.
+pub type Game {
+  Game(socket: Client, cipher: Cipher)
+}
+
+fn base_cipher() -> Cipher {
+  let assert Ok(base) = cipher.new(cipher.base_key) as "the base key"
+  base
+}
+
+/// Connects to the game listener and reads its hello: message 3 inside 0x3DC
+/// under the base key, with the build and the message table checksum the client
+/// checks (opcode.0x3).
+pub fn open(port: Int) -> Client {
+  let assert Ok(socket) = tcp_client.connect(port)
+    as "the client could not connect to the game listener"
+  let assert Ok([outer, ..]) =
+    frame_reader.read(have: <<>>, count: 1, next: fn() {
+      tcp_client.receive_some(socket, wait_ms)
+    })
+    as "the game server did not greet the client"
+  assert outer.message_id == 0x03DC
+    as "opcode.0x3dc: the game server's hello arrives inside 0x3DC"
+  let assert Ok(hello) = encrypted_frame.unwrap(outer, base_cipher())
+    as "the hello opens under the base key, which the game connection holds until 0x58F"
+  assert hello.message_id == 0x0003 as "opcode.0x3: the hello is message 3"
+  let assert Ok(decoded) = server_hello.decode(hello.body)
+    as "the hello decodes"
+  assert decoded.build == 16_042 && decoded.message_table_checksum == 0x097998A0
+    as "opcode.0x3: the client checks build 16042 and checksum 0x097998A0"
+  socket
+}
+
+/// Answers the hello with 0x58F inside 0x244 under the base key: the value
+/// from the hand-off (0), the 16-byte session key, a 64-bit 0, the account
+/// name and the 32-bit 3 (opcode.0x58f); then keys the cipher from the session
+/// key.
+pub fn answer_hello(
+  socket socket: Client,
+  session_key session_key: BitArray,
+  account_name account_name: String,
+) -> Game {
+  let assert Ok(body) =
+    game_hello_reply.encode(GameHelloReply(
+      field_1: 0,
+      session_key:,
+      field_3: 0,
+      account_name:,
+      field_5: 3,
+    ))
+    as "0x58F encodes"
+  let assert Ok(bytes) =
+    encrypted_frame.wrap(
+      ClientWrapper,
+      Frame(game_hello_reply.message_id, body),
+      base_cipher(),
+    )
+    as "0x58F wraps"
+  let assert Ok(Nil) = tcp_client.send(socket, bytes)
+    as "the server closed the connection before 0x58F"
+  let assert Ok(key) = cipher.session_key(session_key, cipher.base_key)
+    as "the session key is 16 bytes"
+  let assert Ok(session) = cipher.new(key) as "the session key makes a cipher"
+  Game(socket:, cipher: session)
+}
+
+/// Connects, reads the hello and answers it.
+pub fn connect(
+  port port: Int,
+  session_key session_key: BitArray,
+  account_name account_name: String,
+) -> Game {
+  answer_hello(socket: open(port), session_key:, account_name:)
+}
+
+/// Sends a message inside 0x244 under the session cipher.
+pub fn send(
+  game game: Game,
+  message_id message_id: Int,
+  body body: BitArray,
+) -> Nil {
+  let assert Ok(bytes) =
+    encrypted_frame.wrap(ClientWrapper, Frame(message_id, body), game.cipher)
+    as "the message wraps"
+  let assert Ok(Nil) = tcp_client.send(game.socket, bytes)
+    as "the server closed the connection before the message"
+  Nil
+}
+
+/// Sends a create-character request the way LuaCreateCharacter does: the 0x25B
+/// frame is ciphered after its length into 0x25C, which goes inside 0x244
+/// (opcode.0x25c).
+pub fn send_create(game game: Game, body body: BitArray) -> Nil {
+  let assert Ok(carried) =
+    encrypted_frame.wrap(
+      CreateCharacterWrapper,
+      Frame(0x025B, body),
+      game.cipher,
+    )
+    as "0x25B wraps into 0x25C"
+  let assert Ok(#([carrier], <<>>)) = frame.decode(carried)
+    as "0x25C is one frame"
+  let assert Ok(bytes) =
+    encrypted_frame.wrap(ClientWrapper, carrier, game.cipher)
+    as "0x25C wraps into 0x244"
+  let assert Ok(Nil) = tcp_client.send(game.socket, bytes)
+    as "the server closed the connection before the create request"
+  Nil
+}
+
+/// Sends a world message the way SendWorldMessage does: its whole frame inside
+/// 0x38C with the 5-bit value 3, inside 0x244 (opcode.0x38c).
+pub fn send_world(
+  game game: Game,
+  message_id message_id: Int,
+  body body: BitArray,
+) -> Nil {
+  let assert Ok(inner) = frame.encode(message_id, body) as "the message frames"
+  let assert Ok(carried) =
+    world_message.encode(WorldMessage(field_1: 3, inner_frame: inner))
+    as "0x38C encodes"
+  send(game:, message_id: world_message.message_id, body: carried)
+}
+
+/// Reads until `count` messages have arrived from the server, each opened from
+/// its 0x3DC wrapper under the session cipher, in order.
+pub fn read(game game: Game, count count: Int) -> List(Frame) {
+  let assert Ok(outers) =
+    frame_reader.read(have: <<>>, count:, next: fn() {
+      tcp_client.receive_some(game.socket, wait_ms)
+    })
+    as "the game server did not write the messages"
+  assert list.length(outers) == count
+    as "the game server wrote no more messages than the test reads"
+  list.map(outers, fn(outer) {
+    assert outer.message_id == 0x03DC
+      as "opcode.0x3dc: every game server message arrives inside 0x3DC"
+    let assert Ok(inner) = encrypted_frame.unwrap(outer, game.cipher)
+      as "the message opens under the session cipher"
+    inner
+  })
+}
+
+/// Whether the server closes the connection within the wait.
+pub fn closed(game game: Game) -> Bool {
+  tcp_client.await_close(game.socket, wait_ms)
+}
