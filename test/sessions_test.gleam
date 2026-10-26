@@ -338,9 +338,12 @@ pub fn two_logins_in_a_chain_leave_no_connection_alive_when_the_last_is_answered
   // The second was told to end by the third's claim too, with an eviction
   // deadline of its own, a little after the first's. So either the first's end
   // answered it before that deadline and it ended by itself, or its deadline
-  // killed it while it waited. The third is answered only when the second is
-  // down, and the second's report was sent before it went down, so it is
-  // already here.
+  // killed it while it waited. Either way it is down when the third is
+  // answered. Its report, when it made one, was sent before it went down, and
+  // signals from one process to another arrive in the order they were sent, so
+  // once the test has seen it go down, the report is in the mailbox.
+  assert ended(second.pid)
+    as "the second is down: it ended by itself or was killed at its eviction deadline"
   case process.receive(second.claimed, 0) {
     Ok(claimed) -> {
       assert claimed.result == Ok(Nil)
@@ -349,11 +352,7 @@ pub fn two_logins_in_a_chain_leave_no_connection_alive_when_the_last_is_answered
         as "the second is answered only when the first is dead"
       Nil
     }
-    Error(Nil) -> {
-      assert ended(second.pid)
-        as "the second was never answered, so it was killed at its eviction deadline while it waited"
-      Nil
-    }
+    Error(Nil) -> Nil
   }
 }
 
