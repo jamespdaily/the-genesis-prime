@@ -605,10 +605,10 @@ grade = "fairly sure"
 gap = "The wire layout of the commands (routines 0x1400b0560 and 0x1400b06f0) is not read, nor the message's id in the outer wrapping (0x1403f4900 nests it in message 0x38c, sent as 0x244)."
 
 ["opcode.0xf1"]
-statement = "Message 0xf1 (241), server to client, read as four fields of 2, 32, 8 and 32 bits. Its handler stores the first three, and the fourth is the player's movement send interval in milliseconds: values below 25 become 25 and above 1000 become 1000. Until it arrives the interval is 125 ms."
-proof = "Registered in 0x14006c290 as (0xf1, size 0x10, reader 0x1400a37d0); the reader calls 0x14006c090 with widths 2 (record offset 0), 0x20 (offset 4), 0x14006be30 with 8 (offset 8), 0x14006c090 with 0x20 (offset 0xc). HandleWorldMessage's jump table entry for 241 is 0x1403ec80b: 0x1403ec811 call 0x1403b67e0. There 0x1403b69b0 mov eax, [r14+0xc]; 0x1403b69b4 cmp eax, 0x19; jae; 0x1403b69b9 mov dword [0x140c3a004], 0x19; 0x1403b69c5 mov ecx, 0x3e8; 0x1403b69ca cmp eax, ecx; 0x1403b69cc cmova eax, ecx; 0x1403b69cf mov [0x140c3a004], eax. Bytes at 0x140c3a004: 7d000000 (125)."
+statement = "Message 0xf1 (241), server to client. Body: values of 2, 32, 8 and 32 bits, in that order, none aligned to a byte (74 bits, padded to 10 bytes). Its handler stores the first three, and the fourth is the player's movement send interval in milliseconds: values below 25 become 25 and above 1000 become 1000. Until it arrives the interval is 125 ms. The client has no writer for it."
+proof = "Registered at 0x140078d86 mov edx, 0xf1 with 0x140078d7f lea r8d, [r9+0x10] (size), 0x140078d68 lea rcx, [0x1400a37d0] stored at 0x140078d7a (reader) and 0x140078d8b mov qword ptr [rsp+0x20], 0x0 (no writer). ReadMessage00F1Body: ReadBits32 width 2 (record offset 0), 0x20 (offset 4), ReadBits8 width 8 (offset 8), ReadBits32 width 0x20 (offset 0xc). HandleWorldMessage's jump table entry for 241 is 0x1403ec80b: 0x1403ec811 call 0x1403b67e0. There 0x1403b69b0 mov eax, dword ptr [r14+0xc]; 0x1403b69b4 cmp eax, 0x19; jae; 0x1403b69b9 mov dword ptr [0x140c3a004], 0x19; 0x1403b69c5 mov ecx, 0x3e8; 0x1403b69ca cmp eax, ecx; 0x1403b69cc cmova eax, ecx; 0x1403b69cf mov dword ptr [0x140c3a004], eax. Bytes at 0x140c3a004: 7d000000 (125). Emulator: vector.opcode.0xf1.body."
 grade = "fairly sure"
-gap = "That the width arguments of 0x14006c090 and 0x14006be30 are bit counts is inferred from the values and the bit arithmetic in the readers, which Ghidra's signatures drop; what the first three fields mean is not read."
+gap = "What the first three fields mean is not read."
 
 ["0x140c3a004"]
 statement = "The player's movement send interval in milliseconds: 125 in the file, set by server message 0xf1 and kept between 25 and 1000. FlushPlayerMovementCommands re-arms itself after this interval; each queued batch of commands is stamped with the clock plus twice this interval; a unit's server-time estimate takes a new sample only when half this interval has passed since the last."
@@ -913,23 +913,23 @@ grade = "sure"
 name = "HandleLoginMessage"
 
 ["opcode.0x3"]
-statement = "Message 3, server to client: the hello every server sends on a new connection. Fields: build (32 bits), a 32-bit value, two more 32-bit values, a 64-bit value, a 16-bit value, a 5-bit value, the message-table checksum (32 bits), a 32-bit value, a 64-bit value and a 32-bit value. From the auth server the client checks the build (16042) and checksum (0x097998A0) and answers with its login request 0x592; from a game server it answers with 0x58f, its session key, and starts character select (or, after a realm switch, the same)."
-proof = "Registered in 0x1400a8190: 0x1400a81d7 lea edx, [rdi+3]; 0x1400a81da lea r8d, [rdi+0x38] (size); reader 0x1400a9140 (stored at [rsp+0x28]): widths 0x20 at record 0, 4, 8, 0xc; 0x14006c120 at 0x10; 0x10 at 0x18; 5 at 0x1c; 0x20 at 0x20 and 0x24; 0x14006c120 at 0x28; 0x20 at 0x30. Handlers: 0x140037b70 (auth connection), 0x140038120 (game connection after login), 0x140046340 (game connection after a realm switch); 0x140038120 keeps the second field in the game object."
+statement = "Message 3, server to client: the hello every server sends on a new connection. Body, in order: the build (32 bits), a 32-bit value the game-server hello's handler keeps, two more 32-bit values, a 64-bit value, a 16-bit value, a 5-bit value, the message table checksum (32 bits), a 32-bit value, a 64-bit value and a 32-bit value: 373 bits, padded to 47 bytes. From the auth server the client checks the build (16042) and the checksum (0x097998A0) and answers with its login request 0x592, or ends the login with 'versions do not match' or 'messages do not match'; from a game server it answers with 0x58f, its session key, and starts character select (or, after a realm switch, the same). The client registers a writer for message 3 but no part of it sends one."
+proof = "Registered in 0x1400a8190: 0x1400a81d7 lea edx, [rdi+0x3]; 0x1400a81da lea r8d, [rdi+0x38] (record size); 0x1400a81d0 lea r9, [0x1400a8e00] (sizer, 373 bits); 0x1400a81ba lea rcx, [0x1400a8e10] stored at 0x1400a81cb (writer); 0x1400a81a3 lea rcx, [0x1400a9140] stored at 0x1400a81b5 (reader); 0x1400a81b1 mov dword ptr [rsp+0x30], edi (mode 0). Widths in ReadMessage0003Body and WriteMessage0003Body; the 64-bit reads are 0x14006c120 (0x14006c16c mov r8d, 0x40). Handlers: CheckAuthServerVersion 0x140037b70 (decompiled: word 0 == 0x3eaa else L'Client(%d) Auth(%d) versions do not match' and error 0x41ccc; word 8 == 0x97998a0 else L'Client(0x%8X) Auth(0x%8X) messages do not match' and 0x41ccd), 0x140038120 (keeps word 1 at game 0x1680), 0x140046340. No send: a scan of every call through network slots 0xf0 and 0x108 and of every call of 0x1403f4900 and 0x1403f4740 for an id loaded within the 30 instructions before found none with id 3, and Ghidra refs_to 0x1400a8e10 finds only the registration. Emulator: vector.opcode.0x3.body."
 grade = "fairly sure"
-gap = "That 0x14006c120 reads 64 bits is inferred from the 8-byte field spacing; what the fields other than build and checksum mean is not read."
+gap = "What the fields other than the build and the checksum mean is not read; the send scan follows immediate ids only, so a send of 3 through an id held in memory would be missed."
 
 ["0x14003a620"]
-statement = "Sends the login request, message 0x592, to the auth server, once its hello has passed the version check, and only while the NC platform login has finished (state 5); otherwise it ends the login with error 0xD7. The request holds the build (16042), the account name (up to 502 characters), two GUIDs parsed from text the NC platform login keeps, a value from the NC platform service, the realm data center id and further client details."
-proof = "0x14003a645 mov rbx, [rcx+0xb0] (account name); 0x14003a652 je / 0x14003a658 cmp dword [rcx+0xa8], 5; jne 0x14003a93d (error 0xd7). Decompiled: record word 0 = 0x3eaa; the name copied for at most 0x1f6 characters; UuidFromStringA on the texts at 0x140c671c0 and 0x140c67200; 0x140335360 on 0x140c66ff0; the row's ID (first dword of the RealmDataCenter row); network slot 0x108 serialises id 0x592, the cipher at the auth connection's 0x10 runs over it, slot 0xf0 sends it as 0x244; state 6."
+statement = "Sends the login request, message 0x592, to the auth server, once its hello has passed the version check, and only while the NC platform login has finished (state 5); otherwise it ends the login with error 0xD7. The request holds the build (16042), a digest of the client's files, the account name (an account name over 250 characters makes the request fail to serialise and nothing is sent), two GUIDs parsed from the STS login's UserId and game token texts, four further values, a description of the machine and the realm data center id (opcode.0x592)."
+proof = "0x14003a645 mov rbx, qword ptr [rcx+0xb0] (account name); 0x14003a652 je / 0x14003a658 cmp dword ptr [rcx+0xa8], 5; jne 0x14003a93d (error 0xd7). Decompiled: record word 0 = 0x3eaa; 64 bits from game 0x1628 (0x14003a73e mov rax, qword ptr [rdi+0x1628]); the name copied for at most 0x1f6 units into the record's 0xfb-unit field, which WriteCountedWideText 0x1400c2f70 refuses without a zero in its first 251 units; UuidFromStringA on the texts at 0x140c671c0 and 0x140c67200; 0x140335360 on 0x140c66ff0; the machine block from game 0x15c..0x1594; the row's ID (first dword of the RealmDataCenter row); network slot 0x108 serialises id 0x592, the cipher at the auth connection's 0x10 runs over it, slot 0xf0 sends it as 0x244 (0x14003a923 call qword ptr [rax+0xf0] after 0x14003a91d mov r8d, 0x244); state 6 whether or not it was sent."
 grade = "fairly sure"
-gap = "The record's other fields and the wire layout of 0x592 (its writer) are not read; that the two GUIDs are the NC platform's game token is a guess, settled by reading who fills 0x140c671c0 and 0x140c67200."
+gap = "The record's sources are read from Ghidra's decompile. The two GUIDs are the STS login's UserId (HandleLoginFinishResult 0x1400b3070) and game token (HandleRequestGameTokenResult 0x1400b3a50); UuidFromStringA's result is not checked, so a text that is not a GUID leaves the previous GUID value in the request."
 name = "SendAuthLoginRequest"
 
 ["opcode.0x3db"]
-statement = "Message 0x3db (979), auth server to client: the hand-off to a game server. Fields: the server's IPv4 address (32 bits, in host byte order, so 127.0.0.1 is 0x7F000001), its port (16 bits), a 16-byte session key (read as a GUID), a 32-bit value the client sends back in 0x58f, the realm's name (wide text; it names the realm's settings file Realm.<account>.<realm>.ini), a 32-bit value, a 2-bit value and a 21-bit value. Accepted only after 0x591; the client opens a game connection to that address (HandleMessage03DB); the auth connection is not closed there."
-proof = "Registered at 0x14006d3e7 mov edx, 0x3db with size 0x38 (0x14006d3e0 lea r8d, [r9+0x38]) and reader 0x14007d6a0: 0x14007d6d2 width 0x20 at record 0; 0x14007d6ec width 0x10 at 4 (0x14006bf60); 0x14007d705 call 0x1400a8900 at 8 (a GUID: 32, 16 and 16 bits and 8 bytes, 0x1400a8928..0x1400a896a); 0x14007d712 width 0x20 at 0x18; 0x14007d72e call 0x140336a40 (text) at 0x20; widths 0x20 at 0x28, 2 at 0x2c, 0x15 at 0x30. Handler 0x140037f30: state must be 9 (set by 0x591); 0x140038057 movzx r8d, word [r14+4]; 0x14003805c mov edx, [r14]; 0x140038069 call 0x140334bb0 (htonl, htons); key to game 0x1638..0x1644; field 0x18 to game 0x1668; text to 0x140011800 (L'Realm.%s.%s.ini'); 0x28, 0x2c, 0x30 to game 0x1684..0x168c."
+statement = "Message 0x3db (979), auth server to client: the hand-off to a game server. Body, in order: the server's IPv4 address (32 bits, as a number, so 127.0.0.1 is 0x7F000001), its port (16 bits), the 16-byte session key (as a GUID: 32, 16 and 16 bits and 8 raw bytes, so the 16 bytes in order), a 32-bit value the client sends back in 0x58f, the realm's name (wide text; it names the realm's settings file Realm.<account>.<realm>.ini), a 32-bit value, a 2-bit value and a 21-bit value. No field is aligned to a byte. Accepted only after 0x591; the client opens a game connection to that address (HandleMessage03DB); the auth connection is not closed there. The client has no writer for it."
+proof = "Registered at 0x14006d3e7 mov edx, 0x3db with size 0x38 (0x14006d3e0 lea r8d, [r9+0x38]), reader 0x14007d6a0 (0x14006d3c9 lea rcx, [0x14007d6a0] stored at 0x14006d3db) and 0x14006d3ec mov qword ptr [rsp+0x20], 0x0 (no writer); widths in ReadMessage03DBBody. Handler 0x140037f30: state must be 9 (set by 0x591); 0x140038057 movzx r8d, word ptr [r14+4]; 0x14003805c mov edx, dword ptr [r14]; 0x140038069 call 0x140334bb0 (htonl, htons); key to game 0x1638..0x1647; field 0x18 to game 0x1668; text to 0x140011800 (L'Realm.%s.%s.ini' with game 0x1670, the account name); 0x28, 0x2c, 0x30 to game 0x1684..0x168c. Emulator: vector.opcode.0x3db.body."
 grade = "fairly sure"
-gap = "What the 32-bit value at 0x18 and the last three fields mean is not read; that the 2-bit and 21-bit widths are bit counts follows the reading of 0x14006c090 in the 0xf1 record."
+gap = "What the 32-bit value sent back in 0x58f and the last three fields mean is not read; the handler is read partly from Ghidra's decompile."
 
 ["0x140037f30"]
 statement = "Handles message 0x3db while the login waits for it: keeps the session key, the account value, the realm name and three further values, opens a game connection (kind 1) to the given address and port, and waits for that server's hello."
@@ -939,10 +939,10 @@ gap = "Read from Ghidra's decompile and the instructions at 0x140038057..0x14003
 name = "HandleMessage03DB"
 
 ["opcode.0x58f"]
-statement = "Message 0x58f (1423), client to game server: the first message on a game connection, sent when the server's hello arrives. It carries the 32-bit account value from the hand-off (0x3db), the 16-byte session key, a 64-bit value from the game object and the value 3. Right after sending it the client keys the connection's cipher from the session key."
-proof = "0x140038120 and 0x140046340 (decompiled): record = {game 0x1668, game 0x1638 (key), game 0x163c..0x1644, 0, game 0x1670, 3}; network slot 0x108 serialises id 0x58f, the connection's cipher at 0x10 runs over it, slot 0xf0 sends it as 0x244; then the 16 key bytes at game 0x1638 are folded from 0x718da9074f2deb91 by (h + byte) * 0xaa7f8ea9 and 0x14002a050 starts the connection with that and (h + game 0x1630) * 0xaa7f8ea9. Registered at 0x14006d593 mov edx, 0x58f."
+statement = "Message 0x58f (1423), client to game server: the first message on a game connection, sent when the server's hello arrives. Body, in order: the 32-bit value from the auth server's hand-off (0x3db; a realm switch's 0x7a1 does not replace it), the 16-byte session key (as a GUID: 32, 16 and 16 bits and 8 raw bytes, so the 16 bytes in order), a 64-bit value the client sets to 0, the account name the client logged in with (wide text), and a 32-bit value the client sets to 3. Right after sending it the client keys the connection's cipher from the session key. The client has no reader for it."
+proof = "Registered at 0x14006d593 mov edx, 0x58f; 0x14006d598 mov r8d, 0x30 (record size); 0x14006d57e lea r9, [0x14007e2c0] (sizer); 0x14006d56f lea rcx, [0x14007e320] stored at 0x14006d58e (writer); 0x14006d585 mov qword ptr [rsp+0x28], 0x0 (no reader). Senders HandleLoginGameServerHello 0x140038120 and HandleRealmSwitchServerHello 0x140046340 (decompiled): record word 0 = game 0x1668; bytes 4..0x13 = game 0x1638..0x1647 (the key); 64 bits at 0x18 = 0; text at 0x20 = game 0x1670 (set from the login's account name by 0x1400114e0 when 0x591 arrives); word 0x28 = 3; 0x1400381f9 call qword ptr [rax+0x108] with 0x140038198 mov r8d, 0x58f. Emulator: vector.opcode.0x58f.body."
 grade = "fairly sure"
-gap = "The wire layout (the writer registered with 0x58f) is not read; what game 0x1670 holds is not read."
+gap = "The record's sources are read from Ghidra's decompile; what the server does with the 64-bit 0 and the 3 is not read."
 
 ["0x140038120"]
 statement = "Handles the hello (message 3) from the game server reached by the auth hand-off: sends 0x58f with the session key, keys the connection's cipher, starts character select on that connection (StartCharacterSelect) and ends the login, which then handles no more messages."
@@ -966,10 +966,10 @@ gap = "Read from Ghidra's decompile; that game 0x1700 is the login screen is inf
 name = "HandleCharacterSelectMessage"
 
 ["opcode.0xad"]
-statement = "Message 0xad (173), game server to client, after the player chose a character: six 32-bit values. The client then enters the world on the same connection, which becomes the world connection; no new server connection is opened."
-proof = "Registered at 0x14006d8eb mov edx, 0xad. 0x140020ea0 sends it to 0x140022480, which needs state 4, keeps the six values at the object's 0x1c8..0x1dc and calls 0x140034330 with the character-select connection (object 0xb8); 0x140034330 calls 0x1403e7ea0, which stores that connection at game 0x7928 (0x1403e7ee9 mov [rdi+0x7928], r14), the connection SendWorldMessage sends on."
+statement = "Message 0xad (173), game server to client, after the player chose a character. Body: a 15-bit value, then five 32-bit floats (each sent as its IEEE 754 single-precision bits). The client keeps the six values and enters the world on the same connection, which becomes the world connection; no new server connection is opened. The client has no writer for it."
+proof = "Registered at 0x14006d8eb mov edx, 0xad; 0x14006d8e4 lea r8d, [r9+0x18] (record size); 0x14006d8cd lea rcx, [0x14007e9e0] stored at 0x14006d8df (reader); 0x14006d8f0 mov qword ptr [rsp+0x20], 0x0 (no writer); widths in ReadMessage00ADBody. 0x140020ea0 sends it to 0x140022480, which needs state 4, keeps the six words at the character-select object's 0x1c8..0x1dc and calls 0x140034330 with the character-select connection (object 0xb8) and the kept character record; 0x140034330 calls 0x1403e7ea0, which stores that connection at game 0x7928 (0x1403e7ee9 mov qword ptr [rdi+0x7928], r14). Emulator: vector.opcode.0xad.body."
 grade = "fairly sure"
-gap = "The reader's field widths are not read (the six values are read from the handler's copies); what they mean is not read."
+gap = "What the six values mean is not read: the handler only keeps them; settled by reading the readers of the character-select object's 0x1c8..0x1dc."
 
 ["0x140022480"]
 statement = "Handles message 0xad: keeps its six values, builds the world session on the character-select connection with the chosen character's world and position, and moves character select to its finished state."
@@ -992,10 +992,10 @@ grade = "sure"
 name = "LuaExitToRealmSelect"
 
 ["0x140045760"]
-statement = "Starts realm select on an existing game connection: clears the current realm name, sends message 0x7a4 (a 32-bit 0) asking for the realm list, and loads the realm-select interface."
-proof = "Decompiled: the connection kept at the object's 0xb0; game 0x1690 freed, 0x16a0 cleared; network slot 0x108 with 0x7a4 and a zero 32-bit value, sent as 0x244; 0x14003db40 with L'Realm', L'DefaultStratum' and L'RealmSelect'."
+statement = "Starts realm select on an existing game connection: clears the current realm name, sends message 0x7a4 (whose body is empty) asking for the realm list, and loads the realm-select interface."
+proof = "Decompiled: the connection kept at the object's 0xb0; game 0x1690 freed, 0x16a0 cleared; 0x140045806 mov r8d, 0x7a4; 0x14004580c call qword ptr [rax+0x108] with a zero 32-bit record, which the registered writer 0x140001ba0 does not write; 0x140045874 mov r8d, 0x244; 0x14004587a call qword ptr [rax+0xf0]; 0x14003db40 with L'Realm', L'DefaultStratum' and L'RealmSelect'."
 grade = "fairly sure"
-gap = "Read from Ghidra's decompile; that 0x7a4 asks for the realm list is inferred from the realm list (0x761) being the next message handled."
+gap = "Read from Ghidra's decompile apart from the send instructions; that 0x7a4 asks for the realm list is inferred from the realm list (0x761) being the next message handled."
 name = "StartRealmSelect"
 
 ["0x140045a70"]
@@ -1006,16 +1006,16 @@ gap = "The full compare chain is read from Ghidra's decompile; only the jumps ab
 name = "HandleRealmSelectMessage"
 
 ["opcode.0x761"]
-statement = "Message 0x761 (1889), game server to client during realm select: the realm list. It holds a count and that many realm entries of 0x58 bytes, then a count of groups of texts; the client rebuilds its realm list and raises RealmListChanged."
-proof = "Registered at 0x1400a84b9 mov edx, 0x761. Handler 0x140045e30 (decompiled): count at record 8, entries at 0x10 each 0x58 bytes through 0x1400a7cf0; count at 0x18, entries at 0x20 of 0x10 bytes each holding a byte count at 4 and text pointers at 8; 'RealmListChanged' to the screen."
+statement = "Message 0x761 (1889), game server to client during realm select: the realm list. Body, in order: a 64-bit value; the realm count (32 bits) and that many realm entries; the text group count (32 bits) and that many text groups. A realm entry: realm id (32 bits, Lua nRealmId), name (wide text, strName), note text id (32 bits; strNote is the client's localized text with this id), flags (32 bits; bit 4 is bFactionRestricted, bit 0 picks the realm selected first), PvP type (2 bits, nRealmPVPType), status (3 bits, nRealmStatus), population (3 bits, nPopulation), a 32-bit value, 16 raw bytes, a 14-bit value, a count (32 bits, nCount), the last-played text (wide text, strLastPlayed), a 64-bit value and four 16-bit values. A text group: a 32-bit value, a text count (8 bits) and that many wide texts. No field is aligned to a byte. The client rebuilds its realm list and raises RealmListChanged; it registers a writer but never sends 0x761."
+proof = "Registered at 0x1400a84b9 mov edx, 0x761; 0x1400a84b5 lea r8d, [rdi+0x28] (record size); 0x1400a84a9 lea r9, [0x1400ac660] (sizer); 0x1400a84a2 lea rcx, [0x1400ac770] stored at 0x1400a84b0 (writer); 0x1400a8496 lea rcx, [0x1400ac9d0] stored at 0x1400a849d (reader); 0x1400a8492 mov dword ptr [rsp+0x30], edi (mode 0). Widths in ReadMessage0761Body, ReadRealmListEntry and ReadRealmListTextGroup; the Lua names from LuaGetRealmList 0x140046790. Handler 0x140045e30 (decompiled): entries copied by 0x1400a7cf0 into the realm list, groups' texts into a second list, 'RealmListChanged' to the screen; with game 0x1648 set, the first entry whose flags have bit 0 becomes the selected index. No send of 0x761 in the id scan of slots 0xf0 and 0x108; Ghidra refs_to 0x1400ac770 finds only the registration. Emulator: vector.opcode.0x761.body."
 grade = "fairly sure"
-gap = "The wire layout and the entry fields are not read."
+gap = "The handler and the bit-0 use are read from Ghidra's decompile; what the leading 64-bit value, the entry's 32-bit value, 16 raw bytes, 14-bit value, 64-bit value and four 16-bit values, and the text groups mean is not read (the groups are likely what GetRealmMessages returns; reading that Lua function would settle it)."
 
 ["opcode.0x7a1"]
-statement = "Message 0x7a1 (1953), game server to client during realm select: the hand-off to another realm's server. Fields: a 32-bit value, a 16-byte session key (read as a GUID), the server's IPv4 address (32 bits, host byte order) and port (16 bits), a 1-bit flag, the realm's name (wide text), a 32-bit value, a 2-bit value and a 21-bit value. The client opens a game connection (kind 1) to that address and, on its hello, sends 0x58f and starts character select there."
-proof = "Registered at 0x1400785e8 mov edx, 0x7a1, size 0x38 (0x1400785e1 lea r8d, [r9+0x38]), reader 0x1400a2110: 0x1400a2142 width 0x20 at 0; 0x1400a215f call 0x1400a8900 (GUID) at 4; 0x1400a216f call 0x1400a8980 at 0x14 (0x1400a89a5 width 0x20, 0x1400a89c4 width 0x10 at 0x18); 0x1400a2185 width 1 at 0x1c; 0x1400a2198 text at 0x20; widths 0x20 at 0x28, 2 at 0x2c, 0x15 at 0x30. Handler 0x1400461e0: 0x140046221 movzx r8d, word [rbp+0x18]; 0x140046226 mov edx, [rbp+0x14]; 0x140046233 call 0x140334bb0; 0x140046240 call 0x140029f00 (kind 1)."
+statement = "Message 0x7a1 (1953), game server to client during realm select: the hand-off to another realm's server. Body, in order: a 32-bit value, the 16-byte session key (as a GUID: 32, 16 and 16 bits and 8 raw bytes, so the 16 bytes in order), the server's IPv4 address (32 bits, as a number) and port (16 bits), a 1-bit flag, the realm's name (wide text), a 32-bit value, a 2-bit value and a 21-bit value. No field is aligned to a byte. The client opens a game connection (kind 1) to that address and, on its hello, sends 0x58f and starts character select there. The client has no writer for it."
+proof = "Registered at 0x1400785e8 mov edx, 0x7a1, size 0x38 (0x1400785e1 lea r8d, [r9+0x38]), reader 0x1400a2110 (0x1400785ca lea rcx, [0x1400a2110] stored at 0x1400785dc), 0x1400785ed mov qword ptr [rsp+0x20], 0x0 (no writer); widths in ReadMessage07A1Body (the endpoint through ReadIpv4Endpoint 0x1400a8980). Handler 0x1400461e0: 0x140046221 movzx r8d, word ptr [rbp+0x18]; 0x140046226 mov edx, dword ptr [rbp+0x14]; 0x140046233 call 0x140334bb0; 0x140046240 call 0x140029f00 (kind 1); decompiled, the handler keeps the key (game 0x1638..0x1647), the name (0x140011800) and the last three values (game 0x1684..0x168c) but not the first value or the flag. Emulator: vector.opcode.0x7a1.body."
 grade = "fairly sure"
-gap = "What the first 32-bit value, the flag and the last three fields mean is not read."
+gap = "What the first value, the flag and the last three fields mean is not read; that the handler drops the first value and the flag is read from Ghidra's decompile."
 
 ["0x1400461e0"]
 statement = "Handles message 0x7a1: opens a game connection (kind 1) to the given realm server, keeps the session key, realm name and three further values as the auth hand-off does, and waits for that server's hello."
@@ -1042,7 +1042,7 @@ name = "LoadStsConnLib"
 statement = "Starts the NC platform login service with the program id and a list of server addresses (here one: the AuthNc host, port 6600 by default), logging each as 'Using NCPlatform address'. The connection to that server is opened inside StsConnLib64.MT.dll through the connection CreateStsConn makes, which receives the address list."
 proof = "Decompiled: each address formatted by 0x1403352b0 and logged with descriptor 0x141d0d810 (0x140a131d0 'Using NCPlatform address [%I64x][%d]: %S' plus 0x12fa640); appended to the list at 0x140c67018; then the manager object 0x140c66f70's slot 0x20 with the program id. 0x1400b4340: 0x1400b43b1 mov rax, [0x140c3bec8] (CreateStsConn); the new connection's slot 0x20 receives the list count and pointer (manager 0xa8, 0xb0 = 0x140c67018, 0x140c67020)."
 grade = "fairly sure"
-gap = "The library's own connection code and the STS protocol it speaks are not read; that 0x1400b4340 runs on the manager 0x140c66f70 is inferred from the list addresses."
+gap = "That 0x1400b4340 runs on the manager 0x140c66f70 is inferred from the list addresses. The library's side is read in the StsConnLib64.MT.dll records (StsConnInit 0x180001c30 and after)."
 name = "StartNcPlatform"
 
 ["0x140038570"]
@@ -1056,7 +1056,7 @@ name = "SubmitLogin"
 statement = "Handles the NC platform login's events. Event 14 means the platform login is done: the client opens the auth server connection (or sends the login request if it is already open). Other events end the login with an error, show a second-factor or IP-verification form, or are ignored."
 proof = "Decompiled: event type is the first field; type 0x18 maps field 10 to errors 0x62f72..0x62f76; in states 3 and 4 a switch: 0xe -> state 5, 0x140037341 call 0x140039380 when no auth connection, else 0x14003a620; 10 -> 0x140038870; 0x23 -> 0x140039220; 2, 0x10..0x16, 0x22 -> errors."
 grade = "fairly sure"
-gap = "What each event type is in the NC platform's terms is not read; settled by reading where 0x140037220 is called from the StsConnLib callbacks (OnLoginFinish, OnRequestGameToken)."
+gap = "Event 14 is raised by HandleRequestGameTokenResult 0x1400b3a50 when RequestGameToken succeeds, event 9 after LoginStart, 11 after LoginFinish, 13 after ListMyAccounts (RaiseNcPlatformEvent 0x1400b23b0); what the other event numbers mean to the login screen is not read."
 name = "HandleNcPlatformEvent"
 
 ["0x1400374e0"]
@@ -1083,10 +1083,9 @@ gap = "Read from Ghidra's decompile, not the instructions; what modes 1 and 3 ar
 name = "WriteMessageFrame"
 
 ["0x140336380"]
-statement = "Writes an unsigned value of 1 to 64 bits into a bit stream at the current bit position, least significant bit first, so a byte-aligned 16- or 32-bit value lands as little-endian bytes. A stream without room for it grows first."
-proof = "Decompiled: room = (buffer end - byte pointer) * 8 - bit offset, else 0x140336470; by (width + 7) >> 3: 0x1403367d0 (1 byte), 0x140336860 (2), 0x1403368f0 (3 or 4), 0x1400a7540 (5 to 8). 0x1403368f0 decompiled: the 32-bit word at the byte pointer keeps its bits below the bit offset, then ors (value masked to width) << bit offset; a fifth byte when it spills; byte pointer += (offset + width) >> 3, offset = (offset + width) & 7. 0x140336860 the same on a 16-bit word."
-grade = "fairly sure"
-gap = "Read from Ghidra's decompile; the 1-byte and 5-to-8-byte writers are not read."
+statement = "Writes an unsigned value of 1 to 64 bits into a bit stream at the current bit position, least significant bit first, so a byte-aligned 16-, 32- or 64-bit value lands as little-endian bytes and a field may start and end anywhere in a byte. Only the value's low bits for the width are written; the bits of the last byte above the value are cleared, so a frame's padding to a whole byte is zero bits. A stream without room for it grows first, or the write fails with 0x80004005. A signed value is written as its two's-complement low bits."
+proof = "Decompiled: room = (chunk end - write pointer) * 8 - bit offset, else 0x140336470; by (width + 7) >> 3: 0x1403367d0 (1 byte), 0x140336860 (2), 0x1403368f0 (3 or 4), 0x1400a7540 (5 to 8); each keeps the bits below the offset in its word, ors in (value masked to the width) << offset and spills into one more byte; byte pointer += (offset + width) >> 3, offset = (offset + width) & 7. The inline copies in the message writers mask the same way (0x1400a8e10: a 5-bit field as value & 0x1f) and pass narrow signed fields to 0x140336470 sign-extended, where they are masked byte by byte. Run on Ghidra's p-code emulator: vector.0x140336380.fields."
+grade = "sure"
 name = "WriteBits"
 
 ["0x1403365e0"]
@@ -1251,6 +1250,523 @@ proof = "In the game object's constructor 0x14000a490: 0x14000a502 mov rdi, 0x71
 grade = "fairly sure"
 gap = "A write to game 0x1630 through a block copy or a computed offset is not excluded by the instruction search; reading game 0x1630 in a running client would settle it."
 
+# Bit stream primitives: how a message body is written and read
+
+["0x1403367d0"]
+statement = "WriteBits's path for a value of 1 to 8 bits: clears the bits of the current byte from the bit position up, ors in the value's low bits there, puts the bits that do not fit in the next byte, and moves the position on by the width."
+proof = "Decompiled: mask (1 << width) - 1, or 0xff for 8; byte &= (1 << offset) - 1; byte |= (value & mask) << offset; when (width + 7 + offset) rounded down to 8 is over 8, the next byte = value >> (8 - offset); byte pointer += (offset + width) >> 3; offset = (offset + width) & 7. Called by WriteBits for (width + 7) >> 3 = 1. Run on the emulator inside WriteBits: vector.0x140336380.fields (one_bit, two_bits, value_wider_than_width, fill_ff_3bits)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile and checked only through WriteBits's outputs on the emulator; the instructions are not listed."
+name = "WriteBits8"
+
+["0x1400a7540"]
+statement = "WriteBits's path for a value of 33 to 64 bits, also used by the inline writers: clears the bits of the current 8-byte word from the bit position up, ors in the value's low bits there, puts the bits that do not fit in the ninth byte, and moves the position on by the width."
+proof = "Decompiled: mask (1 << width) - 1, or all ones for 64; word &= (1 << offset) - 1; word |= (value & mask) << offset; when (width + 7 + offset) rounded down to 8 is over 64, byte 8 = value >> (64 - offset); byte pointer += (offset + width) >> 3; offset = (offset + width) & 7. Called by WriteBits for (width + 7) >> 3 from 5 to 8, and by 0x1400a7110, 0x1400a7160 and 0x1400a7360. Run on the emulator inside WriteBits: vector.0x140336380.fields (64_bits, 3bits_then_64)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile and checked only through WriteBits's outputs on the emulator."
+name = "WriteBits64"
+
+["0x140336470"]
+statement = "Writes a value of up to 64 bits one byte's worth at a time, least significant bits first, moving to a new chunk of the stream when one fills. When the stream has no room and no chunk list to grow into, it fails with 0x80004005 after writing the bytes that fit. Every writer falls back to it when fewer than 64 bits of room are left in the current chunk."
+proof = "Decompiled: per pass takes min(8 - offset, bits left) bits; offset 0 stores the byte, otherwise ors into it; at a byte end with the chunk full takes a new chunk (0x140338550) and appends it (0x140337f20), or returns 0x80004005 when the stream's chunk list is null and bits remain. Emulator (vector.0x140336380.fields, no_room_32_in_2_bytes): WriteBits of 0xdeadbeef in 32 bits into a 2-byte chunk with no chunk list returned 0x80004005 and left the bytes ef be."
+grade = "fairly sure"
+gap = "Growing into a new chunk was not run (it allocates); read from Ghidra's decompile."
+name = "WriteBitsSlow"
+
+["0x1400a7110"]
+statement = "Writes an unsigned value in a given number of bits (up to 64) at the stream's bit position, least significant bit first: through WriteBits64 when 64 bits of room are left in the current chunk, otherwise through WriteBitsSlow. The message writers call it for most 32-bit fields."
+proof = "Decompiled: room = (chunk end - write pointer) * 8 - offset; room < 0x40 -> 0x140336470 (value, width); else 0x1400a7540 (value, width). Callers include WriteMessage0592Body 0x14007dd40, WriteMessage0003Body 0x1400a8e10 and WriteMessage058FBody 0x14007e320, whose outputs are in vector.opcode.0x3.body, vector.opcode.0x592.body and vector.opcode.0x58f.body."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; checked through the message writers' outputs on the emulator."
+name = "WriteUintBits"
+
+["0x1400a7160"]
+statement = "Writes a 64-bit value at the stream's bit position, least significant bit first (little-endian when the position is on a byte boundary)."
+proof = "Decompiled: as 0x1400a7110 with the width fixed at 0x40. Emulator: WriteMessage0003Body wrote the 64-bit fields 0x0102030405060708 and 0x1112131415161718 as 0807060504030201 and, 7 bits into a byte, as the bits of vector.opcode.0x3.body."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; checked through vector.opcode.0x3.body."
+name = "WriteUint64"
+
+["0x1400a7360"]
+statement = "Writes a 16-bit value at the stream's bit position, least significant bit first."
+proof = "Decompiled: as 0x1400a7110 with the width fixed at 0x10. Emulator: WriteMessage0003Body wrote 0xbeef as ef be (vector.opcode.0x3.body)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; checked through vector.opcode.0x3.body."
+name = "WriteUint16"
+
+["0x1403360d0"]
+statement = "Writes raw bytes into a bit stream at the current bit position, with no move to a byte boundary: in order, as 8-, 16-, 32- and 64-bit values least significant bit first, so the bytes land in order, shifted by the position. A GUID's last eight bytes and the characters of a text are written this way."
+proof = "Decompiled: an odd length writes one byte in 8 bits, then a 2 bit writes 16 bits (0x1400a7360), a 4 bit 32 bits, then 64 bits per 8 bytes; each through the fast path or 0x140336470. Emulator: the 16 bytes a0..af of a realm entry written 0 bits into a byte (vector.opcode.0x761.body), and the session key's last 8 bytes (vector.opcode.0x58f.body), came out in order."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; checked only at a whole-byte position on the emulator."
+name = "WriteBytesAsBits"
+
+["0x140336040"]
+statement = "Writes a wide (UTF-16) text: one bit that is 1 when the text has more than 127 characters, then the character count in 7 bits (or 15 bits when the first bit is 1), then each character in 16 bits, least significant bit first; no terminating zero and no move to a byte boundary. A missing text is written as an empty one. Used for every text in the messages of this decode except 0x592's account name."
+proof = "Decompiled: length by scanning to the zero; > 0x7f -> WriteBits(1, 1) then WriteBits(length, 0xf); else WriteBits(0, 1) then WriteBits(length, 7); then 0x1403360d0 over length * 2 bytes; a null text has length 0. Emulator (vector.0x140336040.wide_text): 'Ab' -> 04 41 00 62 00 (40 bits); '' -> 00 (8 bits); 127 characters -> fe then the characters (2040 bits); 128 characters -> 01 01 then the characters (2064 bits)."
+grade = "sure"
+name = "WriteWideText"
+
+["0x140336a40"]
+statement = "Reads a wide (UTF-16) text written by WriteWideText: one bit, a count in 7 bits when it is 0 or 15 bits when it is 1, then that many 16-bit characters; the text is kept in the message record's space with a terminating zero added."
+proof = "Decompiled: 0x140336c60 width 1; 0 -> width 7, 1 -> width 0xf; 0x1403374e0 allocates count * 2 + 2; 0x140337160 reads count * 2 bytes; a zero character stored after them. Emulator: the readers of 0x3db, 0x7a1 and 0x761 gave back 'Nexus', 'bc', 'a' and 'd' from the bit streams in vector.opcode.0x3db.body, vector.opcode.0x7a1.body and vector.opcode.0x761.body."
+grade = "fairly sure"
+gap = "The 15-bit count was not run through the reader on the emulator, only through the writer."
+name = "ReadWideText"
+
+["0x140335fb0"]
+statement = "Writes a narrow (8-bit) text: one bit that is 1 when the text has more than 127 bytes, the byte count in 7 or 15 bits, then the bytes; no terminating zero. No message of this decode holds one."
+proof = "Decompiled: as 0x140336040 with 8-bit characters. Emulator: 'Ab' -> 04 41 62 (24 bits) (vector.0x140336040.wide_text). Its reader is 0x140336980 (same count rule, the bytes through 0x140337160, a zero byte added)."
+grade = "sure"
+name = "WriteNarrowText"
+
+["0x1400c2f70"]
+statement = "Writes a counted wide text, the form 0x592's account name takes: the character count plus one in 16 bits, then the characters and the terminating zero, each in 16 bits. A text with no zero within the given maximum (251 characters for the account name) is refused with 0x80070057 and nothing is written, so an account name of more than 250 characters cannot be sent."
+proof = "Decompiled: scans at most the given count for a zero, none -> 0x80070057; writes (length + 1) & 0xffff in 0x10 bits, then length + 1 units of 0x10 bits. Emulator, 0x1400c2f70 run with the maximum 0xfb (vector.0x1400c2f70.counted_text): 'Ab' -> 03 00 41 00 62 00 00 00 (64 bits); 251 characters with no zero inside the 251 -> 0x80070057, 0 bits; 250 characters -> 0, 4032 bits."
+grade = "sure"
+name = "WriteCountedWideText"
+
+["0x1400a8780"]
+statement = "Writes a GUID or other 16-byte key: its first 32-bit word, then two 16-bit words, then its last 8 bytes, all least significant bit first, so the 16 bytes go out in their memory order."
+proof = "Decompiled: record word 0 in 0x20 bits, the short at 4 in 0x10 bits, 0x1400a7360 with the short at 6, 0x1403360d0 over bytes 8 to 0x10. Emulator: the session key 01 02 .. 10 written by WriteMessage058FBody came out as 0102030405060708090a0b0c0d0e0f10 (vector.opcode.0x58f.body). Its reader is 0x1400a8900: 0x1400a80f0 (32 bits), 0x14006bf60 twice with width 0x10, 0x140337160 over 8 bytes."
+grade = "sure"
+name = "WriteGuid"
+
+["0x140336d60"]
+statement = "Reads up to 64 bits from a received bit stream, least significant bit first, a byte's worth at a time, moving on to the next received chunk when one ends. When the received data ends first it fails with 0x80070026 (end of data). Every reader falls back to it when fewer than 64 bits are left in the current chunk."
+proof = "Decompiled: out = 0; per pass takes min(8 - offset, bits left) bits of the current byte, shifted by the bits already read; at a chunk's end takes the next from the stream's chain at 0x28/0x30, or returns 0x80070026 when there is none. Emulator, 0x1400a37d0 run over 10 bytes with no slack after them: its last fields came through this path and all 74 bits were read; over 9 bytes it returned 0x80070026 after 72 bits (vector.opcode.0xf1.body)."
+grade = "sure"
+name = "ReadBitsSlow"
+
+["0x1400a71c0"]
+statement = "Reads up to 64 bits of a received bit stream from the 8 bytes at the read position and the byte after them, least significant bit first, masks them to the width, and moves the position on; the readers use it when 64 bits are left in the chunk."
+proof = "Decompiled: v = word >> offset; when (width + 7 + offset) rounded down to 8 is over 64, v |= byte 8 << (64 - offset); v &= (1 << width) - 1 below 64; pointer += (offset + width) >> 3; offset = (offset + width) & 7. Emulator: the reads of vector.opcode.0x3.body and vector.opcode.0xad.body went through it."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; checked through the message readers on the emulator."
+name = "ReadBitsFromWord"
+
+["0x14006c090"]
+statement = "Reads an unsigned value of a given width (up to 32 bits) into a 32-bit field, least significant bit first; the bits above the width are zero, so a value is never sign-extended. The message readers call it for most fields."
+proof = "0x14006c0d1 cmp r9, 0x40 (bits left in the chunk); 0x14006c0db call 0x1400a71c0 with the width still in the third argument (r8 is not written between entry and the call); 0x14006c0e8 mov dword ptr [rdi], eax; else 0x14006c0f3 call 0x140336d60 with the width; 0x14006c0fc mov dword ptr [rdi], ecx. Emulator: vector.opcode.0xf1.body (2, 32, 8 and 32 bits), vector.opcode.0x3db.body (32, 16, 32, 2 and 21 bits)."
+grade = "sure"
+name = "ReadBits32"
+
+["0x14006be30"]
+statement = "Reads an unsigned value of a given width (up to 8 bits) into an 8-bit field, least significant bit first."
+proof = "Decompiled: the same body as 0x14006c090 storing one byte. Emulator: ReadMessage00F1Body read its third field (8 bits, 0xab) through it (vector.opcode.0xf1.body); ReadRealmListTextGroup 0x1400ac590 reads its text count with it."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; checked through the 0xf1 reader on the emulator."
+name = "ReadBits8"
+
+["0x14006bf60"]
+statement = "Reads an unsigned value of a given width (up to 16 bits) into a 16-bit field, least significant bit first."
+proof = "Decompiled: the same body as 0x14006c090 storing two bytes. Emulator: the port of 0x3db (24000) and of 0x7a1 (24001), and the 16-bit field of message 3 (0xbeef), came back through it (vector.opcode.0x3db.body, vector.opcode.0x7a1.body, vector.opcode.0x3.body)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; checked through the message readers on the emulator."
+name = "ReadBits16"
+
+["0x14006c120"]
+statement = "Reads a 64-bit value, least significant bit first (little-endian when the position is on a byte boundary)."
+proof = "0x14006c16c mov r8d, 0x40; 0x14006c176 call 0x1400a71c0; 0x14006c183 mov qword ptr [rdi], rax; slow path 0x14006c18f mov r8d, 0x40; 0x14006c195 call 0x140336d60; 0x14006c19f mov qword ptr [rdi], rcx. Emulator: message 3's two 64-bit fields came back (vector.opcode.0x3.body)."
+grade = "sure"
+name = "ReadUint64"
+
+["0x14006c1c0"]
+statement = "Reads a 32-bit float: 32 bits least significant bit first, kept as the float's own bits (IEEE 754 single precision), with no conversion."
+proof = "0x14006c200 lea rax, [r10+0x27] (width 32 on the fast path); 0x14006c23e mov eax, r8d; 0x14006c241 mov qword ptr [rsp+0x30], rax; 0x14006c24a movss xmm0, dword ptr [rsp+0x30]; 0x14006c259 movss dword ptr [rbx], xmm0; slow path 0x14006c268 mov r8d, 0x20; 0x14006c26e call 0x140336d60; 0x14006c279 movss dword ptr [rbx], xmm0. Emulator: 0xad's five floats 1.0, -2.5, 100.25, 0.0 and 3.5 came back (vector.opcode.0xad.body)."
+grade = "sure"
+name = "ReadFloat"
+
+["0x140336c60"]
+statement = "Reads an unsigned value of up to 64 bits, least significant bit first, choosing a 1-, 2-, 4- or 8-byte read by the width, or ReadBitsSlow when the chunk holds too few bytes. The text readers and ReadBytesAsBits use it."
+proof = "Decompiled: bytes left < (offset + 7 + width) >> 3 -> 0x140336d60; else by (width + 7) >> 3: 0x140337320, 0x1403373b0, 0x140337440, 0x1400a71c0. Emulator: every text and raw-byte read in vector.opcode.0x761.body and vector.opcode.0x3db.body went through it."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the 1-, 2- and 4-byte readers are not read."
+name = "ReadBits"
+
+["0x140337160"]
+statement = "Reads raw bytes from a received bit stream at the current bit position, with no move to a byte boundary: an odd byte in 8 bits, then 16, 32 and 64 bits at a time, least significant bit first, so the bytes come back in order. It undoes WriteBytesAsBits."
+proof = "Decompiled: length & 1 -> 0x140336c60 width 8; & 2 -> width 0x10; & 4 -> width 0x20; then width 0x40 per 8 bytes, each stored in order. Emulator: the 16 bytes of a realm entry and the session keys of 0x3db and 0x7a1 came back in order (vector.opcode.0x761.body, vector.opcode.0x3db.body, vector.opcode.0x7a1.body)."
+grade = "sure"
+name = "ReadBytesAsBits"
+
+["0x1400a8980"]
+statement = "Reads a server endpoint: an IPv4 address in 32 bits and a port in 16 bits, both as numbers (host byte order), so 127.0.0.1 is the value 0x7F000001 and its bytes on the wire are 01 00 00 7f."
+proof = "Decompiled: 0x14006c090 width 0x20 into word 0, 0x14006bf60 width 0x10 into the short at 4. Emulator: 0x7a1's endpoint 0100007f c15d read back as 0x7f000001 and port 24001 (vector.opcode.0x7a1.body)."
+grade = "sure"
+name = "ReadIpv4Endpoint"
+
+["0x1403374e0"]
+statement = "Takes space for a received message's variable parts (texts and arrays) from the message's record space: rounds the start and the size up to 4 bytes and fails when the space is used up."
+proof = "Decompiled: a bump allocator over (limit at word 0, base at word 2, end at word 3, next at word 4); alignment (x + 3) & ~3; over the end or the limit -> ReportError and 0. Run on the emulator with a planted 4 KiB space under the readers of vector.opcode.0x761.body and vector.opcode.0x3db.body."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; who sets the space's limit for a received frame is not read."
+name = "AllocateMessageSpace"
+
+# Message layouts: each body field by field, in wire order, from the routines RegisterMessage keeps
+
+["opcode.0x592"]
+statement = "Message 0x592 (1426), client to auth server: the login request, sent once (SendAuthLoginRequest). Body, in order: the build (32 bits, 16042); a 64-bit value folded from the client's file digests; the account name as a counted wide text (16-bit count of characters plus one, then the characters and a terminating zero, 16 bits each; at most 250 characters); two GUIDs (each 32 + 16 + 16 bits and 8 raw bytes): the STS login's UserId and its game token, each parsed from its text; four 32-bit values (the client's own IPv4 address on the STS connection, a value of the text table, a client setting, a global value); the machine's description: the processor's manufacturer, name and description (three wide texts), its family, level, revision, clock speed and core count (five 32-bit values), the installed memory in MiB (32 bits), the video adapter's description (wide text), the adapter's vendor id, device id, subsystem id and revision and its memory in MiB (five 32-bit values), the processor architecture code, the Windows version, the service pack and an OS flags word (four 32-bit values); and the realm data center id (32 bits). The client has no reader for it."
+proof = "Registered at 0x14006d4ee mov edx, 0x592; 0x14006d4f6 mov r8d, 0x2a8 (record size); sizer 0x14006d4d9 lea r9, [0x14007dcd0]; writer 0x14006d4ca lea rcx, [0x14007dd40] stored at 0x14006d4e9; 0x14006d4e0 mov qword ptr [rsp+0x28], 0x0 (no reader); mode 0. Writer 0x14007dd40 (decompiled): 0x20 bits record 0; 0x40 bits record 8; 0x1400c2f70 (record 0x10, at most 0xfb units); 0x1400a8780 at 0x208 and 0x218; 0x1400a7110 width 0x20 at 0x228, 0x22c, 0x230, 0x234; 0x14007dc80 at 0x238 (0x14007d9c0: 0x140336040 three times, five 0x20-bit words; 0x14007d010: one 0x20-bit word; 0x14007da70: 0x140336040 and five 0x20-bit words; 0x14007d4a0: four 0x20-bit words); 0x20 bits at 0x2a0. Sizer 0x14007dcd0 with 0x14007dc10 and 0x14007d8f0 counts the same bits. Sources (SendAuthLoginRequest 0x14003a620, decompiled): record 0 = 0x3eaa; record 8 = game 0x1628, which FUN 0x140012780 folds from 0x718da9074f2deb91 by (h + byte) * 0xaa7f8ea9 over the 20-byte digests (0x1401b71d0) of the client's own file and of Patch.index; the name from the login object's 0xb0, copied into the record's 0xfb-unit field; GUIDs from UuidFromStringA on 0x140c671c0 and 0x140c67200; 0x228 = 0x140335360 of 0x140c66ff0, 0x22c = the dword at 8 of the text table 0x140c7aac0, 0x230 = game 0x1708, 0x234 = 0x140c67244; the machine block = game 0x15c..0x1594, filled by 0x140193f10 (decompiled): WMI Win32_Processor Manufacturer, Name, Description, Family, Level, Revision, CurrentClockSpeed or MaxClockSpeed, NumberOfCores (the processor count when 0); GlobalMemoryStatusEx total physical >> 20; IDirect3D9 adapter identifier 0 Description, VendorId, DeviceId, SubSysId, Revision; WMI Win32_VideoController AdapterRAM >> 20 matched by description; the architecture code (1 x86, 2 x64, 3 IA64, 4 ARM) | 0x10000; GetVersionExW major << 16 | minor; service pack major << 16 | minor; suite and product type << 8 with GetSystemMetrics 0x56..0x59 in bits 0..3; 0x2a0 = the RealmDataCenter row's ID. The bytes are in vector.opcode.0x592.body."
+grade = "fairly sure"
+gap = "The wire layout is run on the emulator (vector.opcode.0x592.body); the sources of the fields are read from Ghidra's decompile only, and what the text-table value, game 0x1708 and 0x140c67244 mean to the server is not read. The digest fold is read in FoldClientFileDigests 0x140012780. A recording of the real client's 0x592 would settle the values."
+
+["0x14007dcd0"]
+statement = "Counts the bits of message 0x592's body: 96, the account name's 16-bit count and characters with the zero, 128 for the four 32-bit values, 128 for each GUID, the machine description and 32 for the data center id. It also counts the bytes the texts need in a record."
+proof = "Decompiled: bits += 0x60; scan of at most 0xfb units -> bits += (length + 10) * 0x10; bytes += 8, bits += 0x80 twice; 0x14007dc10 on record 0x238; bits += 0x20. Emulator: 1168 bits for the planted record of vector.opcode.0x592.body, equal to the writer's count."
+grade = "sure"
+name = "SizeMessage0592Body"
+
+["0x14007dd40"]
+statement = "Writes message 0x592's body in the order given in the opcode.0x592 record."
+proof = "Decompiled as in opcode.0x592; 0x14007dd40 run on the emulator with a planted record: vector.opcode.0x592.body."
+grade = "sure"
+name = "WriteMessage0592Body"
+
+["opcode.0x591"]
+statement = "Message 0x591 (1425), auth server to client: login accepted. Body: one 32-bit value, of which the client keeps only bit 0 (in the game object). On it the client keeps the account name it logged in with as the name of its settings file (Account.<name>.ini) and waits for the hand-off (0x3db). The client has no writer for it."
+proof = "Registered at 0x140078555 mov edx, 0x591; 0x14007854e lea r8d, [r9+0x4] (record size 4); 0x140078549 mov qword ptr [rsp+0x28], rcx with 0x140078537 lea rcx, [0x14007ab50] (reader); 0x14007855a mov qword ptr [rsp+0x20], 0x0 (no writer). Reader 0x14007ab50: 0x14006c090 width 0x20 into record 0. Handler in HandleLoginMessage: 0x140037175 mov rdx, qword ptr [rbx+0xb0] (the login's account name); 0x140037183 call 0x1400114e0 (keeps it at game 0x1670 and names L'Account.%s.ini'); 0x140037188 mov ecx, dword ptr [rdi]; 0x140037191 and ecx, 0x1; 0x140037194 mov dword ptr [rax+0x166c], ecx; 0x14003719a state 9. Emulator: vector.opcode.0x591.body."
+grade = "fairly sure"
+gap = "What bit 0 (kept at game 0x166c) selects is not read; settled by reading the readers of game 0x166c."
+
+["0x14007ab50"]
+statement = "Reads message 0x591's body: one 32-bit value."
+proof = "Decompiled: 0x14006c090 with width 0x20 into record 0; a null record -> 0x80004005. Emulator: 01000000 -> 1, 32 bits read (vector.opcode.0x591.body)."
+grade = "sure"
+name = "ReadMessage0591Body"
+
+["0x1400a8e00"]
+statement = "Counts the bits of message 3's body: 373, a fixed size."
+proof = "0x1400a8e00 add qword ptr [rdx], 0x175; 0x1400a8e07 ret. Registered as message 3's sizer at 0x1400a81d0 lea r9, [0x1400a8e00]."
+grade = "sure"
+name = "SizeMessage0003Body"
+
+["0x1400a8e10"]
+statement = "Writes message 3's body in the order given in the opcode.0x3 record. The client registers it but never sends message 3."
+proof = "Decompiled: 0x20 bits at record 0, 4, 8 and 0xc; 0x1400a7160 at 0x10; 0x1400a7360 at 0x18; 5 bits (value & 0x1f) at 0x1c; 0x20 bits at 0x20 and 0x24; 0x1400a7160 at 0x28; 0x20 bits at 0x30. Ghidra refs_to 0x1400a8e10: only the registration (0x1400a81ba, 0x1400a81cb) and the exception data. Emulator: vector.opcode.0x3.body."
+grade = "sure"
+name = "WriteMessage0003Body"
+
+["0x1400a9140"]
+statement = "Reads message 3's body in the order given in the opcode.0x3 record."
+proof = "Decompiled: 0x14006c090 width 0x20 at record 0, 4, 8, 0xc; 0x14006c120 at 0x10; 0x14006bf60 width 0x10 at 0x18; 0x14006c090 width 5 at 0x1c; width 0x20 at 0x20 and 0x24; 0x14006c120 at 0x28; width 0x20 at 0x30. Emulator: read back the writer's 373 bits (vector.opcode.0x3.body)."
+grade = "sure"
+name = "ReadMessage0003Body"
+
+["0x14007e2c0"]
+statement = "Counts the bits of message 0x58f's body: 160 for the account value and the session key, 64, the account name as a wide text, and 32."
+proof = "0x14007e2c0 add qword ptr [rdx], 0xa0; 0x14007e2cb add qword ptr [rdx], 0x40; the text at record 0x20 counted; 0x14007e2f5 cmp rcx, 0x7f; 0x14007e2fb..0x14007e307 (length + 1) * 16 + 0x20 for more than 127 characters; 0x14007e30b..0x14007e313 length * 16 + 0x28 otherwise. Emulator: 312 bits for the planted record of vector.opcode.0x58f.body, equal to the writer's count."
+grade = "sure"
+name = "SizeMessage058FBody"
+
+["0x14007e320"]
+statement = "Writes message 0x58f's body in the order given in the opcode.0x58f record."
+proof = "Decompiled: 0x20 bits at record 0; 0x1400a8780 at 4; 0x1400a7160 at 0x18; 0x140336040 with the text at 0x20; 0x1400a7110 width 0x20 at 0x28. Emulator: vector.opcode.0x58f.body."
+grade = "sure"
+name = "WriteMessage058FBody"
+
+["0x14007d6a0"]
+statement = "Reads message 0x3db's body in the order given in the opcode.0x3db record."
+proof = "Decompiled: 0x14006c090 width 0x20 at record 0; 0x14006bf60 width 0x10 at 4; 0x1400a8900 at 8; 0x14006c090 width 0x20 at 0x18; 0x140336a40 at 0x20; widths 0x20 at 0x28, 2 at 0x2c, 0x15 at 0x30. Emulator: vector.opcode.0x3db.body."
+grade = "sure"
+name = "ReadMessage03DBBody"
+
+["0x14007e9e0"]
+statement = "Reads message 0xad's body: a 15-bit value, then five 32-bit floats."
+proof = "0x14007ea05 mov r8d, 0xf; 0x14007ea0b mov rdx, rbx; 0x14007ea0e call 0x14006c090; 0x14007ea17 lea r8, [rbx+0x4]; 0x14007ea1e call 0x1400ab810, which calls 0x14006c1c0 (ReadFloat) for record 4, 8, 0xc, 0x10 and 0x14 (0x1400ab838..0x1400ab878). Emulator: vector.opcode.0xad.body."
+grade = "sure"
+name = "ReadMessage00ADBody"
+
+["0x1400ac660"]
+statement = "Counts the bits of message 0x761's body: 96, each realm entry's bits, and each text group's bits."
+proof = "Decompiled: bits += 0x60; per entry 0x1400abc90 (0x20, the name, 0xe8, 0x2e, the last-played text, 0x80); bits += 0x20; per group 0x28 and each text. Emulator, 0x1400ac660 run on the planted record of vector.opcode.0x761.body: 734 bits, equal to the writer's count."
+grade = "sure"
+name = "SizeMessage0761Body"
+
+["0x1400ac770"]
+statement = "Writes message 0x761's body in the order given in the opcode.0x761 record. The client registers it but never sends message 0x761."
+proof = "Decompiled: 0x40 bits at record 0; 0x20 bits count at 8; per entry 0x1400abd30 (0x20 bits; 0x140336040; 0x20, 0x20; 2, 3, 3 bits; 0x20; 0x1403360d0 over 16 bytes; 0x1400aba70: 0xe bits, 0x20 bits, 0x140336040, 0x1400a7160; four 0x1400a7360); 0x20 bits count at 0x18; per group 0x1400ac410 (0x20 bits, 8 bits count, 0x140336040 per text). Ghidra refs_to 0x1400ac770: only the registration (0x1400a84a2, 0x1400a84b0) and data. Emulator: vector.opcode.0x761.body."
+grade = "sure"
+name = "WriteMessage0761Body"
+
+["0x1400ac9d0"]
+statement = "Reads message 0x761's body in the order given in the opcode.0x761 record, taking space for the entries and groups from the record space."
+proof = "Decompiled: 0x14006c120 at record 0; 0x14006c090 width 0x20 at 8; 0x1403374e0 of count * 0x58; per entry 0x1400ac130; width 0x20 at 0x18; 0x1403374e0 of count * 0x10; per group 0x1400ac590. Emulator: read back the writer's 734 bits (vector.opcode.0x761.body)."
+grade = "sure"
+name = "ReadMessage0761Body"
+
+["0x1400ac130"]
+statement = "Reads one realm entry of message 0x761: realm id (32 bits), name (wide text), note text id (32 bits), flags (32 bits), PvP type (2 bits), status (3 bits), population (3 bits), a 32-bit value, 16 raw bytes, a 14-bit value, a count (32 bits), the last-played text (wide text), a 64-bit value and four 16-bit values."
+proof = "Decompiled: 0x14006c090 width 0x20 at entry 0; 0x140336a40 at 8; widths 0x20 at 0x10 and 0x14, 2 at 0x18, 3 at 0x1c, 3 at 0x20, 0x20 at 0x24; 0x140337160 of 0x10 bytes at 0x28; 0x1400abc00 at 0x38 (width 0xe, width 0x20 at 4, 0x140336a40 at 8, 0x14006c120 at 0x10); 0x14006bf60 width 0x10 at 0x50, 0x52, 0x54, 0x56. Emulator: vector.opcode.0x761.body."
+grade = "sure"
+name = "ReadRealmListEntry"
+
+["0x1400ac590"]
+statement = "Reads one text group of message 0x761: a 32-bit value, a count in 8 bits, then that many wide texts."
+proof = "Decompiled: 0x14006c090 width 0x20 at 0; 0x14006be30 width 8 at 4; 0x1403374e0 of count * 8; 0x140336a40 per text. Emulator: the group 0x3333 with 'd' and 'bc' came back (vector.opcode.0x761.body)."
+grade = "sure"
+name = "ReadRealmListTextGroup"
+
+["0x140046790"]
+statement = "The Lua function GetRealmList of RealmSelectScreenLib: returns the realm list from the last 0x761 as a table of tables with nRealmId, nPopulation, strName, strNote (the localized text of the entry's note text id), nRealmStatus, nCount, nRealmPVPType, bFactionRestricted (bit 4 of the flags) and, when the entry has one, strLastPlayed."
+proof = "Name pair at 0x140c56a10: 'GetRealmList' (0x1409fec68), 0x140046790. Decompiled and the string loads: 0x140046942 lea rdx, [0x1409fed10] ('nRealmId') with the entry's word 0; 0x140046a2c mov r15d, dword ptr [rcx+rbx+0x20] then 0x140046ab0 lea rdx, [0x1409fecf8] ('nPopulation'); 0x140046ba1 mov r11, qword ptr [rcx+rbx+0x8] then 0x140046c23 lea r8, [0x1409fed38] ('strName'); 0x140046c57 mov edx, dword ptr [rcx+rbx+0x10] into 0x14034bdd0 (localized text by id) then 0x140046cf4 lea r8, [0x1409fed28] ('strNote'); 0x140046d39 mov r15d, dword ptr [rcx+rbx+0x1c] then 'nRealmStatus'; the word at 0x3c then 'nCount'; the word at 0x18 then 'nRealmPVPType'; (word at 0x14 >> 4) & 1 then 'bFactionRestricted'; 0x140047313 mov r11, qword ptr [rcx+rbx+0x40] then 0x140047330 lea r8, [0x1409fedc0] ('strLastPlayed'). The list's 0x68-byte entries are copied from the 0x761 entries by 0x1400a7cf0 (decompiled: words 0, 5..0xd, 0xf, the 64-bit value at 0x48 and the two texts at 8 and 0x40 kept at the same offsets) in the handler 0x140045e30."
+grade = "fairly sure"
+gap = "The copy 0x1400a7cf0 is read from Ghidra's decompile; the keys and the list reads were checked in the instructions."
+name = "LuaGetRealmList"
+
+["0x1400a2110"]
+statement = "Reads message 0x7a1's body in the order given in the opcode.0x7a1 record."
+proof = "Decompiled: 0x14006c090 width 0x20 at 0; 0x1400a8900 at 4; 0x1400a8980 at 0x14; width 1 at 0x1c; 0x140336a40 at 0x20; widths 0x20 at 0x28, 2 at 0x2c, 0x15 at 0x30. Emulator: vector.opcode.0x7a1.body."
+grade = "sure"
+name = "ReadMessage07A1Body"
+
+["0x1400a37d0"]
+statement = "Reads message 0xf1's body: values of 2, 32, 8 and 32 bits."
+proof = "Decompiled: 0x14006c090 width 2 at 0; width 0x20 at 4; 0x14006be30 width 8 at 8; 0x14006c090 width 0x20 at 0xc. Emulator: vector.opcode.0xf1.body."
+grade = "sure"
+name = "ReadMessage00F1Body"
+
+["0x140001b70"]
+statement = "The sizer of a message with an empty body: counts no bits. Messages 0x7e0 and 0x7a4 use it."
+proof = "Bytes at 0x140001b70: c20000 (ret 0). Registered as the sizer of 0x7e0 (0x14006d76d lea r9, [0x140001b70]) and of 0x7a4 (0x14006d5b5 lea r9, [0x140001b70])."
+grade = "sure"
+name = "SizeEmptyBody"
+
+["0x140001ba0"]
+statement = "The writer of a message with an empty body: writes nothing and succeeds. Messages 0x7e0 and 0x7a4 use it."
+proof = "0x140001ba0 xor eax, eax; 0x140001ba2 ret. Registered as the writer of 0x7e0 (0x14006d75e lea rcx, [0x140001ba0]) and of 0x7a4 (0x14006d5a6 lea rcx, [0x140001ba0])."
+grade = "sure"
+name = "WriteEmptyBody"
+
+["opcode.0x7a4"]
+statement = "Message 0x7a4 (1956), client to game server, sent when realm select starts (StartRealmSelect): its body is empty, so the frame is only the header 06 00 00 00 a4 07. The client fills a record with a 32-bit 0, but the message's sizer counts no bits and its writer writes nothing. The client has no reader for it."
+proof = "Registered at 0x14006d5ca mov edx, 0x7a4; 0x14006d5cf mov r8d, 0x1 (a one-byte record); 0x14006d5b5 lea r9, [0x140001b70] (sizer, adds nothing); 0x14006d5a6 lea rcx, [0x140001ba0] stored at 0x14006d5c5 mov qword ptr [rsp+0x20], rcx (writer, writes nothing); 0x14006d5bc mov qword ptr [rsp+0x28], 0x0 (no reader); 0x14006d5ad mov dword ptr [rsp+0x30], 0x0 (mode 0). Sent by 0x140045760: 0x140045806 mov r8d, 0x7a4 before 0x14004580c call qword ptr [rax+0x108], then 0x140045874 mov r8d, 0x244 and 0x14004587a call qword ptr [rax+0xf0]. So WriteMessageFrame counts 16 + 0 + 32 bits = 6 bytes, as for 0x7e0."
+grade = "sure"
+
+# The NC platform login library, StsConnLib64.MT.dll: the STS protocol the client speaks before the auth server
+
+
+
+["StsConnLib64.MT.dll!0x180000000"]
+statement = "StsConnLib64.MT.dll, shipped beside the client, is the NC platform login library the client loads (LoadStsConnLib). It is a 64-bit DLL loaded at 0x180000000 exporting CreateStsConn (ordinal 1), FinalizeStsConnLib (2) and InitializeStsConnLib (3). It speaks the STS protocol over one TCP connection: text messages with an HTTP-like first line and headers, XML bodies, a login by SRP-6a (SHA-256, the 1024-bit group of RFC 5054, little-endian numbers) and, after the login, RC4 over every byte in both directions."
+proof = "File SHA-256 aa0ef5888d17eb65da28b1cbef178d1650a837303c10a6fafc9f3c646c2f3fd1, 1899520 bytes. llvm-readobj: ImageBase 0x180000000, AddressOfEntryPoint 0x46894; sections .text (0x1000, 0x121e3c), .rdata (0x123000), .data (0x170000), .pdata, .rsrc, .reloc. Export table: CreateStsConn RVA 0x36b0, FinalizeStsConnLib 0x1140, InitializeStsConnLib 0x10f0. Imported into the Ghidra project beside the client as /StsConnLib64.MT.dll and analysed (40 s). Source paths in its strings name the NC platform's StsConnLib, StsInetSocket, InetMsg, RapidXml, Srp and SocketCrypt modules."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x180001c30"]
+statement = "Starts a connection object (CreateStsConn's method 0) with the client's three numbers: 400, 1001 and the NC program id (902 by default). It makes the library's socket manager named StsConn2Gate with connection type 1281 (0x501) when the first number is 400, else 1280, and a transaction time-out of 100000 ms. The client then passes the server address list (StsConnSetServerAddresses), and the library opens the TCP connection itself."
+proof = "Decompiled: uVar1 = 0x500; if (param_2 == 400) uVar1 = 0x501; FUN_1800346d0(L'StsConn2Gate', conn+0x20, param_2, 0, 0, uVar1, 100000, param_3, param_4, 0) kept at conn+0x18; log '[Info] StsConnLib Initialized.'. The client's call: StartNcPlatform's manager method 0x1400b4340 calls the new connection's slot 0 with the manager's 0xc4, 0xc8 and 0xcc, set by the manager constructor 0x1400b2a60 to 400 (0x140c67034) and 0x3e9 (0x140c67038) and by 0x1400b4340 to its program id argument. 0x180002b10 copies each address into a list and calls the socket manager's slot 0x40 with it."
+grade = "fairly sure"
+gap = "Which of the socket's fields the three numbers become (Program, Build, Process in the Connect message) is not traced through the socket manager 0x180033fd0 to the socket. The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x180022cb0"]
+statement = "Writes an STS request's first line: POST, a space, /<protocol>/<command> with every byte outside A-Z, a-z, 0-9, '-', '.', '_', '~' percent-encoded, a space, STS/1.0 and CR LF. The protocol and the command must each be under 65 characters, or the line is not written. The login uses protocol Auth (commands LoginStart, KeyData, LoginFinish, RequestGameToken), GameAccount (ListMyAccounts) and Sts (Connect, Ping)."
+proof = "Decompiled: lengths of both checked < 0x41; FUN_180025570 (FormatStsUri) writes '/', the protocol, '/', the command, each byte escaped as %XX unless the class table 0x1801b8e70 has bit 8 (set by 0x180023ab0 for the unreserved characters 'A..Za..z0..9-._~'); 'STS/1.0' (0x18012b470), or 'HTTP/1.1' when the message's flag 0x20 is set (never for the client's messages: NewStsMessageOut 0x180022f60 sets it only for option 2); 'POST' (0x18012b5d0); CR LF (0x18012b480). Emulator: vector.StsConnLib64.MT.dll!0x180022cb0.messages."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x180023290"]
+statement = "Ends an STS message's headers: writes the length header l:<body length in decimal> (a one-letter name, a colon, no space), CR LF, then the blank line CR LF that ends the headers; the body follows. A transaction request has the sequence header s:<n> before it (WriteStsSequenceHeader). A message with no body still carries l:0."
+proof = "Decompiled: unless flag 8 or 0x10, the body size from slot 0x18; flag 0x40 clear -> FUN_180023200(msg, 'l', size), which writes the one-letter name (0x180023400 writes the given name, adding a space after ':' only in HTTP mode), '%d' (0x180129938), and 0x1800229f0's CR LF; then LAB_1800233d0 writes CR LF (0x18012b480) and sets flag 4. Header letters and their long names from the static initialisers 0x18011d0c0..0x18011d6b0: a Accept, e Content-Encoding, l Content-Length, c Content-Type, f From, r Refer-To, p Reply-To, m Stream, s Subject (the sequence), z Timestamp, t To, x Transfer-Encoding, v Via. Emulator: vector.StsConnLib64.MT.dll!0x180022cb0.messages."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x180023550"]
+statement = "Writes the sequence header of a transaction message: s:<n> on a request; s:<n>R on the final reply to request n, or s:<n>r on a reply that is not the last, either optionally followed by a count. The client numbers its transactions per connection from 1 (NextStsSequence), so its login requests are s:1, s:2 and onward in the order sent."
+proof = "Decompiled: '%u' (0x18012b520) of the sequence; when it is a reply, 'R' (0x52) when final else 'r' (0x72), then '%u' of the count when given; written as header 's' (0x73). Callers: SendStsRequest 0x1800351e0 (request: FUN_180023550(msg, seq, 0, 1, 0) then FinishStsHeaders), SendStsReply 0x180034a30 and 0x180031f70 (replies). NextStsSequence 0x180030ff0: the socket's counter at 0x1c8 plus one, skipping 0 and any number still outstanding. Emulator: the REPLY line of vector.StsConnLib64.MT.dll!0x180022cb0.messages."
+grade = "fairly sure"
+gap = "That the socket's counter starts at 0 when the connection is made is inferred (the socket's constructor is not read). The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x180024dd0"]
+statement = "Reads an incoming message's first line. A reply's line is <protocol> <code> <text> CR LF: the protocol STS/1.0 (or an HTTP/ version), one space, a decimal status code (100 to 999), one space, any reason text, the whole line under 200 characters; the code is the reply's status. A request's line is an upper-case method of at most 10 letters, a space, a /-separated path with percent escapes, a space and the protocol."
+proof = "Decompiled: FUN_180024b50 matches the protocol; then ' ', digits accumulated into the message's 0x48 (slot 0x150), the 100..999 check, ' ', text to CR, length < 200; the request form tests 'A'..'Z' up to the space (< 0xb), '/' segments with '%XX' decoding, '?' and '#' parts, and the protocol."
+grade = "fairly sure"
+gap = "FUN_180024b50's exact protocol match is not read. The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x1800277f0"]
+statement = "Reads an incoming message's headers, one per line, until the blank line: a name, optional spaces, ':', optional spaces, the value, CR LF. l is the decimal body length; s is the decimal sequence, optionally followed by R (final reply) or r (more replies follow) and a decimal count, and nothing else before CR; any other header is kept by name, and a repeated one is refused as a duplicate. A message whose header block breaks these rules is a framing error."
+proof = "Decompiled: the name scan stops at ' ', ':' or TAB; FUN_180025ee0 finds the header's descriptor; kind 0 (l) -> digits into the message's 0xf8; kind 1 (s) -> digits into 0x58, then 'R' sets flags 3 at 0x5c, 'r' sets flag 1, any other character before CR is error 0x59c; digits after it into 0x60; error 0x5a7 if not followed by CR. 'InetMsg: duplicate header' (0x18012ba50). CInetMsg slot 0x28 returns 0x58, slot 0x38 bit 1 of 0x5c (final), slot 0x30 returns 0x60."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x1800248a0"]
+statement = "Parses a message's body as XML (RapidXml) the first time its root element is asked for. The body must be at least one byte and end with a line feed, or the message has no root element; a request or reply that needs one then fails."
+proof = "Decompiled: body pointer from slot 0x68 and length param_1[0x1d]; returns 0 when the length is 0 or byte length-1 is not 0x0a; replaces it with 0 and parses with FUN_18002c900; a parse failure records 'Error (char %u): %s'. Callers read the root through CInetMsg slot 0x60."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x180029470"]
+statement = "The XML the library writes for a message body: an element opens as <Name; its first child closes the open tag with > and a line feed; text closes it with > and is written with & as &amp; and < as &lt;, stopping at a zero byte; an element closes as </Name> and a line feed after text or children, or as /> and a line feed when it is empty. No indentation and no XML declaration. A number is written in decimal; binary data is written as standard base64 with = padding (Base64Encode)."
+proof = "Decompiled XmlOpenElement 0x180029470 (mode 3 writes '>\\n' from 0x18012be90, mode 2 writes a line feed, then '<' and the name, mode 3), XmlTextElement 0x180029610 (open, FUN_180028ed0 writes '>' and the escaped text by XmlWriteEscapedText 0x180028d90, close), XmlNumberElement 0x180029660 ('%d'), XmlBase64Element 0x1800296d0 (XmlWriteBase64Text 0x180029320, Base64Encode 0x18001f650 with the table 'A..Za..z0..9+/' at 0x18012b200), XmlCloseElement 0x1800290a0 ('/>\\n' at 0x18012be8c for an empty element; '</', the name, '>\\n' otherwise). The builder's indent width (0xc) is 0 from 0x180029450. Emulator: vector.StsConnLib64.MT.dll!0x180022cb0.messages."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x18002f410"]
+statement = "When the TCP connection to the NC platform server is up, the library sends POST /Sts/Connect STS/1.0, a one-way message with no sequence header, so no reply is awaited. Its body is <Connect> with the children, in order: ConnType (1281 for the client), ConnProductType, ConnAppIndex, ConnDeployment and ConnEpoch (each only when not 0), Address (the client's own address as text), ProductType, AppIndex, Deployment (only when not 0), Epoch, Program, Build, Process, NotifyFlags and VersionFlags (each only when not 0); every value but Address is a decimal number."
+proof = "Decompiled: socket fields 0x14c (ConnType; when 0 nothing is sent), the slot 0x70 record's 0x18..0x24, FUN_180015080 of the socket's address at 0x158 for Address, 0x170, 0x174, 0x178, 0x17c, 0x150 (or the default 0x18011aa80), 0x154 (or 0x18011a880), 0x118, 0x180, 0x184; FUN_180022cb0(msg, 'Connect', 'Sts'); FinishStsHeaders with no sequence header; sent by the global sender 0x1801b9060 slot 0. The library's own reader of Connect, ReadStsConnect 0x18002ec10, needs ConnType and Process non-zero and Address (or Location) present, and Program and Build non-zero. Slot 0x38 of CStsInetSocketNotify (0x18012d180) points here."
+grade = "fairly sure"
+gap = "The values of Program, Build, Process, ProductType, AppIndex, Epoch and the flags the client sends, and the address text's form, are not traced; a recording of the real client's first message would settle them. The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x18002f370"]
+statement = "Sends POST /Sts/Ping STS/1.0 with l:0 and no body and no sequence header: a one-way keep-alive the library sends on its socket's timer; no reply is awaited. An incoming /Sts/Ping that carries a sequence is answered STS/1.0 200 OK with s:<n>R."
+proof = "Decompiled: FUN_180022cb0(msg, 'Ping' 0x18012cf50, 'Sts' 0x18012cf58); FinishStsHeaders; sent through the socket's slot 0x88. Slot 0x30 of CStsInetSocketNotify (0x18012d178). HandleStsInternalMessage 0x180031f70: a request of protocol Sts other than Ping is logged as 'unknown internal message'; one with a sequence gets FUN_1800227d0(200), WriteStsSequenceHeader(seq, reply). Emulator: the PING line of vector.StsConnLib64.MT.dll!0x180022cb0.messages."
+grade = "fairly sure"
+gap = "When the timer fires (the idle period) is not read. The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x1800328f0"]
+statement = "Matches a reply to the client's pending transaction by its sequence. A reply must carry s:<n> with R or r and must not itself be a request; with a status below 400 a final reply (R) completes the transaction with the reply's body, a reply with r is a partial answer; a status of 400 or more is an error reply whose body is an Error element (ReadStsErrorElement)."
+proof = "Decompiled: slot 0x118 non-zero -> 'StsInetSocket: request with transaction response code' (0x18012d4f0); slot 0x150 (status) < 400 -> slot 0x38 (final) decides between completion (notify slot 8 with code 0, module 0x2329, line 0xd2d) and partial (line 0xd2f); otherwise HandleStsErrorReply 0x180032470."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x18002de60"]
+statement = "Reads an error reply's body: the root element must be named Error, with the attributes code, server, module and line (numbers) and text; the code becomes the failed request's error, which the client's handlers act on (HandleLoginStartResult and the others). A missing or unreadable Error element, or code -1, gives error 4. The library writes the same element for its own error replies: STS/1.0 400 Error, s:<n>R, then <Error code=\"N\" .../> (SendStsReply)."
+proof = "Decompiled 0x18002de60: name compared with 'Error'; slot 0x78 with 'code' (0x18012ce20), 'server', 'module', 'line' (0x18012ce38); slot 0x68 with 'text' (0x18012ce40); 0x180032470 sets 4 when it fails and 0xffff for a zero server. WriteStsErrorElement 0x18002dfe0 writes the same attributes; SendStsReply 0x180034a30 writes status 400 with reason 'Error' or 'Success', or 200 with 'OK' (0x18012b554) for a success, then WriteStsSequenceHeader(seq, reply, final)."
+grade = "fairly sure"
+gap = "Which error codes mean what to the NC platform (beyond the client's mapping) is not in the library. The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x180006fb0"]
+statement = "The login's first request, LoginStart: POST /Auth/LoginStart STS/1.0 with the next sequence and the body <Request> with LoginName (the account name, lower-cased by the client and sent as UTF-8) and NetAddress (the client's own IPv4 address on the STS connection, dotted text). The password is not sent: it goes into the SRP client (SrpClientInit) and both texts are then wiped. Without a name, a password and an address the request is not sent and fails with error 10."
+proof = "Decompiled: the texts at 0x18, 0x30, 0x48 of CLoginStart (set by its slots 0x30, 0x38, 0x40: 0x180008ff0, 0x180008000, 0x180007b50); NewSrpClient 0x18002cfb0 with XorRandomBytes 0x1800365b0, its slot 8 with (name, password); SetAuthCommand 0x180010290 with 0x16 (AuthCommandName 0x18000fd10: 'LoginStart', protocol 'Auth' 0x180125d88); XmlOpenElement 'Request', XmlTextElement 'LoginName', 'NetAddress'; StsConnSendTransaction 0x180001040 with a CLoginStartTxnNotify; FUN_180015830 wipes the name and password copies. Emulator: the LOGINSTART line of vector.StsConnLib64.MT.dll!0x180022cb0.messages."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x18000a350"]
+statement = "Handles the reply to LoginStart and to each KeyData: reads its root element's KeyData child (base64), and gives the decoded bytes to the SRP client. While the SRP exchange is not finished it sends POST /Auth/KeyData with <Request><KeyData>base64 of the SRP client's answer</KeyData></Request> and the next sequence; when it is finished it takes the 64-byte session key, puts RC4 under that key on the connection (both directions, from the next byte) and reports success (0) to the client. A reply with no root element, or KeyData the SRP client refuses, fails the login with error 4."
+proof = "Decompiled: slot 0x60 of the reply; XmlChildBase64 0x18002be60 (child by name, Base64Decode 0x18001f770) for 'KeyData'; SRP slot 0x28 (SrpClientStep 0x18002de00) with (&done, &out, in); done == 0 -> SetAuthCommand 0x15 ('KeyData'), XmlBase64Element 'KeyData', CKeyDataTxnNotify (same handler); done -> SRP slot 0x30 (SrpClientSessionKey: 64 bytes at 0x98), NewRc4SocketFilter 0x18003a7d0, the socket's slot 0x50 (0x18002eac0 -> 0x18003e4a0, the transport's slot 0x70), status 0. Emulator: vector.StsConnLib64.MT.dll!0x18002d4e0.srp."
+grade = "fairly sure"
+gap = "That the filter applies from the first byte after this reply is inferred: the transport's slot 0x70 is not read. The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x18002d0f0"]
+statement = "The SRP group the library uses: N is the 1024-bit prime of RFC 5054 (EEAF0AB9ADB38DD69C33F80AFA8FC5E86072618775FF3C0B9EA2314C9C256576D674DF7496EA81D3383B4813D692C6E0E0D5D8E250B98BE48E495C1D6089DAD15DC7D7B46154D6B6CE8EF4AD69B15D4982559B297BCF1885C529F566660E57EC68EDBC3C05726CC02FD4CBF4976EAA9AFD5138FE8376435B9FC61D2FC0EB06E3), g is 2, k = H(N | g) and the proof's first part is H(N) xor H(g), H being SHA-256 over each number's bytes. A number's bytes, here and on the wire, are its 32-bit words low word first, each little-endian, with no zero top word (so N is 128 bytes and g is 02 00 00 00). A digest becomes a number by reading its eight 4-byte groups, last group first, as that little-endian word list, which gives the same number as reading the digest big-endian; k = 0x7D78058F0E39285AB924601B3E49AC400652ABEF7D9CCE1D52AABFBC57FF397A."
+proof = "Decompiled: 32 dwords of the table 0x18012cd30 copied in reverse order into BigNumFromBytes 0x1800f48c0 (dword i of the input is word i, little-endian); 0x1800f4ce0(g, 2); Sha256Parts 0x180039a30 of (BigNumBytes(N), BigNumBytes(g)) loaded with the groups reversed into k 0x1801b9018; H(N) into 0x1801b8fb8 xor H(g). BigNumBytes 0x1800f4650 returns the word array and top*4. Emulator: run with the three numbers initialised by BigNumInit 0x1800f5360, read back N, g = 2, k and 0x1801b8fb8 equal to the hand model (vector.StsConnLib64.MT.dll!0x18002d4e0.srp)."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x18002ccd0"]
+statement = "Starts the SRP client with the account name I and password p: keeps H(I) = SHA-256 of the name's bytes and P = SHA-256 of I ':' p, and nothing else of the password. The private value x is later SHA-256 of the salt's bytes then P, read as a number (SrpClientStepServerKey)."
+proof = "Decompiled: Sha256Parts 0x180039a30 with three parts (name, ':' at 0x18012807c, password) into a 32-byte buffer; slot 0x10 (SrpClientSetIdentity 0x18002cd70): state 0, Sha256Parts of the name into 0x18, the 32 bytes into 0x38. Emulator: vector.StsConnLib64.MT.dll!0x18002d4e0.srp."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x18002d4e0"]
+statement = "The SRP client's first step, on the server's KeyData from LoginStart. The KeyData is a 32-bit little-endian length and the salt s, then a 32-bit length and the server value B, and nothing after; B must be non-zero and below N. The client picks a 32-byte random a, computes A = g^a mod N, u = H(A | B), x = H(s | P), S = (B - k*g^x mod N, raised by N until not negative)^(a + u*x mod N) mod N, the session key K (SrpInterleaveKey) and M1 = H(H(N) xor H(g) | H(I) | s | A | B | K), where s, A and B are hashed as the library's bytes of each number. It answers with KeyData: a 32-bit length and A's bytes, then the length 32 and M1. Any other KeyData fails the step."
+proof = "Decompiled: the two length-prefixed parts read into BigNumFromBytes; checks the exact length, BigNumCompare 0x1800f45e0 B != 0 and B < N; the random function at 0x10 for 32 bytes; BigNumWordModExp 0x1800f5970(A, 2, a, N) into 0x58; Sha256Parts(A, B) and Sha256Parts(s, P) loaded with groups reversed; BigNumWordModExp(g, x), BigNumModMul 0x1800f5f50 by k, the add-N loop with BigNumAdd 0x1800f47b0, BigNumSub 0x1800f5280; BigNumMul 0x1800f4a90 u*x, add a, BigNumMod 0x1800f5f40; BigNumModExp 0x1800f6030; SrpInterleaveKey into 0x98; SrpClientProof 0x18002d010 (six parts: 0x1801b8fb8, H(I), s, A, B, K) into 0x78; output written length-prefixed; state 2. Emulator: vector.StsConnLib64.MT.dll!0x18002d4e0.srp, every byte equal to the hand model."
+grade = "fairly sure"
+gap = "The emulator run replaced the two modular powers with Python's pow after both routines matched pow on 96-bit operands and every other bignum routine matched on operands up to 1024 bits; the 1024-bit powers themselves were not run on the emulator. The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x18002ce20"]
+statement = "Makes the 64-byte session key K from S, with a fault: starting from S's lowest byte it drops bytes that are NOT zero while more than 4 remain, stopping at the first zero byte; of the T bytes left (low first) it hashes E = the bytes from the top down taking every second one starting with the top byte, and F = every second one starting with the byte below the top, each half the count rounded down; K is SHA-256(E) and SHA-256(F) interleaved, E's digest byte first. For most S (no zero byte among its lowest 124) only the top 4 bytes of S reach K. A server must compute K the same way."
+proof = "Decompiled: for (p = S; 4 < n && *p != 0; p++) n--; half = n >> 1; E copied from p + n - 1 backwards by 2, F from p + n - 2 backwards by 2; Sha256Parts of each; K[4i] = G[2i], K[4i+2] = G[2i+1], K[4i+1] = H[2i], K[4i+3] = H[2i+1]. Emulator on 01..08 gave G = SHA-256(08 06), H = SHA-256(07 05); on 01..09, SHA-256(09 07) and (08 06); on 00 00 05..0a, SHA-256(0a 08 06 00) and (09 07 05 00); in the full run K equals the hand model (vector.StsConnLib64.MT.dll!0x18002d4e0.srp)."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x18002d3b0"]
+statement = "The SRP client's second step, on the server's KeyData from the KeyData request: it must be a 32-bit length of 32 and the 32-byte M2, nothing after, and M2 must equal SHA-256(A | M1 | K). Then the exchange is finished and the session key is K; otherwise the step fails and the login fails with error 4."
+proof = "Decompiled: length checks (*param_5 == 0x20, exact size), Sha256Parts of (BigNumBytes(A), 0x78 for 32, 0x98 for 64), memcmp with the 32 bytes; state 3 and done = 1. Emulator: the right M2 is accepted (result 1, done 1) and M2 with one bit changed is refused (result 0) (vector.StsConnLib64.MT.dll!0x18002d4e0.srp)."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x18003a7d0"]
+statement = "The cipher put on the connection after the SRP exchange: RC4 keyed with the 64-byte session key K, one RC4 state for bytes sent and a separate one for bytes received, both from the same key, with no bytes dropped; each state runs on across messages."
+proof = "Decompiled: NewRc4Key 0x1800f73e0 twice with (64, K); Rc4KeyInit 0x1800f7320 is the standard key schedule (S[i] = i; j = j + S[i] + key[i mod len]; swap); Rc4Crypt 0x1800f7420 the standard generator (i = i + 1, j = j + S[i], swap, out = in xor S[S[i] + S[j]]). Rc4FilterWrite 0x18003aa40 encrypts each outgoing buffer with the second key (filter 0x18); Rc4FilterRead 0x18003a8f0 decrypts incoming bytes with the first (filter 0x10) before parsing. Emulator: vector.StsConnLib64.MT.dll!0x1800f7420.rc4."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x1800043d0"]
+statement = "The login's third request, after SRP: POST /Auth/LoginFinish with <Request> holding LongTermSession, SecondaryAuthToken and RegisterVerifiedIp only when set; the client sets none of them (it sets RegisterVerifiedIp to 0), so the body is <Request/>. The reply's root must hold AuthType (0 for a finished login; the client fails any other); it may hold LocationId, UserId, UserCenter, UserName, AccessMask, Roles, Status, Aliases, PcCafe and Licenses. The client keeps UserId and UserName."
+proof = "Decompiled 0x1800043d0: SetAuthCommand 0x17 ('LoginFinish'), optional children from 0x18, 0x30, 0x48. ReadLoginFinishReply 0x18000d560: slot 0xd0 'AuthType' into 0x50; when 0: 'LocationId', 'UserId' (0x70), 'UserCenter', 'UserName' (0x90), 'AccessMask' (_strtoi64), child elements 'Aliases', 'PcCafe', 'Licenses' parsed when present (a malformed one gives error 4). Getters of CLoginFinish: slot 0x48 returns 0x50, 0x58 returns 0x70, 0x68 returns 0x90, slot 0x40 (0x180074bc0) sets 0x48. Emulator: the LOGINFINISH line of vector.StsConnLib64.MT.dll!0x180022cb0.messages."
+grade = "fairly sure"
+gap = "The reply's AuthType values other than 0 and the Roles element's reader (0x18000a150) are not read. The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x180004950"]
+statement = "The login's fourth request: POST /GameAccount/ListMyAccounts with <Request><UserId>..</UserId><GameCode>..</GameCode></Request>, the UserId from LoginFinish's reply and the game code wildstar. The reply's root must hold one or more GameAccount elements, each with Alias, Created and GameAccountId texts; none fails with error 4."
+proof = "Decompiled 0x180004950: GameAccountCommandName 0x180010670(3) = 'ListMyAccounts', protocol 'GameAccount'; XmlTextElement 'UserId', 'GameCode'. ReadListMyAccountsReply 0x18000cbe0: child 'GameAccount' (slot 0xa8) and its siblings (slot 0x100); ReadGameAccount 0x1800076f0 reads 'Alias' (0x8), 'Created' (0x20), 'GameAccountId' (0x38). CListMyAccounts slot 0x40 returns the count, slot 0x48 the entry; CGameAccount slot 0 returns Alias."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x180004ac0"]
+statement = "The login's last request: POST /Auth/RequestGameToken with <Request><UserId>..</UserId><GameCode>wildstar</GameCode><AccountAlias>..</AccountAlias></Request>, the alias being the one game account's Alias. The reply's root must hold Token, a text; the client keeps it as the game token and raises NC platform event 14."
+proof = "Decompiled 0x180004ac0: SetAuthCommand 0x1e ('RequestGameToken'); XmlTextElement 'UserId' (0x18), 'GameCode' (0x30), 'AccountAlias' (0x48). ReadRequestGameTokenReply 0x180008060: slot 0xc0 'Token', copied to 0x68; none -> error 4. CRequestGameToken slot 0x48 (0x180007f50) returns 0x68."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["StsConnLib64.MT.dll!0x18001f770"]
+statement = "Decodes base64 (the standard alphabet) in groups of four characters, stopping at the first '=' padding; used for KeyData in replies."
+proof = "Decompiled: per four characters through the table 0x18012b250, three bytes out, stopping when the third or fourth character maps to 0x7f ('='). The encoder Base64Encode 0x18001f650 uses 'A..Za..z0..9+/' and '=' padding (decompiled). Emulator: the KEYDATA line of vector.StsConnLib64.MT.dll!0x180022cb0.messages (00..09 -> AAECAwQFBgcICQ==)."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["0x1400b4500"]
+statement = "Starts the NC platform login with the typed account name and password: lower-cases the name (A-Z and the client's case table) and converts both to UTF-8, makes the library's LoginStart request with the name, the password and the client's own address on the STS connection (kept by HandleStsConnected), and sends it."
+proof = "Decompiled: 0x1401b2410 lowers each UTF-16 unit (below 0x80 adds 0x20 to A-Z; above, the 0x3d1-entry table at 0x140a41a80/0x140a40af0); 0x14018f0e0 writes UTF-8 (0xc0/0xe0 lead bytes, 0x80 continuations); the connection 0x140c67080's slot 0x40 with the notify 0x140c67118; the request's slot 0x30 (name), 0x38 (password), 0x40 (0x140c66ff0), slot 8 (send); manager state 0x140c66fb0 = 8. Called from SubmitLogin 0x140038570."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what 0x14018f0e0 does with surrogate pairs is not read."
+name = "StartStsLogin"
+
+["0x1400b1380"]
+statement = "Handles the library's report that the STS connection is up: keeps the server's address and port and the client's own address (dotted text) and port, logs local->server, and raises NC platform event 1. The client's own address text is what LoginStart sends as NetAddress and what 0x592 carries as a number."
+proof = "Decompiled: the first argument's text to the manager's 0x50 and port to 0x70; the second's text to 0x78 (its characters at 0x140c66ff0) and port to 0x98; L'%S:%u->%S:%u'; 0x1400b28b0(manager, 1). Slot 0 of the manager table 0x140b560e0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; which of the two arguments is local is inferred from the log format's order and from LoginStart's use of the second."
+name = "HandleStsConnected"
+
+["0x1400b2f20"]
+statement = "Handles the result of LoginStart (with its KeyData exchange). On success it sends LoginFinish (setting RegisterVerifiedIp to 0) and raises NC platform event 9; on failure it raises an event by the error code: 10, 11 or 3002 -> 16, 42 -> 20, 3320 -> 34, 3716 -> 19; any other code ends the NC login as failed and is logged."
+proof = "Decompiled: slot 0x10 of the result (its error); 0 -> the connection's slot 0x50 with notify 0x140c67120, its slot 0x40(0), slot 8; FUN_1400b23b0(.., 9); 0xbba and 10..11 -> 0x10; 0x2a -> 0x14; 0xcf8 -> 0x22; 0xe84 -> 0x13; else FUN_1400b2700 and LogMessage 0x141d0d7a8. Slot 0 of 0x140b560c8."
+grade = "fairly sure"
+gap = "What each event means to the login screen is not read (HandleNcPlatformEvent maps them)."
+name = "HandleLoginStartResult"
+
+["0x1400b3070"]
+statement = "Handles the result of LoginFinish. With AuthType 0 it keeps the reply's UserId (the text 0x592's first GUID is parsed from) and UserName, sends ListMyAccounts with the UserId and the game code, and raises event 11; AuthType 5 raises event 10 and 8 raises event 35 (second-factor and IP-verification paths), any other AuthType event 22. Error codes raise events: 10, 11, 3002, 3010 and 3310 -> 16; 42 -> 21; 3023 and 3746 -> 18; 3716 -> 19; any other ends the NC login as failed and is logged."
+proof = "Decompiled: slot 0x48 (AuthType); slot 0x58 (UserId) to 0x140c671b8's string (characters at 0x140c671c0), slot 0x68 (UserName) to 0x140c671d8's; the connection's slot 0x70 with notify 0x140c67128, slot 0x30 (UserId), 0x38 (the game code at 0x140c67068), slot 8; FUN_1400b23b0(.., 0xb). Slot 0 of 0x140b560d0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the branch at 0x11c that also starts a presence login (slot 0x108) is not read."
+name = "HandleLoginFinishResult"
+
+["0x1400b36c0"]
+statement = "Handles the result of ListMyAccounts: exactly one game account is required (otherwise the NC login fails and is logged); it keeps that account's Alias and sends RequestGameToken with the UserId, the game code and the alias, and raises event 13."
+proof = "Decompiled: slot 0x40 (count) == 1; slot 0x48(0) then the entry's slot 0 (Alias) appended to the list at 0xf0; the connection's slot 0x78 with notify 0x140c67130, slot 0x30 (0x140c671c0), 0x38 (0x140c67068), 0x40 (the alias), slot 8; FUN_1400b23b0(.., 0xd). Errors 10, 11, 3002 -> 16. Slot 0 of 0x140b560b8."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "HandleListMyAccountsResult"
+
+["0x1400b3a50"]
+statement = "Handles the result of RequestGameToken: on success keeps the Token text (0x592's second GUID is parsed from it) and raises NC platform event 14, which makes the client open the auth connection (HandleNcPlatformEvent); on failure logs the error and sets the manager's state to 15."
+proof = "Decompiled: slot 0x10 == 0 -> slot 0x48 (the token) copied by 0x14001b1a0 to the string whose characters are at 0x140c67200; FUN_1400b23b0(.., 0xe) at 0x1400b3b08. Slot 0 of 0x140b560c0, the notify object 0x140c67130."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the event call."
+name = "HandleRequestGameTokenResult"
+
+["0x140018aa0"]
+statement = "Returns the NC game code: the command-line argument ncAppGroupCode when given, else the RealmDataCenter row's ncAppGroupCode text, wildstar in this install's data. It is the GameCode of ListMyAccounts and RequestGameToken."
+proof = "Decompiled: the argument loop compares with L'ncAppGroupCode'; else the row (game 0x16e8) at record offset 0x38. Called at 0x14000b9e8 in StartClient, stored by 0x14001b410 into game 0x1718, which StartClient passes to StartNcPlatform (0x14000d454 mov rax, qword ptr [rsi+0x1718]) and StartNcPlatform keeps in 0x140c67060. RealmDataCenter.tbl's text values include 'wildstar' as the only short code-like text."
+grade = "fairly sure"
+gap = "That ncAppGroupCode is 'wildstar' in every row is read from the table's text pool, not row by row."
+name = "GetNcAppGroupCode"
+
+["0x140012780"]
+statement = "Builds the client's version text and folds the file digests sent in 0x592: starting from 0x718DA9074F2DEB91, each byte b of the SHA-1 of the running client executable and then of Patch\\Patch.index makes h = (h + b) * 0xAA7F8EA9 (64-bit). A server could check it by computing the same fold over the client's own files; for this install it is 0xD061ADE9D704A68F."
+proof = "Decompiled: L'1.7.8.16042' in the version text; GetModuleFileNameW then Sha1OfClientFile 0x1401b71d0 into 20 bytes; the loop at 0x140012917 mov qword ptr [rdi+0x1628], r8 over 20 bytes; the second fold for the game folder plus L'\\\\Patch.index' stored at 0x140012b67. The start value is stored at 0x14000a53e mov qword ptr [rbx+0x1628], rdi in the game constructor. SHA-1 of WildStar64.exe 4102eb60fb178a43492912657079d6795472ff12 and of Patch\\Patch.index b847404c089beccde604c777b2ccd7f8b8d48998 (Python hashlib) folded by hand give 0xD061ADE9D704A68F."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; whether the digest is the standard SHA-1 byte order, whether the game folder path holds Patch, and whether 0x1403b6111 (another writer of an object's 0x1628) changes it before 0x592 are not read; a recording of the real client's 0x592 would settle the value."
+name = "FoldClientFileDigests"
+
+["0x1401b71d0"]
+statement = "Computes the SHA-1 of a file opened through the client file system, reading it in chunks of up to 1 MiB."
+proof = "Decompiled: 0x1401b5b50 opens the path; the SHA-1 starting words 0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f0; 0x1401c8c20 per chunk, 0x1401c8b70 into the 20-byte output."
+grade = "fairly sure"
+gap = "That 0x1401c8c20 and 0x1401c8b70 are SHA-1 update and finish is inferred from the starting words."
+name = "Sha1OfClientFile"
+
+["0x1400b23b0"]
+statement = "Raises an NC platform event: queues a record with the event number for the game thread, where HandleNcPlatformEvent handles it, and keeps the number as the manager's last event."
+proof = "Decompiled: a 0x48-byte record with the event at 0x10 appended to the list at 0x38; the event stored at 0x40; the manager's lock at 0x10/0x18."
+grade = "fairly sure"
+gap = "That the queue is read by HandleNcPlatformEvent is inferred from the event numbers matching its switch."
+name = "RaiseNcPlatformEvent"
+
 # Test vectors from the client's own code, run on Ghidra's p-code emulator
 
 ["vector.0x1400c2eb0.base_key"]
@@ -1288,3 +1804,87 @@ statement = "Message 0x7e0 as the client sends it inside 0x244 under the base ke
 proof = "Ghidra's p-code emulator (scratch script outside the repository), on a stream planted in the emulator's stack block (stream object with its chunk pointer at 8 and bit offset at 0x10 zero; chunk end at 0x18 and write pointer at 0x20 over 64 zero bytes): WriteBits 0x140336380 run with (stream, 6, 0x20) then (stream, 0x7e0, 0x10), its one call (0x140336413 call to the 4-byte writer, 0x1403363f9 to the 2-byte one) followed on the emulator, gave 06000000e007; EncryptMessageBody 0x1400c2d10 run on its bytes 4..5 (rcx = the base-key object built as in vector.0x1400c2eb0.base_key, rdx = the planted frame + 4, r8 = 2) gave 0389; WriteBits on a fresh stream with (12, 0x20) then (0x244, 0x10) gave 0c0000004402. By hand: n = 2 starts at key word 4 (0xbb4864fac37046aa) with p = h (0x7d546d1d1994c849): e0 xor aa xor 49 = 03, 07 xor 46 xor c8 = 89."
 grade = "fairly sure"
 gap = "The frame is assembled from the client's routines run one by one, with WriteMessageFrame's order (length, id, sizer and writer, no padding for a whole-byte frame), 0x244's whole-frame copy (WriteWholeFrameBody) and the senders' cipher call (frame + 4, size - 4) taken from their decodes; the whole path from StartCharacterSelect 0x140020bc0 through SerialiseMessageById and QueueMessageSend cannot run on the emulator, because the network object (0x140c65808), its registration table and its buffers exist only in a running client and the path allocates memory. A recording of the real client's 0x7e0 would settle it."
+
+["vector.0x140336380.fields"]
+statement = "WriteBits on a fresh zeroed stream, each line the (value, width) calls in order and the bytes they leave: (1, 1) -> 01; (2, 2) -> 02; (0x12345, 21) -> 452301; (0xDEADBEEF, 32) -> efbeadde; (0x0123456789ABCDEF, 64) -> efcdab8967452301; (0x1F, 5) then (0x1ABCDE, 21), crossing bytes -> df9b5703 (26 bits); (1, 1), (2, 2), (0x12345, 21), (0xDEADBEEF, 32) -> 2d1a09efbeadde (56 bits); (5, 3) then (0xFEDCBA9876543210, 64) -> 8590a1b2c3d4e5f607 (67 bits); (0x7F, 7) then (0xABCD, 16) -> ffe655 (23 bits); (0xFF, 4), a value wider than its width -> 0f. Over a stream of 0xff bytes, (5, 3) leaves 05 ff ff: the write clears the rest of its own byte only. With a 2-byte chunk and nothing to grow into, (0xDEADBEEF, 32) fails with 0x80004005 after leaving ef be. Each call returned 0 otherwise."
+proof = "Ghidra's p-code emulator (client_emulator._Machine, driven by a scratch script outside the repository that steps through calls): WriteBits 0x140336380 run with rcx = a planted stream (chunk pointer at 8, bit offset at 0x10, no chunk list at 0x20; the chunk's end at 0x18 and write pointer at 0x20 over 0x800 bytes in the emulator's stack block), rdx = the value, r8 = the width; the bytes read back from the chunk up to the write pointer, plus the part-written byte. The calls it made: 0x1403367d0, 0x140336860, 0x1403368f0 or 0x1400a7540 by width, and 0x140336470 for the short chunk (call at 0x14033643d)."
+grade = "sure"
+
+["vector.0x140336040.wide_text"]
+statement = "WriteWideText on a fresh stream: 'Ab' -> 04 41 00 62 00 (40 bits); the empty text and a missing text -> 00 (8 bits); 127 'x' -> fe then 127 times 78 00 (2040 bits); 128 'y' -> 01 01 then 128 times 79 00 (2064 bits). WriteNarrowText on 'Ab' -> 04 41 62 (24 bits)."
+proof = "Ghidra's p-code emulator (scratch script outside the repository, as vector.0x140336380.fields): 0x140336040 run with rcx = the planted stream and rdx = a planted UTF-16 text with its zero (or 0 for a missing text); 0x140335fb0 with an 8-bit text."
+grade = "sure"
+
+["vector.0x1400c2f70.counted_text"]
+statement = "WriteCountedWideText with the maximum 251 (as 0x592 calls it): 'Ab' -> 03 00 41 00 62 00 00 00 (64 bits, result 0); 250 characters and a zero -> 4032 bits, result 0; 251 characters before the zero -> result 0x80070057 and nothing written."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): 0x1400c2f70 run with rcx = the planted stream, rdx = a planted UTF-16 text, r8 = 0xfb."
+grade = "sure"
+
+["vector.opcode.0x3.body"]
+statement = "Message 3's body as the client's writer makes it and its reader takes it: build 16042, then 0x11223344, 0x55667788, 0x99AABBCC, the 64-bit 0x0102030405060708, the 16-bit 0xBEEF, the 5-bit 0x1F, checksum 0x097998A0, 0xCAFEBABE, the 64-bit 0x1112131415161718 and 0x21222324 give the 373 bits aa3e0000 44332211 88776655 ccbbaa99 0807060504030201 efbe 1f14332fc157d75f19e3c2a2826242228264442404 (47 bytes); a 5-bit field given 0x3F writes the same bytes (its low 5 bits). The sizer counts 373 bits; the reader takes the 47 bytes back to the same values and stops after 373 bits."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): WriteMessage0003Body 0x1400a8e10 run with rcx = the planted stream and rdx = a planted 0x38-byte record; SizeMessage0003Body 0x1400a8e00 with planted counters; ReadMessage0003Body 0x1400a9140 with rcx = a planted received stream (chunk pointer at 0x10, read pointer at 0x18, bit offset at 0x20, no chain at 0x28) over the bytes plus 16 bytes of slack, r8 = a zeroed record; the record read back and the read position 373."
+grade = "sure"
+
+["vector.opcode.0x58f.body"]
+statement = "Message 0x58f's body as the client's writer makes it: account value 0xA1B2C3D4, session key 01 02 .. 10, the 64-bit 0, the account name 'jim' and 3 give the 312 bits d4c3b2a1 0102030405060708090a0b0c0d0e0f10 0000000000000000 06 6a00 6900 6d00 03000000 (39 bytes); the sizer counts 312 bits."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): WriteMessage058FBody 0x14007e320 run with rcx = the planted stream and rdx = a planted 0x30-byte record (word 0, key at 4, 64 bits at 0x18, a text pointer at 0x20, word 0x28); SizeMessage058FBody 0x14007e2c0 with planted counters."
+grade = "sure"
+
+["vector.opcode.0x592.body"]
+statement = "Message 0x592's body as the client's writer makes it, from planted values (build 16042, the 64-bit 0x0807060504030201, account name 'Jim', GUIDs 10..1f and 20..2f, values 0x41..0x44, processor texts 'a', 'bc' and '', values 0x51..0x55, memory 0x60, adapter text 'd', values 0x71..0x75 and 0x81..0x84, data center 0x99): aa3e0000 0102030405060708 0400 4a00 6900 6d00 0000 101112131415161718191a1b1c1d1e1f 202122232425262728292a2b2c2d2e2f 41000000 42000000 43000000 44000000 02 6100 04 6200 6300 00 51000000 52000000 53000000 54000000 55000000 60000000 02 6400 71000000 72000000 73000000 74000000 75000000 81000000 82000000 83000000 84000000 99000000 (1168 bits, 146 bytes); the sizer counts 1168 bits."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): WriteMessage0592Body 0x14007dd40 run with rcx = the planted stream and rdx = a planted 0x2a8-byte record laid out as SendAuthLoginRequest 0x14003a620 fills it (texts of the machine block as pointers into the emulator's stack block); SizeMessage0592Body 0x14007dcd0 with planted counters."
+grade = "sure"
+
+["vector.opcode.0x761.body"]
+statement = "Message 0x761's body as the client's writer makes it and its reader takes it: the 64-bit 0xFEDCBA9876543210, one realm (id 7, name 'bc', note id 0x1111, flags 0x10, PvP type 2, status 5, population 3, 0x2424, raw bytes a0..af, 14-bit 0x3FFF, count 9, last played 'a', 64-bit 0x4848484848484848, 16-bit 0x5050, 0x5252, 0x5454, 0x5656) and one text group (0x3333 with 'd' and 'bc') give the 734 bits 1032547698badcfe 01000000 07000000 04 6200 6300 11110000 10000000 76 24240000 a0a1a2a3a4a5a6a7a8a9aaabacadaeaf ff7f0200008040180012121212121212121494941415959555000000c0cc0c0080800019008118c01800 (92 bytes; from the 14-bit value on, nothing is byte-aligned). With no realms and no groups: 05000000 00000000 00000000 00000000 (128 bits). The sizer counts 734 bits; the reader takes the 92 bytes back to every value above and stops after 734 bits."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): WriteMessage0761Body 0x1400ac770 with rdx = a planted 0x28-byte record (entries and groups planted as the reader lays them out); SizeMessage0761Body 0x1400ac660; ReadMessage0761Body 0x1400ac9d0 with rdx = a planted record space (limit, base, end, next for AllocateMessageSpace 0x1403374e0) and r8 = a zeroed record; the entry, group and texts read back through the pointers it stored."
+grade = "sure"
+
+["vector.opcode.0x3db.body"]
+statement = "Message 0x3db's body read by the client: address 127.0.0.1, port 24000, key 01 02 .. 10, 0x55667788, realm 'Nexus', 0x1234, 2-bit 3 and 21-bit 0x1ABCDE are the 351 bits 0100007f c05d 0102030405060708090a0b0c0d0e0f10 88776655 0a 4e00 6500 7800 7500 7300 34120000 7bf36a (44 bytes), which the reader takes back to those values (address 0x7F000001). The same bytes less the last one fail with 0x80070026 after 344 bits."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadMessage03DBBody 0x14007d6a0 run with rcx = a planted received stream over the bytes (16 bytes of slack; none for the short case), rdx = a planted record space, r8 = a zeroed 0x38-byte record; the record and the realm name read back."
+grade = "sure"
+
+["vector.opcode.0x7a1.body"]
+statement = "Message 0x7a1's body read by the client: 0x99, key 01 02 .. 10, address 127.0.0.1, port 24001, flag 1, realm 'Nexus', 0x1234, 2-bit 2 and 21-bit 0x0BCDEF are the 352 bits 99000000 0102030405060708090a0b0c0d0e0f10 0100007f c15d 159c00ca00f000ea00e600 68240000 7c6f5e (44 bytes), which the reader takes back to those values."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadMessage07A1Body 0x1400a2110 run as in vector.opcode.0x3db.body."
+grade = "sure"
+
+["vector.opcode.0xad.body"]
+statement = "Message 0xad's body read by the client: the 15-bit 0x1234 and the floats 1.0, -2.5, 100.25, 0.0 and 3.5 are the 175 bits 34120000c01f00001060004064210000000000003020 (22 bytes), which the reader takes back to those values."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadMessage00ADBody 0x14007e9e0 run as in vector.opcode.0x3db.body with a zeroed 0x18-byte record."
+grade = "sure"
+
+["vector.opcode.0xf1.body"]
+statement = "Message 0xf1's body read by the client: 3 (2 bits), 0x12345678 (32 bits), 0xAB (8 bits) and 500 (32 bits) are the 74 bits e359d148acd207000000 (10 bytes), read back to those values with or without bytes after them; the first 9 bytes alone fail with 0x80070026 after 72 bits."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadMessage00F1Body 0x1400a37d0 run as in vector.opcode.0x3db.body, with 16 bytes of slack and with none."
+grade = "sure"
+
+["vector.opcode.0x591.body"]
+statement = "Message 0x591's body read by the client: 01000000 is the value 1, 32 bits."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadMessage0591Body 0x14007ab50 run as in vector.opcode.0x3db.body."
+grade = "sure"
+
+["vector.StsConnLib64.MT.dll!0x180022cb0.messages"]
+statement = "Messages as the library builds them, CR and LF spelled out: Ping: POST /Sts/Ping STS/1.0<CR><LF>l:0<CR><LF><CR><LF> ; LoginStart (name jim, address 192.168.1.5, sequence 1): POST /Auth/LoginStart STS/1.0<CR><LF>s:1<CR><LF>l:85<CR><LF><CR><LF><Request><LF><LoginName>jim</LoginName><LF><NetAddress>192.168.1.5</NetAddress><LF></Request><LF> ; KeyData (bytes 00..09, sequence 2): POST /Auth/KeyData STS/1.0<CR><LF>s:2<CR><LF>l:57<CR><LF><CR><LF><Request><LF><KeyData>AAECAwQFBgcICQ==</KeyData><LF></Request><LF> ; LoginFinish (sequence 3): POST /Auth/LoginFinish STS/1.0<CR><LF>s:3<CR><LF>l:11<CR><LF><CR><LF><Request/><LF> ; a final reply to sequence 5 with Token a&b<c: STS/1.0 200 OK<CR><LF>s:5R<CR><LF>l:45<CR><LF><CR><LF><Reply><LF><Token>a&amp;b&lt;c</Token><LF></Reply><LF>."
+proof = "Ghidra's p-code emulator on StsConnLib64.MT.dll (scratch script outside the repository; HeapAlloc, HeapReAlloc, HeapFree and the critical sections stood in by Python, and the library's sprintf 0x180014500 by a Python formatter for %u, %d, %x, %s): InitUriCharClasses 0x180023ab0 run first; NewStsMessageOut 0x180022f60(msg, 0); WriteStsRequestLine 0x180022cb0 or SetAuthCommand 0x180010290; XmlOpenElement, XmlTextElement, XmlBase64Element, XmlCloseElement; WriteStsSequenceHeader 0x180023550(msg, n, reply, final, 0); FinishStsHeaders 0x180023290; the size from 0x180022650 and the bytes from 0x180022b20. The reply used WriteStsStatusLine 0x1800227d0(msg, 200)."
+grade = "fairly sure"
+gap = "The library's send path adds a p header when the socket's flag 0x100 is set (SendStsRequest 0x1800351e0); whether the client's socket has it is not read. The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["vector.StsConnLib64.MT.dll!0x18002d4e0.srp"]
+statement = "An SRP login run on the library's own code, for account jim and password secret, salt 0102030405060708090a0b0c0d0e0f10, the client's random a = 2122..40 (32 bytes, the library's little-endian bytes), the server's b = 5152..70 (32 bytes, little-endian): the verifier v's bytes are d2395dc97de4055b3fe1c0c64df8dd105346bcba5323ffd945bafd90d1fb64a870fa542da7c6613be72ed03013d983c9083ecba9415905f0bf5ae6e65a2dcabc099dd0ce5c0b3d422d57da6c32cd01b23f456c5148e58fa142a494fbed4f569815ef5ffe1157991fc014d90526874586663bdfcc925c705debb3a820971c571a; the server's KeyData (salt and B) is 100000000102030405060708090a0b0c0d0e0f10800000000b12657b1e8ef6bac80c0d7da96c1b4d40f7ce6bd14c2e78e35d0f127a4289f104ff4685ef439f8ec031a25b30c1290c816897e8f631c4e83775829ef3984327e154540bb3b02164f22a94be6f0a0c65b398e54933c2dca179cd96ee1fc7c7cb1a5b1c8aa85a370a6029a15c510a0a6379c9cceac789cc01ea85e902d70c9520 (base64 EAAAAAECAwQFBgcICQoLDA0ODxCAAAAACxJlex6O9rrIDA19qWwbTUD3zmvRTC54410PEnpCifEE/0aF70OfjsAxolswwSkMgWiX6PYxxOg3dYKe85hDJ+FUVAuzsCFk8iqUvm8KDGWzmOVJM8LcoXnNlu4fx8fLGlsciqhaNwpgKaFcUQoKY3nJzOrHicwB6oXpAtcMlSA=); the client answers KeyData 800000005731c398b67289a5846a3e3629731e6e35613c9eb91b4792694efa2161ef5ec1706c665b283b2f7ad8fa24bd451913ff9ef862b3a0b0f122c9f110431fec049d2fd2c5f5e1042cb45a00ba0bbc521b54a3a112ca91bcfb08f3f616aa4fd4e1e19fc039aabac8fbf4121921d6475c1223463d861c417388e9ccdcb606191d9aa4200000006a82e1fd55749d389039786b29bb1282a7941ba555b9531dbda76025ad62262a (base64 gAAAAFcxw5i2comlhGo+NilzHm41YTyeuRtHkmlO+iFh717BcGxmWyg7L3rY+iS9RRkT/574YrOgsPEiyfEQQx/sBJ0v0sX14QQstFoAugu8UhtUo6ESypG8+wjz9haqT9Th4Z/AOaq6yPv0Ehkh1kdcEiNGPYYcQXOI6czctgYZHZqkIAAAAGqC4f1VdJ04kDl4aym7EoKnlBulVblTHb2nYCWtYiYq), that is A and M1 = 6a82e1fd55749d389039786b29bb1282a7941ba555b9531dbda76025ad62262a; the session key K is 8e258c4634f929c6ff46dbff8769542234134fb91c4d4048833f7df0662ab6ba25537d30e7430c6ad59f17fada2358f71bab2eb38e93de80d1df98b9e98d19f3; the server's second KeyData (M2) is 20000000adbf4675ff32174270e72a028a16b3bec015b74c2d04f863ef963b9ea2d2df91, which the client accepts, and refuses with one bit of M2 changed."
+proof = "Ghidra's p-code emulator on StsConnLib64.MT.dll (scratch script outside the repository): BigNumInit 0x1800f5360 on N, g and k, SrpGroupInit 0x18002d0f0; NewSrpClient 0x18002cfb0 with a planted random function writing a; slot 8 (SrpClientInit 0x18002ccd0) with jim and secret; slot 0x28 (SrpClientStep 0x18002de00) with the server KeyData, then with M2. BigNumWordModExp 0x1800f5970 and BigNumModExp 0x1800f6030 were replaced by Python's pow after each matched pow on random 96-bit operands run on the emulator; BigNumModMul, BigNumMul, BigNumAdd, BigNumSub, BigNumMod and BigNumCompare were run on the emulator (and matched Python on 96- to 1024-bit operands). Every output equals a hand model (srpmodel in the scratch directory) of SrpGroupInit, SrpClientStepServerKey, SrpInterleaveKey and SrpClientProof, and the server's S = (A * v^u)^b mod N equals the client's."
+grade = "fairly sure"
+gap = "The two 1024-bit modular powers were computed by Python, not by the library's code on the emulator. The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["vector.StsConnLib64.MT.dll!0x1800f7420.rc4"]
+statement = "RC4 under the session key K of vector.StsConnLib64.MT.dll!0x18002d4e0.srp: the bytes 00..1f encrypt to 33b03353f0dd9c3bfc19692ca27a45434bb1faaff30a722ddd99edb384eae33c, and the next four zero bytes to 64470a37; both equal standard RC4."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): Rc4KeyInit 0x1800f7320(state, 64, K), Rc4Crypt 0x1800f7420(state, out, 32, in) and again with four zero bytes on the same state; compared with a Python RC4."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
+
+["vector.StsConnLib64.MT.dll!0x180039a30.sha256"]
+statement = "Sha256Parts is standard SHA-256: 'abc' gives ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad, the empty text e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855, the bytes 00..c7 1901da1c9f699b48f6b2636e65cbf73abf99d0441ef67f5c540a42f7051dec6f."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): 0x180039a30(out, 1, &length, &pointer); each equal to Python's hashlib.sha256."
+grade = "fairly sure"
+gap = "The fact checker accepts a sure grade only for addresses of the client (0x14...), so a fact read in StsConnLib64.MT.dll is graded fairly sure; teaching check_facts.py the library's addresses (0x18...) would let it be graded sure."
