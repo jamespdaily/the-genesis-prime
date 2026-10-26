@@ -23,11 +23,14 @@ const name_constraint = "character_name_lower_key"
 
 /// Carries out a command of character select against the database and says
 /// how it went. A name another character has is `NameInUse`; an account with no
-/// such character is `NotFound`; a database that cannot be reached or does not
-/// answer in time is `Unavailable`. Any other failure of a statement is a bug
-/// in the statement or the migration and crashes the caller.
+/// such character is `NotFound`; a database that cannot be reached, or whose
+/// reply to a read does not come, is `Unavailable`. A write whose connection
+/// closes under it is `Unknown`: it may have committed before the reply was
+/// lost, because pog's deadline for a query closes the socket whatever the
+/// statement is doing. Any other failure of a statement is a bug in the
+/// statement or the migration and crashes the caller.
 pub fn run(db db: pog.Connection, command command: Command) -> Answer {
-  carry_out(db:, command:, closed: Unavailable)
+  carry_out(db:, command:, closed: closed_answer(command))
 }
 
 /// Runs the command's statement; `closed` is the answer when the connection
@@ -47,10 +50,10 @@ fn carry_out(
   }
 }
 
-/// The answer of a command held in a transaction when its connection closes
-/// after the go. A write may have committed before the reply was lost, so it is
-/// `Unknown`; a read changes nothing, so it is `Unavailable`.
-fn closed_after_go(command: Command) -> Answer {
+/// The answer of a command whose statement was sent when its connection closes.
+/// A write may have committed before the reply was lost, so it is `Unknown`; a
+/// read changes nothing, so it is `Unavailable`.
+fn closed_answer(command: Command) -> Answer {
   case command {
     select.LoadCharacters(..) -> Unavailable
     select.InsertCharacter(..)
@@ -83,7 +86,7 @@ pub fn run_held(
   command command: Command,
   connection_held connection_held: fn() -> Permission,
 ) -> Answer {
-  let closed = closed_after_go(command)
+  let closed = closed_answer(command)
   let sent = process.new_subject()
   let carried_out =
     pog.transaction(db, fn(transaction) {
@@ -189,17 +192,22 @@ fn delete(
 /// statement timeout (`pool.statement_timeout_ms`): query_canceled.
 const query_canceled = "57014"
 
-/// The code of Postgres's error for a transaction it ended at the pool's
-/// transaction timeout (`pool.transaction_timeout_ms`): transaction_timeout.
+/// The code of Postgres's error transaction_timeout, raised when a transaction
+/// outlives the pool's transaction timeout (`pool.transaction_timeout_ms`).
 /// Postgres rolls the transaction back, so nothing of it committed.
 const transaction_timeout = "25P04"
 
-/// What a failed statement means: a database that is away or slow, or one that
-/// cancelled a statement or ended a transaction at its limit, is an outside
-/// failure the server recovers from; a name another character has is the
-/// player's own; anything else is a mistake in a statement or the migration.
-/// A connection that closed under the statement (`pog.QueryTimeout`) is
-/// `closed`, which the caller chooses by what the command does to the data.
+/// What a failed statement means: a database that is away, or one that
+/// cancelled a statement, is an outside failure the server recovers from; a
+/// name another character has is the player's own; anything else is a mistake
+/// in a statement or the migration. A connection that closed under the
+/// statement (`pog.QueryTimeout`) is `closed`, which the caller chooses by what
+/// the command does to the data. A transaction that outlives its limit is ended
+/// by Postgres with a FATAL error that closes the session, and pgo drops that
+/// message and returns a closed socket (`pgo_handler.erl` lines 551-570 and
+/// 593-594), so it reaches the store as `pog.QueryTimeout`; the
+/// transaction_timeout branch covers that error only when Postgres returns it
+/// without closing the connection.
 fn failed(error: pog.QueryError, closed closed: Answer) -> Answer {
   case error {
     pog.ConnectionUnavailable -> Unavailable

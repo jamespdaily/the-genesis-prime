@@ -18,9 +18,11 @@ const default_pool_size = 10
 /// statement that is cancelled leaves its connection open and its error says
 /// why (query_canceled, 57014). The transaction as a whole is bounded by
 /// `transaction_timeout_ms`, above this. A statement inside a transaction has no
-/// timeout of the client's own; pgo's checkout deadline of 5000 ms from the
-/// checkout bounds the whole transaction, by closing its socket
-/// (`pgo_pool.erl` lines 19 and 149-158). A statement outside a transaction has
+/// timeout of the client's own; pgo's checkout deadline of 5000 ms bounds the
+/// whole transaction, by closing its socket (`pgo_pool.erl` lines 19 and
+/// 149-158). The deadline counts from the request for the connection, queue
+/// wait included (lines 50-51 and 336), so on a busy pool it can fire before
+/// `transaction_timeout_ms`. A statement outside a transaction has
 /// `pog`'s default client timeout of 5000 ms from the start of the call, which
 /// the functions squirrel generates do not let a caller change, and this limit
 /// is below it. 4 seconds; no measurement chose it.

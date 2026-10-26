@@ -127,7 +127,7 @@ pub type Status {
   /// The player chose a character: the client leaves character select for the
   /// world, so no request is taken until the entry is refused.
   Entering
-  /// A write was answered `Unavailable`, so it may or may not have been done.
+  /// A write was answered `Unavailable`, which says nothing of it committed.
   /// The server waits for the account's characters again, and the player is
   /// sent `owed`, the failure of the request, with the list the store holds.
   Reloading(owed: ServerMessage)
@@ -170,9 +170,10 @@ pub type Answer {
   NotFound
   /// The database could not do it.
   Unavailable
-  /// The command was sent to the database and nothing came back in the longest
-  /// time a command can take, so the server cannot tell what it did. Only the
-  /// store's worker gives it, never the store.
+  /// A write was sent to the database and its connection closed after that, or
+  /// nothing came back in the longest time a write can take, so the server
+  /// cannot tell what it did. The store gives it for a closed connection and
+  /// the store's worker gives it for a missing answer.
   Unknown
 }
 
@@ -229,10 +230,10 @@ pub type Outage {
   /// The characters of the account could not be loaded for the list.
   ListNotLoaded
   /// The characters could not be loaded again after a write that was answered
-  /// `Unavailable`, so the server cannot tell what that write did.
+  /// `Unavailable`, so the client's list is not the store's.
   ListNotReloaded
-  /// A write that was sent to the database got no answer in the longest time a
-  /// write can take, so the server cannot tell whether it was done.
+  /// A write that was sent to the database was not answered, or its connection
+  /// closed after it was sent, so the server cannot tell whether it was done.
   WriteNotAnswered
 }
 
@@ -575,8 +576,7 @@ fn loaded(
 /// The answer to the read after a write that was answered `Unavailable`: the
 /// characters the store holds, and with them the failure the player is
 /// owed, then the list, so the client's list is the store's. A store that is
-/// away again leaves the server not knowing what the write did, so the
-/// connection ends.
+/// away again leaves the client's list not the store's, so the connection ends.
 fn reloaded(
   state state: State,
   owed owed: ServerMessage,
@@ -594,9 +594,9 @@ fn reloaded(
   }
 }
 
-/// A write was answered `Unavailable`: it may have been done after the
-/// deadline, so the failure is answered only once the account's characters
-/// have been read again.
+/// A write was answered `Unavailable`, which says nothing of it committed: the
+/// failure is answered only once the account's characters have been read again,
+/// so the client's list is the store's.
 fn reload(
   state state: State,
   owed owed: ServerMessage,

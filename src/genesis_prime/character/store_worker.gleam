@@ -17,8 +17,9 @@
 //// the answer is `Unknown`, never `Unavailable`, which says nothing committed,
 //// and the connection ends so that the client lists the store's characters
 //// again. A worker that is not told to go within `go_wait_milliseconds` sends
-//// nothing and gives `Unavailable`. A worker that ends without answering,
-//// such as one whose statement crashed, gives `Unavailable` at once.
+//// nothing and gives `Unavailable`. A worker that ends without answering
+//// before it was told to go gives `Unavailable` at once, and one that ends
+//// without answering after it was told to go gives `Unknown`.
 //// A worker holds nothing between commands, so none is restarted.
 ////
 //// A limit that is stated and not closed: a session that a second login of its
