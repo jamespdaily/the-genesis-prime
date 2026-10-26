@@ -488,14 +488,18 @@ service(Name) ->
         _ -> running
     end.
 
-%% The ports of the node's listening TCP sockets: a socket with an address of
-%% its own and no peer, which is what a listening socket is and a connected one
-%% is not.
+%% The ports of the node's listening TCP sockets: a socket whose states
+%% (`inet:info/1`, `states`) include `listen`. A socket with an address of its
+%% own and no peer is not enough: one that is still connecting has both, as
+%% the server's database pool's sockets do while it opens its connections. A
+%% socket that has closed meanwhile reports the state `closed` and is not
+%% counted.
 listening_ports() ->
     lists:usort([
         Port
      || Socket <- erlang:ports(),
         erlang:port_info(Socket, name) =:= {name, "tcp_inet"},
-        {error, enotconn} =:= inet:peername(Socket),
+        #{states := States} <- [inet:info(Socket)],
+        lists:member(listen, States),
         {ok, {_, Port}} <- [inet:sockname(Socket)]
     ]).
