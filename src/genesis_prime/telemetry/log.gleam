@@ -64,26 +64,34 @@ pub type Number {
 /// message.
 pub const nobody = Who(account: None, actor: None, place: None, message: None)
 
+/// The levels of logger that the functions of this module write at.
+type Level {
+  ErrorLevel
+  WarningLevel
+  InfoLevel
+  DebugLevel
+}
+
 /// Writes a line at error level: a bug, always looked into.
 pub fn error(who: Who, text: String) -> Nil {
-  todo as "write the line at logger's error level"
+  emit(ErrorLevel, who, text, dict.new())
 }
 
 /// Writes a line at warning level: an outside failure the server recovered
 /// from.
 pub fn warning(who: Who, text: String) -> Nil {
-  todo as "write the line at logger's warning level"
+  emit(WarningLevel, who, text, dict.new())
 }
 
 /// Writes a line at info level: start, stop, login or logout.
 pub fn info(who: Who, text: String) -> Nil {
-  todo as "write the line at logger's info level"
+  emit(InfoLevel, who, text, dict.new())
 }
 
 /// Writes a line at debug level: per-message detail. Nothing is written
 /// unless `configure` turned debug on.
 pub fn debug(who: Who, text: String) -> Nil {
-  todo as "write the line at logger's debug level"
+  emit(DebugLevel, who, text, dict.new())
 }
 
 /// Writes a line at info level that also carries numbers, in one map under
@@ -94,13 +102,20 @@ pub fn info_with_numbers(
   text: String,
   numbers: Dict(String, Number),
 ) -> Nil {
-  todo as "write the line at info level with its numbers"
+  emit(InfoLevel, who, text, numbers)
 }
 
 /// Sets which lines are written, from the start argument that says whether
 /// debug is on: with it off, info and above are written, and with it on,
 /// debug too. It sets the level of logger itself, which belongs to the whole
 /// node, so the server's entry point calls it once, before the tree starts.
-pub fn configure(debug debug: Bool) -> Nil {
-  todo as "set logger's primary level from the debug argument"
-}
+@external(erlang, "log_ffi", "configure")
+pub fn configure(debug debug: Bool) -> Nil
+
+@external(erlang, "log_ffi", "emit")
+fn emit(
+  level: Level,
+  who: Who,
+  text: String,
+  numbers: Dict(String, Number),
+) -> Nil
