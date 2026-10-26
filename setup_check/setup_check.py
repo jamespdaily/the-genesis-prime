@@ -353,10 +353,50 @@ def _query_failure(message: str) -> Missing:
     return Missing(part, message, fix)
 
 
+# A release's settings file, wherever the repository keeps it. Folders that are
+# not the repository's own are not searched.
+RELEASE_SETTINGS_FILES = ("vm.args", "vm.args.src")
+NOT_THE_REPOSITORYS_FILES = (".git", "build")
+# The flags that start Erlang distribution on a VM (`erl -name`, `erl -sname`),
+# at the start of a vm.args line.
+DISTRIBUTION_FLAG = re.compile(r"^\s*-(name|sname)(\s|$)")
+
+
+def check_distribution(machine: Machine) -> list[Missing]:
+    """One Missing for each line of a release's settings file that turns
+    Erlang distribution on; nothing when there is no settings file.
+
+    The server runs as one node, so a release must start its VM with no `-name`
+    and no `-sname`. The settings file is any file named vm.args or vm.args.src
+    in the repository (not under .git or build); a line starting with `#` is a
+    comment, and a line whose first word is `-name` or `-sname` turns
+    distribution on. What the release keeps (the issue that writes it must keep
+    it, or extend this check): its VM flags in a file with one of those names,
+    and distribution turned on only by those two flags, not by an environment
+    variable or a setting of another file."""
+    missing = []
+    for folder, folders, files in os.walk(machine.repository):
+        folders[:] = sorted(name for name in folders if name not in NOT_THE_REPOSITORYS_FILES)
+        for name in sorted(files):
+            if name not in RELEASE_SETTINGS_FILES:
+                continue
+            path = Path(folder) / name
+            relative = path.relative_to(machine.repository).as_posix()
+            for number, line in enumerate(path.read_text().splitlines(), 1):
+                if DISTRIBUTION_FLAG.match(line):
+                    missing.append(Missing(
+                        "Erlang distribution off in the release's settings",
+                        "%s line %d: %s" % (relative, number, line.strip()),
+                        "remove the %s line from %s: the server runs as one node and uses no distribution" % (
+                            line.split()[0], relative),
+                    ))
+    return missing
+
+
 def check_all(machine: Machine) -> list[Missing]:
     """Every part's check, in order, skipping the client's parts where
     GENESIS_NO_CLIENT=1."""
-    checks = [check_gleam, check_erlang, check_rebar, check_manifest, check_postgres]
+    checks = [check_gleam, check_erlang, check_rebar, check_manifest, check_postgres, check_distribution]
     if not _no_client(machine):
         checks += [check_client, check_query_process]
     return [missing for check in checks for missing in check(machine)]
