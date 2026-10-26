@@ -44,6 +44,14 @@ pub type Failure {
   ServerClosed(chunk: Int, offset: Int)
   /// Receiving failed for another reason.
   NotReceived(chunk: Int, offset: Int, error: mug.Error)
+  /// The recording ended, and the server then sent `bytes` more before it
+  /// closed the connection; `offset` is the first of them in the stream of
+  /// everything the server sent.
+  ExtraBytes(offset: Int, bytes: BitArray)
+  /// The recording ended, the replay closed its sending side, and the server
+  /// neither sent nor closed within the deadline; `offset` is the length of the
+  /// stream the server sent.
+  NotClosed(offset: Int)
 }
 
 /// Replays `recording` against `target`. Each wait for the server's bytes of
@@ -54,6 +62,23 @@ pub fn run(
   target target: Target,
   deadline_ms deadline_ms: Int,
 ) -> Result(Nil, Failure) {
+  run_connected(recording:, target:, deadline_ms:, connected: fn(_address) {
+    Nil
+  })
+}
+
+/// Replays as `run` does, and calls `connected` once the connection is open and
+/// before the first byte is sent, with the connection's own address as text,
+/// which is the peer address the server sees for it. A replay that must give
+/// the server something for this connection, such as its recorded draws, does
+/// it there.
+pub fn run_connected(
+  recording recording: Recording,
+  target target: Target,
+  deadline_ms deadline_ms: Int,
+  connected connected: fn(String) -> Nil,
+) -> Result(Nil, Failure) {
+  let _ = connected
   let options =
     mug.new(target.host, port: target.port)
     |> mug.timeout(deadline_ms)

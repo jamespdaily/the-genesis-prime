@@ -134,8 +134,8 @@ pub fn the_hand_offs_hold_their_own_keys_test() -> Nil {
   use <- owned_test.run(5000)
   let settings = settings(login_clock.new(), process.new_subject())
   let _top = start(settings)
-  let token = handoff.issue(settings.game_tokens.name, identity())
-  let key = handoff.issue(settings.session_keys.name, identity())
+  let token = handoff.issue(settings.game_tokens.name, identity(), option.None)
+  let key = handoff.issue(settings.session_keys.name, identity(), option.None)
   assert handoff.redeem(settings.session_keys.name, token) == Error(Unknown)
     as "a game token is not a session key: each hand-off holds its own"
   assert handoff.redeem(settings.game_tokens.name, token) == Ok(identity())

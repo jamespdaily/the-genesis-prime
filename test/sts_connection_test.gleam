@@ -46,10 +46,10 @@ fn services() -> sts_connection.Services {
         False -> Error(Nil)
       }
     },
-    issue_game_token: fn(_identity: Identity) {
+    issue_game_token: fn(_identity: Identity, _peer) {
       message_support.hex("33221100 5544 7766 8899 aabbccddeeff")
     },
-    draw_secret: vector.server_secret,
+    draw_secret: fn(_peer, _account) { vector.server_secret() },
   )
 }
 

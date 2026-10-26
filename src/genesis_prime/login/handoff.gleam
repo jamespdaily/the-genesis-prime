@@ -4,16 +4,19 @@
 //// redeems in 0x58F (opcode.0x592, opcode.0x58f). A key is 16 random bytes
 //// from the settings' random source, the operating system's strong one in a
 //// running server, kept with what it stands for until it is redeemed once or
-//// its expiry passes. A restart empties the
+//// its expiry passes. The connection that asks for a key is named in the
+//// request, and the draw is made for that connection, so a source that
+//// records its draws keeps each connection's apart. A restart empties the
 //// hand-off: a login in flight fails and the client logs in again.
 ////
 //// The process owns its keys; every other process asks it by message. It
 //// reads the monotonic clock the settings give it, in whole milliseconds from
 //// an arbitrary start.
 
-import genesis_prime/login/random_source.{type RandomSource}
+import genesis_prime/login/random_source.{type RandomSource, Draw}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Name, type Subject}
+import gleam/option.{type Option, None}
 import gleam/otp/actor
 import gleam/otp/supervision
 
@@ -33,7 +36,7 @@ pub type Settings(held) {
 
 /// The messages a hand-off receives.
 pub opaque type Message(held) {
-  Issue(held: held, reply: Subject(BitArray))
+  Issue(held: held, connection: Option(String), reply: Subject(BitArray))
   Redeem(key: BitArray, reply: Subject(Result(held, Refusal)))
 }
 
@@ -86,12 +89,16 @@ fn handle(
 ) -> actor.Next(State(held), Message(held)) {
   let now = state.settings.clock()
   case message {
-    Issue(held:, reply:) -> {
+    Issue(held:, connection: _connection, reply:) -> {
       let live =
         dict.filter(state.keys, fn(_, issued) {
           !has_expired(settings: state.settings, now:, issued_at: issued.0)
         })
-      let key = random_source.bytes(state.settings.random, key_bytes)
+      let key =
+        random_source.bytes(
+          state.settings.random,
+          Draw(count: key_bytes, connection: None, account: None),
+        )
       process.send(reply, key)
       actor.continue(State(..state, keys: dict.insert(live, key, #(now, held))))
     }
@@ -119,10 +126,15 @@ fn has_expired(
   now - issued_at >= settings.expiry_milliseconds
 }
 
-/// Issues a new key for `held`, and drops the keys already expired.
-pub fn issue(name name: Name(Message(held)), held held: held) -> BitArray {
+/// Issues a new key for `held` on behalf of `connection`, the peer address of
+/// the connection that asks, and drops the keys already expired.
+pub fn issue(
+  name name: Name(Message(held)),
+  held held: held,
+  connection connection: Option(String),
+) -> BitArray {
   actor.call(process.named_subject(name), waiting: call_ms, sending: fn(reply) {
-    Issue(held:, reply:)
+    Issue(held:, connection:, reply:)
   })
 }
 

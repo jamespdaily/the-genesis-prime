@@ -29,8 +29,9 @@ pub type Services {
   Services(
     /// Redeems a game token of 16 bytes, once.
     redeem_game_token: fn(BitArray) -> Result(Identity, Nil),
-    /// A new session key for an identity: 16 bytes.
-    issue_session_key: fn(Identity) -> BitArray,
+    /// A new session key for an identity, asked for by the connection of the
+    /// given peer address: 16 bytes.
+    issue_session_key: fn(Identity, Option(String)) -> BitArray,
   )
 }
 
@@ -44,7 +45,9 @@ pub fn services(
     redeem_game_token: fn(key) {
       handoff.redeem(game_tokens, key) |> result.replace_error(Nil)
     },
-    issue_session_key: fn(identity) { handoff.issue(session_keys, identity) },
+    issue_session_key: fn(identity, peer) {
+      handoff.issue(session_keys, identity, peer)
+    },
   )
 }
 
@@ -111,7 +114,8 @@ fn run(
           )
         }
         auth_session.IssueSessionKey(identity) -> {
-          let key = connection.services.issue_session_key(identity)
+          let key =
+            connection.services.issue_session_key(identity, connection.peer)
           let #(session, more) =
             auth_session.session_key_issued(connection.session, key)
           log.info(

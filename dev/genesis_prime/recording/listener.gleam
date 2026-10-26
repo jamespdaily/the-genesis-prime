@@ -2,8 +2,9 @@
 //// (a TCP client) does not have. An accepted socket is a `mug.Socket`: `mug`
 //// sends on it, receives on it and shuts it down.
 ////
-//// The Erlang helper `recording_socket_ffi` holds the two calls that return a
-//// bare `ok`, which no Gleam external can read as a `Result`.
+//// The Erlang helper `recording_socket_ffi` holds the calls that return a bare
+//// `ok`, which no Gleam external can read as a `Result`, and the socket's own
+//// address as text.
 
 import gleam/erlang/process.{type Pid}
 import mug
@@ -84,3 +85,15 @@ pub fn hand_over(socket: mug.Socket, to pid: Pid) -> Result(Nil, mug.Error)
 /// the relay adds none to the exchange it carries.
 @external(erlang, "recording_socket_ffi", "send_at_once")
 pub fn send_at_once(socket: mug.Socket) -> Result(Nil, mug.Error)
+
+/// The socket's own address and port as text, written as the server writes the
+/// peer address of the connection at the other end, so the two are the same
+/// text.
+@external(erlang, "recording_socket_ffi", "local_address")
+pub fn local_address(socket: mug.Socket) -> Result(String, mug.Error)
+
+/// Closes the sending side of the socket and leaves the receiving side open,
+/// so the other side reads the end of the stream and what it still has to send
+/// can be read.
+@external(erlang, "recording_socket_ffi", "finish_sending")
+pub fn finish_sending(socket: mug.Socket) -> Result(Nil, mug.Error)
