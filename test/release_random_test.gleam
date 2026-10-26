@@ -1,9 +1,9 @@
-//// The released server cannot be seeded. The expected value is the issue's
-//// test 2: the settings `genesis_prime.main` starts with draw every random
-//// byte of the login (the STS secrets and both hand-offs' keys) from the
-//// operating system's strong source, whatever the environment holds. The
-//// other half of the test, that no module of `src/` can import the seeded
-//// generator, is in `code_rule/seeded_source_test`.
+//// The released server cannot take supplied draws. The expected value is the
+//// issue's test 2: the settings `genesis_prime.main` starts with draw every
+//// random byte of the login (the STS secrets and both hand-offs' keys) from the
+//// operating system's strong source, whatever the environment holds. The other
+//// half of the test, that no module of `src/` but `login/random_source` builds
+//// a `Supplied` source, is in `code_rule/supplied_source_test`.
 
 import genesis_prime
 import genesis_prime/login/random_source.{Strong}
@@ -11,7 +11,7 @@ import gleam/dict
 import owned_test
 
 /// The environment of a machine that has what the server needs to start, and
-/// also a variable that names a seed, which the released server must ignore.
+/// also variables that name a seed, which the released server must ignore.
 fn environment(name: String) -> Result(String, Nil) {
   dict.from_list([
     #("PGHOST", "localhost"),

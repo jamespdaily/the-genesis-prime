@@ -9,8 +9,18 @@ import pog
 
 /// Inserts the account row; the database gives it its own number.
 pub fn insert(
-  connection _connection: pog.Connection,
-  account _account: UsedAccount,
+  connection connection: pog.Connection,
+  account account: UsedAccount,
 ) -> Nil {
-  panic as "shape only: built after the tests"
+  let assert Ok(_) =
+    pog.query(
+      "insert into account (name, salt, verifier, user_id) values ($1, $2, $3, $4::uuid)",
+    )
+    |> pog.parameter(pog.text(account.name))
+    |> pog.parameter(pog.bytea(account.salt))
+    |> pog.parameter(pog.bytea(account.verifier))
+    |> pog.parameter(pog.text(account.user_id))
+    |> pog.execute(on: connection)
+    as { "the account " <> account.name <> " was not inserted" }
+  Nil
 }

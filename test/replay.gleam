@@ -16,6 +16,7 @@ import genesis_prime/recording.{
   type Chunk, type Recording, ClientToServer, ServerToClient,
 }
 import genesis_prime/recording/clock
+import genesis_prime/recording/listener
 import gleam/bit_array
 import gleam/bool
 import gleam/result
@@ -78,7 +79,6 @@ pub fn run_connected(
   deadline_ms deadline_ms: Int,
   connected connected: fn(String) -> Nil,
 ) -> Result(Nil, Failure) {
-  let _ = connected
   let options =
     mug.new(target.host, port: target.port)
     |> mug.timeout(deadline_ms)
@@ -86,6 +86,9 @@ pub fn run_connected(
   use socket <- result.try(
     mug.connect(options) |> result.map_error(NotConnected),
   )
+  let assert Ok(address) = listener.local_address(socket)
+    as "the replay's connection has an address"
+  connected(address)
   let outcome =
     replay_chunks(
       socket:,
@@ -94,6 +97,7 @@ pub fn run_connected(
       pending: <<>>,
       deadline_ms:,
     )
+    |> result.try(fn(end) { await_end(socket:, end:, deadline_ms:) })
   case mug.shutdown(socket) {
     Ok(Nil) | Error(mug.Closed) | Error(mug.Enotconn) -> outcome
     Error(error) ->
@@ -110,6 +114,45 @@ type Position {
   Position(chunk: Int, offset: Int)
 }
 
+/// Where the chunks ended: how many chunks there were, how many bytes the
+/// server sent that they hold, and the bytes it has sent beyond them.
+type End {
+  End(chunks: Int, offset: Int, pending: BitArray)
+}
+
+/// After the recording's last chunk the server must send nothing more before
+/// it closes the connection. The replay closes its sending side, which tells a
+/// server that waits for the client that the client has no more to say, and
+/// reads until the server closes: the bytes it sends meanwhile are the
+/// failure, and a server that neither sends nor closes within the deadline is
+/// one too.
+fn await_end(
+  socket socket: mug.Socket,
+  end end: End,
+  deadline_ms deadline_ms: Int,
+) -> Result(Nil, Failure) {
+  case end.pending {
+    <<>> -> {
+      case listener.finish_sending(socket) {
+        Ok(Nil) | Error(mug.Closed) | Error(mug.Enotconn) -> Nil
+        Error(error) ->
+          panic as {
+            "the replay's sending side did not close: "
+            <> mug.describe_error(error)
+          }
+      }
+      case mug.receive(socket, timeout_milliseconds: deadline_ms) {
+        Ok(bytes) -> Error(ExtraBytes(offset: end.offset, bytes:))
+        Error(mug.Closed) -> Ok(Nil)
+        Error(mug.Timeout) -> Error(NotClosed(offset: end.offset))
+        Error(error) ->
+          Error(NotReceived(chunk: end.chunks, offset: end.offset, error:))
+      }
+    }
+    extra -> Error(ExtraBytes(offset: end.offset, bytes: extra))
+  }
+}
+
 /// Replays `chunks` from `position`. `pending` holds the bytes the server has
 /// sent that no chunk has taken yet.
 fn replay_chunks(
@@ -118,9 +161,9 @@ fn replay_chunks(
   position position: Position,
   pending pending: BitArray,
   deadline_ms deadline_ms: Int,
-) -> Result(Nil, Failure) {
+) -> Result(End, Failure) {
   case chunks {
-    [] -> Ok(Nil)
+    [] -> Ok(End(chunks: position.chunk, offset: position.offset, pending:))
     [chunk, ..later] -> {
       let next = Position(..position, chunk: position.chunk + 1)
       case chunk.direction {
