@@ -274,9 +274,10 @@ pub fn a_character_that_is_on_the_map_is_refused_the_second_time_and_the_player_
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"
   let character = saved_character(database:, running:, account:)
-  let first = signed_in(running:, account:)
-  let assert [_, _, _, _] = play(game: first, character:, answers: 4)
-    as "the first connection entered the world"
+  // The character is on the map through a process that no connection of the
+  // account holds, as a unit the second login found still on it.
+  let #(_observer, _unit) =
+    join_as_observer(running:, character_id: character.id)
   let second = signed_in(running:, account:)
   let assert [refused] = play(game: second, character:, answers: 1)
     as "the second connection's answer"

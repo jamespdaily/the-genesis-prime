@@ -15,6 +15,7 @@ import genesis_prime/connection/clock
 import genesis_prime/connection/listener
 import genesis_prime/database/pool
 import genesis_prime/game/game_connection
+import genesis_prime/game/sessions
 import genesis_prime/login/account.{type Identity}
 import genesis_prime/login/handoff
 import genesis_prime/map/heap_limit
@@ -58,6 +59,7 @@ pub type Settings {
     clock: fn() -> Int,
     answer_deadline_ms: Int,
     maps: maps.Settings,
+    sessions: Name(sessions.Message),
     workers: store_worker.Workers,
   )
 }
@@ -87,6 +89,7 @@ pub fn settings(
       snapshot:,
       heap_limits: heap_limit.measured,
     ),
+    sessions: process.new_name("game_sessions"),
     workers: store_worker.Workers(factory: process.new_name("store_workers")),
   )
 }
@@ -108,6 +111,7 @@ pub fn supervised(
       workers: settings.workers,
       db: pool.connection(pool),
       registry: settings.maps.registry,
+      sessions: settings.sessions,
       tables:,
       start: settings.start,
       customisation: settings.customisation(tables),
@@ -121,6 +125,7 @@ pub fn supervised(
     intensity: restart_intensity,
     period: restart_period_seconds,
   )
+  |> static_supervisor.add(sessions.supervised(settings.sessions))
   |> static_supervisor.add(maps.supervised(settings.maps))
   |> static_supervisor.add(store_worker.supervised(settings.workers))
   |> static_supervisor.add(listener.supervised(

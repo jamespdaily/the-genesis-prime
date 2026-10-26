@@ -31,6 +31,7 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/character_select_start
 import genesis_prime/message/create_character
 import genesis_prime/message/delete_character
+import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/play_character
 import genesis_prime/message/rename_character
@@ -86,6 +87,11 @@ pub type EndReason {
   WorldEntryBreach(world_entry.Breach)
   /// The database did not give the characters character select needed.
   StoreAway(select.Outage)
+  /// The account logged in again, so the new connection ended this one.
+  SessionTakenOver
+  /// The connection that held the account's slot did not end in time, or the
+  /// registry of the sessions did not answer.
+  SessionNotFreed
   /// The map process that held the character's unit ended, and a map that
   /// starts again is empty, so the unit is gone.
   MapEnded
@@ -93,6 +99,13 @@ pub type EndReason {
   MapAway
   /// A message of the answer could not be built.
   AnswerNotBuilt
+}
+
+/// Whether the connection took its account's slot: no other connection of the
+/// account is left.
+pub type Claim {
+  SlotFree
+  SlotNotFreed
 }
 
 /// What the connection carries out, in order.
@@ -131,6 +144,13 @@ type Stage {
 
 /// The message every client message travels in (opcode.0x244).
 const wrapper_message = 0x0244
+
+/// The reason of message 0x36A that tells a player the account was
+/// disconnected: 19, whose text is 'This account has been disconnected'. No
+/// reason says the account logged in elsewhere, and which one retail sent is not
+/// in the client, so 19, the only one about the account, is a guess
+/// (opcode.0x36a).
+const reason_account_disconnected = 19
 
 /// The first message on a game connection (opcode.0x58f).
 const key_message = 0x058F
@@ -405,6 +425,7 @@ fn apply_select(
             | select.NotYourCharacter(_)
             | select.CharacterDisabled(_)
             | select.CharacterRequiresRename(_)
+            | select.CharacterOnline(_)
             | select.BoneCountWrong(..)
             | select.LabelRefused(_)
             | select.AccountFull(_) -> WarningLevel
@@ -583,6 +604,40 @@ pub fn map_answered(
   }
 }
 
+/// The effects of the answer to taking the account's slot: a slot that is not
+/// free ends the connection.
+pub fn account_claimed(
+  session session: Session,
+  claim claim: Claim,
+) -> #(Session, List(Effect)) {
+  case session.stage, claim {
+    Ended, _ -> #(session, [])
+    _, SlotFree -> #(session, [])
+    _, SlotNotFreed -> end(session, SessionNotFreed)
+  }
+}
+
+/// The effects of a second login of the account: the player is told the account
+/// was disconnected (0x36A) and the connection ends. The unit is taken off the
+/// map by the connection before it ends.
+pub fn taken_over(session session: Session) -> #(Session, List(Effect)) {
+  case session.stage {
+    Ended -> #(session, [])
+    AwaitingKey | RedeemingKey(_) | Playing(..) -> {
+      let #(ended, ending) = end(session, SessionTakenOver)
+      #(ended, [
+        sent(
+          cipher: session.cipher,
+          message: server_message.Disconnected(DisconnectNotice(
+            reason: reason_account_disconnected,
+          )),
+        ),
+        ..ending
+      ])
+    }
+  }
+}
+
 /// The effects of the end of the map process that holds the character's unit,
 /// which the connection watches from the moment the map joined the unit: the
 /// connection ends, because a map that starts again holds none of its players.
@@ -645,6 +700,10 @@ pub fn describe(reason reason: EndReason) -> String {
     CharacterSelectBreach(breach) -> select.describe_breach(breach)
     WorldEntryBreach(breach) -> world_entry.describe_breach(breach)
     StoreAway(outage) -> select.describe_outage(outage)
+    SessionTakenOver ->
+      "the account logged in again, so the new connection ended this one"
+    SessionNotFreed ->
+      "the connection that held the account's slot did not end in time, or the registry of the sessions did not answer"
     MapEnded ->
       "the map that held the character's unit ended, and a map that starts again is empty, so the connection ends and the player enters again"
     MapAway ->
@@ -674,8 +733,9 @@ fn describe_decoding(error: bit_stream.DecodeError) -> String {
 /// every end that is a client's or a player's doing.
 pub fn level_of(reason reason: EndReason) -> Level {
   case reason {
-    AnswerNotBuilt | MapAway | StoreAway(_) -> ErrorLevel
-    MapEnded
+    AnswerNotBuilt | MapAway | StoreAway(_) | SessionNotFreed -> ErrorLevel
+    SessionTakenOver
+    | MapEnded
     | BadWrapper
     | UnexpectedMessage(_)
     | MalformedMessage(..)

@@ -176,3 +176,8 @@ pub fn read(game game: Game, count count: Int) -> List(Frame) {
 pub fn closed(game game: Game) -> Bool {
   tcp_client.await_close(game.socket, wait_ms)
 }
+
+/// Closes the client's end of the connection, as a client that leaves does.
+pub fn close(game game: Game) -> Nil {
+  tcp_client.close(game.socket)
+}

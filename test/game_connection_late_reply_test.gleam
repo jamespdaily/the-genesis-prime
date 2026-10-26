@@ -22,6 +22,7 @@ import genesis_prime/login/guid
 import genesis_prime/map/maps
 import gleam/dict
 import gleam/erlang/process
+import gleam/option.{None}
 import gleam/string
 import log_capture
 import owned_test
@@ -47,6 +48,9 @@ fn services() -> game_connection.Services {
       process.send(abandoned, Loaded([]))
       Loaded([])
     },
+    take_over: fn(_account_id, _notice) { Ok(Nil) },
+    leave_map: fn(_map, _connection) { Nil },
+    character_in_world: fn(_character_ids) { None },
     enter_map: fn(_world_id, _newcomer, _deliveries) {
       Error(maps.RegistryNotAnswering)
     },

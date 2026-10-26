@@ -33,6 +33,7 @@ import genesis_prime/map/unit.{PlayerUnit}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/delete_character.{DeleteCharacter}
+import genesis_prime/message/disconnect_notice
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/rename_character.{RenameCharacter}
@@ -726,4 +727,38 @@ pub fn a_create_request_with_more_bone_values_or_labels_than_the_client_can_send
     }
   })
     as "the most the client sends, 48 bone values, is decoded; the rule decides what is made of it"
+}
+
+pub fn a_connection_told_to_end_by_a_second_login_sends_0x36a_with_reason_19_and_ends_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(session, effects) = game_session.taken_over(idle([own(11)]))
+  let assert [notice] = messages(effects, session_cipher())
+    as "opcode.0x36a: the player is told it is disconnected"
+  assert notice.message_id == 0x036A
+  let assert Ok(decoded) = disconnect_notice.decode(notice.body)
+    as "0x36A decodes"
+  assert decoded.reason == 19
+    as "opcode.0x36a: reason 19 is 'This account has been disconnected', the only reason about the account; that retail sent it is a guess (no recording of a double login)"
+  assert list.contains(effects, End(game_session.SessionTakenOver))
+    as "the connection ends after the notice"
+  let #(_, effects) = game_session.taken_over(session)
+  assert effects == [] as "a connection that has ended takes no more"
+  assert game_session.level_of(game_session.SessionTakenOver)
+    == game_session.WarningLevel
+}
+
+pub fn a_slot_that_is_not_free_ends_the_connection_as_an_error_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) =
+    game_session.account_claimed(keyed(), game_session.SlotNotFreed)
+  assert effects == [End(game_session.SessionNotFreed)]
+    as "a connection that could not take its account's slot does not play beside the old one"
+  assert game_session.level_of(game_session.SessionNotFreed)
+    == game_session.ErrorLevel
+    as "the old connection that did not end is an outside failure the server cannot repair"
+  let #(_, effects) =
+    game_session.account_claimed(keyed(), game_session.SlotFree)
+  assert effects == [] as "a free slot starts nothing by itself"
+  assert game_session.describe(game_session.SessionTakenOver) != ""
+    && game_session.describe(game_session.SessionNotFreed) != ""
 }

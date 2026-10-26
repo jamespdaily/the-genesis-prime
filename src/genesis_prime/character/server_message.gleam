@@ -6,6 +6,7 @@ import genesis_prime/message/bit_stream.{type EncodeError}
 import genesis_prime/message/character_list.{type CharacterList}
 import genesis_prime/message/create_character_result.{type CreateCharacterResult}
 import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
+import genesis_prime/message/disconnect_notice.{type DisconnectNotice}
 import genesis_prime/message/enter_world.{type EnterWorld}
 import genesis_prime/message/movement_send_interval.{type MovementSendInterval}
 import genesis_prime/message/play_character_refused.{type PlayCharacterRefused}
@@ -41,6 +42,8 @@ pub type ServerMessage {
   PlayerEntered(PlayerEnteredWorld)
   /// Message 0x355.
   UnitRemoved(UnitDestroyed)
+  /// Message 0x36A.
+  Disconnected(DisconnectNotice)
 }
 
 /// The message's number and the bytes of its body, or the first field that
@@ -89,6 +92,8 @@ pub fn encode(
       )
     UnitRemoved(body) ->
       numbered(unit_destroyed.message_id, unit_destroyed.encode(body))
+    Disconnected(body) ->
+      numbered(disconnect_notice.message_id, disconnect_notice.encode(body))
   }
 }
 

@@ -13,7 +13,7 @@
 //// socket's owner: the map takes the player's unit off the map when that
 //// process ends.
 
-import genesis_prime/character/character.{type Place}
+import genesis_prime/character/character.{type Character, type Place}
 import genesis_prime/character/customisation.{type Customisation}
 import genesis_prime/character/select
 import genesis_prime/character/store_worker
@@ -24,6 +24,7 @@ import genesis_prime/connection/socket_owner.{
 }
 import genesis_prime/game/game_context
 import genesis_prime/game/game_session
+import genesis_prime/game/sessions
 import genesis_prime/login/account.{type Identity}
 import genesis_prime/login/handoff
 import genesis_prime/map/delivery.{type Delivery}
@@ -47,6 +48,15 @@ pub type Services {
     /// Carries out a command of character select against the database and
     /// gives its answer.
     run_store: fn(select.Command) -> select.Answer,
+    /// Takes the account's slot for this connection, whose notices arrive on
+    /// the subject, and ends the connection that held it.
+    take_over: fn(Int, Subject(sessions.Notice)) ->
+      Result(Nil, sessions.NotFreed),
+    /// Takes the unit of this connection off the map it is on, and waits for the
+    /// map to say it has.
+    leave_map: fn(Subject(world_map_process.Message), Subject(Delivery)) -> Nil,
+    /// The first of the characters that is on a map, when one is.
+    character_in_world: fn(List(Int)) -> Option(Int),
     /// Joins a character's unit to the map of its world, with the subject its
     /// connection receives the map's deliveries on.
     enter_map: fn(Int, Newcomer, Subject(Delivery)) ->
@@ -65,6 +75,7 @@ pub type Settings {
     workers: store_worker.Workers,
     db: pog.Connection,
     registry: Name(maps.Message),
+    sessions: Name(sessions.Message),
     tables: Tables,
     start: fn(Tables, CharacterCreation) -> Result(Place, Nil),
     customisation: Customisation,
@@ -86,6 +97,30 @@ pub fn services(settings settings: Settings) -> Services {
         workers: settings.workers,
         db: settings.db,
         command:,
+        within_ms: settings.answer_deadline_ms,
+      )
+    },
+    take_over: fn(account_id, notice) {
+      sessions.take_over(
+        registry: settings.sessions,
+        account_id:,
+        notice:,
+        within_ms: settings.answer_deadline_ms,
+      )
+    },
+    leave_map: fn(map, connection) {
+      let _ =
+        world_map_process.leave(
+          map:,
+          connection:,
+          within_ms: settings.answer_deadline_ms,
+        )
+      Nil
+    },
+    character_in_world: fn(character_ids) {
+      maps.character_on_a_map(
+        registry: settings.registry,
+        character_ids:,
         within_ms: settings.answer_deadline_ms,
       )
     },
@@ -117,9 +152,12 @@ type Connection {
     services: Services,
     session: game_session.Session,
     deliveries: Subject(Delivery),
+    notices: Subject(sessions.Notice),
     peer: Option(String),
     account: Option(Int),
     map_monitor: Option(Monitor),
+    map_via: Option(Subject(world_map_process.Message)),
+    in_world: Option(select.InWorld),
   )
 }
 
@@ -138,9 +176,12 @@ fn new(services services: Services, peer peer: Option(String)) -> Output {
       services:,
       session:,
       deliveries: process.new_subject(),
+      notices: process.new_subject(),
       peer:,
       account: None,
       map_monitor: None,
+      map_via: None,
+      in_world: None,
     ),
     effects:,
     context: services.context(),
@@ -148,9 +189,25 @@ fn new(services services: Services, peer peer: Option(String)) -> Output {
   )
 }
 
+/// The context for an input: what the services give and the character of the
+/// account that was found still in the world when the list was read.
+fn context_of(connection: Connection) -> game_session.Context {
+  with_in_world(connection.services.context(), connection.in_world)
+}
+
+fn with_in_world(
+  context: game_session.Context,
+  in_world: Option(select.InWorld),
+) -> game_session.Context {
+  game_session.Context(
+    ..context,
+    select: select.Context(..context.select, in_world:),
+  )
+}
+
 /// Takes a frame the socket's owner cut.
 fn receive(connection connection: Connection, frame frame: Frame) -> Output {
-  let context = connection.services.context()
+  let context = context_of(connection)
   let #(session, effects) =
     game_session.receive(connection.session, frame, context)
   run(
@@ -166,7 +223,7 @@ fn delivered(
   connection connection: Connection,
   delivery delivery: Delivery,
 ) -> Output {
-  let context = connection.services.context()
+  let context = context_of(connection)
   let #(session, effects) =
     game_session.delivered(connection.session, delivery, context)
   run(
@@ -183,7 +240,24 @@ fn map_went_down(connection connection: Connection) -> Output {
   run(
     connection: Connection(..connection, session:, map_monitor: None),
     effects:,
-    context: connection.services.context(),
+    context: context_of(connection),
+    sent: [],
+  )
+}
+
+/// Takes the notice that the account logged in again: the unit comes off the
+/// map before this connection ends, so the new connection finds the character
+/// off the map, and the player is told the account was disconnected.
+fn taken_over(connection connection: Connection) -> Output {
+  case connection.map_via {
+    Some(via) -> connection.services.leave_map(via, connection.deliveries)
+    None -> Nil
+  }
+  let #(session, effects) = game_session.taken_over(connection.session)
+  run(
+    connection: Connection(..connection, session:, map_monitor: None),
+    effects:,
+    context: context_of(connection),
     sent: [],
   )
 }
@@ -286,7 +360,19 @@ fn redeem(
         who(account: Some(identity.id), peer: connection.peer, message: None),
         "the player reached the game server with a session key",
       )
-      #(Connection(..connection, session:, account: Some(identity.id)), more)
+      // A second login of the account ends the first connection, and this one
+      // goes on only when the old one and its unit are gone.
+      let claim = case
+        connection.services.take_over(identity.id, connection.notices)
+      {
+        Ok(Nil) -> game_session.SlotFree
+        Error(_) -> game_session.SlotNotFreed
+      }
+      let #(session, claimed) = game_session.account_claimed(session, claim)
+      #(
+        Connection(..connection, session:, account: Some(identity.id)),
+        list.append(more, claimed),
+      )
     }
     Error(Nil) -> #(Connection(..connection, session:), more)
   }
@@ -299,9 +385,48 @@ fn ask_store(
   context context: game_session.Context,
 ) -> #(Connection, List(game_session.Effect)) {
   let answer = connection.services.run_store(command)
+  // The characters of the account that are on a map when the list is read are
+  // still in the world: the client is told of the one and blocks the rest.
+  let in_world = case answer {
+    select.Loaded(characters) ->
+      found_in_world(connection:, characters:, context:)
+    _ -> connection.in_world
+  }
   let #(session, more) =
-    game_session.stored(connection.session, answer, context)
-  #(Connection(..connection, session:), more)
+    game_session.stored(
+      connection.session,
+      answer,
+      with_in_world(context, in_world),
+    )
+  #(Connection(..connection, session:, in_world:), more)
+}
+
+/// How long a character that is still in the world has until it is removed,
+/// in milliseconds. The client's text for it says to try again 'in a minute';
+/// no value is in the client or the tables.
+const removal_milliseconds = 60_000
+
+/// The 100-nanosecond intervals of a Windows FILETIME in a millisecond.
+const intervals_per_millisecond = 10_000
+
+/// The character of the account that is still on a map, with the time it is
+/// removed.
+fn found_in_world(
+  connection connection: Connection,
+  characters characters: List(Character),
+  context context: game_session.Context,
+) -> Option(select.InWorld) {
+  connection.services.character_in_world(
+    list.map(characters, fn(character) { character.id }),
+  )
+  |> option.map(fn(character_id) {
+    select.InWorld(
+      character_id:,
+      until: context.select.server_time
+        + removal_milliseconds
+        * intervals_per_millisecond,
+    )
+  })
 }
 
 /// Asks the map to join the character's unit and tells the rule the answer. A
@@ -317,11 +442,11 @@ fn join_map(
     connection.services.enter_map(world_id, newcomer, connection.deliveries)
   let #(session, more) =
     game_session.map_answered(connection.session, map_answer(entered), context)
-  let map_monitor = case entered {
-    Ok(maps.Entered(map:, ..)) -> Some(process.monitor(map))
-    Error(_) -> connection.map_monitor
+  let #(map_monitor, map_via) = case entered {
+    Ok(maps.Entered(map:, via:, ..)) -> #(Some(process.monitor(map)), Some(via))
+    Error(_) -> #(connection.map_monitor, connection.map_via)
   }
-  #(Connection(..connection, session:, map_monitor:), more)
+  #(Connection(..connection, session:, map_monitor:, map_via:), more)
 }
 
 /// What the map's answer to a join means to the rule: a unit, the map's refusal
@@ -359,6 +484,8 @@ fn message_of(reason: game_session.EndReason) -> Option(log.Message) {
     | game_session.WorldEntryBreach(_)
     | game_session.MapAway
     | game_session.MapEnded
+    | game_session.SessionTakenOver
+    | game_session.SessionNotFreed
     | game_session.StoreAway(_)
     | game_session.AnswerNotBuilt -> None
   }
@@ -400,7 +527,7 @@ fn conversation(connection: Connection) -> Conversation {
 }
 
 /// What the owner of the connection's socket is woken by besides the socket:
-/// the map's deliveries, the end of the map that holds the player's unit and
+/// the map's deliveries, the notice of a second login of the account, the end of the map that holds the player's unit and
 /// any other message, which can only be a reply that came after the wait for it
 /// was over. The last is selected only here, so that the owner's process logs
 /// it through the telemetry module instead of its actor library discarding it.
@@ -409,6 +536,10 @@ fn wake(connection: Connection) -> process.Selector(Reaction) {
     process.new_selector()
     |> process.select_map(connection.deliveries, fn(delivery) {
       reaction(delivered(connection:, delivery:))
+    })
+    |> process.select_map(connection.notices, fn(notice) {
+      let sessions.TakeOver = notice
+      reaction(taken_over(connection:))
     })
     |> process.select_other(fn(_message) { reaction(late_reply(connection:)) })
   case connection.map_monitor {

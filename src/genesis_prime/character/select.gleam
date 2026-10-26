@@ -46,6 +46,7 @@ import genesis_prime/table/character_creation.{type CharacterCreation}
 import gleam/bool
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// The results of messages 0xDC, 0x14B and 0xE6, each named by its name in
@@ -55,11 +56,15 @@ const delete_ok = 0
 
 const delete_failed = 1
 
+const delete_failed_character_online = 42
+
 const create_ok = 3
 
 const create_failed = 4
 
 const create_failed_account_full = 9
+
+const create_failed_character_online = 44
 
 const create_failed_unique_name = 6
 
@@ -75,6 +80,8 @@ const rename_failed_invalid_name = 15
 
 const rename_failed_unique_name = 16
 
+const rename_failed_character_online = 43
+
 const rename_ok = 18
 
 /// The values of message 0x162, each named by its name in PreGameLib.
@@ -83,7 +90,13 @@ const select_failed_rename = 1
 
 const select_failed = 2
 
+const select_failed_character_in_world = 4
+
 const select_failed_disabled = 3
+
+/// The 100-nanosecond intervals of a Windows FILETIME in a millisecond, which
+/// the time until a character in the world is removed is told in.
+const intervals_per_millisecond = 10_000
 
 /// The most customisation values a character holds: the character list reads
 /// their count in 4 bits (ReadCharacterListEntry 0x14007F720).
@@ -97,7 +110,8 @@ const most_customisations = 15
 /// 0x140029820; a character starts with the row's `xp`). `server_time` is the server's time as a Windows FILETIME,
 /// and `realm_id` the realm the connection is on. `customisation` is what the
 /// client's tables say a create request may carry and `character_slots` how
-/// many characters an account may hold.
+/// many characters an account may hold. `in_world` is the character of the
+/// account that is still in the world, when one is.
 pub type Context {
   Context(
     creation: fn(Int) -> Result(CharacterCreation, Nil),
@@ -105,9 +119,19 @@ pub type Context {
     level_of: fn(Int) -> Int,
     customisation: Customisation,
     character_slots: Int,
+    in_world: Option(InWorld),
     server_time: Int,
     realm_id: Int,
   )
+}
+
+/// A character of the account that is still in the world, which the client is
+/// told of in the list (its realm, its id and the time until it is removed) and
+/// which blocks every other character, create, rename and delete until then
+/// (lua.CharacterSelection.OnRemoveCountdown). `until` is the server's time as
+/// a Windows FILETIME at which it is removed.
+pub type InWorld {
+  InWorld(character_id: Int, until: Int)
 }
 
 /// What character select is doing.
@@ -209,6 +233,9 @@ pub type Refusal {
   NameTaken
   /// The character is not one of the account's.
   NotYourCharacter(character_id: Int)
+  /// A character of the account is still in the world, so no other character
+  /// is played, and none is created, renamed or deleted, until it is removed.
+  CharacterOnline(character_id: Int)
   /// The character is disabled, so it cannot be played.
   CharacterDisabled(character_id: Int)
   /// The character must be renamed before it can be played.
@@ -313,12 +340,43 @@ fn requested(
 ) -> #(State, List(Effect)) {
   case state.status {
     Idle ->
-      case request {
-        CreateRequested(create) ->
+      case request, online(context) {
+        CreateRequested(_), Some(character_id) ->
+          refuse_online(
+            state:,
+            character_id:,
+            owed: CreateResult(create_failure(CharacterOnline(character_id))),
+          )
+        RenameRequested(rename), Some(character_id) ->
+          refuse_online(
+            state:,
+            character_id:,
+            owed: RenameResult(rename_failure(
+              rename,
+              CharacterOnline(character_id),
+            )),
+          )
+        DeleteRequested(_), Some(character_id) ->
+          refuse_online(
+            state:,
+            character_id:,
+            owed: DeleteResult(delete_failure(CharacterOnline(character_id))),
+          )
+        PlayRequested(play), Some(character_id)
+          if play.character_id != character_id
+        ->
+          refuse_online(
+            state:,
+            character_id:,
+            owed: PlayRefused(PlayCharacterRefused(
+              field_1: select_failed_character_in_world,
+            )),
+          )
+        CreateRequested(create), _ ->
           start_creating(state:, request: create, context:)
-        RenameRequested(rename) -> start_renaming(state:, request: rename)
-        DeleteRequested(delete) -> start_deleting(state:, request: delete)
-        PlayRequested(play) -> start_playing(state:, request: play)
+        RenameRequested(rename), _ -> start_renaming(state:, request: rename)
+        DeleteRequested(delete), _ -> start_deleting(state:, request: delete)
+        PlayRequested(play), _ -> start_playing(state:, request: play)
       }
     NotStarted -> #(state, [Close(RequestBeforeStart)])
     Loading | Creating | Renaming(_) | Deleting(_) | Entering | Reloading(_) -> #(
@@ -326,6 +384,26 @@ fn requested(
       [Close(RequestWhileBusy(state.status))],
     )
   }
+}
+
+/// The character of the account that is still in the world, while it is: the
+/// time it is removed is in the future of the server's time.
+fn online(context: Context) -> Option(Int) {
+  case context.in_world {
+    Some(InWorld(character_id:, until:)) if until > context.server_time ->
+      Some(character_id)
+    Some(_) | None -> None
+  }
+}
+
+/// A request while a character of the account is still in the world is
+/// refused with the result the client's text for it names, and logged.
+fn refuse_online(
+  state state: State,
+  character_id character_id: Int,
+  owed owed: ServerMessage,
+) -> #(State, List(Effect)) {
+  #(state, [Log(CharacterOnline(character_id)), Send(owed)])
 }
 
 fn start_creating(
@@ -496,7 +574,7 @@ fn start_deleting(
   case owned(state, id) {
     Error(Nil) -> #(state, [
       Log(NotYourCharacter(id)),
-      Send(DeleteResult(delete_failure())),
+      Send(DeleteResult(delete_failure(NotYourCharacter(id)))),
     ])
     Ok(_) -> #(State(..state, status: Deleting(id)), [
       Store(DeleteStored(account_id: state.account_id, character_id: id)),
@@ -602,21 +680,30 @@ fn reload(
 
 /// Message 0x117 for the characters: the server's time, the characters and
 /// the realm, with nothing enabled or disabled beyond the rows' own enabled
-/// column, no removal pending, no reservations, no restriction and none of the
+/// column, no removal pending unless a character of the account is still in the
+/// world, no reservations, no restriction and none of the
 /// values whose meaning the client's code does not show.
 fn character_list(
   characters characters: List(Character),
   context context: Context,
 ) -> character_list.CharacterList {
+  let pending = case context.in_world {
+    Some(InWorld(character_id:, until:)) if until > context.server_time -> #(
+      context.realm_id,
+      character_id,
+      { until - context.server_time } / intervals_per_millisecond,
+    )
+    Some(_) | None -> #(0, 0, 0)
+  }
   CharacterList(
     server_time: context.server_time,
     characters: list.map(characters, character.list_entry),
     enabled_creation_ids: [],
     disabled_creation_ids: [],
     realm_id: context.realm_id,
-    pending_removal_realm_id: 0,
-    pending_removal_character_id: 0,
-    pending_removal_time: 0,
+    pending_removal_realm_id: pending.0,
+    pending_removal_character_id: pending.1,
+    pending_removal_time: pending.2,
     reservations: 0,
     field_10: 0,
     field_11: 0,
@@ -746,7 +833,8 @@ fn deleted(
       ],
     )
     NotFound -> delete_refused(state, NotYourCharacter(id))
-    Unavailable -> reload(state:, owed: DeleteResult(delete_failure()))
+    Unavailable ->
+      reload(state:, owed: DeleteResult(delete_failure(StoreUnavailable)))
     Loaded(_) | Inserted(_) | Renamed(_) | NameInUse ->
       unexpected(state, answer)
   }
@@ -755,7 +843,7 @@ fn deleted(
 fn delete_refused(state: State, refusal: Refusal) -> #(State, List(Effect)) {
   #(State(..state, status: Idle), [
     Log(refusal),
-    Send(DeleteResult(delete_failure())),
+    Send(DeleteResult(delete_failure(refusal))),
   ])
 }
 
@@ -778,6 +866,7 @@ fn create_failure(refusal: Refusal) -> CreateCharacterResult {
     | CharacterRequiresRename(_)
     | BoneCountWrong(..)
     | LabelRefused(_) -> create_failed
+    CharacterOnline(_) -> create_failed_character_online
     AccountFull(_) -> create_failed_account_full
     NoStartingPlace(_) | StoreUnavailable -> create_failed_internal
   }
@@ -805,6 +894,7 @@ fn rename_result(refusal: Refusal) -> Int {
     | BoneCountWrong(..)
     | LabelRefused(_)
     | AccountFull(_) -> rename_failed
+    CharacterOnline(_) -> rename_failed_character_online
   }
 }
 
@@ -821,8 +911,12 @@ fn rename_failure(
 
 /// The result of message 0xE6 for every refusal: DeleteFailed, never
 /// DeleteOk, which deletes.
-fn delete_failure() -> DeleteCharacterResult {
-  DeleteCharacterResult(result: delete_failed, field_2: 0)
+fn delete_failure(refusal: Refusal) -> DeleteCharacterResult {
+  let result = case refusal {
+    CharacterOnline(_) -> delete_failed_character_online
+    _ -> delete_failed
+  }
+  DeleteCharacterResult(result:, field_2: 0)
 }
 
 /// The sentence the log line of a refusal holds.
@@ -882,6 +976,10 @@ pub fn describe_refusal(refusal refusal: Refusal) -> String {
     NameTaken -> "another character has the name"
     NotYourCharacter(character_id:) ->
       "the character " <> int.to_string(character_id) <> " is not the account's"
+    CharacterOnline(character_id:) ->
+      "the character "
+      <> int.to_string(character_id)
+      <> " of the account is still in the world"
     CharacterDisabled(character_id:) ->
       "the character " <> int.to_string(character_id) <> " is disabled"
     CharacterRequiresRename(character_id:) ->
