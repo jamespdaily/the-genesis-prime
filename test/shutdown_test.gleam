@@ -50,6 +50,12 @@ const close_wait_ms = 5000
 /// connection that closes when told is never close to it.
 const long_drain_ms = 30_000
 
+/// How long a node has to end by itself once its coordinator is killed: the
+/// supervisor ends it as the coordinator dies, so a node still running after
+/// this is not ending. The snapshot lines it writes every few seconds keep a
+/// silence limit from ending the wait.
+const coordinator_loss_deadline_ms = 20_000
+
 /// The drain deadline of the child whose connection never closes: short, so the
 /// test does not wait out a long one.
 const short_drain_ms = 500
@@ -59,6 +65,7 @@ fn start(
   drain_ms drain_ms: Int,
   connection connection: String,
   flush flush: String,
+  coordinator coordinator: String,
   body body: fn(Child) -> a,
 ) -> a {
   released_child.run_erlang(
@@ -71,6 +78,7 @@ fn start(
       #(planted_shutdown.drain_variable, int.to_string(drain_ms)),
       #(planted_shutdown.connection_variable, connection),
       #(planted_shutdown.flush_variable, flush),
+      #(planted_shutdown.coordinator_variable, coordinator),
       ..released_child.database_environment(database)
     ],
     body:,
@@ -148,6 +156,7 @@ pub fn sigterm_stops_in_order_and_ends_the_node_with_status_0_test() -> Nil {
     drain_ms: long_drain_ms,
     connection: planted_shutdown.all_close,
     flush: planted_shutdown.flush_saves,
+    coordinator: planted_shutdown.coordinator_lives,
   )
   let port = until_running(child)
   let first = connect_and_wait_for_registration(child:, port:, number: 1)
@@ -198,6 +207,7 @@ pub fn a_connection_that_will_not_drain_is_closed_at_the_deadline_and_the_flush_
     drain_ms: short_drain_ms,
     connection: planted_shutdown.second_never_closes,
     flush: planted_shutdown.flush_saves,
+    coordinator: planted_shutdown.coordinator_lives,
   )
   let port = until_running(child)
   let first = connect_and_wait_for_registration(child:, port:, number: 1)
@@ -236,6 +246,7 @@ pub fn a_flush_that_fails_is_logged_as_an_error_and_the_shutdown_still_completes
     drain_ms: long_drain_ms,
     connection: planted_shutdown.all_close,
     flush: planted_shutdown.flush_fails,
+    coordinator: planted_shutdown.coordinator_lives,
   )
   let port = until_running(child)
   let first = connect_and_wait_for_registration(child:, port:, number: 1)
@@ -287,6 +298,31 @@ fn logged(
     string.contains(line, " " <> level <> " ")
     && list.all(parts, string.contains(line, _))
   })
+}
+
+pub fn a_coordinator_that_dies_takes_the_node_down_instead_of_being_restarted_empty_test() -> Nil {
+  use <- owned_test.run(coordinator_loss_deadline_ms)
+  use database <- template_database.run
+  use child <- start(
+    database,
+    drain_ms: long_drain_ms,
+    connection: planted_shutdown.all_close,
+    flush: planted_shutdown.flush_saves,
+    coordinator: planted_shutdown.coordinator_killed,
+  )
+  // A coordinator restarted by the supervisor holds no registration, so a
+  // SIGTERM after it would flush nothing and still end the node with status
+  // 0. The issue's one-node choice: a fault the tree cannot recover stops the
+  // node, which the host restarts, so the node ends by itself, with a status
+  // that is not 0.
+  let assert Ok(#(lines, status)) = released_child.lines_until_exit(child)
+    as "the node did not end after its coordinator was killed"
+  assert list.contains(lines, planted_shutdown.coordinator_killed_line)
+    as "the planted program did not kill the coordinator"
+  assert status != 0
+    as "the node ended with status 0 after its coordinator was killed"
+  assert !list.any(lines, string.contains(_, released_child.server_running))
+    as "the node went on to run after its coordinator was killed"
 }
 
 pub fn a_child_the_supervisor_restarts_does_not_run_the_shutdown_order_test() -> Nil {

@@ -40,6 +40,17 @@ pub const connection_variable = "PLANTED_CONNECTION"
 /// database, `fails` answers that it cannot.
 pub const flush_variable = "PLANTED_FLUSH"
 
+/// Whether the planted program kills the shutdown coordinator once the tree is
+/// up: `killed` or `lives`.
+pub const coordinator_variable = "PLANTED_COORDINATOR"
+
+pub const coordinator_killed = "killed"
+
+pub const coordinator_lives = "lives"
+
+/// The line written just before the coordinator is killed.
+pub const coordinator_killed_line = "planted coordinator killed"
+
 /// The value of `connection_variable` for connections that all close when told.
 pub const all_close = "none"
 
@@ -277,6 +288,15 @@ pub fn main() -> Nil {
     as "the planted saving worker did not start"
   let port = start_listener(settings:, ignores_close:)
   io.println(listening(port))
+  case envoy.get(coordinator_variable) == Ok(coordinator_killed) {
+    True -> {
+      io.println(coordinator_killed_line)
+      let assert Ok(coordinator) = process.named(settings.name)
+        as "the shutdown coordinator is not running"
+      process.kill(coordinator)
+    }
+    False -> Nil
+  }
   shutdown.run(tree: tree.pid, settings:)
 }
 
