@@ -64,7 +64,7 @@ fn new_character(account_id: Int) -> character.NewCharacter {
 /// character takes `sleep` seconds, and whose connection cancels a statement
 /// that runs `limit_ms` milliseconds.
 fn start_slow_pool(
-  database: template_database.Database,
+  database database: template_database.Database,
   sleep sleep: String,
   limit_ms limit_ms: Int,
 ) -> pog.Connection {
@@ -242,7 +242,7 @@ pub fn a_write_that_holds_its_connection_and_runs_past_the_deadline_is_not_kille
   use <- owned_test.run(60_000)
   use database <- template_database.run
   let workers = start_workers()
-  let one = start_slow_pool(database, sleep: "0.8", limit_ms: 5000)
+  let one = start_slow_pool(database:, sleep: "0.8", limit_ms: 5000)
   let assert Ok(account) =
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"
@@ -264,7 +264,7 @@ pub fn a_write_the_database_cancels_after_the_deadline_gives_unavailable_and_com
   use <- owned_test.run(60_000)
   use database <- template_database.run
   let workers = start_workers()
-  let one = start_slow_pool(database, sleep: "2", limit_ms: 300)
+  let one = start_slow_pool(database:, sleep: "2", limit_ms: 300)
   let assert Ok(account) =
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"

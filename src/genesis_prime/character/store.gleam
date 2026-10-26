@@ -46,9 +46,8 @@ pub type Permission {
 /// Carries out a command as `run` does, in a transaction, and calls
 /// `connection_held` once the command has a connection of the pool and before
 /// its first statement is sent; the statement is sent only when the call gives
-/// `Go`. A caller that has said `Go` can no longer say the command did not
-/// begin: from then on its statement can commit, so the answer is the only
-/// truth about it. A pool that gives no connection, or a call that gives
+/// `Go`. Once the call has said `Go` the statement can commit whatever the
+/// caller does next, so the answer is the only truth about the command. A pool that gives no connection, or a call that gives
 /// `Withheld`, is `Unavailable` with nothing sent. A statement the database
 /// cancelled leaves the transaction failed, and the commit that follows rolls
 /// it back, so the answer `Unavailable` is true of the stored data; a
