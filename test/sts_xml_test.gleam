@@ -94,6 +94,12 @@ pub fn a_body_that_is_not_well_formed_is_refused_test() -> Nil {
     as "StsConnLib64.MT.dll!0x1800248a0: a body that does not parse records an error and the message has no root"
 }
 
+pub fn an_entity_other_than_the_five_predefined_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert sts_xml.parse(<<"<a>&x;</a>\n":utf8>>) == Error(sts_xml.NotWellFormed)
+    as "StsConnLib64.MT.dll!0x180029470: the library writes only &amp; and &lt; as escapes, so a reference to an entity the body never declares is not the client's"
+}
+
 pub fn a_document_type_is_refused_before_its_entities_are_expanded_test() -> Nil {
   use <- owned_test.run(5000)
   assert sts_xml.parse(<<
