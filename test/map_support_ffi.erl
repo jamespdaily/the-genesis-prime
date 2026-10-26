@@ -1,6 +1,6 @@
 -module(map_support_ffi).
 -export([max_heap_words/1, schedulers_online/0, suspend/1, resume/1,
-         registered_name/1, unregister_name/1]).
+         registered_name/1, unregister_name/1, monitored_by/1]).
 
 %% The heap ceiling in words that a running process has set on itself
 %% (process_info(Pid, max_heap_size), whose `size` is 0 for no ceiling).
@@ -41,3 +41,9 @@ unregister_name(Pid) ->
     {registered_name, Name} = process_info(Pid, registered_name),
     true = unregister(Name),
     nil.
+
+%% The processes that monitor `Pid` now.
+-spec monitored_by(pid()) -> [pid()].
+monitored_by(Pid) ->
+    {monitored_by, Watchers} = process_info(Pid, monitored_by),
+    Watchers.

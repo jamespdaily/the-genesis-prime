@@ -13,6 +13,7 @@ import genesis_prime/map/world_map_process.{NotAnswering, Refused}
 import genesis_prime/telemetry/snapshot
 import gleam/dict
 import gleam/erlang/process.{type Pid}
+import gleam/int
 import gleam/list
 import gleam/otp/static_supervisor
 import gleam/result
@@ -343,17 +344,22 @@ pub fn entering_gives_up_at_one_deadline_not_at_one_wait_for_each_step_test() ->
   let map = the_map_process(settings)
   map_support.suspend(map)
   // The registry answers after 600 ms of the 1000 the entry has; the map never
-  // does, so each wait that has its own 1000 ms adds up to 1600 ms. A process
-  // resumes only what it suspended itself.
+  // does, so each wait that has its own 1000 ms adds up to 1600 ms. The 600 ms
+  // is the time the registry's step takes, which is what the test measures, so
+  // a timer sends the word to resume it and the process that suspended it
+  // waits for that word. A process resumes only what it suspended itself.
   let suspended = process.new_subject()
   process.spawn(fn() {
     map_support.suspend(registry)
-    process.send(suspended, Nil)
-    process.sleep(600)
+    let resume = process.new_subject()
+    process.send(suspended, resume)
+    let assert Ok(Nil) = process.receive(resume, event_wait_ms)
+      as "the test told the registry to resume"
     map_support.resume(registry)
   })
-  let assert Ok(Nil) = process.receive(suspended, event_wait_ms)
+  let assert Ok(resume) = process.receive(suspended, event_wait_ms)
     as "the registry was suspended"
+  let _timer = process.send_after(resume, 600, Nil)
   let started = clock.monotonic_milliseconds()
   let result =
     maps.enter(
@@ -427,28 +433,30 @@ pub fn a_registry_that_starts_again_gives_every_world_the_names_it_had_test() ->
 /// holds it until it is gone. It ends when it is sent the subject it reports.
 fn holding_the_name_of_the_map(
   name: process.Name(world_map_process.Message),
-) -> process.Subject(Nil) {
+) -> #(process.Subject(Nil), Pid) {
   let ready = process.new_subject()
-  process.spawn(fn() {
-    let assert Ok(Nil) = process.register(process.self(), name)
-      as "the name of the map is free"
-    let release = process.new_subject()
-    process.send(ready, release)
-    let assert Ok(Nil) = process.receive(release, 30_000)
-      as "the test let the name go"
-    Nil
-  })
+  let holder =
+    process.spawn(fn() {
+      let assert Ok(Nil) = process.register(process.self(), name)
+        as "the name of the map is free"
+      let release = process.new_subject()
+      process.send(ready, release)
+      let assert Ok(Nil) = process.receive(release, 30_000)
+        as "the test let the name go"
+      Nil
+    })
   let assert Ok(release) = process.receive(ready, event_wait_ms)
     as "the process holds the name"
-  release
+  #(release, holder)
 }
 
 /// A map whose supervisor has ended, and a process that still holds the name
 /// of the map's process, as the map would while it goes down. Returns the
-/// settings, and what lets the name go.
+/// settings, what lets the name go and the process that holds it.
 fn with_the_name_of_an_ended_map_still_held() -> #(
   maps.Settings,
   process.Subject(Nil),
+  Pid,
 ) {
   let #(settings, _, names) = start_maps_with_names()
   let assert Ok(_) = enter(settings:, world_id: 7, character_id: 11)
@@ -463,12 +471,13 @@ fn with_the_name_of_an_ended_map_still_held() -> #(
   process.kill(map_subtree)
   assert went_down(map_subtree) && went_down(old_map)
     as "the map's subtree and its process ended"
-  #(settings, holding_the_name_of_the_map(name))
+  let #(release, holder) = holding_the_name_of_the_map(name)
+  #(settings, release, holder)
 }
 
 pub fn a_map_that_starts_while_the_old_one_still_holds_the_names_waits_for_the_old_one_to_end_test() -> Nil {
   use <- owned_test.run(30_000)
-  let #(settings, release) = with_the_name_of_an_ended_map_still_held()
+  let #(settings, release, _) = with_the_name_of_an_ended_map_still_held()
   let answered = process.new_subject()
   process.spawn(fn() {
     process.send(answered, enter(settings:, world_id: 7, character_id: 12))
@@ -484,7 +493,7 @@ pub fn a_map_that_starts_while_the_old_one_still_holds_the_names_waits_for_the_o
 
 pub fn an_old_map_that_never_ends_leaves_the_entry_an_answer_at_its_deadline_and_the_registry_free_test() -> Nil {
   use <- owned_test.run(30_000)
-  let #(settings, release) = with_the_name_of_an_ended_map_still_held()
+  let #(settings, release, _) = with_the_name_of_an_ended_map_still_held()
   let started = clock.monotonic_milliseconds()
   let result =
     maps.enter(
@@ -503,4 +512,110 @@ pub fn an_old_map_that_never_ends_leaves_the_entry_an_answer_at_its_deadline_and
   let assert Ok(unit) = enter(settings:, world_id: 7, character_id: 13)
     as "the registry is free again and starts the map once the old one is gone"
   assert unit.id == 1
+}
+
+/// Waits until the registry monitors the process, which it does as it starts
+/// to wait for the process to end. Nothing announces that, so the process's
+/// watchers are read until the registry is one, for at most `event_wait_ms`.
+fn wait_for_the_registry_to_watch(
+  registry registry: Pid,
+  process process: Pid,
+) -> Bool {
+  let expired = process.new_subject()
+  let _timer = process.send_after(expired, event_wait_ms, Nil)
+  look_for_the_registry(registry:, process:, expired:)
+}
+
+fn look_for_the_registry(
+  registry registry: Pid,
+  process process: Pid,
+  expired expired: process.Subject(Nil),
+) -> Bool {
+  case
+    list.contains(map_support.monitored_by(process), registry),
+    process.receive(expired, 0)
+  {
+    True, _ -> True
+    False, Error(Nil) -> look_for_the_registry(registry:, process:, expired:)
+    False, Ok(Nil) -> False
+  }
+}
+
+/// Asks to enter world 7 from a process of its own, with `within_ms`
+/// milliseconds to give up in; the answer comes on the subject.
+fn asking_to_enter_world_7(
+  settings settings: maps.Settings,
+  character_id character_id: Int,
+  within_ms within_ms: Int,
+) -> process.Subject(Result(maps.Entered, maps.EnterError)) {
+  let answered = process.new_subject()
+  process.spawn(fn() {
+    process.send(
+      answered,
+      maps.enter(
+        registry: settings.registry,
+        world_id: 7,
+        newcomer: map_support.newcomer(character_id:, x: 0.0),
+        connection: process.new_subject(),
+        within_ms:,
+      ),
+    )
+  })
+  answered
+}
+
+pub fn an_entry_into_a_running_world_does_not_wait_behind_the_old_map_of_another_world_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // World 7's map ended and a process still holds its name, so the registry
+  // waits for that process to end before it starts world 7's map again.
+  let #(settings, release, holder) = with_the_name_of_an_ended_map_still_held()
+  let assert Ok(_) = enter(settings:, world_id: 8, character_id: 21)
+    as "world 8 has a running map"
+  let assert Ok(registry) = process.named(settings.registry)
+    as "the registry is registered under its name"
+  let _waiting =
+    asking_to_enter_world_7(settings:, character_id: 12, within_ms: 5000)
+  assert wait_for_the_registry_to_watch(registry:, process: holder)
+    as "the registry waits for the old map of world 7 to end"
+  let started = clock.monotonic_milliseconds()
+  let result =
+    maps.enter(
+      registry: settings.registry,
+      world_id: 8,
+      newcomer: map_support.newcomer(character_id: 22, x: 0.0),
+      connection: process.new_subject(),
+      within_ms: 1000,
+    )
+  let elapsed = clock.monotonic_milliseconds() - started
+  process.send(release, Nil)
+  let assert Ok(entered) = result
+    as "designing-processes: one process owns the registry and every world asks it, so a wait for one world's old map must not hold the others: the entry into world 8 is answered while the registry waits"
+  assert entered.unit.id == 2
+    as "world 8's running map gave the second unit its id"
+  assert elapsed < 500
+    as "the entry is answered at once, not after the other world's wait"
+}
+
+pub fn the_askers_of_a_world_whose_old_map_is_ending_each_get_their_own_deadline_and_the_rest_the_new_map_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(settings, release, holder) = with_the_name_of_an_ended_map_still_held()
+  let assert Ok(registry) = process.named(settings.registry)
+    as "the registry is registered under its name"
+  let impatient =
+    asking_to_enter_world_7(settings:, character_id: 12, within_ms: 300)
+  let patient =
+    asking_to_enter_world_7(settings:, character_id: 13, within_ms: 5000)
+  let also_patient =
+    asking_to_enter_world_7(settings:, character_id: 14, within_ms: 5000)
+  assert wait_for_the_registry_to_watch(registry:, process: holder)
+    as "the registry waits for the old map of world 7 to end"
+  let assert Ok(Error(_)) = process.receive(impatient, 2000)
+    as "an asker whose deadline passes is answered at its own deadline, not at the others'"
+  process.send(release, Nil)
+  let assert Ok(Ok(first)) = process.receive(patient, event_wait_ms)
+    as "an asker with time left gets the map once the old one is down"
+  let assert Ok(Ok(second)) = process.receive(also_patient, event_wait_ms)
+    as "so does the other"
+  assert list.sort([first.unit.id, second.unit.id], int.compare) == [1, 2]
+    as "both joined the one map that was started, a map that starts again starts empty"
 }

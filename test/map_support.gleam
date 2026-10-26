@@ -82,3 +82,7 @@ pub fn suspend(pid: Pid) -> Nil
 /// Lets a suspended process run again.
 @external(erlang, "map_support_ffi", "resume")
 pub fn resume(pid: Pid) -> Nil
+
+/// The processes that monitor the process now.
+@external(erlang, "map_support_ffi", "monitored_by")
+pub fn monitored_by(pid: Pid) -> List(Pid)
