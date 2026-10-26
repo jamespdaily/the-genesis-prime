@@ -435,8 +435,8 @@ pub fn unit_create_player_round_trips_test() -> Nil {
       let #(field_20, state) = message_support.unsigned(state:, bits: 32)
       let #(item_visuals, state) = item_visuals(state)
       let #(field_25, state) = message_support.unsigned(state:, bits: 32)
-      let #(field_26, state) = message_support.unsigned(state:, bits: 14)
-      let #(field_27, state) = message_support.unsigned(state:, bits: 14)
+      let #(faction_id, state) = message_support.unsigned(state:, bits: 14)
+      let #(base_faction_id, state) = message_support.unsigned(state:, bits: 14)
       let #(field_28, state) = message_support.unsigned(state:, bits: 32)
       let #(field_29, state) = message_support.unsigned(state:, bits: 64)
       let #(field_31, state) = message_support.unsigned(state:, bits: 1)
@@ -469,8 +469,8 @@ pub fn unit_create_player_round_trips_test() -> Nil {
           field_20:,
           item_visuals:,
           field_25:,
-          field_26:,
-          field_27:,
+          faction_id:,
+          base_faction_id:,
           field_28:,
           field_29:,
           field_31:,
