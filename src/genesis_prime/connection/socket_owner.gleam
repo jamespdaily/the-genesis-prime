@@ -9,6 +9,16 @@
 //// cap is the listener's. The rules of the first two are in `inbound`; this
 //// process reads the clock, the socket and the handler.
 ////
+//// What the owner does for a protocol is given by whoever starts the listener
+//// as a `Protocol`: the mode the owner reads in, frames or raw bytes, and what
+//// happens when a client connects. Each connection has its own `Conversation`,
+//// which the protocol's connect step makes and each reaction replaces, so a
+//// connection's state is the conversation's own and no other connection reads
+//// it. A reaction says what to write to the socket, in order, and whether to
+//// close it after. A game connection reads frames; the STS login's
+//// connection reads raw bytes, because its protocol is text with its own
+//// framing and then RC4.
+////
 //// A request of the shutdown coordinator to close ends the connection like a
 //// client that leaves: the socket is closed, the line is logged and the owner
 //// stops normally. A handler that is busy holds the request until it returns.
@@ -26,24 +36,62 @@ import genesis_prime/connection/socket.{type FlowControl, type Socket}
 import genesis_prime/shutdown
 import genesis_prime/telemetry/log.{type Who}
 import gleam/erlang/process.{type Subject}
-import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 
 /// How long the owner has to start, in milliseconds.
 const start_deadline_ms = 5000
 
-/// What a socket owner does with each frame: the game logic, given by whoever
-/// starts the listener. It runs in the socket owner's process, so a slow
-/// handler holds the owner, and flow control keeps the socket's reads waiting
-/// in the runtime meanwhile.
+/// What a socket owner does with each frame when it only looks at them: the
+/// game logic, given by whoever starts the listener. It runs in the socket
+/// owner's process, so a slow handler holds the owner, and flow control keeps
+/// the socket's reads waiting in the runtime meanwhile. `settings` makes a
+/// frame-mode protocol of one that writes nothing.
 pub type Handler =
   fn(Frame) -> Nil
+
+/// How the owner reads the socket. In `Frames` mode the bytes are cut into
+/// frames, each of which takes a token and is handed on, and a frame over the
+/// size cap ends the connection. In `RawBytes` mode every read is handed on as
+/// it came and takes a token, and the conversation bounds what it keeps.
+pub type Mode {
+  Frames
+  RawBytes
+}
+
+/// What a conversation is handed: a whole frame in `Frames` mode, the bytes of
+/// a read in `RawBytes` mode.
+pub type Input {
+  FrameRead(frame: Frame)
+  BytesRead(bytes: BitArray)
+}
+
+/// What a conversation answers an input or a new connection with: the bytes
+/// to write, in order; whether to close the socket after writing them; and the
+/// conversation that handles the next input. A conversation that closes is not
+/// asked again.
+pub type Reaction {
+  Reaction(send: List(BitArray), close: Bool, next: Conversation)
+}
+
+/// One connection's logic and its state, which lives in the function's
+/// closure. It runs in the socket owner's process.
+pub type Conversation {
+  Conversation(handle: fn(Input) -> Reaction)
+}
+
+/// What a listener serves: the mode its sockets are read in, and the step that
+/// runs when a client connects, given the client's peer address as text. The
+/// step gives the first writes, such as a server's hello, and the
+/// conversation the connection starts with.
+pub type Protocol {
+  Protocol(mode: Mode, connect: fn(Option(String)) -> Reaction)
+}
 
 /// What a socket owner needs to start.
 pub type Settings {
   Settings(
-    handler: Handler,
+    protocol: Protocol,
     flow_control: FlowControl,
     rate: Rate,
     heap_ceiling_words: Int,
@@ -63,10 +111,17 @@ pub opaque type Message {
 }
 
 /// What the owner is doing: waiting for the acceptor to give it the socket,
-/// or reading it.
+/// or reading it with the connection's conversation.
 type Status {
   AwaitingSocket
-  Reading(inbound: Inbound)
+  Reading(reader: Reader, conversation: Conversation)
+}
+
+/// What the owner keeps of the bytes it read, by mode: the start of a frame
+/// that has not fully arrived and the rate bucket, or the bucket alone.
+type Reader {
+  FrameReader(inbound: Inbound)
+  RawReader(bucket: rate_limit.Bucket)
 }
 
 type State {
@@ -95,10 +150,34 @@ fn owner_who(peer: Option(String)) -> Who {
 const reads_per_arm = 32
 
 /// Settings with the limits the server measured: `reads_per_arm` reads at a
-/// time, the client's rate and the heap ceiling, reading the monotonic clock.
+/// time, the client's rate and the heap ceiling, reading the monotonic clock,
+/// for a frame-mode protocol that only hands each frame to `handler` and writes
+/// nothing.
 pub fn settings(handler handler: Handler) -> Settings {
+  protocol_settings(protocol: observing(handler))
+}
+
+/// The frame-mode protocol of a handler that only looks at frames.
+fn observing(handler: Handler) -> Protocol {
+  Protocol(mode: Frames, connect: fn(_peer) {
+    Reaction(send: [], close: False, next: observer(handler))
+  })
+}
+
+fn observer(handler: Handler) -> Conversation {
+  Conversation(handle: fn(input) {
+    case input {
+      FrameRead(frame:) -> handler(frame)
+      BytesRead(..) -> Nil
+    }
+    Reaction(send: [], close: False, next: observer(handler))
+  })
+}
+
+/// Settings with the measured limits for a protocol.
+pub fn protocol_settings(protocol protocol: Protocol) -> Settings {
   Settings(
-    handler:,
+    protocol:,
     flow_control: socket.ActiveCount(reads: reads_per_arm),
     rate: rate_limit.client_rate(),
     heap_ceiling_words: capacity.heap_ceiling_words(),
@@ -155,19 +234,12 @@ fn handle_message(
   message: Message,
 ) -> actor.Next(State, Message) {
   case message, state.status {
-    SocketGiven, AwaitingSocket -> {
-      let inbound =
-        inbound.new(
-          rate: state.settings.rate,
-          now_milliseconds: state.settings.clock(),
-        )
-      arm(State(..state, status: Reading(inbound:)))
-    }
+    SocketGiven, AwaitingSocket -> connect(state)
     SocketGiven, Reading(..) -> actor.continue(state)
     ServerStopping, _ ->
       end_connection(state, log.info, "the server is stopping")
-    SocketEvent(socket.Received(bytes:)), Reading(inbound:) ->
-      receive(state:, inbound:, bytes:)
+    SocketEvent(socket.Received(bytes:)), Reading(reader:, conversation:) ->
+      receive(state:, reader:, conversation:, bytes:)
     SocketEvent(socket.ReadsUsedUp), Reading(..) -> arm(state)
     SocketEvent(socket.PeerClosed), Reading(..) ->
       end_connection(state, log.info, "the client closed the socket")
@@ -184,40 +256,142 @@ fn handle_message(
   }
 }
 
-/// Cuts the bytes into frames, hands each to the handler and asks the socket
-/// for more, unless a limit ended the connection.
+/// Runs the protocol's connect step for the client that connected, carries out
+/// its reaction and starts reading in the protocol's mode.
+fn connect(state: State) -> actor.Next(State, Message) {
+  let protocol = state.settings.protocol
+  let reaction = protocol.connect(socket.peer(state.socket))
+  let now = state.settings.clock()
+  let reader = case protocol.mode {
+    Frames ->
+      FrameReader(inbound.new(rate: state.settings.rate, now_milliseconds: now))
+    RawBytes ->
+      RawReader(rate_limit.new(rate: state.settings.rate, now_milliseconds: now))
+  }
+  carry_out(
+    State(..state, status: Reading(reader:, conversation: reaction.next)),
+    reaction,
+    arm,
+  )
+}
+
+/// Writes what a reaction sends, in order, then closes the socket when the
+/// reaction says to, and otherwise goes on with `then`, with the reaction's
+/// conversation in place. A write that fails ends the connection.
+fn carry_out(
+  state: State,
+  reaction: Reaction,
+  then: fn(State) -> actor.Next(State, Message),
+) -> actor.Next(State, Message) {
+  case write_all(state.socket, reaction.send) {
+    Error(reason) ->
+      end_connection(
+        state,
+        log.warning,
+        "the socket failed writing: " <> socket.describe(reason),
+      )
+    Ok(Nil) ->
+      case reaction.close {
+        True ->
+          end_connection(state, log.info, "the connection's logic closed it")
+        False -> then(with_conversation(state, reaction.next))
+      }
+  }
+}
+
+fn write_all(
+  socket: Socket,
+  writes: List(BitArray),
+) -> Result(Nil, socket.Reason) {
+  case writes {
+    [] -> Ok(Nil)
+    [bytes, ..rest] ->
+      case socket.send(socket, bytes) {
+        Ok(Nil) -> write_all(socket, rest)
+        Error(reason) -> Error(reason)
+      }
+  }
+}
+
+fn with_conversation(state: State, conversation: Conversation) -> State {
+  case state.status {
+    Reading(reader:, ..) ->
+      State(..state, status: Reading(reader:, conversation:))
+    AwaitingSocket -> state
+  }
+}
+
+/// Hands what the socket read to the connection's conversation, in the
+/// protocol's mode, writes what it sends and asks the socket for more, unless
+/// a limit ended the connection or the conversation closed it.
 fn receive(
   state state: State,
-  inbound inbound: Inbound,
+  reader reader: Reader,
+  conversation conversation: Conversation,
   bytes bytes: BitArray,
 ) -> actor.Next(State, Message) {
-  let #(inbound, effects) =
-    inbound.receive(
-      inbound:,
-      received: bytes,
-      now_milliseconds: state.settings.clock(),
-    )
-  let state = State(..state, status: Reading(inbound:))
-  let ended =
-    list.find_map(effects, fn(effect) {
-      case effect {
-        inbound.End(reason:) -> Ok(reason)
-        inbound.Deliver(..) -> Error(Nil)
-      }
-    })
-  list.each(effects, fn(effect) {
-    case effect {
-      inbound.Deliver(frame:) -> state.settings.handler(frame)
-      inbound.End(..) -> Nil
+  case reader {
+    FrameReader(inbound:) -> {
+      let #(inbound, effects) =
+        inbound.receive(
+          inbound:,
+          received: bytes,
+          now_milliseconds: state.settings.clock(),
+        )
+      deliver(
+        State(
+          ..state,
+          status: Reading(reader: FrameReader(inbound:), conversation:),
+        ),
+        effects,
+      )
     }
-  })
-  case ended {
-    Ok(reason) -> end_connection(state, log.warning, inbound.describe(reason:))
-    Error(Nil) ->
-      case state.settings.flow_control {
-        socket.ActiveOnce -> arm(state)
-        socket.ActiveCount(..) -> actor.continue(state)
+    RawReader(bucket:) ->
+      case rate_limit.take(bucket:, now_milliseconds: state.settings.clock()) {
+        Error(exceeded) ->
+          end_connection(
+            state,
+            log.warning,
+            inbound.describe(reason: inbound.TooFast(exceeded:)),
+          )
+        Ok(bucket) -> {
+          let state =
+            State(
+              ..state,
+              status: Reading(reader: RawReader(bucket:), conversation:),
+            )
+          carry_out(state, conversation.handle(BytesRead(bytes:)), next_reads)
+        }
       }
+  }
+}
+
+/// Hands each frame the inbound rule delivered to the conversation, in order,
+/// and ends the connection at the rule's `End` effect, after the frames before
+/// it.
+fn deliver(
+  state: State,
+  effects: List(inbound.Effect),
+) -> actor.Next(State, Message) {
+  case effects, state.status {
+    [], _ -> next_reads(state)
+    [inbound.End(reason:), ..], _ ->
+      end_connection(state, log.warning, inbound.describe(reason:))
+    [inbound.Deliver(frame:), ..rest], Reading(conversation:, ..) ->
+      carry_out(state, conversation.handle(FrameRead(frame:)), fn(state) {
+        deliver(state, rest)
+      })
+    [_, ..], AwaitingSocket -> actor.continue(state)
+  }
+}
+
+/// Asks for the next read once the owner has taken what it was given: at once
+/// in `ActiveOnce`, and when the runtime says the reads are used up
+/// otherwise.
+fn next_reads(state: State) -> actor.Next(State, Message) {
+  case state.settings.flow_control {
+    socket.ActiveOnce -> arm(state)
+    socket.ActiveCount(..) -> actor.continue(state)
   }
 }
 

@@ -8,7 +8,8 @@
 %% ones a test gives it: the others are removed from the environment it would
 %% inherit from this VM.
 -define(SETTINGS, [
-    "PGHOST", "PGPORT", "PGUSER", "PGDATABASE", "PGPASSWORD", "GENESIS_TABLE_DIR"
+    "PGHOST", "PGPORT", "PGUSER", "PGDATABASE", "PGPASSWORD", "GENESIS_TABLE_DIR",
+    "GENESIS_STS_PORT", "GENESIS_AUTH_PORT"
 ]).
 
 %% Opens the program at an absolute path with the given arguments and the given

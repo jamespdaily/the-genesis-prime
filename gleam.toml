@@ -12,6 +12,8 @@ gleam_otp = ">= 1.3.0 and < 2.0.0"
 pog = ">= 4.1.0 and < 5.0.0"
 simplifile = ">= 2.7.0 and < 3.0.0"
 envoy = ">= 1.2.0 and < 2.0.0"
+gleam_crypto = ">= 1.6.0 and < 2.0.0"
+xmlm = ">= 1.0.1 and < 2.0.0"
 
 [dev_dependencies]
 argv = ">= 1.1.0 and < 2.0.0"
@@ -21,9 +23,12 @@ squirrel = ">= 4.7.0 and < 5.0.0"
 glance = ">= 7.0.0 and < 8.0.0"
 glexer = ">= 2.5.0 and < 3.0.0"
 tom = ">= 2.1.0 and < 3.0.0"
-gleam_crypto = ">= 1.6.0 and < 2.0.0"
 mug = ">= 3.1.0 and < 4.0.0"
 gleam_time = ">= 1.11.0 and < 2.0.0"
+
+[erlang]
+# `crypto` is the OTP application behind SHA-256, modular powers and RC4.
+extra_applications = ["crypto"]
 
 [tools.glinter]
 include = ["src/", "test/", "dev/"]
@@ -40,6 +45,10 @@ avoid_panic = "off"
 # `get` and `all`. Only the registry and the tests call them until an engine
 # does, which is no defect in generated code.
 "src/genesis_prime/table/*.gleam" = ["unused_exports"]
+# squirrel generates this module from `src/genesis_prime/login/sql/*.sql`; its
+# parameters are `arg_1` and the like, and its row types are the account
+# store's to use.
+"src/genesis_prime/login/sql.gleam" = ["unused_exports", "label_possible"]
 # The test runner finds public `_test` functions by name, and test-support
 # modules are shared across test modules, so no other module calls them.
 "test/**/*.gleam" = ["unused_exports"]
@@ -63,6 +72,13 @@ effectful_modules = [
   { module = "genesis_prime/telemetry/log", reason = "writes each line through Erlang's logger" },
   { module = "genesis_prime/telemetry/snapshot", reason = "the snapshot process, a child of the top supervisor" },
   { module = "genesis_prime/table/loader/store", reason = "reads the table files and keeps the loaded tables in persistent terms" },
+  { module = "genesis_prime/login/sql", reason = "the queries squirrel generates, run through the pool" },
+  { module = "genesis_prime/login/account_store", reason = "reads and writes the accounts in Postgres" },
+  { module = "genesis_prime/login/handoff", reason = "the process that holds one-time keys until the next connection redeems them" },
+  { module = "genesis_prime/login/service", reason = "the login subtree's supervisor" },
+  { module = "genesis_prime/login/sts_connection", reason = "carries out one STS connection's effects: the account store, the hand-off, RC4 and the log" },
+  { module = "genesis_prime/login/auth_connection", reason = "carries out one auth connection's effects: the hand-offs and the log" },
+  { module = "genesis_prime/login/rc4", reason = "OTP's crypto holds the state of each RC4 stream" },
 ]
 # The game domains: each top-level folder or module under src/genesis_prime/.
 domains = [
@@ -87,6 +103,7 @@ pure_erlang = [
   "tbl_file_ffi:table_of",
   "tbl_file_ffi:row",
   "tbl_file_ffi:rows",
+  "genesis_prime_login_ffi:mod_pow",
 ]
 # Modules that may make an atom from a string or read a term from bytes.
 atom_or_term = []

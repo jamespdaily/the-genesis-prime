@@ -48,6 +48,7 @@ packages = [
   { name = "tom", version = "2.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib", "gleam_time"], otp_app = "tom", source = "hex", outer_checksum = "DCF04CB7AB35D58CFC598C66EA2E1816D160759802C89B2BA6238780D59BC256" },
   { name = "tote", version = "1.1.0", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "tote", source = "hex", outer_checksum = "30CBB77B72867B1DE2D271A7FE61DBE8BB81CA7DC385A0E1FDF7D38E71F3791A" },
   { name = "unitest", version = "1.6.1", build_tools = ["gleam"], requirements = ["argv", "clip", "envoy", "glance", "gleam_community_ansi", "gleam_stdlib", "gleam_time", "prng", "simplifile", "spinner", "tobble"], otp_app = "unitest", source = "hex", outer_checksum = "73AE41203E418B7B4D77C130B4F71968A59E491DEB24CCFEC85D6B9A629D09C6" },
+  { name = "xmlm", version = "1.0.1", build_tools = ["gleam"], requirements = ["gleam_stdlib"], otp_app = "xmlm", source = "hex", outer_checksum = "F23155B6F0B22CB8E09DAD41BB6B1CD036725FD0A80EE25B1D1B14138683A81D" },
   { name = "youid", version = "1.6.0", build_tools = ["gleam"], requirements = ["gleam_crypto", "gleam_stdlib", "gleam_time"], otp_app = "youid", source = "hex", outer_checksum = "7A3ABA44B1B38BC2BDCB5474C5317AA372BE58DFBC649815EE08B03526DDA18D" },
 ]
 
@@ -68,3 +69,4 @@ simplifile = { version = ">= 2.7.0 and < 3.0.0" }
 squirrel = { version = ">= 4.7.0 and < 5.0.0" }
 tom = { version = ">= 2.1.0 and < 3.0.0" }
 unitest = { version = ">= 1.6.1 and < 2.0.0" }
+xmlm = { version = ">= 1.0.1 and < 2.0.0" }

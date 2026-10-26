@@ -39,10 +39,12 @@ const child_deadline_ms = 60_000
 /// listener the server starts adds its port here, with the client address
 /// that names it, as the test starts the child with the port as its start
 /// argument; a port the server holds that is not here, or listed here and not
-/// held, fails `only_the_games_ports_listen_test`. The server's tree starts
-/// no listener, so the list is empty.
-fn expected_listening_ports() -> List(Int) {
-  []
+/// held, fails `only_the_games_ports_listen_test`. The server's tree starts the
+/// STS listener (the client's port 6600, `0x14000d3ca`) and the auth listener
+/// (23115, `0x140c3adbc`), each on the port the child was told, since a test
+/// shares no fixed port; the game listener does not exist yet.
+fn expected_listening_ports(node: Node) -> List(Int) {
+  [node.sts_port, node.auth_port]
 }
 
 pub fn a_node_started_as_a_release_starts_it_has_no_distribution_test() -> Nil {
@@ -105,7 +107,7 @@ pub fn only_the_games_ports_listen_test() -> Nil {
   let node = unwrap(started)
   assert released_node.compare_ports(
       observed: node.report.listening_ports,
-      expected: expected_listening_ports(),
+      expected: expected_listening_ports(node),
     )
     == Difference(unexpected: [], missing: [])
 }
@@ -123,11 +125,16 @@ pub fn a_listener_the_server_did_not_start_is_caught_test() -> Nil {
   let Difference(unexpected:, missing:) =
     released_node.compare_ports(
       observed: node.report.listening_ports,
-      expected: expected_listening_ports(),
+      expected: expected_listening_ports(node),
     )
   assert list.length(unexpected) == 2
     as "the two planted listeners are not both seen"
-  assert unexpected == node.report.listening_ports
+  assert list.sort(
+      list.append(unexpected, expected_listening_ports(node)),
+      int.compare,
+    )
+    == node.report.listening_ports
+    as "what the node holds is the two planted ports and the login's two"
   assert missing == []
 }
 
