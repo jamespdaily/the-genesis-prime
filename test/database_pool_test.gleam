@@ -359,6 +359,51 @@ pub fn the_pools_connections_end_a_whole_transaction_before_the_asker_gives_up_w
     as "the asker's longest wait for the answer of a worker that holds a connection is the transaction's limit and the margin"
 }
 
+pub fn a_transaction_whose_statements_are_each_within_the_statement_limit_but_together_past_the_transaction_limit_is_ended_and_commits_nothing_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let settings = pool_settings(database, "pool_transaction_ends")
+  let assert Ok(_) =
+    server.supervisor_with_pool(settings) |> static_supervisor.start
+    as "the planted top supervisor did not start"
+  let assert Ok(_) =
+    pog.query("create table pool_scratch (id integer not null)")
+    |> pog.execute(on: database.connection)
+    as "the scratch table was made"
+  // Each sleep of 2.5 seconds is within the statement's limit of 4 seconds, and
+  // the two together pass the transaction's limit of 4.5 seconds.
+  assert pool.statement_timeout_ms == 4000
+    && pool.transaction_timeout_ms == 4500
+    as "the limits the test is built on: each statement under one, the two together over the other"
+  let carried_out =
+    pog.transaction(pool.connection(settings), fn(transaction) {
+      use _ <- result.try(run_in(transaction, "select 1 from pg_sleep(2.5)"))
+      use _ <- result.try(run_in(
+        transaction,
+        "insert into pool_scratch (id) values (1)",
+      ))
+      use _ <- result.try(run_in(transaction, "select 1 from pg_sleep(2.5)"))
+      Ok(Nil)
+    })
+  let assert Error(pog.TransactionQueryError(_)) = carried_out
+    as "PostgreSQL 17 and later: transaction_timeout ends the transaction at 4.5 seconds, in its second sleep, though no statement passed 4 seconds: the transaction does not commit"
+  let assert Ok(pog.Returned(rows: [stored], ..)) =
+    pog.query("select count(*) from pool_scratch")
+    |> pog.returning(decode.at([0], decode.int))
+    |> pog.execute(on: database.connection)
+    as "the scratch table was read"
+  assert stored == 0
+    as "a transaction the database ended was rolled back: its insert is not stored"
+}
+
+/// Runs a statement in a transaction, giving the error of the statement.
+fn run_in(
+  transaction: pog.Connection,
+  statement: String,
+) -> Result(pog.Returned(Nil), pog.QueryError) {
+  pog.query(statement) |> pog.execute(on: transaction)
+}
+
 pub fn a_request_that_waits_for_a_connection_for_most_of_a_second_is_served_and_not_refused_test() -> Nil {
   use <- owned_test.run(30_000)
   use database <- template_database.run
