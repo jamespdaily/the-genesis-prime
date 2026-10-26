@@ -2,7 +2,7 @@
 //// the body, both header fields little-endian. The length counts the whole
 //// frame, its own 4 bytes and the id's 2 included, and no frame is over 131,070
 //// bytes (WriteMessageFrame 0x1403355e0, MessageSizeLimit 0x140335ec0). The
-//// decoder reads frames from the bytes received so far, as the client's
+//// decoder reads frames from the received bytes, as the client's
 //// frame reader does: a frame may span reads and one read may hold several
 //// (ReadConnectionMessages 0x1403321a0, ReadMessageFrame 0x140331990).
 ////
@@ -52,7 +52,7 @@ pub fn encode(
   todo as "encode a frame"
 }
 
-/// Splits the bytes received so far into their whole frames and the bytes left
+/// Splits the received bytes into their whole frames and the bytes left
 /// over: the start of a frame whose end has not arrived. A length below the
 /// header or over the size limit is an error as soon as its 4 bytes have
 /// arrived, so a huge claimed length is never waited for.
