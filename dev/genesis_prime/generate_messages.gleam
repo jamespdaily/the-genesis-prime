@@ -7,7 +7,6 @@ import genesis_prime/message_generator.{
   type GeneratedFile, type Mismatch, Edited, GeneratedFile, Missing, Stale,
 }
 import genesis_prime/message_schema
-import genesis_prime/topology/measurement
 import gleam/int
 import gleam/io
 import gleam/list
@@ -18,13 +17,17 @@ const schema_path = "src/genesis_prime/message/schema.toml"
 
 const directory = "src/genesis_prime/message"
 
+/// The arguments given after `--` on the command line.
+@external(erlang, "generate_messages_ffi", "plain_arguments")
+fn plain_arguments() -> List(String)
+
 /// Ends the program with a status.
 @external(erlang, "erlang", "halt")
 fn halt(status: Int) -> Nil
 
 /// Generates the codec, or checks the committed one.
 pub fn main() -> Nil {
-  case measurement.plain_arguments() {
+  case plain_arguments() {
     [] -> generate()
     ["check"] -> check()
     _ -> {

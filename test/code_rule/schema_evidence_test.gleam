@@ -94,7 +94,7 @@ pub fn a_field_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
   let text =
     schema(
       fields: [
-        "  { name = \"build\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9141\" },",
+        "  { name = \"build\", kind = \"unsigned\", bits = 32, evidence = \"planted.not_a_fact_key\" },",
       ],
       record_fields: [good_field],
     )
