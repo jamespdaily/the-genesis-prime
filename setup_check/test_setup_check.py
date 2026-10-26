@@ -45,6 +45,9 @@ What a planted command answers (the contract the checks run against):
 - any other command stops the test with an AssertionError, so a check that
   runs something the table does not know is seen at once.
 
+The patched OTP is checked unless GENESIS_NO_CLIENT=1 and GENESIS_OTP_DIR is
+unset (CI sets GENESIS_OTP_DIR, so it runs on the patched build it caches), and
+setup_check/environment.sh puts its bin first on PATH on the same condition.
 The patched OTP's marker is the file `GENESIS_PATCHES` in $GENESIS_OTP_DIR: one
 line per patch, "NAME SHA-256", the name and the hash of that file in the
 repository's setup_check/ folder. The check requires a line, with the matching
@@ -152,10 +155,13 @@ class Plan:
     postgres_version: str = "18.6"
     postgres_clock_offset: float = 0.0  # seconds the server's clock is ahead
     with_client: bool = True  # False: nothing of the client, the query process or the patched OTP
+    otp_without_client: bool = False  # with_client False, and still GENESIS_OTP_DIR and the build there (CI)
     no_client_flag: bool = False  # GENESIS_NO_CLIENT=1
     client: str = "good"  # good, other (another SHA-256) or missing
     index_builds: tuple = (TARGET_BUILD,) * 4  # per name in INDEX_NAMES: a build, "garbage" or "signature"
     otp_dir: str = "patched"  # patched, unmarked, stale, unlisted_patch or absent
+    erl_on_path: str = "patched"  # which erl PATH finds first: patched, elsewhere (a stock OTP) or linked (a link to the patched erl)
+    otp_dir_linked: bool = False  # GENESIS_OTP_DIR names a symbolic link to the patched OTP's folder
     ghidra_version: str = "12.2"
     decompiler: bool = True
     jdk: str = "25.0.1"
@@ -176,8 +182,9 @@ class PlantedTestCase(unittest.TestCase):
 
     def plant(self, plan: Plan | None = None, **changes) -> Machine:
         plan = plan or Plan(**changes)
-        for leftover in ("repository", "WildStar", "ghidra", "jdk", "otp"):  # a test may plant twice
+        for leftover in ("repository", "WildStar", "ghidra", "jdk", "otp", "stock"):  # a test may plant twice
             shutil.rmtree(self.root / leftover, ignore_errors=True)
+        (self.root / "otp-link").unlink(missing_ok=True)
         repository = self.root / "repository"
         repository.mkdir()
         for name in (".tool-versions", "gleam.toml"):
@@ -198,6 +205,9 @@ class PlantedTestCase(unittest.TestCase):
             env["GENESIS_NO_CLIENT"] = "1"
         if plan.with_client:
             env.update(self.plant_client(plan))
+        elif plan.otp_without_client:
+            env.update(self.plant_otp(plan))
+        env["PATH"] = self.plant_path(plan, env)
         for name in plan.without_variables:
             env.pop(name, None)
         self.apply_pins(plan)
@@ -221,10 +231,27 @@ class PlantedTestCase(unittest.TestCase):
         ghidra.mkdir(exist_ok=True)
         jdk = self.root / "jdk"
         jdk.mkdir(exist_ok=True)
+        env = {
+            "WILDSTAR_CLIENT_EXE": str(exe),
+            "GENESIS_GHIDRA_DIR": str(ghidra),
+            "GENESIS_GHIDRA_PROJECT_DIR": str(self.root / plan.project_path),
+            "JAVA_HOME": str(jdk),
+        }
+        env.update(self.plant_otp(plan))
+        if plan.pyghidra_python != "unset":
+            interpreter = self.root / "pyghidra-venv" / "bin" / "python"
+            interpreter.parent.mkdir(parents=True, exist_ok=True)
+            interpreter.write_text("#!/bin/sh\n")
+            env["GENESIS_PYGHIDRA_PYTHON"] = str(interpreter)
+        return env
+
+    def plant_otp(self, plan: Plan) -> dict[str, str]:
+        """The patched OTP's folder as plan.otp_dir says, and GENESIS_OTP_DIR for it."""
         otp_dir = self.root / "otp"
         if plan.otp_dir != "absent":
             (otp_dir / "bin").mkdir(parents=True, exist_ok=True)
             (otp_dir / "bin" / "erl").write_text("#!/bin/sh\n")
+            (otp_dir / "bin" / "erl").chmod(0o755)
         lines = {
             "patched": ["%s %s" % (PATCH_FILE, PATCH_SHA256)],
             "unlisted_patch": ["%s %s" % (PATCH_FILE, PATCH_SHA256)],
@@ -232,19 +259,30 @@ class PlantedTestCase(unittest.TestCase):
         }
         if plan.otp_dir in lines:
             (otp_dir / MARKER).write_text("\n".join(lines[plan.otp_dir]) + "\n")
-        env = {
-            "WILDSTAR_CLIENT_EXE": str(exe),
-            "GENESIS_GHIDRA_DIR": str(ghidra),
-            "GENESIS_GHIDRA_PROJECT_DIR": str(self.root / plan.project_path),
-            "JAVA_HOME": str(jdk),
-            "GENESIS_OTP_DIR": str(otp_dir),
-        }
-        if plan.pyghidra_python != "unset":
-            interpreter = self.root / "pyghidra-venv" / "bin" / "python"
-            interpreter.parent.mkdir(parents=True, exist_ok=True)
-            interpreter.write_text("#!/bin/sh\n")
-            env["GENESIS_PYGHIDRA_PYTHON"] = str(interpreter)
-        return env
+        if plan.otp_dir_linked:
+            link = self.root / "otp-link"
+            if not link.exists():
+                link.symlink_to(otp_dir)
+            return {"GENESIS_OTP_DIR": str(link)}
+        return {"GENESIS_OTP_DIR": str(otp_dir)}
+
+    def plant_path(self, plan: Plan, env: dict[str, str]) -> str:
+        """PATH as the plan says: the patched OTP's bin and, ahead of it or in
+        place of its erl, another folder with an erl that is a stock OTP's or a
+        link to the patched one."""
+        folders = []
+        if plan.erl_on_path != "patched":
+            stock = self.root / "stock" / "bin"
+            stock.mkdir(parents=True, exist_ok=True)
+            if plan.erl_on_path == "elsewhere":
+                (stock / "erl").write_text("#!/bin/sh\n")
+                (stock / "erl").chmod(0o755)
+            else:
+                (stock / "erl").symlink_to(self.root / "otp" / "bin" / "erl")
+            folders.append(str(stock))
+        if "GENESIS_OTP_DIR" in env:
+            folders.append(str(self.root / "otp" / "bin"))
+        return ":".join(folders)
 
     def apply_pins(self, plan: Plan):
         """The client's pin is the hash of the planted client."""
@@ -505,12 +543,58 @@ class ErlangTest(PlantedTestCase):
         self.assertIn("second.patch", missing.part + missing.found)
         self.assert_fix(missing, "rebuild")
 
-    def test_the_patched_otp_is_not_required_where_genesis_no_client_is_1(self):
-        machine = self.plant(otp_dir="absent", no_client_flag=True)
+    def test_the_patched_otp_is_not_required_where_genesis_no_client_is_1_and_genesis_otp_dir_is_unset(self):
+        machine = self.plant(otp_dir="absent", no_client_flag=True, without_variables=("GENESIS_OTP_DIR",))
         self.assertEqual(setup_check.check_erlang(machine), [])
+
+    def test_the_patched_otp_is_required_where_genesis_no_client_is_1_and_genesis_otp_dir_is_set(self):
+        # CI: no client, but GENESIS_OTP_DIR names the build it runs on.
+        for otp_dir, expected in (("absent", "nothing"), ("unmarked", MARKER), ("stale", PATCH_FILE)):
+            with self.subTest(otp_dir=otp_dir):
+                machine = self.plant(otp_dir=otp_dir, no_client_flag=True)
+                missing = self.only(setup_check.check_erlang(machine))
+                self.assert_part(missing, "patch")
+                self.assertIn(expected.lower(), (missing.part + missing.found).lower())
+                self.assert_fix(missing, "rebuild")
+
+    def test_a_machine_without_the_client_and_marked_so_but_with_the_patched_otp_has_nothing_missing(self):
+        machine = self.plant(with_client=False, otp_without_client=True, no_client_flag=True)
+        self.assertEqual(setup_check.check_all(machine), [])
+
+    def test_a_machine_without_the_client_and_marked_so_with_a_stale_patched_otp_is_missing_only_the_rebuild(self):
+        machine = self.plant(with_client=False, otp_without_client=True, no_client_flag=True, otp_dir="stale")
+        missing = self.only(setup_check.check_all(machine))
+        self.assert_part(missing, "patch")
+        self.assert_fix(missing, "rebuild")
 
     def test_the_pinned_otp_with_its_patched_build_is_not_missing(self):
         self.assertEqual(setup_check.check_erlang(self.plant()), [])
+
+    def test_an_erl_on_path_from_outside_the_patched_otp_is_named_with_both_paths(self):
+        machine = self.plant(erl_on_path="elsewhere")
+        missing = self.only(setup_check.check_erlang(machine))
+        self.assert_part(missing, "erl")
+        stock_erl = str(self.root / "stock" / "bin" / "erl")
+        patched_bin = str(self.root / "otp" / "bin")
+        self.assertIn(stock_erl, missing.part + missing.found)
+        self.assertIn(patched_bin, missing.part + missing.found + missing.fix)
+        self.assert_fix(missing, "PATH", "environment.sh")
+
+    def test_an_erl_on_path_from_outside_the_patched_otp_is_named_where_genesis_no_client_is_1_and_genesis_otp_dir_is_set(self):
+        machine = self.plant(erl_on_path="elsewhere", no_client_flag=True)
+        missing = self.only(setup_check.check_erlang(machine))
+        self.assert_part(missing, "erl")
+        self.assert_fix(missing, "PATH")
+
+    def test_an_erl_on_path_that_is_a_link_to_the_patched_erl_is_not_missing(self):
+        self.assertEqual(setup_check.check_erlang(self.plant(erl_on_path="linked")), [])
+
+    def test_a_genesis_otp_dir_that_is_a_link_to_the_patched_otp_is_not_missing(self):
+        self.assertEqual(setup_check.check_erlang(self.plant(otp_dir_linked=True)), [])
+
+    def test_the_erl_on_path_is_not_checked_where_genesis_no_client_is_1_and_genesis_otp_dir_is_unset(self):
+        machine = self.plant(erl_on_path="elsewhere", no_client_flag=True, without_variables=("GENESIS_OTP_DIR",))
+        self.assertEqual(setup_check.check_erlang(machine), [])
 
 
 class RebarTest(PlantedTestCase):
@@ -531,6 +615,44 @@ class RebarTest(PlantedTestCase):
 
     def test_the_pinned_rebar3_is_not_missing(self):
         self.assertEqual(setup_check.check_rebar(self.plant()), [])
+
+
+class EnvironmentTest(PlantedTestCase):
+    """setup_check/environment.sh, sourced by ./check and ./setup-check from the
+    repository's folder: the patched OTP's bin goes first on PATH, unless
+    GENESIS_NO_CLIENT=1 and GENESIS_OTP_DIR is unset."""
+
+    def sourced(self, **env) -> dict[str, str]:
+        base = {"PATH": "/usr/bin:/bin", "HOME": str(self.root), "GENESIS_HOME": str(self.root / "genesis-home")}
+        base.update(env)
+        script = '. setup_check/environment.sh; printf "%s\\n%s\\n" "$PATH" "${GENESIS_OTP_DIR:-unset}"'
+        done = subprocess.run(["sh", "-c", script], cwd=REPOSITORY, env=base, stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        path, otp_dir = done.stdout.splitlines()
+        return {"PATH": path, "GENESIS_OTP_DIR": otp_dir}
+
+    def test_the_patched_otp_is_first_on_path_by_default_in_the_genesis_home(self):
+        result = self.sourced()
+        default = str(self.root / "genesis-home" / ("otp-%s-gc-marker" % OTP))
+        self.assertEqual(result["GENESIS_OTP_DIR"], default)
+        self.assertEqual(result["PATH"], "%s/bin:/usr/bin:/bin" % default)
+
+    def test_genesis_otp_dir_names_the_patched_otp_first_on_path(self):
+        result = self.sourced(GENESIS_OTP_DIR="/somewhere/otp")
+        self.assertEqual(result["GENESIS_OTP_DIR"], "/somewhere/otp")
+        self.assertEqual(result["PATH"], "/somewhere/otp/bin:/usr/bin:/bin")
+
+    def test_where_genesis_no_client_is_1_and_genesis_otp_dir_is_unset_path_is_left_as_it_is(self):
+        result = self.sourced(GENESIS_NO_CLIENT="1")
+        self.assertEqual(result["GENESIS_OTP_DIR"], "unset")
+        self.assertEqual(result["PATH"], "/usr/bin:/bin")
+
+    def test_where_genesis_no_client_is_1_and_genesis_otp_dir_is_set_the_patched_otp_is_first_on_path(self):
+        # CI: no client, the patched OTP from the cache.
+        result = self.sourced(GENESIS_NO_CLIENT="1", GENESIS_OTP_DIR="/cache/otp")
+        self.assertEqual(result["GENESIS_OTP_DIR"], "/cache/otp")
+        self.assertEqual(result["PATH"], "/cache/otp/bin:/usr/bin:/bin")
 
 
 # ---------------------------------------------------------------- 4. manifest.toml
