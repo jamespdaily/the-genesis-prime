@@ -13,6 +13,8 @@ pub type Stream
 pub type StartError {
   /// This OTP build has no RC4 cipher.
   Unsupported
+  /// RC4 is keyed with at least one byte; the library's key is 64.
+  EmptyKey
 }
 
 /// A new stream under `key`, at its first byte.

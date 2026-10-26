@@ -15,12 +15,12 @@ import gleam/otp/supervision
 /// What a hand-off starts with. `name` is the name the hand-off registers and
 /// its users find it by, made once by whoever starts the tree.
 /// `expiry_milliseconds` is how long a key stays valid after it is issued;
-/// `now` reads the monotonic clock in milliseconds.
+/// `clock` reads the monotonic clock in milliseconds.
 pub type Settings(held) {
   Settings(
     name: Name(Message(held)),
     expiry_milliseconds: Int,
-    now: fn() -> Int,
+    clock: fn() -> Int,
   )
 }
 
@@ -39,7 +39,7 @@ pub type Refusal {
   Expired
 }
 
-/// The monotonic clock in milliseconds, the default for `Settings.now`
+/// The monotonic clock in milliseconds, the default for `Settings.clock`
 /// (`erlang:monotonic_time/1`).
 pub fn monotonic_milliseconds() -> Int {
   todo as "the monotonic clock"

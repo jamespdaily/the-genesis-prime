@@ -11,13 +11,14 @@
 import gleam/option.{type Option}
 
 /// The most bytes before the blank line that ends a request's headers. The
-/// client's longest request line is under 140 bytes and it sends two headers,
-/// so this is far above any client; it bounds what a connection makes the
-/// server hold while it waits for the end of a head.
+/// client's longest head is under 80 bytes: the longest request line,
+/// `POST /Auth/RequestGameToken STS/1.0`, and two headers. This is far above
+/// any client; it bounds what a connection makes the server hold while it
+/// waits for the end of a head.
 pub const head_limit = 1024
 
 /// The most bytes a request's body may hold. The client's bodies are under
-/// 400 bytes (the KeyData request is the longest: A and M1 in base64).
+/// 300 bytes (the KeyData request is the longest, at 265: A and M1 in base64).
 pub const body_limit = 4096
 
 /// One request as the client wrote it. `sequence` is the `s` header, absent

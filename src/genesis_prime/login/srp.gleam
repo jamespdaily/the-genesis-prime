@@ -23,8 +23,9 @@ pub type SrpError {
   /// The client's M1 is not the one the server computes: the password is
   /// wrong.
   ProofRefused
-  /// The server's secret value or the verifier is not usable: no bytes.
-  ValueMissing
+  /// The server's secret value is not 32 bytes, the size of the client's own
+  /// (StsConnLib64.MT.dll!0x18002d4e0).
+  SecretNotThirtyTwoBytes(bytes: Int)
 }
 
 /// What the server holds between its first key data and the client's answer.
