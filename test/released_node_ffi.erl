@@ -198,12 +198,13 @@ collect(Opened, Output) ->
 %% supervisor is answered once its children have started, so the answer is the
 %% signal that the tree is up. When the entry point ends first, its reason is
 %% written and the VM ends with status 1.
--spec report(non_neg_integer(), server | idle) -> no_return().
+-spec report(non_neg_integer(), server | idle | lingering) -> no_return().
 report(Planted, Program) ->
     Tree =
         case Program of
             server -> start_server();
-            idle -> none
+            idle -> none;
+            lingering -> none
         end,
     _Sockets = [
         begin
@@ -219,15 +220,23 @@ report(Planted, Program) ->
         lists:join(" ", [integer_to_list(Port) || Port <- listening_ports()])
     ]),
     io:format("report-end~n"),
-    answer(Tree).
+    answer(Tree, Program).
 
-answer(Tree) ->
+%% A lingering child does not end on the end of its input, which is what a
+%% test's cleanup does first today: it ends when it is told to stop.
+answer(Tree, Program) ->
     case io:get_line("") of
+        eof when Program =:= lingering ->
+            receive
+            after infinity -> ok
+            end;
         eof ->
+            halt(0);
+        "stop\n" ->
             halt(0);
         "survey\n" ->
             survey(Tree),
-            answer(Tree)
+            answer(Tree, Program)
     end.
 
 %% What the node is now, written for each line the test asks with. The tree is

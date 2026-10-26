@@ -36,10 +36,13 @@ pub type Naming {
 /// What the child runs. `Server` runs `genesis_prime:main`, the entry point,
 /// and reports once its tree is up. `Idle` starts nothing, so a test can ask
 /// what a node started in a given way is without the server's own checks
-/// of that start.
+/// of that start. `Lingering` is `Idle` that does not end when its input
+/// closes, only when it is told to stop, so a test can hold a child alive and
+/// registered with its epmd while the cleanup runs.
 pub type Program {
   Server
   Idle
+  Lingering
 }
 
 /// What to start: the test's own database for the server's pool, how the
@@ -148,11 +151,15 @@ pub fn run(start: Start, body: fn(Result(Node, Failure)) -> a) -> a {
       |> result.map(fn(report) { Node(process:, epmd_port:, report:) })
       |> body
     },
-    fn() {
-      close(process)
-      kill_epmd(epmd_port)
-    },
+    fn() { clean_up(process:, epmd_port:) },
   )
+}
+
+/// Ends the child and the epmd made for it, whatever state they are in; ending
+/// what has ended already does nothing.
+pub fn clean_up(process process: Process, epmd_port epmd_port: Int) -> Nil {
+  close(process)
+  kill_epmd(epmd_port)
 }
 
 /// Asks the child for a survey of what it is: the child waits until a query
@@ -199,6 +206,7 @@ fn arguments(start: Start) -> List(String) {
   let program = case start.program {
     Server -> "server"
     Idle -> "idle"
+    Lingering -> "lingering"
   }
   let expression =
     "released_node_ffi:report("
