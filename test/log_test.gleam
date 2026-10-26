@@ -12,7 +12,7 @@
 //// message 0x0592 in `src/genesis_prime/message/schema.toml` (the client's
 //// opcode.0x592), and 0x0715 is a message the client registers and ignores on
 //// the realm-select connection, which the schema does not name. The ids in
-//// the other fields are arbitrary. The line the node's default handler writes
+//// the other fields, and the peer address, are arbitrary. The line the node's default handler writes
 //// is the issue's done-when: the telemetry and every key of who and where are
 //// readable in it while the server runs, on one line, as `key=value`. A test waits for the line it needs, as an
 //// event from a capture, and never for a fixed time.
@@ -39,6 +39,7 @@ pub fn a_line_carries_each_part_of_who_as_metadata_under_its_key_test() -> Nil {
       actor: Some(log.Character(9)),
       place: Some(log.Process("login")),
       message: Some(log.Named("login_request", 0x0592)),
+      peer: None,
     )
   log.info(who, "a login")
   let assert Ok(event) =
@@ -63,6 +64,7 @@ pub fn a_unit_a_map_and_a_message_with_only_a_number_are_metadata_under_their_ke
       actor: Some(log.Unit(31)),
       place: Some(log.Map(4)),
       message: Some(log.Numbered(0x0715)),
+      peer: None,
     )
   log.info(who, "a move")
   let assert Ok(event) =
@@ -150,6 +152,7 @@ pub fn the_line_the_default_handler_writes_carries_the_level_the_text_and_every_
       actor: Some(log.Character(9)),
       place: Some(log.Process("login")),
       message: Some(log.Named("login_request", 0x0592)),
+      peer: Some("127.0.0.1:50321"),
     )
   log.warning(who, "a login that was retried")
   let assert Ok(event) =
@@ -163,6 +166,7 @@ pub fn the_line_the_default_handler_writes_carries_the_level_the_text_and_every_
   assert string.contains(line, "process=login") as line
   assert string.contains(line, "message_name=login_request") as line
   assert string.contains(line, "message_number=1426") as line
+  assert string.contains(line, "peer=127.0.0.1:50321") as line
   assert string.trim_end(line) == string.replace(line, "\n", "")
     as "the line is not on one line"
 }
@@ -176,6 +180,7 @@ pub fn the_line_the_default_handler_writes_carries_a_unit_a_map_and_a_message_nu
       actor: Some(log.Unit(31)),
       place: Some(log.Map(4)),
       message: Some(log.Numbered(0x0715)),
+      peer: None,
     )
   log.info(who, "a move")
   let assert Ok(event) =
@@ -188,4 +193,5 @@ pub fn the_line_the_default_handler_writes_carries_a_unit_a_map_and_a_message_nu
   assert !string.contains(line, "account=") as line
   assert !string.contains(line, "character=") as line
   assert !string.contains(line, "message_name=") as line
+  assert !string.contains(line, "peer=") as line
 }

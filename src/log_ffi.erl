@@ -4,7 +4,8 @@
 %% The Gleam types of src/genesis_prime/telemetry/log.gleam, as Gleam
 %% represents them:
 %%   Level: error_level, warning_level, info_level, debug_level
-%%   Who(account, actor, place, message) is {who, Account, Actor, Place, Message},
+%%   Who(account, actor, place, message, peer) is
+%%     {who, Account, Actor, Place, Message, Peer},
 %%     each an Option: {some, Value} or none
 %%   Actor: {character, Id} or {unit, Id}
 %%   Place: {process, Name} or {map, Id}
@@ -12,6 +13,7 @@
 %%   Number: {count, Integer} or {ratio, Float}
 %% Each constructor's name is the metadata key of its value, except a named
 %% message, whose name and number are `message_name` and `message_number`.
+%% The peer is a text under `peer`.
 
 %% Writes a line through logger at the level, with the metadata of who and
 %% where, and the numbers, when there are any, as one map under `numbers`.
@@ -41,7 +43,7 @@ configure(Debug) ->
 %% The metadata keys `metadata/2` sets, in the order a line prints them.
 keys() ->
     [account, character, unit, process, map, message_name, message_number,
-     numbers].
+     peer, numbers].
 
 %% The template of the default handler's formatter: the time, the level, the
 %% text, each key the line has as ` key=value`, and the end of the line.
@@ -55,9 +57,9 @@ level(warning_level) -> warning;
 level(info_level) -> info;
 level(debug_level) -> debug.
 
-metadata({who, Account, Actor, Place, Message}, Numbers) ->
+metadata({who, Account, Actor, Place, Message, Peer}, Numbers) ->
     maps:from_list(account(Account) ++ actor(Actor) ++ place(Place)
-                   ++ message(Message) ++ numbers(Numbers)).
+                   ++ message(Message) ++ peer(Peer) ++ numbers(Numbers)).
 
 account({some, Id}) -> [{account, Id}];
 account(none) -> [].
@@ -74,6 +76,9 @@ message({some, {named, Name, Number}}) ->
     [{message_name, text(Name)}, {message_number, Number}];
 message({some, {numbered, Number}}) -> [{message_number, Number}];
 message(none) -> [].
+
+peer({some, Address}) -> [{peer, text(Address)}];
+peer(none) -> [].
 
 numbers(Numbers) when map_size(Numbers) =:= 0 -> [];
 numbers(Numbers) ->

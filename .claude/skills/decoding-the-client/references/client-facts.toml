@@ -650,9 +650,9 @@ name = "MovementCommandIsRedundant"
 
 ["0x1403a25c0"]
 statement = "Updates the player's own movement once per game update, while the player unit exists, is the controlled unit and is under client control: it moves the unit and builds a batch of movement commands (platform, position, two packed vectors, rotation (left out in one unit state), state flags and mode), applies it to the unit and queues it to be sent (QueuePlayerMovementCommands). It sends the queue at once (FlushPlayerMovementCommands) while a dash is in progress, when a dash ends, before reporting a fall (message 0xfb) and before message 0xfc."
-proof = "Early returns 0x1403a25c0..: game 0x6490 null, not equal to game 0x6488, unit 0xd50 zero, unit 0xdf4 == 1, unit 0x16e8 null. Batch: entries type 1 (word 2 the platform id), 2 (position, word 0x17 the interpolate flag), 8 and 0xb (0x1401c9800 packs a vector), then 0x14079a780 (type 0xe, skipped when unit 0x1620 is set), 0x14079a810 (type 0x18), 0x14079a990 (type 0x1b); 0x1405b3b80 applies it; 0x1403a62b3 call 0x14057a190. Direct sends: 0x14057a2c0 called when game 0x78d8 is set (set to 1 with 'DashCastSuccess' in 0x14039eff0), when the dash window from GameFormula rows 0x10c and 0x11b ends (game 0x78d8 cleared), before 0x1403f4900 with 0xfb and before 0xfc. Caller: 0x1403e85d0 at 0x1403e8942, a method of the game object (data ref 0x140b668b0), which calls it on every pass after 0x140641350 succeeds."
+proof = "Early returns 0x1403a25c0..: game 0x6490 null, not equal to game 0x6488, unit 0xd50 zero, unit 0xdf4 == 1, unit 0x16e8 null. Batch: entries type 1 (word 2 the platform id), 2 (position, word 0x17 the interpolate flag), 8 and 0xb (0x1401c9800 packs a vector), then 0x14079a780 (type 0xe, skipped when unit 0x1620 is set), 0x14079a810 (type 0x18), 0x14079a990 (type 0x1b); 0x1405b3b80 applies it; 0x1403a62b3 call 0x14057a190. Direct sends: 0x14057a2c0 called when game 0x78d8 is set (set to 1 with 'DashCastSuccess' in 0x14039eff0), when the dash window from GameFormula rows 0x10c and 0x11b ends (game 0x78d8 cleared), before 0x1403f4900 with 0xfb and before 0xfc. Caller: 0x1403e85d0 (UpdateGame) at 0x1403e8942, once in each of its runs; it runs once a frame: 0x140008bc0 -> 0x1400094f0 -> 0x1400097d0 -> 0x140013d00 -> each stage's update, the world stage's 0x1400344d0 calling 0x1403e85d0 until it hands the game object over as a stage of its own, which 0x140013d00 then updates directly."
 grade = "fairly sure"
-gap = "That 0x1403e85d0 runs once per rendered frame is inferred from its role (it also drives the renderer) and not traced to the main loop; the meaning of command types 8, 11, 24 and 27 is not read."
+gap = "Whether the frame of the hand-over runs 0x1403e85d0 twice is not read (see 0x1400344d0); the meaning of command types 8, 11, 24 and 27 is not read."
 name = "UpdatePlayerMovement"
 
 ["0x1403f4900"]
@@ -826,6 +826,172 @@ proof = "0x1401e8591 cmp [0x140c64a98], rsi (already loaded); 0x1401e859e cmp [0
 grade = "fairly sure"
 gap = "What the source at 0x140c63970 and the flags 0x140c64714, 0x140c64d5c and 0x140c1e48c are, and which path a shipped client takes, are not read."
 name = "LoadAccountCurrencyTypeTable"
+
+# The main loop, the frame rate and the video settings
+
+["0x140008bc0"]
+statement = "The client's main loop, run on the application object (the object at 0x140c635f0). It fails when the application is not set up or is already running; otherwise it marks it running and loops until a quit message arrives: it takes every waiting window message and dispatches it (after the window's accelerators), then either applies a pending window-mode change (ApplyWindowMode) or runs one pass (RunFramePass). After the loop it releases the renderer."
+proof = "0x140008bc6 mov rdi, [0x140c635f0]; 0x140008bd2 je (bit 1 clear) and 0x140008bda jne (bit 4 set) return 0x80004005; 0x140008bfd or eax, 0x44; 0x140008c4c call [0x140959740] (user32.dll!PeekMessageW) with 1 (remove); 0x140008c56 cmp dword [rsp+0x38], 0x12 (WM_QUIT) -> 0x140008cb0 or dword [rdi+0x40], 0x1000; 0x140008c6f TranslateAcceleratorW (0x140959748), 0x140008c7e TranslateMessage, 0x140008c89 DispatchMessageW; 0x140008cc9 test al, 0x40; 0x140008cd3 call [rax+0x38] (slot 0x38 of the class 0x140b55120: 0x140008dc0); else 0x140008cdb call 0x1400094f0; 0x140008ce4 test dword [rdi+0x40], 0x1000; 0x140008ceb je 0x140008c20 (the loop). After it: 0x140008d4b call [rax+0x8] on the renderer at 0x140c65670 and 0x140008d4e stores 0 there. The object is made by 0x140019374 call 0x14000a490 (0x14000a4b5 stores the class 0x140b55120) and stored by 0x140019379. Callers: 0x14001939c only."
+grade = "sure"
+name = "RunMainLoop"
+
+["0x1400094f0"]
+statement = "One pass of the main loop: runs a frame (RunFrame), draws it (DrawFrame) when the frame asked for drawing, then waits. It does nothing when the application is not running or a pass is already in progress, and returns at once when another thread holds the pass. The wait lasts until one second divided by video.framerateMax has passed since the frame began, counting at most one second of the frame's own time, except when the display mode's vertical sync flag (video.verticalSync) is on: then that wait is skipped and the client sets no frame rate of its own. When the application is not in the foreground, or the renderer could not draw, the pass also waits at least half the frame's time. The wait sleeps whole milliseconds and spins for the rest. With vertical sync off the client therefore starts at most video.framerateMax frames a second."
+proof = "0x1400094fc test al, 1 and 0x14000950b test al, 4 (running) else 0x80004005; 0x140009517 call [0x140959368] (GetCurrentThreadId): the owner at 0x20 counts up on the same thread (0x140009526), another thread fails 0x140009534 lock cmpxchg and returns 0; 0x140009551 test al, 0x10 (pass in progress) then 0x140009559 or eax, 0x10; 0x14000956f call [rax+0x40] (slot 0x40 of the class 0x140b55120: 0x1400097d0) unless bit 8; 0x140009589..0x14000959a: when bit 0x80 is set, clear it and call [rax+0x48] (0x140009b70). The wait: 0x1400095bb QueryPerformanceCounter (0x140959660); 0x1400095c1 mov rax, [rbx+0xb8] (counts a second); 0x1400095d7 sub r9, [rbx+0xc8] (the frame's start, stored by 0x1400097d0 at 0x1400098d9); 0x1400095e1 cmovb r9, rax (at most one second); 0x1400095e5 test dword [rbx+0x40], 0x100; 0x1400095f1 shr rdi (half); 0x1400095f9 test byte [rbx+0x70], 4; 0x1400095fd jne 0x140009635 (vertical sync: no frame-rate wait); 0x140009608 mov ecx, [0x140c3feb0]; 0x140009610 cmovl ecx, edx (the settings level in use); 0x14000961d mov r8d, [rdx+4*rcx] with rdx 0x140c3fec0 (video.framerateMax); 0x140009623 div r8 (counts per frame); 0x140009626 cmp r9, rax; 0x14000962b sub rax, r9; 0x140009631 cmovb rdi, rax; 0x140009660 div qword [rbx+0xb0] (counts a millisecond); 0x1400096e0 call [0x140959280] (Sleep); 0x140009710 pause, looping at 0x14000972f until the time since 0x1400095bb reaches the wait; 0x140009731 and dword [rbx+0x40], ~0x100. Fields set in 0x140008910: 0x140008b41 [rbx+0xb8] = [0x140c636b8] (from 0x14018ccf0), 0x140008b71 [rbx+0xb0] = that / 1000, 0x140008b9a [rbx+0xc0] = 1 / that. Bit 0x2000 (foreground): set at 0x140008b8d, cleared in MainWindowProc at 0x140009e35; 0x1400097d0 sets 0x100 when it is clear (0x140009b49..0x140009b4f); 0x140009b70 sets 0x100 when the renderer is not ready (0x140009ccf). Bit 4 of [rbx+0x70] is set from video.verticalSync at 0x140017bf7. Callers: 0x140008cdb (0x140008bc0) and 0x140009fd9 (0x140009d00)."
+grade = "fairly sure"
+gap = "A frame run by an indirect call of slot 0x40 other than this pass's is not excluded (the slot's routine 0x1400097d0 has no direct caller and one data reference, the class at 0x140b55120); the counts-per-frame division truncates, so a frame may be one counter count shorter than one second divided by the setting."
+name = "RunFramePass"
+
+["0x1400097d0"]
+statement = "Runs one frame of the application: measures the time since the last frame began, stores this frame's start, then runs the update (UpdateStages) with the frame's time in seconds, at most one second. When the update asks for drawing it marks the frame to be drawn; when the application is not in the foreground it marks the pass to wait half the frame's time (RunFramePass)."
+proof = "0x140009824 call [0x140959660] (QueryPerformanceCounter); 0x14000984f sub rax, [rbx+0xc8]; 0x140009868 mulss xmm0, xmm2 with xmm2 = [rbx+0xc0] (seconds a count); 0x14000986c movss [rbx+0xe8], xmm0; 0x1400098d9 mov [rbx+0xc8], r14 (this frame's start); 0x14000991b minss xmm7, [0x140b79ed0] (bytes at 0x140b79ed0: 0000803f, 1.0); 0x140009aea movaps xmm1, xmm7; 0x140009af8 call [rax+0x58] (slot 0x58 of the class 0x140b55120: 0x140013d00); 0x140009b3a cmp edi, 1; 0x140009b3f or dword [rbx+0x40], 0x80 (draw); 0x140009b49 bt eax, 0xd; 0x140009b4f bts eax, 8. Slot 0x40 of the class 0x140b55120 (entry 0x140b55160); called by 0x1400094f0 at 0x14000956f."
+grade = "fairly sure"
+gap = "The work between the clock read and the update (0x140009909..0x140009adf: the millisecond clock, a share of the frame scaled by 250 for other work, and two renderer calls) is not read."
+name = "RunFrame"
+
+["0x140009b70"]
+statement = "Draws a frame: when the renderer is ready it begins the frame, draws the stages and presents (the Direct3D 9 renderer's PresentDirect3D9 or the Direct3D 11 renderer's PresentDirect3D11), keeping the drawing and presenting times; when the renderer is not ready it draws nothing and marks the pass to wait half the frame's time (RunFramePass)."
+proof = "0x140009baa call [rax+0x258] on the renderer at 0x140c65670 (ready); 0x140009bc2 call [rax+0x268]; 0x140009c48 call [rax+0x60] (slot 0x60 of the class 0x140b55120, which draws the stages); 0x140009c86 call [rax+0x2a0] on the renderer: 0x140274b90 in the class 0x140b60e70 (0x140b61110) and 0x140281a40 in the class 0x140b61270 (0x140b61510); 0x140009cb7 call [rax+0x2a8]; 0x140009c75 add [rdi+0xd8] and 0x140009ca6 add [rdi+0xe0] the counts spent; 0x140009ccf or dword [rdi+0x40], 0x100 when not ready. The renderer is made at 0x140251589 (0x28d0 bytes, the class 0x140b60e70) or 0x14025154f (0x21e0 bytes, the class 0x140b61270) by its type argument, stored at 0x1402515e9. Slot 0x48 of the class 0x140b55120; called by 0x1400094f0 at 0x14000959a."
+grade = "fairly sure"
+gap = "The renderer's slots 0x258, 0x268 and 0x2a8 and the stage drawing are not read; which renderer type the client picks is not read."
+name = "DrawFrame"
+
+["0x140013d00"]
+statement = "The application's update for a frame, given the frame's time in seconds: applies the video settings when they are marked (ApplyVideoSettings), otherwise reads them back from the renderer (ReadBackVideoSettings), then runs the update of each stage in the application's stage list, in order, with the frame's time. The world stage (UpdateWorldStage) is one such stage, and so, once handed over, is the game object (UpdateGame)."
+proof = "Slot 0x58 of the class 0x140b55120 (entry 0x140b55178); 0x140013d29 movaps xmm6, xmm1 (the frame's time); 0x140013dc6 cmp dword [rdi+0x16ac], 0; 0x140013dce call 0x140017900; 0x140013ddc call 0x140017c80; 0x140013e1b mov rbx, [rdi+0x15b0] (the first stage); 0x140013ef1 movaps xmm1, xmm6; 0x140013ef7 call [rax+0x30] (each stage's update); 0x140013f82 mov rbx, [rbx+0x20] (the next stage); 0x140013f89 jne 0x140013e40. A stage is linked by its words at 0x18 and 0x20: 0x140048100 inserts one after another (0x140048168..0x14004817d) and gives it its state at 0x28. Called by 0x1400097d0 at 0x140009af8."
+grade = "fairly sure"
+gap = "The stage-state handling before each update (0x140013e40..0x140013ed8), what puts the world stage in the list, and the calls after the loop (0x140013fa6 onward) are not read."
+name = "UpdateStages"
+
+["0x1400344d0"]
+statement = "The update of the world stage, the stage that makes and owns the game object, given the frame's time: after some per-frame work, while it still owns the game object, has been drawn at least once and the game object is not yet a stage of its own, it runs the game object's update (UpdateGame) with the frame's time; it then checks whether the world is ready and, when it is, hands the game object over as a stage placed after itself and lets it go."
+proof = "Slot 0x30 of the stage class 0x140b55660 (entry 0x140b55690). The game object: 0x1400343a8 mov ecx, 0x8020; 0x1400343bc call to its constructor, which stores the class 0x140b66880 at 0x1403e145f; 0x1400343cf mov [rsi+0x60], rax. Here: 0x1400344f5 movaps xmm7, xmm1; 0x1400346ce cmp dword [rbp+0x50], 0 (handed over); 0x1400346d8 cmp dword [rbp+0x14], 0 (frames drawn, counted at 0x140014287 inc dword [rbx+0x14]); 0x1400346e6 cmp qword [rax+0x18], 0 (not linked as a stage); 0x1400346f6 movaps xmm1, xmm7; 0x140034707 call [rax+0x30] (slot 0x30 of the class 0x140b66880, entry 0x140b668b0: 0x1403e85d0). Hand-over: 0x140034822 call 0x140048100 with (this stage, the game object, 1); 0x140034827 mov dword [rbp+0x50], 1; 0x14003483d mov [rbp+0x60], 0."
+grade = "fairly sure"
+gap = "The per-frame work before the update (0x140034507..0x1400346bc) and the readiness checks (0x140034723..0x140034803) are not read; whether the frame of the hand-over runs the game object's update twice (here, then from the stage list) is not read."
+name = "UpdateWorldStage"
+
+["0x1403e85d0"]
+statement = "The game object's update for a frame, given the frame's time in seconds. Among its work it runs UpdatePlayerMovement once, with the frame's time, after an earlier step succeeds; a failed step ends the update."
+proof = "Slot 0x30 of the game object's class 0x140b66880 (entry 0x140b668b0). 0x1403e8604 movaps xmm9, xmm1; 0x1403e892c call (the earlier step); 0x1403e8933 test eax, eax; 0x1403e8935 js 0x1403e935c; 0x1403e893b movaps xmm1, xmm9; 0x1403e8942 call 0x1403a25c0; 0x1403e894b js 0x1403e935c. No backward jump from after 0x1403e8942 lands before it: the later loops start at 0x1403e8992, 0x1403e89d0 and 0x1403e8b00. Called by 0x1400344d0 at 0x140034707 and, once it is a stage, by 0x140013d00 at 0x140013ef7."
+grade = "fairly sure"
+gap = "The rest of the function, about a thousand instructions, is not read, nor its early returns before 0x1403e892c."
+name = "UpdateGame"
+
+["0x140c3fea0"]
+statement = "The setting video.framerateMax: the most frames a second the client runs, an integer setting with default 120, least 15 and most 180. It holds one value for each of five settings levels, each 120 at start, and is read at the level in use. Its set routine (SetIntSetting) clamps every value to 15..180 (ClampIntSetting) before storing it, and its other writers store the default or a value already held, so no level holds a value outside 15..180. Each pass of the main loop waits out one second divided by it unless vertical sync is on (RunFramePass)."
+proof = "Initializer 0x140939260: 0x140939276 call 0x14019d520 with the registry 0x140c63750 (plus 8) and the name slot 0x140c3fea8; bytes at 0x140c3fea8: 2838ae4001000000, a pointer to 0x140ae3828, the UTF-16 text 'video.framerateMax'; 0x140939293 mov [0x140c3fea0], 0x140b55200 (the integer setting class: slot 1 0x14019acd0 returns 3, slot 3 0x14019b530 parses text and jumps to 0x14001a770, slot 4 0x14001b9f0, slot 5 0x14001ba80, slot 6 0x14019c130); 0x14093929c mov dword [0x140c3fed4], 0xf (least); 0x1409392a6 mov dword [0x140c3fed8], 0xb4 (most); 0x1409392b0 mov dword [0x140c3fedc], 0x78 (default); 0x1409392ba mov dword [0x140c3fee8], 1 (check on); 0x1409392d2..0x1409392fa store 0x78 to 0x140c3fec0, 0x140c3fec4, 0x140c3fec8, 0x140c3fecc and 0x140c3fed0. Bytes at 0x140c3feb0: 01000000 (the setting's top level). 0x14001a770 runs slot 6 when 0x140c3fee8 is set (0x14001a77a, 0x14001a793). 0x14001b9f0 stores the default (0x14001ba05 mov r9d, [rcx+0x3c]) or the value of the level below (0x14001b9fe) from a level upward (0x14001ba39 rep stosd); 0x14001ba80 copies one level's value to the levels above it (0x14001babf rep stosd). Every instruction naming 0x140c3fea0..0x140c3fef0, read from the whole .text disassembly: the initializer, the teardown 0x14094dc00, and the read 0x140009608 mov ecx, [0x140c3feb0] with 0x14000961d mov r8d, [rdx+4*rcx] in 0x1400094f0."
+grade = "fairly sure"
+gap = "A write to the five values through a block copy or a computed pointer is not excluded by the instruction search; what the five levels are and how 0x14019d520 files the setting by name are not read. Setting 200 in the client's settings and reading the value back would settle the clamp in a running client."
+
+["0x140c3b1c0"]
+statement = "The setting video.verticalSync: whether the display mode asks the renderer for vertical sync, a true-or-false setting, false at start in its default and in all five settings levels. When it is true the display mode's vertical sync flag is set (ApplyVideoSettings), the main loop skips its video.framerateMax wait (RunFramePass), and the renderer presents on the display's vertical blank (BuildDirect3D9PresentParameters, CreateTargetSwapChain). A change runs OnVideoSettingChanged, which marks the video settings for applying at the next frame; each frame that applies nothing reads the setting back from the renderer's mode (ReadBackVideoSettings)."
+proof = "Initializer 0x140937120: 0x140937136 call 0x14019d520 with the name slot 0x140c3b1c8; bytes at 0x140c3b1c8: 58e69d4001000000, a pointer to 0x1409de658, the UTF-16 text 'video.verticalSync'; 0x140937153 mov [0x140c3b1c0], 0x140b55238 (the true-or-false setting class); 0x14093715c mov byte [0x140c3b1e7], 0 (default); 0x140937177 mov dword [0x140c3b1e0], 0 and 0x140937181 mov byte [0x140c3b1e4], 0 (the five levels); 0x140937188 mov [0x140c3b1f8], 0x1400163b0 (the change routine). Use: 0x140017bdc..0x140017bec read the level in use; 0x140017bf7 or dword [rsp+0x50], 4; 0x140017c28 mov [rbx+0x70], rsi. Read back: 0x140017f1c mov r8d, [rbx+0x20]; 0x140017f20 shr r8d, 2; 0x140017f34 call 0x14001a6c0 with 0x140c3b1c0. Every other instruction naming it: 0x14094cb20 (teardown) and 0x14000ab9a (a log of the video settings)."
+grade = "sure"
+
+["0x14001a770"]
+statement = "Sets an integer setting at a settings level: when the setting's check flag is on it first passes the value through the setting's check (for video.framerateMax, ClampIntSetting); it stores the value at that level and every level above it, marks that level set and clears the marks above, and when the value at the level in use changed it writes the new value to the setting's mirror, if any, and runs the setting's change routine, if any, with the old value. Returns 1."
+proof = "0x14001a77a cmp dword [rcx+0x48], 0; 0x14001a793 call [rax+0x30] with the value's address; 0x14001a7aa mov r10d, [rbx+4*rax+0x20] (the old value at the level in use, the first word of 0x140c63750); 0x14001a7af cmp rsi, 5; 0x14001a7c8 rep stosd from the level to level 4; 0x14001a7d1..0x14001a7e0 the mask at 0x18: bits below the level kept, the level's bit set; 0x14001a7ea cmp r10d, edx; 0x14001a7f8 mov [rdi], edx (the mirror at 0x40); 0x14001a806 call rdi (the change routine at 0x50) with ecx the old value; 0x14001a808 mov eax, 1. Reached from slot 3 of the integer setting class (0x14019b576 jmp 0x14001a770)."
+grade = "sure"
+name = "SetIntSetting"
+
+["0x14019c130"]
+statement = "The integer setting's check: clamps a value to the setting's least and most, comparing as unsigned numbers, so a negative value becomes the most."
+proof = "0x14019c130 mov r9d, [rdx]; 0x14019c133 mov r8d, [rcx+0x34] (least); 0x14019c137 cmp [rcx+0x38], r9d (most); 0x14019c13b cmovb r9d, [rcx+0x38]; 0x14019c140 cmp r8d, r9d; 0x14019c143 cmovb r8d, r9d; 0x14019c147 mov [rdx], r8d; 0x14019c14a ret. Slot 6 of the integer setting class (bytes at 0x140b55230: 30c1194001000000)."
+grade = "sure"
+name = "ClampIntSetting"
+
+["0x14001a6c0"]
+statement = "Sets a true-or-false setting at a settings level: when the setting's check flag is on it first passes the value through the setting's check; it stores the value at that level and every level above it, marks that level set and clears the marks above, and when the value at the level in use changed it writes the new value to the setting's mirror, if any, and runs the setting's change routine, if any, with the old value. Returns 1."
+proof = "0x14001a6ca cmp dword [rcx+0x30], 0; 0x14001a6e3 call [rax+0x30]; 0x14001a6fb movzx r10d, byte [rax+rbx+0x20] (old value at the level in use); 0x14001a704 cmp rsi, 5; 0x14001a71d rep stosb; 0x14001a726..0x14001a735 the mask at 0x18; 0x14001a740 cmp r10b, dl; 0x14001a74e mov [rdi], dl (the mirror at 0x28); 0x14001a75d call rdi (the change routine at 0x38) with ecx the old value; 0x14001a75f mov eax, 1."
+grade = "sure"
+name = "SetBoolSetting"
+
+["0x1400163b0"]
+statement = "The change routine of video.verticalSync: when the application object exists it marks the video settings to be applied at the next frame (UpdateStages runs ApplyVideoSettings) and logs the video settings."
+proof = "0x1400163b0 mov rax, [0x140c635f0]; 0x1400163ba je 0x1400163cb (no object: return); 0x1400163bc mov dword [rax+0x16ac], 1; 0x1400163c6 jmp 0x14000aae0, which reads the video settings and writes them with the log writer 0x1401a3130 (0x14000ac67). Stored as the change routine of 0x140c3b1c0 at 0x140937188."
+grade = "sure"
+name = "OnVideoSettingChanged"
+
+["0x140017900"]
+statement = "Applies the video settings to the application's display mode: picks the window mode (2, 3 or 4, where 4 is full screen) from two settings, takes the renderer's current mode, sets the size and position, sets the full-screen flag for window mode 4 and the vertical sync flag from video.verticalSync, stores the mode in the application object and marks a window-mode change, which runs at once when the main loop is not running and otherwise on the next loop (ApplyWindowMode). It clears the mark that asked for it."
+proof = "0x14001792b..0x140017966: window mode 2 when the setting at 0x140c3b180 is false, else 3 or 4 by the setting at 0x140c3b140; 0x140017997 call [rax+0x18] on the renderer at 0x140c65670 (its mode, five words); 0x1400179dd..0x140017acc the size and position; 0x140017bdc..0x140017bfc vertical sync: 0x140017bf7 or dword [rsp+0x50], 4; 0x140017c15..0x140017c28 store the five words at 0x50..0x70 of the application object; 0x140017c31 or dword [rbx+0x70], 2 when the window mode is 4, else 0x140017c37 and dword [rbx+0x70], ~2; 0x140017c42 or ecx, 0x40; 0x140017c48 test cl, 4; 0x140017c53 call [rax+0x38] (0x140008dc0) when not running; 0x140017c5a mov dword [rbx+0x16ac], 0. Called by 0x140013d00 at 0x140013dce and at 0x140012a23."
+grade = "fairly sure"
+gap = "Which settings the size and position come from (0x140c3b200, 0x140c3b280, 0x140c3b300, 0x140c3b340, 0x140c66cc0) is not read by name."
+name = "ApplyVideoSettings"
+
+["0x140017c80"]
+statement = "Copies the renderer's current display mode back into the video settings: by window mode it updates the full-screen and size settings, and in every case it sets video.verticalSync from the mode's vertical sync flag. It clears the mark that asks for the settings to be applied."
+proof = "0x140017ca6 call [rax+0x10] on the renderer at 0x140c65670 (its mode); 0x140017ca9 mov r8d, [rdi+0x48]; 0x140017cb0..0x140017cc6 branches for window modes 2, 3 and 4, each reaching 0x140017f0f; 0x140017f16 mov edx, [0x140c3b1d0]; 0x140017f1c mov r8d, [rbx+0x20]; 0x140017f20 shr r8d, 2; 0x140017f2b and r8b, 1; 0x140017f34 call 0x14001a6c0 with 0x140c3b1c0; 0x140017f39 mov dword [rdi+0x16ac], 0. Called by 0x140013d00 at 0x140013ddc when nothing is marked."
+grade = "fairly sure"
+gap = "The per-mode branches (0x140017ccc..0x140017f0a) are read only for their calls of 0x14001a6c0 and 0x14001a8d0; which settings they write is not named."
+name = "ReadBackVideoSettings"
+
+["0x140008dc0"]
+statement = "Applies a pending window-mode change: changes the window's style, placement and cursor clip for the new window mode and hands the application's display mode (size, window, and the flags that carry full screen and vertical sync) to the renderer's set-mode. It returns at once, changing nothing, when the renderer reports it cannot change mode now."
+proof = "0x140008dea call [rax+0x260] on the renderer at 0x140c65670; nonzero -> 0x140008df4 mov eax, 1; 0x140008e11 and eax, ~0x40 (the pending mark); 0x140008e4f GetWindowPlacement (0x140959730); 0x14000904c SetWindowLongW (0x140959790) with -16; 0x140009078 SetWindowPos; 0x1400090ae SetWindowPlacement; 0x14000913d..0x14000914e the width, height and window at 0x50, 0x54 and 0x68; 0x14000914a lea rdx, [rdi+0x50]; 0x14000915c call [rax+0x28] (the renderer's set-mode: 0x14026d0a0 in the class 0x140b60e70, 0x140276bb0 in the class 0x140b61270). Slot 0x38 of the class 0x140b55120; called by 0x140008bc0 at 0x140008cd3 and by 0x140017900 at 0x140017c53."
+grade = "fairly sure"
+gap = "The styles per window mode, the display-settings change, the failure path from 0x140009169 and what the renderer's slot 0x260 tests are not read."
+name = "ApplyWindowMode"
+
+["0x14018ccf0"]
+statement = "Reads the performance counter's frequency (counts a second) and sets the counts a millisecond, rounded to the nearest, which turn the counter into the client's millisecond clock."
+proof = "0x14018ccf4 lea rcx, [0x140c636b8]; 0x14018ccfb call [0x140959668] (QueryPerformanceFrequency); 0x14018cd19 mov [0x140c88490], rcx; 0x14018cd12 lea r8, [rcx+0x1f4]; 0x14018cd08 mov rax, 0x624dd2f1a9fbe77; 0x14018cd20 mul r8; 0x14018cd23..0x14018cd2c sub, shr, add, shr 9 (a division by 1000, checked for 200,000 random 64-bit values); 0x14018cd30 mov [0x140c636b0], r8; 0x14018cd37 mov [0x140c88498], r8. Called at 0x14018cc6d and at 0x14018cdc7, after each second of counting."
+grade = "sure"
+name = "ReadCounterFrequency"
+
+["0x140274b90"]
+statement = "The Direct3D 9 renderer's present: for each of its four targets in use it ends the scene, presents (PresentEx on a Direct3D 9Ex device, else Present; a target with its own swap chain presents that), and on a 9Ex device whose present parameters asked for it (ResetDirect3D9Device) waits for the display's vertical blank, then begins the next scene. A failed PresentEx stops the wait."
+proof = "Slot 0x2a0 of the class 0x140b60e70 (entry 0x140b61110). Per target, type 0 at 0x1d68: 0x140274c0a call [rax+0x150] (method 42, EndScene); 0x140274c31 call [rax+0x18] on the target's swap chain (method 3, IDirect3DSwapChain9::Present); 0x140274c4f call [rax+0x3c8] on the 9Ex device at 0x19d8 (method 121, PresentEx); 0x140274c57 js / 0x140274c59 cmp eax, 0x8760878 -> 0x140274c60 mov dword [rdi+0x19e4], 0; 0x140274c67 cmp dword [rdi+0x19e4], 0; 0x140274c70 cmp dword [rdi+0x19ec], 0; 0x140274c80 xor edx, edx; 0x140274c85 call [rax+0x3e0] (method 124, WaitForVBlank, swap chain 0); 0x140274c9c call [rax+0x88] on the device at 0x19d0 (method 17, Present); 0x140274cb7 call [rax+0x148] (method 41, BeginScene). 0x19ec is set by 0x14026a2d0 at 0x14026a41a."
+grade = "fairly sure"
+gap = "The method names are from the Windows SDK's IDirect3DDevice9Ex and IDirect3DSwapChain9 layouts, not from the client; the status 0x08760878 is not named; that Present and WaitForVBlank block until the vertical blank is Direct3D's behaviour, not the client's."
+name = "PresentDirect3D9"
+
+["0x14026a150"]
+statement = "Fills Direct3D 9 present parameters from a display mode: size, format, window and full screen or windowed, and the presentation interval: the default interval, which presents on the vertical blank, when the mode's vertical sync flag is set and the window belongs to the calling thread; otherwise immediate, with no wait."
+proof = "0x14026a179 call [0x140959860] (GetWindowThreadProcessId) on the mode's window at 0x18; 0x14026a18a cmp with the current thread's id; 0x14026a191 setne r8b (another thread); 0x14026a195 test cl, 2 (full screen); 0x14026a1c4 test cl, 4 (vertical sync); 0x14026a1cc mov r8d, 1 when it is set and the thread is the same; 0x14026a2a3 mov eax, 0x80000000; 0x14026a2b0 cmovne eax, r9d (0); 0x14026a2b4 mov [rbx+0x3c], eax (PresentationInterval). Called at 0x14026d365, in the Direct3D 9 renderer's set-mode 0x14026d0a0, whose parameters 0x14026a2d0 then uses (0x14026d46d), and at 0x1402896b0."
+grade = "fairly sure"
+gap = "The parameter layout and the values D3DPRESENT_INTERVAL_DEFAULT (0) and D3DPRESENT_INTERVAL_IMMEDIATE (0x80000000) are from the Windows SDK; that the default interval holds the frame rate to the display's refresh is Direct3D's behaviour, not the client's."
+name = "BuildDirect3D9PresentParameters"
+
+["0x14026a2d0"]
+statement = "Resets the Direct3D 9 device with present parameters filled by BuildDirect3D9PresentParameters. On a Direct3D 9Ex device, when windowed with the default interval and VerticalSyncByWaitForVBlank says so, it presents immediately instead and marks the device to wait for the vertical blank after each present (PresentDirect3D9)."
+proof = "0x14026a2fc..0x14026a32e copy the 0x40-byte parameters; 0x14026a333 cmp qword [rbx+0x19c8], 0 (the 9Ex object); 0x14026a33c cmp dword [rsp+0x48], 0 (Windowed); 0x14026a342 cmp dword [rsp+0x5c], 0 (PresentationInterval default); 0x14026a34e call 0x1402649d0; 0x14026a357 mov dword [rsp+0x5c], 0x80000000; 0x14026a35f lea ebp, [rsi+1]; 0x14026a37c call [rax+0x420] (method 132, ResetEx); 0x14026a41a mov [rbx+0x19ec], ebp."
+grade = "fairly sure"
+gap = "The plain Direct3D 9 path (0x14026a38b onward) and the call 0x14026a2ef are not read; method names are from the Windows SDK."
+name = "ResetDirect3D9Device"
+
+["0x1402649d0"]
+statement = "Tells whether vertical sync is to be done by waiting for the vertical blank after an immediate present, rather than by the present itself: true only when the display mode's vertical sync flag is set, a Windows version test passes and desktop composition is enabled (DwmIsCompositionEnabled, looked up once in dwmapi.dll)."
+proof = "0x1402649d4 test cl, 4 -> false when clear; 0x140264a08 call 0x140193b70 with 6 (kept at 0x140c8e0ec); 0x140264a1f call 0x140193c40, nonzero -> the cached lookup; bytes at 0x140ae4c48: the UTF-16 text 'dwmapi.dll'; 0x140264a43 call [0x140959188] (GetProcAddress) with 'DwmIsCompositionEnabled' (0x140ae4878); 0x140264a84 call rax with a result word; 0x140264a8e cmovs (a failure gives false)."
+grade = "fairly sure"
+gap = "0x140193b70 (taken as a Windows version check, 6 = Vista), 0x140193c40 and 0x140193770 (the library load) are not read."
+name = "VerticalSyncByWaitForVBlank"
+
+["0x14029d910"]
+statement = "Creates a Direct3D 11 target's swap chain for its window and picks the target's present sync interval: 1 (present on the next vertical blank) when the display mode's vertical sync flag is set, otherwise 0 (no wait). For a windowed target with vertical sync where VerticalSyncByWaitForVBlank says so, the interval is 0 and the target instead waits for the vertical blank after presenting (PresentDirect3D11Target)."
+proof = "0x14029dad8 call [r10+0x78] on the factory at 0x1888 (method 15, IDXGIFactory2::CreateSwapChainForHwnd) with the window at 0x30, result at 0x60; 0x14029dae0 test byte [rdi+0x38], 4; 0x14029dae6 mov qword [rdi+0x94], 1; 0x14029daf3 mov [rdi+0x94], rsi (0). Second path: 0x14029db42 call [r10+0x78]; 0x14029db51 test al, 4; 0x14029db55 test al, 2; 0x14029db63 call 0x1402649d0; 0x14029db73 mov [rdi+0x94], esi (0); 0x14029db79 mov dword [rdi+0x98], 1; 0x14029db97 mov qword [rdi+0x94], 1; 0x14029dbaf mov [rdi+0x94], rsi. The mode's flags word is the fifth of the five mode words stored at 0x18..0x38 of the target (0x14029d1b8, 0x14029d415)."
+grade = "fairly sure"
+gap = "The rest of the function (buffer count, swap effect, the full-screen description) is not read; the method name is from the Windows SDK."
+name = "CreateTargetSwapChain"
+
+["0x14029e260"]
+statement = "Presents one Direct3D 11 target: Present with the target's sync interval and no flags. An occluded result counts as not presented and a failure marks the device lost. After a present, a target that syncs by waiting (CreateTargetSwapChain) waits for the display output's vertical blank."
+proof = "0x14029e269 mov rcx, [rcx+0x58] (the swap chain); 0x14029e275 mov edx, [rbx+0x94] (sync interval); 0x14029e27b xor r8d, r8d; 0x14029e27e call [rax+0x40] (method 8, IDXGISwapChain::Present); 0x14029e287 cmp eax, 0x87a0001 (DXGI_STATUS_OCCLUDED); 0x14029e29b mov dword [rax+0x186c], 1 on failure; 0x14029e2ab cmp dword [rbx+0x98], 0; 0x14029e2b8 mov rcx, [rax+0x18b0] (the output; 0x14027ab19 calls its method 8, GetDisplayModeList, with format 0x1c); 0x14029e2c7 jmp [rax+0x50] (method 10, IDXGIOutput::WaitForVBlank). Called by 0x1402adb40 at 0x1402adbbb."
+grade = "fairly sure"
+gap = "Method names and status values are from the Windows SDK; that Present with interval 1 and WaitForVBlank block until the vertical blank is DXGI's behaviour, not the client's."
+name = "PresentDirect3D11Target"
+
+["0x1402adb40"]
+statement = "Presents the Direct3D 11 renderer's targets: of four target places, each of kind 0 presents its target, or the renderer's main target when it has none (PresentDirect3D11Target); places of kinds 1 to 3 are only flagged."
+proof = "0x1402adb57 mov esi, 4; 0x1402adb61 mov eax, [rdi-0x8] (kind); 0x1402adb66 je 0x1402adb9c (kind 0); 0x1402adba9 mov rcx, [rdi]; 0x1402adbb4 mov rcx, [rax+0x2188] when none; 0x1402adbbb call 0x14029e260; 0x1402adb7c and 0x1402adb90 set a flag for kinds 1 to 3; 0x1402adbc6 add rdi, 0x18; 0x1402adbcd jne 0x1402adb61."
+grade = "sure"
+name = "PresentDirect3D11Targets"
+
+["0x140281a40"]
+statement = "The Direct3D 11 renderer's present: presents its targets (PresentDirect3D11Targets), then flags the current target object by its kind."
+proof = "Slot 0x2a0 of the class 0x140b61270 (entry 0x140b61510). 0x140281a49 mov rcx, [rcx+0x2190]; 0x140281a50 call 0x1402adb40; 0x140281a5c mov ecx, [rdx+0x8]; 0x140281a74 and 0x140281a8d set flags at 0xb8 or 0x158 of the object at 0x10."
+grade = "sure"
+name = "PresentDirect3D11"
 
 # Servers and connections
 
