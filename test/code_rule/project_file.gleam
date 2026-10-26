@@ -37,7 +37,15 @@ pub fn listings(
   project_file project_file: String,
   key key: String,
 ) -> List(#(String, String)) {
-  todo as "read each module and its reason"
+  list.map(entries(project_file, key), fn(entry) {
+    let assert Ok(table) = tom.as_table(entry)
+      as { "an entry of " <> key <> " is not a table" }
+    let assert Ok(module) = tom.get_string(table, ["module"])
+      as { "an entry of " <> key <> " has no module" }
+    let assert Ok(reason) = tom.get_string(table, ["reason"])
+      as { "an entry of " <> key <> " has no reason" }
+    #(module, reason)
+  })
 }
 
 fn entries(project_file: String, key: String) -> List(tom.Toml) {
