@@ -12,6 +12,11 @@
 #   format         gleam format --check src test dev
 #   gleam-build    gleam build --warnings-as-errors
 #   glinter        gleam run -m glinter                 (after gleam-build)
+#   generated-tables  gleam run -m genesis_prime/table_generator check
+#                  regenerates src/genesis_prime/table* from the client's
+#                  game tables in $GENESIS_TABLE_DIR (setup_check/extract_tables.py
+#                  fills it) and compares; skipped where GENESIS_NO_CLIENT=1
+#                                                       (after gleam-build)
 #   gleam-test     gleam test                           (after gleam-build)
 #   message-codec  gleam run -m genesis_prime/generate_messages -- check
 #                  the committed message codec equals what the schema
@@ -56,7 +61,7 @@ fi
 started=$(date +%s)
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
-parts="format gleam-build glinter gleam-test message-codec migrations squirrel client-suite setup-suite fact-checker"
+parts="format gleam-build glinter generated-tables gleam-test message-codec migrations squirrel client-suite setup-suite fact-checker"
 
 cleanup() {
   if [ -f "$work/database_created" ]; then
@@ -126,6 +131,7 @@ squirrel_check() {
 gleam_chain() {
   if step gleam-build gleam build --warnings-as-errors; then
     step glinter gleam run -m glinter
+    step generated-tables gleam run -m genesis_prime/table_generator check
     step gleam-test gleam test
     step message-codec gleam run -m genesis_prime/generate_messages -- check
   fi
@@ -167,14 +173,14 @@ failed_names=""
 for part in $parts; do
   if [ -f "$work/$part.status" ]; then
     if [ "$(cat "$work/$part.status")" = 0 ]; then
-      printf '  %-13s ok      %ss\n' "$part" "$(cat "$work/$part.seconds")"
+      printf '  %-16s ok      %ss\n' "$part" "$(cat "$work/$part.seconds")"
     else
-      printf '  %-13s FAILED  %ss\n' "$part" "$(cat "$work/$part.seconds")"
+      printf '  %-16s FAILED  %ss\n' "$part" "$(cat "$work/$part.seconds")"
       failed="$failed $part"
       failed_names="${failed_names:+$failed_names, }$part"
     fi
   else
-    printf '  %-13s not run (a part it needs failed)\n' "$part"
+    printf '  %-16s not run (a part it needs failed)\n' "$part"
   fi
 done
 
