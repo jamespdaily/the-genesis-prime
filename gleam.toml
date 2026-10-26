@@ -2,6 +2,7 @@ name = "genesis_prime"
 version = "0.1.0"
 gleam = ">= 1.19.2 and < 2.0.0"
 description = "A server for WildStar that the original client connects to and plays on."
+licences = ["Apache-2.0"]
 repository = { type = "github", user = "jamespdaily", repo = "the-genesis-prime" }
 
 [dependencies]
@@ -45,3 +46,7 @@ effectful_modules = [
 pure_erlang = []
 # Modules that may make an atom from a string or read a term from bytes.
 atom_or_term = []
+
+# The licences a package may carry; a package with none of them fails the check.
+[tools.licences]
+accepted = ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC"]

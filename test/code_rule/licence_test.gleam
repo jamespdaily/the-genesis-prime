@@ -37,8 +37,13 @@ fn read(path: String) -> String {
 
 pub fn the_licence_file_is_the_apache_licence_2_0_text_test() -> Nil {
   use <- owned_test.run(5000)
-  let text = string.trim(read("LICENSE"))
-  let lines = string.split(text, "\n")
+  let lines =
+    string.split(read("LICENSE"), "\n")
+    |> list.drop_while(fn(line) { line == "" })
+    |> list.reverse
+    |> list.drop_while(fn(line) { line == "" })
+    |> list.reverse
+  let text = string.join(lines, "\n")
   assert list.first(lines)
     == Ok("                                 Apache License")
   assert list.take(list.drop(lines, 1), 3)
