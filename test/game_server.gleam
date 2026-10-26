@@ -144,6 +144,16 @@ pub fn start(
   database database: template_database.Database,
   answer_deadline_ms answer_deadline_ms: Int,
 ) -> Running {
+  start_with(database:, answer_deadline_ms:, change: fn(settings) { settings })
+}
+
+/// Starts the server as `start` does, with the game's settings changed by
+/// `change` first, such as the deadlines of a second login.
+pub fn start_with(
+  database database: template_database.Database,
+  answer_deadline_ms answer_deadline_ms: Int,
+  change change: fn(game_service.Settings) -> game_service.Settings,
+) -> Running {
   let facts = facts()
   let pool_settings =
     template_database.pool_settings(
@@ -168,16 +178,21 @@ pub fn start(
         expected_files_digest: None,
       ),
     )
+  // Only the world the tests play in has a map's names: every world of the
+  // client's table would make thousands of names in each test's server.
   let game =
-    game_service.Settings(
-      ..defaults.game,
-      opened: fn(port) { process.send(ports, #("game", port)) },
-      realm_id:,
-      start: fn(_tables, _row) { Ok(start_place(world_id: facts.world_id)) },
-      customisation: customisation.of,
-      character_slots: character_slots.hybrid,
-      clock: fn() { server_time },
-      answer_deadline_ms:,
+    change(
+      game_service.Settings(
+        ..defaults.game,
+        opened: fn(port) { process.send(ports, #("game", port)) },
+        realm_id:,
+        start: fn(_tables, _row) { Ok(start_place(world_id: facts.world_id)) },
+        customisation: customisation.of,
+        character_slots: character_slots.hybrid,
+        clock: fn() { server_time },
+        answer_deadline_ms:,
+        worlds: fn(_tables) { [facts.world_id] },
+      ),
     )
   let assert Ok(_) =
     server.start(

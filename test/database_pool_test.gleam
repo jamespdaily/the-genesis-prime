@@ -338,3 +338,13 @@ pub fn the_pools_connections_stop_a_statement_before_the_game_workers_deadline_t
   assert pool.statement_timeout_ms < game_service.answer_deadline_ms
     as "the pool's limit is below the workers' deadline"
 }
+
+pub fn the_wait_for_a_connection_the_statement_limit_and_the_margin_end_before_the_workers_deadline_test() -> Nil {
+  assert pool.checkout_wait_bound_ms
+    + pool.statement_timeout_ms
+    + pool.margin_ms
+    < game_service.answer_deadline_ms
+    as "a write that was reported failed has committed nothing: a worker is killed at its deadline, so the longest a write can wait for a connection and then run must end, with a margin, before it"
+  assert pool.checkout_wait_bound_ms == 3 * pool.queue_interval_ms
+    as "pgo_pool.erl: a request that waits in a pool whose connections are all held is refused at the third poll after it arrived, so at most 3 queue intervals"
+}

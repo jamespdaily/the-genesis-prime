@@ -26,6 +26,12 @@ import supervisor_flags
 const event_wait_ms = 5000
 
 fn start_maps() -> #(maps.Settings, Pid) {
+  let #(settings, subtree, _names) = start_maps_with_names()
+  #(settings, subtree)
+}
+
+/// The maps, started for worlds 7 and 8, with the names they were given.
+fn start_maps_with_names() -> #(maps.Settings, Pid, maps.Names) {
   let settings =
     maps.Settings(
       registry: process.new_name("maps"),
@@ -33,18 +39,16 @@ fn start_maps() -> #(maps.Settings, Pid) {
       snapshot: map_support.start_snapshot(),
       heap_limits: map_support.no_limits(),
     )
+  let names = maps.new_names(worlds: [7, 8])
   let assert Ok(started) =
     static_supervisor.new(static_supervisor.OneForOne)
     |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
-    |> static_supervisor.add(maps.supervised(
-      settings:,
-      names: maps.new_names(worlds: [7, 8]),
-    ))
+    |> static_supervisor.add(maps.supervised(settings:, names:))
     |> static_supervisor.start
     as "the maps did not start"
   let assert [subtree] = supervisor_children.in_start_order(started.pid)
     as "the maps' subtree is one child"
-  #(settings, subtree)
+  #(settings, subtree, names)
 }
 
 fn entered(
@@ -403,4 +407,138 @@ pub fn a_character_on_a_map_of_any_world_is_found_by_its_id_test() -> Nil {
     )
     == None
     as "a registry that is away holds no character the caller knows of"
+}
+
+/// Waits until the process is down, which is at once for one that is.
+fn went_down(pid: Pid) -> Bool {
+  let monitor = process.monitor(pid)
+  process.new_selector()
+  |> process.select_specific_monitor(monitor, fn(_down) { True })
+  |> process.selector_receive(within: event_wait_ms)
+  == Ok(True)
+}
+
+/// The pid the name is registered to once it is not `old`. A restarted
+/// process registers its name as it starts, and nothing announces that, so the
+/// name is looked up until it names a new process, for at most `event_wait_ms`.
+fn wait_for_a_new_process(
+  name: process.Name(message),
+  old: Pid,
+) -> Result(Pid, Nil) {
+  let expired = process.new_subject()
+  let _timer = process.send_after(expired, event_wait_ms, Nil)
+  look_for_a_new_process(name:, old:, expired:)
+}
+
+fn look_for_a_new_process(
+  name name: process.Name(message),
+  old old: Pid,
+  expired expired: process.Subject(Nil),
+) -> Result(Pid, Nil) {
+  case process.named(name), process.receive(expired, 0) {
+    Ok(pid), _ if pid != old -> Ok(pid)
+    _, Error(Nil) -> look_for_a_new_process(name:, old:, expired:)
+    _, Ok(Nil) -> Error(Nil)
+  }
+}
+
+pub fn a_registry_that_starts_again_gives_every_world_the_names_it_had_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(settings, _) = start_maps()
+  let assert Ok(_) = enter(settings:, world_id: 7, character_id: 11)
+    as "the character entered"
+  let names_before = names_of(processes_of_the_only_map(settings))
+  let assert Ok(registry) = process.named(settings.registry)
+    as "the registry is registered under its name"
+  let assert Ok(factory) = process.named(settings.factory)
+    as "the factory supervisor is registered under its name"
+  process.kill(registry)
+  let assert Ok(_) = wait_for_a_new_process(settings.factory, factory)
+    as "the maps' subtree started the registry and then the factory again: rest for one"
+  let assert Ok(_) = enter(settings:, world_id: 7, character_id: 12)
+    as "the next entry started the world's map again"
+  assert names_of(processes_of_the_only_map(settings)) == names_before
+    as "designing-processes: names are start arguments made once, so a registry that starts again makes no new atoms: the names are the ones the tree was started with"
+}
+
+/// A process that holds the name of a world's map, as a map that is going down
+/// holds it until it is gone. It ends when it is sent the subject it reports.
+fn holding_the_name_of_the_map(
+  name: process.Name(world_map_process.Message),
+) -> process.Subject(Nil) {
+  let ready = process.new_subject()
+  process.spawn(fn() {
+    let assert Ok(Nil) = process.register(process.self(), name)
+      as "the name of the map is free"
+    let release = process.new_subject()
+    process.send(ready, release)
+    let assert Ok(Nil) = process.receive(release, 30_000)
+      as "the test let the name go"
+    Nil
+  })
+  let assert Ok(release) = process.receive(ready, event_wait_ms)
+    as "the process holds the name"
+  release
+}
+
+/// A map whose supervisor has ended, and a process that still holds the name
+/// of the map's process, as the map would while it goes down. Returns the
+/// settings, and what lets the name go.
+fn with_the_name_of_an_ended_map_still_held() -> #(
+  maps.Settings,
+  process.Subject(Nil),
+) {
+  let #(settings, _, names) = start_maps_with_names()
+  let assert Ok(_) = enter(settings:, world_id: 7, character_id: 11)
+    as "the character entered"
+  let assert Ok(name) = maps.map_name(names:, world_id: 7)
+    as "world 7 has names"
+  let old_map = the_map_process(settings)
+  let assert Ok(factory) = process.named(settings.factory)
+    as "the factory supervisor is registered under its name"
+  let assert [map_subtree] = supervisor_children.in_start_order(factory)
+    as "the world has one map subtree"
+  process.kill(map_subtree)
+  assert went_down(map_subtree) && went_down(old_map)
+    as "the map's subtree and its process ended"
+  #(settings, holding_the_name_of_the_map(name))
+}
+
+pub fn a_map_that_starts_while_the_old_one_still_holds_the_names_waits_for_the_old_one_to_end_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(settings, release) = with_the_name_of_an_ended_map_still_held()
+  let answered = process.new_subject()
+  process.spawn(fn() {
+    process.send(answered, enter(settings:, world_id: 7, character_id: 12))
+  })
+  assert process.receive(answered, 300) == Error(Nil)
+    as "the registry waits for the old map to end instead of starting a map that cannot register its name"
+  process.send(release, Nil)
+  let assert Ok(Ok(unit)) = process.receive(answered, event_wait_ms)
+    as "once the old one is down the next map started, within the entry's deadline"
+  assert unit.id == 1 && unit.character_id == 12
+    as "a map that is started again starts empty"
+}
+
+pub fn an_old_map_that_never_ends_leaves_the_entry_an_answer_at_its_deadline_and_the_registry_free_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let #(settings, release) = with_the_name_of_an_ended_map_still_held()
+  let started = clock.monotonic_milliseconds()
+  let result =
+    maps.enter(
+      registry: settings.registry,
+      world_id: 7,
+      newcomer: map_support.newcomer(character_id: 12, x: 0.0),
+      connection: process.new_subject(),
+      within_ms: 600,
+    )
+  let elapsed = clock.monotonic_milliseconds() - started
+  let assert Error(_) = result
+    as "the old map did not end, so no map started: an answer and not a crash"
+  assert elapsed >= 500 && elapsed < 1500
+    as "designing-processes: the wait for the old map is under the entry's one deadline, not for ever and not given up at once"
+  process.send(release, Nil)
+  let assert Ok(unit) = enter(settings:, world_id: 7, character_id: 13)
+    as "the registry is free again and starts the map once the old one is gone"
+  assert unit.id == 1
 }

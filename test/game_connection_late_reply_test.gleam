@@ -69,9 +69,14 @@ fn services() -> game_connection.Services {
   )
 }
 
-fn is_about_a_late_reply(event: log_capture.Event) -> Bool {
-  string.contains(event.text, "late reply")
-  || string.contains(event.text, "discarding unexpected message")
+/// Whether the line is the late reply of the connection with this peer
+/// address: tests run beside each other, and a line another connection logs
+/// about its own late reply is not this test's.
+fn is_about_a_late_reply_of(peer: String) -> fn(log_capture.Event) -> Bool {
+  fn(event: log_capture.Event) {
+    string.contains(event.text, "late reply")
+    && dict.get(event.metadata, "peer") == Ok(log_capture.Text(peer))
+  }
 }
 
 pub fn a_reply_that_arrives_after_its_deadline_is_logged_by_the_connection_through_the_telemetry_module_test() -> Nil {
@@ -94,15 +99,13 @@ pub fn a_reply_that_arrives_after_its_deadline_is_logged_by_the_connection_throu
     log_capture.next_matching(
       capture:,
       within: wait_ms,
-      matching: is_about_a_late_reply,
+      matching: is_about_a_late_reply_of(tcp_client.own_address(game.socket)),
     )
-    as "the late reply is logged"
+    as "the late reply is logged, with the peer of this test's own connection"
   assert line.level == "warning" && string.contains(line.text, "late reply")
     as "a reply that came after its wait is an outside failure the server recovered from: a warning, written by the connection and not by the actor library that would discard it"
   assert dict.get(line.metadata, "process")
     == Ok(log_capture.Text("game_connection"))
     as "designing-processes: every line carries who and where as metadata"
-  assert dict.has_key(line.metadata, "peer")
-    as "the line says whose connection it is"
   tcp_client.close(game.socket)
 }

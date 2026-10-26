@@ -18,6 +18,8 @@ import genesis_prime/character/character.{
 }
 import genesis_prime/character/select.{Inserted}
 import genesis_prime/character/store
+import genesis_prime/game/service as game_service
+import genesis_prime/game/sessions
 import genesis_prime/login/account.{type Account}
 import genesis_prime/login/account_store
 import genesis_prime/login/handoff
@@ -30,9 +32,15 @@ import genesis_prime/message/create_character_result
 import genesis_prime/message/disconnect_notice
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused
-import gleam/erlang/process
+import gleam/dict
+import gleam/erlang/process.{type Pid}
 import gleam/list
+import gleam/string
+import log_capture
+import map_support
 import owned_test
+import supervisor_children
+import tcp_client
 import template_database
 import unitest
 
@@ -249,4 +257,179 @@ pub fn a_character_of_the_account_still_on_the_map_is_listed_as_pending_removal_
     as "0xDC decodes"
   assert created_message.result == 44
     as "PreGameLib.CodeEnumCharacterModifyResults: 44 is CreateFailed_CharacterOnline"
+}
+
+/// The process of the only map the server runs: the last child of the map's
+/// supervisor, which the factory runs.
+fn the_map_process(running: game_server.Running) -> Pid {
+  let assert Ok(factory) = process.named(running.game.maps.factory)
+    as "the factory supervisor is registered under its name"
+  let assert [map_subtree] = supervisor_children.in_start_order(factory)
+    as "the world has one map subtree"
+  let assert Ok(map) =
+    list.last(supervisor_children.in_start_order(map_subtree))
+    as "a map's supervisor runs the map process after its senders"
+  map
+}
+
+/// The server's settings with the three deadlines of a second login, in
+/// milliseconds.
+fn with_deadlines(
+  leave leave: Int,
+  eviction eviction: Int,
+  claim claim: Int,
+) -> fn(game_service.Settings) -> game_service.Settings {
+  fn(settings) {
+    game_service.Settings(
+      ..settings,
+      leave_deadline_ms: leave,
+      eviction_deadline_ms: eviction,
+      claim_deadline_ms: claim,
+    )
+  }
+}
+
+/// The first connection of the account is in the world, and the map that holds
+/// its unit does not run, so it cannot answer the leave of the first connection.
+/// Returns the first connection, the map's process and the character.
+fn in_the_world_with_a_map_that_does_not_run(
+  running running: game_server.Running,
+  account account: Account,
+  character character: Character,
+) -> #(Game, Pid) {
+  let first = signed_in(running:, account:)
+  assert listed(game: first).characters != []
+    as "the first connection lists the account's character"
+  play(game: first, character:)
+  let assert [_, _, _, _] = game_client.read(game: first, count: 4)
+    as "the first connection entered the world: 0xAD, 0x262, 0x19B and 0xF1"
+  let map = the_map_process(running)
+  map_support.suspend(map)
+  #(first, map)
+}
+
+pub fn a_map_that_does_not_answer_the_leave_does_not_stop_the_second_login_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
+  use database <- template_database.run
+  let running =
+    game_server.start_with(
+      database:,
+      answer_deadline_ms: 5000,
+      change: with_deadlines(leave: 300, eviction: 900, claim: 3000),
+    )
+  let account = account_of(database:, name: "jim")
+  let character =
+    saved_character(database:, running:, account:, name: "Zed Mara")
+  let #(first, map) =
+    in_the_world_with_a_map_that_does_not_run(running:, account:, character:)
+
+  let second = signed_in(running:, account:)
+  let assert [notice] = game_client.read(game: first, count: 1)
+    as "the first connection is told it is disconnected although the map did not answer its leave"
+  assert notice.message_id == 0x036A
+    as "opcode.0x36a: a connection that could not leave the map in its deadline still tells the player and ends"
+  assert game_client.closed(first)
+    as "the first connection ends within the leave deadline, not at the shared answer deadline of 5 seconds"
+  assert list.map(listed(game: second).characters, fn(entry) {
+      entry.character_id
+    })
+    == [character.id]
+    as "the new login is answered with the list: a slow map does not end both connections"
+  map_support.resume(map)
+  play(game: second, character:)
+  let assert [entered, ..] = game_client.read(game: second, count: 4)
+    as "the new connection plays the character once the map answers: the map took the old unit off when it handled the old connection's end"
+  assert entered.message_id == 0x00AD
+    as "opcode.0xad: the world is loaded, not refused with 0x162 for a character that is on the map"
+}
+
+pub fn a_connection_that_is_still_leaving_at_the_eviction_deadline_is_killed_and_the_second_login_goes_on_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
+  use database <- template_database.run
+  // The leave deadline is longer than the eviction deadline here, the other way
+  // round from the server's own, so the first connection is still waiting for
+  // the map when the registry kills it.
+  let running =
+    game_server.start_with(
+      database:,
+      answer_deadline_ms: 5000,
+      change: with_deadlines(leave: 4000, eviction: 300, claim: 3000),
+    )
+  let account = account_of(database:, name: "jim")
+  let character =
+    saved_character(database:, running:, account:, name: "Zed Mara")
+  let #(first, map) =
+    in_the_world_with_a_map_that_does_not_run(running:, account:, character:)
+
+  let second = signed_in(running:, account:)
+  assert game_client.closed(first)
+    as "the registry killed the first connection at the eviction deadline, so its socket closed"
+  assert list.map(listed(game: second).characters, fn(entry) {
+      entry.character_id
+    })
+    == [character.id]
+    as "the new login is answered with the list once the old connection is dead"
+  map_support.resume(map)
+  play(game: second, character:)
+  let assert [entered, ..] = game_client.read(game: second, count: 4)
+    as "the map took the killed connection's unit off when it saw the connection go down"
+  assert entered.message_id == 0x00AD
+    as "opcode.0xad: the world is loaded for the new connection"
+}
+
+/// The pid the name is registered to once it is not `old`. The restarted
+/// registry registers its name as it starts, and nothing announces that, so the
+/// name is looked up until it names a new process, for at most `wait_ms`.
+fn wait_for_a_new_registry(
+  name: process.Name(sessions.Message),
+  old: Pid,
+) -> Result(Pid, Nil) {
+  let expired = process.new_subject()
+  let _timer = process.send_after(expired, wait_ms, Nil)
+  look_for_a_new_registry(name:, old:, expired:)
+}
+
+fn look_for_a_new_registry(
+  name name: process.Name(sessions.Message),
+  old old: Pid,
+  expired expired: process.Subject(Nil),
+) -> Result(Pid, Nil) {
+  case process.named(name), process.receive(expired, 0) {
+    Ok(pid), _ if pid != old -> Ok(pid)
+    _, Error(Nil) -> look_for_a_new_registry(name:, old:, expired:)
+    _, Ok(Nil) -> Error(Nil)
+  }
+}
+
+pub fn a_registry_that_starts_again_ends_the_connections_that_held_slots_and_logs_a_warning_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
+  use database <- template_database.run
+  let capture = log_capture.start()
+  let running = game_server.start(database:, answer_deadline_ms: 5000)
+  let account = account_of(database:, name: "jim")
+  let first = signed_in(running:, account:)
+  assert listed(game: first).characters == []
+    as "the first connection holds the account's slot"
+  let peer = tcp_client.own_address(first.socket)
+  let assert Ok(old) = process.named(running.game.sessions)
+    as "the sessions' registry is registered"
+  process.kill(old)
+  assert game_client.closed(first)
+    as "a registry that starts again forgets its holders, so the connections it held end: the second login of the account could not find them"
+  let assert Ok(line) =
+    log_capture.next_matching(capture:, within: wait_ms, matching: fn(event) {
+      dict.get(event.metadata, "peer") == Ok(log_capture.Text(peer))
+      && string.contains(event.text, "sessions")
+    })
+    as "the end is logged by the connection"
+  assert line.level == "warning"
+    as "designing-processes: an outside failure the server recovered from is a warning; a map that ended is logged the same way"
+  let assert Ok(_) = wait_for_a_new_registry(running.game.sessions, old)
+    as "the game subtree started the registry again"
+  let second = signed_in(running:, account:)
+  assert listed(game: second).characters == []
+    as "the new registry takes the next login of the account"
 }
