@@ -36,10 +36,11 @@ pub fn main() -> Nil {
     print(
       prototype,
       run.run(
-        prototype,
-        Workload(..workload.default(), players: 20, creatures: 200),
-        cores,
-        timing,
+        prototype:,
+        workload: Workload(..workload.default(), players: 20, creatures: 200),
+        maps: 1,
+        schedulers: cores,
+        timing:,
       ),
     )
   })
