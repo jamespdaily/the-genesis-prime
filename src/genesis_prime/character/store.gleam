@@ -12,6 +12,7 @@ import genesis_prime/character/select.{
 }
 import genesis_prime/character/sql
 import genesis_prime/map/position.{Position}
+import gleam/erlang/process
 import gleam/list
 import pog
 
@@ -83,16 +84,25 @@ pub fn run_held(
   connection_held connection_held: fn() -> Permission,
 ) -> Answer {
   let closed = closed_after_go(command)
+  let sent = process.new_subject()
   let carried_out =
     pog.transaction(db, fn(transaction) {
       case connection_held() {
-        Go -> Ok(carry_out(db: transaction, command:, closed:))
+        Go -> {
+          process.send(sent, Nil)
+          Ok(carry_out(db: transaction, command:, closed:))
+        }
         Withheld -> Error(Unavailable)
       }
     })
+  let was_told_to_go = process.receive(sent, 0) == Ok(Nil)
   case carried_out {
     Ok(answer) -> answer
-    Error(pog.TransactionQueryError(error)) -> failed(error, closed:)
+    Error(pog.TransactionQueryError(error)) ->
+      case was_told_to_go {
+        True -> failed(error, closed:)
+        False -> failed(error, closed: Unavailable)
+      }
     Error(pog.TransactionRolledBack(answer)) -> answer
   }
 }
