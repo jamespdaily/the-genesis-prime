@@ -189,7 +189,7 @@ gap = "What 0x1401ad620 and 0x1401ada40 do with the named object, and what game 
 statement = "Handles the game's world messages: given the handler object, a connection id, the message id and the decoded message, it returns 1 (not handled) unless the connection id is the current world connection's; otherwise it dispatches on the message id through a 2,322-case switch covering ids 97 to 2418 (0x61 to 0x972). 645 of those ids reach a case; the record of its jump table (0x1403f1344) lists them. Seven of them (209, 231, 385, 1487, 1758, 2019 and 2118) share a case that does nothing and returns 0, so the client takes and ignores them. Ids 975 to 978 (0x3cf to 0x3d2) share a case that passes the message to the game's handler kept at game 0x15a8 (HandleMessages03CFTo03D2) and returns its result, or 1 when that handler is missing or already on the game's handler list. The other cases act on their message, many of them raising UI events (for example MatchEntered, GuildChange, ItemAuctionWon, FriendshipResult). An id with no case is turned into its message name (or 'Message Id #<id>') and passed to a report call that is empty in this build, and the function returns 1."
 proof = "0x1403ec6ba mov ebx, r8d (id); 0x1403ec6bd mov r8, [rcx+0x7928]; 0x1403ec6cd test r8, r8 / 0x1403ec6dc cmp edx, [r8+0x98]: either fails to 0x1403ec6d2 mov eax, 1; 0x1403ec6e5..0x1403ec6f6 copy the global at 0x140c636a8 into the handler object (purpose unread); 0x1403ec6eb lea eax, [rbx-0x61]; 0x1403ec6fc cmp eax, 0x911; 0x1403ec701 ja 0x1403f12d2; 0x1403ec719 jmp rcx. Cases end at 0x1403f1320 mov r14, [rsp+0xd8]; 0x1403f1328 mov eax, ebx (the result). The shared do-nothing case: 0x1403ec71b xor ebx, ebx; 0x1403ec71d jmp 0x1403f1320 (table entries for ids 209, 231, 385, 1487, 1758, 2019, 2118). The shared case for 975..978: 0x1403f0d86 mov r14, [0x140c65a48]; 0x1403f0d8d test r14, r14; 0x1403f0d90 je 0x1403f131b (mov ebx, 1); 0x1403f0d96 cmp qword [r14+0x18], 0 (its list link); 0x1403f0d9b jne 0x1403f131b; 0x1403f0dbb call [rax+0x58] with the connection id, id and message; 0x1403f0dc6 mov ebx, eax. 0x140c65a48 is set from game 0x15a8 at 0x1400100c1 mov rax, [rsi+0x15a8]; 0x1400100c8 mov [0x140c65a48], rax, and game 0x15a8 holds the object built by 0x1404d56b0 (0x14000ff95, 0x14000ffa2), whose class table 0x140b690f0 has 0x1404d60f0 at its message slot. The only other shared target, 0x1403f0bdd (ids 1671 and 1672), calls 0x1403c8690. A walk of every case to the shared end (scratch script over llvm-objdump's listing) finds no case that leaves the function another way. Case blocks (0x1403ec71b..0x1403f12d2) load 66 printable strings, among them event names such as MatchEntered and GuildChange, and make 44 calls to 0x1400ea3e0, the UI event raiser that HandleMessages0966To0980 calls with 'WalletUpdate'. Table: 2,322 entries, 1,677 to the default, 636 distinct targets. Its one pointer is slot 11 (0x58) of the class table at 0x140b66880 (relocated pointer at 0x140b668d8; the table is stored by 0x1403e1400 at 0x1403e1453), the slot HandleServerMessage calls on each handler on the game's list (0x140015847 call [rax+0x58], with the connection id, the id and the message)."
 grade = "fairly sure"
-gap = "That the world handler object (class table 0x140b66880) is put on the game's handler list, and so reaches HandleServerMessage's slot call, is not traced: no store of it into the list (game 0x15b0) was read. What the cases for the other 638 ids do with their messages is read only where other records cite them."
+gap = "HandleMessage00AD hands the world handler (built by 0x1403e1400 and kept at the world session's 0x60) to 0x140048100: 0x140022542 mov rdx, qword ptr [rdi+0x60]; 0x140022546 mov r8d, 0x4; 0x14002254f call 0x140048100, the call that also places ForwardServerMessage's wrapper; that 0x140048100 puts it on the game's handler list (game 0x15b0), where HandleServerMessage's slot call reaches it, is inferred, not read. What the cases for the other 638 ids do with their messages is read only where other records cite them."
 name = "HandleWorldMessage"
 
 ["0x1403ec719"]
@@ -605,8 +605,8 @@ grade = "fairly sure"
 gap = "The wire layout of the commands (routines 0x1400b0560 and 0x1400b06f0) is not read, nor the message's id in the outer wrapping (0x1403f4900 nests it in message 0x38c, sent as 0x244)."
 
 ["opcode.0xf1"]
-statement = "Message 0xf1 (241), server to client. Body: values of 2, 32, 8 and 32 bits, in that order, none aligned to a byte (74 bits, padded to 10 bytes). Its handler stores the first three, and the fourth is the player's movement send interval in milliseconds: values below 25 become 25 and above 1000 become 1000. Until it arrives the interval is 125 ms. The client has no writer for it."
-proof = "Registered at 0x140078d86 mov edx, 0xf1 with 0x140078d7f lea r8d, [r9+0x10] (size), 0x140078d68 lea rcx, [0x1400a37d0] stored at 0x140078d7a (reader) and 0x140078d8b mov qword ptr [rsp+0x20], 0x0 (no writer). ReadMessage00F1Body: ReadBits32 width 2 (record offset 0), 0x20 (offset 4), ReadBits8 width 8 (offset 8), ReadBits32 width 0x20 (offset 0xc). HandleWorldMessage's jump table entry for 241 is 0x1403ec80b: 0x1403ec811 call 0x1403b67e0. There 0x1403b69b0 mov eax, dword ptr [r14+0xc]; 0x1403b69b4 cmp eax, 0x19; jae; 0x1403b69b9 mov dword ptr [0x140c3a004], 0x19; 0x1403b69c5 mov ecx, 0x3e8; 0x1403b69ca cmp eax, ecx; 0x1403b69cc cmova eax, ecx; 0x1403b69cf mov dword ptr [0x140c3a004], eax. Bytes at 0x140c3a004: 7d000000 (125). Emulator: vector.opcode.0xf1.body."
+statement = "Message 0xf1 (241), server to client. Body: values of 2, 32, 8 and 32 bits, in that order, none aligned to a byte (74 bits, padded to 10 bytes). Its handler stores the first three, and the fourth is the player's movement send interval in milliseconds: values below 25 become 25 and above 1000 become 1000. Until it arrives the interval is 125 ms. The client has no writer for it. Its handler also sets the world flag that the end of loading waits for (CheckWorldLoaded), so the client does not finish entering a world without it."
+proof = "Registered at 0x140078d86 mov edx, 0xf1 with 0x140078d7f lea r8d, [r9+0x10] (size), 0x140078d68 lea rcx, [0x1400a37d0] stored at 0x140078d7a (reader) and 0x140078d8b mov qword ptr [rsp+0x20], 0x0 (no writer). ReadMessage00F1Body: ReadBits32 width 2 (record offset 0), 0x20 (offset 4), ReadBits8 width 8 (offset 8), ReadBits32 width 0x20 (offset 0xc). HandleWorldMessage's jump table entry for 241 is 0x1403ec80b: 0x1403ec811 call 0x1403b67e0. There 0x1403b69b0 mov eax, dword ptr [r14+0xc]; 0x1403b69b4 cmp eax, 0x19; jae; 0x1403b69b9 mov dword ptr [0x140c3a004], 0x19; 0x1403b69c5 mov ecx, 0x3e8; 0x1403b69ca cmp eax, ecx; 0x1403b69cc cmova eax, ecx; 0x1403b69cf mov dword ptr [0x140c3a004], eax. Bytes at 0x140c3a004: 7d000000 (125). Emulator: vector.opcode.0xf1.body. HandleMessage00F1 0x1403b67e0: 0x1403b6806 mov dword ptr [rcx+0x6420], 0x1 on the world handler; CheckWorldLoaded 0x1403e8399 cmp dword ptr [rbx+0x6420], r13d returns not loaded while it is 0; the only other store, 0x1403b711c in 0x1403b6de0, is on a world change."
 grade = "fairly sure"
 gap = "What the first three fields mean is not read."
 
@@ -980,16 +980,16 @@ gap = "Read from Ghidra's decompile; what 0x7e0 asks for is not read; the caller
 name = "StartCharacterSelect"
 
 ["0x140020ea0"]
-statement = "Handles game-server messages during character select. In state 5 (which HandleMessage00AD sets) it returns 1 (not handled) for every message; in state 6 (which 0x36a sets) it returns 0 for every message and does nothing; a message on any connection other than its own it takes (returns 0) and drops. On its connection it handles 19 ids and returns 1 for any other: 0x36 (keeps the value and raises MaxCharacterLevelAchieved), 0xad (enter the world: HandleMessage00AD), 0xdc (handler 0x140021fb0), 0xe6 (only in state 2 with a selected character below the count: when its first value is 0 it passes that character's index to 0x1400296f0, then clears the selection, returns to state 0 and raises CharacterDelete with the two values; otherwise ignored), 0xe7 (raises CharacterDisabled for each character whose 64-bit key matches and keeps the value), 0x116 (handler 0x140023230), 0x117 (handler 0x140021540), 0x14b (only in state 3: handler 0x140022190, whose result it returns; otherwise ignored), 0x162 (only in state 4: back to state 0 and raises CharacterSelectFail; otherwise ignored), 0x33d (handler 0x1400225e0), 0x36a (releases the connection, passes the message's first value to 0x1400168a0, switches to the screen held at game 0x1700 and enters state 6), 0x3e1 (RealmBroadcast with a text and a value), 0x594 (ignored), 0x6ea (PTRCharacterCopyQueued), 0x715 (QueueFinished), 0x717 (QueueStatus with three values), 0x761 (ignored), 0x765 (RealmTransferResult with one value) and 0x862 (handler 0x1400226c0)."
-proof = "Read in llvm-objdump's listing of all 22 .pdata ranges 0x140020ea0..0x14002137e. 0x140020eaa mov eax, [rcx+0x170] (state); 0x140020eb6 cmp eax, 5 / 0x140020ebb mov eax, 1; 0x140020ecb cmp eax, 6 / 0x140020ed0 xor eax, eax; 0x140020edd mov rcx, [rcx+0xb8]; 0x140020ee4 cmp edx, [rcx+0x98]; 0x140020eea jne 0x140020ed0. The compare tree: 0x140020ef1 cmp r8d, 0x33d (je 0x14002119b -> jmp 0x1400225e0); 0x140020f04 cmp r8d, 0xe7 (je 0x140021038); 0x140020f17 sub r8d, 0x36 (-> 0x140020ff7, 0x140021021 call 0x1400ea3e0 with 'MaxCharacterLevelAchieved' 0x1409ed648); 0x140020f21 sub r8d, 0x77 (0xad -> 0x140020ff2 jmp 0x140022480); 0x140020f2b sub r8d, 0x2f (0xdc -> 0x140020fd8 jmp 0x140021fb0); 0x140020f35 cmp r8d, 0xa (0xe6; 0x140020f3f cmp eax, 2; 0x140020f4f cmp rdx, [rbx+0x110]; 0x140020f5c cmp dword [r9], 0 / 0x140020f69 call 0x1400296f0; 0x140020f8e state 0; 'CharacterDelete' 0x1409ed6f0); 0x1400210ce sub r8d, 0x116 (-> 0x140021196 jmp 0x140023230); 0x1400210db dec (0x117 -> 0x14002117c jmp 0x140021540); 0x1400210e4 sub r8d, 0x34 (0x14b: 0x140021131 cmp eax, 3, 0x140021150 call 0x140022190); 0x1400210ea cmp r8d, 0x17 (0x162: 0x1400210f4 cmp eax, 4, 'CharacterSelectFail' 0x1409ed710); 0x1400211b5 cmp r8d, 0x715 (je 0x14002129c, 'QueueFinished' 0x1409ed750); 0x1400211c8 sub r8d, 0x36a (-> 0x14002124e, 0x140021256 call [rax+0x8], 0x14002127d call 0x1400481b0 with game 0x1700, 0x140021287 state 6); 0x1400211d1 sub r8d, 0x77 (0x3e1: 'RealmBroadcast' 0x1409ed8a0, format 'Si'); 0x1400211d7 sub r8d, 0x1b3 (0x594 -> 0x14002136c xor eax, eax); 0x1400211e4 cmp r8d, 0x156 (0x6ea: 'PTRCharacterCopyQueued' 0x1409ed738); 0x1400212c5 sub r8d, 0x717 (-> 0x140021342, 'QueueStatus' 0x1409ed728, format 'iib'); 0x1400212ce sub r8d, 0x4a (0x761 -> 0x14002136c); 0x1400212d8 sub r8d, 4 (0x765: 'RealmTransferResult' 0x1409ed888); 0x1400212de cmp r8d, 0xfd (0x862 -> 0x140021311 jmp 0x1400226c0); 0x1400212e7 mov eax, 1 for any other id. 0xe7: 0x140021038..0x1400210b0 compare each 0x330-byte character's first 8 bytes at [rbx+0x108] with the message's, 'CharacterDisabled' 0x1409ed8b0, value kept at the character's 0x2c4."
+statement = "Handles game-server messages during character select. In state 5 (which HandleMessage00AD sets) it returns 1 (not handled) for every message; in state 6 (which 0x36a sets) it returns 0 for every message and does nothing; a message on any connection other than its own it takes (returns 0) and drops. On its connection it handles 19 ids and returns 1 for any other: 0x36 (keeps the value and raises MaxCharacterLevelAchieved), 0xad (enter the world: HandleMessage00AD), 0xdc (the create-character result: HandleMessage00DC), 0xe6 (the delete result, only in state 2 with a selected character below the count: when its first value is 0 it passes that character's index to 0x1400296f0, then clears the selection, returns to state 0 and raises CharacterDelete with the two values; otherwise ignored), 0xe7 (raises CharacterDisabled for each character whose 64-bit key matches and keeps the value), 0x116 (handler 0x140023230: a list of deleted characters, which GetDeletedCharacterInfo returns), 0x117 (the character list: HandleMessage0117), 0x14b (the rename result, only in state 3: HandleMessage014B, whose result it returns; otherwise ignored), 0x162 (playing the character failed, only in state 4: back to state 0 and raises CharacterSelectFail; otherwise ignored), 0x33d (handler 0x1400225e0), 0x36a (releases the connection, passes the message's first value to 0x1400168a0, switches to the screen held at game 0x1700 and enters state 6), 0x3e1 (RealmBroadcast with a text and a value), 0x594 (ignored), 0x6ea (PTRCharacterCopyQueued), 0x715 (QueueFinished), 0x717 (QueueStatus with three values), 0x761 (ignored), 0x765 (RealmTransferResult with one value) and 0x862 (handler 0x1400226c0)."
+proof = "Read in llvm-objdump's listing of all 22 .pdata ranges 0x140020ea0..0x14002137e. 0x140020eaa mov eax, [rcx+0x170] (state); 0x140020eb6 cmp eax, 5 / 0x140020ebb mov eax, 1; 0x140020ecb cmp eax, 6 / 0x140020ed0 xor eax, eax; 0x140020edd mov rcx, [rcx+0xb8]; 0x140020ee4 cmp edx, [rcx+0x98]; 0x140020eea jne 0x140020ed0. The compare tree: 0x140020ef1 cmp r8d, 0x33d (je 0x14002119b -> jmp 0x1400225e0); 0x140020f04 cmp r8d, 0xe7 (je 0x140021038); 0x140020f17 sub r8d, 0x36 (-> 0x140020ff7, 0x140021021 call 0x1400ea3e0 with 'MaxCharacterLevelAchieved' 0x1409ed648); 0x140020f21 sub r8d, 0x77 (0xad -> 0x140020ff2 jmp 0x140022480); 0x140020f2b sub r8d, 0x2f (0xdc -> 0x140020fd8 jmp 0x140021fb0); 0x140020f35 cmp r8d, 0xa (0xe6; 0x140020f3f cmp eax, 2; 0x140020f4f cmp rdx, [rbx+0x110]; 0x140020f5c cmp dword [r9], 0 / 0x140020f69 call 0x1400296f0; 0x140020f8e state 0; 'CharacterDelete' 0x1409ed6f0); 0x1400210ce sub r8d, 0x116 (-> 0x140021196 jmp 0x140023230); 0x1400210db dec (0x117 -> 0x14002117c jmp 0x140021540); 0x1400210e4 sub r8d, 0x34 (0x14b: 0x140021131 cmp eax, 3, 0x140021150 call 0x140022190); 0x1400210ea cmp r8d, 0x17 (0x162: 0x1400210f4 cmp eax, 4, 'CharacterSelectFail' 0x1409ed710); 0x1400211b5 cmp r8d, 0x715 (je 0x14002129c, 'QueueFinished' 0x1409ed750); 0x1400211c8 sub r8d, 0x36a (-> 0x14002124e, 0x140021256 call [rax+0x8], 0x14002127d call 0x1400481b0 with game 0x1700, 0x140021287 state 6); 0x1400211d1 sub r8d, 0x77 (0x3e1: 'RealmBroadcast' 0x1409ed8a0, format 'Si'); 0x1400211d7 sub r8d, 0x1b3 (0x594 -> 0x14002136c xor eax, eax); 0x1400211e4 cmp r8d, 0x156 (0x6ea: 'PTRCharacterCopyQueued' 0x1409ed738); 0x1400212c5 sub r8d, 0x717 (-> 0x140021342, 'QueueStatus' 0x1409ed728, format 'iib'); 0x1400212ce sub r8d, 0x4a (0x761 -> 0x14002136c); 0x1400212d8 sub r8d, 4 (0x765: 'RealmTransferResult' 0x1409ed888); 0x1400212de cmp r8d, 0xfd (0x862 -> 0x140021311 jmp 0x1400226c0); 0x1400212e7 mov eax, 1 for any other id. 0xe7: 0x140021038..0x1400210b0 compare each 0x330-byte character's first 8 bytes at [rbx+0x108] with the message's, 'CharacterDisabled' 0x1409ed8b0, value kept at the character's 0x2c4. The states: 1 waits for 0xdc (LuaCreateCharacter 0x140024b4f), 2 for 0xe6 (LuaDeleteCharacter 0x140024d47), 3 for 0x14b (LuaRenameCharacter 0x140024f49), 4 for 0xad or 0x162 (PlayCharacter 0x1400235a3). GetDeletedCharacterInfo 0x140028020 (name pair 0x140c564f0) reads the list 0x140023230 keeps (decompiled)."
 grade = "sure"
 name = "HandleCharacterSelectMessage"
 
 ["opcode.0xad"]
-statement = "Message 0xad (173), game server to client, after the player chose a character. Body: a 15-bit value, then five 32-bit floats (each sent as its IEEE 754 single-precision bits). The client keeps the six values and enters the world on the same connection, which becomes the world connection; no new server connection is opened. The client has no writer for it."
-proof = "Registered at 0x14006d8eb mov edx, 0xad; 0x14006d8e4 lea r8d, [r9+0x18] (record size); 0x14006d8cd lea rcx, [0x14007e9e0] stored at 0x14006d8df (reader); 0x14006d8f0 mov qword ptr [rsp+0x20], 0x0 (no writer); widths in ReadMessage00ADBody. 0x140020ea0 sends it to 0x140022480, which needs state 4, keeps the six words at the character-select object's 0x1c8..0x1dc and calls 0x140034330 with the character-select connection (object 0xb8) and the kept character record; 0x140034330 calls 0x1403e7ea0, which stores that connection at game 0x7928 (0x1403e7ee9 mov qword ptr [rdi+0x7928], r14). Emulator: vector.opcode.0xad.body."
+statement = "Message 0xad (173), game server to client, after the player chose a character (0x7dd): enter the world. Body: the World id (15 bits: the World row whose asset the client loads and whose loading picture it shows), then five 32-bit floats (each sent as its IEEE 754 single-precision bits), the first three the position x, y and z the world loads at. The client takes it only while it waits after 0x7dd; it keeps the six values, shows the world's loading screen and enters the world on the same connection, which becomes the world connection; no new server connection is opened. A World id with no row fails the load: the client shows an error (text 0x7a6af) and character select stops. The client has no writer for it."
+proof = "Registered at 0x14006d8eb mov edx, 0xad; 0x14006d8e4 lea r8d, [r9+0x18] (record size); 0x14006d8cd lea rcx, [0x14007e9e0] stored at 0x14006d8df (reader); 0x14006d8f0 mov qword ptr [rsp+0x20], 0x0 (no writer); widths in ReadMessage00ADBody. 0x140020ea0 sends it to 0x140022480, which needs state 4, keeps the six words at the character-select object's 0x1c8..0x1dc and calls 0x140034330 with the character-select connection (object 0xb8) and the kept character record; 0x140034330 calls 0x1403e7ea0, which stores that connection at game 0x7928 (0x1403e7ee9 mov qword ptr [rdi+0x7928], r14). Emulator: vector.opcode.0xad.body. The values sit at the character-select object's 0x1c8..0x1dc, inside the kept character record that starts at 0x178, so StartWorldSession 0x140034330 reads the World id as the record's word 0x50: ShowWorldLoadingScreen 0x1400360f0 and LoadWorld 0x1403e70d0 look it up with GetWorldRow 0x14024acc0 (the 'World' table); SetWorldConnection logs the record's 0x50 and the floats at 0x54..0x5c and passes those three to LoadWorld, which fails without a row; HandleMessage00AD then calls 0x1400232f0 with 0x7a6af."
 grade = "fairly sure"
-gap = "What the six values mean is not read: the handler only keeps them; settled by reading the readers of the character-select object's 0x1c8..0x1dc."
+gap = "The meaning of the World id and the position is read from Ghidra's decompile of the routines named; the last two floats (kept at 0x1d8 and 0x1dc) are passed to no routine read here."
 
 ["0x140022480"]
 statement = "Handles message 0xad: keeps its six values, builds the world session on the character-select connection with the chosen character's world and position, and moves character select to its finished state."
@@ -1002,7 +1002,7 @@ name = "HandleMessage00AD"
 statement = "Makes a connection the world connection: sets the world name, stores the connection as the one world messages are sent on, records the server's address, logs the world id and position, and loads that world at that position."
 proof = "0x1403e7ed4 call 0x14001c480 (the text at the record's 8); 0x1403e7ee9 mov [rdi+0x7928], r14; network slot 0x38 for the connection's peer, Ordinal_14/Ordinal_8 of its address into 0x140c65898's 0x60; LogMessage with the record's 0x50 (world id) and three floats at 0x54..0x5c; 0x1403e70d0 loads them. Only caller 0x1400343d3 in 0x140034330."
 grade = "fairly sure"
-gap = "Read partly from Ghidra's decompile; that the record's 0x50 is the world id is inferred from its use with 0x1403e70d0."
+gap = "Read partly from Ghidra's decompile; the world id is looked up in the World table by LoadWorld 0x1403e70d0 (GetWorldRow 0x14024acc0)."
 name = "SetWorldConnection"
 
 ["0x140023d50"]
@@ -1596,6 +1596,465 @@ statement = "Message 0x7a4 (1956), client to game server, sent when realm select
 proof = "Registered at 0x14006d5ca mov edx, 0x7a4; 0x14006d5cf mov r8d, 0x1 (a one-byte record); 0x14006d5b5 lea r9, [0x140001b70] (sizer, adds nothing); 0x14006d5a6 lea rcx, [0x140001ba0] stored at 0x14006d5c5 mov qword ptr [rsp+0x20], rcx (writer, writes nothing); 0x14006d5bc mov qword ptr [rsp+0x28], 0x0 (no reader); 0x14006d5ad mov dword ptr [rsp+0x30], 0x0 (mode 0). Sent by 0x140045760: 0x140045806 mov r8d, 0x7a4 before 0x14004580c call qword ptr [rax+0x108], then 0x140045874 mov r8d, 0x244 and 0x14004587a call qword ptr [rax+0xf0]. So WriteMessageFrame counts 16 + 0 + 32 bits = 6 bytes, as for 0x7e0."
 grade = "sure"
 
+# Character select and entering the world: the character list, creating, playing, deleting and
+# renaming a character, and the world messages the client waits for before it shows the player
+
+["opcode.0x117"]
+statement = "Message 0x117 (279), game server to client during character select: the account's character list. Body, in order: the server's time as a 64-bit Windows FILETIME (the client keeps the difference from its own clock); the character count (32 bits) and that many characters, each as ReadCharacterListEntry lays it out; a count (32 bits) and that many 32-bit CharacterCreation ids the server enables, and a count (32 bits) and that many CharacterCreation ids it disables (both searched by halving, so sorted ascending); the realm id (14 bits), which becomes the game's current realm when a character is played; a realm id (14 bits) and a character id (64 bits) naming a listed character whose removal is pending, then its remove time (32 bits); the value GetNumCharacterReservations returns (32 bits); a 32-bit value passed first with the CharacterList event; a 32-bit value the client keeps; the faction restriction (14 bits, GetFactionRestriction); and one bit without which GetFreeLevel50sRemaining is 0. No field is aligned to a byte. The client replaces its list, marks it received (HasReceivedCharacterList), makes the creation choices (a CharacterCreation row is offered when it is not disabled here and either its enabled column is set or it is enabled here), builds a Lua table per character and raises CharacterList with the first 32-bit value, the characters, a table holding nCharacterRemoveTime and nCharacterIndex for the pending character, and the faction restriction. The client has no writer for it."
+proof = "Registered at 0x14006da4e mov edx, 0x117; 0x14006da47 lea r8d, [r9+0x68] (record size, r9 = 0); 0x14006da30 lea rcx, [0x14007fab0] stored at 0x14006da42 (reader); 0x14006da53 mov qword ptr [rsp+0x20], 0x0 (no writer). Widths in ReadMessage0117Body. Handled by HandleCharacterSelectMessage 0x140020ea0 (0x1400210db, 0x14002117c jmp 0x140021540). HandleMessage0117: 0x140021560 mov dword ptr [rcx+0x168], 0x1 (read by HasReceivedCharacterList 0x140028e90); GetSystemTimeAsFileTime and the 64-bit value; 0x14002158d mov [r14+0x1e0], eax (the 14-bit realm, copied to game 0x1680 by 0x140023400; 0x140045b70 compares game 0x1680 with a realm entry's id); 0x1400215f3/0x1400215fe the identity; 0x140021620 the remove time plus a clock base; 0x14002167a, 0x140021685 (read by GetFactionRestriction 0x140027c30), 0x140021690 (gates GetFreeLevel50sRemaining 0x140028ec0); the reservations word at 0x218 is read by GetNumCharacterReservations 0x140027f20. The id lists go through 0x140021bb0, which walks CharacterCreation rows, skips a row whose id the second list holds and adds it when its enabled column (row word 0x58 per CharacterCreation.tbl) is set or the first list holds it. 0x140021abd 'nCharacterRemoveTime' (0x1409ed678), 0x140021afb 'nCharacterIndex' (0x1409ed6a8), 0x140021b3e 'CharacterList' (0x1409ed6c8) with format 'iTTi' (0x1409d6f64). Emulator: vector.opcode.0x117.body."
+grade = "fairly sure"
+gap = "The handler is read from Ghidra's decompile apart from the instructions named; what the first 32-bit value of the CharacterList event and the kept 32-bit value mean is not read (the character-select Lua's CharacterList handler would say); that the 14-bit values are realm ids rests on the realm id kept at game 0x1680 and the width realm ids have elsewhere."
+
+["0x14007fab0"]
+statement = "Reads message 0x117's body in the order given in the opcode.0x117 record, taking space for the characters and both id lists from the record space."
+proof = "Ghidra decompile: ReadUint64; ReadBits32 width 0x20 (count); AllocateMessageSpace count x 0xa0; ReadCharacterListEntry 0x14007f720 per character; ReadBits32 0x20 and ReadBytesAsBits count x 4, twice; ReadBits32 0xe; 0x1400852f0 (14 bits and a 64-bit value); ReadBits32 0x20 four times; ReadBits32 0xe; ReadBits32 1. Emulator: vector.opcode.0x117.body reads 1372 bits back to every planted value."
+grade = "sure"
+name = "ReadMessage0117Body"
+
+["0x14007f720"]
+statement = "Reads one character of message 0x117, in order: the character id (64 bits; Lua table key order follows the list), the name (wide text, strName; the client keeps at most 32 characters), gender (2 bits, idGender), race (5 bits, idRace), class (5 bits, idClass), faction (32 bits, idFaction), level (32 bits, nLevel), a count (32 bits) and that many item visuals (ReadItemVisual) for the body, a count (32 bits) and that many item visuals for worn items, the world (15 bits, idWorld), the world zone (15 bits, used with the position to name strZone), a 14-bit value, five floats (the first three are the position the zone name is looked up at), the path (3 bits, idPath), disabled (1 bit, bDisabled), needs a rename (1 bit, bRequiresRename), a 32-bit value, a count (4 bits) and that many 32-bit customisation labels then as many 32-bit values (the client keeps the first 7), a count (32 bits) and that many 32-bit bone values, and a float that, when not 0, sets fLastLoggedOutDays."
+proof = "Ghidra decompile of 0x14007f720 for the widths (ReadUint64; ReadWideText; ReadBits32 widths 2, 5, 5, 0x20, 0x20, 0x20; 0x1400ab890 per item; 0x20; 0x1400ab890; 0xf, 0xf, 0xe; 0x1400ab810; 3, 1, 1, 0x20, 4; ReadBytesAsBits count x 4 twice; 0x20; ReadBytesAsBits; ReadFloat). Meanings from CopyCharacterListEntry 0x1400201f0 (name copied at most 0x21 wide characters with the zero; labels and values copied while the index is below 7; bones by 0x140020590; the float through 0x1401e82f0) and PushCharacterTable 0x1400235d0, which stores strName, nLevel, idWorld, idClass, idRace, idGender, idPath, idFaction, bDisabled, bRequiresRename, strZone (from 0x140448be0 with world, zone and position) and fLastLoggedOutDays. 0xe7 sets the same bDisabled word (record 0x140020ea0). Emulator: vector.opcode.0x117.body."
+grade = "fairly sure"
+gap = "Widths are sure (emulator); the meanings of the 14-bit value, the 32-bit value after the rename bit, the last two floats and the bone values are not read; the Lua names come from the decompile of PushCharacterTable."
+name = "ReadCharacterListEntry"
+
+["0x1400ab890"]
+statement = "Reads one item visual: a slot (7 bits), a display id (15 bits), a colour set id (14 bits, an ItemColorSet row) and a dye value (32 bits). The character list and the unit create message (0x262) use it."
+proof = "Ghidra decompile: ReadBits32 widths 7, 0xf, 0xe, 0x20 at record offsets 0, 4, 8, 0xc. CopyCharacterListEntry 0x1400201f0 stores the second value by slot (slots below 0x48) and, for worn items with no dye value, looks the third up in ItemColorSet (0x140a6ad70) and its three DyeColorRamp ids; ReadMessage0262Body 0x140096fa0 calls it for its 7-bit counted list. Emulator: vector.opcode.0x117.body."
+grade = "fairly sure"
+gap = "That the second value is a display id is inferred from its use as a per-slot appearance value; the dye packing is not read."
+name = "ReadItemVisual"
+
+["0x1400ab810"]
+statement = "Reads five 32-bit floats in a row."
+proof = "Ghidra decompile: ReadFloat at record offsets 0, 4, 8, 0xc, 0x10. Emulator: vector.opcode.0x117.body (the character's five floats). 0x1400ab838, 0x1400ab848, 0x1400ab858, 0x1400ab868 and 0x1400ab878 call 0x14006c1c0 (ReadFloat)."
+grade = "sure"
+name = "ReadFiveFloats"
+
+["0x1400852f0"]
+statement = "Reads a realm id (14 bits) and a character id (64 bits)."
+proof = "Ghidra decompile: ReadBits32 width 0xe at offset 0, ReadUint64 at offset 8. Emulator: vector.opcode.0x117.body."
+grade = "fairly sure"
+gap = "Widths are sure; that the pair is a realm and a character is read from its use in HandleMessage0117 (the 64-bit value matched against character ids)."
+name = "ReadRealmCharacterId"
+
+["0x140021540"]
+statement = "Handles message 0x117, the character list: keeps the server's clock offset, the realm id and the other values in the opcode.0x117 record, replaces the character list, rebuilds the offered CharacterCreation choices, builds the Lua character tables and raises CharacterList."
+proof = "Reached from HandleCharacterSelectMessage 0x140020ea0 at 0x14002117c. Anchors: 0x140021560 mov dword ptr [rcx+0x168], 0x1; 0x14002158d; 0x1400215f3; 0x1400215fe; 0x140021620; 0x14002167a; 0x140021685; 0x140021690; 0x140021a1e call 0x140021bb0; 0x140021b4d call 0x1400ea3e0 (the UI event raiser) with 'CharacterList'."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the anchors named."
+name = "HandleMessage0117"
+
+["0x1400201f0"]
+statement = "Copies one character of message 0x117 into the client's character list: id, name (at most 32 characters), gender, race, class, faction, level, path, disabled and rename flags, world, zone, position, the body and worn item visuals by slot, at most 7 customisation labels and values, the bone values and the last logout time."
+proof = "Called from HandleMessage0117 per character. Decompiled; the name copy loop bound 0x14002022a mov r8d, 0x21 sits in the listing."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "CopyCharacterListEntry"
+
+["0x1400235d0"]
+statement = "Builds a character's Lua table for character select: strName, nLevel, idWorld, idClass, idRace, idGender, idPath, idFaction, bDisabled, bRequiresRename, strZone (when the zone's name can be found from world, zone and position) and fLastLoggedOutDays (when the character has a last logout time)."
+proof = "Called from HandleMessage0117 per character. Decompiled: the wide key texts L'strName', L'nLevel', L'idWorld', L'idClass', L'idRace', L'idGender', L'idPath', L'idFaction', L'bDisabled', L'bRequiresRename', L'strZone', L'fLastLoggedOutDays'."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "PushCharacterTable"
+
+["opcode.0x25b"]
+statement = "Message 0x25b (603), client to game server: create a character. Body, in order: the CharacterCreation id (32 bits; that row gives class, race, sex and faction), the name (wide text), the path (3 bits, 0 to 3), the customisation count (32 bits), that many CharacterCustomizationLabel ids (32 bits each), as many values (32 bits each), the bone count (32 bits) and that many bone values (32-bit floats). No field is aligned to a byte. It is never sent on its own: the client writes it as a whole frame and sends that frame as the body of message 0x25c. The client has no reader for it."
+proof = "Registered at 0x14006d987 mov edx, 0x25b; 0x14006d98c mov r8d, 0x38 (record size); 0x14006d97d lea r9, [0x14007eaa0] (sizer); 0x14006d960 lea rcx, [0x14007eb30] stored at 0x14006d978 (writer); 0x14006d96f mov qword ptr [rsp+0x28], 0x0 (no reader). The record is filled by LuaCreateCharacter 0x140023e90 (decompiled): word 0 the creation id (Lua argument 2), the name (argument 1), word 0x10 the path (argument 4, refused above 3), the labels and values from the customised actor (argument 3), the bones from the actor's bone call; 0x1400249da mov r8d, 0x25b serialises it, 0x140024aaa mov r8d, 0x25c wraps the frame. The CharacterCreation columns (classId, raceId, sex, factionId at row words 4, 8, 0xc, 0x10) are from CharacterCreation.tbl's header. Emulator: vector.opcode.0x25b.body."
+grade = "fairly sure"
+gap = "Widths are sure (emulator); that the labels are CharacterCustomizationLabel ids is inferred from the name 'labels' the actor's customisation map gives and the table's name, not read in the actor code."
+
+["opcode.0x25c"]
+statement = "Message 0x25c (604), client to game server: the carrier of a create-character request. Its body is one whole message 0x25b frame copied byte for byte (32-bit length counting itself, 16-bit id 0x25b, the 0x25b body), as message 0x244's body carries a frame. The client sends it, like every message, encrypted inside 0x244; after sending it the client waits for message 0xdc. The client has no reader for it."
+proof = "Registered at 0x14006d638 mov edx, 0x25c; 0x14006d63d mov r8d, 0x8; 0x14006d623 lea r9, [0x140079ef0] (SizeWholeFrameBody); 0x14006d614 lea rcx, [0x140079f30] stored at 0x14006d633 (WriteWholeFrameBody); 0x14006d62a mov qword ptr [rsp+0x28], 0x0 (no reader). LuaCreateCharacter: 0x1400249da mov r8d, 0x25b (serialised to a buffer), 0x140024aaa mov r8d, 0x25c with the record holding that frame, the cipher over the frame after its length, 0x140024b3c mov r8d, 0x244; 0x140024b4f mov dword ptr [rax+0x170], 0x1 (character select waits; 0x140021fbd cmp dword ptr [rcx+0x170], 0x1 in HandleMessage00DC)."
+grade = "fairly sure"
+gap = "The record pointer handed to 0x25c is read from Ghidra's decompile; the send instructions are read."
+
+["0x14007eb30"]
+statement = "Writes message 0x25b's body in the order given in the opcode.0x25b record."
+proof = "Ghidra decompile: 32 bits (inline), WriteWideText, 0x1400a7300 (3 bits), WriteUintBits 0x20, WriteBytesAsBits count x 4 twice, WriteUintBits 0x20, WriteBytesAsBits count x 4. Emulator: vector.opcode.0x25b.body. 0x14007ebc4 mov r8d, 0x20 / 0x14007ebcd call 0x140336470 (the first word when the chunk is short); 0x14007ebe1 call 0x140336040 (WriteWideText); 0x14007ebf0 call 0x1400a7300 (3 bits); 0x14007ebfc mov r8d, 0x20 / 0x14007ec05 call 0x1400a7110; 0x14007ec1c and 0x14007ec33 call 0x1403360d0; 0x14007ec3f mov r8d, 0x20 / 0x14007ec48 call 0x1400a7110; 0x14007ec5f call 0x1403360d0."
+grade = "sure"
+name = "WriteMessage025BBody"
+
+["0x14007eaa0"]
+statement = "Counts the bits of message 0x25b's body: 32, the name as a wide text, 3, 32, 64 per customisation, 32 and 32 per bone value."
+proof = "0x14007eaa0 add qword ptr [rdx], 0x20; the wide text count at 0x14007eaca cmp rax, 0x7f; 0x14007eae1 add rax, 0x23; 0x14007eaec shl rax, 0x5 per customisation count (twice); 0x14007eb14 add qword ptr [rdx], 0x20. Emulator: vector.opcode.0x25b.body (379 bits)."
+grade = "sure"
+name = "SizeMessage025BBody"
+
+["0x140023e90"]
+statement = "The Lua function CreateCharacter(name, creation id, actor, path): when character select is idle it takes the name, the CharacterCreation id and the path, and refuses (raising CharacterCreateFailed and showing an error) when the name is empty or breaks the character name rule (CheckTextRule rule 0), when the CharacterCreation row is missing, when the row needs an entitlement the account lacks, when the path is above 3, or when the row costs account currency the account cannot pay (a free level-50 entitlement can cover a row whose start is 5). Otherwise it writes the actor's customisation codes to a log file, sends message 0x25b inside 0x25c and waits for message 0xdc."
+proof = "Name pair 0x140c56360 ('CreateCharacter', 0x140023e90). 0x140023ecb cmp dword ptr [rax+0x170], 0x0. Decompiled: name empty -> text 0x230ae, code 10; 0x1403e1170 with rule 0 false -> 0x230b2, code 10; 0x1401efee0 (CharacterCreation row) null -> 0x230a5; row entitlementIdRequired (word 0x6c) with 0x1400068f0 false -> 0xb8e6b, code 0x3a; path > 3 -> 0x230a5; currency cost (words 0x64, 0x68) above the account's balance -> 0xb8e59, code 0x39, unless row start (word 0x5c) is 5 with the free level-50 bit and Entitlement 0x49 left; 'CharacterCreateFailed' then 0x1400232f0. 'CreationCodes' log text; 0x1400249da, 0x140024aaa, 0x140024b3c, 0x140024b4f as in opcode.0x25c."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the send instructions; what the error codes 10, 0x39 and 0x3a mean to the Lua is not read."
+name = "LuaCreateCharacter"
+
+["opcode.0xdc"]
+statement = "Message 0xdc (220), game server to client: the result of a create-character request. Body, in order: the new character's id (64 bits), a 32-bit value, and the result (6 bits). Result 3 means created: the client looks up the CharacterCreation row it asked for and plays the new character (message 0x7dd with the new id, then it waits for 0xad, as SelectCharacter does): at once when the row's start is 3 or 5, otherwise after an intro sequence it starts (kind 5 for faction 166, 4 for faction 167). Any other result raises CharacterCreateFailed with the result and, unless the Lua handles it, shows an error (a different text for result 6). The client takes it only while it waits for a create result."
+proof = "Registered at 0x14006dae1 mov edx, 0xdc; 0x14006dada lea r8d, [r9+0x10]; 0x14006dac3 lea rcx, [0x14007fd50] stored at 0x14006dad5 (reader); no writer. HandleCharacterSelectMessage 0x140020f2b -> 0x140020fd8 jmp 0x140021fb0. HandleMessage00DC: 0x140021fbd cmp dword ptr [rcx+0x170], 0x1; 0x140021fd0 state back to 0; 0x140021fdf cmp r9d, 0x3; 0x1400220a8 cmp eax, 0xa6; 0x1400220b6 cmp eax, 0xa7; decompiled: 'CharacterCreateFailed' with the result, texts 0x230a3 (result 6) or 0x230a5; on success 0x1401efee0 with the kept creation id, then 0x140023400 with the new id, the name sent, and the row's class, race and sex. Emulator: vector.opcode.0xdc.body."
+grade = "fairly sure"
+gap = "The success path is read from Ghidra's decompile; the intro sequence (0x14001c590, its end callback 0x140021f40) is not read, so that it ends in PlayCharacter is inferred; the 32-bit value is not used by the handler."
+
+["0x14007fd50"]
+statement = "Reads message 0xdc's body: a 64-bit value, a 32-bit value and a 6-bit value."
+proof = "Ghidra decompile: ReadUint64 (offset 0), ReadBits32 0x20 (offset 8), ReadBits32 6 (offset 0xc). Emulator: vector.opcode.0xdc.body. 0x14007fd78 call 0x14006c120 (ReadUint64); 0x14007fd85 mov r8d, 0x20 / 0x14007fd8e call 0x14006c090; 0x14007fd9b mov r8d, 0x6 / 0x14007fda4 call 0x14006c090."
+grade = "sure"
+name = "ReadMessage00DCBody"
+
+["0x140021fb0"]
+statement = "Handles message 0xdc, the create-character result, as the opcode.0xdc record gives."
+proof = "0x140021fbd cmp dword ptr [rcx+0x170], 0x1; 0x140021fdf cmp r9d, 0x3; 0x1400220a8 cmp eax, 0xa6; 0x1400220b6 cmp eax, 0xa7."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the compares named."
+name = "HandleMessage00DC"
+
+["0x1401efee0"]
+statement = "Returns the CharacterCreation row with the given id, or none."
+proof = "Decompiled: the table lookup through the shared-table hook with the name 'CharacterCreation' (0x140a696b0), else the loaded table's slot 0x18 with the id."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "GetCharacterCreationRow"
+
+["0x1403e1170"]
+statement = "Checks a wide text against one of the client's 29 text rules (rule 0 is a character's full name, rule 25 one part of a name); a rule number above 28 fails. A rule has flags, a least length and a bound: the text must end before the bound (so at most bound minus 1 characters) and hold at least the least length. Letters are A to Z, a to z and the Latin-1 letters the client lists (À Á Â Ä Æ Ç È É Ê Ë Ì Í Î Ï Ñ Ò Ó Ô Ö Ù Ú Û Ü Ý ß à á â ä æ ç è é ê ë ì í î ï ñ ò ó ô ö ù ú û ü ý ÿ Œ œ Ÿ). Flag 1 refuses a space after a space; 2 refuses a space first or last; 4 refuses a first character that is not a letter; 8 asks a capital first letter and small letters after; 0x10 refuses spaces; 0x20 refuses a non-letter that is not a digit; 0x40 allows line breaks; 0x80 allows an empty text; 0x100 refuses every non-letter; 0x200 allows the underscore; 0x400 asks exactly one space. A non-letter that is not a digit must also be a printable character. A text that passes is finally given to Windows' IsTextUnicode test for illegal characters, which must find none. Rule 0 (flags 0x506, least 5, bound 31): letters and exactly one space, not first or last, 5 to 30 characters in all, case free. Rule 25 (flags 0x116, least 1, bound 29): letters only, no space, 1 to 28 characters."
+proof = "Rules filled by InitTextRules 0x1403e0b60: 0x1403e0db7 mov dword ptr [0x140c89730], 0x506; 0x1403e0dc1 mov qword ptr [0x140c89738], 0x5; 0x1403e0dcc mov qword ptr [0x140c89740], 0x1f; 0x1403e107f mov dword ptr [0x140c89988], 0x116; 0x1403e1089 mov qword ptr [0x140c89990], 0x1; 0x1403e1094 mov qword ptr [0x140c89998], 0x1d (rule 25 = 0x140c89730 + 25 x 0x18). Checks: 0x1403e117e cmp edx, 0x1d (rule number); 0x1403e121e cmp bx, 0x20; 0x1403e1224 test dil, 0x10; 0x1403e1232 test dil, 0x1; 0x1403e1241 test dil, 0x2; 0x1403e1267 cmp bx, 0xa; 0x1403e1271 cmp bx, 0xd; 0x1403e127b cmp bx, 0x5f; 0x1403e128e call 0x1403e09d0 (letter); 0x1403e12ad call 0x1403e0ae0 (printable); 0x1403e12c4 test dil, 0x4; 0x1403e12e3 call 0x140056430 (lower case); 0x1403e1308 test dil, 0x20; 0x1403e1314 test dil, 0x8; 0x1403e133d test dil, 0x40; 0x1403e1363 cmp word ptr [r10+2*r9-0x2], r14w (the bound); 0x1403e13a6 test dil, 0x2; 0x1403e13e4 call qword ptr [0x140959030] (IsTextUnicode with 0x100). Callers: LuaCreateCharacter (rule 0), LuaRenameCharacter (rule 0), LuaIsCharacterNameValid 0x1400272a0 (rule 0), LuaIsCharacterNamePartValid 0x140027310 (rule 25). Emulator: vector.0x1403e1170.names."
+grade = "fairly sure"
+gap = "The flag meanings and both rules are sure (instructions and emulator); IsTextUnicode was stubbed to find nothing in the emulator, so which texts Windows reports as holding illegal characters (0xFFFE, 0xFFFF and the like) is Windows' behaviour, not read; the other 27 rules are not described."
+name = "CheckTextRule"
+
+["0x1403e0b60"]
+statement = "Sets up the client's text checks once: loads the word filter (from the WordFilter table, or WordFilterChina when the first is missing) and fills the 29 text rules CheckTextRule uses, among them rule 0 (a character's full name: flags 0x506, least 5, bound 31) and rule 25 (a name part: flags 0x116, least 1, bound 29); one rule's bound comes from GameFormula 0x4bd (500000 without it)."
+proof = "Only caller StartClient 0x14000b690 at 0x14000cce7. 0x1403e0da3 lea rcx, [0x140c89730] (zeroed, 0x2b8 bytes); 0x1403e0db7, 0x1403e0dc1, 0x1403e0dcc, 0x1403e107f, 0x1403e1089, 0x1403e1094 as in CheckTextRule; decompiled: 'WordFilter' (0x140a6e110), 'WordFilterChina' (0x140a6e148), 'GameFormula' (0x140a6a408) row 0x4bd."
+grade = "fairly sure"
+gap = "The other 27 rules' purposes and the word filter's use are not read."
+name = "InitTextRules"
+
+["0x140c89730"]
+statement = "The client's 29 text rules, 24 bytes each: flags (32 bits), the least length (64 bits) and the bound (64 bits); zero in the file and filled at start-up by InitTextRules. Rule 0 is a character's full name, rule 25 a name part (CheckTextRule gives both)."
+proof = "Bytes at 0x140c89730 are zero in the file (Ghidra bytes). Written by 0x1403e0db7 mov dword ptr [0x140c89730], 0x506 and the stores named in InitTextRules; read by CheckTextRule 0x1403e1170."
+grade = "sure"
+
+["0x1403e09d0"]
+statement = "Tells whether a wide character is a letter for the text rules: A to Z, a to z, and 53 Latin-1 and Latin Extended letters (the list in CheckTextRule's record); every other character is not."
+proof = "Ghidra decompile: a switch over the 53 listed code points returning 1, else 1 only for 0x41..0x5a and 0x61..0x7a. Emulator: vector.0x1403e1170.names ('Ébc Déf' passes, 'Abcå Def' and the Cyrillic 'Ж' fail). 0x1403e09d8 cmp eax, 0xb8 (the listed code points less 0xc0, through a table); 0x1403e0a01 cmp ax, 0x19 (A to Z); 0x1403e0a07 sub cx, 0x61 / 0x1403e0a0b cmp cx, 0x19 (a to z)."
+grade = "sure"
+name = "IsTextRuleLetter"
+
+["0x1403e0ae0"]
+statement = "Tells whether a wide character may stand in checked text as a non-letter: control characters below 0x1f, 0x7f, 0x80 to 0x9f, 0xa0, 0xad, 0x2028 and 0x2029, 0xd0a, 0xfeff, 0xfffe and 0xffff, and the 32 code points 0xfdd0 to 0xfdef are refused."
+proof = "Ghidra decompile: false for c < 0x1f, for c - 0x7f < 0x2f with bit (c - 0x7f) of 0x400200000001 set (0x7f, 0xa0, 0xad), for c - 0x2028 < 2, c - 0x80 < 0x20, c == 0xd0a, c > 0xfffd, c == 0xfeff; else true when c + 0x230 (16-bit) > 0x1f."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile only; no rule that the character rules use lets such characters reach it except as a non-letter, which rules 0 and 25 refuse anyway."
+name = "IsTextRuleCharacterAllowed"
+
+["0x1400272a0"]
+statement = "The Lua function IsCharacterNameValid(name): true when the name passes text rule 0 (CheckTextRule)."
+proof = "Name pair 0x140c56420 ('IsCharacterNameValid', 0x1400272a0). Decompiled: 0x1403e1170 with rule 0, the result pushed as a boolean."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "LuaIsCharacterNameValid"
+
+["0x140027310"]
+statement = "The Lua function IsCharacterNamePartValid(name part): true when it passes text rule 25 (CheckTextRule)."
+proof = "Name pair 0x140c56430 ('IsCharacterNamePartValid', 0x140027310). Decompiled: 0x1403e1170 with rule 0x19."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "LuaIsCharacterNamePartValid"
+
+["opcode.0x7dd"]
+statement = "Message 0x7dd (2013), client to game server: play this character. Body: the character id (64 bits). The client sends it from SelectCharacter, or by itself after a successful create (0xdc), only while character select is idle, and then waits: 0xad enters the world, 0x162 refuses. The client has no reader for it."
+proof = "Registered at 0x14006d5fc mov edx, 0x7dd; 0x14006d601 mov r8d, 0x8; 0x14006d5f5 lea r9, [0x14007d830] (sizer); 0x14006d5e5 lea rcx, [0x14007d840] stored at 0x14006d607 (writer); 0x14006d5ec mov qword ptr [rsp+0x28], 0x0 (no reader). Sender 0x140023400: 0x14002340f cmp dword ptr [rcx+0x170], 0x0; 0x14002345b mov r8d, 0x7dd; 0x1400234ce mov r8d, 0x244; 0x1400235a3 mov dword ptr [rdi+0x170], 0x4 (0xad needs state 4: HandleMessage00AD; 0x162 needs it: 0x1400210f4 in HandleCharacterSelectMessage). Emulator: vector.opcode.0x7dd.body."
+grade = "sure"
+
+["0x140023400"]
+statement = "Plays a character: while character select is idle it sends message 0x7dd with the character id, keeps the id, name (at most 32 characters), race, class and gender for the world, copies the character list's realm id to the game's current realm, and waits for 0xad (or 0x162)."
+proof = "0x14002340f cmp dword ptr [rcx+0x170], 0x0; 0x14002345b mov r8d, 0x7dd; 0x1400234ce mov r8d, 0x244; 0x14002358d mov eax, dword ptr [rdi+0x1e0] (stored to game 0x1680); 0x1400235a3 mov dword ptr [rdi+0x170], 0x4. Callers LuaSelectCharacter 0x140024d60 and HandleMessage00DC 0x140021fb0 (decompiled)."
+grade = "fairly sure"
+gap = "The kept fields are read from Ghidra's decompile."
+name = "PlayCharacter"
+
+["0x140024d60"]
+statement = "The Lua function SelectCharacter(index): when character select is idle and the index (counted from 1) names a listed character, plays it (PlayCharacter: message 0x7dd)."
+proof = "Name pair 0x140c56380 ('SelectCharacter', 0x140024d60). 0x140024d74 cmp dword ptr [rax+0x170], 0x0; decompiled: index - 1 below the count, then 0x140023400 with the character's id, name, class, race and gender."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the state check."
+name = "LuaSelectCharacter"
+
+["opcode.0x162"]
+statement = "Message 0x162 (354), game server to client: playing the chosen character failed. Body: a 3-bit value. While the client waits for 0xad after 0x7dd it goes back to idle character select and raises CharacterSelectFail; otherwise it ignores it."
+proof = "Registered at 0x14006db12 mov edx, 0x162; 0x14006db0b lea r8d, [r9+0x4]; 0x14006daf4 lea rcx, [0x14007fdc0] stored at 0x14006db06 (reader); no writer. Reader 0x14007fdc0: 0x14007fdce mov r8d, 0x3; 0x14007fdd7 jmp 0x14006c090 (ReadBits32). Handler in HandleCharacterSelectMessage (record 0x140020ea0): 0x1400210f4 cmp eax, 4, 'CharacterSelectFail' 0x1409ed710. Emulator: vector.opcode.0x162.body."
+grade = "fairly sure"
+gap = "Whether the 3-bit value reaches the Lua with CharacterSelectFail is not read."
+
+["0x14007fdc0"]
+statement = "Reads a body of one 3-bit value. Messages 0x145, 0x162, 0x3d0, 0x689 and 0x985 use it."
+proof = "0x14007fdc3 test r8, r8; 0x14007fdc8 mov eax, 0x80004005 for no record; 0x14007fdce mov r8d, 0x3; 0x14007fdd7 jmp 0x14006c090. The five ids from the registration scan (scratch script over llvm-objdump's listing of 0x14006b000..0x1400b0000). Emulator: vector.opcode.0x162.body."
+grade = "sure"
+name = "ReadBits3Body"
+
+["opcode.0x352"]
+statement = "Message 0x352 (850), client to game server: delete a character. Body: the character id (64 bits). The client sends it from DeleteCharacter while character select is idle, then waits for 0xe6. The client has no reader for it."
+proof = "Registered at 0x14006d6a6 mov edx, 0x352; 0x14006d6ab mov r8d, 0x8; 0x14006d691 lea r9, [0x14007d830]; 0x14006d682 lea rcx, [0x14007d840] stored at 0x14006d6a1; 0x14006d698 mov qword ptr [rsp+0x28], 0x0. LuaDeleteCharacter 0x140024c10: 0x140024c2a cmp dword ptr [rbx+0x170], 0x0; 0x140024c93 mov r8d, 0x352; 0x140024d2f mov r8d, 0x244; 0x140024d47 mov dword ptr [rax+0x170], 0x2. Emulator: vector.opcode.0x7dd.body (same writer)."
+grade = "sure"
+
+["0x140024c10"]
+statement = "The Lua function DeleteCharacter(index): when character select is idle and the index (from 1) names a listed character, keeps that index, sends message 0x352 with its id and waits for 0xe6."
+proof = "Name pair 0x140c56370 ('DeleteCharacter', 0x140024c10). 0x140024c2a cmp dword ptr [rbx+0x170], 0x0; 0x140024c93 mov r8d, 0x352; 0x140024d47 mov dword ptr [rax+0x170], 0x2."
+grade = "fairly sure"
+gap = "The index handling is read from Ghidra's decompile."
+name = "LuaDeleteCharacter"
+
+["opcode.0xe6"]
+statement = "Message 0xe6 (230), game server to client: the result of a delete. Body: the result (6 bits) and a 32-bit value. While the client waits after 0x352, result 0 removes the character from its list (an emptied list also clears the faction restriction); any result returns character select to idle and raises CharacterDelete with the result and the value. Otherwise it is ignored."
+proof = "Registered at 0x14006da7f mov edx, 0xe6; 0x14006da78 lea r8d, [r9+0x8]; 0x14006da61 lea rcx, [0x14007fcf0] stored at 0x14006da73; no writer. HandleCharacterSelectMessage: 0x140020f3f cmp eax, 0x2; 0x140020f4f cmp rdx, qword ptr [rbx+0x110]; 0x140020f5c cmp dword ptr [r9], 0x0; 0x140020f60 jne 0x140020f6e; 0x140020f69 call 0x1400296f0 (remove); 0x140020f79 mov dword ptr [rbx+0x23c], edi when the count is 0; 0x140020f8e mov dword ptr [rbx+0x170], edi; 0x140020fac call 0x1400ea3e0 with 'CharacterDelete' (0x1409ed6f0), the result and the value. Emulator: vector.opcode.0xe6.body."
+grade = "sure"
+
+["0x14007fcf0"]
+statement = "Reads message 0xe6's body: a 6-bit value, then a 32-bit value."
+proof = "Ghidra decompile: ReadBits32 6 (offset 0), ReadBits32 0x20 (offset 4). Emulator: vector.opcode.0xe6.body. 0x14007fd15 mov r8d, 0x6 / 0x14007fd1e call 0x14006c090; 0x14007fd2b mov r8d, 0x20 / 0x14007fd34 call 0x14006c090."
+grade = "sure"
+name = "ReadMessage00E6Body"
+
+["opcode.0x786"]
+statement = "Message 0x786 (1926), client to game server: rename a character. Body: the character id (64 bits) and the new name (wide text). The client sends it from RenameCharacter while character select is idle, only for a name that passes text rule 0 (CheckTextRule); then it waits for 0x14b. For an empty or refused name it sends nothing and answers itself as if 0x14b came with result 15. The client has no reader for it."
+proof = "Registered at 0x14006d714 mov edx, 0x786; 0x14006d719 mov r8d, 0x10; 0x14006d6ff lea r9, [0x14007e4f0] (sizer); 0x14006d6f0 lea rcx, [0x14007e540] stored at 0x14006d70f (writer); 0x14006d706 mov qword ptr [rsp+0x28], 0x0. LuaRenameCharacter 0x140024dd0: 0x140024ded cmp dword ptr [rax+0x170], 0x0; decompiled: 0x1403e1170 rule 0; 0x140024e8c mov r8d, 0x786; 0x140024f31 mov r8d, 0x244; 0x140024f49 / 0x140024f5c mov dword ptr [rax+0x170], 0x3; the refusal path builds a 0x14b record with result 0xf and calls 0x140022190 (0x140024f6f cmp dword ptr [rcx+0x170], 0x3). Emulator: vector.opcode.0x786.body."
+grade = "fairly sure"
+gap = "The refusal path's record is read from Ghidra's decompile."
+
+["0x14007e540"]
+statement = "Writes message 0x786's body: a 64-bit value, then a wide text."
+proof = "Ghidra decompile: 64 bits inline or WriteBitsSlow 0x40, then WriteWideText. Emulator: vector.opcode.0x786.body. 0x14007e5d2 mov r8d, 0x40 / 0x14007e5de call 0x140336470 (the slow path); 0x14007e5ee call 0x140336040 (WriteWideText)."
+grade = "sure"
+name = "WriteMessage0786Body"
+
+["0x140024dd0"]
+statement = "The Lua function RenameCharacter(index, name): sends message 0x786 as the opcode.0x786 record gives, or answers a refused name itself with result 15."
+proof = "Name pair 0x140c56390 ('RenameCharacter', 0x140024dd0). Instructions as in opcode.0x786."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the send and state instructions."
+name = "LuaRenameCharacter"
+
+["opcode.0x14b"]
+statement = "Message 0x14b (331), game server to client: the result of a rename. Body: the result (6 bits), the character id (64 bits) and the name (wide text). While the client waits after 0x786 it returns to idle; result 18 means renamed: the listed character with that id takes the name (at most 32 characters) and loses its needs-a-rename flag. Any result raises CharacterRename with the result and the name. Otherwise the message is ignored."
+proof = "Registered at 0x14006dc0d mov edx, 0x14b; 0x14006dc06 lea r8d, [r9+0x18]; 0x14006dbef lea rcx, [0x140080460] stored at 0x14006dc01; no writer. HandleCharacterSelectMessage: 0x140021131 cmp eax, 3; 0x140021150 call 0x140022190. HandleMessage014B (decompiled): state 0; result 0x12 -> id match, name copy (0x21 wide characters), word 0x2c8 of the character cleared (bRequiresRename in PushCharacterTable); 'CharacterRename' with format 'iS'. Emulator: vector.opcode.0x14b.body."
+grade = "fairly sure"
+gap = "The handler is read from Ghidra's decompile."
+
+["0x140080460"]
+statement = "Reads message 0x14b's body: a 6-bit value, a 64-bit value and a wide text."
+proof = "Ghidra decompile: ReadBits32 6 (offset 0), ReadUint64 (offset 8), ReadWideText (offset 0x10). Emulator: vector.opcode.0x14b.body. 0x140080492 mov r8d, 0x6 / 0x14008049b call 0x14006c090; 0x1400804ab call 0x14006c120 (ReadUint64); 0x1400804be call 0x140336a40 (ReadWideText)."
+grade = "sure"
+name = "ReadMessage014BBody"
+
+["0x140022190"]
+statement = "Handles message 0x14b, the rename result, as the opcode.0x14b record gives."
+proof = "Reached from 0x140021150 in HandleCharacterSelectMessage and from LuaRenameCharacter's refusal path."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "HandleMessage014B"
+
+["opcode.0x36a"]
+statement = "Message 0x36a (874), game server to client: you are being disconnected. Body: the reason (5 bits). Character select, realm select and the world each handle it: the client lets the connection go and shows the reason as a text (reason 6, 7, 8, 12, 15, 16, 19 and 20 each have their own text; any other reason a general one), and character select stops taking messages. The client has no writer for it."
+proof = "Registered at 0x14006d889 mov edx, 0x36a; 0x14006d882 lea r8d, [r9+0x4]; 0x14006d86b lea rcx, [0x14007e950] stored at 0x14006d87d (reader); 0x14006d88e mov qword ptr [rsp+0x20], 0x0 (no writer). Reader: 0x14007e95e mov r8d, 0x5; 0x14007e967 jmp 0x14006c090. Handlers: HandleCharacterSelectMessage 0x1400211c8 (record 0x140020ea0: the first value to 0x1400168a0, state 6), HandleRealmSelectMessage 0x140045abe (0x1400465c0), HandleWorldMessage case for 874 at 0x1403ec82f (0x1403b6d10). 0x1400168a0 (decompiled): a switch on the reason giving text ids 0x8e9e8 (6), 0xa638e (7), 0x8e9e5 (8), 0x8e9e7 (12), 0x8e9e6 (15), 0x96ae5 (16), 0xb268e (19), 0xb3600 (20), else 0x99e58, then an error screen with that text."
+grade = "fairly sure"
+gap = "The texts' wording (those ids in the client's en-US language file) is not read, so which reason means 'logged in elsewhere' is open; the realm-select and world handlers (0x1400465c0, 0x1403b6d10) are not read beyond their place in the dispatch."
+
+["opcode.0x36"]
+statement = "Message 0x36 (54), game server to client during character select: one 32-bit value, the highest character level the account has reached; the client keeps it (GetMaxCharacterLevelAchieved) and raises MaxCharacterLevelAchieved."
+proof = "Registered at 0x1400782c1 lea edx, [r9+0x36]; 0x1400782ca lea r8d, [r9+0x4]; 0x1400782b2 lea rcx, [0x14007ab50] (ReadMessage0591Body, one 32-bit value) stored at 0x1400782c5. HandleCharacterSelectMessage 0x140020f17 sub r8d, 0x36 -> 0x140021021 call 0x1400ea3e0 with 'MaxCharacterLevelAchieved'; GetMaxCharacterLevelAchieved 0x1400266c0 returns the kept word (decompiled)."
+grade = "fairly sure"
+gap = "The Lua getter is read from Ghidra's decompile."
+
+["opcode.0x7df"]
+statement = "Message 0x7df (2015), client to game server: choose a realm. Body: the realm id (32 bits). Realm select sends it for the chosen realm; when that is the current realm it first starts character select on the same connection, otherwise it makes the chosen realm current and waits for the hand-off (0x7a1). The client has no reader for it."
+proof = "Registered at 0x14006d7bc mov edx, 0x7df; 0x14006d7c1 mov r8d, 0x4; 0x14006d7b5 lea r9, [0x14007d000]; 0x14006d795 lea rcx, [0x14007d010] stored at 0x14006d7ad. Senders: 0x140045b70 (0x140045c65, 0x140045d46 mov r8d, 0x7df) and 0x140047730 (0x1400477be), decompiled: the realm entry's id compared with game 0x1680, StartCharacterSelect 0x140020bc0 then 0x7df, or 0x7df, the realm name and game 0x1680 set, state 1. Emulator: vector.opcode.0x7df.body."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the send instructions; 0x140047730 is reached from a pointer at 0x140c56a68 whose owner is not read."
+
+["0x140045b70"]
+statement = "Realm select's choice of the selected realm: when the realm is the current one, starts character select on the realm-select connection and sends message 0x7df with its id; otherwise sends 0x7df, makes it the current realm and waits for the server's hand-off."
+proof = "Instructions 0x140045c65 and 0x140045d46 mov r8d, 0x7df; decompiled as in opcode.0x7df. Callers 0x1400458f0 and 0x140047680."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "ChooseRealm"
+
+["0x14007d840"]
+statement = "Writes a body of one 64-bit value. Sixteen messages use it, among them 0x352 and 0x7dd."
+proof = "Ghidra decompile: 64 bits inline when the chunk has 64 bits of room, else WriteBitsSlow 0x40. Registrations from the scan: 0x124, 0x18d, 0x194, 0x197, 0x352, 0x3a2, 0x3af, 0x411, 0x43b, 0x4e7, 0x549, 0x570, 0x6e7, 0x7dd, 0x839, 0x865. Emulator: vector.opcode.0x7dd.body. 0x14007d862 cmp rax, 0x40 (room for 64 bits in the chunk) and the slow path after 0x14007d893 cmp rax, 0x40."
+grade = "sure"
+name = "WriteUint64Body"
+
+["0x14007d010"]
+statement = "Writes a body of one 32-bit value. Twenty-two messages use it, among them 0x7df."
+proof = "Ghidra decompile: 32 bits inline or WriteBitsSlow 0x20. Registrations from the scan: 0xb3, 0xb9, 0xbb, 0xc9, 0xd2, 0x11d, 0x153, 0x185, 0x192, 0x248, 0x249, 0x3cd, 0x552, 0x571, 0x5d5, 0x63b, 0x71f, 0x7a5, 0x7cc, 0x7df, 0x802, 0x858. Emulator: vector.opcode.0x7df.body. 0x14007d032 cmp rax, 0x40 (room in the chunk) and the slow path after 0x14007d063 cmp rax, 0x40."
+grade = "sure"
+name = "WriteUint32Body"
+
+["0x1400232f0"]
+statement = "Shows a character-select error: puts up the error screen with the given text id and moves character select to its stopped state, where it takes every message and does nothing."
+proof = "Decompiled: a screen object built with the text, 0x1400481b0, 0x1400233ba mov dword ptr [rdi+0x170], 0x6. Callers include LuaCreateCharacter (texts 0x230ae, 0x230b2, 0x230a5, 0x41ccd), HandleMessage00DC and HandleMessage00AD (0x7a6af)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the state store; what the error screen offers the player is not read."
+name = "ShowCharacterSelectError"
+
+["0x140034330"]
+statement = "Starts the world session for the chosen character: shows the loading screen for the world (ShowWorldLoadingScreen), keeps the character's id and name and its gender in the game, builds the world's message handler and makes the character-select connection the world connection, loading the world at the 0xad position (SetWorldConnection)."
+proof = "Only caller HandleMessage00AD at 0x140022510. Decompiled: 0x1400360f0 with the record's word 0x50 (0xad's first value); game 0x16a0 = the character id; 0x140012620 with the name; game 0x1698 = the record's word 0x4c; 0x1403e1400 builds the 0x8020-byte world handler (class table 0x140b66880, HandleWorldMessage at slot 0x58); SetWorldConnection 0x1403e7ea0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "StartWorldSession"
+
+["0x1400360f0"]
+statement = "Shows the loading screen for a world: loads the loading screen's font, shader, cursor, progress bar and tip textures, then the world's own loading picture and model (the World row's screenPath and screenModelPath), or UI_CRB_WorldID51_LoadScreen and PRP_Loading_Temp_000 when the row or the file is missing."
+proof = "Decompiled: the texts UI_CRB_LoadingProgress.tex and UI_CRB_LoadingTipBack.tex; 0x14024acc0 with the world id; the row's words 0x18 and 0x20 as text offsets (World.tbl columns screenPath and screenModelPath); defaults UI_CRB_WorldID51_LoadScreen.tex and PRP_Loading_Temp_000.m3."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "ShowWorldLoadingScreen"
+
+["0x14024acc0"]
+statement = "Returns the World row with the given id, or none."
+proof = "Decompiled: the lookup through the shared-table hook with 'World' (0x140a6e180), else the loaded table's slot 0x18."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "GetWorldRow"
+
+["0x1403e70d0"]
+statement = "Loads a world: fails when no World row has the id; otherwise opens the world's asset (the row's assetPath, and its '_Low' variant unless the row's flags say otherwise), sets up the world's terrain and zones, clears what the last world held, keeps the start position, and clears the world's loading stages."
+proof = "Callers SetWorldConnection (0x1403e7fd1) and 0x1403b6de0 (0x1403b715e, the in-world case of 0xad). Decompiled: 0x14024acc0 null -> 0x80004005; the row's word 8 as the asset path; L'%s_Low' when bit 0 of the row's word 0x10 is clear; the position's four words to the world's 0x7260; 0x1403e7a20 mov dword ptr [r13+0x7b48], 0x0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the stage reset."
+name = "LoadWorld"
+
+["0x1403e8000"]
+statement = "Tells whether the world has finished loading, stage by stage, each kept once passed: (1) the world's terrain around the start is loaded; (2) the player unit is set (message 0x19b) and has its model; (3) for worlds of type 2, 5, 7 or 8, a further list is loaded; (4) a further world part is ready; then (5) the terrain near the player is loaded and the world has had message 0xf1, after which the client places the player, notes the player unit's zone and sends message 0xf2 with it. It answers loaded only after all that and once message 0x61 has set both of its flags."
+proof = "Slot 5 (0x28) of the world handler's class table 0x140b66880 (pointer 0x1403e8000 at 0x140b668a8). 0x1403e8011 mov eax, dword ptr [rcx+0x7b48]; 0x1403e805a cmp dword ptr [rbx+0x6420], r13d; 0x1403e8076 or dword ptr [rbx+0x7b48], 0x1; 0x1403e80aa test byte ptr [rbx+0x7b48], 0x4; 0x1403e80fb or ..., 0x4; 0x1403e8137 or ..., 0x8; 0x1403e8371 test byte ptr [rbx+0x7b48], 0x10; 0x1403e8399 cmp dword ptr [rbx+0x6420], r13d (set to 1 only by HandleMessage00F1 at 0x1403b6806); 0x1403e8493 or dword ptr [rbx+0x7b48], 0x10. Decompiled: stage 2 needs the world's player unit and its word 0x16e8 (the model, set by 0x140467f50); stage 3 the World row type (row word 0x14, World.tbl column type) in the set 0x1a4; SendWorldMessage 0x1403f4900 with 0xf2 and the player unit's word 0x17e8 kept at the world's 0x7150; the result needs flags 0x20 and 0x40 (set by HandleMessage0061 at 0x1403c75b4 and 0x1403c75d0)."
+grade = "fairly sure"
+gap = "Stages 3 and 4 and what gives the player unit its model are read from Ghidra's decompile only, not traced; that the 0xf2 value is a zone id is a guess from the 15-bit width the client writes."
+name = "CheckWorldLoaded"
+
+["0x1400344d0"]
+statement = "The world session's update while the world loads: once the world has finished loading (CheckWorldLoaded) and the player unit exists with its world ready, it hands the world to the game (the world's handler leaves the loading session) and ends the loading screen."
+proof = "Slot 6 (0x30) of the world session's class table 0x140b55660 (stored by 0x140033e00). Decompiled: slot 0x28 of the world handler (CheckWorldLoaded), the world's player unit and its word 0x16e8, terrain slots 0x98 and 0xa0; 0x1403f3790 (cursor position); 0x140048100 with the world handler and 1; the session's word 0x50 set to 1 and the handler released."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "UpdateWorldStage"
+
+["opcode.0x262"]
+statement = "Message 0x262 (610), game server to client: create a unit in the world. Body, in order: the unit id (32 bits); the unit type (6 bits, 0 to 36; 37 and above fail the read); the type's own data (for type 20, a player character: ReadUnitCreatePlayerData); an 8-bit value; a count (5 bits) and that many 5-bit/2-bit tagged entries (the 2-bit tag picks one of three readers: a 32-bit value, the reader at 0x140080c60, or two 32-bit values); a 32-bit value; a count (5 bits) and that many entries of a 5-bit kind (0 to 29) and the kind's data; a count (8 bits) and that many (8 bits, float, float); a count (7 bits) and that many item visuals (ReadItemVisual); a count (9 bits) and that many entries read by 0x140094bf0; 32, 14, 14 and 32 bits; a 64-bit value; three tagged values, each a 2-bit tag (0 or 1; 2 and 3 fail) followed by one bit for tag 0 or, for tag 1, 17 bits, then a 64-bit value and 14 bits, then 32 and 18 bits; and 14, 17 and 15 bits. The client ignores a unit id it already has; otherwise it builds the unit (InitUnitFromCreate) and raises UnitCreated. The client has no writer for it."
+proof = "Registered at 0x140074aea mov edx, 0x262; 0x140074aef mov r8d, 0x120 (record size); 0x140074ad0 lea rcx, [0x140096fa0] stored at 0x140074adf; 0x140074af5 mov qword ptr [rsp+0x20], 0x0 (no writer). Widths in ReadMessage0262Body (decompiled): the type readers from the 37-entry table at 0x140c1ea30, the 3 tagged readers at 0x140c1ea18 (0x14007ab50, 0x140080c60, 0x14007a040), the 30 kind readers at 0x140c1f070, the tag tables 0x140c1eb78, 0x140c1eb68, 0x140c1eb58 (entry 0 0x1400853f0, one bit; entries 1 0x140096f80, 0x140096f30, 0x140080e80). HandleWorldMessage's case for 610 (0x1403ed3ee) calls 0x1403d9760. Emulator: vector.opcode.0x262.player."
+grade = "fairly sure"
+gap = "The layout's widths are sure (emulator); what the 8-bit value, the lists, the 32/14/14/32-bit values, the 64-bit value, the three tagged values and the last three values mean is not read, nor which of them the client needs beyond race and gender to give a player unit its model (DescribeUnitModel 0x140466ec0 describes a player's model by race and gender); a recording of a retail player's 0x262 would settle what a working one holds."
+
+["0x140096fa0"]
+statement = "Reads message 0x262's body in the order given in the opcode.0x262 record, taking space for its lists from the record space."
+proof = "Ghidra decompile (widths and offsets in the opcode.0x262 record). Emulator: vector.opcode.0x262.player reads 907 bits back to every planted value; a type of 37 and a tag of 2 fail with 0x80004005. 0x140096fcf mov r8d, 0x20 / 0x140096fe2 call 0x14006c090 (unit id); 0x140096ff3 mov r8d, 0x6 / 0x140096fff call 0x14006c090 (type); 0x14009700f cmp rax, 0x25; 0x14009702a call qword ptr [r12+8*rax+0xc1ea30] (the type's reader); 0x140097041 mov r8d, 0x8 / 0x14009704a call 0x14006be30; 0x14009705e mov r8d, 0x5 / 0x140097067 call 0x14006be30; 0x1400970c5 call 0x140096230; 0x1400970e5 mov r8d, 0x20; 0x140097102 mov r8d, 0x5 / 0x14009710b call 0x14006bf60; 0x140097168 call 0x1400af930; 0x140097188 mov r8d, 0x8; 0x1400971e7 call 0x1400961d0; 0x140097207 mov r8d, 0x7; 0x140097262 call 0x1400ab890; 0x140097282 mov r8d, 0x9 / 0x14009728b call 0x14006bf60."
+grade = "sure"
+name = "ReadMessage0262Body"
+
+["0x1400962d0"]
+statement = "Reads unit type 20's data in message 0x262, a player character: the character id (64 bits), the realm id (14 bits), the name (wide text), race (5 bits), class (5 bits), gender (2 bits), a 64-bit value, a count (8 bits) and that many 32-bit values, a wide text, a 4-bit value, a count (5 bits) and that many 64-bit values, a count (6 bits) and that many 32-bit values, the path (3 bits), an 8-bit value and a 14-bit value."
+proof = "Entry 20 of the type table at 0x140c1ea30. Ghidra decompile: ReadUint64; ReadBits32 0xe; ReadWideText; ReadBits32 5, 5, 2; ReadUint64; ReadBits8 8 and ReadBytesAsBits count x 4; ReadWideText; ReadBits32 4; ReadBits8 5 and ReadBytesAsBits count x 8; ReadBits16 6 and ReadBytesAsBits count x 4; ReadBits32 3, ReadBits8 8, ReadBits32 0xe. Meanings from InitUnitFromCreate's case 0x14 (character id and realm must not be 0, race at most 17, class looked up, gender at most 3). Emulator: vector.opcode.0x262.player."
+grade = "fairly sure"
+gap = "Widths are sure; the 64-bit value, the lists, the second text, the 4-bit, 8-bit and 14-bit values are not read; that the 3-bit value is the path is inferred from its width and place."
+name = "ReadUnitCreatePlayerData"
+
+["0x1403d9760"]
+statement = "Handles message 0x262: when no unit has the id, builds a unit from the message (InitUnitFromCreate); a build failure drops it. A unit the world was waiting to take control of is marked as the client's."
+proof = "HandleWorldMessage case for 610: 0x1403ed3ee..0x1403ed3f4 call 0x1403d9760 (jump table 0x1403f1344). Decompiled: 0x1403d90d0 finds the id -> return; 0x14018b280 0x37b0 bytes, 0x140454380 (unit constructor), 0x140456960; game 0x6480 compared with the id."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what game 0x6480 holds is not read."
+name = "HandleMessage0262"
+
+["0x140456960"]
+statement = "Builds a unit from message 0x262: keeps its id and type (types above 36 fail), sets the type's data, and for type 20 (a player character) refuses a character id or realm of 0, a race above 17, a class the client cannot look up and a gender above 3; then raises UnitCreated."
+proof = "Called by HandleMessage0262 (0x1403d97a9). Decompiled: 0x24 compared with the type; case 0x14: the character id and realm checked against 0; race compared with 0x11; 0x14045a8b0 with the class; gender compared with 3; 'UnitCreated' (0x140afb808)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the other 36 types' cases are not read."
+name = "InitUnitFromCreate"
+
+["0x140466ec0"]
+statement = "Describes the model a unit's actor loads: a unit of type 18 gets the default icon animation model; a unit with its own model path uses it; a unit with creature data gets the creature's model; any other unit, a player character among them, is described by its race and gender (and, for the player in a world that sets one, a race-and-gender model the world names). The unit's actor (built by 0x1404674c0) loads that model, and the loaded model is what the end of loading waits for (CheckWorldLoaded stage 2)."
+proof = "Called by 0x1404674c0 (which builds the actor at the unit's 0xcc0 through 0x1401df340 and its slot 0x18; 0x1404675d7 mov qword ptr [r15+0xcc0], rbx), itself called from InitUnitFromCreate 0x140456960 at 0x140457a93; the actor's load completes in 0x140467990, which calls 0x140467f50 (0x1404681c7 mov qword ptr [r14+0x16e8], r13: the model CheckWorldLoaded tests). Decompiled: the unit type (word 0x80) 0x12 -> L'Art\\Icon\\Animation\\Default\\Icon_Animation_Default_000.m3'; the unit's 0xd20 path; the creature data at 0xd08 through 0x1401dab50; else race (0xd8) and gender (0x34) into the description, and for the player a lookup by the world object's 0x7198 id, race and gender (0x1401f2910 / 0x1401f29c0)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; whether a race and gender alone give a player a model that loads (no item visuals, no customisation) is not tested; a live session or a recording of a retail player's 0x262 would settle it."
+name = "DescribeUnitModel"
+
+["0x1403d90d0"]
+statement = "Finds a world's unit by its 32-bit id, or none."
+proof = "Decompiled: a hash table of the world (count at 0x6f10, buckets at 0x6f18, hash and compare routines at 0x6f20 and 0x6f28); 0x1403d90f1 mov rbx, qword ptr [rsi+0x6f18]; 0x1403d90fd div qword ptr [rsi+0x6f10]."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the bucket instructions."
+name = "FindUnit"
+
+["opcode.0x19b"]
+statement = "Message 0x19b (411), game server to client: this unit is the player. Body: two 32-bit values, the first the unit id. When the world has no player yet and a unit has that id, the client makes it the player: the world takes the unit's position, the camera and control follow it, and PlayerChanged is raised; an unknown id is reported as an error and leaves the world without a player, so loading never finishes. With a player already set it does nothing."
+proof = "Registered at 0x140071973 mov edx, 0x19b; 0x14007196c lea r8d, [r9+0x8]; 0x140071955 lea rcx, [0x14007a040] stored at 0x140071967; no writer. HandleWorldMessage case for 411: 0x1403ec8f9..0x1403ec8ff call 0x1403b5ad0. HandleMessage019B (decompiled): the world's player word null, 0x1403d90d0 with the first value, the unit's position to the world's 0x7260, 'PlayerChanged'; a missing unit goes to ReportError and returns 0x80004005. Emulator: vector.opcode.0x19b.body."
+grade = "fairly sure"
+gap = "The handler is read from Ghidra's decompile; the second 32-bit value is not used by it."
+
+["0x14007a040"]
+statement = "Reads a body of two 32-bit values. Thirty-two messages use it, among them 0x19b."
+proof = "Ghidra decompile: ReadBits32 0x20 at offsets 0 and 4. Registrations from the scan include 0x19b. Emulator: vector.opcode.0x19b.body. 0x14007a065 mov r8d, 0x20 / 0x14007a06e call 0x14006c090; 0x14007a07b mov r8d, 0x20 / 0x14007a084 call 0x14006c090."
+grade = "sure"
+name = "ReadTwoUint32Body"
+
+["0x1403b5ad0"]
+statement = "Handles message 0x19b, making a unit the player, as the opcode.0x19b record gives."
+proof = "Reached from HandleWorldMessage at 0x1403ec8ff."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "HandleMessage019B"
+
+["opcode.0x61"]
+statement = "Message 0x61 (97), game server to client: the player has entered the world. Its body is empty. The client sets the world's entered flag (and, unless a world event is pending, its second flag), which the end of loading waits for (CheckWorldLoaded), and raises PlayerEnteredWorld; it reads the player unit's position without checking that a player exists, so it must come after 0x19b."
+proof = "Registered at 0x140071ac4 lea edx, [r9+0x61]; 0x140071ac8 lea r8d, [r9+0x1]; 0x140071ab0 lea rcx, [0x14007d8e0] stored at 0x140071abf (ReadEmptyBody); 0x140071acf mov qword ptr [rsp+0x20], 0x0. HandleWorldMessage case for 97 (jump table entry 0 -> 0x1403ec9ff): 0x1403eca02 call 0x1403c74d0. HandleMessage0061: 0x1403c75b4 or dword ptr [rdi+0x7b48], 0x20; 0x1403c75d0 or dword ptr [rdi+0x7b48], 0x40 when the world's 0x7198 object's words 0x24 and 0x1c and pointer 0x1f0 are 0; decompiled: the game's player unit's 0x11e0 passed to 0x140448be0 when 0x140c658f8 is set, 'PlayerEnteredWorld' (0x140affe10). Emulator: vector.opcode.0x61.body."
+grade = "fairly sure"
+gap = "What the world's 0x7198 object is (when the second flag waits) is not read; the unchecked player read is from Ghidra's decompile."
+
+["0x14007d8e0"]
+statement = "Reads an empty body: reads nothing and succeeds when given a record. Forty-five messages use it, among them 0x61."
+proof = "0x14007d8e0 xor eax, eax; 0x14007d8e2 mov ecx, 0x80004005; 0x14007d8e7 test r8, r8; 0x14007d8ea cmovz eax, ecx; 0x14007d8ed ret. Emulator: vector.opcode.0x61.body."
+grade = "sure"
+name = "ReadEmptyBody"
+
+["0x1403c74d0"]
+statement = "Handles message 0x61 as the opcode.0x61 record gives."
+proof = "Reached from HandleWorldMessage at 0x1403eca02."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the flag instructions."
+name = "HandleMessage0061"
+
+["opcode.0xf2"]
+statement = "Message 0xf2 (242), client to world server, sent once while the world loads, when the terrain near the player is ready and the world has had message 0xf1 (CheckWorldLoaded): one 15-bit value, a value of the player unit's (likely the zone it stands in). The server's 0x61 is what the end of loading still waits for. The client has no reader for it."
+proof = "Registered at 0x140070fc6 mov edx, 0xf2; 0x140070fcb mov r8d, 0x4; 0x140070fb1 lea r9, [0x14007c610] (sizer: 0x14007c610 add qword ptr [rdx], 0xf); 0x140070fa2 lea rcx, [0x14007eea0] stored at 0x140070fc1 (writer: 0x14007eee5 and eax, 0x7fff); 0x140070fb8 mov qword ptr [rsp+0x28], 0x0. Sent through SendWorldMessage 0x1403f4900 by CheckWorldLoaded. Emulator: vector.opcode.0xf2.body."
+grade = "fairly sure"
+gap = "What the player unit's value is (its word 0x17e8, set by 0x1405b4e90) is not read."
+
+["0x14007eea0"]
+statement = "Writes message 0xf2's body: the low 15 bits of its value."
+proof = "0x14007eee5 and eax, 0x7fff; 0x14007eef4 lea rax, [rcx+0x16]. Emulator: vector.opcode.0xf2.body."
+grade = "sure"
+name = "WriteMessage00F2Body"
+
+["0x14007c610"]
+statement = "Counts the bits of message 0xf2's body: 15."
+proof = "0x14007c610 add qword ptr [rdx], 0xf; 0x14007c614 ret."
+grade = "sure"
+name = "SizeMessage00F2Body"
+
+["opcode.0x355"]
+statement = "Message 0x355 (853), game server to client: remove a unit. Body: the unit id (32 bits) and one bit. The client raises UnitDestroyed and removes the unit; when it is the player, the world loses its player. The bit marks a unit of type 1 specially."
+proof = "Registered at 0x140074b21 mov edx, 0x355; 0x140074b1a lea r8d, [r9+0x8]; 0x140074b03 lea rcx, [0x14007c340] stored at 0x140074b15. HandleWorldMessage case for 853 (0x1403ed400) calls 0x1403d98f0: 0x1403d90d0, then 0x1403d9590 ('UnitDestroyed', the unit taken off the world's table, the player cleared). Emulator: vector.opcode.0x355.body."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what the bit does for type 1 units is not read."
+
+["0x14007c340"]
+statement = "Reads a body of a 32-bit value and one bit. Thirteen messages use it, among them 0x355."
+proof = "Ghidra decompile: ReadBits32 0x20 (offset 0), ReadBits32 1 (offset 4). Emulator: vector.opcode.0x355.body. 0x14007c365 mov r8d, 0x20 / 0x14007c36e call 0x14006c090; 0x14007c37b mov r8d, 0x1 / 0x14007c384 call 0x14006c090."
+grade = "sure"
+name = "ReadUint32AndBitBody"
+
 # Test vectors from the client's own code, run on Ghidra's p-code emulator
 
 ["vector.0x1400c2eb0.base_key"]
@@ -1692,4 +2151,79 @@ grade = "sure"
 ["vector.opcode.0x591.body"]
 statement = "Message 0x591's body read by the client: 01000000 is the value 1, 32 bits."
 proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadMessage0591Body 0x14007ab50 run as in vector.opcode.0x3db.body."
+grade = "sure"
+
+["vector.opcode.0x117.body"]
+statement = "Message 0x117's body read by the client: server time 0x01D9F00000000000; one character (id 0x0102030405060708, name 'Ab', gender 1, race 3, class 2, faction 166, level 7, body item (slot 2, display 0x1234, colour set 0x56, dye 0x789), worn item (3, 0x2345, 0x67, 0x89ABCDEF), world 0x33, zone 0x44, 14-bit 0x55, floats 1.5 2.5 3.5 4.5 5.5, path 2, disabled 1, rename 0, 0x77, labels 1 2 with values 3 4, bones 1.0 2.0, last float 0.25); enabled ids [0x11]; disabled ids [0x21, 0x22]; realm 0x99; pending realm 0x99 and character 0x0102030405060708; remove time 600; reservations 3; 12; 0x5C5C; faction restriction 167; free-50 bit 1. These are the 1372 bits 0000000000f0d90101000000080706050403020104410062000d610a0000700000001000000020a0915801890700000100000083a2d119f0debc9a3803200254010000c03f0000204000006040000090400000b040ea0e00004002000000040000000600000008000000040000000000007f000000800000007d020000002200000004000000420000004400000032814c00e1c0a080604020004b00006000000080010000808b0b00e01408 (172 bytes), which the reader takes back to every value and stops after 1372 bits; the same bytes less the last fail with 0x80070026 after 1368 bits. With no characters and empty lists (time 5, realm 0x99, all else 0) the body is the 395 bits 0500000000000000000000000000000000000000990000000000000000000000000000000000000000000000000000000000."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadMessage0117Body 0x14007fab0 with rcx = a reader over the bytes, rdx = a planted record space (limit, base, end, next for AllocateMessageSpace 0x1403374e0) and r8 = a zeroed 0x68-byte record; the character, item, label, bone and id-list values read back through the pointers it stored."
+grade = "sure"
+
+["vector.opcode.0x25b.body"]
+statement = "Message 0x25b's body as the client's writer makes it: creation id 0x45, name 'Ab Cd', path 2, labels 1 2 with values 3 4, bones 1.0 and -0.5 give the 379 bits 450000000a41006200200043006400120000000800000010000000180000002000000010000000000000fc010000f805 (48 bytes); the sizer counts 379 bits. Creation id 7, the same name, path 0 and no customisation or bones give the 187 bits 070000000a41006200200043006400000000000000000000."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): WriteMessage025BBody 0x14007eb30 with rdx = a planted 0x38-byte record (id, name pointer, path, count, label and value pointers, bone count, bone pointer); SizeMessage025BBody 0x14007eaa0 with the same record."
+grade = "sure"
+
+["vector.opcode.0xdc.body"]
+statement = "Message 0xdc's body read by the client: character id 0x1122334455667788, 0xCAFE and result 3 are the 102 bits 8877665544332211feca000003 (13 bytes)."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadMessage00DCBody 0x14007fd50 with a zeroed 0x10-byte record."
+grade = "sure"
+
+["vector.opcode.0x7dd.body"]
+statement = "Messages 0x7dd and 0x352 share one writer: the character id 0x0102030405060708 is the 64 bits 0807060504030201; the sizer counts 64."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): WriteUint64Body 0x14007d840 and its sizer 0x14007d830."
+grade = "sure"
+
+["vector.opcode.0x786.body"]
+statement = "Message 0x786's body as the client's writer makes it: character id 0x0102030405060708 and the name 'Ef Gh' are the 152 bits 08070605040302010a45006600200047006800 (19 bytes); the sizer counts 152."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): WriteMessage0786Body 0x14007e540 with a planted record (id, name pointer); its sizer 0x14007e4f0."
+grade = "sure"
+
+["vector.opcode.0x7df.body"]
+statement = "Message 0x7df's body as the client's writer makes it: realm 0x99 is the 32 bits 99000000; the sizer counts 32."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): WriteUint32Body 0x14007d010 and its sizer 0x14007d000."
+grade = "sure"
+
+["vector.opcode.0xe6.body"]
+statement = "Message 0xe6's body read by the client: result 0 and the value 0x1234 are the 38 bits 008d040000 (5 bytes)."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadMessage00E6Body 0x14007fcf0 with a zeroed 8-byte record."
+grade = "sure"
+
+["vector.opcode.0x14b.body"]
+statement = "Message 0x14b's body read by the client: result 18, character id 0x0102030405060708 and the name 'Cd Ef' are the 158 bits 12c2814101c1804080c210001900084011801900 (20 bytes)."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadMessage014BBody 0x140080460 with a planted record space and a zeroed 0x18-byte record; the name read back through its pointer."
+grade = "sure"
+
+["vector.opcode.0x162.body"]
+statement = "Message 0x162's body read by the client: the 3-bit value 5 is the byte 05."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadBits3Body 0x14007fdc0 with a zeroed 4-byte record."
+grade = "sure"
+
+["vector.opcode.0x19b.body"]
+statement = "Message 0x19b's body read by the client: unit id 0x1001 and 0x2002 are the 64 bits 0110000002200000."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadTwoUint32Body 0x14007a040 with a zeroed 8-byte record."
+grade = "sure"
+
+["vector.opcode.0x61.body"]
+statement = "Message 0x61's body read by the client: no bytes; the reader succeeds and reads nothing."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadEmptyBody 0x14007d8e0 over an empty reader with a 1-byte record."
+grade = "sure"
+
+["vector.opcode.0xf2.body"]
+statement = "Message 0xf2's body as the client's writer makes it: the value 0xFFFF1234 is written as its low 15 bits, 0x1234, the 15 bits 3412; the sizer counts 15."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): WriteMessage00F2Body 0x14007eea0 and SizeMessage00F2Body 0x14007c610."
+grade = "sure"
+
+["vector.opcode.0x355.body"]
+statement = "Message 0x355's body read by the client: unit id 0x1001 and the bit 1 are the 33 bits 0110000001."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadUint32AndBitBody 0x14007c340 with a zeroed 8-byte record."
+grade = "sure"
+
+["vector.opcode.0x262.player"]
+statement = "Message 0x262's body read by the client for a player: unit id 0x1001, type 20, character id 0x0102030405060708, realm 0x99, name 'Ab Cd', race 1, class 2, gender 1, 0x1112131415161718, one 32-bit value 0x21, text 'Gd', 4-bit 5, one 64-bit value 0x3132333435363738, one 32-bit value 0x41, path 3, 0x51, 0x61; then 8-bit 0x80, no 5-bit list, 0x90, no lists, 0xD0, 0xD4, 0xD8, 0xDC, 0xE0E0E0E0E0E0E0E0, tag 0 with bit 1, tag 1 with 0x5A5A5A5A5A5A5A5A and 0x99, tag 1 with 0x10C and 0x110, then 0x114, 0x118, 0x11C. These are the 907 bits 0110000014c2814101c180404026a010042006000230044006104418171615141312110121000000044700640015706e6c6a686664628220000080458501800012000000000000400300005003d800370000003838383838383838d3d2d2d2d2d2d2d2ca046208000080088022c008c01100 (114 bytes), which the reader takes back to every value and stops after 907 bits. A type of 37 (0110000025) fails with 0x80004005 after 38 bits, and a first tag of 2 fails the same way."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): ReadMessage0262Body 0x140096fa0 with a planted record space and a zeroed 0x120-byte record; the player's name, text and lists read back through their pointers."
+grade = "sure"
+
+["vector.0x1403e1170.names"]
+statement = "CheckTextRule on rule 0 (a full name) passes 'Ab Cd', 'Abc Def', 'abc def', 'aBC dEF', 'Ébc Déf' and 14 A, a space and 15 B (30 characters); it refuses 'Abc' and 'Abcd' (too short, no space), 'Ab  Cd' and 'Ab Cd Ef' (two spaces), ' Abc Def' and 'Abc Def ' (space first or last), 'Ab1 Cd', 'Ab-Cd Ef', 'Ab_Cd Ef', \"Ab'c Def\", 'Ab.c Def', 'Abcå Def', 'AbЖ Cd', 'Ab Cd' with a line break, the empty text, and 15 A, a space and 15 B (31 characters). On rule 25 (a name part) it passes 'Ab', 'A' and 28 A, and refuses the empty text, 'Ab Cd', 'Ab1', 'Ab-c' and 29 A. Windows' IsTextUnicode is reached only for texts that passed every other test."
+proof = "Ghidra's p-code emulator (scratch script outside the repository): CheckTextRule 0x1403e1170 with rcx = the text and edx = the rule, after planting rules 0 and 25 at 0x140c89730 as InitTextRules 0x1403e0b60 stores them; the IsTextUnicode call at 0x1403e13e4 stepped over with the result 0 and counted."
 grade = "sure"
