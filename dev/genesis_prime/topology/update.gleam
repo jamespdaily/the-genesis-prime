@@ -31,6 +31,12 @@ pub type Delivery {
 
 /// The update that tells observers of an effect, stamped with the time of the
 /// move or think that caused the effect.
-pub fn from_effect(effect: Effect, sent_at: Int) -> Update {
-  todo as "body in the build commit"
+pub fn from_effect(effect effect: Effect, sent_at sent_at: Int) -> Update {
+  case effect {
+    unit.Moved(unit_id:, position:) -> Moved(unit_id:, position:, sent_at:)
+    unit.HealthChanged(unit_id:, health:) ->
+      HealthChanged(unit_id:, health:, sent_at:)
+    unit.Died(unit_id:) -> Died(unit_id:, sent_at:)
+    unit.Returned(unit_id:) -> Returned(unit_id:, sent_at:)
+  }
 }

@@ -8,6 +8,8 @@
 //// writing-gleam skill, for the reason given in `genesis_prime/topology/grid`.
 
 import genesis_prime/topology/position.{type Position}
+import gleam/int
+import gleam/list
 import gleam/option.{type Option}
 
 /// How long a dead unit stays dead before it returns, in microseconds.
@@ -70,19 +72,49 @@ pub type Neighbour {
 
 /// A living unit at full health.
 pub fn new(
-  id: Int,
-  kind: Kind,
-  position: Position,
-  maximum_health: Int,
+  id id: Int,
+  kind kind: Kind,
+  position position: Position,
+  maximum_health maximum_health: Int,
 ) -> Unit {
-  todo as "body in the build commit"
+  Unit(
+    id:,
+    kind:,
+    position:,
+    health: maximum_health,
+    maximum_health:,
+    status: Alive,
+  )
 }
 
 /// Takes `damage` from a unit. A hit on a dead unit is refused. Health stops
 /// at 0; the hit that brings it there kills the unit once, and it returns
 /// `return_delay_microseconds` after `now`.
-pub fn hit(unit: Unit, damage: Int, now: Int) -> HitResult {
-  todo as "body in the build commit"
+pub fn hit(unit unit: Unit, damage damage: Int, now now: Int) -> HitResult {
+  case unit.status {
+    Dead(_) -> HitResult(unit:, outcome: RefusedDead, effects: [])
+    Alive -> {
+      let health = int.max(0, unit.health - damage)
+      case health {
+        0 ->
+          HitResult(
+            unit: Unit(
+              ..unit,
+              health:,
+              status: Dead(returns_at: now + return_delay_microseconds),
+            ),
+            outcome: Landed(remaining_health: health),
+            effects: [Died(unit_id: unit.id)],
+          )
+        _ ->
+          HitResult(
+            unit: Unit(..unit, health:),
+            outcome: Landed(remaining_health: health),
+            effects: [HealthChanged(unit_id: unit.id, health:)],
+          )
+      }
+    }
+  }
 }
 
 /// One think of a creature: it steps `step_metres` toward `target`, the
@@ -92,29 +124,88 @@ pub fn think(
   creature: Unit,
   target: Option(Position),
   step_metres: Float,
-  now: Int,
+  _now: Int,
 ) -> #(Unit, List(Effect)) {
-  todo as "body in the build commit"
+  case creature.status, target {
+    Alive, option.Some(target) -> {
+      let position =
+        position.step_toward(creature.position, target, step_metres)
+      case position == creature.position {
+        True -> #(creature, [])
+        False -> move(unit: creature, position:)
+      }
+    }
+    Alive, option.None | Dead(_), _ -> #(creature, [])
+  }
 }
 
 /// Puts a unit at a position. A dead unit does not move.
-pub fn move(unit: Unit, position: Position) -> #(Unit, List(Effect)) {
-  todo as "body in the build commit"
+pub fn move(
+  unit unit: Unit,
+  position position: Position,
+) -> #(Unit, List(Effect)) {
+  case unit.status {
+    Alive -> #(Unit(..unit, position:), [Moved(unit_id: unit.id, position:)])
+    Dead(_) -> #(unit, [])
+  }
 }
 
 /// Brings a dead unit back at full health once `now` has reached its return
 /// time. Before that time, and for a living unit, nothing changes.
-pub fn return_if_due(unit: Unit, now: Int) -> #(Unit, List(Effect)) {
-  todo as "body in the build commit"
+pub fn return_if_due(unit unit: Unit, now now: Int) -> #(Unit, List(Effect)) {
+  case unit.status {
+    Dead(returns_at) if now >= returns_at -> #(
+      Unit(..unit, health: unit.maximum_health, status: Alive),
+      [Returned(unit_id: unit.id)],
+    )
+    Dead(_) | Alive -> #(unit, [])
+  }
+}
+
+/// Whether the effects of a hit say that the unit died.
+pub fn died(effects effects: List(Effect)) -> Bool {
+  list.any(effects, fn(effect) {
+    case effect {
+      Died(_) -> True
+      Moved(..) | HealthChanged(..) | Returned(_) -> False
+    }
+  })
 }
 
 /// The neighbour of one kind that is nearest to `from`, or none when no
 /// neighbour of that kind is listed. Two at the same distance resolve to the
 /// lower id, so the answer does not depend on the list's order.
 pub fn nearest(
-  from: Position,
-  neighbours: List(Neighbour),
-  kind: Kind,
+  from from: Position,
+  neighbours neighbours: List(Neighbour),
+  kind kind: Kind,
 ) -> Option(Neighbour) {
-  todo as "body in the build commit"
+  neighbours
+  |> list.filter(fn(neighbour) { neighbour.kind == kind })
+  |> list.fold(option.None, fn(best, candidate) {
+    case best {
+      option.None -> option.Some(candidate)
+      option.Some(current) ->
+        case closer(from:, candidate:, current:) {
+          True -> option.Some(candidate)
+          False -> best
+        }
+    }
+  })
+}
+
+/// Whether `candidate` is nearer to `from` than `current`, a tie going to the
+/// lower id.
+fn closer(
+  from from: Position,
+  candidate candidate: Neighbour,
+  current current: Neighbour,
+) -> Bool {
+  let candidate_distance = position.distance_squared(from, candidate.position)
+  let current_distance = position.distance_squared(from, current.position)
+  candidate_distance <. current_distance
+  || {
+    candidate_distance == current_distance
+    && candidate.unit_id < current.unit_id
+  }
 }

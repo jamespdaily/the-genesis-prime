@@ -6,6 +6,7 @@
 import genesis_prime/topology/per_unit/table.{type Table}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Pid, type Subject}
+import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 
 /// Every message the table owner can receive. Its selector covers these and
@@ -25,7 +26,7 @@ pub type TableOwner(mailbox) {
 
 /// The state of the table owner: the table, the cell width its cleanup needs,
 /// and the unit each watched process owns.
-pub type State(mailbox) {
+type State(mailbox) {
   State(table: Table(mailbox), cell_size: Float, watched: Dict(Pid, Int))
 }
 
@@ -34,8 +35,65 @@ pub type State(mailbox) {
 /// sends again, and the units of the old table are not rebuilt by it, so the
 /// run that saw it is not measured.
 pub fn supervised(
+  cell_size cell_size: Float,
+  ready ready: Subject(TableOwner(mailbox)),
+) -> ChildSpecification(Subject(Message)) {
+  supervision.worker(fn() { start(cell_size, ready) })
+}
+
+/// What the table owner's process receives: a message from a unit or from the
+/// harness, or the news that a watched process has died.
+type Input {
+  Control(Message)
+  Down(process.Down)
+}
+
+fn start(
   cell_size: Float,
   ready: Subject(TableOwner(mailbox)),
-) -> ChildSpecification(Subject(Message)) {
-  todo as "body in the build commit"
+) -> actor.StartResult(Subject(Message)) {
+  actor.new_with_initialiser(1000, fn(_default) {
+    let table = table.new()
+    let control = process.new_subject()
+    let selector =
+      process.new_selector()
+      |> process.select_map(control, Control)
+      |> process.select_monitors(Down)
+    process.send(ready, TableOwner(table:, control:))
+    actor.initialised(State(table:, cell_size:, watched: dict.new()))
+    |> actor.selecting(selector)
+    |> actor.returning(control)
+    |> Ok
+  })
+  |> actor.on_message(handle)
+  |> actor.start
+}
+
+fn handle(
+  state: State(mailbox),
+  input: Input,
+) -> actor.Next(State(mailbox), Input) {
+  case input {
+    Control(Track(unit_id:, owner:)) -> {
+      let _monitor = process.monitor(owner)
+      actor.continue(
+        State(..state, watched: dict.insert(state.watched, owner, unit_id)),
+      )
+    }
+    Control(TrackedProcesses(reply_with:)) -> {
+      process.send(reply_with, dict.keys(state.watched))
+      actor.continue(state)
+    }
+    Down(process.ProcessDown(pid:, ..)) ->
+      case dict.get(state.watched, pid) {
+        Ok(unit_id) -> {
+          table.delete_unit(state.table, unit_id, pid, state.cell_size)
+          actor.continue(
+            State(..state, watched: dict.delete(state.watched, pid)),
+          )
+        }
+        Error(Nil) -> actor.continue(state)
+      }
+    Down(process.PortDown(..)) -> actor.continue(state)
+  }
 }

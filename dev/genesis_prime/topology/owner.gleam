@@ -5,6 +5,8 @@
 import genesis_prime/topology/position.{type Position}
 import genesis_prime/topology/update.{type Delivery}
 import gleam/erlang/process.{type Pid, type Subject}
+import gleam/otp/supervision.{type ChildSpecification}
+import gleam/result
 
 /// A prototype's door. Every function sends a message and returns at once; a
 /// player never waits for the owner.
@@ -33,4 +35,30 @@ pub type Owner {
     /// Stops the prototype and every process it started.
     stop: fn() -> Nil,
   )
+}
+
+/// Stops a supervisor the calling process started, and waits until it and
+/// everything under it has stopped. Both prototypes' `stop` use it.
+pub fn stop_supervisor(supervisor: Pid) -> Nil {
+  let monitor = process.monitor(supervisor)
+  process.send_exit(supervisor)
+  let assert Ok(_down) =
+    process.new_selector()
+    |> process.select_specific_monitor(monitor, fn(down) { down })
+    |> process.selector_receive(within: 60_000)
+    as "the prototype did not stop"
+  Nil
+}
+
+/// A child specification that sends what its child started with to `subject`,
+/// so the process that starts the supervisor can reach the child.
+pub fn reporting(
+  child child: ChildSpecification(data),
+  subject subject: Subject(data),
+) -> ChildSpecification(data) {
+  supervision.ChildSpecification(..child, start: fn() {
+    use started <- result.map(child.start())
+    process.send(subject, started.data)
+    started
+  })
 }

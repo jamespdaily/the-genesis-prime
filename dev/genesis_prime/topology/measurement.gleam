@@ -5,6 +5,7 @@ import genesis_prime/topology/unit.{type Unit}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Pid}
 import gleam/erlang/reference.{type Reference}
+import gleam/list
 
 /// A counter many processes add to at once, without a lock or a message.
 pub type Counter
@@ -28,8 +29,22 @@ pub fn enable_scheduler_wall_time() -> Nil
 /// The scheduler time since accounting started, from the runtime's
 /// `scheduler_wall_time`.
 pub fn scheduler_time() -> SchedulerTime {
-  todo as "body in the build commit"
+  let times = scheduler_wall_time()
+  SchedulerTime(
+    busy_microseconds: list.fold(times, 0, fn(sum, time) { sum + time.1 }),
+    total_microseconds: list.fold(times, 0, fn(sum, time) { sum + time.2 }),
+  )
 }
+
+/// Each scheduler's id, busy time and total time, in microseconds.
+@external(erlang, "topology_ffi", "scheduler_wall_time")
+fn scheduler_wall_time() -> List(#(Int, Int, Int))
+
+@external(erlang, "topology_ffi", "process_memory_words")
+fn memory_words_of(pid: Pid) -> Result(Int, Nil)
+
+@external(erlang, "topology_ffi", "message_queue_length")
+fn queue_length_of(pid: Pid) -> Result(Int, Nil)
 
 /// Sets how many schedulers are online, the same as starting the runtime with
 /// that many.
@@ -42,13 +57,13 @@ pub fn core_count() -> Int
 
 /// The words of memory a process holds, or an error when it is not alive.
 pub fn process_memory_words(pid: Pid) -> Result(Int, Nil) {
-  todo as "body in the build commit"
+  memory_words_of(pid)
 }
 
 /// How many messages wait in a process's mailbox, or an error when it is not
 /// alive.
 pub fn message_queue_length(pid: Pid) -> Result(Int, Nil) {
-  todo as "body in the build commit"
+  queue_length_of(pid)
 }
 
 /// A counter at 0.
