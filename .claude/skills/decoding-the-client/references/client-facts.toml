@@ -693,3 +693,263 @@ statement = "A per-creature draw distance in world units: -1 (none) for 55,977 o
 proof = "Creature2.tbl from ClientData: column 'donutDrawDistance' type 4 (float); value counts from every row: -1.0 55,977, 1.0 83, 30.0 76, 10.0 42, 15.0 41, 25.0 36, 60.0 23, 0.0 22, 20.0 13, 40.0 11, 5.0 9, 50.0 8, 128.0 6, 200.0 6, 150.0 5, 3.0 3, 64.0 3, 35.0 2, 100.0 2, 24.0 1."
 grade = "guess"
 gap = "What the client does with it (a ring drawn around the unit, or hiding the unit beyond it) is not read; settled by finding the client's reader of this column."
+
+# Servers and connections
+
+["0x14000ac90"]
+statement = "Starts the client from its command line. The first word must be /auth or -auth (any case) and the second word must not be empty; otherwise the client starts the launcher and exits (RelaunchLauncherAndExit). It then reads the optional arguments processor, account, password, authtoken and Lang (en by default; en, de, fr and zh are known). An argument name begins with '-', '/' or the character 0x96 or 0x97, is matched ignoring case, and its value is the next word. Because the first word is /auth, the second word is also the value of the argument Auth: the auth server's host."
+proof = "0x14000ae77 call [0x140959718] (CommandLineToArgvW), the word list kept in the game object; 0x14000aea2 lea rdx, L'/auth' (0x1409de840); 0x14000aeb3 call 0x14018e2c0 on the first word; 0x14000aebc lea rdx, L'-auth' (0x1409de850); 0x14000aecd jne 0x14000b67d; 0x14000aed3 test rbx, rbx (the second word); 0x14000aedc cmp word [rbx], di; je 0x14000b67d; 0x14000b680 call 0x1400112c0. Each argument loop tests the word's first character ((c - 0x2d) & ~2 == 0, or c - 0x96 < 2) and compares the rest with 0x14018e2c0 against L'processor' (0x1409de860), L'account' (0x1409de8b0), L'password' (0x1409de8c0), L'authtoken' (0x1409de8e0) and L'Lang' (0x1409de8f8); the Lang value is compared with 'en', 'de', 'fr' and 'zh' (0x1409d1884, 0x1409d1944, 0x1409d19d4, 0x1409d1a7c)."
+grade = "sure"
+name = "InitClientFromCommandLine"
+
+["0x1400112c0"]
+statement = "Starts the launcher and exits: runs WildStar.exe from the folder above the client's own folder, passing /steam when the client was given -steam, shows 'Failed to start WildStar.exe' when that fails, and ends the process with code 0. The client does this when its command line does not begin with /auth and a host."
+proof = "Decompiled: GetModuleFileNameW, the path cut at its last two backslashes (0x1407dd8d8 twice), L'\\WildStar.exe' appended; the argument loop for L'steam' builds L'/steam'; 0x140010ef0 starts the program; MessageBoxW(L'Failed to start WildStar.exe', L'Error'); ExitProcess(0). Called at 0x14000b680 in 0x14000ac90."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; how 0x140010ef0 starts the program is not read."
+name = "RelaunchLauncherAndExit"
+
+["0x14018e2c0"]
+statement = "Compares two wide texts ignoring case and returns 0 when they are equal. A-Z are lowered directly; other characters from 0x80 up are lowered through a 977-entry table."
+proof = "Decompiled: per character, below 0x80 adds 0x20 when in 0x41..0x5a; otherwise a binary search over 0x3d1 entries of the u16 table at 0x140a41a80 gives the lower form from 0x140a40af0; loops until a difference or the end."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the return value for unequal texts (sign or difference) and the case table's contents are not read."
+name = "CompareTextNoCase"
+
+["0x1401a4720"]
+statement = "Returns the number given after a named command-line argument, or the default when the argument is absent or is the last word."
+proof = "Decompiled: the same argument loop as 0x14000ac90 (option character test, 0x14018e2c0 on the name); the next word goes through 0x14018e820; otherwise the third argument is returned. Callers in 0x14000b690 pass L'realmDataCenterId', L'gmode', L'amode' and L'ncProgramId'."
+grade = "fairly sure"
+gap = "That 0x14018e820 parses a decimal number is inferred from its use, not read."
+name = "GetNumberArgument"
+
+["0x1400189e0"]
+statement = "Returns the value of the command-line argument Auth (any case): the auth server's host, as text that may end in ':port'. Without it the value is an empty text."
+proof = "0x140018a3f lea rdx, [0x1409e0a70] (L'Auth'); 0x140018a46 call 0x14018e2c0; the next word is returned; 0x140018a74 lea rax, [0x1409d076c], bytes at 0x1409d076c: 0000 (an empty wide text). The result is stored in the game object by 0x14001b4e0, called at 0x14000b94a in 0x14000b690."
+grade = "sure"
+name = "GetAuthHostArgument"
+
+["0x140018870"]
+statement = "Returns the value of the command-line argument AuthNc (any case): the NC platform login server's host. Without it the value is an empty text."
+proof = "0x1400188cf lea rdx, [0x1409e09e8] (L'AuthNc'); 0x1400188d6 call 0x14018e2c0; 0x140018904 lea rax, [0x1409d074c], bytes at 0x1409d074c: 0000 (an empty wide text). Stored by 0x14001b5b0, called at 0x14000b93a in 0x14000b690."
+grade = "sure"
+name = "GetAuthNcHostArgument"
+
+["0x14022e1c0"]
+statement = "Returns the RealmDataCenter row with the given id, or none when the table is not loaded."
+proof = "Decompiled: with a loader hook at 0x140c63840 it is called with the table name pointer 0x140a6c9e0 ('RealmDataCenter') and the id; otherwise after the table check 0x14022df60 the table object at 0x140c64d00 is asked through its slot 0x18 with the id."
+grade = "fairly sure"
+gap = "The table object's lookup (slot 0x18) is not read; that it returns none for an unknown id is inferred from the caller's null test."
+name = "GetRealmDataCenterRow"
+
+["0x14000b690"]
+statement = "The client's start-up, in stages. The first stage takes the RealmDataCenter row named by the argument realmDataCenterId, logging 'Expected RealmDataCenterId' when the argument is absent (id 0) and 'Invalid RealmDataCenterId' when no row has that id; keeps the auth host (argument Auth) and the NC platform host (argument AuthNc); keeps gmode and amode (1 or 0; absent or 2 and above become 0); and keeps ncProgramId, taken from the row's ncProgramAuth (902 in every row) when absent. A later stage starts the network and the NC platform: it loads StsConnLib64.MT.dll (LoadStsConnLib) and starts it with the AuthNc host, using port 6600 when the host text gives none (StartNcPlatform)."
+proof = "0x14000b86a call 0x14022e1c0 with the realmDataCenterId number (0x1401a4720), 0x14000b86f mov [rsi+0x16e8], rax; log descriptors 0x141cd90e0 and 0x141cd9118 are the strings 0x1409deaa0 and 0x1409dead8 plus 0x12fa640, the same offset CheckAuthServerVersion's messages carry. 0x14000b92f call 0x140018870 / 0x14000b93a call 0x14001b5b0; 0x14000b93f call 0x1400189e0 / 0x14000b94a call 0x14001b4e0. ncProgramId default: the row's dword at record offset 0x40, the ncProgramAuth column (RealmDataCenter.tbl columns ID, flags, deploymentRegionEnum, deploymentTypeEnum, localizedTextId, authServer, ncClientAuthServer, ncRedirectUrlTemplate, ncRedirectUrlTemplateSignature, ncAppGroupCode, ncProgramAuth, ...; ten rows, ncProgramAuth 902 in each). NC platform: 0x14000d339 mov rdx, [rsi+0x16f0]; 0x14000d3a0 call 0x140334f90 with default port 0; 0x14000d3bf call [0x140959b10] (ntohs); 0x14000d3c8 jne; 0x14000d3ca mov ecx, 0x19c8; 0x14000d3cf call [0x140959b30] (htons); 0x14000d445 call 0x1400b0c70; 0x14000d47a call 0x1400b1060 with ncProgramId (game 0x1710)."
+grade = "fairly sure"
+gap = "The stages are read from Ghidra's decompile. With no row, the ncProgramId default reads the row through a null pointer; that this crashes the client is inferred, not run. Ordinals 8, 9 and 15 are read as htonl, htons and ntohs from Windows' ws2_32.dll export table, not from the client."
+name = "StartClient"
+
+["RealmDataCenter.authServer"]
+statement = "The auth server host for each data center: main.omechron.ws in all ten rows of this install's data, as is ncClientAuthServer. The client takes the auth host from its command line (GetAuthHostArgument) and the NC platform host from AuthNc (GetAuthNcHostArgument); no reader of these two columns was found."
+proof = "RealmDataCenter.tbl from ClientData (also present in Patch/ClientData.archive): 14 columns, record size 96, rows 1, 3, 6, 7, 9, 12, 13, 14, 15 and 24; authServer and ncClientAuthServer are text columns at record offsets 0x18 and 0x20, 'main.omechron.ws' in every row. The name strings 0x140aa02f0 and 0x140aa0308 are pointed to only by the column schema (0x140a86498, 0x140a864c0). A sweep of the disassembly for a load of the game object's row pointer (offset 0x16e8) followed within seven instructions by a read of the row found reads of offsets 0x28, 0x30, 0x38, 0x48, 0x50 and 0x58, none of 0x18 or 0x20."
+grade = "guess"
+gap = "A search that found nothing settles nothing: a reader that keeps the row pointer elsewhere would be missed. Settled by tracing every use of the row returned by GetRealmDataCenterRow."
+
+["0x140334f90"]
+statement = "Builds an IPv4 socket address from host text and a default port. Text of the form host:port takes its port from after the colon; otherwise the default port is used. A host starting with a digit is read as a dotted address; the host '$host$' means this machine (its own name, looked up); any other host is looked up by name. A failed lookup leaves the address 0.0.0.0."
+proof = "Decompiled: family 2; 0x140335470 finds ':' (0x140335045); the part after it through 0x1407df3e4 then htons, else htons(default) (0x140335189 call [0x140959b30]); first character in '0'..'9' -> inet_addr (0x14033517a call [0x140959b40]); case-insensitive compare with '$host$' (bytes at 0x140c58bb8: '$host$'); different -> gethostbyname (0x140335219 call [0x140959b48]); equal -> gethostname (ordinal 57) then gethostbyname (0x14033523a). Callers: 0x140039456 (the auth host) and 0x14000d3a0 (the NC platform host)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; that 0x1407df3e4 is a decimal parse is inferred. Ordinals 9, 11, 52 and 57 are read as htons, inet_addr, gethostbyname and gethostname from Windows' ws2_32.dll export table."
+name = "SocketAddressFromHostText"
+
+["0x140334bb0"]
+statement = "Builds an IPv4 socket address from a 32-bit address in host byte order and a 16-bit port. The two server hand-offs (messages 0x3db and 0x7a1) give their addresses this way."
+proof = "Decompiled: family 2; Ordinal_8 (htonl) of the address into the sockaddr's address; Ordinal_9 (htons) of the port. Callers: 0x140038069 in 0x140037f30 (message 0x3db's first two fields), 0x140046233 in 0x1400461e0 (message 0x7a1's fields at 0x14 and 0x18), 0x14033bc93."
+grade = "fairly sure"
+gap = "Ordinals 8 and 9 are read as htonl and htons from Windows' ws2_32.dll export table, not from the client; the third caller 0x14033bc93 is not read."
+name = "SocketAddressFromIpv4"
+
+["0x140c3adbc"]
+statement = "The auth server's default port, 23115, used when the auth host text names no port. Nothing in the client writes it."
+proof = "Bytes at 0x140c3adbc: 4b5a (23115). Ghidra refs_to: one READ, 0x1400393f5 movzx ebp, word [0x140c3adbc] in 0x140039380, passed to 0x140334f90 as the default port at 0x14003944f movzx r8d, bp; 0x140039456 call 0x140334f90."
+grade = "sure"
+
+["0x140039380"]
+statement = "Opens the connection to the auth server: the address is the auth host text (argument Auth) with default port 23115, the connection is of kind 0 and becomes the login's auth connection, the login screen is told 'NetworkStatus', and the connection is started with the client's base cipher key. Called when the NC platform reports event 14 (HandleNcPlatformEvent) and when a login is submitted with amode 1 (SubmitLogin)."
+proof = "0x1400393f5 movzx ebp, word [0x140c3adbc]; 0x1400393fc mov rdx, [rcx+0x16f8] (the auth host, set from 0x1400189e0); 0x140039456 call 0x140334f90; 0x140039486 call 0x140029f00 with kind 0 (decompiled); the result kept at the login object's 0xe8; 'NetworkStatus' to the screen object; 0x140039591 mov r8, [r8+0x1630]; 0x140039598 call 0x14002a050. Callers: 0x140037341 in 0x140037220 and 0x1400386ef in 0x140038570."
+grade = "fairly sure"
+gap = "What the cipher started by 0x14002a050 does is not read."
+name = "ConnectToAuthServer"
+
+["0x140029f00"]
+statement = "Creates a connection to a server address and registers it with the network object. Kind 0 is kept as the client's auth connection and kind 1 as its game connection. Only three functions create one: ConnectToAuthServer (kind 0), HandleMessage03DB (kind 1) and HandleMessage07A1 (kind 1); every other server session reuses one of these connections."
+proof = "0x140029f58 mov [rsi+0x9c], edi (the kind); 0x140029fa9 call [rax+0x20] on the network object 0x140c65808, result to 0x140029fb2 mov [rsi+0x98], eax (the connection index); 0x140029fba je (kind 0) -> 0x140029fd7 mov [rax+0x1720], rsi; 0x140029fbc dec ecx / jne; 0x140029fc7 mov [rax+0x1728], rsi. Ghidra callers: 0x140039486 (0x140039380), 0x140038076 (0x140037f30), 0x140046240 (0x1400461e0), and no others."
+grade = "sure"
+name = "NewServerConnection"
+
+["0x1403390d0"]
+statement = "Connects a connection's socket to its server address. It is the client's only call of Winsock connect, so every TCP connection the client itself opens goes through it; the NC platform library opens its own."
+proof = "0x1403391db call [0x140959ad8] (ws2_32.dll ordinal 4) with the socket at the connection's 0x110 and its 16-byte address from 0x90; on success the connection's state becomes 3. A search of the whole disassembly for the slot 0x140959ad8 finds only this call."
+grade = "fairly sure"
+gap = "Ordinal 4 is read as connect from Windows' ws2_32.dll export table, not from the client."
+name = "SocketConnect"
+
+["0x1400370d0"]
+statement = "Handles server messages during login. Once the login has passed to character select it handles nothing. From the auth server it handles message 3 (the server hello: CheckAuthServerVersion), 0x591 (login accepted, only while waiting for it: loads the account's settings file and keeps bit 0 of the first field), 0x3db (the hand-off to a game server: HandleMessage03DB), 0x3ef (ignored) and 0x63d (login refused); any other message ends the login with error 0x801B2. From the game server it was handed to it handles only message 3; any other ends the login with that error."
+proof = "0x1400370e6 cmp ecx, 0xb (state) / 0x1400370eb lea eax, [rcx-0xa] (returns 1); 0x140037109 cmp edx, [rax+0x98] (the auth connection at 0xe8); 0x140037118 sub eax, 3 -> 0x1400371d6 jmp 0x140037b70; 0x140037121 sub eax, 0x3d8 -> 0x1400371c1 jmp 0x140037f30; 0x14003712c sub eax, 0x14 (0x3ef) -> return 0; 0x140037131 sub eax, 0x1a2 (0x591): 0x14003716e test (state - 6) & ~2, 0x140037183 call 0x1400114e0 (L'Account.%s.ini'), 0x140037191 and ecx, 1, 0x14003719a state 9; 0x14003713b cmp eax, 0xac (0x63d) -> 0x140037166 jmp 0x140037db0; 0x140037142 mov edx, 0x801b2; 0x1400371eb cmp edx, [rax+0x98] (the game connection at 0xf0); 0x1400371fa cmp r8d, 3 -> 0x140037211 jmp 0x140038120."
+grade = "sure"
+name = "HandleLoginMessage"
+
+["opcode.0x3"]
+statement = "Message 3, server to client: the hello every server sends on a new connection. Fields: build (32 bits), a 32-bit value, two more 32-bit values, a 64-bit value, a 16-bit value, a 5-bit value, the message-table checksum (32 bits), a 32-bit value, a 64-bit value and a 32-bit value. From the auth server the client checks the build (16042) and checksum (0x097998A0) and answers with its login request 0x592; from a game server it answers with 0x58f, its session key, and starts character select (or, after a realm switch, the same)."
+proof = "Registered in 0x1400a8190: 0x1400a81d7 lea edx, [rdi+3]; 0x1400a81da lea r8d, [rdi+0x38] (size); reader 0x1400a9140 (stored at [rsp+0x28]): widths 0x20 at record 0, 4, 8, 0xc; 0x14006c120 at 0x10; 0x10 at 0x18; 5 at 0x1c; 0x20 at 0x20 and 0x24; 0x14006c120 at 0x28; 0x20 at 0x30. Handlers: 0x140037b70 (auth connection), 0x140038120 (game connection after login), 0x140046340 (game connection after a realm switch); 0x140038120 keeps the second field in the game object."
+grade = "fairly sure"
+gap = "That 0x14006c120 reads 64 bits is inferred from the 8-byte field spacing; what the fields other than build and checksum mean is not read."
+
+["0x14003a620"]
+statement = "Sends the login request, message 0x592, to the auth server, once its hello has passed the version check, and only while the NC platform login has finished (state 5); otherwise it ends the login with error 0xD7. The request holds the build (16042), the account name (up to 502 characters), two GUIDs parsed from text the NC platform login keeps, a value from the NC platform service, the realm data center id and further client details."
+proof = "0x14003a645 mov rbx, [rcx+0xb0] (account name); 0x14003a652 je / 0x14003a658 cmp dword [rcx+0xa8], 5; jne 0x14003a93d (error 0xd7). Decompiled: record word 0 = 0x3eaa; the name copied for at most 0x1f6 characters; UuidFromStringA on the texts at 0x140c671c0 and 0x140c67200; 0x140335360 on 0x140c66ff0; the row's ID (first dword of the RealmDataCenter row); network slot 0x108 serialises id 0x592, the cipher at the auth connection's 0x10 runs over it, slot 0xf0 sends it as 0x244; state 6."
+grade = "fairly sure"
+gap = "The record's other fields and the wire layout of 0x592 (its writer) are not read; that the two GUIDs are the NC platform's game token is a guess, settled by reading who fills 0x140c671c0 and 0x140c67200."
+name = "SendAuthLoginRequest"
+
+["opcode.0x3db"]
+statement = "Message 0x3db (979), auth server to client: the hand-off to a game server. Fields: the server's IPv4 address (32 bits, in host byte order, so 127.0.0.1 is 0x7F000001), its port (16 bits), a 16-byte session key (read as a GUID), a 32-bit value the client sends back in 0x58f, the realm's name (wide text; it names the realm's settings file Realm.<account>.<realm>.ini), a 32-bit value, a 2-bit value and a 21-bit value. Accepted only after 0x591; the client opens a game connection to that address (HandleMessage03DB); the auth connection is not closed there."
+proof = "Registered at 0x14006d3e7 mov edx, 0x3db with size 0x38 (0x14006d3e0 lea r8d, [r9+0x38]) and reader 0x14007d6a0: 0x14007d6d2 width 0x20 at record 0; 0x14007d6ec width 0x10 at 4 (0x14006bf60); 0x14007d705 call 0x1400a8900 at 8 (a GUID: 32, 16 and 16 bits and 8 bytes, 0x1400a8928..0x1400a896a); 0x14007d712 width 0x20 at 0x18; 0x14007d72e call 0x140336a40 (text) at 0x20; widths 0x20 at 0x28, 2 at 0x2c, 0x15 at 0x30. Handler 0x140037f30: state must be 9 (set by 0x591); 0x140038057 movzx r8d, word [r14+4]; 0x14003805c mov edx, [r14]; 0x140038069 call 0x140334bb0 (htonl, htons); key to game 0x1638..0x1644; field 0x18 to game 0x1668; text to 0x140011800 (L'Realm.%s.%s.ini'); 0x28, 0x2c, 0x30 to game 0x1684..0x168c."
+grade = "fairly sure"
+gap = "What the 32-bit value at 0x18 and the last three fields mean is not read; that the 2-bit and 21-bit widths are bit counts follows the reading of 0x14006c090 in the 0xf1 record."
+
+["0x140037f30"]
+statement = "Handles message 0x3db while the login waits for it: keeps the session key, the account value, the realm name and three further values, opens a game connection (kind 1) to the given address and port, and waits for that server's hello."
+proof = "Decompiled: state (login object 0xa8) == 9; fields as in the opcode.0x3db record; 0x140038076 call 0x140029f00 with kind 1, kept at the login object's 0xf0; 0x14002a050 starts it; state 10."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile and the instructions at 0x140038057..0x140038069; what 0x14003e470 reports to the screen is not read."
+name = "HandleMessage03DB"
+
+["opcode.0x58f"]
+statement = "Message 0x58f (1423), client to game server: the first message on a game connection, sent when the server's hello arrives. It carries the 32-bit account value from the hand-off (0x3db), the 16-byte session key, a 64-bit value from the game object and the value 3. Right after sending it the client keys the connection's cipher from the session key."
+proof = "0x140038120 and 0x140046340 (decompiled): record = {game 0x1668, game 0x1638 (key), game 0x163c..0x1644, 0, game 0x1670, 3}; network slot 0x108 serialises id 0x58f, the connection's cipher at 0x10 runs over it, slot 0xf0 sends it as 0x244; then the 16 key bytes at game 0x1638 are folded from 0x718da9074f2deb91 by (h + byte) * 0xaa7f8ea9 and 0x14002a050 starts the connection with that and (h + game 0x1630) * 0xaa7f8ea9. Registered at 0x14006d593 mov edx, 0x58f."
+grade = "fairly sure"
+gap = "The wire layout (the writer registered with 0x58f) is not read; what game 0x1670 holds is not read."
+
+["0x140038120"]
+statement = "Handles the hello (message 3) from the game server reached by the auth hand-off: sends 0x58f with the session key, keys the connection's cipher, starts character select on that connection (StartCharacterSelect) and ends the login, which then handles no more messages."
+proof = "Decompiled: state == 10; 0x58f sent as 0x244 on the connection at the login object's 0xf0; 0x14002a050 with the folded key; 0x140020730 builds a 0x2d0-byte object; 0x1400382fe call 0x140020bc0 with the connection; 0x14003e380 hands it over; the hello's second field to game 0x1680; state 11."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what 0x14003e380 does with the object beyond keeping it is not read."
+name = "HandleLoginGameServerHello"
+
+["0x140020bc0"]
+statement = "Starts character select on a game connection: keeps the connection, loads the character-select interface (strata such as CharacterSelection and AccountServices) and sends message 0x7e0 with one byte, 0."
+proof = "Decompiled: the connection kept at the object's 0xb8; 0x14003db40 with L'AccountServices', L'Navigation', L'DefaultStratum', L'TempBlocker' and L'Character', L'CharacterSelection', L'AccountServices', L'Credits', L'MicroStore'; network slot 0x108 with 0x7e0 and a zero byte, sent as 0x244. Callers include 0x140038120 (after login) and 0x140046340 (after a realm switch)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what 0x7e0 asks for is not read; the callers 0x140033d60, 0x140045b70, 0x140047730 and 0x1403b6a80 (returns to character select) are not read."
+name = "StartCharacterSelect"
+
+["0x140020ea0"]
+statement = "Handles game-server messages during character select, on the character-select connection. Among them: 0xad (enter the world: HandleMessage00AD), 0x36a (close the connection and return to the login screen), 0x761 (ignored here), 0x3e1 (RealmBroadcast), 0x715 and 0x717 (login queue), 0x765 (RealmTransferResult), 0xe6 (character deleted), 0xe7 (character disabled), 0x162 (character select failed)."
+proof = "Decompiled switch on the message id after the connection test (object 0xb8, its index at 0x98) and state (0x170) tests; 0xad -> 0x140022480; 0x36a releases the connection, 0x1400481b0 with game 0x1700, state 6; event names 'RealmBroadcast', 'QueueFinished', 'QueueStatus', 'RealmTransferResult', 'CharacterDelete', 'CharacterDisabled', 'CharacterSelectFail'."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; that game 0x1700 is the login screen is inferred."
+name = "HandleCharacterSelectMessage"
+
+["opcode.0xad"]
+statement = "Message 0xad (173), game server to client, after the player chose a character: six 32-bit values. The client then enters the world on the same connection, which becomes the world connection; no new server connection is opened."
+proof = "Registered at 0x14006d8eb mov edx, 0xad. 0x140020ea0 sends it to 0x140022480, which needs state 4, keeps the six values at the object's 0x1c8..0x1dc and calls 0x140034330 with the character-select connection (object 0xb8); 0x140034330 calls 0x1403e7ea0, which stores that connection at game 0x7928 (0x1403e7ee9 mov [rdi+0x7928], r14), the connection SendWorldMessage sends on."
+grade = "fairly sure"
+gap = "The reader's field widths are not read (the six values are read from the handler's copies); what they mean is not read."
+
+["0x140022480"]
+statement = "Handles message 0xad: keeps its six values, builds the world session on the character-select connection with the chosen character's world and position, and moves character select to its finished state."
+proof = "Decompiled: state (0x170 as word 0x2e) == 4; 0x140033e00 builds a 0x500-byte object; 0x140034330 with the connection (object 0xb8) and the kept character record (object 0x178); state 5; failure reports 0x7a6af."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "HandleMessage00AD"
+
+["0x1403e7ea0"]
+statement = "Makes a connection the world connection: sets the world name, stores the connection as the one world messages are sent on, records the server's address, logs the world id and position, and loads that world at that position."
+proof = "0x1403e7ed4 call 0x14001c480 (the text at the record's 8); 0x1403e7ee9 mov [rdi+0x7928], r14; network slot 0x38 for the connection's peer, Ordinal_14/Ordinal_8 of its address into 0x140c65898's 0x60; LogMessage with the record's 0x50 (world id) and three floats at 0x54..0x5c; 0x1403e70d0 loads them. Only caller 0x1400343d3 in 0x140034330."
+grade = "fairly sure"
+gap = "Read partly from Ghidra's decompile; that the record's 0x50 is the world id is inferred from its use with 0x1403e70d0."
+name = "SetWorldConnection"
+
+["0x140023d50"]
+statement = "The Lua function ExitToRealmSelect: when character select is idle, starts realm select on the character-select connection (StartRealmSelect)."
+proof = "Name pair at 0x140c56330/0x140c56338: 'ExitToRealmSelect' (0x1409ed9c8), 0x140023d50. 0x140023d5b cmp dword [rax+0x170], 0 (character select object 0x140c66da8); 0x140023d97 mov rdx, [rax+0xb8] (its connection); 0x140023d9e call 0x140045760; 0x140023dc1 state 5."
+grade = "sure"
+name = "LuaExitToRealmSelect"
+
+["0x140045760"]
+statement = "Starts realm select on an existing game connection: clears the current realm name, sends message 0x7a4 (a 32-bit 0) asking for the realm list, and loads the realm-select interface."
+proof = "Decompiled: the connection kept at the object's 0xb0; game 0x1690 freed, 0x16a0 cleared; network slot 0x108 with 0x7a4 and a zero 32-bit value, sent as 0x244; 0x14003db40 with L'Realm', L'DefaultStratum' and L'RealmSelect'."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; that 0x7a4 asks for the realm list is inferred from the realm list (0x761) being the next message handled."
+name = "StartRealmSelect"
+
+["0x140045a70"]
+statement = "Handles game-server messages during realm select. On the realm-select connection: 0x761 (the realm list: RealmListChanged), 0x7a1 (the hand-off to another realm's server: HandleMessage07A1), 0x36a (close and return to the login screen), 0x3e1 (RealmBroadcast); 0x715, 0x717, 0x594 and 0xe7 are ignored. On the new realm's connection it handles only message 3 (HandleRealmSwitchServerHello)."
+proof = "Method table entry 0x140b55998 -> 0x140045a70. 0x140045a7a cmp eax, 3 / 0x140045a89 cmp eax, 5 (states); 0x140045a9e cmp edx, [rax+0x98] (connection 0xb0); 0x140045b0d jmp 0x1400465c0 (0x36a); 0x140045b32 jmp 0x1400461e0 (0x7a1); 0x140045b3e jmp 0x140045e30 (0x761); 0x140045b4f cmp edx, [rax+0x98] (connection 0xb8); 0x140045b5b cmp r8d, 3; 0x140045b69 jmp 0x140046340."
+grade = "fairly sure"
+gap = "The full compare chain is read from Ghidra's decompile; only the jumps above were checked in the instructions."
+name = "HandleRealmSelectMessage"
+
+["opcode.0x761"]
+statement = "Message 0x761 (1889), game server to client during realm select: the realm list. It holds a count and that many realm entries of 0x58 bytes, then a count of groups of texts; the client rebuilds its realm list and raises RealmListChanged."
+proof = "Registered at 0x1400a84b9 mov edx, 0x761. Handler 0x140045e30 (decompiled): count at record 8, entries at 0x10 each 0x58 bytes through 0x1400a7cf0; count at 0x18, entries at 0x20 of 0x10 bytes each holding a byte count at 4 and text pointers at 8; 'RealmListChanged' to the screen."
+grade = "fairly sure"
+gap = "The wire layout and the entry fields are not read."
+
+["opcode.0x7a1"]
+statement = "Message 0x7a1 (1953), game server to client during realm select: the hand-off to another realm's server. Fields: a 32-bit value, a 16-byte session key (read as a GUID), the server's IPv4 address (32 bits, host byte order) and port (16 bits), a 1-bit flag, the realm's name (wide text), a 32-bit value, a 2-bit value and a 21-bit value. The client opens a game connection (kind 1) to that address and, on its hello, sends 0x58f and starts character select there."
+proof = "Registered at 0x1400785e8 mov edx, 0x7a1, size 0x38 (0x1400785e1 lea r8d, [r9+0x38]), reader 0x1400a2110: 0x1400a2142 width 0x20 at 0; 0x1400a215f call 0x1400a8900 (GUID) at 4; 0x1400a216f call 0x1400a8980 at 0x14 (0x1400a89a5 width 0x20, 0x1400a89c4 width 0x10 at 0x18); 0x1400a2185 width 1 at 0x1c; 0x1400a2198 text at 0x20; widths 0x20 at 0x28, 2 at 0x2c, 0x15 at 0x30. Handler 0x1400461e0: 0x140046221 movzx r8d, word [rbp+0x18]; 0x140046226 mov edx, [rbp+0x14]; 0x140046233 call 0x140334bb0; 0x140046240 call 0x140029f00 (kind 1)."
+grade = "fairly sure"
+gap = "What the first 32-bit value, the flag and the last three fields mean is not read."
+
+["0x1400461e0"]
+statement = "Handles message 0x7a1: opens a game connection (kind 1) to the given realm server, keeps the session key, realm name and three further values as the auth hand-off does, and waits for that server's hello."
+proof = "Decompiled and 0x140046221..0x140046240: address and port from the record's 0x14 and 0x18; the connection kept at the object's 0xb8; key from 4..0x13 to game 0x1638..0x1644; text at 0x20 to 0x140011800; 0x28..0x30 to game 0x1684..0x168c; 0x14002a050; state 2."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the address instructions."
+name = "HandleMessage07A1"
+
+["0x140046340"]
+statement = "Handles the hello (message 3) from the realm server reached by a realm switch: sends 0x58f with the session key, keys the connection's cipher, starts character select on the new connection and closes the old realm-select connection."
+proof = "Decompiled: state == 2; the same 0x58f record and key fold as 0x140038120; 0x14004651f call 0x140020bc0 with the connection at 0xb8; state 3; the connection at 0xb0 released (0x140046553 mov [rbx+0xb0], rsi)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "HandleRealmSwitchServerHello"
+
+["0x1400b0c70"]
+statement = "Loads the NC platform library StsConnLib64.MT.dll, finds InitializeStsConnLib, FinalizeStsConnLib and CreateStsConn in it, and calls InitializeStsConnLib. A missing library or function returns the Windows error."
+proof = "Decompiled: 0x1401938d0(L'StsConnLib64.MT.dll' 0x140a130b8); GetProcAddress with 'InitializeStsConnLib' (0x140a130a0), 'FinalizeStsConnLib' (0x140a13088), 'CreateStsConn' (0x140a13078); 0x1400b0d0e mov [0x140c3bec8], rax (CreateStsConn); GetLastError as 0x8007xxxx. Called at 0x14000d445 in 0x14000b690."
+grade = "fairly sure"
+gap = "That 0x1401938d0 loads a library is inferred from its argument and the GetProcAddress calls after it."
+name = "LoadStsConnLib"
+
+["0x1400b1060"]
+statement = "Starts the NC platform login service with the program id and a list of server addresses (here one: the AuthNc host, port 6600 by default), logging each as 'Using NCPlatform address'. The connection to that server is opened inside StsConnLib64.MT.dll through the connection CreateStsConn makes, which receives the address list."
+proof = "Decompiled: each address formatted by 0x1403352b0 and logged with descriptor 0x141d0d810 (0x140a131d0 'Using NCPlatform address [%I64x][%d]: %S' plus 0x12fa640); appended to the list at 0x140c67018; then the manager object 0x140c66f70's slot 0x20 with the program id. 0x1400b4340: 0x1400b43b1 mov rax, [0x140c3bec8] (CreateStsConn); the new connection's slot 0x20 receives the list count and pointer (manager 0xa8, 0xb0 = 0x140c67018, 0x140c67020)."
+grade = "fairly sure"
+gap = "The library's own connection code and the STS protocol it speaks are not read; that 0x1400b4340 runs on the manager 0x140c66f70 is inferred from the list addresses."
+name = "StartNcPlatform"
+
+["0x140038570"]
+statement = "Submits a login with an account name and password. With amode 1 it connects straight to the auth server (ConnectToAuthServer); otherwise it starts the NC platform login and waits for its events (HandleNcPlatformEvent)."
+proof = "Decompiled: both texts kept at the login object's 0xb0 and 0xb8; game 0x170c (amode) == 1 -> 0x1400386ef call 0x140039380, state 7; else 0x1400b4500, state 3; 0x14003e470 with 0x7e101."
+grade = "fairly sure"
+gap = "With amode 1 the auth hello leads to SendAuthLoginRequest, which needs state 5, so that path ends in error 0xD7 as read; whether another path moves state 7 on is not read."
+name = "SubmitLogin"
+
+["0x140037220"]
+statement = "Handles the NC platform login's events. Event 14 means the platform login is done: the client opens the auth server connection (or sends the login request if it is already open). Other events end the login with an error, show a second-factor or IP-verification form, or are ignored."
+proof = "Decompiled: event type is the first field; type 0x18 maps field 10 to errors 0x62f72..0x62f76; in states 3 and 4 a switch: 0xe -> state 5, 0x140037341 call 0x140039380 when no auth connection, else 0x14003a620; 10 -> 0x140038870; 0x23 -> 0x140039220; 2, 0x10..0x16, 0x22 -> errors."
+grade = "fairly sure"
+gap = "What each event type is in the NC platform's terms is not read; settled by reading where 0x140037220 is called from the StsConnLib callbacks (OnLoginFinish, OnRequestGameToken)."
+name = "HandleNcPlatformEvent"
+
+["0x1400374e0"]
+statement = "On an auth version mismatch, traces the network route to the patch server for the log: the host is the argument patcher, or wildstar.patcher.ncsoft.com, and the trace uses ICMP echo, not a connection."
+proof = "Decompiled: argument loop for L'patcher' (0x1409f5708); default 'wildstar.patcher.ncsoft.com' (0x1409f57a8); gethostbyname (0x140037644 call [0x140959b48]); IcmpCreateFile and the hop log formats at 0x1409f58d0..0x1409f59d8. Called from 0x140037b70 on both mismatch paths."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the echo loop itself is not read."
+name = "TraceRouteToPatcher"
