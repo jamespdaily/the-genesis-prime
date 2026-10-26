@@ -22,6 +22,7 @@ fn newcomer(character_id: Int, x: Float) -> Newcomer {
     class_id: 3,
     gender: 1,
     path: 2,
+    faction_id: 167,
     position: Position(x:, y: 0.0, z: 0.0),
   )
 }
@@ -57,6 +58,7 @@ pub fn a_joined_character_gets_the_next_unit_id_and_its_own_facts_test() -> Nil 
       class_id: 3,
       gender: 1,
       path: 2,
+      faction_id: 167,
       position: Position(x: 0.0, y: 0.0, z: 0.0),
     )
     as "unit ids are given in order from 1, and the unit carries the character's facts"

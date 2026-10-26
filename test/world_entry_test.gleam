@@ -26,11 +26,14 @@ import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
-import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
+import genesis_prime/message/unit_create_player.{
+  type UnitCreatePlayer, UnitCreatePlayer,
+}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import gleam/int
 import gleam/list
 import gleam/string
+import message_support
 import owned_test
 import seeded
 
@@ -54,6 +57,7 @@ fn unit() -> PlayerUnit {
     class_id: 3,
     gender: 1,
     path: 2,
+    faction_id: 167,
     position: Position(x: 1.0, y: -2.5, z: 100.25),
   )
 }
@@ -73,6 +77,7 @@ pub fn the_chosen_character_is_joined_to_the_map_of_its_world_test() -> Nil {
           class_id: 3,
           gender: 1,
           path: 2,
+          faction_id: 167,
           position: Position(x: 1.0, y: -2.5, z: 100.25),
         ),
       ),
@@ -134,8 +139,8 @@ pub fn the_map_s_unit_is_followed_by_the_world_the_unit_the_player_and_the_inter
           field_20: 0,
           item_visuals: [],
           field_25: 0,
-          field_26: 0,
-          field_27: 0,
+          faction_id: 167,
+          base_faction_id: 167,
           field_28: 0,
           field_29: 0,
           field_31: 0,
@@ -158,7 +163,7 @@ pub fn the_map_s_unit_is_followed_by_the_world_the_unit_the_player_and_the_inter
         )),
       ),
     ]
-    as "CheckWorldLoaded 0x1403E8000 and opcode.0x19b: 0xAD, then the unit (0x262), then the player (0x19B, whose unit id must exist), then 0xF1; the player's data is the character's, the realm is the connection's, every value the client's code does not give a meaning is 0 and the interval is the client's own 125 ms (0x140C3A004)"
+    as "CheckWorldLoaded 0x1403E8000 and opcode.0x19b: 0xAD, then the unit (0x262), then the player (0x19B, whose unit id must exist), then 0xF1; the player's data is the character's, the realm is the connection's, the unit's faction and base faction are the character's stored faction (opcode.0x262, Faction2.ID: 167 is a row), every other value the client's code does not give a meaning is 0 and the interval is the client's own 125 ms (0x140C3A004)"
   assert state == AwaitingTerrain(unit())
 }
 
@@ -204,6 +209,69 @@ pub fn a_second_choice_while_a_character_enters_closes_the_connection_test() -> 
     world_entry.decide(AwaitingMap(chosen()), Begin(chosen()), context())
   assert effects == [Close(BeganTwice)]
     as "HandleCharacterSelectMessage 0x140020EA0: the client sends 0x7dd only while idle"
+}
+
+/// The 0x262 message of the unit's effects, when the rule sent one.
+fn unit_created(effects: List(world_entry.Effect)) -> UnitCreatePlayer {
+  let created =
+    list.filter_map(effects, fn(effect) {
+      case effect {
+        Send(UnitCreated(message)) -> Ok(message)
+        Send(_) | JoinMap(..) | Failed | Close(_) -> Error(Nil)
+      }
+    })
+  let assert [message] = created as "the rule sends exactly one 0x262"
+  message
+}
+
+pub fn the_player_s_unit_carries_the_character_s_stored_faction_in_both_faction_fields_test() -> Nil {
+  use <- owned_test.run(5000)
+  let character = character.Character(..chosen(), faction_id: 167)
+  let #(_, effects) =
+    world_entry.decide(AwaitingMap(character), Joined(unit()), context())
+  let message = unit_created(effects)
+  assert message.faction_id == 167
+    as "opcode.0x262: the unit's faction (record 0xd4) is a Faction2 id, and 167 is a row of Faction2.ID; 0 has none, which leaves the unit without a faction and makes 0x19b fail"
+  assert message.base_faction_id == 167
+    as "opcode.0x262: the unit's base faction (record 0xd8) is a Faction2 id; HandleMessage019B 0x1403b5ad0 reads it and fails when it is empty"
+}
+
+pub fn the_server_s_0x262_for_roxo_is_the_emulator_s_faction_167_vector_test() -> Nil {
+  use <- owned_test.run(5000)
+  let roxo =
+    character.Character(
+      ..chosen(),
+      id: 1,
+      name: "Roxo Stompstone",
+      race_id: 3,
+      class_id: 1,
+      gender: 0,
+      path: 0,
+      faction_id: 167,
+    )
+  let roxo_unit =
+    PlayerUnit(
+      id: 1,
+      character_id: 1,
+      name: "Roxo Stompstone",
+      race_id: 3,
+      class_id: 1,
+      gender: 0,
+      path: 0,
+      faction_id: 167,
+      position: Position(x: 1.0, y: -2.5, z: 100.25),
+    )
+  let #(_, effects) =
+    world_entry.decide(
+      AwaitingMap(roxo),
+      Joined(roxo_unit),
+      world_entry.Context(realm_id: 1, world_exists: fn(_) { True }),
+    )
+  assert unit_create_player.encode(unit_created(effects))
+    == Ok(message_support.hex(
+      "0100000054000000000000004000e02105f0068007f006000230054007f006d006000730074007f006e00650063002000000000000000000000000000000000000000000000000000000009c02a7000000000000000000000000000200000000000000000002000000000000000000000000",
+    ))
+    as "vector.opcode.0x262.roxo: the body the client's reader takes in 907 bits with 167 in both faction fields (record 0xd4 and 0xd8)"
 }
 
 /// The message numbers of what a list of effects sends, in order.

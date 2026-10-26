@@ -37,8 +37,8 @@ pub type UnitCreatePlayer {
     field_20: Int,
     item_visuals: List(ItemVisual),
     field_25: Int,
-    field_26: Int,
-    field_27: Int,
+    faction_id: Int,
+    base_faction_id: Int,
     field_28: Int,
     field_29: Int,
     field_31: Int,
@@ -86,8 +86,8 @@ pub fn encode(message: UnitCreatePlayer) -> Result(BitArray, EncodeError) {
   )
   |> bit_stream.write_constant("no_other_entries", 0, 9)
   |> bit_stream.write_unsigned("field_25", message.field_25, 32)
-  |> bit_stream.write_unsigned("field_26", message.field_26, 14)
-  |> bit_stream.write_unsigned("field_27", message.field_27, 14)
+  |> bit_stream.write_unsigned("faction_id", message.faction_id, 14)
+  |> bit_stream.write_unsigned("base_faction_id", message.base_faction_id, 14)
   |> bit_stream.write_unsigned("field_28", message.field_28, 32)
   |> bit_stream.write_unsigned("field_29", message.field_29, 64)
   |> bit_stream.write_constant("first_tag", 0, 2)
@@ -168,8 +168,11 @@ pub fn decode(body: BitArray) -> Result(UnitCreatePlayer, DecodeError) {
     0,
   ))
   use #(field_25, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_26, reader) <- result.try(bit_stream.read_unsigned(reader, 14))
-  use #(field_27, reader) <- result.try(bit_stream.read_unsigned(reader, 14))
+  use #(faction_id, reader) <- result.try(bit_stream.read_unsigned(reader, 14))
+  use #(base_faction_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    14,
+  ))
   use #(field_28, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_29, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use reader <- result.try(bit_stream.read_constant(reader, "first_tag", 2, 0))
@@ -205,8 +208,8 @@ pub fn decode(body: BitArray) -> Result(UnitCreatePlayer, DecodeError) {
     field_20:,
     item_visuals:,
     field_25:,
-    field_26:,
-    field_27:,
+    faction_id:,
+    base_faction_id:,
     field_28:,
     field_29:,
     field_31:,

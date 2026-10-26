@@ -73,6 +73,7 @@ pub fn a_character_joins_a_map_with_what_its_observers_need_test() -> Nil {
       class_id: 3,
       gender: 1,
       path: 2,
+      faction_id: 167,
       position: Position(x: 1.0, y: -2.5, z: 100.25),
     )
     as "opcode.0x262 and ReadUnitCreatePlayerData 0x1400962D0: a player's unit carries the character id, name, race, class, gender and path"

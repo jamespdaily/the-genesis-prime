@@ -184,7 +184,9 @@ fn joined(
 }
 
 /// Message 0x262 for a player's unit: its id, the character's id, name, race,
-/// class, gender and path, the connection's realm and nothing else: no item
+/// class, gender, path and faction (the unit's faction and base faction are
+/// both the character's stored one, a Faction2 id: opcode.0x262), the
+/// connection's realm and nothing else: no item
 /// visuals, and every value the client's code does not give a meaning is 0.
 pub fn unit_create(
   unit unit: PlayerUnit,
@@ -211,8 +213,8 @@ pub fn unit_create(
     field_20: 0,
     item_visuals: [],
     field_25: 0,
-    field_26: 0,
-    field_27: 0,
+    faction_id: unit.faction_id,
+    base_faction_id: unit.faction_id,
     field_28: 0,
     field_29: 0,
     field_31: 0,
