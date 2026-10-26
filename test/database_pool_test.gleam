@@ -340,6 +340,7 @@ pub fn the_pools_connections_stop_a_statement_before_the_game_workers_deadline_t
 }
 
 pub fn the_wait_for_a_connection_the_statement_limit_and_the_margin_end_before_the_workers_deadline_test() -> Nil {
+  use <- owned_test.run(5000)
   assert pool.checkout_wait_bound_ms
     + pool.statement_timeout_ms
     + pool.margin_ms

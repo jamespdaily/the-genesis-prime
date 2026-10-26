@@ -321,7 +321,7 @@ fn running_map(
 /// Starts a map for the world with the names the world's maps have, once no
 /// process of an earlier map of the world holds one of them. A map whose
 /// supervisor ended can still be going down, with its processes registered, and
-/// a map started now could not register its names; the registry waits for those
+/// a map started while they hold the names could not register its own; the registry waits for those
 /// processes to end, until `by`. A world with no names, a factory that is not
 /// running, as when its supervisor is being rebuilt, and an old map that does
 /// not end are a map that could not start, which the next entry tries again.

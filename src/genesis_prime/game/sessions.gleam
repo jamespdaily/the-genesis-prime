@@ -9,7 +9,7 @@
 //// claimed, and monitors each one until its own end arrives: a holder is never
 //// dropped because another claim came in, so a connection that is told to end
 //// and does not is still known, and every claim after it still waits for it. A
-//// claim tells every holder of the account that is not yet told to end, by a
+//// claim tells every holder of the account that has not been told to end, by a
 //// message to it, and the registry answers the claimant when it is the first
 //// holder of its account, that is when every holder before it is down. A
 //// holder that is told and has not gone down within the eviction deadline is
@@ -234,7 +234,7 @@ fn answered(holders: List(Holder)) -> List(Holder) {
 }
 
 /// A holder went down: it leaves its account's holders, its eviction timer is
-/// cancelled, and the holder that is now first is answered when it waits.
+/// cancelled, and the holder that is first after it is answered when it waits.
 fn went_down(state state: State, owner owner: Pid) -> State {
   case dict.get(state.accounts_of, owner) {
     Error(Nil) -> state
@@ -242,15 +242,7 @@ fn went_down(state state: State, owner owner: Pid) -> State {
       let holders = dict.get(state.accounts, account_id) |> result.unwrap([])
       let #(gone, left) =
         list.partition(holders, fn(holder) { holder.owner == owner })
-      list.each(gone, fn(holder) {
-        case holder.eviction {
-          Some(timer) -> {
-            process.cancel_timer(timer)
-            Nil
-          }
-          None -> Nil
-        }
-      })
+      list.each(gone, cancel_eviction)
       let accounts = case answered(left) {
         [] -> dict.delete(state.accounts, account_id)
         left -> dict.insert(state.accounts, account_id, left)
@@ -261,6 +253,17 @@ fn went_down(state state: State, owner owner: Pid) -> State {
         accounts_of: dict.delete(state.accounts_of, owner),
       )
     }
+  }
+}
+
+/// Cancels the eviction timer of a holder that was told to end.
+fn cancel_eviction(holder: Holder) -> Nil {
+  case holder.eviction {
+    Some(timer) -> {
+      process.cancel_timer(timer)
+      Nil
+    }
+    None -> Nil
   }
 }
 

@@ -29,7 +29,7 @@ pub const statement_timeout_ms = 4000
 /// The queue target of the pool, in milliseconds: how long a request may wait
 /// for a connection before the pool counts the queue slow. `pgo`'s own
 /// default; no measurement chose it.
-pub const queue_target_ms = 50
+const queue_target_ms = 50
 
 /// The queue interval of the pool, in milliseconds: how often the pool looks
 /// at its queue. 100 ms, a tenth of `pgo`'s default, so that `pgo` refuses a

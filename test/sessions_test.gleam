@@ -91,7 +91,8 @@ fn connect(
         ),
       )
       case result {
-        Error(_) -> Nil
+        Error(sessions.RegistryNotAnswering)
+        | Error(sessions.PreviousNotEnding) -> Nil
         Ok(Nil) -> {
           let sessions.TakeOver = process.receive_forever(notice)
           process.send(told, Nil)
@@ -450,6 +451,7 @@ pub fn a_registry_that_is_not_running_is_an_answer_and_not_a_crash_test() -> Nil
 }
 
 pub fn the_deadlines_of_a_second_login_are_ordered_so_each_comes_before_the_next_gives_up_test() -> Nil {
+  use <- owned_test.run(5000)
   assert game_service.leave_deadline_ms < game_service.eviction_deadline_ms
     as "the old connection leaves the map politely within a deadline shorter than the eviction deadline, so the registry kills only a connection that did not"
   assert game_service.claim_deadline_ms
