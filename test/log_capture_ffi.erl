@@ -2,7 +2,8 @@
 -export([add/1, remove/1, log/2]).
 
 %% The Gleam types of test/log_capture.gleam:
-%%   Event(level, text, from, metadata) is {event, Level, Text, From, Metadata}
+%%   Event(level, text, from, metadata, formatted) is
+%%     {event, Level, Text, From, Metadata, Formatted}
 %%   Handle(id)                         is {handle, Id}
 %%   Field: Whole(N) is {whole, N}, Fraction(F) is {fraction, F},
 %%          Text(T) is {text, T}, Fields(D) is {fields, D}
@@ -25,12 +26,13 @@ remove({handle, Id}) ->
 %% leaves the line uncaptured. A handler whose receiver has ended removes
 %% itself, from a process of its own, as logger does not allow it from inside
 %% the callback.
-log(#{level := Level, msg := Msg, meta := Meta}, #{id := Id, config := #{subject := {subject, Pid, Tag}}}) ->
+log(#{level := Level, msg := Msg, meta := Meta} = Event, #{id := Id, config := #{subject := {subject, Pid, Tag}}}) ->
     case is_process_alive(Pid) of
         true ->
             try
                 From = maps:get(pid, Meta, self()),
-                Pid ! {Tag, {event, atom_to_binary(Level), text(Msg), From, fields(Meta)}}
+                Pid ! {Tag, {event, atom_to_binary(Level), text(Msg), From, fields(Meta),
+                            formatted(Event)}}
             catch
                 _:_ -> ok
             end;
@@ -38,6 +40,17 @@ log(#{level := Level, msg := Msg, meta := Meta}, #{id := Id, config := #{subject
             spawn(fun() -> logger:remove_handler(Id) end)
     end,
     ok.
+
+%% The line the node's default handler writes for the event: the event run
+%% through the formatter the default handler is configured with. Empty when
+%% the node has no default handler.
+formatted(Event) ->
+    try
+        {ok, #{formatter := {Module, Config}}} = logger:get_handler_config(default),
+        unicode:characters_to_binary(Module:format(Event, Config))
+    catch
+        _:_ -> <<>>
+    end.
 
 text({string, Text}) -> unicode:characters_to_binary(Text);
 text({report, _}) -> <<"report">>;

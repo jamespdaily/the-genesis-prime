@@ -16,9 +16,16 @@ import gleam/erlang/process.{type Pid, type Subject}
 /// A line that was logged: its level as logger names it (`error`, `warning`,
 /// `info` or `debug`), its text, the process that wrote it and its metadata
 /// by key. Only the metadata a test can read is kept: whole numbers, floats,
-/// texts and maps of them.
+/// texts and maps of them. `formatted` is the line the node's default handler
+/// writes for it, made with the handler's own formatter.
 pub type Event {
-  Event(level: String, text: String, from: Pid, metadata: Dict(String, Field))
+  Event(
+    level: String,
+    text: String,
+    from: Pid,
+    metadata: Dict(String, Field),
+    formatted: String,
+  )
 }
 
 /// One metadata value.

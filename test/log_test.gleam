@@ -12,13 +12,16 @@
 //// message 0x0592 in `src/genesis_prime/message/schema.toml` (the client's
 //// opcode.0x592), and 0x0715 is a message the client registers and ignores on
 //// the realm-select connection, which the schema does not name. The ids in
-//// the other fields are arbitrary. A test waits for the line it needs, as an
+//// the other fields are arbitrary. The line the node's default handler writes
+//// is the issue's done-when: the telemetry and every key of who and where are
+//// readable in it while the server runs, on one line, as `key=value`. A test waits for the line it needs, as an
 //// event from a capture, and never for a fixed time.
 
 import genesis_prime/telemetry/log.{Who}
 import gleam/dict
 import gleam/erlang/process
 import gleam/option.{None, Some}
+import gleam/string
 import log_capture.{Text, Whole}
 import owned_test
 
@@ -136,4 +139,53 @@ pub fn debug_is_off_by_default_and_on_when_the_start_argument_says_so_test() -> 
     log_capture.next_from(capture, from: process.self(), within: line_wait_ms)
     as "the debug line was not captured"
   assert #(on.level, on.text) == #("debug", "per-message detail while on")
+}
+
+pub fn the_line_the_default_handler_writes_carries_the_level_the_text_and_every_key_of_who_test() -> Nil {
+  use <- owned_test.run(5000)
+  let capture = log_capture.start()
+  let who =
+    Who(
+      account: Some(7),
+      actor: Some(log.Character(9)),
+      place: Some(log.Process("login")),
+      message: Some(log.Named("login_request", 0x0592)),
+    )
+  log.warning(who, "a login that was retried")
+  let assert Ok(event) =
+    log_capture.next_from(capture, from: process.self(), within: line_wait_ms)
+    as "the line was not captured"
+  let line = event.formatted
+  assert string.contains(line, "warning") as line
+  assert string.contains(line, "a login that was retried") as line
+  assert string.contains(line, "account=7") as line
+  assert string.contains(line, "character=9") as line
+  assert string.contains(line, "process=login") as line
+  assert string.contains(line, "message_name=login_request") as line
+  assert string.contains(line, "message_number=1426") as line
+  assert string.trim_end(line) == string.replace(line, "\n", "")
+    as "the line is not on one line"
+}
+
+pub fn the_line_the_default_handler_writes_carries_a_unit_a_map_and_a_message_number_test() -> Nil {
+  use <- owned_test.run(5000)
+  let capture = log_capture.start()
+  let who =
+    Who(
+      account: None,
+      actor: Some(log.Unit(31)),
+      place: Some(log.Map(4)),
+      message: Some(log.Numbered(0x0715)),
+    )
+  log.info(who, "a move")
+  let assert Ok(event) =
+    log_capture.next_from(capture, from: process.self(), within: line_wait_ms)
+    as "the line was not captured"
+  let line = event.formatted
+  assert string.contains(line, "unit=31") as line
+  assert string.contains(line, "map=4") as line
+  assert string.contains(line, "message_number=1813") as line
+  assert !string.contains(line, "account=") as line
+  assert !string.contains(line, "character=") as line
+  assert !string.contains(line, "message_name=") as line
 }

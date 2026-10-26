@@ -23,6 +23,7 @@ import genesis_prime/telemetry/snapshot
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Pid}
 import gleam/list
+import gleam/string
 import log_capture.{type Event, type Field, Fields, Fraction, Text, Whole}
 import owned_test
 
@@ -87,6 +88,24 @@ pub fn a_snapshot_is_written_at_each_interval_with_every_number_test() -> Nil {
     let assert Ok(Fraction(scheduler_use)) = dict.get(numbers, "scheduler_use")
     assert scheduler_use >=. 0.0 && scheduler_use <=. 1.0
   })
+}
+
+pub fn the_line_the_default_handler_writes_for_a_snapshot_holds_every_number_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let capture = log_capture.start()
+  let settings =
+    snapshot.Settings(
+      name: process.new_name("snapshot_formatted"),
+      interval_milliseconds: test_interval_ms,
+    )
+  let assert Ok(started) = snapshot.start(settings)
+    as "the snapshot process did not start"
+  let assert Ok(snapshot) = next_snapshot(capture:, pid: started.pid)
+    as "the snapshot was not written"
+  let line = snapshot.formatted
+  assert string.contains(line, "info") as line
+  assert string.contains(line, "process=snapshot") as line
+  assert list.all(numbers_of_every_line, string.contains(line, _)) as line
 }
 
 pub fn a_registered_kind_reports_its_largest_mailbox_and_heap_in_the_next_snapshot_test() -> Nil {
