@@ -1,6 +1,6 @@
 //// A short run of the topology benchmark's harness, to show in seconds that
-//// both prototypes start, carry the load and report: one run each at 20
-//// players and 200 creatures on all the cores, with short timing.
+//// the three prototypes start, carry the load and report: one run each at 20
+//// players and 200 creatures on all the cores, one second measured.
 ////
 //// Run it with `gleam run -m genesis_prime/topology/smoke`.
 
@@ -25,8 +25,13 @@ pub fn main() -> Nil {
       warm_up_milliseconds: 200,
       measure_milliseconds: 1000,
       sample_interval_milliseconds: 100,
+      first_judged_sample: 5,
     )
-  let prototypes = [run.PerUnit, run.MapProcess(map_process.NoPlantedCost)]
+  let prototypes = [
+    run.PerUnit,
+    run.MapProcess(map_process.SendsItself),
+    run.MapProcess(map_process.SenderPool),
+  ]
   list.each(prototypes, fn(prototype) {
     print(
       prototype,

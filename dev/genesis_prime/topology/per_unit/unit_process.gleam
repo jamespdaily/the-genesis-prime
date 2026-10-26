@@ -187,10 +187,11 @@ fn notify(
       let shared = state.start.shared
       let connections =
         table.near(
-          shared.table,
-          position,
-          shared.workload.visibility_range,
-          cell_size(state),
+          table: shared.table,
+          centre: position,
+          range: shared.workload.visibility_range,
+          cell_size: cell_size(state),
+          kind: unit.Player,
         )
         |> list.filter_map(fn(row) {
           case row.connection {
@@ -241,6 +242,7 @@ fn hit_nearest_creature(
       centre: state.unit.position,
       range: shared.workload.visibility_range,
       cell_size: cell_size(state),
+      kind: unit.Creature,
     )
   let neighbours =
     list.map(rows, fn(row) {
@@ -310,10 +312,11 @@ fn think(state: State) -> State {
   let now = measurement.monotonic_microseconds()
   let neighbours =
     table.near(
-      shared.table,
-      state.unit.position,
-      shared.workload.aggro_range,
-      cell_size(state),
+      table: shared.table,
+      centre: state.unit.position,
+      range: shared.workload.aggro_range,
+      cell_size: cell_size(state),
+      kind: unit.Player,
     )
     |> list.map(fn(row) {
       unit.Neighbour(

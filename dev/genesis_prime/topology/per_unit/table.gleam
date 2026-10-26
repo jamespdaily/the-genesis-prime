@@ -4,8 +4,9 @@
 //// mailbox of the unit processes, so this module does not depend on them.
 ////
 //// The rows live in an ordered set, with a unit's position row under the key
-//// `{position, id}` and its cell row under `{cell, x, y, id}`, so every row of
-//// one cell is found by a key prefix and no search reads the whole table.
+//// `{position_key, id}` and its cell row under `{cell_key, kind, x, y, id}`, so
+//// every row of one kind in one cell is found by a key prefix, no search reads
+//// the whole table, and a search for one kind never reads another kind's rows.
 
 import genesis_prime/topology/grid.{type Cell}
 import genesis_prime/topology/position.{type Position}
@@ -36,8 +37,8 @@ pub type Row(mailbox) {
 @external(erlang, "topology_ffi", "table_new")
 pub fn new() -> Table(mailbox)
 
-/// Writes a unit's position row and its cell row, and removes the cell row it
-/// had before when the unit has changed cell. Only the unit's own process
+/// Writes a unit's position row and its cell row, filed under the unit's kind,
+/// and removes the cell row it had before when the unit has changed cell. Only the unit's own process
 /// calls this for its unit.
 pub fn write(
   table table: Table(mailbox),
@@ -49,14 +50,14 @@ pub fn write(
       let old_cell = cell_of(row: old, cell_size:)
       case old_cell == cell_of(row:, cell_size:) {
         True -> Nil
-        False -> delete(table, cell_key(old_cell, row.unit_id))
+        False -> delete(table, cell_key(old_cell, row.kind, row.unit_id))
       }
     }
     Error(Nil) -> Nil
   }
   let cell = cell_of(row:, cell_size:)
   insert(table, PositionKey(row.unit_id), row)
-  insert(table, cell_key(cell, row.unit_id), row)
+  insert(table, cell_key(cell, row.kind, row.unit_id), row)
 }
 
 /// Removes a unit's rows when `owner` is still the process that owns them. A
@@ -69,7 +70,11 @@ pub fn delete_unit(
 ) -> Nil {
   case find(table:, unit_id:) {
     Ok(row) -> {
-      delete_owned(table, cell_key(cell_of(row:, cell_size:), unit_id), owner)
+      delete_owned(
+        table,
+        cell_key(cell_of(row:, cell_size:), row.kind, unit_id),
+        owner,
+      )
       delete_owned(table, PositionKey(unit_id), owner)
     }
     Error(Nil) -> Nil
@@ -84,16 +89,17 @@ pub fn find(
   lookup(table, PositionKey(unit_id))
 }
 
-/// The rows of the units at most `range` metres from `centre`, from the
-/// cells that can hold one.
+/// The rows of the units of one kind at most `range` metres from `centre`,
+/// from the cells that can hold one. Rows of the other kind are not read.
 pub fn near(
   table table: Table(mailbox),
   centre centre: Position,
   range range: Float,
   cell_size cell_size: Float,
+  kind kind: Kind,
 ) -> List(Row(mailbox)) {
   grid.cells_near(centre, range, cell_size)
-  |> list.flat_map(fn(cell) { cell_rows(table, cell.x, cell.y) })
+  |> list.flat_map(fn(cell) { cell_rows(table, kind, cell.x, cell.y) })
   |> list.filter(fn(row) { position.within(row.position, centre, range) })
 }
 
@@ -107,14 +113,14 @@ fn cell_of(row row: Row(mailbox), cell_size cell_size: Float) -> Cell {
 pub fn memory_words(table: Table(mailbox)) -> Int
 
 /// The key of a row in the table: a unit's position row, or its row in one
-/// cell.
+/// cell, where cell rows are told apart by the unit's kind.
 type Key {
   PositionKey(unit_id: Int)
-  CellKey(x: Int, y: Int, unit_id: Int)
+  CellKey(kind: Kind, x: Int, y: Int, unit_id: Int)
 }
 
-fn cell_key(cell: Cell, unit_id: Int) -> Key {
-  CellKey(x: cell.x, y: cell.y, unit_id:)
+fn cell_key(cell: Cell, kind: Kind, unit_id: Int) -> Key {
+  CellKey(kind:, x: cell.x, y: cell.y, unit_id:)
 }
 
 @external(erlang, "topology_ffi", "table_insert")
@@ -130,4 +136,9 @@ fn delete_owned(table: Table(mailbox), key: Key, owner: Pid) -> Nil
 fn lookup(table: Table(mailbox), key: Key) -> Result(Row(mailbox), Nil)
 
 @external(erlang, "topology_ffi", "table_cell_rows")
-fn cell_rows(table: Table(mailbox), x: Int, y: Int) -> List(Row(mailbox))
+fn cell_rows(
+  table: Table(mailbox),
+  kind: Kind,
+  x: Int,
+  y: Int,
+) -> List(Row(mailbox))

@@ -1,12 +1,12 @@
 -module(topology_ffi).
 -export([monotonic_microseconds/0, enable_scheduler_wall_time/0,
          set_high_priority/0, plain_arguments/0,
-         scheduler_wall_time/0, set_schedulers_online/1, core_count/0,
+         scheduler_wall_time/0, set_schedulers_online/1, core_count/0, schedulers_online/0,
          process_memory_words/1, message_queue_length/1, new_counter/0,
          increment/1, counter_value/1, put_spawn_list/2, get_spawn_list/1,
          erase_spawn_list/1, table_new/0, table_memory_words/1,
          table_insert/3, table_delete/2, table_delete_owned/3,
-         table_lookup/2, table_cell_rows/3]).
+         table_lookup/2, table_cell_rows/4]).
 
 monotonic_microseconds() ->
     erlang:monotonic_time(microsecond).
@@ -44,6 +44,9 @@ set_schedulers_online(Count) ->
 %% started with another count.
 core_count() ->
     erlang:system_info(schedulers).
+
+schedulers_online() ->
+    erlang:system_info(schedulers_online).
 
 process_memory_words(Pid) ->
     case erlang:process_info(Pid, memory) of
@@ -108,7 +111,8 @@ table_lookup(Table, Key) ->
         [] -> {error, nil}
     end.
 
-%% Every row filed under one cell: the keys `{cell_key, X, Y, UnitId}` share
-%% their first three elements, so the ordered set reads only that range.
-table_cell_rows(Table, X, Y) ->
-    ets:select(Table, [{{{cell_key, X, Y, '_'}, '$1'}, [], ['$1']}]).
+%% Every row of one kind filed under one cell: the keys
+%% `{cell_key, Kind, X, Y, UnitId}` share their first four elements, so the
+%% ordered set reads only that range and none of another kind's rows.
+table_cell_rows(Table, Kind, X, Y) ->
+    ets:select(Table, [{{{cell_key, Kind, X, Y, '_'}, '$1'}, [], ['$1']}]).

@@ -2,7 +2,7 @@
 //// a measured stretch, and what the run counted.
 
 import genesis_prime/topology/latency.{type Histogram}
-import genesis_prime/topology/map_process.{type PlantedCost}
+import genesis_prime/topology/map_process.{type Sending}
 import genesis_prime/topology/measurement
 import genesis_prime/topology/owner.{type Owner}
 import genesis_prime/topology/per_unit
@@ -29,28 +29,40 @@ pub type Timing {
     measure_milliseconds: Int,
     /// How often the owners' queues are sampled during the measured stretch.
     sample_interval_milliseconds: Int,
+    /// The first sample, counted from the start of the measured stretch, that
+    /// counts toward falling behind: the samples before it are the owners
+    /// catching up with the start of the load.
+    first_judged_sample: Int,
   )
 }
 
 /// The timing of a full run: 5 seconds of warm-up, a measured stretch of 30
-/// seconds and a sample every second.
+/// seconds and a sample every second, judged from the tenth.
 pub const full_timing =
   Timing(
     warm_up_milliseconds: 5000,
     measure_milliseconds: 30_000,
     sample_interval_milliseconds: 1000,
+    first_judged_sample: 10,
   )
 
-/// The first sample, counted from the start of the measured stretch, that
-/// counts toward falling behind.
-const first_judged_sample = 10
+/// The timing of a short run: 3 seconds of warm-up, a measured stretch of 15
+/// seconds and a sample every second, judged from the fifth.
+pub const short_timing =
+  Timing(
+    warm_up_milliseconds: 3000,
+    measure_milliseconds: 15_000,
+    sample_interval_milliseconds: 1000,
+    first_judged_sample: 5,
+  )
 
 /// Which prototype a run measures.
 pub type Prototype {
   /// One process per unit.
   PerUnit
-  /// One map process, with a planted cost or none.
-  MapProcess(planted: PlantedCost)
+  /// One map process, and who sends its deliveries: the map process itself is
+  /// prototype B, a pool of senders is prototype C.
+  MapProcess(sending: Sending)
 }
 
 /// Whether the owners kept up with the load.
@@ -66,8 +78,14 @@ pub type Pace {
   PlayersFellBehind
 }
 
-/// How long the players together have to report after the measured stretch.
-const report_deadline_milliseconds = 30_000
+/// How long the players together have to report after the measured stretch
+/// when the owners kept up.
+const report_deadline_kept_up_milliseconds = 30_000
+
+/// How long the players together have to report after the measured stretch
+/// when the owners fell behind: their mailboxes are full of updates that
+/// arrive late or not at all, so waiting longer adds nothing.
+const report_deadline_fell_behind_milliseconds = 5000
 
 /// What one run counted over its measured stretch.
 pub type RunResult {
@@ -93,13 +111,14 @@ fn load_per_second(workload: Workload) -> Int {
   workload.players * { workload.moves_per_second + 1 } + workload.creatures
 }
 
-/// Whether the owners kept up: from `first_judged_sample` on, no sample of the
-/// owners' summed queue may exceed `load_per_second`.
+/// Whether the owners kept up: from the timing's first judged sample on, no
+/// sample of the owners' summed queue may exceed `load_per_second`.
 fn pace(
   queue_samples queue_samples: List(Int),
   load_per_second load_per_second: Int,
+  timing timing: Timing,
 ) -> Pace {
-  let judged = list.drop(queue_samples, first_judged_sample - 1)
+  let judged = list.drop(queue_samples, timing.first_judged_sample - 1)
   case list.any(judged, fn(queue) { queue > load_per_second }) {
     True -> FellBehind
     False -> KeptUp
@@ -110,9 +129,9 @@ fn pace(
 pub fn name_of(prototype: Prototype) -> String {
   case prototype {
     PerUnit -> "A one process per unit"
-    MapProcess(planted: map_process.NoPlantedCost) -> "B one map process"
-    MapProcess(planted: map_process.ExtraGridLookupPerMove) ->
-      "B planted extra lookup"
+    MapProcess(sending: map_process.SendsItself) -> "B one map process"
+    MapProcess(sending: map_process.SenderPool) ->
+      "C map process with sender pool"
   }
 }
 
@@ -172,17 +191,19 @@ pub fn run(
   let scheduler_after = measurement.scheduler_time()
   let handled_after = door.messages_handled()
   let memory_words = door.memory_words()
+  let owners_pace =
+    pace(queue_samples:, load_per_second: load_per_second(workload), timing:)
   let asked = list.map(players, player.ask_report)
   let deadline =
-    measurement.monotonic_microseconds() / 1000 + report_deadline_milliseconds
+    measurement.monotonic_microseconds()
+    / 1000
+    + report_deadline_milliseconds(owners_pace)
   let answers =
     list.map(asked, fn(reply) {
       let left = deadline - measurement.monotonic_microseconds() / 1000
       process.receive(reply, int.max(left, 0))
     })
   let reports = result.values(answers)
-  let owners_pace =
-    pace(queue_samples:, load_per_second: load_per_second(workload))
   owner.stop_supervisor(supervisor.pid)
   measurement.erase_spawn_list(key)
 
@@ -218,7 +239,17 @@ fn start_prototype(
 ) -> Result(actor.Started(Owner), actor.StartError) {
   case prototype {
     PerUnit -> per_unit.start(workload, key)
-    MapProcess(planted:) -> map_process.start(workload, key, planted)
+    MapProcess(sending:) -> map_process.start(workload, key, sending)
+  }
+}
+
+/// How long the players together have to report after a run whose owners
+/// had the given pace. A pace of `PlayersFellBehind` is never an argument:
+/// it is decided from the reports this deadline collects.
+fn report_deadline_milliseconds(owners_pace: Pace) -> Int {
+  case owners_pace {
+    KeptUp | PlayersFellBehind -> report_deadline_kept_up_milliseconds
+    FellBehind -> report_deadline_fell_behind_milliseconds
   }
 }
 

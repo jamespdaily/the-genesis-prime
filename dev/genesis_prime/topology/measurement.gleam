@@ -65,6 +65,10 @@ pub fn set_schedulers_online(count: Int) -> Nil
 @external(erlang, "topology_ffi", "core_count")
 pub fn core_count() -> Int
 
+/// How many schedulers are online now.
+@external(erlang, "topology_ffi", "schedulers_online")
+pub fn schedulers_online() -> Int
+
 /// The words of memory a process holds, or an error when it is not alive.
 pub fn process_memory_words(pid: Pid) -> Result(Int, Nil) {
   memory_words_of(pid)

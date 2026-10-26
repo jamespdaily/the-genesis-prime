@@ -1,7 +1,8 @@
 //// Which process owns a unit's state: one process per unit with its position
-//// in a shared table, or one process that owns the whole map. The two
-//// prototypes run the same game rules under the same load, and only the
-//// ownership differs.
+//// in a shared table (A), one process that owns the whole map and sends its
+//// own updates (B), or that process with the sending handed to a pool of
+//// sender processes (C). The three prototypes run the same game rules under
+//// the same load, and only the ownership and the sending differ.
 ////
 //// Run it with `gleam run -m genesis_prime/topology` on a machine with
 //// nothing else heavy running. It lives in `dev/` because Gleam compiles that
@@ -9,18 +10,25 @@
 //// `gleam test` never runs it. It uses only the runtime's own counters, so it
 //// can be run again on the real map.
 ////
-//// It runs the measures in order and prints a table for each, then the
-//// prototype the choosing rule picks. Measure 1, that both prototypes are
-//// correct, is the test suite: `gleam test` must pass before these numbers
-//// count. Measures 2 to 5 run on all the cores and then on each count in
-//// `scheduler_counts`; the planted cost, the visibility sweep and the crash
-//// cost run on all the cores.
+//// It runs its parts in order and prints a table for each, then the
+//// prototype the choosing rule picks. Correctness is the test suite:
+//// `gleam test` must pass before these numbers count. Every run has 10,000
+//// creatures. The parts, selected by naming them after `--` (none named runs
+//// all of them):
+////
+//// - `all-cores`: every core, visibility ranges 100 m and 640 m, player
+////   counts counted up with short runs until a prototype falls behind, then the
+////   count below that and the count that fell behind rerun at full length.
+//// - `one-core`: one scheduler, 100 m, 100 and 400 players, short runs.
+//// - `time`: scheduler busy time per message, in paired short rounds.
+//// - `crash`: the time from an owner's death to its rebuilt process answering.
+//// - the choosing rule, which runs after `all-cores` and `time` when both ran.
 
 import genesis_prime/topology/latency
 import genesis_prime/topology/map_process
 import genesis_prime/topology/measurement
 import genesis_prime/topology/per_unit
-import genesis_prime/topology/run.{type Prototype, type RunResult}
+import genesis_prime/topology/run.{type Prototype, type RunResult, type Timing}
 import genesis_prime/topology/workload.{type Workload, Workload}
 import gleam/dict
 import gleam/erlang/reference
@@ -28,168 +36,167 @@ import gleam/float
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{type Option}
 import gleam/order
 import gleam/string
 
-/// The player counts a run uses.
+/// The three prototypes, in the order they are run and printed.
+const prototypes = [
+  run.PerUnit,
+  run.MapProcess(map_process.SendsItself),
+  run.MapProcess(map_process.SenderPool),
+]
+
+/// The creatures on the map in every run.
+const creature_count = 10_000
+
+/// The player counts the all-cores climb goes through, lowest first.
 const player_counts = [100, 200, 400, 800]
 
-/// The creature counts a run uses.
-const creature_counts = [1000, 10_000]
+/// The visibility ranges of the all-cores part, in metres. 100 is the stand-in
+/// every other run uses; 640 is the client's default draw distance
+/// (`lod.viewDistance`, setting object 0x140c46410), which bounds what a
+/// player can see.
+const visibility_ranges = [100.0, 640.0]
 
-/// The scheduler counts of the scheduler measure, besides all the cores.
-const scheduler_counts = [1]
+/// The player counts of the one-core part, at the default visibility range.
+const one_core_player_counts = [100, 400]
 
-/// How many runs the time per message is taken over; the median counts.
-const time_runs = 5
+/// How many paired rounds the time per message is taken over; the median
+/// counts.
+const time_rounds = 5
 
-/// How many rounds the planted-cost measure pairs.
-const planted_rounds = 5
-
-/// The player count at which the choosing rule compares latency.
+/// The player count at which latency, time per message and memory are
+/// compared by the choosing rule, at `creature_count` creatures and the
+/// default visibility range.
 const comparison_players = 100
 
-/// The creature count at which time per message and the planted cost are
-/// measured.
-const comparison_creatures = 10_000
-
-/// Choosing rule, first step: a prototype whose ceiling, on all cores, is
-/// below this many players in one map is out.
+/// Choosing rule, first step: a prototype that did not keep up at this many
+/// players on all cores, at every visibility range in `visibility_ranges`, is
+/// out.
 const ceiling_floor_players = 400
 
-/// Choosing rule, second step: prototypes whose 99th-percentile latency at
-/// `comparison_players` is within this percent of each other are tied, and the
-/// one with less memory per unit wins.
-const latency_tie_percent = 10.0
+/// Choosing rule, second step: a difference in 99th-percentile latency of at
+/// least this many microseconds decides for the lower. It is a tenth of the
+/// client's movement send interval, 125 ms (0x140c3a004).
+const latency_tie_microseconds = 12_500
 
-/// The visibility ranges of the sweep, in metres. The first is the stand-in
-/// every other run uses; 256 and 640 are the client's minimum and default draw
-/// distance (`lod.viewDistance`, setting object 0x140c46410), which bound what
-/// a player can see.
-const visibility_ranges = [100.0, 256.0, 640.0]
+/// Choosing rule, third step: a prototype whose scheduler busy time per
+/// message is lower by more than this percent of the other's wins; a smaller
+/// difference is below what the harness can resolve between two runs of the
+/// same prototype, measured by pairing runs with a cost planted in them.
+const resolution_percent = 5.0
 
 /// How many times the crash cost of each prototype is timed.
 const crash_repeats = 3
 
-/// Runs measures 2 to 6 in order and prints their tables and the choosing
-/// rule's pick.
-/// The parts of the run, in the order they run. Naming some of them after
-/// `--` runs only those; the choosing rule runs with `all-cores`, whose runs
-/// it reads.
-const parts = ["all-cores", "one-core", "planted", "sweep", "crash"]
+/// The parts of the run, in the order they run.
+const parts = ["all-cores", "one-core", "time", "crash"]
 
+/// Runs the parts named after `--`, or all of them, in order, and prints their
+/// tables and the choosing rule's pick.
 pub fn main() -> Nil {
-  let chosen = case measurement.plain_arguments() {
-    [] -> parts
-    named -> named
-  }
-  list.each(chosen, fn(part) {
-    assert list.contains(parts, part)
-      as "a part is one of all-cores, one-core, planted, sweep and crash"
-  })
-  let runs = fn(part) { list.contains(chosen, part) }
-  io.println(
-    "== Measure 1: correctness is the test suite; `gleam test` must pass before these numbers count",
-  )
-  measurement.set_high_priority()
-  measurement.enable_scheduler_wall_time()
-  let cores = measurement.core_count()
-  let prototypes = [run.PerUnit, run.MapProcess(map_process.NoPlantedCost)]
-  let default_range = workload.default().visibility_range
-
-  let all_cores_runs = case runs("all-cores") {
-    True ->
-      measures_2_to_5(
-        schedulers: cores,
-        prototypes:,
-        visibility_range: default_range,
-      )
-    False -> []
-  }
-  case runs("one-core") {
-    True ->
-      list.each(scheduler_counts, fn(count) {
-        measures_2_to_5(
-          schedulers: count,
-          prototypes:,
-          visibility_range: default_range,
-        )
-        Nil
-      })
-    False -> Nil
-  }
-
-  measurement.set_schedulers_online(cores)
-  case runs("planted") {
-    True -> planted_cost(cores)
-    False -> Nil
-  }
-  case runs("sweep") {
-    True ->
-      visibility_sweep(schedulers: cores, prototypes:, grid: all_cores_runs)
-      |> print_sweep
-    False -> Nil
-  }
-  case runs("crash") {
-    True -> crash_cost(cores)
-    False -> Nil
-  }
-  case runs("all-cores") {
-    True -> choose(prototypes, all_cores_runs)
-    False -> Nil
-  }
-  measurement.set_schedulers_online(cores)
+  todo as "body in the build commit"
 }
 
-/// Runs the grid of player and creature counts for both prototypes with
-/// `schedulers` schedulers online, the paired time runs, and prints
-/// measures 2 to 5. Returns the grid's runs.
-fn measures_2_to_5(
-  schedulers schedulers: Int,
-  prototypes prototypes: List(Prototype),
-  visibility_range visibility_range: Float,
-) -> List(RunResult) {
-  io.println(
-    "\n== "
-    <> int.to_string(schedulers)
-    <> " scheduler(s) online: raw runs, one per prototype, player count and creature count",
+/// Where one prototype stopped keeping up at one visibility range, from the
+/// full-length confirmation runs only. A run whose owners kept up but whose
+/// players did not all report counts as kept up.
+type Ceiling {
+  Ceiling(
+    prototype: Prototype,
+    visibility_range: Float,
+    /// The highest player count whose confirmation run kept up, or none when
+    /// no confirmation run kept up.
+    kept_up_at: Option(Int),
+    /// The lowest player count whose confirmation run fell behind, or none
+    /// when none did.
+    fell_behind_at: Option(Int),
   )
-  let runs =
-    list.flat_map(creature_counts, fn(creatures) {
-      list.flat_map(player_counts, fn(players) {
-        list.map(prototypes, fn(prototype) {
-          measured_run(
-            prototype:,
-            workload: workload_for(players:, creatures:, visibility_range:),
-            schedulers:,
-          )
-        })
-      })
-    })
-  print_latency(schedulers, runs)
-  print_ceiling(schedulers, runs)
-  print_memory(schedulers, runs)
-  time_per_message(schedulers, prototypes)
-  runs
+}
+
+/// What the all-cores part found: the short runs of every climb, the
+/// full-length confirmation runs, and each prototype's ceiling at each range.
+type AllCores {
+  AllCores(
+    climbed: List(RunResult),
+    confirmed: List(RunResult),
+    ceilings: List(Ceiling),
+  )
+}
+
+/// The all-cores part: for each visibility range and prototype, the climb and
+/// its confirmation. Prints the latency, ceiling and memory tables.
+fn all_cores(schedulers schedulers: Int) -> AllCores {
+  todo as "body in the build commit"
+}
+
+/// Short runs of one prototype at each player count of `player_counts`, lowest
+/// first, stopping after the first run that fell behind; the runs, in the
+/// order they ran. Owners that kept up with every count give every count's run.
+fn climb(
+  prototype prototype: Prototype,
+  visibility_range visibility_range: Float,
+  schedulers schedulers: Int,
+) -> List(RunResult) {
+  todo as "body in the build commit"
+}
+
+/// Full-length reruns of the highest player count of `climbed` that kept up
+/// and the first that fell behind, each when there is one.
+fn confirm(
+  climbed climbed: List(RunResult),
+  visibility_range visibility_range: Float,
+  schedulers schedulers: Int,
+) -> List(RunResult) {
+  todo as "body in the build commit"
+}
+
+/// The ceiling `confirmed`, the confirmation runs of one prototype at one
+/// range, show.
+fn ceiling_of(
+  prototype prototype: Prototype,
+  visibility_range visibility_range: Float,
+  confirmed confirmed: List(RunResult),
+) -> Ceiling {
+  todo as "body in the build commit"
+}
+
+/// Whether the prototype kept up at `players` players at the ceiling's range:
+/// its highest confirmed player count that kept up reaches `players`.
+fn keeps_up_at(ceiling ceiling: Ceiling, players players: Int) -> Bool {
+  todo as "body in the build commit"
+}
+
+/// The one-core part: `one_core_player_counts` for each prototype, short runs
+/// on one scheduler at the default visibility range. Prints the latency and
+/// ceiling tables.
+fn one_core() -> Nil {
+  todo as "body in the build commit"
 }
 
 fn workload_for(
   players players: Int,
-  creatures creatures: Int,
   visibility_range visibility_range: Float,
 ) -> Workload {
-  Workload(..workload.default(), players:, creatures:, visibility_range:)
+  Workload(
+    ..workload.default(),
+    players:,
+    creatures: creature_count,
+    visibility_range:,
+  )
 }
 
-/// One run with the full timing, printed as it finishes.
+/// One run with the given timing, printed as it finishes.
 fn measured_run(
   prototype prototype: Prototype,
   workload workload: Workload,
   schedulers schedulers: Int,
+  timing timing: Timing,
 ) -> RunResult {
-  let result = run.run(prototype, workload, schedulers, run.full_timing)
+  let result = run.run(prototype, workload, schedulers, timing)
   io.println(
-    string.pad_end(run.name_of(prototype), 24, " ")
+    string.pad_end(run.name_of(prototype), 32, " ")
     <> pad_start(int.to_string(workload.players), 5)
     <> " players "
     <> pad_start(int.to_string(workload.creatures), 6)
@@ -213,91 +220,29 @@ fn measured_run(
   result
 }
 
+/// Prints microseconds from a move's send to its arrival at a player in range,
+/// for each of `runs`.
+fn print_latency(schedulers: Int, runs: List(RunResult)) -> Nil {
+  todo as "body in the build commit"
+}
+
+/// Prints each ceiling: the highest player count that kept up and the lowest
+/// that fell behind, in the full-length confirmation runs.
+fn print_ceiling(schedulers: Int, ceilings: List(Ceiling)) -> Nil {
+  todo as "body in the build commit"
+}
+
+/// Prints the words of memory per unit of each of `runs`.
+fn print_memory(schedulers: Int, runs: List(RunResult)) -> Nil {
+  todo as "body in the build commit"
+}
+
 fn pace_name(result: RunResult) -> String {
   case result.pace {
     run.KeptUp -> "KeptUp"
     run.FellBehind -> "FellBehind"
     run.PlayersFellBehind -> "PlayersFellBehind"
   }
-}
-
-fn print_latency(schedulers: Int, runs: List(RunResult)) -> Nil {
-  io.println(
-    "\n== Measure 3: microseconds from a move's send to its arrival at a player in range, "
-    <> int.to_string(schedulers)
-    <> " scheduler(s)",
-  )
-  io.println(
-    string.pad_end("prototype", 24, " ")
-    <> pad_start("creatures", 10)
-    <> pad_start("players", 9)
-    <> pad_start("p50", 10)
-    <> pad_start("p99", 10)
-    <> pad_start("max", 10)
-    <> pad_start("arrivals", 12),
-  )
-  list.each(sorted_by_creatures_and_players(runs), fn(result) {
-    io.println(
-      string.pad_end(run.name_of(result.prototype), 24, " ")
-      <> pad_start(int.to_string(result.creatures), 10)
-      <> pad_start(int.to_string(result.players), 9)
-      <> pad_start(int.to_string(latency.percentile(result.latency, 50.0)), 10)
-      <> pad_start(int.to_string(latency.percentile(result.latency, 99.0)), 10)
-      <> pad_start(int.to_string(latency.maximum(result.latency)), 10)
-      <> pad_start(int.to_string(latency.count(result.latency)), 12),
-    )
-  })
-}
-
-fn print_ceiling(schedulers: Int, runs: List(RunResult)) -> Nil {
-  io.println(
-    "\n== Measure 4: lowest player count at which an owner's queue grew (FellBehind), "
-    <> int.to_string(schedulers)
-    <> " scheduler(s)",
-  )
-  list.each(creature_counts, fn(creatures) {
-    list.each(prototypes_in(runs), fn(prototype) {
-      let ceiling =
-        runs
-        |> list.filter(fn(result) {
-          result.prototype == prototype
-          && result.creatures == creatures
-          && result.pace == run.FellBehind
-        })
-        |> list.map(fn(result) { result.players })
-        |> list.sort(int.compare)
-        |> list.first
-      io.println(
-        string.pad_end(run.name_of(prototype), 24, " ")
-        <> pad_start(int.to_string(creatures), 7)
-        <> " creatures: "
-        <> case ceiling {
-          Ok(players) ->
-            "fell behind at " <> int.to_string(players) <> " players"
-          Error(Nil) -> "kept up at every count tried"
-        },
-      )
-    })
-  })
-}
-
-fn print_memory(schedulers: Int, runs: List(RunResult)) -> Nil {
-  io.println(
-    "\n== Measure 5: words of memory per unit, "
-    <> int.to_string(schedulers)
-    <> " scheduler(s)",
-  )
-  list.each(sorted_by_creatures_and_players(runs), fn(result) {
-    io.println(
-      string.pad_end(run.name_of(result.prototype), 24, " ")
-      <> pad_start(int.to_string(result.creatures), 7)
-      <> " creatures "
-      <> pad_start(int.to_string(result.players), 4)
-      <> " players: "
-      <> two_places(result.memory_words_per_unit)
-      <> " words per unit",
-    )
-  })
 }
 
 fn sorted_by_creatures_and_players(runs: List(RunResult)) -> List(RunResult) {
@@ -324,50 +269,6 @@ fn microseconds_per_message(result: RunResult) -> Float {
   /. int.to_float(int.max(1, result.messages_handled))
 }
 
-/// Measure 2: runs each prototype `time_runs` times at the comparison counts,
-/// in rounds that alternate which one starts, and prints the median.
-fn time_per_message(schedulers: Int, prototypes: List(Prototype)) -> Nil {
-  io.println(
-    "\n== Measure 2: scheduler busy microseconds per message handled, "
-    <> int.to_string(comparison_players)
-    <> " players, "
-    <> int.to_string(comparison_creatures)
-    <> " creatures, "
-    <> int.to_string(schedulers)
-    <> " scheduler(s), "
-    <> int.to_string(time_runs)
-    <> " paired rounds (busy time includes the players' own work)",
-  )
-  let rounds =
-    paired_rounds(
-      prototypes:,
-      rounds: time_runs,
-      workload: workload_for(
-        players: comparison_players,
-        creatures: comparison_creatures,
-        visibility_range: workload.default().visibility_range,
-      ),
-      schedulers:,
-    )
-  list.each(prototypes, fn(prototype) {
-    let values =
-      list.map(rounds, fn(round) {
-        microseconds_per_message(result_of(round, prototype))
-      })
-    io.println(
-      string.pad_end(run.name_of(prototype), 24, " ")
-      <> "median "
-      <> two_places(median(values))
-      <> " us/message  min "
-      <> two_places(minimum(values))
-      <> "  max "
-      <> two_places(maximum(values))
-      <> "  standard deviation "
-      <> two_places(standard_deviation(values)),
-    )
-  })
-}
-
 fn result_of(round: List(RunResult), prototype: Prototype) -> RunResult {
   let assert Ok(result) =
     list.find(round, fn(result) { result.prototype == prototype })
@@ -375,350 +276,126 @@ fn result_of(round: List(RunResult), prototype: Prototype) -> RunResult {
   result
 }
 
-/// Rounds in which every prototype runs once, the first to run alternating
-/// from round to round.
+/// What the time part found for one prototype: the median, over the paired
+/// rounds, of the scheduler busy microseconds per message handled.
+type Timed {
+  Timed(prototype: Prototype, microseconds_per_message: Float)
+}
+
+/// The time part: `time_rounds` paired rounds of every prototype at
+/// `comparison_players` players, the default visibility range and short
+/// timing, on `schedulers` schedulers. Prints each prototype's median, minimum,
+/// maximum and standard deviation.
+fn time_per_message(schedulers schedulers: Int) -> List(Timed) {
+  todo as "body in the build commit"
+}
+
+/// Rounds in which every prototype runs once at short timing, the first to run
+/// rotating by one prototype from round to round so each starts about as often
+/// as the others.
 fn paired_rounds(
-  prototypes prototypes: List(Prototype),
   rounds rounds: Int,
   workload workload: Workload,
   schedulers schedulers: Int,
 ) -> List(List(RunResult)) {
-  int.range(0, rounds, [], fn(taken, round) {
-    let order = case round % 2 {
-      0 -> prototypes
-      _ -> list.reverse(prototypes)
-    }
-    let results =
-      list.map(order, fn(prototype) {
-        let result = measured_run(prototype:, workload:, schedulers:)
-        io.println(
-          "  round "
-          <> int.to_string(round + 1)
-          <> ": "
-          <> two_places(microseconds_per_message(result))
-          <> " us/message, "
-          <> int.to_string(result.messages_handled)
-          <> " messages",
-        )
-        result
-      })
-    [results, ..taken]
-  })
-  |> list.reverse
+  todo as "body in the build commit"
 }
 
-/// Measure 8: the map process against the same with a planted extra grid
-/// lookup on every move, in paired rounds, on all the cores.
-fn planted_cost(schedulers: Int) -> Nil {
-  io.println(
-    "\n== Measure 8: the planted extra grid lookup per move, "
-    <> int.to_string(planted_rounds)
-    <> " paired rounds, "
-    <> int.to_string(schedulers)
-    <> " scheduler(s)",
-  )
-  let plain = run.MapProcess(map_process.NoPlantedCost)
-  let planted = run.MapProcess(map_process.ExtraGridLookupPerMove)
-  let rounds =
-    paired_rounds(
-      prototypes: [plain, planted],
-      rounds: planted_rounds,
-      workload: workload_for(
-        players: comparison_players,
-        creatures: comparison_creatures,
-        visibility_range: workload.default().visibility_range,
-      ),
-      schedulers:,
-    )
-  let plain_values =
-    list.map(rounds, fn(round) {
-      microseconds_per_message(result_of(round, plain))
-    })
-  let planted_values =
-    list.map(rounds, fn(round) {
-      microseconds_per_message(result_of(round, planted))
-    })
-  let difference = median(planted_values) -. median(plain_values)
-  let ratios =
-    list.map2(plain_values, planted_values, fn(plain, planted) {
-      planted /. plain
-    })
-  io.println(
-    "median planted - median plain: "
-    <> two_places(difference)
-    <> " us/message; range of plain's runs: "
-    <> two_places(maximum(plain_values) -. minimum(plain_values))
-    <> "; the harness "
-    <> case difference >. maximum(plain_values) -. minimum(plain_values) {
-      True -> "sees the difference"
-      False -> "does not see the difference"
-    },
-  )
-  io.println(
-    "per-round planted/plain: median "
-    <> signed({ median(ratios) -. 1.0 } *. 100.0)
-    <> "%, planted slower in "
-    <> int.to_string(list.count(ratios, fn(ratio) { ratio >. 1.0 }))
-    <> " of "
-    <> int.to_string(planted_rounds)
-    <> " rounds",
-  )
-}
-
-/// A run of the visibility sweep.
-type Swept {
-  Swept(visibility_range: Float, result: RunResult)
-}
-
-/// Runs both prototypes at the comparison creature count for every visibility
-/// range and player count. The runs at the default range are the grid's.
-fn visibility_sweep(
-  schedulers schedulers: Int,
-  prototypes prototypes: List(Prototype),
-  grid grid: List(RunResult),
-) -> List(Swept) {
-  io.println(
-    "\n== Visibility sweep: "
-    <> int.to_string(comparison_creatures)
-    <> " creatures, "
-    <> int.to_string(schedulers)
-    <> " scheduler(s), raw runs",
-  )
-  list.flat_map(visibility_ranges, fn(visibility_range) {
-    list.flat_map(prototypes, fn(prototype) {
-      list.map(player_counts, fn(players) {
-        Swept(
-          visibility_range:,
-          result: swept_run(
-            prototype:,
-            players:,
-            visibility_range:,
-            schedulers:,
-            grid:,
-          ),
-        )
-      })
-    })
-  })
-}
-
-/// One run of the sweep: the grid's own run when the range is the default
-/// one, else a new run.
-fn swept_run(
-  prototype prototype: Prototype,
-  players players: Int,
-  visibility_range visibility_range: Float,
-  schedulers schedulers: Int,
-  grid grid: List(RunResult),
-) -> RunResult {
-  let earlier = case visibility_range == workload.default().visibility_range {
-    True ->
-      list.find(grid, fn(result) {
-        result.prototype == prototype
-        && result.players == players
-        && result.creatures == comparison_creatures
-      })
-    False -> Error(Nil)
-  }
-  case earlier {
-    Ok(result) -> result
-    Error(Nil) ->
-      measured_run(
-        prototype:,
-        workload: workload_for(
-          players:,
-          creatures: comparison_creatures,
-          visibility_range:,
-        ),
-        schedulers:,
-      )
-  }
-}
-
-fn print_sweep(sweep: List(Swept)) -> Nil {
-  io.println(
-    "\n== Visibility sweep: microseconds from a move's send to its arrival, and pace",
-  )
-  io.println(
-    string.pad_end("prototype", 24, " ")
-    <> pad_start("range", 9)
-    <> pad_start("players", 9)
-    <> pad_start("p50", 10)
-    <> pad_start("p99", 10)
-    <> pad_start("max", 10)
-    <> "  pace",
-  )
-  list.each(sweep, fn(swept) {
-    let result = swept.result
-    io.println(
-      string.pad_end(run.name_of(result.prototype), 24, " ")
-      <> pad_start(two_places(swept.visibility_range), 9)
-      <> pad_start(int.to_string(result.players), 9)
-      <> pad_start(int.to_string(latency.percentile(result.latency, 50.0)), 10)
-      <> pad_start(int.to_string(latency.percentile(result.latency, 99.0)), 10)
-      <> pad_start(int.to_string(latency.maximum(result.latency)), 10)
-      <> "  "
-      <> pace_name(result),
-    )
-  })
-}
-
-/// Measure 6: the microseconds from killing one owner to the rebuilt process
-/// handling a message: one creature's process for A, the whole map process
-/// for B, at the comparison creature count and no players.
+/// The crash part: the microseconds from killing one owner to the rebuilt
+/// owner handling a message, with no players: one creature's process for A,
+/// the map process for B and for C, repeated `crash_repeats` times.
 fn crash_cost(schedulers: Int) -> Nil {
-  io.println(
-    "\n== Measure 6: microseconds from the owner's death to the rebuilt owner answering, "
-    <> int.to_string(comparison_creatures)
-    <> " creatures, no players, "
-    <> int.to_string(schedulers)
-    <> " scheduler(s)",
+  todo as "body in the build commit"
+}
+
+/// What the choosing rule reads about one prototype that kept up: its
+/// 99th-percentile latency in microseconds, its scheduler busy time per
+/// message and its memory per unit, at `comparison_players` players,
+/// `creature_count` creatures and the default visibility range on all cores.
+type Standing {
+  Standing(
+    prototype: Prototype,
+    p99_microseconds: Int,
+    microseconds_per_message: Float,
+    memory_words_per_unit: Float,
   )
-  let crash_workload =
-    Workload(..workload.default(), players: 0, creatures: comparison_creatures)
-  let key = reference.new()
-  measurement.put_spawn_list(
-    key,
-    workload.spawn_list(crash_workload)
-      |> list.map(fn(unit) { #(unit.id, unit) })
-      |> dict.from_list,
+}
+
+/// What decided one comparison of two prototypes.
+type Decision {
+  /// The 99th-percentile latencies differ by `latency_tie_microseconds` or
+  /// more: the lower wins.
+  LowerLatency
+  /// The latencies are tied and the time per message differs by more than
+  /// `resolution_percent`: the lower wins.
+  LowerTimePerMessage
+  /// Neither latency nor time per message separates them: the lower memory
+  /// per unit wins.
+  LowerMemory
+}
+
+/// One comparison of the best prototype so far with the next: who won and what
+/// decided it. A tie on every measure goes to the best so far.
+type Duel {
+  Duel(
+    best: Standing,
+    challenger: Standing,
+    winner: Prototype,
+    decided_by: Decision,
   )
-  let costs = [
-    #(
-      "A one creature's process",
-      repeat(crash_repeats, fn() { per_unit.crash_cost(crash_workload, key) }),
-    ),
-    #(
-      "B the map process",
-      repeat(crash_repeats, fn() {
-        map_process.crash_cost(crash_workload, key, map_process.NoPlantedCost)
-      }),
-    ),
-  ]
-  measurement.erase_spawn_list(key)
-  list.each(costs, fn(cost) {
-    io.println(
-      string.pad_end(cost.0, 28, " ")
-      <> string.join(list.map(cost.1, int.to_string), "  ")
-      <> " us, median "
-      <> int.to_string(float.round(median(list.map(cost.1, int.to_float))))
-      <> " us",
-    )
-  })
+}
+
+/// What the choosing rule ends with.
+type Choice {
+  /// One prototype, and the comparisons made to reach it.
+  Picked(prototype: Prototype, duels: List(Duel))
+  /// Every prototype is out: the cell variant must be built.
+  CellVariantNeeded
+}
+
+/// The choosing rule, from the all-cores and time parts. It prints each
+/// prototype's standing and the choice.
+fn choose(all_cores all_cores: AllCores, timed timed: List(Timed)) -> Nil {
+  todo as "body in the build commit"
+}
+
+/// The prototypes that did not fall out at the first step of the rule: those
+/// that kept up at `ceiling_floor_players` players at every visibility range.
+fn prototypes_left(ceilings ceilings: List(Ceiling)) -> List(Prototype) {
+  todo as "body in the build commit"
+}
+
+/// The standing of one prototype that is left.
+fn standing_of(
+  prototype prototype: Prototype,
+  all_cores all_cores: AllCores,
+  timed timed: List(Timed),
+) -> Standing {
+  todo as "body in the build commit"
+}
+
+/// The choice among the standings of the prototypes that are left, none
+/// meaning every prototype is out. Three prototypes are compared pairwise
+/// against the best so far, in the order they are listed: the best so far is
+/// the first, and each next one is compared with it by `duel`; the winner is
+/// the best so far for the next comparison. The result can depend on the order,
+/// because a tie band is not transitive.
+fn pick(standings standings: List(Standing)) -> Choice {
+  todo as "body in the build commit"
+}
+
+/// The rule's second and third steps for two prototypes that are left: a
+/// difference in p99 latency of `latency_tie_microseconds` or more picks the
+/// lower; otherwise a time per message lower by more than `resolution_percent`
+/// of the other's picks the lower; otherwise the lower memory per unit picks,
+/// and an equal memory per unit picks `best`.
+fn duel(best best: Standing, challenger challenger: Standing) -> Duel {
+  todo as "body in the build commit"
 }
 
 fn repeat(times: Int, work: fn() -> a) -> List(a) {
   int.range(0, times, [], fn(taken, _) { [work(), ..taken] })
   |> list.reverse
-}
-
-/// The choosing rule: a prototype that fell behind below
-/// `ceiling_floor_players` players on all the cores is out; of those left the
-/// one with the lower 99th-percentile latency at the comparison counts wins,
-/// and within `latency_tie_percent` the one with less memory per unit; when
-/// both are out the cell variant is built.
-fn choose(prototypes: List(Prototype), all_cores_runs: List(RunResult)) -> Nil {
-  io.println("\n== The choosing rule, from the runs on all the cores")
-  let out = fn(prototype) {
-    list.any(all_cores_runs, fn(result) {
-      result.prototype == prototype
-      && result.players < ceiling_floor_players
-      && result.pace == run.FellBehind
-    })
-  }
-  list.each(prototypes, fn(prototype) {
-    io.println(
-      run.name_of(prototype)
-      <> case out(prototype) {
-        True ->
-          " is out: it fell behind below "
-          <> int.to_string(ceiling_floor_players)
-          <> " players"
-        False ->
-          " is in: it kept up below "
-          <> int.to_string(ceiling_floor_players)
-          <> " players"
-      },
-    )
-  })
-  case list.filter(prototypes, fn(prototype) { !out(prototype) }) {
-    [] ->
-      io.println(
-        "Both prototypes are out: the cell variant must be built, and measures 1 to 5 rerun on it.",
-      )
-    [only] ->
-      io.println("Pick: " <> run.name_of(only) <> ", the only one left.")
-    left -> {
-      let compared =
-        list.map(left, fn(prototype) {
-          let assert Ok(result) =
-            list.find(all_cores_runs, fn(result) {
-              result.prototype == prototype
-              && result.players == comparison_players
-              && result.creatures == comparison_creatures
-            })
-            as "the grid holds the comparison run"
-          #(
-            prototype,
-            int.to_float(latency.percentile(result.latency, 99.0)),
-            result.memory_words_per_unit,
-          )
-        })
-      let assert [first, second, ..] = compared as "two prototypes are left"
-      let lower_latency = case first.1 <=. second.1 {
-        True -> #(first, second)
-        False -> #(second, first)
-      }
-      let #(faster, slower) = lower_latency
-      let tied = within_percent(faster.1, slower.1)
-      let picked = case tied && slower.2 <. faster.2 {
-        True -> slower
-        False -> faster
-      }
-      io.println(
-        "p99 at "
-        <> int.to_string(comparison_players)
-        <> " players and "
-        <> int.to_string(comparison_creatures)
-        <> " creatures: "
-        <> run.name_of(first.0)
-        <> " "
-        <> two_places(first.1)
-        <> " us, "
-        <> run.name_of(second.0)
-        <> " "
-        <> two_places(second.1)
-        <> " us; "
-        <> case tied {
-          True ->
-            "within "
-            <> two_places(latency_tie_percent)
-            <> "% of each other, so memory per unit decides: "
-          False ->
-            "not within "
-            <> two_places(latency_tie_percent)
-            <> "%, so latency decides: "
-        }
-        <> run.name_of(first.0)
-        <> " "
-        <> two_places(first.2)
-        <> " words, "
-        <> run.name_of(second.0)
-        <> " "
-        <> two_places(second.2)
-        <> " words",
-      )
-      io.println("Pick: " <> run.name_of(picked.0))
-    }
-  }
-}
-
-/// Whether two latencies are within `latency_tie_percent` of each other,
-/// measured against the lower.
-fn within_percent(a: Float, b: Float) -> Bool {
-  let lower = float.min(a, b)
-  let higher = float.max(a, b)
-  higher -. lower <=. lower *. latency_tie_percent /. 100.0
 }
 
 fn median(values: List(Float)) -> Float {

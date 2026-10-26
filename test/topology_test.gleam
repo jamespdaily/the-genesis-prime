@@ -121,7 +121,7 @@ fn start_prototype_b(
   workload: Workload,
   key: Reference,
 ) -> Result(actor.Started(Owner), actor.StartError) {
-  map_process.start(workload, key, map_process.NoPlantedCost)
+  map_process.start(workload, key, map_process.SendsItself)
 }
 
 /// 1000 health and 100 hits of 7 take 700: every hit lands, the remaining

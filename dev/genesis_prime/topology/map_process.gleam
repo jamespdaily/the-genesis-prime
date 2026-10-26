@@ -1,18 +1,30 @@
-//// Prototype B: one process owns every unit of the map, with a grid index in
-//// its state. Moves and attacks are messages to it, and it thinks for the
-//// creatures itself, a hundredth of them every 10 milliseconds, so each
-//// creature thinks once a second and no one message holds the map for long.
+//// Prototypes B and C: one process owns every unit of the map, with a grid
+//// index of the players and another of the creatures in its state. Moves and
+//// attacks are messages to it, and it thinks for the creatures itself, a
+//// hundredth of them every 10 milliseconds, so each creature thinks once a
+//// second and no one message holds the map for long. The two prototypes differ
+//// only in who sends the deliveries the map process decides on: in B the map
+//// process sends them itself, in C a pool of sender processes does.
 ////
-//// The supervision tree is one supervisor with one child, the map process,
-//// registered under a name made for the run. The map process is rebuilt from
-//// the spawn list kept in the persistent term named by the start argument,
-//// so a crash loses the whole map until the rebuild is done: every player
-//// sees every unit stop, and each player's connection must join again.
+//// Every query reads only the grid of the kind it needs: the recipients of a
+//// move and a creature's aggro check read the players, an attack's target
+//// reads the creatures.
+////
+//// The supervision tree is one supervisor, restarting its children rest for
+//// one. Its children are the senders, if any, and then the map process, which
+//// is registered under a name made for the run; the senders are registered
+//// under names of their own, so a rebuilt map process reaches the rebuilt
+//// senders. The map process is rebuilt from the spawn list kept in the
+//// persistent term named by the start argument, so a crash loses the whole
+//// map until the rebuild is done: every player sees every unit stop, and each
+//// player's connection must join again. A sender that crashes takes the map
+//// process down with it, because the map process starts after the senders.
 
 import genesis_prime/topology/grid.{type Grid}
 import genesis_prime/topology/measurement.{type Counter}
 import genesis_prime/topology/owner.{type Owner, Owner}
 import genesis_prime/topology/position.{type Position}
+import genesis_prime/topology/sender
 import genesis_prime/topology/unit.{type Unit}
 import genesis_prime/topology/update.{type Delivery}
 import genesis_prime/topology/workload.{type Workload}
@@ -41,12 +53,29 @@ const shutdown_milliseconds = 5000
 /// long.
 const think_slices = 100
 
-/// A cost planted in the prototype to show that the harness can see one.
-pub type PlantedCost {
-  /// The prototype as it is.
-  NoPlantedCost
-  /// One more grid-cell lookup on every move.
-  ExtraGridLookupPerMove
+/// Who sends the deliveries the map process decides on.
+pub type Sending {
+  /// The map process sends each delivery to each recipient itself (prototype
+  /// B).
+  SendsItself
+  /// The map process hands each delivery, with all its recipients, to one
+  /// sender of a pool (prototype C). The pool has one sender for each
+  /// scheduler online when the prototype starts. The sender is chosen by the
+  /// id of the unit the delivery is about, so everything said about one unit,
+  /// and the answers to hits on it, reach each player in the order the map
+  /// process decided it.
+  SenderPool
+}
+
+/// How the map process's deliveries leave it, made from `Sending` when the map
+/// process starts.
+type Route {
+  /// The map process sends each delivery itself.
+  Direct
+  /// Each delivery goes to the sender stored under the unit's id modulo the
+  /// number of senders. The keys are 0 up to one less than the number of
+  /// senders.
+  Pooled(senders: Dict(Int, Subject(sender.Message)))
 }
 
 /// Every message the map process can receive. Its selector covers all of
@@ -68,18 +97,19 @@ type Message {
   Probe(reply_with: Subject(Nil))
 }
 
-/// The state of the map process: every unit, the grid over them, each
-/// player's connection, the creatures split into the slices they think in, and
-/// which slice is next.
+/// The state of the map process: every unit, one grid over the players and one
+/// over the creatures, each player's connection, the creatures split into the
+/// slices they think in, which slice is next, and how deliveries leave.
 type State {
   State(
     workload: Workload,
     units: Dict(Int, Unit),
-    grid: Grid,
+    players: Grid,
+    creatures: Grid,
     connections: Dict(Int, Subject(Delivery)),
     slices: Dict(Int, List(Int)),
     next_slice: Int,
-    planted: PlantedCost,
+    route: Route,
     handled: Counter,
     self: Subject(Message),
   )
@@ -92,33 +122,34 @@ const initialisation_milliseconds = 60_000
 /// The time between two slices of creature thinking, in milliseconds.
 const slice_interval_milliseconds = 10
 
-/// Starts the prototype: the supervisor and the map process, built from the
-/// spawn list kept under `spawn_list_key`. Players' connections join
-/// afterwards through the `Owner`. The supervisor is linked to the calling
-/// process; the data is the `Owner` the players act through.
+/// Starts the prototype: the supervisor, the senders `sending` calls for and
+/// then the map process, built from the spawn list kept under
+/// `spawn_list_key`. Players' connections join afterwards through the
+/// `Owner`. The supervisor is linked to the calling process; the data is the
+/// `Owner` the players act through.
 pub fn start(
   workload workload: Workload,
   spawn_list_key spawn_list_key: Reference,
-  planted planted: PlantedCost,
+  sending sending: Sending,
 ) -> Result(actor.Started(Owner), actor.StartError) {
   use #(started, _name) <- result.map(start_named(
     workload:,
     spawn_list_key:,
-    planted:,
+    sending:,
   ))
   started
 }
 
-/// Kills the map process and returns the microseconds until the rebuilt
-/// process handles a message again. It starts its own prototype with no
-/// players from the spawn list kept under `spawn_list_key` and stops it.
+/// Kills the map process, not a sender, and returns the microseconds until the
+/// rebuilt process handles a message again. It starts its own prototype with
+/// no players from the spawn list kept under `spawn_list_key` and stops it.
 pub fn crash_cost(
   workload workload: Workload,
   spawn_list_key spawn_list_key: Reference,
-  planted planted: PlantedCost,
+  sending sending: Sending,
 ) -> Int {
   let assert Ok(#(started, name)) =
-    start_named(workload:, spawn_list_key:, planted:)
+    start_named(workload:, spawn_list_key:, sending:)
     as "the prototype did not start"
   let assert Ok(victim) = process.named(name) as "the map process is running"
   let started_at = measurement.monotonic_microseconds()
@@ -132,38 +163,64 @@ pub fn crash_cost(
 fn start_named(
   workload workload: Workload,
   spawn_list_key spawn_list_key: Reference,
-  planted planted: PlantedCost,
+  sending sending: Sending,
 ) -> Result(#(actor.Started(Owner), process.Name(Message)), actor.StartError) {
   let name = process.new_name("topology_map")
+  let sender_names = new_sender_names(sending)
   let handled = measurement.new_counter()
   let map_child =
     supervision.worker(fn() {
-      start_map(workload:, spawn_list_key:, planted:, name:, handled:)
+      start_map(workload:, spawn_list_key:, name:, sender_names:, handled:)
     })
     |> supervision.timeout(ms: shutdown_milliseconds)
-  use supervisor <- result.map(
-    static_supervisor.new(static_supervisor.OneForOne)
+  let builder =
+    static_supervisor.new(static_supervisor.RestForOne)
     |> static_supervisor.restart_tolerance(
       intensity: restart_intensity,
       period: restart_period_seconds,
     )
+  use supervisor <- result.map(
+    list.fold(sender_names, builder, fn(builder, sender_name) {
+      static_supervisor.add(builder, sender.supervised(sender_name))
+    })
     |> static_supervisor.add(map_child)
     |> static_supervisor.start,
   )
   #(
     actor.Started(
       pid: supervisor.pid,
-      data: door(supervisor: supervisor.pid, name:, handled:),
+      data: door(supervisor: supervisor.pid, name:, sender_names:, handled:),
     ),
     name,
   )
 }
 
+/// The names the senders are registered under, one for each sender `sending`
+/// calls for: none for `SendsItself`, and for `SenderPool` one for each
+/// scheduler online.
+fn new_sender_names(
+  sending sending: Sending,
+) -> List(process.Name(sender.Message)) {
+  case sending {
+    SendsItself -> []
+    SenderPool -> todo as "body in the build commit"
+  }
+}
+
+/// Where the map process's deliveries go, from the senders' names: straight
+/// to the recipients when there are none.
+fn route_to(sender_names: List(process.Name(sender.Message))) -> Route {
+  case sender_names {
+    [] -> Direct
+    [_, ..] -> todo as "body in the build commit"
+  }
+}
+
 fn start_map(
   workload workload: Workload,
   spawn_list_key spawn_list_key: Reference,
-  planted planted: PlantedCost,
   name name: process.Name(Message),
+  sender_names sender_names: List(process.Name(sender.Message)),
   handled handled: Counter,
 ) -> actor.StartResult(Subject(Message)) {
   actor.new_with_initialiser(initialisation_milliseconds, fn(self) {
@@ -172,11 +229,12 @@ fn start_map(
       State(
         workload:,
         units:,
-        grid: index(units, workload.visibility_range),
+        players: index(units, unit.Player, workload.visibility_range),
+        creatures: index(units, unit.Creature, workload.visibility_range),
         connections: dict.new(),
         slices: divide_into_slices(units),
         next_slice: 0,
-        planted:,
+        route: route_to(sender_names),
         handled:,
         self:,
       )
@@ -194,9 +252,13 @@ fn start_map(
   |> actor.start
 }
 
-fn index(units: Dict(Int, Unit), cell_size: Float) -> Grid {
+/// The grid over the units of one kind.
+fn index(units: Dict(Int, Unit), kind: unit.Kind, cell_size: Float) -> Grid {
   dict.fold(units, grid.new(cell_size), fn(index, unit_id, unit) {
-    grid.insert(index, unit_id, unit.position)
+    case unit.kind == kind {
+      True -> grid.insert(index, unit_id, unit.position)
+      False -> index
+    }
   })
 }
 
@@ -222,19 +284,18 @@ fn schedule(
   Nil
 }
 
-/// The `Owner` of a running prototype, which reaches the map process through
-/// its name, so a rebuilt process is reached too.
+/// The `Owner` of a running prototype, which reaches the map process and the
+/// senders through their names, so rebuilt processes are reached too. Its
+/// owner processes are the map process and the senders.
 fn door(
   supervisor supervisor: Pid,
   name name: process.Name(Message),
+  sender_names sender_names: List(process.Name(sender.Message)),
   handled handled: Counter,
 ) -> Owner {
   let map = process.named_subject(name)
   let map_processes = fn() {
-    case process.named(name) {
-      Ok(pid) -> [pid]
-      Error(Nil) -> []
-    }
+    result.values([process.named(name), ..list.map(sender_names, process.named)])
   }
   Owner(
     join: fn(unit_id, connection) {
@@ -303,8 +364,27 @@ fn unit_of(state: State, unit_id: Int) -> Unit {
   unit
 }
 
+/// Delivers `delivery`, which is about the unit `about`, to each of
+/// `recipients` in order: the map process sends it itself, or hands it, with
+/// all the recipients, to the sender chosen by the unit's id.
+fn deliver(
+  state state: State,
+  about unit_id: Int,
+  delivery delivery: Delivery,
+  to recipients: List(Subject(Delivery)),
+) -> Nil {
+  case state.route {
+    Direct ->
+      list.each(recipients, fn(recipient) { process.send(recipient, delivery) })
+    Pooled(..) -> {
+      let _ = unit_id
+      todo as "body in the build commit"
+    }
+  }
+}
+
 /// Tells every other joined player in visibility range of the unit about each
-/// effect, stamped with `sent_at`.
+/// effect, stamped with `sent_at`. Only the players' grid is read.
 fn notify(
   state state: State,
   unit unit: Unit,
@@ -315,7 +395,7 @@ fn notify(
     [] -> Nil
     _ -> {
       let connections =
-        grid.near(state.grid, unit.position, state.workload.visibility_range)
+        grid.near(state.players, unit.position, state.workload.visibility_range)
         |> list.filter_map(fn(unit_id) {
           case unit_id == unit.id {
             True -> Error(Nil)
@@ -323,29 +403,43 @@ fn notify(
           }
         })
       list.each(effects, fn(effect) {
-        let delivery = update.Updated(update.from_effect(effect, sent_at))
-        list.each(connections, fn(connection) {
-          process.send(connection, delivery)
-        })
+        deliver(
+          state:,
+          about: unit.id,
+          delivery: update.Updated(update.from_effect(effect, sent_at)),
+          to: connections,
+        )
       })
     }
   }
 }
 
 fn put(state: State, unit: Unit) -> State {
-  State(
-    ..state,
-    units: dict.insert(state.units, unit.id, unit),
-    grid: grid.move(state.grid, unit.id, unit.position),
-  )
+  let state = State(..state, units: dict.insert(state.units, unit.id, unit))
+  case unit.kind {
+    unit.Player ->
+      State(..state, players: grid.move(state.players, unit.id, unit.position))
+    unit.Creature ->
+      State(
+        ..state,
+        creatures: grid.move(state.creatures, unit.id, unit.position),
+      )
+  }
 }
 
+/// The units of one kind within `range` of `position`, read from the grid of
+/// that kind only.
 fn neighbours_near(
   state state: State,
+  kind kind: unit.Kind,
   position position: Position,
   range range: Float,
 ) -> List(unit.Neighbour) {
-  grid.near(state.grid, position, range)
+  let index = case kind {
+    unit.Player -> state.players
+    unit.Creature -> state.creatures
+  }
+  grid.near(index, position, range)
   |> list.map(fn(unit_id) {
     let unit = unit_of(state, unit_id)
     unit.Neighbour(unit_id:, kind: unit.kind, position: unit.position)
@@ -361,15 +455,6 @@ fn move(
   let #(moved, effects) = unit.move(unit_of(state, unit_id), position)
   let state = put(state, moved)
   notify(state:, unit: moved, effects:, sent_at:)
-  case state.planted {
-    NoPlantedCost -> Nil
-    ExtraGridLookupPerMove -> {
-      let extra =
-        grid.near(state.grid, moved.position, state.workload.visibility_range)
-      assert list.length(extra) <= dict.size(state.units)
-        as "a grid lookup holds each unit at most once"
-    }
-  }
   state
 }
 
@@ -387,6 +472,7 @@ fn attack(
           attacker.position,
           neighbours_near(
             state:,
+            kind: unit.Creature,
             position: attacker.position,
             range: state.workload.visibility_range,
           ),
@@ -402,7 +488,9 @@ fn attack(
 }
 
 /// Hits a creature for an attacker: the observers are told, the attacker is
-/// answered, and a creature that died is set to return.
+/// answered through the same route as the creature's own updates, so the reply
+/// follows every update about the creature that came before it, and a creature
+/// that died is set to return.
 fn strike(
   state state: State,
   connection connection: Subject(Delivery),
@@ -417,9 +505,11 @@ fn strike(
     )
   let state = put(state, result.unit)
   notify(state:, unit: result.unit, effects: result.effects, sent_at:)
-  process.send(
-    connection,
-    update.Hit(update.HitReply(target_id:, outcome: result.outcome)),
+  deliver(
+    state:,
+    about: target_id,
+    delivery: update.Hit(update.HitReply(target_id:, outcome: result.outcome)),
+    to: [connection],
   )
   case unit.died(result.effects) {
     True ->
@@ -458,6 +548,7 @@ fn think(state state: State, unit_id unit_id: Int, now now: Int) -> State {
       creature.position,
       neighbours_near(
         state:,
+        kind: unit.Player,
         position: creature.position,
         range: state.workload.aggro_range,
       ),
