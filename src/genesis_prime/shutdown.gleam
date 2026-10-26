@@ -221,8 +221,14 @@ pub fn exit_status(outcome: Outcome) -> Int {
 
 /// What the node does for the rest of its life, called by the process that
 /// started the tree: makes SIGTERM ask for the order, logs that the server is
-/// running, waits for the outcome, stops the tree, and ends the node with the
-/// outcome's status. It does not return.
+/// running, waits for the outcome, stops the tree, asks for the node to end with
+/// the outcome's status, and returns. The caller returns from the program's
+/// entry point at once, so the expression that runs the entry point ends
+/// normally. A caller that waited instead (`process.sleep_forever` loads the
+/// `timer` module through the code server, which `init` has stopped by then)
+/// would crash, and `init` reports that as an expression that failed. The
+/// status asked for first is the one the node ends with, whatever the entry
+/// point asks for after.
 pub fn run(tree tree: Pid, settings settings: Settings) -> Nil {
   handle_sigterm(fn() { stop_or_end_node(settings) })
   log_info("the server is running; SIGTERM stops it in order")
@@ -230,7 +236,6 @@ pub fn run(tree tree: Pid, settings settings: Settings) -> Nil {
   stop_tree(tree)
   log_info("the server stopped")
   end_node(exit_status(outcome))
-  process.sleep_forever()
 }
 
 /// Asks for the order. A SIGTERM that finds no coordinator, which a restart of
