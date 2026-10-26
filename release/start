@@ -1,0 +1,16 @@
+#!/bin/sh
+# Starts the server from the folder this script is in, the shipment that
+# release/build makes. The settings come from the environment: PGHOST (a TCP
+# host name or address, not a socket directory), PGPORT, PGUSER, PGDATABASE,
+# PGPASSWORD (optional) and GENESIS_TABLE_DIR. The VM's
+# flags are in vm.args beside this script, and `erl` is the first one on PATH,
+# which must be the patched OTP.
+
+set -eu
+
+BASE=$(cd "$(dirname "$0")" && pwd)
+
+exec erl \
+  -args_file "$BASE/vm.args" \
+  -pa "$BASE"/*/ebin \
+  -eval "genesis_prime@@main:run(genesis_prime)"
