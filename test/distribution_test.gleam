@@ -26,8 +26,8 @@ import gleam/list
 import gleam/string
 import owned_test
 import released_node.{
-  type Failure, type Node, Difference, Exited, Idle, Running, Server, ShortName,
-  Start, Stopped, Unnamed,
+  type Failure, type Node, Difference, Exited, Idle, Lingering, Running, Server,
+  ShortName, Start, Stopped, Unnamed,
 }
 import template_database
 
@@ -176,6 +176,30 @@ pub fn a_node_with_a_short_name_starts_epmd_and_is_listed_by_it_test() -> Nil {
   assert released_node.epmd_answers(node)
     as "a node with a short name did not start an epmd"
   assert released_node.epmd_names(node) == [name]
+}
+
+/// Issue 95: the harness's cleanup ran while a named child was still registered
+/// with its epmd, and crashed on epmd's refusal ("Killing not allowed - living
+/// nodes in database", the epmd documentation of `-kill`). The child here does
+/// not end when its input closes, so it is registered whenever the cleanup
+/// asks epmd to die; the cleanup must end it, wait for its exit and end its
+/// epmd without a crash.
+pub fn cleaning_up_while_a_named_child_is_registered_leaves_no_epmd_test() -> Nil {
+  use <- owned_test.run(child_deadline_ms)
+  use database <- template_database.run
+  let name = unique_name()
+  use started <- released_node.run(Start(
+    database:,
+    naming: ShortName(name),
+    program: Lingering,
+    planted_listeners: 0,
+  ))
+  let node = unwrap(started)
+  assert released_node.epmd_names(node) == [name]
+    as "the child is not registered with its epmd before the cleanup"
+  released_node.clean_up(process: node.process, epmd_port: node.epmd_port)
+  assert !released_node.epmd_answers(node)
+    as "an epmd is left on the child's epmd port after the cleanup"
 }
 
 /// The node of a child that reported, or a crash that shows why it did not.
