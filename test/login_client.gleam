@@ -36,7 +36,7 @@ pub fn connect(port: Int) -> Client {
   client
 }
 
-pub fn send(client: Client, bytes: BitArray) -> Nil {
+pub fn send(client client: Client, bytes bytes: BitArray) -> Nil {
   let assert Ok(Nil) = tcp_client.send(client, bytes)
     as "the server closed the connection before the client finished sending"
   Nil
@@ -74,7 +74,7 @@ pub fn ask(
       command:,
       body: sts_xml.render(body),
     )
-  send(client.socket, case client.sending {
+  send(client: client.socket, bytes: case client.sending {
     Some(stream) -> rc4.crypt(stream, plain)
     None -> plain
   })
@@ -99,7 +99,7 @@ fn read_reply(client: StsClient, have: BitArray) -> Reply {
   }
 }
 
-pub fn child(reply: Reply, name: String) -> String {
+pub fn child(reply reply: Reply, name name: String) -> String {
   let assert Ok(text) = scripted_client.child_text(reply, name)
     as { "the reply has no " <> name }
   text
@@ -109,8 +109,8 @@ pub fn child(reply: Reply, name: String) -> String {
 pub fn sts_connect(ports: Ports) -> StsClient {
   let socket = connect(ports.sts_port)
   send(
-    socket,
-    scripted_client.request(
+    client: socket,
+    bytes: scripted_client.request(
       sequence: None,
       protocol: "Sts",
       command: "Connect",
@@ -141,7 +141,7 @@ pub fn srp_exchange(
       ]),
     )
   let assert Ok(server_key_data) =
-    bit_array.base64_decode(child(started.reply, "KeyData"))
+    bit_array.base64_decode(child(reply: started.reply, name: "KeyData"))
     as "KeyData is base64"
   let #(secret, _) = seeded.bytes(state: seed, count: 32)
   let assert Ok(exchange) =
@@ -178,7 +178,7 @@ pub fn sts_login(
     )
   assert answered.reply.status == 200
     as "StsConnLib64.MT.dll!0x18002d3b0: the client accepts the server's M2"
-  assert child(answered.reply, "KeyData")
+  assert child(reply: answered.reply, name: "KeyData")
     == bit_array.base64_encode(
       <<32:size(32)-little, exchange.expected_m2:bits>>,
       True,
@@ -200,8 +200,8 @@ pub fn sts_login(
       command: "LoginFinish",
       body: sts_xml.Empty("Request"),
     )
-  let user_id = child(finished.reply, "UserId")
-  assert child(finished.reply, "AuthType") == "0"
+  let user_id = child(reply: finished.reply, name: "UserId")
+  assert child(reply: finished.reply, name: "AuthType") == "0"
     as "StsConnLib64.MT.dll!0x1800043d0: AuthType 0 is a finished login"
   let listed =
     ask(
@@ -228,7 +228,11 @@ pub fn sts_login(
         sts_xml.Text("AccountAlias", alias.text),
       ]),
     )
-  scripted_client.StsLogin(user_id:, token: child(token.reply, "Token"), name:)
+  scripted_client.StsLogin(
+    user_id:,
+    token: child(reply: token.reply, name: "Token"),
+    name:,
+  )
 }
 
 /// Reads frames from the auth connection until there are `count` of them.
@@ -281,6 +285,6 @@ pub fn auth_login(
       scripted_client.login_request_frame(login:, build:).body,
     )
     as "the request frame encodes"
-  send(socket, request_bytes)
+  send(client: socket, bytes: request_bytes)
   socket
 }

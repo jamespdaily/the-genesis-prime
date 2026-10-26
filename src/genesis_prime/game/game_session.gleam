@@ -33,6 +33,7 @@ import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/message/terrain_loaded
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/world_message
+import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/result
@@ -304,18 +305,16 @@ fn decoded(
 
 /// A message no rule handles: logged once for each message number.
 fn unhandled(session: Session, message_id: Int) -> #(Session, List(Effect)) {
-  case list.contains(session.unhandled, message_id) {
-    True -> #(session, [])
-    False -> #(
-      Session(..session, unhandled: [message_id, ..session.unhandled]),
-      [
-        Log(
-          WarningLevel,
-          "message " <> hex(message_id) <> " is not handled by the game server",
-        ),
-      ],
-    )
-  }
+  use <- bool.guard(
+    when: list.contains(session.unhandled, message_id),
+    return: #(session, []),
+  )
+  #(Session(..session, unhandled: [message_id, ..session.unhandled]), [
+    Log(
+      WarningLevel,
+      "message " <> hex(message_id) <> " is not handled by the game server",
+    ),
+  ])
 }
 
 /// The new stage and the effects of a run of the rules of a playing
@@ -428,13 +427,15 @@ fn apply_entry(
 /// A message of the server as the bytes of its 0x3DC frame, or the end that
 /// building it would be.
 fn sent(cipher cipher: Cipher, message message: ServerMessage) -> Effect {
-  case server_message.encode(message) {
-    Error(_) -> End(AnswerNotBuilt)
-    Ok(#(id, body)) ->
-      case wrap(cipher:, id:, body:) {
-        Ok(bytes) -> Send(bytes)
-        Error(Nil) -> End(AnswerNotBuilt)
-      }
+  let built =
+    server_message.encode(message)
+    |> result.replace_error(Nil)
+    |> result.try(fn(numbered) {
+      wrap(cipher:, id: numbered.0, body: numbered.1)
+    })
+  case built {
+    Ok(bytes) -> Send(bytes)
+    Error(Nil) -> End(AnswerNotBuilt)
   }
 }
 

@@ -8,7 +8,9 @@
 
 import genesis_prime/character/select.{type Answer, type Command, Unavailable}
 import genesis_prime/character/store
+import genesis_prime/telemetry/log
 import gleam/erlang/process.{type Name, type Subject}
+import gleam/option.{None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision
@@ -72,11 +74,16 @@ fn start(job: Job) -> actor.StartResult(Nil) {
 }
 
 fn handle(job: Job, message: Message) -> actor.Next(Job, Message) {
-  case message {
-    Begin -> {
-      process.send(job.reply, store.run(job.db, job.command))
-      actor.stop()
-    }
+  let Begin = message
+  process.send(job.reply, store.run(job.db, job.command))
+  actor.stop()
+}
+
+fn describe(error: actor.StartError) -> String {
+  case error {
+    actor.InitTimeout -> "it did not start in time"
+    actor.InitFailed(reason) -> reason
+    actor.InitExited(_) -> "it ended as it started"
   }
 }
 
@@ -96,7 +103,19 @@ pub fn run(
       Job(db:, command:, reply:),
     )
   {
-    Error(_) -> Unavailable
+    Error(why) -> {
+      log.error(
+        log.Who(
+          account: None,
+          actor: None,
+          place: Some(log.Process("store_worker")),
+          message: None,
+          peer: None,
+        ),
+        "a store worker did not start: " <> describe(why),
+      )
+      Unavailable
+    }
     Ok(started) -> {
       let monitor = process.monitor(started.pid)
       let outcome =

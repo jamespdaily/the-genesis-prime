@@ -174,7 +174,7 @@ pub fn start(
       ),
     )
     as "the server's tree did not start"
-  let opened = receive_ports(ports, 3, [])
+  let opened = receive_ports(ports:, remaining: 3, opened: [])
   let assert Ok(sts_port) = list.key_find(opened, "sts")
     as "the STS listener opened"
   let assert Ok(auth_port) = list.key_find(opened, "auth")
@@ -192,16 +192,16 @@ pub fn start(
 }
 
 fn receive_ports(
-  ports: process.Subject(#(String, Int)),
-  remaining: Int,
-  opened: List(#(String, Int)),
+  ports ports: process.Subject(#(String, Int)),
+  remaining remaining: Int,
+  opened opened: List(#(String, Int)),
 ) -> List(#(String, Int)) {
   case remaining {
     0 -> opened
     _ -> {
       let assert Ok(port) = process.receive(ports, wait_ms)
         as "a listener did not open"
-      receive_ports(ports, remaining - 1, [port, ..opened])
+      receive_ports(ports:, remaining: remaining - 1, opened: [port, ..opened])
     }
   }
 }

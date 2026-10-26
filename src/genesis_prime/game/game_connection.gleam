@@ -105,7 +105,7 @@ pub fn services(settings settings: Settings) -> Services {
 }
 
 /// One connection's state.
-pub opaque type Connection {
+type Connection {
   Connection(
     services: Services,
     session: game_session.Session,
@@ -117,13 +117,13 @@ pub opaque type Connection {
 
 /// What a connection hands back: itself, the bytes to write to the socket in
 /// order, and whether to close the socket after writing them.
-pub type Output {
+type Output {
   Output(connection: Connection, send: List(BitArray), close: Bool)
 }
 
 /// A new connection and its first output: the hello. `peer` is the client's
 /// address as text, which names it in the log until the key names an account.
-pub fn new(services services: Services, peer peer: Option(String)) -> Output {
+fn new(services services: Services, peer peer: Option(String)) -> Output {
   let #(session, effects) = game_session.start()
   run(
     connection: Connection(
@@ -140,10 +140,7 @@ pub fn new(services services: Services, peer peer: Option(String)) -> Output {
 }
 
 /// Takes a frame the socket's owner cut.
-pub fn receive(
-  connection connection: Connection,
-  frame frame: Frame,
-) -> Output {
+fn receive(connection connection: Connection, frame frame: Frame) -> Output {
   let context = connection.services.context()
   let #(session, effects) =
     game_session.receive(connection.session, frame, context)
@@ -156,7 +153,7 @@ pub fn receive(
 }
 
 /// Takes a delivery from the map.
-pub fn delivered(
+fn delivered(
   connection connection: Connection,
   delivery delivery: Delivery,
 ) -> Output {
@@ -186,63 +183,109 @@ fn run(
       case effect {
         game_session.Send(bytes) ->
           run(connection:, effects: rest, context:, sent: [bytes, ..sent])
-        game_session.RedeemSessionKey(key) -> {
-          let redeemed = connection.services.redeem_session_key(key)
-          let #(session, more) =
-            game_session.session_key_redeemed(connection.session, redeemed)
-          let connection = case redeemed {
-            Ok(identity) -> {
-              log.info(
-                who(Some(identity.id), connection.peer, None),
-                "the player reached the game server with a session key",
-              )
-              Connection(..connection, session:, account: Some(identity.id))
-            }
-            Error(Nil) -> Connection(..connection, session:)
-          }
-          run(connection:, effects: list.append(more, rest), context:, sent:)
-        }
-        game_session.Store(command) -> {
-          let answer = connection.services.run_store(command)
-          let #(session, more) =
-            game_session.stored(connection.session, answer, context)
-          run(
-            connection: Connection(..connection, session:),
-            effects: list.append(more, rest),
+        game_session.RedeemSessionKey(key) ->
+          carry_on(answered: redeem(connection:, key:), rest:, context:, sent:)
+        game_session.Store(command) ->
+          carry_on(
+            answered: ask_store(connection:, command:, context:),
+            rest:,
             context:,
             sent:,
           )
-        }
-        game_session.JoinMap(world_id:, newcomer:) -> {
-          let answer =
-            connection.services.enter_map(
-              world_id,
-              newcomer,
-              connection.deliveries,
-            )
-            |> map_answer
-          let #(session, more) =
-            game_session.map_answered(connection.session, answer, context)
-          run(
-            connection: Connection(..connection, session:),
-            effects: list.append(more, rest),
+        game_session.JoinMap(world_id:, newcomer:) ->
+          carry_on(
+            answered: join_map(connection:, world_id:, newcomer:, context:),
+            rest:,
             context:,
             sent:,
           )
-        }
         game_session.Log(level:, text:) -> {
-          write(level)(who(connection.account, connection.peer, None), text)
+          write(level)(
+            who(
+              account: connection.account,
+              peer: connection.peer,
+              message: None,
+            ),
+            text,
+          )
           run(connection:, effects: rest, context:, sent:)
         }
         game_session.End(reason) -> {
           write(game_session.level_of(reason))(
-            who(connection.account, connection.peer, message_of(reason)),
+            who(
+              account: connection.account,
+              peer: connection.peer,
+              message: message_of(reason),
+            ),
             "the game connection ended: " <> game_session.describe(reason),
           )
           Output(connection:, send: list.reverse(sent), close: True)
         }
       }
   }
+}
+
+/// Goes on with the effects after one that was asked of another process: the
+/// rule's answer to it comes before the effects that were left.
+fn carry_on(
+  answered answered: #(Connection, List(game_session.Effect)),
+  rest rest: List(game_session.Effect),
+  context context: game_session.Context,
+  sent sent: List(BitArray),
+) -> Output {
+  run(
+    connection: answered.0,
+    effects: list.append(answered.1, rest),
+    context:,
+    sent:,
+  )
+}
+
+/// Redeems the session key and tells the rule who it was issued to.
+fn redeem(
+  connection connection: Connection,
+  key key: BitArray,
+) -> #(Connection, List(game_session.Effect)) {
+  let redeemed = connection.services.redeem_session_key(key)
+  let #(session, more) =
+    game_session.session_key_redeemed(connection.session, redeemed)
+  case redeemed {
+    Ok(identity) -> {
+      log.info(
+        who(account: Some(identity.id), peer: connection.peer, message: None),
+        "the player reached the game server with a session key",
+      )
+      #(Connection(..connection, session:, account: Some(identity.id)), more)
+    }
+    Error(Nil) -> #(Connection(..connection, session:), more)
+  }
+}
+
+/// Carries out a command of character select and tells the rule the answer.
+fn ask_store(
+  connection connection: Connection,
+  command command: select.Command,
+  context context: game_session.Context,
+) -> #(Connection, List(game_session.Effect)) {
+  let answer = connection.services.run_store(command)
+  let #(session, more) =
+    game_session.stored(connection.session, answer, context)
+  #(Connection(..connection, session:), more)
+}
+
+/// Asks the map to join the character's unit and tells the rule the answer.
+fn join_map(
+  connection connection: Connection,
+  world_id world_id: Int,
+  newcomer newcomer: Newcomer,
+  context context: game_session.Context,
+) -> #(Connection, List(game_session.Effect)) {
+  let answer =
+    connection.services.enter_map(world_id, newcomer, connection.deliveries)
+    |> map_answer
+  let #(session, more) =
+    game_session.map_answered(connection.session, answer, context)
+  #(Connection(..connection, session:), more)
 }
 
 /// What the map's answer to a join means to the rule: a unit, the map's refusal
@@ -286,9 +329,9 @@ fn message_of(reason: game_session.EndReason) -> Option(log.Message) {
 /// Who the connection's log lines are about: the account once the key has
 /// named it, and the client's peer address.
 fn who(
-  account: Option(Int),
-  peer: Option(String),
-  message: Option(log.Message),
+  account account: Option(Int),
+  peer peer: Option(String),
+  message message: Option(log.Message),
 ) -> log.Who {
   log.Who(
     account:,

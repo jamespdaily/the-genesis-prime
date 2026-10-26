@@ -83,12 +83,14 @@ pub fn a_worker_that_has_not_answered_by_the_deadline_gives_unavailable_test() -
   let holding = process.new_subject()
   process.spawn(fn() {
     let release = process.new_subject()
-    let _ =
+    let assert Ok(_) =
       pog.transaction(one, fn(_transaction) {
         process.send(holding, release)
-        let _ = process.receive(release, 30_000)
+        let assert Ok(Nil) = process.receive(release, 30_000)
+          as "the test let the connection go"
         Ok(Nil)
       })
+      as "the transaction ran"
     Nil
   })
   let assert Ok(release) = process.receive(holding, answer_wait_ms)
