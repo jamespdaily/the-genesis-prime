@@ -70,7 +70,7 @@ pub fn an_import_of_the_constructor_under_another_name_is_a_breach_test() -> Nil
       "  Chosen",
       "}",
     ])
-  assert planted.lines(supplied_source.breaches(file)) == [1]
+  assert planted.lines(supplied_source.breaches(file)) == [1, 4]
 }
 
 pub fn matching_supplied_or_using_the_strong_source_builds_nothing_and_is_no_breach_test() -> Nil {

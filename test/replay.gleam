@@ -125,7 +125,10 @@ type End {
 /// server that waits for the client that the client has no more to say, and
 /// reads until the server closes: the bytes it sends meanwhile are the
 /// failure, and a server that neither sends nor closes within the deadline is
-/// one too.
+/// one too. A server that treats the close of the sending side as the end of
+/// the connection may not send what it was still to answer to the last client
+/// chunk, so what the check catches past the end is what the server sends
+/// before it reads the close.
 fn await_end(
   socket socket: mug.Socket,
   end end: End,

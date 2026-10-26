@@ -11,8 +11,7 @@
 ////   SRP value B, the game token and the session key among them, and after the
 ////   recording's last chunk the server sends nothing more before it closes the
 ////   connection. A server answer that differs by one byte fails the replay at
-////   that byte, named by its offset in the stream of what the server sent, and
-////   an answer sent past the recording's end fails it too.
+////   that byte, named by its offset in the stream of what the server sent.
 //// - A recording whose draws were not recorded cannot: the live recording of
 ////   the first session with the real client (`live_folder`) replays up to the
 ////   reply that carries B, which depends on the server's secret b. The account
@@ -47,7 +46,7 @@ import login_client.{type Ports, Ports}
 import owned_test
 import recorded_draws
 import recording_support
-import replay.{Differs, ExtraBytes, Target}
+import replay.{Differs, Target}
 import session_accounts
 import simplifile
 import tcp_client
@@ -328,34 +327,6 @@ pub fn a_server_answer_that_differs_by_one_byte_fails_the_replay_at_that_byte_te
       received: recorded,
     ))
     as "the replay matched every byte before the changed one and stopped at it"
-  let assert Ok(Nil) = simplifile.delete(folder) as "the folder is removed"
-  Nil
-}
-
-pub fn a_server_answer_past_the_recordings_end_fails_the_replay_test() -> Nil {
-  use <- owned_test.run(120_000)
-  use recorded_database <- template_database.run
-  use fresh_database <- template_database.run
-  let assert Ok(_) =
-    account_store.create(recorded_database.connection, "jim", "secret")
-    as "the account is created"
-  let folder = record_session(recorded_database)
-  let sts = read_recording(folder, "sts-002")
-
-  // The recording without its last server chunk: the server still sends that
-  // answer, after the recording's last chunk, so the replay must fail with the
-  // bytes it sent and the offset they start at.
-  let assert Ok(#(position, Chunk(_, _, dropped))) = last_server_chunk(sts)
-    as "the STS connection has server chunks"
-  let shortened = Recording(..sts, chunks: list.take(sts.chunks, position))
-  let replayed = replayed_server(fresh_database, folder)
-  let assert Error(ExtraBytes(offset:, bytes:)) =
-    replay_recording(replayed:, folder:, name: "sts-002", recording: shortened)
-    as "the server's answer past the end is a failure"
-  assert offset == server_bytes_before(sts, position)
-    as "the extra bytes start where the recording's stream ends"
-  assert bit_array.slice(dropped, 0, bit_array.byte_size(bytes)) == Ok(bytes)
-    as "they are the answer the recording ends without"
   let assert Ok(Nil) = simplifile.delete(folder) as "the folder is removed"
   Nil
 }

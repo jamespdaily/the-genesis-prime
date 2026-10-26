@@ -21,7 +21,7 @@ import mug
 import owned_test
 import planted_peer
 import recording_support
-import replay.{Differs, Target}
+import replay.{Differs, ExtraBytes, Target}
 import seeded
 
 /// How long one wait for an event may take, in milliseconds.
@@ -112,4 +112,27 @@ pub fn a_server_that_answers_one_byte_differently_fails_the_replay_at_that_byte_
   assert process.receive(peer.report, within: event_wait_ms)
     == Ok(Error(mug.Closed))
     as "the replay sent no client chunk after the difference"
+}
+
+pub fn a_server_that_sends_more_after_the_recordings_last_chunk_fails_the_replay_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let recording = planted_recording()
+
+  // The planted server answers the recording's last client chunk (the 7 bytes
+  // at the end) with 3 bytes the recording does not hold, and then closes. The
+  // server's stream before them is its three chunks, 1052 bytes.
+  let extra = <<1, 2, 3>>
+  let peer =
+    planted_peer.start(
+      script: list.append(recording.chunks, [Chunk(ServerToClient, 0, extra)]),
+      wait_ms: event_wait_ms,
+    )
+
+  assert replay.run(
+      recording:,
+      target: Target("127.0.0.1", peer.port),
+      deadline_ms: event_wait_ms,
+    )
+    == Error(ExtraBytes(offset: 1052, bytes: extra))
+    as "the replay reached the end of the recording and then failed on the bytes the server sent past it, at the offset where its stream ends"
 }

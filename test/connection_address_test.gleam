@@ -34,6 +34,20 @@ pub fn the_relay_writes_the_address_it_connected_from_beside_each_recording_test
     as "the first connection has a peer"
   let assert Some(second_peer) = peer(second.server)
     as "the second connection has a peer"
+  // The relay passes a chunk only after it has written the recording and the
+  // address beside it, so once a round has gone through both are in the folder.
+  recording_support.exchange(
+    ends: first,
+    seed: 1,
+    rounds: 1,
+    wait_ms: event_wait_ms,
+  )
+  recording_support.exchange(
+    ends: second,
+    seed: 2,
+    rounds: 1,
+    wait_ms: event_wait_ms,
+  )
   assert first_peer != second_peer
     as "two open connections have two addresses, so a draw's connection is told apart"
 
