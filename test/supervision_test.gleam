@@ -23,6 +23,7 @@ import gleam/otp/static_supervisor
 import owned_test
 import planted_service.{type Settings}
 import supervisor_flags.{Flags}
+import template_database
 
 /// How long a test waits for one event that must happen at once.
 const event_wait_ms = 1000
@@ -95,8 +96,16 @@ pub fn a_child_that_keeps_failing_stops_its_subtree_and_the_top_restarts_the_sub
 }
 
 pub fn the_top_supervisors_settings_are_one_for_one_with_three_restarts_in_five_seconds_test() -> Nil {
-  use <- owned_test.run(5000)
-  let assert Ok(started) = server.start() as "the top supervisor did not start"
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let settings =
+    template_database.pool_settings(
+      for: database,
+      pool_name: process.new_name("supervision_test_pool"),
+      pool_size: 2,
+    )
+  let assert Ok(started) = server.start(settings)
+    as "the top supervisor did not start"
   assert supervisor_flags.read(started.pid)
     == Flags(strategy: static_supervisor.OneForOne, intensity: 3, period: 5)
 }

@@ -12,11 +12,20 @@ import gleam/otp/static_supervisor
 import gleam/otp/supervision
 import owned_test
 import spawn_watch
+import template_database
 
 pub fn every_process_the_server_starts_is_in_the_top_supervisors_tree_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let settings =
+    template_database.pool_settings(
+      for: database,
+      pool_name: process.new_name("server_test_pool"),
+      pool_size: 2,
+    )
   let watch = spawn_watch.begin()
-  let assert Ok(started) = server.start() as "the top supervisor did not start"
+  let assert Ok(started) = server.start(settings)
+    as "the top supervisor did not start"
   assert spawn_watch.unsupervised(watch, started.pid) == []
 }
 
