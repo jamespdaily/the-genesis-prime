@@ -3,6 +3,8 @@
 import envoy
 import genesis_prime/database/pool
 import genesis_prime/server
+import genesis_prime/telemetry/log
+import genesis_prime/telemetry/snapshot
 import gleam/erlang/atom
 import gleam/erlang/node
 import gleam/erlang/process
@@ -17,7 +19,8 @@ const node_without_distribution = "nonode@nohost"
 /// distribution, so it stops at once, saying so, when the VM runs it. The
 /// database pool's settings come from PGHOST, PGPORT, PGUSER, PGDATABASE and
 /// PGPASSWORD; the server stops at once, saying which is missing or wrong, when
-/// one it needs is.
+/// one it needs is. Debug lines are written when GENESIS_DEBUG is 1, and not
+/// otherwise.
 pub fn main() -> Nil {
   let node_name = atom.to_string(node.name(node.self()))
   case node_name == node_without_distribution {
@@ -38,7 +41,9 @@ pub fn main() -> Nil {
     Ok(settings) -> settings
     Error(error) -> panic as pool.describe(error)
   }
-  let assert Ok(_) = server.start(pool_settings)
+  log.configure(debug: envoy.get("GENESIS_DEBUG") == Ok("1"))
+  let snapshot_settings = snapshot.settings(process.new_name("snapshot"))
+  let assert Ok(_) = server.start(pool_settings, snapshot_settings)
     as "the server's supervision tree did not start"
   process.sleep_forever()
 }

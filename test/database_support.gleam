@@ -137,7 +137,7 @@ pub fn stop_pool(pool: Pid) -> Dynamic
 
 /// Runs `create` once per key in this VM; every caller gets the same value.
 @external(erlang, "database_support_ffi", "once")
-fn once(key: String, create: fn() -> a) -> a
+pub fn once(key: String, create: fn() -> a) -> a
 
 /// An integer no other call in this VM has returned.
 @external(erlang, "database_support_ffi", "unique")
