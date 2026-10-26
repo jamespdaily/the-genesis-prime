@@ -57,6 +57,7 @@ fn unit() -> PlayerUnit {
     class_id: 3,
     gender: 1,
     path: 2,
+    faction_id: 167,
     position: Position(x: 1.0, y: -2.5, z: 100.25),
   )
 }
@@ -76,6 +77,7 @@ pub fn the_chosen_character_is_joined_to_the_map_of_its_world_test() -> Nil {
           class_id: 3,
           gender: 1,
           path: 2,
+          faction_id: 167,
           position: Position(x: 1.0, y: -2.5, z: 100.25),
         ),
       ),
@@ -256,6 +258,7 @@ pub fn the_server_s_0x262_for_roxo_is_the_emulator_s_faction_167_vector_test() -
       class_id: 1,
       gender: 0,
       path: 0,
+      faction_id: 167,
       position: Position(x: 1.0, y: -2.5, z: 100.25),
     )
   let #(_, effects) =

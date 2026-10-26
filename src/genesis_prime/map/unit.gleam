@@ -7,7 +7,7 @@ import genesis_prime/map/position.{type Position}
 /// A player character's unit. `id` is the unit id the map gave it, the
 /// 32-bit number the client's unit messages name it by (message 0x262's
 /// unit id). The rest is the character's own: its id, name, race, class,
-/// gender and path as the character list gives them.
+/// gender, path and faction as the character list gives them.
 pub type PlayerUnit {
   PlayerUnit(
     id: Int,
@@ -17,6 +17,7 @@ pub type PlayerUnit {
     class_id: Int,
     gender: Int,
     path: Int,
+    faction_id: Int,
     position: Position,
   )
 }
@@ -30,6 +31,7 @@ pub type Newcomer {
     class_id: Int,
     gender: Int,
     path: Int,
+    faction_id: Int,
     position: Position,
   )
 }

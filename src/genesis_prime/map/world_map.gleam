@@ -78,6 +78,7 @@ pub fn join(
           class_id: newcomer.class_id,
           gender: newcomer.gender,
           path: newcomer.path,
+          faction_id: newcomer.faction_id,
           position: newcomer.position,
         )
       let observers = in_range(map:, of: unit.position)

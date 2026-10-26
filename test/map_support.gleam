@@ -49,6 +49,7 @@ pub fn newcomer(character_id character_id: Int, x x: Float) -> Newcomer {
     class_id: 3,
     gender: 1,
     path: 2,
+    faction_id: 167,
     position: Position(x:, y: 0.0, z: 0.0),
   )
 }

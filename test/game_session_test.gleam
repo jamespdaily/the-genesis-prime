@@ -394,6 +394,7 @@ fn playing_unit() -> unit.PlayerUnit {
     class_id: 3,
     gender: 1,
     path: 2,
+    faction_id: 167,
     position: Position(x: 1.0, y: -2.5, z: 100.25),
   )
 }

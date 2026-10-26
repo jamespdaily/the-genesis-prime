@@ -118,6 +118,7 @@ pub fn newcomer(character character: Character) -> Newcomer {
     class_id: character.class_id,
     gender: character.gender,
     path: character.path,
+    faction_id: character.faction_id,
     position: character.place.position,
   )
 }

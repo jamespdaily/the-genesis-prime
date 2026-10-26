@@ -158,6 +158,7 @@ fn join_as_observer(
           class_id: 3,
           gender: 1,
           path: 2,
+          faction_id: 167,
           position: Position(x: 1.5, y: 2.5, z: 3.5),
         ),
         connection: deliveries,
