@@ -28,6 +28,7 @@
 //// through the one Erlang file `dev/node_cost_ffi.erl`.
 
 import genesis_prime/database/pool
+import genesis_prime/login/random_source
 import genesis_prime/login/service
 import genesis_prime/message/bit_stream
 import genesis_prime/server
@@ -385,6 +386,7 @@ pub fn start_server() -> Result(Nil, Nil) {
         game_server: bit_stream.Endpoint(address: 0x7F000001, port: 0),
         realm_name: "node_cost",
         expected_files_digest: option.None,
+        random: random_source.Strong,
       ),
     )
   case server.start(tree) {

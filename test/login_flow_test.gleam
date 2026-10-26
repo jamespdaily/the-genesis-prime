@@ -17,6 +17,7 @@ import genesis_prime/login/auth_connection
 import genesis_prime/login/auth_session
 import genesis_prime/login/guid
 import genesis_prime/login/handoff
+import genesis_prime/login/random_source
 import genesis_prime/login/rc4
 import genesis_prime/login/sts_connection
 import genesis_prime/login/sts_xml
@@ -52,27 +53,29 @@ fn start_server(database: template_database.Database) -> Server {
     static_supervisor.new(static_supervisor.OneForOne)
     |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
     |> static_supervisor.add(
-      handoff.supervised(
-        handoff.Settings(
-          name: game_tokens,
-          expiry_milliseconds: 60_000,
-          clock: fn() { 0 },
-        ),
-      ),
+      handoff.supervised(handoff.Settings(
+        name: game_tokens,
+        expiry_milliseconds: 60_000,
+        clock: fn() { 0 },
+        random: random_source.Strong,
+      )),
     )
     |> static_supervisor.add(
-      handoff.supervised(
-        handoff.Settings(
-          name: session_keys,
-          expiry_milliseconds: 60_000,
-          clock: fn() { 0 },
-        ),
-      ),
+      handoff.supervised(handoff.Settings(
+        name: session_keys,
+        expiry_milliseconds: 60_000,
+        clock: fn() { 0 },
+        random: random_source.Strong,
+      )),
     )
     |> static_supervisor.start
     as "the hand-offs did not start"
   Server(
-    sts: sts_connection.services(database.connection, game_tokens),
+    sts: sts_connection.services(
+      database.connection,
+      game_tokens,
+      random_source.Strong,
+    ),
     auth: auth_connection.services(game_tokens, session_keys),
     session_keys:,
     game_tokens:,

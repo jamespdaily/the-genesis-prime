@@ -2,6 +2,7 @@
 
 import envoy
 import genesis_prime/database/pool
+import genesis_prime/login/random_source.{type RandomSource}
 import genesis_prime/login/service
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
@@ -109,6 +110,7 @@ pub fn main() -> Nil {
         realm_name: envoy.get("GENESIS_REALM_NAME")
           |> result.unwrap(default_realm_name),
         expected_files_digest: None,
+        random: random_source.Strong,
       ),
     )
   let started = case server.start(settings) {
@@ -152,4 +154,28 @@ fn address(variable: String, default: String) -> Int {
     Ok(_) | Error(Nil) ->
       panic as { variable <> " is " <> text <> ", which is not an IPv4 address" }
   }
+}
+
+/// The settings of the released server: everything `main` reads from the
+/// environment, and the operating system's strong random source, which no
+/// setting changes.
+pub fn release_settings(
+  get get: fn(String) -> Result(String, Nil),
+) -> server.Settings {
+  settings(get:, random: random_source.Strong)
+}
+
+/// The settings the server starts with, read from the environment through `get`,
+/// with the login drawing its random bytes from `random`.
+pub fn settings(
+  get _get: fn(String) -> Result(String, Nil),
+  random _random: RandomSource,
+) -> server.Settings {
+  panic as "shape only: not built"
+}
+
+/// Starts the server's tree with `settings` and keeps the calling process alive
+/// until SIGTERM stops it in order, as `main` does.
+pub fn run(settings _settings: server.Settings) -> Nil {
+  panic as "shape only: not built"
 }

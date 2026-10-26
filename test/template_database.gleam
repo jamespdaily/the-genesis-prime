@@ -7,6 +7,7 @@
 
 import database_support.{type Settings}
 import genesis_prime/database/pool
+import genesis_prime/login/random_source
 import genesis_prime/login/service
 import genesis_prime/message/bit_stream
 import genesis_prime/server
@@ -105,6 +106,7 @@ pub fn tree_settings(pool_settings: pool.Settings) -> server.Settings {
       game_server: bit_stream.Endpoint(address: 0x7F000001, port: 0),
       realm_name: "test",
       expected_files_digest: None,
+      random: random_source.Strong,
     ),
   )
 }

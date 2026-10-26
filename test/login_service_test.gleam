@@ -9,6 +9,7 @@ import genesis_prime/database/pool
 import genesis_prime/login/account.{type Identity, Identity}
 import genesis_prime/login/guid
 import genesis_prime/login/handoff.{Unknown}
+import genesis_prime/login/random_source
 import genesis_prime/login/service
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
@@ -43,6 +44,7 @@ fn settings(
       game_server: Endpoint(address: 0x7F000001, port: 24_000),
       realm_name: "Nexus",
       expected_files_digest: option.None,
+      random: random_source.Strong,
     )
   service.Settings(
     ..defaults,
@@ -50,11 +52,13 @@ fn settings(
       name: process.new_name("login_service_game_tokens"),
       expiry_milliseconds:,
       clock: fn() { login_clock.read(clock) },
+      random: random_source.Strong,
     ),
     session_keys: handoff.Settings(
       name: process.new_name("login_service_session_keys"),
       expiry_milliseconds:,
       clock: fn() { login_clock.read(clock) },
+      random: random_source.Strong,
     ),
     sts: service.Port(number: 0, opened: fn(port) {
       process.send(ports, #("sts", port))

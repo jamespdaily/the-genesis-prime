@@ -14,6 +14,7 @@ import gleam/crypto
 import gleam/erlang/process
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import gleam/string
 import gleam/time/calendar.{Date}
 import mug
@@ -43,6 +44,7 @@ pub fn header() -> Header {
     date: Date(2026, calendar.October, 26),
     role: recording.Game,
     commit: "0123456789abcdef0123456789abcdef01234567",
+    seed: None,
   )
 }
 

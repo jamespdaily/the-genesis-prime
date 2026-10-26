@@ -10,6 +10,7 @@
 //// reads the monotonic clock the settings give it, in whole milliseconds from
 //// an arbitrary start.
 
+import genesis_prime/login/random_source.{type RandomSource}
 import gleam/crypto
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Name, type Subject}
@@ -19,12 +20,14 @@ import gleam/otp/supervision
 /// What a hand-off starts with. `name` is the name the hand-off registers and
 /// its users find it by, made once by whoever starts the tree.
 /// `expiry_milliseconds` is how long a key stays valid after it is issued;
-/// `clock` reads the monotonic clock in milliseconds.
+/// `clock` reads the monotonic clock in milliseconds; `random` is where the
+/// keys' bytes come from.
 pub type Settings(held) {
   Settings(
     name: Name(Message(held)),
     expiry_milliseconds: Int,
     clock: fn() -> Int,
+    random: RandomSource,
   )
 }
 

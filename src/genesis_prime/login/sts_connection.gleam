@@ -18,6 +18,7 @@ import genesis_prime/connection/socket_owner.{
 import genesis_prime/login/account.{type Account, type Identity}
 import genesis_prime/login/account_store
 import genesis_prime/login/handoff
+import genesis_prime/login/random_source.{type RandomSource}
 import genesis_prime/login/rc4
 import genesis_prime/login/sts_message
 import genesis_prime/login/sts_session
@@ -46,11 +47,12 @@ pub type Services {
 
 /// The services of a running server: accounts in Postgres through
 /// `connection`, game tokens in the hand-off `game_tokens`, and random bytes
-/// from the operating system. A database that fails ends the connection's
-/// process, which its supervisor does not restart.
+/// from `random`. A database that fails ends the connection's process, which
+/// its supervisor does not restart.
 pub fn services(
   connection connection: pog.Connection,
   game_tokens game_tokens: Name(handoff.Message(Identity)),
+  random _random: RandomSource,
 ) -> Services {
   Services(
     find_account: fn(name) {

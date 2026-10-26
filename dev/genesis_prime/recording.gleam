@@ -38,6 +38,7 @@ import gleam/bit_array
 import gleam/bool
 import gleam/int
 import gleam/list
+import gleam/option.{type Option}
 import gleam/result
 import gleam/time/calendar.{type Date, Date}
 import simplifile.{type FileError}
@@ -65,9 +66,12 @@ pub type Direction {
 }
 
 /// What a recording says about itself: the client's build, the day it was
-/// recorded, the role and the server code's commit as text.
+/// recorded, the role, the server code's commit as text, and the seed of the
+/// server's random source when the session ran on the dev start, none when it
+/// did not (a server that draws from the operating system cannot be played
+/// again).
 pub type Header {
-  Header(build: Int, date: Date, role: Role, commit: String)
+  Header(build: Int, date: Date, role: Role, commit: String, seed: Option(Int))
 }
 
 /// Bytes the relay received on one side of the connection. `microseconds` is
@@ -140,7 +144,7 @@ pub fn encode(recording: Recording) -> Result(BitArray, RecordingError) {
 }
 
 fn encode_header(header: Header) -> Result(BitArray, RecordingError) {
-  let Header(build:, date:, role:, commit:) = header
+  let Header(build:, date:, role:, commit:, ..) = header
   let Date(year:, month:, day:) = date
   let month_number = calendar.month_to_int(month)
   use <- bool.guard(
@@ -263,7 +267,10 @@ fn decode_header(
       use chunks <- result.map(
         decode_chunks(bytes: after_commit, total:, chunks: []),
       )
-      Recording(header: Header(build:, date:, role:, commit:), chunks:)
+      Recording(
+        header: Header(build:, date:, role:, commit:, seed: option.None),
+        chunks:,
+      )
     }
     _ -> Error(Truncated(offset: offset(total, bytes)))
   }

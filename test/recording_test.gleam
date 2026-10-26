@@ -23,6 +23,7 @@ import genesis_prime/recording.{
 import genesis_prime/recording/clock
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import gleam/time/calendar.{Date}
 import message_support
 import owned_test
@@ -122,6 +123,7 @@ pub fn a_recording_reads_back_as_it_was_written_test() -> Nil {
         date: Date(2026, calendar.October, 26),
         role: Auth,
         commit: "abc",
+        seed: None,
       ),
       chunks: [
         Chunk(ClientToServer, 258, <<1, 2, 3>>),
@@ -192,7 +194,8 @@ fn random_recording(state: Int) -> #(Recording, Int) {
   let #(commit, state) = message_support.text(state:, longest: 60)
   let #(chunk_count, state) = seeded.up_to(state:, most: 12)
   let #(chunks, state) = random_chunks(state:, count: chunk_count)
-  let header = Header(build:, date: Date(year, month, day + 1), role:, commit:)
+  let header =
+    Header(build:, date: Date(year, month, day + 1), role:, commit:, seed: None)
   #(Recording(header:, chunks:), state)
 }
 

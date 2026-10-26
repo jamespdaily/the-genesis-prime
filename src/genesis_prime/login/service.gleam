@@ -15,6 +15,7 @@ import genesis_prime/login/account.{type Identity}
 import genesis_prime/login/auth_connection
 import genesis_prime/login/auth_session
 import genesis_prime/login/handoff
+import genesis_prime/login/random_source.{type RandomSource}
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{type Endpoint}
 import genesis_prime/shutdown
@@ -30,7 +31,8 @@ pub type Port {
 }
 
 /// What the subtree starts with: the settings of each hand-off, the port of
-/// each listener, and what the auth login hands a client to.
+/// each listener, what the auth login hands a client to, and where the
+/// login's random bytes come from.
 pub type Settings {
   Settings(
     game_tokens: handoff.Settings(Identity),
@@ -38,6 +40,7 @@ pub type Settings {
     sts: Port,
     auth: Port,
     auth_login: auth_session.Settings,
+    random: RandomSource,
   )
 }
 
@@ -53,23 +56,27 @@ const key_expiry_ms = 60_000
 /// here, the monotonic clock and `key_expiry_ms`, and each port reports
 /// nothing when it opens. `expected_files_digest` is the digest of the
 /// client's files the login logs a difference from, none to skip the check.
+/// `random` is where the hand-offs' keys and the STS secrets come from.
 pub fn settings(
   sts_port sts_port: Int,
   auth_port auth_port: Int,
   game_server game_server: Endpoint,
   realm_name realm_name: String,
   expected_files_digest expected_files_digest: Option(Int),
+  random random: RandomSource,
 ) -> Settings {
   Settings(
     game_tokens: handoff.Settings(
       name: process.new_name("game_tokens"),
       expiry_milliseconds: key_expiry_ms,
       clock: clock.monotonic_milliseconds,
+      random:,
     ),
     session_keys: handoff.Settings(
       name: process.new_name("session_keys"),
       expiry_milliseconds: key_expiry_ms,
       clock: clock.monotonic_milliseconds,
+      random:,
     ),
     sts: Port(number: sts_port, opened: fn(_port) { Nil }),
     auth: Port(number: auth_port, opened: fn(_port) { Nil }),
@@ -78,6 +85,7 @@ pub fn settings(
       realm_name:,
       expected_files_digest:,
     ),
+    random:,
   )
 }
 
@@ -93,6 +101,7 @@ pub fn supervised(
     sts_connection.services(
       connection: pool.connection(pool),
       game_tokens: settings.game_tokens.name,
+      random: settings.random,
     )
   let auth_services =
     auth_connection.services(

@@ -15,6 +15,7 @@
 
 import envoy
 import genesis_prime/database/pool
+import genesis_prime/login/random_source
 import genesis_prime/login/service
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
@@ -289,6 +290,7 @@ pub fn main() -> Nil {
         game_server: Endpoint(address: 0x7F000001, port: 0),
         realm_name: "planted",
         expected_files_digest: None,
+        random: random_source.Strong,
       ),
     ))
     as "the planted program's tree did not start"

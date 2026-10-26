@@ -11,6 +11,7 @@
 import genesis_prime/login/account.{type Identity, Identity}
 import genesis_prime/login/guid
 import genesis_prime/login/handoff.{Expired, Unknown}
+import genesis_prime/login/random_source
 import gleam/bit_array
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/otp/actor
@@ -37,11 +38,12 @@ fn started(clock: login_clock.Clock) -> Name(handoff.Message(Identity)) {
     static_supervisor.new(static_supervisor.OneForOne)
     |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
     |> static_supervisor.add(
-      handoff.supervised(
-        handoff.Settings(name:, expiry_milliseconds:, clock: fn() {
-          login_clock.read(clock)
-        }),
-      ),
+      handoff.supervised(handoff.Settings(
+        name:,
+        expiry_milliseconds:,
+        clock: fn() { login_clock.read(clock) },
+        random: random_source.Strong,
+      )),
     )
     |> static_supervisor.start
     as "the supervisor of the hand-off did not start"
@@ -129,11 +131,12 @@ pub fn a_hand_off_that_restarts_holds_no_keys_test() -> Nil {
   let name = process.new_name("handoff_restart_test")
   let starts = process.new_subject()
   let spec =
-    handoff.supervised(
-      handoff.Settings(name:, expiry_milliseconds:, clock: fn() {
-        login_clock.read(clock)
-      }),
-    )
+    handoff.supervised(handoff.Settings(
+      name:,
+      expiry_milliseconds:,
+      clock: fn() { login_clock.read(clock) },
+      random: random_source.Strong,
+    ))
   let reporting =
     supervision.worker(fn() { report_start(spec, starts) })
     |> supervision.timeout(1000)

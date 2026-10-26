@@ -28,6 +28,7 @@ import gleam/erlang/process
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{None}
 import gleam/result
 import gleam/string
 import gleam/time/calendar
@@ -118,7 +119,7 @@ fn parse_role(text: String) -> Result(Role, Failure) {
 fn header(role role: Role, commit commit: String) -> Header {
   let #(date, _) =
     timestamp.system_time() |> timestamp.to_calendar(calendar.local_offset())
-  Header(build: client_build, date:, role:, commit:)
+  Header(build: client_build, date:, role:, commit:, seed: None)
 }
 
 /// The commit checked out in the current directory, `+uncommitted` after it
