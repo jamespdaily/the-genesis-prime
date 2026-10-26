@@ -140,11 +140,12 @@ fn describe(error: actor.StartError) -> String {
 /// Carries out the command in a worker and waits for the answer: up to
 /// `within_ms` milliseconds for the worker to hold a connection, and from then
 /// on up to `pool.holding_wait_ms` for its answer. A worker that does not start,
-/// ends without answering or holds no connection by the deadline gives
+/// ends before it holds a connection or holds none by the deadline gives
 /// `Unavailable`, and so does a supervisor of workers that is not running, as
 /// while it is being rebuilt. A worker that held a connection is never killed
 /// at the deadline, so a write answered `Unavailable` committed nothing; one
-/// that has no answer within `pool.holding_wait_ms` is `Unknown`.
+/// that was told to go and ends without answering, or has no answer within
+/// `pool.holding_wait_ms`, is `Unknown`.
 pub fn run(
   workers workers: Workers,
   db db: pog.Connection,
@@ -233,12 +234,12 @@ fn wait_for_connection(
 
 /// Waits up to `pool.holding_wait_ms` for the answer of a worker that was told
 /// to go. The worker is not killed when the time is up: its transaction may be
-/// at its commit, and it ends by itself when Postgres ends the transaction. An
-/// answer that has not come by then is `Unknown`.
+/// at its commit, and it ends by itself when Postgres ends the transaction. A
+/// worker that ends without answering, or an answer that has not come by then,
+/// is `Unknown`: the statement may have been sent.
 fn wait_for_answer(selector selector: process.Selector(Report)) -> Answer {
   case process.selector_receive(selector, within: pool.holding_wait_ms()) {
     Ok(Answered(answer)) -> answer
-    Ok(Gone) | Ok(Holding(..)) -> Unavailable
-    Error(Nil) -> Unknown
+    Ok(Gone) | Ok(Holding(..)) | Error(Nil) -> Unknown
   }
 }

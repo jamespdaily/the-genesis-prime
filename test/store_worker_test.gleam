@@ -415,3 +415,47 @@ pub fn a_write_that_has_no_answer_when_the_longest_wait_ends_is_unknown_and_not_
   assert waited < pool.holding_wait_ms() + 1000
     as "the wait ends at that ceiling and is not for ever"
 }
+
+pub fn a_worker_that_ends_without_answering_after_it_was_told_to_go_is_unknown_and_not_unavailable_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use database <- template_database.run
+  let workers = start_workers()
+  // The statement is sent and runs, and the worker is then killed before it
+  // answers: its statement may have reached Postgres and may commit.
+  let one =
+    start_slow_pool(
+      database:,
+      sleep: "30",
+      limit_ms: 0,
+      transaction_limit_ms: 0,
+    )
+  let assert Ok(account) =
+    account_store.create(database.connection, "jim", "secret")
+    as "the account is created"
+  let answered = process.new_subject()
+  process.spawn(fn() {
+    process.send(
+      answered,
+      store_worker.run(
+        workers:,
+        db: one,
+        command: select.InsertCharacter(new_character(account.id)),
+        within_ms: 100,
+      ),
+    )
+  })
+  assert wait_for_the_insert_to_run(
+    connection: database.connection,
+    within_ms: answer_wait_ms,
+  )
+    as "the write was sent to the database"
+  let assert Ok(factory) = process.named(workers.factory)
+    as "the workers' supervisor runs"
+  let assert [worker] = supervisor_children.in_start_order(factory)
+    as "one worker carries the write out"
+  process.kill(worker)
+  let assert Ok(answer) = process.receive(answered, answer_wait_ms)
+    as "the asker gave an answer as soon as its worker ended"
+  assert answer == select.Unknown
+    as "a worker that was told to go and ended without answering may have sent its statement, so nothing is known to be uncommitted"
+}
