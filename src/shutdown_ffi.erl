@@ -2,8 +2,8 @@
 -behaviour(gen_event).
 
 %% The runtime calls `genesis_prime/shutdown` makes that no Gleam package
-%% binds: the node's SIGTERM handler, the logger, and ending the node.
--export([handle_sigterm/1, log_info/1, log_warning/1, log_error/1, end_node/1]).
+%% binds: the node's SIGTERM handler and ending the node.
+-export([handle_sigterm/1, end_node/1]).
 %% The handler of `erl_signal_server` that `handle_sigterm` adds.
 -export([init/1, handle_event/2, handle_call/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -22,22 +22,6 @@ handle_sigterm(OnSigterm) ->
         _Terminated -> ok
     end,
     ok = gen_event:add_handler(erl_signal_server, ?MODULE, OnSigterm),
-    nil.
-
-%% Logs through Erlang's logger, the text as one message.
--spec log_info(binary()) -> nil.
-log_info(Text) ->
-    logger:info("~ts", [Text]),
-    nil.
-
--spec log_warning(binary()) -> nil.
-log_warning(Text) ->
-    logger:warning("~ts", [Text]),
-    nil.
-
--spec log_error(binary()) -> nil.
-log_error(Text) ->
-    logger:error("~ts", [Text]),
     nil.
 
 %% Ends the node with the status through the VM's orderly stop, which stops

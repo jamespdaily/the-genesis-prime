@@ -15,7 +15,6 @@
 //// no client file is needed. The pool is the test's own database.
 
 import genesis_prime/server
-import genesis_prime/shutdown
 import genesis_prime/table/creature2
 import genesis_prime/table/loader/store
 import genesis_prime/table/localized_text
@@ -127,16 +126,17 @@ pub fn a_start_with_a_required_row_missing_fails_naming_both_tables_and_starts_n
     )
   let key = reference.new()
   let started =
-    server.start(server.Settings(
-      pool: pool_settings,
-      tables: server.TableSettings(
-        key:,
-        folder:,
-        entries: [creature2.entry(), localized_text.entry()],
-        requirements: [creature2_names_a_localized_text()],
+    server.start(
+      server.Settings(
+        ..template_database.tree_settings(pool_settings),
+        tables: server.TableSettings(
+          key:,
+          folder:,
+          entries: [creature2.entry(), localized_text.entry()],
+          requirements: [creature2_names_a_localized_text()],
+        ),
       ),
-      shutdown: shutdown.new(drain_deadline_ms: 1000, flush_deadline_ms: 1000),
-    ))
+    )
   let expected =
     store.RowMissing(
       from_table: "Creature2",

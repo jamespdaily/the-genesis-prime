@@ -5,6 +5,3 @@
 
 ## No Erlang shell: the server is started by a host, not by a person.
 -noshell
-
-## Log at info, so the log tells when the server runs and when it stops.
--kernel logger_level info

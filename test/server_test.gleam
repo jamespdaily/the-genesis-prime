@@ -3,7 +3,10 @@
 //// under a supervisor: a test starts the top supervisor, then every process
 //// started since is in its tree, found through its children. The check is
 //// `spawn_watch.unsupervised`, shown first on planted supervisors, one whose
-//// child also starts an unlinked process and one whose child does not.
+//// child also starts an unlinked process and one whose child does not. The
+//// tree's children are the database pool, then the snapshot process that
+//// writes the runtime's numbers to the log, in the order the supervisor
+//// started them.
 
 import genesis_prime/server
 import gleam/erlang/process.{type Pid, type Subject}
@@ -12,6 +15,7 @@ import gleam/otp/static_supervisor
 import gleam/otp/supervision
 import owned_test
 import spawn_watch
+import supervisor_children
 import template_database
 
 pub fn every_process_the_server_starts_is_in_the_top_supervisors_tree_test() -> Nil {
@@ -28,6 +32,27 @@ pub fn every_process_the_server_starts_is_in_the_top_supervisors_tree_test() -> 
     server.start(template_database.tree_settings(settings))
     as "the top supervisor did not start"
   assert spawn_watch.unsupervised(watch, started.pid) == []
+}
+
+pub fn the_snapshot_process_is_the_top_supervisors_child_after_the_pool_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  let pool_settings =
+    template_database.pool_settings(
+      for: database,
+      pool_name: process.new_name("server_test_snapshot_pool"),
+      pool_size: 2,
+    )
+  let settings = template_database.tree_settings(pool_settings)
+  let assert Ok(started) = server.start(settings)
+    as "the top supervisor did not start"
+  let assert [pool_pid, snapshot_pid, _shutdown_pid] =
+    supervisor_children.in_start_order(started.pid)
+    as "the top supervisor does not have the pool, the snapshot process and the shutdown coordinator"
+  assert process.named(pool_settings.name) == Ok(pool_pid)
+    as "the first child is not the pool"
+  assert process.named(settings.snapshot.name) == Ok(snapshot_pid)
+    as "the second child is not the snapshot process"
 }
 
 pub fn a_process_started_beside_the_tree_is_found_outside_it_test() -> Nil {

@@ -64,9 +64,6 @@ fn start(
   released_child.run_erlang(
     arguments: [
       "-noshell",
-      "-kernel",
-      "logger_level",
-      "info",
       "-eval",
       "{ok, _} = application:ensure_all_started(genesis_prime), planted_shutdown:main().",
     ],
@@ -189,7 +186,7 @@ pub fn sigterm_stops_in_order_and_ends_the_node_with_status_0_test() -> Nil {
   assert saved_values(database) == [planted_shutdown.saved_value]
     as "the saving worker's value was not written to the database"
   assert status == 0 as "a clean stop ends the node with status 0"
-  assert !list.any(lines, string.contains(_, "ERROR REPORT"))
+  assert !list.any(lines, string.contains(_, " error "))
     as "a clean stop logged an error"
 }
 
@@ -225,7 +222,7 @@ pub fn a_connection_that_will_not_drain_is_closed_at_the_deadline_and_the_flush_
   assert list.contains(lines, planted_shutdown.flush_written)
     as "the flush did not run after the connection was closed at the deadline"
   assert saved_values(database) == [planted_shutdown.saved_value]
-  assert logged(lines:, level: "WARNING", containing: ["did not close"])
+  assert logged(lines:, level: "warning", containing: ["did not close"])
     as "a connection ended at the deadline was not logged as a warning"
   assert status == 0
     as "a connection that would not drain is an outside failure the server recovered from, so the stop is clean"
@@ -247,7 +244,7 @@ pub fn a_flush_that_fails_is_logged_as_an_error_and_the_shutdown_still_completes
   let assert Ok(#(lines, status)) = released_child.lines_until_exit(child)
     as "the child did not end after SIGTERM"
 
-  assert logged(lines:, level: "ERROR", containing: [
+  assert logged(lines:, level: "error", containing: [
     planted_shutdown.saver_name,
     planted_shutdown.flush_failure_reason,
   ])
@@ -279,17 +276,16 @@ pub fn the_exit_status_is_0_for_a_clean_stop_and_1_for_any_failed_step_test() ->
 }
 
 /// Whether the child wrote a line holding every one of `containing` as a log
-/// line of `level`: the logger writes its level on the line before the message.
+/// line of `level`: `log.configure` writes each line on one line with its time,
+/// its level, its text and its metadata, separated by spaces.
 fn logged(
   lines lines: List(String),
   level level: String,
   containing parts: List(String),
 ) -> Bool {
-  list.zip(["", ..lines], lines)
-  |> list.any(fn(pair) {
-    let #(header, message) = pair
-    string.starts_with(header, "=" <> level <> " REPORT====")
-    && list.all(parts, string.contains(message, _))
+  list.any(lines, fn(line) {
+    string.contains(line, " " <> level <> " ")
+    && list.all(parts, string.contains(line, _))
   })
 }
 

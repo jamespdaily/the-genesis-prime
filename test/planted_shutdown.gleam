@@ -17,6 +17,8 @@ import envoy
 import genesis_prime/database/pool
 import genesis_prime/server
 import genesis_prime/shutdown.{type NotFlushed, type Settings, NotFlushed}
+import genesis_prime/telemetry/log
+import genesis_prime/telemetry/snapshot
 import gleam/erlang/process.{type Subject}
 import gleam/erlang/reference
 import gleam/int
@@ -234,6 +236,7 @@ pub fn saver(
 /// listener, which a test connects to, and a saving worker holding one value
 /// to save, then runs as the server does until SIGTERM ends the node.
 pub fn main() -> Nil {
+  log.configure(debug: False)
   let drain_deadline_ms = number_from(drain_variable)
   let ignores_close = case envoy.get(connection_variable) {
     Ok(value) if value == second_never_closes -> 2
@@ -257,6 +260,7 @@ pub fn main() -> Nil {
         requirements: [],
       ),
       shutdown: settings,
+      snapshot: snapshot.settings(process.new_name("planted_snapshot")),
     ))
     as "the planted program's tree did not start"
   watch_for_the_end_of(tree.pid)

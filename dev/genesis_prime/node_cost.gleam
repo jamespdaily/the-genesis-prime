@@ -30,6 +30,7 @@
 import genesis_prime/database/pool
 import genesis_prime/server
 import genesis_prime/shutdown
+import genesis_prime/telemetry/snapshot
 import genesis_prime/topology/trial
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/erlang/reference
@@ -375,6 +376,7 @@ pub fn start_server() -> Result(Nil, Nil) {
         requirements: [],
       ),
       shutdown: shutdown.new(drain_deadline_ms: 1000, flush_deadline_ms: 1000),
+      snapshot: snapshot.settings(process.new_name("snapshot")),
     )
   case server.start(tree) {
     Ok(_) -> Ok(Nil)

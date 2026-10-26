@@ -19,10 +19,12 @@
 //// process: the coordinator monitors it and forgets it when it ends, so a
 //// restarted process registers again.
 
+import genesis_prime/telemetry/log
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/otp/actor
 import gleam/otp/supervision
 
@@ -509,14 +511,22 @@ fn collect(
 @external(erlang, "shutdown_ffi", "handle_sigterm")
 fn handle_sigterm(on_sigterm: fn() -> Nil) -> Nil
 
-@external(erlang, "shutdown_ffi", "log_info")
-fn log_info(text: String) -> Nil
+/// Who the shutdown's own lines are from: the process, by its name.
+fn who() -> log.Who {
+  log.Who(..log.nobody, place: Some(log.Process("shutdown")))
+}
 
-@external(erlang, "shutdown_ffi", "log_warning")
-fn log_warning(text: String) -> Nil
+fn log_info(text: String) -> Nil {
+  log.info(who: who(), text:)
+}
 
-@external(erlang, "shutdown_ffi", "log_error")
-fn log_error(text: String) -> Nil
+fn log_warning(text: String) -> Nil {
+  log.warning(who: who(), text:)
+}
+
+fn log_error(text: String) -> Nil {
+  log.error(who: who(), text:)
+}
 
 /// Ends the node with the status once the VM has stopped its applications.
 @external(erlang, "shutdown_ffi", "end_node")

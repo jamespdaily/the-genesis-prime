@@ -9,6 +9,7 @@ import database_support.{type Settings}
 import genesis_prime/database/pool
 import genesis_prime/server
 import genesis_prime/shutdown
+import genesis_prime/telemetry/snapshot
 import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
 import gleam/erlang/reference
 import gleam/int
@@ -93,6 +94,7 @@ pub fn tree_settings(pool_settings: pool.Settings) -> server.Settings {
       requirements: [],
     ),
     shutdown: shutdown.new(drain_deadline_ms: 1000, flush_deadline_ms: 1000),
+    snapshot: snapshot.settings(process.new_name("snapshot")),
   )
 }
 
