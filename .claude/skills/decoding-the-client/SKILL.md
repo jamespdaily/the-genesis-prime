@@ -11,4 +11,5 @@ description: How a client fact is found, graded, saved and named. Use for any qu
 - Every decode searches the fact file first. Every client address the code or tests cite has a record; an address a test plants on purpose is assigned to a `PLANTED_` name.
 - A client value keeps its number until a decode saves what the client does with it. It is then renamed everywhere in the same change.
 - The client is queried through `scripts/ghidra_query.py`: one Ghidra 12.2 process on a saved, analysed project, one JSON request per line on stdin. Its docstring lists the request kinds; `scripts/ghidra_env.py` names the pinned parts and the environment it reads. The first start needs `--seed` with a file written by `scripts/seed.py`.
+- The query process's settings live in `~/.genesis-prime/env.sh`, and `./setup-check` names any that are missing. Ghidra refuses a project path with a folder starting with a dot.
 - A formula's expected values can come from running the client's function with the `emulate` request. Ghidra's p-code wraps an out-of-range float-to-integer conversion where the CPU gives 0x80000000, so a value near that overflow is checked against the CPU's rule.

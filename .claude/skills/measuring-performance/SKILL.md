@@ -7,3 +7,4 @@ description: Runtime inspection, benchmarks and load runs. Use for a timing, mem
 
 - Inspect a running process with the runtime's own tools first: its state, a sampled stack, its collections, a trace of its messages.
 - Change code for speed only after a benchmark or profile shows the bottleneck. A load run takes the machine alone.
+- A benchmark lives in `dev/` and runs with `gleam run -m`. `dev/genesis_prime/id_cost.gleam` is the pattern: each variant in its own module, a planted change to prove the harness can see one, and rounds paired.
