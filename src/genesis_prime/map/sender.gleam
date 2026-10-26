@@ -8,6 +8,7 @@
 //// restart rebuilds nothing, because there is nothing to rebuild; deliveries
 //// that were waiting in the dead sender's mailbox are lost.
 
+import genesis_prime/connection/named_send
 import genesis_prime/map/delivery.{type Delivery}
 import genesis_prime/map/heap_limit.{type HeapLimit}
 import genesis_prime/telemetry/log
@@ -81,13 +82,16 @@ fn start(
 }
 
 /// Asks a sender to send `delivery` to each of `recipients`, in order, and
-/// returns at once.
+/// returns at once. The map process reaches the sender by its name, and a
+/// sender between two lives has no process under it: the delivery is dropped,
+/// as one waiting in a dead sender's mailbox is, and the map process, which
+/// holds players' units, does not crash.
 pub fn send(
   sender sender: Subject(Message),
   delivery delivery: Delivery,
   recipients recipients: List(Subject(Delivery)),
 ) -> Nil {
-  process.send(sender, Send(delivery:, recipients:))
+  named_send.send(sender, Send(delivery:, recipients:))
 }
 
 fn handle(world_id: Int, message: Message) -> actor.Next(Int, Message) {
