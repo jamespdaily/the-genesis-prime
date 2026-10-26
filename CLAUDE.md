@@ -8,7 +8,7 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 - **Rule:** a pure function: state and input in, new state and effects out. Game logic is rules.
 - **Effect:** an action a rule returns, carried out in order by the process that owns the state.
 - **Engine:** the one module that owns a kind of game data: it decodes a type, decides what it does and applies it.
-- **Full check:** format, warnings as errors, glinter, generated code matching the schema, squirrel, migrations and the tests; CI runs the same.
+- **Full check:** the setup check, then format, warnings as errors, glinter, generated code matching the schema, migrations, squirrel, the tests and the fact checker; `./check` runs it, and CI runs the same.
 - **Coverage measure:** the count of what the client's tables require, against what the server handles.
 
 ## Authority
