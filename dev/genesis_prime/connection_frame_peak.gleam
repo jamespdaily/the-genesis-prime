@@ -20,6 +20,7 @@ import genesis_prime/connection/frame
 import genesis_prime/connection/listener
 import genesis_prime/connection/socket_owner.{Settings}
 import genesis_prime/server
+import genesis_prime/shutdown
 import gleam/bit_array
 import gleam/erlang/process.{type Pid}
 import gleam/int
@@ -78,8 +79,10 @@ pub fn main() -> Nil {
 fn survives(ceiling_words: Int) -> Bool {
   let frames = process.new_subject()
   let ports = process.new_subject()
+  let coordinator =
+    shutdown.new(drain_deadline_ms: 1000, flush_deadline_ms: 1000)
   let handler = fn(_frame) { process.send(frames, Nil) }
-  let defaults = listener.settings(port: 0, handler:)
+  let defaults = listener.settings(port: 0, handler:, shutdown: coordinator)
   let settings =
     listener.Settings(
       ..defaults,
@@ -89,6 +92,7 @@ fn survives(ceiling_words: Int) -> Bool {
     )
   let assert Ok(started) =
     server.supervisor()
+    |> static_supervisor.add(shutdown.supervised(coordinator))
     |> static_supervisor.add(listener.supervised(settings))
     |> static_supervisor.start
     as "the server did not start"

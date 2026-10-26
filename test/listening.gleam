@@ -7,6 +7,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/listener
 import genesis_prime/connection/socket_owner
 import genesis_prime/server
+import genesis_prime/shutdown
 import gleam/bit_array
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/otp/static_supervisor
@@ -33,11 +34,26 @@ pub type Config {
   )
 }
 
-/// A running listener: the port it was given, its supervisor and the frames
-/// its handler reports.
+/// A running listener: the port it was given, its supervisor, the frames its
+/// handler reports, and the settings of the shutdown coordinator it
+/// registered with, started beside it.
 pub type Running {
-  Running(port: Int, supervisor: Pid, frames: Subject(Received))
+  Running(
+    port: Int,
+    supervisor: Pid,
+    frames: Subject(Received),
+    shutdown: shutdown.Settings,
+  )
 }
+
+/// How long the coordinator gives connections to close once told to, in
+/// milliseconds. Long, so a connection that closes when told is never near it
+/// and a test that would wait it out fails by its own deadline instead.
+const drain_deadline_ms = 30_000
+
+/// How long the coordinator gives saving workers to flush, in milliseconds. A
+/// listener has none.
+const flush_deadline_ms = 1000
 
 /// The measured defaults, with a handler that frees the owner at once.
 pub fn config() -> Config {
@@ -61,7 +77,8 @@ pub fn start(config: Config) -> Running {
       False -> Nil
     }
   }
-  let defaults = listener.settings(port: 0, handler:)
+  let coordinator = shutdown.new(drain_deadline_ms:, flush_deadline_ms:)
+  let defaults = listener.settings(port: 0, handler:, shutdown: coordinator)
   let settings =
     listener.Settings(
       ..defaults,
@@ -71,12 +88,13 @@ pub fn start(config: Config) -> Running {
     )
   let assert Ok(started) =
     server.supervisor()
+    |> static_supervisor.add(shutdown.supervised(coordinator))
     |> static_supervisor.add(listener.supervised(settings))
     |> static_supervisor.start
     as "the listener did not start"
   let assert Ok(port) = process.receive(ports, event_wait_ms)
     as "the listener did not report its port"
-  Running(port:, supervisor: started.pid, frames:)
+  Running(port:, supervisor: started.pid, frames:, shutdown: coordinator)
 }
 
 /// Connects a client to the listener.

@@ -39,6 +39,7 @@ import genesis_prime/connection/listener
 import genesis_prime/connection/socket
 import genesis_prime/connection/socket_owner.{Settings}
 import genesis_prime/server
+import genesis_prime/shutdown
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/float
 import gleam/int
@@ -170,6 +171,8 @@ fn rotate(variants: List(Variant), round: Int) -> List(Variant) {
 /// window. The server and the clients stop at the end.
 fn run(peer: Peer, variant: Variant) -> Measure {
   let counter = new_counter()
+  let coordinator =
+    shutdown.new(drain_deadline_ms: 1000, flush_deadline_ms: 1000)
   let handler = fn(_frame) {
     increment(counter)
     case variant.planted_work {
@@ -177,7 +180,7 @@ fn run(peer: Peer, variant: Variant) -> Measure {
       False -> Nil
     }
   }
-  let defaults = listener.settings(port: 0, handler:)
+  let defaults = listener.settings(port: 0, handler:, shutdown: coordinator)
   let ports = process.new_subject()
   let settings =
     listener.Settings(
@@ -192,6 +195,7 @@ fn run(peer: Peer, variant: Variant) -> Measure {
     )
   let assert Ok(started) =
     server.supervisor()
+    |> static_supervisor.add(shutdown.supervised(coordinator))
     |> static_supervisor.add(listener.supervised(settings))
     |> static_supervisor.start
     as "the server did not start"

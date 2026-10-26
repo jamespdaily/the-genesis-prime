@@ -19,6 +19,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/inbound.{type Inbound}
 import genesis_prime/connection/rate_limit.{type Rate}
 import genesis_prime/connection/socket.{type FlowControl, type Socket}
+import genesis_prime/shutdown
 import genesis_prime/telemetry/log.{type Who}
 import gleam/erlang/process.{type Subject}
 import gleam/list
@@ -51,6 +52,8 @@ pub type Settings {
 pub opaque type Message {
   /// The acceptor made this process the socket's owner.
   SocketGiven
+  /// The shutdown coordinator asked the connection to close.
+  ServerStopping
   /// The socket reported something.
   SocketEvent(event: socket.Event)
 }
@@ -104,6 +107,7 @@ pub fn settings(handler handler: Handler) -> Settings {
 pub fn start(
   settings settings: Settings,
   socket socket: Socket,
+  shutdown _shutdown: shutdown.Settings,
 ) -> actor.StartResult(Subject(Message)) {
   actor.new_with_initialiser(start_deadline_ms, fn(subject) {
     limit_heap(settings.heap_ceiling_words)
@@ -148,6 +152,7 @@ fn handle_message(
       arm(State(..state, status: Reading(inbound:)))
     }
     SocketGiven, Reading(..) -> actor.continue(state)
+    ServerStopping, _ -> actor.continue(state)
     SocketEvent(socket.Received(bytes:)), Reading(inbound:) ->
       receive(state:, inbound:, bytes:)
     SocketEvent(socket.ReadsUsedUp), Reading(..) -> arm(state)

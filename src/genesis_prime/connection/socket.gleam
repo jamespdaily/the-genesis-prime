@@ -111,6 +111,12 @@ fn arm_count(socket: Socket, reads: Int) -> Result(Nil, Reason)
 @external(erlang, "genesis_prime_socket_ffi", "close")
 pub fn close(socket socket: Socket) -> Nil
 
+/// Closes a listening socket from any process, which makes the process that
+/// waits in `accept` on it get `Closed`, and makes the port refuse new
+/// connections.
+@external(erlang, "genesis_prime_socket_ffi", "close")
+pub fn close_listening(socket socket: ListenSocket) -> Nil
+
 /// The peer's address and port as text, for the log, or `None` when the
 /// socket is closed.
 @external(erlang, "genesis_prime_socket_ffi", "peer")

@@ -10,6 +10,7 @@
 import genesis_prime/connection/acceptor
 import genesis_prime/connection/capacity
 import genesis_prime/connection/socket_owner
+import genesis_prime/shutdown
 import gleam/erlang/process
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor.{type Supervisor}
@@ -20,27 +21,33 @@ import gleam/otp/supervision
 const owner_shutdown_ms = 1000
 
 /// What a listener needs: the port, the cap on connections, what each socket
-/// owner is started with, and what to do when the port is open.
+/// owner is started with, what to do when the port is open, and the settings
+/// of the shutdown coordinator that the listener and its connections register
+/// with.
 pub type Settings {
   Settings(
     port: Int,
     connection_cap: Int,
     owner: socket_owner.Settings,
     listening: fn(Int) -> Nil,
+    shutdown: shutdown.Settings,
   )
 }
 
 /// Settings for `port` with the measured connection cap and owner settings,
-/// handing each frame to `handler`.
+/// handing each frame to `handler`, and registering with the coordinator of
+/// `shutdown`.
 pub fn settings(
   port port: Int,
   handler handler: socket_owner.Handler,
+  shutdown shutdown: shutdown.Settings,
 ) -> Settings {
   Settings(
     port:,
     connection_cap: capacity.connection_cap(),
     owner: socket_owner.settings(handler:),
     listening: fn(_port) { Nil },
+    shutdown:,
   )
 }
 
@@ -52,7 +59,11 @@ pub fn supervised(
   let connections = process.new_name("connections")
   let connection_supervisor =
     factory_supervisor.worker_child(fn(socket) {
-      socket_owner.start(settings.owner, socket)
+      socket_owner.start(
+        settings: settings.owner,
+        socket:,
+        shutdown: settings.shutdown,
+      )
     })
     |> factory_supervisor.named(connections)
     |> factory_supervisor.restart_strategy(supervision.Temporary)
@@ -68,6 +79,7 @@ pub fn supervised(
       heap_ceiling_words: settings.owner.heap_ceiling_words,
       connections:,
       listening: settings.listening,
+      shutdown: settings.shutdown,
     )),
   )
   |> static_supervisor.supervised

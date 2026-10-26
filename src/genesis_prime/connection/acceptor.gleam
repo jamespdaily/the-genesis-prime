@@ -11,6 +11,7 @@
 import genesis_prime/connection/capacity
 import genesis_prime/connection/socket.{type ListenSocket, type Socket}
 import genesis_prime/connection/socket_owner
+import genesis_prime/shutdown
 import genesis_prime/telemetry/log
 import gleam/erlang/process.{type Subject}
 import gleam/int
@@ -49,6 +50,7 @@ pub type Settings {
       factory_supervisor.Message(Socket, Subject(socket_owner.Message)),
     ),
     listening: fn(Int) -> Nil,
+    shutdown: shutdown.Settings,
   )
 }
 
