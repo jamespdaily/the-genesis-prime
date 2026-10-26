@@ -586,3 +586,64 @@ pub fn every_end_has_a_sentence_and_a_level_test() -> Nil {
   assert game_session.level_of(game_session.SessionKeyRefused)
     == game_session.WarningLevel
 }
+
+pub fn a_database_that_cannot_give_the_list_ends_the_connection_as_an_error_not_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(session, effects) =
+    game_session.receive(
+      keyed(),
+      client_frame(cipher: session_cipher(), message_id: 0x07E0, body: <<>>),
+      context(),
+    )
+  assert effects == [Store(select.LoadCharacters(character_support.account_id))]
+    as "opcode.0x7e0: the list is the account's characters"
+  let #(_, effects) =
+    game_session.stored(session, select.Unavailable, context())
+  assert effects == [End(game_session.StoreAway(select.ListNotLoaded))]
+    as "designing-processes: a database that failed is an outside failure of the server, never the player's breach"
+  assert game_session.level_of(game_session.StoreAway(select.ListNotLoaded))
+    == game_session.ErrorLevel
+    as "an outside failure the connection cannot go on without is logged as an error"
+  assert game_session.describe(game_session.StoreAway(select.ListNotLoaded))
+    == select.describe_outage(select.ListNotLoaded)
+}
+
+pub fn a_write_answered_unavailable_reads_the_characters_again_and_then_answers_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(body) =
+    create_character.encode(
+      CreateCharacter(
+        creation_id: 277,
+        name: "Ab Cd",
+        path: 2,
+        customisation_labels: [],
+        customisation_values: [],
+        bone_values: [],
+      ),
+    )
+    as "0x25B encodes"
+  let #(session, effects) =
+    game_session.receive(idle([]), create_frame(body:), context())
+  assert list.any(effects, fn(effect) {
+    case effect {
+      Store(select.InsertCharacter(_)) -> True
+      _ -> False
+    }
+  })
+    as "the create asks the store"
+  let #(session, effects) =
+    game_session.stored(session, select.Unavailable, context())
+  assert list.contains(
+    effects,
+    Store(select.LoadCharacters(character_support.account_id)),
+  )
+    as "a write that was answered Unavailable may have been done, so the characters are read again"
+  assert messages(effects, session_cipher()) == []
+    as "nothing is sent until the list is read"
+  let #(_, effects) =
+    game_session.stored(session, select.Loaded([own(11)]), context())
+  let assert [failure, listed] = messages(effects, session_cipher())
+    as "the failure is answered, then the list"
+  assert failure.message_id == 0x00DC && listed.message_id == 0x0117
+    as "opcode.0xdc and opcode.0x117: the create result, then the character list the store holds"
+}

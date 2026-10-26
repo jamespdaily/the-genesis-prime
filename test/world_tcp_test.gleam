@@ -48,6 +48,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/string
 import log_capture
 import owned_test
+import pog
 import template_database
 import unitest
 
@@ -318,4 +319,62 @@ pub fn a_map_that_does_not_answer_closes_the_connection_and_logs_an_error_test()
     })
     as "the reason is logged as an error: an outside failure is never the player's mistake"
   Nil
+}
+
+/// Marks the saved character: sets one of the columns the character list holds.
+fn mark(
+  database database: template_database.Database,
+  character character: Character,
+  column column: String,
+) -> Nil {
+  let assert Ok(_) =
+    pog.query("update character set " <> column <> " = true where id = $1")
+    |> pog.parameter(pog.int(character.id))
+    |> pog.execute(on: database.connection)
+    as "the character was marked"
+  Nil
+}
+
+pub fn a_disabled_character_is_refused_with_0x162_value_3_and_no_world_is_entered_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
+  use database <- template_database.run
+  let running = game_server.start(database:, answer_deadline_ms: 5000)
+  let assert Ok(account) =
+    account_store.create(database.connection, "jim", "secret")
+    as "the account is created"
+  let character = saved_character(database:, running:, account:)
+  mark(database:, character:, column: "disabled")
+  let game = signed_in(running:, account:)
+  let assert [refused] = play(game:, character:, answers: 1)
+    as "the answer to the play"
+  assert refused.message_id == 0x0162
+    as "opcode.0x162: a character that cannot be played is answered with 0x162, on which the client returns to idle character select"
+  let assert Ok(refusal) = play_character_refused.decode(refused.body)
+    as "0x162 decodes"
+  assert refusal.field_1 == 3
+    as "PreGameLib.CodeEnumCharacterSelectResults: 3 is FailedDisabled"
+  let #(_observer, joined) = join_as_observer(running:, character_id: 77)
+  assert joined.id == 1
+    as "no unit of the refused character was made, so the next unit on the map has the first id"
+}
+
+pub fn a_character_that_must_be_renamed_is_refused_with_0x162_value_1_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
+  use database <- template_database.run
+  let running = game_server.start(database:, answer_deadline_ms: 5000)
+  let assert Ok(account) =
+    account_store.create(database.connection, "jim", "secret")
+    as "the account is created"
+  let character = saved_character(database:, running:, account:)
+  mark(database:, character:, column: "requires_rename")
+  let game = signed_in(running:, account:)
+  let assert [refused] = play(game:, character:, answers: 1)
+    as "the answer to the play"
+  assert refused.message_id == 0x0162
+  let assert Ok(refusal) = play_character_refused.decode(refused.body)
+    as "0x162 decodes"
+  assert refusal.field_1 == 1
+    as "PreGameLib.CodeEnumCharacterSelectResults: 1 is FailedRename"
 }

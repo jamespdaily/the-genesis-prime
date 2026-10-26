@@ -398,6 +398,7 @@ pub fn a_database_that_could_not_save_is_not_the_players_mistake_test() -> Nil {
     select.decide(creating, Stored(Unavailable), context())
   assert list.contains(effects, Log(StoreUnavailable))
     as "an outside failure is logged as one, never as a refusal of the request"
+  let #(state, effects) = select.decide(state, Stored(Loaded([])), context())
   assert create_result_of(effects) == 12
     as "PreGameLib.CodeEnumCharacterModifyResults: 12 is CreateFailed_Internal, the server's failure and not the player's"
   assert state == idle([]) as "nothing was added"
@@ -472,10 +473,11 @@ pub fn a_rename_to_a_name_another_character_has_is_refused_test() -> Nil {
 pub fn a_rename_the_store_could_not_do_is_answered_with_the_results_the_enum_names_test() -> Nil {
   use <- owned_test.run(5000)
   let renaming = State(..idle([own(11, "Ab Cd")]), status: Renaming(11))
+  let #(reloading, _) = select.decide(renaming, Stored(Unavailable), context())
   let #(_, unavailable) =
-    select.decide(renaming, Stored(Unavailable), context())
-  let assert [RenameResult(answer)] = sent(unavailable)
-    as "one rename answer is sent"
+    select.decide(reloading, Stored(Loaded([own(11, "Ab Cd")])), context())
+  let assert [RenameResult(answer), _list] = sent(unavailable)
+    as "one rename answer is sent, then the list the store holds"
   assert answer.result == 14
     as "PreGameLib.CodeEnumCharacterModifyResults: 14 is RenameFailed_Internal, the server's failure"
   let #(_, not_found) = select.decide(renaming, Stored(NotFound), context())
@@ -853,4 +855,187 @@ fn writes_or_enters(effect: select.Effect) -> Bool {
     Store(_) | BeginWorldEntry(_) -> True
     Send(_) | Log(_) | Close(_) | select.Abandon(_) -> False
   }
+}
+
+pub fn a_database_that_cannot_give_the_list_is_an_outage_not_the_players_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  let loading =
+    State(
+      account_id: character_support.account_id,
+      characters: [],
+      status: Loading,
+    )
+  let #(_, effects) = select.decide(loading, Stored(Unavailable), context())
+  assert effects == [select.Abandon(select.ListNotLoaded)]
+    as "designing-processes: a database that failed is an outside failure, logged as an error and never as the player's breach; the connection cannot go on without the list"
+  let #(_, effects) = select.decide(loading, Stored(NotFound), context())
+  assert effects == [Close(AnswerNobodyAskedFor(Loading))]
+    as "a store that answers NotFound to the load of a list is a bug, not an outage, and stays a breach of the protocol"
+}
+
+pub fn a_write_answered_unavailable_is_followed_by_a_reload_before_the_failure_is_answered_test() -> Nil {
+  use <- owned_test.run(5000)
+  let mine = [own(11, "Ab Cd")]
+  list.each(
+    [
+      #(select.Creating, "a create"),
+      #(Renaming(11), "a rename"),
+      #(Deleting(11), "a delete"),
+    ],
+    fn(waiting) {
+      let #(status, what) = waiting
+      let #(state, effects) =
+        select.decide(
+          State(..idle(mine), status:),
+          Stored(Unavailable),
+          context(),
+        )
+      assert effects
+        == [
+          Log(StoreUnavailable),
+          Store(select.LoadCharacters(character_support.account_id)),
+        ]
+        as {
+          what
+          <> " that was answered Unavailable may have been done, so the account's characters are read again; nothing is sent until they are"
+        }
+      assert case state.status {
+        select.Reloading(_) -> True
+        _ -> False
+      }
+        as { what <> ": the server waits for the characters" }
+    },
+  )
+}
+
+pub fn the_reload_after_a_failed_write_answers_the_failure_and_sends_the_list_the_store_holds_test() -> Nil {
+  use <- owned_test.run(5000)
+  let before = [own(11, "Ab Cd")]
+  // The create committed after the deadline: the store holds a character the
+  // server was told nothing of.
+  let created = [own(11, "Ab Cd"), own(12, "Ef Gh")]
+  let #(reloading, _) =
+    select.decide(
+      State(..idle(before), status: select.Creating),
+      Stored(Unavailable),
+      context(),
+    )
+  let #(state, effects) =
+    select.decide(reloading, Stored(Loaded(created)), context())
+  assert state == idle(created)
+    as "the list is the store's, so a character the write did commit is listed"
+  let assert [CreateResult(failure), CharacterListed(listed)] = sent(effects)
+    as "the failure is answered, then the list"
+  assert failure.result == 12
+    as "PreGameLib.CodeEnumCharacterModifyResults: 12 is CreateFailed_Internal"
+  assert listed.characters == list.map(created, character.list_entry)
+    as "opcode.0x117: the client replaces its list with the one it is sent, so the next 0x117 matches the store"
+  let #(reloaded_for_rename, _) =
+    select.decide(
+      State(..idle(before), status: Renaming(11)),
+      Stored(Unavailable),
+      context(),
+    )
+  let #(_, answered) =
+    select.decide(reloaded_for_rename, Stored(Loaded(before)), context())
+  let assert [RenameResult(rename), CharacterListed(_)] = sent(answered)
+    as "the rename failure is answered, then the list"
+  assert rename.result == 14
+    as "PreGameLib.CodeEnumCharacterModifyResults: 14 is RenameFailed_Internal"
+  let #(reloaded_for_delete, _) =
+    select.decide(
+      State(..idle(before), status: Deleting(11)),
+      Stored(Unavailable),
+      context(),
+    )
+  let #(_, answered) =
+    select.decide(reloaded_for_delete, Stored(Loaded([])), context())
+  let assert [DeleteResult(delete), CharacterListed(emptied)] = sent(answered)
+    as "the delete failure is answered, then the list"
+  assert delete.result == 1
+    as "PreGameLib.CodeEnumCharacterModifyResults: 1 is DeleteFailed; the write did commit, and the list says so"
+  assert emptied.characters == []
+}
+
+pub fn a_reload_that_the_database_cannot_do_either_ends_the_connection_as_an_outage_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(reloading, _) =
+    select.decide(
+      State(..idle([own(11, "Ab Cd")]), status: select.Creating),
+      Stored(Unavailable),
+      context(),
+    )
+  let #(_, effects) = select.decide(reloading, Stored(Unavailable), context())
+  assert effects == [select.Abandon(select.ListNotReloaded)]
+    as "what the write did is not known and the list cannot be read, so the connection ends and the next login reads the store"
+}
+
+pub fn a_request_while_the_list_is_read_again_closes_the_connection_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(reloading, _) =
+    select.decide(
+      State(..idle([own(11, "Ab Cd")]), status: select.Creating),
+      Stored(Unavailable),
+      context(),
+    )
+  let #(_, effects) =
+    select.decide(
+      reloading,
+      Requested(DeleteRequested(DeleteCharacter(11))),
+      context(),
+    )
+  assert effects == [Close(RequestWhileBusy(reloading.status))]
+    as "HandleCharacterSelectMessage 0x140020EA0: the client sends a request only while idle, and it was answered nothing yet"
+}
+
+pub fn a_disabled_character_is_refused_with_result_3_and_nothing_is_entered_test() -> Nil {
+  use <- owned_test.run(5000)
+  let disabled = Character(..own(11, "Ab Cd"), disabled: True)
+  let #(state, effects) =
+    select.decide(
+      idle([disabled]),
+      Requested(PlayRequested(PlayCharacter(11))),
+      context(),
+    )
+  assert effects
+    == [
+      Log(select.CharacterDisabled(11)),
+      Send(PlayRefused(PlayCharacterRefused(field_1: 3))),
+    ]
+    as "opcode.0x162: the value is PreGameLib.CodeEnumCharacterSelectResults 3, FailedDisabled"
+  assert state == idle([disabled])
+    as "the client returns to idle character select, so a request is taken again"
+}
+
+pub fn a_character_that_must_be_renamed_is_refused_with_result_1_and_nothing_is_entered_test() -> Nil {
+  use <- owned_test.run(5000)
+  let unnamed = Character(..own(11, "Ab Cd"), requires_rename: True)
+  let #(state, effects) =
+    select.decide(
+      idle([unnamed]),
+      Requested(PlayRequested(PlayCharacter(11))),
+      context(),
+    )
+  assert effects
+    == [
+      Log(select.CharacterRequiresRename(11)),
+      Send(PlayRefused(PlayCharacterRefused(field_1: 1))),
+    ]
+    as "opcode.0x162: the value is PreGameLib.CodeEnumCharacterSelectResults 1, FailedRename"
+  assert state == idle([unnamed])
+    as "the client returns to idle character select, so the rename it is asked for can be asked"
+}
+
+pub fn a_disabled_character_that_must_also_be_renamed_is_refused_as_disabled_test() -> Nil {
+  use <- owned_test.run(5000)
+  let both =
+    Character(..own(11, "Ab Cd"), disabled: True, requires_rename: True)
+  let #(_, effects) =
+    select.decide(
+      idle([both]),
+      Requested(PlayRequested(PlayCharacter(11))),
+      context(),
+    )
+  assert sent(effects) == [PlayRefused(PlayCharacterRefused(field_1: 3))]
+    as "a rename does not make a disabled character playable, so the player is told it is disabled"
 }
