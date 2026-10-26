@@ -15,10 +15,10 @@ pub const support_modules = [
   "genesis_prime/game_master/sql",
 ]
 
-/// Each command module in the file's place that has no public `rule`, or whose
-/// `rule` has no parameter labelled `permissions` of type
-/// `Set(permission.Permission)`. A file outside `game_master`, and a support
-/// module, is never a breach.
+/// The breach of a command module that has no public `rule` (at line 1), or
+/// whose `rule` has no parameter labelled `permissions` of type
+/// `Set(Permission)` (at the line of the `rule`). A file outside
+/// `game_master`, and a support module, is never a breach.
 pub fn breaches(file file: SourceFile) -> List(Breach) {
   todo as "the commands whose rule does not take the account's permissions"
 }
