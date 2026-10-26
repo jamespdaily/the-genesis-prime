@@ -415,3 +415,33 @@ pub fn a_statement_that_runs_past_the_databases_limit_gives_unavailable_and_comm
   assert listed(one, character_support.account_id) == []
     as "the cancelled save committed nothing, so a failure answered to the player is true"
 }
+
+pub fn a_write_whose_caller_withholds_the_word_to_go_sends_no_statement_and_is_unavailable_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use database <- template_database.run
+  add_accounts(database.connection)
+  let held = process.new_subject()
+  assert store.run_held(
+      db: database.connection,
+      command: select.InsertCharacter(new_character("Ab Cd")),
+      connection_held: fn() {
+        process.send(held, Nil)
+        store.Withheld
+      },
+    )
+    == Unavailable
+    as "a write that holds a connection and is not told to go is not carried out, so it is reported failed"
+  assert process.receive(held, 0) == Ok(Nil)
+    as "the caller was told the write holds a connection"
+  assert listed(database.connection, character_support.account_id) == []
+    as "designing-processes: a write that was reported failed committed nothing"
+  let assert Inserted(saved) =
+    store.run_held(
+      db: database.connection,
+      command: select.InsertCharacter(new_character("Ab Cd")),
+      connection_held: fn() { store.Go },
+    )
+    as "a write that is told to go is carried out"
+  assert listed(database.connection, character_support.account_id) == [saved]
+    as "the write that was told to go is stored"
+}

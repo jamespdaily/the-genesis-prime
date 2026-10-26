@@ -23,6 +23,14 @@
 ////
 //// The wait for the answer is in the claimant's own process, within its own
 //// deadline; nothing calls a peer while it waits.
+////
+//// A limit of the rule that a new connection is let in only when no older one
+//// is alive: a store worker (`character/store_worker`) is not the connection's
+//// child, so a connection that is ended while its worker is carrying out a
+//// write leaves the worker running, and the write can commit after the old
+//// session is gone. The new session's first list may then miss that write,
+//// and the next list shows it. Nothing waits for or stops the worker, so a
+//// session's write is never lost, and the registry is not held up by it.
 
 import genesis_prime/connection/named_send
 import genesis_prime/telemetry/log

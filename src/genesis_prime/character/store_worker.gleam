@@ -1,13 +1,32 @@
 //// The workers that carry out character select's commands against the
 //// database: one temporary process for each command, started under a
 //// supervisor of the game subtree. The connection that asked waits for the
-//// answer up to its deadline; a worker that has not answered by then is
-//// killed and the answer is `Unavailable`. A worker that ends without
-//// answering, such as one whose statement crashed, gives `Unavailable` at once.
+//// answer in two phases, so that an answer of `Unavailable` to a write is
+//// never untrue. A worker tells the asker as soon as it holds a connection of
+//// the pool, inside a transaction and before its first statement is sent, and
+//// sends the statement only when the asker tells it to go. Until the asker has
+//// told it, the asker waits up to its deadline and kills a worker that has
+//// not told it: nothing was sent to Postgres, so nothing can commit, and the
+//// answer is `Unavailable`. Because the worker waits for the word to go, a
+//// kill at the deadline cannot come after the statement was sent. Once the
+//// asker has told the worker to go, it does not kill it at the deadline, which
+//// could be mid-statement, but waits for its answer up to `pool.holding_wait_ms`,
+//// in which Postgres cancels a statement that is still running
+//// (`pool.statement_timeout_ms`): the answer is what happened, committed or
+//// cancelled. A worker that is not told to go within `go_wait_milliseconds`
+//// sends nothing and gives `Unavailable`. A worker that ends without answering,
+//// such as one whose statement crashed, gives `Unavailable` at once.
 //// A worker holds nothing between commands, so none is restarted.
+////
+//// A limit that is stated and not closed: a session that a second login of its
+//// account replaced is ended and its worker is not, so a write the worker is
+//// carrying out can commit after the session is gone; the new session's first
+//// list is read at once and may miss it, and the next list shows it
+//// (`game/sessions`).
 
 import genesis_prime/character/select.{type Answer, type Command, Unavailable}
 import genesis_prime/character/store
+import genesis_prime/database/pool
 import genesis_prime/telemetry/log
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{None, Some}
@@ -30,10 +49,27 @@ const worker_shutdown_milliseconds = 1000
 /// How long a worker has to start, in milliseconds.
 const start_deadline_milliseconds = 5000
 
+/// How long a worker that holds a connection waits for its asker to tell it to
+/// go, in milliseconds, before it gives the connection back and sends nothing.
+/// An asker that is waiting answers at once, so this only ends a wait for an
+/// asker that has gone; the pool's margin, so a connection is never held longer
+/// than the wait for an answer is allowed to be. No measurement chose it.
+const go_wait_milliseconds = pool.margin_ms
+
 /// One command to carry out, with the connection to the database and where
-/// the answer goes.
+/// the worker reports.
 pub opaque type Job {
-  Job(db: pog.Connection, command: Command, reply: Subject(Answer))
+  Job(db: pog.Connection, command: Command, reply: Subject(Report))
+}
+
+/// What the asker of a worker hears. A worker says `Holding` when it has a
+/// connection of the pool and is about to send its statement, with the subject
+/// the asker tells it to go on, and then `Answered`; `Gone` is the asker's own
+/// note that the worker ended without answering.
+type Report {
+  Holding(go: Subject(Nil))
+  Answered(Answer)
+  Gone
 }
 
 /// The name the workers' supervisor is registered under, made once by whoever
@@ -75,7 +111,16 @@ fn start(job: Job) -> actor.StartResult(Nil) {
 
 fn handle(job: Job, message: Message) -> actor.Next(Job, Message) {
   let Begin = message
-  process.send(job.reply, store.run(job.db, job.command))
+  let answer =
+    store.run_held(db: job.db, command: job.command, connection_held: fn() {
+      let go = process.new_subject()
+      process.send(job.reply, Holding(go:))
+      case process.receive(go, within: go_wait_milliseconds) {
+        Ok(Nil) -> store.Go
+        Error(Nil) -> store.Withheld
+      }
+    })
+  process.send(job.reply, Answered(answer))
   actor.stop()
 }
 
@@ -87,10 +132,13 @@ fn describe(error: actor.StartError) -> String {
   }
 }
 
-/// Carries out the command in a worker and waits up to `within_ms`
-/// milliseconds for the answer. A worker that does not start, ends without
-/// answering or is too slow gives `Unavailable`, and so does a supervisor of
-/// workers that is not running, as while it is being rebuilt.
+/// Carries out the command in a worker and waits for the answer: up to
+/// `within_ms` milliseconds for the worker to hold a connection, and from then
+/// on up to `pool.holding_wait_ms` for its answer. A worker that does not start,
+/// ends without answering or holds no connection by the deadline gives
+/// `Unavailable`, and so does a supervisor of workers that is not running, as
+/// while it is being rebuilt. A worker that held a connection is never killed
+/// at the deadline, so a write answered `Unavailable` committed nothing.
 pub fn run(
   workers workers: Workers,
   db db: pog.Connection,
@@ -143,19 +191,46 @@ fn start_and_wait(
     }
     Ok(started) -> {
       let monitor = process.monitor(started.pid)
-      let outcome =
+      let selector =
         process.new_selector()
         |> process.select(reply)
-        |> process.select_specific_monitor(monitor, fn(_down) { Unavailable })
-        |> process.selector_receive(within: within_ms)
+        |> process.select_specific_monitor(monitor, fn(_down) { Gone })
+      let answer = wait_for_connection(selector:, pid: started.pid, within_ms:)
       process.demonitor_process(monitor)
-      case outcome {
-        Ok(answer) -> answer
-        Error(Nil) -> {
-          process.kill(started.pid)
-          Unavailable
-        }
-      }
+      answer
     }
+  }
+}
+
+/// Waits for the worker's report within `within_ms`: its answer, its end, or
+/// the word that it holds a connection, which is answered with the word to go.
+/// A worker that has said nothing at the deadline has sent nothing to Postgres,
+/// because it sends nothing before it is told to go, so it is killed.
+fn wait_for_connection(
+  selector selector: process.Selector(Report),
+  pid pid: process.Pid,
+  within_ms within_ms: Int,
+) -> Answer {
+  case process.selector_receive(selector, within: within_ms) {
+    Ok(Answered(answer)) -> answer
+    Ok(Gone) -> Unavailable
+    Ok(Holding(go:)) -> {
+      process.send(go, Nil)
+      wait_for_answer(selector:)
+    }
+    Error(Nil) -> {
+      process.kill(pid)
+      Unavailable
+    }
+  }
+}
+
+/// Waits up to `pool.holding_wait_ms` for the answer of a worker that was told
+/// to go. The worker is not killed when the time is up: its statement may be
+/// running, and it ends by itself when `pgo` times the statement out.
+fn wait_for_answer(selector selector: process.Selector(Report)) -> Answer {
+  case process.selector_receive(selector, within: pool.holding_wait_ms()) {
+    Ok(Answered(answer)) -> answer
+    Ok(Gone) | Ok(Holding(..)) | Error(Nil) -> Unavailable
   }
 }

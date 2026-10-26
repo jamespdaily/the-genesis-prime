@@ -14,13 +14,16 @@ import pog
 const default_pool_size = 10
 
 /// How long Postgres lets one statement of the pool's connections run, in
-/// milliseconds, before it cancels the statement and rolls it back. A game
-/// worker is killed at 5 seconds (`game/service.answer_deadline_ms`), and a
-/// write that was reported failed must have committed nothing, so a request
-/// waits at most `checkout_wait_bound_ms` for a connection, then runs at most
-/// this long, and `margin_ms` is left before the worker's deadline: the three
-/// add up to less than it. The statement's own timeout in `pog` is its default
-/// of 5000 ms from the start of the call, which the functions squirrel
+/// milliseconds, before it cancels the statement and rolls it back. A write
+/// that was reported failed must have committed nothing, so a game worker is
+/// killed at its deadline (`game/service.answer_deadline_ms`) only while it has
+/// no connection: nothing was sent to Postgres. A worker that has a
+/// connection is waited for until its statement ends, at most this long, plus
+/// `margin_ms` (`holding_wait_ms`), and its answer says whether the write
+/// committed or was cancelled. A request waits at most `checkout_wait_bound_ms`
+/// for a connection, so that wait, this limit and the margin add up to less
+/// than the worker's deadline. The statement's own timeout in `pog` is its
+/// default of 5000 ms from the start of the call, which the functions squirrel
 /// generates do not let a caller change; `pgo` closes the connection of a
 /// statement that has run that long, after this limit has cancelled it. 4
 /// seconds; no measurement chose it.
@@ -50,13 +53,20 @@ pub const queue_interval_ms = 100
 /// has no timeout, and the `timeout` of a query counts from the checkout.
 pub const checkout_wait_bound_ms = 300
 
-/// The time kept between the end of a statement's longest life and the moment
-/// a worker is killed, in milliseconds: the wait for a connection, the
-/// statement's limit and this add up to less than the worker's deadline, so a
-/// worker that was killed never had a statement left running. 600 ms covers a
-/// round trip to Postgres, the start of a worker and the commit; no
-/// measurement chose it.
+/// The time given, after a statement's limit, for the answer of a worker that
+/// holds a connection to arrive, in milliseconds: it covers the round trip to
+/// Postgres that carries the cancellation, the commit or the rollback, and the
+/// worker's reply. 600 ms; no measurement chose it.
 pub const margin_ms = 600
+
+/// How long the asker of a worker that holds a connection waits for its
+/// answer, in milliseconds, counted from the moment the worker says it holds
+/// it: the statement's limit and the margin. The asker's deadline does not
+/// apply from then on, because Postgres ends the statement within this time,
+/// so the worker's answer is the truth about the write.
+pub fn holding_wait_ms() -> Int {
+  statement_timeout_ms + margin_ms
+}
 
 /// What a pool needs to start. `name` is the name the pool registers and
 /// that its users find it by, made once by whoever starts the tree, so two
