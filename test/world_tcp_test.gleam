@@ -50,6 +50,7 @@ import gleam/string
 import log_capture
 import owned_test
 import pog
+import supervisor_children
 import template_database
 import unitest
 
@@ -381,4 +382,37 @@ pub fn a_character_that_must_be_renamed_is_refused_with_0x162_value_1_test() -> 
     as "0x162 decodes"
   assert refusal.field_1 == 1
     as "PreGameLib.CodeEnumCharacterSelectResults: 1 is FailedRename"
+}
+
+pub fn a_map_that_ends_closes_the_connection_of_the_player_on_it_and_logs_a_warning_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
+  use database <- template_database.run
+  let capture = log_capture.start()
+  let running = game_server.start(database:, answer_deadline_ms: 5000)
+  let assert Ok(account) =
+    account_store.create(database.connection, "jim", "secret")
+    as "the account is created"
+  let character = saved_character(database:, running:, account:)
+  let game = signed_in(running:, account:)
+  let assert [_, _, _, _] = play(game:, character:, answers: 4)
+    as "the world messages"
+  // The map's process ends and its supervisor starts it again: empty, with the
+  // first unit id free, which the connection's unit is no longer on.
+  let assert Ok(factory) = process.named(running.game.maps.factory)
+    as "the factory supervisor is registered under its name"
+  let assert [map_subtree] = supervisor_children.in_start_order(factory)
+    as "the world has one map subtree"
+  let assert Ok(map_process) =
+    list.last(supervisor_children.in_start_order(map_subtree))
+    as "a map's supervisor runs the map process after its senders"
+  process.kill(map_process)
+  assert game_client.closed(game)
+    as "a map that starts again holds none of its players, so the connection of a player on it ends rather than play on a map that does not know it"
+  let assert Ok(_) =
+    log_capture.next_matching(capture:, within: wait_ms, matching: fn(event) {
+      event.level == "warning" && string.contains(event.text, "map")
+    })
+    as "designing-processes: the end is logged as a warning, an outside failure the server recovered from"
+  Nil
 }

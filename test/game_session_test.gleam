@@ -577,6 +577,8 @@ pub fn every_end_has_a_sentence_and_a_level_test() -> Nil {
     game_session.CharacterSelectBreach(select.StartedTwice),
     game_session.WorldEntryBreach(world_entry.BeganTwice),
     game_session.MapAway,
+    game_session.MapEnded,
+    game_session.StoreAway(select.ListNotLoaded),
     game_session.AnswerNotBuilt,
   ]
   assert list.all(reasons, fn(reason) { game_session.describe(reason) != "" })
@@ -646,4 +648,23 @@ pub fn a_write_answered_unavailable_reads_the_characters_again_and_then_answers_
     as "the failure is answered, then the list"
   assert failure.message_id == 0x00DC && listed.message_id == 0x0117
     as "opcode.0xdc and opcode.0x117: the create result, then the character list the store holds"
+}
+
+pub fn the_end_of_the_map_that_holds_the_unit_ends_the_connection_as_a_warning_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(session, _) =
+    game_session.map_answered(
+      waiting_for_the_map(),
+      game_session.MapJoined(playing_unit()),
+      context(),
+    )
+  let #(session, effects) = game_session.map_ended(session, context())
+  assert effects == [End(game_session.MapEnded)]
+    as "a map that starts again is empty, so the unit the connection joined is gone, and the connection ends so the player enters again"
+  assert game_session.level_of(game_session.MapEnded)
+    == game_session.WarningLevel
+    as "designing-processes: an outside failure the server recovered from is a warning"
+  assert game_session.describe(game_session.MapEnded) != ""
+  let #(_, effects) = game_session.map_ended(session, context())
+  assert effects == [] as "a connection that has ended takes no more"
 }

@@ -65,3 +65,20 @@ pub fn max_heap_words(pid: Pid) -> Int
 /// The schedulers online.
 @external(erlang, "map_support_ffi", "schedulers_online")
 pub fn schedulers_online() -> Int
+
+/// The name a running process is registered under, as text.
+@external(erlang, "map_support_ffi", "registered_name")
+pub fn registered_name(pid: Pid) -> Result(String, Nil)
+
+/// Frees the name a running process is registered under, so a request to the
+/// name finds no process, as it would between two lives of the process.
+@external(erlang, "map_support_ffi", "unregister_name")
+pub fn unregister_name(pid: Pid) -> Nil
+
+/// Stops a process from running until `resume`.
+@external(erlang, "map_support_ffi", "suspend")
+pub fn suspend(pid: Pid) -> Nil
+
+/// Lets a suspended process run again.
+@external(erlang, "map_support_ffi", "resume")
+pub fn resume(pid: Pid) -> Nil
