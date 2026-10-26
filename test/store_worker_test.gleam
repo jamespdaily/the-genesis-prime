@@ -105,3 +105,17 @@ pub fn a_worker_that_has_not_answered_by_the_deadline_gives_unavailable_test() -
     as "a worker that cannot get a connection by the deadline is stopped and the answer is Unavailable"
   process.send(release, Nil)
 }
+
+pub fn workers_whose_supervisor_is_not_running_give_unavailable_and_not_a_crash_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A supervisor that is being rebuilt has no process under its name.
+  let workers = Workers(factory: process.new_name("store_workers_away"))
+  assert store_worker.run(
+      workers:,
+      db: pog.named_connection(process.new_name("no_pool_runs_here")),
+      command: select.LoadCharacters(account_id: 1),
+      within_ms: answer_wait_ms,
+    )
+    == Unavailable
+    as "designing-processes: a request to a process that is away is an outside failure the asker handles, not a crash of the asker"
+}
