@@ -28,6 +28,7 @@ import gleam/io
 import gleam/option.{None}
 import gleam/otp/actor
 import pog
+import pool_started
 
 /// A TCP socket: a listening one, a connected one, or the test's end of a
 /// connection.
@@ -245,6 +246,10 @@ pub fn saver(
   |> actor.start
 }
 
+/// How long the child's pool has to start: a handshake for each of its
+/// connections, with room for a slow runner.
+const pool_start_deadline_ms = 30_000
+
 /// The program a child VM runs. Starts the real tree with the pool settings
 /// of the environment and a pool of the test's own database, plants a
 /// listener, which a test connects to, and a saving worker holding one value
@@ -284,6 +289,14 @@ pub fn main() -> Nil {
       ),
     ))
     as "the planted program's tree did not start"
+  // A stop that arrives while pgo opens the pool's connections is reported by
+  // pgo's own supervisors as errors, so the program says it runs only once the
+  // pool has started.
+  assert pool_started.await(
+    name: pool_settings.name,
+    within_ms: pool_start_deadline_ms,
+  )
+    as "the planted program's pool did not start"
   watch_for_the_end_of(tree.pid)
   let assert Ok(_) =
     saver(settings:, name: saver_name, flush: fn() {
