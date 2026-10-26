@@ -85,6 +85,7 @@ fn message_module(message: Message) -> String {
   let direction = case message.direction {
     message_schema.ClientToServer -> "client to server"
     message_schema.ServerToClient -> "server to client"
+    message_schema.Both -> "either direction"
   }
   let head =
     wrap(
@@ -285,7 +286,9 @@ fn type_declaration(type_name: String, fields: List(Field)) -> List(String) {
 
 fn field_type(kind: Kind) -> String {
   case kind {
-    message_schema.Unsigned(..) | message_schema.Float32 -> "Int"
+    message_schema.Unsigned(..)
+    | message_schema.UnsignedBelow(..)
+    | message_schema.Float32 -> "Int"
     message_schema.WideText | message_schema.CountedWideText(..) -> "String"
     message_schema.Guid
     | message_schema.RawBytes(..)
@@ -320,6 +323,12 @@ fn write_step(field: Field, owner: String) -> List(String) {
       name,
       value,
       int.to_string(bits),
+    ])
+    message_schema.UnsignedBelow(bits:, limit:) -> #("write_unsigned_below", [
+      name,
+      value,
+      int.to_string(bits),
+      int.to_string(limit),
     ])
     message_schema.Float32 -> #("write_float32_bits", [name, value])
     message_schema.WideText -> #("write_wide_text", [name, value])
@@ -375,6 +384,12 @@ fn read_step(field: Field) -> List(String) {
     message_schema.Unsigned(bits:) -> #("read_unsigned", [
       "reader",
       int.to_string(bits),
+    ])
+    message_schema.UnsignedBelow(bits:, limit:) -> #("read_unsigned_below", [
+      "reader",
+      "\"" <> field.name <> "\"",
+      int.to_string(bits),
+      int.to_string(limit),
     ])
     message_schema.Float32 -> #("read_float32_bits", ["reader"])
     message_schema.WideText -> #("read_wide_text", ["reader"])

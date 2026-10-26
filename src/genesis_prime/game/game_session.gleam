@@ -6,6 +6,9 @@
 //// opcode.0x244, opcode.0x3dc, opcode.0x25c, opcode.0x38c, opcode.0xf2;
 //// HandleLoginGameServerHello 0x140038120).
 ////
+//// The network layer's own messages 0, 1 and 2 (ping, pong, close notice) are
+//// read first, bare, in every state (`network_message`).
+////
 //// The rule decodes each client message into a typed value at this edge and
 //// hands it to the rule of its feature: `select` for 0x7E0, 0x25C, 0x352,
 //// 0x786 and 0x7DD, and `world_entry` for 0xF2 inside 0x38C. A message that
@@ -18,6 +21,7 @@ import genesis_prime/character/world_entry
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/connection/network_message
 import genesis_prime/login/account.{type Identity}
 import genesis_prime/login/auth_session
 import genesis_prime/map/delivery.{type Delivery, Appeared, Disappeared}
@@ -87,7 +91,8 @@ pub type EndReason {
 
 /// What the connection carries out, in order.
 pub type Effect {
-  /// Send these bytes: a whole frame, wrapped.
+  /// Send these bytes: a whole frame, wrapped, or the bare pong that answers a
+  /// ping.
   Send(bytes: BitArray)
   /// Redeem the session key whose 16 bytes these are, then answer with
   /// `session_key_redeemed`.
@@ -162,14 +167,29 @@ pub fn receive(
   case session.stage {
     Ended -> #(session, [])
     AwaitingKey | RedeemingKey(_) | Playing(..) ->
-      case frame.message_id == wrapper_message {
-        False -> end(session, BadWrapper)
-        True ->
-          case encrypted_frame.unwrap(frame, session.cipher) {
-            Error(encrypted_frame.NotAWrapper(_))
-            | Error(encrypted_frame.BadFrame(_)) -> end(session, BadWrapper)
-            Ok(inner) -> routed(session:, inner:, context:)
-          }
+      case network_message.handle(frame) {
+        network_message.Answer(bytes:) -> #(session, [Send(bytes)])
+        network_message.Accepted -> #(session, [])
+        network_message.Malformed(message_id:, error:) ->
+          end(session, MalformedMessage(message_id, error))
+        network_message.NotNetwork -> wrapped(session:, frame:, context:)
+      }
+  }
+}
+
+/// A frame that is not the network layer's: it must be a 0x244 wrapper.
+fn wrapped(
+  session session: Session,
+  frame frame: Frame,
+  context context: Context,
+) -> #(Session, List(Effect)) {
+  case frame.message_id == wrapper_message {
+    False -> end(session, BadWrapper)
+    True ->
+      case encrypted_frame.unwrap(frame, session.cipher) {
+        Error(encrypted_frame.NotAWrapper(_))
+        | Error(encrypted_frame.BadFrame(_)) -> end(session, BadWrapper)
+        Ok(inner) -> routed(session:, inner:, context:)
       }
   }
 }

@@ -9,12 +9,15 @@
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/character_select_start.{CharacterSelectStart}
 import genesis_prime/message/client_wrapper.{ClientWrapper}
+import genesis_prime/message/close_notice.{CloseNotice}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/game_server_handoff.{GameServerHandoff}
 import genesis_prime/message/login_accepted.{LoginAccepted}
 import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
+import genesis_prime/message/ping.{Ping}
+import genesis_prime/message/pong.{Pong}
 import genesis_prime/message/realm_entry.{type RealmEntry, RealmEntry}
 import genesis_prime/message/realm_handoff.{RealmHandoff}
 import genesis_prime/message/realm_list.{RealmList}
@@ -473,5 +476,44 @@ pub fn world_message_round_trips_test() -> Nil {
     },
     encode: world_message.encode,
     decode: world_message.decode,
+  )
+}
+
+pub fn ping_round_trips_test() -> Nil {
+  use <- owned_test.run(60_000)
+  round_trips(
+    name: "message 0x0",
+    seed: 20_261_114,
+    draw: fn(state) {
+      let #(sequence_number, state) = message_support.up_to(state:, most: 19)
+      #(Ping(sequence_number:), state)
+    },
+    encode: ping.encode,
+    decode: ping.decode,
+  )
+}
+
+pub fn pong_round_trips_test() -> Nil {
+  use <- owned_test.run(60_000)
+  round_trips(
+    name: "message 0x1",
+    seed: 20_261_115,
+    draw: fn(state) {
+      let #(sequence_number, state) = message_support.unsigned(state:, bits: 8)
+      #(Pong(sequence_number:), state)
+    },
+    encode: pong.encode,
+    decode: pong.decode,
+  )
+}
+
+pub fn close_notice_round_trips_test() -> Nil {
+  use <- owned_test.run(60_000)
+  round_trips(
+    name: "message 0x2",
+    seed: 20_261_116,
+    draw: fn(state) { #(CloseNotice, state) },
+    encode: close_notice.encode,
+    decode: close_notice.decode,
   )
 }

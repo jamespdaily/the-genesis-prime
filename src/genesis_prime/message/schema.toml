@@ -19,6 +19,34 @@ fields = [
 ]
 
 [[message]]
+id = 0x0000
+name = "ping"
+direction = "client_to_server"
+evidence = "opcode.0x0"
+summary = "the network layer's ping, which travels bare on every connection and which the server answers at once with a pong carrying the same number"
+fields = [
+  { name = "sequence_number", kind = "unsigned_below", bits = 8, limit = 20, evidence = "opcode.0x0", named_by = "opcode.0x0" },
+]
+
+[[message]]
+id = 0x0001
+name = "pong"
+direction = "both"
+evidence = "opcode.0x1"
+summary = "the network layer's pong, the answer to a ping with the ping's number, which travels bare; the client ignores a number of 20 or more"
+fields = [
+  { name = "sequence_number", kind = "unsigned", bits = 8, evidence = "opcode.0x1", named_by = "opcode.0x1" },
+]
+
+[[message]]
+id = 0x0002
+name = "close_notice"
+direction = "client_to_server"
+evidence = "opcode.0x2"
+summary = "the network layer's notice that the client is closing a connection, which travels bare with an empty body and gets no answer"
+fields = []
+
+[[message]]
 id = 0x0592
 name = "login_request"
 direction = "client_to_server"

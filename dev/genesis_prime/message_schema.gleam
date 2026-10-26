@@ -20,6 +20,8 @@ pub type Schema {
 pub type Direction {
   ClientToServer
   ServerToClient
+  /// Either side sends it, such as the network layer's pong.
+  Both
 }
 
 /// One message: its number, its name, which way it travels, the fact-file key
@@ -58,6 +60,9 @@ pub type Field {
 pub type Kind {
   /// An unsigned value of 1 to 64 bits.
   Unsigned(bits: Int)
+  /// An unsigned value of `bits` bits that is below `limit`: the encoder
+  /// refuses a value at or above it and the decoder fails on one.
+  UnsignedBelow(bits: Int, limit: Int)
   /// A 32-bit float kept as its bits.
   Float32
   /// A wide text with a 7-bit or 15-bit count.
@@ -101,8 +106,8 @@ pub type SchemaError {
   WrongTypeOfKey(table: String, key: String)
   /// A field's kind is none the generator writes.
   UnknownKind(field: String, kind: String)
-  /// A message's direction is neither `client_to_server` nor
-  /// `server_to_client`.
+  /// A message's direction is none of `client_to_server`, `server_to_client`
+  /// and `both`.
   UnknownDirection(message: String, direction: String)
   /// An array field names a record the schema does not hold.
   UnknownRecord(field: String, record: String)
@@ -152,6 +157,7 @@ fn parse_message(
   use direction <- result.try(case direction_name {
     "client_to_server" -> Ok(ClientToServer)
     "server_to_client" -> Ok(ServerToClient)
+    "both" -> Ok(Both)
     other -> Error(UnknownDirection(message: name, direction: other))
   })
   use evidence <- result.try(string_of(table:, owner: name, key: "evidence"))
@@ -224,6 +230,7 @@ fn check_counted_by_loop(
             ..earlier_arrays
           ])
         Unsigned(..)
+        | UnsignedBelow(..)
         | Float32
         | WideText
         | CountedWideText(..)
@@ -273,6 +280,23 @@ fn parse_kind(
         most: 64,
       ))
       Ok(Unsigned(bits:))
+    }
+    "unsigned_below" -> {
+      use bits <- result.try(int_in(
+        table:,
+        owner: field,
+        key: "bits",
+        least: 1,
+        most: 64,
+      ))
+      use limit <- result.try(int_in(
+        table:,
+        owner: field,
+        key: "limit",
+        least: 1,
+        most: int.bitwise_shift_left(1, bits),
+      ))
+      Ok(UnsignedBelow(bits:, limit:))
     }
     "float32" -> Ok(Float32)
     "wide_text" -> Ok(WideText)

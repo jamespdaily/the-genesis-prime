@@ -5,6 +5,9 @@
 //// opcode.0x3db, opcode.0x76, opcode.0x244; CheckAuthServerVersion
 //// 0x140037b70, SendAuthLoginRequest 0x14003a620).
 ////
+//// The network layer's own messages 0, 1 and 2 (ping, pong, close notice) are
+//// read first, bare, in every state (`network_message`).
+////
 //// The login request is checked against what the STS login settled: the
 //// build is 16042, the account name is the STS login's (compared in lower
 //// case), the first GUID is its UserId and the second is the game token it
@@ -14,6 +17,7 @@
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/connection/network_message
 import genesis_prime/login/account.{type Identity}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/message/bit_stream
@@ -77,6 +81,9 @@ pub type EndReason {
   BadWrapper
   /// The inner message is not the login request at this point of the login.
   UnexpectedMessage(message_id: Int)
+  /// A network layer message (ping, pong or close notice) whose body does not
+  /// decode.
+  MalformedNetworkMessage(message_id: Int, error: bit_stream.DecodeError)
   /// The login request's body is not message 0x592.
   MalformedLoginRequest(error: bit_stream.DecodeError)
   /// The build is not 16042.
@@ -124,25 +131,35 @@ pub fn receive(
   case session.state {
     Ended -> #(session, [])
     AwaitingLoginRequest | RedeemingToken(..) | Handed ->
-      case
-        frame.message_id
-        == encrypted_frame.message_id(encrypted_frame.ClientWrapper)
-      {
-        False -> end(session, BadWrapper)
-        True ->
-          case encrypted_frame.unwrap(frame, session.cipher) {
-            Error(encrypted_frame.NotAWrapper(_))
-            | Error(encrypted_frame.BadFrame(_)) -> end(session, BadWrapper)
-            Ok(inner) ->
-              case session.state, inner.message_id {
-                AwaitingLoginRequest, 0x0592 ->
-                  read_login_request(session, inner)
-                AwaitingLoginRequest, message_id
-                | RedeemingToken(..), message_id
-                | Handed, message_id
-                | Ended, message_id
-                -> end(session, UnexpectedMessage(message_id:))
-              }
+      case network_message.handle(frame) {
+        network_message.Answer(bytes:) -> #(session, [Send(bytes)])
+        network_message.Accepted -> #(session, [])
+        network_message.Malformed(message_id:, error:) ->
+          end(session, MalformedNetworkMessage(message_id:, error:))
+        network_message.NotNetwork -> unwrapped(session, frame)
+      }
+  }
+}
+
+/// A frame that is not the network layer's: it must be a 0x244 wrapper.
+fn unwrapped(session: Session, frame: Frame) -> #(Session, List(Effect)) {
+  case
+    frame.message_id
+    == encrypted_frame.message_id(encrypted_frame.ClientWrapper)
+  {
+    False -> end(session, BadWrapper)
+    True ->
+      case encrypted_frame.unwrap(frame, session.cipher) {
+        Error(encrypted_frame.NotAWrapper(_))
+        | Error(encrypted_frame.BadFrame(_)) -> end(session, BadWrapper)
+        Ok(inner) ->
+          case session.state, inner.message_id {
+            AwaitingLoginRequest, 0x0592 -> read_login_request(session, inner)
+            AwaitingLoginRequest, message_id
+            | RedeemingToken(..), message_id
+            | Handed, message_id
+            | Ended, message_id
+            -> end(session, UnexpectedMessage(message_id:))
           }
       }
   }
@@ -271,6 +288,11 @@ pub fn describe(reason reason: EndReason) -> String {
       "message "
       <> int.to_string(message_id)
       <> " does not belong at this point of the login"
+    MalformedNetworkMessage(message_id:, error:) ->
+      "message "
+      <> int.to_string(message_id)
+      <> " of the network layer does not decode: "
+      <> decode_error(error)
     MalformedLoginRequest(error:) ->
       "the login request does not decode: " <> decode_error(error)
     WrongBuild(received:) ->

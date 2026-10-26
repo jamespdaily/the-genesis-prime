@@ -21,6 +21,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/login/account
 import genesis_prime/login/account_store
 import genesis_prime/login/handoff
+import genesis_prime/message/delete_character.{DeleteCharacter}
 import gleam/string
 import log_capture
 import login_client
@@ -147,10 +148,14 @@ pub fn a_ping_on_the_game_connection_at_character_select_is_answered_with_the_ec
   let answer = next_frame(client: game.socket)
   assert answer.message_id == 1 && answer.body == <<3>>
     as "opcode.0x0, opcode.0x1: the ping is bare and never ciphered, so the pong is too, under the session key's cipher as before it"
-  game_client.send(game:, message_id: 0x07E0, body: <<>>)
-  let assert [_] = game_client.read(game:, count: 1)
-    as "the connection plays on: the cipher's stream was not touched by the ping"
-  Nil
+  let assert Ok(delete) =
+    delete_character.encode(DeleteCharacter(character_id: 1))
+    as "0x352 encodes"
+  game_client.send(game:, message_id: 0x0352, body: delete)
+  let assert [deleted] = game_client.read(game:, count: 1)
+    as "the connection plays on: the cipher's stream was not touched by the ping, so the next request is read and answered"
+  assert deleted.message_id == 0x00E6
+    as "opcode.0xe6: a delete the account cannot make is answered with 0xE6"
 }
 
 pub fn a_ping_with_a_number_of_20_ends_the_auth_connection_and_logs_the_reason_test() -> Nil {

@@ -45,6 +45,9 @@ pub type EncodeError {
   /// A list that has no count of its own is not as long as the list that
   /// counts it (the customisation values and labels of a character).
   ItemCountDisagrees(field: String, expected: Int, actual: Int)
+  /// A value is at or above the limit the schema sets below the field's width,
+  /// such as a sequence number that counts to 19.
+  ValueAtOrAboveLimit(field: String, limit: Int, value: Int)
 }
 
 /// Why bytes are not a body. A decode error ends the connection.
@@ -61,7 +64,8 @@ pub type DecodeError {
   InvalidCountedText
   /// A whole frame's length is below the 4 bytes of the length itself.
   InnerFrameTooShort(length: Int)
-  /// A field the schema fixes to one value holds another.
+  /// A field the schema fixes to one value holds another, or holds a value at
+  /// or above the limit the schema sets.
   UnexpectedValue(field: String, value: Int)
 }
 
@@ -243,6 +247,22 @@ pub fn write_array(
   let counted =
     write_unsigned(writer:, field:, value: list.length(items), bits: count_bits)
   list.fold(items, counted, write_item)
+}
+
+/// Writes an unsigned value in `bits` bits that the schema limits to below
+/// `limit`; a value at or above the limit is an error.
+pub fn write_unsigned_below(
+  writer writer: Writer,
+  field field: String,
+  value value: Int,
+  bits bits: Int,
+  limit limit: Int,
+) -> Writer {
+  use <- bool.guard(
+    when: value >= limit,
+    return: fail(writer:, error: ValueAtOrAboveLimit(field:, limit:, value:)),
+  )
+  write_unsigned(writer:, field:, value:, bits:)
 }
 
 /// Writes a value the schema fixes, in `bits` bits.
@@ -445,6 +465,21 @@ pub fn read_array(
 ) -> Result(#(List(a), Reader), DecodeError) {
   use #(count, reader) <- result.try(read_unsigned(reader:, bits: count_bits))
   read_items(reader:, remaining: count, read_item:, built: [])
+}
+
+/// Reads an unsigned value of `bits` bits that the schema limits to below
+/// `limit`; a value at or above the limit is an error.
+pub fn read_unsigned_below(
+  reader reader: Reader,
+  field field: String,
+  bits bits: Int,
+  limit limit: Int,
+) -> Result(#(Int, Reader), DecodeError) {
+  use #(value, reader) <- result.try(read_unsigned(reader:, bits:))
+  case value < limit {
+    True -> Ok(#(value, reader))
+    False -> Error(UnexpectedValue(field:, value:))
+  }
 }
 
 /// Reads a value the schema fixes, in `bits` bits; any other value is an error.

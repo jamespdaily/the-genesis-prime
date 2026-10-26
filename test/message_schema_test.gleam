@@ -6,8 +6,8 @@
 
 import genesis_prime/message_generator
 import genesis_prime/message_schema.{
-  ArrayOfFloat32, ArrayOfUnsigned, Constant, UnknownCountField,
-  UnsignedArrayCountedBy, WrongTypeOfKey,
+  ArrayOfFloat32, ArrayOfUnsigned, Both, Constant, UnknownCountField,
+  UnsignedArrayCountedBy, UnsignedBelow, WrongTypeOfKey,
 }
 import gleam/list
 import gleam/string
@@ -92,4 +92,39 @@ pub fn a_fixed_value_is_written_by_the_encoder_and_is_no_field_of_the_type_test(
     as "the type holds no field for it"
   assert string.contains(file.text, "Planted(id: Int)")
     as "the type holds the field that is not fixed"
+}
+
+pub fn the_reader_knows_a_value_below_a_limit_and_a_message_sent_both_ways_test() -> Nil {
+  use <- owned_test.run(5000)
+  let text =
+    string.replace(
+      schema_with(
+        "  { name = \"number\", kind = \"unsigned_below\", bits = 8, limit = 20, evidence = \"x\" },",
+      ),
+      "client_to_server",
+      "both",
+    )
+  assert field_kinds(text) == [UnsignedBelow(bits: 8, limit: 20)]
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the planted schema parses"
+  let assert [message] = schema.messages as "one message"
+  assert message.direction == Both
+    as "a message either side sends has the direction both"
+  let assert [file, _record] = message_generator.generate(schema)
+    as "one message and one record are two modules"
+  assert string.contains(file.text, "either direction")
+  assert string.contains(
+    file.text,
+    "bit_stream.read_unsigned_below(\n    reader,\n    \"number\",\n    8,\n    20,\n  )",
+  )
+    as "the decoder refuses a value at or above the limit"
+}
+
+pub fn a_limit_above_the_fields_width_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(schema_with(
+      "  { name = \"number\", kind = \"unsigned_below\", bits = 4, limit = 17, evidence = \"x\" },",
+    ))
+    == Error(WrongTypeOfKey("number", "limit"))
+    as "a 4-bit value is below 16 at the most"
 }
