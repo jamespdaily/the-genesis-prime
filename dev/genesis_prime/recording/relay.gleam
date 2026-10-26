@@ -19,8 +19,8 @@
 //// rebuilt. Nothing is saved except the recording files, which each chunk
 //// reaches before it is passed on. A file is named `<role>-<number>.recording`,
 //// the number counting from 1 in the order the connections were accepted. The
-//// file `<role>-<number>.connection` beside it holds the address the relay
-//// connected to the server from.
+//// file `<role>-<number>.connection` beside it holds the connection's role, the
+//// address the relay connected to the server from, and its incarnation.
 ////
 //// The relay serves one client on a network its operator trusts: it has no
 //// connection cap, no packet size cap and no rate limit, and each socket is

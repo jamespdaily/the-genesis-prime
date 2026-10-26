@@ -9,6 +9,7 @@
 //// the socket writes the bytes it returns, first the hello that `new` gives,
 //// and closes the socket when `close` is set.
 
+import genesis_prime/connection/clock
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/socket_owner.{
   type Conversation, type Protocol, type Reaction, BytesRead, Conversation,
@@ -83,12 +84,24 @@ pub fn new(
       services:,
       session:,
       peer:,
-      origin: None,
+      origin: origin(peer),
       account: None,
     ),
     effects:,
     sent: [],
   )
+}
+
+/// The connection as a draw names it: the auth listener, the client's address
+/// and the order this connection started in, none when the socket has no peer.
+fn origin(peer: Option(String)) -> Option(Origin) {
+  option.map(peer, fn(peer) {
+    random_source.Connection(
+      role: random_source.Auth,
+      peer:,
+      started: clock.start_order(),
+    )
+  })
 }
 
 /// Takes a frame the socket's owner cut.

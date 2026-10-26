@@ -10,7 +10,7 @@ import genesis_prime/login/account.{type Identity, Account, Identity}
 import genesis_prime/login/auth_connection
 import genesis_prime/login/auth_session
 import genesis_prime/login/guid
-import genesis_prime/login/random_source.{type Connection, Auth, Connection, Sts}
+import genesis_prime/login/random_source.{type Connection, Auth, Sts}
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
 import gleam/erlang/process.{type Subject}
@@ -68,7 +68,9 @@ fn login_start() -> BitArray {
 fn sts_origin(peer: Option(String)) -> Option(Connection) {
   let reports = process.new_subject()
   let connection = sts_connection.new(sts_services(reports), peer)
-  let _ = sts_connection.receive(connection, login_start())
+  let served = sts_connection.receive(connection, login_start())
+  assert !served.close
+    as "the LoginStart is served and the connection stays open"
   let assert Ok(origin) = process.receive(reports, wait_ms)
     as "the connection drew its secret"
   origin
@@ -120,11 +122,13 @@ pub fn an_auth_connection_names_the_auth_listener_in_the_draw_of_its_session_key
       token: "33221100-5544-7766-8899-aabbccddeeff",
       name: "jim",
     )
-  let _ =
+  let answered =
     auth_connection.receive(
       hello.connection,
       scripted_client.login_request_frame(login:, build: 16_042),
     )
+  assert !answered.close
+    as "the login request is served and the connection stays open"
   let assert Ok(Some(origin)) = process.receive(reports, wait_ms)
     as "the connection asked for a session key, naming itself"
   assert origin.role == Auth && origin.peer == peer

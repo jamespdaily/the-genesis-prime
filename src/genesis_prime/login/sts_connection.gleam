@@ -11,6 +11,7 @@
 //// the socket gives it the bytes read, writes the bytes it returns and closes
 //// the socket when `close` is set.
 
+import genesis_prime/connection/clock
 import genesis_prime/connection/socket_owner.{
   type Conversation, type Protocol, type Reaction, BytesRead, Conversation,
   FrameRead, Protocol, RawBytes, Reaction,
@@ -128,10 +129,22 @@ pub fn new(
     receiving: None,
     sending: None,
     peer:,
-    origin: None,
+    origin: origin(peer),
     account: None,
     ended: False,
   )
+}
+
+/// The connection as a draw names it: the STS listener, the client's address
+/// and the order this connection started in, none when the socket has no peer.
+fn origin(peer: Option(String)) -> Option(Origin) {
+  option.map(peer, fn(peer) {
+    random_source.Connection(
+      role: random_source.Sts,
+      peer:,
+      started: clock.start_order(),
+    )
+  })
 }
 
 /// Takes the bytes the socket read.

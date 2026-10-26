@@ -1,6 +1,6 @@
 //// Only the strong random source reaches the released server: no module under
-//// `src/` builds a `Supplied` source except `login/random_source.gleam`, which
-//// defines it. The compiler already refuses `src/` importing a module of
+//// `src/` builds a `Supplied` source, the one that defines it included, which
+//// only matches on it. The compiler already refuses `src/` importing a module of
 //// `dev/`, so the one way left to put draws of the caller's choosing into the
 //// server is to build the constructor in `src/`.
 
@@ -13,23 +13,18 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 
-/// The module that defines `Supplied`, and the only one under `src/` that may
-/// build it.
+/// The module that defines `Supplied`, whose imports name the constructor.
 const defining_module = "genesis_prime/login/random_source"
 
 /// The constructor the rule watches.
 const constructor = "Supplied"
 
-/// Each place in a file under `src/`, other than `login/random_source.gleam`,
-/// that builds a `Supplied` source: a call or a use of the constructor, written
+/// Each place in a file under `src/` that builds a `Supplied` source: a call or a use of the constructor, written
 /// bare or with the module's name, and an import of it under another name.
 /// Matching it in a pattern builds nothing, and a file under `dev/` or `test/`
 /// may build it.
 pub fn breaches(file file: SourceFile) -> List(Breach) {
-  case
-    string.starts_with(file.path, "src/")
-    && syntax.module_name(file.path) != defining_module
-  {
+  case string.starts_with(file.path, "src/") {
     False -> []
     True -> {
       let module = syntax.parse(file)
@@ -38,7 +33,11 @@ pub fn breaches(file file: SourceFile) -> List(Breach) {
           definition.definition.module == defining_module
         })
       let qualifiers = list.filter_map(imports, qualifier)
-      let bare_names = list.flat_map(imports, bare_names)
+      // The defining module has the constructor in scope under its own name.
+      let bare_names = case syntax.module_name(file.path) == defining_module {
+        True -> [constructor]
+        False -> list.flat_map(imports, bare_names)
+      }
       let uses =
         list.append(
           syntax.references(module),

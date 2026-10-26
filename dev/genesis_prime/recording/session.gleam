@@ -40,6 +40,7 @@ import genesis_prime/recording.{type Role}
 import gleam/bit_array
 import gleam/bool
 import gleam/dict
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
@@ -79,6 +80,10 @@ pub type SessionError {
   NotText(file: String, offset: Int)
   /// The connection flag of a draw is neither 0 nor 1.
   UnknownFlag(file: String, offset: Int, value: Int)
+  /// The role byte of a draw's connection is neither 0 nor 1.
+  UnknownRole(file: String, offset: Int, value: Int)
+  /// A connection file does not hold a role, an address and an incarnation.
+  BadConnectionFile(path: String)
   /// A value does not fit its width in the file: a text or a byte string
   /// longer than 65535 bytes.
   TooLong(field: String, size: Int)
@@ -104,10 +109,30 @@ const longest = 65_535
 /// Adds a draw to the end of the folder's `draws` file, which is made when
 /// missing.
 pub fn append_draw(
-  folder _folder: String,
-  draw _draw: Draw,
+  folder folder: String,
+  draw draw: Draw,
 ) -> Result(Nil, SessionError) {
-  panic as "shape only: built after the tests"
+  use connection <- result.try(case draw.connection {
+    None -> Ok(<<0>>)
+    Some(connection) -> {
+      use peer <- result.map(encode_text("peer", connection.peer))
+      <<
+        1,
+        role_byte(connection.role),
+        peer:bits,
+        connection.started:size(64),
+      >>
+    }
+  })
+  use bytes <- result.try(encode_bytes("draw", draw.bytes))
+  append(folder <> "/" <> draws_file, <<connection:bits, bytes:bits>>)
+}
+
+fn role_byte(role: random_source.Role) -> Int {
+  case role {
+    random_source.Sts -> 0
+    random_source.Auth -> 1
+  }
 }
 
 /// Adds an account to the end of the folder's `accounts` file, which is made
@@ -215,11 +240,57 @@ fn decode_entries(
 }
 
 fn decode_draw(
-  bytes _bytes: BitArray,
-  file _file: String,
-  offset _offset: Int,
+  bytes bytes: BitArray,
+  file file: String,
+  offset offset: Int,
 ) -> Result(#(Draw, BitArray), SessionError) {
-  panic as "shape only: built after the tests"
+  case bytes {
+    <<0, rest:bytes>> ->
+      decode_draw_bytes(connection: None, bytes: rest, file:, offset:)
+    <<1, role, rest:bytes>> -> {
+      use role <- result.try(decode_role(value: role, file:, offset:))
+      use #(peer, after_peer) <- result.try(take_text(
+        bytes: rest,
+        file:,
+        offset:,
+      ))
+      case after_peer {
+        <<started:signed-size(64), after:bytes>> ->
+          decode_draw_bytes(
+            connection: Some(random_source.Connection(role:, peer:, started:)),
+            bytes: after,
+            file:,
+            offset:,
+          )
+        _ -> Error(Truncated(file:, offset:))
+      }
+    }
+    <<1>> -> Error(Truncated(file:, offset:))
+    <<value, _:bytes>> -> Error(UnknownFlag(file:, offset:, value:))
+    _ -> Error(Truncated(file:, offset:))
+  }
+}
+
+fn decode_role(
+  value value: Int,
+  file file: String,
+  offset offset: Int,
+) -> Result(random_source.Role, SessionError) {
+  case value {
+    0 -> Ok(random_source.Sts)
+    1 -> Ok(random_source.Auth)
+    _ -> Error(UnknownRole(file:, offset:, value:))
+  }
+}
+
+fn decode_draw_bytes(
+  connection connection: Option(random_source.Connection),
+  bytes bytes: BitArray,
+  file file: String,
+  offset offset: Int,
+) -> Result(#(Draw, BitArray), SessionError) {
+  use #(drawn, rest) <- result.map(take_bytes(bytes:, file:, offset:))
+  #(Draw(connection:, bytes: drawn), rest)
 }
 
 fn decode_account(
@@ -282,14 +353,52 @@ pub fn role_of(role: random_source.Role) -> Role {
 
 /// The bytes of the draws the connection of the key made, in the order it made
 /// them.
-pub fn draws_of(session _session: Session, key _key: Key) -> List(BitArray) {
-  panic as "shape only: built after the tests"
+pub fn draws_of(session session: Session, key key: Key) -> List(BitArray) {
+  case list.find(ranked(session), fn(entry) { entry.0 == key }) {
+    Error(Nil) -> []
+    Ok(#(_, connection)) ->
+      list.filter_map(session.draws, fn(draw) {
+        case draw.connection == Some(connection) {
+          True -> Ok(draw.bytes)
+          False -> Error(Nil)
+        }
+      })
+  }
 }
 
 /// Every connection of the session that made a draw, as a replay would look
 /// for it, in the order the connections started.
-pub fn connections(session _session: Session) -> List(Key) {
-  panic as "shape only: built after the tests"
+pub fn connections(session session: Session) -> List(Key) {
+  list.map(ranked(session), fn(entry) { entry.0 })
+}
+
+/// The connections that drew, in the order they started, each with its key: the
+/// incarnation is how many connections of the same role and address started
+/// before it.
+fn ranked(session: Session) -> List(#(Key, random_source.Connection)) {
+  let started =
+    list.filter_map(session.draws, fn(draw) {
+      option.to_result(draw.connection, Nil)
+    })
+    |> list.unique
+    |> list.sort(fn(first, second) {
+      int.compare(first.started, second.started)
+    })
+  let #(ranked, _) =
+    list.fold(started, #([], dict.new()), fn(built, connection) {
+      let #(ranked, counts) = built
+      let role = role_of(connection.role)
+      let incarnation =
+        dict.get(counts, #(role, connection.peer)) |> result.unwrap(0)
+      #(
+        [
+          #(Key(role:, peer: connection.peer, incarnation:), connection),
+          ..ranked
+        ],
+        dict.insert(counts, #(role, connection.peer), incarnation + 1),
+      )
+    })
+  list.reverse(ranked)
 }
 
 /// Writes the key of a recording's connection beside the recording at
@@ -299,17 +408,64 @@ pub fn connections(session _session: Session) -> List(Key) {
 /// that role and address the folder already holds. A file already there is
 /// replaced.
 pub fn write_connection(
-  recording_path _recording_path: String,
-  role _role: Role,
-  peer _peer: String,
+  recording_path recording_path: String,
+  role role: Role,
+  peer peer: String,
 ) -> Result(Nil, SessionError) {
-  panic as "shape only: built after the tests"
+  let path = connection_path(recording_path)
+  use earlier <- result.try(connection_files(path))
+  let incarnation =
+    list.count(earlier, fn(key) { key.role == role && key.peer == peer })
+  simplifile.write(
+    path,
+    recording.role_name(role)
+      <> " "
+      <> peer
+      <> " "
+      <> int.to_string(incarnation),
+  )
+  |> result.map_error(FileFailed(path:, error: _))
+}
+
+/// The keys the connection files beside `path` hold, `path` itself left out.
+fn connection_files(path: String) -> Result(List(Key), SessionError) {
+  let folder =
+    string.join(
+      list.reverse(list.drop(list.reverse(string.split(path, "/")), 1)),
+      "/",
+    )
+  use names <- result.try(
+    simplifile.read_directory(folder)
+    |> result.map_error(FileFailed(path: folder, error: _)),
+  )
+  list.filter(names, fn(name) {
+    string.ends_with(name, connection_suffix) && folder <> "/" <> name != path
+  })
+  |> list.try_map(fn(name) { read_key(folder <> "/" <> name) })
 }
 
 /// The key the recording at `recording_path` was made by, as the relay wrote
 /// it.
 pub fn read_connection(
-  recording_path _recording_path: String,
+  recording_path recording_path: String,
 ) -> Result(Key, SessionError) {
-  panic as "shape only: built after the tests"
+  read_key(connection_path(recording_path))
+}
+
+fn read_key(path: String) -> Result(Key, SessionError) {
+  use text <- result.try(
+    simplifile.read(path) |> result.map_error(FileFailed(path:, error: _)),
+  )
+  case string.split(text, " ") {
+    [role, peer, incarnation] ->
+      case recording.role_from_name(role), int.parse(incarnation) {
+        Ok(role), Ok(incarnation) -> Ok(Key(role:, peer:, incarnation:))
+        _, _ -> Error(BadConnectionFile(path:))
+      }
+    _ -> Error(BadConnectionFile(path:))
+  }
+}
+
+fn connection_path(recording_path: String) -> String {
+  string.remove_suffix(recording_path, recording_suffix) <> connection_suffix
 }

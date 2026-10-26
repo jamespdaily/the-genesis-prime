@@ -12,11 +12,12 @@
 ////   it is missing; by convention `test/recording/<date>-<flow>`.
 //// - `role`: `sts`, `auth` or `game`, written into each recording's header.
 ////
-//// Beside each recording the relay writes the address it connected to the server
-//// from, `<role>-<number>.connection`; run the server as
+//// Beside each recording the relay writes the role, the address it connected to
+//// the server from and the incarnation of the address,
+//// `<role>-<number>.connection`; run the server as
 //// `genesis_prime/recording_server` with the same session folder, and it
-//// writes each draw of random bytes with the address of the connection that
-//// made it, so the session can be replayed.
+//// writes each draw of random bytes with the connection that made it, so the
+//// session can be replayed.
 ////
 //// The relay runs until the process is stopped. It listens on every IPv4
 //// address of the machine, so a client on another machine can reach it.
