@@ -17,6 +17,7 @@ import gleam/string
 
 /// Runs each prototype once and prints what the run counted.
 pub fn main() -> Nil {
+  measurement.set_high_priority()
   measurement.enable_scheduler_wall_time()
   let cores = measurement.core_count()
   let timing =

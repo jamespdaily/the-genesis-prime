@@ -26,6 +26,16 @@ pub fn monotonic_microseconds() -> Int
 @external(erlang, "topology_ffi", "enable_scheduler_wall_time")
 pub fn enable_scheduler_wall_time() -> Nil
 
+/// Runs the calling process at high priority, so a harness that samples and
+/// stops a run is not starved by the load it measures when only one
+/// scheduler is online.
+@external(erlang, "topology_ffi", "set_high_priority")
+pub fn set_high_priority() -> Nil
+
+/// The arguments given after `--` on the command line.
+@external(erlang, "topology_ffi", "plain_arguments")
+pub fn plain_arguments() -> List(String)
+
 /// The scheduler time since accounting started, from the runtime's
 /// `scheduler_wall_time`.
 pub fn scheduler_time() -> SchedulerTime {

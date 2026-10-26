@@ -73,37 +73,71 @@ const crash_repeats = 3
 
 /// Runs measures 2 to 6 in order and prints their tables and the choosing
 /// rule's pick.
+/// The parts of the run, in the order they run. Naming some of them after
+/// `--` runs only those; the choosing rule runs with `all-cores`, whose runs
+/// it reads.
+const parts = ["all-cores", "one-core", "planted", "sweep", "crash"]
+
 pub fn main() -> Nil {
+  let chosen = case measurement.plain_arguments() {
+    [] -> parts
+    named -> named
+  }
+  list.each(chosen, fn(part) {
+    assert list.contains(parts, part)
+      as "a part is one of all-cores, one-core, planted, sweep and crash"
+  })
+  let runs = fn(part) { list.contains(chosen, part) }
   io.println(
     "== Measure 1: correctness is the test suite; `gleam test` must pass before these numbers count",
   )
+  measurement.set_high_priority()
   measurement.enable_scheduler_wall_time()
   let cores = measurement.core_count()
   let prototypes = [run.PerUnit, run.MapProcess(map_process.NoPlantedCost)]
   let default_range = workload.default().visibility_range
 
-  let all_cores_runs =
-    measures_2_to_5(
-      schedulers: cores,
-      prototypes:,
-      visibility_range: default_range,
-    )
-  list.each(scheduler_counts, fn(count) {
-    measures_2_to_5(
-      schedulers: count,
-      prototypes:,
-      visibility_range: default_range,
-    )
-    Nil
-  })
+  let all_cores_runs = case runs("all-cores") {
+    True ->
+      measures_2_to_5(
+        schedulers: cores,
+        prototypes:,
+        visibility_range: default_range,
+      )
+    False -> []
+  }
+  case runs("one-core") {
+    True ->
+      list.each(scheduler_counts, fn(count) {
+        measures_2_to_5(
+          schedulers: count,
+          prototypes:,
+          visibility_range: default_range,
+        )
+        Nil
+      })
+    False -> Nil
+  }
 
   measurement.set_schedulers_online(cores)
-  planted_cost(cores)
-  let sweep =
-    visibility_sweep(schedulers: cores, prototypes:, grid: all_cores_runs)
-  print_sweep(sweep)
-  crash_cost(cores)
-  choose(prototypes, all_cores_runs)
+  case runs("planted") {
+    True -> planted_cost(cores)
+    False -> Nil
+  }
+  case runs("sweep") {
+    True ->
+      visibility_sweep(schedulers: cores, prototypes:, grid: all_cores_runs)
+      |> print_sweep
+    False -> Nil
+  }
+  case runs("crash") {
+    True -> crash_cost(cores)
+    False -> Nil
+  }
+  case runs("all-cores") {
+    True -> choose(prototypes, all_cores_runs)
+    False -> Nil
+  }
   measurement.set_schedulers_online(cores)
 }
 
@@ -477,18 +511,18 @@ fn swept_run(
   schedulers schedulers: Int,
   grid grid: List(RunResult),
 ) -> RunResult {
-  case visibility_range == workload.default().visibility_range {
-    True -> {
-      let assert Ok(result) =
-        list.find(grid, fn(result) {
-          result.prototype == prototype
-          && result.players == players
-          && result.creatures == comparison_creatures
-        })
-        as "the grid holds every default-range run"
-      result
-    }
-    False ->
+  let earlier = case visibility_range == workload.default().visibility_range {
+    True ->
+      list.find(grid, fn(result) {
+        result.prototype == prototype
+        && result.players == players
+        && result.creatures == comparison_creatures
+      })
+    False -> Error(Nil)
+  }
+  case earlier {
+    Ok(result) -> result
+    Error(Nil) ->
       measured_run(
         prototype:,
         workload: workload_for(
