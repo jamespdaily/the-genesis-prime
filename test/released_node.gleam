@@ -197,8 +197,8 @@ fn environment(start: Start, epmd_port: Int) -> List(#(String, String)) {
   ])
 }
 
-/// Reads the child's lines up to the end of its report. `seen` holds the
-/// lines read so far, newest first.
+/// Reads the child's lines up to the end of its report. `seen` holds the lines
+/// read before this call, newest first.
 fn read_report(
   process: Process,
   seen: List(String),
