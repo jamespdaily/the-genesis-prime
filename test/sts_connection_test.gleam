@@ -274,3 +274,50 @@ pub fn the_line_of_a_login_that_failed_after_the_account_was_found_carries_its_i
   assert !string.contains(line.formatted, "secret")
     as "designing-processes: never a password or a key in a log line"
 }
+
+pub fn the_exchange_that_starts_the_cipher_logs_no_line_test() -> Nil {
+  use <- owned_test.run(5000)
+  let capture = log_capture.start()
+  let started =
+    sts_connection.receive(
+      sts_connection.new(services(), Some("192.0.2.1:50000")),
+      login_start(),
+    )
+  let proved = sts_connection.receive(started.connection, key_data())
+  assert !proved.close
+    as "StsConnLib64.MT.dll!0x18000a350: the exchange's last reply, with M2, is not the end of the connection"
+  assert log_capture.next_from(capture:, from: process.self(), within: 0)
+    == Error(Nil)
+    as "designing-processes: a line says what happened; a login that goes on has not ended, and a warning is an outside failure the server recovered from"
+}
+
+pub fn a_request_that_arrives_in_the_read_of_the_one_that_starts_the_cipher_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(5000)
+  let capture = log_capture.start()
+  let started =
+    sts_connection.receive(
+      sts_connection.new(services(), Some("192.0.2.1:50000")),
+      login_start(),
+    )
+  let ended =
+    sts_connection.receive(started.connection, <<
+      key_data():bits,
+      scripted_client.request(
+        sequence: Some(3),
+        protocol: "Auth",
+        command: "LoginFinish",
+        body: "<Request/>\n",
+      ):bits,
+    >>)
+  assert ended.close
+    as "StsConnLib64.MT.dll!0x18003a7d0: the client ciphers only after it has read M2, so a request that arrives in the read of the one that starts the cipher is not the client's"
+  assert list.length(ended.send) == 1
+    as "the reply that carries M2 is still written before the connection closes"
+  let assert Ok(line) =
+    log_capture.next_from(capture:, from: process.self(), within: 2000)
+    as "the connection did not log why it ended"
+  assert line.level == "warning"
+    as "designing-processes: an outside failure the server recovered from is a warning"
+  assert string.contains(line.text, "starts the cipher")
+    as "the line says why the connection ended"
+}
