@@ -62,7 +62,7 @@ pub fn start(
   todo as "start the actor"
 }
 
-/// Tells the owner that the socket now belongs to it, so it starts reading.
+/// Tells the owner that the socket belongs to it, so it starts reading.
 pub fn socket_given(owner owner: Subject(Message)) -> Nil {
   todo as "send SocketGiven"
 }
