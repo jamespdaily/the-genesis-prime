@@ -7,12 +7,15 @@
 
 import database_support.{type Settings}
 import genesis_prime/database/pool
+import genesis_prime/login/service
+import genesis_prime/message/bit_stream
 import genesis_prime/server
 import genesis_prime/shutdown
 import genesis_prime/telemetry/snapshot
 import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
 import gleam/erlang/reference
 import gleam/int
+import gleam/option.{None}
 import gleam/otp/actor
 import gleam/result
 import pog
@@ -82,8 +85,9 @@ pub fn pool_settings(
 }
 
 /// The settings of the whole tree around a pool, for a test that starts it with
-/// `server.start`: no game table is read, and the shutdown has deadlines of 1
-/// second, which a test that does not stop the server never meets.
+/// `server.start`: no game table is read, the login's two listeners take free
+/// ports, and the shutdown has deadlines of 1 second, which a test that does
+/// not stop the server never meets.
 pub fn tree_settings(pool_settings: pool.Settings) -> server.Settings {
   server.Settings(
     pool: pool_settings,
@@ -95,6 +99,13 @@ pub fn tree_settings(pool_settings: pool.Settings) -> server.Settings {
     ),
     shutdown: shutdown.new(drain_deadline_ms: 1000, flush_deadline_ms: 1000),
     snapshot: snapshot.settings(process.new_name("snapshot")),
+    login: service.settings(
+      sts_port: 0,
+      auth_port: 0,
+      game_server: bit_stream.Endpoint(address: 0x7F000001, port: 0),
+      realm_name: "test",
+      expected_files_digest: None,
+    ),
   )
 }
 

@@ -5,7 +5,8 @@
 //// `spawn_watch.unsupervised`, shown first on planted supervisors, one whose
 //// child also starts an unlinked process and one whose child does not. The
 //// tree's children are the database pool, then the snapshot process that
-//// writes the runtime's numbers to the log, in the order the supervisor
+//// writes the runtime's numbers to the log, then the shutdown coordinator and
+//// the login's subtree, in the order the supervisor
 //// started them.
 
 import genesis_prime/server
@@ -46,9 +47,9 @@ pub fn the_snapshot_process_is_the_top_supervisors_child_after_the_pool_test() -
   let settings = template_database.tree_settings(pool_settings)
   let assert Ok(started) = server.start(settings)
     as "the top supervisor did not start"
-  let assert [pool_pid, snapshot_pid, _shutdown_pid] =
+  let assert [pool_pid, snapshot_pid, _shutdown_pid, _login_pid] =
     supervisor_children.in_start_order(started.pid)
-    as "the top supervisor does not have the pool, the snapshot process and the shutdown coordinator"
+    as "the top supervisor does not have the pool, the snapshot process, the shutdown coordinator and the login subtree"
   assert process.named(pool_settings.name) == Ok(pool_pid)
     as "the first child is not the pool"
   assert process.named(settings.snapshot.name) == Ok(snapshot_pid)

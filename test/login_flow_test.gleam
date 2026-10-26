@@ -9,8 +9,8 @@
 //// twice or a build other than 16042 never gets a session key.
 
 import genesis_prime/connection/cipher
-import genesis_prime/connection/encrypted_frame.{AuthWrapper, ClientWrapper}
-import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/connection/encrypted_frame.{AuthWrapper}
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/login/account.{type Identity}
 import genesis_prime/login/account_store
 import genesis_prime/login/auth_connection
@@ -18,13 +18,11 @@ import genesis_prime/login/auth_session
 import genesis_prime/login/guid
 import genesis_prime/login/handoff
 import genesis_prime/login/rc4
-import genesis_prime/login/service
 import genesis_prime/login/sts_connection
 import genesis_prime/login/sts_xml
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/message/game_server_handoff
 import genesis_prime/message/login_accepted
-import genesis_prime/message/login_request.{LoginRequest}
 import gleam/bit_array
 import gleam/erlang/process.{type Name}
 import gleam/list
@@ -54,21 +52,25 @@ fn start_server(database: template_database.Database) -> Server {
     static_supervisor.new(static_supervisor.OneForOne)
     |> static_supervisor.restart_tolerance(intensity: 3, period: 5)
     |> static_supervisor.add(
-      service.supervised(service.Settings(
-        game_tokens: handoff.Settings(
+      handoff.supervised(
+        handoff.Settings(
           name: game_tokens,
           expiry_milliseconds: 60_000,
           clock: fn() { 0 },
         ),
-        session_keys: handoff.Settings(
+      ),
+    )
+    |> static_supervisor.add(
+      handoff.supervised(
+        handoff.Settings(
           name: session_keys,
           expiry_milliseconds: 60_000,
           clock: fn() { 0 },
         ),
-      )),
+      ),
     )
     |> static_supervisor.start
-    as "the login subtree did not start"
+    as "the hand-offs did not start"
   Server(
     sts: sts_connection.services(database.connection, game_tokens),
     auth: auth_connection.services(game_tokens, session_keys),
@@ -168,12 +170,6 @@ fn only(heard: Heard) -> Reply {
   reply
 }
 
-/// What a completed STS login gives the client: the UserId and the game token
-/// as their texts.
-type StsLogin {
-  StsLogin(user_id: String, token: String, name: String)
-}
-
 /// Runs the client's STS login to the game token: Connect, LoginStart, KeyData,
 /// LoginFinish, ListMyAccounts and RequestGameToken (the library's order).
 fn sts_login(
@@ -181,7 +177,7 @@ fn sts_login(
   name name: String,
   password password: String,
   seed seed: Int,
-) -> StsLogin {
+) -> scripted_client.StsLogin {
   let client = connect(server)
   let heard =
     talk(
@@ -292,56 +288,7 @@ fn sts_login(
     )
   let assert Ok(token) = scripted_client.child_text(only(heard), "Token")
     as "the reply holds the Token"
-  StsLogin(user_id:, token:, name:)
-}
-
-/// The client's side of the auth connection for an STS login: the login
-/// request the client writes, with its UserId and its game token parsed from
-/// their texts as UuidFromStringA does, in a 0x244 wrapper under the base key.
-fn login_request_frame(login login: StsLogin, build build: Int) -> Frame {
-  let assert Ok(user_id) = guid.from_text(login.user_id)
-    as "the UserId is a GUID text"
-  let assert Ok(token) = guid.from_text(login.token)
-    as "the token is a GUID text"
-  let request =
-    LoginRequest(
-      build:,
-      files_digest: 0x0807060504030201,
-      account_name: login.name,
-      field_4: guid.to_wire(user_id),
-      field_5: guid.to_wire(token),
-      field_6: 0,
-      field_7: 0,
-      field_8: 0,
-      field_9: 0,
-      processor_manufacturer: "a",
-      processor_name: "bc",
-      processor_description: "",
-      processor_family: 0,
-      processor_level: 0,
-      processor_revision: 0,
-      processor_clock_speed: 0,
-      processor_core_count: 0,
-      memory_mebibytes: 0,
-      video_adapter_description: "d",
-      video_adapter_vendor_id: 0,
-      video_adapter_device_id: 0,
-      video_adapter_subsystem_id: 0,
-      video_adapter_revision: 0,
-      video_adapter_memory_mebibytes: 0,
-      processor_architecture: 0,
-      windows_version: 0,
-      service_pack: 0,
-      os_flags: 0,
-      realm_data_center_id: 0,
-    )
-  let assert Ok(body) = login_request.encode(request) as "the request encodes"
-  let assert Ok(base) = cipher.new(cipher.base_key) as "the base key"
-  let assert Ok(bytes) =
-    encrypted_frame.wrap(ClientWrapper, Frame(0x0592, body), base)
-    as "the frame wraps"
-  let assert Ok(#([outer], <<>>)) = frame.decode(bytes) as "one frame"
-  outer
+  scripted_client.StsLogin(user_id:, token:, name:)
 }
 
 fn auth_settings() -> auth_session.Settings {
@@ -404,7 +351,7 @@ pub fn a_player_logs_in_through_sts_and_auth_and_is_handed_a_session_key_test() 
   let answered =
     auth_connection.receive(
       hello.connection,
-      login_request_frame(login:, build: 16_042),
+      scripted_client.login_request_frame(login:, build: 16_042),
     )
   assert !answered.close as "the connection stays open after the hand-off"
   let frames = read_writes(answered.send)
@@ -442,7 +389,7 @@ pub fn two_logins_get_different_tokens_and_session_keys_test() -> Nil {
       let answered =
         auth_connection.receive(
           hello.connection,
-          login_request_frame(login:, build: 16_042),
+          scripted_client.login_request_frame(login:, build: 16_042),
         )
       handed_keys(read_writes(answered.send))
     })
@@ -530,7 +477,7 @@ pub fn a_game_token_is_used_once_and_the_second_use_gets_no_session_key_test() -
   let answered =
     auth_connection.receive(
       first.connection,
-      login_request_frame(login:, build: 16_042),
+      scripted_client.login_request_frame(login:, build: 16_042),
     )
   assert list.length(handed_keys(read_writes(answered.send))) == 1
     as "the first use is handed a key"
@@ -538,7 +485,7 @@ pub fn a_game_token_is_used_once_and_the_second_use_gets_no_session_key_test() -
   let refused =
     auth_connection.receive(
       second.connection,
-      login_request_frame(login:, build: 16_042),
+      scripted_client.login_request_frame(login:, build: 16_042),
     )
   assert refused.close
     as "the login issue: the game token is used once, and the second use ends the connection"
@@ -557,7 +504,7 @@ pub fn a_build_other_than_16042_gets_no_session_key_and_spends_no_token_test() -
   let refused =
     auth_connection.receive(
       wrong.connection,
-      login_request_frame(login:, build: 16_043),
+      scripted_client.login_request_frame(login:, build: 16_043),
     )
   assert refused.close && refused.send == []
     as "CheckAuthServerVersion 0x140037b70: the client's build is 16042, and another ends the connection with nothing sent"
@@ -565,7 +512,7 @@ pub fn a_build_other_than_16042_gets_no_session_key_and_spends_no_token_test() -
   let answered =
     auth_connection.receive(
       right.connection,
-      login_request_frame(login:, build: 16_042),
+      scripted_client.login_request_frame(login:, build: 16_042),
     )
   assert list.length(handed_keys(read_writes(answered.send))) == 1
     as "the token the wrong build did not spend is still good for the right one"
@@ -579,7 +526,7 @@ pub fn a_token_the_server_never_issued_gets_no_session_key_test() -> Nil {
     account_store.create(database.connection, "jim", "secret")
     as "the account is created"
   let made_up =
-    StsLogin(
+    scripted_client.StsLogin(
       user_id: guid.to_text(account.user_id),
       token: "00112233-4455-6677-8899-aabbccddeeff",
       name: "jim",
@@ -588,7 +535,7 @@ pub fn a_token_the_server_never_issued_gets_no_session_key_test() -> Nil {
   let refused =
     auth_connection.receive(
       hello.connection,
-      login_request_frame(login: made_up, build: 16_042),
+      scripted_client.login_request_frame(login: made_up, build: 16_042),
     )
   assert refused.close && refused.send == []
     as "the login issue: the game token is the real link between STS and auth, and an unknown one is refused"

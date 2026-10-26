@@ -106,10 +106,17 @@ pub type Failure {
   Unreadable(line: String)
 }
 
-/// A running child: its operating system process, the epmd port made for it
-/// and its report.
+/// A running child: its operating system process, the epmd port made for it,
+/// the ports its login's listeners were told to open (STS and auth) and its
+/// report.
 pub type Node {
-  Node(process: Process, epmd_port: Int, report: Report)
+  Node(
+    process: Process,
+    epmd_port: Int,
+    sts_port: Int,
+    auth_port: Int,
+    report: Report,
+  )
 }
 
 /// The operating system process of a child, as the VM holds it.
@@ -141,11 +148,19 @@ const report_end = "report-end"
 pub fn run(start: Start, body: fn(Result(Node, Failure)) -> a) -> a {
   use tables <- planted_table.in_empty_tables_folder
   let epmd_port = free_port()
-  let process = open(arguments(start), environment(start:, epmd_port:, tables:))
+  let sts_port = free_port()
+  let auth_port = free_port()
+  let process =
+    open(
+      arguments(start),
+      environment(start:, epmd_port:, tables:, sts_port:, auth_port:),
+    )
   with_cleanup(
     fn() {
       read_report(process)
-      |> result.map(fn(report) { Node(process:, epmd_port:, report:) })
+      |> result.map(fn(report) {
+        Node(process:, epmd_port:, sts_port:, auth_port:, report:)
+      })
       |> body
     },
     fn() {
@@ -210,11 +225,14 @@ fn arguments(start: Start) -> List(String) {
 }
 
 /// The database's settings in the names the server reads them by, a folder of
-/// the game tables and the child's own epmd port.
+/// the game tables, the child's own epmd port and the ports of its login's
+/// listeners.
 fn environment(
   start start: Start,
   epmd_port epmd_port: Int,
   tables tables: String,
+  sts_port sts_port: Int,
+  auth_port auth_port: Int,
 ) -> List(#(String, String)) {
   let settings = start.database.settings
   let password = case settings.password {
@@ -229,6 +247,8 @@ fn environment(
       #("PGDATABASE", start.database.name),
       #("GENESIS_TABLE_DIR", tables),
       #("ERL_EPMD_PORT", int.to_string(epmd_port)),
+      #("GENESIS_STS_PORT", int.to_string(sts_port)),
+      #("GENESIS_AUTH_PORT", int.to_string(auth_port)),
     ],
     password,
   ])

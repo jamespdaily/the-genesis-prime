@@ -48,10 +48,11 @@ fn environment(
   database: template_database.Database,
   tables: String,
 ) -> List(#(String, String)) {
-  [
-    #("GENESIS_TABLE_DIR", tables),
-    ..released_child.database_environment(database)
-  ]
+  list.flatten([
+    [#("GENESIS_TABLE_DIR", tables)],
+    released_child.database_environment(database),
+    released_child.login_environment(),
+  ])
 }
 
 pub fn a_release_starts_from_its_environment_and_stops_on_sigterm_test() -> Nil {

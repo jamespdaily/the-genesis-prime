@@ -15,6 +15,8 @@
 
 import envoy
 import genesis_prime/database/pool
+import genesis_prime/login/service
+import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
 import genesis_prime/shutdown.{type NotFlushed, type Settings, NotFlushed}
 import genesis_prime/telemetry/log
@@ -23,6 +25,7 @@ import gleam/erlang/process.{type Subject}
 import gleam/erlang/reference
 import gleam/int
 import gleam/io
+import gleam/option.{None}
 import gleam/otp/actor
 import pog
 
@@ -272,6 +275,13 @@ pub fn main() -> Nil {
       ),
       shutdown: settings,
       snapshot: snapshot.settings(process.new_name("planted_snapshot")),
+      login: service.settings(
+        sts_port: 0,
+        auth_port: 0,
+        game_server: Endpoint(address: 0x7F000001, port: 0),
+        realm_name: "planted",
+        expected_files_digest: None,
+      ),
     ))
     as "the planted program's tree did not start"
   watch_for_the_end_of(tree.pid)

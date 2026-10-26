@@ -8,8 +8,13 @@
 //// derivation and the RC4 stream with the server, each tested against the
 //// library's own vectors.
 
+import genesis_prime/connection/cipher
+import genesis_prime/connection/encrypted_frame.{ClientWrapper}
+import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/login/guid
 import genesis_prime/login/srp
 import genesis_prime/login/sts_xml.{type Element}
+import genesis_prime/message/login_request.{LoginRequest}
 import gleam/bit_array
 import gleam/bool
 import gleam/crypto
@@ -207,4 +212,59 @@ fn xor(left: BitArray, right: BitArray) -> BitArray {
     >>
     _, _ -> <<>>
   }
+}
+
+/// What a completed STS login gives the client: the UserId and the game token
+/// as their texts.
+pub type StsLogin {
+  StsLogin(user_id: String, token: String, name: String)
+}
+
+/// The client's side of the auth connection for an STS login: the login
+/// request the client writes, with its UserId and its game token parsed from
+/// their texts as UuidFromStringA does, in a 0x244 wrapper under the base key.
+pub fn login_request_frame(login login: StsLogin, build build: Int) -> Frame {
+  let assert Ok(user_id) = guid.from_text(login.user_id)
+    as "the UserId is a GUID text"
+  let assert Ok(token) = guid.from_text(login.token)
+    as "the token is a GUID text"
+  let request =
+    LoginRequest(
+      build:,
+      files_digest: 0x0807060504030201,
+      account_name: login.name,
+      field_4: guid.to_wire(user_id),
+      field_5: guid.to_wire(token),
+      field_6: 0,
+      field_7: 0,
+      field_8: 0,
+      field_9: 0,
+      processor_manufacturer: "a",
+      processor_name: "bc",
+      processor_description: "",
+      processor_family: 0,
+      processor_level: 0,
+      processor_revision: 0,
+      processor_clock_speed: 0,
+      processor_core_count: 0,
+      memory_mebibytes: 0,
+      video_adapter_description: "d",
+      video_adapter_vendor_id: 0,
+      video_adapter_device_id: 0,
+      video_adapter_subsystem_id: 0,
+      video_adapter_revision: 0,
+      video_adapter_memory_mebibytes: 0,
+      processor_architecture: 0,
+      windows_version: 0,
+      service_pack: 0,
+      os_flags: 0,
+      realm_data_center_id: 0,
+    )
+  let assert Ok(body) = login_request.encode(request) as "the request encodes"
+  let assert Ok(base) = cipher.new(cipher.base_key) as "the base key"
+  let assert Ok(bytes) =
+    encrypted_frame.wrap(ClientWrapper, Frame(0x0592, body), base)
+    as "the frame wraps"
+  let assert Ok(#([outer], <<>>)) = frame.decode(bytes) as "one frame"
+  outer
 }

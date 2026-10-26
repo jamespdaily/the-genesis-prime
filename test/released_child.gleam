@@ -39,6 +39,21 @@ const silence_limit_ms = 30_000
 /// that sends SIGTERM first reads up to this.
 pub const server_running = "the server is running"
 
+/// Two ports of the child's own for the login's listeners, in the names the
+/// server reads them by: GENESIS_STS_PORT and GENESIS_AUTH_PORT. The ports are
+/// free on this machine when chosen, so children that run side by side do not
+/// share the client's 6600 and 23115.
+pub fn login_environment() -> List(#(String, String)) {
+  [
+    #("GENESIS_STS_PORT", int.to_string(free_port())),
+    #("GENESIS_AUTH_PORT", int.to_string(free_port())),
+  ]
+}
+
+/// A port on the loopback that nothing listens on.
+@external(erlang, "released_node_ffi", "free_port")
+fn free_port() -> Int
+
 /// A test's own database in the names the server reads the pool's settings by:
 /// PGHOST, PGPORT, PGUSER, PGDATABASE and, when there is one, PGPASSWORD.
 pub fn database_environment(
