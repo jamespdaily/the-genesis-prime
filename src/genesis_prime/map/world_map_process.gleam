@@ -195,19 +195,35 @@ fn processes_of(
 
 /// Asks the map to join a character's unit, with the subject its connection
 /// receives deliveries on, and waits up to `within_ms` milliseconds for the
-/// unit.
+/// unit. A map whose name has no process, as while it starts again, does not
+/// answer.
 pub fn join(
   map map: Subject(Message),
   newcomer newcomer: Newcomer,
   connection connection: Subject(Delivery),
   within_ms within_ms: Int,
 ) -> Result(PlayerUnit, JoinError) {
-  let reply = process.new_subject()
-  process.send(map, Join(newcomer:, connection:, reply:))
-  case process.receive(reply, within_ms) {
-    Ok(Ok(unit)) -> Ok(unit)
-    Ok(Error(refused)) -> Error(Refused(refused))
-    Error(Nil) -> Error(NotAnswering)
+  case registered(map) {
+    False -> Error(NotAnswering)
+    True -> {
+      let reply = process.new_subject()
+      process.send(map, Join(newcomer:, connection:, reply:))
+      case process.receive(reply, within_ms) {
+        Ok(Ok(unit)) -> Ok(unit)
+        Ok(Error(refused)) -> Error(Refused(refused))
+        Error(Nil) -> Error(NotAnswering)
+      }
+    }
+  }
+}
+
+/// Whether a request to the map can be sent: a map reached by its name has a
+/// process under the name, which a map between two lives does not, and sending
+/// to a name with none is a crash of the sender.
+fn registered(map: Subject(Message)) -> Bool {
+  case process.subject_name(map) {
+    Ok(name) -> result.is_ok(process.named(name))
+    Error(Nil) -> True
   }
 }
 
