@@ -11,6 +11,9 @@ import genesis_prime/message/realm_entry.{type RealmEntry}
 import genesis_prime/message/text_group.{type TextGroup}
 import gleam/result
 
+/// The message's number.
+pub const message_id = 0x0761
+
 /// The body of message 0x0761, its fields in wire order. A field named
 /// `field_N` is the Nth of the body and has no use the client's code shows.
 pub type RealmList {

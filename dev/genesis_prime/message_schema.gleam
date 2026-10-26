@@ -5,8 +5,9 @@
 //// its evidence.
 
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/list
-import gleam/option.{type Option}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import tom.{type Toml}
 
@@ -76,6 +77,18 @@ pub type Kind {
   ArrayOfWideText(count_bits: Int)
   /// A count in `count_bits` bits, then that many of the named record.
   ArrayOfRecord(count_bits: Int, record: String)
+  /// A count in `count_bits` bits, then that many unsigned values of `bits`
+  /// bits each.
+  ArrayOfUnsigned(count_bits: Int, bits: Int)
+  /// A count in `count_bits` bits, then that many 32-bit floats kept as their
+  /// bits.
+  ArrayOfFloat32(count_bits: Int)
+  /// Unsigned values of `bits` bits each, as many as the earlier array field
+  /// `counted_by` holds, with no count of their own.
+  UnsignedArrayCountedBy(counted_by: String, bits: Int)
+  /// A value of `bits` bits that is always `value`. It is no field of the
+  /// type: the encoder writes it, and the decoder refuses any other value.
+  Constant(bits: Int, value: Int)
 }
 
 /// Why the schema file is not a schema.
@@ -93,6 +106,9 @@ pub type SchemaError {
   UnknownDirection(message: String, direction: String)
   /// An array field names a record the schema does not hold.
   UnknownRecord(field: String, record: String)
+  /// A field is counted by a field that is not an array before it in the same
+  /// message or record.
+  UnknownCountField(field: String, counted_by: String)
 }
 
 /// Reads the text of the schema file.
@@ -173,7 +189,51 @@ fn parse_fields(
     owner: owner_name,
     key: "fields",
   ))
-  list.try_map(field_tables, parse_field(table: _, owner_name:, record_names:))
+  use fields <- result.try(
+    list.try_map(field_tables, parse_field(table: _, owner_name:, record_names:)),
+  )
+  use Nil <- result.try(check_counted_by(fields))
+  Ok(fields)
+}
+
+/// Every field that is counted by another is counted by an array field before
+/// it, so a decoder has read the count when it needs it.
+fn check_counted_by(fields: List(Field)) -> Result(Nil, SchemaError) {
+  check_counted_by_loop(fields:, earlier_arrays: [])
+}
+
+fn check_counted_by_loop(
+  fields fields: List(Field),
+  earlier_arrays earlier_arrays: List(String),
+) -> Result(Nil, SchemaError) {
+  case fields {
+    [] -> Ok(Nil)
+    [field, ..rest] ->
+      case field.kind {
+        UnsignedArrayCountedBy(counted_by:, ..) ->
+          case list.contains(earlier_arrays, counted_by) {
+            True -> check_counted_by_loop(fields: rest, earlier_arrays:)
+            False -> Error(UnknownCountField(field: field.name, counted_by:))
+          }
+        ArrayOfWideText(..)
+        | ArrayOfRecord(..)
+        | ArrayOfUnsigned(..)
+        | ArrayOfFloat32(..) ->
+          check_counted_by_loop(fields: rest, earlier_arrays: [
+            field.name,
+            ..earlier_arrays
+          ])
+        Unsigned(..)
+        | Float32
+        | WideText
+        | CountedWideText(..)
+        | Guid
+        | Endpoint
+        | RawBytes(..)
+        | WholeFrame
+        | Constant(..) -> check_counted_by_loop(fields: rest, earlier_arrays:)
+      }
+  }
 }
 
 fn parse_field(
@@ -239,7 +299,46 @@ fn parse_kind(
       Ok(RawBytes(count:))
     }
     "whole_frame" -> Ok(WholeFrame)
-    "array" -> {
+    "array" -> parse_array(table:, field:, record_names:)
+    "constant" -> {
+      use bits <- result.try(int_in(
+        table:,
+        owner: field,
+        key: "bits",
+        least: 1,
+        most: 64,
+      ))
+      use value <- result.try(int_in(
+        table:,
+        owner: field,
+        key: "value",
+        least: 0,
+        most: int.bitwise_shift_left(1, bits) - 1,
+      ))
+      Ok(Constant(bits:, value:))
+    }
+    other -> Error(UnknownKind(field:, kind: other))
+  }
+}
+
+/// An array field: the count is in `count_bits` bits or is the length of
+/// an earlier array (`counted_by`), and the elements are wide texts, 32-bit
+/// floats, unsigned values of `element_bits` bits or records.
+fn parse_array(
+  table table: Dict(String, Toml),
+  field field: String,
+  record_names record_names: List(String),
+) -> Result(Kind, SchemaError) {
+  use element <- result.try(string_of(table:, owner: field, key: "element"))
+  case optional_string(table, "counted_by") {
+    Some(counted_by) -> {
+      use bits <- result.try(element_bits(table:, field:))
+      case element {
+        "unsigned" -> Ok(UnsignedArrayCountedBy(counted_by:, bits:))
+        other -> Error(UnknownKind(field:, kind: "array of " <> other))
+      }
+    }
+    None -> {
       use count_bits <- result.try(int_in(
         table:,
         owner: field,
@@ -247,15 +346,35 @@ fn parse_kind(
         least: 1,
         most: 64,
       ))
-      use element <- result.try(string_of(table:, owner: field, key: "element"))
-      case element, list.contains(record_names, element) {
-        "wide_text", _ -> Ok(ArrayOfWideText(count_bits:))
-        _, True -> Ok(ArrayOfRecord(count_bits:, record: element))
-        _, False -> Error(UnknownRecord(field:, record: element))
-      }
+      parse_counted_array(table:, field:, element:, count_bits:, record_names:)
     }
-    other -> Error(UnknownKind(field:, kind: other))
   }
+}
+
+fn parse_counted_array(
+  table table: Dict(String, Toml),
+  field field: String,
+  element element: String,
+  count_bits count_bits: Int,
+  record_names record_names: List(String),
+) -> Result(Kind, SchemaError) {
+  case element, list.contains(record_names, element) {
+    "wide_text", _ -> Ok(ArrayOfWideText(count_bits:))
+    "float32", _ -> Ok(ArrayOfFloat32(count_bits:))
+    "unsigned", _ -> {
+      use bits <- result.map(element_bits(table:, field:))
+      ArrayOfUnsigned(count_bits:, bits:)
+    }
+    _, True -> Ok(ArrayOfRecord(count_bits:, record: element))
+    _, False -> Error(UnknownRecord(field:, record: element))
+  }
+}
+
+fn element_bits(
+  table table: Dict(String, Toml),
+  field field: String,
+) -> Result(Int, SchemaError) {
+  int_in(table:, owner: field, key: "element_bits", least: 1, most: 64)
 }
 
 fn tables(
@@ -327,5 +446,10 @@ pub fn describe(error: SchemaError) -> String {
       message <> " has the unknown direction " <> direction
     UnknownRecord(field:, record:) ->
       field <> " names the record " <> record <> ", which the schema lacks"
+    UnknownCountField(field:, counted_by:) ->
+      field
+      <> " is counted by "
+      <> counted_by
+      <> ", which is no array field before it"
   }
 }

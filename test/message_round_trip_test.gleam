@@ -282,14 +282,21 @@ pub fn enter_world_round_trips_test() -> Nil {
     name: "message 0xad",
     seed: 20_261_107,
     draw: fn(state) {
-      let #(field_1, state) = message_support.unsigned(state:, bits: 15)
-      let #(field_2, state) = message_support.unsigned(state:, bits: 32)
-      let #(field_3, state) = message_support.unsigned(state:, bits: 32)
-      let #(field_4, state) = message_support.unsigned(state:, bits: 32)
+      let #(world_id, state) = message_support.unsigned(state:, bits: 15)
+      let #(position_x, state) = message_support.unsigned(state:, bits: 32)
+      let #(position_y, state) = message_support.unsigned(state:, bits: 32)
+      let #(position_z, state) = message_support.unsigned(state:, bits: 32)
       let #(field_5, state) = message_support.unsigned(state:, bits: 32)
       let #(field_6, state) = message_support.unsigned(state:, bits: 32)
       #(
-        EnterWorld(field_1:, field_2:, field_3:, field_4:, field_5:, field_6:),
+        EnterWorld(
+          world_id:,
+          position_x:,
+          position_y:,
+          position_z:,
+          field_5:,
+          field_6:,
+        ),
         state,
       )
     },

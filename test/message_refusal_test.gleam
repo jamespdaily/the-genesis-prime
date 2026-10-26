@@ -149,18 +149,18 @@ pub fn an_enter_world_value_wider_than_15_bits_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let world =
     EnterWorld(
-      field_1: 0x1234,
-      field_2: 0,
-      field_3: 0,
-      field_4: 0,
+      world_id: 0x1234,
+      position_x: 0,
+      position_y: 0,
+      position_z: 0,
       field_5: 0,
       field_6: 0,
     )
-  assert enter_world.encode(EnterWorld(..world, field_1: 0x8000))
-    == Error(bit_stream.ValueDoesNotFit("field_1", 15, 0x8000))
-    as "ReadMessage00ADBody 0x14007e9e0: a 15-bit value"
-  assert enter_world.encode(EnterWorld(..world, field_4: 0x1_0000_0000))
-    == Error(bit_stream.ValueDoesNotFit("field_4", 32, 0x1_0000_0000))
+  assert enter_world.encode(EnterWorld(..world, world_id: 0x8000))
+    == Error(bit_stream.ValueDoesNotFit("world_id", 15, 0x8000))
+    as "ReadMessage00ADBody 0x14007e9e0: a 15-bit value, the World id (opcode.0xad)"
+  assert enter_world.encode(EnterWorld(..world, position_z: 0x1_0000_0000))
+    == Error(bit_stream.ValueDoesNotFit("position_z", 32, 0x1_0000_0000))
     as "ReadFloat 0x14006c1c0: a float is 32 bits"
 }
 

@@ -9,6 +9,9 @@
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import gleam/result
 
+/// The message's number.
+pub const message_id = 0x07A4
+
 /// The body of message 0x07A4, which is empty.
 pub type RealmSelectStart {
   RealmSelectStart

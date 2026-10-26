@@ -42,6 +42,9 @@ pub type EncodeError {
   /// A whole frame's first 32 bits are not its length in bytes, or it is not
   /// whole bytes (WriteWholeFrameBody 0x140079f30).
   InnerFrameDisagrees(field: String)
+  /// A list that has no count of its own is not as long as the list that
+  /// counts it (the customisation values and labels of a character).
+  ItemCountDisagrees(field: String, expected: Int, actual: Int)
 }
 
 /// Why bytes are not a body. A decode error ends the connection.
@@ -58,6 +61,8 @@ pub type DecodeError {
   InvalidCountedText
   /// A whole frame's length is below the 4 bytes of the length itself.
   InnerFrameTooShort(length: Int)
+  /// A field the schema fixes to one value holds another.
+  UnexpectedValue(field: String, value: Int)
 }
 
 /// A body being written: the whole bytes written, the bits that do not fill
@@ -240,6 +245,67 @@ pub fn write_array(
   list.fold(items, counted, write_item)
 }
 
+/// Writes a value the schema fixes, in `bits` bits.
+pub fn write_constant(
+  writer writer: Writer,
+  field field: String,
+  value value: Int,
+  bits bits: Int,
+) -> Writer {
+  write_unsigned(writer:, field:, value:, bits:)
+}
+
+/// Writes a count of unsigned values in `count_bits` bits, then each in `bits`
+/// bits.
+pub fn write_unsigned_array(
+  writer writer: Writer,
+  field field: String,
+  items items: List(Int),
+  count_bits count_bits: Int,
+  bits bits: Int,
+) -> Writer {
+  write_array(
+    writer:,
+    field:,
+    items:,
+    count_bits:,
+    write_item: fn(writer, item) {
+      write_unsigned(writer:, field:, value: item, bits:)
+    },
+  )
+}
+
+/// Writes unsigned values in `bits` bits each, with no count: the reader takes
+/// as many as the list `like` holds, so a list of another length is an error.
+pub fn write_unsigned_array_like(
+  writer writer: Writer,
+  field field: String,
+  items items: List(Int),
+  like like: List(a),
+  bits bits: Int,
+) -> Writer {
+  let expected = list.length(like)
+  let actual = list.length(items)
+  use <- bool.guard(
+    when: expected != actual,
+    return: fail(writer:, error: ItemCountDisagrees(field:, expected:, actual:)),
+  )
+  list.fold(items, writer, fn(writer, item) {
+    write_unsigned(writer:, field:, value: item, bits:)
+  })
+}
+
+/// Writes a count of 32-bit floats, kept as their bits, in `count_bits` bits,
+/// then each in 32 bits.
+pub fn write_float32_array(
+  writer writer: Writer,
+  field field: String,
+  items items: List(Int),
+  count_bits count_bits: Int,
+) -> Writer {
+  write_unsigned_array(writer:, field:, items:, count_bits:, bits: 32)
+}
+
 /// Writes a count of texts in `count_bits` bits, then each as a wide text.
 pub fn write_wide_texts(
   writer writer: Writer,
@@ -379,6 +445,55 @@ pub fn read_array(
 ) -> Result(#(List(a), Reader), DecodeError) {
   use #(count, reader) <- result.try(read_unsigned(reader:, bits: count_bits))
   read_items(reader:, remaining: count, read_item:, built: [])
+}
+
+/// Reads a value the schema fixes, in `bits` bits; any other value is an error.
+pub fn read_constant(
+  reader reader: Reader,
+  field field: String,
+  bits bits: Int,
+  value value: Int,
+) -> Result(Reader, DecodeError) {
+  use #(read, reader) <- result.try(read_unsigned(reader:, bits:))
+  case read == value {
+    True -> Ok(reader)
+    False -> Error(UnexpectedValue(field:, value: read))
+  }
+}
+
+/// Reads a count in `count_bits` bits, then that many unsigned values of `bits`
+/// bits each.
+pub fn read_unsigned_array(
+  reader reader: Reader,
+  count_bits count_bits: Int,
+  bits bits: Int,
+) -> Result(#(List(Int), Reader), DecodeError) {
+  read_array(reader:, count_bits:, read_item: fn(reader) {
+    read_unsigned(reader:, bits:)
+  })
+}
+
+/// Reads as many unsigned values of `bits` bits each as the list `like` holds.
+pub fn read_unsigned_array_like(
+  reader reader: Reader,
+  like like: List(a),
+  bits bits: Int,
+) -> Result(#(List(Int), Reader), DecodeError) {
+  read_items(
+    reader:,
+    remaining: list.length(like),
+    read_item: fn(reader) { read_unsigned(reader:, bits:) },
+    built: [],
+  )
+}
+
+/// Reads a count in `count_bits` bits, then that many 32-bit floats as the
+/// bits they are.
+pub fn read_float32_array(
+  reader reader: Reader,
+  count_bits count_bits: Int,
+) -> Result(#(List(Int), Reader), DecodeError) {
+  read_unsigned_array(reader:, count_bits:, bits: 32)
 }
 
 /// Reads a count of texts in `count_bits` bits, then that many wide texts.
