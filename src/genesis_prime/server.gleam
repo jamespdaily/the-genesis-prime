@@ -21,7 +21,7 @@ pub fn supervisor() -> Builder {
 /// that name carries on across a restart. `start` starts it, and a test that
 /// plants children after the pool starts from it.
 pub fn supervisor_with_pool(pool_settings: pool.Settings) -> Builder {
-  todo as "the top supervisor with the pool as its first child"
+  supervisor() |> static_supervisor.add(pool.supervised(pool_settings))
 }
 
 /// Starts the top supervisor with the database pool and every other child

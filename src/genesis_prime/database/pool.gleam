@@ -2,8 +2,11 @@
 //// and loads through: its settings and the child the top supervisor starts.
 
 import gleam/erlang/process.{type Name}
+import gleam/int
 import gleam/option.{type Option}
 import gleam/otp/supervision
+import gleam/result
+import gleam/string
 import pog
 
 /// How many connections a pool holds when nothing has measured a better
@@ -44,7 +47,30 @@ pub fn from_environment(
   name name: Name(pog.Message),
   get get: fn(String) -> Result(String, Nil),
 ) -> Result(Settings, EnvironmentError) {
-  todo as "read the pool's settings from the environment"
+  use host <- result.try(required(get, "PGHOST"))
+  use port_text <- result.try(required(get, "PGPORT"))
+  use port <- result.try(
+    int.parse(port_text)
+    |> result.replace_error(NotANumber(variable: "PGPORT", value: port_text)),
+  )
+  use user <- result.try(required(get, "PGUSER"))
+  use database <- result.try(required(get, "PGDATABASE"))
+  Ok(Settings(
+    name:,
+    host:,
+    port:,
+    database:,
+    user:,
+    password: option.from_result(get("PGPASSWORD")),
+    pool_size: default_pool_size,
+  ))
+}
+
+fn required(
+  get: fn(String) -> Result(String, Nil),
+  variable: String,
+) -> Result(String, EnvironmentError) {
+  get(variable) |> result.replace_error(Missing(variable:))
 }
 
 /// A sentence that says which variable is wrong and how, for the message the
@@ -73,10 +99,28 @@ const shutdown_ms = 1000
 pub fn supervised(
   settings: Settings,
 ) -> supervision.ChildSpecification(pog.Connection) {
-  todo as "the pool as a supervised worker with its shutdown time"
+  supervision.worker(fn() { pog.start(config(settings)) })
+  |> supervision.timeout(ms: shutdown_ms)
 }
 
 /// The connection the pool's users query through, found by the pool's name.
 pub fn connection(settings: Settings) -> pog.Connection {
-  todo as "the connection named by the settings"
+  pog.named_connection(settings.name)
+}
+
+/// `pog`'s configuration for the settings. A host with a colon is an IPv6
+/// address, which `pog` must be told of.
+fn config(settings: Settings) -> pog.Config {
+  let ip_version = case string.contains(settings.host, ":") {
+    True -> pog.Ipv6
+    False -> pog.Ipv4
+  }
+  pog.default_config(settings.name)
+  |> pog.host(settings.host)
+  |> pog.port(settings.port)
+  |> pog.database(settings.database)
+  |> pog.user(settings.user)
+  |> pog.password(settings.password)
+  |> pog.pool_size(settings.pool_size)
+  |> pog.ip_version(ip_version)
 }

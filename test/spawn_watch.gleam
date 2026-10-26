@@ -1,7 +1,9 @@
 //// Finds the processes a test started that no supervisor owns: the check
 //// behind "every process is supervised". A test begins a watch, starts what it
 //// tests, then asks which processes started since are outside a supervisor's
-//// tree. The tree is read through the supervisor's own children list.
+//// tree. The tree is read through the supervisor's own children list, and a
+//// worker's own supervision tree through the ancestors OTP records for each
+//// process it starts.
 
 import gleam/erlang/process.{type Pid}
 
@@ -14,8 +16,9 @@ pub type Watch
 pub fn begin() -> Watch
 
 /// The processes started since the watch began that are still alive, are not
-/// the caller and are not the supervisor or anything in its tree. The watch
-/// ends with this call.
+/// the caller and are not the supervisor or anything in its tree, or started
+/// through OTP's `proc_lib` by anything in its tree. The watch ends with this
+/// call.
 @external(erlang, "spawn_watch_ffi", "unsupervised")
 pub fn unsupervised(watch: Watch, supervisor: Pid) -> List(Pid)
 

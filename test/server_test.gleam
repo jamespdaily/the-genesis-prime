@@ -72,6 +72,17 @@ pub fn a_process_in_a_nested_supervisors_tree_is_not_a_stray_test() -> Nil {
   assert spawn_watch.unsupervised(watch, started.pid) == []
 }
 
+pub fn a_supervision_tree_a_worker_owns_is_not_a_stray_test() -> Nil {
+  use <- owned_test.run(5000)
+  let watch = spawn_watch.begin()
+  let assert Ok(started) =
+    static_supervisor.new(static_supervisor.OneForOne)
+    |> static_supervisor.add(supervision.worker(start_child_with_own_tree))
+    |> static_supervisor.start
+    as "the planted supervisor did not start"
+  assert spawn_watch.unsupervised(watch, started.pid) == []
+}
+
 fn start_child() -> Result(actor.Started(Subject(Nil)), actor.StartError) {
   actor.new(Nil)
   |> actor.on_message(fn(state, _message: Nil) { actor.continue(state) })
@@ -85,4 +96,22 @@ fn start_child_with_stray(
 ) -> Result(actor.Started(Subject(Nil)), actor.StartError) {
   process.send(strays, process.spawn_unlinked(fn() { process.sleep_forever() }))
   start_child()
+}
+
+/// A worker that is not a supervisor and that starts a supervisor of its own,
+/// with a child, from its initialiser, as the database pool does.
+fn start_child_with_own_tree() -> Result(
+  actor.Started(Subject(Nil)),
+  actor.StartError,
+) {
+  actor.new_with_initialiser(1000, fn(subject) {
+    let assert Ok(_) =
+      static_supervisor.new(static_supervisor.OneForOne)
+      |> static_supervisor.add(supervision.worker(start_child))
+      |> static_supervisor.start
+      as "the worker's own supervisor did not start"
+    Ok(actor.initialised(Nil) |> actor.returning(subject))
+  })
+  |> actor.on_message(fn(state, _message: Nil) { actor.continue(state) })
+  |> actor.start
 }

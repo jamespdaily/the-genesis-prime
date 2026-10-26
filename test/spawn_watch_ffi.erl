@@ -9,8 +9,9 @@ begin_watch() ->
     1 = erlang:trace(self(), true, [procs, set_on_spawn, {tracer, Tracer}]),
     Tracer.
 
-%% The processes started since begin_watch that are alive, are not the caller
-%% and are not in the supervisor's tree.
+%% The processes started since begin_watch that are alive, are not the caller,
+%% are not in the supervisor's tree and were not started, through OTP's
+%% proc_lib, by a process that is.
 unsupervised(Tracer, Supervisor) ->
     Ref = make_ref(),
     Tracer ! {collect, self(), Ref},
@@ -26,8 +27,56 @@ unsupervised(Tracer, Supervisor) ->
      || Pid <- Spawned,
         Pid =/= Self,
         not lists:member(Pid, InTree),
+        not started_under(Pid, InTree),
         is_process_alive(Pid)
     ]).
+
+%% Whether a process is under a supervisor of its own that a worker of the tree
+%% started, as the database pool starts one. The pool is a worker, so it has no
+%% children to ask for, but the supervisor it started records the pool as its
+%% parent, and each process that supervisor starts records the supervisor. A
+%% process is owned when it is a supervisor whose parent is a worker of the
+%% tree, or when its parent is a supervisor that is owned. A stray started by
+%% a worker or by a supervisor of the tree is not owned, since a supervisor's
+%% children are in the tree already, and neither is one started by a plain
+%% spawn, which records no parent.
+started_under(Pid, InTree) ->
+    case parent(Pid) of
+        undefined ->
+            false;
+        Parent ->
+            (is_supervisor(Pid) andalso lists:member(Parent, InTree) andalso
+                not is_supervisor(Parent)) orelse
+                (is_supervisor(Parent) andalso not lists:member(Parent, InTree) andalso
+                    started_under(Parent, InTree))
+    end.
+
+%% The process that started this one through proc_lib, which records its
+%% ancestors, nearest first, by pid or by registered name.
+parent(Pid) ->
+    case dictionary_entry(Pid, '$ancestors') of
+        {ok, [Nearest | _]} when is_pid(Nearest) -> Nearest;
+        {ok, [Nearest | _]} when is_atom(Nearest) -> whereis(Nearest);
+        _ -> undefined
+    end.
+
+%% Whether proc_lib records the process as started by the supervisor behaviour.
+is_supervisor(Pid) ->
+    case dictionary_entry(Pid, '$initial_call') of
+        {ok, {supervisor, _Module, _Arity}} -> true;
+        _ -> false
+    end.
+
+dictionary_entry(Pid, Key) ->
+    case process_info(Pid, dictionary) of
+        {dictionary, Dictionary} ->
+            case lists:keyfind(Key, 1, Dictionary) of
+                {Key, Value} -> {ok, Value};
+                false -> error
+            end;
+        undefined ->
+            error
+    end.
 
 %% The supervisor and every process under it, found through its children.
 tree(Supervisor) ->

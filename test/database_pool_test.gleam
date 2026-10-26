@@ -260,10 +260,13 @@ fn read_one_until(
   connection: pog.Connection,
   expired: Subject(Nil),
 ) -> Result(List(Int), pog.QueryError) {
-  case read_one(connection), process.receive(expired, 0) {
-    Ok(rows), _ -> Ok(rows)
-    Error(_), Error(Nil) -> read_one_until(connection, expired)
-    Error(error), Ok(Nil) -> Error(error)
+  case read_one(connection) {
+    Ok(rows) -> Ok(rows)
+    Error(error) ->
+      case process.receive(expired, 0) {
+        Ok(Nil) -> Error(error)
+        Error(Nil) -> read_one_until(connection, expired)
+      }
   }
 }
 
@@ -273,17 +276,17 @@ fn read_one_until(
 fn wait_for_a_new_pool(name: Name(pog.Message), old: Pid) -> Result(Pid, Nil) {
   let expired = process.new_subject()
   let _timer = process.send_after(expired, event_wait_ms, Nil)
-  look_for_a_new_pool(name, old, expired)
+  look_for_a_new_pool(name:, old:, expired:)
 }
 
 fn look_for_a_new_pool(
-  name: Name(pog.Message),
-  old: Pid,
-  expired: Subject(Nil),
+  name name: Name(pog.Message),
+  old old: Pid,
+  expired expired: Subject(Nil),
 ) -> Result(Pid, Nil) {
   case process.named(name), process.receive(expired, 0) {
     Ok(pid), _ if pid != old -> Ok(pid)
-    _, Error(Nil) -> look_for_a_new_pool(name, old, expired)
+    _, Error(Nil) -> look_for_a_new_pool(name:, old:, expired:)
     _, Ok(Nil) -> Error(Nil)
   }
 }
