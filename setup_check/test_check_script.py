@@ -18,6 +18,11 @@ the real toolchain, the real database or the real client:
   formulas_by_hand.py with one planted test file whose test is gated by
   check_support.integration_only, so the gate is the real one.
 
+- the planted repository is a git repository on a branch `feature` of `main`
+  (the planted files are the first commit), because the integration tests run
+  only when the branch changes a file under the client scripts folder, as
+  issue 109's item 3 (changed 2026-10-27, Jim's yes) says.
+
 Expected values and their sources: issue 109's test list, items 1, 2, 3, 6, 7
 and 8. The wall-time budget default is CLAUDE.md's "the full check passes in
 under 2 minutes". The part names are the ones ./check prints.
@@ -124,6 +129,7 @@ class PlantedCheckCase(unittest.TestCase):
         self.log = self.root / "commands.log"
         self.marker = self.root / "integration-ran"
         self.log.write_text("")
+        self.settled = False
         self.plant_repository()
 
     def plant_repository(self) -> None:
@@ -149,6 +155,32 @@ class PlantedCheckCase(unittest.TestCase):
         executable(tools / "psql", PSQL_STUB)
         executable(tools / "python3.13", PYTHON_STUB)
 
+    def git(self, *arguments: str) -> str:
+        done = subprocess.run(
+            ["git", "-c", "user.name=Planted", "-c", "user.email=planted@example.invalid", *arguments],
+            cwd=self.repository, capture_output=True, text=True, check=True,
+        )
+        return done.stdout.strip()
+
+    def settle(self) -> None:
+        """Commits what is planted as `main`, and moves to a branch `feature` of it.
+        Done once, before the first run, so a test may plant first."""
+        if self.settled:
+            return
+        self.settled = True
+        (self.repository / ".gitignore").write_text("__pycache__/\n")
+        self.git("init", "-q", "-b", "main")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "planted repository")
+        self.git("checkout", "-q", "-b", "feature")
+
+    def commit_change(self, path: str) -> None:
+        """A commit on the branch that changes the file at path (from the repository's folder)."""
+        self.settle()
+        with open(self.repository / path, "a") as changed:
+            changed.write("\n# changed on the branch\n")
+        self.git("commit", "-q", "-am", "change %s" % path)
+
     def plant_integration_test(self, fails: bool) -> None:
         test = INTEGRATION_TEST % {
             "outcome": "fails" if fails else "passes",
@@ -159,6 +191,7 @@ class PlantedCheckCase(unittest.TestCase):
     def run_check(self, *arguments: str, client: bool = False, **settings: str) -> subprocess.CompletedProcess:
         """Runs the planted repository's ./check. `client` leaves GENESIS_NO_CLIENT
         unset, as on a machine with the client; `settings` are more variables."""
+        self.settle()
         home = self.root / "home"
         home.mkdir(exist_ok=True)
         env = {
@@ -280,36 +313,135 @@ class BudgetTest(PlantedCheckCase):
         self.assertEqual(defaults, ["120"], "CLAUDE.md: the full check passes in under 2 minutes")
 
 
-class ClientIntegrationTest(PlantedCheckCase):
-    """Issue 109, item 3: the query process's integration tests run in the full check."""
+SCRIPTS_FILE = str(SCRIPTS / "formulas_by_hand.py")
 
-    def test_where_the_client_is_present_a_gated_test_runs_in_the_full_check(self):
+
+class ClientIntegrationTest(PlantedCheckCase):
+    """Issue 109, item 3 (changed 2026-10-27): the query process's integration
+    tests run in the full check when the branch changes a file under the client
+    scripts folder, compared with its merge base with main (origin/main when
+    there is one); otherwise they are skipped and the output says so. Where they
+    run, the budget is raised and the output says why."""
+
+    def part_line(self, output: str) -> str:
+        return next((line for line in output.splitlines() if "client-integration" in line), "")
+
+    def test_where_the_branch_changes_a_file_of_the_scripts_folder_a_gated_test_runs(self):
+        self.commit_change(SCRIPTS_FILE)
         done = self.run_check(client=True)
         self.assertEqual(done.returncode, 0, self.output(done))
         self.assertTrue(self.marker.exists(), "the planted integration test did not run:\n" + self.output(done))
 
     def test_a_planted_failing_integration_test_fails_the_check_by_part_name(self):
         self.plant_integration_test(fails=True)
+        self.commit_change(SCRIPTS_FILE)
         done = self.run_check(client=True)
         output = self.output(done)
         self.assertNotEqual(done.returncode, 0, output)
         self.assertRegex(self.failed_line(output), r"client-integration")
         self.assertIn("planted integration failure", output, "the failed part's log is printed")
 
+    def test_a_change_made_but_not_yet_committed_counts_as_a_change(self):
+        self.settle()
+        with open(self.repository / SCRIPTS_FILE, "a") as changed:
+            changed.write("\n# edited, not committed\n")
+        done = self.run_check(client=True)
+        self.assertEqual(done.returncode, 0, self.output(done))
+        self.assertTrue(self.marker.exists(), "an edit under the scripts folder did not start the gated tests")
+
+    def test_where_the_branch_changes_nothing_there_the_gated_tests_are_skipped_and_the_output_says_so(self):
+        self.plant_integration_test(fails=True)
+        self.settle()
+        done = self.run_check(client=True)
+        output = self.output(done)
+        self.assertEqual(done.returncode, 0, output)
+        self.assertFalse(self.marker.exists(), "an integration test ran with no change under the scripts folder")
+        line = self.part_line(output)
+        self.assertIn("skipped", line, "the part's line says it was skipped:\n" + output)
+        self.assertIn("unchanged", line, "and why:\n" + output)
+
+    def test_a_change_outside_the_scripts_folder_does_not_start_them(self):
+        self.settle()
+        (self.repository / "src" / "planted.gleam").write_text("// a file outside the scripts folder\n")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "a change outside the scripts folder")
+        done = self.run_check(client=True)
+        self.assertEqual(done.returncode, 0, self.output(done))
+        self.assertFalse(self.marker.exists())
+        self.assertIn("skipped", self.part_line(self.output(done)))
+
+    def test_the_merge_base_is_with_origin_main_when_there_is_one(self):
+        # origin/main is at the first commit, while the local main has moved on with
+        # the change: against origin/main the branch changes the scripts folder.
+        self.settle()
+        self.git("checkout", "-q", "main")
+        self.commit_change(SCRIPTS_FILE)
+        self.git("update-ref", "refs/remotes/origin/main", self.git("rev-parse", "main~1"))
+        self.git("checkout", "-q", "feature")
+        self.git("reset", "-q", "--hard", "main")
+        done = self.run_check(client=True)
+        self.assertEqual(done.returncode, 0, self.output(done))
+        self.assertTrue(self.marker.exists(), "the merge base was taken with main, not origin/main")
+
+    def test_without_a_main_to_compare_with_they_run_and_the_output_says_the_base_was_not_found(self):
+        self.settle()
+        self.git("branch", "-q", "-m", "main", "trunk")
+        done = self.run_check(client=True)
+        output = self.output(done)
+        self.assertEqual(done.returncode, 0, output)
+        self.assertTrue(self.marker.exists(), "with no merge base, the safe course is to run them")
+        self.assertIn("main", self.part_line(output) + output)
+
     def test_where_there_is_no_client_the_gated_tests_are_skipped_and_the_output_says_so(self):
         self.plant_integration_test(fails=True)
+        self.commit_change(SCRIPTS_FILE)
         done = self.run_check(client=False)
         output = self.output(done)
         self.assertEqual(done.returncode, 0, output)
         self.assertFalse(self.marker.exists(), "an integration test ran with GENESIS_NO_CLIENT=1")
-        line = next((l for l in output.splitlines() if "client-integration" in l), "")
+        line = self.part_line(output)
         self.assertIn("skipped", line, "the part's line says it was skipped:\n" + output)
         self.assertIn("GENESIS_NO_CLIENT", line, "and why:\n" + output)
 
     def test_the_fast_check_does_not_run_the_integration_tests(self):
+        self.commit_change(SCRIPTS_FILE)
         done = self.run_check("fast", client=True)
         self.assertEqual(done.returncode, 0, self.output(done))
         self.assertFalse(self.marker.exists())
+
+    def test_where_they_run_the_budget_is_raised_and_the_output_says_why(self):
+        # The usual budget (1 s) would fail the 3 s the planted setup suite takes;
+        # the raised one (30 s) holds. The line names the raised budget and the reason.
+        self.commit_change(SCRIPTS_FILE)
+        done = self.run_check(
+            client=True,
+            GENESIS_CHECK_BUDGET_SECONDS="1",
+            GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="30",
+            PLANT_SETUP_SUITE_SECONDS="3",
+        )
+        output = self.output(done)
+        self.assertEqual(done.returncode, 0, output)
+        raised = [line for line in output.splitlines() if "budget" in line.lower() and "raised" in line.lower()]
+        self.assertTrue(raised, "a line says the budget was raised:\n" + output)
+        self.assertRegex(raised[0], r"\b30\s*s", "it names the raised budget")
+        self.assertIn("integration", raised[0].lower(), "and the reason")
+
+    def test_where_they_are_skipped_the_budget_is_not_raised(self):
+        self.settle()
+        done = self.run_check(
+            client=True,
+            GENESIS_CHECK_BUDGET_SECONDS="1",
+            GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="30",
+            PLANT_SETUP_SUITE_SECONDS="3",
+        )
+        output = self.output(done)
+        self.assertNotEqual(done.returncode, 0, "3 s over a 1 s budget: " + output)
+        self.assertFalse([l for l in output.splitlines() if "raised" in l.lower()], output)
+
+    def test_the_raised_budget_without_the_setting_is_583_seconds_from_the_worst_measured_run(self):
+        # 466 s (the slowest of 3 runs on 2026-10-26, issue 109) x 1.25, rounded up.
+        source = CHECK.read_text()
+        self.assertEqual(re.findall(r"GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS:-(\d+)", source), ["583"])
 
 
 class FastModeTest(PlantedCheckCase):
