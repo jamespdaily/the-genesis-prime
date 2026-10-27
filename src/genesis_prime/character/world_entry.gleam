@@ -32,6 +32,7 @@ import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
+import gleam/bool
 import gleam/int
 
 /// The movement send interval the server sets, in milliseconds: the client's
@@ -172,11 +173,11 @@ fn begin(
         ])
         False -> #(Waiting, refused(play_failed))
       }
-    AwaitingMap(_) | AwaitingTerrain(_) | Entered -> #(state, [
-      Close(BeganTwice),
-    ])
-    AwaitingTerrainEchoed(_) | EnteredEchoed ->
-      todo as "a begin after the echo is a breach"
+    AwaitingMap(_)
+    | AwaitingTerrain(_)
+    | AwaitingTerrainEchoed(_)
+    | Entered
+    | EnteredEchoed -> #(state, [Close(BeganTwice)])
   }
 }
 
@@ -225,11 +226,11 @@ fn joined(
         )),
       ),
     ])
-    Waiting | AwaitingTerrain(_) | Entered -> #(state, [
-      Close(AnswerNobodyAskedFor),
-    ])
-    AwaitingTerrainEchoed(_) | EnteredEchoed ->
-      todo as "a unit from the map after the echo is a breach"
+    Waiting
+    | AwaitingTerrain(_)
+    | AwaitingTerrainEchoed(_)
+    | Entered
+    | EnteredEchoed -> #(state, [Close(AnswerNobodyAskedFor)])
   }
 }
 
@@ -299,11 +300,11 @@ pub fn unit_create(
 fn map_refused(state: State) -> #(State, List(Effect)) {
   case state {
     AwaitingMap(_) -> #(Waiting, refused(play_failed_character_in_world))
-    Waiting | AwaitingTerrain(_) | Entered -> #(state, [
-      Close(AnswerNobodyAskedFor),
-    ])
-    AwaitingTerrainEchoed(_) | EnteredEchoed ->
-      todo as "a refusal from the map after the echo is a breach"
+    Waiting
+    | AwaitingTerrain(_)
+    | AwaitingTerrainEchoed(_)
+    | Entered
+    | EnteredEchoed -> #(state, [Close(AnswerNobodyAskedFor)])
   }
 }
 
@@ -312,30 +313,46 @@ fn terrain_loaded(state: State) -> #(State, List(Effect)) {
     AwaitingTerrain(_) -> #(Entered, [
       Send(PlayerEntered(PlayerEnteredWorld)),
     ])
-    Waiting | AwaitingMap(_) | Entered -> #(state, [
+    AwaitingTerrainEchoed(_) -> #(EnteredEchoed, [
+      Send(PlayerEntered(PlayerEnteredWorld)),
+    ])
+    Waiting | AwaitingMap(_) | Entered | EnteredEchoed -> #(state, [
       Close(TerrainLoadedOutOfOrder),
     ])
-    AwaitingTerrainEchoed(_) | EnteredEchoed ->
-      todo as "0xF2 carries the echo into Entered"
   }
 }
 
 /// The echo of message 0x636: accepted with no reply when it carries the value
-/// the server sent, a breach before the server sent it or with another value.
+/// the server sent, a breach before the server sent it, with another value or
+/// a second time (the client sends one for each 0x636 and the server sends
+/// one: opcode.0x635).
 fn control_echoed(
   state state: State,
   value value: Int,
 ) -> #(State, List(Effect)) {
   case state {
-    AwaitingTerrain(_) | Entered ->
-      case value == control_echo_value {
-        True -> #(state, [])
-        False -> #(state, [Close(ControlEchoedWrongValue(value))])
-      }
+    AwaitingTerrain(unit) ->
+      accept_echo(state:, echoed_state: AwaitingTerrainEchoed(unit), value:)
+    Entered -> accept_echo(state:, echoed_state: EnteredEchoed, value:)
+    AwaitingTerrainEchoed(_) | EnteredEchoed -> #(state, [
+      Close(ControlEchoedTwice),
+    ])
     Waiting | AwaitingMap(_) -> #(state, [Close(ControlEchoedOutOfOrder)])
-    AwaitingTerrainEchoed(_) | EnteredEchoed ->
-      todo as "a second echo is a breach"
   }
+}
+
+/// The first echo: the entry remembers it when it carries the value the server
+/// sent, and a breach when it carries another.
+fn accept_echo(
+  state state: State,
+  echoed_state echoed_state: State,
+  value value: Int,
+) -> #(State, List(Effect)) {
+  use <- bool.guard(
+    when: value != control_echo_value,
+    return: #(state, [Close(ControlEchoedWrongValue(value))]),
+  )
+  #(echoed_state, [])
 }
 
 /// The sentence the log line of a breach holds.
@@ -352,6 +369,7 @@ pub fn describe_breach(breach breach: Breach) -> String {
       "the client sent message 0x635 with the value "
       <> int.to_string(value)
       <> ", which message 0x636 did not carry"
-    ControlEchoedTwice -> todo as "the sentence of a second echo"
+    ControlEchoedTwice ->
+      "the client sent message 0x635 a second time, though the server sent message 0x636 once"
   }
 }
