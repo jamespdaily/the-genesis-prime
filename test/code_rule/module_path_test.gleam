@@ -16,6 +16,7 @@ import gleam/list
 import gleam/string
 import owned_test
 import simplifile
+import unitest
 
 fn read(path: String) -> String {
   let assert Ok(text) = simplifile.read(path) as { "could not read " <> path }
@@ -24,6 +25,7 @@ fn read(path: String) -> String {
 
 pub fn a_folder_named_by_kind_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   list.each(module_path.kind_names, fn(name) {
     let file =
       planted.file("src/genesis_prime/map/" <> name <> "/tile.gleam", [
@@ -39,6 +41,7 @@ pub fn a_folder_named_by_kind_is_a_breach_test() -> Nil {
 
 pub fn a_module_named_by_kind_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   list.each(module_path.kind_names, fn(name) {
     let file =
       planted.file("src/genesis_prime/map/" <> name <> ".gleam", [
@@ -53,6 +56,7 @@ pub fn a_module_named_by_kind_is_a_breach_test() -> Nil {
 
 pub fn the_kind_names_are_the_fifteen_in_the_test_list_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert list.sort(module_path.kind_names, string.compare)
     == [
       "common",
@@ -75,6 +79,7 @@ pub fn the_kind_names_are_the_fifteen_in_the_test_list_test() -> Nil {
 
 pub fn a_name_that_only_contains_a_kind_name_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let files = [
     planted.file("src/genesis_prime/rule_check.gleam", ["pub const a = 1"]),
     planted.file("src/genesis_prime/typeset/library.gleam", ["pub const a = 1"]),
@@ -85,6 +90,7 @@ pub fn a_name_that_only_contains_a_kind_name_is_not_a_breach_test() -> Nil {
 
 pub fn a_module_path_named_by_kind_is_reported_once_per_file_in_order_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let files = [
     planted.file("src/genesis_prime/map/tile.gleam", ["pub const a = 1"]),
     planted.file("src/genesis_prime/util/strings.gleam", ["pub const a = 1"]),
@@ -101,11 +107,13 @@ pub fn no_folder_or_module_under_src_is_named_by_kind_test() -> Nil {
   // Deadline: the body took 82 to 106 ms in three runs alone, so 5 s is more
   // than 3 times that.
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert module_path.named_by_kind(repository.sources(["src"])) == []
 }
 
 pub fn the_package_names_are_read_from_the_manifest_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let manifest =
     string.join(
       [
@@ -124,6 +132,7 @@ pub fn the_package_names_are_read_from_the_manifest_test() -> Nil {
 
 pub fn a_folder_named_for_a_package_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/genesis_prime/pog/pool.gleam", ["pub const a = 1"])
   let assert [breach] =
@@ -136,6 +145,7 @@ pub fn a_folder_named_for_a_package_is_a_breach_test() -> Nil {
 
 pub fn a_module_named_for_a_package_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/genesis_prime/database/simplifile.gleam", [
       "pub const a = 1",
@@ -149,6 +159,7 @@ pub fn a_module_named_for_a_package_is_a_breach_test() -> Nil {
 
 pub fn a_path_with_no_package_name_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let files = [
     planted.file("src/genesis_prime/database/pool.gleam", ["pub const a = 1"]),
     planted.file("src/genesis_prime/pogo/pool.gleam", ["pub const a = 1"]),
@@ -159,6 +170,7 @@ pub fn a_path_with_no_package_name_is_not_a_breach_test() -> Nil {
 
 pub fn no_folder_or_module_under_src_is_named_for_a_package_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let packages = module_path.packages(read("manifest.toml"))
   assert list.length(packages) >= 40 as "the manifest packages were not found"
   assert module_path.named_for_a_package(repository.sources(["src"]), packages)

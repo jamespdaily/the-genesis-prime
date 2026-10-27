@@ -12,9 +12,11 @@ import code_rule/planted
 import code_rule/repository
 import gleam/list
 import owned_test
+import unitest
 
 pub fn a_call_to_os_getenv_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("dev/planted_ffi.erl", [
       "-module(planted_ffi).",
@@ -27,6 +29,7 @@ pub fn a_call_to_os_getenv_is_a_breach_test() -> Nil {
 
 pub fn a_call_to_os_getenv_with_no_name_or_a_default_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("dev/planted_ffi.erl", [
       "all() -> os:getenv().",
@@ -37,6 +40,7 @@ pub fn a_call_to_os_getenv_with_no_name_or_a_default_is_a_breach_test() -> Nil {
 
 pub fn a_call_to_init_get_plain_arguments_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("test/planted_ffi.erl", [
       "arguments() ->",
@@ -47,6 +51,7 @@ pub fn a_call_to_init_get_plain_arguments_is_a_breach_test() -> Nil {
 
 pub fn a_reference_to_the_function_without_a_call_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("dev/planted_ffi.erl", [
       "names(Names) -> lists:map(fun os:getenv/1, Names).",
@@ -56,6 +61,7 @@ pub fn a_reference_to_the_function_without_a_call_is_a_breach_test() -> Nil {
 
 pub fn a_breach_after_a_percent_sign_in_a_string_is_still_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("dev/planted_ffi.erl", [
       "f() -> io:format(\"100% done~n\"), os:getenv(\"HOME\").",
@@ -65,6 +71,7 @@ pub fn a_breach_after_a_percent_sign_in_a_string_is_still_a_breach_test() -> Nil
 
 pub fn a_file_that_reads_neither_is_clean_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("dev/planted_ffi.erl", [
       "-module(planted_ffi).",
@@ -79,6 +86,7 @@ pub fn a_file_that_reads_neither_is_clean_test() -> Nil {
 
 pub fn a_comment_or_a_string_that_names_the_functions_is_clean_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("dev/planted_ffi.erl", [
       "%% Not os:getenv, and not init:get_plain_arguments.",
@@ -90,6 +98,7 @@ pub fn a_comment_or_a_string_that_names_the_functions_is_clean_test() -> Nil {
 
 pub fn no_tracked_erlang_file_reads_the_environment_or_the_arguments_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
   let files = repository.erlang_sources()
   assert list.length(files) >= 10 as "tracked Erlang files were not found"
   assert list.flat_map(files, erlang_environment.breaches) == []

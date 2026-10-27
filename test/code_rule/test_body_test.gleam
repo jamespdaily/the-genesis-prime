@@ -11,9 +11,11 @@ import code_rule/repository
 import code_rule/test_body
 import gleam/list
 import owned_test
+import unitest
 
 pub fn a_test_that_starts_inside_the_helper_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("test/planted_test.gleam", [
       "import owned_test",
@@ -33,6 +35,7 @@ pub fn a_test_that_starts_inside_the_helper_is_not_a_breach_test() -> Nil {
 
 pub fn a_public_test_that_does_not_start_inside_the_helper_is_a_breach_at_its_line_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("test/planted_test.gleam", [
       "import owned_test",
@@ -62,6 +65,7 @@ pub fn a_public_test_that_does_not_start_inside_the_helper_is_a_breach_at_its_li
 
 pub fn a_breach_names_the_file_it_is_in_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("test/planted_test.gleam", [
       "pub fn bare_test() {",
@@ -75,6 +79,7 @@ pub fn a_breach_names_the_file_it_is_in_test() -> Nil {
 
 pub fn a_private_function_and_a_public_function_that_is_not_a_test_are_ignored_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("test/planted_test.gleam", [
       "fn private_test() {",
@@ -100,6 +105,7 @@ pub fn every_test_in_the_test_directory_starts_inside_the_helper_test() -> Nil {
   // Deadline: the body took 159 to 173 ms in three runs alone, so 5 s is more
   // than 3 times that.
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let files = repository.sources(["test"])
   assert list.flat_map(files, test_body.breaches) == []
 }

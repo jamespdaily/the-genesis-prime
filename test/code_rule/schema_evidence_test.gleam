@@ -12,6 +12,7 @@ import gleam/list
 import gleam/string
 import owned_test
 import simplifile
+import unitest
 
 const fact_keys = ["opcode.0x1", "0x1400a9140", "0x1400ac130", "opcode.0x2"]
 
@@ -60,6 +61,7 @@ fn breach_lines(text: String) -> List(Int) {
 
 pub fn a_field_that_names_no_evidence_is_a_breach_at_its_line_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text =
     schema(
       fields: [
@@ -82,6 +84,7 @@ pub fn a_field_that_names_no_evidence_is_a_breach_at_its_line_test() -> Nil {
 
 pub fn a_field_of_a_record_that_names_no_evidence_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text =
     schema(fields: [good_field], record_fields: [
       "  { name = \"loose\", kind = \"wide_text\" },",
@@ -91,6 +94,7 @@ pub fn a_field_of_a_record_that_names_no_evidence_is_a_breach_test() -> Nil {
 
 pub fn a_field_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text =
     schema(
       fields: [
@@ -103,6 +107,7 @@ pub fn a_field_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
 
 pub fn a_named_by_key_that_is_not_a_fact_key_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text =
     schema(
       fields: [
@@ -115,6 +120,7 @@ pub fn a_named_by_key_that_is_not_a_fact_key_is_a_breach_test() -> Nil {
 
 pub fn a_message_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text =
     string.replace(
       schema(fields: [good_field], record_fields: [good_field]),
@@ -126,6 +132,7 @@ pub fn a_message_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
 
 pub fn fields_that_name_their_evidence_are_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text =
     schema(
       fields: [
@@ -139,11 +146,13 @@ pub fn fields_that_name_their_evidence_are_not_a_breach_test() -> Nil {
 
 pub fn a_file_that_is_not_a_schema_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert breach_lines("[[message]]\nid = \"seven\"\n") == [1]
 }
 
 pub fn every_field_of_the_message_schema_names_its_evidence_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
   let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
     as "the schema file could not be read"
   assert schema_evidence.breaches(

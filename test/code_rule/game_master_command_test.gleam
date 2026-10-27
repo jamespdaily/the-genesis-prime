@@ -14,6 +14,7 @@ import code_rule/planted
 import code_rule/repository
 import gleam/list
 import owned_test
+import unitest
 
 const imports = [
   "import genesis_prime/game_master/command.{type Refusal}",
@@ -30,6 +31,7 @@ fn command_module(path path: String, rule rule: List(String)) -> List(Int) {
 
 pub fn a_rule_that_takes_the_permissions_is_clean_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert command_module(
       path: "src/genesis_prime/game_master/teleport.gleam",
       rule: [
@@ -46,6 +48,7 @@ pub fn a_rule_that_takes_the_permissions_is_clean_test() -> Nil {
 
 pub fn a_rule_that_does_not_take_the_permissions_is_a_breach_at_its_line_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert command_module(
       path: "src/genesis_prime/game_master/teleport.gleam",
       rule: [
@@ -60,6 +63,7 @@ pub fn a_rule_that_does_not_take_the_permissions_is_a_breach_at_its_line_test() 
 
 pub fn a_rule_whose_permissions_are_not_a_set_of_permission_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert command_module(
       path: "src/genesis_prime/game_master/teleport.gleam",
       rule: [
@@ -76,6 +80,7 @@ pub fn a_rule_whose_permissions_are_not_a_set_of_permission_is_a_breach_test() -
 
 pub fn a_rule_whose_parameter_is_not_labelled_permissions_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert command_module(
       path: "src/genesis_prime/game_master/teleport.gleam",
       rule: [
@@ -90,6 +95,7 @@ pub fn a_rule_whose_parameter_is_not_labelled_permissions_is_a_breach_test() -> 
 
 pub fn a_command_module_with_no_public_rule_is_a_breach_at_line_one_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert command_module(
       path: "src/genesis_prime/game_master/teleport.gleam",
       rule: [
@@ -104,6 +110,7 @@ pub fn a_command_module_with_no_public_rule_is_a_breach_at_line_one_test() -> Ni
 
 pub fn a_support_module_and_a_file_outside_game_master_are_never_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let no_rule = ["pub fn other() -> Int {", "  1", "}"]
   assert command_module(
       path: "src/genesis_prime/game_master/store.gleam",
@@ -135,6 +142,7 @@ pub fn every_command_module_in_the_tree_takes_the_account_permissions_test() -> 
   // Deadline: the body took 85 to 97 ms in three runs alone, so 5 s is more
   // than 3 times that.
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let files = repository.sources(["src"])
   assert list.any(files, fn(file) {
     file.path == "src/genesis_prime/game_master/grant.gleam"

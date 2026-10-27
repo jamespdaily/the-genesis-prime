@@ -18,6 +18,7 @@ import code_rule/repository
 import code_rule/supervision_setting
 import gleam/list
 import owned_test
+import unitest
 
 /// A planted module whose one function, `tree`, has the body given. Its body
 /// starts on line 7.
@@ -56,6 +57,7 @@ fn factory_module(body: List(String)) -> List(String) {
 
 pub fn a_static_supervisor_with_no_restart_limit_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/login.gleam",
@@ -72,6 +74,7 @@ pub fn a_static_supervisor_with_no_restart_limit_is_a_breach_test() -> Nil {
 
 pub fn a_static_supervisor_that_states_its_restart_limit_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/login.gleam",
@@ -86,6 +89,7 @@ pub fn a_static_supervisor_that_states_its_restart_limit_is_not_a_breach_test() 
 
 pub fn a_restart_limit_stated_late_in_the_pipeline_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/login.gleam",
@@ -101,6 +105,7 @@ pub fn a_restart_limit_stated_late_in_the_pipeline_is_not_a_breach_test() -> Nil
 
 pub fn a_factory_supervisor_with_no_restart_limit_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/connection.gleam",
@@ -123,6 +128,7 @@ pub fn a_factory_supervisor_with_no_restart_limit_is_a_breach_test() -> Nil {
 
 pub fn a_factory_supervisor_that_states_its_restart_limit_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/connection.gleam",
@@ -146,6 +152,7 @@ pub fn a_factory_supervisor_that_states_its_restart_limit_is_not_a_breach_test()
 
 pub fn the_restart_limit_of_another_pipeline_does_not_excuse_a_builder_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/login.gleam",
@@ -165,6 +172,7 @@ pub fn the_restart_limit_of_another_pipeline_does_not_excuse_a_builder_test() ->
 
 pub fn a_builder_whose_limit_is_set_outside_its_pipeline_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/login.gleam",
@@ -178,6 +186,7 @@ pub fn a_builder_whose_limit_is_set_outside_its_pipeline_is_a_breach_test() -> N
 
 pub fn a_supervisor_module_imported_under_another_name_is_still_read_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/genesis_prime/login.gleam", [
       "//// A planted module.",
@@ -199,6 +208,7 @@ pub fn a_supervisor_module_imported_under_another_name_is_still_read_test() -> N
 
 pub fn a_file_that_builds_no_supervisor_has_no_restart_limit_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/genesis_prime/login.gleam", [
       "//// A planted module.",
@@ -215,6 +225,7 @@ pub fn a_file_that_builds_no_supervisor_has_no_restart_limit_breach_test() -> Ni
 
 pub fn every_supervisor_under_src_states_its_restart_limit_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let breaches =
     repository.sources(["src"])
     |> list.flat_map(supervision_setting.missing_restart_limit)
@@ -225,6 +236,7 @@ pub fn every_supervisor_under_src_states_its_restart_limit_test() -> Nil {
 
 pub fn a_worker_with_no_shutdown_time_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/login.gleam",
@@ -242,6 +254,7 @@ pub fn a_worker_with_no_shutdown_time_is_a_breach_test() -> Nil {
 
 pub fn a_worker_that_states_its_shutdown_time_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/login.gleam",
@@ -264,6 +277,7 @@ pub fn a_worker_that_states_its_shutdown_time_is_not_a_breach_test() -> Nil {
 
 pub fn a_worker_written_as_an_argument_with_a_shutdown_time_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/login.gleam",
@@ -280,6 +294,7 @@ pub fn a_worker_written_as_an_argument_with_a_shutdown_time_is_not_a_breach_test
 
 pub fn a_worker_whose_shutdown_time_is_in_another_pipeline_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/login.gleam",
@@ -299,6 +314,7 @@ pub fn a_worker_whose_shutdown_time_is_in_another_pipeline_is_a_breach_test() ->
 
 pub fn a_supervisor_child_has_no_shutdown_time_to_state_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/login.gleam",
@@ -314,6 +330,7 @@ pub fn a_supervisor_child_has_no_shutdown_time_to_state_test() -> Nil {
 
 pub fn a_factory_worker_with_no_shutdown_time_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(
       "src/genesis_prime/connection.gleam",
@@ -342,6 +359,7 @@ pub fn a_factory_worker_with_no_shutdown_time_is_a_breach_test() -> Nil {
 
 pub fn a_supervision_module_imported_under_another_name_is_still_read_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/genesis_prime/login.gleam", [
       "//// A planted module.",
@@ -361,6 +379,7 @@ pub fn a_supervision_module_imported_under_another_name_is_still_read_test() -> 
 
 pub fn every_worker_under_src_states_its_shutdown_time_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let breaches =
     repository.sources(["src"])
     |> list.flat_map(supervision_setting.missing_shutdown_time)

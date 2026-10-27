@@ -11,6 +11,7 @@ import code_rule/planted
 import code_rule/repository
 import gleam/list
 import owned_test
+import unitest
 
 fn shape_case(clauses: List(String)) -> List(String) {
   list.flatten([
@@ -36,18 +37,21 @@ fn breach_lines(source_lines: List(String)) -> List(Int) {
 
 pub fn a_discard_beside_a_custom_types_constructor_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines = shape_case(["    Circle -> 1", "    _ -> 2"])
   assert breach_lines(lines) == [9]
 }
 
 pub fn a_bare_variable_beside_a_custom_types_constructor_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines = shape_case(["    Circle -> 1", "    other -> 2"])
   assert breach_lines(lines) == [9]
 }
 
 pub fn a_catch_all_beside_a_constructor_with_fields_or_a_module_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let with_fields =
     shape_case(["    Rectangle(width, height) -> width", "    _ -> 0"])
   let qualified = shape_case(["    shapes.Circle -> 1", "    _ -> 0"])
@@ -59,12 +63,14 @@ pub fn a_catch_all_beside_a_constructor_with_fields_or_a_module_is_a_breach_test
 
 pub fn a_catch_all_before_a_constructor_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines = shape_case(["    _ -> 2", "    Circle -> 1"])
   assert breach_lines(lines) == [8]
 }
 
 pub fn each_catch_all_is_reported_at_its_own_line_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines =
     list.append(shape_case(["    Circle -> 1", "    _ -> 2"]), [
       "",
@@ -80,6 +86,7 @@ pub fn each_catch_all_is_reported_at_its_own_line_test() -> Nil {
 
 pub fn a_catch_all_over_integers_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines = [
     "pub fn name(count: Int) -> String {",
     "  case count {",
@@ -94,6 +101,7 @@ pub fn a_catch_all_over_integers_is_not_a_breach_test() -> Nil {
 
 pub fn a_catch_all_over_strings_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines = [
     "pub fn size(word: String) -> Int {",
     "  case word {",
@@ -108,6 +116,7 @@ pub fn a_catch_all_over_strings_is_not_a_breach_test() -> Nil {
 
 pub fn a_catch_all_beside_only_the_fixed_constructors_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines = [
     "pub fn read(result: Result(Int, Nil), flag: Bool, maybe: Option(Int)) -> Int {",
     "  let a = case result {",
@@ -138,6 +147,7 @@ pub fn a_catch_all_beside_only_the_fixed_constructors_is_not_a_breach_test() -> 
 
 pub fn a_catch_all_with_no_constructor_beside_it_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines = [
     "pub fn always(value: Int) -> Int {",
     "  case value {",
@@ -150,6 +160,7 @@ pub fn a_catch_all_with_no_constructor_beside_it_is_not_a_breach_test() -> Nil {
 
 pub fn a_case_that_names_every_constructor_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines = shape_case(["    Circle -> 1", "    Rectangle(_, _) -> 2"])
   assert breach_lines(lines) == []
 }
@@ -158,6 +169,7 @@ pub fn no_case_in_src_or_test_has_a_catch_all_beside_a_growing_type_test() -> Ni
   // Deadline: the body took 374 to 392 ms in three runs alone, so 5 s is more
   // than 3 times that.
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let files = repository.sources(["src", "test"])
   assert list.flat_map(files, catch_all.breaches) == []
 }

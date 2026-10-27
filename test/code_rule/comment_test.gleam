@@ -9,6 +9,7 @@ import code_rule/planted
 import code_rule/repository
 import gleam/list
 import owned_test
+import unitest
 
 fn commented(comment: String) -> List(String) {
   [
@@ -30,6 +31,7 @@ fn breach_lines(comment: String) -> List(Int) {
 
 pub fn a_comment_with_a_history_word_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let sentences = [
     #("now", "// The cache holds the value it is given, as it is now."),
     #("now", "// Now the cache holds the value it is given."),
@@ -48,6 +50,7 @@ pub fn a_comment_with_a_history_word_is_a_breach_test() -> Nil {
 
 pub fn a_doc_comment_and_a_module_comment_are_read_like_a_normal_comment_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted.gleam", [
       "//// This module no longer holds the cache.",
@@ -62,11 +65,13 @@ pub fn a_doc_comment_and_a_module_comment_are_read_like_a_normal_comment_test() 
 
 pub fn a_comment_with_an_issue_number_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert breach_lines("// The layout is the one decided in #12.") == [5]
 }
 
 pub fn a_comment_with_an_issue_or_pull_request_link_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let issue = "// See https://github.com/jamespdaily/the-genesis-prime/issues/8"
   let pull = "// See https://github.com/jamespdaily/the-genesis-prime/pull/26"
   assert breach_lines(issue) == [5] as "no breach for an issue link"
@@ -75,11 +80,13 @@ pub fn a_comment_with_an_issue_or_pull_request_link_is_a_breach_test() -> Nil {
 
 pub fn a_comment_with_a_date_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert breach_lines("// Measured on 2026-10-25 against the client.") == [5]
 }
 
 pub fn a_comment_naming_another_codebase_from_the_deny_list_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let comments = [
     "// Ported from NexusForever's handler.",
     "// The same layout as Nexus Forever.",
@@ -92,6 +99,7 @@ pub fn a_comment_naming_another_codebase_from_the_deny_list_is_a_breach_test() -
 
 pub fn a_clean_comment_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let comments = [
     "// Reads the build from the index header, as the opcode 0x037E is written.",
     "// A tuple written #(id, name) holds the pair, and 16_042 is the build.",
@@ -106,6 +114,7 @@ pub fn a_clean_comment_is_not_a_breach_test() -> Nil {
 
 pub fn a_string_literal_holding_the_banned_words_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted.gleam", [
       "pub fn message() -> String {",
@@ -123,6 +132,7 @@ pub fn no_comment_in_src_or_test_breaks_the_rule_test() -> Nil {
   // Deadline: the body took 412 to 416 ms in three runs alone, so 5 s is more
   // than 12 times that.
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let files = repository.sources(["src", "test"])
   assert list.flat_map(files, comment.breaches) == []
 }

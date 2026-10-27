@@ -13,6 +13,7 @@ import gleam/list
 import gleam/string
 import owned_test
 import simplifile
+import unitest
 
 fn nothing_allowed() -> purity.Allowed {
   Allowed(effectful_modules: [], pure_erlang: [])
@@ -33,6 +34,7 @@ fn importing(module: String) -> List(String) {
 
 pub fn the_allow_lists_are_read_from_the_project_file_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let project_file =
     string.join(
       [
@@ -57,6 +59,7 @@ pub fn the_allow_lists_are_read_from_the_project_file_test() -> Nil {
 
 pub fn a_module_not_listed_as_effectful_that_imports_a_process_otp_database_or_logging_module_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let modules = [
     "gleam/erlang/process",
     "gleam/erlang/process.{type Pid}",
@@ -74,6 +77,7 @@ pub fn a_module_not_listed_as_effectful_that_imports_a_process_otp_database_or_l
 
 pub fn a_rule_that_sends_a_message_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted/rule.gleam", [
       "import gleam/erlang/process.{type Subject}",
@@ -87,6 +91,7 @@ pub fn a_rule_that_sends_a_message_is_a_breach_test() -> Nil {
 
 pub fn a_module_listed_as_effectful_may_import_what_a_rule_may_not_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let allowed = Allowed(effectful_modules: ["planted/server"], pure_erlang: [])
   let file =
     planted.file("src/planted/server.gleam", [
@@ -101,6 +106,7 @@ pub fn a_module_listed_as_effectful_may_import_what_a_rule_may_not_test() -> Nil
 
 pub fn a_rule_that_imports_no_effectful_module_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted/rule.gleam", [
       "import gleam/dict",
@@ -118,6 +124,7 @@ pub fn a_rule_that_imports_no_effectful_module_is_not_a_breach_test() -> Nil {
 
 pub fn an_external_to_an_erlang_function_off_the_allow_list_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted/rule.gleam", [
       "//// A planted rule that reads the clock.",
@@ -129,6 +136,7 @@ pub fn an_external_to_an_erlang_function_off_the_allow_list_is_a_breach_test() -
 
 pub fn an_external_to_an_erlang_function_on_the_allow_list_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let allowed = Allowed(effectful_modules: [], pure_erlang: ["erlang:abs"])
   let file =
     planted.file("src/planted/rule.gleam", [
@@ -140,6 +148,7 @@ pub fn an_external_to_an_erlang_function_on_the_allow_list_is_not_a_breach_test(
 
 pub fn each_breach_is_reported_at_its_own_line_in_order_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted/rule.gleam", [
       "import gleam/list",
@@ -152,6 +161,7 @@ pub fn each_breach_is_reported_at_its_own_line_in_order_test() -> Nil {
 
 pub fn no_module_in_src_breaks_the_rule_with_the_real_project_file_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let assert Ok(project_file) = simplifile.read("gleam.toml")
     as "gleam.toml could not be read"
   let allowed = purity.allowed(project_file)

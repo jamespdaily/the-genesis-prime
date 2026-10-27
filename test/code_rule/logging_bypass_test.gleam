@@ -19,6 +19,7 @@ import code_rule/repository
 import gleam/list
 import gleam/string
 import owned_test
+import unitest
 
 /// The path of the logging module's Gleam file, which may call `logger`.
 const logging_module = "src/genesis_prime/telemetry/log.gleam"
@@ -38,6 +39,7 @@ fn external_to(module: String, function: String) -> String {
 
 pub fn an_external_to_logger_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/genesis_prime/login.gleam", [
       "//// A planted module.",
@@ -50,6 +52,7 @@ pub fn an_external_to_logger_is_a_breach_test() -> Nil {
 
 pub fn an_external_to_io_format_or_io_fwrite_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/genesis_prime/login.gleam", [
       "//// A planted module.",
@@ -62,6 +65,7 @@ pub fn an_external_to_io_format_or_io_fwrite_is_a_breach_test() -> Nil {
 
 pub fn an_external_to_another_function_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/genesis_prime/login.gleam", [
       "//// A planted module.",
@@ -76,6 +80,7 @@ pub fn an_external_to_another_function_is_not_a_breach_test() -> Nil {
 
 pub fn the_logging_module_may_call_logger_but_a_module_beside_it_may_not_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines = [
     "//// A planted module.",
     "",
@@ -95,6 +100,7 @@ pub fn the_logging_module_may_call_logger_but_a_module_beside_it_may_not_test() 
 
 pub fn a_call_to_logger_or_a_log_macro_in_an_erlang_file_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted_ffi.erl", [
       "-module(planted_ffi).",
@@ -109,6 +115,7 @@ pub fn a_call_to_logger_or_a_log_macro_in_an_erlang_file_is_a_breach_test() -> N
 
 pub fn a_call_to_io_format_or_io_fwrite_in_an_erlang_file_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted_ffi.erl", [
       "show(Text) -> io:format(\"~s~n\", [Text]).",
@@ -121,6 +128,7 @@ pub fn a_call_to_io_format_or_io_fwrite_in_an_erlang_file_is_a_breach_test() -> 
 
 pub fn an_erlang_file_that_calls_neither_is_clean_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted_ffi.erl", [
       "-module(planted_ffi).",
@@ -138,6 +146,7 @@ pub fn an_erlang_file_that_calls_neither_is_clean_test() -> Nil {
 
 pub fn the_logging_modules_erlang_file_may_call_logger_but_a_file_beside_it_may_not_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines = ["write(Text) -> logger:log(info, {string, Text}, #{})."]
   assert logging_bypass.erlang_breaches(planted.file(logging_erlang_file, lines))
     == []
@@ -151,6 +160,7 @@ pub fn the_logging_modules_erlang_file_may_call_logger_but_a_file_beside_it_may_
 
 pub fn a_logging_type_with_a_field_for_a_secret_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(logging_module, [
       "//// A planted module.",
@@ -177,6 +187,7 @@ pub fn a_logging_type_with_a_field_for_a_secret_is_a_breach_test() -> Nil {
 
 pub fn a_logging_type_with_fields_for_who_and_where_only_is_clean_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file(logging_module, [
       "//// A planted module.",
@@ -210,6 +221,7 @@ pub fn a_logging_type_with_fields_for_who_and_where_only_is_clean_test() -> Nil 
 
 pub fn no_gleam_file_under_src_calls_logger_or_prints_outside_the_logging_module_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
   let breaches =
     repository.sources(["src"])
     |> list.flat_map(logging_bypass.gleam_breaches)
@@ -218,6 +230,7 @@ pub fn no_gleam_file_under_src_calls_logger_or_prints_outside_the_logging_module
 
 pub fn no_erlang_file_under_src_calls_logger_or_prints_outside_the_logging_module_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
   let files =
     repository.erlang_sources()
     |> list.filter(fn(file) { string.starts_with(file.path, "src/") })
@@ -229,6 +242,7 @@ pub fn no_erlang_file_under_src_calls_logger_or_prints_outside_the_logging_modul
 
 pub fn the_logging_types_of_the_real_logging_module_have_no_field_for_a_secret_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
   let files =
     repository.sources(["src"])
     |> list.filter(fn(file) { file.path == logging_module })
