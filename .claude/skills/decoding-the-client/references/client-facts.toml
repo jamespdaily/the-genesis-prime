@@ -387,10 +387,10 @@ grade = "sure"
 name = "InitSpriteRendererAndFonts"
 
 ["0x1401971e0"]
-statement = "Reports an error: formats the message, logs it under its category, and, when it is not nested inside another report and the call site's report count is under the limit (unlimited by default) and no debugger is attached, raises a crash report with exception code 0xCFFF0001, exiting the process with code 1 when that report says so. It always returns 0, so the DebugBreak its callers place after a nonzero result never runs."
-proof = "Reentrant lock on 0x140c67400/0x140c67408 with GetCurrentThreadId; nesting count 0x140c63730; vsnwprintf of the message (pointer stored plus 0x12fa640); log call 0x1401a3130; 0x14019730e cmp [rsi], eax against 0x140c1e44c (0xffffffff); 0x140197316 category name from the table at 0x140c2ce70 when below 0x83, else 'Unknown'; format '(%s) Error: %s\\n'; 0x14019735a IsDebuggerPresent; 0x140197397 RtlCaptureContext; 0x1401973b7 mov [rsp+0x50], 0xcfff0001; 0x1401973e3 call 0x140192440; 0x1401973ea jne / 0x1401973ee ExitProcess(1); 0x140197470 xor eax, eax on every path. In the callee list checked by test_client_refs.py."
+statement = "Reports an error: formats the message and logs 'Error: <message>' under its category at level Error. When the line passed the level filter, it is not nested inside another report, the call site has reported fewer than 3 times in this run (the client start sets the limit to 3; the file's value is unlimited) and no debugger is attached, it writes an error report (WriteErrorReport: .txt, .dmp and .log of the in-memory log, under ..\\Errors) with exception code 0xCFFF0001. That report returns -1, so the client goes on. It always returns 0, so the DebugBreak its callers place after a nonzero result never runs."
+proof = "Reentrant lock on 0x140c67400/0x140c67408 with GetCurrentThreadId; nesting count 0x140c63730; vsnwprintf of the message (pointer stored plus 0x12fa640); log call 0x1401a3130; 0x14019730e cmp [rsi], eax against 0x140c1e44c (0xffffffff); 0x140197316 category name from the table at 0x140c2ce70 when below 0x83, else 'Unknown'; format '(%s) Error: %s\\n'; 0x14019735a IsDebuggerPresent; 0x140197397 RtlCaptureContext; 0x1401973b7 mov [rsp+0x50], 0xcfff0001; 0x1401973e3 call 0x140192440; 0x1401973ea jne / 0x1401973ee ExitProcess(1); 0x140197470 xor eax, eax on every path. In the callee list checked by test_client_refs.py. Reentrant lock 0x140c67400/0x140c67408; nesting 0x140c63730; 0x1401972a8 _vsnwprintf of the message (pointer minus 0x12fa640); 0x1401972c5 lea rax, [0x141d3e438] (L'Error: %s'); 0x1401972d9 xor edx, edx (level 0); 0x1401972e7 call LogMessage; 0x1401972ee jnz (dropped -> no report); 0x140197308 mov eax, [0x140c1e44c]; 0x14019730e cmp [rsi], eax; count incremented before IsDebuggerPresent; RtlCaptureContext; code 0xcfff0001 with flags 0; 0x1401973e3 call 0x140192440; == 1 -> ExitProcess(1). 0x14000acca mov dword ptr [0x140c1e44c], 0x3 in the client start 0x14000ac90. 0x140192440 returns -1 for codes 0xcfff0000..0xcfff0003 with flags bit 0 clear."
 grade = "fairly sure"
-gap = "What 0x140192440 does with the exception record (crash reporter dialog or upload) is not read."
+gap = "ReportError itself is read from Ghidra's decompile apart from the listed instructions; what the report holds is in WriteErrorReport 0x140192440."
 name = "ReportError"
 
 ["0x1401a3130"]
@@ -398,6 +398,65 @@ statement = "Writes a log message: takes a category (0 to 130), a level, a messa
 proof = "0x1401a3130: level < 0 returns 0; 0x1401a3167 test of 0x140c674a0, else 0x1401a3170 'WARNING! Log called before CRT startup' to OutputDebugStringA; category < 0x83 indexes the levels at 0x140c674a8, else -1; level above it returns 0; vsnwprintf into 0xfff characters with the message pointer minus 0x12fa640; call 0x1401a2460; return 1. In the callee list checked by test_client_refs.py."
 grade = "sure"
 name = "LogMessage"
+
+["0x1401a2460"]
+statement = "Writes one log line that has passed the level filter. It prefixes the local date and time (MM/DD/YY HH:MM:SS), the level name (Error, Warn, Info, Debug, Trace) unless log flag 0x80 is set, and the category name unless flag 0x40 is set, and ends the line with a newline. The line goes, in UTF-8, to: the log file when flag 0x1 is set and a file is open (flushed when flag 0x10 is set); always, a 64 KiB in-memory ring; a wide-text ring when flag 0x2 is set; standard output (flag 0x4) and standard error (flag 0x8), coloured by level when they are consoles; the debugger output only when the client's entry point has not set its no-debug-output flag, which it always sets, so never in this client; and each registered log listener (none is registered in this build). Console and debugger copies drop the 18-character time stamp unless flag 0x20 is set."
+proof = "Decompiled: 0x140c674a0 == 0 -> 'WARNING! Log called before CRT startup' to OutputDebugStringA; category > 0x82 returns; GetLocalTime with L'%0.2u/%0.2u/%0.2u %0.2u:%0.2u:%0.2u ' (month, day, year % 100, hour, minute, second); (char)flags >= 0 -> L'(%s) ' with the level table 0x140a44ec8; flags & 0x40 == 0 -> L'(%s) ' with the category table 0x140c2ce70; L'%s'; newline; wide to UTF-8; flags & 1 and FILE 0x140c676c8 -> fwrite, fflush when flags & 0x10; ring 0x140c676d0 (0x10000 bytes, write index 0x140c776d8, fill 0x140c776d0/0x140c776e0) always; flags & 0x20 == 0 skips 0x12 bytes for the later copies; flags & 2 and 0x140c776e8 -> wide ring; flags & 4 -> stdout (CRT FILE 0x30) with SetConsoleTextAttribute; flags & 8 -> stderr (0x60); 0x140c63734 == 0 and IsDebuggerPresent -> OutputDebugStringA; listeners 0x140c77748..0x140c77750 called with (category, level, text, context). 0x140c63734 is written only by the entry point 0x1400088c0 (0x1400088ce, value 1). The listener vector is written only by 0x1401a1280 and 0x1401a1360 (refs_to 0x140c77748, 0x140c77750)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile. That 0x1401a1360 only frees the listeners (it is called from the shutdown routine 0x14094d940) is inferred, not read."
+name = "WriteLogLine"
+
+["0x1401a1280"]
+statement = "Resets the log settings before the client reads its command line: every one of the 131 categories at level 2 (Info, so Error, Warn and Info lines pass and Debug and Trace are dropped), the log flags at 0 (no file, no console, no wide ring), no file open, both console handles unset, and the log marked ready."
+proof = "Decompiled: 0x140c674a4 = 0; 0x140c676c8 = 0; 0x140c674a8.. filled with 0x200000002 (two levels of 2 per word, 8 x 8 words and one word and one dword: 131); 0x140c77710 and 0x140c77728 = -1; 0x140c674a0 = 1. Its one caller is 0x140938ca0 (0x140938ca4)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; that 0x140938ca0 is a C runtime initialiser that runs before the command line is read is inferred from the 'before CRT startup' guard, not traced."
+name = "ResetLogSettings"
+
+["0x1401a1530"]
+statement = "Sets up the client's log from the registry key HKCU\\SOFTWARE\\NCSOFT\\WildStar\\Log and the command line. An argument starts with '-', '/' or the character 0x96 or 0x97 and is matched ignoring case. The flags start from the key's value Flags; -logFile and -logNoFile turn the file on and off, -logFlush/-logNoFlush the flush after each line, -logTimestamp/-logNoTimestamp the time stamp on console copies, -logFacility/-logNoFacility the category name. -logDefaultLevel <n> sets every category to n. Then for each named category the key's value of that name sets its level, -log<Name> <n> sets it to n (2 when the next word is not a number) and -logNo<Name> turns it off (-1). With the file on, it opens for appending -logFileName <path>, or else <-logDir, or the program's folder followed by ..\\Logs>\\<program name>_16042_<computer name>_<YYMMDD>_<HHMMSS>.txt (local time; with flag 0x100 the process id in hex is added before .txt), creating the folder first. It also reads -errDir <dir>, the folder for error reports. No console variable takes part."
+proof = "Decompiled: 0x1401c94c0 opens HKCU 'SOFTWARE\\%s\\%s\\%s' with 'NCSOFT', the name at 0x1320 of the object 0x140c63788 or 'WildStar', and 'Log' (0x140a44ab8); slot 0x28 of that key object reads L'Flags' into 0x140c674a4. Argument tests ((c - 0x2d) & ~2 == 0 or c - 0x96 < 2, then CompareTextNoCase): logFile |1, logNoFile &~1, logFlush |0x10, logNoFlush &~0x10, logTimestamp |0x20, logNoTimestamp &~0x20, logFacility &~0x40, logNoFacility |0x40; logDefaultLevel fills the 0x83 levels at 0x140c674a8 with 0x14018e820 of the next word; per category (names 0x140c2ce70, index 0..0x82): key value, L'log%s' (0x140a44c80) with 0x1407dff2c on the next word's first character then 0x14018e820, else 2 (0x1401a1c4e), L'logNo%s' -> 0xffffffff. File: logFileName, else GetComputerNameW (or 'UNKNOWN'), GetModuleFileNameW/GetFullPathNameW with the extension cut at the last '.', logDir or the folder plus L'..\\Logs' (0x140a44c10); 0x1401a1efe test 0x100; format L'%s\\%s_%d_%s_%s%0.2u%0.2u%0.2u_%0.2u%0.2u%0.2u.txt' (0x140a44db0) with the folder, program name, 0x3eaa, computer name, an empty text (0x1401a1ef1), year % 100, month, day, hour, minute, second (0x1401a2081..0x1401a210c); 0x1401a2186 call shell32.dll!#165 on the folder; 0x1401a219a call 0x1407e0734 with mode L'a' (bytes at 0x1409e2144: 61000000) -> 0x140c676c8. errDir copied to 0x140c884b0. Its one caller is the client start 0x14000ac90 (0x14000b1e8, with the command-line word list)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile. That 0x1407e0734 is _wfopen, that shell32.dll!#165 creates the folder, that 0x1407dff2c is a digit test and that the key object's slot 0x28 reads a DWORD are inferred from their arguments, not read. Whether the object at 0x140c63788 already names another product when this runs is not read."
+name = "SetUpLog"
+
+["0x1401a2e50"]
+statement = "The UTF-8 twin of LogMessage: takes a category, a level and a UTF-8 format with its arguments, applies the same level filter, converts the formatted text to wide text and writes it as one log line."
+proof = "Decompiled: level < 0 -> 0; category < 0x83 -> level table 0x140c674a8, else -1; above it -> 0; _vsnprintf of the format pointer minus 0x12fa640 into 0xfff bytes; UTF-8 to UTF-16; 0x1401a3102 call 0x1401a2460; returns 1."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "LogMessageUtf8"
+
+["0x140c2ce70"]
+statement = "The log category names, by category number: 0 None, 1 Base, 2 Mem, 3 Asset, 4 Text, 5 Game, 6 Model, 7 CollateAsset, 8 Genesis, 9 P4, 10 Costume, 11 Network, 12 Database, 13 Apollo, 14 Gfx, 15 Input, 22 Client. A command-line switch -log<Name> or -logNo<Name> and a registry value <Name> set the category with that name."
+proof = "Bytes at 0x140c2ce70 (16 pointers): 0x140a45ff0 L'None', 0x140a46008 L'Base', 0x140a46000 L'Mem', 0x140a45f38 L'Asset', 0x140a45fc0 L'Text', 0x140a45fe0 L'Game', 0x140a45fd0 L'Model', 0x140a46068 L'CollateAsset', 0x140a46058 L'Genesis', 0x1409e4bc4 L'P4', 0x140a46088 L'Costume', 0x140a46030 L'Network', 0x140a46018 L'Database', 0x140a46048 L'Apollo', 0x140a46040 L'Gfx', 0x140a460f0 L'Input'; entry 22 (file offset of 0x140c2cf20) -> 0x140a460b8 L'Client'. Read by 0x1401a2460, 0x1401a1530 and ReportError (0x14019731e)."
+grade = "sure"
+
+["0x140a44ec8"]
+statement = "The log level names, by level: 0 Error, 1 Warn, 2 Info, 3 Debug, 4 Trace."
+proof = "Bytes at 0x140a44ec8: pointers 0x140a44ae8 L'Error', 0x140a44b18 L'Warn', 0x140a44b08 L'Info', 0x140a44aa8 L'Debug', 0x140a44a98 L'Trace'. Indexed by the level in 0x1401a2460 (level + 1 < 6)."
+grade = "sure"
+
+["0x1401a2bc0"]
+statement = "Saves the in-memory 64 KiB log ring to a file at the given path: the oldest part first, and when the ring has wrapped, a '...' line and the rest from the first whole line on."
+proof = "Decompiled: path to UTF-8; 0x1407e13f0 with the mode at 0x1409e215c; fwrite of 0x140c676d0 for the first fill; when it wrapped, fwrite '\\n...\\n\\n', skip to past the next newline, then the remainder; fclose. Its one caller is 0x140192440 (0x140192d76)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "SaveLogRing"
+
+["0x1401909c0"]
+statement = "The folder for error reports: the -errDir folder when given, else the program's folder followed by ..\\Errors."
+proof = "Decompiled: 0x140c884b0 empty -> GetModuleFileNameW, GetFullPathNameW, cut at the file part, L'%s..\\Errors' into 0x140c884b0; returns 0x140c884b0 (set from errDir by 0x1401a1530)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "ErrorReportFolder"
+
+["0x140192440"]
+statement = "Writes an error report (for ReportError and for crashes): unless a debugger is attached, it creates the error report folder and writes three files named <program>.<...>.<date>.<time> (UTC) there: .txt (the report), .dmp (a minidump, when the dump writer is available; full with -fulldump) and .log (the in-memory log ring). When all three are written it uploads them to http://crash.na.wildstar-online.com/errors.php, backing off after failures. For ReportError's reports it returns -1, so the client goes on. The three files stay in the folder whether the upload succeeds or fails: neither this function nor any function it calls imports a file delete or move."
+proof = "Decompiled: 0x1401924xx IsDebuggerPresent -> skip; 0x1401909c0 then CreateDirectoryW; GetSystemTime; L'%s.%s.%s.%p.%s.%s.%0.2u%0.2u%0.2u.%0.2u%0.2u%0.2u' from the program name (dots -> '_'); L'%s\\%s.txt' -> 0x1407e0734, 0x140191520, 0x140191f50; L'%s\\%s.dmp' -> CreateFileW, 0x140191340 (type 2 with 0x140c63724 bit 0, set by -fulldump in 0x140251a40 at 0x140251aeb); L'%s\\%s.log' (0x140a435d0) -> 0x140192d76 call 0x1401a2bc0; upload when 0x140c63724 bit 1 is clear and all three were written, to 0x140c886c0 or L'http://crash.na.wildstar-online.com/errors.php' through WinHttp, with a back-off of 30000 doubling at 0x140c8a1ac. Return: exception code 0xcfff0000..0xcfff0003 -> -1 unless the record's flags bit 0 (ReportError passes flags 0), else 1 or 0. Delete check (query process, 2026-10-27): the callees of 0x140192440 import CloseHandle, CreateDirectoryW, CreateEventW, CreateFileW, GetTempFileNameW, WriteFile and WinHttp calls, none deleting or moving; the 16 internal callees each import no DeleteFile, RemoveDirectory or MoveFile. The override at 0x140c886c0 has no writer (refs_to: two reads in this function)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile. The fields of the report name after the program name, and what the .txt holds (0x140191520, 0x140191f50), are not read; nothing sets 0x140c63724 bit 1 in the refs found, so the upload is always tried."
+name = "WriteErrorReport"
 
 ["0x1401b54e0"]
 statement = "Lists the files matching a wildcard path into a new file list, from the loose files on disk and from each registered file source, returning a Windows result code (E_INVALIDARG for a null path or output). Flag 1 is passed to every search, flag 2 adds a search under an extra root when one is set, and flag 4 skips the registered sources."
@@ -1360,17 +1419,57 @@ gap = "Ordinals 16 and 111 are read as recv and WSAGetLastError from Windows' ws
 name = "ReceiveSocketBytes"
 
 ["0x1403321a0"]
-statement = "Reads every whole frame a connection has received: it peeks the next frame's 32-bit length, and while fewer bytes than that length have arrived (counted across the received chunks) it stops and waits for more; otherwise it reads the frame (ReadMessageFrame) and goes on with the next. So a frame may span socket reads and one read may hold several frames. A frame that fails to read is counted and reported to the connection's owner, which may close the connection."
-proof = "Decompiled: the connection by index from the network object's array at 0xa8 (count 0xb0); 0x140336fa0 (PeekUint32) on its stream at 0x28; bytes available = current chunk end - position, plus each later chunk (linked at 0x38) until the length is reached, else return; 0x140331990; a part-read byte is closed after the frame; results 8, 9 and 0xe add one to the connection's 0xc; the owner (network object 0x78) slot 8 gets the result, and slot 0x28 closes the connection when it returns a negative."
+statement = "Reads every whole frame a connection has received: it peeks the next frame's 32-bit length, and while fewer bytes than that length have arrived (counted across the received chunks) it stops and waits for more; otherwise it reads the frame (ReadMessageFrame) and goes on with the next. So a frame may span socket reads and one read may hold several frames. A frame that fails to read is counted and reported to the connection's owner, which may close the connection. When the owner's handler fails, it closes the connection and logs 'Disconnecting connectionId 0x<id> with status <result>' under Network at level Error, with no message id; an unknown connection id is logged as 'Invalid TConnectionId'."
+proof = "Decompiled: the connection by index from the network object's array at 0xa8 (count 0xb0); 0x140336fa0 (PeekUint32) on its stream at 0x28; bytes available = current chunk end - position, plus each later chunk (linked at 0x38) until the length is reached, else return; 0x140331990; a part-read byte is closed after the frame; results 8, 9 and 0xe add one to the connection's 0xc; the owner (network object 0x78) slot 8 gets the result, and slot 0x28 closes the connection when it returns a negative. Decompiled: index out of range -> LogMessage(0xb, 0, 0x141dec090 'Invalid TConnectionId ( 0x%8.8x )'); PeekUint32 loop; 0x140331990; results 8, 9, 0xe -> [conn+0xc] + 1; owner (network object 0x78) slot 8 (0x140014d30) with the result; negative -> slot 0x28 (close) and LogMessage(0xb, 0, 0x141dec140 'Disconnecting connectionId 0x%08x with status %d')."
 grade = "fairly sure"
-gap = "Read from Ghidra's decompile; what the owner does with each failure is not read."
+gap = "Read from Ghidra's decompile; what the owner does with each failure is in HandleConnectionFailure 0x140014d30."
 name = "ReadConnectionMessages"
 
-["0x140331990"]
-statement = "Reads one received frame: its 32-bit length, then its 16-bit message id, and looks the message up. A frame longer than the message's size limit (MessageSizeLimit), or with an unknown id, or with no reader, is logged and skipped to its end. Otherwise the message's reader reads the body into a record and the record goes to the connection's owner, except the network layer's own ids, which never reach it: a ping (id 0) is answered at once with a pong (id 1) carrying the same byte, a pong goes to HandleNetworkPong, and a close notice (id 2) is dropped."
-proof = "Decompiled: 0x140336d60 (or an inline fast path) reads widths 0x20 and 0x10; the id gets 0x10000 when the connection's 0x20 is 1; slot 0x130 looks it up; 0x140335ec0 gives the limit, length <= limit passes, over limit * 0.9 a warning; the record from 0x1403374e0 sized by descriptor 8; reader at descriptor 0x20; id 0 -> slot 0xf0 (0x140332151 movzx eax, byte ptr [r12]; 0x140332164 mov r8d, 0x1; 0x14033216d call [rax+0xf0], the network object's send-by-id with id 1 and that byte), 1 -> 0x140333790 (0x14033214a), 2 -> nothing (0x140332006 je 0x140332173), others -> the owner's slot 0x10 (or 0x18 in a foreign id space); every failure skips length - bytes read with 0x1403370c0."
+["0x140335f10"]
+statement = "Gives a message id's printable name: 'Base Message Id #<id>' for ids 0 to 2, else the message table's name, or 'Invalid or foreign Message Id #<id>' when the id is past the table or its name is empty. The table holds no names in this build, so every network log line names a message by its decimal id."
+proof = "Decompiled: id < 3 -> 'Base Message Id #%d'; id >= 0x140c1e564 (0xd2f) or the name word at 0x140c65828 + 8 + (id - 3) * 16 is 0 -> 'Invalid or foreign Message Id #%d'; else the name copied. The table's name words are all zero (record of NetworkSendMessageById 0x140332580)."
 grade = "fairly sure"
-gap = "Read from Ghidra's decompile; what sets the connection's 0x20 (the second id space) is not read."
+gap = "Read from Ghidra's decompile; that nothing writes names into the table at run time is not read."
+name = "MessageIdName"
+
+["0x140014d30"]
+statement = "The game's handler for a frame that failed on a connection, given the result. Results 8, 9 and 14 (unknown id, bad size, reader failure, handler failure) are ignored and the connection goes on. For any other result each handler on the game's list is asked first; when none takes it, the client shows the error screen with 'Network Error: Connection Closed' (2), 'Network Error: Unable to Connect' (3, 4, 6, 7, 8, 10 to 13) or 'Unknown Network Error' (5, 9, above 14), shows nothing for 0, 1 and 14, and returns a failure, so the connection is closed."
+proof = "Decompiled: (s - 8) < 2 or s == 0xe -> return 0; handler list game 0x15b0 slot 0x50, any 0 -> return 0; switch 0x140014e68 (table at 0x140014ecc, 15 entries): 2 -> 0x140014e6a mov r8d, 0x23084; 3, 4, 6, 7, 8, 10..13 -> 0x140014e72 mov r8d, 0x23086; 5, 9 and default -> 0x140014e7a mov r8d, 0x23087; 0x140014e87 call 0x140014c60; 0x140014e8c mov ebx, 0x80004005; 0, 1 -> 0x140014e91 return 0. Texts from ClientDataEN en-US.bin: 143492 'Network Error: Connection Closed', 143494 'Network Error: Unable to Connect', 143495 'Unknown Network Error'. Slot 1 of the class table at 0x140b55100 (bytes at 0x140b55108: 0x140014d30)."
+grade = "fairly sure"
+gap = "Which handlers answer slot 0x50 is not read."
+name = "HandleConnectionFailure"
+
+["0x140014c60"]
+statement = "Shows the error screen with a localized text, given its text id."
+proof = "Decompiled: 0x14034bdd0 (localized text) with the id, copied, then 0x140015ec0 with the text and 2."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "ShowNetworkErrorScreen"
+
+["0x140015ec0"]
+statement = "Shows the pre-game error screen (UI\\PreGame\\ErrorScreen\\ErrorScreen.xml) with the given text in its ErrorMessageText, and puts the screen on the game's handler list."
+proof = "Decompiled: a 0x70-byte object (class table 0x140b55540); 0x140033780 (StartClient mode 3, cursor UI\\Cursors\\Point.tex, ApolloFonts.xml and ApolloCursors.xml, strata 'ErrorScreen' and 'DefaultStratum', form 'ErrorMessage' from ErrorScreen.xml, slot 0x50 of 'ErrorMessageText' with the text); linked into game 0x15b0, or after game 0x1598's object."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; whether the screen replaces the current one or the connection stays open behind it is not read."
+name = "ShowErrorScreen"
+
+["0x140015a90"]
+statement = "HandleServerMessage's report of a message no handler took: it reports 'Unhandled network message <name>' (with the id, as 'Invalid or foreign Message Id #<id>') as an error under the Client category, so the line goes to the log and the first three such messages in a run each write an error report; the message is then dropped and 0 returned. A world message that reaches HandleWorldMessage's default case comes here when no other handler takes it."
+proof = "0x140015a3f..0x140015a5d the name ('Invalid or foreign Message Id #%d' 0x140af1e38, 'Base Message Id #%d' 0x140af22b8 or 'Message Id #%d' 0x140af23f8 with the id); 0x140015a67 lea rax, [0x141cdae90] (text 0x1409e0850 L'Unhandled network message %S'); 0x140015a73 lea rcx, [0x140c89edc] (this site's count); 0x140015a86 mov edx, 0x16; 0x140015a90 call ReportError; 0x140015ac4 xor eax, eax. The same function's other reports (category 0x16) are 'message from %S [%d, %S] without wrapper' (0x1400150c7), 'message from unknown connection [%d, %S] without wrapper' (0x1400151fe), and the wide-text forms at 0x1400153ca and 0x140015547."
+grade = "fairly sure"
+gap = "That no other handler on the list takes a world id HandleWorldMessage refuses rests on the handler-list record's own gap."
+
+["0x1400155f7"]
+statement = "HandleServerMessage's answer to a handler that failed: it shows the error screen with 'Failure handling network message '<name>'' (text 143520, naming the message by id), or 'Disconnected. Client/Server Data Mismatch.' (text 418527) when the failure is 0xA00B0001, writes nothing to the log there, and returns the failure, so ReadMessageFrame logs 'Invalid Message' with the id."
+proof = "0x1400155f7 mov edx, 0x230a0; 0x1400155fc call 0x14034bdd0; 0x14001560c call 0x14018d540 (format with the name); 0x140015622 call 0x140015ec0; 0x14001564d mov eax, edi (the handler's result). 0x140015952 cmp eax, 0xa00b0001 -> 0x1400159f3 mov edx, 0x662df; 0x140015a1d call 0x140015ec0; else 0x14001598a mov edx, 0x230a0. Texts from ClientDataEN en-US.bin: 143520 'Failure handling network message '%hs'', 418527 'Disconnected. Client/Server Data Mismatch.'"
+grade = "fairly sure"
+gap = "Which handlers return 0xA00B0001 is not read."
+
+["0x140331990"]
+statement = "Reads one received frame: its 32-bit length, then its 16-bit message id, and looks the message up. A frame longer than the message's size limit (MessageSizeLimit), or with an unknown id, or with no reader, is logged and skipped to its end. Otherwise the message's reader reads the body into a record and the record goes to the connection's owner, except the network layer's own ids, which never reach it: a ping (id 0) is answered at once with a pong (id 1) carrying the same byte, a pong goes to HandleNetworkPong, and a close notice (id 2) is dropped. Each failure is logged under Network at level Error, naming the connection and the message id, and the frame is skipped to its end: an unknown id ('(->conn)[conn id] Malformed Packet: Unknown Message: '<id>' (bytes: n) (last msg: id:name)', result 8); a frame longer than the message's size limit ('Malformed Packet: bad Message size: [length>limit] ...', result 8); no room for the record ('Msg <id, name> failed to GetMsgBuffer().alloc(size)', result 4); no reader ('Msg <id, name> failed to find unPackFromStreamFn function', result 11); the reader failing ('(->conn) unpacked data too big, ID = <name> consumed n bytes rather than length', result 8); the game's handler failing ('(->conn) Invalid Message '<name>'', result 14). A frame over 90% of its limit gets a Warn line ('Packet: Message size approaching failure size'). A length or id that cannot be read returns 12 with no line."
+proof = "Decompiled: 0x140336d60 (or an inline fast path) reads widths 0x20 and 0x10; the id gets 0x10000 when the connection's 0x20 is 1; slot 0x130 looks it up; 0x140335ec0 gives the limit, length <= limit passes, over limit * 0.9 a warning; the record from 0x1403374e0 sized by descriptor 8; reader at descriptor 0x20; id 0 -> slot 0xf0 (0x140332151 movzx eax, byte ptr [r12]; 0x140332164 mov r8d, 0x1; 0x14033216d call [rax+0xf0], the network object's send-by-id with id 1 and that byte), 1 -> 0x140333790 (0x14033214a), 2 -> nothing (0x140332006 je 0x140332173), others -> the owner's slot 0x10 (or 0x18 in a foreign id space); every failure skips length - bytes read with 0x1403370c0. Log calls (category 0xb, level 0 unless noted): 0x140331bbe call 0x1401a2e50 with 0x141debc30 (text 0x140af15f0), args connection name, [conn+0x10], name, length, [conn+0x318], last name; 0x140331cd3 with 0x141debd30 (0x140af16f0); 0x140331dad level 1 with 0x141debcc0 (0x140af1680); 0x140331e56 LogMessage with 0x141debfb0 (0x140af1970), id, name, size; 0x140331eec LogMessage with 0x141debf40 (0x140af1900), return 0xb; 0x140331fd3 0x1401a2e50 with 0x141dec040 (0x140af1a00), name, bytes read, length, after 0x140331f36 call rax (the reader) and 0x140331f3a jns; 0x14033209e with 0x141dec018 and 0x140332124 with 0x141dec0d8 (both 'Invalid Message'), return 0xe. Descriptor = text + 0x12fa640. ReadBitsSlow failure on length or id -> return 0xc with no call. Pings: 0x14033216d call [rax+0xf0] with id 1; 0x14033214a HandleNetworkPong."
+grade = "fairly sure"
+gap = "Instructions read for the log sites; the rest is from Ghidra's decompile. What sets the connection's 0x20 (the second id space) and what 0x140334d90 puts in the connection name are not read."
 name = "ReadMessageFrame"
 
 ["opcode.0x0"]
@@ -1430,8 +1529,8 @@ gap = "The map insert 0x1400edd00 and the index allocator 0x14032ff20 are not re
 name = "NetworkNewConnection"
 
 ["0x140331620"]
-statement = "Parses one whole frame held in memory, the decrypted body of message 0x76 or 0x3dc: its 32-bit length must be at least 6; it reads the 32-bit length and the 16-bit message id, looks the message up and reads its body with the message's reader into a record. An unknown id or one with no reader is logged and fails."
-proof = "Slot 0x100 of the class table at 0x140b647b0. Decompiled: no buffer -> 0xe; *buffer < 6 -> 5; a stream (class table 0x140b64918) over buffer .. buffer + *buffer; 0x140336c60 with 0x20 then 0x10; the id to the caller's id slot; slot 0x130; reader at descriptor 0x20 into a record from 0x1403374e0; reader failure -> 8."
+statement = "Parses one whole frame held in memory, the decrypted body of message 0x76 or 0x3dc: its 32-bit length must be at least 6; it reads the 32-bit length and the 16-bit message id, looks the message up and reads its body with the message's reader into a record. An unknown id or one with no reader is logged and fails. Failures are logged under Network at level Error with the id: 'Malformed Packet: Unknown Message: <id, name>' (8), 'Overflow' when the record space is too small (4, no id), 'Msg <id, name> failed to find unPackFromStreamFn function' (11), 'Malformed Packet: unPackFromStreamFn failure : <id, name>' (8)."
+proof = "Slot 0x100 of the class table at 0x140b647b0. Decompiled: no buffer -> 0xe; *buffer < 6 -> 5; a stream (class table 0x140b64918) over buffer .. buffer + *buffer; 0x140336c60 with 0x20 then 0x10; the id to the caller's id slot; slot 0x130; reader at descriptor 0x20 into a record from 0x1403374e0; reader failure -> 8. Decompiled: no buffer -> 0xe; length < 6 -> 5; ReadBits 0x20, 0x10; slot 0x130; null -> 0x1401a2e50(0xb, 0, 0x141debb58 'Malformed Packet: Unknown Message: <%d, %s>', id, name); space 0x18 < record size -> 0x141debc20 'Overflow', 4; AllocateMessageSpace null -> 6; no reader -> LogMessage 0x141debbb0, 0xb; reader < 0 -> 0x141debc88 'Malformed Packet: unPackFromStreamFn failure : <%d, %S>', 8. HandleServerMessage turns any nonzero result into 0x80004005 (0x140015299)."
 grade = "fairly sure"
 gap = "Read from Ghidra's decompile."
 name = "ParseWrappedMessage"
@@ -1723,8 +1822,8 @@ grade = "sure"
 name = "ReadIpv4Endpoint"
 
 ["0x1403374e0"]
-statement = "Takes space for a received message's variable parts (texts and arrays) from the message's record space: rounds the start and the size up to 4 bytes and fails when the space is used up."
-proof = "Decompiled: a bump allocator over (limit at word 0, base at word 2, end at word 3, next at word 4); alignment (x + 3) & ~3; over the end or the limit -> ReportError and 0. Run on the emulator with a planted 4 KiB space under the readers of vector.opcode.0x761.body and vector.opcode.0x3db.body."
+statement = "Takes space for a received message's variable parts (texts and arrays) from the message's record space: rounds the start and the size up to 4 bytes. When the space is used up it reports an error under Network ('Message offset invalid!', 'Message size exceeds remaining!' or 'Message size exceeds limit!', without the message id; each site writes at most three error reports a run) and fails."
+proof = "Decompiled: a bump allocator over (limit at word 0, base at word 2, end at word 3, next at word 4); alignment (x + 3) & ~3; over the end or the limit -> ReportError and 0. Run on the emulator with a planted 4 KiB space under the readers of vector.opcode.0x761.body and vector.opcode.0x3db.body. 0x140337518 cmp rax, [r8+0x18] -> 0x140337555 lea rax, [0x141deca48] (L'Message offset invalid!'), 0x14033755c lea rcx, [0x140c8a630]; 0x1403375e3 cmp rcx, rax -> 0x14033761b lea rax, [0x141decb30] (L'Message size exceeds remaining!'), [0x140c8a62c]; 0x140337637 cmp rax, [r8] -> 0x14033766f lea rax, [0x141deca78] (L'Message size exceeds limit!'), [0x140c8a634]; 0x140337575 mov edx, 0xb; 0x140337592 call ReportError; 0x1403375b7 xor eax, eax."
 grade = "fairly sure"
 gap = "Read from Ghidra's decompile; who sets the space's limit for a received frame is not read."
 name = "AllocateMessageSpace"
