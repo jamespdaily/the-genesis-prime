@@ -40,6 +40,8 @@ import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
+import gleam/int
+import gleam/list
 import message_support
 import owned_test
 
@@ -601,4 +603,17 @@ pub fn a_disconnect_notice_is_one_5_bit_reason_test() -> Nil {
   assert disconnect_notice.encode(DisconnectNotice(reason: 32))
     == Error(bit_stream.ValueDoesNotFit("reason", 5, 32))
     as "opcode.0x36a: a reason is 5 bits"
+}
+
+pub fn disconnect_notice_is_the_clients_5_bits_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each([#("06", 6), #("13", 19), #("14", 20), #("1f", 31)], fn(case_) {
+    message_support.assert_vector(
+      name: "vector.opcode.0x36a.body, reason " <> int.to_string(case_.1),
+      body: message_support.hex(case_.0),
+      value: DisconnectNotice(reason: case_.1),
+      encode: disconnect_notice.encode,
+      decode: disconnect_notice.decode,
+    )
+  })
 }

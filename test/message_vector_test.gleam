@@ -20,6 +20,7 @@ import genesis_prime/message/game_server_handoff.{GameServerHandoff}
 import genesis_prime/message/login_accepted.{LoginAccepted}
 import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
+import genesis_prime/message/pong.{Pong}
 import genesis_prime/message/realm_entry.{RealmEntry}
 import genesis_prime/message/realm_handoff.{RealmHandoff}
 import genesis_prime/message/realm_list.{RealmList}
@@ -373,4 +374,17 @@ pub fn a_body_with_a_whole_byte_after_its_last_field_is_a_decode_error_test() ->
     ))
     == Error(bit_stream.TrailingBytes(1))
     as "vector.opcode.0xf1.body is 74 bits in 10 bytes; an 11th byte is not padding"
+}
+
+pub fn pong_is_the_clients_8_bits_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each([#("00", 0), #("13", 19), #("14", 20), #("ff", 255)], fn(case_) {
+    message_support.assert_vector(
+      name: "vector.opcode.0x1.body, number " <> int.to_string(case_.1),
+      body: message_support.hex(case_.0),
+      value: Pong(sequence_number: case_.1),
+      encode: pong.encode,
+      decode: pong.decode,
+    )
+  })
 }
