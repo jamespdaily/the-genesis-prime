@@ -41,13 +41,43 @@
 //// - **A recording that cannot be written.** The shell logs it, closes the
 ////   socket and ends the process before that step's effects, so no input is
 ////   carried out without its record; the recording has no `End`.
-//// - **Effects built later.** `Send`, `Reply`, `Watch`, `Unwatch`,
-////   `StartTimer`, `CancelTimer` and a step that ends in an ask need the
-////   processes they name, which the login card builds; until then the shell
-////   logs an error naming the effect and ends the connection.
+//// - **An ask.** A step that ends in `EffectsThenAsk` has its effects carried
+////   out first; a failed write or a `Stop` among them means the ask is never
+////   made. The shell then hands the request and a reply, tagged with a fresh
+////   reference, to the settings' `directory`, and waits, taking no other
+////   input, until the outcome:
+////
+//// ```
+//// directory(request, reply)
+////   Error(Nil)              ─▶ Answered(ask, NotRunning), nothing sent
+////   Ok(ToService(pid))      ─▶ monitor pid, wait until the ask's deadline
+////   Ok(ToWorker(pid))       ─▶ monitor pid, wait until the ask's deadline
+//// waiting:
+////   {ask answer, tag, a}    ─▶ Answered(ask, Answer(a))
+////   the target's DOWN       ─▶ Answered(ask, EndedBeforeAnswer)
+////   the deadline passes     ─▶ ToService: Answered(ask, NoAnswerInTime), and
+////                                the tag is kept until its answer or DOWN
+////                              ToWorker: the worker is ended (exit shutdown),
+////                                then Answered(ask, NoAnswerInTime)
+////   the parent's exit       ─▶ its arrival time is kept; the wait goes on
+//// after the outcome: a stop that arrived during the ask is the next input,
+////   Stopping(arrival + shutdown_ms - send_deadline_ms)
+//// later, between steps:
+////   {ask answer, tag, _} of a kept tag ─▶ AnsweredLate(ask)
+////   an answer or DOWN of no kept tag   ─▶ dropped
+//// ```
+////
+////   The `Now` of `Answered` is read when the outcome is known. Bytes the
+////   client sent during the ask are read only after it, since the socket is
+////   active once and is not re-armed while the shell waits.
+//// - **Effects a connection does not carry out.** `Reply` (a connection is
+////   never asked), and `Send`, `Watch`, `Unwatch`, `StartTimer` and
+////   `CancelTimer`, which need processes no rule uses yet: the shell logs an
+////   error naming the effect and ends the connection.
 
 import genesis_prime/rule_recording.{Taken}
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
+import genesis_prime/service/shell.{type Sent} as service_shell
 import genesis_prime/step.{
   type About, type Effect, type Event, type LogLevel, type Peer, type Rule,
   type SocketFailure, About, Accepted, ConnectionId, Effects, EffectsThenAsk,
@@ -69,6 +99,11 @@ pub type Settings(settings, state, message, answer, outgoing, request) {
     /// Where each connection's inputs are recorded; `None` unless the dev
     /// start turns recording on.
     recorder: Option(Recorder(settings)),
+    /// How the shell reaches the process a request names: it sends the
+    /// request with `reply` and says where it went, or `Error(Nil)` when that
+    /// process is not running. Made once at start from the services' names,
+    /// with `service/shell.call` and `store/worker.ask`; a rule never sees it.
+    directory: fn(request, fn(answer) -> Nil) -> Result(Sent, Nil),
   )
 }
 

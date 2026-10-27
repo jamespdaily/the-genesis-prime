@@ -1,7 +1,8 @@
 //// Starts the server: it loads the client's game tables from the folder named
 //// by GENESIS_TABLE_DIR, stopping at once with the reason when one does not
-//// load, then starts the supervision tree and keeps the node alive. It serves
-//// no client.
+//// load, then starts the supervision tree, with the database named by PGHOST,
+//// PGPORT, PGUSER, PGPASSWORD and PGDATABASE, and keeps the node alive. It
+//// serves no client.
 
 import envoy
 import genesis_prime/server
@@ -26,11 +27,18 @@ pub fn main() -> Nil {
     Ok(_tables) -> Nil
     Error(error) -> panic as store.describe(error)
   }
-  let assert Ok(_) = server.start() as "the supervision tree did not start"
+  let assert Ok(_) = server.start(settings: settings())
+    as "the supervision tree did not start"
   io.println(
     "the server loaded "
     <> int.to_string(list.length(entries))
     <> " game tables and serves no client",
   )
   process.sleep_forever()
+}
+
+/// The tree's settings: the database from the environment, with Postgres's
+/// own defaults for what is not set, and a fresh name for each child.
+fn settings() -> server.Settings {
+  todo as "the build follows the shape commit"
 }

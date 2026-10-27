@@ -72,6 +72,9 @@ effectful_modules = [
   { module = "genesis_prime/connection/shell", reason = "owns a client socket and carries out its rule's effects" },
   { module = "genesis_prime/connection/listener", reason = "starts a Ranch listener under the supervision tree" },
   { module = "genesis_prime/rule_recording/file", reason = "writes a connection's recording to a file" },
+  { module = "genesis_prime/service/shell", reason = "runs a service's rule as a named actor and carries out its effects" },
+  { module = "genesis_prime/store/worker", reason = "runs one ask's query on the database pool in a worker of its own" },
+  { module = "genesis_prime/store/sql", reason = "the queries squirrel generates, run on pog's pool" },
 ]
 # The game domains: each top-level folder or module under src/genesis_prime/.
 domains = [
@@ -84,6 +87,9 @@ domains = [
   { module = "genesis_prime/step", reason = "the contract between each process's rule and its shell" },
   { module = "genesis_prime/rule_recording", reason = "the file a rule's inputs and steps are recorded in, for replay" },
   { module = "genesis_prime/world_map", reason = "the maps players share: their keys, rules and processes" },
+  { module = "genesis_prime/service", reason = "the shell of a named process with no socket that others ask" },
+  { module = "genesis_prime/store", reason = "the asks a rule makes of the database, and the workers that run them" },
+  { module = "genesis_prime/hand_off", reason = "the one-time keys a client carries from one server to the next" },
 ]
 # Erlang functions a rule module's externals may call.
 pure_erlang = [
