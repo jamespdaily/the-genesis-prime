@@ -15,9 +15,8 @@ Apply every section to each change, and check the diff against each before it is
 - A process exists only for state, concurrency or failure isolation. Pure code stays in plain functions.
 - Every process starts under a supervisor.
 - One process owns each piece of state; others ask it by message. Peers never call each other synchronously; a timed call up the tree, to a registry or a worker, is normal.
-- A map process owns every unit of its map, with a grid for each kind of unit. It hands each update, with its recipients, to one of a pool of senders, one per scheduler, chosen by the unit's id, so one unit's updates reach each player in order (measured on issue #28).
 - The server runs one scheduler per core, the BEAM's default. A lower count needs a load run that weighs the CPU it saves, in absolute terms, against the headroom it loses (issue #29).
-- The server runs as one node. Auth and game are each a subtree under the top supervisor; a fault that survives every restart stops the node, and the host restarts it (`test/one_node_test.gleam`).
+- The server runs as one node. Auth and game are each a subtree under the top supervisor; a fault that survives every restart stops the node, and the host restarts it (issue #30).
 - A map is keyed by its world and its instance. A rule picks the instance: open worlds share one, an instanced world has one per group.
 - A process's messages are defined by its module, with the functions that send them.
 - State is a record with one status field, not several flags. Settings and process names are start arguments, made once.
@@ -38,7 +37,6 @@ A process with state is a shell plus one rule. A recorded session replays throug
 - Watching a process and starting a timer are effects, named by role or id, never by a process id, monitor or subject.
 - No type a rule takes or returns holds a function.
 - A shell does only the work its message needs; it never preloads data a rule might read.
-- Older modules that still mix the shell and the rule are fixed by their own rebuild cards. Other cards leave them as they are.
 
 ## Restarts and shutdown
 
@@ -60,7 +58,6 @@ A process with state is a shell plus one rule. A recorded session replays throug
 ## Memory
 
 - Keep a busy process's live data small; leave data another process owns with that process.
-- Every busy process sets `max_heap_size`, kill on, at four times its measured peak heap rounded up to a power of two words: a collection needs up to about twice the sampled peak (issue #31). A process that holds packets also counts shared binaries; an ETS table that grows while running has a row cap kept by its owner.
 - Data many processes read and nobody changes while running goes in a persistent term, written once at start and never replaced while running. Its key is a start argument. Each game table is one term, a tuple of its rows indexed by id: a read costs about 76 ns with 12 readers, against 715 ns from ETS, which copies the whole row (issue #32).
 - Find nearby units and players by spatial index (grid cells), on every path, including rare ones.
 - Players and connections keep waiting messages off the heap.
