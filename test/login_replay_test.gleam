@@ -9,42 +9,18 @@
 //// - The recording's layout and replay in `genesis_prime/rule_recording`:
 ////   every recorded step must be the step the rule gives again.
 
+import fresh_node
 import genesis_prime/login.{type Answer, type Request}
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/rule_recording.{End, Header}
 import genesis_prime/rule_types
 import genesis_prime/step.{type Input, type Step, Rule}
-import gleam/dynamic.{type Dynamic}
-import gleam/dynamic/decode
-import gleam/erlang/atom.{type Atom}
 import gleam/list
 import owned_test
 import simplifile
 
 const folder = "test/rule_recording/2026-10-27-login-rule/"
-
-/// The modules whose record tags and constructors a recording holds as atoms.
-/// A recording is read with `binary_to_term` and `[safe]`, which refuses an
-/// atom the node does not know yet, and a module's atoms are known once it is
-/// loaded; so the replay loads them first, whatever test ran before.
-const modules_of_the_recorded_terms = [
-  // Builds the settings a recording's header holds.
-  "genesis_prime",
-  "genesis_prime@step",
-  "genesis_prime@rule_recording",
-  "genesis_prime@login",
-  "genesis_prime@hand_off",
-  "genesis_prime@store",
-  "genesis_prime@login@guid",
-  "genesis_prime@connection@frame",
-  "genesis_prime@message@bit_stream",
-  "genesis_prime@login@sts_connection",
-  "genesis_prime@login@auth_connection",
-]
-
-@external(erlang, "code", "ensure_loaded")
-fn ensure_loaded(module: Atom) -> Dynamic
 
 /// Replays the recording through the rule, whose settings are the ones its
 /// header holds, and gives the inputs replayed and the inputs `End` counts.
@@ -54,17 +30,6 @@ fn replayed(
   new new: fn(settings) -> state,
   step step: fn(state, Input(Nil, Answer)) -> #(state, Step(Nil, Request)),
 ) -> #(Int, Int) {
-  list.each(modules_of_the_recorded_terms, fn(name) {
-    // OTP answers {module, Name} for a module that is loaded.
-    let assert Ok(loaded) =
-      decode.run(
-        ensure_loaded(atom.create(name)),
-        decode.at([0], atom.decoder()),
-      )
-      as { "the module " <> name <> " loads" }
-    assert loaded == atom.create("module")
-      as { "the module " <> name <> " loads" }
-  })
   let assert Ok(bytes) = simplifile.read_bits(folder <> file)
     as "the recording reads"
   let assert Ok(#(Header(settings:, ..), records)) = rule_recording.read(bytes)
@@ -109,4 +74,18 @@ pub fn the_live_sessions_auth_recording_replays_to_the_same_steps_test() -> Nil 
     )
   assert inputs == count as "the replay folds every input the End counts"
   assert count == 153 as "the live session's auth connection took 153 inputs"
+}
+
+/// The recording replays in a fresh node, where nothing has loaded the
+/// modules whose names its terms hold: the reader must not depend on what ran
+/// before it.
+pub fn the_auth_recording_replays_in_a_fresh_node_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert fresh_node.run(
+      module: "login_replay_test",
+      function: "the_live_sessions_auth_recording_replays_to_the_same_steps_test",
+      timeout_ms: 50_000,
+    )
+    == Ok(Nil)
+    as "the auth recording replays with nothing loaded before it"
 }
