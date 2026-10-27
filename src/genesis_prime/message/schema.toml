@@ -95,6 +95,18 @@ fields = [
 ]
 
 [[message]]
+id = 0x063D
+name = "login_refused"
+direction = "server_to_client"
+evidence = "opcode.0x63d"
+summary = "the auth server's refusal of a login, with the reason the client shows; the client reads the float only for reason 21"
+fields = [
+  { name = "reason", kind = "unsigned", bits = 32, evidence = "opcode.0x63d", named_by = "opcode.0x63d" },
+  { name = "value", kind = "unsigned", bits = 32, evidence = "opcode.0x63d", named_by = "opcode.0x63d" },
+  { name = "field_3", kind = "float32", evidence = "opcode.0x63d", safe_by = "opcode.0x63d" },
+]
+
+[[message]]
 id = 0x03DB
 name = "game_server_handoff"
 direction = "server_to_client"

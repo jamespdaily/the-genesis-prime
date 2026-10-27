@@ -60,8 +60,12 @@ pub type Settings {
 /// store they ask, so they stop first.
 pub type Login {
   Login(
+    /// The STS listener's name in Ranch, unique on the node.
+    sts_listener: String,
     sts_port: Int,
     sts: sts_connection.Settings,
+    /// The auth listener's name in Ranch, unique on the node.
+    auth_listener: String,
     auth_port: Int,
     auth: auth_connection.Settings,
     /// How long a write may wait for a client's socket.

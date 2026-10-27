@@ -396,7 +396,7 @@ pub fn a_recording_that_cannot_be_written_ends_the_connection_before_the_steps_e
 fn hello() -> server_hello.ServerHello {
   ServerHello(
     build: 16_042,
-    field_2: 0x11223344,
+    realm_id: 0x11223344,
     field_3: 0x55667788,
     field_4: 0x99AABBCC,
     field_5: 0x0102030405060708,
@@ -513,7 +513,11 @@ fn big_write_rule() -> Rule(
 fn accept() -> #(hello_rule.State, Step(Nil, Nil)) {
   take(
     hello_rule.new(hello_rule.Settings(hello: hello())),
-    Socket(Accepted(ConnectionId(1), Peer(address: "127.0.0.1", port: 1))),
+    Socket(
+      Accepted(ConnectionId(1), Peer(address: "127.0.0.1", port: 1), <<
+        0:size(256),
+      >>),
+    ),
   )
 }
 

@@ -74,27 +74,45 @@ pub fn ask(
       command:,
       body: sts_xml.render(body),
     )
-  send(client: client.socket, bytes: case client.sending {
-    Some(stream) -> rc4.crypt(stream, plain)
-    None -> plain
-  })
-  let reply = read_reply(client, <<>>)
+  let #(sending, wire) = case client.sending {
+    Some(stream) -> {
+      let #(stream, ciphered) = rc4.crypt(stream, plain)
+      #(Some(stream), ciphered)
+    }
+    None -> #(None, plain)
+  }
+  send(client: client.socket, bytes: wire)
+  let #(receiving, reply) = read_reply(client, <<>>)
   Heard(
-    client: StsClient(..client, next_sequence: client.next_sequence + 1),
+    client: StsClient(
+      ..client,
+      sending:,
+      receiving:,
+      next_sequence: client.next_sequence + 1,
+    ),
     reply:,
   )
 }
 
-fn read_reply(client: StsClient, have: BitArray) -> Reply {
+/// Reads bytes, deciphering each as it arrives and in order, until they make
+/// one whole reply; gives the receiving stream after them and the reply.
+fn read_reply(
+  client: StsClient,
+  have: BitArray,
+) -> #(Option(rc4.Stream), Reply) {
   let assert Ok(bytes) = tcp_client.receive_some(client.socket, wait_ms)
     as "the server did not answer the request"
-  let plain = case client.receiving {
-    Some(stream) -> rc4.crypt(stream, bytes)
-    None -> bytes
+  let #(receiving, plain) = case client.receiving {
+    Some(stream) -> {
+      let #(stream, deciphered) = rc4.crypt(stream, bytes)
+      #(Some(stream), deciphered)
+    }
+    None -> #(None, bytes)
   }
   let all = <<have:bits, plain:bits>>
+  let client = StsClient(..client, receiving:)
   case scripted_client.read_reply(all) {
-    Ok(reply) -> reply
+    Ok(reply) -> #(receiving, reply)
     Error(Nil) -> read_reply(client, all)
   }
 }

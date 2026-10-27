@@ -52,9 +52,19 @@ const good_field =
   "  { name = \"build\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\" },"
 
 fn breach_lines(text: String) -> List(Int) {
+  breach_lines_when_sent(text, sent_messages: [])
+}
+
+/// The breach lines when the modules outside the message folder import the
+/// message modules named in `sent_messages`.
+fn breach_lines_when_sent(
+  text: String,
+  sent_messages sent_messages: List(String),
+) -> List(Int) {
   schema_evidence.breaches(
     file: SourceFile(path: "src/planted/schema.toml", text:),
     fact_keys:,
+    sent_messages:,
   )
   |> list.map(fn(breach) { breach.line })
 }
@@ -74,6 +84,7 @@ pub fn a_field_that_names_no_evidence_is_a_breach_at_its_line_test() -> Nil {
     schema_evidence.breaches(
       file: SourceFile(path: "src/planted/schema.toml", text:),
       fact_keys:,
+      sent_messages: [],
     )
   let assert [breach] = breaches as "expected exactly one breach"
   assert breach.path == "src/planted/schema.toml"
@@ -158,7 +169,113 @@ pub fn every_field_of_the_message_schema_names_its_evidence_test() -> Nil {
   assert schema_evidence.breaches(
       file: SourceFile(path: "src/genesis_prime/message/schema.toml", text:),
       fact_keys: repository.fact_keys(),
+      sent_messages: [],
     )
     == []
     as "CLAUDE.md: every packet layout lives in one schema with its evidence"
+}
+
+const unnamed_field =
+  "  { name = \"field_3\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\" },"
+
+const unnamed_safe_field =
+  "  { name = \"field_3\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\", safe_by = \"opcode.0x2\" },"
+
+pub fn an_unnamed_field_with_no_safe_by_in_a_message_the_server_sends_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    schema(fields: [good_field, unnamed_field], record_fields: [good_field])
+  let assert [breach] =
+    schema_evidence.breaches(
+      file: SourceFile(path: "src/planted/schema.toml", text:),
+      fact_keys:,
+      sent_messages: ["planted_hello"],
+    )
+    as "expected exactly one breach"
+  assert breach.line == 9 as "the field is the second line of the fields array"
+  assert string.contains(breach.rule, "planted_hello.field_3")
+    as "the breach names the message and the field"
+  assert string.contains(breach.rule, "safe_by")
+    as "the breach says what the field lacks"
+}
+
+pub fn an_unnamed_field_with_a_safe_by_key_of_the_fact_file_is_not_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    schema(fields: [good_field, unnamed_safe_field], record_fields: [good_field])
+  assert breach_lines_when_sent(text, sent_messages: ["planted_hello"]) == []
+}
+
+pub fn a_safe_by_key_that_is_not_a_fact_key_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    schema(
+      fields: [
+        good_field,
+        string.replace(unnamed_safe_field, "opcode.0x2", "opcode.0x9"),
+      ],
+      record_fields: [good_field],
+    )
+  assert breach_lines_when_sent(text, sent_messages: ["planted_hello"]) == [9]
+}
+
+pub fn a_message_the_client_sends_may_have_unnamed_fields_with_no_safe_by_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    string.replace(
+      schema(fields: [good_field, unnamed_field], record_fields: [good_field]),
+      "direction = \"server_to_client\"",
+      "direction = \"client_to_server\"",
+    )
+  assert breach_lines_when_sent(text, sent_messages: ["planted_hello"]) == []
+    as "the server never writes a client-to-server message, so no value of it is the server's to prove safe"
+}
+
+pub fn a_message_no_module_outside_the_message_folder_imports_is_not_sent_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    schema(fields: [good_field, unnamed_field], record_fields: [good_field])
+  assert breach_lines_when_sent(text, sent_messages: ["another_message"]) == []
+    as "a message nothing imports is never written by the server"
+}
+
+pub fn the_sent_messages_are_the_ones_a_module_outside_the_message_folder_imports_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let sources = [
+    SourceFile(
+      path: "src/genesis_prime/login/planted_rule.gleam",
+      text: "import genesis_prime/message/planted_hello.{PlantedHello}\nimport genesis_prime/message/bit_stream\nimport genesis_prime/message/other as renamed\n",
+    ),
+    SourceFile(
+      path: "src/genesis_prime/message/planted_carrier.gleam",
+      text: "import genesis_prime/message/planted_inner\n",
+    ),
+  ]
+  assert schema_evidence.sent_messages(sources)
+    == ["bit_stream", "other", "planted_hello"]
+    as "each module imported outside src/genesis_prime/message/, sorted and once; the message folder's own imports do not count"
+}
+
+pub fn every_unnamed_field_of_a_message_the_server_sends_names_its_safe_by_in_the_real_schema_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
+    as "the schema file could not be read"
+  let sent_messages =
+    schema_evidence.sent_messages(repository.sources(under: ["src"]))
+  assert list.contains(sent_messages, "server_hello")
+    as "the auth rule imports the hello, so the real schema is read with it as a sent message"
+  assert schema_evidence.breaches(
+      file: SourceFile(path: "src/genesis_prime/message/schema.toml", text:),
+      fact_keys: repository.fact_keys(),
+      sent_messages:,
+    )
+    == []
+    as "CLAUDE.md: a value the server sends that the client never reads is shown safe by a fact"
 }
