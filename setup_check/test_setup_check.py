@@ -88,6 +88,7 @@ for directory in (HERE, SCRIPTS):
 import check_support  # noqa: E402
 import ghidra_env  # noqa: E402
 import setup_check  # noqa: E402
+import test_extract_tables  # noqa: E402
 from setup_check import Machine, Missing  # noqa: E402
 
 # ---------------------------------------------------------------- expected values
@@ -119,6 +120,9 @@ STALE_SHA256 = hashlib.sha256(b"an older patch").hexdigest()
 PLANTED_CLIENT = b"planted WildStar64.exe"
 OTHER_CLIENT = b"another WildStar64.exe"
 INDEX_NAMES = ("Client64.index", "ClientData.index", "ClientDataEN.index", "Patch.index")
+# Tables of the client's DB folder (fact file, game_tables.ClientData: 384 game
+# tables); the planted ClientData.index lists these five, standing for the 384.
+TABLE_NAMES = ("Creature2", "World", "XpPerLevel", "CharacterCreation", "Spell4")
 
 
 def sha256(data: bytes) -> str:
@@ -176,6 +180,9 @@ class Plan:
     pyghidra_python: str = "ok"  # ok, unset, not_runnable (exit 126) or absent (exit 127)
     without_variables: tuple = ()  # variables left out of env
     project_path: str = "projects/ghidra"  # under the temporary root
+    index_tables: tuple = TABLE_NAMES  # the tables ClientData.index lists under DB/
+    tables_missing: tuple = ()  # of those, the ones left out of the table folder
+    table_folder: str = "present"  # present, or absent (no folder at all)
 
 
 class PlantedTestCase(unittest.TestCase):
@@ -228,6 +235,8 @@ class PlantedTestCase(unittest.TestCase):
             exe.write_bytes(PLANTED_CLIENT if plan.client == "good" else OTHER_CLIENT)
         for name, build in zip(INDEX_NAMES, plan.index_builds):
             data = archive_index(build if isinstance(build, int) else TARGET_BUILD)
+            if name == "ClientData.index" and build == TARGET_BUILD:
+                data = self.index_listing_tables(plan)
             if build == "garbage":
                 data = b"this is not an archive index"
             elif build == "signature":
@@ -238,6 +247,7 @@ class PlantedTestCase(unittest.TestCase):
         jdk = self.root / "jdk"
         jdk.mkdir(exist_ok=True)
         env = {
+            "GENESIS_TABLE_DIR": str(self.plant_table_folder(plan)),
             "WILDSTAR_CLIENT_EXE": str(exe),
             "GENESIS_GHIDRA_DIR": str(ghidra),
             "GENESIS_GHIDRA_PROJECT_DIR": str(self.root / plan.project_path),
@@ -250,6 +260,30 @@ class PlantedTestCase(unittest.TestCase):
             interpreter.write_text("#!/bin/sh\n")
             env["GENESIS_PYGHIDRA_PYTHON"] = str(interpreter)
         return env
+
+    def index_listing_tables(self, plan: Plan) -> bytes:
+        """A ClientData.index with a directory tree: the tables of the plan under
+        DB/, and two files that are not tables of the DB folder (DB/Notes.txt and
+        Other/Gamma.tbl), which the folder never holds."""
+        client_data = self.root / "client-data"
+        shutil.rmtree(client_data, ignore_errors=True)
+        client_data.mkdir()
+        files = [("DB/%s.tbl" % name, test_extract_tables.table_content(name), 5) for name in plan.index_tables]
+        files += [("DB/Notes.txt", b"not a table", 1), ("Other/Gamma.tbl", test_extract_tables.table_content("gamma"), 5)]
+        planted = test_extract_tables.Planted(client_data, files)
+        return (planted.patch / "ClientData.index").read_bytes()
+
+    def plant_table_folder(self, plan: Plan) -> Path:
+        """The folder GENESIS_TABLE_DIR names: a file for each table the index
+        lists, less the plan's missing ones; not there at all when absent."""
+        folder = self.root / "tables"
+        shutil.rmtree(folder, ignore_errors=True)
+        if plan.table_folder != "absent":
+            folder.mkdir()
+            for name in plan.index_tables:
+                if name not in plan.tables_missing:
+                    (folder / (name + ".tbl")).write_bytes(test_extract_tables.table_content(name))
+        return folder
 
     def plant_otp(self, plan: Plan) -> dict[str, str]:
         """The patched OTP's folder as plan.otp_dir says, and GENESIS_OTP_DIR for it."""
@@ -838,6 +872,71 @@ class ClientTest(PlantedTestCase):
         self.assertEqual(setup_check.check_client(self.plant()), [])
 
 
+# ---------------------------------------------------------------- 6b. the table folder
+
+
+class TableFolderTest(PlantedTestCase):
+    """Issue 109, item 4: the setup check checks the table folder holds every
+    table of the client's index.
+
+    Expected values: the tables are the files directly in DB/ ending in .tbl of
+    the planted ClientData.index (the layout extract_tables documents: 384 for
+    the client, fact file game_tables.ClientData); a name is missing when the
+    folder holds no file of it."""
+
+    def test_a_folder_holding_every_table_of_the_index_has_nothing_missing(self):
+        # The index also lists DB/Notes.txt and Other/Gamma.tbl, which are not tables of DB.
+        self.assertEqual(setup_check.check_table_folder(self.plant()), [])
+
+    def test_a_folder_missing_tables_names_each_one_and_no_other(self):
+        machine = self.plant(tables_missing=("World", "Spell4"))
+        result = setup_check.check_table_folder(machine)
+        self.assertTrue(result, "a folder missing two tables passes")
+        named = " ".join(self.text(m) for m in result)
+        for name in ("World", "Spell4"):
+            self.assertIn(name.lower() + ".tbl", named, name + " is named")
+        for name in ("Creature2", "XpPerLevel", "CharacterCreation"):
+            self.assertNotIn(name.lower(), named, name + " is there and is not named")
+
+    def test_the_setup_check_as_a_whole_fails_on_a_missing_table(self):
+        result = setup_check.check_all(self.plant(tables_missing=("XpPerLevel",)))
+        self.assertTrue(any("xpperlevel.tbl" in self.text(m) for m in result), "no Missing names it: %r" % (result,))
+
+    def test_a_missing_folder_names_every_table(self):
+        result = setup_check.check_table_folder(self.plant(table_folder="absent"))
+        named = " ".join(self.text(m) for m in result)
+        for name in TABLE_NAMES:
+            self.assertIn(name.lower() + ".tbl", named, name + " is named")
+
+    def test_the_expected_tables_are_the_indexs_not_a_fixed_list(self):
+        machine = self.plant(index_tables=("Alpha", "Beta", "Gamma"), tables_missing=("Beta",))
+        named = " ".join(self.text(m) for m in setup_check.check_table_folder(machine))
+        self.assertIn("beta.tbl", named)
+        self.assertNotIn("alpha", named)
+        self.assertNotIn("creature2", named, "a table the planted index does not list is not expected")
+
+    def test_a_folder_of_384_tables_passes_and_one_short_names_the_one(self):
+        names = tuple("Table%03d" % number for number in range(384))
+        self.assertEqual(setup_check.check_table_folder(self.plant(index_tables=names)), [])
+        result = setup_check.check_table_folder(self.plant(index_tables=names, tables_missing=("Table200",)))
+        named = " ".join(self.text(m) for m in result)
+        self.assertIn("table200.tbl", named)
+        for neighbour in ("table199.tbl", "table201.tbl"):
+            self.assertNotIn(neighbour, named, "only the missing table is named")
+
+    def test_the_folder_is_not_checked_where_genesis_no_client_is_1(self):
+        machine = self.plant(with_client=False, no_client_flag=True)
+        machine.env["GENESIS_TABLE_DIR"] = str(self.root / "no-tables-here")
+        self.assertEqual(setup_check.check_all(machine), [])
+
+    def test_an_index_that_cannot_be_read_is_left_to_the_client_check_and_does_not_crash(self):
+        builds = (TARGET_BUILD, "garbage", TARGET_BUILD, TARGET_BUILD)
+        machine = self.plant(index_builds=builds, table_folder="absent")
+        self.assertIsInstance(setup_check.check_table_folder(machine), list)
+        named = " ".join(self.text(m) for m in setup_check.check_all(machine))
+        self.assertIn("clientdata.index", named, "the client check still names the index")
+
+
 # ---------------------------------------------------------------- 7. the query process
 
 
@@ -986,7 +1085,7 @@ FULL_CHECK_RUNNABLE = bool(shutil.which("bash")) and bool(shutil.which("python3.
 @unittest.skipUnless(FULL_CHECK_RUNNABLE, "the full check needs bash, python3.13 and an executable ./check here")
 class FullCheckStopsTest(PlantedTestCase):
     PART_LINE = re.compile(
-        r"^\s*(format|gleam-build|glinter|gleam-test|migrations|squirrel|client-suite|fact-checker)\s+(ok|FAILED)\b",
+        r"^\s*(format|gleam-build|glinter|gleam-test|migrations|squirrel|client-suite|client-integration|fact-checker)\s+(ok|FAILED)\b",
         re.MULTILINE,
     )
 
