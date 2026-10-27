@@ -172,9 +172,7 @@ pub fn no_erlang_helper_in_src_outside_the_listed_ones_makes_an_atom_or_reads_a_
   let assert Ok(project_file) = simplifile.read("gleam.toml")
     as "gleam.toml could not be read"
   let allowed = atom.allowed(project_file)
-  let files =
-    repository.erlang_sources()
-    |> list.filter(fn(file) { string.starts_with(file.path, "src/") })
+  let files = repository.erlang_sources(under: ["src"])
   assert list.flat_map(files, atom.erlang_breaches(_, allowed)) == []
 }
 

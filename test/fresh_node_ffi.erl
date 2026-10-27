@@ -5,8 +5,13 @@
 -export([run/3]).
 
 run(Module, Function, TimeoutMs) ->
-    Paths = lists:append([["-pa", Path] || Path <- code:get_path()]),
-    {ok, Peer} = start(Paths),
+    %% The peer's own erl holds OTP's paths; it is given the project's.
+    Root = code:root_dir(),
+    Paths = [Path || Path <- code:get_path(), not lists:prefix(Root, Path)],
+    Peer = case peer:start_link(#{connection => standard_io, args => ["-pa" | Paths]}) of
+               {ok, Started} -> Started;
+               {ok, Started, _Node} -> Started
+           end,
     try peer:call(Peer, binary_to_atom(Module), binary_to_atom(Function), [],
                   TimeoutMs) of
         _ -> {ok, nil}
@@ -16,10 +21,4 @@ run(Module, Function, TimeoutMs) ->
                                       io_lib:format("~p: ~0p", [Class, Reason]))}}
     after
         peer:stop(Peer)
-    end.
-
-start(Args) ->
-    case peer:start_link(#{connection => standard_io, args => Args}) of
-        {ok, Peer} -> {ok, Peer};
-        {ok, Peer, _Node} -> {ok, Peer}
     end.

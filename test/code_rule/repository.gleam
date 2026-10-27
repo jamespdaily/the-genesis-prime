@@ -54,11 +54,17 @@ pub fn tracked_paths() -> List(String) {
   paths
 }
 
-/// Every tracked `.erl` file, sorted by path, which must hold at least one.
-pub fn erlang_sources() -> List(SourceFile) {
+/// Every tracked `.erl` file under the directories, sorted by path, which
+/// must hold at least one.
+pub fn erlang_sources(under directories: List(String)) -> List(SourceFile) {
   let files =
     tracked_paths()
     |> list.filter(string.ends_with(_, ".erl"))
+    |> list.filter(fn(path) {
+      list.any(directories, fn(directory) {
+        string.starts_with(path, directory <> "/")
+      })
+    })
     |> list.sort(string.compare)
     |> list.map(fn(path) {
       let assert Ok(text) = simplifile.read(path)

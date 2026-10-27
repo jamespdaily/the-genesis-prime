@@ -99,7 +99,7 @@ pub fn a_comment_or_a_string_that_names_the_functions_is_clean_test() -> Nil {
 pub fn no_tracked_erlang_file_reads_the_environment_or_the_arguments_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
-  let files = repository.erlang_sources()
+  let files = repository.erlang_sources(under: ["src", "test", "dev"])
   assert list.length(files) >= 10 as "tracked Erlang files were not found"
   assert list.flat_map(files, erlang_environment.breaches) == []
 }

@@ -43,6 +43,7 @@ pub fn module_name(path: String) -> String {
   |> string.remove_prefix("src/")
   |> string.remove_prefix("test/")
   |> string.remove_suffix(".gleam")
+  |> string.remove_suffix(".erl")
 }
 
 /// The Erlang module and function each `@external(erlang, ...)` attribute

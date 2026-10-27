@@ -76,10 +76,8 @@ pub fn encode(record: a) -> BitArray {
 /// Folds every recorded input through `rule`, from its first state, and
 /// compares each step with the recorded one. `types_digest` is the digest of
 /// the rule's types as the code stands; a header with another refuses to
-/// replay. Returns how many inputs replayed. Only bytes the server wrote are
-/// read, with `binary_to_term`, so a recording replays whatever the node has
-/// loaded (rule_recording_ffi); the header's rule name and type digest are
-/// checked before any input is read as the rule's types.
+/// replay. Returns how many inputs replayed. The header's rule name and type
+/// digest are checked before any input is read as the rule's types.
 pub fn replay(
   bytes bytes: BitArray,
   rule rule: Rule(settings, state, message, answer, outgoing, request),
@@ -99,8 +97,7 @@ pub fn replay(
 }
 
 /// The header and every record a recording holds, in order, for a person or
-/// a test to look at; it checks no header and folds nothing. Only bytes the
-/// server wrote are read, with `binary_to_term` (rule_recording_ffi).
+/// a test to look at; it checks no header and folds nothing.
 pub fn read(
   bytes: BitArray,
 ) -> Result(
