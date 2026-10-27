@@ -622,9 +622,7 @@ fn listen(
   }
 }
 
-/// What reached a process that `asking_to_enter_world_7_and_listening`
-/// started, after its entry was answered: whether each message carried a map.
-/// What has reached the asker so far, from its listener.
+/// What has reached the asker, from its listener, when asked.
 fn heard_by(asked: process.Subject(process.Subject(List(Bool)))) -> List(Bool) {
   let reply = process.new_subject()
   process.send(asked, reply)
@@ -648,6 +646,8 @@ fn wait_until_something_reached(
   }
 }
 
+/// What reached a process that `asking_to_enter_world_7_and_listening`
+/// started, after its entry was answered: whether each message carried a map.
 fn what_reached(
   listening listening: process.Subject(
     process.Subject(process.Subject(List(Bool))),
@@ -756,7 +756,7 @@ pub fn the_askers_of_a_world_whose_old_map_is_ending_each_get_their_own_deadline
         as "the registry answered the asker at its deadline"
       Nil
     }
-    _ -> Nil
+    maps.MapNotStarted(_) | maps.MapRefused(_) -> Nil
   }
   process.send(release, Nil)
   let assert Ok(Ok(first)) = process.receive(patient, event_wait_ms)
