@@ -5,7 +5,7 @@ description: Rules for engines - routing client messages, unhandled types, effec
 
 # Building an engine
 
-Each engine owns its kind. Which engines exist is decided in Milestone 1; these rules hold for any of them.
+An engine is the one module that owns a kind of game data: it decodes, decides and applies it. Which engines exist is decided in Milestone 1; these rules hold for any of them.
 
 Apply every rule to each change, and check the diff against each before it is done.
 

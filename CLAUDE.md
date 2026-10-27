@@ -7,12 +7,11 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 - **Evidence:** the client's code and tables, then recordings; a retail record only where the client lacks the data.
 - **Rule:** a pure function: state and input in, new state and effects (actions to carry out) out. Every game and connection decision is a rule.
 - **Shell:** the process that carries out its rule's effects in order and turns all it sees into that rule's inputs; it decides nothing.
-- **Engine:** the one module that owns a kind of game data: it decodes, decides and applies it.
 - **Full check:** `./check`: the setup check, format, warnings as errors, glinter, generated code matching the schema, migrations, squirrel, the tests and the fact checker; CI runs the same.
-- **Coverage measure:** what the client's tables require, counted against what the server handles.
+- **Coverage measure:** what the client's tables require, against what the server handles.
 
 ## Authority
-- The client and its data files are the only authority on what the server must do. Every protocol or game-rule fact in code points to its evidence.
+- The client and its data files are the only authority on what the server must do; every protocol or game-rule fact in code points to its evidence.
 - The client's tables set the scope; each run of the coverage measure is posted on its issue.
 - Never read or copy another WildStar server's code, text or structure; it is never evidence.
 - Retail records (Jabbithole, Dulfy, wikis) count only for data the client lacks, such as spawns, vendor stock and loot, and each such value is marked.
@@ -25,13 +24,13 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 - Every packet layout lives in one schema with its evidence. The generated codec states each field's size and byte order, is never edited by hand, and round-trips in a property test.
 - A bug fix starts with a test that fails because of the bug.
 - No shortcut makes a check pass: no stub or hard-coded value in place of the client's behaviour, no test skipped or loosened without its reason in the test, no swallowed error. A gap is stated where it is enforced and reported as missing or a question.
-- Every requirement and fact lives in the code, test, config or check that enforces it. No design documents or decision records: the issue keeps the reasoning, and a choice becomes one line in its place.
+- Every requirement and fact lives in the code, test, config or check that enforces it. No design documents or decision records: the issue keeps the reasoning, and a choice becomes one line in its place. Guidance and developer tools are checked by real use, not test suites.
 - A new rule replaces an old one or shows what it saved. A change to this file, a skill or an agent lands in its own pull request once Jim approves it; the guidance issue lists only approved changes not yet merged.
 
 ## A step
 Four parts. Jim's go on the design and test list is the step's one stop; it then runs to merge, stopping early only for a question the evidence cannot settle or a change to the test list. State the estimate in rounds first; past twice it, ask Jim to cut or continue.
 
-1. **Design and test list.** Read the client's evidence, these rules, then the code the step touches. For a change the client sees, trace the client's code from the step's messages to the visible goal: each check on that path becomes a test, and a field with no known meaning needs the client's code to show its value is safe. Weigh at least two options, asking first what most projects use; measure when costs differ, else take the simplest. Codex names the failure paths the list is missing; they become tests.
+1. **Design and test list.** Read the client's evidence, these rules, then the code the step touches. For a change the client sees, trace the client's code from the step's messages to the visible goal: each check on that path becomes a test, and a field with no known meaning needs the client's code to show its value is safe. Weigh at least two options, asking first what most projects use; measure when costs differ, else take the simplest. Codex names the failure paths the list is missing; one that could reach a player or saved data becomes a test.
 2. **Build.** One fresh implementer writes the tests, then the code, and hands back once. The main session checks each expected value against its evidence; changing one is a change to the test list.
 3. **Check.** `./check fast` first, then side by side: the main session's diff review, one Codex review (`dev/codex_review.sh`) and the full check, which passes in under 2 minutes. A live login with the real client, played by an agent, runs when the client sees or sends something new. Check each finding against the code first. One fix round, then one Codex re-check of the fix commits; after that only a P1 (a break of what the step promises) is fixed, and the rest goes in the closing summary.
 4. **Merge** on green. The pull request body describes the change as it stands, rewritten, never appended to; then the closing summary.
@@ -54,4 +53,4 @@ A closing summary names each throwaway tool or workaround and the issue that own
 - Before opening an issue, search the code and the issues under several names. File and move it with `dev/card.sh`: milestone, parent, order and status (To do, In progress, Waiting on Jim, Done).
 - A step's issue carries its test list, progress, dated measurements and closing summary; a new session resumes from the parent issue and the board.
 - A branch is `jimd/<issue>-<topic>`; each commit names its issue and says why; an issue title states the outcome.
-- A playable server is set up whenever Jim asks; the `playing-live` skill says how.
+- A playable server is set up whenever Jim asks (the `playing-live` skill).
