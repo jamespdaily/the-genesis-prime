@@ -1,6 +1,11 @@
 %% Reads the terms of a rule recording back. Only bytes the server wrote are
-%% read, with binary_to_term and [safe], so no new atom is made; a term is
-%% returned only when its tag and size are those of a header or a record.
+%% read: a recording is written by the server's own recorder and read by
+%% developers and tests from the repository, never taken from a client. So
+%% binary_to_term reads them without [safe]: the atoms a recording holds (its
+%% header's and its terms' tags) exist only once the modules that make them are
+%% loaded, and [safe] would refuse a valid recording in a node that has not
+%% loaded them. A term is returned only when its tag and size are those of a
+%% header or a record.
 -module(rule_recording_ffi).
 
 -export([decode_header/1, decode_record/1]).
@@ -20,6 +25,6 @@ decode_record(Bytes) ->
     end.
 
 term(Bytes) ->
-    try {ok, binary_to_term(Bytes, [safe])}
+    try {ok, binary_to_term(Bytes)}
     catch error:badarg -> {error, nil}
     end.
