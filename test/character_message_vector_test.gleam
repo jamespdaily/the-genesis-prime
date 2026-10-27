@@ -616,4 +616,7 @@ pub fn disconnect_notice_is_the_clients_5_bits_test() -> Nil {
       decode: disconnect_notice.decode,
     )
   })
+  assert disconnect_notice.decode(message_support.hex("e6"))
+    == Ok(DisconnectNotice(reason: 6))
+    as "vector.opcode.0x36a.body: the client reads e6 as reason 6 in 5 bits, its top 3 bits left unread"
 }

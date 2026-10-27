@@ -2846,8 +2846,8 @@ proof = "The query process's emulate request (2026-10-27): the reader 0x14007b1d
 grade = "sure"
 
 ["vector.opcode.0x36a.body"]
-statement = "Message 0x36a's body read by the client: the reasons 6, 19, 20 and 31 are the single bytes 06, 13, 14 and 1f, each read back in 5 bits; an empty body fails with 0x80070026 after 0 bits."
-proof = "The query process's emulate request (2026-10-27): the reader 0x14007e950 run from its address to its return, since Ghidra makes no function there (0x14007e95e mov r8d, 0x5; 0x14007e967 jmp 0x14006c090), with rcx = a received stream planted over the byte (16 bytes of slack; none for the empty body), rdx = a planted record space and r8 = a zeroed 8-byte record, calls followed: result 0, the record's first word the reason and the read position 5 bits; for the empty body, 0x80070026 and position 0."
+statement = "Message 0x36a's body read by the client: the reasons 6, 19, 20 and 31 are the single bytes 06, 13, 14 and 1f, each read back in 5 bits; the byte e6 reads as reason 6 in 5 bits, its top 3 bits left unread; an empty body fails with 0x80070026 after 0 bits."
+proof = "The query process's emulate request (2026-10-27): the reader 0x14007e950 run from its address to its return, since Ghidra makes no function there (0x14007e95e mov r8d, 0x5; 0x14007e967 jmp 0x14006c090), with rcx = a received stream planted over the byte (16 bytes of slack; none for the empty body), rdx = a planted record space and r8 = a zeroed 8-byte record, calls followed: result 0, the record's first word the reason and the read position 5 bits (for e6, the word 6); for the empty body, 0x80070026 and position 0."
 grade = "sure"
 
 ["vector.opcode.0x355.body"]
