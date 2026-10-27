@@ -7,6 +7,7 @@
 //// module outside `src/genesis_prime/message/` imports its module.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
+import code_rule/syntax
 import genesis_prime/message_schema.{type Field, type Schema, ClientToServer}
 import gleam/list
 import gleam/option.{None, Some}
@@ -19,26 +20,11 @@ pub fn sent_messages(sources sources: List(SourceFile)) -> List(String) {
   |> list.filter(fn(file) {
     !string.starts_with(file.path, "src/genesis_prime/message/")
   })
-  |> list.flat_map(fn(file) {
-    string.split(file.text, "\n")
-    |> list.filter_map(fn(line) {
-      case string.split_once(line, "import genesis_prime/message/") {
-        Ok(#("", rest)) -> Ok(module_name(rest))
-        _ -> Error(Nil)
-      }
-    })
-  })
+  |> list.flat_map(syntax.imported_modules)
+  |> list.filter(string.starts_with(_, "genesis_prime/message/"))
+  |> list.map(string.remove_prefix(_, "genesis_prime/message/"))
   |> list.unique
   |> list.sort(string.compare)
-}
-
-/// The module name at the start of an import's remainder: up to the first
-/// character that cannot be part of it.
-fn module_name(rest: String) -> String {
-  rest
-  |> string.to_graphemes
-  |> list.take_while(fn(grapheme) { grapheme != "." && grapheme != " " })
-  |> string.concat
 }
 
 /// Each field, message or record of the schema that names no evidence or

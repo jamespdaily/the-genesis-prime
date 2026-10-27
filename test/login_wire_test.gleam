@@ -17,8 +17,6 @@
 //// never reaches.
 
 import ask_support
-import database_support
-import genesis_prime/connection/listener
 import genesis_prime/hand_off
 import genesis_prime/login/guid
 import genesis_prime/login/rc4
@@ -26,101 +24,34 @@ import genesis_prime/login/sts_xml
 import genesis_prime/message/game_server_handoff
 import genesis_prime/message/login_accepted.{LoginAccepted}
 import genesis_prime/message/server_hello.{ServerHello}
-import genesis_prime/server
 import genesis_prime/service/shell as service_shell
 import genesis_prime/store.{AccountId}
 import gleam/bit_array
-import gleam/dynamic/decode
-import gleam/erlang/process.{type Name, type Pid}
+import gleam/erlang/process
 import gleam/option.{Some}
-import gleam/result
-import login_client.{Ports, StsClient}
+import login_client.{StsClient}
 import login_rule_support as support
 import login_support
 import login_vectors as vector
 import owned_test
-import pog
-import pool_started
 
-/// A running tree: its listeners' ports, the hand-off's name and the id of
-/// the account `jim`.
-type Running {
-  Running(
-    tree: Pid,
-    ports: login_client.Ports,
-    hand_off: Name(service_shell.Call(hand_off.Message, hand_off.Answer)),
-    account_id: Int,
-  )
+/// The tree, with the account of the library's vector inserted, its ports
+/// and the account's id.
+fn start() -> #(login_support.Started, login_client.Ports, Int) {
+  let started = login_support.start()
+  let account_id = login_support.insert_jim(started)
+  #(started, login_support.ports(started), account_id)
 }
 
-/// Starts the server's tree on a database of its own, with the account of the
-/// library's vector inserted.
-fn start() -> Running {
-  let shared = database_support.shared()
-  let database = database_support.new_database(on: shared)
-  let pool_name = process.new_name("pool")
-  let login = login_support.login()
-  let settings =
-    server.Settings(
-      pool: database_support.config(
-        for: shared.settings,
-        database:,
-        pool_name:,
-        pool_size: 2,
-      ),
-      store: process.new_name("store"),
-      hand_off: process.new_name("hand_off"),
-      hand_off_shutdown_ms: 1500,
-      login:,
-    )
-  let assert Ok(started) = server.start(settings) as "the tree started"
-  process.unlink(started.pid)
-  ask_support.guard(started.pid)
-  assert pool_started.await(pool_name, within_ms: 30_000)
-    as "the pool opened its connections"
-  let assert Ok(account_id) = insert_account(pog.named_connection(pool_name))
-    as "the account was inserted"
-  let assert Ok(sts_port) = listener.port(login.sts_listener)
-    as "the STS listener has a port"
-  let assert Ok(auth_port) = listener.port(login.auth_listener)
-    as "the auth listener has a port"
-  Running(
-    tree: started.pid,
-    ports: Ports(sts_port:, auth_port:),
-    hand_off: settings.hand_off,
-    account_id:,
-  )
-}
-
-fn insert_account(pool: pog.Connection) -> Result(Int, pog.QueryError) {
-  use returned <- result.try(
-    pog.query(
-      "insert into account (login_name, srp_salt, srp_verifier, game_account_id)
-       values ($1, $2, $3, $4::uuid) returning account_id",
-    )
-    |> pog.parameter(pog.text(vector.name))
-    |> pog.parameter(pog.bytea(vector.salt()))
-    |> pog.parameter(pog.bytea(vector.verifier()))
-    |> pog.parameter(pog.text(guid.to_text(support.jim().game_account_id)))
-    |> pog.returning({
-      use id <- decode.field(0, decode.int)
-      decode.success(id)
-    })
-    |> pog.execute(pool),
-  )
-  let assert [id] = returned.rows as "one row came back"
-  Ok(id)
-}
-
-fn stop(running: Running) -> Nil {
-  let _reason = ask_support.stop_tree(running.tree)
+fn stop(started: login_support.Started) -> Nil {
+  let _reason = ask_support.stop_tree(started.tree)
   Nil
 }
 
 pub fn the_sts_login_runs_plain_to_m2_and_then_both_ways_on_rc4_under_k_one_state_per_direction_test() -> Nil {
   use <- owned_test.run(60_000)
-  let running = start()
-  let client = login_client.sts_connect(running.ports)
+  let #(started, ports, _account_id) = start()
+  let client = login_client.sts_connect(ports)
   let #(answered, exchange) =
     login_client.srp_exchange(
       client:,
@@ -170,13 +101,13 @@ pub fn the_sts_login_runs_plain_to_m2_and_then_both_ways_on_rc4_under_k_one_stat
     )
   assert listed.reply.status == 200
     as "each direction's state runs on across messages"
-  stop(running)
+  stop(started)
 }
 
 pub fn a_client_that_connects_to_the_auth_listener_gets_the_hello_test() -> Nil {
   use <- owned_test.run(60_000)
-  let running = start()
-  let socket = login_client.connect(running.ports.auth_port)
+  let #(started, ports, _account_id) = start()
+  let socket = login_client.connect(ports.auth_port)
   let assert [hello] =
     login_client.read_frames(client: socket, have: <<>>, count: 1)
     as "the auth server greets the client first"
@@ -198,21 +129,20 @@ pub fn a_client_that_connects_to_the_auth_listener_gets_the_hello_test() -> Nil 
       field_11: 0,
     )
     as "CheckAuthServerVersion 0x140037b70: build 16042, checksum 0x097998A0; the realm's id; 0 in every field the client never reads"
-  stop(running)
+  stop(started)
 }
 
 pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_hand_off_keeps_the_session_key_test() -> Nil {
   use <- owned_test.run(60_000)
-  let running = start()
+  let #(started, ports, account_id) = start()
   let login =
     login_client.sts_login(
-      ports: running.ports,
+      ports: ports,
       name: vector.name,
       password: vector.password,
       seed: 7,
     )
-  let socket =
-    login_client.auth_login(ports: running.ports, login:, build: 16_042)
+  let socket = login_client.auth_login(ports: ports, login:, build: 16_042)
   let assert [accepted, handoff] =
     login_client.read_frames(client: socket, have: <<>>, count: 2)
     as "0x591 then 0x3db"
@@ -224,8 +154,7 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
   let assert Ok(handed) = game_server_handoff.decode(handoff.body)
     as "0x3db decodes"
   assert handed.game_server == login_support.realm().game_server
-  assert handed.account_id == running.account_id
-    as "opcode.0x3db: the account's id"
+  assert handed.account_id == account_id as "opcode.0x3db: the account's id"
   assert handed.realm_name == "Nexus"
   assert handed.realm_flags == 0
     && handed.realm_pvp_type == 0
@@ -236,7 +165,7 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
   let answers = process.new_subject()
   let assert Ok(_) =
     service_shell.call(
-      name: running.hand_off,
+      name: started.settings.hand_off,
       message: hand_off.Take(hand_off.SessionKey(session_key)),
       reply: fn(answer) { process.send(answers, answer) },
     )
@@ -244,7 +173,7 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
   let assert Ok(hand_off.Taken(holder:)) =
     process.receive(answers, within: 5000)
     as "the hand-off answered"
-  assert holder.account_id == AccountId(running.account_id)
+  assert holder.account_id == AccountId(account_id)
   assert holder.login_name == vector.name
-  stop(running)
+  stop(started)
 }

@@ -11,12 +11,15 @@ import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
 import genesis_prime/table
 import genesis_prime/table/loader/store
+import gleam/erlang/atom.{type Atom}
+import gleam/erlang/charlist.{type Charlist}
 import gleam/erlang/process
 import gleam/erlang/reference
 import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import pog
 
@@ -51,9 +54,9 @@ pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
     "the server loaded "
     <> int.to_string(tables)
     <> " game tables and serves the STS login on port "
-    <> int.to_string(settings.login.sts_port)
+    <> int.to_string(settings.login.sts.port)
     <> " and the auth login on port "
-    <> int.to_string(settings.login.auth_port),
+    <> int.to_string(settings.login.auth.port),
   )
   process.sleep_forever()
 }
@@ -136,53 +139,46 @@ fn login() -> server.Login {
       panic as "GENESIS_REALM_NAME is not set; it names the realm the auth server hands each client to"
   }
   server.Login(
-    sts_listener: "sts",
-    sts_port: 6600,
-    sts: sts_connection.Settings(
-      ask_deadline_ms: 5000,
-      game_token_lifetime_ms: 60_000,
-    ),
-    auth_listener: "auth",
-    auth_port: 23_115,
-    auth: auth_connection.Settings(
-      realm: auth_connection.Realm(
-        id: 1,
-        name: realm_name,
-        game_server: Endpoint(address:, port: 24_000),
+    sts: server.Served(
+      listener: process.new_name("sts_listener"),
+      port: 6600,
+      settings: sts_connection.Settings(
+        ask_deadline_ms: 5000,
+        game_token_lifetime_ms: 60_000,
       ),
-      ask_deadline_ms: 5000,
-      session_key_lifetime_ms: 60_000,
-      planted: None,
+      recorder: None,
+    ),
+    auth: server.Served(
+      listener: process.new_name("auth_listener"),
+      port: 23_115,
+      settings: auth_connection.Settings(
+        realm: auth_connection.Realm(
+          id: 1,
+          name: realm_name,
+          game_server: Endpoint(address:, port: 24_000),
+        ),
+        ask_deadline_ms: 5000,
+        session_key_lifetime_ms: 60_000,
+        planted: None,
+      ),
+      recorder: None,
     ),
     send_deadline_ms: 2000,
     connection_shutdown_ms: 5000,
-    sts_recorder: None,
-    auth_recorder: None,
   )
 }
 
 /// The 32-bit number of an IPv4 address written as four decimal numbers of
 /// 0 to 255, so 127.0.0.1 is 0x7F000001.
 fn ipv4_number(text: String) -> Result(Int, Nil) {
-  case string.split(text, ".") {
-    [first, second, third, fourth] -> {
-      use first <- octet(first)
-      use second <- octet(second)
-      use third <- octet(third)
-      use fourth <- octet(fourth)
-      Ok(first * 16_777_216 + second * 65_536 + third * 256 + fourth)
-    }
-    _ -> Error(Nil)
-  }
+  parse_ipv4(charlist.from_string(text))
+  |> result.map(fn(octets) {
+    let #(first, second, third, fourth) = octets
+    first * 16_777_216 + second * 65_536 + third * 256 + fourth
+  })
+  |> result.replace_error(Nil)
 }
 
-/// One decimal number of 0 to 255, of digits only.
-fn octet(text: String, next: fn(Int) -> Result(Int, Nil)) -> Result(Int, Nil) {
-  let digits_only =
-    text != ""
-    && list.all(string.to_graphemes(text), string.contains("0123456789", _))
-  case digits_only, int.parse(text) {
-    True, Ok(number) if number <= 255 -> next(number)
-    _, _ -> Error(Nil)
-  }
-}
+/// OTP's strict parse of four decimal numbers separated by dots.
+@external(erlang, "inet", "parse_ipv4strict_address")
+fn parse_ipv4(address: Charlist) -> Result(#(Int, Int, Int, Int), Atom)

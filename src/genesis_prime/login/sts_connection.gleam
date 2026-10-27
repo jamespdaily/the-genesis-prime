@@ -55,7 +55,8 @@
 
 import genesis_prime/hand_off.{GameToken, Holder, Put}
 import genesis_prime/login.{
-  type Answer, type Request, AskHandOff, AskStore, FromHandOff, FromStore,
+  type Answer, type Link, type Request, AskHandOff, AskStore, Asking, Bytes,
+  Connect, Continue, End, FromHandOff, FromStore, Otherwise,
 }
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/login/rc4
@@ -65,20 +66,18 @@ import genesis_prime/login/sts_message.{
   LoginStart, Ping, RequestGameToken, Transaction, UnknownCommand,
 }
 import genesis_prime/login/sts_wire
-import genesis_prime/random.{type Random}
 import genesis_prime/step.{
-  type About, type ConnectionId, type Effect, type Input, type Now, type Outcome,
-  type Peer, type Step, About, Accepted, Answered, AnsweredLate, AskId, Asked,
-  Effects, EffectsThenAsk, Log, LogError, LogInfo, LogLine, LogWarning,
-  PeerClosed, ReadFailed, Socket, Started, Stop, Stopping, TimerFired, Woken,
-  Write, WriteFailed,
+  type Effect, type Input, type Now, type Outcome, type Step, Effects, Log,
+  LogError, LogInfo, LogLine, LogWarning, Stop, Write,
 }
 import genesis_prime/store.{
   type Account, AccountFound, FindAccount, NoSuchAccount, Unavailable,
 }
 import gleam/int
-import gleam/list
 import gleam/option.{type Option, None, Some}
+
+/// The rule's name in a recording's header and in the server's tree.
+pub const rule_name = "genesis_prime/login/sts_connection"
 
 /// What every STS connection is made with, at start.
 pub type Settings {
@@ -102,14 +101,10 @@ pub opaque type State {
 type Session {
   Session(
     settings: Settings,
-    connection: ConnectionId,
-    peer: Peer,
-    random: Random,
+    link: Link,
     /// Bytes of a request not yet whole, and whole requests not yet taken
     /// while an ask is out. Once RC4 is on they are already deciphered.
     pending: BitArray,
-    /// The number of the last ask made, so each ask has an id of its own.
-    asks: Int,
     status: Status,
   )
 }
@@ -127,18 +122,24 @@ type Status {
   FindingAccount(sequence: Int)
   /// KeyData(salt, B) is sent; waiting for the client's A and M1.
   AwaitingProof(account: Account, challenge: srp.Challenge)
-  /// The proof passed and RC4 is on; waiting for LoginFinish.
-  AwaitingLoginFinish(account: Account, ciphers: Ciphers)
+  /// The proof passed and RC4 is on; `stage` is where the login is after it.
+  Proven(account: Account, ciphers: Ciphers, stage: Stage)
+}
+
+/// Where the login is once the proof has passed.
+type Stage {
+  /// Waiting for LoginFinish.
+  AwaitingLoginFinish
   /// The hand-off is asked to keep the game token, before LoginFinish is
   /// answered.
-  KeepingToken(sequence: Int, account: Account, token: Guid, ciphers: Ciphers)
+  KeepingToken(sequence: Int, token: Guid)
   /// LoginFinish is answered; waiting for ListMyAccounts.
-  AwaitingAccountList(account: Account, token: Guid, ciphers: Ciphers)
+  AwaitingAccountList(token: Guid)
   /// The account list is answered; waiting for RequestGameToken.
-  AwaitingTokenRequest(account: Account, token: Guid, ciphers: Ciphers)
+  AwaitingTokenRequest(token: Guid)
   /// The token is given; the client goes on to the auth server and keeps
   /// this connection open with its pings until it closes it.
-  TokenGiven(account: Account, ciphers: Ciphers)
+  TokenGiven
 }
 
 /// The error code the client shows as "Invalid account name or password".
@@ -159,103 +160,65 @@ pub fn step(
   input input: Input(Nil, Answer),
 ) -> #(State, Step(Nil, Request)) {
   case state {
-    NotAccepted(settings:) -> before_accept(settings:, event: input.event)
+    NotAccepted(settings:) -> {
+      case login.hear(input.event, about: step.no_one) {
+        Connect(connection:, peer:, seed:) -> #(
+          Connected(Session(
+            settings:,
+            link: login.link(connection:, peer:, seed:),
+            pending: <<>>,
+            status: AwaitingLoginStart,
+          )),
+          Effects([]),
+        )
+        Bytes(..) | login.Outcome(..) -> #(
+          state,
+          Effects([
+            Log(LogLine(
+              level: LogError,
+              text: "the STS rule took an input before the connection was accepted",
+              about: step.no_one,
+            )),
+            Stop,
+          ]),
+        )
+        Otherwise(step:) -> #(state, step)
+      }
+    }
     Connected(session:) ->
-      after_accept(session:, now: input.now, event: input.event)
+      connected(session:, now: input.now, event: input.event)
   }
 }
 
-/// The only input a connection not yet accepted takes is `Accepted`; the
-/// shell gives it first, so any other is a bug.
-fn before_accept(
-  settings settings: Settings,
-  event event: step.Event(Nil, Answer),
-) -> #(State, Step(Nil, Request)) {
-  case event {
-    Socket(Accepted(connection:, peer:, seed:)) -> #(
-      Connected(Session(
-        settings:,
-        connection:,
-        peer:,
-        random: random.new(seed:),
-        pending: <<>>,
-        asks: 0,
-        status: AwaitingLoginStart,
-      )),
-      Effects([]),
-    )
-    Socket(step.Read(..))
-    | Socket(PeerClosed)
-    | Socket(ReadFailed(..))
-    | Socket(WriteFailed(..))
-    | Started
-    | Woken(..)
-    | Asked(..)
-    | step.WatchEnded(..)
-    | TimerFired(..)
-    | Answered(..)
-    | AnsweredLate(..)
-    | Stopping(..) -> #(
-      NotAccepted(settings:),
-      Effects([
-        Log(LogLine(
-          level: LogError,
-          text: "the STS rule took an input before the connection was accepted",
-          about: no_one(),
-        )),
-        Stop,
-      ]),
-    )
-  }
-}
-
-fn after_accept(
+fn connected(
   session session: Session,
   now now: Now,
   event event: step.Event(Nil, Answer),
 ) -> #(State, Step(Nil, Request)) {
-  case event {
-    Socket(step.Read(bytes:)) -> read(session:, now:, bytes:)
-    Socket(PeerClosed) | Stopping(..) -> #(Connected(session), Effects([Stop]))
-    Socket(ReadFailed(failure:)) | Socket(WriteFailed(failure:)) -> #(
-      Connected(session),
-      Effects([
-        log(
-          session:,
-          level: LogWarning,
-          text: "the socket failed (" <> describe_failure(failure) <> ")",
-        ),
-        Stop,
-      ]),
+  case
+    login.hear(
+      event,
+      about: login.about(
+        link: session.link,
+        account_id: account_id_of(session.status),
+      ),
     )
-    Answered(outcome:, ..) ->
-      settle(handled: answered(session:, now:, outcome:), now:, carried: [])
-    AnsweredLate(..) -> #(Connected(session), Effects([]))
-    Socket(Accepted(..))
-    | Started
-    | Woken(..)
-    | Asked(..)
-    | step.WatchEnded(..)
-    | TimerFired(..) -> #(
+  {
+    Bytes(bytes:) -> read(session:, now:, bytes:)
+    login.Outcome(outcome:) ->
+      settle(handled: answered(session:, outcome:), now:, carried: [])
+    Connect(..) -> #(
       Connected(session),
       Effects([
         log(
           session:,
           level: LogError,
-          text: "the STS rule took an input a connection is never given",
+          text: "the STS rule was accepted a second time",
         ),
         Stop,
       ]),
     )
-  }
-}
-
-fn describe_failure(failure: step.SocketFailure) -> String {
-  case failure {
-    step.Closed -> "the socket was closed"
-    step.Reset -> "the peer reset the connection"
-    step.SendTimedOut -> "a write timed out"
-    step.OtherSocketFailure(reason:) -> reason
+    Otherwise(step:) -> #(Connected(session), step)
   }
 }
 
@@ -271,24 +234,17 @@ fn read(
     Session(..session, status:, pending: <<session.pending:bits, plain:bits>>)
   case session.status {
     // A request is taken only once the answer to the ask in flight comes.
-    FindingAccount(..) | KeepingToken(..) -> #(Connected(session), Effects([]))
+    FindingAccount(..) | Proven(stage: KeepingToken(..), ..) -> #(
+      Connected(session),
+      Effects([]),
+    )
     AwaitingLoginStart
     | AwaitingProof(..)
-    | AwaitingLoginFinish(..)
-    | AwaitingAccountList(..)
-    | AwaitingTokenRequest(..)
-    | TokenGiven(..) -> drive(session:, now:, carried: [])
+    | Proven(stage: AwaitingLoginFinish, ..)
+    | Proven(stage: AwaitingAccountList(..), ..)
+    | Proven(stage: AwaitingTokenRequest(..), ..)
+    | Proven(stage: TokenGiven, ..) -> drive(session:, now:, carried: [])
   }
-}
-
-/// What taking one request, or one answer, decided.
-type Handled {
-  /// Go on to the next request in the bytes.
-  Continue(session: Session, effects: List(Effect(Nil)))
-  /// Carry out the effects, then ask; the requests after this one wait.
-  Ask(session: Session, effects: List(Effect(Nil)), ask: step.Ask(Request))
-  /// Carry out the effects, which end with `Stop`.
-  End(session: Session, effects: List(Effect(Nil)))
 }
 
 /// Takes the whole requests in the pending bytes in order until one asks or
@@ -300,14 +256,18 @@ fn drive(
 ) -> #(State, Step(Nil, Request)) {
   case sts_wire.take(session.pending) {
     Error(error) ->
-      end(session:, carried:, effects: [
-        log(
-          session:,
-          level: LogError,
-          text: "the bytes are no STS request: " <> sts_wire.describe(error),
-        ),
-        Stop,
-      ])
+      settle(
+        handled: End(session, [
+          log(
+            session:,
+            level: LogError,
+            text: "the bytes are no STS request: " <> sts_wire.describe(error),
+          ),
+          Stop,
+        ]),
+        now:,
+        carried:,
+      )
     Ok(None) -> #(Connected(session), Effects(carried))
     Ok(Some(#(request, rest))) ->
       settle(
@@ -323,27 +283,16 @@ fn drive(
 }
 
 fn settle(
-  handled handled: Handled,
+  handled handled: login.Handled(Session),
   now now: Now,
   carried carried: List(Effect(Nil)),
 ) -> #(State, Step(Nil, Request)) {
-  case handled {
-    Continue(session:, effects:) ->
-      drive(session:, now:, carried: list.append(carried, effects))
-    Ask(session:, effects:, ask:) -> #(
-      Connected(session),
-      EffectsThenAsk(list.append(carried, effects), ask),
-    )
-    End(session:, effects:) -> end(session:, carried:, effects:)
-  }
-}
-
-fn end(
-  session session: Session,
-  carried carried: List(Effect(Nil)),
-  effects effects: List(Effect(Nil)),
-) -> #(State, Step(Nil, Request)) {
-  #(Connected(session), Effects(list.append(carried, effects)))
+  login.settle(
+    handled:,
+    carried:,
+    connected: Connected,
+    drive: fn(session, carried) { drive(session:, now:, carried:) },
+  )
 }
 
 /// What one whole request does.
@@ -351,7 +300,7 @@ fn handle(
   session session: Session,
   now now: Now,
   request request: sts_wire.Request,
-) -> Handled {
+) -> login.Handled(Session) {
   case sts_message.decode(request) {
     Error(UnknownCommand(protocol:, command:)) ->
       Continue(session, [
@@ -369,13 +318,8 @@ fn handle(
     Ok(ConnectionOpened(..)) ->
       case session.status {
         AwaitingLoginStart -> Continue(session, [])
-        FindingAccount(..)
-        | AwaitingProof(..)
-        | AwaitingLoginFinish(..)
-        | KeepingToken(..)
-        | AwaitingAccountList(..)
-        | AwaitingTokenRequest(..)
-        | TokenGiven(..) -> out_of_order(session, "Connect")
+        FindingAccount(..) | AwaitingProof(..) | Proven(..) ->
+          out_of_order(session, "Connect")
       }
     Ok(Ping) -> Continue(session, [])
     Ok(Transaction(sequence:, request: transaction)) ->
@@ -388,7 +332,7 @@ fn transact(
   now now: Now,
   sequence sequence: Int,
   transaction transaction: sts_message.Transaction,
-) -> Handled {
+) -> login.Handled(Session) {
   case session.status, transaction {
     AwaitingLoginStart, LoginStart(login_name:, ..) ->
       ask(
@@ -398,15 +342,19 @@ fn transact(
       )
     AwaitingProof(account:, challenge:), KeyData(bytes:) ->
       prove(session:, sequence:, account:, challenge:, key_data: bytes)
-    AwaitingLoginFinish(account:, ciphers:), LoginFinish -> {
-      let #(random, token_bytes) = random.bytes(session.random, 16)
+    Proven(account:, ciphers:, stage: AwaitingLoginFinish), LoginFinish -> {
+      let #(link, token_bytes) = login.draw(session.link, 16)
       let assert Ok(token) = guid.from_wire(token_bytes)
         as "sixteen bytes are a GUID"
       ask(
         session: Session(
           ..session,
-          random:,
-          status: KeepingToken(sequence:, account:, token:, ciphers:),
+          link:,
+          status: Proven(
+            account:,
+            ciphers:,
+            stage: KeepingToken(sequence:, token:),
+          ),
         ),
         now:,
         request: AskHandOff(Put(
@@ -420,11 +368,15 @@ fn transact(
         )),
       )
     }
-    AwaitingAccountList(account:, token:, ciphers:), ListMyAccounts(..) -> {
+    Proven(account:, ciphers:, stage: AwaitingAccountList(token:)),
+      ListMyAccounts(..)
+    -> {
       let #(status, written) =
         send(
-          AwaitingTokenRequest(account:, token:, ciphers:),
-          sts_message.encode(
+          account:,
+          ciphers:,
+          stage: AwaitingTokenRequest(token:),
+          bytes: sts_message.encode(
             sts_message.GameAccounts(sequence:, accounts: [
               GameAccount(
                 alias: account.login_name,
@@ -436,22 +388,26 @@ fn transact(
         )
       Continue(Session(..session, status:), [Write(written)])
     }
-    AwaitingTokenRequest(account:, token:, ciphers:), RequestGameToken(..) -> {
+    Proven(account:, ciphers:, stage: AwaitingTokenRequest(token:)),
+      RequestGameToken(..)
+    -> {
       let #(status, written) =
         send(
-          TokenGiven(account:, ciphers:),
-          sts_message.encode(sts_message.GameToken(
+          account:,
+          ciphers:,
+          stage: TokenGiven,
+          bytes: sts_message.encode(sts_message.GameToken(
             sequence:,
             token: guid.to_text(token),
           )),
         )
       Continue(Session(..session, status:), [
         Write(written),
-        Log(LogLine(
+        log(
+          session:,
           level: LogInfo,
           text: "the STS login is finished and the game token is given",
-          about: about(session),
-        )),
+        ),
       ])
     }
     AwaitingLoginStart, KeyData(..)
@@ -467,24 +423,20 @@ fn transact(
     | AwaitingProof(..), LoginFinish
     | AwaitingProof(..), ListMyAccounts(..)
     | AwaitingProof(..), RequestGameToken(..)
-    | AwaitingLoginFinish(..), LoginStart(..)
-    | AwaitingLoginFinish(..), KeyData(..)
-    | AwaitingLoginFinish(..), ListMyAccounts(..)
-    | AwaitingLoginFinish(..), RequestGameToken(..)
-    | KeepingToken(..), LoginStart(..)
-    | KeepingToken(..), KeyData(..)
-    | KeepingToken(..), LoginFinish
-    | KeepingToken(..), ListMyAccounts(..)
-    | KeepingToken(..), RequestGameToken(..)
-    | AwaitingAccountList(..), LoginStart(..)
-    | AwaitingAccountList(..), KeyData(..)
-    | AwaitingAccountList(..), LoginFinish
-    | AwaitingAccountList(..), RequestGameToken(..)
-    | AwaitingTokenRequest(..), LoginStart(..)
-    | AwaitingTokenRequest(..), KeyData(..)
-    | AwaitingTokenRequest(..), LoginFinish
-    | AwaitingTokenRequest(..), ListMyAccounts(..)
-    | TokenGiven(..), _
+    | Proven(..), LoginStart(..)
+    | Proven(..), KeyData(..)
+    | Proven(stage: AwaitingLoginFinish, ..), ListMyAccounts(..)
+    | Proven(stage: AwaitingLoginFinish, ..), RequestGameToken(..)
+    | Proven(stage: KeepingToken(..), ..), LoginFinish
+    | Proven(stage: KeepingToken(..), ..), ListMyAccounts(..)
+    | Proven(stage: KeepingToken(..), ..), RequestGameToken(..)
+    | Proven(stage: AwaitingAccountList(..), ..), LoginFinish
+    | Proven(stage: AwaitingAccountList(..), ..), RequestGameToken(..)
+    | Proven(stage: AwaitingTokenRequest(..), ..), LoginFinish
+    | Proven(stage: AwaitingTokenRequest(..), ..), ListMyAccounts(..)
+    | Proven(stage: TokenGiven, ..), LoginFinish
+    | Proven(stage: TokenGiven, ..), ListMyAccounts(..)
+    | Proven(stage: TokenGiven, ..), RequestGameToken(..)
     -> out_of_order(session, request_name(transaction))
   }
 }
@@ -500,7 +452,7 @@ fn request_name(transaction: sts_message.Transaction) -> String {
 }
 
 /// A request the client never sends at that point ends the connection.
-fn out_of_order(session: Session, name: String) -> Handled {
+fn out_of_order(session: Session, name: String) -> login.Handled(Session) {
   End(session, [
     log(
       session:,
@@ -519,30 +471,29 @@ fn where_is(status: Status) -> String {
     AwaitingLoginStart -> "the wait for LoginStart"
     FindingAccount(..) -> "the wait for the store's answer"
     AwaitingProof(..) -> "the wait for the proof"
-    AwaitingLoginFinish(..) -> "the wait for LoginFinish"
-    KeepingToken(..) -> "the wait for the hand-off's answer"
-    AwaitingAccountList(..) -> "the wait for ListMyAccounts"
-    AwaitingTokenRequest(..) -> "the wait for RequestGameToken"
-    TokenGiven(..) -> "the finished login"
+    Proven(stage: AwaitingLoginFinish, ..) -> "the wait for LoginFinish"
+    Proven(stage: KeepingToken(..), ..) -> "the wait for the hand-off's answer"
+    Proven(stage: AwaitingAccountList(..), ..) -> "the wait for ListMyAccounts"
+    Proven(stage: AwaitingTokenRequest(..), ..) ->
+      "the wait for RequestGameToken"
+    Proven(stage: TokenGiven, ..) -> "the finished login"
   }
 }
 
-/// Makes an ask with the next id of the connection.
+/// Makes the connection's next ask.
 fn ask(
   session session: Session,
   now now: Now,
   request request: Request,
-) -> Handled {
-  let asks = session.asks + 1
-  Ask(
-    session: Session(..session, asks:),
-    effects: [],
-    ask: step.Ask(
-      ask: AskId(asks),
+) -> login.Handled(Session) {
+  let #(link, made) =
+    login.ask(
+      session.link,
+      now:,
+      deadline_ms: session.settings.ask_deadline_ms,
       request:,
-      deadline_ms: now.monotonic_ms + session.settings.ask_deadline_ms,
-    ),
-  )
+    )
+  Asking(Session(..session, link:), [], made)
 }
 
 /// The client's KeyData: A and M1. A right proof is answered with M2 in plain
@@ -554,21 +505,20 @@ fn prove(
   account account: Account,
   challenge challenge: srp.Challenge,
   key_data key_data: BitArray,
-) -> Handled {
+) -> login.Handled(Session) {
   case srp.prove(challenge:, key_data:) {
     Ok(srp.Proven(session_key:, server_key_data:)) ->
       case session.pending {
         <<>> -> {
-          let assert Ok(receiving) = rc4.start(session_key)
-            as "the session key is 64 bytes"
-          let assert Ok(sending) = rc4.start(session_key)
+          let assert Ok(stream) = rc4.start(session_key)
             as "the session key is 64 bytes"
           Continue(
             Session(
               ..session,
-              status: AwaitingLoginFinish(
+              status: Proven(
                 account:,
-                ciphers: Ciphers(receiving:, sending:),
+                ciphers: Ciphers(receiving: stream, sending: stream),
+                stage: AwaitingLoginFinish,
               ),
             ),
             [
@@ -582,14 +532,10 @@ fn prove(
           )
         }
         _ ->
-          End(session, [
-            log(
-              session:,
-              level: LogError,
-              text: "the client sent bytes after the proof, before it had M2",
-            ),
-            Stop,
-          ])
+          end_for(
+            session,
+            "the client sent bytes after the proof, before it had M2",
+          )
       }
     Error(srp.ProofRefused) ->
       Continue(Session(..session, status: AwaitingLoginStart), [
@@ -606,7 +552,7 @@ fn prove(
   }
 }
 
-fn end_for(session: Session, reason: String) -> Handled {
+fn end_for(session: Session, reason: String) -> login.Handled(Session) {
   End(session, [log(session:, level: LogError, text: reason), Stop])
 }
 
@@ -617,19 +563,19 @@ fn refusal(sequence: Int, code: Int) -> BitArray {
 /// The answer to the ask in flight.
 fn answered(
   session session: Session,
-  now _now: Now,
   outcome outcome: Outcome(Answer),
-) -> Handled {
+) -> login.Handled(Session) {
   case session.status {
     FindingAccount(sequence:) -> found(session:, sequence:, outcome:)
-    KeepingToken(sequence:, account:, token:, ciphers:) ->
+    Proven(account:, ciphers:, stage: KeepingToken(sequence:, token:)) ->
       kept(session:, sequence:, account:, token:, ciphers:, outcome:)
     AwaitingLoginStart
     | AwaitingProof(..)
-    | AwaitingLoginFinish(..)
-    | AwaitingAccountList(..)
-    | AwaitingTokenRequest(..)
-    | TokenGiven(..) -> end_for(session, "an answer came when no ask was out")
+    | Proven(stage: AwaitingLoginFinish, ..)
+    | Proven(stage: AwaitingAccountList(..), ..)
+    | Proven(stage: AwaitingTokenRequest(..), ..)
+    | Proven(stage: TokenGiven, ..) ->
+      end_for(session, "an answer came when no ask was out")
   }
 }
 
@@ -638,10 +584,10 @@ fn found(
   session session: Session,
   sequence sequence: Int,
   outcome outcome: Outcome(Answer),
-) -> Handled {
+) -> login.Handled(Session) {
   case outcome {
     step.Answer(FromStore(AccountFound(account:))) -> {
-      let #(random, secret) = random.bytes(session.random, 32)
+      let #(link, secret) = login.draw(session.link, 32)
       let assert Ok(#(challenge, key_data)) =
         srp.challenge(
           name: account.login_name,
@@ -651,7 +597,7 @@ fn found(
         )
         as "the secret is 32 bytes"
       Continue(
-        Session(..session, random:, status: AwaitingProof(account:, challenge:)),
+        Session(..session, link:, status: AwaitingProof(account:, challenge:)),
         [
           Write(
             sts_message.encode(sts_message.KeyDataAnswer(sequence:, key_data:)),
@@ -667,14 +613,15 @@ fn found(
       timed_out(session:, sequence:, what: "the store was unavailable")
     step.Answer(FromHandOff(..)) ->
       end_for(session, "the hand-off answered the ask for the account")
-    step.NotRunning ->
-      timed_out(session:, sequence:, what: "the store was not running")
-    step.NoAnswerInTime ->
-      timed_out(session:, sequence:, what: "the store gave no answer in time")
-    step.EndedBeforeAnswer ->
-      timed_out(session:, sequence:, what: "the store ended before it answered")
-    step.StoppedWaiting ->
-      timed_out(session:, sequence:, what: "the server began stopping")
+    step.NotRunning
+    | step.NoAnswerInTime
+    | step.EndedBeforeAnswer
+    | step.StoppedWaiting ->
+      timed_out(
+        session:,
+        sequence:,
+        what: login.without_answer(who: "the store", outcome:),
+      )
   }
 }
 
@@ -684,7 +631,7 @@ fn timed_out(
   session session: Session,
   sequence sequence: Int,
   what what: String,
-) -> Handled {
+) -> login.Handled(Session) {
   Continue(Session(..session, status: AwaitingLoginStart), [
     log(
       session:,
@@ -706,13 +653,37 @@ fn kept(
   token token: Guid,
   ciphers ciphers: Ciphers,
   outcome outcome: Outcome(Answer),
-) -> Handled {
+) -> login.Handled(Session) {
+  let timed_out = fn(what) {
+    // Error 42, "finish timeout", ciphered, and a warning; the client may
+    // send LoginFinish again.
+    let #(status, written) =
+      send(
+        account:,
+        ciphers:,
+        stage: AwaitingLoginFinish,
+        bytes: refusal(sequence, service_timeout),
+      )
+    Continue(Session(..session, status:), [
+      log(
+        session:,
+        level: LogWarning,
+        text: "LoginFinish is answered with error "
+          <> int.to_string(service_timeout)
+          <> ": "
+          <> what,
+      ),
+      Write(written),
+    ])
+  }
   case outcome {
     step.Answer(FromHandOff(hand_off.Kept)) -> {
       let #(status, written) =
         send(
-          AwaitingAccountList(account:, token:, ciphers:),
-          sts_message.encode(sts_message.LoginFinished(
+          account:,
+          ciphers:,
+          stage: AwaitingAccountList(token:),
+          bytes: sts_message.encode(sts_message.LoginFinished(
             sequence:,
             user_id: guid.to_text(account.game_account_id),
             user_name: account.login_name,
@@ -721,130 +692,49 @@ fn kept(
       Continue(Session(..session, status:), [Write(written)])
     }
     step.Answer(FromHandOff(hand_off.AlreadyHeld)) ->
-      finish_timed_out(
-        session:,
-        sequence:,
-        account:,
-        ciphers:,
-        what: "the hand-off already held the game token",
-      )
+      timed_out("the hand-off already held the game token")
     step.Answer(FromHandOff(hand_off.Taken(..)))
     | step.Answer(FromHandOff(hand_off.NoHolder))
     | step.Answer(FromStore(..)) ->
       end_for(session, "the hand-off's answer is none a Put gets")
-    step.NotRunning ->
-      finish_timed_out(
-        session:,
-        sequence:,
-        account:,
-        ciphers:,
-        what: "the hand-off was not running",
-      )
-    step.NoAnswerInTime ->
-      finish_timed_out(
-        session:,
-        sequence:,
-        account:,
-        ciphers:,
-        what: "the hand-off gave no answer in time",
-      )
-    step.EndedBeforeAnswer ->
-      finish_timed_out(
-        session:,
-        sequence:,
-        account:,
-        ciphers:,
-        what: "the hand-off ended before it answered",
-      )
-    step.StoppedWaiting ->
-      finish_timed_out(
-        session:,
-        sequence:,
-        account:,
-        ciphers:,
-        what: "the server began stopping",
-      )
+    step.NotRunning
+    | step.NoAnswerInTime
+    | step.EndedBeforeAnswer
+    | step.StoppedWaiting ->
+      timed_out(login.without_answer(who: "the hand-off", outcome:))
   }
-}
-
-/// The hand-off gave no answer at LoginFinish: error 42, "finish timeout",
-/// ciphered, and a warning. The client may send LoginFinish again.
-fn finish_timed_out(
-  session session: Session,
-  sequence sequence: Int,
-  account account: Account,
-  ciphers ciphers: Ciphers,
-  what what: String,
-) -> Handled {
-  let #(status, written) =
-    send(
-      AwaitingLoginFinish(account:, ciphers:),
-      refusal(sequence, service_timeout),
-    )
-  Continue(Session(..session, status:), [
-    log(
-      session:,
-      level: LogWarning,
-      text: "LoginFinish is answered with error "
-        <> int.to_string(service_timeout)
-        <> ": "
-        <> what,
-    ),
-    Write(written),
-  ])
 }
 
 // ---- RC4 ----
 
-/// The RC4 state of the status, when the proof has passed.
-fn ciphers_of(status: Status) -> Option(Ciphers) {
-  case status {
-    AwaitingLoginFinish(ciphers:, ..)
-    | KeepingToken(ciphers:, ..)
-    | AwaitingAccountList(ciphers:, ..)
-    | AwaitingTokenRequest(ciphers:, ..)
-    | TokenGiven(ciphers:, ..) -> Some(ciphers)
-    AwaitingLoginStart | FindingAccount(..) | AwaitingProof(..) -> None
-  }
-}
-
-/// The status with other RC4 state.
-fn with_ciphers(status: Status, ciphers: Ciphers) -> Status {
-  case status {
-    AwaitingLoginFinish(account:, ..) -> AwaitingLoginFinish(account:, ciphers:)
-    KeepingToken(sequence:, account:, token:, ..) ->
-      KeepingToken(sequence:, account:, token:, ciphers:)
-    AwaitingAccountList(account:, token:, ..) ->
-      AwaitingAccountList(account:, token:, ciphers:)
-    AwaitingTokenRequest(account:, token:, ..) ->
-      AwaitingTokenRequest(account:, token:, ciphers:)
-    TokenGiven(account:, ..) -> TokenGiven(account:, ciphers:)
-    AwaitingLoginStart | FindingAccount(..) | AwaitingProof(..) -> status
-  }
-}
-
 /// The bytes the client sent, deciphered once RC4 is on, and the status with
 /// its receiving state moved on.
 fn receive(status: Status, bytes: BitArray) -> #(Status, BitArray) {
-  case ciphers_of(status) {
-    None -> #(status, bytes)
-    Some(Ciphers(receiving:, sending:)) -> {
-      let #(receiving, plain) = rc4.crypt(receiving, bytes)
-      #(with_ciphers(status, Ciphers(receiving:, sending:)), plain)
+  case status {
+    Proven(account:, ciphers:, stage:) -> {
+      let #(receiving, plain) = rc4.crypt(ciphers.receiving, bytes)
+      #(
+        Proven(account:, ciphers: Ciphers(..ciphers, receiving:), stage:),
+        plain,
+      )
     }
+    AwaitingLoginStart | FindingAccount(..) | AwaitingProof(..) -> #(
+      status,
+      bytes,
+    )
   }
 }
 
-/// The bytes to write, ciphered once RC4 is on, and the status with its
-/// sending state moved on. The status given is the one after the write.
-fn send(status: Status, bytes: BitArray) -> #(Status, BitArray) {
-  case ciphers_of(status) {
-    None -> #(status, bytes)
-    Some(Ciphers(receiving:, sending:)) -> {
-      let #(sending, ciphered) = rc4.crypt(sending, bytes)
-      #(with_ciphers(status, Ciphers(receiving:, sending:)), ciphered)
-    }
-  }
+/// The bytes to write, ciphered, and the status at `stage` with its sending
+/// state moved on.
+fn send(
+  account account: Account,
+  ciphers ciphers: Ciphers,
+  stage stage: Stage,
+  bytes bytes: BitArray,
+) -> #(Status, BitArray) {
+  let #(sending, ciphered) = rc4.crypt(ciphers.sending, bytes)
+  #(Proven(account:, ciphers: Ciphers(..ciphers, sending:), stage:), ciphered)
 }
 
 // ---- log lines ----
@@ -854,43 +744,23 @@ fn log(
   level level: step.LogLevel,
   text text: String,
 ) -> Effect(Nil) {
-  Log(LogLine(level:, text:, about: about(session)))
-}
-
-fn about(session: Session) -> About {
-  About(
-    connection: Some(session.connection),
-    peer: Some(session.peer),
-    account_id: case account_of(session.status) {
-      Some(store.Account(account_id: store.AccountId(id), ..)) -> Some(id)
-      None -> None
-    },
-    character_id: None,
-    map: None,
-    message: None,
+  login.log(
+    link: session.link,
+    account_id: account_id_of(session.status),
+    level:,
+    text:,
   )
 }
 
-fn no_one() -> About {
-  About(
-    connection: None,
-    peer: None,
-    account_id: None,
-    character_id: None,
-    map: None,
-    message: None,
-  )
-}
-
-/// The account the login is for, once the store has found it.
-fn account_of(status: Status) -> Option(Account) {
+/// The id of the account the login is for, once the store has found it.
+fn account_id_of(status: Status) -> Option(Int) {
   case status {
-    AwaitingProof(account:, ..)
-    | AwaitingLoginFinish(account:, ..)
-    | KeepingToken(account:, ..)
-    | AwaitingAccountList(account:, ..)
-    | AwaitingTokenRequest(account:, ..)
-    | TokenGiven(account:, ..) -> Some(account)
+    AwaitingProof(
+      account: store.Account(account_id: store.AccountId(id), ..),
+      ..,
+    )
+    | Proven(account: store.Account(account_id: store.AccountId(id), ..), ..) ->
+      Some(id)
     AwaitingLoginStart | FindingAccount(..) -> None
   }
 }

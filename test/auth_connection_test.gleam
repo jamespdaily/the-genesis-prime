@@ -24,7 +24,7 @@ import genesis_prime/hand_off.{
   AlreadyHeld, GameToken, Holder, Kept, NoHolder, Put, SessionKey, Take, Taken,
 }
 import genesis_prime/login.{type Answer, type Request, AskHandOff, FromHandOff}
-import genesis_prime/login/auth_connection.{Realm, Settings}
+import genesis_prime/login/auth_connection.{Settings}
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/message/game_server_handoff.{GameServerHandoff}
@@ -40,24 +40,12 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import login_client
 import login_rule_support as support
+import login_support
 import owned_test
 import scripted_client.{StsLogin}
 
-fn realm() -> auth_connection.Realm {
-  Realm(
-    id: 1,
-    name: "Nexus",
-    game_server: Endpoint(address: 0x7F000001, port: 24_000),
-  )
-}
-
 fn settings(planted planted: Option(Frame)) -> auth_connection.Settings {
-  Settings(
-    realm: realm(),
-    ask_deadline_ms: 5000,
-    session_key_lifetime_ms: 60_000,
-    planted:,
-  )
+  Settings(..login_support.auth_settings(), planted:)
 }
 
 fn holder() -> hand_off.Holder {
@@ -147,14 +135,33 @@ fn refusal(taken: Step(Nil, Request)) -> login_refused.LoginRefused {
   refused
 }
 
-/// The connection after a login request for the holder's UserId and the
-/// build, with its Take ask.
-fn asking(
+/// The connection after a login request for a UserId and a build, with its
+/// Take ask.
+fn asking_as(
   seed seed: BitArray,
   user_id user_id: guid.Guid,
   build build: Int,
 ) -> #(auth_connection.State, Step(Nil, Request)) {
   read(connected(seed:), login_request(user_id:, build:))
+}
+
+/// The connection after a login request for the holder's UserId and the
+/// build the client is, with its Take ask.
+fn asking(seed seed: BitArray) -> #(auth_connection.State, Step(Nil, Request)) {
+  asking_as(seed:, user_id: holder().game_account_id, build: 16_042)
+}
+
+/// The connection after the hand-off gave the holder for the token, with the
+/// ask to keep the session key.
+fn token_taken(
+  seed seed: BitArray,
+) -> #(auth_connection.State, Step(Nil, Request)) {
+  let #(state, taken) = asking(seed:)
+  answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
+  )
 }
 
 // ---- the tests, in the order of the card's list ----
@@ -200,8 +207,7 @@ pub fn on_connect_the_server_sends_the_hello_with_build_16042_the_checksum_and_t
 pub fn a_login_request_with_a_live_game_token_gets_0x591_then_0x3db_with_a_session_key_the_hand_off_keeps_test() -> Nil {
   use <- owned_test.run(10_000)
   let seed = support.seed(first: 1)
-  let #(state, taken) =
-    asking(seed:, user_id: holder().game_account_id, build: 16_042)
+  let #(state, taken) = asking(seed:)
   let assert Some(ask) = support.asked(taken) as "the token is taken"
   assert ask.request == AskHandOff(Take(GameToken(token: token())))
     as "the game token the client showed"
@@ -247,12 +253,7 @@ pub fn a_login_request_with_a_live_game_token_gets_0x591_then_0x3db_with_a_sessi
 
 pub fn a_token_never_kept_already_taken_or_expired_gets_0x63d_reason_16_and_the_connection_ends_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(state, taken) =
-    asking(
-      seed: support.seed(first: 1),
-      user_id: holder().game_account_id,
-      build: 16_042,
-    )
+  let #(state, taken) = asking(seed: support.seed(first: 1))
   let #(_, taken) =
     answer(state:, taken:, outcome: step.Answer(FromHandOff(NoHolder)))
   let refused = refusal(taken)
@@ -265,7 +266,7 @@ pub fn a_token_never_kept_already_taken_or_expired_gets_0x63d_reason_16_and_the_
 pub fn a_user_id_other_than_the_tokens_account_gets_0x63d_reason_16_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) =
-    asking(
+    asking_as(
       seed: support.seed(first: 1),
       user_id: support.guid_of(33),
       build: 16_042,
@@ -284,7 +285,7 @@ pub fn a_user_id_other_than_the_tokens_account_gets_0x63d_reason_16_test() -> Ni
 pub fn a_build_other_than_16042_gets_0x63d_reason_19_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) =
-    asking(
+    asking_as(
       seed: support.seed(first: 1),
       user_id: holder().game_account_id,
       build: 16_043,
@@ -305,12 +306,7 @@ pub fn a_hand_off_that_does_not_answer_gets_0x63d_reason_12_and_a_warning_log_te
   ]
   list.each(outcomes, fn(outcome) {
     // At the Take.
-    let #(state, taken) =
-      asking(
-        seed: support.seed(first: 1),
-        user_id: holder().game_account_id,
-        build: 16_042,
-      )
+    let #(state, taken) = asking(seed: support.seed(first: 1))
     let #(_, taken) = answer(state:, taken:, outcome:)
     assert refusal(taken).reason == 12
       as "opcode.0x63d: 12 is 'NCSoft login service finish timeout'"
@@ -319,35 +315,13 @@ pub fn a_hand_off_that_does_not_answer_gets_0x63d_reason_12_and_a_warning_log_te
     assert line.about.connection == Some(ConnectionId(1))
       && line.about.peer == Some(support.peer)
     // At the Put of the session key.
-    let #(state, taken) =
-      asking(
-        seed: support.seed(first: 1),
-        user_id: holder().game_account_id,
-        build: 16_042,
-      )
-    let #(state, taken) =
-      answer(
-        state:,
-        taken:,
-        outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
-      )
+    let #(state, taken) = token_taken(seed: support.seed(first: 1))
     let #(_, taken) = answer(state:, taken:, outcome:)
     assert refusal(taken).reason == 12
     assert list.length(support.logs_of(step: taken, level: LogWarning)) == 1
   })
   // A session key that is already held is the server's failure too.
-  let #(state, taken) =
-    asking(
-      seed: support.seed(first: 1),
-      user_id: holder().game_account_id,
-      build: 16_042,
-    )
-  let #(state, taken) =
-    answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
-    )
+  let #(state, taken) = token_taken(seed: support.seed(first: 1))
   let #(_, taken) =
     answer(state:, taken:, outcome: step.Answer(FromHandOff(AlreadyHeld)))
   assert refusal(taken).reason == 12
@@ -383,14 +357,7 @@ pub fn a_ping_gets_its_pong_test() -> Nil {
 pub fn the_session_key_comes_from_the_connections_seed_only_test() -> Nil {
   use <- owned_test.run(10_000)
   let session_key_for = fn(seed) {
-    let #(state, taken) =
-      asking(seed:, user_id: holder().game_account_id, build: 16_042)
-    let #(_, taken) =
-      answer(
-        state:,
-        taken:,
-        outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
-      )
+    let #(_, taken) = token_taken(seed:)
     let assert Some(ask) = support.asked(taken)
     let assert AskHandOff(Put(key: SessionKey(key:), ..)) = ask.request
     key

@@ -44,6 +44,12 @@ pub type KeyError {
 /// 0x718DA9074F2DEB91 + 0x064F77F4AB4E81A0`, where 16042 is the build.
 pub const base_key = 0xD283F5B34A8DC685
 
+/// The cipher under the base key, which keys the auth connection.
+pub fn base() -> Cipher {
+  let assert Ok(base) = new(key: base_key) as "the base key is not 0"
+  base
+}
+
 /// Builds a cipher from a 64-bit key. With x = key + 0x718DA9074F2DEB91, each
 /// of the sixteen key words in turn is x * 0xAA7F8EA9 (64-bit, wrapping), and x
 /// becomes that word + key before the next. The chaining start `h` begins at

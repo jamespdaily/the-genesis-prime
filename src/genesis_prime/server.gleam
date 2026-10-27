@@ -29,8 +29,8 @@ import genesis_prime/login.{AskHandOff, AskStore, FromHandOff, FromStore}
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/rule_recording/file.{type Recorder}
-import genesis_prime/service/shell.{type Call} as service_shell
-import genesis_prime/step.{Rule}
+import genesis_prime/service/shell.{type Call, type Sent} as service_shell
+import genesis_prime/step.{type Rule, Rule}
 import genesis_prime/store/worker.{type Job}
 import gleam/erlang/process.{type Name}
 import gleam/option.{type Option, None}
@@ -63,22 +63,25 @@ pub type Settings {
 /// store they ask, so they stop first.
 pub type Login {
   Login(
-    /// The STS listener's name in Ranch, unique on the node.
-    sts_listener: String,
-    sts_port: Int,
-    sts: sts_connection.Settings,
-    /// The auth listener's name in Ranch, unique on the node.
-    auth_listener: String,
-    auth_port: Int,
-    auth: auth_connection.Settings,
+    sts: Served(sts_connection.Settings),
+    auth: Served(auth_connection.Settings),
     /// How long a write may wait for a client's socket.
     send_deadline_ms: Int,
     /// How long a connection has to stop once the server stops.
     connection_shutdown_ms: Int,
-    /// Where each connection's inputs are recorded; `None` unless the dev
-    /// start turns recording on.
-    sts_recorder: Option(Recorder(sts_connection.Settings)),
-    auth_recorder: Option(Recorder(auth_connection.Settings)),
+  )
+}
+
+/// One login listener: its name in Ranch, unique on the node and made once
+/// with `process.new_name`, the port it listens on (0 for one the system
+/// picks), the settings its rule is made with, and where each connection's
+/// inputs are recorded, `None` unless the dev start turns recording on.
+pub type Served(settings) {
+  Served(
+    listener: Name(Nil),
+    port: Int,
+    settings: settings,
+    recorder: Option(Recorder(settings)),
   )
 }
 
@@ -117,57 +120,69 @@ pub fn start(
 
 /// Adds the STS listener, then the auth listener, each with the directory
 /// that sends a login rule's asks to the store and the hand-off by their
-/// names and wraps each answer (`login.FromStore`, `login.FromHandOff`).
+/// names and wraps each answer (`login.FromStore`, `login.FromHandOff`). The
+/// directory holds the two names, not the settings.
 fn add_login(
   tree: supervisor.Builder,
   settings: Settings,
 ) -> supervisor.Builder {
+  let store = settings.store
+  let hand_off = settings.hand_off
   let directory = fn(request: login.Request, reply: fn(login.Answer) -> Nil) {
     case request {
       AskStore(request:) ->
-        worker.ask(settings.store, request, fn(answer) {
-          reply(FromStore(answer))
-        })
+        worker.ask(store, request, fn(answer) { reply(FromStore(answer)) })
       AskHandOff(message:) ->
-        service_shell.call(settings.hand_off, message, fn(answer) {
+        service_shell.call(hand_off, message, fn(answer) {
           reply(FromHandOff(answer))
         })
     }
   }
   let login = settings.login
   tree
-  |> supervisor.add(
-    listener.supervised(Listener(
-      name: login.sts_listener,
-      port: login.sts_port,
-      connection: connection_shell.Settings(
-        rule: Rule(
-          name: "genesis_prime/login/sts_connection",
-          settings: login.sts,
-          new: sts_connection.new,
-          step: sts_connection.step,
-        ),
-        send_deadline_ms: login.send_deadline_ms,
-        shutdown_ms: login.connection_shutdown_ms,
-        recorder: login.sts_recorder,
-        directory:,
-      ),
-    )),
+  |> serve(
+    login:,
+    served: login.sts,
+    rule: Rule(
+      name: sts_connection.rule_name,
+      settings: login.sts.settings,
+      new: sts_connection.new,
+      step: sts_connection.step,
+    ),
+    directory:,
   )
-  |> supervisor.add(
+  |> serve(
+    login:,
+    served: login.auth,
+    rule: Rule(
+      name: auth_connection.rule_name,
+      settings: login.auth.settings,
+      new: auth_connection.new,
+      step: auth_connection.step,
+    ),
+    directory:,
+  )
+}
+
+/// Adds one login listener, whose connections run `rule`.
+fn serve(
+  tree: supervisor.Builder,
+  login login: Login,
+  served served: Served(settings),
+  rule rule: Rule(settings, state, Nil, login.Answer, Nil, login.Request),
+  directory directory: fn(login.Request, fn(login.Answer) -> Nil) ->
+    Result(Sent, Nil),
+) -> supervisor.Builder {
+  supervisor.add(
+    tree,
     listener.supervised(Listener(
-      name: login.auth_listener,
-      port: login.auth_port,
+      name: served.listener,
+      port: served.port,
       connection: connection_shell.Settings(
-        rule: Rule(
-          name: "genesis_prime/login/auth_connection",
-          settings: login.auth,
-          new: auth_connection.new,
-          step: auth_connection.step,
-        ),
+        rule:,
         send_deadline_ms: login.send_deadline_ms,
         shutdown_ms: login.connection_shutdown_ms,
-        recorder: login.auth_recorder,
+        recorder: served.recorder,
         directory:,
       ),
     )),

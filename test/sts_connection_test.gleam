@@ -46,15 +46,13 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
+import login_client
 import login_rule_support as support
+import login_support
 import login_vectors as vector
 import owned_test
 import scripted_client.{type Exchange, type Reply}
 import seeded
-
-fn settings() -> sts_connection.Settings {
-  sts_connection.Settings(ask_deadline_ms: 5000, game_token_lifetime_ms: 60_000)
-}
 
 /// The client's side of one connection beside the rule's state: its RC4
 /// streams once the proof has passed, and the next sequence number.
@@ -81,7 +79,7 @@ fn accepted(seed seed: BitArray) -> Session {
   let #(session, taken) =
     feed(
       Session(
-        state: sts_connection.new(settings()),
+        state: sts_connection.new(login_support.sts_settings()),
         sending: None,
         receiving: None,
         sequence: 1,
@@ -97,13 +95,8 @@ fn send_bytes(
   session: Session,
   plain: BitArray,
 ) -> #(Session, Step(Nil, Request)) {
-  let #(sending, wire) = case session.sending {
-    Some(stream) -> {
-      let #(stream, ciphered) = rc4.crypt(stream, plain)
-      #(Some(stream), ciphered)
-    }
-    None -> #(None, plain)
-  }
+  let #(sending, wire) =
+    login_client.crypt_when_on(stream: session.sending, bytes: plain)
   feed(Session(..session, sending:), step.Socket(step.Read(wire)))
 }
 
@@ -180,25 +173,15 @@ fn answer(
 fn hear(session: Session, taken: Step(Nil, Request)) -> #(Session, BitArray) {
   let assert [written] = support.writes(taken)
     as "the taken writes exactly one reply"
-  case session.receiving {
-    Some(stream) -> {
-      let #(stream, plain) = rc4.crypt(stream, written)
-      #(Session(..session, receiving: Some(stream)), plain)
-    }
-    None -> #(session, written)
-  }
+  let #(receiving, plain) =
+    login_client.crypt_when_on(stream: session.receiving, bytes: written)
+  #(Session(..session, receiving:), plain)
 }
 
 fn reply_of(bytes: BitArray) -> Reply {
   let assert Ok(reply) = scripted_client.read_reply(bytes)
     as "the bytes are one whole STS reply"
   reply
-}
-
-fn child(reply: Reply, name: String) -> String {
-  let assert Ok(text) = scripted_client.child_text(reply, name)
-    as { "the reply has a " <> name }
-  text
 }
 
 fn assert_error_reply(
@@ -237,7 +220,10 @@ fn key_data_exchange(
     )
   let #(session, bytes) = hear(session, taken)
   let assert Ok(server_key_data) =
-    bit_array.base64_decode(child(reply_of(bytes), "KeyData"))
+    bit_array.base64_decode(login_client.child(
+      reply: reply_of(bytes),
+      name: "KeyData",
+    ))
     as "KeyData is base64"
   let assert Ok(exchange) =
     scripted_client.exchange(
@@ -266,17 +252,26 @@ fn key_data_request(
 
 /// The connection after the right proof and M2: RC4 under K on in both
 /// directions of the client's side too.
-fn proven(seed seed: BitArray) -> #(Session, Exchange, Step(Nil, Request)) {
+fn proven(seed seed: BitArray) -> #(Session, Exchange) {
+  let #(session, exchange, _taken, _m2) = proven_with_m2(seed:)
+  #(session, exchange)
+}
+
+/// The same, with the step of the KeyData request and the bytes of M2, which
+/// the server writes in plain text, before RC4 is on.
+fn proven_with_m2(
+  seed seed: BitArray,
+) -> #(Session, Exchange, Step(Nil, Request), BitArray) {
   let #(session, exchange) =
     key_data_exchange(connected(seed:), password: vector.password)
   let #(session, taken) = key_data_request(session, exchange)
-  let #(session, _m2) = hear(session, taken)
-  let assert Ok(sending) = rc4.start(exchange.session_key)
-  let assert Ok(receiving) = rc4.start(exchange.session_key)
+  let #(session, m2) = hear(session, taken)
+  let assert Ok(stream) = rc4.start(exchange.session_key)
   #(
-    Session(..session, sending: Some(sending), receiving: Some(receiving)),
+    Session(..session, sending: Some(stream), receiving: Some(stream)),
     exchange,
     taken,
+    m2,
   )
 }
 
@@ -300,7 +295,7 @@ fn token_asked(taken: Step(Nil, Request)) -> guid.Guid {
 /// The connection after LoginFinish is answered: the game token asked for and
 /// the reply to LoginFinish.
 fn finished(seed seed: BitArray) -> #(Session, guid.Guid, Reply) {
-  let #(session, _exchange, _step) = proven(seed:)
+  let #(session, _exchange) = proven(seed:)
   let #(session, taken) = login_finish(session)
   let token = token_asked(taken)
   let #(session, taken) =
@@ -391,7 +386,8 @@ pub fn login_start_for_a_stored_account_answers_key_data_with_the_accounts_salt_
   let reply = reply_of(written)
   assert reply.status == 200 && reply.sequence == 1
     as "a success that answers LoginStart's sequence"
-  let assert Ok(key_data) = bit_array.base64_decode(child(reply, "KeyData"))
+  let assert Ok(key_data) =
+    bit_array.base64_decode(login_client.child(reply:, name: "KeyData"))
   assert key_data == expected_key_data(support.block(seed:, counter: 0))
     as "the account's salt and B from the first block of the seed"
 }
@@ -427,36 +423,26 @@ pub fn key_data_with_a_wrong_m1_answers_error_3002_in_plain_text_test() -> Nil {
 
 pub fn key_data_with_the_right_m1_answers_m2_in_plain_text_and_then_both_ways_run_on_rc4_under_k_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(session, exchange) =
-    key_data_exchange(
-      connected(seed: support.seed(first: 1)),
-      password: vector.password,
-    )
-  let #(session, taken) = key_data_request(session, exchange)
+  let #(session, exchange, taken, m2) =
+    proven_with_m2(seed: support.seed(first: 1))
   assert support.asked(taken) == None && !support.stops(taken)
     as "the proof is checked at once"
-  let #(session, m2) = hear(session, taken)
   let reply = reply_of(m2)
   assert reply.status == 200 && reply.sequence == 2
     as "M2 answers the KeyData request, in plain text"
-  assert child(reply, "KeyData")
+  assert login_client.child(reply:, name: "KeyData")
     == bit_array.base64_encode(
       <<32:size(32)-little, exchange.expected_m2:bits>>,
       True,
     )
     as "StsConnLib64.MT.dll!0x18002d3b0: M2 = SHA-256(A | M1 | K), with its 32-bit length"
-  // The client puts RC4 under K on both directions from the next byte.
-  let assert Ok(sending) = rc4.start(exchange.session_key)
-  let assert Ok(receiving) = rc4.start(exchange.session_key)
-  let session =
-    Session(..session, sending: Some(sending), receiving: Some(receiving))
   let #(session, taken) = login_finish(session)
   assert support.writes(taken) == []
     as "StsConnLib64.MT.dll!0x18000a350: the server sends nothing between M2 and the client's LoginFinish"
   let #(session, taken) =
     answer(session:, taken:, outcome: step.Answer(FromHandOff(Kept)))
   let #(session, bytes) = hear(session, taken)
-  assert child(reply_of(bytes), "AuthType") == "0"
+  assert login_client.child(reply: reply_of(bytes), name: "AuthType") == "0"
     as "the first bytes after M2 decipher under K from byte 0: none were dropped and none were sent in between"
   let #(session, taken) = list_my_accounts(session)
   let #(_, bytes) = hear(session, taken)
@@ -467,7 +453,7 @@ pub fn key_data_with_the_right_m1_answers_m2_in_plain_text_and_then_both_ways_ru
 pub fn login_finish_asks_the_hand_off_to_keep_a_new_game_token_and_once_kept_answers_auth_type_0_test() -> Nil {
   use <- owned_test.run(10_000)
   let seed = support.seed(first: 1)
-  let #(session, _exchange, _step) = proven(seed:)
+  let #(session, _exchange) = proven(seed:)
   let #(session, taken) = login_finish(session)
   let assert Some(ask) = support.asked(taken) as "LoginFinish asks the hand-off"
   let assert Ok(token) = guid.from_wire(support.sixteen(seed:, counter: 1))
@@ -490,11 +476,12 @@ pub fn login_finish_asks_the_hand_off_to_keep_a_new_game_token_and_once_kept_ans
   let #(_, bytes) = hear(session, taken)
   let reply = reply_of(bytes)
   assert reply.status == 200 && reply.sequence == 3
-  assert child(reply, "AuthType") == "0"
+  assert login_client.child(reply:, name: "AuthType") == "0"
     as "StsConnLib64.MT.dll!0x1800043d0: AuthType 0 is a finished login"
-  assert child(reply, "UserId") == guid.to_text(support.jim().game_account_id)
+  assert login_client.child(reply:, name: "UserId")
+    == guid.to_text(support.jim().game_account_id)
     as "the UserId is the account's game account id as GUID text"
-  assert child(reply, "UserName") == vector.name
+  assert login_client.child(reply:, name: "UserName") == vector.name
 }
 
 pub fn list_my_accounts_answers_exactly_one_game_account_with_an_alias_test() -> Nil {
@@ -526,11 +513,11 @@ pub fn request_game_token_answers_the_token_kept_at_login_finish_with_no_ask_tes
   let #(_, bytes) = hear(session, taken)
   let reply = reply_of(bytes)
   assert reply.status == 200 && reply.sequence == 5
-  assert child(reply, "Token") == guid.to_text(token)
+  assert login_client.child(reply:, name: "Token") == guid.to_text(token)
     as "the token the hand-off was asked to keep at LoginFinish"
   // The client sends the three requests back to back; the rule takes the two
   // after LoginFinish once the hand-off answers.
-  let #(session, _exchange, _step) = proven(seed: support.seed(first: 1))
+  let #(session, _exchange) = proven(seed: support.seed(first: 1))
   let #(session, first) = login_finish(session)
   let #(session, second) = list_my_accounts(session)
   assert support.asked(second) == None
@@ -545,11 +532,12 @@ pub fn request_game_token_answers_the_token_kept_at_login_finish_with_no_ask_tes
     as "after the answer the rule replies to each request in order"
   let assert Some(receiving) = session.receiving
   let #(receiving, plain) = rc4.crypt(receiving, finish_reply)
-  assert child(reply_of(plain), "AuthType") == "0"
+  assert login_client.child(reply: reply_of(plain), name: "AuthType") == "0"
   let #(receiving, plain) = rc4.crypt(receiving, list_reply)
   assert reply_of(plain).sequence == 4
   let #(_, plain) = rc4.crypt(receiving, token_reply)
-  assert child(reply_of(plain), "Token") == guid.to_text(token)
+  assert login_client.child(reply: reply_of(plain), name: "Token")
+    == guid.to_text(token)
 }
 
 pub fn a_ping_gets_no_answer_and_the_connection_goes_on_test() -> Nil {
@@ -603,7 +591,7 @@ pub fn a_hand_off_that_gives_no_answer_at_login_finish_answers_error_42_and_logs
     step.Answer(FromHandOff(AlreadyHeld)),
   ]
   list.each(outcomes, fn(outcome) {
-    let #(session, _exchange, _step) = proven(seed: support.seed(first: 1))
+    let #(session, _exchange) = proven(seed: support.seed(first: 1))
     let #(session, taken) = login_finish(session)
     let #(session, taken) = answer(session:, taken:, outcome:)
     let #(_, bytes) = hear(session, taken)
@@ -680,7 +668,7 @@ pub fn the_srp_secret_and_the_token_come_from_the_connections_seed_only_test() -
         outcome: step.Answer(FromStore(AccountFound(support.jim()))),
       )
     let assert [written] = support.writes(taken)
-    let #(session, _exchange, _step) = proven(seed:)
+    let #(session, _exchange) = proven(seed:)
     let #(_, taken) = login_finish(session)
     #(written, token_asked(taken))
   }

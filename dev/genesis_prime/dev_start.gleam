@@ -16,8 +16,10 @@
 
 import argv
 import genesis_prime
+import genesis_prime/client_archive
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/login/auth_connection
+import genesis_prime/login/sts_connection
 import genesis_prime/rule_recording.{Header}
 import genesis_prime/rule_recording/file
 import genesis_prime/rule_types
@@ -25,12 +27,9 @@ import genesis_prime/server
 import gleam/int
 import gleam/io
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 import simplifile
-
-/// The client's build: the build of the archive index and of the auth server's
-/// version check (fact `archive_index.header`).
-const client_build = 16_042
 
 /// Why the dev start cannot begin.
 type Failure {
@@ -55,54 +54,71 @@ pub fn main() -> Nil {
 fn halt(status: Int) -> Nil
 
 fn start() -> Result(Nil, Failure) {
-  use #(folder, planted) <- try(arguments())
-  use _ <- try(
+  use #(folder, planted) <- result.try(arguments())
+  use _ <- result.try(
     simplifile.create_directory_all(folder)
-    |> map_error(fn(error) {
+    |> result.map_error(fn(error) {
       FolderNotMade(path: folder, reason: simplifile.describe_error(error))
     }),
   )
+  use sts_digest <- result.try(digest(sts_connection.rule_name))
+  use auth_digest <- result.try(digest(auth_connection.rule_name))
   let tables = genesis_prime.load_tables()
   let settings = genesis_prime.settings()
   let login = settings.login
   let auth =
     auth_connection.Settings(
-      ..login.auth,
+      ..login.auth.settings,
       planted: option.map(planted, fn(message_id) {
         Frame(message_id:, body: <<>>)
       }),
     )
-  use sts_digest <- try(digest("genesis_prime/login/sts_connection"))
-  use auth_digest <- try(digest("genesis_prime/login/auth_connection"))
   let login =
     server.Login(
       ..login,
-      auth:,
-      sts_recorder: Some(file.recorder(
-        folder:,
-        header: Header(
-          format: rule_recording.format,
-          rule: "genesis_prime/login/sts_connection",
-          client_build:,
-          tables_digest: None,
-          settings: login.sts,
+      sts: server.Served(
+        ..login.sts,
+        recorder: Some(recorder(
+          folder:,
+          rule: sts_connection.rule_name,
+          settings: login.sts.settings,
           types_digest: sts_digest,
-        ),
-      )),
-      auth_recorder: Some(file.recorder(
-        folder:,
-        header: Header(
-          format: rule_recording.format,
-          rule: "genesis_prime/login/auth_connection",
-          client_build:,
-          tables_digest: None,
+        )),
+      ),
+      auth: server.Served(
+        ..login.auth,
+        settings: auth,
+        recorder: Some(recorder(
+          folder:,
+          rule: auth_connection.rule_name,
           settings: auth,
           types_digest: auth_digest,
-        ),
-      )),
+        )),
+      ),
     )
   genesis_prime.start(settings: server.Settings(..settings, login:), tables:)
   Ok(Nil)
+}
+
+/// The recorder of one rule's connections: a file in the folder for each,
+/// with a header that names the rule, the client's build and the settings.
+fn recorder(
+  folder folder: String,
+  rule rule: String,
+  settings settings: settings,
+  types_digest types_digest: String,
+) -> file.Recorder(settings) {
+  file.recorder(
+    folder:,
+    header: Header(
+      format: rule_recording.format,
+      rule:,
+      client_build: client_archive.target_build,
+      tables_digest: None,
+      settings:,
+      types_digest:,
+    ),
+  )
 }
 
 fn arguments() -> Result(#(String, Option(Int)), Failure) {
@@ -125,7 +141,7 @@ fn arguments() -> Result(#(String, Option(Int)), Failure) {
 
 fn digest(module: String) -> Result(String, Failure) {
   rule_types.digest(rule_module: module, source_roots: ["src"])
-  |> map_error(fn(_) { DigestFailed(module:) })
+  |> result.replace_error(DigestFailed(module:))
 }
 
 fn describe(failure: Failure) -> String {
@@ -140,25 +156,5 @@ fn describe(failure: Failure) -> String {
       "the types of "
       <> module
       <> " could not be read for the recording's header"
-  }
-}
-
-fn try(
-  result: Result(a, Failure),
-  next: fn(a) -> Result(b, Failure),
-) -> Result(b, Failure) {
-  case result {
-    Ok(value) -> next(value)
-    Error(failure) -> Error(failure)
-  }
-}
-
-fn map_error(
-  result: Result(a, e),
-  with: fn(e) -> Failure,
-) -> Result(a, Failure) {
-  case result {
-    Ok(value) -> Ok(value)
-    Error(error) -> Error(with(error))
   }
 }

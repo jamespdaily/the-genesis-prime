@@ -58,6 +58,21 @@ pub type Heard {
   Heard(client: StsClient, reply: Reply)
 }
 
+/// The bytes through the RC4 stream when it is on, and the stream after them;
+/// plain bytes and no stream while it is off.
+pub fn crypt_when_on(
+  stream stream: Option(rc4.Stream),
+  bytes bytes: BitArray,
+) -> #(Option(rc4.Stream), BitArray) {
+  case stream {
+    Some(stream) -> {
+      let #(stream, crypted) = rc4.crypt(stream, bytes)
+      #(Some(stream), crypted)
+    }
+    None -> #(None, bytes)
+  }
+}
+
 /// Writes a request the way the library does, through RC4 once it is on, and
 /// reads the reply: bytes are deciphered as they arrive, in order, until they
 /// make one whole reply.
@@ -74,13 +89,7 @@ pub fn ask(
       command:,
       body: sts_xml.render(body),
     )
-  let #(sending, wire) = case client.sending {
-    Some(stream) -> {
-      let #(stream, ciphered) = rc4.crypt(stream, plain)
-      #(Some(stream), ciphered)
-    }
-    None -> #(None, plain)
-  }
+  let #(sending, wire) = crypt_when_on(stream: client.sending, bytes: plain)
   send(client: client.socket, bytes: wire)
   let #(receiving, reply) = read_reply(client, <<>>)
   Heard(
@@ -102,13 +111,7 @@ fn read_reply(
 ) -> #(Option(rc4.Stream), Reply) {
   let assert Ok(bytes) = tcp_client.receive_some(client.socket, wait_ms)
     as "the server did not answer the request"
-  let #(receiving, plain) = case client.receiving {
-    Some(stream) -> {
-      let #(stream, deciphered) = rc4.crypt(stream, bytes)
-      #(Some(stream), deciphered)
-    }
-    None -> #(None, bytes)
-  }
+  let #(receiving, plain) = crypt_when_on(stream: client.receiving, bytes:)
   let all = <<have:bits, plain:bits>>
   let client = StsClient(..client, receiving:)
   case scripted_client.read_reply(all) {

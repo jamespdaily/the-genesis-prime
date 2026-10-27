@@ -4,6 +4,7 @@
 
 import genesis_prime/rule_recording.{type Header, type Record, End}
 import gleam/int
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import simplifile
@@ -36,7 +37,7 @@ pub fn recorder(
 /// Makes the file of one connection, named after the rule and the
 /// connection, and writes its header. A file already there is never
 /// overwritten.
-pub fn open(
+fn open(
   recorder recorder: Recorder(settings),
   connection connection: Int,
 ) -> Result(Writer, FileError) {
@@ -64,7 +65,7 @@ pub fn open(
 }
 
 /// Appends one input's record.
-pub fn append(
+fn append(
   writer writer: Writer,
   record record: Record(message, answer, outgoing, request),
 ) -> Result(Writer, FileError) {
@@ -76,10 +77,47 @@ pub fn append(
 }
 
 /// Writes `End` with the count of inputs.
-pub fn finish(writer: Writer) -> Result(Nil, FileError) {
+fn finish(writer: Writer) -> Result(Nil, FileError) {
   let end: Record(Nil, Nil, Nil, Nil) = End(count: writer.count)
   simplifile.append_bits(writer.path, rule_recording.encode(end))
   |> result.map_error(fn(error) {
     FileError(path: writer.path, reason: simplifile.describe_error(error))
   })
+}
+
+/// Opens the recording of one connection when there is a recorder; with none
+/// there is no recording.
+pub fn open_if(
+  recorder recorder: Option(Recorder(settings)),
+  connection connection: Int,
+) -> Result(Option(Writer), FileError) {
+  case recorder {
+    None -> Ok(None)
+    Some(recorder) -> result.map(open(recorder:, connection:), Some)
+  }
+}
+
+/// Appends the record when a recording is open; with none there is nothing to
+/// write.
+pub fn append_if(
+  writer writer: Option(Writer),
+  record record: Record(message, answer, outgoing, request),
+) -> Result(Option(Writer), FileError) {
+  case writer {
+    None -> Ok(None)
+    Some(writer) -> result.map(append(writer:, record:), Some)
+  }
+}
+
+/// Ends the recording when one is open.
+pub fn finish_if(writer writer: Option(Writer)) -> Result(Nil, FileError) {
+  case writer {
+    None -> Ok(Nil)
+    Some(writer) -> finish(writer)
+  }
+}
+
+/// A sentence that says which file failed and why, for the log.
+pub fn describe(error error: FileError) -> String {
+  error.path <> ": " <> error.reason
 }

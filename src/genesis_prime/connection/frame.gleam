@@ -15,6 +15,8 @@
 import gleam/bit_array
 import gleam/bool
 import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
 
 /// The bytes of a frame before its body: the 32-bit length and the 16-bit id
 /// (WriteMessageFrame 0x1403355e0 writes widths 0x20 and 0x10).
@@ -92,21 +94,41 @@ fn collect(
   received: BitArray,
   found: List(Frame),
 ) -> #(List(Frame), Result(BitArray, FrameError)) {
+  case take(received:) {
+    Ok(Some(#(frame, rest))) -> collect(rest, [frame, ..found])
+    Ok(None) -> #(list.reverse(found), Ok(received))
+    Error(error) -> #(list.reverse(found), Error(error))
+  }
+}
+
+/// The first frame whole in the received bytes and the bytes after it, or
+/// `None` when its end has not arrived. A length below the header or over the
+/// size limit is an error as soon as its 4 bytes have arrived. A rule that
+/// must stop between two frames of one read keeps the bytes after the first.
+pub fn take(
+  received received: BitArray,
+) -> Result(Option(#(Frame, BitArray)), FrameError) {
   case received {
-    <<length:size(32)-little, _:bits>> ->
-      case check_length(length) {
-        Error(error) -> #(list.reverse(found), Error(error))
-        Ok(Nil) ->
-          case received {
-            <<whole:bytes-size(length), rest:bytes>> ->
-              case read(whole) {
-                Ok(frame) -> collect(rest, [frame, ..found])
-                Error(error) -> #(list.reverse(found), Error(error))
-              }
-            _ -> #(list.reverse(found), Ok(received))
-          }
+    <<length:size(32)-little, _:bits>> -> {
+      use Nil <- result.try(check_length(length))
+      case received {
+        <<whole:bytes-size(length), rest:bytes>> ->
+          result.map(read(whole), fn(frame) { Some(#(frame, rest)) })
+        _ -> Ok(None)
       }
-    _ -> #(list.reverse(found), Ok(received))
+    }
+    _ -> Ok(None)
+  }
+}
+
+/// A sentence that says why bytes are not a frame, for the log.
+pub fn describe(error error: FrameError) -> String {
+  case error {
+    ShorterThanHeader(..) -> "a frame shorter than its header"
+    LengthBelowHeader(..) -> "a length below the header"
+    LengthOverLimit(..) -> "a frame over the size limit"
+    LengthDisagrees(..) -> "a length that disagrees with the frame"
+    MessageIdOutOfRange(..) -> "a message id out of range"
   }
 }
 

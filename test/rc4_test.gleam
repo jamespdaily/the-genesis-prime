@@ -26,15 +26,13 @@ fn counting_bytes_to_1f() -> BitArray {
   )
 }
 
-fn started() -> rc4.Stream {
-  let assert Ok(stream) = rc4.start(vector.session_key())
-    as "a 64-byte key starts a stream"
-  stream
-}
-
 fn started_under(key: BitArray) -> rc4.Stream {
   let assert Ok(stream) = rc4.start(key) as "a key of 1 to 256 bytes starts"
   stream
+}
+
+fn started() -> rc4.Stream {
+  started_under(vector.session_key())
 }
 
 pub fn the_bytes_00_to_1f_encrypt_to_the_vectors_bytes_test() -> Nil {
@@ -134,16 +132,6 @@ pub fn the_128_bit_key_gives_rfc_6229s_keystream_at_each_offset_test() -> Nil {
   assert_rows(message_support.session_key(), rfc_6229_128_bit_rows())
 }
 
-/// `count` whole numbers, the first `first`.
-fn count_from(first: Int, count: Int) -> List(Int) {
-  list.index_map(list.repeat(Nil, count), fn(_, index) { first + index })
-}
-
-/// A message of `length` random bytes and the advanced state.
-fn message(state state: Int, length length: Int) -> #(BitArray, Int) {
-  seeded.bytes(state:, count: length)
-}
-
 /// Ciphers the messages one after another on one stream, and gives each
 /// result.
 fn crypt_each(stream: rc4.Stream, messages: List(BitArray)) -> List(BitArray) {
@@ -156,23 +144,32 @@ fn crypt_each(stream: rc4.Stream, messages: List(BitArray)) -> List(BitArray) {
   }
 }
 
+/// One round: a random key of 1 to 256 bytes and 1 to 6 random messages of 0
+/// to 600 bytes, ciphered one after another on one stream and then in one call
+/// by OTP.
+fn check_round(round: Int) -> Nil {
+  let state = 20_261_300 + round
+  let #(key_length, state) = seeded.up_to(state:, most: 255)
+  let #(key, state) = seeded.bytes(state:, count: key_length + 1)
+  let #(call_count, state) = seeded.up_to(state:, most: 5)
+  let #(messages, _state) =
+    list.fold(list.repeat(Nil, call_count + 1), #([], state), fn(drawn, _) {
+      let #(built, state) = drawn
+      let #(length, state) = seeded.up_to(state:, most: 600)
+      let #(bytes, state) = seeded.bytes(state:, count: length)
+      #([bytes, ..built], state)
+    })
+  let messages = list.reverse(messages)
+  assert bit_array.concat(crypt_each(started_under(key), messages))
+    == otp_rc4(key, bit_array.concat(messages))
+    as "OTP's RC4 over the whole message equals the Gleam RC4 over its parts, in order"
+}
+
 pub fn random_keys_and_lengths_give_otps_bytes_across_several_calls_test() -> Nil {
   use <- owned_test.run(60_000)
-  list.each(count_from(1, 200), fn(round) {
-    let state = 20_261_300 + round
-    let #(key_length, state) = seeded.up_to(state:, most: 255)
-    let #(key, state) = seeded.bytes(state:, count: key_length + 1)
-    let #(call_count, state) = seeded.up_to(state:, most: 5)
-    let #(messages, _state) =
-      list.fold(count_from(0, call_count + 1), #([], state), fn(drawn, _) {
-        let #(built, state) = drawn
-        let #(length, state) = seeded.up_to(state:, most: 600)
-        let #(bytes, state) = message(state:, length:)
-        #([bytes, ..built], state)
-      })
-    let messages = list.reverse(messages)
-    assert bit_array.concat(crypt_each(started_under(key), messages))
-      == otp_rc4(key, bit_array.concat(messages))
-      as "OTP's RC4 over the whole message equals the Gleam RC4 over its parts, in order"
-  })
+  let _rounds =
+    list.index_map(list.repeat(Nil, 200), fn(_, index) {
+      check_round(index + 1)
+    })
+  Nil
 }

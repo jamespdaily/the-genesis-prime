@@ -139,22 +139,17 @@ fn crypt_each(
     <<>> -> #(stream, done)
     <<byte, rest:bytes>> -> {
       let position = { stream.position + 1 } % 256
-      let swapped_with =
-        { stream.swapped_with + byte_at(stream.permutation, position) } % 256
+      let at_position = byte_at(stream.permutation, position)
+      let swapped_with = { stream.swapped_with + at_position } % 256
+      let at_swapped = byte_at(stream.permutation, swapped_with)
       let permutation =
         swap(
           permutation: stream.permutation,
           first: position,
           second: swapped_with,
         )
-      let keystream =
-        byte_at(
-          permutation,
-          {
-            byte_at(permutation, position) + byte_at(permutation, swapped_with)
-          }
-            % 256,
-        )
+      // The swap leaves the sum of the two bytes as it was.
+      let keystream = byte_at(permutation, { at_position + at_swapped } % 256)
       crypt_each(
         stream: Stream(permutation:, position:, swapped_with:),
         bytes: rest,

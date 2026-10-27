@@ -19,6 +19,7 @@
 //// `+uncommitted` after it when a tracked file differs from that commit.
 
 import argv
+import genesis_prime/client_archive
 import genesis_prime/recording.{type Header, type Role, Header}
 import genesis_prime/recording/listener
 import genesis_prime/recording/pipe.{Server}
@@ -34,10 +35,6 @@ import gleam/time/calendar
 import gleam/time/timestamp
 import mug
 import simplifile
-
-/// The client's build: the build of the archive index and of the auth server's
-/// version check (fact `archive_index.header`).
-const client_build = 16_042
 
 /// What was wrong with the command line or the machine, before the relay
 /// started.
@@ -118,7 +115,7 @@ fn parse_role(text: String) -> Result(Role, Failure) {
 fn header(role role: Role, commit commit: String) -> Header {
   let #(date, _) =
     timestamp.system_time() |> timestamp.to_calendar(calendar.local_offset())
-  Header(build: client_build, date:, role:, commit:)
+  Header(build: client_archive.target_build, date:, role:, commit:)
 }
 
 /// The commit checked out in the current directory, `+uncommitted` after it
