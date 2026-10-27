@@ -12,7 +12,7 @@ import gleam/list
 
 /// How far a player sees other players, in metres: a stand-in, not the
 /// client's. No client table or code holds a unit visibility range (the
-/// topology trial's measure 0 searched the client's strings and the column
+/// topology trial's measure 0 of the workload searched the client's strings and the column
 /// names of its tables), so players within this range of each other are told
 /// about each other until the client's value is found.
 pub const visibility_range_metres = 100.0

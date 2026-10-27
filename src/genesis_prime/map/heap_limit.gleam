@@ -1,7 +1,7 @@
 //// The most memory a process of a map may hold on its heap before the runtime
 //// kills it: one limit for the map process and one for each sender. The limits
 //// are the topology trial's, four times the largest heap each kind was
-//// sampled at (`heap_ceiling`, prototype C at 10,000 creatures and up to 800
+//// sampled at (the heap-ceiling runs of prototype C at 10,000 creatures and up to 800
 //// players, rounded up to a power of two words).
 ////
 //// A process that passes its limit is killed with reason `killed` and an

@@ -1,7 +1,6 @@
 //// The heap ceiling of a connection and the connection cap. The expected
 //// values come from the heap-ceiling rule of the prototype's measurement
-//// (`heap_limit.for_peak`: four times the measured peak, rounded up to a power
-//// of two words), which gave 131,072 words for a peak of 32,317 and 8,388,608
+//// (four times the measured peak, rounded up to a power of two words), which gave 131,072 words for a peak of 32,317 and 8,388,608
 //// for a peak of 1,103,592, and from the cap's own rule: the heap ceilings of
 //// all connections together stay under 1 GB.
 
