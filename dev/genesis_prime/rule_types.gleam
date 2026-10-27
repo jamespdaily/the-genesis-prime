@@ -5,8 +5,10 @@
 //// holds the digest it was made under; a replay compares it with the digest as
 //// the code stands, so a recording from other types fails with "record again"
 //// and never folds into a wrong value. A change to a function body leaves the
-//// digest as it is. A type from a package or the prelude is named, not
-//// followed: its package's version fixes it.
+//// digest as it is. A type from a package is followed into the package's
+//// source under `build/packages`, so an upgrade that changes it changes the
+//// digest; a prelude type (`Int`, `List` and the like) is named, since the
+//// compiler fixes it.
 
 import glance
 import gleam/bit_array
@@ -45,6 +47,8 @@ pub fn digest(
   rule_module rule_module: String,
   source_roots source_roots: List(String),
 ) -> Result(String, DigestError) {
+  use packages <- result.try(package_sources())
+  let source_roots = list.append(source_roots, packages)
   use #(module, modules) <- result.try(load(
     name: rule_module,
     source_roots:,
@@ -122,7 +126,19 @@ fn load(
   }
 }
 
-/// The file of a project module, in the first source folder that holds it.
+/// The source folder of every package the project's build holds.
+fn package_sources() -> Result(List(String), DigestError) {
+  simplifile.read_directory("build/packages")
+  |> result.map(fn(names) {
+    list.sort(names, string.compare)
+    |> list.map(fn(name) { "build/packages/" <> name <> "/src" })
+  })
+  |> result.map_error(fn(error) {
+    Unreadable("build/packages", simplifile.describe_error(error))
+  })
+}
+
+/// The file of a module, in the first source folder that holds it.
 fn path_of(
   module_name: String,
   source_roots: List(String),

@@ -31,8 +31,8 @@
 ////   `Stop` after `PeerClosed` or `ReadFailed`, since no other socket input
 ////   reaches the process then.
 //// - **The server stopping.** The shell traps its parent's exit, so the
-////   tree's stop arrives as `Stopping`, with the deadline the listener's
-////   shutdown time allows. A rule that has not stopped by then is killed, and
+////   tree's stop arrives as `Stopping`, with a deadline of the listener's
+////   shutdown time less the send deadline, never later than Ranch's kill. A rule that has not stopped by then is killed, and
 ////   its recording has no `End`.
 //// - **A crash.** When the rule's step crashes, the process ends with that
 ////   reason; Ranch starts connection processes as temporary children, so
@@ -209,13 +209,23 @@ fn wait(
           take(
             running:,
             now:,
-            event: Stopping(
-              deadline_ms: now.monotonic_ms + running.settings.shutdown_ms,
-            ),
+            event: Stopping(deadline_ms: stop_deadline(now, running.settings)),
           )
       }
     }
   }
+}
+
+/// The deadline a stopping rule is given: the shutdown time from now, less
+/// the send deadline, since Ranch's timer started when it sent the stop and
+/// the shell may then have been in a write, which waits at most the send
+/// deadline before its socket closes. So the deadline is never later than
+/// the moment Ranch kills the process.
+fn stop_deadline(
+  now: step.Now,
+  settings: Settings(settings, state, message, answer, outgoing, request),
+) -> Int {
+  now.monotonic_ms + settings.shutdown_ms - settings.send_deadline_ms
 }
 
 /// Closes the socket, ends the recording and lets the process end normally.
