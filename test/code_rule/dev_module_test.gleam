@@ -21,9 +21,7 @@ import unitest
 /// issue that decides whether it gets one or is deleted.
 const allowed = [
   #("genesis_prime/coverage", 47),
-  #("genesis_prime/create_account", 60),
-  #("genesis_prime/grant_permission", 60),
-  #("genesis_prime/record", 129),
+  #("genesis_prime/record", 119),
 ]
 
 fn module_file(module: String, imports: List(String)) -> SourceFile {

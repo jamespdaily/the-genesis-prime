@@ -20,5 +20,4 @@ Apply every rule to each test, and check the diff against each before it is done
 - Tests share nothing: no fixed names, nodes or ports. A database test runs in its own database through `template_database.run`, at about 75 ms a test, so database tests are for processes and saves; rules and engines stay pure. Setup is paid once per run.
 - Wait for an event, never a fixed time. Each test runs in its own process. A test that fails once is unexplained until its cause is named.
 - A test is named as the rule it checks: `a_full_inventory_refuses_a_new_item_test`.
-- Tests of rebuilt code are replaced in the same pull request as their code; tests anchored on the client and the code rules stay.
 - Prove a reshape changes nothing by running every table row through old and new code, and prove the harness can fail.

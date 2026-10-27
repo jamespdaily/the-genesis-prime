@@ -6,7 +6,7 @@
 //// and the count of reads from disk, kept by the repository helper for the
 //// whole VM, must be one.
 
-import code_rule/game_master_command
+import code_rule/catch_all
 import code_rule/repository
 import code_rule/test_body
 import gleam/list
@@ -16,11 +16,7 @@ import unitest
 pub fn the_tree_is_read_once_whatever_the_number_of_rules_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  assert list.flat_map(
-      repository.sources(["src"]),
-      game_master_command.breaches,
-    )
-    == []
+  assert list.flat_map(repository.sources(["src"]), catch_all.breaches) == []
   assert list.flat_map(repository.sources(["test"]), test_body.breaches) == []
   assert repository.tree_reads() == 1
     as "the source tree was read more than once in this run"
