@@ -32,9 +32,11 @@ pub type Key {
   SessionKey(key: Guid)
 }
 
-/// Who a key was made for.
+/// Who a key was made for: the account, its login name, and its game account
+/// id, the GUID the client shows as its UserId (opcode.0x592), so the auth
+/// rule can check the UserId against the token's account.
 pub type Holder {
-  Holder(account_id: AccountId, login_name: String)
+  Holder(account_id: AccountId, login_name: String, game_account_id: Guid)
 }
 
 /// What another process asks the hand-off.

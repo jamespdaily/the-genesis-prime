@@ -39,9 +39,10 @@
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/login.{type Answer, type Request}
+import genesis_prime/login/guid.{type Guid}
 import genesis_prime/message/bit_stream.{type Endpoint}
 import genesis_prime/random.{type Random}
-import genesis_prime/step.{type Input, type Step}
+import genesis_prime/step.{type ConnectionId, type Input, type Peer, type Step}
 import gleam/option.{type Option}
 
 /// The realm the client is handed to.
@@ -72,12 +73,15 @@ pub type Settings {
   )
 }
 
-/// Where the login is.
+/// Where the login is. Once accepted, the state keeps the connection and the
+/// peer for every log line it writes, and the seed's random source.
 pub opaque type State {
-  State(
+  NotAccepted(settings: Settings)
+  Connected(
     settings: Settings,
-    /// `None` until the connection is accepted.
-    random: Option(Random),
+    connection: ConnectionId,
+    peer: Peer,
+    random: Random,
     /// Bytes of a frame not yet whole, and whole frames not yet taken while
     /// an ask is out.
     pending: BitArray,
@@ -87,16 +91,15 @@ pub opaque type State {
 
 /// The login's one status.
 type Status {
-  /// No socket yet.
-  NotAccepted
   /// The hello is sent; waiting for 0x592.
   AwaitingLoginRequest
-  /// The hand-off is asked to take the game token of this UserId.
-  TakingToken(user_id: BitArray)
+  /// The hand-off is asked to take the game token; `user_id` is the UserId
+  /// 0x592 named, checked against the holder's game account id.
+  TakingToken(user_id: Guid)
   /// The hand-off is asked to keep the session key for the holder.
-  KeepingSessionKey(holder: Holder, session_key: BitArray)
+  KeepingSessionKey(holder: Holder, session_key: Guid)
   /// 0x591 and 0x3db are sent; the client goes on to the game server.
-  HandedOff
+  HandedOff(holder: Holder)
 }
 
 /// The rule's first state.

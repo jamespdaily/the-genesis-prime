@@ -11,20 +11,29 @@
 //// KeyData(A, M1)                   ─▶ srp.prove
 ////   proven                         ◀─ KeyData(M2), plain; then RC4 under K both ways
 ////   M1 wrong                       ◀─ Error 3002, plain
-//// LoginFinish        (ciphered)    ─▶ AuthType 0, UserId, UserName (ciphered)
+//// LoginFinish        (ciphered)    ─▶ token from the seed        ─▶ hand-off: Put(GameToken)
+////   Kept                           ◀─ AuthType 0, UserId, UserName (ciphered)
 //// ListMyAccounts     (ciphered)    ─▶ one GameAccount with an Alias
-//// RequestGameToken   (ciphered)    ─▶ token from the seed        ─▶ hand-off: Put(GameToken)
-////   Kept                           ◀─ Token
+//// RequestGameToken   (ciphered)    ─▶ the token kept at LoginFinish, no ask
 //// Ping (one-way, every 30 s)       ─▶ nothing
 //// ```
 ////
 //// - **Refusals.** An unknown name and a wrong password answer Error 3002,
 ////   which the client shows as "Invalid account name or password"; it cannot
 ////   tell the two apart (0x1400b2f20, StsConnLib64.MT.dll!0x180003d30). A
-////   store or hand-off that gives no answer (`NotRunning`, `NoAnswerInTime`,
-////   `EndedBeforeAnswer`, `StoppedWaiting`, or the store's `Unavailable`)
-////   answers Error 42, "NCSoft login service start timeout", with a warning:
-////   the failure is the server's, never the player's.
+////   store that gives no answer at LoginStart (`NotRunning`, `NoAnswerInTime`,
+////   `EndedBeforeAnswer`, `StoppedWaiting`, or its `Unavailable`) answers
+////   Error 42, "NCSoft login service start timeout" (0x1400b2f20); a hand-off
+////   that gives no answer at LoginFinish, or a token already held, answers
+////   Error 42, "NCSoft login service finish timeout" (0x1400b3070). Each logs
+////   a warning: the failure is the server's, never the player's.
+//// - **Why the token is kept at LoginFinish.** Every failure of
+////   RequestGameToken, an Error, a reply without Token or no reply, leaves the
+////   client on "Authenticating" with no message and no way on (0x1400b3a50).
+////   So the rule keeps the token before it answers LoginFinish, where a
+////   refusal shows a message, and RequestGameToken makes no ask that could
+////   fail. The client sends the three requests back to back, so the token's
+////   lifetime starts only a moment early.
 //// - **RC4.** Everything is plain up to the end of the reply carrying M2.
 ////   From the next byte each way, one RC4 state per direction under the
 ////   64-byte key K runs on across messages (StsConnLib64.MT.dll!0x18000a350).
@@ -42,12 +51,12 @@
 ////   in the state and are taken once the answer comes.
 
 import genesis_prime/login.{type Answer, type Request}
+import genesis_prime/login/guid.{type Guid}
 import genesis_prime/login/rc4
 import genesis_prime/login/srp
 import genesis_prime/random.{type Random}
-import genesis_prime/step.{type Input, type Step}
+import genesis_prime/step.{type ConnectionId, type Input, type Peer, type Step}
 import genesis_prime/store.{type Account}
-import gleam/option.{type Option}
 
 /// What every STS connection is made with, at start.
 pub type Settings {
@@ -60,12 +69,15 @@ pub type Settings {
   )
 }
 
-/// Where the login is.
+/// Where the login is. Once accepted, the state keeps the connection and the
+/// peer for every log line it writes, and the seed's random source.
 pub opaque type State {
-  State(
+  NotAccepted(settings: Settings)
+  Connected(
     settings: Settings,
-    /// `None` until the connection is accepted.
-    random: Option(Random),
+    connection: ConnectionId,
+    peer: Peer,
+    random: Random,
     /// Bytes of a request not yet whole, and whole requests not yet taken
     /// while an ask is out.
     pending: BitArray,
@@ -73,30 +85,31 @@ pub opaque type State {
   )
 }
 
-/// The login's one status.
+/// The RC4 state of each direction once the proof has passed.
+type Ciphers {
+  Ciphers(receiving: rc4.Stream, sending: rc4.Stream)
+}
+
+/// The login's one status, in the order the client's requests come.
 type Status {
-  /// No socket yet.
-  NotAccepted
   /// Waiting for Connect, then LoginStart.
   AwaitingLoginStart
   /// The store is asked for the account LoginStart named.
   FindingAccount(sequence: Int)
   /// KeyData(salt, B) is sent; waiting for the client's A and M1.
-  AwaitingProof(
-    sequence_of_start: Int,
-    account: Account,
-    challenge: srp.Challenge,
-  )
-  /// The proof passed and RC4 is on; the login runs to the game token.
-  Proven(account: Account, receiving: rc4.Stream, sending: rc4.Stream)
-  /// The hand-off is asked to keep the game token.
-  KeepingToken(
-    sequence: Int,
-    account: Account,
-    token: BitArray,
-    receiving: rc4.Stream,
-    sending: rc4.Stream,
-  )
+  AwaitingProof(account: Account, challenge: srp.Challenge)
+  /// The proof passed and RC4 is on; waiting for LoginFinish.
+  AwaitingLoginFinish(account: Account, ciphers: Ciphers)
+  /// The hand-off is asked to keep the game token, before LoginFinish is
+  /// answered.
+  KeepingToken(sequence: Int, account: Account, token: Guid, ciphers: Ciphers)
+  /// LoginFinish is answered; waiting for ListMyAccounts.
+  AwaitingAccountList(account: Account, token: Guid, ciphers: Ciphers)
+  /// The account list is answered; waiting for RequestGameToken.
+  AwaitingTokenRequest(account: Account, token: Guid, ciphers: Ciphers)
+  /// The token is given; the client goes on to the auth server and keeps
+  /// this connection open with its pings until it closes it.
+  TokenGiven(account: Account, ciphers: Ciphers)
 }
 
 /// The rule's first state.
