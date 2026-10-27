@@ -209,3 +209,36 @@ fn read(path: String) -> String {
   let assert Ok(text) = simplifile.read(path) as { "could not read " <> path }
   text
 }
+
+pub fn a_commented_out_import_does_not_use_a_module_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let tests = [
+    planted.file(path: "test/planted_test.gleam", lines: [
+      "// import genesis_prime/tool",
+    ]),
+  ]
+  assert unused_modules(
+      dev: [module_file("genesis_prime/tool", [])],
+      tests:,
+      runners: [],
+      allowed: [],
+    )
+    == [
+      "a module in dev/ that no check, test or CI job uses: genesis_prime/tool",
+    ]
+}
+
+pub fn a_run_after_a_comment_mark_on_a_runner_line_does_not_use_a_module_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  assert unused_modules(
+      dev: [module_file("genesis_prime/tool", [])],
+      tests: [],
+      runners: [runner(["echo skipped # gleam run -m genesis_prime/tool"])],
+      allowed: [],
+    )
+    == [
+      "a module in dev/ that no check, test or CI job uses: genesis_prime/tool",
+    ]
+}
