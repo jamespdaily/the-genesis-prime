@@ -1,0 +1,646 @@
+//// The rule of one auth connection: the login the client makes with the game
+//// token from the STS login, to the hand-off to a game server. It decides
+//// everything; its connection shell carries it out
+//// (genesis_prime/connection/shell).
+////
+//// ```
+//// client                          rule                              asks
+//// connects                     ◀─ hello 0x3, bare
+////                              ◀─ the planted frame, when the dev start sets one
+//// 0x592 in 0x244               ─▶ build 16042? else 0x63d 19
+////                                                                ─▶ hand-off: Take(GameToken)
+////   Taken(holder), UserId is the holder's   ─▶ session key from the seed
+////                                                                ─▶ hand-off: Put(SessionKey)
+////     Kept                     ◀─ 0x591, then 0x3db, each in 0x76
+////   NoHolder, or another UserId ◀─ 0x63d 16, then the connection ends
+//// ping 0x0                     ◀─ pong 0x1, bare
+//// ```
+////
+//// - **The hello** carries build 16042 and checksum 0x097998A0, which the
+////   client checks (0x140037b70), the realm's id, and 0 in every field the
+////   client never reads (opcode.0x3).
+//// - **0x591** is not disconnected for lag (opcode.0x591). **0x3db** names the
+////   game server, the session key, the account's id (stable per account: the
+////   client names the addon save folder after it), the realm's name, flags 0,
+////   PvE and no realm note (opcode.0x3db).
+//// - **Refusals** are 0x63d, then the connection ends: reason 16, "Invalid
+////   Login Token", for a token never kept, already taken or expired, or a
+////   UserId other than the token's account; 19 for a build other than 16042;
+////   12, "NCSoft login service finish timeout", with a warning, when the
+////   hand-off gives no answer, since the failure is the server's
+////   (opcode.0x63d).
+//// - **Ciphers.** The hello and the ping's pong travel bare; every other
+////   frame each way travels in the wrapper (0x244 from the client, 0x76 to it)
+////   under the client's base key (genesis_prime/connection/encrypted_frame).
+//// - **Out of order.** A frame the client's reader would refuse ends the
+////   connection; a whole frame of a message the rule does not take is logged
+////   as unhandled and the connection goes on.
+
+import genesis_prime/client_archive
+import genesis_prime/connection/cipher
+import genesis_prime/connection/encrypted_frame.{AuthWrapper, ClientWrapper}
+import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/connection/network_message
+import genesis_prime/hand_off.{type Holder, GameToken, Put, SessionKey, Take}
+import genesis_prime/login.{
+  type Answer, type Link, type Request, AskHandOff, Asking, Bytes, Connect,
+  Continue, End, FromHandOff, FromStore, Otherwise,
+}
+import genesis_prime/login/guid.{type Guid}
+import genesis_prime/message/bit_stream.{type Endpoint}
+import genesis_prime/message/game_server_handoff.{GameServerHandoff}
+import genesis_prime/message/login_accepted.{LoginAccepted}
+import genesis_prime/message/login_refused.{LoginRefused}
+import genesis_prime/message/login_request
+import genesis_prime/message/server_hello.{ServerHello}
+import genesis_prime/step.{
+  type Effect, type Input, type Now, type Outcome, type Step, Effects, Log,
+  LogError, LogInfo, LogLine, LogWarning, Stop, Write,
+}
+import genesis_prime/store
+import gleam/int
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/string
+
+/// The rule's name in a recording's header and in the server's tree.
+pub const rule_name = "genesis_prime/login/auth_connection"
+
+/// The realm the client is handed to.
+pub type Realm {
+  Realm(
+    /// The realm's id, the same the game server's realm messages carry.
+    id: Int,
+    /// Its name, which also names the client's realm settings file.
+    name: String,
+    /// The game server the client connects to next.
+    game_server: Endpoint,
+  )
+}
+
+/// What every auth connection is made with, at start.
+pub type Settings {
+  Settings(
+    realm: Realm,
+    /// How long an ask to the hand-off may take.
+    ask_deadline_ms: Int,
+    /// How long a session key stays good in the hand-off: the client shows
+    /// it to the game server right after it gets it.
+    session_key_lifetime_ms: Int,
+    /// A frame sent right after the hello, in the auth wrapper, that the
+    /// client does not handle; only the dev start sets it, to prove the
+    /// client's failure log brings back its id.
+    planted: Option(Frame),
+  )
+}
+
+/// Where the login is. Once accepted, the state keeps the connection and the
+/// peer for every log line it writes, and the seed's random source.
+pub opaque type State {
+  NotAccepted(settings: Settings)
+  Connected(session: Session)
+}
+
+/// What an accepted connection keeps.
+type Session {
+  Session(
+    settings: Settings,
+    link: Link,
+    /// Bytes of a frame not yet whole, and whole frames not yet taken while
+    /// an ask is out.
+    pending: BitArray,
+    status: Status,
+  )
+}
+
+/// The login's one status.
+type Status {
+  /// The hello is sent; waiting for 0x592.
+  AwaitingLoginRequest
+  /// The hand-off is asked to take the game token; `user_id` is the UserId
+  /// 0x592 named, checked against the holder's game account id.
+  TakingToken(user_id: Guid)
+  /// The hand-off is asked to keep the session key for the holder.
+  KeepingSessionKey(holder: Holder, session_key: Guid)
+  /// 0x591 and 0x3db are sent; the client goes on to the game server.
+  HandedOff(holder: Holder)
+}
+
+/// The build the client must be, and the hello's build.
+const build = client_archive.target_build
+
+/// The message table checksum the client checks in the hello
+/// (CheckAuthServerVersion 0x140037b70).
+const message_table_checksum = 0x097998A0
+
+/// 0x63d's reasons (opcode.0x63d).
+const reason_service_timeout = 12
+
+const reason_invalid_login_token = 16
+
+const reason_version_mismatch = 19
+
+/// The rule's first state.
+pub fn new(settings: Settings) -> State {
+  NotAccepted(settings:)
+}
+
+/// One input in, the new state and what the shell must do out.
+pub fn step(
+  state state: State,
+  input input: Input(Nil, Answer),
+) -> #(State, Step(Nil, Request)) {
+  case state {
+    NotAccepted(settings:) ->
+      case login.hear(input.event, about: step.no_one) {
+        Connect(connection:, peer:, seed:) -> {
+          let planted = case settings.planted {
+            Some(planted) -> [Write(wrapped(planted))]
+            None -> []
+          }
+          #(
+            Connected(Session(
+              settings:,
+              link: login.link(connection:, peer:, seed:),
+              pending: <<>>,
+              status: AwaitingLoginRequest,
+            )),
+            Effects([Write(hello(settings.realm)), ..planted]),
+          )
+        }
+        Bytes(..) | login.Outcome(..) -> #(
+          state,
+          Effects([
+            Log(LogLine(
+              level: LogError,
+              text: "the auth rule took an input before the connection was accepted",
+              about: step.no_one,
+            )),
+            Stop,
+          ]),
+        )
+        Otherwise(step:) -> #(state, step)
+      }
+    Connected(session:) ->
+      connected(session:, now: input.now, event: input.event)
+  }
+}
+
+fn connected(
+  session session: Session,
+  now now: Now,
+  event event: step.Event(Nil, Answer),
+) -> #(State, Step(Nil, Request)) {
+  case
+    login.hear(
+      event,
+      about: login.about(
+        session.link,
+        account_id: account_id_of(session.status),
+      ),
+    )
+  {
+    Bytes(bytes:) -> {
+      let session =
+        Session(..session, pending: <<session.pending:bits, bytes:bits>>)
+      case session.status {
+        // A frame is taken only once the answer to the ask in flight comes.
+        TakingToken(..) | KeepingSessionKey(..) -> #(
+          Connected(session),
+          Effects([]),
+        )
+        AwaitingLoginRequest | HandedOff(..) ->
+          drive(session:, now:, carried: [])
+      }
+    }
+    login.Outcome(outcome:) ->
+      settle(handled: answered(session:, now:, outcome:), now:, carried: [])
+    Connect(..) -> #(
+      Connected(session),
+      Effects([
+        log(
+          session:,
+          level: LogError,
+          text: "the auth rule was accepted a second time",
+        ),
+        Stop,
+      ]),
+    )
+    Otherwise(step:) -> #(Connected(session), step)
+  }
+}
+
+/// The hello, bare: the build and checksum the client checks, the realm's id,
+/// and 0 in every field the client never reads (opcode.0x3).
+fn hello(realm: Realm) -> BitArray {
+  let assert Ok(body) =
+    server_hello.encode(ServerHello(
+      build:,
+      realm_id: realm.id,
+      field_3: 0,
+      field_4: 0,
+      field_5: 0,
+      field_6: 0,
+      field_7: 0,
+      message_table_checksum:,
+      field_9: 0,
+      field_10: 0,
+      field_11: 0,
+    ))
+    as "the realm's id is within 32 bits"
+  let assert Ok(bytes) = frame.encode(server_hello.message_id, body)
+    as "the hello is far below the size limit"
+  bytes
+}
+
+/// A frame in the auth wrapper, under the client's base key.
+fn wrapped(inner: Frame) -> BitArray {
+  let assert Ok(bytes) = encrypted_frame.wrap(AuthWrapper, inner, cipher.base())
+    as "the frame is far below the size limit"
+  bytes
+}
+
+/// Takes the whole frames in the pending bytes in order until one asks or the
+/// bytes hold no more. A bad frame ends the connection after the whole frames
+/// before it.
+fn drive(
+  session session: Session,
+  now now: Now,
+  carried carried: List(Effect(Nil)),
+) -> #(State, Step(Nil, Request)) {
+  case frame.take(session.pending) {
+    Error(error) ->
+      settle(
+        handled: End(session, [
+          log(
+            session:,
+            level: LogError,
+            text: "the bytes are no frame: " <> frame.describe(error),
+          ),
+          Stop,
+        ]),
+        now:,
+        carried:,
+      )
+    Ok(None) -> #(Connected(session), Effects(carried))
+    Ok(Some(#(first, rest))) ->
+      settle(
+        handled: handle(
+          session: Session(..session, pending: rest),
+          now:,
+          frame: first,
+        ),
+        now:,
+        carried:,
+      )
+  }
+}
+
+fn settle(
+  handled handled: login.Handled(Session),
+  now now: Now,
+  carried carried: List(Effect(Nil)),
+) -> #(State, Step(Nil, Request)) {
+  login.settle(
+    handled:,
+    carried:,
+    connected: Connected,
+    drive: fn(session, carried) { drive(session:, now:, carried:) },
+  )
+}
+
+/// What one whole frame does: the network layer's messages first, then the
+/// login request in its wrapper.
+fn handle(
+  session session: Session,
+  now now: Now,
+  frame frame: Frame,
+) -> login.Handled(Session) {
+  case network_message.handle(frame:) {
+    network_message.Answer(bytes:) -> Continue(session, [Write(bytes)])
+    network_message.Accepted -> Continue(session, [])
+    network_message.Malformed(message_id:, ..) ->
+      End(session, [
+        log(
+          session:,
+          level: LogError,
+          text: "a network message "
+            <> message_text(message_id)
+            <> " does not decode",
+        ),
+        Stop,
+      ])
+    network_message.NotNetwork ->
+      case frame.message_id == encrypted_frame.message_id(ClientWrapper) {
+        True -> unwrap(session:, now:, outer: frame)
+        False -> unhandled(session, frame.message_id)
+      }
+  }
+}
+
+fn unwrap(
+  session session: Session,
+  now now: Now,
+  outer outer: Frame,
+) -> login.Handled(Session) {
+  case encrypted_frame.unwrap(outer, cipher.base()) {
+    Error(encrypted_frame.NotAWrapper(..)) ->
+      unhandled(session, outer.message_id)
+    Error(encrypted_frame.BadFrame(error)) ->
+      End(session, [
+        log(
+          session:,
+          level: LogError,
+          text: "the wrapped frame is no frame: " <> frame.describe(error),
+        ),
+        Stop,
+      ])
+    Ok(inner) ->
+      case inner.message_id == login_request.message_id {
+        True ->
+          case login_request.decode(inner.body) {
+            Ok(request) -> login_requested(session:, now:, request:)
+            Error(error) ->
+              End(session, [
+                log(
+                  session:,
+                  level: LogError,
+                  text: "the login request 0x0592 does not decode: "
+                    <> bit_stream.describe_decode(error:),
+                ),
+                Stop,
+              ])
+          }
+        False -> unhandled(session, inner.message_id)
+      }
+  }
+}
+
+/// A whole frame of a message the rule does not take: logged, and the
+/// connection goes on.
+fn unhandled(session: Session, message_id: Int) -> login.Handled(Session) {
+  Continue(session, [
+    Log(LogLine(
+      level: LogWarning,
+      text: "unhandled auth message " <> message_text(message_id),
+      about: step.About(
+        ..login.about(session.link, account_id_of(session.status)),
+        message: Some(#("unhandled", message_id)),
+      ),
+    )),
+  ])
+}
+
+fn message_text(message_id: Int) -> String {
+  "0x" <> string.pad_start(string.uppercase(int.to_base16(message_id)), 4, "0")
+}
+
+/// The client's login request: a build other than 16042 is refused; else the
+/// game token it shows is taken from the hand-off.
+fn login_requested(
+  session session: Session,
+  now now: Now,
+  request request: login_request.LoginRequest,
+) -> login.Handled(Session) {
+  case session.status {
+    AwaitingLoginRequest ->
+      case request.build == build {
+        False -> refuse(session:, reason: reason_version_mismatch, before: [])
+        True -> {
+          let assert Ok(user_id) = guid.from_wire(request.user_id)
+            as "the request's UserId is 16 bytes"
+          let assert Ok(token) = guid.from_wire(request.game_token)
+            as "the request's game token is 16 bytes"
+          ask(
+            session: Session(..session, status: TakingToken(user_id:)),
+            now:,
+            request: AskHandOff(Take(GameToken(token:))),
+          )
+        }
+      }
+    TakingToken(..) | KeepingSessionKey(..) | HandedOff(..) ->
+      unhandled(session, login_request.message_id)
+  }
+}
+
+/// Makes the connection's next ask.
+fn ask(
+  session session: Session,
+  now now: Now,
+  request request: Request,
+) -> login.Handled(Session) {
+  let #(link, made) =
+    login.ask(
+      session.link,
+      now:,
+      deadline_ms: session.settings.ask_deadline_ms,
+      request:,
+    )
+  Asking(Session(..session, link:), [], made)
+}
+
+/// The refusal 0x63d with the reason, in the auth wrapper, and the end of the
+/// connection; `before` are the effects ahead of it, such as a log line.
+fn refuse(
+  session session: Session,
+  reason reason: Int,
+  before before: List(Effect(Nil)),
+) -> login.Handled(Session) {
+  let assert Ok(body) =
+    login_refused.encode(LoginRefused(reason:, value: 0, field_3: 0))
+    as "a reason is within 32 bits"
+  End(
+    session,
+    list.append(before, [
+      Write(wrapped(Frame(login_refused.message_id, body))),
+      Stop,
+    ]),
+  )
+}
+
+/// A hand-off that gave no answer: 0x63d reason 12, "NCSoft login service
+/// finish timeout", and a warning, since the failure is the server's.
+fn timed_out(
+  session session: Session,
+  what what: String,
+) -> login.Handled(Session) {
+  refuse(session:, reason: reason_service_timeout, before: [
+    log(
+      session:,
+      level: LogWarning,
+      text: "the login is refused with reason 12: " <> what,
+    ),
+  ])
+}
+
+fn end_for(session: Session, reason: String) -> login.Handled(Session) {
+  End(session, [log(session:, level: LogError, text: reason), Stop])
+}
+
+/// The answer to the ask in flight.
+fn answered(
+  session session: Session,
+  now now: Now,
+  outcome outcome: Outcome(Answer),
+) -> login.Handled(Session) {
+  case session.status {
+    TakingToken(user_id:) -> taken(session:, now:, user_id:, outcome:)
+    KeepingSessionKey(holder:, session_key:) ->
+      kept(session:, holder:, session_key:, outcome:)
+    AwaitingLoginRequest | HandedOff(..) ->
+      end_for(session, "an answer came when no ask was out")
+  }
+}
+
+/// The hand-off's answer to taking the game token: the holder's game account
+/// must be the UserId the client showed.
+fn taken(
+  session session: Session,
+  now now: Now,
+  user_id user_id: Guid,
+  outcome outcome: Outcome(Answer),
+) -> login.Handled(Session) {
+  case outcome {
+    step.Answer(FromHandOff(hand_off.Taken(holder:))) ->
+      case holder.game_account_id == user_id {
+        True -> {
+          let #(link, key_bytes) = login.draw(session.link, 16)
+          let assert Ok(session_key) = guid.from_wire(key_bytes)
+            as "sixteen bytes are a GUID"
+          ask(
+            session: Session(
+              ..session,
+              link:,
+              status: KeepingSessionKey(holder:, session_key:),
+            ),
+            now:,
+            request: AskHandOff(Put(
+              key: SessionKey(key: session_key),
+              holder:,
+              lifetime_ms: session.settings.session_key_lifetime_ms,
+            )),
+          )
+        }
+        False ->
+          refuse(session:, reason: reason_invalid_login_token, before: [])
+      }
+    step.Answer(FromHandOff(hand_off.NoHolder)) ->
+      refuse(session:, reason: reason_invalid_login_token, before: [])
+    step.Answer(FromHandOff(hand_off.Kept))
+    | step.Answer(FromHandOff(hand_off.AlreadyHeld))
+    | step.Answer(FromStore(..)) ->
+      end_for(session, "the hand-off's answer is none a Take gets")
+    step.NotRunning
+    | step.NoAnswerInTime
+    | step.EndedBeforeAnswer
+    | step.StoppedWaiting ->
+      timed_out(
+        session:,
+        what: login.without_answer(who: "the hand-off", outcome:),
+      )
+  }
+}
+
+/// The hand-off's answer to keeping the session key: 0x591, then 0x3db.
+fn kept(
+  session session: Session,
+  holder holder: Holder,
+  session_key session_key: Guid,
+  outcome outcome: Outcome(Answer),
+) -> login.Handled(Session) {
+  case outcome {
+    step.Answer(FromHandOff(hand_off.Kept)) ->
+      handed_off(session:, holder:, session_key:)
+    step.Answer(FromHandOff(hand_off.AlreadyHeld)) ->
+      timed_out(session:, what: "the hand-off already held the session key")
+    step.Answer(FromHandOff(hand_off.Taken(..)))
+    | step.Answer(FromHandOff(hand_off.NoHolder))
+    | step.Answer(FromStore(..)) ->
+      end_for(session, "the hand-off's answer is none a Put gets")
+    step.NotRunning
+    | step.NoAnswerInTime
+    | step.EndedBeforeAnswer
+    | step.StoppedWaiting ->
+      timed_out(
+        session:,
+        what: login.without_answer(who: "the hand-off", outcome:),
+      )
+  }
+}
+
+/// 0x591 and 0x3db, each in the auth wrapper. A 0x3db that cannot be written
+/// for this account and realm is the server's failure: an error log and 0x63d
+/// reason 12.
+fn handed_off(
+  session session: Session,
+  holder holder: Holder,
+  session_key session_key: Guid,
+) -> login.Handled(Session) {
+  let realm = session.settings.realm
+  let store.AccountId(account_id) = holder.account_id
+  let assert Ok(accepted) =
+    login_accepted.encode(LoginAccepted(disconnected_for_lag: 0))
+    as "a value of 0 fits 32 bits"
+  case
+    game_server_handoff.encode(GameServerHandoff(
+      game_server: realm.game_server,
+      session_key: guid.to_wire(session_key),
+      account_id:,
+      realm_name: realm.name,
+      realm_flags: 0,
+      realm_pvp_type: 0,
+      realm_note_text_id: 0,
+    ))
+  {
+    Error(error) ->
+      refuse(session:, reason: reason_service_timeout, before: [
+        log(
+          session:,
+          level: LogError,
+          text: "0x03DB cannot be written for the account and the realm: "
+            <> bit_stream.describe_encode(error:),
+        ),
+      ])
+    Ok(handoff) -> {
+      let handed = Session(..session, status: HandedOff(holder:))
+      Continue(handed, [
+        Write(wrapped(Frame(login_accepted.message_id, accepted))),
+        Write(wrapped(Frame(game_server_handoff.message_id, handoff))),
+        log(
+          session: handed,
+          level: LogInfo,
+          text: "the login is accepted and the client is handed to the game server",
+        ),
+      ])
+    }
+  }
+}
+
+// ---- log lines ----
+
+fn log(
+  session session: Session,
+  level level: step.LogLevel,
+  text text: String,
+) -> Effect(Nil) {
+  login.log(
+    link: session.link,
+    account_id: account_id_of(session.status),
+    level:,
+    text:,
+  )
+}
+
+/// The id of the account the login is for, once the hand-off has named the
+/// holder.
+fn account_id_of(status: Status) -> Option(Int) {
+  case status {
+    KeepingSessionKey(
+      holder: hand_off.Holder(account_id: store.AccountId(id), ..),
+      ..,
+    )
+    | HandedOff(holder: hand_off.Holder(account_id: store.AccountId(id), ..)) ->
+      Some(id)
+    AwaitingLoginRequest | TakingToken(..) -> None
+  }
+}

@@ -31,6 +31,11 @@ fn parse_text(file: SourceFile) -> glance.Module {
   module
 }
 
+/// The name of every module the file imports, as written in its imports.
+pub fn imported_modules(file: SourceFile) -> List(String) {
+  list.map(parse(file).imports, fn(definition) { definition.definition.module })
+}
+
 /// The module's name from its path: `src/genesis_prime/server.gleam` is
 /// `genesis_prime/server`, and `test/owned_test.gleam` is `owned_test`.
 pub fn module_name(path: String) -> String {

@@ -75,7 +75,7 @@ pub fn server_hello_round_trips_test() -> Nil {
     seed: 20_261_101,
     draw: fn(state) {
       let #(build, state) = message_support.unsigned(state:, bits: 32)
-      let #(field_2, state) = message_support.unsigned(state:, bits: 32)
+      let #(realm_id, state) = message_support.unsigned(state:, bits: 32)
       let #(field_3, state) = message_support.unsigned(state:, bits: 32)
       let #(field_4, state) = message_support.unsigned(state:, bits: 32)
       let #(field_5, state) = message_support.unsigned(state:, bits: 64)
@@ -89,7 +89,7 @@ pub fn server_hello_round_trips_test() -> Nil {
       #(
         ServerHello(
           build:,
-          field_2:,
+          realm_id:,
           field_3:,
           field_4:,
           field_5:,
@@ -117,8 +117,8 @@ pub fn login_request_round_trips_test() -> Nil {
       let #(build, state) = message_support.unsigned(state:, bits: 32)
       let #(files_digest, state) = message_support.unsigned(state:, bits: 64)
       let #(account_name, state) = message_support.text(state:, longest: 120)
-      let #(field_4, state) = message_support.guid(state:)
-      let #(field_5, state) = message_support.guid(state:)
+      let #(user_id, state) = message_support.guid(state:)
+      let #(game_token, state) = message_support.guid(state:)
       let #(field_6, state) = message_support.unsigned(state:, bits: 32)
       let #(field_7, state) = message_support.unsigned(state:, bits: 32)
       let #(field_8, state) = message_support.unsigned(state:, bits: 32)
@@ -161,8 +161,8 @@ pub fn login_request_round_trips_test() -> Nil {
           build:,
           files_digest:,
           account_name:,
-          field_4:,
-          field_5:,
+          user_id:,
+          game_token:,
           field_6:,
           field_7:,
           field_8:,
@@ -202,8 +202,9 @@ pub fn login_accepted_round_trips_test() -> Nil {
     name: "message 0x591",
     seed: 20_261_103,
     draw: fn(state) {
-      let #(field_1, state) = message_support.unsigned(state:, bits: 32)
-      #(LoginAccepted(field_1:), state)
+      let #(disconnected_for_lag, state) =
+        message_support.unsigned(state:, bits: 32)
+      #(LoginAccepted(disconnected_for_lag:), state)
     },
     encode: login_accepted.encode,
     decode: login_accepted.decode,
@@ -218,20 +219,21 @@ pub fn game_server_handoff_round_trips_test() -> Nil {
     draw: fn(state) {
       let #(game_server, state) = message_support.endpoint(state:)
       let #(session_key, state) = message_support.guid(state:)
-      let #(field_3, state) = message_support.unsigned(state:, bits: 32)
+      let #(account_id, state) = message_support.unsigned(state:, bits: 32)
       let #(realm_name, state) = message_support.field_text(state:)
-      let #(field_5, state) = message_support.unsigned(state:, bits: 32)
-      let #(field_6, state) = message_support.unsigned(state:, bits: 2)
-      let #(field_7, state) = message_support.unsigned(state:, bits: 21)
+      let #(realm_flags, state) = message_support.unsigned(state:, bits: 32)
+      let #(realm_pvp_type, state) = message_support.unsigned(state:, bits: 2)
+      let #(realm_note_text_id, state) =
+        message_support.unsigned(state:, bits: 21)
       #(
         GameServerHandoff(
           game_server:,
           session_key:,
-          field_3:,
+          account_id:,
           realm_name:,
-          field_5:,
-          field_6:,
-          field_7:,
+          realm_flags:,
+          realm_pvp_type:,
+          realm_note_text_id:,
         ),
         state,
       )

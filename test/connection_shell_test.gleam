@@ -28,9 +28,8 @@ import genesis_prime/step.{
   WriteFailed,
 }
 import gleam/bit_array
-import gleam/crypto
 import gleam/erlang/atom
-import gleam/erlang/process.{type Pid}
+import gleam/erlang/process.{type Name, type Pid}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/static_supervisor as supervisor
@@ -396,7 +395,7 @@ pub fn a_recording_that_cannot_be_written_ends_the_connection_before_the_steps_e
 fn hello() -> server_hello.ServerHello {
   ServerHello(
     build: 16_042,
-    field_2: 0x11223344,
+    realm_id: 0x11223344,
     field_3: 0x55667788,
     field_4: 0x99AABBCC,
     field_5: 0x0102030405060708,
@@ -513,7 +512,11 @@ fn big_write_rule() -> Rule(
 fn accept() -> #(hello_rule.State, Step(Nil, Nil)) {
   take(
     hello_rule.new(hello_rule.Settings(hello: hello())),
-    Socket(Accepted(ConnectionId(1), Peer(address: "127.0.0.1", port: 1))),
+    Socket(
+      Accepted(ConnectionId(1), Peer(address: "127.0.0.1", port: 1), <<
+        0:size(256),
+      >>),
+    ),
   )
 }
 
@@ -574,7 +577,7 @@ fn record_one_ping(
 }
 
 type Server {
-  Server(supervisor: Pid, name: String, port: Int)
+  Server(supervisor: Pid, name: Name(Nil), port: Int)
 }
 
 fn start(
@@ -582,9 +585,7 @@ fn start(
   recorder recorder: option.Option(file.Recorder(settings)),
   shutdown_ms shutdown_ms: Int,
 ) -> Server {
-  let name =
-    "test-"
-    <> string.lowercase(bit_array.base16_encode(crypto.strong_random_bytes(8)))
+  let name = process.new_name("test_listener")
   let connection =
     shell.Settings(
       rule:,
@@ -760,4 +761,4 @@ fn monotonic_ms() -> Int {
 fn monotonic_ms_ffi(unit: atom.Atom) -> Int
 
 @external(erlang, "ranch", "procs")
-fn procs(ref: String, kind: atom.Atom) -> List(Pid)
+fn procs(ref: Name(Nil), kind: atom.Atom) -> List(Pid)

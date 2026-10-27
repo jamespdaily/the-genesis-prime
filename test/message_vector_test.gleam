@@ -70,7 +70,7 @@ pub fn server_hello_is_the_clients_373_bits_test() -> Nil {
     ),
     value: ServerHello(
       build: 16_042,
-      field_2: 0x11223344,
+      realm_id: 0x11223344,
       field_3: 0x55667788,
       field_4: 0x99AABBCC,
       field_5: 0x0102030405060708,
@@ -97,10 +97,10 @@ pub fn login_request_is_the_clients_1168_bits_test() -> Nil {
       build: 16_042,
       files_digest: 0x0807060504030201,
       account_name: "Jim",
-      field_4: message_support.hex(
+      user_id: message_support.hex(
         "10 11 12 13 14 15 16 17 18 19 1a 1b 1c 1d 1e 1f",
       ),
-      field_5: message_support.hex(
+      game_token: message_support.hex(
         "20 21 22 23 24 25 26 27 28 29 2a 2b 2c 2d 2e 2f",
       ),
       field_6: 0x41,
@@ -164,7 +164,7 @@ pub fn login_accepted_is_one_32_bit_value_test() -> Nil {
   assert_vector(
     name: "vector.opcode.0x591.body",
     body: message_support.hex("01000000"),
-    value: LoginAccepted(field_1: 1),
+    value: LoginAccepted(disconnected_for_lag: 1),
     encode: login_accepted.encode,
     decode: login_accepted.decode,
   )
@@ -180,11 +180,11 @@ pub fn game_server_handoff_is_the_clients_351_bits_test() -> Nil {
     value: GameServerHandoff(
       game_server: Endpoint(address: 0x7F000001, port: 24_000),
       session_key: message_support.session_key(),
-      field_3: 0x55667788,
+      account_id: 0x55667788,
       realm_name: "Nexus",
-      field_5: 0x1234,
-      field_6: 3,
-      field_7: 0x1ABCDE,
+      realm_flags: 0x1234,
+      realm_pvp_type: 3,
+      realm_note_text_id: 0x1ABCDE,
     ),
     encode: game_server_handoff.encode,
     decode: game_server_handoff.decode,

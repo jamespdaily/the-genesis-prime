@@ -69,6 +69,69 @@ pub type DecodeError {
   UnexpectedValue(field: String, value: Int)
 }
 
+/// A sentence that says why a value could not be written, for the log.
+pub fn describe_encode(error error: EncodeError) -> String {
+  case error {
+    ValueDoesNotFit(field:, bits:, value:) ->
+      "the value "
+      <> int.to_string(value)
+      <> " of "
+      <> field
+      <> " does not fit in "
+      <> int.to_string(bits)
+      <> " bits"
+    WrongByteCount(field:, expected:, actual:) ->
+      field
+      <> " has "
+      <> int.to_string(actual)
+      <> " bytes, not "
+      <> int.to_string(expected)
+    TextTooLong(field:, units:, limit:) ->
+      "the text "
+      <> field
+      <> " has "
+      <> int.to_string(units)
+      <> " units, over the limit of "
+      <> int.to_string(limit)
+    TextHoldsZero(field:) -> "the counted text " <> field <> " holds a zero"
+    InnerFrameDisagrees(field:) ->
+      "the whole frame " <> field <> " disagrees with its length"
+    ItemCountDisagrees(field:, expected:, actual:) ->
+      field
+      <> " has "
+      <> int.to_string(actual)
+      <> " items, not "
+      <> int.to_string(expected)
+    ValueAtOrAboveLimit(field:, limit:, value:) ->
+      "the value "
+      <> int.to_string(value)
+      <> " of "
+      <> field
+      <> " is at or above its limit of "
+      <> int.to_string(limit)
+  }
+}
+
+/// A sentence that says why bytes are not a body, for the log.
+pub fn describe_decode(error error: DecodeError) -> String {
+  case error {
+    EndOfData -> "the bytes end inside a field"
+    TrailingBytes(count:) ->
+      int.to_string(count) <> " bytes are left after the last field"
+    InvalidText -> "a text is not valid UTF-16"
+    InvalidCountedText -> "a counted text is not well formed"
+    InnerFrameTooShort(length:) ->
+      "a whole frame's length of "
+      <> int.to_string(length)
+      <> " is below its own 4 bytes"
+    UnexpectedValue(field:, value:) ->
+      "the field "
+      <> field
+      <> " holds the unexpected value "
+      <> int.to_string(value)
+  }
+}
+
 /// A body being written: the whole bytes written, the bits that do not fill
 /// a byte, and the first error.
 pub opaque type Writer {

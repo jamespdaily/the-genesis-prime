@@ -1,18 +1,41 @@
 //// Every field of the message schema names its evidence: a key of the client's
 //// fact file that gives its width, and, when its name is more than its
 //// position, a key that says what it is. So does every message and record.
+//// A field of a message the server sends that has no name must carry a
+//// `safe_by` key of the fact file, which shows the value the server sends is
+//// safe. A message is sent when it travels to the client, or both ways, and a
+//// module outside `src/genesis_prime/message/` imports its module.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
-import genesis_prime/message_schema.{type Field, type Schema}
+import code_rule/syntax
+import genesis_prime/message_schema.{type Field, type Schema, ClientToServer}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 
+/// The names of the message modules the given source files import, from the
+/// files outside `src/genesis_prime/message/`, sorted and each once.
+pub fn sent_messages(sources sources: List(SourceFile)) -> List(String) {
+  sources
+  |> list.filter(fn(file) {
+    !string.starts_with(file.path, "src/genesis_prime/message/")
+  })
+  |> list.flat_map(syntax.imported_modules)
+  |> list.filter(string.starts_with(_, "genesis_prime/message/"))
+  |> list.map(string.remove_prefix(_, "genesis_prime/message/"))
+  |> list.unique
+  |> list.sort(string.compare)
+}
+
 /// Each field, message or record of the schema that names no evidence or
-/// names a key the fact file does not hold, at the line of the field.
+/// names a key the fact file does not hold, at the line of the field; each
+/// `safe_by` key the fact file does not hold; and each unnamed field with no
+/// `safe_by` in a message the server sends, which is one named in
+/// `sent_messages` that does not travel only from the client.
 pub fn breaches(
   file file: SourceFile,
   fact_keys fact_keys: List(String),
+  sent_messages sent_messages: List(String),
 ) -> List(Breach) {
   case message_schema.parse(file.text) {
     Error(error) -> [
@@ -23,21 +46,27 @@ pub fn breaches(
           <> message_schema.describe(error),
       ),
     ]
-    Ok(schema) -> owners_breaches(file:, schema:, fact_keys:)
+    Ok(schema) -> owners_breaches(file:, schema:, fact_keys:, sent_messages:)
   }
 }
 
 type Owner {
-  Owner(name: String, evidence: String, fields: List(Field))
+  Owner(name: String, evidence: String, fields: List(Field), sent: Bool)
 }
 
-fn owners(schema: Schema) -> List(Owner) {
+fn owners(schema: Schema, sent_messages: List(String)) -> List(Owner) {
   list.append(
     list.map(schema.messages, fn(message) {
-      Owner(message.name, message.evidence, message.fields)
+      Owner(
+        message.name,
+        message.evidence,
+        message.fields,
+        sent: message.direction != ClientToServer
+          && list.contains(sent_messages, message.name),
+      )
     }),
     list.map(schema.records, fn(record) {
-      Owner(record.name, record.evidence, record.fields)
+      Owner(record.name, record.evidence, record.fields, sent: False)
     }),
   )
 }
@@ -46,9 +75,10 @@ fn owners_breaches(
   file file: SourceFile,
   schema schema: Schema,
   fact_keys fact_keys: List(String),
+  sent_messages sent_messages: List(String),
 ) -> List(Breach) {
   let lines = string.split(file.text, "\n")
-  list.flat_map(owners(schema), fn(owner) {
+  list.flat_map(owners(schema, sent_messages), fn(owner) {
     let owner_line =
       line_of(lines:, from: 0, text: "name = \"" <> owner.name <> "\"")
     let own = case list.contains(fact_keys, owner.evidence) {
@@ -105,7 +135,19 @@ fn field_breaches(
     None -> []
     Some(key) -> unknown_key(file:, line:, where:, key:, fact_keys:)
   }
-  list.append(evidence, named_by)
+  let safe_by = case field.safe_by, field.named_by {
+    Some(key), _ -> unknown_key(file:, line:, where:, key:, fact_keys:)
+    None, None if owner.sent -> [
+      Breach(
+        path: file.path,
+        line:,
+        rule: "a field of a message the server sends that has no name and no safe_by key: "
+          <> where,
+      ),
+    ]
+    None, _ -> []
+  }
+  list.flatten([evidence, named_by, safe_by])
 }
 
 fn unknown_key(

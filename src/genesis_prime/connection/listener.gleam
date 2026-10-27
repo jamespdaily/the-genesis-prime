@@ -17,15 +17,16 @@
 //// the connection settings' `shutdown_ms` to end before it is killed.
 
 import genesis_prime/connection/shell.{type Settings}
-import gleam/erlang/process.{type Pid}
+import gleam/erlang/process.{type Name, type Pid}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 
 /// What one listener is started with.
 pub type Listener(settings, state, message, answer, outgoing, request) {
   Listener(
-    /// The listener's name in Ranch, unique on the node, such as `"auth"`.
-    name: String,
+    /// The listener's name in Ranch, unique on the node: made once, with
+    /// `process.new_name`.
+    name: Name(Nil),
     /// The TCP port, or 0 for one the system picks.
     port: Int,
     connection: Settings(settings, state, message, answer, outgoing, request),
@@ -58,11 +59,11 @@ pub fn supervised(
 
 /// The port a running listener listens on, as Ranch reports it.
 @external(erlang, "connection_shell_ffi", "listener_port")
-pub fn port(name: String) -> Result(Int, Nil)
+pub fn port(name: Name(Nil)) -> Result(Int, Nil)
 
 @external(erlang, "connection_shell_ffi", "start_listener")
 fn start_listener(
-  name: String,
+  name: Name(Nil),
   port: Int,
   shutdown_ms: Int,
   settings: Settings(settings, state, message, answer, outgoing, request),

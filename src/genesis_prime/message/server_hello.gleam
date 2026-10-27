@@ -17,7 +17,7 @@ pub const message_id = 0x0003
 pub type ServerHello {
   ServerHello(
     build: Int,
-    field_2: Int,
+    realm_id: Int,
     field_3: Int,
     field_4: Int,
     field_5: Int,
@@ -35,7 +35,7 @@ pub type ServerHello {
 pub fn encode(message: ServerHello) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_unsigned("build", message.build, 32)
-  |> bit_stream.write_unsigned("field_2", message.field_2, 32)
+  |> bit_stream.write_unsigned("realm_id", message.realm_id, 32)
   |> bit_stream.write_unsigned("field_3", message.field_3, 32)
   |> bit_stream.write_unsigned("field_4", message.field_4, 32)
   |> bit_stream.write_unsigned("field_5", message.field_5, 64)
@@ -56,7 +56,7 @@ pub fn encode(message: ServerHello) -> Result(BitArray, EncodeError) {
 pub fn decode(body: BitArray) -> Result(ServerHello, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(build, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(realm_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_3, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_4, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_5, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
@@ -72,7 +72,7 @@ pub fn decode(body: BitArray) -> Result(ServerHello, DecodeError) {
   use Nil <- result.try(bit_stream.finish_reading(reader))
   Ok(ServerHello(
     build:,
-    field_2:,
+    realm_id:,
     field_3:,
     field_4:,
     field_5:,

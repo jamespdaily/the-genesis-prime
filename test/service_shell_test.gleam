@@ -69,7 +69,12 @@ pub fn an_ask_reaches_the_rule_as_asked_and_its_reply_reaches_the_asker_test() -
     ))
   let assert Ok(pid) = process.named(name) as "the name is registered"
   let key = SessionKey(a_guid())
-  let holder = Holder(account_id: AccountId(7), login_name: "login-7")
+  let holder =
+    Holder(
+      account_id: AccountId(7),
+      login_name: "login-7",
+      game_account_id: a_guid(),
+    )
   let replies = process.new_subject()
   assert service_shell.call(
       name,

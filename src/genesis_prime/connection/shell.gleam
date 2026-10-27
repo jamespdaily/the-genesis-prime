@@ -9,7 +9,7 @@
 //// ```
 //// Ranch accepts ─▶ connection_shell_ffi:start_link ─▶ ranch:handshake ─▶ run
 ////   the recorder, when on, opens the file and writes the header
-////   Socket(Accepted(connection id, peer))        ─▶ step ─▶ effects
+////   Socket(Accepted(connection id, peer, seed))  ─▶ step ─▶ effects
 ////   loop, the socket active once:
 ////     {tcp, bytes}        ─▶ Socket(Read(bytes))   ─▶ step ─▶ effects
 ////     {tcp_closed}        ─▶ Socket(PeerClosed)    ─▶ step ─▶ effects
@@ -94,12 +94,13 @@ import genesis_prime/rule_recording.{Taken}
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/service/shell.{type Sent, ToService, ToWorker}
 import genesis_prime/step.{
-  type About, type Ask, type AskId, type Effect, type Event, type LogLevel,
-  type Peer, type Rule, type SocketFailure, About, Accepted, Answer, Answered,
-  AnsweredLate, ConnectionId, Effects, EffectsThenAsk, EndedBeforeAnswer, Input,
-  LogError, LogWarning, NoAnswerInTime, NotRunning, Now, PeerClosed, ReadFailed,
-  SendTimedOut, Socket, StoppedWaiting, Stopping, WriteFailed,
+  type Ask, type AskId, type Effect, type Event, type Peer, type Rule,
+  type SocketFailure, Accepted, Answer, Answered, AnsweredLate, ConnectionId,
+  Effects, EffectsThenAsk, EndedBeforeAnswer, Input, LogError, LogWarning,
+  NoAnswerInTime, NotRunning, PeerClosed, ReadFailed, Socket, StoppedWaiting,
+  Stopping, WriteFailed,
 }
+import genesis_prime/step/runtime
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Pid}
@@ -192,14 +193,10 @@ pub fn run(
   ),
 ) -> Nil {
   let socket = handshake(ranch_ref, settings.send_deadline_ms)
-  let connection = unique_id()
-  let writer = case settings.recorder {
-    None -> None
-    Some(recorder) ->
-      case file.open(recorder, connection:) {
-        Ok(writer) -> Some(writer)
-        Error(error) -> recording_failed(socket, error)
-      }
+  let connection = runtime.unique_id()
+  let writer = case file.open_if(settings.recorder, connection:) {
+    Ok(writer) -> writer
+    Error(error) -> recording_failed(socket, error)
   }
   let rule = settings.rule
   let running =
@@ -214,8 +211,12 @@ pub fn run(
     )
   take(
     running:,
-    now: now(),
-    event: Socket(Accepted(ConnectionId(connection), peer(socket))),
+    now: runtime.now(),
+    event: Socket(Accepted(
+      connection: ConnectionId(connection),
+      peer: peer(socket),
+      seed: seed(),
+    )),
   )
 }
 
@@ -227,13 +228,9 @@ fn take(
 ) -> Nil {
   let input = Input(now:, event:)
   let #(state, step) = running.settings.rule.step(running.state, input)
-  let writer = case running.writer {
-    None -> None
-    Some(writer) ->
-      case file.append(writer, Taken(input:, step:)) {
-        Ok(writer) -> Some(writer)
-        Error(error) -> recording_failed(running.socket, error)
-      }
+  let writer = case file.append_if(running.writer, Taken(input:, step:)) {
+    Ok(writer) -> writer
+    Error(error) -> recording_failed(running.socket, error)
   }
   let running = Running(..running, state:, writer:)
   case step {
@@ -274,14 +271,14 @@ fn carry(
         MakeAsk(ask:), Some(_) ->
           take(
             running:,
-            now: now(),
+            now: runtime.now(),
             event: Answered(ask: ask.ask, outcome: StoppedWaiting),
           )
         WaitForInput, None -> wait(running)
         WaitForInput, Some(deadline_ms) ->
           take(
             running: Running(..running, stopping: None),
-            now: now(),
+            now: runtime.now(),
             event: Stopping(deadline_ms:),
           )
       }
@@ -291,20 +288,24 @@ fn carry(
           case send(running.socket, bytes), then {
             Ok(Nil), _ -> carry(running:, effects: later, then:)
             Error(failure), EndProcess -> {
-              log(
+              runtime.log(
                 LogWarning,
                 "a write after the rule's Stop failed ("
-                  <> describe_failure(failure)
+                  <> step.describe_socket_failure(failure)
                   <> "), so the connection ends",
-                no_one(),
+                step.no_one,
               )
               stop(running)
             }
             Error(failure), MakeAsk(..) | Error(failure), WaitForInput ->
-              take(running:, now: now(), event: Socket(WriteFailed(failure:)))
+              take(
+                running:,
+                now: runtime.now(),
+                event: Socket(WriteFailed(failure:)),
+              )
           }
         step.Log(line:) -> {
-          log(line.level, line.text, line.about)
+          runtime.log(line.level, line.text, line.about)
           carry(running:, effects: later, then:)
         }
         step.Stop -> carry(running:, effects: later, then: EndProcess)
@@ -324,7 +325,7 @@ fn wait(
 ) -> Nil {
   case read_once(running.socket) {
     Error(failure) ->
-      take(running:, now: now(), event: Socket(ReadFailed(failure:)))
+      take(running:, now: runtime.now(), event: Socket(ReadFailed(failure:)))
     Ok(Nil) -> next(running)
   }
 }
@@ -335,7 +336,7 @@ fn next(
   running: Running(settings, state, message, answer, outgoing, request),
 ) -> Nil {
   let arrived = next_event(running.socket, running.parent, running.kept)
-  let now = now()
+  let now = runtime.now()
   case arrived {
     Read(bytes:) -> take(running:, now:, event: Socket(step.Read(bytes:)))
     ClosedByPeer -> take(running:, now:, event: Socket(PeerClosed))
@@ -375,7 +376,7 @@ fn make_ask(
     Error(Nil) ->
       take(
         running:,
-        now: now(),
+        now: runtime.now(),
         event: Answered(ask: ask.ask, outcome: NotRunning),
       )
     Ok(sent) -> wait_for_answer(running:, ask:, tag:, sent:)
@@ -393,7 +394,7 @@ fn wait_for_answer(
 ) -> Nil {
   let monitor = watch(target(sent))
   let waited = await_answer(tag, monitor, running.parent, ask.deadline_ms)
-  let known = now()
+  let known = runtime.now()
   let #(running, outcome) = case waited {
     Replied(answer:) -> #(running, Answer(answer:))
     TargetEnded -> #(running, EndedBeforeAnswer)
@@ -459,22 +460,9 @@ fn stop(
   running: Running(settings, state, message, answer, outgoing, request),
 ) -> Nil {
   close(running.socket)
-  case running.writer {
-    None -> Nil
-    Some(writer) ->
-      case file.finish(writer) {
-        Ok(Nil) -> Nil
-        Error(error) -> log_recording_failure(error)
-      }
-  }
-}
-
-fn describe_failure(failure: SocketFailure) -> String {
-  case failure {
-    step.Closed -> "the socket was closed"
-    step.Reset -> "the peer reset the connection"
-    SendTimedOut -> "the write timed out"
-    step.OtherSocketFailure(reason:) -> reason
+  case file.finish_if(running.writer) {
+    Ok(Nil) -> Nil
+    Error(error) -> log_recording_failure(error)
   }
 }
 
@@ -487,39 +475,24 @@ fn recording_failed(socket: ClientSocket, error: FileError) -> a {
 }
 
 fn log_recording_failure(error: FileError) -> Nil {
-  log(
+  runtime.log(
     LogError,
-    "the recording " <> error.path <> " could not be written: " <> error.reason,
-    no_one(),
+    "the recording could not be written: " <> file.describe(error),
+    step.no_one,
   )
 }
 
 /// Ends the connection over an effect the shell does not carry out yet.
 fn not_built(socket: ClientSocket, effect: String) -> a {
-  log(
+  runtime.log(
     LogError,
     "a rule returned "
       <> effect
       <> ", which the connection shell does not carry out",
-    no_one(),
+    step.no_one,
   )
   close(socket)
   panic as "a rule returned an effect the connection shell does not carry out"
-}
-
-fn no_one() -> About {
-  About(
-    connection: None,
-    peer: None,
-    account_id: None,
-    character_id: None,
-    map: None,
-    message: None,
-  )
-}
-
-fn now() -> step.Now {
-  Now(monotonic_ms: monotonic_ms(), filetime: filetime())
 }
 
 @external(erlang, "connection_shell_ffi", "handshake")
@@ -564,14 +537,7 @@ fn close(socket: ClientSocket) -> Nil
 @external(erlang, "connection_shell_ffi", "peer")
 fn peer(socket: ClientSocket) -> Peer
 
-@external(erlang, "connection_shell_ffi", "unique_id")
-fn unique_id() -> Int
-
-@external(erlang, "connection_shell_ffi", "monotonic_ms")
-fn monotonic_ms() -> Int
-
-@external(erlang, "connection_shell_ffi", "filetime")
-fn filetime() -> Int
-
-@external(erlang, "connection_shell_ffi", "log")
-fn log(level: LogLevel, text: String, about: About) -> Nil
+/// 32 bytes from the operating system's strong random source, the seed of a
+/// new connection.
+@external(erlang, "connection_shell_ffi", "seed")
+fn seed() -> BitArray

@@ -13,15 +13,12 @@ import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type Rule, Rule}
 import genesis_prime/store/worker.{type Job}
-import gleam/bit_array
-import gleam/crypto
 import gleam/erlang/atom
 import gleam/erlang/process.{type Name, type Pid}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
-import gleam/string
 import mug
 
 /// How long one wait for an event may take, in milliseconds. A passing test
@@ -51,7 +48,7 @@ pub const stop_then_write_command = 0x51
 
 /// A running listener and the tree it started under.
 pub type Server {
-  Server(supervisor: Pid, name: String, port: Int)
+  Server(supervisor: Pid, name: Name(Nil), port: Int)
 }
 
 /// One record the asking rule wrote.
@@ -69,9 +66,7 @@ pub fn start(
   recorder recorder: Option(Recorder(Nil)),
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
-  let name =
-    "test-"
-    <> string.lowercase(bit_array.base16_encode(crypto.strong_random_bytes(8)))
+  let name = process.new_name("test_listener")
   let connection =
     shell.Settings(
       rule: asking_rule.rule(),
@@ -321,4 +316,4 @@ pub fn unreported(_sent: service_shell.Sent) -> Nil {
 }
 
 @external(erlang, "ranch", "procs")
-fn procs(ref: String, kind: atom.Atom) -> List(Pid)
+fn procs(ref: Name(Nil), kind: atom.Atom) -> List(Pid)

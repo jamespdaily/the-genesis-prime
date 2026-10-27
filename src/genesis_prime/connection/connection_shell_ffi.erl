@@ -1,6 +1,5 @@
-%% Ranch's protocol callback for a connection shell, and the socket, clock,
-%% logger and ask calls the shell makes; the service shell uses the clock and
-%% logger calls too. Ranch calls start_link/3, an Erlang behaviour callback
+%% Ranch's protocol callback for a connection shell, and the socket and ask
+%% calls the shell makes. Ranch calls start_link/3, an Erlang behaviour callback
 %% Gleam cannot declare; the process it starts hands over to
 %% genesis_prime@connection@shell:run/3. Each function returns the Gleam shape
 %% its caller declares.
@@ -8,13 +7,8 @@
 -behaviour(ranch_protocol).
 
 -export([start_link/3, start_listener/4, listener_port/1, handshake/2,
-         read_once/1, next_event/3, send/2, close/1, peer/1, unique_id/0,
-         monotonic_ms/0, filetime/0, log/3, watch/1, unwatch/1,
+         read_once/1, next_event/3, send/2, close/1, peer/1, seed/0, watch/1, unwatch/1,
          send_answer/3, await_answer/4]).
-
-%% FILETIME counts 100-nanosecond intervals from 1601-01-01; the Unix epoch is
-%% this many of them after it.
--define(FILETIME_AT_UNIX_EPOCH, 116444736000000000).
 
 %% Starts the connection's process, linked to Ranch's connection supervisor,
 %% which is the calling process and the shell's parent.
@@ -148,29 +142,8 @@ peer(Socket) ->
         {error, _} -> {peer, <<"unknown">>, 0}
     end.
 
-unique_id() ->
-    erlang:unique_integer([positive, monotonic]).
-
-monotonic_ms() ->
-    erlang:monotonic_time(millisecond).
-
-%% The BEAM's system time, which follows its time correction, as a FILETIME.
-filetime() ->
-    erlang:system_time(nanosecond) div 100 + ?FILETIME_AT_UNIX_EPOCH.
-
-%% Writes a log line through the logger, each known field of its who and where
-%% as a metadata key of its own.
-log(Level, Text, {about, Connection, Peer, Account, Character, Map, Message}) ->
-    Fields = [{connection, Connection}, {peer, Peer}, {account_id, Account},
-              {character_id, Character}, {map, Map}, {message, Message}],
-    Metadata = maps:from_list([{Key, Value} || {Key, {some, Value}} <- Fields]),
-    logger:log(level(Level), "~ts", [Text], Metadata),
-    nil.
-
-level(log_error) -> error;
-level(log_warning) -> warning;
-level(log_info) -> info;
-level(log_debug) -> debug.
+seed() ->
+    crypto:strong_rand_bytes(32).
 
 failure(closed) -> closed;
 failure(econnreset) -> reset;

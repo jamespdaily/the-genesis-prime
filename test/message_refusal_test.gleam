@@ -30,7 +30,7 @@ pub fn a_server_hello_field_wider_than_5_bits_is_refused_test() -> Nil {
   let hello =
     ServerHello(
       build: 16_042,
-      field_2: 0,
+      realm_id: 0,
       field_3: 0,
       field_4: 0,
       field_5: 0,
@@ -77,15 +77,21 @@ pub fn a_login_request_with_a_wide_value_or_a_wrong_sized_key_is_refused_test() 
       0x1_0000_0000_0000_0000,
     ))
     as "the digest is 64 bits"
-  assert login_request.encode(LoginRequest(..request, field_4: <<1, 2, 3>>))
-    == Error(bit_stream.WrongByteCount("field_4", 16, 3))
+  assert login_request.encode(LoginRequest(..request, user_id: <<1, 2, 3>>))
+    == Error(bit_stream.WrongByteCount("user_id", 16, 3))
     as "WriteGuid 0x1400a8780: a GUID is 16 bytes"
 }
 
 pub fn a_login_accepted_value_wider_than_32_bits_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
-  assert login_accepted.encode(LoginAccepted(field_1: 0x1_0000_0000))
-    == Error(bit_stream.ValueDoesNotFit("field_1", 32, 0x1_0000_0000))
+  assert login_accepted.encode(LoginAccepted(
+      disconnected_for_lag: 0x1_0000_0000,
+    ))
+    == Error(bit_stream.ValueDoesNotFit(
+      "disconnected_for_lag",
+      32,
+      0x1_0000_0000,
+    ))
     as "ReadMessage0591Body 0x14007ab50: one 32-bit value"
 }
 
@@ -95,19 +101,21 @@ pub fn a_game_server_handoff_with_a_wide_value_or_port_is_refused_test() -> Nil 
     GameServerHandoff(
       game_server: Endpoint(address: 0x7F000001, port: 24_000),
       session_key: message_support.session_key(),
-      field_3: 0,
+      account_id: 0,
       realm_name: "Nexus",
-      field_5: 0,
-      field_6: 3,
-      field_7: 0x1ABCDE,
+      realm_flags: 0,
+      realm_pvp_type: 3,
+      realm_note_text_id: 0x1ABCDE,
     )
-  assert game_server_handoff.encode(GameServerHandoff(..handoff, field_6: 4))
-    == Error(bit_stream.ValueDoesNotFit("field_6", 2, 4))
+  assert game_server_handoff.encode(
+      GameServerHandoff(..handoff, realm_pvp_type: 4),
+    )
+    == Error(bit_stream.ValueDoesNotFit("realm_pvp_type", 2, 4))
     as "ReadMessage03DBBody 0x14007d6a0: a 2-bit value"
   assert game_server_handoff.encode(
-      GameServerHandoff(..handoff, field_7: 0x200000),
+      GameServerHandoff(..handoff, realm_note_text_id: 0x200000),
     )
-    == Error(bit_stream.ValueDoesNotFit("field_7", 21, 0x200000))
+    == Error(bit_stream.ValueDoesNotFit("realm_note_text_id", 21, 0x200000))
     as "ReadMessage03DBBody 0x14007d6a0: a 21-bit value"
   assert game_server_handoff.encode(
       GameServerHandoff(

@@ -15,13 +15,13 @@
 import ask_support
 import asking_rule
 import database_support
+import genesis_prime/add_account/sql
 import genesis_prime/login/guid
 import genesis_prime/service/shell.{ToWorker}
 import genesis_prime/store.{
   Account, AccountFound, AccountId, FindAccount, NoSuchAccount, Unavailable,
 }
 import genesis_prime/store/worker
-import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/option.{None, Some}
@@ -333,22 +333,10 @@ fn insert_account(
   verifier verifier: BitArray,
   game_account_id game_account_id: String,
 ) -> Int {
-  let assert Ok(pog.Returned(rows: [id], ..)) =
-    pog.query(
-      "insert into account (login_name, srp_salt, srp_verifier, game_account_id)
-       values ($1, $2, $3, $4::uuid) returning account_id",
-    )
-    |> pog.parameter(pog.text(login_name))
-    |> pog.parameter(pog.bytea(salt))
-    |> pog.parameter(pog.bytea(verifier))
-    |> pog.parameter(pog.text(game_account_id))
-    |> pog.returning({
-      use id <- decode.field(0, decode.int)
-      decode.success(id)
-    })
-    |> pog.execute(pool)
+  let assert Ok(pog.Returned(rows: [sql.InsertAccountRow(account_id:)], ..)) =
+    sql.insert_account(pool, login_name, salt, verifier, game_account_id)
     as "the account was inserted"
-  id
+  account_id
 }
 
 fn execute(pool: pog.Connection, sql: String) -> Nil {

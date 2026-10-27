@@ -15,6 +15,7 @@ import genesis_prime/login/rc4
 import genesis_prime/login/sts_xml
 import genesis_prime/message/server_hello
 import gleam/bit_array
+import gleam/int
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import scripted_client.{type Reply}
@@ -58,6 +59,21 @@ pub type Heard {
   Heard(client: StsClient, reply: Reply)
 }
 
+/// The bytes through the RC4 stream when it is on, and the stream after them;
+/// plain bytes and no stream while it is off.
+pub fn crypt_when_on(
+  stream stream: Option(rc4.Stream),
+  bytes bytes: BitArray,
+) -> #(Option(rc4.Stream), BitArray) {
+  case stream {
+    Some(stream) -> {
+      let #(stream, crypted) = rc4.crypt(stream, bytes)
+      #(Some(stream), crypted)
+    }
+    None -> #(None, bytes)
+  }
+}
+
 /// Writes a request the way the library does, through RC4 once it is on, and
 /// reads the reply: bytes are deciphered as they arrive, in order, until they
 /// make one whole reply.
@@ -74,27 +90,33 @@ pub fn ask(
       command:,
       body: sts_xml.render(body),
     )
-  send(client: client.socket, bytes: case client.sending {
-    Some(stream) -> rc4.crypt(stream, plain)
-    None -> plain
-  })
-  let reply = read_reply(client, <<>>)
+  let #(sending, wire) = crypt_when_on(stream: client.sending, bytes: plain)
+  send(client: client.socket, bytes: wire)
+  let #(receiving, reply) = read_reply(client, <<>>)
   Heard(
-    client: StsClient(..client, next_sequence: client.next_sequence + 1),
+    client: StsClient(
+      ..client,
+      sending:,
+      receiving:,
+      next_sequence: client.next_sequence + 1,
+    ),
     reply:,
   )
 }
 
-fn read_reply(client: StsClient, have: BitArray) -> Reply {
+/// Reads bytes, deciphering each as it arrives and in order, until they make
+/// one whole reply; gives the receiving stream after them and the reply.
+fn read_reply(
+  client: StsClient,
+  have: BitArray,
+) -> #(Option(rc4.Stream), Reply) {
   let assert Ok(bytes) = tcp_client.receive_some(client.socket, wait_ms)
     as "the server did not answer the request"
-  let plain = case client.receiving {
-    Some(stream) -> rc4.crypt(stream, bytes)
-    None -> bytes
-  }
+  let #(receiving, plain) = crypt_when_on(stream: client.receiving, bytes:)
   let all = <<have:bits, plain:bits>>
+  let client = StsClient(..client, receiving:)
   case scripted_client.read_reply(all) {
-    Ok(reply) -> reply
+    Ok(reply) -> #(receiving, reply)
     Error(Nil) -> read_reply(client, all)
   }
 }
@@ -249,18 +271,19 @@ pub fn read_frames(
   frames
 }
 
-/// A frame from the auth server as the client reads it: a 0x76 wrapper is
-/// opened under the base key.
-pub fn as_the_client_reads(sent: Frame) -> Frame {
-  let assert Ok(base) = cipher.new(cipher.base_key) as "the base key"
-  case sent.message_id == encrypted_frame.message_id(AuthWrapper) {
-    True -> {
-      let assert Ok(inner) = encrypted_frame.unwrap(sent, base)
-        as "the client reads 0x76 under the base key"
-      inner
+/// A frame the auth server sent in its 0x76 wrapper, as the client reads it:
+/// opened under the base key. Every auth frame but the hello and the pong
+/// travels so, so a frame that is not a 0x76 fails here.
+pub fn in_the_auth_wrapper(sent: Frame) -> Frame {
+  let assert True = sent.message_id == encrypted_frame.message_id(AuthWrapper)
+    as {
+      "the auth server sent message "
+      <> int.to_string(sent.message_id)
+      <> " bare; the client reads it only inside 0x76"
     }
-    False -> sent
-  }
+  let assert Ok(inner) = encrypted_frame.unwrap(sent, cipher.base())
+    as "the client reads 0x76 under the base key"
+  inner
 }
 
 /// Connects to the auth listener, reads the hello and sends the login request

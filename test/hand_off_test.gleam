@@ -93,11 +93,19 @@ fn ask(
 }
 
 fn anna() -> Holder {
-  Holder(account_id: AccountId(1), login_name: "anna")
+  Holder(
+    account_id: AccountId(1),
+    login_name: "anna",
+    game_account_id: a_guid(0xA1),
+  )
 }
 
 fn ben() -> Holder {
-  Holder(account_id: AccountId(2), login_name: "ben")
+  Holder(
+    account_id: AccountId(2),
+    login_name: "ben",
+    game_account_id: a_guid(0xB2),
+  )
 }
 
 fn a_guid(seed: Int) -> guid.Guid {

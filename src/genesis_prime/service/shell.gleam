@@ -56,13 +56,14 @@
 import genesis_prime/rule_recording.{Taken}
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/step.{
-  type About, type Event, type Rule, About, Asked, CallerId, Effects,
-  EffectsThenAsk, Input, LogError, Now, Started, Stopping,
+  type Event, type Rule, Asked, CallerId, Effects, EffectsThenAsk, Input,
+  LogError, Started, Stopping,
 }
+import genesis_prime/step/runtime
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Name, type Pid}
-import gleam/option.{type Option, None, Some}
+import gleam/option.{type Option}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
@@ -194,13 +195,10 @@ fn initialise(
     |> result.replace_error(NameTaken),
   )
   process.trap_exits(True)
-  use writer <- result.try(case settings.recorder {
-    None -> Ok(None)
-    Some(recorder) ->
-      file.open(recorder, connection: unique_id())
-      |> result.map(Some)
-      |> result.map_error(RecordingNotOpened)
-  })
+  use writer <- result.try(
+    file.open_if(settings.recorder, connection: runtime.unique_id())
+    |> result.map_error(RecordingNotOpened),
+  )
   let rule = settings.rule
   let running =
     take(
@@ -212,7 +210,7 @@ fn initialise(
         callers: dict.new(),
         next_caller: 1,
       ),
-      now: now(),
+      now: runtime.now(),
       event: Started,
     )
   let selector =
@@ -244,14 +242,14 @@ fn handle(
         )
       actor.continue(take(
         running:,
-        now: now(),
+        now: runtime.now(),
         event: Asked(caller: CallerId(number), message:),
       ))
     }
     Exited(exit:) ->
       case exit.pid == running.parent {
         True -> {
-          let now = now()
+          let now = runtime.now()
           actor.continue(take(
             running:,
             now:,
@@ -273,13 +271,9 @@ fn take(
 ) -> Running(settings, state, message, outgoing) {
   let input = Input(now:, event:)
   let #(state, step) = running.settings.rule.step(running.state, input)
-  let writer = case running.writer {
-    None -> None
-    Some(writer) ->
-      case file.append(writer, Taken(input:, step:)) {
-        Ok(writer) -> Some(writer)
-        Error(error) -> recording_failed(error)
-      }
+  let writer = case file.append_if(running.writer, Taken(input:, step:)) {
+    Ok(writer) -> writer
+    Error(error) -> recording_failed(error)
   }
   let running = Running(..running, state:, writer:)
   case step {
@@ -320,7 +314,7 @@ fn carry(
               panic as "a rule replied to a caller it was not asked by, or answered one twice"
           }
         step.Log(line:) -> {
-          log(line.level, line.text, line.about)
+          runtime.log(line.level, line.text, line.about)
           carry(running:, effects: later, ending:)
         }
         step.Stop -> carry(running:, effects: later, ending: True)
@@ -336,18 +330,14 @@ fn carry(
 
 /// Ends the recording and exits with the reason `shutdown`.
 fn stop(running: Running(settings, state, message, outgoing)) -> a {
-  case running.writer {
-    None -> Nil
-    Some(writer) ->
-      case file.finish(writer) {
-        Ok(Nil) -> Nil
-        Error(error) ->
-          log(
-            LogError,
-            "the recording could not be finished: " <> describe(error),
-            no_one(),
-          )
-      }
+  case file.finish_if(running.writer) {
+    Ok(Nil) -> Nil
+    Error(error) ->
+      runtime.log(
+        LogError,
+        "the recording could not be finished: " <> file.describe(error),
+        step.no_one,
+      )
   }
   exit_now(Shutdown)
 }
@@ -355,19 +345,19 @@ fn stop(running: Running(settings, state, message, outgoing)) -> a {
 /// Ends the process over an effect, or an ask, that a service does not carry
 /// out.
 fn refused(what: String) -> a {
-  log(
+  runtime.log(
     LogError,
     "a rule returned " <> what <> ", which the service shell does not carry out",
-    no_one(),
+    step.no_one,
   )
   panic as "a rule returned an effect the service shell does not carry out"
 }
 
 fn recording_failed(error: FileError) -> a {
-  log(
+  runtime.log(
     LogError,
-    "the recording could not be written: " <> describe(error),
-    no_one(),
+    "the recording could not be written: " <> file.describe(error),
+    step.no_one,
   )
   panic as "a service's recording could not be written"
 }
@@ -376,27 +366,8 @@ fn explain(failure: StartFailure) -> String {
   case failure {
     NameTaken -> "the service's name is already registered"
     RecordingNotOpened(error:) ->
-      "the recording could not be opened: " <> describe(error)
+      "the recording could not be opened: " <> file.describe(error)
   }
-}
-
-fn describe(error: FileError) -> String {
-  error.path <> ": " <> error.reason
-}
-
-fn no_one() -> About {
-  About(
-    connection: None,
-    peer: None,
-    account_id: None,
-    character_id: None,
-    map: None,
-    message: None,
-  )
-}
-
-fn now() -> step.Now {
-  Now(monotonic_ms: monotonic_ms(), filetime: filetime())
 }
 
 @external(erlang, "erlang", "send")
@@ -409,15 +380,3 @@ fn send_to(
 /// exits is not ended by an exit signal it sends itself.
 @external(erlang, "erlang", "exit")
 fn exit_now(reason: ExitReason) -> a
-
-@external(erlang, "connection_shell_ffi", "unique_id")
-fn unique_id() -> Int
-
-@external(erlang, "connection_shell_ffi", "monotonic_ms")
-fn monotonic_ms() -> Int
-
-@external(erlang, "connection_shell_ffi", "filetime")
-fn filetime() -> Int
-
-@external(erlang, "connection_shell_ffi", "log")
-fn log(level: step.LogLevel, text: String, about: About) -> Nil

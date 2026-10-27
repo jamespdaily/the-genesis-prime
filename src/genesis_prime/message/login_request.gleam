@@ -19,8 +19,8 @@ pub type LoginRequest {
     build: Int,
     files_digest: Int,
     account_name: String,
-    field_4: BitArray,
-    field_5: BitArray,
+    user_id: BitArray,
+    game_token: BitArray,
     field_6: Int,
     field_7: Int,
     field_8: Int,
@@ -59,8 +59,8 @@ pub fn encode(message: LoginRequest) -> Result(BitArray, EncodeError) {
     message.account_name,
     250,
   )
-  |> bit_stream.write_guid("field_4", message.field_4)
-  |> bit_stream.write_guid("field_5", message.field_5)
+  |> bit_stream.write_guid("user_id", message.user_id)
+  |> bit_stream.write_guid("game_token", message.game_token)
   |> bit_stream.write_unsigned("field_6", message.field_6, 32)
   |> bit_stream.write_unsigned("field_7", message.field_7, 32)
   |> bit_stream.write_unsigned("field_8", message.field_8, 32)
@@ -146,8 +146,8 @@ pub fn decode(body: BitArray) -> Result(LoginRequest, DecodeError) {
     reader,
     250,
   ))
-  use #(field_4, reader) <- result.try(bit_stream.read_guid(reader))
-  use #(field_5, reader) <- result.try(bit_stream.read_guid(reader))
+  use #(user_id, reader) <- result.try(bit_stream.read_guid(reader))
+  use #(game_token, reader) <- result.try(bit_stream.read_guid(reader))
   use #(field_6, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_7, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(field_8, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
@@ -223,8 +223,8 @@ pub fn decode(body: BitArray) -> Result(LoginRequest, DecodeError) {
     build:,
     files_digest:,
     account_name:,
-    field_4:,
-    field_5:,
+    user_id:,
+    game_token:,
     field_6:,
     field_7:,
     field_8:,

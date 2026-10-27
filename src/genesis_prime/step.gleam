@@ -19,7 +19,7 @@
 //// chooses.
 
 import genesis_prime/world_map/map_id.{type MapId}
-import gleam/option.{type Option}
+import gleam/option.{type Option, None}
 
 /// A rule as its shell runs it and a replay folds it. `name` is the rule's
 /// module path and `settings` are made once at start; a recording's header
@@ -81,8 +81,11 @@ pub type Event(message, answer) {
 
 /// What happened to a connection's socket.
 pub type SocketEvent {
-  /// The connection's socket is the process's own.
-  Accepted(connection: ConnectionId, peer: Peer)
+  /// The connection's socket is the process's own. `seed` is 32 bytes from
+  /// the operating system's strong random source, drawn once for the
+  /// connection; every random value the rule needs comes from it
+  /// (genesis_prime/random), so a recording replays them.
+  Accepted(connection: ConnectionId, peer: Peer, seed: BitArray)
   /// Bytes arrived, in the order the socket received them; a read may hold
   /// part of a frame or several frames.
   Read(bytes: BitArray)
@@ -105,6 +108,16 @@ pub type SocketFailure {
   SendTimedOut
   /// Any other reason, as the socket reported it.
   OtherSocketFailure(reason: String)
+}
+
+/// A sentence that says why a socket operation failed, for the log.
+pub fn describe_socket_failure(failure failure: SocketFailure) -> String {
+  case failure {
+    Closed -> "the socket was closed"
+    Reset -> "the peer reset the connection"
+    SendTimedOut -> "the write timed out"
+    OtherSocketFailure(reason:) -> reason
+  }
 }
 
 /// The address and port the client connected from, for logs before login.
@@ -240,6 +253,17 @@ pub type About {
     message: Option(#(String, Int)),
   )
 }
+
+/// What a log line is about when it is about no one in particular.
+pub const no_one =
+  About(
+    connection: None,
+    peer: None,
+    account_id: None,
+    character_id: None,
+    map: None,
+    message: None,
+  )
 
 /// How much a log line matters.
 pub type LogLevel {
