@@ -107,6 +107,23 @@ pub fn execute(
   |> result.replace(Nil)
 }
 
+/// A database of its own for one test: a copy of the migrated template, with
+/// a name no other test has. The run's watcher drops it when the VM ends.
+pub fn new_database(on shared: Shared) -> String {
+  let name = shared.run <> "_" <> int.to_string(unique())
+  let assert Ok(Nil) =
+    execute(
+      on: shared,
+      sql: "create database \""
+        <> name
+        <> "\" template \""
+        <> shared.template
+        <> "\"",
+    )
+    as "a database was not made from the template"
+  name
+}
+
 /// Runs `work` in a process that lives as long as the VM and is linked to
 /// nothing, so a pool the work starts outlives the test that asked. Returns
 /// what the work returned, and panics at once when the work crashes.

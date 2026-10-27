@@ -20,11 +20,14 @@
 
 import genesis_prime/hand_off
 import genesis_prime/service/shell.{type Call} as service_shell
+import genesis_prime/step.{Rule}
 import genesis_prime/store/worker.{type Job}
 import gleam/erlang/process.{type Name}
+import gleam/option.{None}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
+import gleam/otp/supervision
 import pog
 
 /// The names and settings the tree's children are started with, made once
@@ -48,5 +51,28 @@ pub type Settings {
 pub fn start(
   settings settings: Settings,
 ) -> actor.StartResult(supervisor.Supervisor) {
-  todo as "the build follows the shape commit"
+  supervisor.new(supervisor.OneForOne)
+  |> supervisor.restart_tolerance(intensity: 3, period: 10)
+  |> supervisor.add(
+    pog.supervised(settings.pool)
+    |> supervision.restart(supervision.Permanent),
+  )
+  |> supervisor.add(worker.supervised(
+    name: settings.store,
+    pool: pog.named_connection(settings.pool.pool_name),
+  ))
+  |> supervisor.add(
+    service_shell.supervised(service_shell.Settings(
+      rule: Rule(
+        name: "genesis_prime/hand_off",
+        settings: Nil,
+        new: hand_off.new,
+        step: hand_off.step,
+      ),
+      name: settings.hand_off,
+      shutdown_ms: settings.hand_off_shutdown_ms,
+      recorder: None,
+    )),
+  )
+  |> supervisor.start
 }

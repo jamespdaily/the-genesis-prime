@@ -13,6 +13,8 @@ import gleam/erlang/reference
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{Some}
+import pog
 
 pub fn main() -> Nil {
   let folder = case envoy.get("GENESIS_TABLE_DIR") {
@@ -40,5 +42,39 @@ pub fn main() -> Nil {
 /// The tree's settings: the database from the environment, with Postgres's
 /// own defaults for what is not set, and a fresh name for each child.
 fn settings() -> server.Settings {
-  todo as "the build follows the shape commit"
+  let pool = pog.default_config(process.new_name("database_pool"))
+  let pool = from_environment(pool, "PGHOST", pog.host)
+  let pool = from_environment(pool, "PGUSER", pog.user)
+  let pool = from_environment(pool, "PGDATABASE", pog.database)
+  let pool = case envoy.get("PGPORT") {
+    Ok(text) ->
+      case int.parse(text) {
+        Ok(port) -> pog.port(pool, port)
+        Error(Nil) -> panic as "PGPORT is not a port number"
+      }
+    Error(Nil) -> pool
+  }
+  let pool = case envoy.get("PGPASSWORD") {
+    Ok(password) -> pog.password(pool, Some(password))
+    Error(Nil) -> pool
+  }
+  server.Settings(
+    pool:,
+    store: process.new_name("store"),
+    hand_off: process.new_name("hand_off"),
+    hand_off_shutdown_ms: 5000,
+  )
+}
+
+/// The pool's setting from an environment variable, or the pool as it is
+/// when the variable is not set.
+fn from_environment(
+  pool: pog.Config,
+  variable: String,
+  set: fn(pog.Config, String) -> pog.Config,
+) -> pog.Config {
+  case envoy.get(variable) {
+    Ok(value) -> set(pool, value)
+    Error(Nil) -> pool
+  }
 }

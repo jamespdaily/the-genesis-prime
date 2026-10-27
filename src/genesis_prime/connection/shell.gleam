@@ -67,8 +67,9 @@
 ////   an answer or DOWN of no kept tag   ─▶ dropped
 //// ```
 ////
-////   A worker answers late only when its answer left before the shell's exit
-////   reached it. The `Now` of `Answered` is read when the outcome is known.
+////   A step that follows `StoppedWaiting` and ends in another ask does not
+////   make it: `Stopping` is the next input. A worker answers late only when
+////   its answer left before the shell's exit reached it. The `Now` of `Answered` is read when the outcome is known.
 ////   Bytes the client sent during the ask are read only after it, since the
 ////   socket is active once and is not re-armed while the shell waits.
 //// - **The directory's own wait.** `directory` runs before the wait begins,
@@ -86,14 +87,18 @@
 
 import genesis_prime/rule_recording.{Taken}
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
-import genesis_prime/service/shell.{type Sent} as service_shell
+import genesis_prime/service/shell.{type Sent, ToService, ToWorker}
 import genesis_prime/step.{
-  type About, type Effect, type Event, type LogLevel, type Peer, type Rule,
-  type SocketFailure, About, Accepted, ConnectionId, Effects, EffectsThenAsk,
-  Input, LogError, Now, PeerClosed, ReadFailed, Socket, Stopping, WriteFailed,
+  type About, type Ask, type AskId, type Effect, type Event, type LogLevel,
+  type Peer, type Rule, type SocketFailure, About, Accepted, Answer, Answered,
+  AnsweredLate, ConnectionId, Effects, EffectsThenAsk, EndedBeforeAnswer, Input,
+  LogError, NoAnswerInTime, NotRunning, Now, PeerClosed, ReadFailed, Socket,
+  StoppedWaiting, Stopping, WriteFailed,
 }
+import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Pid}
+import gleam/erlang/reference.{type Reference}
 import gleam/option.{type Option, None, Some}
 
 /// What every connection of one listener is started with.
@@ -125,10 +130,34 @@ type Arrived {
   ClosedByPeer
   FailedToRead(failure: SocketFailure)
   StopRequested
+  /// The answer of a kept ask, by its tag.
+  LateAnswer(tag: Reference)
+  /// The end of a kept ask's target, by the ask's tag.
+  KeptEnded(tag: Reference)
+}
+
+/// How an ask's wait ended, as `connection_shell_ffi` sees it.
+type Waited(answer) {
+  Replied(answer: answer)
+  TargetEnded
+  ParentExited
+  DeadlinePassed
+}
+
+/// An ask whose outcome came without an answer: its tag and its monitor are
+/// kept until the target answers or ends.
+type Kept {
+  Kept(ask: AskId, monitor: Reference)
+}
+
+/// Why a process is asked to exit; the atom `shutdown`.
+type ExitReason {
+  Shutdown
 }
 
 /// A running connection: its socket, its parent, its settings, the rule's
-/// state and the recording file, when there is one.
+/// state, the recording file when there is one, the asks kept by their tags
+/// and the stop deadline of a stop that arrived during an ask.
 type Running(settings, state, message, answer, outgoing, request) {
   Running(
     socket: ClientSocket,
@@ -136,6 +165,8 @@ type Running(settings, state, message, answer, outgoing, request) {
     settings: Settings(settings, state, message, answer, outgoing, request),
     state: state,
     writer: Option(file.Writer),
+    kept: Dict(Reference, Kept),
+    stopping: Option(Int),
   )
 }
 
@@ -173,6 +204,8 @@ pub fn run(
       settings:,
       state: rule.new(rule.settings),
       writer:,
+      kept: dict.new(),
+      stopping: None,
     )
   take(
     running:,
@@ -199,29 +232,42 @@ fn take(
   }
   let running = Running(..running, state:, writer:)
   case step {
-    Effects(effects:) -> carry(running, effects)
-    EffectsThenAsk(..) -> not_built(running.socket, "an ask")
+    Effects(effects:) -> carry(running:, effects:, ask: None)
+    EffectsThenAsk(effects:, ask:) -> carry(running:, effects:, ask: Some(ask))
   }
 }
 
-/// Carries out the effects in order, then waits for the next input.
+/// Carries out the effects in order, then makes the ask if there is one, or
+/// waits for the next input. A stop that arrived during an ask is the next
+/// input before either.
 fn carry(
-  running: Running(settings, state, message, answer, outgoing, request),
-  effects: List(Effect(outgoing)),
+  running running: Running(settings, state, message, answer, outgoing, request),
+  effects effects: List(Effect(outgoing)),
+  ask ask: Option(Ask(request)),
 ) -> Nil {
   case effects {
-    [] -> wait(running)
+    [] ->
+      case running.stopping, ask {
+        Some(deadline_ms), _ ->
+          take(
+            running: Running(..running, stopping: None),
+            now: now(),
+            event: Stopping(deadline_ms:),
+          )
+        None, None -> wait(running)
+        None, Some(ask) -> make_ask(running, ask)
+      }
     [effect, ..later] ->
       case effect {
         step.Write(bytes:) ->
           case send(running.socket, bytes) {
-            Ok(Nil) -> carry(running, later)
+            Ok(Nil) -> carry(running:, effects: later, ask:)
             Error(failure) ->
               take(running:, now: now(), event: Socket(WriteFailed(failure:)))
           }
         step.Log(line:) -> {
           log(line.level, line.text, line.about)
-          carry(running, later)
+          carry(running:, effects: later, ask:)
         }
         step.Stop -> stop(running)
         step.Send(..) -> not_built(running.socket, "Send")
@@ -241,23 +287,121 @@ fn wait(
   case read_once(running.socket) {
     Error(failure) ->
       take(running:, now: now(), event: Socket(ReadFailed(failure:)))
-    Ok(Nil) -> {
-      let arrived = next_event(running.socket, running.parent)
-      let now = now()
-      case arrived {
-        Read(bytes:) -> take(running:, now:, event: Socket(step.Read(bytes:)))
-        ClosedByPeer -> take(running:, now:, event: Socket(PeerClosed))
-        FailedToRead(failure:) ->
-          take(running:, now:, event: Socket(ReadFailed(failure:)))
-        StopRequested ->
-          take(
-            running:,
-            now:,
-            event: Stopping(deadline_ms: stop_deadline(now, running.settings)),
-          )
-      }
-    }
+    Ok(Nil) -> next(running)
   }
+}
+
+/// Takes what reaches the process next as an input. The end of a kept ask's
+/// target is no input; it only drops the tag.
+fn next(
+  running: Running(settings, state, message, answer, outgoing, request),
+) -> Nil {
+  let arrived = next_event(running.socket, running.parent, running.kept)
+  let now = now()
+  case arrived {
+    Read(bytes:) -> take(running:, now:, event: Socket(step.Read(bytes:)))
+    ClosedByPeer -> take(running:, now:, event: Socket(PeerClosed))
+    FailedToRead(failure:) ->
+      take(running:, now:, event: Socket(ReadFailed(failure:)))
+    StopRequested ->
+      take(
+        running:,
+        now:,
+        event: Stopping(deadline_ms: stop_deadline(now, running.settings)),
+      )
+    LateAnswer(tag:) -> {
+      let assert Ok(Kept(ask:, monitor:)) = dict.get(running.kept, tag)
+        as "an answer is taken as late only for a tag the shell kept"
+      unwatch(monitor)
+      take(
+        running: Running(..running, kept: dict.delete(running.kept, tag)),
+        now:,
+        event: AnsweredLate(ask:),
+      )
+    }
+    KeptEnded(tag:) ->
+      next(Running(..running, kept: dict.delete(running.kept, tag)))
+  }
+}
+
+/// Makes an ask through the settings' directory and waits for its outcome,
+/// taking no other input.
+fn make_ask(
+  running: Running(settings, state, message, answer, outgoing, request),
+  ask: Ask(request),
+) -> Nil {
+  let tag = reference.new()
+  let shell = process.self()
+  let reply = fn(answer) { send_answer(shell, tag, answer) }
+  case running.settings.directory(ask.request, reply) {
+    Error(Nil) ->
+      take(
+        running:,
+        now: now(),
+        event: Answered(ask: ask.ask, outcome: NotRunning),
+      )
+    Ok(sent) -> wait_for_answer(running:, ask:, tag:, sent:)
+  }
+}
+
+/// Watches the process the ask went to and waits for the ask's outcome. An
+/// ask that ends without an answer, by its deadline or the server's stop, is
+/// kept by its tag until the target answers or ends.
+fn wait_for_answer(
+  running running: Running(settings, state, message, answer, outgoing, request),
+  ask ask: Ask(request),
+  tag tag: Reference,
+  sent sent: Sent,
+) -> Nil {
+  let monitor = watch(target(sent))
+  let waited = await_answer(tag, monitor, running.parent, ask.deadline_ms)
+  let known = now()
+  let #(running, outcome) = case waited {
+    Replied(answer:) -> #(running, Answer(answer:))
+    TargetEnded -> #(running, EndedBeforeAnswer)
+    DeadlinePassed -> {
+      end_worker(sent)
+      #(keep(running:, tag:, ask: ask.ask, monitor:), NoAnswerInTime)
+    }
+    ParentExited -> #(
+      Running(
+        ..keep(running:, tag:, ask: ask.ask, monitor:),
+        stopping: Some(stop_deadline(known, running.settings)),
+      ),
+      StoppedWaiting,
+    )
+  }
+  take(running:, now: known, event: Answered(ask: ask.ask, outcome:))
+}
+
+/// The process an ask went to.
+fn target(sent: Sent) -> Pid {
+  case sent {
+    ToService(pid:) -> pid
+    ToWorker(pid:) -> pid
+  }
+}
+
+/// Ends the worker an ask went to, so no work goes on for an asker that gave
+/// up; a service is left running.
+fn end_worker(sent: Sent) -> Nil {
+  case sent {
+    ToWorker(pid:) -> {
+      exit_process(pid, Shutdown)
+      Nil
+    }
+    ToService(..) -> Nil
+  }
+}
+
+/// Keeps an ask's tag and monitor until its target answers or ends.
+fn keep(
+  running running: Running(settings, state, message, answer, outgoing, request),
+  tag tag: Reference,
+  ask ask: AskId,
+  monitor monitor: Reference,
+) -> Running(settings, state, message, answer, outgoing, request) {
+  Running(..running, kept: dict.insert(running.kept, tag, Kept(ask:, monitor:)))
 }
 
 /// The deadline a stopping rule is given: the shutdown time from now, less
@@ -338,7 +482,31 @@ fn handshake(ranch_ref: Dynamic, send_deadline_ms: Int) -> ClientSocket
 fn read_once(socket: ClientSocket) -> Result(Nil, SocketFailure)
 
 @external(erlang, "connection_shell_ffi", "next_event")
-fn next_event(socket: ClientSocket, parent: Pid) -> Arrived
+fn next_event(
+  socket: ClientSocket,
+  parent: Pid,
+  kept: Dict(Reference, Kept),
+) -> Arrived
+
+@external(erlang, "connection_shell_ffi", "watch")
+fn watch(pid: Pid) -> Reference
+
+@external(erlang, "connection_shell_ffi", "unwatch")
+fn unwatch(monitor: Reference) -> Nil
+
+@external(erlang, "connection_shell_ffi", "send_answer")
+fn send_answer(shell: Pid, tag: Reference, answer: answer) -> Nil
+
+@external(erlang, "connection_shell_ffi", "await_answer")
+fn await_answer(
+  tag: Reference,
+  monitor: Reference,
+  parent: Pid,
+  deadline_ms: Int,
+) -> Waited(answer)
+
+@external(erlang, "erlang", "exit")
+fn exit_process(pid: Pid, reason: ExitReason) -> Bool
 
 @external(erlang, "connection_shell_ffi", "send")
 fn send(socket: ClientSocket, bytes: BitArray) -> Result(Nil, SocketFailure)

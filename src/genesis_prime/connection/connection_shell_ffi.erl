@@ -1,14 +1,16 @@
-%% Ranch's protocol callback for a connection shell, and the socket, clock and
-%% logger calls the shell makes. Ranch calls start_link/3, an Erlang behaviour
-%% callback Gleam cannot declare; the process it starts hands over to
+%% Ranch's protocol callback for a connection shell, and the socket, clock,
+%% logger and ask calls the shell makes; the service shell uses the clock and
+%% logger calls too. Ranch calls start_link/3, an Erlang behaviour callback
+%% Gleam cannot declare; the process it starts hands over to
 %% genesis_prime@connection@shell:run/3. Each function returns the Gleam shape
 %% its caller declares.
 -module(connection_shell_ffi).
 -behaviour(ranch_protocol).
 
 -export([start_link/3, start_listener/4, listener_port/1, handshake/2,
-         read_once/1, next_event/2, send/2, close/1, peer/1, unique_id/0,
-         monotonic_ms/0, filetime/0, log/3]).
+         read_once/1, next_event/3, send/2, close/1, peer/1, unique_id/0,
+         monotonic_ms/0, filetime/0, log/3, watch/1, unwatch/1,
+         send_answer/3, await_answer/4]).
 
 %% FILETIME counts 100-nanosecond intervals from 1601-01-01; the Unix epoch is
 %% this many of them after it.
@@ -64,14 +66,67 @@ read_once(Socket) ->
     end.
 
 %% Waits for what reaches the process next: a read, the peer's close, a read
-%% failure, or the parent's stop. Another process's exit is not the shell's.
-next_event(Socket, Parent) ->
+%% failure, or the parent's stop. Kept maps the tag of each ask whose outcome
+%% was NoAnswerInTime or StoppedWaiting to {kept, Ask, Monitor}: its late answer
+%% comes as {late_answer, Tag} and its target's end as {kept_ended, Tag}. The
+%% answer or end of a tag that is not kept, and another process's exit, are not
+%% the shell's and are dropped, so the mailbox never fills with them.
+next_event(Socket, Parent, Kept) ->
     receive
         {tcp, Socket, Bytes} -> {read, Bytes};
         {tcp_closed, Socket} -> closed_by_peer;
         {tcp_error, Socket, Reason} -> {failed_to_read, failure(Reason)};
         {'EXIT', Parent, _Reason} -> stop_requested;
-        {'EXIT', _Other, _Reason} -> next_event(Socket, Parent)
+        {'EXIT', _Other, _Reason} -> next_event(Socket, Parent, Kept);
+        {ask_answer, Tag, _Answer} when is_map_key(Tag, Kept) ->
+            {late_answer, Tag};
+        {ask_answer, _Tag, _Answer} -> next_event(Socket, Parent, Kept);
+        {'DOWN', Monitor, process, _Pid, _Reason} ->
+            case kept_with_monitor(Monitor, Kept) of
+                {ok, Tag} -> {kept_ended, Tag};
+                error -> next_event(Socket, Parent, Kept)
+            end
+    end.
+
+kept_with_monitor(Monitor, Kept) ->
+    case [Tag || {Tag, {kept, _Ask, Kept_monitor}} <- maps:to_list(Kept),
+                 Kept_monitor =:= Monitor] of
+        [Tag] -> {ok, Tag};
+        [] -> error
+    end.
+
+%% Starts watching the process an ask went to.
+watch(Pid) ->
+    erlang:monitor(process, Pid).
+
+%% Stops watching, and drops a DOWN already sent.
+unwatch(Monitor) ->
+    erlang:demonitor(Monitor, [flush]),
+    nil.
+
+%% What an ask's target calls to answer it; it never fails, and an answer to a
+%% shell that has ended is dropped.
+send_answer(Shell, Tag, Answer) ->
+    Shell ! {ask_answer, Tag, Answer},
+    nil.
+
+%% Waits for the outcome of an ask: the answer, the target's end, the parent's
+%% exit, or the deadline, on the monotonic clock. A deadline already passed ends
+%% the wait at once, whatever has arrived. Only this ask's tag and monitor and
+%% the parent's exit are taken from the mailbox.
+await_answer(Tag, Monitor, Parent, DeadlineMs) ->
+    Remaining = DeadlineMs - erlang:monotonic_time(millisecond),
+    case Remaining =< 0 of
+        true -> deadline_passed;
+        false ->
+            receive
+                {ask_answer, Tag, Answer} ->
+                    erlang:demonitor(Monitor, [flush]),
+                    {replied, Answer};
+                {'DOWN', Monitor, process, _Pid, _Reason} -> target_ended;
+                {'EXIT', Parent, _Reason} -> parent_exited
+            after Remaining -> deadline_passed
+            end
     end.
 
 %% Writes the bytes; a write that waits past the socket's send deadline fails

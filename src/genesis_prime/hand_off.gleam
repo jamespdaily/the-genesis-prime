@@ -14,7 +14,10 @@
 //// the service needs no timer.
 
 import genesis_prime/login/guid.{type Guid}
-import genesis_prime/step.{type Input, type Step}
+import genesis_prime/step.{
+  type Input, type Step, Answered, AnsweredLate, Asked, Effects, Reply, Socket,
+  Started, Stop, Stopping, TimerFired, WatchEnded, Woken,
+}
 import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
 
@@ -63,8 +66,8 @@ pub opaque type State {
 }
 
 /// The hand-off's first state: no keys.
-pub fn new(settings: Nil) -> State {
-  todo as "the build follows the shape commit"
+pub fn new(_settings: Nil) -> State {
+  State(keys: dict.new())
 }
 
 /// One input in, the new state and what the shell must do out. `Asked` is
@@ -74,5 +77,59 @@ pub fn step(
   state state: State,
   input input: Input(Message, Nil),
 ) -> #(State, Step(Answer, Nil)) {
-  todo as "the build follows the shape commit"
+  let now = input.now.monotonic_ms
+  let state = drop_expired(state, now)
+  case input.event {
+    Started -> #(state, Effects([]))
+    Stopping(..) -> #(state, Effects([Stop]))
+    Asked(caller:, message:) -> {
+      let #(state, answer) = answer(state:, now:, message:)
+      #(state, Effects([Reply(caller, answer)]))
+    }
+    Socket(..)
+    | Woken(..)
+    | WatchEnded(..)
+    | TimerFired(..)
+    | Answered(..)
+    | AnsweredLate(..) ->
+      panic as "the hand-off takes Started, Asked and Stopping only; its shell gives no Socket, Woken, WatchEnded, TimerFired, Answered or AnsweredLate"
+  }
+}
+
+/// How many keys the state holds. It exists so a test can see that an expired
+/// key is dropped by any input, without a `Take` for that key.
+pub fn key_count(state: State) -> Int {
+  dict.size(state.keys)
+}
+
+/// A key lives until its expiry: at the expiry time it is gone.
+fn drop_expired(state: State, now: Int) -> State {
+  State(keys: dict.filter(state.keys, fn(_key, kept) { kept.1 > now }))
+}
+
+fn answer(
+  state state: State,
+  now now: Int,
+  message message: Message,
+) -> #(State, Answer) {
+  case message {
+    Put(key:, holder:, lifetime_ms:) ->
+      case dict.has_key(state.keys, key) {
+        True -> #(state, AlreadyHeld)
+        False -> #(
+          State(
+            keys: dict.insert(state.keys, key, #(holder, now + lifetime_ms)),
+          ),
+          Kept,
+        )
+      }
+    Take(key:) ->
+      case dict.get(state.keys, key) {
+        Ok(#(holder, _expiry)) -> #(
+          State(keys: dict.delete(state.keys, key)),
+          Taken(holder:),
+        )
+        Error(Nil) -> #(state, NoHolder)
+      }
+  }
 }
