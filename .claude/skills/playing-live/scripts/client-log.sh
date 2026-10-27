@@ -20,14 +20,16 @@ set -euo pipefail
 
 usage() { sed -n '5,10p' "$0" >&2; exit 2; }
 
-# Each failure line as: kind, message id (decimal, or - when the line has none), the line.
-# The texts are the client's own (facts 0x140331990, 0x140331620, 0x1403321a0, 0x1403374e0,
-# 0x140015a90).
+# Each failure line as: kind, message id (decimal, or - when the line has none), the line. A line
+# found in more than one file (an error report holds a copy of the log) is listed once. The texts
+# are the client's own (facts 0x140331990, 0x140331620, 0x1403321a0, 0x1403374e0, 0x140015a90).
 failures() {
   awk '
+    seen[$0]++ { next }
     function id(line,   m) {
       if (match(line, /Message Id #[0-9]+/)) return substr(line, RSTART + 12, RLENGTH - 12)
       if (match(line, /<[0-9]+,/)) return substr(line, RSTART + 1, RLENGTH - 2)
+      if (match(line, /\[[0-9]+, /)) return substr(line, RSTART + 1, RLENGTH - 3)
       return "-"
     }
     function show(kind) { printf "%-16s %6s  %s\n", kind, id($0), $0; count++ }
@@ -40,6 +42,8 @@ failures() {
     /Unhandled network message/                   { show("unhandled"); next }
     /Message offset invalid!|Message size exceeds (remaining|limit)!|\(Network\) Overflow/ { show("record space"); next }
     /Disconnecting connectionId/                  { show("disconnected"); next }
+    /Invalid TConnectionId/                       { show("bad connection"); next }
+    / without wrapper/                            { show("no wrapper"); next }
     END { printf "%d failure line(s)\n", count }
   ' "$@"
 }
@@ -60,6 +64,7 @@ options=(-o BatchMode=yes -o ConnectTimeout=10)
 on_pc() {
   local encoded
   encoded=$(printf '%s' "\$ProgressPreference = 'SilentlyContinue'
+\$ErrorActionPreference = 'Stop'
 $1" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n')
   ssh "${options[@]}" "$GENESIS_PLAY_PC" "powershell -NoProfile -NonInteractive -EncodedCommand $encoded" | tr -d '\r'
 }
@@ -73,9 +78,12 @@ fi
 
 [ -s "$folder/since.txt" ] || { echo "client-log: no $folder/since.txt; run 'client-log.sh start $folder' before the session" >&2; exit 1; }
 since=$(cat "$folder/since.txt")
-names=$(on_pc "\$since = [datetime]::Parse('$since')
+# Both go into single-quoted PowerShell text, where an apostrophe is written twice.
+quoted_since=${since//\'/\'\'}
+quoted_dir=${GENESIS_PLAY_CLIENT_DIR//\'/\'\'}
+names=$(on_pc "\$since = [datetime]::Parse('$quoted_since')
 foreach (\$part in 'Logs', 'Errors') {
-  \$path = Join-Path '$GENESIS_PLAY_CLIENT_DIR' \$part
+  \$path = Join-Path '$quoted_dir' \$part
   if (Test-Path \$path) {
     Get-ChildItem \$path -File | Where-Object { \$_.LastWriteTime -gt \$since } | ForEach-Object { \$part + '/' + \$_.Name }
   }
@@ -90,13 +98,14 @@ ssh "${options[@]}" "$GENESIS_PLAY_PC" "tar -cf - -C \"$GENESIS_PLAY_CLIENT_DIR\
 echo "copied to $folder:"
 sed 's/^/  /' <<< "$names"
 
-logs=("$folder"/Logs/*.txt)
-if [ -e "${logs[0]}" ]; then
-  failures "${logs[@]}" | tee "$folder/failures.txt"
-else
-  # Without a log file, the error reports' copies of the in-memory log are all there is.
-  echo "client-log: no log file; was the client started with -logFile -logFlush? Reading the error reports' logs instead." >&2
-  reports=("$folder"/Errors/*.log)
-  [ -e "${reports[0]}" ] || { echo "client-log: no error report either" >&2; exit 1; }
-  failures "${reports[@]}" | tee "$folder/failures.txt"
-fi
+# Only this collection's files: a folder used before holds earlier sessions' files too. The error
+# reports' logs are read as well, since a run without -logFile leaves only those.
+sources=()
+while read -r name; do
+  case "$name" in
+    Logs/*.txt | Errors/*.log) sources+=("$folder/$name") ;;
+  esac
+done <<< "$names"
+grep -q '^Logs/' <<< "$names" || echo "client-log: no log file; was the client started with -logFile -logFlush? Reading the error reports' logs only." >&2
+[ ${#sources[@]} -gt 0 ] || { echo "client-log: no log file and no error report log" >&2; exit 1; }
+failures "${sources[@]}" | tee "$folder/failures.txt"
