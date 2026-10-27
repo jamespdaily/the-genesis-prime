@@ -1,8 +1,10 @@
 //// Starts the server: it loads the client's game tables from the folder named
 //// by GENESIS_TABLE_DIR, stopping at once with the reason when one does not
-//// load, then keeps the node alive. It serves no client.
+//// load, then starts the supervision tree and keeps the node alive. It serves
+//// no client.
 
 import envoy
+import genesis_prime/server
 import genesis_prime/table
 import genesis_prime/table/loader/store
 import gleam/erlang/process
@@ -21,13 +23,14 @@ pub fn main() -> Nil {
   case
     store.load(under: reference.new(), from: folder, entries:, requirements: [])
   {
-    Ok(_tables) ->
-      io.println(
-        "the server loaded "
-        <> int.to_string(list.length(entries))
-        <> " game tables and serves no client",
-      )
+    Ok(_tables) -> Nil
     Error(error) -> panic as store.describe(error)
   }
+  let assert Ok(_) = server.start() as "the supervision tree did not start"
+  io.println(
+    "the server loaded "
+    <> int.to_string(list.length(entries))
+    <> " game tables and serves no client",
+  )
   process.sleep_forever()
 }

@@ -50,6 +50,9 @@ avoid_panic = "off"
 # the shell and rule; until then nothing calls them.
 "src/genesis_prime/connection/frame.gleam" = ["unused_exports"]
 "src/genesis_prime/login/sts_message.gleam" = ["unused_exports"]
+# The recording's types are the shape the shell's record mode and the replay
+# are built on; no module records or replays, so no other module uses them.
+"src/genesis_prime/rule_recording.gleam" = ["unused_exports"]
 # The test runner finds public `_test` functions by name, and test-support
 # modules are shared across test modules, so no other module calls them.
 "test/**/*.gleam" = ["unused_exports"]
@@ -61,6 +64,7 @@ effectful_modules = [
   { module = "genesis_prime", reason = "loads the game tables and keeps the node alive" },
   { module = "genesis_prime/table/loader/store", reason = "reads the table files and keeps the loaded tables in persistent terms" },
   { module = "genesis_prime/login/rc4", reason = "OTP's crypto holds the state of each RC4 stream" },
+  { module = "genesis_prime/server", reason = "starts the supervision tree" },
 ]
 # The game domains: each top-level folder or module under src/genesis_prime/.
 domains = [
@@ -69,6 +73,10 @@ domains = [
   { module = "genesis_prime/message", reason = "the generated codec for every packet layout" },
   { module = "genesis_prime/login", reason = "the login's protocol: SRP, the STS wire and its messages" },
   { module = "genesis_prime/table", reason = "the client's game tables, loaded once at start" },
+  { module = "genesis_prime/server", reason = "the supervision tree every process starts under" },
+  { module = "genesis_prime/step", reason = "the contract between each process's rule and its shell" },
+  { module = "genesis_prime/rule_recording", reason = "the file a rule's inputs and steps are recorded in, for replay" },
+  { module = "genesis_prime/world_map", reason = "the maps players share: their keys, rules and processes" },
 ]
 # Erlang functions a rule module's externals may call.
 pure_erlang = [
