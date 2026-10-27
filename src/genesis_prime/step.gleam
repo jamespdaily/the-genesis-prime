@@ -21,6 +21,19 @@
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/option.{type Option}
 
+/// A rule as its shell runs it and a replay folds it. `name` is the rule's
+/// module path and `settings` are made once at start; a recording's header
+/// holds both. This is the shell's view of a rule, so it holds functions; no
+/// type a rule takes or returns does.
+pub type Rule(settings, state, message, answer, outgoing, request) {
+  Rule(
+    name: String,
+    settings: settings,
+    new: fn(settings) -> state,
+    step: fn(state, Input(message, answer)) -> #(state, Step(outgoing, request)),
+  )
+}
+
 /// The time an input reached the shell, read once as the shell takes it, so
 /// every part of one step reads the same time.
 pub type Now {
