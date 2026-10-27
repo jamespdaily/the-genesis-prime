@@ -3,11 +3,15 @@
 %% caller declares.
 -module(step_runtime_ffi).
 
--export([unique_id/0, monotonic_ms/0, filetime/0, log/3]).
+-export([unique_id/0, monotonic_ms/0, filetime/0, log/3, show_info_lines/0]).
 
 %% FILETIME counts 100-nanosecond intervals from 1601-01-01; the Unix epoch is
 %% this many of them after it.
 -define(FILETIME_AT_UNIX_EPOCH, 116444736000000000).
+
+show_info_lines() ->
+    ok = logger:set_primary_config(level, info),
+    nil.
 
 unique_id() ->
     erlang:unique_integer([positive, monotonic]).
