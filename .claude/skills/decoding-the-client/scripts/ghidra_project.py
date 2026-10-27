@@ -1,8 +1,9 @@
 """Opens the analysed Ghidra project of the client, making it on first use.
 
 The first open imports the client, applies the seed, runs Ghidra's default
-analysis and saves the project. Every later open reads the saved project and
-runs no analysis.
+analysis and saves the project; it needs a seed file, or UNSEEDED said outright,
+and raises SeedRequired with neither, before anything is made. Every later open
+reads the saved project and runs no analysis. open_existing never makes one.
 """
 
 import time
@@ -14,6 +15,24 @@ from ghidra_env import Settings
 
 PROJECT_NAME = "WildStar"
 PROGRAM_NAME = "WildStar64.exe"
+
+
+class SeedRequired(Exception):
+    """A first import was asked for with no seed file and no UNSEEDED."""
+
+
+class ProjectMissing(Exception):
+    """open_existing found no project to open; the message names the folder."""
+
+
+class Unseeded:
+    """The explicit choice to import and analyse the client with no seed."""
+
+    def __repr__(self) -> str:
+        return "UNSEEDED"
+
+
+UNSEEDED = Unseeded()
 
 
 @dataclass
@@ -48,8 +67,25 @@ def _consume(project):
     return pyghidra.consume_program(project, "/" + PROGRAM_NAME)
 
 
-def open_project(settings: Settings, seed_path: Path | None) -> Opened:
-    """Starts Ghidra through PyGhidra (once per process) and opens the project."""
+def open_project(settings: Settings, seed_path: "Path | Unseeded | None") -> Opened:
+    """Starts Ghidra through PyGhidra (once per process) and opens the project, making
+    it from the seed file, or from none when seed_path is UNSEEDED, when it does not
+    exist. Raises SeedRequired, having made nothing, when it must be made and seed_path is None."""
+    if seed_path is None and not (settings.project_dir / (PROJECT_NAME + ".gpr")).is_file():
+        raise SeedRequired(
+            "there is no project in %s; its first import needs a seed file, or UNSEEDED said outright" % settings.project_dir
+        )
+    return _open(settings, seed_path, make=True)
+
+
+def open_existing(settings: Settings) -> Opened:
+    """Opens the project that exists; raises ProjectMissing, having made nothing, when there is none."""
+    if not (settings.project_dir / (PROJECT_NAME + ".gpr")).is_file():
+        raise ProjectMissing("there is no project in %s; it is made by the first start of ghidra_query.py" % settings.project_dir)
+    return _open(settings, None, make=False)
+
+
+def _open(settings: Settings, seed_path: "Path | Unseeded | None", make: bool) -> Opened:
     started = time.monotonic()
     import pyghidra
 
@@ -58,10 +94,14 @@ def open_project(settings: Settings, seed_path: Path | None) -> Opened:
     from ghidra.program.util import GhidraProgramUtilities
 
     settings.project_dir.mkdir(parents=True, exist_ok=True)
-    project = pyghidra.open_project(settings.project_dir, PROJECT_NAME, create=True)
+    project = pyghidra.open_project(settings.project_dir, PROJECT_NAME, create=make)
     try:
         report = None
         if project.getProjectData().getFile("/" + PROGRAM_NAME) is None:
+            if not make or seed_path is None:
+                raise SeedRequired(
+                    "the project in %s holds no program, and its import needs a seed file or UNSEEDED" % settings.project_dir
+                )
             report = _import_and_analyse(project, settings, seed_path)
         program, consumer = _consume(project)
     except BaseException:
@@ -77,7 +117,7 @@ def open_project(settings: Settings, seed_path: Path | None) -> Opened:
     return Opened(program, report is not None, report, time.monotonic() - started, project, consumer)
 
 
-def _import_and_analyse(project, settings: Settings, seed_path: Path | None) -> SeedReport:
+def _import_and_analyse(project, settings: Settings, seed_path: "Path | Unseeded") -> SeedReport:
     """Import, seed, analyse, save; the project is reopened from disk afterwards."""
     import pyghidra
 
@@ -86,7 +126,7 @@ def _import_and_analyse(project, settings: Settings, seed_path: Path | None) -> 
         results.save(pyghidra.task_monitor())
     program, consumer = _consume(project)
     try:
-        lines = seed.read_seed(seed_path) if seed_path is not None else []
+        lines = [] if seed_path is UNSEEDED else seed.read_seed(seed_path)
         report = apply_seed(program, lines)
         pyghidra.analyze(program)
         program.save("Analysed", pyghidra.task_monitor())

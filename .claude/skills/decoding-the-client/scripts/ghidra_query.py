@@ -4,9 +4,11 @@ Reads one JSON request per line on stdin and writes one JSON reply per line on
 stdout, until stdin closes. A bad request gets an error reply; the process
 goes on. Run with the pinned Python and the environment ghidra_env reads.
 
-Start:    ghidra_query.py [--seed PATH]; --seed names the seed file and is used
-          only when the project does not exist yet, so the first start imports,
-          seeds, analyses and saves, and later starts only open it.
+Start:    ghidra_query.py [--seed PATH | --unseeded]; --seed names the seed file and is
+          used only when the project does not exist yet, so the first start imports,
+          seeds, analyses and saves, and later starts only open it. A first start
+          needs --seed or --unseeded (an import with no seed, said outright) and
+          refuses to import with neither.
 
 Request:  {"id": 1, "kind": "callers", "function": "0x140663030"}
 Reply:    {"id": 1, "ok": true, "answer": [...], "ms": 0.4}
@@ -266,7 +268,11 @@ def serve(opened, lines, out) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Answers JSON requests about the client, one per line on stdin.")
-    parser.add_argument("--seed", type=Path, help="the seed file, used only when the project does not exist yet")
+    seeding = parser.add_mutually_exclusive_group()
+    seeding.add_argument("--seed", type=Path, help="the seed file, used only when the project does not exist yet")
+    seeding.add_argument(
+        "--unseeded", action="store_true", help="import with no seed when the project does not exist yet"
+    )
     arguments = parser.parse_args()
     try:
         settings = ghidra_env.settings_from_env(os.environ)
@@ -275,7 +281,10 @@ def main() -> None:
         sys.exit("ghidra_query: %s" % error)
     import ghidra_project
 
-    opened = ghidra_project.open_project(settings, arguments.seed)
+    try:
+        opened = ghidra_project.open_project(settings, ghidra_project.UNSEEDED if arguments.unseeded else arguments.seed)
+    except ghidra_project.SeedRequired as error:
+        sys.exit("ghidra_query: %s" % error)
     try:
         _strings(opened.program)
         serve(opened, sys.stdin, sys.stdout)

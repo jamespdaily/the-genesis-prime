@@ -2,9 +2,10 @@
 
 Read-only by default: reports, for each record with a name, whether its
 function exists and what it is called now. With GHIDRA_WRITE=1 it creates a
-missing function, renames each one and saves the project. Run with the pinned
-Python and the environment ghidra_env reads, while no query process holds the
-project open.
+missing function, renames each one and saves the project. Either way it opens
+only the project that exists, and exits naming the folder when there is none:
+the first start of ghidra_query.py makes it. Run with the pinned Python and the
+environment ghidra_env reads, while no query process holds the project open.
 
 Usage: python3 -I name_functions.py
 """
@@ -84,7 +85,10 @@ def apply_names(program, pairs: list[tuple[int, str]], write: bool) -> list[Outc
 def main() -> int:
     pairs = name_pairs(check_facts.load(check_facts.FACT_FILE))
     write = os.environ.get("GHIDRA_WRITE") == "1"
-    opened = ghidra_project.open_project(ghidra_env.settings_from_env(os.environ), None)
+    try:
+        opened = ghidra_project.open_existing(ghidra_env.settings_from_env(os.environ))
+    except (ghidra_env.WrongVersion, ghidra_project.ProjectMissing) as error:
+        sys.exit("name_functions: %s" % error)
     try:
         outcomes = apply_names(opened.program, pairs, write)
         if write:

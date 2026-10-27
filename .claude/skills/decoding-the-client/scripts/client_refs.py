@@ -7,10 +7,12 @@ decode as stray instructions, so a query names the .pdata function of each site.
 """
 
 import bisect
+import hashlib
 import os
 import re
 import struct
 import subprocess
+import tempfile
 from array import array
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
@@ -36,7 +38,7 @@ CONDITIONAL_JUMPS = {
 
 KINDS = ["call", "jmp", "jcc", "rip-data", "rip-lea", "call-mem", "jmp-mem", "pointer"]
 KIND_CODE = {k: i for i, k in enumerate(KINDS)}
-MAGIC = b"GPREFIX1"
+MAGIC = b"GPREFIX2"  # 2: the client's SHA-256 follows its path
 
 
 def objdump_path() -> Path:
@@ -70,18 +72,29 @@ def parse_line(line: str) -> tuple[int, str, int] | None:
     return None
 
 
+class ObjdumpFailed(RuntimeError):
+    """llvm-objdump exited nonzero or wrote to stderr; the message names the chunk and its words."""
+
+
 def _sweep(job: tuple[str, str, int, int]) -> list[tuple[int, str, int]]:
+    """The references of [low, high). A nonzero exit or any stderr output raises ObjdumpFailed:
+    a chunk the disassembler could not finish would leave a silent hole in the index."""
     objdump, exe, low, high = job
     command = [
         objdump, "-d", "--no-show-raw-insn", "--x86-asm-syntax=intel",
         "--start-address=0x%x" % low, "--stop-address=0x%x" % high, exe,
     ]
     found = []
-    with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, errors="replace") as p:
-        for line in p.stdout:
-            ref = parse_line(line)
-            if ref:
-                found.append(ref)
+    with tempfile.TemporaryFile() as errors:  # a file, not a pipe: a full pipe would stall the read of stdout
+        with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=errors, text=True, errors="replace") as p:
+            for line in p.stdout:
+                ref = parse_line(line)
+                if ref:
+                    found.append(ref)
+        errors.seek(0)
+        said = errors.read().decode(errors="replace").strip()
+    if p.returncode != 0 or said:
+        raise ObjdumpFailed("llvm-objdump failed on 0x%x-0x%x (exit %d): %s" % (low, high, p.returncode, said or "no message"))
     return found
 
 
@@ -115,6 +128,7 @@ class RefIndex:
 
     def __init__(self, exe: Path, sources: array, targets: array, kinds: bytes):
         self.pe = ClientPE(exe)
+        self.client_sha256 = hashlib.sha256(self.pe.data).hexdigest()
         self._sources, self._targets, self._kinds = sources, targets, kinds
         self._code_count = len(kinds) - kinds.count(KIND_CODE["pointer"])  # pointers come after the code records
         order = sorted(range(len(targets)), key=targets.__getitem__)  # stable: sources stay ascending
@@ -149,6 +163,14 @@ class RefIndex:
         at += 12
         exe = Path(data[at : at + name_length].decode())
         at += name_length
+        saved_digest = data[at : at + 32].hex()
+        at += 32
+        current_digest = hashlib.sha256(exe.read_bytes()).hexdigest()
+        if saved_digest != current_digest:
+            raise ValueError(
+                "%s was saved for a client with SHA-256 %s; the client at %s has SHA-256 %s"
+                % (path, saved_digest, exe, current_digest)
+            )
         sources, targets = array("Q"), array("Q")
         sources.frombytes(data[at : at + 8 * count])
         at += 8 * count
@@ -162,7 +184,7 @@ class RefIndex:
     def save(self, path: Path) -> None:
         name = str(self.pe.path).encode()
         with open(path, "wb") as f:
-            f.write(MAGIC + struct.pack("<QI", len(self._sources), len(name)) + name)
+            f.write(MAGIC + struct.pack("<QI", len(self._sources), len(name)) + name + bytes.fromhex(self.client_sha256))
             f.write(self._sources.tobytes() + self._targets.tobytes() + self._kinds)
 
     def _records_to(self, target: int) -> list[int]:
