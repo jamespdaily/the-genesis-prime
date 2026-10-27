@@ -133,3 +133,64 @@ pub fn no_module_in_src_outside_the_listed_ones_makes_an_atom_or_reads_a_term_te
   let files = repository.sources(["src"])
   assert list.flat_map(files, atom.breaches(_, allowed)) == []
 }
+
+pub fn an_erlang_helper_that_reads_a_term_or_makes_an_atom_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    planted.file("src/planted/codec_ffi.erl", [
+      "-module(codec_ffi).",
+      "-export([read/1, name/1, other/1]).",
+      "read(Bytes) -> binary_to_term(Bytes).",
+      "name(Text) -> erlang:binary_to_atom(Text).",
+      "other(Text) -> list_to_atom(Text).",
+    ])
+  assert planted.lines(atom.erlang_breaches(file, [])) == [3, 4, 5]
+}
+
+pub fn an_erlang_helper_that_is_listed_or_only_mentions_the_calls_is_no_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let listed =
+    planted.file("src/planted/codec_ffi.erl", [
+      "-module(codec_ffi).",
+      "read(Bytes) -> binary_to_term(Bytes).",
+    ])
+  assert atom.erlang_breaches(listed, ["planted/codec_ffi"]) == []
+  let mentions =
+    planted.file("src/planted/other_ffi.erl", [
+      "%% binary_to_term(Bytes) would read a term; this module never calls it.",
+      "-module(other_ffi).",
+      "known(Text) -> binary_to_existing_atom(Text).",
+    ])
+  assert atom.erlang_breaches(mentions, []) == []
+}
+
+pub fn no_erlang_helper_in_src_outside_the_listed_ones_makes_an_atom_or_reads_a_term_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let assert Ok(project_file) = simplifile.read("gleam.toml")
+    as "gleam.toml could not be read"
+  let allowed = atom.allowed(project_file)
+  let files =
+    repository.erlang_sources()
+    |> list.filter(fn(file) { string.starts_with(file.path, "src/") })
+  assert list.flat_map(files, atom.erlang_breaches(_, allowed)) == []
+}
+
+pub fn an_erlang_helper_is_read_as_the_compiler_reads_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    planted.file("src/planted/codec_ffi.erl", [
+      "-module(codec_ffi).",
+      "refer() -> fun erlang:binary_to_term/1.",
+      "spaced(Bytes) -> binary_to_term",
+      "  (Bytes).",
+      "after_percent(Bytes) -> _ = \"%\", binary_to_term(Bytes).",
+      "label() -> <<\"binary_to_term(\">>.",
+      "other(Bytes) -> codec:binary_to_term(Bytes).",
+      "safe(Bytes) -> safe_binary_to_term(Bytes).",
+    ])
+  assert planted.lines(atom.erlang_breaches(file, [])) == [2, 3, 5]
+}

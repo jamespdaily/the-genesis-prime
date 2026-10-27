@@ -1,6 +1,7 @@
 //// No atom is made from a string, and no term is read from bytes, outside
 //// the modules allowed it under `[tools.code_rules]`, so client input can
-//// neither fill the atom table nor build terms.
+//// neither fill the atom table nor build terms. Gleam modules are read for
+//// `atom.create` and externals; Erlang helpers for the calls themselves.
 
 import code_rule/project_file
 import code_rule/source.{type Breach, type SourceFile, Breach}
@@ -9,8 +10,11 @@ import glance
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 
 const unsafe_externals = ["binary_to_atom", "list_to_atom", "binary_to_term"]
+
+const rule_name = "atom or term from outside the server's own values"
 
 /// Reads the modules allowed atoms or terms from the text of a Gleam project file.
 pub fn allowed(project_file: String) -> List(String) {
@@ -91,6 +95,33 @@ fn breach(file: SourceFile, byte_offset: Int) -> Breach {
   Breach(
     path: file.path,
     line: syntax.line_of(file.text, byte_offset),
-    rule: "atom or term from outside the server's own values",
+    rule: rule_name,
   )
 }
+
+/// Each line of an Erlang helper that calls or refers to a BIF that makes an
+/// atom from a string or reads a term from bytes, unless its module is
+/// allowed. The text is read with Erlang's own scanner (atom_rule_ffi), so a
+/// comment, a string or another module's function of the same name is no
+/// breach; a helper that does not scan is one, at the line the scan stopped.
+pub fn erlang_breaches(
+  file file: SourceFile,
+  allowed allowed: List(String),
+) -> List(Breach) {
+  let module =
+    file.path
+    |> string.remove_prefix("src/")
+    |> string.remove_suffix(".erl")
+  case list.contains(allowed, module) {
+    True -> []
+    False ->
+      case unsafe_lines(file.text, unsafe_externals) {
+        Ok(lines) -> lines
+        Error(line) -> [line]
+      }
+      |> list.map(fn(line) { Breach(path: file.path, line:, rule: rule_name) })
+  }
+}
+
+@external(erlang, "atom_rule_ffi", "unsafe_lines")
+fn unsafe_lines(text: String, names: List(String)) -> Result(List(Int), Int)

@@ -21,6 +21,12 @@ pub fn unique_id() -> Int
 @external(erlang, "step_runtime_ffi", "log")
 pub fn log(level: LogLevel, text: String, about: About) -> Nil
 
+/// Sets the logger's primary level to info, so the info lines the shells
+/// write (start, stop, login, logout) are not dropped; OTP's own primary
+/// level is notice.
+@external(erlang, "step_runtime_ffi", "show_info_lines")
+pub fn show_info_lines() -> Nil
+
 @external(erlang, "step_runtime_ffi", "monotonic_ms")
 fn monotonic_ms() -> Int
 

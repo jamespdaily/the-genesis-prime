@@ -9,6 +9,7 @@ import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/server
+import genesis_prime/step/runtime
 import genesis_prime/table
 import genesis_prime/table/loader/store
 import gleam/erlang/atom.{type Atom}
@@ -48,6 +49,7 @@ pub fn load_tables() -> Int {
 
 /// Starts the supervision tree with these settings and keeps the node alive.
 pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
+  show_info_lines()
   let assert Ok(_) = server.start(settings:)
     as "the supervision tree did not start"
   io.println(
@@ -182,3 +184,10 @@ fn ipv4_number(text: String) -> Result(Int, Nil) {
 /// OTP's strict parse of four decimal numbers separated by dots.
 @external(erlang, "inet", "parse_ipv4strict_address")
 fn parse_ipv4(address: Charlist) -> Result(#(Int, Int, Int, Int), Atom)
+
+/// Lets the logger write info lines: start, stop, login and logout log at
+/// info (the designing-processes skill), and OTP's logger drops them unless
+/// its primary level lets them through.
+pub fn show_info_lines() -> Nil {
+  runtime.show_info_lines()
+}
