@@ -26,6 +26,7 @@ import released_node.{
   Unnamed,
 }
 import template_database
+import unitest
 
 /// How long the tests wait for a child to start, report, answer a survey and
 /// end: the child's own limit on its silence, plus its database and its end.
@@ -33,6 +34,7 @@ const child_deadline_ms = 60_000
 
 pub fn a_survey_of_a_node_that_runs_no_server_shows_no_tree_and_no_pool_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   use started <- released_node.run(Start(
     database:,
@@ -49,6 +51,7 @@ pub fn a_survey_of_a_node_that_runs_no_server_shows_no_tree_and_no_pool_test() -
 
 pub fn the_servers_tree_still_runs_after_its_report_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   use started <- released_node.run(Start(
     database:,
@@ -64,6 +67,7 @@ pub fn the_servers_tree_still_runs_after_its_report_test() -> Nil {
 
 pub fn the_server_runs_with_the_applications_a_release_starts_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   use started <- released_node.run(Start(
     database:,

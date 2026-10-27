@@ -30,6 +30,7 @@ import released_node.{
   Running, Server, ShortName, Start, Stopped, Unnamed,
 }
 import template_database
+import unitest
 
 /// How long the tests wait for a child to start, report and end: the child's
 /// own limit on its silence, plus its database and its end.
@@ -51,6 +52,7 @@ fn expected_listening_ports(node: Node) -> List(Int) {
 
 pub fn a_node_started_as_a_release_starts_it_has_no_distribution_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   use started <- released_node.run(Start(
     database:,
@@ -66,6 +68,7 @@ pub fn a_node_started_as_a_release_starts_it_has_no_distribution_test() -> Nil {
 
 pub fn a_node_started_with_a_short_name_is_seen_to_run_distribution_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   let name = unique_name()
   use started <- released_node.run(Start(
@@ -83,6 +86,7 @@ pub fn a_node_started_with_a_short_name_is_seen_to_run_distribution_test() -> Ni
 
 pub fn the_server_refuses_to_start_with_distribution_on_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   use started <- released_node.run(Start(
     database:,
@@ -99,6 +103,7 @@ pub fn the_server_refuses_to_start_with_distribution_on_test() -> Nil {
 
 pub fn only_the_games_ports_listen_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   use started <- released_node.run(Start(
     database:,
@@ -116,6 +121,7 @@ pub fn only_the_games_ports_listen_test() -> Nil {
 
 pub fn a_listener_the_server_did_not_start_is_caught_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   use started <- released_node.run(Start(
     database:,
@@ -150,6 +156,7 @@ pub fn a_listener_the_server_did_not_start_is_caught_test() -> Nil {
 /// listening one.
 pub fn a_socket_that_is_still_connecting_is_not_a_listening_port_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   use started <- released_node.run(Start(
     database:,
@@ -164,6 +171,7 @@ pub fn a_socket_that_is_still_connecting_is_not_a_listening_port_test() -> Nil {
 
 pub fn a_game_port_that_does_not_listen_is_caught_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("serial")
   assert released_node.compare_ports(observed: [6600], expected: [23_115, 6600])
     == Difference(unexpected: [], missing: [23_115])
   assert released_node.compare_ports(observed: [], expected: [])
@@ -172,6 +180,7 @@ pub fn a_game_port_that_does_not_listen_is_caught_test() -> Nil {
 
 pub fn the_server_does_not_start_or_register_with_epmd_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   use started <- released_node.run(Start(
     database:,
@@ -188,6 +197,7 @@ pub fn the_server_does_not_start_or_register_with_epmd_test() -> Nil {
 
 pub fn a_node_with_a_short_name_starts_epmd_and_is_listed_by_it_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   let name = unique_name()
   use started <- released_node.run(Start(
@@ -210,6 +220,7 @@ pub fn a_node_with_a_short_name_starts_epmd_and_is_listed_by_it_test() -> Nil {
 /// epmd without a crash.
 pub fn cleaning_up_while_a_named_child_is_registered_leaves_no_epmd_test() -> Nil {
   use <- owned_test.run(child_deadline_ms)
+  use <- unitest.tag("serial")
   use database <- template_database.run
   let name = unique_name()
   use started <- released_node.run(Start(

@@ -34,7 +34,8 @@
 #                  fills it) and compares; skipped where GENESIS_NO_CLIENT=1
 #                                                       (after gleam-build)
 #   gleam-test     gleam test, with GENESIS_TEST_WORKERS module groups at
-#                  once (default 1; each group also runs its tests at once)
+#                  once (default 1; each group also runs its tests at once),
+#                  then the tests tagged serial, one at a time
 #                                                       (after gleam-build)
 #   code-rules     fast mode only: gleam test -- --tag code_rule, the tests of
 #                  test/code_rule, each tagged with unitest.tag("code_rule")
@@ -201,10 +202,26 @@ stop_everything_quickly() {
   return 0
 }
 
+# drop_database: drops the check's database, for at most 3 seconds: Postgres may
+# have stopped answering, and the deadline that ended the check is already spent.
+drop_database() {
+  local pid waited=0
+  PGCONNECT_TIMEOUT=3 psql -X -q -d postgres -c "drop database if exists \"$database\" with (force)" \
+    >/dev/null 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 30 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    stop_everything_quickly "$pid"
+  fi
+  return 0
+}
+
 cleanup() {
   if [ -f "$work/database_created" ]; then
-    psql -X -q -d postgres -c "drop database if exists \"$database\" with (force)" \
-      >/dev/null 2>&1
+    drop_database
   fi
   [ -n "${watchdog:-}" ] && stop_everything_quickly "$watchdog"
   rm -rf "$work"
@@ -306,12 +323,18 @@ wait_for_status() {
   [ "$(cat "$work/$name.status" 2>/dev/null)" = 0 ]
 }
 
+# The tests tagged serial share a machine-wide resource (a child node's epmd and
+# ports), so they run one at a time, in a second run; the first run skips them
+# (GENESIS_TEST_SKIP_SERIAL, read by test/genesis_prime_test.gleam).
 gleam_test() {
+  local status=0
   if [ -n "$test_workers" ]; then
-    gleam test -- --workers "$test_workers"
+    GENESIS_TEST_SKIP_SERIAL=1 gleam test -- --workers "$test_workers" || status=1
   else
-    gleam test
+    GENESIS_TEST_SKIP_SERIAL=1 gleam test || status=1
   fi
+  gleam test -- --tag serial || status=1
+  return $status
 }
 
 # The client query process's integration tests: the client scripts' own tests
