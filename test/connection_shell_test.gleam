@@ -586,7 +586,13 @@ fn start(
     "test-"
     <> string.lowercase(bit_array.base16_encode(crypto.strong_random_bytes(8)))
   let connection =
-    shell.Settings(rule:, send_deadline_ms: 300, shutdown_ms:, recorder:)
+    shell.Settings(
+      rule:,
+      send_deadline_ms: 300,
+      shutdown_ms:,
+      recorder:,
+      directory: fn(_request, _reply) { Error(Nil) },
+    )
   let assert Ok(started) =
     supervisor.new(supervisor.OneForOne)
     |> supervisor.add(
