@@ -31,6 +31,7 @@ import genesis_prime/map/delivery.{type Delivery, Appeared, Disappeared}
 import genesis_prime/map/unit.{type Newcomer, type PlayerUnit}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/character_select_start
+import genesis_prime/message/client_control_echoed
 import genesis_prime/message/create_character
 import genesis_prime/message/delete_character
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
@@ -332,8 +333,8 @@ fn player_input(
   }
 }
 
-/// The world message inside message 0x38C: 0xF2 says the terrain is loaded; any
-/// other is not handled.
+/// The world message inside message 0x38C: 0xF2 says the terrain is loaded and
+/// 0x635 echoes the value of 0x636; any other is not handled.
 fn world_input(inner: Frame) -> Result(PlayerInput, EndReason) {
   use carried <- result.try(
     world_message.decode(inner.body)
@@ -342,11 +343,13 @@ fn world_input(inner: Frame) -> Result(PlayerInput, EndReason) {
   use world <- result.try(
     frame.parse(carried.inner_frame) |> result.replace_error(BadWrapper),
   )
-  case world.message_id == terrain_loaded.message_id {
-    False -> Ok(Unhandled)
-    True ->
+  case world.message_id {
+    id if id == terrain_loaded.message_id ->
       terrain_loaded.decode(world.body)
       |> decoded(world.message_id, fn(_) { ToEntry(world_entry.TerrainLoaded) })
+    id if id == client_control_echoed.message_id ->
+      todo as "decode message 0x635 into world_entry.ControlEchoed"
+    _ -> Ok(Unhandled)
   }
 }
 

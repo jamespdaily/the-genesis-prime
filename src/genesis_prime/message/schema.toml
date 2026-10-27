@@ -376,7 +376,7 @@ id = 0x0262
 name = "unit_create_player"
 direction = "server_to_client"
 evidence = "opcode.0x262"
-summary = "creates a unit of type 20, a player character, in the world; the lists the client's reader allows are sent empty"
+summary = "creates a unit of type 20, a player character, in the world, with its stats, its movement commands (only kind 2, the position) and its properties; the lists the schema does not hold are sent empty"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "unit_type", kind = "constant", bits = 6, value = 20, evidence = "0x140096fa0", named_by = "opcode.0x262" },
@@ -396,10 +396,10 @@ fields = [
   { name = "field_16", kind = "unsigned", bits = 8, evidence = "0x1400962d0" },
   { name = "field_17", kind = "unsigned", bits = 14, evidence = "0x1400962d0" },
   { name = "field_18", kind = "unsigned", bits = 8, evidence = "0x140096fa0" },
-  { name = "no_tagged_entries", kind = "constant", bits = 5, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "field_20", kind = "unsigned", bits = 32, evidence = "0x140096fa0" },
-  { name = "no_kind_entries", kind = "constant", bits = 5, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "no_timed_entries", kind = "constant", bits = 8, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
+  { name = "stats", kind = "array", count_bits = 5, element = "unit_stat", evidence = "0x140096fa0", named_by = "0x140458140" },
+  { name = "server_time_estimate_start", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x1404586e0" },
+  { name = "movement_commands", kind = "array", count_bits = 5, element = "unit_position_command", evidence = "0x140096fa0", named_by = "0x1404586e0" },
+  { name = "properties", kind = "array", count_bits = 8, element = "unit_property", evidence = "0x140096fa0", named_by = "0x1404584b0" },
   { name = "item_visuals", kind = "array", count_bits = 7, element = "item_visual", evidence = "0x140096fa0", named_by = "0x1400ab890" },
   { name = "no_other_entries", kind = "constant", bits = 9, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "field_25", kind = "unsigned", bits = 32, evidence = "0x140096fa0" },
@@ -429,6 +429,28 @@ summary = "tells the client which unit is the player, so the camera and control 
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x14007a040", named_by = "opcode.0x19b" },
   { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x14007a040" },
+]
+
+[[message]]
+id = 0x0636
+name = "client_control_granted"
+direction = "server_to_client"
+evidence = "opcode.0x636"
+summary = "gives the client control of a unit's movement, after message 0x19B has set the controlled unit; the client answers with message 0x635 carrying the value"
+fields = [
+  { name = "echo_value", kind = "unsigned", bits = 32, evidence = "opcode.0x636", named_by = "opcode.0x636" },
+  { name = "reset_movement", kind = "unsigned", bits = 1, evidence = "opcode.0x636", named_by = "opcode.0x636" },
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x636", named_by = "opcode.0x636" },
+]
+
+[[message]]
+id = 0x0635
+name = "client_control_echoed"
+direction = "client_to_server"
+evidence = "opcode.0x635"
+summary = "the client's answer to message 0x636, carrying back the value 0x636 brought"
+fields = [
+  { name = "echo_value", kind = "unsigned", bits = 32, evidence = "opcode.0x635", named_by = "opcode.0x635" },
 ]
 
 [[message]]
@@ -502,6 +524,38 @@ fields = [
   { name = "display_id", kind = "unsigned", bits = 15, evidence = "0x1400ab890", named_by = "0x1400ab890" },
   { name = "item_color_set_id", kind = "unsigned", bits = 14, evidence = "0x1400ab890", named_by = "0x1400ab890" },
   { name = "dye", kind = "unsigned", bits = 32, evidence = "0x1400ab890", named_by = "0x1400ab890" },
+]
+
+[[record]]
+name = "unit_stat"
+evidence = "0x140458140"
+summary = "one stat of a new unit, in the integer form: stat 0 is the unit's health"
+fields = [
+  { name = "stat_id", kind = "unsigned", bits = 5, evidence = "0x140458140", named_by = "0x140458140" },
+  { name = "form", kind = "constant", bits = 2, value = 0, evidence = "0x140458140", named_by = "0x140458140" },
+  { name = "value", kind = "unsigned", bits = 32, evidence = "0x140458140", named_by = "0x140458140" },
+]
+
+[[record]]
+name = "unit_position_command"
+evidence = "0x1400ad350"
+summary = "one movement command of a new unit, of kind 2: the position, which the unit is placed at at once when the last bit is 0 and blends onto its last segment when it is 1"
+fields = [
+  { name = "kind", kind = "constant", bits = 5, value = 2, evidence = "0x140c1f070", named_by = "0x140c1f070" },
+  { name = "x", kind = "float32", evidence = "0x1400ad350", named_by = "0x1400ad350" },
+  { name = "y", kind = "float32", evidence = "0x1400ad350", named_by = "0x1400ad350" },
+  { name = "z", kind = "float32", evidence = "0x1400ad350", named_by = "0x1400ad350" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x1400ad350", named_by = "0x1407138f0" },
+]
+
+[[record]]
+name = "unit_property"
+evidence = "0x1404584b0"
+summary = "one property of a new unit: its id (a UnitProperty2 id) and two values; the second is the one Unit:GetMaxHealth reads for id 7"
+fields = [
+  { name = "property_id", kind = "unsigned", bits = 8, evidence = "0x1404584b0", named_by = "0x1404584b0" },
+  { name = "field_2", kind = "float32", evidence = "0x1404584b0" },
+  { name = "value", kind = "float32", evidence = "0x1404584b0", named_by = "0x1404584b0" },
 ]
 
 [[record]]

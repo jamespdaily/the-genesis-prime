@@ -7,8 +7,9 @@
 //// The server then sends 0xAD (the world and the position the client loads),
 //// 0x262 (the player's unit), 0x19B (that unit is the player; the client
 //// reports an error and never finishes loading when the unit does not exist
-//// yet) and 0xF1 (the movement send interval, whose handler sets a flag the end
-//// of loading waits for). The client sends 0xF2 when the terrain near the player
+//// yet), 0x636 (the client takes control of that unit and answers with 0x635;
+//// it is ignored before 0x19B) and 0xF1 (the movement send interval, whose
+//// handler sets a flag the end of loading waits for). The client sends 0xF2 when the terrain near the player
 //// is ready; only then does the server send 0x61, which the client reads the
 //// player's position for and which must come after 0x19B.
 
@@ -27,11 +28,22 @@ import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
+import gleam/int
 
 /// The movement send interval the server sets, in milliseconds: the client's
 /// own default, 125 (the bytes at 0x140C3A004), so a client that is given none
 /// moves at the same rate.
 const movement_send_interval_milliseconds = 125
+
+/// The health a new player's unit is created with, in stat 0 and in property
+/// 7 of message 0x262. It is CreatureLevel row 1's BaseHealth (135.97), a
+/// creature's value, used because no client table holds a player's health: a
+/// graded guess that wants a retail record.
+pub const player_health_stand_in = 136
+
+/// The value message 0x636 carries and the client echoes in 0x635. The client
+/// uses it for nothing else, so any value serves (opcode.0x636).
+pub const control_echo_value = 0
 
 /// The value of message 0x162 when a character cannot enter because its world
 /// is not one the client can load: PreGameLib.CodeEnumCharacterSelectResults'
@@ -73,6 +85,8 @@ pub type Input {
   MapRefused
   /// The client sent message 0xF2: the terrain near the player is loaded.
   TerrainLoaded
+  /// The client sent message 0x635, echoing the value of message 0x636.
+  ControlEchoed(value: Int)
 }
 
 /// A message or an answer that a correct client and map never produce.
@@ -83,6 +97,10 @@ pub type Breach {
   AnswerNobodyAskedFor
   /// Message 0xF2 before the server sent the world messages, or a second one.
   TerrainLoadedOutOfOrder
+  /// Message 0x635 before the server sent message 0x636.
+  ControlEchoedOutOfOrder
+  /// Message 0x635 with a value other than the one message 0x636 carried.
+  ControlEchoedWrongValue(value: Int)
 }
 
 /// What the connection's handler must do, in order.
@@ -115,6 +133,7 @@ pub fn decide(
     Joined(unit) -> joined(state:, unit:, context:)
     MapRefused -> map_refused(state)
     TerrainLoaded -> terrain_loaded(state)
+    ControlEchoed(value) -> control_echoed(state:, value:)
   }
 }
 
@@ -210,7 +229,10 @@ pub fn unit_create(
     field_16: 0,
     field_17: 0,
     field_18: 0,
-    field_20: 0,
+    stats: [],
+    server_time_estimate_start: 0,
+    movement_commands: [],
+    properties: [],
     item_visuals: [],
     field_25: 0,
     faction_id: unit.faction_id,
@@ -248,6 +270,15 @@ fn terrain_loaded(state: State) -> #(State, List(Effect)) {
   }
 }
 
+/// The echo of message 0x636: accepted with no reply when it carries the value
+/// the server sent, a breach before the server sent it or with another value.
+fn control_echoed(
+  state state: State,
+  value value: Int,
+) -> #(State, List(Effect)) {
+  todo as "accept the echo of message 0x636"
+}
+
 /// The sentence the log line of a breach holds.
 pub fn describe_breach(breach breach: Breach) -> String {
   case breach {
@@ -256,5 +287,11 @@ pub fn describe_breach(breach breach: Breach) -> String {
     AnswerNobodyAskedFor -> "the map answered a request nobody made"
     TerrainLoadedOutOfOrder ->
       "the client sent message 0xF2 before the server had sent the world messages, or twice"
+    ControlEchoedOutOfOrder ->
+      "the client sent message 0x635 before the server had sent message 0x636"
+    ControlEchoedWrongValue(value:) ->
+      "the client sent message 0x635 with the value "
+      <> int.to_string(value)
+      <> ", which message 0x636 did not carry"
   }
 }

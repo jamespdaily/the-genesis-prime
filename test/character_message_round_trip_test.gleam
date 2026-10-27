@@ -432,7 +432,8 @@ pub fn unit_create_player_round_trips_test() -> Nil {
       let #(field_16, state) = message_support.unsigned(state:, bits: 8)
       let #(field_17, state) = message_support.unsigned(state:, bits: 14)
       let #(field_18, state) = message_support.unsigned(state:, bits: 8)
-      let #(field_20, state) = message_support.unsigned(state:, bits: 32)
+      let #(server_time_estimate_start, state) =
+        message_support.unsigned(state:, bits: 32)
       let #(item_visuals, state) = item_visuals(state)
       let #(field_25, state) = message_support.unsigned(state:, bits: 32)
       let #(faction_id, state) = message_support.unsigned(state:, bits: 14)
@@ -466,7 +467,10 @@ pub fn unit_create_player_round_trips_test() -> Nil {
           field_16:,
           field_17:,
           field_18:,
-          field_20:,
+          stats: [],
+          server_time_estimate_start:,
+          movement_commands: [],
+          properties: [],
           item_visuals:,
           field_25:,
           faction_id:,

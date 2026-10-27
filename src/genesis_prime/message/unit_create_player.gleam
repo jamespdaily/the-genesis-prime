@@ -2,12 +2,17 @@
 //// never edited by hand.
 ////
 //// Message 0x0262 (unit_create_player), server to client: creates a unit of
-//// type 20, a player character, in the world; the lists the client's reader
-//// allows are sent empty. Its fields are listed in `schema.toml` with the
-//// client's evidence, and the fact file's `opcode.0x262` names the message.
+//// type 20, a player character, in the world, with its stats, its movement
+//// commands (only kind 2, the position) and its properties; the lists the
+//// schema does not hold are sent empty. Its fields are listed in `schema.toml`
+//// with the client's evidence, and the fact file's `opcode.0x262` names the
+//// message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/item_visual.{type ItemVisual}
+import genesis_prime/message/unit_position_command.{type UnitPositionCommand}
+import genesis_prime/message/unit_property.{type UnitProperty}
+import genesis_prime/message/unit_stat.{type UnitStat}
 import gleam/result
 
 /// The message's number.
@@ -34,7 +39,10 @@ pub type UnitCreatePlayer {
     field_16: Int,
     field_17: Int,
     field_18: Int,
-    field_20: Int,
+    stats: List(UnitStat),
+    server_time_estimate_start: Int,
+    movement_commands: List(UnitPositionCommand),
+    properties: List(UnitProperty),
     item_visuals: List(ItemVisual),
     field_25: Int,
     faction_id: Int,
@@ -74,10 +82,24 @@ pub fn encode(message: UnitCreatePlayer) -> Result(BitArray, EncodeError) {
   |> bit_stream.write_unsigned("field_16", message.field_16, 8)
   |> bit_stream.write_unsigned("field_17", message.field_17, 14)
   |> bit_stream.write_unsigned("field_18", message.field_18, 8)
-  |> bit_stream.write_constant("no_tagged_entries", 0, 5)
-  |> bit_stream.write_unsigned("field_20", message.field_20, 32)
-  |> bit_stream.write_constant("no_kind_entries", 0, 5)
-  |> bit_stream.write_constant("no_timed_entries", 0, 8)
+  |> bit_stream.write_array("stats", message.stats, 5, unit_stat.write)
+  |> bit_stream.write_unsigned(
+    "server_time_estimate_start",
+    message.server_time_estimate_start,
+    32,
+  )
+  |> bit_stream.write_array(
+    "movement_commands",
+    message.movement_commands,
+    5,
+    unit_position_command.write,
+  )
+  |> bit_stream.write_array(
+    "properties",
+    message.properties,
+    8,
+    unit_property.write,
+  )
   |> bit_stream.write_array(
     "item_visuals",
     message.item_visuals,
@@ -137,24 +159,23 @@ pub fn decode(body: BitArray) -> Result(UnitCreatePlayer, DecodeError) {
   use #(field_16, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
   use #(field_17, reader) <- result.try(bit_stream.read_unsigned(reader, 14))
   use #(field_18, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
-  use reader <- result.try(bit_stream.read_constant(
+  use #(stats, reader) <- result.try(bit_stream.read_array(
     reader,
-    "no_tagged_entries",
     5,
-    0,
+    unit_stat.read,
   ))
-  use #(field_20, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use reader <- result.try(bit_stream.read_constant(
+  use #(server_time_estimate_start, reader) <- result.try(
+    bit_stream.read_unsigned(reader, 32),
+  )
+  use #(movement_commands, reader) <- result.try(bit_stream.read_array(
     reader,
-    "no_kind_entries",
     5,
-    0,
+    unit_position_command.read,
   ))
-  use reader <- result.try(bit_stream.read_constant(
+  use #(properties, reader) <- result.try(bit_stream.read_array(
     reader,
-    "no_timed_entries",
     8,
-    0,
+    unit_property.read,
   ))
   use #(item_visuals, reader) <- result.try(bit_stream.read_array(
     reader,
@@ -205,7 +226,10 @@ pub fn decode(body: BitArray) -> Result(UnitCreatePlayer, DecodeError) {
     field_16:,
     field_17:,
     field_18:,
-    field_20:,
+    stats:,
+    server_time_estimate_start:,
+    movement_commands:,
+    properties:,
     item_visuals:,
     field_25:,
     faction_id:,
