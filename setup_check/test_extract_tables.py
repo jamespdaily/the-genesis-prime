@@ -310,6 +310,29 @@ class AllOrNothingTest(WorkInFolderCase):
                 self.assertEqual(snapshot(self.destination), OLD_FILES)
                 self.assert_nothing_beside_the_folder()
 
+    def test_a_failure_removing_the_old_folder_after_the_swap_does_not_fail_the_extraction(self):
+        # Both renames are done and the new set is published: the old folder is
+        # cleanup. It stays beside the folder, and the next run's recover removes it.
+        write_folder(self.destination, OLD_FILES)
+        planted = self.planted_three()
+        aside = extract_tables.aside_of(self.destination)
+        real_rmtree = shutil.rmtree
+
+        def refusing(path, *args, **kwargs):
+            if Path(path) == aside:
+                raise OSError("planted: the old folder could not be removed")
+            return real_rmtree(path, *args, **kwargs)
+
+        with mock.patch("shutil.rmtree", refusing):
+            names = extract_tables.extract(planted.patch, self.destination)
+        new_files = {f"{name}.tbl": table_content(name.lower()) for name in ("Alpha", "Beta", "Gamma")}
+        self.assertEqual(names, ["Alpha.tbl", "Beta.tbl", "Gamma.tbl"])
+        self.assertEqual(snapshot(self.destination), new_files)
+        self.assertEqual(snapshot(aside), OLD_FILES, "the old folder is left for recover")
+        extract_tables.recover(self.destination)
+        self.assertFalse(aside.exists(), "the next run's recover removed the old folder")
+        self.assertEqual(snapshot(self.destination), new_files)
+
     def test_a_run_that_succeeds_replaces_the_whole_folder_so_a_stale_file_is_gone(self):
         write_folder(self.destination, OLD_FILES)
         planted = self.planted_three()

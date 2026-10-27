@@ -183,6 +183,7 @@ class Plan:
     index_tables: tuple = TABLE_NAMES  # the tables ClientData.index lists under DB/
     tables_missing: tuple = ()  # of those, the ones left out of the table folder
     table_folder: str = "present"  # present, or absent (no folder at all)
+    index_damage: str = "none"  # none, or directory: a good header and a damaged directory node
 
 
 class PlantedTestCase(unittest.TestCase):
@@ -271,7 +272,12 @@ class PlantedTestCase(unittest.TestCase):
         files = [("DB/%s.tbl" % name, test_extract_tables.table_content(name), 5) for name in plan.index_tables]
         files += [("DB/Notes.txt", b"not a table", 1), ("Other/Gamma.tbl", test_extract_tables.table_content("gamma"), 5)]
         planted = test_extract_tables.Planted(client_data, files)
-        return (planted.patch / "ClientData.index").read_bytes()
+        index = bytearray((planted.patch / "ClientData.index").read_bytes())
+        if plan.index_damage == "directory":
+            # Block 1 is the root directory node; its first u32 is the directory count.
+            (offset, _size) = struct.unpack_from("<QQ", index, 0x240 + 16)
+            index[offset : offset + 4] = struct.pack("<I", 0x00FFFFFF)
+        return bytes(index)
 
     def plant_table_folder(self, plan: Plan) -> Path:
         """The folder GENESIS_TABLE_DIR names: a file for each table the index
@@ -929,12 +935,23 @@ class TableFolderTest(PlantedTestCase):
         machine.env["GENESIS_TABLE_DIR"] = str(self.root / "no-tables-here")
         self.assertEqual(setup_check.check_all(machine), [])
 
-    def test_an_index_that_cannot_be_read_is_left_to_the_client_check_and_does_not_crash(self):
+    def test_an_index_that_cannot_be_read_is_named_and_does_not_crash(self):
         builds = (TARGET_BUILD, "garbage", TARGET_BUILD, TARGET_BUILD)
         machine = self.plant(index_builds=builds, table_folder="absent")
-        self.assertIsInstance(setup_check.check_table_folder(machine), list)
-        named = " ".join(self.text(m) for m in setup_check.check_all(machine))
-        self.assertIn("clientdata.index", named, "the client check still names the index")
+        result = setup_check.check_table_folder(machine)
+        self.assertEqual(len(result), 1, result)
+        self.assertIn("clientdata.index", self.text(result[0]))
+
+    def test_an_index_with_a_good_header_and_a_damaged_directory_fails_naming_the_index_and_the_error(self):
+        # check_client reads only the header, so it passes this index; the tables the
+        # index lists cannot be known, which is a part missing, not a pass.
+        machine = self.plant(index_damage="directory")
+        self.assertEqual(setup_check.check_client(machine), [], "the header is good, so the client check passes")
+        result = setup_check.check_table_folder(machine)
+        self.assertEqual(len(result), 1, result)
+        self.assertIn("clientdata.index", self.text(result[0]))
+        self.assertIn("bytes end before offset", self.text(result[0]), "the read error is named")
+        self.assertTrue(any("clientdata.index" in self.text(m) for m in setup_check.check_all(machine)))
 
 
 # ---------------------------------------------------------------- 7. the query process

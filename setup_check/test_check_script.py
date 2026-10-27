@@ -33,9 +33,11 @@ Run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -67,6 +69,9 @@ case "$1" in
     esac
     ;;
 esac
+if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]; then
+  sleep "$PLANT_GLEAM_TEST_SECONDS"
+fi
 if grep -rq PLANTED_BREACH test/code_rule 2>/dev/null; then
   echo "planted code-rule breach"
   exit 1
@@ -188,9 +193,13 @@ class PlantedCheckCase(unittest.TestCase):
         }
         (self.repository / SCRIPTS / "test_planted_integration.py").write_text(test)
 
-    def run_check(self, *arguments: str, client: bool = False, **settings: str) -> subprocess.CompletedProcess:
-        """Runs the planted repository's ./check. `client` leaves GENESIS_NO_CLIENT
-        unset, as on a machine with the client; `settings` are more variables."""
+    def run_check(
+        self, *arguments: str, client: bool = False, timeout: float = 120, **settings: str
+    ) -> subprocess.CompletedProcess:
+        """Runs the planted repository's ./check in a session of its own. `client`
+        leaves GENESIS_NO_CLIENT unset, as on a machine with the client; `settings`
+        are more variables. A check that has not ended after `timeout` seconds
+        fails the test, and its whole session is killed."""
         self.settle()
         home = self.root / "home"
         home.mkdir(exist_ok=True)
@@ -205,15 +214,23 @@ class PlantedCheckCase(unittest.TestCase):
         if not client:
             env["GENESIS_NO_CLIENT"] = "1"
         env.update(settings)
-        return subprocess.run(
+        process = subprocess.Popen(
             [str(self.repository / "check"), *arguments],
             cwd=self.repository,
             env=env,
             stdin=subprocess.DEVNULL,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=120,
+            start_new_session=True,
         )
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.communicate()
+            self.fail("the check had not ended after %s seconds" % timeout)
+        return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
 
     def commands(self) -> list[str]:
         return [line for line in self.log.read_text().splitlines() if line.strip()]
@@ -292,7 +309,7 @@ class BudgetTest(PlantedCheckCase):
         )
         times = re.findall(r"wall time (\d+)s", output)
         self.assertTrue(times, "the wall time is printed:\n" + output)
-        self.assertGreaterEqual(int(times[-1]), 3, "the planted delay is in the printed time")
+        self.assertGreaterEqual(int(times[-1]), budget, "the printed time reaches the budget")
 
     def test_a_slow_part_takes_the_check_past_its_budget(self):
         done = self.run_check(GENESIS_CHECK_BUDGET_SECONDS="1", PLANT_SETUP_SUITE_SECONDS="3")
@@ -314,6 +331,79 @@ class BudgetTest(PlantedCheckCase):
 
 
 SCRIPTS_FILE = str(SCRIPTS / "formulas_by_hand.py")
+
+
+class HungPartTest(PlantedCheckCase):
+    """The budget is a deadline, not only a comparison at the end: a part that
+    hangs, or a setup check that does, is stopped when the budget is reached, with
+    everything it started, and the check fails naming it.
+
+    A hang is a planted `sleep` of 600 seconds and a fraction that is unique to the
+    test, so `pgrep -f` finds exactly the processes this test planted. The budget
+    is 3 seconds; the check must end within a few seconds of it."""
+
+    BUDGET = 3
+    FEW_SECONDS = 8
+
+    def hang(self) -> str:
+        """600 seconds and a fraction no other test uses; whatever of it is still
+        running at the end of the test is killed."""
+        seconds = "600.%d" % (time.time_ns() % 1_000_000_000)
+        self.addCleanup(subprocess.run, ["pkill", "-f", "sleep %s" % seconds.replace(".", "\\.")])
+        return seconds
+
+    def left_running(self, seconds: str) -> list[str]:
+        done = subprocess.run(["pgrep", "-f", "sleep %s" % seconds.replace(".", "\\.")], capture_output=True, text=True)
+        return done.stdout.split()
+
+    def run_hung(self, seconds: str, budget: int = BUDGET, **settings: str) -> tuple[subprocess.CompletedProcess, float]:
+        started = time.monotonic()
+        done = self.run_check(timeout=30, GENESIS_CHECK_BUDGET_SECONDS=str(budget), **settings)
+        return done, time.monotonic() - started
+
+    def assert_stopped_at_the_budget(self, done, took: float, seconds: str, part: str | None, budget: int = BUDGET) -> None:
+        output = self.output(done)
+        self.assertNotEqual(done.returncode, 0, output)
+        self.assertLess(took, budget + self.FEW_SECONDS, "the check ran %.1f s past a budget of %d s" % (took, budget))
+        self.assertRegex(self.failed_line(output), r"over the budget of %ds" % budget)
+        if part:
+            self.assertRegex(self.failed_line(output), r"\b%s\b" % re.escape(part), "the unfinished part is named")
+            part_line = next(line for line in output.splitlines() if line.strip().startswith(part))
+            self.assertIn("FAILED", part_line)
+        self.assertRegex(output, r"wall time \d+s")
+        self.assertEqual(self.left_running(seconds), [], "the planted sleep is still running")
+
+    def test_a_part_that_hangs_is_stopped_at_the_budget_and_named(self):
+        seconds = self.hang()
+        done, took = self.run_hung(seconds, PLANT_SETUP_SUITE_SECONDS=seconds)
+        self.assert_stopped_at_the_budget(done, took, seconds, "setup-suite")
+
+    def test_the_database_is_dropped_when_the_budget_stops_the_check(self):
+        seconds = self.hang()
+        done, took = self.run_hung(seconds, PLANT_SETUP_SUITE_SECONDS=seconds)
+        self.assertTrue(any("drop database" in command for command in self.commands()), self.commands())
+
+    def test_a_gleam_run_that_hangs_is_stopped_with_what_it_started(self):
+        # The sleep is a grandchild of the check: its subshell runs `gleam`, which runs it.
+        seconds = self.hang()
+        done, took = self.run_hung(seconds, PLANT_GLEAM_TEST_SECONDS=seconds)
+        self.assert_stopped_at_the_budget(done, took, seconds, "gleam-test")
+
+    def test_a_setup_check_that_hangs_is_stopped_at_the_budget(self):
+        seconds = self.hang()
+        done, took = self.run_hung(seconds, PLANT_SETUP_SECONDS=seconds)
+        self.assert_stopped_at_the_budget(done, took, seconds, None)
+        self.assertEqual(self.commands(), [], "no part ran after a setup check that did not end")
+
+    def test_the_deadline_is_the_raised_budget_when_the_integration_tests_run(self):
+        # The usual budget is 1 s, the raised one 6 s: a hung setup check is stopped at 6.
+        self.commit_change(SCRIPTS_FILE)
+        seconds = self.hang()
+        done, took = self.run_hung(
+            seconds, budget=1, client=True, GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="6", PLANT_SETUP_SECONDS=seconds
+        )
+        self.assert_stopped_at_the_budget(done, took, seconds, None, budget=6)
+        self.assertGreaterEqual(took, 5, "the check was stopped at the usual budget, not the raised one")
 
 
 class FastBudgetTest(PlantedCheckCase):
@@ -418,6 +508,17 @@ class ClientIntegrationTest(PlantedCheckCase):
         line = self.part_line(output)
         self.assertIn("skipped", line, "the part's line says it was skipped:\n" + output)
         self.assertIn("GENESIS_NO_CLIENT", line, "and why:\n" + output)
+
+    def test_an_exported_genesis_integration_does_not_open_the_gate_of_the_unit_suite(self):
+        # GENESIS_INTEGRATION=1 in the caller's environment would run the 450 s
+        # tests inside the client-suite part, in the usual budget.
+        self.plant_integration_test(fails=True)
+        self.settle()
+        for client in (True, False):
+            with self.subTest(client=client):
+                done = self.run_check(client=client, GENESIS_INTEGRATION="1")
+                self.assertEqual(done.returncode, 0, self.output(done))
+                self.assertFalse(self.marker.exists(), "a gated test ran with nothing changed")
 
     def test_the_fast_check_does_not_run_the_integration_tests(self):
         self.commit_change(SCRIPTS_FILE)
