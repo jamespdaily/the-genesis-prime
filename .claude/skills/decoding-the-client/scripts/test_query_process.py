@@ -7,7 +7,8 @@ check_support.seeded_project() (import, seed, analysis: about 3 minutes, once
 per run); the unseeded project is built by UnseededProjectTest.
 
 The interface, as ghidra_query.py documents it:
-- `--seed PATH` on the command line; used only when the project does not exist yet.
+- `--seed PATH` on the command line; used only when the project does not exist yet. A first start
+  needs `--seed PATH` or `--unseeded`; with neither the process refuses to import.
 - `seed_report` answers null exactly when the open ran no analysis ("analysed_now"
   is false); on the first start it answers
   {"lines", "created", "already_present", "failed": [hex], "unmapped": [hex]}.
@@ -396,7 +397,7 @@ class UnseededProjectTest(unittest.TestCase):
     def setUpClass(cls):
         cls.pe = cs.client_pe()
         _root, project_dir = cs.fresh_unseeded_project()
-        cls.qp = cs.QueryProcess(project_dir)
+        cls.qp = cs.QueryProcess(project_dir, unseeded=True)  # a first import with no seed must say so
         cls.report = cls.qp.ask("seed_report", timeout=1800).answer
         cls.functions = {int(a, 16) for a in cls.qp.ask("functions").answer}
 

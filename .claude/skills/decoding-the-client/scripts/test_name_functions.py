@@ -74,6 +74,42 @@ class NamePairsTest(unittest.TestCase):
         self.assertEqual(name_functions.name_pairs({}), [])
 
 
+class ReadOnlyRunWithNoProjectTest(unittest.TestCase):
+    """The read-only run opens only an existing project; it never imports and analyses one.
+
+    Plain test: the run stops before Ghidra starts, so the settings name paths that do not exist."""
+
+    def run_script(self, project_dir: Path, root: Path) -> subprocess.CompletedProcess:
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            "GENESIS_GHIDRA_DIR": str(root / "no-ghidra"),
+            "GENESIS_GHIDRA_PROJECT_DIR": str(project_dir),
+            "WILDSTAR_CLIENT_EXE": str(root / "no-client.exe"),
+            "JAVA_HOME": str(root / "no-java"),
+        }
+        return subprocess.run(
+            [sys.executable, "-I", str(cs.SCRIPTS / "name_functions.py")],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+    def test_a_read_only_run_with_no_project_exits_nonzero_naming_the_path_and_creates_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            empty = root / "empty"
+            empty.mkdir()
+            missing = root / "missing"
+            for project_dir in (empty, missing):
+                with self.subTest(project_dir=project_dir.name):
+                    completed = self.run_script(project_dir, root)
+                    self.assertNotEqual(completed.returncode, 0)
+                    self.assertIn(str(project_dir), completed.stderr)
+            self.assertEqual(list(empty.iterdir()), [])
+            self.assertFalse(missing.exists())
+
+
 # Run by the pinned Python with the environment of the query process. argv:
 # scripts directory, result file, then a JSON request:
 #   {"pick": n}                      -> functions: n [address, name] pairs the project holds
