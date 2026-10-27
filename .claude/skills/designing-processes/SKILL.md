@@ -7,8 +7,6 @@ description: Design rules for processes on the BEAM - actors, services, supervis
 
 The server is designed for the BEAM from the first line. Processes, messages, supervision and the runtime's own tools are the building blocks. Nothing is designed as threads, locks, shared objects or a game loop and then translated.
 
-Apply every section to each change, and check the diff against each before it is done.
-
 ## Structure
 
 - Draw the supervision tree before the code: which processes exist, what each owns, how each restarts, and what players see when each dies. Isolated parts of the game get isolated processes.

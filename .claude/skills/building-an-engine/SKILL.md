@@ -5,9 +5,7 @@ description: Rules for engines - routing client messages, unhandled types, effec
 
 # Building an engine
 
-An engine is the one module that owns a kind of game data: it decodes, decides and applies it. Which engines exist is decided in Milestone 1; these rules hold for any of them.
-
-Apply every rule to each change, and check the diff against each before it is done.
+An engine is the one module that owns a kind of game data: it decodes, decides and applies it. These rules hold for every engine.
 
 - Client messages reach their feature rule in one hop, through one routing table.
 - The server decides; the client asks. Speed, range, cooldowns, costs, damage and loot are checked server-side.
