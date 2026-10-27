@@ -99,8 +99,11 @@ fn breach(file: SourceFile, byte_offset: Int) -> Breach {
   )
 }
 
-/// Each line of an Erlang helper that makes an atom from a string or reads a
-/// term from bytes, unless its module is allowed.
+/// Each line of an Erlang helper that calls or refers to a BIF that makes an
+/// atom from a string or reads a term from bytes, unless its module is
+/// allowed. The text is read with Erlang's own scanner (atom_rule_ffi), so a
+/// comment, a string or another module's function of the same name is no
+/// breach; a helper that does not scan is one, at the line the scan stopped.
 pub fn erlang_breaches(
   file file: SourceFile,
   allowed allowed: List(String),
@@ -112,24 +115,13 @@ pub fn erlang_breaches(
   case list.contains(allowed, module) {
     True -> []
     False ->
-      string.split(file.text, "\n")
-      |> list.index_map(fn(line, index) { #(index + 1, code_of(line)) })
-      |> list.filter(fn(numbered) {
-        list.any(unsafe_externals, fn(name) {
-          string.contains(numbered.1, name <> "(")
-        })
-      })
-      |> list.map(fn(numbered) {
-        Breach(path: file.path, line: numbered.0, rule: rule_name)
-      })
+      case unsafe_lines(file.text, unsafe_externals) {
+        Ok(lines) -> lines
+        Error(line) -> [line]
+      }
+      |> list.map(fn(line) { Breach(path: file.path, line:, rule: rule_name) })
   }
 }
 
-/// A line of Erlang without its comment, which starts at the first `%`; no
-/// helper's call of these functions sits after a `%` in a string.
-fn code_of(line: String) -> String {
-  case string.split_once(line, "%") {
-    Ok(#(code, _comment)) -> code
-    Error(Nil) -> line
-  }
-}
+@external(erlang, "atom_rule_ffi", "unsafe_lines")
+fn unsafe_lines(text: String, names: List(String)) -> Result(List(Int), Int)
