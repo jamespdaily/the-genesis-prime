@@ -259,7 +259,7 @@ class PartThatNeverRanTest(PlantedCheckCase):
         done = self.run_check(PLANT_SETUP_SUITE_NEVER_WRITES="1")
         output = self.output(done)
         self.assertNotEqual(done.returncode, 0, output)
-        self.assertNotIn("check passed", output)
+        self.assertNotRegex(output, r"(?m)^check passed")
         self.assertRegex(self.failed_line(output), r"setup-suite")
         part_line = next(line for line in output.splitlines() if line.strip().startswith("setup-suite"))
         self.assertIn("FAILED", part_line, "the part's own line says it failed: " + part_line)
@@ -282,7 +282,7 @@ class BudgetTest(PlantedCheckCase):
     def assert_over_budget(self, done: subprocess.CompletedProcess, budget: int) -> None:
         output = self.output(done)
         self.assertNotEqual(done.returncode, 0, output)
-        self.assertNotIn("check passed", output)
+        self.assertNotRegex(output, r"(?m)^check passed")
         self.assertIn("check FAILED", output)
         budget_lines = [line for line in output.splitlines() if "budget" in line.lower()]
         self.assertTrue(budget_lines, "a line names the budget:\n" + output)
@@ -314,6 +314,22 @@ class BudgetTest(PlantedCheckCase):
 
 
 SCRIPTS_FILE = str(SCRIPTS / "formulas_by_hand.py")
+
+
+class FastBudgetTest(PlantedCheckCase):
+    """Issue 109, item 6: the fast check's budget is set from its measured time,
+    and is its own setting: GENESIS_CHECK_FAST_BUDGET_SECONDS."""
+
+    def test_a_fast_check_past_its_budget_fails_naming_the_time_and_the_budget(self):
+        done = self.run_check("fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="1", PLANT_SETUP_SECONDS="3")
+        output = self.output(done)
+        self.assertNotEqual(done.returncode, 0, output)
+        self.assertRegex(output, r"budget[^\n]*\b1\s*s")
+
+    def test_the_fast_checks_budget_without_the_setting_is_9_seconds_from_its_measured_time(self):
+        # 6, 7 and 7 s in 3 runs on 2026-10-27 (issue 109): 7 x 1.25, rounded up.
+        source = CHECK.read_text()
+        self.assertEqual(re.findall(r"GENESIS_CHECK_FAST_BUDGET_SECONDS:-(\d+)", source), ["9"])
 
 
 class ClientIntegrationTest(PlantedCheckCase):
