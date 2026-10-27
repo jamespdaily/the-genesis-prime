@@ -25,23 +25,6 @@ import owned_test
 import planted_table.{Integer}
 import unitest
 
-fn loaded() -> Tables {
-  let assert Ok(tables) =
-    store.load(
-      under: reference.new(),
-      from: client_tables.folder(),
-      entries: [
-        character_customization_label.entry(),
-        customization_parameter.entry(),
-        customization_parameter_map.entry(),
-        reward_property_premium_modifier.entry(),
-      ],
-      requirements: [],
-    )
-    as "the client's tables did not load"
-  tables
-}
-
 /// The sexes of CustomizationParameterMap.genderEnum: 0 male, 1 female.
 const male = 0
 
@@ -50,7 +33,7 @@ const female = 1
 pub fn the_bone_values_of_each_race_and_sex_are_counted_as_the_client_builds_its_list_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let counts = customisation.of(loaded())
+  let counts = customisation.of(client_tables.shared())
   let expected = [
     #(1, male, 48),
     #(3, male, 48),
@@ -80,7 +63,7 @@ pub fn the_bone_values_of_each_race_and_sex_are_counted_as_the_client_builds_its
 pub fn a_request_holds_at_most_as_many_labels_as_the_label_table_has_rows_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let tables = loaded()
+  let tables = client_tables.shared()
   let counts = customisation.of(tables)
   assert counts.most_labels
     == list.length(character_customization_label.all(tables))
@@ -92,7 +75,7 @@ pub fn a_request_holds_at_most_as_many_labels_as_the_label_table_has_rows_test()
 pub fn a_label_is_one_the_client_sends_only_once_and_for_no_faction_or_the_characters_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let counts = customisation.of(loaded())
+  let counts = customisation.of(client_tables.shared())
   assert customisation.check_labels(counts, [1, 2, 3], 167) == Ok(Nil)
     as "CharacterCustomizationLabel rows 1, 2 and 3 are for faction 0: any faction has them"
   assert customisation.check_labels(counts, [16, 20], 167) == Ok(Nil)
@@ -111,7 +94,7 @@ pub fn a_label_is_one_the_client_sends_only_once_and_for_no_faction_or_the_chara
 pub fn an_account_has_the_hybrid_systems_character_slots_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let tables = loaded()
+  let tables = client_tables.shared()
   assert character_slots.hybrid(tables) == 2
     as "RewardPropertyPremiumModifier row 117: Hybrid, tier 0, CharacterSlots (29), modifierValueInt 2; row 118 adds an entitlement to the most slots only; VIP row 119 is another system"
   let assert Ok(row) =

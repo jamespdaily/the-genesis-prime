@@ -54,15 +54,19 @@ pub fn files() -> List(String) {
   |> list.sort(string.compare)
 }
 
-/// Every one of the client's 384 tables with the rows the server requires,
-/// loaded once per test run: the first caller loads them, every later caller
-/// in any test process gets the same `Tables`. Never unload them, and never
-/// load the tables again for a test that reads the real files; a test of the
-/// load itself loads its own and unloads it.
+/// Every one of the client's 384 tables, loaded once per test run: the first
+/// caller loads them, every later caller in any test process gets the same
+/// `Tables`. A failed load stops the caller, naming the table. Never unload
+/// them, and never load the tables again for a test that reads the real files;
+/// a test of the load itself loads its own and unloads it.
 pub fn shared() -> store.Tables {
   database_support.once("client_tables", fn() {
-    let assert Ok(tables) = table.load(under: reference.new(), from: folder())
-      as "the client's 384 tables did not all load"
-    tables
+    case table.load(under: reference.new(), from: folder()) {
+      Ok(tables) -> tables
+      Error(error) ->
+        panic as {
+          "the client's 384 tables did not all load: " <> store.describe(error)
+        }
+    }
   })
 }

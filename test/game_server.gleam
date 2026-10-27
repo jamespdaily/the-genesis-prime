@@ -94,17 +94,7 @@ pub fn start_place(world_id world_id: Int) -> Place {
 /// World row, and every XpPerLevel row as its level and the experience it
 /// starts at.
 pub fn facts() -> Facts {
-  let assert Ok(tables) =
-    table_store.load(
-      under: reference.new(),
-      from: client_tables.folder(),
-      entries: tables(),
-      requirements: list.append(
-        customisation.requirements(),
-        character_slots.requirements(),
-      ),
-    )
-    as "the client's tables did not load"
+  let tables = client_tables.shared()
   let assert Ok(creation) =
     list.find(character_creation.all(tables), fn(row) {
       row.enabled

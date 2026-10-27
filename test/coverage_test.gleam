@@ -26,7 +26,6 @@ import genesis_prime/coverage/engine.{type EngineDeclaration, EngineDeclaration}
 import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, Measured, TypeLine, Unmeasured,
 }
-import genesis_prime/table
 import genesis_prime/table/creature2
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file.{type Schema}
@@ -295,9 +294,7 @@ fn heaviest_first(types: List(TypeLine)) -> Bool {
 pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_rows_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_present())
-  let assert Ok(tables) =
-    table.load(under: reference.new(), from: client_tables.folder())
-    as "the client's 384 tables did not all load"
+  let tables = client_tables.shared()
   list.each(engine.all(), fn(declared) {
     let measured = measurement.measure(declared, tables)
     case declared.source {
@@ -339,7 +336,6 @@ pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_
       }
     }
   })
-  store.unload(tables)
 }
 
 fn quest_objectives_over(types: List(Int)) -> Measurement {

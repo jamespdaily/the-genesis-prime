@@ -92,9 +92,7 @@ pub fn every_client_table_loads_and_holds_the_rows_its_header_and_lookup_name_te
     as "game_tables.ClientData: 384 game tables in ClientData"
   assert list.map(entries, store.file) == the_clients_table_files()
     as "one entry per table file, in file-name order"
-  let assert Ok(tables) =
-    table.load(under: reference.new(), from: client_tables.folder())
-    as "the client's 384 tables did not all load"
+  let tables = client_tables.shared()
   let counted =
     list.map(entries, fn(entry) {
       let #(record_count, lookup_ids) = counted_by_the_file(store.file(entry))
@@ -110,7 +108,6 @@ pub fn every_client_table_loads_and_holds_the_rows_its_header_and_lookup_name_te
     })
   assert int.sum(counted) == 2_116_954
     as "game_tables.ClientData: 2,116,954 records in all"
-  store.unload(tables)
 }
 
 pub fn a_table_file_that_is_missing_fails_the_load_naming_the_file_test() -> Nil {

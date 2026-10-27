@@ -35,8 +35,7 @@ fn load(
 pub fn a_new_character_starts_at_world_location_50230_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let assert Ok(tables) = load(requirements: [])
-    as "the client's tables did not load"
+  let tables = client_tables.shared()
   let assert Ok(row) = world_location2.get(tables, starting_location)
     as "WorldLocation2.tbl holds row 50230"
   let assert Ok(place) =
@@ -64,8 +63,7 @@ pub fn a_new_character_starts_at_world_location_50230_test() -> Nil {
 pub fn a_location_the_table_does_not_hold_gives_no_place_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let assert Ok(tables) = load(requirements: [])
-    as "the client's tables did not load"
+  let tables = client_tables.shared()
   assert starting_place.place(tables:, location_id: -1) == Error(Nil)
     as "a row the table does not hold is no place"
 }
@@ -86,10 +84,10 @@ pub fn the_load_fails_when_the_starting_row_is_missing_test() -> Nil {
 pub fn the_load_passes_with_the_starting_row_the_table_holds_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let assert Ok(_) =
+  let assert Ok(tables) =
     load(requirements: starting_place.requirements(
       location_id: starting_location,
     ))
     as "row 50230 and the World row it names are in the client's tables"
-  Nil
+  store.unload(tables)
 }
