@@ -5,8 +5,6 @@ description: Conventions for Gleam code - format, types, errors, modules, naming
 
 # Writing Gleam
 
-Apply every section to each change, and check the diff against each before it is done.
-
 ## Format and build
 
 - Code is formatted by `gleam format`; CI runs `gleam format --check`.
