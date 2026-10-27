@@ -17,10 +17,11 @@ import genesis_prime/character/server_message.{
   UnitCreated, WorldEntered,
 }
 import genesis_prime/character/world_entry.{
-  AnswerNobodyAskedFor, AwaitingMap, AwaitingTerrain, BeganTwice, Begin, Close,
-  ControlEchoed, ControlEchoedOutOfOrder, ControlEchoedTwice,
-  ControlEchoedWrongValue, Entered, Failed, JoinMap, Joined, MapRefused, Send,
-  TerrainLoaded, TerrainLoadedOutOfOrder, Waiting,
+  AnswerNobodyAskedFor, AwaitingMap, AwaitingTerrain, AwaitingTerrainEchoed,
+  BeganTwice, Begin, Close, ControlEchoed, ControlEchoedOutOfOrder,
+  ControlEchoedTwice, ControlEchoedWrongValue, Entered, EnteredEchoed, Failed,
+  JoinMap, Joined, MapRefused, Send, TerrainLoaded, TerrainLoadedOutOfOrder,
+  Waiting,
 }
 import genesis_prime/map/position.{Position}
 import genesis_prime/map/unit.{type PlayerUnit, Newcomer, PlayerUnit}
@@ -374,18 +375,59 @@ pub fn the_server_s_0x262_for_a_new_player_is_the_emulator_s_health_vector_test(
 
 pub fn the_echo_of_the_value_0x636_carried_is_accepted_with_no_reply_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each([AwaitingTerrain(unit()), Entered], fn(state) {
-    let #(after, effects) =
-      world_entry.decide(
-        state,
-        ControlEchoed(world_entry.control_echo_value),
-        context(),
-      )
-    assert after == state
-      as "opcode.0x635: the client's answer to 0x636 changes nothing"
-    assert effects == []
-      as "opcode.0x635: the client sends it as soon as it handles a 0x636 and expects no reply"
+  list.each(
+    [
+      #(AwaitingTerrain(unit()), AwaitingTerrainEchoed(unit())),
+      #(Entered, EnteredEchoed),
+    ],
+    fn(pair) {
+      let #(state, echoed_state) = pair
+      let #(after, effects) =
+        world_entry.decide(
+          state,
+          ControlEchoed(world_entry.control_echo_value),
+          context(),
+        )
+      assert after == echoed_state
+        as "opcode.0x635: the client sends one for each 0x636, so the first is remembered and a second is a breach"
+      assert effects == []
+        as "opcode.0x635: a first echo is accepted with no reply; the client sends it as soon as it handles a 0x636 and expects none"
+    },
+  )
+}
+
+pub fn the_0xf2_after_the_echo_carries_it_into_the_entered_state_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, effects) =
+    world_entry.decide(AwaitingTerrainEchoed(unit()), TerrainLoaded, context())
+  assert effects == [Send(PlayerEntered(PlayerEnteredWorld))]
+    as "opcode.0x61: sent after the client's 0xf2 whether or not 0x635 came first (CheckWorldLoaded 0x1403E8000)"
+  assert state == EnteredEchoed
+    as "opcode.0x635: the echo that came before the 0xf2 is still remembered after it"
+}
+
+pub fn an_entry_whose_echo_came_ends_on_the_same_inputs_as_one_whose_echo_did_not_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, begun) =
+    world_entry.decide(
+      AwaitingTerrainEchoed(unit()),
+      Begin(chosen()),
+      context(),
+    )
+  assert begun == [Close(BeganTwice)]
+    as "HandleCharacterSelectMessage 0x140020EA0: the client sends 0x7dd only while idle"
+  list.each([AwaitingTerrainEchoed(unit()), EnteredEchoed], fn(state) {
+    let #(_, joined) = world_entry.decide(state, Joined(unit()), context())
+    assert joined == [Close(AnswerNobodyAskedFor)]
+      as "the map answers only a request the entry made"
+    let #(_, refused) = world_entry.decide(state, MapRefused, context())
+    assert refused == [Close(AnswerNobodyAskedFor)]
+      as "the map answers only a request the entry made"
   })
+  let #(_, loaded_twice) =
+    world_entry.decide(EnteredEchoed, TerrainLoaded, context())
+  assert loaded_twice == [Close(TerrainLoadedOutOfOrder)]
+    as "opcode.0xf2: the client sends it once, while the world loads"
 }
 
 pub fn a_second_echo_while_the_terrain_loads_closes_the_connection_test() -> Nil {
