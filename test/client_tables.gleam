@@ -2,7 +2,11 @@
 //// read the real files. Where `GENESIS_NO_CLIENT=1` there are none and those
 //// tests skip; anywhere else a missing table fails the test with the fix.
 
+import database_support
 import environment
+import genesis_prime/table
+import genesis_prime/table/loader/store
+import gleam/erlang/reference
 import gleam/list
 import gleam/string
 import simplifile
@@ -48,4 +52,21 @@ pub fn files() -> List(String) {
   |> list.filter(string.ends_with(_, ".tbl"))
   |> list.map(string.remove_suffix(_, ".tbl"))
   |> list.sort(string.compare)
+}
+
+/// Every one of the client's 384 tables, loaded once per test run: the first
+/// caller loads them, every later caller in any test process gets the same
+/// `Tables`. A failed load stops the caller, naming the table. Never unload
+/// them, and never load the tables again for a test that reads the real files;
+/// a test of the load itself loads its own and unloads it.
+pub fn shared() -> store.Tables {
+  database_support.once("client_tables", fn() {
+    case table.load(under: reference.new(), from: folder()) {
+      Ok(tables) -> tables
+      Error(error) ->
+        panic as {
+          "the client's 384 tables did not all load: " <> store.describe(error)
+        }
+    }
+  })
 }

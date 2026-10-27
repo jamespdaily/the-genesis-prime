@@ -19,14 +19,7 @@ import genesis_prime/game/game_context
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/character_customization_label
-import genesis_prime/table/customization_parameter
-import genesis_prime/table/customization_parameter_map
-import genesis_prime/table/game_formula
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/table/reward_property_premium_modifier
-import genesis_prime/table/world
-import genesis_prime/table/xp_per_level
-import gleam/erlang/reference
 import gleam/list
 import owned_test
 import unitest
@@ -34,27 +27,6 @@ import unitest
 const male = 0
 
 const female = 1
-
-fn loaded() -> table_store.Tables {
-  let assert Ok(tables) =
-    table_store.load(
-      under: reference.new(),
-      from: client_tables.folder(),
-      entries: [
-        character_creation.entry(),
-        character_customization_label.entry(),
-        customization_parameter.entry(),
-        customization_parameter_map.entry(),
-        game_formula.entry(),
-        reward_property_premium_modifier.entry(),
-        world.entry(),
-        xp_per_level.entry(),
-      ],
-      requirements: [],
-    )
-    as "the client's tables did not load"
-  tables
-}
 
 /// The context the game server builds from the client's tables, with the row
 /// offered to the account whatever its enabled column says.
@@ -159,7 +131,7 @@ fn result_of(effects: List(Effect)) -> Int {
 pub fn a_race_1_male_sends_48_bone_values_and_a_race_12_female_41_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let tables = loaded()
+  let tables = client_tables.shared()
   let male_row = row_of(tables:, race: 1, sex: male)
   let female_row = row_of(tables:, race: 12, sex: female)
   let male_context = context_for(tables:, row: male_row)
@@ -221,7 +193,7 @@ pub fn a_race_1_male_sends_48_bone_values_and_a_race_12_female_41_test() -> Nil 
 pub fn the_labels_of_the_client_s_table_are_checked_against_the_characters_faction_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let tables = loaded()
+  let tables = client_tables.shared()
   let row = row_of(tables:, race: 1, sex: male)
   let context = context_for(tables:, row:)
   let faction = row.faction_id
@@ -270,7 +242,7 @@ pub fn the_labels_of_the_client_s_table_are_checked_against_the_characters_facti
 pub fn an_account_with_2_characters_is_full_under_the_hybrid_system_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let tables = loaded()
+  let tables = client_tables.shared()
   let row = row_of(tables:, race: 1, sex: male)
   let context = context_for(tables:, row:)
   assert is_created(create(

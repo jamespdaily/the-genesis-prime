@@ -21,6 +21,7 @@ import gleam/list
 import gleam/string
 import owned_test
 import simplifile
+import unitest
 
 const accepted_list = [
   "Apache-2.0",
@@ -37,6 +38,7 @@ fn read(path: String) -> String {
 
 pub fn the_licence_file_is_the_apache_licence_2_0_text_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let lines =
     string.split(read("LICENSE"), "\n")
     |> list.drop_while(fn(line) { line == "" })
@@ -65,11 +67,13 @@ pub fn the_licence_file_is_the_apache_licence_2_0_text_test() -> Nil {
 
 pub fn the_project_file_names_the_apache_licence_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert licence.gleam_licences(read("gleam.toml")) == ["Apache-2.0"]
 }
 
 pub fn the_licences_of_a_gleam_package_are_read_under_either_spelling_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let spelled_licences =
     "name = \"planted\"\nlicences = [\"Apache-2.0\", \"MIT\"]\n"
   let spelled_licenses = "name = \"planted\"\nlicenses = [\"MIT\"]\n"
@@ -81,6 +85,7 @@ pub fn the_licences_of_a_gleam_package_are_read_under_either_spelling_test() -> 
 
 pub fn the_licences_of_an_erlang_package_are_read_whatever_the_spacing_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let compact =
     "{application,planted,\n [{description,\"A planted package\"},\n  {licenses,[\"Apache-2.0\"]},\n  {links,[]}]}.\n"
   let spaced =
@@ -107,6 +112,7 @@ pub fn the_licences_of_an_erlang_package_are_read_whatever_the_spacing_test() ->
 
 pub fn the_accepted_list_is_read_from_the_project_file_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let planted =
     string.join(
       [
@@ -123,6 +129,7 @@ pub fn the_accepted_list_is_read_from_the_project_file_test() -> Nil {
 
 pub fn a_package_whose_licences_are_all_off_the_list_is_refused_naming_it_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let packages = [
     #("planted_server", ["AGPL-3.0"]),
     #("planted_codec", ["MIT"]),
@@ -137,6 +144,7 @@ pub fn a_package_whose_licences_are_all_off_the_list_is_refused_naming_it_test()
 
 pub fn a_package_with_any_accepted_licence_passes_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let packages = [
     #("planted_dual", ["AGPL-3.0", "MIT"]),
     #("planted_apache", ["Apache-2.0"]),
@@ -147,6 +155,7 @@ pub fn a_package_with_any_accepted_licence_passes_test() -> Nil {
 
 pub fn a_package_with_no_licence_found_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let packages = [#("planted_bare", []), #("planted_codec", ["MIT"])]
   let refusals = licence.refusals(packages, accepted_list)
   assert refusals == [NoLicence("planted_bare")]
@@ -156,6 +165,7 @@ pub fn a_package_with_no_licence_found_is_refused_test() -> Nil {
 
 pub fn every_package_in_the_manifest_has_an_accepted_licence_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
   let manifest = read("manifest.toml")
   let packages = licence.installed(manifest, "build/packages")
   assert list.length(packages) >= 40 as "the manifest packages were not found"

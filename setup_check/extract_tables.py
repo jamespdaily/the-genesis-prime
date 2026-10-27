@@ -11,8 +11,13 @@ ClientData.archive; GENESIS_TABLE_DIR names the folder to fill (default
 $GENESIS_HOME/tables, set by setup_check/environment.sh).
 
 Every file is checked against the SHA-1 the index holds for it before it is
-written, and a file that fails is refused by name: nothing is left in the
-folder from that run.
+written, and a file that fails is refused by name. The set is built in
+GENESIS_TABLE_DIR's name plus ".staging", checked again as a whole (the index's
+files and sizes, and the fact file's 384), and swapped in as one folder: the
+old folder moves to ".old", the staged one is renamed in, the old one is
+removed. A run that fails leaves the folder as it was, and a run after a crash
+between the two renames puts the folder right first (recover). Two runs at once
+are not guarded.
 
 The archive formats. The fact file's "archive_index.header" gives the PACK
 container and the AIDX header; the rest was read from the data, and is checked
@@ -51,7 +56,6 @@ import os
 import shutil
 import struct
 import sys
-import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -215,36 +219,126 @@ def _archive_entries(archive: BinaryIO, name: str) -> tuple[list[tuple[int, int]
     return blocks, entries
 
 
-def extract(patch_folder: Path, destination: Path) -> list[str]:
+def staging_of(destination: Path) -> Path:
+    """The folder next to destination in which a run builds the whole set
+    (destination's name and ".staging"), on the same filesystem so the swap is
+    a rename."""
+    return destination.with_name(destination.name + ".staging")
+
+
+def aside_of(destination: Path) -> Path:
+    """The folder the swap moves the old destination to (destination's name
+    and ".old"), until the new one is in place."""
+    return destination.with_name(destination.name + ".old")
+
+
+def stage_tables(patch_folder: Path, staging: Path) -> list[IndexedFile]:
+    """Writes every DB/*.tbl of patch_folder's ClientData into the empty folder
+    staging, each checked against the index's SHA-1 before it is written, and
+    returns the tables the index lists. Raises Corrupt naming the file whose
+    block does not match. Touches nothing but staging."""
+    tables = tables_of(read_index((patch_folder / "ClientData.index").read_bytes()))
+    with open(patch_folder / "ClientData.archive", "rb") as archive:
+        blocks, entries = _archive_entries(archive, "ClientData.archive")
+        for file in tables:
+            if file.sha1 not in entries:
+                raise Corrupt(file.path, "the archive holds no block with the index's SHA-1")
+            number, size = entries[file.sha1]
+            offset, block_size = blocks[number]
+            if size != file.stored_size or block_size != size:
+                raise Corrupt(file.path, "the archive's block is %d bytes, the index says %d" % (block_size, file.stored_size))
+            archive.seek(offset)
+            stored = archive.read(size)
+            if hashlib.sha1(stored).digest() != file.sha1:
+                raise Corrupt(file.path, "the block's SHA-1 is not the index's")
+            (staging / _file_name(file)).write_bytes(_content(file, stored))
+    return tables
+
+
+def _file_name(file: IndexedFile) -> str:
+    """The file's name inside the table folder: DB/Creature2.tbl is Creature2.tbl."""
+    return file.path.split("/", 1)[1]
+
+
+def verify_staged(staging: Path, tables: list[IndexedFile], expected_count: int | None) -> None:
+    """Raises Corrupt unless staging holds exactly the files of tables, each of
+    the size the index gives, and, when expected_count is given, exactly that
+    many (the fact file's 384 for the client). Run after stage_tables and
+    before swap_whole, so a set that is short or wrong is never published."""
+    if expected_count is not None and len(tables) != expected_count:
+        raise Corrupt("ClientData.index", "lists %d tables, %d were expected" % (len(tables), expected_count))
+    held = {path.name: path for path in staging.iterdir()}
+    for file in tables:
+        path = held.get(_file_name(file))
+        if path is None:
+            raise Corrupt(file.path, "is not in the staged set")
+        if path.stat().st_size != file.size:
+            raise Corrupt(file.path, "is %d bytes in the staged set, the index says %d" % (path.stat().st_size, file.size))
+    listed = {_file_name(file) for file in tables}
+    for name in sorted(held):
+        if name not in listed:
+            raise Corrupt(name, "is in the staged set and the index does not list it")
+
+
+def swap_whole(staging: Path, destination: Path) -> None:
+    """Replaces destination with staging as one folder: moves an existing
+    destination to aside_of(destination), renames staging to destination, then
+    removes the old one. When the second rename fails, the first is undone and
+    the error is raised, so destination is as it was. Once both renames are done
+    the new set is published, so a failure to remove the old folder is not an
+    error: it stays beside destination, and recover removes it."""
+    aside = aside_of(destination)
+    had_old = destination.exists()
+    if had_old:
+        os.rename(destination, aside)
+    try:
+        os.rename(staging, destination)
+    except BaseException:
+        if had_old:
+            os.rename(aside, destination)
+        raise
+    if had_old:
+        try:
+            shutil.rmtree(aside)
+        except OSError:
+            pass
+
+
+def recover(destination: Path) -> None:
+    """Finishes or undoes a swap that a crash cut short, and removes
+    leftovers. A run that finds aside_of(destination) and no destination moves
+    it back, so the folder is as it was before the cut swap; with both there,
+    the swap had reached its end and the old folder is removed; a leftover
+    staging folder is removed, since it was not verified. Called first by
+    extract."""
+    aside = aside_of(destination)
+    if aside.exists():
+        if destination.exists():
+            shutil.rmtree(aside)
+        else:
+            os.rename(aside, destination)
+    shutil.rmtree(staging_of(destination), ignore_errors=True)
+
+
+def extract(patch_folder: Path, destination: Path, expected_count: int | None = None) -> list[str]:
     """Writes every DB/*.tbl of patch_folder's ClientData into destination,
     each checked against the index's SHA-1, and returns their file names.
-    Raises Corrupt naming the file whose block does not match; the
-    destination is then left as it was."""
-    tables = tables_of(read_index((patch_folder / "ClientData.index").read_bytes()))
+    Raises Corrupt naming the file whose block does not match, or the index
+    when it lists a number of tables other than expected_count; the
+    destination is then left as it was. The whole set replaces destination at
+    once: a crash-cut swap is recovered, the set is built and verified in a
+    staging folder beside destination, then swapped in whole."""
     destination.parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".extracting-", dir=destination.parent))
+    recover(destination)
+    staging = staging_of(destination)
+    staging.mkdir()
     try:
-        with open(patch_folder / "ClientData.archive", "rb") as archive:
-            blocks, entries = _archive_entries(archive, "ClientData.archive")
-            for file in tables:
-                if file.sha1 not in entries:
-                    raise Corrupt(file.path, "the archive holds no block with the index's SHA-1")
-                number, size = entries[file.sha1]
-                offset, block_size = blocks[number]
-                if size != file.stored_size or block_size != size:
-                    raise Corrupt(file.path, "the archive's block is %d bytes, the index says %d" % (block_size, file.stored_size))
-                archive.seek(offset)
-                stored = archive.read(size)
-                if hashlib.sha1(stored).digest() != file.sha1:
-                    raise Corrupt(file.path, "the block's SHA-1 is not the index's")
-                (staging / file.path.split("/", 1)[1]).write_bytes(_content(file, stored))
-        destination.mkdir(exist_ok=True)
-        names = sorted(path.name for path in staging.iterdir())
-        for name in names:
-            os.replace(staging / name, destination / name)
-        return names
+        tables = stage_tables(patch_folder, staging)
+        verify_staged(staging, tables, expected_count)
+        swap_whole(staging, destination)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+    return sorted(_file_name(file) for file in tables)
 
 
 def table_folder(env: Mapping[str, str]) -> Path:
@@ -268,14 +362,11 @@ def main() -> int:
     destination = table_folder(os.environ)
     started = time.monotonic()
     try:
-        names = extract(patch_folder(os.environ), destination)
+        names = extract(patch_folder(os.environ), destination, expected_count=EXPECTED_TABLES)
     except Corrupt as refused:
         print("refused %s: %s" % (refused.name, refused.reason))
         return 1
     print("extracted %d tables into %s in %.1f seconds" % (len(names), destination, time.monotonic() - started))
-    if len(names) != EXPECTED_TABLES:
-        print("the client's index lists %d tables, the fact file says %d" % (len(names), EXPECTED_TABLES))
-        return 1
     return 0
 
 

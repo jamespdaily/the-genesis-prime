@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 # The full check, run locally and in CI (.github/workflows/check.yml).
 #
+# Usage: ./check          every part, the gate before a merge
+#        ./check fast     format, gleam-build, glinter and code-rules only, for
+#                         the loop while editing
+#
+# The wall time counts from the start of this script, setup check included, and
+# the check fails when it passes GENESIS_CHECK_BUDGET_SECONDS (default 120, the
+# 2 minutes CLAUDE.md gives the full check; ./check fast has its own). The budget
+# is a deadline: when it is reached, everything the check started is stopped
+# and each part still running is reported as failed. A part that ends without
+# writing its status fails the check by name.
+#
+# The client query process's integration tests take about 450 seconds, so they
+# run only when the branch changes a file under the client scripts folder since
+# its merge base with origin/main (or main), and then the budget is raised to
+# GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS and the output says so.
+#
 # First the setup check (./setup-check): it names every part this machine is
 # missing, and when it fails nothing else runs. Before it, this script reads
 # $GENESIS_HOME/env.sh (default ~/.genesis-prime/env.sh) and puts
@@ -17,7 +33,14 @@
 #                  game tables in $GENESIS_TABLE_DIR (setup_check/extract_tables.py
 #                  fills it) and compares; skipped where GENESIS_NO_CLIENT=1
 #                                                       (after gleam-build)
-#   gleam-test     gleam test                           (after gleam-build)
+#   gleam-test     gleam test, with GENESIS_TEST_WORKERS module groups at
+#                  once (default 1; each group also runs its tests at once),
+#                  then the tests tagged serial, one at a time
+#                                                       (after gleam-build)
+#   code-rules     fast mode only: gleam test -- --tag code_rule, the tests of
+#                  test/code_rule, each tagged with unitest.tag("code_rule")
+#                  (`./check fast` has its own budget, GENESIS_CHECK_FAST_BUDGET_SECONDS)
+#                                                       (after gleam-build)
 #   message-codec  gleam run -m genesis_prime/generate_messages -- check
 #                  the committed message codec equals what the schema
 #                  generates                            (after gleam-build)
@@ -25,7 +48,11 @@
 #                  priv/migrations/*.sql applied in name order, each with
 #                  psql -v ON_ERROR_STOP=1 --single-transaction
 #   squirrel       gleam run -m squirrel check, against that database
-#   client-suite   the client query process's fast unit tests
+#   client-suite   the client query process's fast unit tests (run with
+#                  GENESIS_INTEGRATION=0, whatever the caller exported)
+#   client-integration  the client query process's integration tests
+#                  (GENESIS_INTEGRATION=1; skipped where GENESIS_NO_CLIENT=1
+#                  and where the branch leaves the client scripts unchanged)
 #   setup-suite    the setup check's own tests
 #   fact-checker   check_facts.py over the fact file
 #
@@ -43,6 +70,44 @@
 
 cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 
+# The clock starts here, before the setup check.
+started=$(date +%s)
+
+mode=${1:-full}
+case "$mode" in
+  full | fast) ;;
+  *)
+    echo "usage: ./check [fast]"
+    exit 2
+    ;;
+esac
+
+# The wall time the check may take, in seconds.
+budget=${GENESIS_CHECK_BUDGET_SECONDS:-120}
+
+# The same for ./check fast, from a cold build: measured 2026-10-27 (issue 109)
+# right after removing build/dev/erlang/genesis_prime, 10, 9 and 9 s in 3 runs on
+# the development Mac (warm: 6, 7 and 7 s); 10 s times 1.25, rounded up.
+if [ "$mode" = fast ]; then
+  budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-13}
+fi
+
+# The budget of a run that includes the integration tests: the slowest of 3
+# solo runs on the development Mac (2026-10-26, issue 109) was 466 s, times
+# 1.25, rounded up.
+integration_budget=${GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS:-583}
+
+client_scripts=.claude/skills/decoding-the-client/scripts
+
+# How many module groups `gleam test` runs at once; each also runs up to one test
+# per scheduler at once. 1 is the smallest count that leaves 25% of the 120 s
+# budget spare: measured 2026-10-27 (issue 109), the whole check took 75 s with 1
+# (gleam-test 68 s with the serial tests, beside the setup suite) and 62 to 67 s
+# with 2; `gleam test -- --workers 1` alone took 58 to 75 s in 16 runs on the
+# development Mac (12 schedulers) and 67 s with 4 schedulers (ERL_FLAGS="+S 4:4",
+# CI's 4 cores), against 119 s with one test at a time.
+test_workers=${GENESIS_TEST_WORKERS:-1}
+
 # The machine's settings (env.sh) and the patched OTP first on PATH, before any part.
 . setup_check/environment.sh
 
@@ -51,27 +116,158 @@ cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
 : "${PGUSER:=postgres}"
 export PGHOST PGPORT PGUSER
 
-# The setup check comes first: when it fails, nothing else runs.
-if ! ./setup-check; then
+work=$(mktemp -d)
+database="genesis_check_$$_${started}"
+case "$mode" in
+  full) parts="format gleam-build glinter generated-tables gleam-test message-codec migrations squirrel client-suite client-integration setup-suite fact-checker" ;;
+  fast) parts="format gleam-build glinter code-rules" ;;
+esac
+
+# decide_integration: sets integration_run to yes or no, and integration_why to
+# the reason, from the machine (GENESIS_NO_CLIENT) and from what the branch
+# changed under the client scripts folder since its merge base with main.
+decide_integration() {
+  local base changed
+  if [ "${GENESIS_NO_CLIENT:-}" = 1 ]; then
+    integration_run=no
+    integration_why="GENESIS_NO_CLIENT=1: there is no client on this machine"
+    return
+  fi
+  base=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main 2>/dev/null)
+  if [ -z "$base" ]; then
+    integration_run=yes
+    integration_why="there is no merge base with origin/main or main to compare the client scripts with"
+    return
+  fi
+  changed=$({
+    git diff --name-only "$base" -- "$client_scripts"
+    git ls-files --others --exclude-standard -- "$client_scripts"
+  } 2>/dev/null | head -n 1)
+  if [ -n "$changed" ]; then
+    integration_run=yes
+    integration_why="the branch changes $changed under $client_scripts since its merge base with main"
+  else
+    integration_run=no
+    integration_why="unchanged: the branch changes nothing under $client_scripts since its merge base with main"
+  fi
+}
+
+# skip NAME REASON: records that the part did not run on purpose, and why.
+skip() {
+  echo "$2" >"$work/$1.skipped"
+}
+
+# descendants_of PID: the process ids of everything PID started, children,
+# their children and so on, from one snapshot of the process table.
+descendants_of() {
+  ps -A -o pid= -o ppid= | awk -v root="$1" '
+    { parent[$1] = $2 }
+    END {
+      for (p in parent) {
+        q = p
+        while ((q in parent) && q != root && q != 0 && q != 1) q = parent[q]
+        if (q == root && p != root) print p
+      }
+    }'
+}
+
+# stop_everything PID: ends everything PID started: asks first, then kills what
+# is still there, twice, for what was started in between.
+stop_everything() {
+  local pids
+  pids=$(descendants_of "$1")
+  [ -n "$pids" ] && kill -TERM $pids 2>/dev/null
+  sleep 1
+  for _ in 1 2; do
+    pids=$(descendants_of "$1")
+    [ -n "$pids" ] && kill -KILL $pids 2>/dev/null
+  done
+  return 0
+}
+
+# The budget is a deadline: a watchdog sends this shell USR1 when the budget is
+# reached, and the handler ends everything the check started, so a part or a
+# setup check that hangs cannot hold the check past its budget.
+over_budget=no
+on_budget() {
+  over_budget=yes
+  stop_everything $$
+}
+trap on_budget USR1
+
+# stop_everything_quickly PID: kills PID and everything it started, at once.
+stop_everything_quickly() {
+  local pids
+  pids=$(descendants_of "$1")
+  kill -KILL $1 $pids 2>/dev/null
+  return 0
+}
+
+# drop_database: drops the check's database, for at most 3 seconds: Postgres may
+# have stopped answering, and the deadline that ended the check is already spent.
+drop_database() {
+  local pid waited=0
+  PGCONNECT_TIMEOUT=3 psql -X -q -d postgres -c "drop database if exists \"$database\" with (force)" \
+    >/dev/null 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 30 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    stop_everything_quickly "$pid"
+  fi
+  return 0
+}
+
+cleanup() {
+  if [ -f "$work/database_created" ]; then
+    drop_database
+  fi
+  [ -n "${watchdog:-}" ] && stop_everything_quickly "$watchdog"
+  rm -rf "$work"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+if [ "$mode" = full ]; then
+  decide_integration
+  if [ "$integration_run" = yes ]; then
+    if [ "$integration_budget" -gt "$budget" ]; then
+      budget=$integration_budget
+    fi
+    echo "budget raised to ${budget}s: the client's integration tests run, because $integration_why"
+  else
+    skip client-integration "$integration_why"
+  fi
+fi
+
+# The watchdog: USR1 to this shell when the budget is reached.
+(
+  remaining=$((started + budget - $(date +%s)))
+  [ "$remaining" -gt 0 ] || remaining=0
+  sleep "$remaining"
+  kill -USR1 $$ 2>/dev/null
+) &
+watchdog=$!
+
+# The setup check comes first: when it fails, nothing else runs. It runs in the
+# background and is waited for, so the deadline can end it.
+./setup-check &
+wait $!
+setup_status=$?
+if [ "$over_budget" = yes ]; then
+  echo
+  echo "check FAILED: over the budget of ${budget}s"
+  echo "wall time $(($(date +%s) - started))s, budget ${budget}s"
+  exit 1
+fi
+if [ "$setup_status" != 0 ]; then
   echo
   echo "check FAILED: the setup check failed, so no other part ran"
   exit 1
 fi
 
-started=$(date +%s)
-work=$(mktemp -d)
-database="genesis_check_$$_${started}"
-parts="format gleam-build glinter generated-tables gleam-test message-codec migrations squirrel client-suite setup-suite fact-checker"
-
-cleanup() {
-  if [ -f "$work/database_created" ]; then
-    psql -X -q -d postgres -c "drop database if exists \"$database\" with (force)" \
-      >/dev/null 2>&1
-  fi
-  rm -rf "$work"
-}
-trap cleanup EXIT
-trap 'exit 130' INT TERM
 
 # step NAME COMMAND...: runs the command here, its output to a log, and records
 # its status and seconds under NAME.
@@ -86,8 +282,12 @@ step() {
   return $status
 }
 
+# in_background COMMAND...: runs the command in the background, and remembers its
+# process id, so the check waits for the parts and not for the watchdog.
+part_pids=()
 in_background() {
   ("$@") &
+  part_pids+=("$!")
 }
 
 prepare_database() {
@@ -124,6 +324,26 @@ wait_for_status() {
   [ "$(cat "$work/$name.status" 2>/dev/null)" = 0 ]
 }
 
+# The tests tagged serial share a machine-wide resource (a child node's epmd and
+# ports), so they run one at a time, in a second run; the first run skips them
+# (GENESIS_TEST_SKIP_SERIAL, read by test/genesis_prime_test.gleam).
+gleam_test() {
+  local status=0
+  if [ -n "$test_workers" ]; then
+    GENESIS_TEST_SKIP_SERIAL=1 gleam test -- --workers "$test_workers" || status=1
+  else
+    GENESIS_TEST_SKIP_SERIAL=1 gleam test || status=1
+  fi
+  gleam test -- --tag serial || status=1
+  return $status
+}
+
+# The client query process's integration tests: the client scripts' own tests
+# with GENESIS_INTEGRATION=1, which opens the gate of check_support.integration_only.
+client_integration() {
+  GENESIS_INTEGRATION=1 python3.13 -I -m unittest discover -s "$client_scripts" -p 'test_*.py'
+}
+
 squirrel_check() {
   DATABASE_URL=$(database_url) gleam run -m squirrel check
 }
@@ -132,11 +352,28 @@ gleam_chain() {
   if step gleam-build gleam build --warnings-as-errors; then
     step glinter gleam run -m glinter
     step generated-tables gleam run -m genesis_prime/table_generator check
-    step gleam-test gleam test
+    step gleam-test gleam_test
     step message-codec gleam run -m genesis_prime/generate_messages -- check
+  else
+    skip glinter "a part it needs failed: gleam-build"
+    skip generated-tables "a part it needs failed: gleam-build"
+    skip gleam-test "a part it needs failed: gleam-build"
+    skip message-codec "a part it needs failed: gleam-build"
   fi
   if wait_for_status migrations; then
     step squirrel squirrel_check
+  else
+    skip squirrel "a part it needs failed: migrations"
+  fi
+}
+
+fast_chain() {
+  if step gleam-build gleam build --warnings-as-errors; then
+    step glinter gleam run -m glinter
+    step code-rules gleam test -- --tag code_rule
+  else
+    skip glinter "a part it needs failed: gleam-build"
+    skip code-rules "a part it needs failed: gleam-build"
   fi
 }
 
@@ -160,40 +397,73 @@ print(check_support.client_exe())')
 }
 
 in_background step format gleam format --check src test dev
-in_background gleam_chain
-in_background step migrations prepare_database
-in_background step client-suite python3.13 -I -m unittest discover \
-  -s .claude/skills/decoding-the-client/scripts -p 'test_*.py'
-in_background step setup-suite python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
-in_background step fact-checker facts_with_the_client_named
-wait
+case "$mode" in
+  full)
+    in_background gleam_chain
+    in_background step migrations prepare_database
+    in_background step client-suite env GENESIS_INTEGRATION=0 python3.13 -I -m unittest discover \
+      -s .claude/skills/decoding-the-client/scripts -p 'test_*.py'
+    if [ "$integration_run" = yes ]; then
+      in_background step client-integration client_integration
+    fi
+    in_background step setup-suite python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
+    in_background step fact-checker facts_with_the_client_named
+    ;;
+  fast)
+    in_background fast_chain
+    ;;
+esac
+wait "${part_pids[@]}"
 
 failed=""
 failed_names=""
 for part in $parts; do
-  if [ -f "$work/$part.status" ]; then
-    if [ "$(cat "$work/$part.status")" = 0 ]; then
-      printf '  %-16s ok      %ss\n' "$part" "$(cat "$work/$part.seconds")"
+  if [ -f "$work/$part.skipped" ]; then
+    printf '  %-18s skipped (%s)\n' "$part" "$(cat "$work/$part.skipped")"
+  elif [ ! -f "$work/$part.status" ]; then
+    if [ "$over_budget" = yes ]; then
+      printf '  %-18s FAILED  unfinished at the budget\n' "$part"
     else
-      printf '  %-16s FAILED  %ss\n' "$part" "$(cat "$work/$part.seconds")"
-      failed="$failed $part"
-      failed_names="${failed_names:+$failed_names, }$part"
+      printf '  %-18s FAILED  never wrote its status\n' "$part"
     fi
+    failed="$failed $part"
+    failed_names="${failed_names:+$failed_names, }$part"
+  elif [ "$(cat "$work/$part.status")" = 0 ]; then
+    printf '  %-18s ok      %ss\n' "$part" "$(cat "$work/$part.seconds")"
   else
-    printf '  %-16s not run (a part it needs failed)\n' "$part"
+    printf '  %-18s FAILED  %ss\n' "$part" "$(cat "$work/$part.seconds")"
+    failed="$failed $part"
+    failed_names="${failed_names:+$failed_names, }$part"
   fi
 done
+
+if [ -f "$work/gleam-test.log" ]; then
+  seeds=$(grep -h '^Seed: ' "$work/gleam-test.log" | sed 's/^Seed: //' | tr '\n' ' ' | sed 's/ $//')
+  [ -n "$seeds" ] && echo "  gleam-test seeds: $seeds"
+fi
 
 for part in $failed; do
   echo
   echo "---- $part ----"
-  cat "$work/$part.log"
+  if [ -f "$work/$part.log" ]; then
+    cat "$work/$part.log"
+  else
+    echo "(the part wrote no status and no log)"
+  fi
 done
 
+elapsed=$(($(date +%s) - started))
 echo
-if [ -n "$failed" ]; then
-  echo "check FAILED: $failed_names"
-  echo "wall time $(($(date +%s) - started))s"
+if [ "$over_budget" = yes ] || [ "$elapsed" -gt "$budget" ]; then
+  over_budget=yes
+fi
+if [ -n "$failed" ] || [ "$over_budget" = yes ]; then
+  reasons=$failed_names
+  if [ "$over_budget" = yes ]; then
+    reasons="${reasons:+$reasons, }over the budget of ${budget}s"
+  fi
+  echo "check FAILED: $reasons"
+  echo "wall time ${elapsed}s, budget ${budget}s"
   exit 1
 fi
-echo "check passed, wall time $(($(date +%s) - started))s"
+echo "check passed, wall time ${elapsed}s, budget ${budget}s"

@@ -44,11 +44,6 @@ import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/table/character_creation
-import genesis_prime/table/character_customization_label
-import genesis_prime/table/customization_parameter
-import genesis_prime/table/customization_parameter_map
-import genesis_prime/table/loader/store as table_store
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/string
@@ -762,19 +757,7 @@ fn answer_every_effect(
 pub fn every_row_of_the_clients_character_creation_table_makes_a_character_of_its_own_class_race_sex_and_faction_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let assert Ok(tables) =
-    table_store.load(
-      under: reference.new(),
-      from: client_tables.folder(),
-      entries: [
-        character_creation.entry(),
-        character_customization_label.entry(),
-        customization_parameter.entry(),
-        customization_parameter_map.entry(),
-      ],
-      requirements: [],
-    )
-    as "the CharacterCreation table did not load from the client's files"
+  let tables = client_tables.shared()
   let counts = customisation.of(tables)
   let rows = character_creation.all(tables)
   let offered =

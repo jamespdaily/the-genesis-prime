@@ -157,6 +157,27 @@ const report_end = "report-end"
 /// the epmd the child may have started is killed, however `body` ends.
 pub fn run(start: Start, body: fn(Result(Node, Failure)) -> a) -> a {
   use tables <- planted_table.in_empty_tables_folder
+  run_with_free_ports(start:, tables:, body:, attempts_left: port_attempts)
+}
+
+/// How many times a child is started on fresh ports when a port it was given is
+/// taken before it binds it.
+const port_attempts = 3
+
+type Attempt(a) {
+  PortTaken
+  Finished(a)
+}
+
+/// A port is free when it is picked and can be taken before the child binds it,
+/// by another test's socket in the same VM; the child then ends with "address in
+/// use" before any report, and is started again on new ports.
+fn run_with_free_ports(
+  start start: Start,
+  tables tables: String,
+  body body: fn(Result(Node, Failure)) -> a,
+  attempts_left attempts_left: Int,
+) -> a {
   let epmd_port = free_port()
   let sts_port = free_port()
   let auth_port = free_port()
@@ -173,16 +194,43 @@ pub fn run(start: Start, body: fn(Result(Node, Failure)) -> a) -> a {
         game_port:,
       ),
     )
-  with_cleanup(
-    fn() {
-      read_report(process)
-      |> result.map(fn(report) {
-        Node(process:, epmd_port:, sts_port:, auth_port:, game_port:, report:)
-      })
-      |> body
-    },
-    fn() { clean_up(process:, epmd_port:) },
-  )
+  let attempt =
+    with_cleanup(
+      fn() {
+        case read_report(process) {
+          Error(Exited(output:, ..) as failure) if attempts_left > 1 ->
+            case list.any(output, string.contains(_, "address in use")) {
+              True -> PortTaken
+              False -> Finished(body(Error(failure)))
+            }
+          reported ->
+            reported
+            |> result.map(fn(report) {
+              Node(
+                process:,
+                epmd_port:,
+                sts_port:,
+                auth_port:,
+                game_port:,
+                report:,
+              )
+            })
+            |> body
+            |> Finished
+        }
+      },
+      fn() { clean_up(process:, epmd_port:) },
+    )
+  case attempt {
+    PortTaken ->
+      run_with_free_ports(
+        start:,
+        tables:,
+        body:,
+        attempts_left: attempts_left - 1,
+      )
+    Finished(result) -> result
+  }
 }
 
 /// Ends the child, waits for its operating system process to exit, then kills

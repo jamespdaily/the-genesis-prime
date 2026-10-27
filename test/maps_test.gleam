@@ -615,7 +615,34 @@ fn listen(
 ) -> Nil {
   case process.selector_receive_forever(selector) {
     Heard(carried_a_map:) -> listen(selector:, heard: [carried_a_map, ..heard])
-    Asked(reply:) -> process.send(reply, list.reverse(heard))
+    Asked(reply:) -> {
+      process.send(reply, list.reverse(heard))
+      listen(selector:, heard:)
+    }
+  }
+}
+
+/// What has reached the asker, from its listener, when asked.
+fn heard_by(asked: process.Subject(process.Subject(List(Bool)))) -> List(Bool) {
+  let reply = process.new_subject()
+  process.send(asked, reply)
+  let assert Ok(heard) = process.receive(reply, event_wait_ms)
+    as "the asker reported what reached it"
+  heard
+}
+
+/// Whether anything reaches the asker within `within_ms`, asking every 10 ms.
+fn wait_until_something_reached(
+  asked asked: process.Subject(process.Subject(List(Bool))),
+  within_ms within_ms: Int,
+) -> Bool {
+  case heard_by(asked), within_ms > 0 {
+    [_, ..], _ -> True
+    [], True -> {
+      process.sleep(10)
+      wait_until_something_reached(asked:, within_ms: within_ms - 10)
+    }
+    [], False -> False
   }
 }
 
@@ -715,8 +742,22 @@ pub fn the_askers_of_a_world_whose_old_map_is_ending_each_get_their_own_deadline
     asking_to_enter_world_7(settings:, character_id: 14, within_ms: 5000)
   assert wait_for_the_registry_to_watch(registry:, process: holder)
     as "the registry waits for the old map of world 7 to end"
-  let assert Ok(Error(_)) = process.receive(impatient, 2000)
+  let assert Ok(Error(why)) = process.receive(impatient, 2000)
     as "an asker whose deadline passes is answered at its own deadline, not at the others'"
+  let assert Ok(asked) = process.receive(listening, event_wait_ms)
+    as "the asker finished its entry and listens"
+  // The asker's own wait and the registry's deadline for it end together. When the
+  // registry answered first, the asker took its answer as the end of its wait; when
+  // the asker's wait ended first, the registry's answer reaches it later, and the
+  // registry has dropped the asker only once it has. The old map ends after that.
+  case why {
+    maps.RegistryNotAnswering -> {
+      assert wait_until_something_reached(asked:, within_ms: event_wait_ms)
+        as "the registry answered the asker at its deadline"
+      Nil
+    }
+    maps.MapNotStarted(_) | maps.MapRefused(_) -> Nil
+  }
   process.send(release, Nil)
   let assert Ok(Ok(first)) = process.receive(patient, event_wait_ms)
     as "an asker with time left gets the map once the old one is down"
@@ -729,7 +770,7 @@ pub fn the_askers_of_a_world_whose_old_map_is_ending_each_get_their_own_deadline
   // before this answer.
   let assert Ok(_) = enter(settings:, world_id: 7, character_id: 15)
     as "a later asker for the same world is served"
-  assert !list.contains(what_reached(listening:), True)
+  assert !list.contains(heard_by(asked), True)
     as "designing-processes: an asker that gave up is dropped from the wait, so the map that starts later is not answered to it"
 }
 

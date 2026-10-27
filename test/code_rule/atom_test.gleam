@@ -14,6 +14,7 @@ import gleam/list
 import gleam/string
 import owned_test
 import simplifile
+import unitest
 
 fn external_to(function: String) -> List(String) {
   [
@@ -27,6 +28,7 @@ fn external_to(function: String) -> List(String) {
 
 pub fn the_allowed_modules_are_read_from_the_project_file_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let project_file =
     string.join(
       [
@@ -47,6 +49,7 @@ pub fn the_allowed_modules_are_read_from_the_project_file_test() -> Nil {
 
 pub fn a_call_that_makes_an_atom_from_a_string_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted/rule.gleam", [
       "import gleam/erlang/atom",
@@ -60,6 +63,7 @@ pub fn a_call_that_makes_an_atom_from_a_string_is_a_breach_test() -> Nil {
 
 pub fn an_external_that_makes_an_atom_from_a_string_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   list.each(["binary_to_atom", "list_to_atom"], fn(function) {
     let file = planted.file("src/planted/rule.gleam", external_to(function))
     assert planted.lines(atom.breaches(file, [])) == [3]
@@ -69,6 +73,7 @@ pub fn an_external_that_makes_an_atom_from_a_string_is_a_breach_test() -> Nil {
 
 pub fn an_external_that_reads_a_term_from_bytes_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted/rule.gleam", external_to("binary_to_term"))
   assert planted.lines(atom.breaches(file, [])) == [3]
@@ -76,6 +81,7 @@ pub fn an_external_that_reads_a_term_from_bytes_is_a_breach_test() -> Nil {
 
 pub fn a_listed_module_may_make_atoms_and_read_terms_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted/codec.gleam", [
       "import gleam/erlang/atom",
@@ -92,6 +98,7 @@ pub fn a_listed_module_may_make_atoms_and_read_terms_test() -> Nil {
 
 pub fn a_module_beside_the_listed_one_still_breaks_the_rule_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted/other.gleam", external_to("binary_to_term"))
   assert planted.lines(atom.breaches(file, ["planted/codec"])) == [3]
@@ -99,6 +106,7 @@ pub fn a_module_beside_the_listed_one_still_breaks_the_rule_test() -> Nil {
 
 pub fn a_call_that_only_reads_an_atom_that_exists_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/planted/rule.gleam", [
       "import gleam/erlang/atom",
@@ -118,6 +126,7 @@ pub fn a_call_that_only_reads_an_atom_that_exists_is_not_a_breach_test() -> Nil 
 
 pub fn no_module_in_src_outside_the_listed_ones_makes_an_atom_or_reads_a_term_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let assert Ok(project_file) = simplifile.read("gleam.toml")
     as "gleam.toml could not be read"
   let allowed = atom.allowed(project_file)

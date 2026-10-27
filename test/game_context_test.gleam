@@ -17,15 +17,8 @@ import genesis_prime/game/game_context
 import genesis_prime/game/game_session.{type Context}
 import genesis_prime/map/position.{Position}
 import genesis_prime/table/character_creation
-import genesis_prime/table/character_customization_label
-import genesis_prime/table/customization_parameter
-import genesis_prime/table/customization_parameter_map
-import genesis_prime/table/game_formula
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/table/reward_property_premium_modifier
 import genesis_prime/table/world
-import genesis_prime/table/xp_per_level
-import gleam/erlang/reference
 import gleam/list
 import owned_test
 import unitest
@@ -33,27 +26,6 @@ import unitest
 const server_time = 0x01D9F00000000000
 
 const realm_id = 0x99
-
-fn loaded() -> table_store.Tables {
-  let assert Ok(tables) =
-    table_store.load(
-      under: reference.new(),
-      from: client_tables.folder(),
-      entries: [
-        character_creation.entry(),
-        character_customization_label.entry(),
-        customization_parameter.entry(),
-        customization_parameter_map.entry(),
-        game_formula.entry(),
-        reward_property_premium_modifier.entry(),
-        world.entry(),
-        xp_per_level.entry(),
-      ],
-      requirements: [],
-    )
-    as "the client's tables did not load"
-  tables
-}
 
 fn context(tables: table_store.Tables) -> Context {
   game_context.build(
@@ -71,7 +43,7 @@ fn context(tables: table_store.Tables) -> Context {
 pub fn every_row_of_the_clients_character_creation_table_is_found_by_its_id_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let tables = loaded()
+  let tables = client_tables.shared()
   let context = context(tables)
   let rows = character_creation.all(tables)
   assert rows != [] as "CharacterCreation.tbl holds rows"
@@ -86,7 +58,7 @@ pub fn every_row_of_the_clients_character_creation_table_is_found_by_its_id_test
 pub fn the_level_an_experience_gives_is_the_xp_per_level_rows_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let context = context(loaded())
+  let context = context(client_tables.shared())
   assert context.select.level_of(0) == 1
     as "GetLevelForExperience: XpPerLevel record 0 starts at 0 experience"
   assert context.select.level_of(654) == 1
@@ -109,7 +81,7 @@ pub fn the_level_an_experience_gives_is_the_xp_per_level_rows_test() -> Nil {
 pub fn every_character_creation_row_starts_a_character_on_a_level_of_the_table_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let tables = loaded()
+  let tables = client_tables.shared()
   let context = context(tables)
   list.each(character_creation.all(tables), fn(row) {
     let level = context.select.level_of(row.xp)
@@ -121,7 +93,7 @@ pub fn every_character_creation_row_starts_a_character_on_a_level_of_the_table_t
 pub fn a_world_exists_when_the_clients_world_table_has_its_row_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let tables = loaded()
+  let tables = client_tables.shared()
   let context = context(tables)
   let rows = world.all(tables)
   assert rows != [] as "World.tbl holds rows"
@@ -136,7 +108,7 @@ pub fn a_world_exists_when_the_clients_world_table_has_its_row_test() -> Nil {
 pub fn the_time_the_realm_and_the_starting_place_are_the_ones_given_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
-  let tables = loaded()
+  let tables = client_tables.shared()
   let context = context(tables)
   assert context.select.server_time == server_time
     && context.select.realm_id == realm_id

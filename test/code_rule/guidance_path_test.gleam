@@ -22,6 +22,7 @@ import code_rule/repository
 import gleam/list
 import gleam/string
 import owned_test
+import unitest
 
 const repository_paths = [
   "CLAUDE.md",
@@ -40,6 +41,7 @@ fn breach_lines(guidance: List(#(String, String))) -> List(Int) {
 
 pub fn a_path_that_is_not_in_the_repository_is_a_breach_at_its_line_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text =
     "Intro.\n\nThe server is `src/planted/server.gleam`.\nThe codec is `src/planted/codec.gleam`.\n"
   let breaches =
@@ -51,30 +53,35 @@ pub fn a_path_that_is_not_in_the_repository_is_a_breach_at_its_line_test() -> Ni
 
 pub fn a_path_that_is_in_the_repository_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text = "See `src/planted/server.gleam`, `gleam.toml` and `CLAUDE.md`.\n"
   assert breach_lines([#("CLAUDE.md", text)]) == []
 }
 
 pub fn a_missing_file_named_by_extension_alone_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text = "The lock is `manifest.toml` and the config is `gleam.toml`.\n"
   assert breach_lines([#("CLAUDE.md", text)]) == [1]
 }
 
 pub fn a_directory_the_repository_holds_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text = "Source is under `src/planted/` and `src/planted`.\n"
   assert breach_lines([#("CLAUDE.md", text)]) == []
 }
 
 pub fn a_directory_the_repository_lacks_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text = "Source is under `src/missing/`.\n"
   assert breach_lines([#("CLAUDE.md", text)]) == [1]
 }
 
 pub fn a_skill_may_name_a_path_from_its_own_folder_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text =
     "The facts are `references/facts.toml`, checked by `scripts/check.py`.\n"
   assert breach_lines([#(".claude/skills/planted/SKILL.md", text)]) == []
@@ -82,6 +89,7 @@ pub fn a_skill_may_name_a_path_from_its_own_folder_test() -> Nil {
 
 pub fn a_skill_naming_a_path_missing_from_its_own_folder_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text =
     "The facts are `references/facts.toml`.\nThe seed is `scripts/seed.py`.\n"
   assert breach_lines([#(".claude/skills/planted/SKILL.md", text)]) == [2]
@@ -89,12 +97,14 @@ pub fn a_skill_naming_a_path_missing_from_its_own_folder_is_a_breach_test() -> N
 
 pub fn a_folder_relative_path_does_not_resolve_from_another_guidance_file_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text = "The facts are `references/facts.toml`.\n"
   assert breach_lines([#("CLAUDE.md", text)]) == [1]
 }
 
 pub fn text_between_backticks_that_is_not_a_path_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text =
     string.join(
       [
@@ -112,12 +122,14 @@ pub fn text_between_backticks_that_is_not_a_path_is_not_a_breach_test() -> Nil {
 
 pub fn a_path_outside_backticks_is_not_read_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let text = "Plain text naming src/planted/missing.gleam is not a reference.\n"
   assert breach_lines([#("CLAUDE.md", text)]) == []
 }
 
 pub fn every_path_the_guidance_names_is_in_the_repository_test() -> Nil {
   use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
   let guidance = repository.guidance()
   assert list.length(guidance) >= 5 as "guidance files were not found"
   assert guidance_path.breaches(guidance, repository.tracked_paths()) == []

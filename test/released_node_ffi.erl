@@ -146,15 +146,17 @@ with_cleanup(Body, Cleanup) ->
         Cleanup()
     end.
 
-%% Whether a connection to the port on the loopback is accepted. Refused is
-%% the one other answer a port with nothing listening gives.
+%% Whether a connection to the port on the loopback is accepted. A port with
+%% nothing listening answers refused; an epmd that is ending can reset a
+%% connection it had queued, which is no acceptance either (seen as
+%% {error, econnreset} in one of five full runs with 12 tests at once).
 -spec accepts_connections(inet:port_number()) -> boolean().
 accepts_connections(Port) ->
     case gen_tcp:connect({127, 0, 0, 1}, Port, [], 5000) of
         {ok, Socket} ->
             ok = gen_tcp:close(Socket),
             true;
-        {error, econnrefused} ->
+        {error, Reason} when Reason =:= econnrefused; Reason =:= econnreset ->
             false
     end.
 

@@ -16,6 +16,7 @@ import gleam/list
 import gleam/string
 import owned_test
 import simplifile
+import unitest
 
 fn listed() -> List(domain.Domain) {
   [
@@ -31,6 +32,7 @@ fn read(path: String) -> String {
 
 pub fn the_domains_are_read_with_their_reasons_from_the_project_file_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let project_file =
     string.join(
       [
@@ -52,11 +54,13 @@ pub fn the_domains_are_read_with_their_reasons_from_the_project_file_test() -> N
 
 pub fn a_project_file_with_no_domains_lists_none_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert domain.domains("name = \"planted\"\n") == []
 }
 
 pub fn a_folder_that_is_not_a_listed_domain_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/genesis_prime/weather/forecast.gleam", [
       "pub fn today() -> Int {",
@@ -72,6 +76,7 @@ pub fn a_folder_that_is_not_a_listed_domain_is_a_breach_test() -> Nil {
 
 pub fn a_module_that_is_not_a_listed_domain_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file =
     planted.file("src/genesis_prime/weather.gleam", ["pub const a = 1"])
   let assert [breach] = domain.unlisted([file], listed())
@@ -82,6 +87,7 @@ pub fn a_module_that_is_not_a_listed_domain_is_a_breach_test() -> Nil {
 
 pub fn a_domain_name_that_only_starts_like_a_listed_domain_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let files = [
     planted.file("src/genesis_prime/server_extra.gleam", ["pub const a = 1"]),
     planted.file("src/genesis_prime/maps/tile.gleam", ["pub const a = 1"]),
@@ -95,6 +101,7 @@ pub fn a_domain_name_that_only_starts_like_a_listed_domain_is_a_breach_test() ->
 
 pub fn a_file_in_a_listed_domain_at_any_depth_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let files = [
     planted.file("src/genesis_prime/server.gleam", ["pub const a = 1"]),
     planted.file("src/genesis_prime/server/supervisor.gleam", [
@@ -107,12 +114,14 @@ pub fn a_file_in_a_listed_domain_at_any_depth_is_not_a_breach_test() -> Nil {
 
 pub fn the_root_module_is_under_no_domain_and_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let file = planted.file("src/genesis_prime.gleam", ["pub fn main() { Nil }"])
   assert domain.unlisted([file], listed()) == []
 }
 
 pub fn no_folder_or_module_under_src_is_outside_the_listed_domains_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let domains = domain.domains(read("gleam.toml"))
   assert domains != [] as "no domain is listed in gleam.toml"
   assert domain.unlisted(repository.sources(["src"]), domains) == []
@@ -120,6 +129,7 @@ pub fn no_folder_or_module_under_src_is_outside_the_listed_domains_test() -> Nil
 
 pub fn a_listed_domain_with_an_empty_reason_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let domains = [
     Domain(module: "genesis_prime/server", reason: "the top supervisor"),
     Domain(module: "genesis_prime/map", reason: ""),
@@ -131,11 +141,13 @@ pub fn a_listed_domain_with_an_empty_reason_is_a_breach_test() -> Nil {
 
 pub fn a_listed_domain_with_a_reason_is_not_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert domain.unexplained(listed()) == []
 }
 
 pub fn every_domain_listed_in_the_project_file_has_a_reason_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   let domains = domain.domains(read("gleam.toml"))
   assert domains != [] as "no domain is listed in gleam.toml"
   assert domain.unexplained(domains) == []

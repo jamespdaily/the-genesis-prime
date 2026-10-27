@@ -17,6 +17,14 @@ Expected values and their sources:
   "game_table.file".
 - 26 of the 384 files are stored as is (flag 1), 358 LZMA-compressed (flag 5),
   read from the client's index; a stored file's SHA-1 is the index's.
+- all or nothing (issue 109, item 5): a run that fails leaves the folder exactly
+  as it was, and one that succeeds replaces it whole, so a file of an earlier
+  run that the index no longer lists is gone. The swap moves the old folder to
+  `.old` beside it, then the staged set in; a crash between the two renames
+  leaves `.old` and no folder, which the next run moves back (rolls back), and a
+  crash after them leaves a folder and `.old`, which it removes (the folder was
+  verified before the swap). These rules are the step's own design (issue 109);
+  the 384 is the fact file's.
 - the settings: GENESIS_TABLE_DIR, else $GENESIS_HOME/tables, else
   ~/.genesis-prime/tables (setup_check/environment.sh); WILDSTAR_CLIENT_EXE
   names Client64/WildStar64.exe, whose Patch folder is beside Client64
@@ -25,14 +33,18 @@ Expected values and their sources:
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
 """
 
+import contextlib
 import hashlib
+import io
 import lzma
 import os
+import shutil
 import struct
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -227,6 +239,276 @@ class ExtractionTest(WorkInFolderCase):
         self.assertEqual((self.destination / "Alpha.tbl").read_bytes(), table_content("alpha"))
 
 
+def write_folder(folder: Path, files: dict[str, bytes]) -> None:
+    folder.mkdir(parents=True)
+    for name, content in files.items():
+        (folder / name).write_bytes(content)
+
+
+def snapshot(folder: Path) -> dict[str, bytes] | None:
+    """The names and bytes of a folder's files, or None when it is not there."""
+    if not folder.exists():
+        return None
+    return {path.name: path.read_bytes() for path in sorted(folder.iterdir())}
+
+
+OLD_FILES = {"Alpha.tbl": b"LBTD an earlier alpha", "Stale.tbl": b"LBTD a table the index no longer lists"}
+
+
+class AllOrNothingTest(WorkInFolderCase):
+    """Issue 109, item 5: extraction is all or nothing."""
+
+    def assert_nothing_beside_the_folder(self):
+        """No staging or old folder is left beside the destination, so the next
+        run has nothing to recover."""
+        left = sorted(path.name for path in self.root.iterdir() if path.name not in ("Patch", "tables"))
+        self.assertEqual(left, [])
+
+    def planted_three(self) -> "Planted":
+        return Planted(
+            self.root,
+            [(f"DB/{name}.tbl", table_content(name.lower()), 5) for name in ("Alpha", "Beta", "Gamma")],
+        )
+
+    def test_a_refused_run_leaves_an_existing_folder_exactly_as_it_was(self):
+        for corrupt in ("DB/Alpha.tbl", "DB/Gamma.tbl"):  # the first and the last file to be staged
+            with self.subTest(corrupt=corrupt):
+                shutil.rmtree(self.root, ignore_errors=True)
+                self.root.mkdir()
+                write_folder(self.destination, OLD_FILES)
+                planted = self.planted_three()
+                planted.corrupt(corrupt)
+                with self.assertRaises(extract_tables.Corrupt) as refused:
+                    extract_tables.extract(planted.patch, self.destination)
+                self.assertEqual(refused.exception.name, corrupt)
+                self.assertEqual(snapshot(self.destination), OLD_FILES)
+                self.assert_nothing_beside_the_folder()
+
+    def test_a_failure_while_the_whole_set_is_swapped_in_leaves_the_folder_as_it_was(self):
+        # The disk refuses a rename of the folder a step of the swap moves: the old
+        # folder aside (its source is the destination), or the staged set in (its
+        # source is the staging folder).
+        for moved in ("the old folder aside", "the staged set in"):
+            with self.subTest(refused=moved):
+                shutil.rmtree(self.root, ignore_errors=True)
+                self.root.mkdir()
+                write_folder(self.destination, OLD_FILES)
+                planted = self.planted_three()
+                source = self.destination if moved == "the old folder aside" else extract_tables.staging_of(self.destination)
+
+                def refusing(real):
+                    def rename(src, dst, *args, **kwargs):
+                        if Path(src) == source:
+                            raise OSError("planted: the disk refused the rename")
+                        return real(src, dst, *args, **kwargs)
+
+                    return rename
+
+                with mock.patch("os.rename", refusing(os.rename)), mock.patch("os.replace", refusing(os.replace)):
+                    with self.assertRaises(OSError):
+                        extract_tables.extract(planted.patch, self.destination)
+                self.assertEqual(snapshot(self.destination), OLD_FILES)
+                self.assert_nothing_beside_the_folder()
+
+    def test_a_failure_removing_the_old_folder_after_the_swap_does_not_fail_the_extraction(self):
+        # Both renames are done and the new set is published: the old folder is
+        # cleanup. It stays beside the folder, and the next run's recover removes it.
+        write_folder(self.destination, OLD_FILES)
+        planted = self.planted_three()
+        aside = extract_tables.aside_of(self.destination)
+        real_rmtree = shutil.rmtree
+
+        def refusing(path, *args, **kwargs):
+            if Path(path) == aside:
+                raise OSError("planted: the old folder could not be removed")
+            return real_rmtree(path, *args, **kwargs)
+
+        with mock.patch("shutil.rmtree", refusing):
+            names = extract_tables.extract(planted.patch, self.destination)
+        new_files = {f"{name}.tbl": table_content(name.lower()) for name in ("Alpha", "Beta", "Gamma")}
+        self.assertEqual(names, ["Alpha.tbl", "Beta.tbl", "Gamma.tbl"])
+        self.assertEqual(snapshot(self.destination), new_files)
+        self.assertEqual(snapshot(aside), OLD_FILES, "the old folder is left for recover")
+        extract_tables.recover(self.destination)
+        self.assertFalse(aside.exists(), "the next run's recover removed the old folder")
+        self.assertEqual(snapshot(self.destination), new_files)
+
+    def test_a_run_that_succeeds_replaces_the_whole_folder_so_a_stale_file_is_gone(self):
+        write_folder(self.destination, OLD_FILES)
+        planted = self.planted_three()
+        names = extract_tables.extract(planted.patch, self.destination)
+        self.assertEqual(names, ["Alpha.tbl", "Beta.tbl", "Gamma.tbl"])
+        self.assertEqual(
+            snapshot(self.destination),
+            {f"{name}.tbl": table_content(name.lower()) for name in ("Alpha", "Beta", "Gamma")},
+        )
+        self.assert_nothing_beside_the_folder()
+
+    def test_a_first_run_creates_the_folder_whole(self):
+        planted = self.planted_three()
+        extract_tables.extract(planted.patch, self.destination)
+        self.assertEqual(sorted(snapshot(self.destination)), ["Alpha.tbl", "Beta.tbl", "Gamma.tbl"])
+        self.assert_nothing_beside_the_folder()
+
+    def test_a_set_of_another_size_than_expected_is_refused_and_publishes_nothing(self):
+        write_folder(self.destination, OLD_FILES)
+        planted = self.planted_three()
+        with self.assertRaises(extract_tables.Corrupt) as refused:
+            extract_tables.extract(planted.patch, self.destination, expected_count=384)
+        self.assertIn("3", str(refused.exception))
+        self.assertIn("384", str(refused.exception))
+        self.assertEqual(snapshot(self.destination), OLD_FILES)
+        self.assert_nothing_beside_the_folder()
+
+    def test_a_set_of_the_expected_size_is_published(self):
+        planted = self.planted_three()
+        names = extract_tables.extract(planted.patch, self.destination, expected_count=3)
+        self.assertEqual(len(names), 3)
+
+    def test_main_refuses_an_index_that_does_not_list_384_tables_and_leaves_the_folder_as_it_was(self):
+        # The planted index lists 3; the fact file says the client's lists 384.
+        write_folder(self.destination, OLD_FILES)
+        self.planted_three()
+        exe = self.root / "Client64" / "WildStar64.exe"
+        exe.parent.mkdir()
+        exe.write_bytes(b"planted")
+        settings = {"WILDSTAR_CLIENT_EXE": str(exe), "GENESIS_TABLE_DIR": str(self.destination)}
+        with mock.patch.dict(os.environ, settings), contextlib.redirect_stdout(io.StringIO()) as printed:
+            status = extract_tables.main()
+        self.assertEqual(status, 1, printed.getvalue())
+        self.assertIn("384", printed.getvalue())
+        self.assertEqual(snapshot(self.destination), OLD_FILES)
+
+
+class StagingTest(WorkInFolderCase):
+    """The steps of the swap: stage and check, verify, swap, recover."""
+
+    def setUp(self):
+        super().setUp()
+        self.planted = Planted(
+            self.root, [(f"DB/{name}.tbl", table_content(name.lower()), 5) for name in ("Alpha", "Beta")]
+        )
+        index = extract_tables.read_index((self.planted.patch / "ClientData.index").read_bytes())
+        self.tables = extract_tables.tables_of(index)
+        self.staging = self.root / "staging"
+
+    def staged(self, **changes: bytes | None) -> None:
+        """A staging folder with each table's content, with the files of `changes`
+        (name -> bytes, or None to leave it out) differing."""
+        files = {f"{name}.tbl": table_content(name.lower()) for name in ("Alpha", "Beta")}
+        for name, content in changes.items():
+            if content is None:
+                del files[name]
+            else:
+                files[name] = content
+        write_folder(self.staging, files)
+
+    def test_the_names_of_the_folders_beside_the_destination_are_staging_and_old(self):
+        self.assertEqual(extract_tables.staging_of(self.destination), self.root / "tables.staging")
+        self.assertEqual(extract_tables.aside_of(self.destination), self.root / "tables.old")
+
+    def test_stage_tables_writes_every_table_into_staging_and_lists_the_index_tables(self):
+        self.staging.mkdir()
+        listed = extract_tables.stage_tables(self.planted.patch, self.staging)
+        self.assertEqual([f.path for f in listed], ["DB/Alpha.tbl", "DB/Beta.tbl"])
+        self.assertEqual(
+            snapshot(self.staging), {"Alpha.tbl": table_content("alpha"), "Beta.tbl": table_content("beta")}
+        )
+
+    def test_stage_tables_refuses_a_block_that_does_not_match_the_index_by_name(self):
+        self.planted.corrupt("DB/Beta.tbl")
+        self.staging.mkdir()
+        with self.assertRaises(extract_tables.Corrupt) as refused:
+            extract_tables.stage_tables(self.planted.patch, self.staging)
+        self.assertEqual(refused.exception.name, "DB/Beta.tbl")
+
+    def test_verify_staged_accepts_exactly_the_index_tables(self):
+        self.staged()
+        extract_tables.verify_staged(self.staging, self.tables, expected_count=2)
+        extract_tables.verify_staged(self.staging, self.tables, expected_count=None)
+
+    def test_verify_staged_refuses_a_table_that_is_missing_by_name(self):
+        self.staged(**{"Beta.tbl": None})
+        with self.assertRaises(extract_tables.Corrupt) as refused:
+            extract_tables.verify_staged(self.staging, self.tables, expected_count=None)
+        self.assertEqual(refused.exception.name, "DB/Beta.tbl")
+
+    def test_verify_staged_refuses_a_table_of_another_size_than_the_index_gives_by_name(self):
+        self.staged(**{"Alpha.tbl": table_content("alpha") + b"more"})
+        with self.assertRaises(extract_tables.Corrupt) as refused:
+            extract_tables.verify_staged(self.staging, self.tables, expected_count=None)
+        self.assertEqual(refused.exception.name, "DB/Alpha.tbl")
+
+    def test_verify_staged_refuses_a_file_the_index_does_not_list(self):
+        self.staged(**{"Stray.tbl": b"LBTD stray"})
+        with self.assertRaises(extract_tables.Corrupt) as refused:
+            extract_tables.verify_staged(self.staging, self.tables, expected_count=None)
+        self.assertIn("Stray.tbl", str(refused.exception))
+
+    def test_verify_staged_refuses_a_count_other_than_expected(self):
+        self.staged()
+        with self.assertRaises(extract_tables.Corrupt) as refused:
+            extract_tables.verify_staged(self.staging, self.tables, expected_count=384)
+        self.assertIn("384", str(refused.exception))
+
+    def test_swap_whole_puts_the_staged_set_in_place_of_the_folder(self):
+        write_folder(self.destination, OLD_FILES)
+        self.staged()
+        extract_tables.swap_whole(self.staging, self.destination)
+        self.assertEqual(
+            snapshot(self.destination), {"Alpha.tbl": table_content("alpha"), "Beta.tbl": table_content("beta")}
+        )
+        self.assertFalse(self.staging.exists())
+        self.assertFalse(extract_tables.aside_of(self.destination).exists())
+
+    def test_swap_whole_creates_the_folder_when_there_was_none(self):
+        self.staged()
+        extract_tables.swap_whole(self.staging, self.destination)
+        self.assertEqual(sorted(snapshot(self.destination)), ["Alpha.tbl", "Beta.tbl"])
+        self.assertFalse(self.staging.exists())
+
+
+class RecoveryTest(WorkInFolderCase):
+    """A crash between the renames of a swap leaves folders beside the destination,
+    and the next run puts them right."""
+
+    NEW_FILES = {"Alpha.tbl": b"LBTD the new alpha"}
+
+    def test_a_crash_after_the_old_folder_was_moved_aside_is_rolled_back(self):
+        write_folder(extract_tables.aside_of(self.destination), OLD_FILES)
+        write_folder(extract_tables.staging_of(self.destination), self.NEW_FILES)
+        extract_tables.recover(self.destination)
+        self.assertEqual(snapshot(self.destination), OLD_FILES)
+        self.assertFalse(extract_tables.aside_of(self.destination).exists())
+        self.assertFalse(extract_tables.staging_of(self.destination).exists())
+
+    def test_a_crash_after_the_staged_set_was_put_in_place_keeps_it_and_removes_the_old_folder(self):
+        write_folder(self.destination, self.NEW_FILES)
+        write_folder(extract_tables.aside_of(self.destination), OLD_FILES)
+        extract_tables.recover(self.destination)
+        self.assertEqual(snapshot(self.destination), self.NEW_FILES)
+        self.assertFalse(extract_tables.aside_of(self.destination).exists())
+
+    def test_a_staging_folder_left_by_a_run_that_never_swapped_is_removed(self):
+        write_folder(self.destination, OLD_FILES)
+        write_folder(extract_tables.staging_of(self.destination), self.NEW_FILES)
+        extract_tables.recover(self.destination)
+        self.assertEqual(snapshot(self.destination), OLD_FILES)
+        self.assertFalse(extract_tables.staging_of(self.destination).exists())
+
+    def test_with_nothing_to_recover_nothing_is_created(self):
+        extract_tables.recover(self.destination)
+        self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_a_run_after_a_cut_swap_publishes_the_new_set_whole(self):
+        write_folder(extract_tables.aside_of(self.destination), OLD_FILES)
+        write_folder(extract_tables.staging_of(self.destination), self.NEW_FILES)
+        planted = Planted(self.root, [("DB/Beta.tbl", table_content("beta"), 5)])
+        extract_tables.extract(planted.patch, self.destination)
+        self.assertEqual(snapshot(self.destination), {"Beta.tbl": table_content("beta")})
+        self.assertEqual(sorted(path.name for path in self.root.iterdir()), ["Patch", "tables"])
+
+
 class SettingsTest(unittest.TestCase):
     def test_genesis_table_dir_names_the_folder(self):
         self.assertEqual(extract_tables.table_folder({"GENESIS_TABLE_DIR": "/x/tables", "GENESIS_HOME": "/h"}), Path("/x/tables"))
@@ -254,7 +536,7 @@ class RealClientTest(WorkInFolderCase):
 
     def test_all_384_tables_are_extracted_each_matching_the_index(self):
         patch = self.real_patch()
-        names = extract_tables.extract(patch, self.destination)
+        names = extract_tables.extract(patch, self.destination, expected_count=384)
         self.assertEqual(len(names), 384, "game_tables.ClientData: 384 tables")
         files = extract_tables.read_index((patch / "ClientData.index").read_bytes())
         tables = {f.path.split("/", 1)[1]: f for f in extract_tables.tables_of(files)}

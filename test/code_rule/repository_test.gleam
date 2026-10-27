@@ -11,9 +11,11 @@ import code_rule/repository
 import code_rule/test_body
 import gleam/list
 import owned_test
+import unitest
 
 pub fn the_tree_is_read_once_whatever_the_number_of_rules_test() -> Nil {
   use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
   assert list.flat_map(
       repository.sources(["src"]),
       game_master_command.breaches,
