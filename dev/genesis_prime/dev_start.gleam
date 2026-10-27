@@ -7,7 +7,8 @@
 //// `gleam run -m genesis_prime/dev_start -- <recording folder> [<planted message id>]`
 ////
 //// - `recording folder`: where each connection's recording is written, made
-////   when it is missing; by convention `test/recording/<date>-<flow>`.
+////   when it is missing; by convention `test/rule_recording/<date>-<flow>`.
+////   The relay's recordings, a different format, are in `test/recording`.
 //// - `planted message id`: a message id, such as `0x0914`, sent once with an
 ////   empty body in the auth wrapper after the hello. Left out, nothing is
 ////   planted.
