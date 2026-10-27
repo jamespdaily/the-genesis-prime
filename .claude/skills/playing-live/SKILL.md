@@ -25,6 +25,12 @@ gleam run
 
 The server reads the table folder from `GENESIS_TABLE_DIR`, which `setup_check/environment.sh` sets.
 
+## The client's log
+
+Start the client with `-logFile -logFlush` on its command line, so it writes a log file. Run `scripts/client-log.sh start <folder>` before a session and `scripts/client-log.sh collect <folder>` after it: the script copies the session's log and error reports back and lists each message the client failed to handle, by id. It needs `GENESIS_PLAY_CLIENT_DIR`, the client's install folder on the PC.
+
+The client uploads its error reports to `crash.na.wildstar-online.com`, which still resolves; the PC's hosts file maps it to `0.0.0.0`. A new play PC needs the same line before its first session.
+
 ## Seeing the screen
 
 `scripts/screenshot.sh` captures the client's window on the PC through a scheduled task that runs hidden, copies the picture back and always deletes the task. It never brings a window forward or moves focus: Jim may be using the PC.
