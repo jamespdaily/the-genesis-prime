@@ -7,7 +7,8 @@
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
   type Ask, type Effect, type Event, type Input, type LogLevel, type LogLine,
-  type Step, Effects, EffectsThenAsk, Input, Log, Now, Peer, Stop, Write,
+  type Step, CancelTimer, Effects, EffectsThenAsk, Input, Log, Now, Peer, Reply,
+  Send, StartTimer, Stop, Unwatch, Watch, Write,
 }
 import genesis_prime/store.{type Account, Account, AccountId}
 import gleam/bit_array
@@ -38,20 +39,29 @@ pub fn jim() -> Account {
 /// A GUID whose 16 wire bytes count up from `first`, so a GUID read in the
 /// wrong byte order is another GUID.
 pub fn guid_of(first: Int) -> Guid {
-  let assert Ok(guid) = guid.from_wire(counting(first, 16, <<>>))
+  let assert Ok(guid) =
+    guid.from_wire(counting(next: first, remaining: 16, built: <<>>))
     as "sixteen bytes are a GUID"
   guid
 }
 
 /// A 32-byte seed whose bytes count up from `first`.
 pub fn seed(first first: Int) -> BitArray {
-  counting(first, 32, <<>>)
+  counting(next: first, remaining: 32, built: <<>>)
 }
 
-fn counting(next: Int, remaining: Int, built: BitArray) -> BitArray {
+fn counting(
+  next next: Int,
+  remaining remaining: Int,
+  built built: BitArray,
+) -> BitArray {
   case remaining {
     0 -> built
-    _ -> counting(next + 1, remaining - 1, <<built:bits, { next % 256 }>>)
+    _ ->
+      counting(next: next + 1, remaining: remaining - 1, built: <<
+        built:bits,
+        { next % 256 },
+      >>)
   }
 }
 
@@ -86,7 +96,14 @@ pub fn writes(step: Step(outgoing, request)) -> List(BitArray) {
   list.filter_map(effects_of(step), fn(effect) {
     case effect {
       Write(bytes:) -> Ok(bytes)
-      _ -> Error(Nil)
+      Send(..)
+      | Reply(..)
+      | Watch(..)
+      | Unwatch(..)
+      | StartTimer(..)
+      | CancelTimer(..)
+      | Log(..)
+      | Stop -> Error(Nil)
     }
   })
 }
@@ -96,14 +113,21 @@ pub fn logs(step: Step(outgoing, request)) -> List(LogLine) {
   list.filter_map(effects_of(step), fn(effect) {
     case effect {
       Log(line:) -> Ok(line)
-      _ -> Error(Nil)
+      Send(..)
+      | Reply(..)
+      | Watch(..)
+      | Unwatch(..)
+      | StartTimer(..)
+      | CancelTimer(..)
+      | Write(..)
+      | Stop -> Error(Nil)
     }
   })
 }
 
 /// The log lines of one level.
 pub fn logs_of(
-  step: Step(outgoing, request),
+  step step: Step(outgoing, request),
   level level: LogLevel,
 ) -> List(LogLine) {
   list.filter(logs(step), fn(line) { line.level == level })
@@ -123,6 +147,6 @@ pub fn asked(step: Step(outgoing, request)) -> Option(Ask(request)) {
 }
 
 /// Whether a log line's text holds the words, in any case.
-pub fn says(line: LogLine, words: String) -> Bool {
+pub fn says(line line: LogLine, words words: String) -> Bool {
   string.contains(string.lowercase(line.text), string.lowercase(words))
 }

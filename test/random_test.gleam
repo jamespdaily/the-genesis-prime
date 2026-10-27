@@ -79,11 +79,11 @@ pub fn a_draw_takes_whole_blocks_and_the_next_draw_starts_at_the_next_block_test
     ])
     as "40 bytes are block 1 and the first 8 of block 2"
   assert one
-    == case bit_array.slice(block(seed:, counter: 4), 0, 1) {
+    == case bit_array.slice(block(seed:, counter: 3), 0, 1) {
       Ok(first) -> first
       Error(Nil) -> <<>>
     }
-    as "the draw after 40 bytes (2 blocks) starts at block 4, none of block 3's dropped bytes reused"
+    as "40 bytes take blocks 1 and 2, so the next draw starts at block 3"
 }
 
 pub fn the_same_seed_gives_the_same_values_and_two_seeds_give_different_ones_test() -> Nil {

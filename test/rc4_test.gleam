@@ -110,7 +110,7 @@ fn rfc_6229_128_bit_rows() -> List(#(Int, BitArray)) {
 /// Walks one stream through the rows in order: ciphering zero bytes up to each
 /// offset and then 16 more, so every row is read after several calls.
 fn assert_rows(key: BitArray, rows: List(#(Int, BitArray))) -> Nil {
-  let _ =
+  let _walked =
     list.fold(rows, #(started_under(key), 0), fn(walk, row) {
       let #(stream, position) = walk
       let #(offset, expected) = row

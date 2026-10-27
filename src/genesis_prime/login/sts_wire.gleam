@@ -80,6 +80,19 @@ fn collect(
   received: BitArray,
   found: List(Request),
 ) -> Result(#(List(Request), BitArray), WireError) {
+  case take(received:) {
+    Error(error) -> Error(error)
+    Ok(None) -> Ok(#(list.reverse(found), received))
+    Ok(Some(#(request, rest))) -> collect(rest, [request, ..found])
+  }
+}
+
+/// The first request whole in the received bytes and the bytes after it, or
+/// `None` when the first request's end has not arrived. A rule that must
+/// stop between two requests of one read keeps the bytes after the first.
+pub fn take(
+  received received: BitArray,
+) -> Result(Option(#(Request, BitArray)), WireError) {
   use <- bool.guard(
     when: !could_start_a_request(received),
     return: Error(BadRequestLine),
@@ -92,7 +105,7 @@ fn collect(
     None ->
       case bit_array.byte_size(received) >= head_limit {
         True -> Error(HeadTooLong)
-        False -> Ok(#(list.reverse(found), received))
+        False -> Ok(None)
       }
     Some(head_size) -> {
       let assert <<head:bytes-size(head_size), "\r\n\r\n":utf8, after:bytes>> =
@@ -105,8 +118,8 @@ fn collect(
       )
       case after {
         <<body:bytes-size(length), rest:bytes>> ->
-          collect(rest, [Request(..request, body:), ..found])
-        _ -> Ok(#(list.reverse(found), received))
+          Ok(Some(#(Request(..request, body:), rest)))
+        _ -> Ok(None)
       }
     }
   }

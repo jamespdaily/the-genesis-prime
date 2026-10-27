@@ -175,6 +175,9 @@ pub fn every_field_of_the_message_schema_names_its_evidence_test() -> Nil {
     as "CLAUDE.md: every packet layout lives in one schema with its evidence"
 }
 
+const named_field =
+  "  { name = \"build\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },"
+
 const unnamed_field =
   "  { name = \"field_3\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\" },"
 
@@ -185,7 +188,7 @@ pub fn an_unnamed_field_with_no_safe_by_in_a_message_the_server_sends_is_a_breac
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let text =
-    schema(fields: [good_field, unnamed_field], record_fields: [good_field])
+    schema(fields: [named_field, unnamed_field], record_fields: [good_field])
   let assert [breach] =
     schema_evidence.breaches(
       file: SourceFile(path: "src/planted/schema.toml", text:),
@@ -204,7 +207,9 @@ pub fn an_unnamed_field_with_a_safe_by_key_of_the_fact_file_is_not_a_breach_test
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let text =
-    schema(fields: [good_field, unnamed_safe_field], record_fields: [good_field])
+    schema(fields: [named_field, unnamed_safe_field], record_fields: [
+      good_field,
+    ])
   assert breach_lines_when_sent(text, sent_messages: ["planted_hello"]) == []
 }
 
@@ -214,7 +219,7 @@ pub fn a_safe_by_key_that_is_not_a_fact_key_is_a_breach_test() -> Nil {
   let text =
     schema(
       fields: [
-        good_field,
+        named_field,
         string.replace(unnamed_safe_field, "opcode.0x2", "opcode.0x9"),
       ],
       record_fields: [good_field],
@@ -227,7 +232,7 @@ pub fn a_message_the_client_sends_may_have_unnamed_fields_with_no_safe_by_test()
   use <- unitest.tag("code_rule")
   let text =
     string.replace(
-      schema(fields: [good_field, unnamed_field], record_fields: [good_field]),
+      schema(fields: [named_field, unnamed_field], record_fields: [good_field]),
       "direction = \"server_to_client\"",
       "direction = \"client_to_server\"",
     )
@@ -239,7 +244,7 @@ pub fn a_message_no_module_outside_the_message_folder_imports_is_not_sent_test()
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let text =
-    schema(fields: [good_field, unnamed_field], record_fields: [good_field])
+    schema(fields: [named_field, unnamed_field], record_fields: [good_field])
   assert breach_lines_when_sent(text, sent_messages: ["another_message"]) == []
     as "a message nothing imports is never written by the server"
 }

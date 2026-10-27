@@ -120,9 +120,9 @@ fn read(
 }
 
 fn answer(
-  state: auth_connection.State,
-  taken: Step(Nil, Request),
-  outcome: Outcome(Answer),
+  state state: auth_connection.State,
+  taken taken: Step(Nil, Request),
+  outcome outcome: Outcome(Answer),
 ) -> #(auth_connection.State, Step(Nil, Request)) {
   let assert Some(ask) = support.asked(taken) as "the step ends in an ask"
   feed(state, step.Answered(ask: ask.ask, outcome:))
@@ -208,7 +208,11 @@ pub fn a_login_request_with_a_live_game_token_gets_0x591_then_0x3db_with_a_sessi
   assert ask.deadline_ms == support.now_ms + 5000
   assert support.writes(taken) == [] as "nothing is written before the answer"
   let #(state, taken) =
-    answer(state, taken, step.Answer(FromHandOff(Taken(holder: holder()))))
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
+    )
   let assert Ok(session_key) =
     guid.from_wire(support.sixteen(seed:, counter: 0))
   let assert Some(ask) = support.asked(taken) as "the session key is kept"
@@ -220,7 +224,8 @@ pub fn a_login_request_with_a_live_game_token_gets_0x591_then_0x3db_with_a_sessi
     ))
     as "the seed's first draw, kept for the account for the settings' lifetime"
   assert support.writes(taken) == []
-  let #(_, taken) = answer(state, taken, step.Answer(FromHandOff(Kept)))
+  let #(_, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromHandOff(Kept)))
   let assert [accepted, handoff] = heard(taken) as "0x591, then 0x3db"
   assert accepted.message_id == 0x0591 && handoff.message_id == 0x03DB
   assert login_accepted.decode(accepted.body)
@@ -248,7 +253,8 @@ pub fn a_token_never_kept_already_taken_or_expired_gets_0x63d_reason_16_and_the_
       user_id: holder().game_account_id,
       build: 16_042,
     )
-  let #(_, taken) = answer(state, taken, step.Answer(FromHandOff(NoHolder)))
+  let #(_, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromHandOff(NoHolder)))
   let refused = refusal(taken)
   assert refused.reason == 16 && refused.value == 0
     as "opcode.0x63d: 16 is 'Invalid Login Token'"
@@ -265,7 +271,11 @@ pub fn a_user_id_other_than_the_tokens_account_gets_0x63d_reason_16_test() -> Ni
       build: 16_042,
     )
   let #(_, taken) =
-    answer(state, taken, step.Answer(FromHandOff(Taken(holder: holder()))))
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
+    )
   assert refusal(taken).reason == 16
     as "the UserId the client showed is not the token's account: opcode.0x63d 16"
   assert support.asked(taken) == None as "no session key is made"
@@ -301,10 +311,10 @@ pub fn a_hand_off_that_does_not_answer_gets_0x63d_reason_12_and_a_warning_log_te
         user_id: holder().game_account_id,
         build: 16_042,
       )
-    let #(_, taken) = answer(state, taken, outcome)
+    let #(_, taken) = answer(state:, taken:, outcome:)
     assert refusal(taken).reason == 12
       as "opcode.0x63d: 12 is 'NCSoft login service finish timeout'"
-    let assert [line] = support.logs_of(taken, LogWarning)
+    let assert [line] = support.logs_of(step: taken, level: LogWarning)
       as "the failure is the server's: a warning"
     assert line.about.connection == Some(ConnectionId(1))
       && line.about.peer == Some(support.peer)
@@ -316,10 +326,14 @@ pub fn a_hand_off_that_does_not_answer_gets_0x63d_reason_12_and_a_warning_log_te
         build: 16_042,
       )
     let #(state, taken) =
-      answer(state, taken, step.Answer(FromHandOff(Taken(holder: holder()))))
-    let #(_, taken) = answer(state, taken, outcome)
+      answer(
+        state:,
+        taken:,
+        outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
+      )
+    let #(_, taken) = answer(state:, taken:, outcome:)
     assert refusal(taken).reason == 12
-    assert list.length(support.logs_of(taken, LogWarning)) == 1
+    assert list.length(support.logs_of(step: taken, level: LogWarning)) == 1
   })
   // A session key that is already held is the server's failure too.
   let #(state, taken) =
@@ -329,8 +343,13 @@ pub fn a_hand_off_that_does_not_answer_gets_0x63d_reason_12_and_a_warning_log_te
       build: 16_042,
     )
   let #(state, taken) =
-    answer(state, taken, step.Answer(FromHandOff(Taken(holder: holder()))))
-  let #(_, taken) = answer(state, taken, step.Answer(FromHandOff(AlreadyHeld)))
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
+    )
+  let #(_, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromHandOff(AlreadyHeld)))
   assert refusal(taken).reason == 12
 }
 
@@ -349,8 +368,13 @@ pub fn a_ping_gets_its_pong_test() -> Nil {
   let #(state, taken) =
     read(state, login_request(user_id: holder().game_account_id, build: 16_042))
   let #(state, taken) =
-    answer(state, taken, step.Answer(FromHandOff(Taken(holder: holder()))))
-  let #(state, _taken) = answer(state, taken, step.Answer(FromHandOff(Kept)))
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
+    )
+  let #(state, _taken) =
+    answer(state:, taken:, outcome: step.Answer(FromHandOff(Kept)))
   let #(_, taken) = read(state, ping(3))
   assert support.writes(taken) == [<<7, 0, 0, 0, 1, 0, 3>>]
     as "the client's pings go on while it moves to the game server"
@@ -362,7 +386,11 @@ pub fn the_session_key_comes_from_the_connections_seed_only_test() -> Nil {
     let #(state, taken) =
       asking(seed:, user_id: holder().game_account_id, build: 16_042)
     let #(_, taken) =
-      answer(state, taken, step.Answer(FromHandOff(Taken(holder: holder()))))
+      answer(
+        state:,
+        taken:,
+        outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
+      )
     let assert Some(ask) = support.asked(taken)
     let assert AskHandOff(Put(key: SessionKey(key:), ..)) = ask.request
     key

@@ -109,7 +109,7 @@ fn send_bytes(
 
 /// A request with the next sequence number.
 fn request(
-  session: Session,
+  session session: Session,
   protocol protocol: String,
   command command: String,
   body body: sts_xml.Node,
@@ -127,7 +127,7 @@ fn request(
 
 /// The one-way messages: no sequence.
 fn one_way(
-  session: Session,
+  session session: Session,
   command command: String,
   body body: String,
   protocol protocol: String,
@@ -142,7 +142,7 @@ fn one_way(
 fn connected(seed seed: BitArray) -> Session {
   let #(session, taken) =
     one_way(
-      accepted(seed:),
+      session: accepted(seed:),
       protocol: "Sts",
       command: "Connect",
       body: sts_xml.render(
@@ -156,7 +156,7 @@ fn connected(seed seed: BitArray) -> Session {
 
 fn login_start(session: Session) -> #(Session, Step(Nil, Request)) {
   request(
-    session,
+    session:,
     protocol: "Auth",
     command: "LoginStart",
     body: sts_xml.Parent("Request", [
@@ -167,9 +167,9 @@ fn login_start(session: Session) -> #(Session, Step(Nil, Request)) {
 }
 
 fn answer(
-  session: Session,
-  taken: Step(Nil, Request),
-  outcome: Outcome(Answer),
+  session session: Session,
+  taken taken: Step(Nil, Request),
+  outcome outcome: Outcome(Answer),
 ) -> #(Session, Step(Nil, Request)) {
   let assert Some(ask) = support.asked(taken) as "the taken ends in an ask"
   feed(session, step.Answered(ask: ask.ask, outcome:))
@@ -230,7 +230,11 @@ fn key_data_exchange(
 ) -> #(Session, Exchange) {
   let #(session, taken) = login_start(session)
   let #(session, taken) =
-    answer(session, taken, step.Answer(FromStore(AccountFound(support.jim()))))
+    answer(
+      session:,
+      taken:,
+      outcome: step.Answer(FromStore(AccountFound(support.jim()))),
+    )
   let #(session, bytes) = hear(session, taken)
   let assert Ok(server_key_data) =
     bit_array.base64_decode(child(reply_of(bytes), "KeyData"))
@@ -251,7 +255,7 @@ fn key_data_request(
   exchange: Exchange,
 ) -> #(Session, Step(Nil, Request)) {
   request(
-    session,
+    session:,
     protocol: "Auth",
     command: "KeyData",
     body: sts_xml.Parent("Request", [
@@ -278,7 +282,7 @@ fn proven(seed seed: BitArray) -> #(Session, Exchange, Step(Nil, Request)) {
 
 fn login_finish(session: Session) -> #(Session, Step(Nil, Request)) {
   request(
-    session,
+    session:,
     protocol: "Auth",
     command: "LoginFinish",
     body: sts_xml.Empty("Request"),
@@ -299,14 +303,15 @@ fn finished(seed seed: BitArray) -> #(Session, guid.Guid, Reply) {
   let #(session, _exchange, _step) = proven(seed:)
   let #(session, taken) = login_finish(session)
   let token = token_asked(taken)
-  let #(session, taken) = answer(session, taken, step.Answer(FromHandOff(Kept)))
+  let #(session, taken) =
+    answer(session:, taken:, outcome: step.Answer(FromHandOff(Kept)))
   let #(session, bytes) = hear(session, taken)
   #(session, token, reply_of(bytes))
 }
 
 fn list_my_accounts(session: Session) -> #(Session, Step(Nil, Request)) {
   request(
-    session,
+    session:,
     protocol: "GameAccount",
     command: "ListMyAccounts",
     body: sts_xml.Parent("Request", [
@@ -318,7 +323,7 @@ fn list_my_accounts(session: Session) -> #(Session, Step(Nil, Request)) {
 
 fn request_game_token(session: Session) -> #(Session, Step(Nil, Request)) {
   request(
-    session,
+    session:,
     protocol: "Auth",
     command: "RequestGameToken",
     body: sts_xml.Parent("Request", [
@@ -377,7 +382,11 @@ pub fn login_start_for_a_stored_account_answers_key_data_with_the_accounts_salt_
     as "the ask's deadline is the settings' ask deadline from this input's time"
   assert support.writes(taken) == [] as "nothing is written before the answer"
   let #(_, taken) =
-    answer(session, taken, step.Answer(FromStore(AccountFound(support.jim()))))
+    answer(
+      session:,
+      taken:,
+      outcome: step.Answer(FromStore(AccountFound(support.jim()))),
+    )
   let assert [written] = support.writes(taken) as "one KeyData reply"
   let reply = reply_of(written)
   assert reply.status == 200 && reply.sequence == 1
@@ -391,7 +400,7 @@ pub fn login_start_for_an_unknown_name_answers_error_3002_and_nothing_is_ciphere
   use <- owned_test.run(10_000)
   let #(session, taken) = login_start(connected(seed: support.seed(first: 1)))
   let #(session, taken) =
-    answer(session, taken, step.Answer(FromStore(NoSuchAccount)))
+    answer(session:, taken:, outcome: step.Answer(FromStore(NoSuchAccount)))
   let #(session, bytes) = hear(session, taken)
   assert_error_reply(bytes:, sequence: 1, code: 3002)
   assert session.receiving == None && session.sending == None
@@ -412,7 +421,7 @@ pub fn key_data_with_a_wrong_m1_answers_error_3002_in_plain_text_test() -> Nil {
   let #(session, taken) = key_data_request(session, exchange)
   let #(_, bytes) = hear(session, taken)
   assert_error_reply(bytes:, sequence: 2, code: 3002)
-  assert support.logs_of(taken, LogError) == []
+  assert support.logs_of(step: taken, level: LogError) == []
     as "a wrong password is the player's, not an error of the server"
 }
 
@@ -444,7 +453,8 @@ pub fn key_data_with_the_right_m1_answers_m2_in_plain_text_and_then_both_ways_ru
   let #(session, taken) = login_finish(session)
   assert support.writes(taken) == []
     as "StsConnLib64.MT.dll!0x18000a350: the server sends nothing between M2 and the client's LoginFinish"
-  let #(session, taken) = answer(session, taken, step.Answer(FromHandOff(Kept)))
+  let #(session, taken) =
+    answer(session:, taken:, outcome: step.Answer(FromHandOff(Kept)))
   let #(session, bytes) = hear(session, taken)
   assert child(reply_of(bytes), "AuthType") == "0"
     as "the first bytes after M2 decipher under K from byte 0: none were dropped and none were sent in between"
@@ -475,7 +485,8 @@ pub fn login_finish_asks_the_hand_off_to_keep_a_new_game_token_and_once_kept_ans
   assert ask.deadline_ms == support.now_ms + 5000
   assert support.writes(taken) == []
     as "the client is answered only once the token is kept"
-  let #(_, taken) = answer(session, taken, step.Answer(FromHandOff(Kept)))
+  let #(_, taken) =
+    answer(session:, taken:, outcome: step.Answer(FromHandOff(Kept)))
   let #(_, bytes) = hear(session, taken)
   let reply = reply_of(bytes)
   assert reply.status == 200 && reply.sequence == 3
@@ -528,7 +539,8 @@ pub fn request_game_token_answers_the_token_kept_at_login_finish_with_no_ask_tes
   let #(session, third) = request_game_token(session)
   assert support.writes(third) == []
   let token = token_asked(first)
-  let #(session, taken) = answer(session, first, step.Answer(FromHandOff(Kept)))
+  let #(session, taken) =
+    answer(session:, taken: first, outcome: step.Answer(FromHandOff(Kept)))
   let assert [finish_reply, list_reply, token_reply] = support.writes(taken)
     as "after the answer the rule replies to each request in order"
   let assert Some(receiving) = session.receiving
@@ -543,7 +555,7 @@ pub fn request_game_token_answers_the_token_kept_at_login_finish_with_no_ask_tes
 pub fn a_ping_gets_no_answer_and_the_connection_goes_on_test() -> Nil {
   use <- owned_test.run(10_000)
   let ping = fn(session) {
-    one_way(session, protocol: "Sts", command: "Ping", body: "")
+    one_way(session:, protocol: "Sts", command: "Ping", body: "")
   }
   let #(session, taken) = ping(connected(seed: support.seed(first: 1)))
   assert taken == Effects([])
@@ -570,10 +582,10 @@ pub fn a_store_that_gives_no_answer_at_login_start_answers_error_42_and_logs_a_w
   ]
   list.each(outcomes, fn(outcome) {
     let #(session, taken) = login_start(connected(seed: support.seed(first: 1)))
-    let #(session, taken) = answer(session, taken, outcome)
+    let #(session, taken) = answer(session:, taken:, outcome:)
     let #(_, bytes) = hear(session, taken)
     assert_error_reply(bytes:, sequence: 1, code: 42)
-    let assert [line] = support.logs_of(taken, LogWarning)
+    let assert [line] = support.logs_of(step: taken, level: LogWarning)
       as "the failure is the server's: a warning"
     assert line.about.connection == Some(ConnectionId(1))
       && line.about.peer == Some(support.peer)
@@ -593,10 +605,10 @@ pub fn a_hand_off_that_gives_no_answer_at_login_finish_answers_error_42_and_logs
   list.each(outcomes, fn(outcome) {
     let #(session, _exchange, _step) = proven(seed: support.seed(first: 1))
     let #(session, taken) = login_finish(session)
-    let #(session, taken) = answer(session, taken, outcome)
+    let #(session, taken) = answer(session:, taken:, outcome:)
     let #(_, bytes) = hear(session, taken)
     assert_error_reply(bytes:, sequence: 3, code: 42)
-    let assert [_line] = support.logs_of(taken, LogWarning)
+    let assert [_line] = support.logs_of(step: taken, level: LogWarning)
       as "the failure is the server's: a warning"
   })
 }
@@ -606,19 +618,19 @@ pub fn a_request_the_client_never_sends_at_that_point_ends_the_connection_and_an
   // KeyData before LoginStart.
   let #(_, taken) =
     request(
-      connected(seed: support.seed(first: 1)),
+      session: connected(seed: support.seed(first: 1)),
       protocol: "Auth",
       command: "KeyData",
       body: sts_xml.Parent("Request", [sts_xml.Text("KeyData", "AAAA")]),
     )
   assert support.stops(taken) && support.writes(taken) == []
     as "KeyData before LoginStart is a request the client never sends"
-  assert list.length(support.logs_of(taken, LogError)) == 1
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
     as "the connection ends with an error log"
   // LoginFinish before LoginStart, and before the proof.
   let #(_, taken) = login_finish(connected(seed: support.seed(first: 1)))
   assert support.stops(taken)
-    && list.length(support.logs_of(taken, LogError)) == 1
+    && list.length(support.logs_of(step: taken, level: LogError)) == 1
     as "LoginFinish before the proof ends the connection"
   let #(session, _exchange) =
     key_data_exchange(
@@ -627,20 +639,22 @@ pub fn a_request_the_client_never_sends_at_that_point_ends_the_connection_and_an
     )
   let #(_, taken) = login_finish(session)
   assert support.stops(taken)
-    && list.length(support.logs_of(taken, LogError)) == 1
+    && list.length(support.logs_of(step: taken, level: LogError)) == 1
     as "LoginFinish while the proof is still to come ends the connection"
   // A whole request of a command the rule does not know.
   let #(session, taken) =
     request(
-      connected(seed: support.seed(first: 1)),
+      session: connected(seed: support.seed(first: 1)),
       protocol: "Auth",
       command: "Frobnicate",
       body: sts_xml.Empty("Request"),
     )
   assert !support.stops(taken) && support.writes(taken) == []
     as "an unknown command does not end the connection"
-  let assert [line] = support.logs_of(taken, LogWarning) as "it is logged once"
-  assert support.says(line, "unhandled") && support.says(line, "Frobnicate")
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+    as "it is logged once"
+  assert support.says(line:, words: "unhandled")
+    && support.says(line:, words: "Frobnicate")
     as "the line says the request is unhandled and which"
   let #(_, taken) = login_start(session)
   assert option.is_some(support.asked(taken))
@@ -651,7 +665,7 @@ pub fn a_request_the_client_never_sends_at_that_point_ends_the_connection_and_an
       "GET / HTTP/1.1\r\n\r\n":utf8,
     >>)
   assert support.stops(taken)
-    && list.length(support.logs_of(taken, LogError)) == 1
+    && list.length(support.logs_of(step: taken, level: LogError)) == 1
     as "bytes the library never writes end the connection with an error log"
 }
 
@@ -661,9 +675,9 @@ pub fn the_srp_secret_and_the_token_come_from_the_connections_seed_only_test() -
     let #(session, taken) = login_start(connected(seed:))
     let #(_, taken) =
       answer(
-        session,
-        taken,
-        step.Answer(FromStore(AccountFound(support.jim()))),
+        session:,
+        taken:,
+        outcome: step.Answer(FromStore(AccountFound(support.jim()))),
       )
     let assert [written] = support.writes(taken)
     let #(session, _exchange, _step) = proven(seed:)
