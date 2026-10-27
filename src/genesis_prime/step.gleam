@@ -81,8 +81,11 @@ pub type Event(message, answer) {
 
 /// What happened to a connection's socket.
 pub type SocketEvent {
-  /// The connection's socket is the process's own.
-  Accepted(connection: ConnectionId, peer: Peer)
+  /// The connection's socket is the process's own. `seed` is 32 bytes from
+  /// the operating system's strong random source, drawn once for the
+  /// connection; every random value the rule needs comes from it
+  /// (genesis_prime/random), so a recording replays them.
+  Accepted(connection: ConnectionId, peer: Peer, seed: BitArray)
   /// Bytes arrived, in the order the socket received them; a read may hold
   /// part of a frame or several frames.
   Read(bytes: BitArray)

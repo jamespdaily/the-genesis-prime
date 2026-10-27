@@ -15,21 +15,28 @@ pub const message_id = 0x0591
 /// The body of message 0x0591, its fields in wire order. A field named
 /// `field_N` is the Nth of the body and has no use the client's code shows.
 pub type LoginAccepted {
-  LoginAccepted(field_1: Int)
+  LoginAccepted(disconnected_for_lag: Int)
 }
 
 /// The message as the bytes of its body, or the first field that cannot be
 /// written.
 pub fn encode(message: LoginAccepted) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
-  |> bit_stream.write_unsigned("field_1", message.field_1, 32)
+  |> bit_stream.write_unsigned(
+    "disconnected_for_lag",
+    message.disconnected_for_lag,
+    32,
+  )
   |> bit_stream.finish
 }
 
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(LoginAccepted, DecodeError) {
   let reader = bit_stream.new_reader(body)
-  use #(field_1, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(disconnected_for_lag, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(LoginAccepted(field_1:))
+  Ok(LoginAccepted(disconnected_for_lag:))
 }

@@ -44,15 +44,17 @@ pub type Record {
 }
 
 /// One field: its name, how its value is written, the fact-file key that gives
-/// its width, and the key that says what it is when it has a name beyond its
-/// position. A field with no `evidence` is read as such, so the rule that
-/// every field names its evidence can report it.
+/// its width, the key that says what it is when it has a name beyond its
+/// position, and, for a field with no name, the key that shows the value the
+/// server sends is safe. A field with no `evidence` is read as such, so the
+/// rule that every field names its evidence can report it.
 pub type Field {
   Field(
     name: String,
     kind: Kind,
     evidence: Option(String),
     named_by: Option(String),
+    safe_by: Option(String),
   )
 }
 
@@ -261,6 +263,7 @@ fn parse_field(
     kind:,
     evidence: optional_string(table, "evidence"),
     named_by: optional_string(table, "named_by"),
+    safe_by: optional_string(table, "safe_by"),
   ))
 }
 

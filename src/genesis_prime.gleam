@@ -41,7 +41,7 @@ pub fn main() -> Nil {
 
 /// The tree's settings: the database from the environment, with Postgres's
 /// own defaults for what is not set, and a fresh name for each child.
-fn settings() -> server.Settings {
+pub fn settings() -> server.Settings {
   let pool = pog.default_config(process.new_name("database_pool"))
   let pool = from_environment(pool, "PGHOST", pog.host)
   let pool = from_environment(pool, "PGUSER", pog.user)
@@ -63,6 +63,7 @@ fn settings() -> server.Settings {
     store: process.new_name("store"),
     hand_off: process.new_name("hand_off"),
     hand_off_shutdown_ms: 5000,
+    login: login(),
   )
 }
 
@@ -77,4 +78,13 @@ fn from_environment(
     Ok(value) -> set(pool, value)
     Error(Nil) -> pool
   }
+}
+
+/// The login's listeners from the environment: GENESIS_GAME_ADDRESS, the IPv4
+/// address the client reaches the game server at, and GENESIS_REALM_NAME; the
+/// ports are the client's defaults (6600, 23115, 24000), the realm id 1, each
+/// key good for 60 s and each ask given 5 s. Recording is off and nothing is
+/// planted; the dev start (dev/genesis_prime/dev_start) changes both.
+pub fn login() -> server.Login {
+  todo as "the build follows the shape commit"
 }

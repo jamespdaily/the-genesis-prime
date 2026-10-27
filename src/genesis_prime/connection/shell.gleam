@@ -9,7 +9,7 @@
 //// ```
 //// Ranch accepts ─▶ connection_shell_ffi:start_link ─▶ ranch:handshake ─▶ run
 ////   the recorder, when on, opens the file and writes the header
-////   Socket(Accepted(connection id, peer))        ─▶ step ─▶ effects
+////   Socket(Accepted(connection id, peer, seed))  ─▶ step ─▶ effects
 ////   loop, the socket active once:
 ////     {tcp, bytes}        ─▶ Socket(Read(bytes))   ─▶ step ─▶ effects
 ////     {tcp_closed}        ─▶ Socket(PeerClosed)    ─▶ step ─▶ effects
@@ -215,7 +215,11 @@ pub fn run(
   take(
     running:,
     now: now(),
-    event: Socket(Accepted(ConnectionId(connection), peer(socket))),
+    event: Socket(Accepted(
+      connection: ConnectionId(connection),
+      peer: peer(socket),
+      seed: seed(),
+    )),
   )
 }
 
@@ -566,6 +570,11 @@ fn peer(socket: ClientSocket) -> Peer
 
 @external(erlang, "connection_shell_ffi", "unique_id")
 fn unique_id() -> Int
+
+/// 32 bytes from the operating system's strong random source, the seed of a
+/// new connection.
+@external(erlang, "connection_shell_ffi", "seed")
+fn seed() -> BitArray
 
 @external(erlang, "connection_shell_ffi", "monotonic_ms")
 fn monotonic_ms() -> Int

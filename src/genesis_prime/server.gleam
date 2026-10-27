@@ -7,7 +7,9 @@
 ////  ├─ database pool: pog's pool, named                  permanent
 ////  ├─ store: factory supervisor, named                  permanent
 ////  │    └─ one worker per ask                            temporary
-////  └─ hand-off: service shell + hand-off rule, named    permanent
+////  ├─ hand-off: service shell + hand-off rule, named    permanent
+////  ├─ STS listener (6600): a connection shell per client
+////  └─ auth listener (23115): a connection shell per client
 //// ```
 ////
 //// What a restart rebuilds, and what a client sees:
@@ -17,13 +19,18 @@
 ////   an asker whose worker was running gets `EndedBeforeAnswer`.
 //// - **The hand-off** starts with no keys. A client part-way through a login
 ////   is refused and logs in again.
+//// - **A listener** restarts with no connections: each client connected to it
+////   is dropped and logs in again.
 
 import genesis_prime/hand_off
+import genesis_prime/login/auth_connection
+import genesis_prime/login/sts_connection
+import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/service/shell.{type Call} as service_shell
 import genesis_prime/step.{Rule}
 import genesis_prime/store/worker.{type Job}
 import gleam/erlang/process.{type Name}
-import gleam/option.{None}
+import gleam/option.{type Option, None}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
@@ -42,6 +49,29 @@ pub type Settings {
     hand_off: Name(Call(hand_off.Message, hand_off.Answer)),
     /// How long the hand-off has to stop.
     hand_off_shutdown_ms: Int,
+    /// The login's two listeners.
+    login: Login,
+  )
+}
+
+/// The login's listeners: the STS server and the auth server, each a Ranch
+/// listener whose connections run their rule in a connection shell
+/// (genesis_prime/connection/listener). Both start after the hand-off and the
+/// store they ask, so they stop first.
+pub type Login {
+  Login(
+    sts_port: Int,
+    sts: sts_connection.Settings,
+    auth_port: Int,
+    auth: auth_connection.Settings,
+    /// How long a write may wait for a client's socket.
+    send_deadline_ms: Int,
+    /// How long a connection has to stop once the server stops.
+    connection_shutdown_ms: Int,
+    /// Where each connection's inputs are recorded; `None` unless the dev
+    /// start turns recording on.
+    sts_recorder: Option(Recorder(sts_connection.Settings)),
+    auth_recorder: Option(Recorder(auth_connection.Settings)),
   )
 }
 
@@ -74,5 +104,16 @@ pub fn start(
       recorder: None,
     )),
   )
+  |> add_login(settings)
   |> supervisor.start
+}
+
+/// Adds the STS listener, then the auth listener, each with the directory
+/// that sends a login rule's asks to the store and the hand-off by their
+/// names and wraps each answer (`login.FromStore`, `login.FromHandOff`).
+fn add_login(
+  tree: supervisor.Builder,
+  settings: Settings,
+) -> supervisor.Builder {
+  todo as "the build follows the shape commit"
 }

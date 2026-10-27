@@ -8,7 +8,7 @@
 -behaviour(ranch_protocol).
 
 -export([start_link/3, start_listener/4, listener_port/1, handshake/2,
-         read_once/1, next_event/3, send/2, close/1, peer/1, unique_id/0,
+         read_once/1, next_event/3, send/2, close/1, peer/1, unique_id/0, seed/0,
          monotonic_ms/0, filetime/0, log/3, watch/1, unwatch/1,
          send_answer/3, await_answer/4]).
 
@@ -150,6 +150,9 @@ peer(Socket) ->
 
 unique_id() ->
     erlang:unique_integer([positive, monotonic]).
+
+seed() ->
+    crypto:strong_rand_bytes(32).
 
 monotonic_ms() ->
     erlang:monotonic_time(millisecond).

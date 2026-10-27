@@ -6,16 +6,16 @@ evidence = "opcode.0x3"
 summary = "the hello every server sends on a new connection, with the build and the message table checksum the client checks"
 fields = [
   { name = "build", kind = "unsigned", bits = 32, evidence = "0x1400a9140", named_by = "0x140037b70" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x1400a9140" },
-  { name = "field_3", kind = "unsigned", bits = 32, evidence = "0x1400a9140" },
-  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x1400a9140" },
-  { name = "field_5", kind = "unsigned", bits = 64, evidence = "0x1400a9140" },
-  { name = "field_6", kind = "unsigned", bits = 16, evidence = "0x1400a9140" },
-  { name = "field_7", kind = "unsigned", bits = 5, evidence = "0x1400a9140" },
+  { name = "realm_id", kind = "unsigned", bits = 32, evidence = "0x1400a9140", named_by = "opcode.0x3" },
+  { name = "field_3", kind = "unsigned", bits = 32, evidence = "0x1400a9140", safe_by = "opcode.0x3" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x1400a9140", safe_by = "opcode.0x3" },
+  { name = "field_5", kind = "unsigned", bits = 64, evidence = "0x1400a9140", safe_by = "opcode.0x3" },
+  { name = "field_6", kind = "unsigned", bits = 16, evidence = "0x1400a9140", safe_by = "opcode.0x3" },
+  { name = "field_7", kind = "unsigned", bits = 5, evidence = "0x1400a9140", safe_by = "opcode.0x3" },
   { name = "message_table_checksum", kind = "unsigned", bits = 32, evidence = "0x1400a9140", named_by = "0x140037b70" },
-  { name = "field_9", kind = "unsigned", bits = 32, evidence = "0x1400a9140" },
-  { name = "field_10", kind = "unsigned", bits = 64, evidence = "0x1400a9140" },
-  { name = "field_11", kind = "unsigned", bits = 32, evidence = "0x1400a9140" },
+  { name = "field_9", kind = "unsigned", bits = 32, evidence = "0x1400a9140", safe_by = "opcode.0x3" },
+  { name = "field_10", kind = "unsigned", bits = 64, evidence = "0x1400a9140", safe_by = "opcode.0x3" },
+  { name = "field_11", kind = "unsigned", bits = 32, evidence = "0x1400a9140", safe_by = "opcode.0x3" },
 ]
 
 [[message]]
@@ -56,8 +56,8 @@ fields = [
   { name = "build", kind = "unsigned", bits = 32, evidence = "0x14007dd40", named_by = "opcode.0x592" },
   { name = "files_digest", kind = "unsigned", bits = 64, evidence = "0x14007dd40", named_by = "opcode.0x592" },
   { name = "account_name", kind = "counted_wide_text", max_units = 250, evidence = "0x14007dd40", named_by = "opcode.0x592" },
-  { name = "field_4", kind = "guid", evidence = "0x14007dd40" },
-  { name = "field_5", kind = "guid", evidence = "0x14007dd40" },
+  { name = "user_id", kind = "guid", evidence = "0x14007dd40", named_by = "opcode.0x592" },
+  { name = "game_token", kind = "guid", evidence = "0x14007dd40", named_by = "opcode.0x592" },
   { name = "field_6", kind = "unsigned", bits = 32, evidence = "0x14007dd40" },
   { name = "field_7", kind = "unsigned", bits = 32, evidence = "0x14007dd40" },
   { name = "field_8", kind = "unsigned", bits = 32, evidence = "0x14007dd40" },
@@ -91,7 +91,7 @@ direction = "server_to_client"
 evidence = "opcode.0x591"
 summary = "the auth server's answer that the login is accepted; the client keeps bit 0 of its one value"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 32, evidence = "0x14007ab50" },
+  { name = "disconnected_for_lag", kind = "unsigned", bits = 32, evidence = "0x14007ab50", named_by = "opcode.0x591" },
 ]
 
 [[message]]
@@ -103,11 +103,11 @@ summary = "the auth server's hand-off to a game server, with its address, the se
 fields = [
   { name = "game_server", kind = "endpoint", evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
   { name = "session_key", kind = "guid", evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
-  { name = "field_3", kind = "unsigned", bits = 32, evidence = "0x14007d6a0" },
+  { name = "account_id", kind = "unsigned", bits = 32, evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
   { name = "realm_name", kind = "wide_text", evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
-  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x14007d6a0" },
-  { name = "field_6", kind = "unsigned", bits = 2, evidence = "0x14007d6a0" },
-  { name = "field_7", kind = "unsigned", bits = 21, evidence = "0x14007d6a0" },
+  { name = "realm_flags", kind = "unsigned", bits = 32, evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
+  { name = "realm_pvp_type", kind = "unsigned", bits = 2, evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
+  { name = "realm_note_text_id", kind = "unsigned", bits = 21, evidence = "0x14007d6a0", named_by = "opcode.0x3db" },
 ]
 
 [[message]]

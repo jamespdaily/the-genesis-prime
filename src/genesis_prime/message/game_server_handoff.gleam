@@ -20,11 +20,11 @@ pub type GameServerHandoff {
   GameServerHandoff(
     game_server: Endpoint,
     session_key: BitArray,
-    field_3: Int,
+    account_id: Int,
     realm_name: String,
-    field_5: Int,
-    field_6: Int,
-    field_7: Int,
+    realm_flags: Int,
+    realm_pvp_type: Int,
+    realm_note_text_id: Int,
   )
 }
 
@@ -34,11 +34,15 @@ pub fn encode(message: GameServerHandoff) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_endpoint("game_server", message.game_server)
   |> bit_stream.write_guid("session_key", message.session_key)
-  |> bit_stream.write_unsigned("field_3", message.field_3, 32)
+  |> bit_stream.write_unsigned("account_id", message.account_id, 32)
   |> bit_stream.write_wide_text("realm_name", message.realm_name)
-  |> bit_stream.write_unsigned("field_5", message.field_5, 32)
-  |> bit_stream.write_unsigned("field_6", message.field_6, 2)
-  |> bit_stream.write_unsigned("field_7", message.field_7, 21)
+  |> bit_stream.write_unsigned("realm_flags", message.realm_flags, 32)
+  |> bit_stream.write_unsigned("realm_pvp_type", message.realm_pvp_type, 2)
+  |> bit_stream.write_unsigned(
+    "realm_note_text_id",
+    message.realm_note_text_id,
+    21,
+  )
   |> bit_stream.finish
 }
 
@@ -47,19 +51,25 @@ pub fn decode(body: BitArray) -> Result(GameServerHandoff, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(game_server, reader) <- result.try(bit_stream.read_endpoint(reader))
   use #(session_key, reader) <- result.try(bit_stream.read_guid(reader))
-  use #(field_3, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(account_id, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(realm_name, reader) <- result.try(bit_stream.read_wide_text(reader))
-  use #(field_5, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_6, reader) <- result.try(bit_stream.read_unsigned(reader, 2))
-  use #(field_7, reader) <- result.try(bit_stream.read_unsigned(reader, 21))
+  use #(realm_flags, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(realm_pvp_type, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    2,
+  ))
+  use #(realm_note_text_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    21,
+  ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
   Ok(GameServerHandoff(
     game_server:,
     session_key:,
-    field_3:,
+    account_id:,
     realm_name:,
-    field_5:,
-    field_6:,
-    field_7:,
+    realm_flags:,
+    realm_pvp_type:,
+    realm_note_text_id:,
   ))
 }

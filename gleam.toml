@@ -70,7 +70,6 @@ avoid_panic = "off"
 effectful_modules = [
   { module = "genesis_prime", reason = "loads the game tables and keeps the node alive" },
   { module = "genesis_prime/table/loader/store", reason = "reads the table files and keeps the loaded tables in persistent terms" },
-  { module = "genesis_prime/login/rc4", reason = "OTP's crypto holds the state of each RC4 stream" },
   { module = "genesis_prime/server", reason = "starts the supervision tree" },
   { module = "genesis_prime/connection/shell", reason = "owns a client socket and carries out its rule's effects" },
   { module = "genesis_prime/connection/listener", reason = "starts a Ranch listener under the supervision tree" },
@@ -93,6 +92,7 @@ domains = [
   { module = "genesis_prime/service", reason = "the shell of a named process with no socket that others ask" },
   { module = "genesis_prime/store", reason = "the asks a rule makes of the database, and the workers that run them" },
   { module = "genesis_prime/hand_off", reason = "the one-time keys a client carries from one server to the next" },
+  { module = "genesis_prime/random", reason = "the random values a rule draws from its connection's seed" },
 ]
 # Erlang functions a rule module's externals may call.
 pure_erlang = [
