@@ -31,7 +31,6 @@ import gleam/bit_array
 import gleam/crypto
 import gleam/erlang/atom
 import gleam/erlang/process.{type Pid}
-import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/static_supervisor as supervisor
@@ -133,6 +132,8 @@ pub fn a_failed_write_reaches_the_rule_and_the_steps_later_effects_are_not_carri
   let rule = big_write_rule()
   use server <- serving(rule, Some(recorder(folder, rule)), 1000)
   let client = connect(server)
+  // The first byte shows the connection's process has started.
+  let _first_byte = receive(client, 1)
   let assert [connection] = connections(server) as "one connection process"
   assert ended(process.monitor(connection)) == process.Normal
     as "the rule stopped after the failed write"
@@ -166,39 +167,44 @@ pub fn every_input_carries_one_time_reading_taken_as_the_shell_takes_it_test() -
   use <- owned_test.run(30_000)
   use folder <- in_folder
   let rule = hello_rule_as_rule()
-  let before_ms = monotonic_ms()
-  let before_filetime = filetime_now()
   use server <- serving(rule, Some(recorder(folder, rule)), 1000)
+  // Each input is bounded by the test's own readings around the action that
+  // caused it, so a reading reused from an earlier input falls outside.
+  let before_accept = reading()
   let client = connect(server)
   let _hello = receive(client, 53)
+  let after_accept = reading()
+  let before_ping = reading()
   assert mug.send(client, <<7, 0, 0, 0, 0, 0, 3>>) == Ok(Nil) as "a ping"
   let _pong = receive(client, 7)
+  let after_ping = reading()
   let assert [connection] = connections(server) as "one connection process"
   let watched = process.monitor(connection)
+  let before_close = reading()
   assert mug.shutdown(client) == Ok(Nil) as "the client closed"
   let _reason = ended(watched)
-  let after_ms = monotonic_ms()
-  let after_filetime = filetime_now()
-  let assert Ok(#(_, records)) = rule_recording.read(recording_in(folder))
-    as "the recording reads"
-  let times =
-    list.filter_map(records, fn(record) {
-      case record {
-        Taken(input: Input(now:, ..), ..) -> Ok(now)
-        End(..) -> Error(Nil)
-      }
-    })
-  assert list.length(times) == 3 as "accept, the ping and the close"
-  assert list.all(times, fn(now) {
-    now.monotonic_ms >= before_ms
-    && now.monotonic_ms <= after_ms
-    && now.filetime >= before_filetime
-    && now.filetime <= after_filetime
+  let after_close = reading()
+  let inputs = taken_inputs(folder)
+  assert inputs != [] as "the session recorded its inputs"
+  list.each(inputs, fn(input) {
+    let window = case input.event {
+      Socket(Accepted(..)) -> #(before_accept, after_accept)
+      Socket(Read(..)) -> #(before_ping, after_ping)
+      Socket(PeerClosed) -> #(before_close, after_close)
+      Socket(ReadFailed(..)) | Socket(WriteFailed(..)) ->
+        panic as "this session has no socket failure"
+      step.Started
+      | step.Woken(..)
+      | step.Asked(..)
+      | step.WatchEnded(..)
+      | step.TimerFired(..)
+      | step.Answered(..)
+      | step.AnsweredLate(..)
+      | Stopping(..) -> panic as "this session causes no other input"
+    }
+    assert within(input.now, window)
+      as "an input's reading lies between the test's readings around its cause"
   })
-    as "each reading lies within the test's own readings around the session"
-  assert list.map(times, fn(now) { now.monotonic_ms })
-    == list.sort(list.map(times, fn(now) { now.monotonic_ms }), int.compare)
-    as "readings never go back"
 }
 
 // ---- the recorder and replay ----
@@ -212,14 +218,15 @@ pub fn a_recorded_session_holds_the_header_one_record_per_input_and_end_test() -
     as "the recording reads"
   assert header == recorded_header(rule)
     as "the header names the format, the rule, its settings and its types"
-  let assert [
-    Taken(input: Input(event: Socket(Accepted(..)), ..), ..),
-    Taken(input: Input(event: Socket(Read(<<7, 0, 0, 0, 0, 0, 5>>)), ..), ..),
-    Taken(input: Input(event: Socket(PeerClosed), ..), ..),
-    End(count: 3),
-  ] = records
-    as "accept, the ping, the close, then End with their count"
-  Nil
+  let events = list.map(taken(records), fn(input) { input.event })
+  let assert [Socket(Accepted(..)), ..reads_and_close] = events
+    as "the accept comes first"
+  let assert [Socket(PeerClosed), ..reads] = list.reverse(reads_and_close)
+    as "the close comes last"
+  assert joined_reads(list.reverse(reads)) == <<7, 0, 0, 0, 0, 0, 5>>
+    as "between them, the ping's bytes in the reads the socket gave"
+  assert list.last(records) == Ok(End(count: list.length(events)))
+    as "End counts the inputs"
 }
 
 pub fn replay_gives_the_same_steps_with_no_socket_test() -> Nil {
@@ -227,7 +234,9 @@ pub fn replay_gives_the_same_steps_with_no_socket_test() -> Nil {
   use folder <- in_folder
   let rule = hello_rule_as_rule()
   record_one_ping(rule:, folder:, number: 5)
-  assert rule_recording.replay(recording_in(folder), rule, digest()) == Ok(3)
+  let inputs = list.length(taken_inputs(folder))
+  assert rule_recording.replay(recording_in(folder), rule, digest())
+    == Ok(inputs)
     as "every recorded step is the step the rule gives again"
 }
 
@@ -236,22 +245,41 @@ pub fn a_changed_byte_in_a_recorded_read_fails_replay_at_that_record_test() -> N
   use folder <- in_folder
   let rule = hello_rule_as_rule()
   record_one_ping(rule:, folder:, number: 5)
-  let bytes = recording_in(folder)
+  let assert Ok(#(header, records)) = rule_recording.read(recording_in(folder))
+    as "the recording reads"
+  // The read that ends the ping holds its number, 5, as its last byte; it is
+  // changed to 6 and the file written again with that one byte different.
+  let last_read =
+    list.index_map(taken(records), fn(input, index) { #(input, index) })
+    |> list.filter(fn(numbered) { is_read(numbered.0) })
+    |> list.last
+  let assert Ok(#(_, index)) = last_read as "the session holds a read"
   let changed =
-    replace_once(bytes:, old: <<7, 0, 0, 0, 0, 0, 5>>, new: <<
-      7,
-      0,
-      0,
-      0,
-      0,
-      0,
-      6,
-    >>)
-  assert changed != bytes as "the ping's number was found and changed"
-  let assert Error(StepDiffers(index: 1, ..)) =
-    rule_recording.replay(changed, rule, digest())
-    as "the read at index 1 now gives pong 6, not the recorded pong 5"
-  Nil
+    list.index_map(records, fn(record, at) {
+      case at == index {
+        True -> {
+          let assert Taken(
+            input: Input(event: Socket(Read(bytes:)), ..) as input,
+            step:,
+          ) = record
+            as "the record at the index is the read"
+          Taken(
+            input: Input(..input, event: Socket(Read(last_byte_6(bytes)))),
+            step:,
+          )
+        }
+        False -> record
+      }
+    })
+  let file =
+    list.fold(changed, rule_recording.encode(header), fn(written, record) {
+      <<written:bits, rule_recording.encode(record):bits>>
+    })
+  assert file != recording_in(folder) as "one byte of the file changed"
+  let assert Error(StepDiffers(index: failed_at, ..)) =
+    rule_recording.replay(file, rule, digest())
+    as "the changed read now gives pong 6, not the recorded pong 5"
+  assert failed_at == index as "replay fails at the changed read"
 }
 
 pub fn a_cut_recording_or_a_wrong_end_count_fails_test() -> Nil {
@@ -260,10 +288,11 @@ pub fn a_cut_recording_or_a_wrong_end_count_fails_test() -> Nil {
   let rule = hello_rule_as_rule()
   record_one_ping(rule:, folder:, number: 5)
   let bytes = recording_in(folder)
-  let end = rule_recording.encode(end_record(3))
+  let inputs = list.length(taken_inputs(folder))
+  let end = rule_recording.encode(end_record(inputs))
   let body_size = bit_array.byte_size(bytes) - bit_array.byte_size(end)
   let assert Ok(without_end) = bit_array.slice(bytes, 0, body_size)
-    as "the recording ends with End(3)"
+    as "the recording ends with End and its count"
   let assert Error(Incomplete(_)) =
     rule_recording.replay(without_end, rule, digest())
     as "no End: the process never finished"
@@ -271,9 +300,12 @@ pub fn a_cut_recording_or_a_wrong_end_count_fails_test() -> Nil {
     as "one byte shorter"
   let assert Error(Incomplete(_)) = rule_recording.replay(cut, rule, digest())
     as "a record cut short"
-  let wrong = <<without_end:bits, rule_recording.encode(end_record(4)):bits>>
+  let wrong = <<
+    without_end:bits,
+    rule_recording.encode(end_record(inputs + 1)):bits,
+  >>
   assert rule_recording.replay(wrong, rule, digest())
-    == Error(CountDiffers(end: 4, records: 3))
+    == Error(CountDiffers(end: inputs + 1, records: inputs))
     as "End must count the records"
 }
 
@@ -643,29 +675,69 @@ fn recording_in(folder: String) -> BitArray {
   bytes
 }
 
-fn replace_once(
-  bytes bytes: BitArray,
-  old old: BitArray,
-  new new: BitArray,
-) -> BitArray {
-  case bytes {
-    <<>> -> <<>>
-    _ -> {
-      let size = bit_array.byte_size(old)
-      case bit_array.slice(bytes, 0, size) {
-        Ok(start) if start == old -> {
-          let assert Ok(rest) =
-            bit_array.slice(bytes, size, bit_array.byte_size(bytes) - size)
-            as "the rest after the match"
-          <<new:bits, rest:bits>>
-        }
-        _ -> {
-          let assert <<first, rest:bytes>> = bytes as "a byte to keep"
-          <<first, replace_once(bytes: rest, old:, new:):bits>>
-        }
-      }
+/// The test's own reading of both clocks.
+fn reading() -> #(Int, Int) {
+  #(monotonic_ms(), filetime_now())
+}
+
+/// Whether a shell's reading lies within the test's two readings.
+fn within(now: step.Now, window: #(#(Int, Int), #(Int, Int))) -> Bool {
+  let #(#(from_ms, from_filetime), #(to_ms, to_filetime)) = window
+  now.monotonic_ms >= from_ms
+  && now.monotonic_ms <= to_ms
+  && now.filetime >= from_filetime
+  && now.filetime <= to_filetime
+}
+
+/// The inputs of the one recording in the folder, in order.
+fn taken_inputs(folder: String) -> List(Input(Nil, Nil)) {
+  let assert Ok(#(_, records)) = rule_recording.read(recording_in(folder))
+    as "the recording reads"
+  taken(records)
+}
+
+fn taken(records: List(Record(Nil, Nil, Nil, Nil))) -> List(Input(Nil, Nil)) {
+  list.filter_map(records, fn(record) {
+    case record {
+      Taken(input:, ..) -> Ok(input)
+      End(..) -> Error(Nil)
     }
+  })
+}
+
+fn is_read(input: Input(Nil, Nil)) -> Bool {
+  case input.event {
+    Socket(Read(..)) -> True
+    Socket(Accepted(..))
+    | Socket(PeerClosed)
+    | Socket(ReadFailed(..))
+    | Socket(WriteFailed(..))
+    | step.Started
+    | step.Woken(..)
+    | step.Asked(..)
+    | step.WatchEnded(..)
+    | step.TimerFired(..)
+    | step.Answered(..)
+    | step.AnsweredLate(..)
+    | Stopping(..) -> False
   }
+}
+
+/// The bytes of the reads, one after another.
+fn joined_reads(events: List(step.Event(Nil, Nil))) -> BitArray {
+  list.fold(events, <<>>, fn(joined, event) {
+    let assert Socket(Read(bytes:)) = event as "only reads lie between"
+    <<joined:bits, bytes:bits>>
+  })
+}
+
+/// The bytes with their last byte, 5, made 6.
+fn last_byte_6(bytes: BitArray) -> BitArray {
+  let size = bit_array.byte_size(bytes)
+  let assert Ok(<<5>>) = bit_array.slice(bytes, size - 1, 1)
+    as "the read ends with the ping's number"
+  let assert Ok(front) = bit_array.slice(bytes, 0, size - 1) as "its front"
+  <<front:bits, 6>>
 }
 
 fn filetime_now() -> Int {
