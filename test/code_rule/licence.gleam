@@ -49,6 +49,46 @@ pub fn erlang_licences(app_source: String) -> List(String) {
   }
 }
 
+/// The licences named under `declared` in `[tools.licences]` of the text of
+/// a Gleam project file, as (package, licence): each for a package that
+/// declares no licence where `installed` reads it, checked by hand and
+/// written with where it was checked (`evidence`).
+pub fn declared(project_file: String) -> List(#(String, String)) {
+  let assert tom.Table(table) = parse(project_file)
+    as "a parsed file is a table"
+  case tom.get_array(table, ["tools", "licences", "declared"]) {
+    Error(tom.NotFound(..)) -> []
+    Error(tom.WrongType(..)) -> panic as "tools.licences.declared is not a list"
+    Ok(entries) ->
+      list.map(entries, fn(entry) {
+        let assert Ok(fields) = tom.as_table(entry)
+          as "an entry of tools.licences.declared is not a table"
+        let assert Ok(package) = tom.get_string(fields, ["package"])
+          as "a declared licence names no package"
+        let assert Ok(named) = tom.get_string(fields, ["licence"])
+          as "a declared licence names no licence"
+        let assert Ok(_evidence) = tom.get_string(fields, ["evidence"])
+          as "a declared licence says not where it was checked"
+        #(package, named)
+      })
+  }
+}
+
+/// The packages with each one that declares no licence given its declared
+/// one, when `declared` names it. A package that declares its own licences
+/// keeps them.
+pub fn with_declared(
+  packages packages: List(#(String, List(String))),
+  declared declared: List(#(String, String)),
+) -> List(#(String, List(String))) {
+  list.map(packages, fn(package) {
+    case package.1, list.key_find(declared, package.0) {
+      [], Ok(named) -> #(package.0, [named])
+      [], Error(Nil) | [_, ..], _ -> package
+    }
+  })
+}
+
 /// Each (package, licences) pair the rule refuses: a package whose licences
 /// are all off the accepted list, or that has none. A package with any
 /// accepted licence passes.

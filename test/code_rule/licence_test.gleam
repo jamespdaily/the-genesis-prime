@@ -15,6 +15,10 @@
 ////   file (glexer writes `licenses`); an Erlang package states it in the
 ////   `{licenses, [...]}` entry of `src/<name>.app.src`. Both are read from
 ////   `build/packages/<name>/`.
+//// - A package that declares no licence there passes only when `declared`
+////   under `[tools.licences]` names it, with an accepted licence and where it
+////   was checked (Jim's yes, on the shell card: Ranch, built with erlang.mk,
+////   states its ISC licence only in its LICENSE file and on Hex).
 
 import code_rule/licence.{NoLicence, Unaccepted}
 import gleam/list
@@ -169,6 +173,47 @@ pub fn every_package_in_the_manifest_has_an_accepted_licence_test() -> Nil {
   let manifest = read("manifest.toml")
   let packages = licence.installed(manifest, "build/packages")
   assert list.length(packages) >= 40 as "the manifest packages were not found"
-  let accepted = licence.accepted(read("gleam.toml"))
+  let project_file = read("gleam.toml")
+  let accepted = licence.accepted(project_file)
+  let packages = licence.with_declared(packages, licence.declared(project_file))
   assert list.map(licence.refusals(packages, accepted), licence.describe) == []
+}
+
+pub fn a_package_with_no_licence_passes_only_when_declared_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let planted =
+    string.join(
+      [
+        "name = \"planted\"",
+        "",
+        "[tools.licences]",
+        "accepted = [\"ISC\"]",
+        "declared = [",
+        "  { package = \"planted_listed\", licence = \"ISC\", evidence = \"its LICENSE file\" },",
+        "]",
+      ],
+      "\n",
+    )
+  let declared = licence.declared(planted)
+  assert declared == [#("planted_listed", "ISC")]
+  let packages = [
+    #("planted_listed", []),
+    #("planted_unlisted", []),
+    #("planted_own", ["MIT"]),
+  ]
+  let filled = licence.with_declared(packages, declared)
+  assert filled
+    == [
+      #("planted_listed", ["ISC"]),
+      #("planted_unlisted", []),
+      #("planted_own", ["MIT"]),
+    ]
+    as "only a package with no licence of its own takes its declared one"
+  assert licence.refusals(filled, ["ISC"])
+    == [
+      NoLicence("planted_unlisted"),
+      licence.Unaccepted("planted_own", ["MIT"]),
+    ]
+    as "the listed package passes; the unlisted one is still refused"
 }
