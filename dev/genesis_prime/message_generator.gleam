@@ -1,6 +1,8 @@
 //// Writes the Gleam codec of every message and record in the schema: one
 //// module for each under `src/genesis_prime/message/`, with its type, and for
-//// a message `encode` and `decode`, for a record `write` and `read`. The text
+//// a message `encode` and `decode`, for a record `write` and `read`; and the
+//// `client_message` module, which decodes a message the client sends by its
+//// number. The text
 //// is already in `gleam format`'s layout, so a regenerated file equals the
 //// committed one byte for byte, and `mismatches` names each file that does not.
 
@@ -35,9 +37,10 @@ const width = 80
 
 const directory = "src/genesis_prime/message"
 
-/// The files the schema generates: a module for each message, then each record.
+/// The files the schema generates: a module for each message, then each
+/// record, then the client message module.
 pub fn generate(schema: Schema) -> List(GeneratedFile) {
-  list.append(
+  list.flatten([
     list.map(schema.messages, fn(message) {
       GeneratedFile(
         path: directory <> "/" <> message.name <> ".gleam",
@@ -50,7 +53,13 @@ pub fn generate(schema: Schema) -> List(GeneratedFile) {
         text: record_module(record),
       )
     }),
-  )
+    [
+      GeneratedFile(
+        path: directory <> "/client_message.gleam",
+        text: client_message_module(schema.messages),
+      ),
+    ],
+  ])
 }
 
 /// Each way the committed files differ from the generated ones. A committed
@@ -209,6 +218,137 @@ fn record_module(record: Record) -> String {
       ["}"],
     ]),
   )
+}
+
+/// The module of every message the client sends: a variant for each message
+/// that travels client to server or either way, in the schema's order, and the
+/// decoder that picks a body's decoder by its message's number.
+fn client_message_module(messages: List(Message)) -> String {
+  let sent =
+    list.filter(messages, fn(message) {
+      message.direction != message_schema.ServerToClient
+    })
+  let head =
+    wrap(
+      "////",
+      "Every message the client sends, by its number: a variant for each message of the schema that travels client to server or either way, `decode` to read a body by its message's number, `encode` to write it back and `message_id` to name it. A number no such message has is reported as unknown.",
+    )
+  let module_imports =
+    list.sort(sent, fn(left, right) { string.compare(left.name, right.name) })
+    |> list.flat_map(fn(message) {
+      let path = "import genesis_prime/message/" <> message.name <> ".{"
+      let item = "type " <> camel(message.name)
+      case string.length(path <> item <> "}") <= width {
+        True -> [path <> item <> "}"]
+        False -> [path, "  " <> item <> ",", "}"]
+      }
+    })
+  lines_to_text(
+    list.flatten([
+      header(head),
+      [
+        "import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}",
+      ],
+      module_imports,
+      [""],
+      ["/// A message the client sends, decoded: one variant for each message."],
+      ["pub type ClientMessage {"],
+      list.map(sent, fn(message) {
+        let name = camel(message.name)
+        "  " <> name <> "(message: " <> name <> ")"
+      }),
+      ["}", ""],
+      ["/// Why a body is not a message the client sends."],
+      ["pub type ClientMessageError {"],
+      ["  /// No message the client sends has this number."],
+      ["  UnknownMessage(message_id: Int)"],
+      ["  /// The body is not the message its number names."],
+      ["  Malformed(message_id: Int, error: DecodeError)"],
+      ["}", ""],
+      wrap(
+        "///",
+        "The message a body holds, read by the decoder of the message its number names.",
+      ),
+      function_head(
+        name: "decode",
+        parameters: ["message_id message_id: Int", "body body: BitArray"],
+        returns: "Result(ClientMessage, ClientMessageError)",
+      ),
+      ["  case message_id {"],
+      list.flat_map(sent, fn(message) {
+        case_arm(pattern: hex_id(message.id), head: "decoded", arguments: [
+          "body",
+          "message_id",
+          message.name <> ".decode",
+          camel(message.name),
+        ])
+      }),
+      ["    _ -> Error(UnknownMessage(message_id:))", "  }", "}", ""],
+      wrap(
+        "///",
+        "The bytes of a message's body, or the first field that cannot be written.",
+      ),
+      function_head(
+        name: "encode",
+        parameters: ["message: ClientMessage"],
+        returns: "Result(BitArray, EncodeError)",
+      ),
+      ["  case message {"],
+      list.flat_map(sent, fn(message) {
+        case_arm(
+          pattern: camel(message.name) <> "(message:)",
+          head: message.name <> ".encode",
+          arguments: ["message"],
+        )
+      }),
+      ["  }", "}", ""],
+      ["/// The number of a message."],
+      ["pub fn message_id(message: ClientMessage) -> Int {"],
+      ["  case message {"],
+      list.map(sent, fn(message) {
+        "    "
+        <> camel(message.name)
+        <> "(..) -> "
+        <> message.name
+        <> ".message_id"
+      }),
+      ["  }", "}", ""],
+      [
+        "fn decoded(",
+        "  body: BitArray,",
+        "  message_id: Int,",
+        "  decode: fn(BitArray) -> Result(message, DecodeError),",
+        "  variant: fn(message) -> ClientMessage,",
+        ") -> Result(ClientMessage, ClientMessageError) {",
+        "  case decode(body) {",
+        "    Ok(message) -> Ok(variant(message))",
+        "    Error(error) -> Error(Malformed(message_id:, error:))",
+        "  }",
+        "}",
+      ],
+    ]),
+  )
+}
+
+/// A case arm `pattern -> call` as `gleam format` lays it out: on one line when
+/// it fits, with the call alone on the next line, or with the call's arguments
+/// one to a line.
+fn case_arm(
+  pattern pattern: String,
+  head head: String,
+  arguments arguments: List(String),
+) -> List(String) {
+  let inner = head <> "(" <> string.join(arguments, ", ") <> ")"
+  let one = "    " <> pattern <> " -> " <> inner
+  case string.length(one) <= width, string.length("      " <> inner) <= width {
+    True, _ -> [one]
+    False, True -> ["    " <> pattern <> " ->", "      " <> inner]
+    False, False ->
+      list.flatten([
+        ["    " <> pattern <> " ->"],
+        call(indent: 6, head:, arguments:, tail: ""),
+      ])
+  }
 }
 
 fn header(description: List(String)) -> List(String) {

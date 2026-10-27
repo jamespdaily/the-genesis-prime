@@ -46,7 +46,7 @@ fn file_named(files: List(GeneratedFile), name: String) -> GeneratedFile {
   file
 }
 
-pub fn the_schema_generates_one_module_for_each_message_and_record_test() -> Nil {
+pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_client_message_module_test() -> Nil {
   use <- owned_test.run(5000)
   let paths =
     generated()
@@ -60,6 +60,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_test() -> Nil
       "src/genesis_prime/message/choose_realm.gleam",
       "src/genesis_prime/message/client_control_echoed.gleam",
       "src/genesis_prime/message/client_control_granted.gleam",
+      "src/genesis_prime/message/client_message.gleam",
       "src/genesis_prime/message/client_wrapper.gleam",
       "src/genesis_prime/message/close_notice.gleam",
       "src/genesis_prime/message/create_character.gleam",
@@ -98,7 +99,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_test() -> Nil
       "src/genesis_prime/message/unit_stat.gleam",
       "src/genesis_prime/message/world_message.gleam",
     ]
-    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list, the 20 messages and 5 records of character select and entering the world, and the network layer's 3 messages (ping, pong and close notice)"
+    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list, the 20 messages and 5 records of character select and entering the world, and the network layer's 3 messages (ping, pong and close notice), and the client message module that decodes every message the client sends by its number"
 }
 
 pub fn the_committed_codec_is_what_the_schema_generates_test() -> Nil {
