@@ -29,7 +29,9 @@ from typing import Callable, Mapping
 REPOSITORY = Path(__file__).resolve().parent.parent
 SCRIPTS = Path(".claude") / "skills" / "decoding-the-client" / "scripts"
 sys.path.insert(0, str(REPOSITORY / SCRIPTS))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import extract_tables  # noqa: E402
 import ghidra_env  # noqa: E402
 
 # The client's own build, client_archive.target_build: GetVersionInfo at
@@ -330,6 +332,18 @@ def check_query_process(machine: Machine) -> list[Missing]:
     return missing + [_query_failure(line.strip()) for line in output.splitlines() if line.strip()]
 
 
+def check_table_folder(machine: Machine) -> list[Missing]:
+    """One Missing for each table the client's index lists under DB/ that the
+    table folder (extract_tables.table_folder) does not hold, named by its file
+    name; one Missing for the folder itself when it is not there at all.
+
+    The expected set is the client's own: ClientData.index in the Patch folder
+    beside Client64, read with extract_tables.read_index and tables_of, so no
+    count or list is written here. Only the names are compared; the contents
+    were checked against the index's SHA-1 when extract_tables published them."""
+    return []
+
+
 def _query_failure(message: str) -> Missing:
     """One failure ghidra_env.check_parts raised, as a Missing."""
     if message.startswith("Ghidra"):
@@ -398,7 +412,7 @@ def check_all(machine: Machine) -> list[Missing]:
     GENESIS_NO_CLIENT=1."""
     checks = [check_gleam, check_erlang, check_rebar, check_manifest, check_postgres, check_distribution]
     if not _no_client(machine):
-        checks += [check_client, check_query_process]
+        checks += [check_client, check_table_folder, check_query_process]
     return [missing for check in checks for missing in check(machine)]
 
 

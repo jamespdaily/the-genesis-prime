@@ -215,11 +215,57 @@ def _archive_entries(archive: BinaryIO, name: str) -> tuple[list[tuple[int, int]
     return blocks, entries
 
 
-def extract(patch_folder: Path, destination: Path) -> list[str]:
+def staging_of(destination: Path) -> Path:
+    """The folder next to destination in which a run builds the whole set
+    (destination's name and ".staging"), on the same filesystem so the swap is
+    a rename."""
+    return destination.with_name(destination.name + ".staging")
+
+
+def aside_of(destination: Path) -> Path:
+    """The folder the swap moves the old destination to (destination's name
+    and ".old"), until the new one is in place."""
+    return destination.with_name(destination.name + ".old")
+
+
+def stage_tables(patch_folder: Path, staging: Path) -> list[IndexedFile]:
+    """Writes every DB/*.tbl of patch_folder's ClientData into the empty folder
+    staging, each checked against the index's SHA-1 before it is written, and
+    returns the tables the index lists. Raises Corrupt naming the file whose
+    block does not match. Touches nothing but staging."""
+    raise NotImplementedError
+
+
+def verify_staged(staging: Path, tables: list[IndexedFile], expected_count: int | None) -> None:
+    """Raises Corrupt unless staging holds exactly the files of tables, each of
+    the size the index gives, and, when expected_count is given, exactly that
+    many (the fact file's 384 for the client). Run after stage_tables and
+    before swap_whole, so a set that is short or wrong is never published."""
+    raise NotImplementedError
+
+
+def swap_whole(staging: Path, destination: Path) -> None:
+    """Replaces destination with staging as one folder: moves an existing
+    destination to aside_of(destination), renames staging to destination, then
+    removes the old one. When the second rename fails, the first is undone and
+    the error is raised, so destination is as it was."""
+    raise NotImplementedError
+
+
+def recover(destination: Path) -> None:
+    """Finishes or undoes a swap that a crash cut short, and removes
+    leftovers. A run that finds aside_of(destination) and no destination moves
+    it back, so the folder is as it was before the cut swap; a leftover staging
+    folder is removed, since it was not verified. Called first by extract."""
+    raise NotImplementedError
+
+
+def extract(patch_folder: Path, destination: Path, expected_count: int | None = None) -> list[str]:
     """Writes every DB/*.tbl of patch_folder's ClientData into destination,
     each checked against the index's SHA-1, and returns their file names.
     Raises Corrupt naming the file whose block does not match; the
-    destination is then left as it was."""
+    destination is then left as it was. The whole set replaces destination at
+    once (recover, stage_tables, verify_staged, swap_whole)."""
     tables = tables_of(read_index((patch_folder / "ClientData.index").read_bytes()))
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".extracting-", dir=destination.parent))
