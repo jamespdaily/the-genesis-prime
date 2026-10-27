@@ -17,9 +17,12 @@ stand-in hands out, are mapped where nothing else is; a load or store outside
 the mapped ranges fails the run as unmapped memory. Ghidra's own access
 breakpoints are not used for this: its lookup finds a range only from the first
 and last 4 KiB page of the range, so a gap of any size traps only at its ends
-and the run goes on reading zeros. Instead an instruction with a load or store
-is run one p-code op at a time, and the address of each of those ops is checked
-before it runs; the other instructions run whole.
+and the run goes on reading zeros. Instead each instruction's memory accesses
+are checked before they run. An access at an address fixed in the instruction
+(a memory varnode in its p-code) is checked before the instruction starts. An
+instruction that loads or stores at a computed address is run one p-code op at
+a time, and each of those addresses is checked before its op runs; the other
+instructions run whole.
 """
 
 import bisect
@@ -121,7 +124,8 @@ class _Machine:
         language = program.getLanguage()
         self.space = program.getAddressFactory().getDefaultAddressSpace()
         self.emulator = PcodeEmulator(language)
-        self._memory_ops: dict[int, tuple[dict, bool]] = {}  # instruction address -> (index -> LOAD/STORE op, has branches)
+        # instruction address -> (index -> LOAD/STORE op, has branches, fixed-address accesses (what, address, size))
+        self._memory_ops: dict[int, tuple[dict, bool, list]] = {}
         self.state = self.emulator.getSharedState()
         mapped = [(STACK_BASE, STACK_BASE + STACK_SIZE - 1)]
         for block in program.getMemory().getBlocks():
@@ -136,6 +140,11 @@ class _Machine:
                 continue
             if address + len(data) > TOP_OF_ADDRESS_SPACE + 1:
                 raise EmulationFailed("memory planted at 0x%x runs past the end of the address space" % address)
+            if address < HEAP_BASE + HEAP_SIZE and HEAP_BASE < address + len(data):
+                raise EmulationFailed(
+                    "memory planted at 0x%x overlaps the heap_alloc region 0x%x-0x%x"
+                    % (address, HEAP_BASE, HEAP_BASE + HEAP_SIZE - 1)
+                )
             self.state.setVar(self._address(address), len(data), False, JArray(JByte)(data))
             mapped.append((address, address + len(data) - 1))
         self.heap_next = HEAP_BASE
@@ -172,23 +181,54 @@ class _Machine:
                 "the instruction at 0x%x made a %s of %d bytes at 0x%x, which is unmapped memory" % (pc, what, size, address)
             )
 
+    def _check_fixed(self, accesses: list, pc: int) -> None:
+        for what, address, size in accesses:
+            if not self.is_mapped(address, size):
+                raise EmulationFailed(
+                    "the instruction at 0x%x made a %s of %d bytes at 0x%x, which is unmapped memory"
+                    % (pc, what, size, address)
+                )
+
+    @staticmethod
+    def _fixed_accesses(code) -> list:
+        """(what, address, size) of each memory varnode the p-code reads or writes. A branch's or
+        call's target is where control goes, not an access, so it is left out."""
+        from ghidra.program.model.pcode import PcodeOp
+
+        targets = (PcodeOp.BRANCH, PcodeOp.CBRANCH, PcodeOp.CALL)
+        accesses = []
+        for i in range(code.size()):
+            op = code.get(i)
+            for position in range(op.getNumInputs()):
+                varnode = op.getInput(position)
+                if varnode.isAddress() and not (position == 0 and op.getOpcode() in targets):
+                    accesses.append(("load", varnode.getOffset() & TOP_OF_ADDRESS_SPACE, varnode.getSize()))
+            output = op.getOutput()
+            if output is not None and output.isAddress():
+                accesses.append(("store", output.getOffset() & TOP_OF_ADDRESS_SPACE, output.getSize()))
+        return accesses
+
     def _step(self, pc: int) -> None:
-        """Runs the instruction at the counter. One with a load or store is run an op at a time, so
-        that each address is checked before the op uses it."""
+        """Runs the instruction at the counter. Its fixed-address accesses are checked first; one
+        with a load or store at a computed address is run an op at a time, so that each address is
+        checked before the op uses it."""
         from ghidra.program.model.pcode import PcodeOp
 
         known = self._memory_ops.get(pc)
-        if known is not None and not known[0]:
-            self.thread.stepInstruction()
-            return
+        if known is not None:
+            self._check_fixed(known[2], pc)
+            if not known[0]:
+                self.thread.stepInstruction()
+                return
         self.thread.stepPcodeOp()  # begins the instruction: decodes it into a frame, runs no op
         frame = self.thread.getFrame()
         if known is None:
             code = frame.getCode()
             ops = {i: code.get(i) for i in range(code.size()) if code.get(i).getOpcode() in (PcodeOp.LOAD, PcodeOp.STORE)}
             branches = any(code.get(i).getOpcode() in (PcodeOp.BRANCH, PcodeOp.CBRANCH) for i in range(code.size()))
-            known = self._memory_ops[pc] = (ops, branches)
-        ops, branches = known
+            known = self._memory_ops[pc] = (ops, branches, self._fixed_accesses(code))
+            self._check_fixed(known[2], pc)
+        ops, branches, _fixed = known
         last = max(ops, default=-1)
         while not frame.isFinished():
             index = frame.index()

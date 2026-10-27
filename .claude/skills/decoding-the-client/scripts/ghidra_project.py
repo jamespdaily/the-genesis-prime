@@ -136,7 +136,8 @@ def _import_and_analyse(project, settings: Settings, seed_path: "Path | Unseeded
 
 
 def apply_seed(program, lines: list[tuple[int, str, str]]) -> SeedReport:
-    """Creates each seeded function and names it, before analysis runs."""
+    """Creates each seeded function that does not exist yet and names it, before analysis runs.
+    A function that already exists keeps its name, and counts as already present."""
     import pyghidra
     from ghidra.app.cmd.disassemble import DisassembleCommand
     from ghidra.app.cmd.function import CreateFunctionCmd

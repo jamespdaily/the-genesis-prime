@@ -38,6 +38,9 @@ FIVE_IMPORTS = [
 ]
 FN_ENCRYPT = 0x1400C2D10  # EncryptMessageBody (fact file record 0x1400c2d10)
 MAX_RANGE = 1 << 20
+# fact file record 0x1404e5760: `call 0x14003b4f0` at 0x1404e576d, five bytes, to a .pdata start
+CALL_SITE = 0x1404E576D
+CALLED = 0x14003B4F0
 
 
 def objdump_addresses(low: int, high: int) -> list[int]:
@@ -89,6 +92,14 @@ class DecompileTest(unittest.TestCase):
         self.assertIn(hx(inside), reply.body["error"])
         self.assert_still_answering()
 
+    def test_a_timeout_that_is_not_finite_or_over_an_hour_gets_an_error_reply_and_the_next_request_is_answered(self):
+        for timeout in (float("inf"), 7200):
+            with self.subTest(timeout=timeout):
+                reply = self.qp.ask("decompile", function=hx(FN_FIVE_IMPORTS), timeout_s=timeout)
+                self.assertIs(reply.body["ok"], False)
+                self.assertIn("timeout_s", reply.body["error"])
+        self.assert_still_answering()
+
     def test_a_timeout_of_a_thousandth_of_a_second_gets_an_error_reply_naming_the_timeout_and_the_next_request_is_answered(self):
         reply = self.qp.ask("decompile", function=hx(FN_FIVE_IMPORTS), timeout_s=0.001)
         self.assertIs(reply.body["ok"], False)
@@ -126,6 +137,14 @@ class DisassembleTest(unittest.TestCase):
         last = listing[-1]
         stop = int(last["address"], 16) + len(last["bytes"]) // 2
         self.assertEqual(self.qp.ask("disassemble", start=hx(first), stop=hx(stop)).answer, listing)
+
+    def test_a_call_names_the_function_it_calls_as_the_project_names_it(self):
+        self.assertIn(CALLED, self.pe.function_starts())
+        name = self.qp.ask("function_at", address=hx(CALLED)).answer["name"]
+        listing = self.qp.ask("disassemble", start=hx(CALL_SITE), stop=hx(CALL_SITE + 5)).answer
+        self.assertEqual(len(listing), 1)
+        self.assertIn(name, listing[0]["text"])
+        self.assertNotIn(hx(CALLED), listing[0]["text"])  # the name, never the bare address
 
     def test_a_range_with_stop_at_or_before_start_or_over_one_mebibyte_gets_an_error_reply(self):
         for name, start, stop in (

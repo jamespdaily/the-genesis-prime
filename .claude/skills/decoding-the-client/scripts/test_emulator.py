@@ -48,6 +48,11 @@ PLANTED_OUT_CELL = 0x2100_0000_0000
 PLANTED_CIPHER_OBJECT = 0x2200_0000_0000
 PLANTED_BUFFER = 0x2300_0000_0000
 HEAP_BASE = 0x6000_0000_0000  # the first block heap_alloc returns, as ghidra_query.py documents
+PLANTED_FIXED = 0x2400_0000_0000  # an address no run maps
+# Intel SDM, MOV: REX.W A1 is `mov rax, moffs64` and REX.W A3 is `mov moffs64, rax`, each 10 bytes.
+# Planted over the 10-byte movabs at 0x14000a6e2 (fact file record 0x14000a6db), so the range is one instruction.
+FIXED_LOAD = bytes([0x48, 0xA1]) + PLANTED_FIXED.to_bytes(8, "little")
+FIXED_STORE = bytes([0x48, 0xA3]) + PLANTED_FIXED.to_bytes(8, "little")
 
 BASE_KEY_SEED = 0x718DA9074F2DEB91  # constructor 0x14000a490 leaves it in rdi (fact file record 0x14000a6db)
 BASE_KEY = 0xD283F5B34A8DC685  # fact file record 0x14000a6db
@@ -274,6 +279,24 @@ class EmulateRangesTest(unittest.TestCase):
         second = self.emulate(start="0x14000a6e2", stop="0x14000a6ec").answer
         self.assertEqual(second["registers"]["rbx"], 0)
         self.assertEqual(second["registers"]["rcx"], 0x5B88D61139619662)
+
+    def test_a_load_or_a_store_at_a_fixed_unmapped_address_fails_naming_the_address(self):
+        for name, code in (("load", FIXED_LOAD), ("store", FIXED_STORE)):
+            with self.subTest(name):
+                reply = self.emulate(
+                    start="0x14000a6e2", stop="0x14000a6ec", memory=[{"address": "0x14000a6e2", "bytes": code.hex()}]
+                )
+                self.assertIs(reply.body["ok"], False)
+                self.assertIn("unmapped", reply.body["error"])
+                self.assertIn(name, reply.body["error"])
+                self.assertIn(hx(PLANTED_FIXED), reply.body["error"])
+
+    def test_memory_planted_in_the_heap_alloc_region_fails_the_request(self):
+        reply = self.emulate(
+            start="0x14000a6e2", stop="0x14000a6ec", memory=[{"address": hx(HEAP_BASE), "bytes": "01020304"}]
+        )
+        self.assertIs(reply.body["ok"], False)
+        self.assertIn("heap_alloc region", reply.body["error"])
 
     def test_a_call_to_an_import_with_no_stand_in_fails_naming_it_and_an_internal_call_fails_with_follow_calls_off(self):
         # llvm-objdump: `call qword ptr [rip + 0x94f891]` at 0x14000a061, six bytes, through the ShowCursor

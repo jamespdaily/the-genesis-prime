@@ -27,7 +27,7 @@ Kinds and their arguments (addresses are 0x-prefixed lower-case hex):
                                              {lines, created, already_present, failed: [hex], unmapped: [hex]}
   decompile       function [, timeout_s]  -> {signature, c}: Ghidra's C for the function, with the
                                              project's names. One decompiler per program is opened on
-                                             the first request and kept. timeout_s defaults to 60; a
+                                             the first request and kept. timeout_s defaults to 60, at most 3600; a
                                              decompile that fails or passes it is an error reply naming
                                              the cause, and the process goes on.
   disassemble     function                -> [{address, bytes, text}] in address order: the listing of
@@ -58,7 +58,8 @@ Kinds and their arguments (addresses are 0x-prefixed lower-case hex):
                 the import table slot a call goes through, as 0x hex; a call the listing shows
                 going there is answered in Python and the run goes on after it. Kinds:
                   heap_alloc  RCX bytes (zeroed) from a bump allocator in its own mapped region
-                              that starts at 0x600000000000, 16-byte aligned; the pointer in RAX
+                              that starts at 0x600000000000, 16-byte aligned; the pointer in RAX.
+                              Its 256 MiB are kept for it: memory planted there fails the request
                   heap_free   nothing happens
                   return      {"kind": "return", "value": int}: RAX = value
                 A call to an import with no stand-in fails the request, naming the import as
@@ -91,6 +92,7 @@ TOP = (1 << 64) - 1
 MAX_PLANTED = 1 << 26
 MAX_STEPS = 100_000_000
 DEFAULT_DECOMPILE_TIMEOUT_S = 60
+MAX_DECOMPILE_TIMEOUT_S = 3600
 
 
 class BadRequest(Exception):
@@ -357,8 +359,8 @@ def _decompile(program, request: dict) -> dict:
 
     function = _function_at_entry(program, request, "function")
     timeout = _number(request, "timeout_s", DEFAULT_DECOMPILE_TIMEOUT_S)
-    if timeout <= 0:
-        raise BadRequest("'timeout_s' must be above 0")
+    if not (math.isfinite(timeout) and 0 < timeout <= MAX_DECOMPILE_TIMEOUT_S):
+        raise BadRequest("'timeout_s' must be above 0 and at most %d" % MAX_DECOMPILE_TIMEOUT_S)
     interface = _decompiler(program)
     monitor = TimeoutTaskMonitor.timeoutIn(max(1, round(timeout * 1000)), TimeUnit.MILLISECONDS)
     result = interface.decompileFunction(function, max(1, math.ceil(timeout)), monitor)
@@ -387,8 +389,11 @@ def _disassemble(program, request: dict) -> list[dict]:
         if not 0 < length <= MAX_BYTES:
             raise BadRequest("'stop' must be above 'start' and at most %d bytes after it" % MAX_BYTES)
         instructions = listing.getInstructions(AddressSet(start, stop.subtract(1)), True)
+    from ghidra.program.model.listing import CodeUnitFormat
+
+    text = CodeUnitFormat.DEFAULT.getRepresentationString
     return [
-        {"address": _hex(i.getAddress()), "bytes": bytes(i.getBytes()).hex(), "text": str(i)} for i in instructions
+        {"address": _hex(i.getAddress()), "bytes": bytes(i.getBytes()).hex(), "text": text(i)} for i in instructions
     ]
 
 
