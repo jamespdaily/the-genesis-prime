@@ -7,10 +7,10 @@
 //// client's own tables are loaded from its files, so the tests skip where
 //// `GENESIS_NO_CLIENT=1`.
 ////
-//// Expected values are the client's records: 0x7DD, 0xAD, 0x262, 0x19B, 0xF1,
-//// 0xF2 inside 0x38C, 0x61, 0x162 and 0x355 (opcode.0x7dd, opcode.0xad,
-//// opcode.0x262, opcode.0x19b, opcode.0xf1, opcode.0xf2, opcode.0x38c,
-//// opcode.0x61, opcode.0x162, opcode.0x355), the order CheckWorldLoaded
+//// Expected values are the client's records: 0x7DD, 0xAD, 0x262, 0x19B, 0x636,
+//// 0xF1, 0xF2 inside 0x38C, 0x61, 0x162 and 0x355 (opcode.0x7dd, opcode.0xad,
+//// opcode.0x262, opcode.0x19b, opcode.0x636, opcode.0xf1, opcode.0xf2,
+//// opcode.0x38c, opcode.0x61, opcode.0x162, opcode.0x355), the order CheckWorldLoaded
 //// 0x1403E8000 needs, and the movement interval the client defaults to (the
 //// bytes at 0x140C3A004: 125 milliseconds). Every wait is for bytes the server
 //// writes, a delivery or a line it logs; the deadlines are for a server that
@@ -203,14 +203,14 @@ pub fn a_player_who_plays_a_character_is_sent_the_world_messages_and_the_map_hol
     as "the account is created"
   let character = saved_character(database:, running:, account:)
   let game = signed_in(running:, account:)
-  let assert [entered, created, is_player, interval] =
-    play(game:, character:, answers: 4)
-    as "0xAD, 0x262, 0x19B and 0xF1"
-  assert list.map([entered, created, is_player, interval], fn(sent) {
+  let assert [entered, created, is_player, control, interval] =
+    play(game:, character:, answers: 5)
+    as "opcode.0x636: 0xAD, 0x262, 0x19B, 0x636 and 0xF1"
+  assert list.map([entered, created, is_player, control, interval], fn(sent) {
       sent.message_id
     })
-    == [0x00AD, 0x0262, 0x019B, 0x00F1]
-    as "CheckWorldLoaded 0x1403E8000: the world, the player's unit, the unit that is the player, then the movement interval"
+    == [0x00AD, 0x0262, 0x019B, 0x0636, 0x00F1]
+    as "CheckWorldLoaded 0x1403E8000 and opcode.0x636: the world, the player's unit, the unit that is the player, the control (which the client ignores before 0x19B), then the movement interval"
   let assert Ok(world) = enter_world.decode(entered.body) as "0xAD decodes"
   assert world.world_id == running.facts.world_id
     && world.position_x == float32.to_bits(1.5)
@@ -397,8 +397,8 @@ pub fn a_map_that_ends_closes_the_connection_of_the_player_on_it_and_logs_a_warn
     as "the account is created"
   let character = saved_character(database:, running:, account:)
   let game = signed_in(running:, account:)
-  let assert [_, _, _, _] = play(game:, character:, answers: 4)
-    as "the world messages"
+  let assert [_, _, _, _, _] = play(game:, character:, answers: 5)
+    as "opcode.0x636: the world messages are 0xAD, 0x262, 0x19B, 0x636 and 0xF1"
   // The map's process ends and its supervisor restarts it empty, with the
   // first unit id free, which the connection's unit is not on.
   let assert Ok(factory) = process.named(running.game.maps.factory)

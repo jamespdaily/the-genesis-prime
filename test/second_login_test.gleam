@@ -127,8 +127,8 @@ pub fn a_second_login_ends_the_first_connection_with_0x36a_reason_19_and_then_li
   assert listed(game: first).characters != []
     as "the first connection lists the account's character"
   play(game: first, character:)
-  let assert [_, _, _, _] = game_client.read(game: first, count: 4)
-    as "the first connection entered the world: 0xAD, 0x262, 0x19B and 0xF1"
+  let assert [_, _, _, _, _] = game_client.read(game: first, count: 5)
+    as "opcode.0x636: the first connection entered the world: 0xAD, 0x262, 0x19B, 0x636 and 0xF1, in the order CheckWorldLoaded 0x1403E8000 needs"
 
   let second = signed_in(running:, account:)
   let assert [notice] = game_client.read(game: first, count: 1)
@@ -149,7 +149,7 @@ pub fn a_second_login_ends_the_first_connection_with_0x36a_reason_19_and_then_li
   assert list_message.pending_removal_character_id == 0
     as "the character is off the map when the list is sent, so the new client never sees it still in the world"
   play(game: second, character:)
-  let assert [entered, ..] = game_client.read(game: second, count: 4)
+  let assert [entered, ..] = game_client.read(game: second, count: 5)
     as "the second connection plays the character the first held"
   assert entered.message_id == 0x00AD
     as "opcode.0xad: the world is loaded, not refused with 0x162 as for a character that is on the map"
@@ -227,8 +227,8 @@ fn in_the_world_with_a_map_that_does_not_run(
   assert listed(game: first).characters != []
     as "the first connection lists the account's character"
   play(game: first, character:)
-  let assert [_, _, _, _] = game_client.read(game: first, count: 4)
-    as "the first connection entered the world: 0xAD, 0x262, 0x19B and 0xF1"
+  let assert [_, _, _, _, _] = game_client.read(game: first, count: 5)
+    as "opcode.0x636: the first connection entered the world: 0xAD, 0x262, 0x19B, 0x636 and 0xF1, in the order CheckWorldLoaded 0x1403E8000 needs"
   let map = the_map_process(running)
   map_support.suspend(map)
   #(first, map)
@@ -264,7 +264,7 @@ pub fn a_map_that_does_not_answer_the_leave_does_not_stop_the_second_login_test(
     as "the new login is answered with the list: a slow map does not end both connections"
   map_support.resume(map)
   play(game: second, character:)
-  let assert [entered, ..] = game_client.read(game: second, count: 4)
+  let assert [entered, ..] = game_client.read(game: second, count: 5)
     as "the new connection plays the character once the map answers: the map took the old unit off when it handled the old connection's end"
   assert entered.message_id == 0x00AD
     as "opcode.0xad: the world is loaded, not refused with 0x162 for a character that is on the map"
@@ -299,7 +299,7 @@ pub fn a_connection_that_is_still_leaving_at_the_eviction_deadline_is_killed_and
     as "the new login is answered with the list once the old connection is dead"
   map_support.resume(map)
   play(game: second, character:)
-  let assert [entered, ..] = game_client.read(game: second, count: 4)
+  let assert [entered, ..] = game_client.read(game: second, count: 5)
     as "the map took the killed connection's unit off when it saw the connection go down"
   assert entered.message_id == 0x00AD
     as "opcode.0xad: the world is loaded for the new connection"
