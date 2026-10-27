@@ -109,7 +109,9 @@ pure_erlang = [
   "rule_recording_ffi:decode_record",
 ]
 # Modules that may make an atom from a string or read a term from bytes.
-atom_or_term = []
+atom_or_term = [
+  { module = "genesis_prime/rule_recording_ffi", reason = "reads a rule recording back: bytes only the server's own recorder wrote, read by developers and tests, never a client's" },
+]
 
 # The licences a package may carry; a package with none of them fails the check.
 [tools.licences]
