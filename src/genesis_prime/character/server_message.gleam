@@ -4,6 +4,7 @@
 
 import genesis_prime/message/bit_stream.{type EncodeError}
 import genesis_prime/message/character_list.{type CharacterList}
+import genesis_prime/message/client_control_granted.{type ClientControlGranted}
 import genesis_prime/message/create_character_result.{type CreateCharacterResult}
 import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
 import genesis_prime/message/disconnect_notice.{type DisconnectNotice}
@@ -36,6 +37,8 @@ pub type ServerMessage {
   UnitCreated(UnitCreatePlayer)
   /// Message 0x19B.
   PlayerUnitSet(UnitIsPlayer)
+  /// Message 0x636.
+  ControlGranted(ClientControlGranted)
   /// Message 0xF1.
   MovementIntervalSet(MovementSendInterval)
   /// Message 0x61.
@@ -80,6 +83,11 @@ pub fn encode(
       numbered(unit_create_player.message_id, unit_create_player.encode(body))
     PlayerUnitSet(body) ->
       numbered(unit_is_player.message_id, unit_is_player.encode(body))
+    ControlGranted(body) ->
+      numbered(
+        client_control_granted.message_id,
+        client_control_granted.encode(body),
+      )
     MovementIntervalSet(body) ->
       numbered(
         movement_send_interval.message_id,

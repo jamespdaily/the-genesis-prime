@@ -29,6 +29,7 @@ import genesis_prime/map/delivery.{Appeared, Disappeared}
 import genesis_prime/map/position.{Position}
 import genesis_prime/map/unit.{PlayerUnit}
 import genesis_prime/message/bit_stream
+import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/disconnect_notice
@@ -422,8 +423,8 @@ pub fn the_maps_answer_sends_the_world_messages_and_0xf2_inside_0x38c_sends_0x61
   assert list.map(messages(effects, session_cipher()), fn(sent) {
       sent.message_id
     })
-    == [0x00AD, 0x0262, 0x019B, 0x00F1]
-    as "CheckWorldLoaded 0x1403E8000: 0xAD, the player's unit 0x262, 0x19B and 0xF1, in that order"
+    == [0x00AD, 0x0262, 0x019B, 0x0636, 0x00F1]
+    as "CheckWorldLoaded 0x1403E8000 and opcode.0x636: 0xAD, the player's unit 0x262, 0x19B, the control 0x636 (ignored before 0x19B) and 0xF1, in that order"
   let assert Ok(body) = terrain_loaded.encode(TerrainLoaded(field_1: 9))
     as "0xF2 encodes"
   let #(_, effects) =
@@ -435,6 +436,64 @@ pub fn the_maps_answer_sends_the_world_messages_and_0xf2_inside_0x38c_sends_0x61
   let assert [entered] = messages(effects, session_cipher())
     as "opcode.0xf2: the client's 0xF2 inside 0x38C is answered with 0x61"
   assert entered.message_id == 0x0061
+}
+
+/// A session that has been sent the world messages and waits for the client's
+/// 0xF2.
+fn awaiting_terrain() -> Session {
+  let #(session, _) =
+    game_session.map_answered(
+      waiting_for_the_map(),
+      game_session.MapJoined(playing_unit()),
+      context(),
+    )
+  session
+}
+
+pub fn the_clients_0x635_inside_0x38c_with_the_value_0x636_carried_ends_nothing_and_sends_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(body) =
+    client_control_echoed.encode(ClientControlEchoed(echo_value: 0))
+    as "0x635 encodes"
+  let #(_, effects) =
+    game_session.receive(
+      awaiting_terrain(),
+      world_frame(message_id: 0x0635, body:),
+      context(),
+    )
+  assert effects == []
+    as "opcode.0x635: the client's echo of the 0x636 value (0, world_entry.control_echo_value) is accepted with no reply"
+}
+
+pub fn a_0x635_inside_0x38c_with_another_value_ends_the_connection_as_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(body) =
+    client_control_echoed.encode(ClientControlEchoed(echo_value: 1))
+    as "0x635 encodes"
+  let #(_, effects) =
+    game_session.receive(
+      awaiting_terrain(),
+      world_frame(message_id: 0x0635, body:),
+      context(),
+    )
+  assert effects
+    == [
+      End(game_session.WorldEntryBreach(world_entry.ControlEchoedWrongValue(1))),
+    ]
+    as "opcode.0x635: the client only echoes the value 0x636 brought, 0, so a 1 is not the client's"
+}
+
+pub fn a_0x635_inside_0x38c_that_does_not_decode_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) =
+    game_session.receive(
+      awaiting_terrain(),
+      world_frame(message_id: 0x0635, body: <<1, 2, 3>>),
+      context(),
+    )
+  assert effects
+    == [End(MalformedMessage(message_id: 0x0635, error: bit_stream.EndOfData))]
+    as "vector.opcode.0x635.body is 32 bits; a body of 24 bits ends inside the field, and a decode failure ends the connection"
 }
 
 pub fn a_map_that_refuses_the_character_sends_0x162_and_character_select_goes_on_test() -> Nil {

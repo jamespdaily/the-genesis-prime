@@ -4,10 +4,12 @@
 //// `character_message_vector_test`.
 
 import genesis_prime/character/server_message.{
-  CharacterListed, CreateResult, DeleteResult, MovementIntervalSet, PlayRefused,
-  PlayerEntered, PlayerUnitSet, RenameResult, UnitCreated, WorldEntered,
+  CharacterListed, ControlGranted, CreateResult, DeleteResult,
+  MovementIntervalSet, PlayRefused, PlayerEntered, PlayerUnitSet, RenameResult,
+  UnitCreated, WorldEntered,
 }
 import genesis_prime/message/character_list.{CharacterList}
+import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/enter_world.{EnterWorld}
@@ -140,4 +142,17 @@ pub fn a_unit_create_is_message_0x262_with_the_vectors_body_test() -> Nil {
     as "vector.opcode.0x262.player decodes"
   assert server_message.encode(UnitCreated(player)) == Ok(#(0x0262, body))
     as "opcode.0x262 and vector.opcode.0x262.player"
+}
+
+pub fn a_control_grant_is_message_0x636_with_the_vectors_body_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert server_message.encode(
+      ControlGranted(ClientControlGranted(
+        echo_value: 0,
+        reset_movement: 1,
+        unit_id: 1,
+      )),
+    )
+    == Ok(#(0x0636, message_support.hex("000000000300000000")))
+    as "opcode.0x636 and vector.opcode.0x636.body"
 }
