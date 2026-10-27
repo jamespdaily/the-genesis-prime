@@ -100,13 +100,13 @@ integration_budget=${GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS:-583}
 client_scripts=.claude/skills/decoding-the-client/scripts
 
 # How many module groups `gleam test` runs at once; each also runs up to one test
-# per scheduler at once. 2 is the smallest count that leaves 25% of the 120 s
-# budget spare: measured 2026-10-27 (issue 109), the whole check took 95 s or
-# more with 1 (the first run 58 to 75 s, then the serial tests about 10 s, beside
-# the setup suite) and with 2 `gleam test` took 38 to 40 s on the development Mac
-# (12 schedulers) and 39 s with 4 schedulers (ERL_FLAGS="+S 4:4", CI's 4 cores),
-# against 119 s with one test at a time.
-test_workers=${GENESIS_TEST_WORKERS:-2}
+# per scheduler at once. 1 is the smallest count that leaves 25% of the 120 s
+# budget spare: measured 2026-10-27 (issue 109), the whole check took 75 s with 1
+# (gleam-test 68 s with the serial tests, beside the setup suite) and 62 to 67 s
+# with 2; `gleam test -- --workers 1` alone took 58 to 75 s in 16 runs on the
+# development Mac (12 schedulers) and 67 s with 4 schedulers (ERL_FLAGS="+S 4:4",
+# CI's 4 cores), against 119 s with one test at a time.
+test_workers=${GENESIS_TEST_WORKERS:-1}
 
 # The machine's settings (env.sh) and the patched OTP first on PATH, before any part.
 . setup_check/environment.sh
