@@ -23,7 +23,8 @@ pub fn log(level: LogLevel, text: String, about: About) -> Nil
 
 /// Sets the logger's primary level to info, so the info lines the shells
 /// write (start, stop, login, logout) are not dropped; OTP's own primary
-/// level is notice.
+/// level is notice. OTP's progress reports, which it logs at info for every
+/// supervisor and child it starts, stay out.
 @external(erlang, "step_runtime_ffi", "show_info_lines")
 pub fn show_info_lines() -> Nil
 

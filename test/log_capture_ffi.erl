@@ -1,5 +1,6 @@
 -module(log_capture_ffi).
--export([start/2, stop/1, log/2, primary_level/0, set_primary_level/1]).
+-export([start/2, stop/1, log/2, primary_level/0, set_primary_level/1,
+         log_progress_report/0, remove_progress_filter/0]).
 
 %% Adds a logger handler that sends each event logged by the process From to
 %% the Gleam subject Into, as {Level, Text}, both binaries. The handler runs in
@@ -33,4 +34,13 @@ primary_level() ->
 
 set_primary_level(Level) ->
     ok = logger:set_primary_config(level, Level),
+    nil.
+
+log_progress_report() ->
+    logger:info(#{label => {supervisor, progress},
+                  report => [{supervisor, {local, planted}}, {started, []}]}),
+    nil.
+
+remove_progress_filter() ->
+    _ = logger:remove_primary_filter(progress_reports),
     nil.

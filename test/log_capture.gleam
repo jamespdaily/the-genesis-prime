@@ -23,3 +23,12 @@ pub fn primary_level() -> Atom
 /// Sets the logger's primary level, for a test that restores what it found.
 @external(erlang, "log_capture_ffi", "set_primary_level")
 pub fn set_primary_level(level: Atom) -> Nil
+
+/// Logs one progress report, as a supervisor does when it starts a child.
+@external(erlang, "log_capture_ffi", "log_progress_report")
+pub fn log_progress_report() -> Nil
+
+/// Removes the filter the server's start adds against progress reports, for a
+/// test that restores what it found.
+@external(erlang, "log_capture_ffi", "remove_progress_filter")
+pub fn remove_progress_filter() -> Nil

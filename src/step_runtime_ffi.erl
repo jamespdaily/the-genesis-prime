@@ -11,7 +11,13 @@
 
 show_info_lines() ->
     ok = logger:set_primary_config(level, info),
-    nil.
+    %% At info OTP also logs a progress report for every supervisor and child
+    %% it starts; OTP's own filter keeps them out.
+    case logger:add_primary_filter(progress_reports,
+                                   {fun logger_filters:progress/2, stop}) of
+        ok -> nil;
+        {error, {already_exist, progress_reports}} -> nil
+    end.
 
 unique_id() ->
     erlang:unique_integer([positive, monotonic]).
