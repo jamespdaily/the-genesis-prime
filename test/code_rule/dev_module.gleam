@@ -24,7 +24,7 @@ pub fn breaches(
   let roots =
     list.filter(names, fn(name) {
       list.any(tests, fn(file) {
-        mentions(in: file.text, after: "import ", module: name)
+        mentions(in: imports(file.text), after: "import ", module: name)
       })
       || list.any(run_text, fn(text) {
         mentions(in: text, after: "-m ", module: name)
@@ -66,7 +66,11 @@ fn close_over_imports(
       !list.contains(used, candidate.0)
       && list.any(modules, fn(user) {
         list.contains(used, user.0)
-        && mentions(in: { user.1 }.text, after: "import ", module: candidate.0)
+        && mentions(
+          in: imports({ user.1 }.text),
+          after: "import ",
+          module: candidate.0,
+        )
       })
     })
   case imported {
@@ -109,9 +113,29 @@ fn continues_a_name(rest: String) -> Bool {
   }
 }
 
+/// The import declarations of a Gleam file: the lines that start with
+/// `import `, so a commented-out import is not one.
+fn imports(text: String) -> String {
+  text
+  |> string.split("\n")
+  |> list.filter(string.starts_with(_, "import "))
+  |> string.join("\n")
+}
+
+/// Each line of a runner up to its first `#` that starts a comment: at the
+/// line's start or after a space.
 fn without_comments(text: String) -> String {
   text
   |> string.split("\n")
-  |> list.filter(fn(line) { !string.starts_with(string.trim_start(line), "#") })
+  |> list.map(fn(line) {
+    case string.starts_with(string.trim_start(line), "#") {
+      True -> ""
+      False ->
+        case string.split_once(line, " #") {
+          Ok(#(before, _comment)) -> before
+          Error(Nil) -> line
+        }
+    }
+  })
   |> string.join("\n")
 }
