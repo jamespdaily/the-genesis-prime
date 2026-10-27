@@ -15,6 +15,7 @@ import genesis_prime/login/rc4
 import genesis_prime/login/sts_xml
 import genesis_prime/message/server_hello
 import gleam/bit_array
+import gleam/int
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import scripted_client.{type Reply}
@@ -270,18 +271,19 @@ pub fn read_frames(
   frames
 }
 
-/// A frame from the auth server as the client reads it: a 0x76 wrapper is
-/// opened under the base key.
-pub fn as_the_client_reads(sent: Frame) -> Frame {
-  let assert Ok(base) = cipher.new(cipher.base_key) as "the base key"
-  case sent.message_id == encrypted_frame.message_id(AuthWrapper) {
-    True -> {
-      let assert Ok(inner) = encrypted_frame.unwrap(sent, base)
-        as "the client reads 0x76 under the base key"
-      inner
+/// A frame the auth server sent in its 0x76 wrapper, as the client reads it:
+/// opened under the base key. Every auth frame but the hello and the pong
+/// travels so, so a frame that is not a 0x76 fails here.
+pub fn in_the_auth_wrapper(sent: Frame) -> Frame {
+  let assert True = sent.message_id == encrypted_frame.message_id(AuthWrapper)
+    as {
+      "the auth server sent message "
+      <> int.to_string(sent.message_id)
+      <> " bare; the client reads it only inside 0x76"
     }
-    False -> sent
-  }
+  let assert Ok(inner) = encrypted_frame.unwrap(sent, cipher.base())
+    as "the client reads 0x76 under the base key"
+  inner
 }
 
 /// Connects to the auth listener, reads the hello and sends the login request

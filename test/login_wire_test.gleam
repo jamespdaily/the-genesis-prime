@@ -146,8 +146,8 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
   let assert [accepted, handoff] =
     login_client.read_frames(client: socket, have: <<>>, count: 2)
     as "0x591 then 0x3db"
-  let accepted = login_client.as_the_client_reads(accepted)
-  let handoff = login_client.as_the_client_reads(handoff)
+  let accepted = login_client.in_the_auth_wrapper(accepted)
+  let handoff = login_client.in_the_auth_wrapper(handoff)
   assert accepted.message_id == 0x0591 && handoff.message_id == 0x03DB
   assert login_accepted.decode(accepted.body)
     == Ok(LoginAccepted(disconnected_for_lag: 0))
