@@ -1105,7 +1105,7 @@ FULL_CHECK_RUNNABLE = bool(shutil.which("bash")) and bool(shutil.which("python3.
 @unittest.skipUnless(FULL_CHECK_RUNNABLE, "the full check needs bash, python3.13 and an executable ./check here")
 class FullCheckStopsTest(PlantedTestCase):
     PART_LINE = re.compile(
-        r"^\s*(format|gleam-build|glinter|gleam-test|migrations|squirrel|client-suite|client-integration|check-suite-[123]|fact-checker)\s+(ok|FAILED)\b",
+        r"^\s*(format|gleam-build|glinter|gleam-test|migrations|squirrel|client-suite|client-integration|fact-checker)\s+(ok|FAILED)\b",
         re.MULTILINE,
     )
 
