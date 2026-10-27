@@ -22,7 +22,10 @@
 //// - **A listener** restarts with no connections: each client connected to it
 ////   is dropped and logs in again.
 
+import genesis_prime/connection/listener.{Listener}
+import genesis_prime/connection/shell as connection_shell
 import genesis_prime/hand_off
+import genesis_prime/login.{AskHandOff, AskStore, FromHandOff, FromStore}
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/rule_recording/file.{type Recorder}
@@ -119,5 +122,54 @@ fn add_login(
   tree: supervisor.Builder,
   settings: Settings,
 ) -> supervisor.Builder {
-  todo as "the build follows the shape commit"
+  let directory = fn(request: login.Request, reply: fn(login.Answer) -> Nil) {
+    case request {
+      AskStore(request:) ->
+        worker.ask(settings.store, request, fn(answer) {
+          reply(FromStore(answer))
+        })
+      AskHandOff(message:) ->
+        service_shell.call(settings.hand_off, message, fn(answer) {
+          reply(FromHandOff(answer))
+        })
+    }
+  }
+  let login = settings.login
+  tree
+  |> supervisor.add(
+    listener.supervised(Listener(
+      name: login.sts_listener,
+      port: login.sts_port,
+      connection: connection_shell.Settings(
+        rule: Rule(
+          name: "genesis_prime/login/sts_connection",
+          settings: login.sts,
+          new: sts_connection.new,
+          step: sts_connection.step,
+        ),
+        send_deadline_ms: login.send_deadline_ms,
+        shutdown_ms: login.connection_shutdown_ms,
+        recorder: login.sts_recorder,
+        directory:,
+      ),
+    )),
+  )
+  |> supervisor.add(
+    listener.supervised(Listener(
+      name: login.auth_listener,
+      port: login.auth_port,
+      connection: connection_shell.Settings(
+        rule: Rule(
+          name: "genesis_prime/login/auth_connection",
+          settings: login.auth,
+          new: auth_connection.new,
+          step: auth_connection.step,
+        ),
+        send_deadline_ms: login.send_deadline_ms,
+        shutdown_ms: login.connection_shutdown_ms,
+        recorder: login.auth_recorder,
+        directory:,
+      ),
+    )),
+  )
 }
