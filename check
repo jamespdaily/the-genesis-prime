@@ -7,8 +7,10 @@
 #
 # The wall time counts from the start of this script, setup check included, and
 # the check fails when it passes GENESIS_CHECK_BUDGET_SECONDS (default 120, the
-# 2 minutes CLAUDE.md gives the full check; ./check fast has its own). A part that ends without writing
-# its status fails the check by name.
+# 2 minutes CLAUDE.md gives the full check; ./check fast has its own). The budget
+# is a deadline: when it is reached, everything the check started is stopped
+# and each part still running is reported as failed. A part that ends without
+# writing its status fails the check by name.
 #
 # The client query process's integration tests take about 450 seconds, so they
 # run only when the branch changes a file under the client scripts folder since
@@ -32,7 +34,7 @@
 #                  fills it) and compares; skipped where GENESIS_NO_CLIENT=1
 #                                                       (after gleam-build)
 #   gleam-test     gleam test, with GENESIS_TEST_WORKERS module groups at
-#                  once (unset: unitest's own default, one at a time)
+#                  once (default 1; each group also runs its tests at once)
 #                                                       (after gleam-build)
 #   code-rules     fast mode only: gleam test -- --tag code_rule, the tests of
 #                  test/code_rule, each tagged with unitest.tag("code_rule")
@@ -45,7 +47,8 @@
 #                  priv/migrations/*.sql applied in name order, each with
 #                  psql -v ON_ERROR_STOP=1 --single-transaction
 #   squirrel       gleam run -m squirrel check, against that database
-#   client-suite   the client query process's fast unit tests
+#   client-suite   the client query process's fast unit tests (run with
+#                  GENESIS_INTEGRATION=0, whatever the caller exported)
 #   client-integration  the client query process's integration tests
 #                  (GENESIS_INTEGRATION=1; skipped where GENESIS_NO_CLIENT=1
 #                  and where the branch leaves the client scripts unchanged)
@@ -81,10 +84,11 @@ esac
 # The wall time the check may take, in seconds.
 budget=${GENESIS_CHECK_BUDGET_SECONDS:-120}
 
-# The same for ./check fast: measured 2026-10-27 (issue 109), 6, 7 and 7 s in 3
-# runs on the development Mac, 7 s times 1.25, rounded up.
+# The same for ./check fast, from a cold build: measured 2026-10-27 (issue 109)
+# right after removing build/dev/erlang/genesis_prime, 10, 9 and 9 s in 3 runs on
+# the development Mac (warm: 6, 7 and 7 s); 10 s times 1.25, rounded up.
 if [ "$mode" = fast ]; then
-  budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-9}
+  budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-13}
 fi
 
 # The budget of a run that includes the integration tests: the slowest of 3
@@ -109,13 +113,6 @@ test_workers=${GENESIS_TEST_WORKERS:-1}
 : "${PGPORT:=5433}"
 : "${PGUSER:=postgres}"
 export PGHOST PGPORT PGUSER
-
-# The setup check comes first: when it fails, nothing else runs.
-if ! ./setup-check; then
-  echo
-  echo "check FAILED: the setup check failed, so no other part ran"
-  exit 1
-fi
 
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
@@ -153,15 +150,106 @@ decide_integration() {
   fi
 }
 
+# skip NAME REASON: records that the part did not run on purpose, and why.
+skip() {
+  echo "$2" >"$work/$1.skipped"
+}
+
+# descendants_of PID: the process ids of everything PID started, children,
+# their children and so on, from one snapshot of the process table.
+descendants_of() {
+  ps -A -o pid= -o ppid= | awk -v root="$1" '
+    { parent[$1] = $2 }
+    END {
+      for (p in parent) {
+        q = p
+        while ((q in parent) && q != root && q != 0 && q != 1) q = parent[q]
+        if (q == root && p != root) print p
+      }
+    }'
+}
+
+# stop_everything PID: ends everything PID started: asks first, then kills what
+# is still there, twice, for what was started in between.
+stop_everything() {
+  local pids
+  pids=$(descendants_of "$1")
+  [ -n "$pids" ] && kill -TERM $pids 2>/dev/null
+  sleep 1
+  for _ in 1 2; do
+    pids=$(descendants_of "$1")
+    [ -n "$pids" ] && kill -KILL $pids 2>/dev/null
+  done
+  return 0
+}
+
+# The budget is a deadline: a watchdog sends this shell USR1 when the budget is
+# reached, and the handler ends everything the check started, so a part or a
+# setup check that hangs cannot hold the check past its budget.
+over_budget=no
+on_budget() {
+  over_budget=yes
+  stop_everything $$
+}
+trap on_budget USR1
+
+# stop_everything_quickly PID: kills PID and everything it started, at once.
+stop_everything_quickly() {
+  local pids
+  pids=$(descendants_of "$1")
+  kill -KILL $1 $pids 2>/dev/null
+  return 0
+}
+
 cleanup() {
   if [ -f "$work/database_created" ]; then
     psql -X -q -d postgres -c "drop database if exists \"$database\" with (force)" \
       >/dev/null 2>&1
   fi
+  [ -n "${watchdog:-}" ] && stop_everything_quickly "$watchdog"
   rm -rf "$work"
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
+
+if [ "$mode" = full ]; then
+  decide_integration
+  if [ "$integration_run" = yes ]; then
+    if [ "$integration_budget" -gt "$budget" ]; then
+      budget=$integration_budget
+    fi
+    echo "budget raised to ${budget}s: the client's integration tests run, because $integration_why"
+  else
+    skip client-integration "$integration_why"
+  fi
+fi
+
+# The watchdog: USR1 to this shell when the budget is reached.
+(
+  remaining=$((started + budget - $(date +%s)))
+  [ "$remaining" -gt 0 ] || remaining=0
+  sleep "$remaining"
+  kill -USR1 $$ 2>/dev/null
+) &
+watchdog=$!
+
+# The setup check comes first: when it fails, nothing else runs. It runs in the
+# background and is waited for, so the deadline can end it.
+./setup-check &
+wait $!
+setup_status=$?
+if [ "$over_budget" = yes ]; then
+  echo
+  echo "check FAILED: over the budget of ${budget}s"
+  echo "wall time $(($(date +%s) - started))s, budget ${budget}s"
+  exit 1
+fi
+if [ "$setup_status" != 0 ]; then
+  echo
+  echo "check FAILED: the setup check failed, so no other part ran"
+  exit 1
+fi
+
 
 # step NAME COMMAND...: runs the command here, its output to a log, and records
 # its status and seconds under NAME.
@@ -176,13 +264,12 @@ step() {
   return $status
 }
 
+# in_background COMMAND...: runs the command in the background, and remembers its
+# process id, so the check waits for the parts and not for the watchdog.
+part_pids=()
 in_background() {
   ("$@") &
-}
-
-# skip NAME REASON: records that the part did not run on purpose, and why.
-skip() {
-  echo "$2" >"$work/$1.skipped"
+  part_pids+=("$!")
 }
 
 prepare_database() {
@@ -285,24 +372,12 @@ print(check_support.client_exe())')
   return "$status"
 }
 
-if [ "$mode" = full ]; then
-  decide_integration
-  if [ "$integration_run" = yes ]; then
-    if [ "$integration_budget" -gt "$budget" ]; then
-      budget=$integration_budget
-    fi
-    echo "budget raised to ${budget}s: the client's integration tests run, because $integration_why"
-  else
-    skip client-integration "$integration_why"
-  fi
-fi
-
 in_background step format gleam format --check src test dev
 case "$mode" in
   full)
     in_background gleam_chain
     in_background step migrations prepare_database
-    in_background step client-suite python3.13 -I -m unittest discover \
+    in_background step client-suite env GENESIS_INTEGRATION=0 python3.13 -I -m unittest discover \
       -s .claude/skills/decoding-the-client/scripts -p 'test_*.py'
     if [ "$integration_run" = yes ]; then
       in_background step client-integration client_integration
@@ -314,7 +389,7 @@ case "$mode" in
     in_background fast_chain
     ;;
 esac
-wait
+wait "${part_pids[@]}"
 
 failed=""
 failed_names=""
@@ -322,7 +397,11 @@ for part in $parts; do
   if [ -f "$work/$part.skipped" ]; then
     printf '  %-18s skipped (%s)\n' "$part" "$(cat "$work/$part.skipped")"
   elif [ ! -f "$work/$part.status" ]; then
-    printf '  %-18s FAILED  never wrote its status\n' "$part"
+    if [ "$over_budget" = yes ]; then
+      printf '  %-18s FAILED  unfinished at the budget\n' "$part"
+    else
+      printf '  %-18s FAILED  never wrote its status\n' "$part"
+    fi
     failed="$failed $part"
     failed_names="${failed_names:+$failed_names, }$part"
   elif [ "$(cat "$work/$part.status")" = 0 ]; then
@@ -346,9 +425,12 @@ done
 
 elapsed=$(($(date +%s) - started))
 echo
-if [ -n "$failed" ] || [ "$elapsed" -gt "$budget" ]; then
+if [ "$over_budget" = yes ] || [ "$elapsed" -gt "$budget" ]; then
+  over_budget=yes
+fi
+if [ -n "$failed" ] || [ "$over_budget" = yes ]; then
   reasons=$failed_names
-  if [ "$elapsed" -gt "$budget" ]; then
+  if [ "$over_budget" = yes ]; then
     reasons="${reasons:+$reasons, }over the budget of ${budget}s"
   fi
   echo "check FAILED: $reasons"

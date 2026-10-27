@@ -416,10 +416,11 @@ class FastBudgetTest(PlantedCheckCase):
         self.assertNotEqual(done.returncode, 0, output)
         self.assertRegex(output, r"budget[^\n]*\b1\s*s")
 
-    def test_the_fast_checks_budget_without_the_setting_is_9_seconds_from_its_measured_time(self):
-        # 6, 7 and 7 s in 3 runs on 2026-10-27 (issue 109): 7 x 1.25, rounded up.
+    def test_the_fast_checks_budget_without_the_setting_is_13_seconds_from_its_cold_build_time(self):
+        # 10, 9 and 9 s in 3 runs on 2026-10-27 (issue 109), each after removing
+        # build/dev/erlang/genesis_prime: 10 x 1.25, rounded up.
         source = CHECK.read_text()
-        self.assertEqual(re.findall(r"GENESIS_CHECK_FAST_BUDGET_SECONDS:-(\d+)", source), ["9"])
+        self.assertEqual(re.findall(r"GENESIS_CHECK_FAST_BUDGET_SECONDS:-(\d+)", source), ["13"])
 
 
 class ClientIntegrationTest(PlantedCheckCase):
