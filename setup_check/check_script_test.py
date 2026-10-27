@@ -11,9 +11,9 @@ the real toolchain, the real database or the real client:
   test or dev holds PLANTED_FORMAT_ERROR, and any `gleam` run of tests (a `test`
   or a `run -m` of a module other than glinter, squirrel, table_generator and
   generate_messages) fails when a file under test/code_rule holds PLANTED_BREACH;
-- `python3.13` is the real one, except for the two runs the stubs stand in for:
-  check_facts.py and the setup check's own tests (`-s setup_check`), which
-  succeed at once, take PLANT_SETUP_SUITE_SECONDS first when it is set, and
+- `python3.13` is the real one, except for the three runs the stubs stand in for:
+  check_facts.py, the setup check's own tests (`-s setup_check`) and this file's
+  (`-p 'check_script_test.py'`), which succeed at once, take PLANT_SETUP_SUITE_SECONDS first when it is set, and
   end their own shell without a word when PLANT_SETUP_SUITE_NEVER_WRITES is set;
 - the client query process's scripts are the real check_support.py and
   formulas_by_hand.py with one planted test file whose test is gated by
@@ -28,7 +28,10 @@ Expected values and their sources: issue 109's test list, items 1, 2, 3, 6, 7
 and 8. The wall-time budget default is CLAUDE.md's "the full check passes in
 under 2 minutes". The part names are the ones ./check prints.
 
-Run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
+Run: python3.13 -I -m unittest discover -s setup_check -p 'check_script_test.py'
+(the setup suite's `test_*.py` does not match it: it takes about two minutes, so
+the full check runs it as three parts beside the setup suite, each one third of
+the tests: GENESIS_CHECK_SUITE_SHARD=K/3 runs the tests whose name hashes to K).
 """
 
 import os
@@ -37,9 +40,12 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
+import zlib
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -71,6 +77,12 @@ case "$1" in
     esac
     ;;
 esac
+if [ "$1" = test ]; then
+  case "$*" in
+    *"--tag serial"*) echo "Seed: 222" ;;
+    *) echo "Seed: 111" ;;
+  esac
+fi
 if [ "$1" = test ] && [ -n "$PLANT_GLEAM_TEST_SECONDS" ]; then
   sleep "$PLANT_GLEAM_TEST_SECONDS"
 fi
@@ -95,6 +107,7 @@ PYTHON_STUB = """#!/bin/sh
 echo "python3.13 $*" >>"$PLANT_LOG"
 case "$*" in
   *check_facts.py*) exit 0 ;;
+  *"-p check_script_test.py"*) exit 0 ;;
   *"-s setup_check"*)
     [ -n "$PLANT_SETUP_SUITE_SECONDS" ] && sleep "$PLANT_SETUP_SUITE_SECONDS"
     [ -n "$PLANT_SETUP_SUITE_NEVER_WRITES" ] && kill -9 "$PPID"
@@ -123,6 +136,29 @@ class PlantedIntegrationTest(unittest.TestCase):
         Path(os.environ["PLANT_MARKER"]).write_text("ran")
         %(body)s
 '''
+
+
+def shard_of(test_id: str, count: int) -> int:
+    """Which of `count` shards runs the test: a hash of its name, so a new test is
+    in a shard without a list to keep."""
+    return zlib.crc32(test_id.encode()) % count
+
+
+def flatten(suite):
+    for item in suite:
+        if isinstance(item, unittest.TestSuite):
+            yield from flatten(item)
+        else:
+            yield item
+
+
+def load_tests(loader, tests, pattern):
+    """With GENESIS_CHECK_SUITE_SHARD=K/N in the environment, only the tests of shard K."""
+    shard = os.environ.get("GENESIS_CHECK_SUITE_SHARD")
+    if not shard:
+        return tests
+    index, count = (int(number) for number in shard.split("/"))
+    return unittest.TestSuite(test for test in flatten(tests) if shard_of(test.id(), count) == index)
 
 
 def executable(path: Path, text: str) -> None:
@@ -352,9 +388,9 @@ class HungPartTest(PlantedCheckCase):
 
     A hang is a planted `sleep` of 600 seconds and a fraction that is unique to the
     test, so `pgrep -f` finds exactly the processes this test planted. The budget
-    is 3 seconds; the check must end within a few seconds of it."""
+    is 2 seconds; the check must end within a few seconds of it."""
 
-    BUDGET = 3
+    BUDGET = 2
     FEW_SECONDS = 8
 
     def hang(self) -> str:
@@ -670,6 +706,47 @@ class SerialTestsTest(PlantedCheckCase):
     def test_the_fast_check_runs_no_serial_run(self):
         self.run_check("fast")
         self.assertFalse([c for c in self.commands() if "--tag serial" in c])
+
+
+class SeedTest(PlantedCheckCase):
+    """The seeds of the test runs are printed whether the check passes or fails, so
+    a failure can be run again with the same order (`gleam test -- --seed N`)."""
+
+    def test_the_seeds_of_both_test_runs_are_printed_when_the_check_passes(self):
+        done = self.run_check()
+        self.assertEqual(done.returncode, 0, self.output(done))
+        self.assertRegex(done.stdout, r"(?m)^  gleam-test seeds: 111 222$")
+
+
+class SeparatePartTest(PlantedCheckCase):
+    """This file's own tests run as three parts, check-suite-1 to 3, beside the setup
+    suite, so none of them is the check's critical path."""
+
+    def test_the_full_check_runs_this_file_as_three_parts_of_its_own(self):
+        done = self.run_check()
+        self.assertEqual(done.returncode, 0, self.output(done))
+        for number in (1, 2, 3):
+            self.assertRegex(done.stdout, r"(?m)^  check-suite-%d +ok" % number)
+        patterns = [c for c in self.commands() if c.startswith("python3.13") and "-s setup_check" in c]
+        self.assertEqual(sorted(patterns), [
+            "python3.13 -I -m unittest discover -s setup_check -p check_script_test.py",
+            "python3.13 -I -m unittest discover -s setup_check -p check_script_test.py",
+            "python3.13 -I -m unittest discover -s setup_check -p check_script_test.py",
+            "python3.13 -I -m unittest discover -s setup_check -p test_*.py",
+        ])
+
+    def test_the_three_shards_together_run_every_test_of_this_file_once(self):
+        with mock.patch.dict(os.environ):
+            os.environ.pop("GENESIS_CHECK_SUITE_SHARD", None)  # all the tests, not this run's shard
+            ids = [test.id() for test in flatten(unittest.TestLoader().loadTestsFromModule(sys.modules[__name__]))]
+        self.assertGreater(len(ids), 40)
+        shards = [[i for i in ids if shard_of(i, 3) == k] for k in range(3)]
+        self.assertEqual(sorted(sum(shards, [])), sorted(ids), "every test is in a shard, once")
+        self.assertTrue(all(len(shard) > len(ids) // 6 for shard in shards), "no shard is nearly empty: %s" % [len(s) for s in shards])
+
+    def test_the_fast_check_does_not_run_it(self):
+        self.run_check("fast")
+        self.assertFalse([c for c in self.commands() if "check_script_test" in c])
 
 
 class WorkerCountTest(PlantedCheckCase):

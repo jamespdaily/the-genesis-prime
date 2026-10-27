@@ -54,6 +54,8 @@
 #                  (GENESIS_INTEGRATION=1; skipped where GENESIS_NO_CLIENT=1
 #                  and where the branch leaves the client scripts unchanged)
 #   setup-suite    the setup check's own tests
+#   check-suite-1 to 3  this script's own tests (setup_check/check_script_test.py)
+#                  on a planted repository, a third each, for they take two minutes
 #   fact-checker   check_facts.py over the fact file
 #
 # The database is on the Postgres named by PGHOST, PGPORT and PGUSER (defaults
@@ -118,7 +120,7 @@ export PGHOST PGPORT PGUSER
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
 case "$mode" in
-  full) parts="format gleam-build glinter generated-tables gleam-test message-codec migrations squirrel client-suite client-integration setup-suite fact-checker" ;;
+  full) parts="format gleam-build glinter generated-tables gleam-test message-codec migrations squirrel client-suite client-integration setup-suite check-suite-1 check-suite-2 check-suite-3 fact-checker" ;;
   fast) parts="format gleam-build glinter code-rules" ;;
 esac
 
@@ -406,6 +408,10 @@ case "$mode" in
       in_background step client-integration client_integration
     fi
     in_background step setup-suite python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
+    for shard in 0 1 2; do
+      in_background step "check-suite-$((shard + 1))" env GENESIS_CHECK_SUITE_SHARD="$shard/3" \
+        python3.13 -I -m unittest discover -s setup_check -p 'check_script_test.py'
+    done
     in_background step fact-checker facts_with_the_client_named
     ;;
   fast)
@@ -435,6 +441,11 @@ for part in $parts; do
     failed_names="${failed_names:+$failed_names, }$part"
   fi
 done
+
+if [ -f "$work/gleam-test.log" ]; then
+  seeds=$(grep -h '^Seed: ' "$work/gleam-test.log" | sed 's/^Seed: //' | tr '\n' ' ' | sed 's/ $//')
+  [ -n "$seeds" ] && echo "  gleam-test seeds: $seeds"
+fi
 
 for part in $failed; do
   echo
