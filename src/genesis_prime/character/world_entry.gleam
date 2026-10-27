@@ -15,10 +15,11 @@
 
 import genesis_prime/character/character.{type Character}
 import genesis_prime/character/server_message.{
-  type ServerMessage, MovementIntervalSet, PlayRefused, PlayerEntered,
-  PlayerUnitSet, UnitCreated, WorldEntered,
+  type ServerMessage, ControlGranted, MovementIntervalSet, PlayRefused,
+  PlayerEntered, PlayerUnitSet, UnitCreated, WorldEntered,
 }
 import genesis_prime/map/unit.{type Newcomer, type PlayerUnit}
+import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/float32
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
@@ -28,6 +29,9 @@ import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/message/unit_stat.{UnitStat}
 import gleam/int
 
 /// The movement send interval the server sets, in milliseconds: the client's
@@ -40,6 +44,15 @@ const movement_send_interval_milliseconds = 125
 /// creature's value, used because no client table holds a player's health: a
 /// graded guess that wants a retail record.
 pub const player_health_stand_in = 136
+
+/// The id of the stat in message 0x262 that holds a unit's health: the client
+/// reads health from stat 0 (0x140458140, 0x140457bc5).
+const health_stat_id = 0
+
+/// The id of the property in message 0x262 that holds a unit's maximum health:
+/// property 7 is BaseHealth, which GetMaxHealth reads (0x1404584b0,
+/// vector.opcode.0x262.health).
+const base_health_property_id = 7
 
 /// The value message 0x636 carries and the client echoes in 0x635. The client
 /// uses it for nothing else, so any value serves (opcode.0x636).
@@ -187,6 +200,14 @@ fn joined(
       ),
       Send(UnitCreated(unit_create(unit:, realm_id: context.realm_id))),
       Send(PlayerUnitSet(UnitIsPlayer(unit_id: unit.id, field_2: 0))),
+      // opcode.0x636: the client ignores it before 0x19B, so it follows it.
+      Send(
+        ControlGranted(ClientControlGranted(
+          echo_value: control_echo_value,
+          reset_movement: 1,
+          unit_id: unit.id,
+        )),
+      ),
       Send(
         MovementIntervalSet(MovementSendInterval(
           field_1: 0,
@@ -205,12 +226,14 @@ fn joined(
 /// Message 0x262 for a player's unit: its id, the character's id, name, race,
 /// class, gender, path and faction (the unit's faction and base faction are
 /// both the character's stored one, a Faction2 id: opcode.0x262), the
-/// connection's realm and nothing else: no item
+/// connection's realm, the position the map gave (one position command), the
+/// stand-in health (stat 0 and property 7) and nothing else: no item
 /// visuals, and every value the client's code does not give a meaning is 0.
 pub fn unit_create(
   unit unit: PlayerUnit,
   realm_id realm_id: Int,
 ) -> UnitCreatePlayer {
+  let health = int.to_float(player_health_stand_in)
   UnitCreatePlayer(
     unit_id: unit.id,
     character_id: unit.character_id,
@@ -229,10 +252,23 @@ pub fn unit_create(
     field_16: 0,
     field_17: 0,
     field_18: 0,
-    stats: [],
+    stats: [UnitStat(stat_id: health_stat_id, value: player_health_stand_in)],
     server_time_estimate_start: 0,
-    movement_commands: [],
-    properties: [],
+    movement_commands: [
+      UnitPositionCommand(
+        x: float32.to_bits(unit.position.x),
+        y: float32.to_bits(unit.position.y),
+        z: float32.to_bits(unit.position.z),
+        blends: 0,
+      ),
+    ],
+    properties: [
+      UnitProperty(
+        property_id: base_health_property_id,
+        field_2: float32.to_bits(health),
+        value: float32.to_bits(health),
+      ),
+    ],
     item_visuals: [],
     field_25: 0,
     faction_id: unit.faction_id,
@@ -276,7 +312,14 @@ fn control_echoed(
   state state: State,
   value value: Int,
 ) -> #(State, List(Effect)) {
-  todo as "accept the echo of message 0x636"
+  case state {
+    AwaitingTerrain(_) | Entered ->
+      case value == control_echo_value {
+        True -> #(state, [])
+        False -> #(state, [Close(ControlEchoedWrongValue(value))])
+      }
+    Waiting | AwaitingMap(_) -> #(state, [Close(ControlEchoedOutOfOrder)])
+  }
 }
 
 /// The sentence the log line of a breach holds.

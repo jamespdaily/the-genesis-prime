@@ -348,7 +348,10 @@ fn world_input(inner: Frame) -> Result(PlayerInput, EndReason) {
       terrain_loaded.decode(world.body)
       |> decoded(world.message_id, fn(_) { ToEntry(world_entry.TerrainLoaded) })
     id if id == client_control_echoed.message_id ->
-      todo as "decode message 0x635 into world_entry.ControlEchoed"
+      client_control_echoed.decode(world.body)
+      |> decoded(world.message_id, fn(message) {
+        ToEntry(world_entry.ControlEchoed(message.echo_value))
+      })
     _ -> Ok(Unhandled)
   }
 }
