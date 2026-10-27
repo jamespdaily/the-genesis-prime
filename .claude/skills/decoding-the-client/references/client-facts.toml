@@ -1545,6 +1545,13 @@ proof = "0x1400c2ed3 test r8, r8; 0x1400c2ed6 je 0x1400c2f52 (0x80004005); 0x140
 grade = "sure"
 name = "NewConnectionCipher"
 
+["0x14018b280"]
+statement = "The client's general memory allocator, called from 3740 functions at 7859 sites: given a byte count and a flags word, it returns a pointer to at least that many bytes, taken under one process-wide recursive lock. A count of up to 256 bytes gets a pool slot of 2^ceil(log2(count)) bytes, at least 2, so 176 (NewConnectionCipher's cipher object) gets a 256-byte slot. A larger count gets a block of 2^ceil(log2(count + 16)) bytes, at least 512, with a 16-byte header before the pointer. Blocks up to 4 GiB come from a buddy heap carved out of 4 GiB reservations; larger ones get a reservation of their own; a count above 2^43 - 16 fails. Flag 1: a failure returns 0. Without it a failure reports and ends the process with exit code 1, so a caller that passes 0 never sees 0. Flag 2 zeroes the memory (the whole slot for a pool count). Flag 8 makes a reservation of its own without top-down placement. Flag 16 skips the report the client makes for a count of 1 GiB or more. Each flag is also read from a process-wide flags word, which start-up sets to 0. NewConnectionCipher passes 176 and flags 0."
+proof = "Every instruction of 0x14018b280..0x14018b568 read in the query process's disassemble. Arguments: count in rcx (kept at [rsp+0x30], local_res8), flags 0x14018b294 mov esi, edx. 0x14018b296 call 0x14018aba0 with rcx and rdx unchanged; its decompile reports (0x140196f30 with 0x141d3a768) only when count & 0xffffffffc0000000 and not flags & 0x10. Lock: 0x14018b29b GetCurrentThreadId; owner 0x140c67400, depth 0x140c67408 (inc when already the owner, 0x14018b2c2 lock cmpxchg up to 0x400 spins with pause, then 0x14018b2e5 call 0x14019fb60); release at 0x14018b4d8/0x14018b458 zeroes owner and depth and, when the waiter count 0x140c67410 is nonzero, SetEvent on 0x140c67418 (made by CreateEventW once). Size class: 0x14018b2f8 cmp rdx, 0x100; ja 0x14018b37c; small: bit length of count - 1, cmovc to at least 1 (0x14018b30f, 0x14018b377); large 0x14018b37c lea rax, [rdx+0x10], dec, bit length, 0x14018b3e3 mov r8d, 0x9 and cmovc to at least 9. 0x14018b3f6 cmp rcx, 0x8; jbe 0x14018b40c call 0x14018b0c0 (class, &count); 0x14018b3fc cmp rcx, 0x2b; ja 0x14018b422 (fail); 0x14018b402 mov r8d, esi; 0x14018b405 call 0x14018ae80 (class, count, flags). Decompile of 0x14018b0c0: per-class free lists at 0x140c87f10 + 32 x class, a page of slots from 0x14018ac90 when empty, *count = 1 << class. Decompile of 0x14018ae80: class below 0x21: a block from 0x14018ac90 with its 16-byte header, more pages committed by VirtualAlloc when count + 16 is past a page, returns header + 0x10; class 0x21..0x2b: VirtualAlloc reserve of count rounded up to 4 GiB with 0x102000 (MEM_RESERVE | MEM_TOP_DOWN), or 0x2000 when (0x140c7f934 | flags) & 8, then commit. Decompile of 0x14018ac90: buddy split from class 0x20, a new VirtualAlloc(0, 0x100000000, MEM_RESERVE) when none is free. Failure 0x14018b422 mov eax, [0x140c7f934]; or eax, esi; test al, 0x1; jz 0x14018b563 call 0x14018a2b0 (decompile: reports via 0x140197490 with 0x141d3a638, then ExitProcess(1)); otherwise release and 0x14018b4b0 xor eax, eax. Success 0x14018b530 mov r8, [rsp+0x30] (count, rounded by 0x14018b0c0); 0x14018b53a mov eax, [0x140c7f934]; or eax, esi; test al, 0x2; 0x14018b54b call 0x1407e4830 (rdi, 0, count), memset by its decompile; 0x14018b55a mov rax, rdi. 0x140c7f934 has one write, 0x140189f08 in the allocator's start-up 0x140189e90, which stores 0 (refs_to). Caller: 0x1400c2f14 mov ecx, 0xb0; 0x1400c2f19 call 0x14018b280, with edx 0 because the key loop ends on 0x1400c2f0f dec rdx; jnz. Emulate run of the function with count 176 and flags 0, following calls, with stand-ins GetCurrentThreadId (import slot 0x140959368) returning 0x1234 and 0x14018b0c0 returning 0x123456789abcdef0: 82 steps, result 0x123456789abcdef0, rcx 8 at return (the class passed to 0x14018b0c0, which no later instruction changes), r8 176 (no zeroing, flags 0), lock words 0x140c67400 and 0x140c67408 read back as 0. 0x14018ae80 had no stand-in and was not called."
+grade = "fairly sure"
+gap = "The pool (0x14018b0c0) and the buddy heap (0x14018ac90, 0x14018ae80) were read from Ghidra's decompile only, not run. They need the page size that start-up (0x140189e90) gets from GetSystemInfo, VirtualAlloc, and the thread's stack base, so the emulate run stood in for 0x14018b0c0. A run of 0x14018b0c0 would settle the slot size and that a slot comes back. Its set-up: the page globals planted (0x1000 at 0x140c7f960, 0xfff at 0x140c7f968, 12 at 0x140c7f958), VirtualAlloc answered with one fixed base, a page planted at that base and at each buddy split point, and the stack-base read supported. What the two reports say is not read (0x141d3a768 and 0x141d3a638 are not in the image's bytes), nor what 0x14019fb60 does while it waits."
+name = "AllocMemory"
+
 ["0x1400c2bd0"]
 statement = "Fills a new 176-byte connection cipher object: a count of 2, the encrypt routine (EncryptMessageBody) and the decrypt routine (DecryptMessageBody) each with the object as its context, the sixteen key words, and a 64-bit chaining start h: h starts at 0x718DA9074F2DEB91 and, for each key word in order, becomes (h + word) * 0xAA7F8EA9. The encrypt and decrypt routines only read the object, so each message is ciphered from the same start, with no state carried from one message to the next."
 proof = "0x1400c2bd0 mov dword ptr [rcx], 0x2; 0x1400c2bd6 mov [rcx+0x8], rcx; 0x1400c2bda lea rax, [0x1400c2d10]; 0x1400c2be1 mov [rcx+0x10], rax; 0x1400c2be5 mov [rcx+0x18], rcx; 0x1400c2be9 lea rax, [0x1400c2de0]; 0x1400c2bf0 mov [rcx+0x20], rax; 0x1400c2c01 mov [rcx+0xa8], rax (0x718da9074f2deb91); words to 0x28..0xa0 (0x1400c2c0f..0x1400c2ca0); 0x1400c2c25 mov r11d, 0xaa7f8ea9; loop 0x1400c2cb0..0x1400c2cfc: add, imul r11, store at 0xa8, four words a pass, four passes (0x1400c2c17 mov r10d, 0x4); returns the object. Neither 0x1400c2d10 nor 0x1400c2de0 stores to the object. Run on Ghidra's p-code emulator for the base key and a session key: the object's count, routines, context, words and h (0x7d546d1d1994c849 for the base key) matched."
@@ -3341,3 +3348,171 @@ statement = "The likeliest start of a new Exile Novice (PreTutorial) character: 
 proof = "PublicEvent.tbl rows 780 and 821, PublicEventObjective.tbl rows 4894, 4896, 4897, 4898 and 4913, Quest2.tbl row 10045 and WorldLocation2.tbl read with a scratch reader (game_table.file); texts from ClientDataEN/en-US.bin. A scan of every 32-bit integer column of every other table finds 50230, 50580 and 50582 only in columns that hold other kinds of id (creature, spell, visual, sound), and no location column in any table names them. World 1537's map folder holds ExileArkShipTutorial.4048.area, the square of this position (area_file.cell)."
 grade = "guess"
 gap = "No client table or code names where the pre-tutorial begins (CharacterCreation.characterCreationStartEnum): the choice of 50230 over 50580 and 50582, that there is floor at its height, and that the identity facing looks toward the scanner are inferred from the layout. A live entry at 50230 (standing on the floor with the scanner ahead) or a retail recording of a new Novice Exile's message 0xad would settle it."
+
+# Driving the client from its own Lua: where addons load from and when, the pre-game screens,
+# the player's state in the world, what an addon can write out, and how the login is filled
+
+["0x1401b41f0"]
+statement = "Sets up the client's folders once: the user's roaming application-data folder (created if missing), the local application-data folder and the documents folder from Windows, the temporary folder, the patch and data folders ('..\\Patch', '..\\Data') and the current folder. Every per-user file the client keeps (addons, Addons.xml, addon saves, chat logs) is under the roaming one."
+proof = "0x1401b4365 mov edx, 0x801a; 0x1401b4371 call [0x140959700] (SHGetFolderPathW, CSIDL_APPDATA with CSIDL_FLAG_CREATE) into rbx+0xa7c; 0x1401b438c mov edx, 0x801c; 0x1401b4398 call (CSIDL_LOCAL_APPDATA) into rbx+0xc84; 0x1401b43b3 mov edx, 0x8005; 0x1401b43bf call (CSIDL_PERSONAL) into rbx+0xe8c; 0x1401b43d9 call [0x1409594b0] (GetTempPathW) into rbx+0x1094; 0x1401b4333 call [0x1409594c8] (GetCurrentDirectoryW); L'..\\Data' 0x140a47150 and L'..\\Patch' 0x140a47138 through 0x1401b5400. rbx is the platform object at 0x140c63788. Import slots read from the PE import table. The addon, Addons.xml, AddonSaveData and ChatLogs paths all format L'%s\\%s\\%s\\%s' with the platform object's 0xa7c first (0x140135c3b, 0x140044711, 0x140424160, 0x1404058cb)."
+grade = "sure"
+name = "InitPlatformFolders"
+
+["0x1401b3ba0"]
+statement = "Sets the product folder name the per-user paths use: WildStar, unless the command line has -SettingsKey (that exact spelling) with a value; a value beginning with WildStar keeps that name and adds the rest of the value, any other value adds an underscore and the value. So by default the per-user folder is <roaming application data>\\NCSOFT\\WildStar."
+proof = "0x1401b3c17 call [0x1409595e0] (GetCommandLineW); 0x1401b3c25 call [0x140959718] (CommandLineToArgvW); 0x1401b3c41 lea rdi, L'SettingsKey' (0x140a46f08); 0x1401b3c57 the '-', '/', 0x96, 0x97 lead-character test; 0x1401b3c76 sub eax, 0x53 (a capital S, compared exactly); 0x1401b3ca4 lea rsi, L'WildStar' (0x140a44f50, the default value); 0x1401b3cb5 lea r15, L'WildStar' (0x140a44d98); 0x1401b3d27 mov [r14+0x1320], rdi (the name WildStar); 0x1401b3d63 call 0x14018e3e0 (prefix compare); 0x1401b3d93 mov dword [rax+rbp*2], 0x5f (underscore) when the value does not begin with WildStar; 0x1401b3e12 mov [r14+0x1320], rdi (name plus the rest)."
+grade = "fairly sure"
+gap = "What 0x1401b3ab0 does to the value before it is added (it may clean the text) is not read, and no run with -SettingsKey checked the folder."
+name = "InitProductFolderName"
+
+["0x1401352f0"]
+statement = "Makes one addon record: keeps its folder, its name, whether it is a Carbine addon, and three further values, then reads its toc.xml (LoadAddonToc)."
+proof = "Prologue: five pushes and sub rsp, 0x20, so the caller's stack arguments 0x20, 0x28, 0x30, 0x38 are read at 0x70, 0x78, 0x80, 0x88. 0x1401355a6 mov rax, [rsp+0x70] (name) -> 0x1401355e5 call 0x14001c480 into rbx+0x78; 0x1401355ed rbp (the fourth argument, the folder) -> 0x140135612 into rbx+0x58; 0x140135617 movzx eax, byte [rsp+0x78]; 0x140135623 mov [rbx+0x108], al (Carbine flag); 0x140135633 mov [rbx+0x110], al; 0x14013565f mov [rbx+0x10c], eax; 0x1401356ca call 0x140135ad0."
+grade = "fairly sure"
+gap = "The meaning of the values kept at 0x10c and 0x110 and of the ninth argument is not read."
+name = "NewAddon"
+
+["0x140135ad0"]
+statement = "Reads an addon's toc.xml. A Carbine addon's toc is found in the client's archive at ui\\<folder>\\<name>\\toc.xml (no folder part when the folder is empty); any other addon's toc is <roaming application data>\\NCSOFT\\WildStar\\Addons\\<name>\\toc.xml on disk, the product name as InitProductFolderName sets it. The toc's Addon element is read for APIVersion, Name, Author ('[Unknown]' when absent) and Version."
+proof = "0x140135b62 cmp byte [rsi+0x108], 0 (Carbine flag); 0x140135b69 je 0x140135c21. Carbine branch: 0x140135b72 lea rdx, L'ui\\' (0x140a22a08); 0x140135be2 rsi+0x60/0x68 (folder) appended at 0x140135bfc; 0x140135c04 L'\\' (0x1409d8dac). Other branch: 0x140135c21 mov rax, [0x140c63788]; 0x140135c28 lea rcx, L'Addons' (0x140a227f8); 0x140135c2f lea r8, L'%s\\%s\\%s\\%s' (0x140a47468); 0x140135c3b lea r9, [rax+0xa7c] (roaming application data); 0x140135c42 mov rax, [rax+0x1320] (product name); 0x140135c4e lea rax, L'NCSOFT' (0x140a44ef0); 0x140135c66 call 0x14001b370 (format); 0x140135d1c L'\\' (0x1409d8dcc). Both: 0x140135d3d rsi+0x80/0x88 (name) appended at 0x140135d50; 0x140135d78 L'\\' (0x1409d8f5c); 0x140135db3 lea rdx, L'toc.xml' (0x140a22b08). Then L'Addon' 0x140a32d28, L'APIVersion' 0x140a22738, L'Name' 0x140a31790, L'Author' 0x140a31780, L'[Unknown]' 0x140a22af0, L'Version' 0x140a32e10."
+grade = "sure"
+name = "LoadAddonToc"
+
+["0x1401395d0"]
+statement = "Adds one addon by folder and name to an addon list: makes its record (NewAddon) with the Carbine flag it is given and keeps it when its toc loaded; otherwise frees it."
+proof = "0x1401395f1 movzx ebx, r9b (the fourth argument); 0x14013963c mov [rsp+0x20], rsi (name); 0x140139624 mov r9, rbp (folder); 0x140139638 mov [rsp+0x28], bl (Carbine flag); 0x140139641 call 0x1401352f0; 0x14013964d cmp byte [rsi+0x138], 0 (loaded); kept by 0x140139670 call 0x14018db00 and 0x140139678 mov [rax+rbx*8], rsi; else 0x1401396bb call 0x1401356f0 and 0x1401396c5 call 0x14018b900."
+grade = "fairly sure"
+gap = "That the byte at 0x138 means the toc loaded is inferred from its use here, not from where LoadAddonToc sets it."
+name = "AddAddon"
+
+["0x1401396e0"]
+statement = "Scans a folder for addons: lists <root>\\<subfolder>\\* and adds each entry found as an addon (AddAddon) with the Carbine flag it is given."
+proof = "0x140139705 lea rdi, (empty text 0x1409d9044) when no root; 0x14013983b lea rdx, L'\\*' (0x1409d9144); 0x14013986d call 0x1401b54e0 (list); 0x14013987c call [rax+0x38] and 0x1401398a9 call [r8+0x40] per entry; 0x140139a4a call 0x1401395d0; 0x140139a7c call 0x140135ad0. Its only caller is StartWorldInterface (0x140539204, 0x140539228, 0x1405392af)."
+grade = "fairly sure"
+gap = "The lister 0x1401b54e0 and its slots 0x38 and 0x40 are read from use, not their bodies; whether files as well as folders become addons is not read."
+name = "ScanAddonFolder"
+
+["0x140538fd0"]
+statement = "Starts the in-world interface. It registers the world's Lua libraries, reads <roaming application data>\\NCSOFT\\WildStar\\Addons.xml (the per-account addon settings), then scans for addons three times: UI\\Addons and UI as Carbine addons, and <roaming application data>\\NCSOFT\\WildStar\\Addons as non-Carbine (user) addons, then loads them. This is the only place user addons are found: the pre-game screens never scan that folder."
+proof = "0x140538ff6 call 0x14040ad50 (chat set-up, which opens the chat log); 0x14053912a call 0x14050a3c0 (the world Lua libraries: DialogResponse, HousingLib and others, see RegisterDialogResponseLuaLibrary); 0x140539163 L'Addons.xml' (0x140b145a8) with 0x14053916f [rax+0xa7c], 0x140539176 [rax+0x1320], 0x140539182 L'NCSOFT'; 0x1405391e0 call 0x1401380c0; 0x1405391ec lea r8, L'Addons' (0x140b14598), 0x1405391f3 lea rdx, L'UI' (0x140b145c0), 0x140539201 mov r9b, 1, 0x140539204 call 0x1401396e0; 0x140539210 lea r8, (empty 0x1409f2214), 0x140539217 lea rdx, L'UI' (0x140b144d4), 0x140539225 mov r9b, 1, 0x140539228 call 0x1401396e0; 0x140539234 L'Addons' (0x140b14768) formatted at 0x14053926b with [rax+0xa7c], [rax+0x1320], L'NCSOFT'; 0x1405392ac xor r9d, r9d; 0x1405392af call 0x1401396e0; 0x1405393e8 call 0x140139ae0. Callers: 0x1403e68f0 (0x1403e6af8) and RestartWorldInterface (0x14053b526). ScanAddonFolder (0x1401396e0) has no other caller; the pre-game loader StartPreGameInterface adds only Carbine addons."
+grade = "fairly sure"
+gap = "What 0x1401380c0 does with Addons.xml (load conditions, disabled addons) and what 0x140139ae0 does when it loads them are not read; UI\\Addons is not checked against the archive."
+name = "StartWorldInterface"
+
+["0x1403e6af8"]
+statement = "The in-world interface, and with it every user addon, starts when the client enters a world from character select: message 0xad leads to StartWorldSession and SetWorldConnection, which builds the world's systems before LoadWorld; that build starts the in-world interface here."
+proof = "0x1403e6af8 call 0x140538fd0 in 0x1403e68f0; 0x1403e68f0's only caller is 0x1403e5de0 (0x1403e6422); 0x1403e5de0's only caller is SetWorldConnection 0x1403e7ea0 (0x1403e7edc call 0x1403e5de0, with no test before it), which calls LoadWorld at 0x1403e7fd1; SetWorldConnection is reached from StartWorldSession (HandleMessage00AD). Callers by the query process."
+grade = "fairly sure"
+gap = "The branches inside 0x1403e5de0 and 0x1403e68f0 before these calls are not read, nor what happens on a second world entry in one session."
+
+["0x14003db40"]
+statement = "Loads a pre-game screen's interface from two lists of names it is given: the strata and the addons. The addons are Carbine addons from the archive (StartPreGameInterface). The login screen gives strata Top and Login and addons Login and Credits; realm select gives Realm, DefaultStratum and RealmSelect; character select gives AccountServices, Navigation, DefaultStratum, TempBlocker and Character, CharacterSelection, AccountServices, Credits, MicroStore. It also registers the console commands pregamereloadui and pregameGetLuaErrors."
+proof = "0x14003db6d call 0x14000b690 with edx 3; 0x14003dbb4 the first list (r12, count r15) copied into rsi+0x78 by 0x14003dc21 call 0x140019b70; 0x14003dc70 the second list copied into 0x68 by 0x14003dce6; 0x14003dd81 call 0x140040310; 0x14003ddaa lea rdx, L'pregamereloadui' (0x1409f7428); 0x14003ddc0 lea rdx, L'pregameGetLuaErrors' (0x1409f74d8); both through 0x140198d60. Callers: StartCharacterSelect (0x140020cbb), 0x140036bf0 (0x140036cd4, after lea of L'Top' 0x1409f5668, L'Login' 0x1409f5680, L'Login' 0x1409f5670, L'Credits' 0x1409f56a8) and StartRealmSelect (0x1400458c0). The realm-select and character-select names are those the StartRealmSelect and StartCharacterSelect records give."
+grade = "fairly sure"
+gap = "Which list is the strata and which the addons is read from StartPreGameInterface's use of the 0x68 list as addon names; how the login screen's two lists are split is read from the order of the lea instructions only."
+name = "LoadPreGameInterface"
+
+["0x140040310"]
+statement = "Builds a pre-game screen's interface: registers the pre-game Lua library (PreGameLib), adds the Carbine addon Util, then adds each named addon from the archive folder PreGame (ui\\PreGame\\<name>\\toc.xml) as a Carbine addon. No user addon is added, so an addon from the user's Addons folder never runs at the login, realm-select or character-select screens."
+proof = "0x1400403b4 call 0x14003e5b0 (PreGameLib's registration, see PreGameLib.CodeEnumCharacterModifyResults); 0x140040441 lea rcx, L'Util' (0x1409f7d10); 0x140040450 mov byte [rsp+0x28], 1 (Carbine); 0x140040464 call 0x1401352f0; loop 0x140040510..0x14004054a over the 0x68 list: 0x140040521 lea rdx, L'PreGame' (0x1409f7d50); 0x14004052f mov r9b, 1 (Carbine); 0x14004053f call 0x1401395d0. AddAddon passes r9b as the Carbine flag (0x1401395f1, 0x140139638), and LoadAddonToc reads a Carbine addon from ui\\<folder>\\<name>."
+grade = "sure"
+name = "StartPreGameInterface"
+
+["0x1400447f0"]
+statement = "The Lua global ReloadUI(): reloads the in-world interface (ReloadWorldInterface) and returns no values. Lua in the world can call it at any time; the Options addon does."
+proof = "Named by the pair at 0x140c56830 (the name 'ReloadUI' at 0x1409fe650, the function 0x1400447f0). 0x1400447f4 call 0x1400446d0; 0x1400447f9 xor eax, eax. UI/ProtectedAddons/Options/Options.lua line 1940 calls ReloadUI() (extracted copy in ui-extract)."
+grade = "sure"
+name = "LuaReloadUI"
+
+["0x1400446d0"]
+statement = "Reloads the in-world interface, only when a world exists: writes the addon settings to <roaming application data>\\NCSOFT\\WildStar\\Addons.xml, then stops and restarts the interface (RestartWorldInterface), which runs every addon's OnSave before the restart."
+proof = "0x1400446e9 cmp qword [0x140c65898], 0; 0x1400446f1 je 0x1400447c9 (no world: nothing); 0x1400446fe L'Addons.xml' (0x1409feb80), 0x140044711 [rax+0xa7c], 0x140044718 [rax+0x1320], 0x140044724 L'NCSOFT', 0x140044742 call 0x14001b370; 0x140044785 call 0x140138940 (the settings writer, also called by StopWorldInterface at 0x1405397a1); 0x1400447ad call 0x14053b4a0."
+grade = "fairly sure"
+gap = "That 0x140138940 writes the file is inferred from its two callers building the Addons.xml path before it; its body is not read."
+name = "ReloadWorldInterface"
+
+["0x14053b4a0"]
+statement = "Restarts the in-world interface: stops it (StopWorldInterface, which saves the addons) and starts it again (StartWorldInterface), so addons are found and loaded afresh and their saved data restored."
+proof = "0x14053b4fe call 0x140539640; 0x14053b526 call 0x140538fd0. Callers ReloadWorldInterface (0x1400447ad) and 0x14053a990 (0x14053a9e0)."
+grade = "fairly sure"
+gap = "The calls before the stop (0x1403fa730, 0x140434900, 0x1403a71f0, 0x1400fd770) and the caller 0x14053a990 are not read."
+name = "RestartWorldInterface"
+
+["0x140539640"]
+statement = "Stops the in-world interface: writes the addon settings to <roaming application data>\\NCSOFT\\WildStar\\Addons.xml and shuts the addons down, which calls each addon's OnSave. It runs on ReloadUI and when the world is torn down."
+proof = "0x140539733 L'Addons.xml' (0x140b144a8) with 0x14053973a L'%s\\%s\\%s\\%s', 0x140539759 L'NCSOFT', formatted at 0x14053976f; 0x1405397a1 call 0x140138940; 0x1405397b8 call 0x14013a1d0, which calls 0x140185f30 at 0x14013a209; 0x140185f30 looks up the addon's 'OnSave' (0x140186129 lea r9, 'OnSave' 0x1409e0ee4; 0x140186146 call 0x1400f3010). Callers: RestartWorldInterface (0x14053b4fe) and 0x1403e3350 (0x1403e41eb), which 0x1403e3310 calls."
+grade = "fairly sure"
+gap = "When 0x1403e3310 runs (leaving the world for character select, a world change, or quitting) is not traced; the OnSave caller 0x140185f30 is read only for its string and calls."
+name = "StopWorldInterface"
+
+["0x1404240b0"]
+statement = "Builds the path of an addon's saved data for a save level 0 to 3 (GameLib.CodeEnumAddonSaveLevel), under <roaming application data>\\NCSOFT\\WildStar\\AddonSaveData; from level 1 up the path also takes the logged-in account's name. A level above 3 or no addon builds nothing."
+proof = "0x14042413c cmp r15d, 3; 0x140424140 ja 0x14042551b; 0x140424133 test r13, r13 (no addon); 0x14042414d lea rcx, L'AddonSaveData' (0x140b005b8), 0x140424154 L'%s\\%s\\%s\\%s', 0x140424160 [rax+0xa7c], 0x140424167 [rax+0x1320], 0x140424173 L'NCSOFT', 0x140424190 call 0x14001b370; 0x14042422f L'\\' (0x1409e8e54); 0x140424261 cmp r15d, 1; 0x140424265 jl; 0x140424272 mov r14, [rax+0x1670] of the game object 0x140c635f0 (the account text). A nonzero stack flag sends it to 0x140423060 (0x1404240ee), which builds the same folder and formats L'%08x' (0x140b00650). Reached through the pointer table at 0x140b66e08. The archive's Lua uses CodeEnumAddonSaveLevel.Account and .Character in OnSave(eType) and OnRestore(eType, tData) (UI/AccountInventory/AccountInventory.lua line 111, UI/MatchMaker/MatchMaker.lua line 316)."
+grade = "fairly sure"
+gap = "The file names for each level (the realm and character parts, the extension) and the file format are not read; that game object 0x1670 is the account name is inferred from the account record's other uses, not read here."
+name = "BuildAddonSaveDataPath"
+
+["0x1404057a0"]
+statement = "Opens or closes the chat log file. With the console variable chat.saveLog on it creates <roaming application data>\\NCSOFT\\WildStar\\ChatLogs\\Chat <year>.<month>.<day> <hh>h<mm>m<ss>.<ms>s.txt (the local time) and keeps it open; off, it closes the open file. It is called when the in-world interface starts. The ChatLog addon's options set chat.saveLog (Apollo.SetConsoleVariable('chat.saveLog', bValue))."
+proof = "0x1404057cd test edx, edx; 0x1404057db cmp [rsi], rax (a file is open); 0x1404057e3 je (no change); 0x1404057eb je 0x140405a89 (off: close); 0x1404057fe call [0x140959190] (GetLocalTime); 0x140405846 lea r8, L'Chat %i.%i.%i %2ih%2im%02i.%03is.txt' (0x140af8910); 0x140405867 lea rcx, L'ChatLogs' (0x140af88b0); 0x140405886 L'NCSOFT'; 0x14040588d L'%s\\%s\\%s\\%s'; 0x14040592c call [0x1409596b0] (GetFileAttributesW); 0x140405962 call [0x140959710]. Only caller 0x140404ee0: 0x140405089 lea rcx, [0x140c45f90] (the value table of the console variable record at 0x140c45f78, whose name pointer is 'chat.saveLog' 0x140af8738); 0x14040509f movzx edx, byte [rax+rcx]; 0x1404050a6 call 0x1404057a0. 0x140404ee0 is called by 0x14040ad50 (0x14040ad97), the first call of StartWorldInterface (0x140538ff6). UI/ChatLog/ChatLog.lua lines 403 and 2460."
+grade = "fairly sure"
+gap = "The import at 0x140959710 is not named; which chat lines are written (every channel, or only those shown, and whether Print's Debug lines go in), when they are flushed, and whether changing chat.saveLog while in the world opens the file at once are not read."
+name = "SetChatLogFile"
+
+["0x140b50620"]
+statement = "The list of Lua standard libraries the client opens: base, package, table, io, os, string, bit32, math and debug. The io library's opener does nothing, so Lua has no io table and no way to write a file; the os library holds only clock, date, difftime and time. The base library keeps dofile, loadfile and loadstring, and package keeps loadlib, module and require."
+proof = "Bytes at 0x140b50620 read as name/function pairs: (unnamed) 0x1407952a0, 'package' 0x140797630, 'table' 0x1407997c0, 'io' 0x140001ba0, 'os' 0x140795de0, 'string' 0x1407923a0, 'bit32' 0x14078dd90, 'math' 0x14078ea30, 'debug' 0x14078d630; read by 0x14078b630 (0x14078b6c5). 0x140001ba0 xor eax, eax; 0x140001ba2 ret (registers nothing). The os functions at 0x140b50dd0: clock 0x1407952c0, date 0x140795560, difftime 0x140795d50, time 0x140795b60, then a null. Base functions at 0x140b50be0..0x140b50d50 include dofile 0x140793e00, loadfile 0x140793a70, loadstring 0x1407938e0, print 0x140792480; package functions at 0x140b50e20: loadlib 0x1407960a0, seeall 0x1407974a0, module 0x1407972e0, require 0x1407969b0. No string 'popen', 'tmpfile' or 'setvbuf' is in the file."
+grade = "sure"
+
+["0x1406f6560"]
+statement = "GameLib.GetPlayerUnit() in the UI's Lua: the world's player unit, or nil when there is none."
+proof = "Named by the pair at 0x140b72740 (the name 'GetPlayerUnit' at 0x140b42508, the function 0x1406f6560). 0x1406f6560 mov rax, [0x140c65898]; 0x1406f6567 mov rdx, [rax+0x78]; 0x1406f656b test rdx, rdx; 0x1406f6570..0x1406f657f push nil (type 0) and return 1; 0x1406f6580 jmp 0x140649930 (push the unit)."
+grade = "sure"
+name = "LuaGameLibGetPlayerUnit"
+
+["0x1406f6700"]
+statement = "GameLib.GetControlledUnit() in the UI's Lua: the unit the client controls (the player, or a vehicle it drives), or nil when none."
+proof = "Named by the pair at 0x140b72720 (the name 'GetControlledUnit' at 0x140b42250). 0x1406f6700 mov rax, [0x140c65898]; 0x1406f6707 mov rdx, [rax+0x6490]; 0x1406f670e test rdx, rdx; 0x1406f6713..0x1406f6722 push nil; 0x1406f6723 jmp 0x140649930."
+grade = "fairly sure"
+gap = "That the world's 0x6490 unit is the controlled unit is read from the Lua name and from CheckWorldLoaded's 'under client control' test, not from where it is set."
+name = "LuaGameLibGetControlledUnit"
+
+["0x1406f6780"]
+statement = "GameLib.IsControlledUnit(unit) in the UI's Lua: true when the unit is the one GetControlledUnit returns, false otherwise or when no unit has the id."
+proof = "Named by the pair at 0x140b72830 (the name 'IsControlledUnit' at 0x140b423c0). 0x1406f6792 call 0x1406622c0 (argument 1); 0x1406f67a7 call 0x1403d90d0 (find unit); 0x1406f67bb cmp rcx, [rax+0x6490]; 0x1406f67d8 mov dword [rcx+8], 1 (boolean); 0x1406f67df mov [rcx], edi."
+grade = "sure"
+name = "LuaGameLibIsControlledUnit"
+
+["0x1406f6800"]
+statement = "GameLib.IsCharacterLoaded() in the UI's Lua: true once every world-loading stage has passed (the seven flags CheckWorldLoaded and message 0x61 set), false before, including while the loading screen shows."
+proof = "Named by the pair at 0x140b72820 (the name 'IsCharacterLoaded' at 0x140b423d8). 0x1406f6804 mov rax, [0x140c65898]; 0x1406f680d cmp dword [rax+0x7b48], 0x7f; 0x1406f6814 mov dword [r8+8], 1 (boolean); 0x1406f6821 sete dl; 0x1406f6824 mov [r8], edx. CheckWorldLoaded 0x1403e8000 sets bits of the world's 0x7b48 (0x1403e8076, 0x1403e80fb, 0x1403e8137, 0x1403e8493) and needs 0x20 and 0x40 from message 0x61; LoadWorld clears it (0x1403e7a20)."
+grade = "fairly sure"
+gap = "That 0x140c65898 holds the same world object CheckWorldLoaded runs on is inferred from the shared 0x7b48 field and LoadWorld's reset, not traced."
+name = "LuaGameLibIsCharacterLoaded"
+
+["0x140651c90"]
+statement = "Unit:GetPosition() in the UI's Lua: a new table holding the unit's position, or nil when no unit has the id. The client's Lua reads it as .x, .y and .z."
+proof = "Named by the pair at 0x140c5af40 (the name 'GetPosition' at 0x140b2aa70). 0x140651ca7 call 0x1406622c0 (argument 1); 0x140651cb4..0x140651cbd push nil; 0x140651cd5 call 0x1403d90d0 (find unit), nil when none (0x140651ce2); 0x140651cf8 call 0x1403d2400; 0x140651d3a movaps xmm0, [rbx+0x10] (cached position); 0x140651d72 call 0x14005c1b0 (new table); keys through 0x14018f0e0 and 0x140058710. UI/PathExplorerContent/PathExplorerMissions.lua lines 471-473 (posTarget.x, .y, .z)."
+grade = "fairly sure"
+gap = "The table's keys and the refresh rule (the 100 ms test at 0x140651d23 cmp ecx, 0x64) are not read in full; the key names are taken from the Lua."
+name = "LuaUnitGetPosition"
+
+["0x140036cf0"]
+statement = "The login screen's update. While no login is under way, when the command line gave both -account and -password, it submits them (SubmitLogin); otherwise, when it gave -authtoken and -account, it logs in with the token (0x140038740) and forgets the token. So the client logs in by itself from its command line, with no input; returning to the login screen forgets the password (0x1400476a0), so this happens once."
+proof = "0x140036d0e cmp [rcx+0xa8], ebp (login state 0); 0x140036d16 mov rcx, [0x140c635f0]; 0x140036d1d mov rax, [rcx+0x1658] (account); 0x140036d29 mov r8, [rcx+0x1650] (password); 0x140036d3b call 0x140038570; 0x140036d42 mov rdx, [rcx+0x1660] (authtoken); 0x140036d59 call 0x140038740; 0x140036d65 mov [rax+0x1660], rbp (0). InitClientFromCommandLine stores account at 0x14000b0b5 mov [r15+0x1658], rcx, password at 0x14000b115 mov [r15+0x1650], rcx and authtoken at 0x14000b171 mov [r15+0x1660], rcx. 0x1400476b6 mov [rax+0x1650], rbx (0) before 0x1400476d5 call 0x140036bf0 (the login screen's load). Reached through the pointer at 0x140b557a0."
+grade = "fairly sure"
+gap = "That it runs each frame is inferred from its pointer slot and its two float arguments; that r15 in InitClientFromCommandLine is the game object at 0x140c635f0 is inferred from the shared offsets; the token login 0x140038740 is not read."
+name = "UpdateLoginScreen"
+
+["0x140039aa0"]
+statement = "The login form's OnLoginReturn handler: reads the Account and Password fields and the Save box of the client's own login window (form LoginWindow of UI\\ClientLoginForms.xml, which the client loads itself, not through Lua) and submits them (SubmitLogin). The login screen's Lua (UI/PreGame/Login/Login.lua) has no account or password field and no submit call."
+proof = "Named by the pair at 0x140c56540 (the name 'OnLoginReturn', the function 0x140039aa0), one of 0x17 handlers (OnLoginTab, OnLoginEscape, OnLoginOptions, OnLoginSaveCheck, OnSaveIpCheck, OnEULA, OnCredits, OnOtpAuthSubmit ...) that 0x1400395c0 registers through 0x1400e9c20 (0x1400395c4 lea rdx, [0x140c56540]; 0x1400395cb mov r8d, 0x17). 0x140039aae cmp [rax+0xa8], 0; 0x140039ad7 lea rdx, L'Account' (0x1409f6120); 0x140039aea lea rdx, L'Password' (0x1409f6168); 0x140039afc lea rdx, L'Save' (0x1409f6150), each through 0x1400e9080 (find child); 0x140039c98 call 0x140038570. 0x1400395f8 lea r8, L'LoginWindow' (0x1409f6030); 0x140039604 lea rdx, L'UI\\ClientLoginForms.xml' (0x1409f6000); 0x140039625 call 0x1400f52e0. Login.lua (132 lines, extracted copy in ui-extract) calls only PreGameLib.GetTimeBasedSeed, SetMusic, GetVersionString and GetLastRealmMessages and handles LoginError and NetworkStatus."
+grade = "fairly sure"
+gap = "Whether 0x1400e9c20 makes these handlers Lua globals of the pre-game state or window-event handlers only is not read; either way only the archive's Carbine pre-game Lua runs there (StartPreGameInterface)."
+name = "OnLoginReturn"
+
+["lua.RealmSelect.SelectRealm"]
+statement = "Realm select in the client's Lua: clicking a realm in the list calls RealmSelectScreenLib.SetCurrentRealm(nRealmId) with the realm's id from GetRealmList; the Select button plays the ship animation, and RealmSelectScreenLib.SelectRealm() is called only when that animation (model sequence 1109) finishes. Character select calls CharacterScreenLib.SelectCharacter with the chosen character unless it must be renamed first, CharacterScreenLib.CreateCharacter(name, CharacterCreation id, actor, path) to create, and CharacterScreenLib.ExitToRealmSelect to go back."
+proof = "UI/PreGame/RealmSelect/RealmSelect.lua lines 115 (GetRealmList), 335-341 (SetCurrentRealm(nRealmId) from the row's data), 412-419 (OnAnimationFinished: nModelSequence == 1109 then SelectRealm()), 443 (ExitToCharacter); UI/PreGame/CharacterSelection/CharacterSelect.lua lines 682-693 (bRequiresRename shows the rename form, else SelectCharacter(tId)) and 1100; UI/PreGame/Character/Character.lua lines 1029, 1123, 1134 (CreateCharacter). Extracted copy in ui-extract."
+grade = "fairly sure"
+gap = "The Lua is read from the archive with a scratch extractor; RealmSelectScreenLib.SetCurrentRealm and SelectRealm are not read in the client (ChooseRealm is the code SelectRealm reaches, by its name only)."
