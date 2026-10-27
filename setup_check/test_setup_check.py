@@ -950,7 +950,10 @@ class TableFolderTest(PlantedTestCase):
         result = setup_check.check_table_folder(machine)
         self.assertEqual(len(result), 1, result)
         self.assertIn("clientdata.index", self.text(result[0]))
-        self.assertIn("bytes end before offset", self.text(result[0]), "the read error is named")
+        index = Path(machine.env["WILDSTAR_CLIENT_EXE"]).parent.parent / "Patch" / "ClientData.index"
+        with self.assertRaises(Exception) as reading:  # what reading the damaged index raises
+            test_extract_tables.extract_tables.read_index(index.read_bytes())
+        self.assertIn(str(reading.exception).lower(), self.text(result[0]), "the read error is named")
         self.assertTrue(any("clientdata.index" in self.text(m) for m in setup_check.check_all(machine)))
 
 

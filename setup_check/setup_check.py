@@ -341,14 +341,19 @@ def check_table_folder(machine: Machine) -> list[Missing]:
     beside Client64, read with extract_tables.read_index and tables_of, so no
     count or list is written here. Only the names are compared; the contents
     were checked against the index's SHA-1 when extract_tables published them.
-    Nothing is reported when the index cannot be read: check_client names that."""
+    An index that cannot be read is one Missing that names it and the error: the
+    tables it lists cannot be known, and check_client reads only its header."""
     if not machine.env.get("WILDSTAR_CLIENT_EXE"):
         return []
     index = extract_tables.patch_folder(machine.env) / "ClientData.index"
     try:
         listed = extract_tables.tables_of(extract_tables.read_index(index.read_bytes()))
-    except (OSError, ValueError, extract_tables.Corrupt):
-        return []
+    except (OSError, ValueError, extract_tables.Corrupt) as unreadable:
+        return [Missing(
+            "ClientData.index read as a list of the client's tables",
+            "cannot be read: %s" % unreadable,
+            "restore the client's own Patch/ClientData.index (the client's install is damaged or another build)",
+        )]
     folder = extract_tables.table_folder(machine.env)
     held = {path.name for path in folder.iterdir()} if folder.is_dir() else set()
     names = [file.path.split("/", 1)[1] for file in listed]

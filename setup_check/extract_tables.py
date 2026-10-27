@@ -284,7 +284,9 @@ def swap_whole(staging: Path, destination: Path) -> None:
     """Replaces destination with staging as one folder: moves an existing
     destination to aside_of(destination), renames staging to destination, then
     removes the old one. When the second rename fails, the first is undone and
-    the error is raised, so destination is as it was."""
+    the error is raised, so destination is as it was. Once both renames are done
+    the new set is published, so a failure to remove the old folder is not an
+    error: it stays beside destination, and recover removes it."""
     aside = aside_of(destination)
     had_old = destination.exists()
     if had_old:
@@ -296,7 +298,10 @@ def swap_whole(staging: Path, destination: Path) -> None:
             os.rename(aside, destination)
         raise
     if had_old:
-        shutil.rmtree(aside)
+        try:
+            shutil.rmtree(aside)
+        except OSError:
+            pass
 
 
 def recover(destination: Path) -> None:
