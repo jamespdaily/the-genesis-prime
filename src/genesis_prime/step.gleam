@@ -19,6 +19,7 @@
 //// chooses.
 
 import genesis_prime/world_map/map_id.{type MapId}
+import gleam/option.{type Option}
 
 /// The time an input reached the shell, read once as the shell takes it, so
 /// every part of one step reads the same time.
@@ -204,7 +205,23 @@ pub type AskId {
 
 /// A log line, with the who and where it is about.
 pub type LogLine {
-  LogLine(level: LogLevel, text: String, about: List(#(String, String)))
+  LogLine(level: LogLevel, text: String, about: About)
+}
+
+/// Who and where a log line is about, each written as its own logger
+/// metadata key. A field is `None` until the process knows it. No field holds
+/// a password, a session key or another secret.
+pub type About {
+  About(
+    connection: Option(ConnectionId),
+    /// Where the client connected from, for lines before login.
+    peer: Option(Peer),
+    account_id: Option(Int),
+    character_id: Option(Int),
+    map: Option(MapId),
+    /// The client message the line is about: its name and its number.
+    message: Option(#(String, Int)),
+  )
 }
 
 /// How much a log line matters.
