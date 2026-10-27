@@ -16,9 +16,17 @@
 //// - **Workers are temporary.** The supervisor never restarts one, and a
 ////   worker the asker ends at its deadline exits with `shutdown`, which the
 ////   supervisor does not report as a failure.
+//// - **A worker's start does no work.** It spawns the worker and returns, and
+////   the worker runs its query after, so `start_child`, a supervisor call with
+////   no timeout, waits only for the starts queued before it.
+//// - **The store not running.** `start_child` on a name no process holds
+////   exits the caller with `noproc` rather than returning an error; `ask`
+////   catches that exit, and only that one, as `Error(Nil)`.
 //// - **Failures.** pog's `ConnectionUnavailable` and `QueryTimeout` answer
-////   `Unavailable`. Any other error is a bug in the query or the schema: the
-////   worker crashes with it, and the asker gets `EndedBeforeAnswer`.
+////   `Unavailable`, and so does the pool not running: pgo's checkout exits
+////   with `{noproc, {pgo_pool, checkout, _}}` then, which the worker catches,
+////   and only that exit. Any other error is a bug in the query or the schema:
+////   the worker crashes with it, and the asker gets `EndedBeforeAnswer`.
 //// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
 ////   an asker waiting on one gets `EndedBeforeAnswer`.
 

@@ -34,8 +34,9 @@
 ////
 //// - **CallerId.** The shell numbers the calls it takes from 1, in the order
 ////   they arrive, so a recording names each caller with no process id.
-//// - **A reply nobody waits for.** The asker's tag is gone after its deadline
-////   or end, so the answer is dropped there; the service never knows.
+//// - **A reply nobody waits for.** An answer after the asker's deadline
+////   reaches it as `AnsweredLate`; one to an asker that has ended is lost.
+////   The service never knows either way.
 //// - **A crash.** The rule's crash ends the process; the supervisor restarts
 ////   it from the rule's `new`, so the service's state is lost. An asker
 ////   waiting on it gets `EndedBeforeAnswer`; one asking while it restarts gets
@@ -43,6 +44,10 @@
 //// - **The server stopping.** The shell traps exits, so the supervisor's stop
 ////   arrives as `Stopping`, with a deadline of the child's shutdown time from
 ////   when it arrived. A rule that has not stopped by then is killed.
+//// - **Stop.** The process exits with the reason `shutdown`, never `normal`:
+////   a supervisor reports a permanent child that exits `normal` while it
+////   shuts down as a failure, and restarts one that exits `shutdown` at any
+////   other time.
 //// - **Effects not carried out.** A service writes to no socket and makes no
 ////   ask. `Write`, `Send`, `Watch`, `Unwatch`, `StartTimer`, `CancelTimer` and a
 ////   step that ends in an ask end the process with an error log naming them.

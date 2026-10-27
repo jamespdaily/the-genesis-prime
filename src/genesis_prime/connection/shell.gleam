@@ -55,21 +55,30 @@
 //// waiting:
 ////   {ask answer, tag, a}    ─▶ Answered(ask, Answer(a))
 ////   the target's DOWN       ─▶ Answered(ask, EndedBeforeAnswer)
-////   the deadline passes     ─▶ ToService: Answered(ask, NoAnswerInTime), and
-////                                the tag is kept until its answer or DOWN
-////                              ToWorker: the worker is ended (exit shutdown),
-////                                then Answered(ask, NoAnswerInTime)
-////   the parent's exit       ─▶ its arrival time is kept; the wait goes on
-//// after the outcome: a stop that arrived during the ask is the next input,
-////   Stopping(arrival + shutdown_ms - send_deadline_ms)
-//// later, between steps:
-////   {ask answer, tag, _} of a kept tag ─▶ AnsweredLate(ask)
+////   the deadline passes     ─▶ Answered(ask, NoAnswerInTime); a worker is
+////                                ended (exit shutdown) first
+////   the parent's exit       ─▶ Answered(ask, StoppedWaiting) at once, then
+////                                Stopping(arrival + shutdown_ms
+////                                         - send_deadline_ms)
+//// after NoAnswerInTime or StoppedWaiting, the tag and the monitor are kept
+////   until the target's answer or DOWN; between steps:
+////   {ask answer, tag, _} of a kept tag ─▶ AnsweredLate(ask), tag dropped
+////   the DOWN of a kept tag             ─▶ tag dropped, no input
 ////   an answer or DOWN of no kept tag   ─▶ dropped
 //// ```
 ////
-////   The `Now` of `Answered` is read when the outcome is known. Bytes the
-////   client sent during the ask are read only after it, since the socket is
-////   active once and is not re-armed while the shell waits.
+////   A worker answers late only when its answer left before the shell's exit
+////   reached it. The `Now` of `Answered` is read when the outcome is known.
+////   Bytes the client sent during the ask are read only after it, since the
+////   socket is active once and is not re-armed while the shell waits.
+//// - **The directory's own wait.** `directory` runs before the wait begins,
+////   so the deadline does not bound it. A service is reached by a send, which
+////   never waits. A worker is started by its supervisor's `start_child`, a
+////   call with no timeout, but the worker's start does no work before it
+////   returns, so the call waits only for the starts queued before it; a
+////   supervisor that has stopped exits the call with `noproc`, which
+////   `store/worker.ask` turns into `Error(Nil)`. When the directory returns
+////   past the deadline, the outcome is `NoAnswerInTime` at once.
 //// - **Effects a connection does not carry out.** `Reply` (a connection is
 ////   never asked), and `Send`, `Watch`, `Unwatch`, `StartTimer` and
 ////   `CancelTimer`, which need processes no rule uses yet: the shell logs an
