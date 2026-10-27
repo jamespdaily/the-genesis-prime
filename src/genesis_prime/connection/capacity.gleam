@@ -36,13 +36,13 @@ pub fn connection_cap_for(ceiling_words ceiling_words: Int) -> Int {
 
 /// The most words an owner's heap reached in the dash load, shared binaries
 /// counted: 800 connections each sending 120 frames a second, read every 100
-/// ms over 5 rounds, 4,583 words at the most (`connection_load`).
+/// ms over 5 rounds, 4,583 words at the most (a load run of the socket owner).
 const dash_load_peak_words = 4583
 
 /// The words the runtime itself needs for an owner to hold a frame of the
 /// largest size the client sends, 131,070 bytes: owners under 61,440 words were
 /// all killed and every owner at 63,488 words survived, 5 runs of each
-/// (`connection_frame_peak`). The frame arrives in about a millisecond, so no
+/// (a run that sent the largest frame to owners of each ceiling). The frame arrives in about a millisecond, so no
 /// reading of the heap can catch it.
 const largest_frame_need_words = 63_488
 

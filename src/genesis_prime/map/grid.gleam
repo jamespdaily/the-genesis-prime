@@ -4,8 +4,8 @@
 ////
 //// A unit id here is a plain `Int`, a named hot path under the typed-id rule of
 //// the writing-gleam skill: the index is the code every look-up passes
-//// through, as it was in the topology trial (`id_cost` measured a typed id at
-//// about 5% of a hot path's time).
+//// through, as it was in the topology trial (a typed-id benchmark measured a
+//// typed id at about 5% of a hot path's time).
 
 import genesis_prime/map/position.{type Position, Position}
 import gleam/dict.{type Dict}

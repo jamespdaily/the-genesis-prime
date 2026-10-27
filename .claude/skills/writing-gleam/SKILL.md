@@ -26,7 +26,7 @@ Apply every section to each change, and check the diff against each before it is
 - Make invalid states impossible: fields that belong together sit in one variant; replace a `Bool` with a type that names its states.
 - A module guards its type's rules behind a small API; other modules cannot build an invalid value.
 - None is `Option`, never 0, -1 or an empty string.
-- Ids are typed (`Spell4Id(Int)`), so one id cannot pass as another. A typed id costs about 5% of a hot path's time and 3 words per id held (`dev/genesis_prime/id_cost.gleam`), so a hot path may keep a plain `Int`; its module's doc comment names it as one, with that measurement.
+- Ids are typed (`Spell4Id(Int)`), so one id cannot pass as another. A typed id costs about 5% of a hot path's time and 3 words per id held (measured on issue #12), so a hot path may keep a plain `Int`; its module's doc comment names it as one, with that measurement.
 - When the client has a formula, use the client's.
 
 ## Errors

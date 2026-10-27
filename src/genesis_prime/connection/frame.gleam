@@ -8,9 +8,9 @@
 ////
 //// A message id is a plain `Int` here, not a typed id: the frame is read for
 //// every packet, and a typed id costs about 5% of a hot path's time (median
-//// +5.09%, about 20 ns per message) and 3 words per id held (the typed-id
-//// benchmark in `dev/genesis_prime/id_cost.gleam`). The message layer above
-//// turns the id into its own type.
+//// +5.09%, about 20 ns per message) and 3 words per id held (a typed-id
+//// benchmark of a read, an update and a reply). The message layer above turns
+//// the id into its own type.
 
 import gleam/bit_array
 import gleam/bool

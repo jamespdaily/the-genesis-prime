@@ -59,9 +59,6 @@ avoid_panic = "off"
 # modules are shared across test modules, so no other module calls them.
 "test/**/*.gleam" = ["unused_exports"]
 "test/*.gleam" = ["unused_exports"]
-# `start_server` is called by name from `dev/node_cost_ffi.erl`, which glinter
-# does not read.
-"dev/genesis_prime/node_cost.gleam" = ["unused_exports"]
 
 # Modules that may have effects; every other module is a pure rule.
 [tools.code_rules]
@@ -114,7 +111,6 @@ domains = [
   { module = "genesis_prime/shutdown", reason = "the ordered stop on SIGTERM: stop accepting, drain connections, flush saves, then stop" },
   { module = "genesis_prime/telemetry", reason = "metrics and logs of the running server" },
   { module = "genesis_prime/game_master", reason = "game master commands, each checked against the account's permission and logged" },
-  { module = "genesis_prime/coverage", reason = "the coverage measure of what the client's tables require against what the server handles" },
 ]
 # Erlang functions a rule module's externals may call.
 pure_erlang = [
