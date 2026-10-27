@@ -28,10 +28,10 @@ the background and its tokens are not in these transcripts, so it shows runs onl
 Prices are dollars per million tokens from Anthropic's pricing page,
 platform.claude.com/docs/en/about-claude/pricing. --check-prices prices each session
 Claude Code recorded a cost for and prints both, so a stale rate shows as a gap. A
-session whose work stays in one transcript matches to the cent. A session with
-subagents records more than its transcripts hold: calls that read context but write
-almost nothing, and compaction, are not saved. The step's table names that share for
-the sessions the step ran in.
+session whose work stays in one transcript matches to the cent. Most sessions with
+subagents record more than their saved replies, nearly all of it input with almost no
+output, so some calls are not in the transcripts; a compaction is one. The step's
+table states the difference, of either sign, for the sessions the step ran in.
 
 Usage:
   python3 -I dev/step_measure.py 143
@@ -80,7 +80,17 @@ _MENTIONS_STEP = re.compile(
     r"|\bgh issue (?:view|edit|comment|close|reopen)\s+(\d+)\b"
     r"|\bcard\.sh (?:status|move|order)\s+(\d+)\b"
 )
-_CODEX = re.compile(r"codex_review\.sh|\bcodex (?:review|exec)\b")
+# A command that starts a review, at the start of one part of a shell command line, so
+# a commit message or a file read that names the script is not a review.
+_COMMAND_PARTS = re.compile(r"&&|\|\||[;|\n]")
+_CODEX = re.compile(
+    r"(?:\S*/)?codex_review\.sh\s+(?:code|ask)\b|codex\s+(?:review|exec)\s+(?!-h\b|--help\b)"
+)
+
+
+def starts_review(command: str) -> bool:
+    """Whether a shell command runs a Codex review."""
+    return any(_CODEX.match(part.strip()) for part in _COMMAND_PARTS.split(command))
 
 
 def numbers(pattern: re.Pattern, text: str) -> list[int]:
@@ -244,7 +254,7 @@ def read_run(path: Path) -> Run:
             run.branches.update(int(n) for n in _BRANCH.findall(text))
             if item.get("name") == "Agent":
                 reply.starts.append(item["id"])
-            if item.get("name") == "Bash" and _CODEX.search(
+            if item.get("name") == "Bash" and starts_review(
                 (item.get("input") or {}).get("command", "")
             ):
                 reply.codex += 1
@@ -475,10 +485,9 @@ def report(step: int, runs: list[Run]) -> int:
     priced = sum(c.priced for c in known)
     if recorded:
         print(
-            f"Claude Code recorded ${recorded:.2f} for the {plural(len(known), 'session')} this step ran in, "
-            f"against ${priced:.2f} priced from their saved replies. The other "
-            f"{(recorded - priced) / recorded:.0%} is calls the transcripts do not save, so the table may "
-            "miss about that share of the step's cost too."
+            f"Claude Code recorded ${recorded:.2f} for the {plural(len(known), 'session')} this step ran in; "
+            f"their saved replies price at ${priced:.2f}, {(priced - recorded) / recorded:+.0%}. "
+            "The table cannot place that difference in any step."
         )
     if len(known) < len(ran_in):
         print(
