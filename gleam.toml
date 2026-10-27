@@ -50,6 +50,9 @@ avoid_panic = "off"
 # protocol pieces whose callers, the connection and the login, are rebuilt on
 # the shell and rule; until then nothing calls them.
 "src/genesis_prime/connection/frame.gleam" = ["unused_exports"]
+# The shell's run is called by Ranch through connection_shell_ffi:start_link, an
+# Erlang callback, which the lint does not see.
+"src/genesis_prime/connection/shell.gleam" = ["unused_exports"]
 "src/genesis_prime/login/sts_message.gleam" = ["unused_exports"]
 # The recording's types are the shape the shell's record mode and the replay
 # are built on; no module records or replays, so no other module uses them.
@@ -66,6 +69,9 @@ effectful_modules = [
   { module = "genesis_prime/table/loader/store", reason = "reads the table files and keeps the loaded tables in persistent terms" },
   { module = "genesis_prime/login/rc4", reason = "OTP's crypto holds the state of each RC4 stream" },
   { module = "genesis_prime/server", reason = "starts the supervision tree" },
+  { module = "genesis_prime/connection/shell", reason = "owns a client socket and carries out its rule's effects" },
+  { module = "genesis_prime/connection/listener", reason = "starts a Ranch listener under the supervision tree" },
+  { module = "genesis_prime/rule_recording/file", reason = "writes a connection's recording to a file" },
 ]
 # The game domains: each top-level folder or module under src/genesis_prime/.
 domains = [
@@ -87,6 +93,9 @@ pure_erlang = [
   "tbl_file_ffi:row",
   "tbl_file_ffi:rows",
   "genesis_prime_login_ffi:mod_pow",
+  "erlang:term_to_binary",
+  "rule_recording_ffi:decode_header",
+  "rule_recording_ffi:decode_record",
 ]
 # Modules that may make an atom from a string or read a term from bytes.
 atom_or_term = []
@@ -94,3 +103,7 @@ atom_or_term = []
 # The licences a package may carry; a package with none of them fails the check.
 [tools.licences]
 accepted = ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "ISC"]
+# A package that states no licence where the rule reads it, checked by hand.
+declared = [
+  { package = "ranch", licence = "ISC", evidence = "its LICENSE file and its Hex metadata, checked 2026-10-27" },
+]

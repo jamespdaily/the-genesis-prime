@@ -1,17 +1,126 @@
-%% Ranch's protocol callback for a connection shell, and the socket and clock
-%% calls the shell makes. Ranch calls start_link/3, an Erlang behaviour callback
-%% Gleam cannot declare; the process it starts hands over to
-%% genesis_prime@connection@shell:run/2.
+%% Ranch's protocol callback for a connection shell, and the socket, clock and
+%% logger calls the shell makes. Ranch calls start_link/3, an Erlang behaviour
+%% callback Gleam cannot declare; the process it starts hands over to
+%% genesis_prime@connection@shell:run/3. Each function returns the Gleam shape
+%% its caller declares.
 -module(connection_shell_ffi).
 -behaviour(ranch_protocol).
 
--export([start_link/3, start_listener/4]).
+-export([start_link/3, start_listener/4, listener_port/1, handshake/2,
+         read_once/1, next_event/2, send/2, close/1, peer/1, unique_id/0,
+         monotonic_ms/0, filetime/0, log/3]).
 
-%% Starts the connection's process, linked to Ranch's connection supervisor.
-start_link(_Ref, _Transport, _Settings) ->
-    erlang:error(shape_only).
+%% FILETIME counts 100-nanosecond intervals from 1601-01-01; the Unix epoch is
+%% this many of them after it.
+-define(FILETIME_AT_UNIX_EPOCH, 116444736000000000).
 
-%% Starts a listener under the caller's supervisor: Ranch's embedded supervisor
-%% for the given port and connection settings.
-start_listener(_Ref, _Port, _ShutdownMs, _Settings) ->
-    erlang:error(shape_only).
+%% Starts the connection's process, linked to Ranch's connection supervisor,
+%% which is the calling process and the shell's parent.
+start_link(Ref, _Transport, Settings) ->
+    Parent = self(),
+    Pid = proc_lib:spawn_link(fun() ->
+        'genesis_prime@connection@shell':run(Ref, Parent, Settings)
+    end),
+    {ok, Pid}.
+
+%% Starts a listener as a child of the calling supervisor: Ranch's embedded
+%% supervisor, with one connection supervisor, so connections are its
+%% temporary children and stop within ShutdownMs.
+start_listener(Ref, Port, ShutdownMs, Settings) ->
+    {ok, _} = application:ensure_all_started(ranch),
+    TransportOptions = #{socket_opts => [{port, Port}],
+                         num_conns_sups => 1,
+                         shutdown => ShutdownMs},
+    case ranch_embedded_sup:start_link(Ref, ranch_tcp, TransportOptions,
+                                       connection_shell_ffi, Settings) of
+        {ok, Pid} -> {ok, Pid};
+        {error, Reason} -> {error, {could_not_listen, format(Reason)}}
+    end.
+
+listener_port(Ref) ->
+    try {ok, ranch:get_port(Ref)}
+    catch _:_ -> {error, nil}
+    end.
+
+%% Takes the socket from Ranch, gives its writes the send deadline, closing it
+%% when one passes, and traps the parent's exit so a stop arrives as a message.
+%% A close gives bytes still queued the send deadline, in whole seconds, to go
+%% out, then drops them: without a linger, a close to a client that has stopped
+%% reading waits for the queue up to 180 s (prim_inet's close_pend_loop).
+handshake(Ref, SendDeadlineMs) ->
+    {ok, Socket} = ranch:handshake(Ref),
+    LingerSeconds = max(1, (SendDeadlineMs + 999) div 1000),
+    ok = inet:setopts(Socket, [{send_timeout, SendDeadlineMs},
+                               {send_timeout_close, true},
+                               {linger, {true, LingerSeconds}}]),
+    process_flag(trap_exit, true),
+    Socket.
+
+%% Asks the socket for its next read.
+read_once(Socket) ->
+    case inet:setopts(Socket, [{active, once}]) of
+        ok -> {ok, nil};
+        {error, Reason} -> {error, failure(Reason)}
+    end.
+
+%% Waits for what reaches the process next: a read, the peer's close, a read
+%% failure, or the parent's stop. Another process's exit is not the shell's.
+next_event(Socket, Parent) ->
+    receive
+        {tcp, Socket, Bytes} -> {read, Bytes};
+        {tcp_closed, Socket} -> closed_by_peer;
+        {tcp_error, Socket, Reason} -> {failed_to_read, failure(Reason)};
+        {'EXIT', Parent, _Reason} -> stop_requested;
+        {'EXIT', _Other, _Reason} -> next_event(Socket, Parent)
+    end.
+
+%% Writes the bytes; a write that waits past the socket's send deadline fails
+%% as send_timed_out and closes the socket.
+send(Socket, Bytes) ->
+    case gen_tcp:send(Socket, Bytes) of
+        ok -> {ok, nil};
+        {error, Reason} -> {error, failure(Reason)}
+    end.
+
+close(Socket) ->
+    gen_tcp:close(Socket),
+    nil.
+
+%% The peer's address and port; a socket already closed has none.
+peer(Socket) ->
+    case inet:peername(Socket) of
+        {ok, {Address, Port}} -> {peer, list_to_binary(inet:ntoa(Address)), Port};
+        {error, _} -> {peer, <<"unknown">>, 0}
+    end.
+
+unique_id() ->
+    erlang:unique_integer([positive, monotonic]).
+
+monotonic_ms() ->
+    erlang:monotonic_time(millisecond).
+
+%% The BEAM's system time, which follows its time correction, as a FILETIME.
+filetime() ->
+    erlang:system_time(nanosecond) div 100 + ?FILETIME_AT_UNIX_EPOCH.
+
+%% Writes a log line through the logger, each known field of its who and where
+%% as a metadata key of its own.
+log(Level, Text, {about, Connection, Peer, Account, Character, Map, Message}) ->
+    Fields = [{connection, Connection}, {peer, Peer}, {account_id, Account},
+              {character_id, Character}, {map, Map}, {message, Message}],
+    Metadata = maps:from_list([{Key, Value} || {Key, {some, Value}} <- Fields]),
+    logger:log(level(Level), "~ts", [Text], Metadata),
+    nil.
+
+level(log_error) -> error;
+level(log_warning) -> warning;
+level(log_info) -> info;
+level(log_debug) -> debug.
+
+failure(closed) -> closed;
+failure(econnreset) -> reset;
+failure(timeout) -> send_timed_out;
+failure(Reason) -> {other_socket_failure, format(Reason)}.
+
+format(Reason) ->
+    unicode:characters_to_binary(io_lib:format("~0p", [Reason])).
