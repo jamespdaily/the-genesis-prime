@@ -11,6 +11,8 @@ import genesis_prime/message/character_list_entry.{
   type CharacterListEntry, CharacterListEntry,
 }
 import genesis_prime/message/choose_realm.{ChooseRealm}
+import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
+import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_carrier.{CreateCharacterCarrier}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
@@ -28,6 +30,11 @@ import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
+import genesis_prime/message/unit_position_command.{
+  type UnitPositionCommand, UnitPositionCommand,
+}
+import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
 import gleam/int
 import message_support
 import owned_test
@@ -93,6 +100,42 @@ fn item_visual(state: Int) -> #(ItemVisual, Int) {
 fn item_visuals(state: Int) -> #(List(ItemVisual), Int) {
   let #(count, state) = message_support.up_to(state:, most: 4)
   message_support.draw_list(state:, count:, draw: item_visual)
+}
+
+fn unit_stat(state: Int) -> #(UnitStat, Int) {
+  let #(stat_id, state) = message_support.unsigned(state:, bits: 5)
+  let #(value, state) = message_support.unsigned(state:, bits: 32)
+  #(UnitStat(stat_id:, value:), state)
+}
+
+fn unit_stats(state: Int) -> #(List(UnitStat), Int) {
+  let #(count, state) = message_support.up_to(state:, most: 4)
+  message_support.draw_list(state:, count:, draw: unit_stat)
+}
+
+fn unit_position_command(state: Int) -> #(UnitPositionCommand, Int) {
+  let #(x, state) = message_support.unsigned(state:, bits: 32)
+  let #(y, state) = message_support.unsigned(state:, bits: 32)
+  let #(z, state) = message_support.unsigned(state:, bits: 32)
+  let #(blends, state) = message_support.unsigned(state:, bits: 1)
+  #(UnitPositionCommand(x:, y:, z:, blends:), state)
+}
+
+fn unit_position_commands(state: Int) -> #(List(UnitPositionCommand), Int) {
+  let #(count, state) = message_support.up_to(state:, most: 4)
+  message_support.draw_list(state:, count:, draw: unit_position_command)
+}
+
+fn unit_property(state: Int) -> #(UnitProperty, Int) {
+  let #(property_id, state) = message_support.unsigned(state:, bits: 8)
+  let #(field_2, state) = message_support.unsigned(state:, bits: 32)
+  let #(value, state) = message_support.unsigned(state:, bits: 32)
+  #(UnitProperty(property_id:, field_2:, value:), state)
+}
+
+fn unit_properties(state: Int) -> #(List(UnitProperty), Int) {
+  let #(count, state) = message_support.up_to(state:, most: 4)
+  message_support.draw_list(state:, count:, draw: unit_property)
 }
 
 fn character_list_entry(state: Int) -> #(CharacterListEntry, Int) {
@@ -432,8 +475,11 @@ pub fn unit_create_player_round_trips_test() -> Nil {
       let #(field_16, state) = message_support.unsigned(state:, bits: 8)
       let #(field_17, state) = message_support.unsigned(state:, bits: 14)
       let #(field_18, state) = message_support.unsigned(state:, bits: 8)
+      let #(stats, state) = unit_stats(state)
       let #(server_time_estimate_start, state) =
         message_support.unsigned(state:, bits: 32)
+      let #(movement_commands, state) = unit_position_commands(state)
+      let #(properties, state) = unit_properties(state)
       let #(item_visuals, state) = item_visuals(state)
       let #(field_25, state) = message_support.unsigned(state:, bits: 32)
       let #(faction_id, state) = message_support.unsigned(state:, bits: 14)
@@ -467,10 +513,10 @@ pub fn unit_create_player_round_trips_test() -> Nil {
           field_16:,
           field_17:,
           field_18:,
-          stats: [],
+          stats:,
           server_time_estimate_start:,
-          movement_commands: [],
-          properties: [],
+          movement_commands:,
+          properties:,
           item_visuals:,
           field_25:,
           faction_id:,
@@ -491,6 +537,36 @@ pub fn unit_create_player_round_trips_test() -> Nil {
     },
     encode: unit_create_player.encode,
     decode: unit_create_player.decode,
+  )
+}
+
+pub fn client_control_granted_round_trips_test() -> Nil {
+  use <- owned_test.run(60_000)
+  round_trips(
+    name: "message 0x636",
+    seed: 20_261_401,
+    draw: fn(state) {
+      let #(echo_value, state) = message_support.unsigned(state:, bits: 32)
+      let #(reset_movement, state) = message_support.unsigned(state:, bits: 1)
+      let #(unit_id, state) = message_support.unsigned(state:, bits: 32)
+      #(ClientControlGranted(echo_value:, reset_movement:, unit_id:), state)
+    },
+    encode: client_control_granted.encode,
+    decode: client_control_granted.decode,
+  )
+}
+
+pub fn client_control_echoed_round_trips_test() -> Nil {
+  use <- owned_test.run(60_000)
+  round_trips(
+    name: "message 0x635",
+    seed: 20_261_402,
+    draw: fn(state) {
+      let #(echo_value, state) = message_support.unsigned(state:, bits: 32)
+      #(ClientControlEchoed(echo_value:), state)
+    },
+    encode: client_control_echoed.encode,
+    decode: client_control_echoed.decode,
   )
 }
 

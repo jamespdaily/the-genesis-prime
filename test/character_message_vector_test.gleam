@@ -16,6 +16,8 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
 import genesis_prime/message/choose_realm.{ChooseRealm}
+import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
+import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_carrier
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
@@ -30,9 +32,14 @@ import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
-import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
+import genesis_prime/message/unit_create_player.{
+  type UnitCreatePlayer, UnitCreatePlayer,
+}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/message/unit_stat.{UnitStat}
 import message_support
 import owned_test
 
@@ -370,6 +377,118 @@ pub fn unit_create_player_is_the_clients_907_bits_test() -> Nil {
     encode: unit_create_player.encode,
     decode: unit_create_player.decode,
   )
+}
+
+/// The player of `vector.opcode.0x262.position`: unit 1, character 1, realm 1,
+/// "Ab", race 1, class 1, gender 0, every other value 0 and every other list
+/// empty, with the one movement command the vector names.
+fn minimal_player() -> UnitCreatePlayer {
+  UnitCreatePlayer(
+    unit_id: 1,
+    character_id: 1,
+    realm_id: 1,
+    name: "Ab",
+    race_id: 1,
+    class_id: 1,
+    gender: 0,
+    field_9: 0,
+    field_10: [],
+    field_11: "",
+    field_12: 0,
+    field_13: [],
+    field_14: [],
+    path: 0,
+    field_16: 0,
+    field_17: 0,
+    field_18: 0,
+    stats: [],
+    server_time_estimate_start: 0,
+    movement_commands: [
+      UnitPositionCommand(
+        x: 0x45879585,
+        y: 0xC487D70A,
+        z: 0xC570E87B,
+        blends: 0,
+      ),
+    ],
+    properties: [],
+    item_visuals: [],
+    field_25: 0,
+    faction_id: 0,
+    base_faction_id: 0,
+    field_28: 0,
+    field_29: 0,
+    field_31: 0,
+    field_33: 0,
+    field_34: 0,
+    field_36: 0,
+    field_37: 0,
+    field_38: 0,
+    field_39: 0,
+    field_40: 0,
+  )
+}
+
+pub fn a_player_with_a_position_command_is_the_clients_801_bits_test() -> Nil {
+  use <- owned_test.run(10_000)
+  message_support.assert_vector(
+    name: "vector.opcode.0x262.position (kind 2 at 4338.69, -1086.72, -3854.53, bit 0; the floats are 0x45879585, 0xC487D70A and 0xC570E87B)",
+    body: message_support.hex(
+      "01000000540000000000000040004010042006100200000000000000000000000000000000000000002088c2cac32285eb43e23d74b86200000000000000000000000000000000000000000000800000000000000000008000000000000000000000000000",
+    ),
+    value: minimal_player(),
+    encode: unit_create_player.encode,
+    decode: unit_create_player.decode,
+  )
+}
+
+pub fn a_player_with_health_and_base_health_is_the_clients_912_bits_test() -> Nil {
+  use <- owned_test.run(10_000)
+  message_support.assert_vector(
+    name: "vector.opcode.0x262.health (stat 0 is 136; property 7 is 136.0 twice, 0x43080000)",
+    body: message_support.hex(
+      "01000000540000000000000040004010042006100200000000000000000000000000000000018008000000000000104461e56191c2f521f11e3a5cb1800300008421000084210000000000000000000000000000000000000000004000000000000000000040000000000000000000000000",
+    ),
+    value: UnitCreatePlayer(
+      ..minimal_player(),
+      stats: [UnitStat(stat_id: 0, value: 136)],
+      properties: [
+        UnitProperty(property_id: 7, field_2: 0x43080000, value: 0x43080000),
+      ],
+    ),
+    encode: unit_create_player.encode,
+    decode: unit_create_player.decode,
+  )
+}
+
+pub fn client_control_granted_is_a_value_a_bit_and_a_unit_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_vector(
+    name: "vector.opcode.0x636.body (the value in bits 0 to 31, the reset bit at 32, the unit id in bits 33 to 64)",
+    body: message_support.hex("000000000300000000"),
+    value: ClientControlGranted(echo_value: 0, reset_movement: 1, unit_id: 1),
+    encode: client_control_granted.encode,
+    decode: client_control_granted.decode,
+  )
+}
+
+pub fn client_control_echoed_is_one_32_bit_value_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_vector(
+    name: "vector.opcode.0x635.body (the client's writer 0x14007d010 on the value 0)",
+    body: message_support.hex("00000000"),
+    value: ClientControlEchoed(echo_value: 0),
+    encode: client_control_echoed.encode,
+    decode: client_control_echoed.decode,
+  )
+}
+
+pub fn the_control_messages_hold_the_clients_message_numbers_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert client_control_granted.message_id == 0x0636
+    as "opcode.0x636: registered at 0x1400a8690 mov edx, 0x636"
+  assert client_control_echoed.message_id == 0x0635
+    as "opcode.0x635: registered at 0x1400a86c4 mov edx, 0x635"
 }
 
 pub fn a_unit_create_of_another_type_than_a_player_is_not_decoded_test() -> Nil {
