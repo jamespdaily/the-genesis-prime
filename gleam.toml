@@ -111,7 +111,6 @@ domains = [
   { module = "genesis_prime/shutdown", reason = "the ordered stop on SIGTERM: stop accepting, drain connections, flush saves, then stop" },
   { module = "genesis_prime/telemetry", reason = "metrics and logs of the running server" },
   { module = "genesis_prime/game_master", reason = "game master commands, each checked against the account's permission and logged" },
-  { module = "genesis_prime/coverage", reason = "the coverage measure of what the client's tables require against what the server handles" },
 ]
 # Erlang functions a rule module's externals may call.
 pure_erlang = [
