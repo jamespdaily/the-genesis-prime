@@ -6,16 +6,21 @@ addresses. The index is built once per class (about 2 s with 4 jobs).
 Run: python3 -I test_client_refs.py
 """
 
+import hashlib
 import os
+import re
+import shutil
 import sys
 import tempfile
 import unittest
+from array import array
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_support as cs  # noqa: E402
-from client_refs import RefIndex  # noqa: E402
+from check_support import hx  # noqa: E402
+from client_refs import ObjdumpFailed, RefIndex  # noqa: E402
 
 
 @cs.needs_client
@@ -117,6 +122,74 @@ class RefIndexTest(unittest.TestCase):
         # draw_questions draws from the full index with random.Random(16)
         drawn = cs.draw_questions(self.pe, self.idx)
         self.assertEqual(drawn, cs.QUESTIONS_16)
+
+
+def planted_objdump(directory: Path, script: str) -> Path:
+    """An executable standing in for llvm-objdump, running the shell script."""
+    path = Path(directory) / "llvm-objdump"
+    path.write_text("#!/bin/sh\n" + script + "\n")
+    path.chmod(0o755)
+    return path
+
+
+@cs.needs_client
+class RefIndexBuildFailureTest(unittest.TestCase):
+    """Item 16: a disassembler error fails the build, naming the chunk, and leaves no silent hole."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.pe = cs.client_pe()
+
+    def test_a_planted_llvm_objdump_that_exits_1_fails_the_build_naming_the_chunk(self):
+        # planted: exits 1 with no output at all
+        first = next(s for s in self.pe.sections if s.executable)
+        with tempfile.TemporaryDirectory() as d:
+            objdump = planted_objdump(Path(d), "exit 1")
+            with self.assertRaises(ObjdumpFailed) as caught:
+                RefIndex.build(self.pe, objdump, 1)
+            with self.subTest("four jobs at once"):
+                with self.assertRaises(ObjdumpFailed) as pooled:
+                    RefIndex.build(self.pe, objdump, 4)
+        # with one job the first chunk is the first executable section as a whole
+        self.assertIn(hx(first.va), str(caught.exception))
+        self.assertIn(hx(first.end), str(caught.exception))
+        self.assertRegex(str(pooled.exception), r"0x[0-9a-f]+-0x[0-9a-f]+")
+
+    def test_a_planted_llvm_objdump_that_exits_0_but_writes_an_error_line_fails_the_build_naming_the_chunk(self):
+        # planted: exits 0 and writes one line to stderr
+        first = next(s for s in self.pe.sections if s.executable)
+        with tempfile.TemporaryDirectory() as d:
+            objdump = planted_objdump(Path(d), "echo 'llvm-objdump: error: planted' >&2")
+            with self.assertRaises(ObjdumpFailed) as caught:
+                RefIndex.build(self.pe, objdump, 1)
+        self.assertIn(hx(first.va), str(caught.exception))
+        self.assertIn(hx(first.end), str(caught.exception))
+        self.assertIn("planted", str(caught.exception))  # the disassembler's own words
+
+
+@cs.needs_client
+class RefIndexOfAnotherClientTest(unittest.TestCase):
+    """Item 17: a saved index is for one client, named by its SHA-256."""
+
+    def test_load_refuses_an_index_saved_for_another_clients_sha256_naming_both_digests(self):
+        # planted: an index saved against a copy of the client, then the copy replaced by a client with one
+        # 4-byte value changed (check_support.planted_client_exe); the index holds no records, which
+        # leaves what is checked, the digest
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            copy = root / "client.exe"
+            shutil.copyfile(cs.client_exe(), copy)
+            saved_digest = hashlib.sha256(copy.read_bytes()).hexdigest()
+            index_path = root / "index"
+            RefIndex(copy, array("Q"), array("Q"), b"").save(index_path)
+            other = cs.planted_client_exe(root, 0x400, 1)
+            shutil.copyfile(other, copy)
+            other_digest = hashlib.sha256(copy.read_bytes()).hexdigest()
+            self.assertNotEqual(saved_digest, other_digest)
+            with self.assertRaises(ValueError) as caught:
+                RefIndex.load(index_path)
+        self.assertIn(saved_digest, str(caught.exception))
+        self.assertIn(other_digest, str(caught.exception))
 
 
 if __name__ == "__main__":

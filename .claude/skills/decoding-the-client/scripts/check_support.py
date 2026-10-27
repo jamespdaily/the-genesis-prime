@@ -499,11 +499,14 @@ def query_environment(project_dir: Path, ghidra_dir: Path | None = None) -> dict
     return env
 
 
-def query_command(seed: Path | None = None) -> list[str]:
+def query_command(seed: Path | None = None, unseeded: bool = False) -> list[str]:
     # No -I: the script puts its own directory on sys.path to import its siblings.
-    # `--seed PATH` is used only when the project does not exist yet.
+    # `--seed PATH` is used only when the project does not exist yet; `--unseeded` is the
+    # explicit first import without a seed, which the process refuses to make unasked.
     cmd = [require_env("GENESIS_PYGHIDRA_PYTHON"), str(SCRIPTS / "ghidra_query.py")]
-    if seed is not None:
+    if unseeded:
+        cmd += ["--unseeded"]
+    elif seed is not None:
         cmd += ["--seed", str(seed)]
     return cmd
 
@@ -522,11 +525,13 @@ class Reply:
 class QueryProcess:
     """The query process as a subprocess, one JSON line per request and reply."""
 
-    def __init__(self, project_dir: Path, seed: Path | None = None, ghidra_dir: Path | None = None):
+    def __init__(
+        self, project_dir: Path, seed: Path | None = None, ghidra_dir: Path | None = None, unseeded: bool = False
+    ):
         self.stderr_file = tempfile.TemporaryFile()
         self.started = time.monotonic()
         self.proc = subprocess.Popen(
-            query_command(seed),
+            query_command(seed, unseeded),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=self.stderr_file,
