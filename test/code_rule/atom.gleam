@@ -3,6 +3,7 @@
 //// neither fill the atom table nor build terms. Gleam modules are read for
 //// `atom.create` and externals; Erlang helpers for the calls themselves.
 
+import code_rule/erlang_calls
 import code_rule/project_file
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
@@ -10,7 +11,6 @@ import glance
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/string
 
 const unsafe_externals = ["binary_to_atom", "list_to_atom", "binary_to_term"]
 
@@ -101,27 +101,18 @@ fn breach(file: SourceFile, byte_offset: Int) -> Breach {
 
 /// Each line of an Erlang helper that calls or refers to a BIF that makes an
 /// atom from a string or reads a term from bytes, unless its module is
-/// allowed. The text is read with Erlang's own scanner (atom_rule_ffi), so a
-/// comment, a string or another module's function of the same name is no
-/// breach; a helper that does not scan is one, at the line the scan stopped.
+/// allowed (code_rule/erlang_calls).
 pub fn erlang_breaches(
   file file: SourceFile,
   allowed allowed: List(String),
 ) -> List(Breach) {
-  let module =
-    file.path
-    |> string.remove_prefix("src/")
-    |> string.remove_suffix(".erl")
-  case list.contains(allowed, module) {
+  case list.contains(allowed, syntax.module_name(file.path)) {
     True -> []
     False ->
-      case unsafe_lines(file.text, unsafe_externals) {
-        Ok(lines) -> lines
-        Error(line) -> [line]
-      }
+      erlang_calls.lines(
+        file.text,
+        list.map(unsafe_externals, erlang_calls.Target("erlang", _)),
+      )
       |> list.map(fn(line) { Breach(path: file.path, line:, rule: rule_name) })
   }
 }
-
-@external(erlang, "atom_rule_ffi", "unsafe_lines")
-fn unsafe_lines(text: String, names: List(String)) -> Result(List(Int), Int)

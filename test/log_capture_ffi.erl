@@ -1,5 +1,5 @@
 -module(log_capture_ffi).
--export([start/2, stop/1, log/2]).
+-export([start/2, stop/1, log/2, primary_level/0, set_primary_level/1]).
 
 %% Adds a logger handler that sends each event logged by the process From to
 %% the Gleam subject Into, as {Level, Text}, both binaries. The handler runs in
@@ -26,3 +26,11 @@ log(_Event, _Config) ->
 text({string, String}) -> unicode:characters_to_binary(String);
 text({report, Report}) -> unicode:characters_to_binary(io_lib:format("~0p", [Report]));
 text({Format, Arguments}) -> unicode:characters_to_binary(io_lib:format(Format, Arguments)).
+
+primary_level() ->
+    #{level := Level} = logger:get_primary_config(),
+    Level.
+
+set_primary_level(Level) ->
+    ok = logger:set_primary_config(level, Level),
+    nil.

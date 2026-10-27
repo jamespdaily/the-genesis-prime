@@ -79,13 +79,13 @@ pub fn the_live_sessions_auth_recording_replays_to_the_same_steps_test() -> Nil 
 /// The recording replays in a fresh node, where nothing has loaded the
 /// modules whose names its terms hold: the reader must not depend on what ran
 /// before it.
-pub fn the_auth_recording_replays_in_a_fresh_node_test() -> Nil {
+pub fn the_sts_recording_replays_in_a_fresh_node_test() -> Nil {
   use <- owned_test.run(60_000)
   assert fresh_node.run(
       module: "login_replay_test",
-      function: "the_live_sessions_auth_recording_replays_to_the_same_steps_test",
+      function: "the_live_sessions_sts_recording_replays_to_the_same_steps_test",
       timeout_ms: 50_000,
     )
     == Ok(Nil)
-    as "the auth recording replays with nothing loaded before it"
+    as "the STS recording replays with nothing loaded before it"
 }
