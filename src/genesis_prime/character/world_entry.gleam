@@ -84,8 +84,12 @@ pub type State {
   /// The client has the world messages and loads the terrain; the server waits
   /// for 0xF2.
   AwaitingTerrain(unit: PlayerUnit)
+  /// As `AwaitingTerrain`, and the client's 0x635 has come.
+  AwaitingTerrainEchoed(unit: PlayerUnit)
   /// The client has the player in the world.
   Entered
+  /// As `Entered`, and the client's 0x635 has come.
+  EnteredEchoed
 }
 
 /// What can happen to the entry.
@@ -114,6 +118,8 @@ pub type Breach {
   ControlEchoedOutOfOrder
   /// Message 0x635 with a value other than the one message 0x636 carried.
   ControlEchoedWrongValue(value: Int)
+  /// A second message 0x635: the server sent one message 0x636.
+  ControlEchoedTwice
 }
 
 /// What the connection's handler must do, in order.
@@ -169,6 +175,8 @@ fn begin(
     AwaitingMap(_) | AwaitingTerrain(_) | Entered -> #(state, [
       Close(BeganTwice),
     ])
+    AwaitingTerrainEchoed(_) | EnteredEchoed ->
+      todo as "a begin after the echo is a breach"
   }
 }
 
@@ -220,6 +228,8 @@ fn joined(
     Waiting | AwaitingTerrain(_) | Entered -> #(state, [
       Close(AnswerNobodyAskedFor),
     ])
+    AwaitingTerrainEchoed(_) | EnteredEchoed ->
+      todo as "a unit from the map after the echo is a breach"
   }
 }
 
@@ -292,6 +302,8 @@ fn map_refused(state: State) -> #(State, List(Effect)) {
     Waiting | AwaitingTerrain(_) | Entered -> #(state, [
       Close(AnswerNobodyAskedFor),
     ])
+    AwaitingTerrainEchoed(_) | EnteredEchoed ->
+      todo as "a refusal from the map after the echo is a breach"
   }
 }
 
@@ -303,6 +315,8 @@ fn terrain_loaded(state: State) -> #(State, List(Effect)) {
     Waiting | AwaitingMap(_) | Entered -> #(state, [
       Close(TerrainLoadedOutOfOrder),
     ])
+    AwaitingTerrainEchoed(_) | EnteredEchoed ->
+      todo as "0xF2 carries the echo into Entered"
   }
 }
 
@@ -319,6 +333,8 @@ fn control_echoed(
         False -> #(state, [Close(ControlEchoedWrongValue(value))])
       }
     Waiting | AwaitingMap(_) -> #(state, [Close(ControlEchoedOutOfOrder)])
+    AwaitingTerrainEchoed(_) | EnteredEchoed ->
+      todo as "a second echo is a breach"
   }
 }
 
@@ -336,5 +352,6 @@ pub fn describe_breach(breach breach: Breach) -> String {
       "the client sent message 0x635 with the value "
       <> int.to_string(value)
       <> ", which message 0x636 did not carry"
+    ControlEchoedTwice -> todo as "the sentence of a second echo"
   }
 }

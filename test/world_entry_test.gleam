@@ -18,9 +18,9 @@ import genesis_prime/character/server_message.{
 }
 import genesis_prime/character/world_entry.{
   AnswerNobodyAskedFor, AwaitingMap, AwaitingTerrain, BeganTwice, Begin, Close,
-  ControlEchoed, ControlEchoedOutOfOrder, ControlEchoedWrongValue, Entered,
-  Failed, JoinMap, Joined, MapRefused, Send, TerrainLoaded,
-  TerrainLoadedOutOfOrder, Waiting,
+  ControlEchoed, ControlEchoedOutOfOrder, ControlEchoedTwice,
+  ControlEchoedWrongValue, Entered, Failed, JoinMap, Joined, MapRefused, Send,
+  TerrainLoaded, TerrainLoadedOutOfOrder, Waiting,
 }
 import genesis_prime/map/position.{Position}
 import genesis_prime/map/unit.{type PlayerUnit, Newcomer, PlayerUnit}
@@ -388,6 +388,27 @@ pub fn the_echo_of_the_value_0x636_carried_is_accepted_with_no_reply_test() -> N
   })
 }
 
+pub fn a_second_echo_while_the_terrain_loads_closes_the_connection_test() -> Nil {
+  use <- owned_test.run(5000)
+  let the_echo = ControlEchoed(world_entry.control_echo_value)
+  let #(after_first, _) =
+    world_entry.decide(AwaitingTerrain(unit()), the_echo, context())
+  let #(_, effects) = world_entry.decide(after_first, the_echo, context())
+  assert effects == [Close(ControlEchoedTwice)]
+    as "opcode.0x635: the client sends one 0x635 for each 0x636 it handles and the server sent one 0x636, so a second is not the client's"
+}
+
+pub fn a_second_echo_after_the_terrain_loaded_closes_the_connection_test() -> Nil {
+  use <- owned_test.run(5000)
+  let the_echo = ControlEchoed(world_entry.control_echo_value)
+  let #(after_first, _) =
+    world_entry.decide(AwaitingTerrain(unit()), the_echo, context())
+  let #(entered, _) = world_entry.decide(after_first, TerrainLoaded, context())
+  let #(_, effects) = world_entry.decide(entered, the_echo, context())
+  assert effects == [Close(ControlEchoedTwice)]
+    as "opcode.0x635: one 0x635 for each 0x636, however late the second comes"
+}
+
 pub fn an_echo_of_another_value_than_0x636_carried_closes_the_connection_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, effects) =
@@ -524,6 +545,7 @@ pub fn each_breach_has_its_own_sentence_for_the_log_test() -> Nil {
         TerrainLoadedOutOfOrder,
         ControlEchoedOutOfOrder,
         ControlEchoedWrongValue(5),
+        ControlEchoedTwice,
       ],
       fn(breach) { world_entry.describe_breach(breach) },
     )
