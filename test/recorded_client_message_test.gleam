@@ -49,8 +49,8 @@ import gleam/option.{Some}
 import gleam/result
 import owned_test
 import recorded_client.{
-  Bare, CutShort, FramesRead, GameConnectionNotRead, NotDecoded, NotRead,
-  Received, StsMessageRefused, StsRead, Wrapped,
+  Bare, ClearRequestAfterKeyData, CutShort, FramesRead, GameConnectionNotRead,
+  NotDecoded, NotRead, Received, StsMessageRefused, StsRead, Wrapped,
 }
 import recording_support
 import simplifile
@@ -292,6 +292,25 @@ pub fn a_wrapper_ciphered_under_another_key_fails_test() -> Nil {
     recorded_client.read_file(path)
     as "the inner frame deciphered under the base key is not the login request"
   assert failed == path as "the failure names the file"
+}
+
+pub fn a_clear_request_after_key_data_in_the_same_chunk_fails_the_read_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- in_folder
+  // Every byte after the KeyData request is ciphered, so a request read in
+  // the clear after it is never counted as ciphered or passed as read.
+  let key_data = <<
+    "POST /Auth/KeyData STS/1.0\r\ns:2\r\nl:45\r\n\r\n<Request>\n<KeyData>AAAA</KeyData>\n</Request>\n":utf8,
+  >>
+  let ping = <<"POST /Sts/Ping STS/1.0\r\nl:0\r\n\r\n":utf8>>
+  let path =
+    plant(folder:, name: "sts-001.recording", role: Sts, bytes: <<
+      key_data:bits,
+      ping:bits,
+    >>)
+  assert recorded_client.read_file(path)
+    == Error(NotRead(path:, role: Sts, problem: ClearRequestAfterKeyData))
+    as "the Ping after KeyData is reported"
 }
 
 pub fn an_unknown_platform_login_command_fails_test() -> Nil {

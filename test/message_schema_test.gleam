@@ -76,8 +76,9 @@ pub fn a_fixed_value_is_written_by_the_encoder_and_is_no_field_of_the_type_test(
   { name = \"id\", kind = \"unsigned\", bits = 32, evidence = \"x\" },",
     ))
     as "the planted schema parses"
-  let assert [file, _record] = message_generator.generate(schema)
-    as "one message and one record are two modules"
+  let assert [file, _record, _client_message] =
+    message_generator.generate(schema)
+    as "one message and one record are two modules, and the client message module is the third"
   assert string.contains(
     file.text,
     "bit_stream.write_constant(\"kind\", 20, 6)",
@@ -110,8 +111,9 @@ pub fn the_reader_knows_a_value_below_a_limit_and_a_message_sent_both_ways_test(
   let assert [message] = schema.messages as "one message"
   assert message.direction == Both
     as "a message either side sends has the direction both"
-  let assert [file, _record] = message_generator.generate(schema)
-    as "one message and one record are two modules"
+  let assert [file, _record, _client_message] =
+    message_generator.generate(schema)
+    as "one message and one record are two modules, and the client message module is the third"
   assert string.contains(file.text, "either direction")
   assert string.contains(
     file.text,

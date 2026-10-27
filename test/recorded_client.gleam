@@ -78,6 +78,9 @@ pub type Problem {
   WrapperRefused(error: WrapError)
   /// A message did not decode.
   NotDecoded(error: ClientMessageError)
+  /// The platform login sent a request in the clear after its KeyData
+  /// request, where every byte is ciphered.
+  ClearRequestAfterKeyData
   /// The recording ends inside a message: `bytes` bytes of it are there.
   CutShort(bytes: Int)
   /// The recording is of a game connection, which this read does not read.
@@ -129,11 +132,11 @@ fn client_bytes(chunks: List(Chunk)) -> BitArray {
 }
 
 /// Reads requests chunk by chunk until the KeyData request, and counts every
-/// byte after it as ciphered. The reply that finishes the exchange turns RC4
-/// on from the next byte, so a clear request the client sent between the
-/// KeyData request and that reply is counted with the ciphered bytes, and a
-/// chunk holding both the KeyData request and ciphered bytes fails the wire
-/// reader.
+/// byte after it as ciphered. A chunk is read whole, so a chunk that holds
+/// more after the KeyData request fails the read: a clear request there is
+/// reported, and ciphered bytes fail the wire reader. A clear request the
+/// client sent in a later chunk, before the reply that turns RC4 on, is
+/// counted with the ciphered bytes.
 fn read_sts(chunks: List(BitArray)) -> Result(Read, Problem) {
   read_sts_chunks(chunks:, pending: <<>>, requests: [])
 }
@@ -159,13 +162,14 @@ fn read_sts_chunks(
         |> result.map_error(StsMessageRefused),
       )
       let requests = list.append(list.reverse(decoded), requests)
-      case list.any(decoded, is_key_data) {
-        True ->
+      case list.drop_while(decoded, fn(request) { !is_key_data(request) }) {
+        [] -> read_sts_chunks(chunks: later, pending: rest, requests:)
+        [_key_data] ->
           Ok(StsRead(
             requests: list.reverse(requests),
             ciphered_bytes: byte_count([rest, ..later]),
           ))
-        False -> read_sts_chunks(chunks: later, pending: rest, requests:)
+        [_key_data, ..] -> Error(ClearRequestAfterKeyData)
       }
     }
   }

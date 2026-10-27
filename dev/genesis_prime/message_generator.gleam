@@ -2,9 +2,9 @@
 //// module for each under `src/genesis_prime/message/`, with its type, and for
 //// a message `encode` and `decode`, for a record `write` and `read`; and the
 //// `client_message` module, which decodes a message the client sends by its
-//// number. The text
-//// is already in `gleam format`'s layout, so a regenerated file equals the
-//// committed one byte for byte, and `mismatches` names each file that does not.
+//// number. The text is already in `gleam format`'s layout, so a regenerated
+//// file equals the committed one byte for byte, and `mismatches` names each
+//// file that does not.
 
 import genesis_prime/message_schema.{
   type Field, type Kind, type Message, type Record, type Schema,
