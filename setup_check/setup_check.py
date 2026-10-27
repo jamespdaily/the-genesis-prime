@@ -333,15 +333,34 @@ def check_query_process(machine: Machine) -> list[Missing]:
 
 
 def check_table_folder(machine: Machine) -> list[Missing]:
-    """One Missing for each table the client's index lists under DB/ that the
-    table folder (extract_tables.table_folder) does not hold, named by its file
-    name; one Missing for the folder itself when it is not there at all.
+    """One Missing for the table folder (extract_tables.table_folder) when it
+    does not hold every table the client's index lists under DB/, naming each
+    missing table by its file name.
 
     The expected set is the client's own: ClientData.index in the Patch folder
     beside Client64, read with extract_tables.read_index and tables_of, so no
     count or list is written here. Only the names are compared; the contents
-    were checked against the index's SHA-1 when extract_tables published them."""
-    return []
+    were checked against the index's SHA-1 when extract_tables published them.
+    Nothing is reported when the index cannot be read: check_client names that."""
+    if not machine.env.get("WILDSTAR_CLIENT_EXE"):
+        return []
+    index = extract_tables.patch_folder(machine.env) / "ClientData.index"
+    try:
+        listed = extract_tables.tables_of(extract_tables.read_index(index.read_bytes()))
+    except (OSError, ValueError, extract_tables.Corrupt):
+        return []
+    folder = extract_tables.table_folder(machine.env)
+    held = {path.name for path in folder.iterdir()} if folder.is_dir() else set()
+    names = [file.path.split("/", 1)[1] for file in listed]
+    missing = [name for name in names if name not in held]
+    if not missing:
+        return []
+    found = "%d of the %d tables" % (len(names) - len(missing), len(names)) if folder.is_dir() else "no folder"
+    return [Missing(
+        "every table of the client's index in %s" % folder,
+        "%s; missing: %s" % (found, ", ".join(missing)),
+        "extract them: python3.13 -I setup_check/extract_tables.py",
+    )]
 
 
 def _query_failure(message: str) -> Missing:
