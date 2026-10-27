@@ -6,7 +6,8 @@ the real toolchain, the real database or the real client:
 
 - ./setup-check is a stub that succeeds (after PLANT_SETUP_SECONDS, when set);
 - `gleam` and `psql` are stubs that write their command line to PLANT_LOG and
-  succeed, except that `gleam format --check` fails when a file under src,
+  succeed (the `psql` that drops the database takes PLANT_PSQL_DROP_SECONDS
+  first, when set), except that `gleam format --check` fails when a file under src,
   test or dev holds PLANTED_FORMAT_ERROR, and any `gleam` run of tests (a `test`
   or a `run -m` of a module other than glinter, squirrel, table_generator and
   generate_messages) fails when a file under test/code_rule holds PLANTED_BREACH;
@@ -54,6 +55,7 @@ NOT_TEST_RUNS = ("glinter", "squirrel", "genesis_prime/table_generator", "genesi
 
 GLEAM_STUB = """#!/bin/sh
 echo "gleam $*" >>"$PLANT_LOG"
+echo "gleam $* GENESIS_TEST_SKIP_SERIAL=$GENESIS_TEST_SKIP_SERIAL" >>"$PLANT_LOG.environment"
 case "$1" in
   format)
     if grep -rq PLANTED_FORMAT_ERROR src test dev 2>/dev/null; then
@@ -81,6 +83,11 @@ exit 0
 
 PSQL_STUB = """#!/bin/sh
 echo "psql $*" >>"$PLANT_LOG"
+case "$*" in
+  *"drop database"*)
+    [ -n "$PLANT_PSQL_DROP_SECONDS" ] && sleep "$PLANT_PSQL_DROP_SECONDS"
+    ;;
+esac
 exit 0
 """
 
@@ -232,6 +239,11 @@ class PlantedCheckCase(unittest.TestCase):
             self.fail("the check had not ended after %s seconds" % timeout)
         return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
 
+    def environment_log(self) -> str:
+        """The gleam commands with the value of GENESIS_TEST_SKIP_SERIAL each saw."""
+        path = Path(str(self.log) + ".environment")
+        return path.read_text() if path.exists() else ""
+
     def commands(self) -> list[str]:
         return [line for line in self.log.read_text().splitlines() if line.strip()]
 
@@ -382,6 +394,23 @@ class HungPartTest(PlantedCheckCase):
         seconds = self.hang()
         done, took = self.run_hung(seconds, PLANT_SETUP_SUITE_SECONDS=seconds)
         self.assertTrue(any("drop database" in command for command in self.commands()), self.commands())
+
+    def test_a_database_drop_that_hangs_does_not_hold_the_check_past_its_budget(self):
+        # Postgres stops answering: the psql that drops the database at the end
+        # would wait for ever. The drop is bounded, and what it started is ended.
+        seconds = self.hang()
+        done, took = self.run_hung(seconds, PLANT_SETUP_SUITE_SECONDS=seconds, PLANT_PSQL_DROP_SECONDS=seconds)
+        self.assert_stopped_at_the_budget(done, took, seconds, "setup-suite")
+        self.assertTrue(any("drop database" in command for command in self.commands()), "the drop was tried")
+
+    def test_a_database_drop_that_hangs_does_not_hold_a_check_that_ended_in_time(self):
+        seconds = self.hang()
+        started = time.monotonic()
+        done = self.run_check(timeout=30, PLANT_PSQL_DROP_SECONDS=seconds)
+        took = time.monotonic() - started
+        self.assertEqual(done.returncode, 0, self.output(done))
+        self.assertLess(took, self.FEW_SECONDS + 4, "the check waited %.1f s for the drop" % took)
+        self.assertEqual(self.left_running(seconds), [], "the planted sleep is still running")
 
     def test_a_gleam_run_that_hangs_is_stopped_with_what_it_started(self):
         # The sleep is a grandchild of the check: its subshell runs `gleam`, which runs it.
@@ -611,6 +640,36 @@ class FastModeTest(PlantedCheckCase):
         output = self.output(done)
         self.assertNotEqual(done.returncode, 0, output)
         self.assertRegex(self.failed_line(output), r"gleam-build")
+
+
+class SerialTestsTest(PlantedCheckCase):
+    """Tests that share a machine-wide resource (a child node's epmd and ports)
+    are tagged `serial`: the test run skips them while it runs the others
+    together (GENESIS_TEST_SKIP_SERIAL=1), and a second run, with no workers,
+    runs only them one at a time (`gleam test -- --tag serial`)."""
+
+    def test_the_full_check_runs_the_serial_tests_in_a_second_run_one_at_a_time(self):
+        done = self.run_check()
+        self.assertEqual(done.returncode, 0, self.output(done))
+        suites = [c for c in self.commands() if c.startswith("gleam test")]
+        self.assertEqual(suites, ["gleam test -- --workers 1", "gleam test -- --tag serial"])
+
+    def test_the_run_of_the_other_tests_skips_the_serial_ones(self):
+        self.run_check()
+        runs = [line for line in self.environment_log().splitlines() if line.startswith("gleam test")]
+        self.assertEqual(runs[0], "gleam test -- --workers 1 GENESIS_TEST_SKIP_SERIAL=1")
+        self.assertEqual(runs[1], "gleam test -- --tag serial GENESIS_TEST_SKIP_SERIAL=")
+
+    def test_a_failure_in_the_serial_run_fails_the_gleam_test_part(self):
+        executable(self.root / "tools" / "gleam", GLEAM_STUB.replace(
+            'if [ "$1" = test ] &&', 'if [ "$*" = "test -- --tag serial" ]; then exit 1; fi\nif [ "$1" = test ] &&'))
+        done = self.run_check()
+        self.assertNotEqual(done.returncode, 0, self.output(done))
+        self.assertRegex(self.failed_line(self.output(done)), r"\bgleam-test\b")
+
+    def test_the_fast_check_runs_no_serial_run(self):
+        self.run_check("fast")
+        self.assertFalse([c for c in self.commands() if "--tag serial" in c])
 
 
 class WorkerCountTest(PlantedCheckCase):
