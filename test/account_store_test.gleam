@@ -18,7 +18,7 @@ import database_support
 import genesis_prime/login/guid
 import genesis_prime/service/shell.{ToWorker}
 import genesis_prime/store.{
-  Account, AccountFound, AccountId, FindAccount, NoSuchAccount,
+  Account, AccountFound, AccountId, FindAccount, NoSuchAccount, Unavailable,
 }
 import genesis_prime/store/worker
 import gleam/dynamic/decode
@@ -123,10 +123,20 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 3)
   let workers = process.new_subject()
+  // The connection's directory reports the worker and waits for the test to
+  // have its monitor on it, so the worker's end is seen as `shutdown` however
+  // slow the machine is: the asker ends the worker only after the report.
   let server =
     start_asker(store, fn(sent) {
       case sent {
-        ToWorker(pid:) -> process.send(workers, pid)
+        ToWorker(pid:) -> {
+          let monitored = process.new_subject()
+          process.send(workers, #(pid, monitored))
+          let assert Ok(Nil) =
+            process.receive(monitored, within: ask_support.event_wait_ms)
+            as "the test monitored the worker"
+          Nil
+        }
         shell.ToService(..) -> Nil
       }
     })
@@ -134,11 +144,12 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
   // A transaction in another connection locks the table, so the query waits.
   let release = lock_table(store.pool)
   ask_support.command(client, ask_support.store_command, 1, wait_ms: 300)
-  let _asked = ask_support.read_record(client)
-  let assert Ok(worker_pid) =
+  let assert Ok(#(worker_pid, monitored)) =
     process.receive(workers, within: ask_support.event_wait_ms)
     as "the ask started a worker"
   let worker_ended = process.monitor(worker_pid)
+  process.send(monitored, Nil)
+  let _asked = ask_support.read_record(client)
   let outcome = ask_support.read_record(client)
   assert outcome.code == asking_rule.code_no_answer_in_time
     as "the query was still waiting for the lock at the deadline"
@@ -179,6 +190,56 @@ pub fn a_worker_that_crashes_gives_ended_before_answer_and_the_store_goes_on_ser
   assert next.code == asking_rule.code_no_such_account
     as "the store answers the next ask"
   ask_support.stop(server)
+  stop(store)
+}
+
+pub fn with_the_stores_supervisor_not_running_an_ask_to_the_store_gives_not_running_and_the_connection_goes_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // No process is started under this name.
+  let absent = process.new_name("store")
+  let server =
+    ask_support.start(
+      directory: ask_support.directory(
+        gate: process.new_name("gate"),
+        store: Some(absent),
+        sent: ask_support.unreported,
+      ),
+      shutdown_ms: 1000,
+      recorder: None,
+      with: fn(builder) { builder },
+    )
+  let client = ask_support.connect(server)
+  ask_support.command(
+    client,
+    ask_support.store_command,
+    1,
+    wait_ms: ask_support.patient,
+  )
+  let _asked = ask_support.read_record(client)
+  let outcome = ask_support.read_record(client)
+  assert outcome.code == asking_rule.code_not_running
+    as "no process holds the store's name"
+  ask_support.command(client, ask_support.ping_command, 9, wait_ms: 0)
+  assert ask_support.read_pong(client) == <<0x70, 9>>
+    as "the connection goes on"
+  ask_support.stop(server)
+}
+
+pub fn with_the_database_pool_not_running_an_ask_to_the_store_gives_unavailable_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // The store runs on a pool name no process holds.
+  let pool = pog.named_connection(process.new_name("absent_pool"))
+  let name = process.new_name("store")
+  let assert Ok(started) =
+    supervisor.new(supervisor.OneForOne)
+    |> supervisor.add(worker.supervised(name:, pool:))
+    |> supervisor.start
+    as "the store started"
+  process.unlink(started.pid)
+  ask_support.guard(started.pid)
+  let store = Store(tree: started.pid, pool:, name:)
+  assert ask(store, "login-1") == Unavailable
+    as "the pool is not running, so the query cannot reach the database"
   stop(store)
 }
 
@@ -223,6 +284,7 @@ fn start_store_on(config: pog.Config) -> Store {
     |> supervisor.start
     as "the pool and the store started"
   process.unlink(started.pid)
+  ask_support.guard(started.pid)
   Store(tree: started.pid, pool:, name:)
 }
 

@@ -34,7 +34,32 @@ const short = 300
 pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_bytes_sent_during_the_ask_come_after_it_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with_gate(gate, None)
+  // The directory, which runs in the connection's process, reports that it was
+  // called and waits for the test to say it has read the step's write. A shell
+  // that made the ask before carrying out the step's effects would block here
+  // before writing, and the test's read of the write would time out.
+  let calls = process.new_subject()
+  let reaching_the_gate =
+    ask_support.directory(gate:, store: None, sent: ask_support.unreported)
+  let server =
+    ask_support.start(
+      directory: fn(request, reply) {
+        let acknowledged = process.new_subject()
+        process.send(calls, acknowledged)
+        let assert Ok(Nil) =
+          process.receive(acknowledged, within: ask_support.event_wait_ms)
+          as "the test read the step's write before the directory went on"
+        reaching_the_gate(request, reply)
+      },
+      shutdown_ms: 1000,
+      recorder: None,
+      with: fn(builder) {
+        supervisor.add(
+          builder,
+          ask_support.gate(name: gate, shutdown_ms: 1000, recorder: None),
+        )
+      },
+    )
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -42,9 +67,13 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
     1,
     wait_ms: ask_support.patient,
   )
+  let assert Ok(acknowledged) =
+    process.receive(calls, within: ask_support.event_wait_ms)
+    as "the shell reached the directory"
   let asked = ask_support.read_record(client)
   assert asked.letter == asking_rule.asked && asked.ask == 1
-    as "the step's own write comes before the ask is made"
+    as "the step's own write was carried out before the ask was made"
+  process.send(acknowledged, Nil)
   // The client sends while the ask is open; the shell reads it only after the
   // outcome, since the socket is not read again while the shell waits.
   ask_support.command(client, ask_support.ping_command, 7, wait_ms: 0)
@@ -244,6 +273,25 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_steps_with_no_other_proc
     as "every recorded step is the step the rule gives again"
   assert list.last(records) == Ok(End(count:))
     as "End counts the inputs the replay folded"
+}
+
+pub fn a_connection_step_of_stop_then_write_still_writes_the_bytes_before_the_socket_closes_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let gate = process.new_name("gate")
+  let server = start_with_gate(gate, None)
+  let client = ask_support.connect(server)
+  ask_support.command(
+    client,
+    ask_support.stop_then_write_command,
+    4,
+    wait_ms: 0,
+  )
+  assert ask_support.read_pong(client) == <<0x71, 4>>
+    as "the write after Stop reached the client"
+  assert mug.receive(client, timeout_milliseconds: ask_support.event_wait_ms)
+    == Error(mug.Closed)
+    as "and the socket closed after it"
+  ask_support.stop(server)
 }
 
 // ---- helpers ----

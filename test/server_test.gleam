@@ -40,6 +40,7 @@ pub fn the_tree_starts_the_pool_the_store_and_the_hand_off_in_that_order_each_wi
     )
   let assert Ok(started) = server.start(settings) as "the tree started"
   process.unlink(started.pid)
+  ask_support.guard(started.pid)
   assert pool_started.await(pool_name, within_ms: 30_000)
     as "the pool opened its connections"
   let assert Ok(pool) = process.named(pool_name) as "the pool is registered"

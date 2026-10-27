@@ -10,6 +10,7 @@
 //// 'O' n   ask the gate to open key n    'I'     ask the gate to ignore the ask
 //// 'C'     ask the gate to crash         'S' n   ask the store for "login-n"
 //// 'P' n   no ask: write the pong 'p' n at once
+//// 'Q' n   no ask: the step is `Stop` and then a write of 'q' n
 //// ```
 ////
 //// Each record the rule writes is twelve bytes: a letter, the ask's number
@@ -184,6 +185,10 @@ fn run(
         Write(<<0x70, n>>),
         ..written
       ])
+    <<0x51, n, _wait:16, rest:bytes>> -> #(
+      State(..state, pending: rest),
+      Effects(list.reverse([Write(<<0x71, n>>), Stop, ..written])),
+    )
     <<0x45, n, wait:16, rest:bytes>> ->
       ask(
         state:,

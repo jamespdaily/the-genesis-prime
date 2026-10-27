@@ -24,8 +24,11 @@
 //// - **A failed write.** The step's later effects are not carried out; the
 ////   next input is `Socket(WriteFailed(_))`. A write that does not finish
 ////   within the send deadline fails as `SendTimedOut` and closes the socket.
-//// - **Stop.** The shell closes the socket, the recorder writes `End` with
-////   the count of inputs, and the process ends normally. Bytes still queued
+//// - **Stop.** The shell carries out the rest of the step's effects in order,
+////   closes the socket, the recorder writes `End` with the count of inputs,
+////   and the process ends normally; a step with a `Stop` makes no ask, and a
+////   failed write after the `Stop` is logged as a warning, closes the socket
+////   and ends the process with no `WriteFailed` input. Bytes still queued
 ////   get the send deadline, in whole seconds, to go out before the close drops
 ////   them. A rule must return
 ////   `Stop` after `PeerClosed` or `ReadFailed`, since no other socket input
@@ -67,9 +70,11 @@
 ////   an answer or DOWN of no kept tag   ─▶ dropped
 //// ```
 ////
-////   A step that follows `StoppedWaiting` and ends in another ask does not
-////   make it: `Stopping` is the next input. A worker answers late only when
-////   its answer left before the shell's exit reached it. The `Now` of `Answered` is read when the outcome is known.
+////   A step that follows `StoppedWaiting` and ends in another ask gets
+////   `Answered(_, StoppedWaiting)` at once, with no call to the directory, so
+////   every ask has one `Answered`; `Stopping` is the next input after a step
+////   that ends without an ask. A worker answers late only when its answer left
+////   before the shell's exit reached it. The `Now` of `Answered` is read when the outcome is known.
 ////   Bytes the client sent during the ask are read only after it, since the
 ////   socket is active once and is not re-armed while the shell waits.
 //// - **The directory's own wait.** `directory` runs before the wait begins,
@@ -92,8 +97,8 @@ import genesis_prime/step.{
   type About, type Ask, type AskId, type Effect, type Event, type LogLevel,
   type Peer, type Rule, type SocketFailure, About, Accepted, Answer, Answered,
   AnsweredLate, ConnectionId, Effects, EffectsThenAsk, EndedBeforeAnswer, Input,
-  LogError, NoAnswerInTime, NotRunning, Now, PeerClosed, ReadFailed, Socket,
-  StoppedWaiting, Stopping, WriteFailed,
+  LogError, LogWarning, NoAnswerInTime, NotRunning, Now, PeerClosed, ReadFailed,
+  SendTimedOut, Socket, StoppedWaiting, Stopping, WriteFailed,
 }
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
@@ -232,44 +237,77 @@ fn take(
   }
   let running = Running(..running, state:, writer:)
   case step {
-    Effects(effects:) -> carry(running:, effects:, ask: None)
-    EffectsThenAsk(effects:, ask:) -> carry(running:, effects:, ask: Some(ask))
+    Effects(effects:) -> carry(running:, effects:, then: WaitForInput)
+    EffectsThenAsk(effects:, ask:) ->
+      carry(running:, effects:, then: MakeAsk(ask))
   }
 }
 
-/// Carries out the effects in order, then makes the ask if there is one, or
-/// waits for the next input. A stop that arrived during an ask is the next
-/// input before either.
+/// What the shell does once a step's effects are carried out.
+type Then(request) {
+  /// Take the next input.
+  WaitForInput
+  /// Make this ask and wait for its outcome.
+  MakeAsk(ask: Ask(request))
+  /// End the process: the step held a `Stop`, which drops its ask.
+  EndProcess
+}
+
+/// Carries out the effects in order, then does what `then` says. A `Stop`
+/// among the effects does not end the step: the effects after it are carried
+/// out, then the process ends. A failed write after a `Stop` closes the socket
+/// and ends the process, without a `WriteFailed` input, since the rule asked
+/// to end. When a stop arrived during an earlier ask, a step that ends in an
+/// ask gets `Answered(_, StoppedWaiting)` at once without the directory being
+/// called, and the stop is the next input after a step that ends without an
+/// ask.
 fn carry(
   running running: Running(settings, state, message, answer, outgoing, request),
   effects effects: List(Effect(outgoing)),
-  ask ask: Option(Ask(request)),
+  then then: Then(request),
 ) -> Nil {
   case effects {
     [] ->
-      case running.stopping, ask {
-        Some(deadline_ms), _ ->
+      case then, running.stopping {
+        EndProcess, _ -> stop(running)
+        MakeAsk(ask:), None -> make_ask(running, ask)
+        MakeAsk(ask:), Some(_) ->
+          take(
+            running:,
+            now: now(),
+            event: Answered(ask: ask.ask, outcome: StoppedWaiting),
+          )
+        WaitForInput, None -> wait(running)
+        WaitForInput, Some(deadline_ms) ->
           take(
             running: Running(..running, stopping: None),
             now: now(),
             event: Stopping(deadline_ms:),
           )
-        None, None -> wait(running)
-        None, Some(ask) -> make_ask(running, ask)
       }
     [effect, ..later] ->
       case effect {
         step.Write(bytes:) ->
-          case send(running.socket, bytes) {
-            Ok(Nil) -> carry(running:, effects: later, ask:)
-            Error(failure) ->
+          case send(running.socket, bytes), then {
+            Ok(Nil), _ -> carry(running:, effects: later, then:)
+            Error(failure), EndProcess -> {
+              log(
+                LogWarning,
+                "a write after the rule's Stop failed ("
+                  <> describe_failure(failure)
+                  <> "), so the connection ends",
+                no_one(),
+              )
+              stop(running)
+            }
+            Error(failure), MakeAsk(..) | Error(failure), WaitForInput ->
               take(running:, now: now(), event: Socket(WriteFailed(failure:)))
           }
         step.Log(line:) -> {
           log(line.level, line.text, line.about)
-          carry(running:, effects: later, ask:)
+          carry(running:, effects: later, then:)
         }
-        step.Stop -> stop(running)
+        step.Stop -> carry(running:, effects: later, then: EndProcess)
         step.Send(..) -> not_built(running.socket, "Send")
         step.Reply(..) -> not_built(running.socket, "Reply")
         step.Watch(..) -> not_built(running.socket, "Watch")
@@ -428,6 +466,15 @@ fn stop(
         Ok(Nil) -> Nil
         Error(error) -> log_recording_failure(error)
       }
+  }
+}
+
+fn describe_failure(failure: SocketFailure) -> String {
+  case failure {
+    step.Closed -> "the socket was closed"
+    step.Reset -> "the peer reset the connection"
+    SendTimedOut -> "the write timed out"
+    step.OtherSocketFailure(reason:) -> reason
   }
 }
 

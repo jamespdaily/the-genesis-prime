@@ -44,7 +44,8 @@
 //// - **The server stopping.** The shell traps exits, so the supervisor's stop
 ////   arrives as `Stopping`, with a deadline of the child's shutdown time from
 ////   when it arrived. A rule that has not stopped by then is killed.
-//// - **Stop.** The process exits with the reason `shutdown`, never `normal`:
+//// - **Stop.** The shell carries out the step's other effects, then the
+////   process exits with the reason `shutdown`, never `normal`:
 ////   a supervisor reports a permanent child that exits `normal` while it
 ////   shuts down as a failure, and restarts one that exits `shutdown` at any
 ////   other time.
@@ -282,18 +283,24 @@ fn take(
   }
   let running = Running(..running, state:, writer:)
   case step {
-    Effects(effects:) -> carry(running, effects)
+    Effects(effects:) -> carry(running:, effects:, ending: False)
     EffectsThenAsk(..) -> refused("an ask")
   }
 }
 
-/// Carries out the effects in order.
+/// Carries out the effects in order. A `Stop` among them does not end the
+/// step: the effects after it are carried out, then the process ends.
 fn carry(
-  running: Running(settings, state, message, outgoing),
-  effects: List(step.Effect(outgoing)),
+  running running: Running(settings, state, message, outgoing),
+  effects effects: List(step.Effect(outgoing)),
+  ending ending: Bool,
 ) -> Running(settings, state, message, outgoing) {
   case effects {
-    [] -> running
+    [] ->
+      case ending {
+        True -> stop(running)
+        False -> running
+      }
     [effect, ..later] ->
       case effect {
         step.Reply(caller: CallerId(number), answer:) ->
@@ -301,11 +308,12 @@ fn carry(
             Ok(reply) -> {
               reply(answer)
               carry(
-                Running(
+                running: Running(
                   ..running,
                   callers: dict.delete(running.callers, number),
                 ),
-                later,
+                effects: later,
+                ending:,
               )
             }
             Error(Nil) ->
@@ -313,9 +321,9 @@ fn carry(
           }
         step.Log(line:) -> {
           log(line.level, line.text, line.about)
-          carry(running, later)
+          carry(running:, effects: later, ending:)
         }
-        step.Stop -> stop(running)
+        step.Stop -> carry(running:, effects: later, ending: True)
         step.Write(..) -> refused("Write")
         step.Send(..) -> refused("Send")
         step.Watch(..) -> refused("Watch")

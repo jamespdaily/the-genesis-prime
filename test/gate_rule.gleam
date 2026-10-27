@@ -24,6 +24,8 @@ pub type Message {
   Open(key: Int)
   /// Take the ask and never answer it.
   Ignore
+  /// The step is `Stop` and then a reply: the caller is still answered.
+  StopThenReply
   /// The rule crashes.
   Crash
   /// The rule returns `Send`, which a service shell refuses.
@@ -109,6 +111,7 @@ fn asked(
       )
     }
     Ignore -> #(state, Effects([]))
+    StopThenReply -> #(state, Effects([Stop, Reply(caller, Echoed(9))]))
     Crash -> panic as "the planted crash"
     TrySend -> #(state, Effects([Send(Echoed(0))]))
     TryWatch -> #(state, Effects([Watch(WatchId(1), Sessions)]))

@@ -170,9 +170,9 @@ pub type Outcome(answer) {
   NoAnswerInTime
   /// The asked process ended before it answered.
   EndedBeforeAnswer
-  /// The server began stopping, so the shell stopped waiting; `Stopping` is
-  /// the next input. Nothing is known about whether the asked process acted;
-  /// an answer after it comes as `AnsweredLate`.
+  /// The server began stopping, so the shell stopped waiting; `Stopping`
+  /// follows once a step ends without an ask. Nothing is known about whether
+  /// the asked process acted; an answer after it comes as `AnsweredLate`.
   StoppedWaiting
 }
 

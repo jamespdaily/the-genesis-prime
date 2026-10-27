@@ -47,6 +47,8 @@ pub const store_command = 0x53
 
 pub const ping_command = 0x50
 
+pub const stop_then_write_command = 0x51
+
 /// A running listener and the tree it started under.
 pub type Server {
   Server(supervisor: Pid, name: String, port: Int)
@@ -87,8 +89,63 @@ pub fn start(
     |> supervisor.start
     as "the tree started"
   process.unlink(started.pid)
+  guard(started.pid)
   let assert Ok(port) = listener.port(name) as "the listener has a port"
   Server(supervisor: started.pid, name:, port:)
+}
+
+/// Why a guardian wakes.
+type Guarded {
+  OwnerEnded
+  TreeEnded
+}
+
+/// Stops the tree when the calling process ends, however it ends, so a test
+/// whose assertion fails leaves no supervisor, listener or service running.
+/// The tree is unlinked from the caller, since the caller does not trap the
+/// exit its stop gives; a guardian of its own watches both.
+pub fn guard(tree: Pid) -> Nil {
+  let owner = process.self()
+  let _guardian =
+    process.spawn_unlinked(fn() {
+      let selector =
+        process.new_selector()
+        |> process.select_specific_monitor(process.monitor(owner), fn(_down) {
+          OwnerEnded
+        })
+        |> process.select_specific_monitor(process.monitor(tree), fn(_down) {
+          TreeEnded
+        })
+      case process.selector_receive_forever(selector) {
+        OwnerEnded -> {
+          let _reason = stop_tree(tree)
+          Nil
+        }
+        TreeEnded -> Nil
+      }
+    })
+  Nil
+}
+
+/// Waits until a process other than `old` holds the name, and returns it. A
+/// supervisor that restarts a service does so within milliseconds; the wait
+/// is bounded, so a service that is never restarted fails the test.
+pub fn await_new_pid(
+  name name: Name(message),
+  not old: Pid,
+  within_ms within_ms: Int,
+) -> Pid {
+  case process.named(name) {
+    Ok(pid) if pid != old -> pid
+    Ok(_) | Error(Nil) ->
+      case within_ms > 0 {
+        True -> {
+          process.sleep(1)
+          await_new_pid(name:, not: old, within_ms: within_ms - 1)
+        }
+        False -> panic as "no other process took the name in time"
+      }
+  }
 }
 
 /// Sends the tree the exit the server's own stop sends, and watches it.

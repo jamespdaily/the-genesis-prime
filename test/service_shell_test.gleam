@@ -218,11 +218,12 @@ pub fn a_crash_in_the_rule_restarts_it_empty_and_an_ask_made_meanwhile_gets_ende
   let crashed = ask_support.read_record(client)
   assert crashed.code == asking_rule.code_ended_before_answer
     as "the ask the gate crashed on ends with its process"
-  // The supervisor answers only after the exit it was sent, so it has
-  // restarted the gate when this returns.
-  let _children = supervisor_children.in_start_order(server.supervisor)
-  let assert Ok(second) = process.named(gate) as "the supervisor restarted it"
-  assert second != first as "a new process holds the name"
+  let _restarted =
+    ask_support.await_new_pid(
+      name: gate,
+      not: first,
+      within_ms: ask_support.event_wait_ms,
+    )
   ask_support.command(client, ask_support.await_command, 5, wait_ms: 300)
   let _asked = ask_support.read_record(client)
   let waited = ask_support.read_record(client)
@@ -270,6 +271,28 @@ pub fn a_refused_effect_ends_the_process_with_an_error_log_test() -> Nil {
   )
 }
 
+pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_process_ends_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let gate = process.new_name("gate")
+  let tree =
+    start_tree(ask_support.gate(name: gate, shutdown_ms: 1000, recorder: None))
+  let assert Ok(pid) = process.named(gate) as "the gate runs"
+  let service = process.monitor(pid)
+  let replies = process.new_subject()
+  let assert Ok(service_shell.ToService(_)) =
+    service_shell.call(gate, gate_rule.StopThenReply, fn(answer) {
+      process.send(replies, answer)
+    })
+    as "the gate took the ask"
+  assert process.receive(replies, within: ask_support.event_wait_ms)
+    == Ok(gate_rule.Echoed(9))
+    as "the reply after Stop was carried out"
+  assert ask_support.ended(service) == shutdown()
+    as "and then the process ended with the reason shutdown"
+  let _reason = ask_support.stop_tree(tree)
+  Nil
+}
+
 // ---- helpers ----
 
 fn start_tree(child: ChildSpecification(Nil)) -> process.Pid {
@@ -280,6 +303,7 @@ fn start_tree(child: ChildSpecification(Nil)) -> process.Pid {
     |> supervisor.start
     as "the tree started"
   process.unlink(started.pid)
+  ask_support.guard(started.pid)
   started.pid
 }
 

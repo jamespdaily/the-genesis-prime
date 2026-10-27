@@ -20,8 +20,9 @@
 ////   the worker runs its query after, so `start_child`, a supervisor call with
 ////   no timeout, waits only for the starts queued before it.
 //// - **The store not running.** `start_child` on a name no process holds
-////   exits the caller with `noproc` rather than returning an error; `ask`
-////   catches that exit, and only that one, as `Error(Nil)`.
+////   exits the caller with `{noproc, {gen_server, call, _}}` rather than
+////   returning an error; `ask` catches that exit, and only that one, as
+////   `Error(Nil)`.
 //// - **Failures.** pog's `ConnectionUnavailable` and `QueryTimeout` answer
 ////   `Unavailable`, and so does the pool not running: pgo's checkout exits
 ////   with `{noproc, {pgo_pool, checkout, _}}` then, which the worker catches,
@@ -74,7 +75,7 @@ pub fn ask(
   reply reply: fn(Answer) -> Nil,
 ) -> Result(Sent, Nil) {
   case
-    unless_not_running(fn() {
+    unless_supervisor_not_running(fn() {
       factory_supervisor.start_child(
         factory_supervisor.get_by_name(store),
         Job(request:, reply:),
@@ -97,7 +98,7 @@ fn start_worker(job: Job, pool: pog.Connection) -> actor.StartResult(Nil) {
 fn run(job: Job, pool: pog.Connection) -> Nil {
   let FindAccount(login_name:) = job.request
   let answer = case
-    unless_not_running(fn() { sql.find_account(pool, login_name) })
+    unless_pool_not_running(fn() { sql.find_account(pool, login_name) })
   {
     // The pool is not running, as when it restarts.
     Error(Nil) -> Unavailable
@@ -126,8 +127,11 @@ fn run(job: Job, pool: pog.Connection) -> Nil {
   job.reply(answer)
 }
 
-@external(erlang, "store_worker_ffi", "unless_not_running")
-fn unless_not_running(run: fn() -> a) -> Result(a, Nil)
+@external(erlang, "store_worker_ffi", "unless_supervisor_not_running")
+fn unless_supervisor_not_running(run: fn() -> a) -> Result(a, Nil)
+
+@external(erlang, "store_worker_ffi", "unless_pool_not_running")
+fn unless_pool_not_running(run: fn() -> a) -> Result(a, Nil)
 
 /// Ends the worker with the error as its exit reason. The account query
 /// failing in the database or in decoding its rows is a bug in the query or the
