@@ -9,20 +9,21 @@ set -euo pipefail
 
 mode=${1:-}
 case "$mode" in
-  code) [ $# -eq 4 ] || { sed -n '2,7p' "$0"; exit 2; }; base=$2; commit=$3; text=$4 ;;
-  ask) [ $# -eq 3 ] || { sed -n '2,7p' "$0"; exit 2; }; commit=$2; text=$3 ;;
+  code) [ $# -eq 4 ] || { sed -n '2,7p' "$0"; exit 2; }; base_name=$2; commit_name=$3; text=$4 ;;
+  ask) [ $# -eq 3 ] || { sed -n '2,7p' "$0"; exit 2; }; commit_name=$2; text=$3 ;;
   *) sed -n '2,7p' "$0"; exit 2 ;;
 esac
 
-git rev-parse --verify --quiet "$commit^{commit}" >/dev/null || { echo "codex_review: no commit $commit" >&2; exit 1; }
-[ "$mode" = ask ] || git rev-parse --verify --quiet "$base^{commit}" >/dev/null || { echo "codex_review: no commit $base" >&2; exit 1; }
+# Names like HEAD~1 mean another commit inside the worktree, so both are fixed as hashes first.
+commit=$(git rev-parse --verify --quiet "$commit_name^{commit}") || { echo "codex_review: no commit $commit_name" >&2; exit 1; }
+[ "$mode" = ask ] || base=$(git rev-parse --verify --quiet "$base_name^{commit}") || { echo "codex_review: no commit $base_name" >&2; exit 1; }
 
 worktree=$(mktemp -d "${TMPDIR:-/tmp}/codex-review-XXXXXX")
 rmdir "$worktree"
 git worktree add --detach "$worktree" "$commit" >/dev/null
 
 remove() {
-  git worktree remove --force "$worktree" 2>/dev/null || echo "codex_review: could not remove the worktree $worktree" >&2
+  git worktree remove --force "$worktree" 2>/dev/null || { echo "codex_review: could not remove the worktree $worktree" >&2; exit 1; }
 }
 trap remove EXIT
 trap 'exit 130' INT TERM

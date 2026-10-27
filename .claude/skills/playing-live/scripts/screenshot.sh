@@ -16,7 +16,19 @@ options=(-o BatchMode=yes -o ConnectTimeout=10)
 
 on_pc() { ssh "${options[@]}" "$GENESIS_PLAY_PC" "$1"; }
 delete_task() { on_pc 'schtasks /Delete /F /TN GenesisShot >NUL 2>&1' || true; }
-trap delete_task EXIT
+# The task is gone when the PC no longer finds it; anything else fails the run.
+finish() {
+  local status=$?
+  local query=0
+  delete_task
+  on_pc 'schtasks /Query /TN GenesisShot >NUL 2>&1' || query=$?
+  case $query in
+    0) echo "screenshot: the GenesisShot task is still on the PC; delete it there" >&2; exit 1 ;;
+    255) echo "screenshot: could not reach the PC to check the GenesisShot task is gone" >&2; exit 1 ;;
+  esac
+  exit $status
+}
+trap finish EXIT
 
 rm -f "$destination"
 scp -q "${options[@]}" "$here/genesis-shot.ps1" "$GENESIS_PLAY_PC:C:/Users/$user/genesis-shot.ps1"
@@ -30,7 +42,7 @@ for _ in $(seq 1 "${SCREENSHOT_SECONDS:-30}"); do
   sleep 1
 done
 case "$result" in
-  printwindow=*) ;;
+  printwindow=True*) ;;
   "") echo "screenshot: no picture after ${SCREENSHOT_SECONDS:-30} s" >&2; exit 1 ;;
   *) echo "screenshot: $result" >&2; exit 1 ;;
 esac

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Files and moves cards on the project board, so no one looks up the board's ids.
 #
-#   dev/card.sh file --title T --body-file F --milestone M --parent N --after S --status STATUS
+#   dev/card.sh file --title T --body-file F --milestone M --parent N [--after S] --status STATUS
 #   dev/card.sh status N STATUS
 #   dev/card.sh move N --parent P [--after S]
 #   dev/card.sh order N --after S
 #
 # STATUS is one of: "To do", "In progress", "Waiting on Jim", "Done".
-# N, P and S are issue numbers; S is the sibling the card goes right after.
+# N, P and S are issue numbers; S is the sibling the card goes right after (without it, last).
 set -euo pipefail
 
 owner=jamespdaily
@@ -76,19 +76,20 @@ case "$command" in
       esac
       shift 2
     done
-    : "${title:?--title}" "${body:?--body-file}" "${milestone:?--milestone}" "${parent:?--parent}" "${after:?--after}" "${status:?--status}"
+    after=${after:-}
+    : "${title:?--title}" "${body:?--body-file}" "${milestone:?--milestone}" "${parent:?--parent}" "${status:?--status}"
     [ -f "$body" ] || fail "no body file $body"
     option_of "$status" >/dev/null
-    require_sibling "$parent" "$after"
-    existing=$(gh issue list -R "$owner/$repo" --state open --search "in:title $title" --json number,title \
-      --jq ".[] | select(.title == \"$title\") | .number")
+    [ -z "$after" ] || require_sibling "$parent" "$after"
+    existing=$(gh issue list -R "$owner/$repo" --state open --search "in:title $title" --json number,title |
+      jq -r --arg title "$title" '.[] | select(.title == $title) | .number')
     [ -z "$existing" ] || fail "an open issue already has this title: #$existing"
     url=$(gh issue create -R "$owner/$repo" --title "$title" --milestone "$milestone" --body-file "$body")
     number=${url##*/}
     step=add-to-parent
     trap 'echo "card: #$number was created; not done from: $step" >&2' ERR
     add_under "$number" "$parent"
-    step=order; place_after "$number" "$parent" "$after"
+    step=order; [ -z "$after" ] || place_after "$number" "$parent" "$after"
     step=status; set_status "$number" "$status"
     trap - ERR
     echo "$url"
