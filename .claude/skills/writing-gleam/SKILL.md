@@ -40,6 +40,7 @@ Length alone is never a reason to split; shared state and shared types are.
 - Split around a type with rules of its own, behind a small API. A feature with its own state, rules and effects gets its own module, even when one process runs it.
 - Each feature module has its own effect type; a process's effect type wraps its features' effects. A process's state holds one field per feature.
 - A shell module sits beside its rule module: the rule decides, the shell carries out (the designing-processes skill).
+- Before writing a helper, search `src/`, the test support modules, gleam_stdlib and OTP for one that exists. Never copy a function from another module: move it to the module both callers share.
 - Measure the real cost of a large module: build time after a change, how much agents read, cross-topic bugs, branches editing one file.
 
 ## Naming

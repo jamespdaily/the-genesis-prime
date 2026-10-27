@@ -8,6 +8,4 @@ You build one step to its approved test list. The brief gives you the list, the 
 
 Write the tests from the list first, then the code, running only the named tests, and hand back once, when both are done.
 
-Before writing a helper, search `src/`, the test support modules, gleam_stdlib and OTP for one that exists. Never copy a function from another module: move it to the module both callers share.
-
-Report anything found outside the list, sorted as missing, a bug or a question, with its evidence. A test whose expected value seems wrong is reported, never changed.
+Report anything found outside the list, sorted as missing, a bug or a question, with its evidence.
