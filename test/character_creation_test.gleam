@@ -14,10 +14,12 @@
 ////   (lua.Character.OnCreateCharacterFailed): 10 for a name, and the text "due
 ////   to an error" for every other value, 4 CreateFailed among them.
 
+import character_support
 import client_tables
 import genesis_prime/game/character_creation.{
-  ArkshipRow, CostsCurrency, CostumeOnlyRow, NameBreaksRule, NeedsEntitlement,
-  NoSuchRow, PathAbove3, RowDisabled, TooManyLabels, WrongBoneCount,
+  ArkshipRow, BoneNotFinite, CostsCurrency, CostumeOnlyRow, NameBreaksRule,
+  NeedsEntitlement, NoSuchRow, PathAbove3, RowDisabled, TooManyLabels,
+  WrongBoneCount,
 }
 import genesis_prime/message/create_character.{
   type CreateCharacter, CreateCharacter,
@@ -33,27 +35,9 @@ import gleam/result
 import gleam/string
 import owned_test
 
-/// 1 to `count`.
-fn numbers(count: Int) -> List(Int) {
-  list.index_map(list.repeat(0, count), fn(_, index) { index + 1 })
-}
-
-/// `count` bone values as float bits (46 are race 1, sex 1's, opcode.0x25b.counts).
-fn bones(count: Int) -> List(Int) {
-  numbers(count) |> list.map(fn(index) { 0x3F800000 + index })
-}
-
-/// A request for the creation row with the name, a path of 0, no look and the
-/// bones race 1 sex 1 has.
+/// A request for the creation row with the name.
 fn request(creation_id: Int, name: String) -> CreateCharacter {
-  CreateCharacter(
-    creation_id:,
-    name:,
-    path: 0,
-    customisation_labels: [],
-    customisation_values: [],
-    bone_values: bones(46),
-  )
+  CreateCharacter(..character_support.create_request(name), creation_id:)
 }
 
 pub fn a_name_that_breaks_rule_0_is_name_length_before_the_row_is_read_test() -> Nil {
@@ -89,7 +73,7 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
         LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
         LookEntry(label: CharacterCustomizationLabelId(22), value: 1),
       ],
-      bones: bones(46),
+      bones: character_support.bones(46),
     ))
     as "CharacterCreation row 466: class 1, race 1, sex 1, faction 167; the path, the labels with their values and the bone values as the request carries them (opcode.0x25b)"
 }
@@ -152,7 +136,7 @@ pub fn a_path_above_3_too_many_labels_or_the_wrong_bone_count_is_refused_test() 
   let many = fn(count) {
     CreateCharacter(
       ..request(466, "Ab Cd"),
-      customisation_labels: numbers(count),
+      customisation_labels: character_support.numbers(count),
       customisation_values: list.repeat(1, count),
     )
   }
@@ -163,21 +147,62 @@ pub fn a_path_above_3_too_many_labels_or_the_wrong_bone_count_is_refused_test() 
     as "opcode.0x25b.counts: at most 27 labels"
   assert character_creation.check(
       tables,
-      CreateCharacter(..request(466, "Ab Cd"), bone_values: bones(45)),
+      CreateCharacter(
+        ..request(466, "Ab Cd"),
+        bone_values: character_support.bones(45),
+      ),
     )
     == Error(WrongBoneCount(creation_id: 466, expected: 46, got: 45))
     as "opcode.0x25b.counts: race 1, sex 1 carries 46 bone values"
   assert character_creation.check(
       tables,
-      CreateCharacter(..request(339, "Ab Cd"), bone_values: bones(46)),
+      CreateCharacter(
+        ..request(339, "Ab Cd"),
+        bone_values: character_support.bones(46),
+      ),
     )
     == Error(WrongBoneCount(creation_id: 339, expected: 48, got: 46))
     as "opcode.0x25b.counts: race 1, sex 0 carries 48"
   assert result.is_ok(character_creation.check(
     tables,
-    CreateCharacter(..request(339, "Ab Cd"), bone_values: bones(48)),
+    CreateCharacter(
+      ..request(339, "Ab Cd"),
+      bone_values: character_support.bones(48),
+    ),
   ))
     as "race 1, sex 0 with 48 bone values"
+}
+
+pub fn a_bone_value_that_is_not_a_finite_float_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = client_tables.shared()
+  let with_bone = fn(bits) {
+    CreateCharacter(..request(466, "Ab Cd"), bone_values: [
+      bits,
+      ..list.drop(character_support.bones(46), 1)
+    ])
+  }
+  list.each(
+    [
+      #(0x7FC00000, "a quiet NaN"),
+      #(0x7F800001, "a signalling NaN"),
+      #(0xFFC00001, "a negative NaN"),
+      #(0x7F800000, "positive infinity"),
+      #(0xFF800000, "negative infinity"),
+    ],
+    fn(case_) {
+      let #(bits, name) = case_
+      assert character_creation.check(tables, with_bone(bits))
+        == Error(BoneNotFinite(creation_id: 466))
+        as { "IEEE 754 single precision: an exponent of all ones is " <> name }
+    },
+  )
+  assert result.is_ok(character_creation.check(tables, with_bone(0x7F7FFFFF)))
+    as "IEEE 754 single precision: 0x7F7FFFFF is the largest finite float"
+  assert result.is_ok(character_creation.check(tables, with_bone(0xFF7FFFFF)))
+    as "IEEE 754 single precision: 0xFF7FFFFF is the most negative finite float"
+  assert result.is_ok(character_creation.check(tables, with_bone(0x00000000)))
+    as "ExportBoneValues 0x1401e3580: a part the actor holds no adjustment for is 0.0"
 }
 
 pub fn every_refusal_but_the_name_is_create_failed_and_says_the_row_test() -> Nil {
@@ -193,6 +218,7 @@ pub fn every_refusal_but_the_name_is_create_failed_and_says_the_row_test() -> Ni
       PathAbove3(creation_id: 7, path: 4),
       TooManyLabels(creation_id: 7, count: 28),
       WrongBoneCount(creation_id: 7, expected: 46, got: 45),
+      BoneNotFinite(creation_id: 7),
     ],
     fn(refusal) {
       assert character_creation.result_of(refusal) == create_result.CreateFailed

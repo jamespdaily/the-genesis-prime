@@ -592,7 +592,7 @@ pub fn two_creates_at_once_for_an_account_with_one_slot_make_one_character_test(
       })
   })
   let received =
-    list.map(numbers(4), fn(_) {
+    list.map(character_support.numbers(4), fn(_) {
       let assert Ok(answer) = process.receive(answers, within: 30_000)
         as "every create is answered"
       answer
@@ -627,19 +627,24 @@ pub fn the_table_refuses_a_look_whose_labels_and_values_differ_in_number_and_a_t
   }
   assert insert([1, 2], [1], []) == Error("character_look_pairs")
     as "a look is label and value pairs"
-  assert insert(numbers(28), numbers(28), []) == Error("character_look_pairs")
+  assert insert(
+      character_support.numbers(28),
+      character_support.numbers(28),
+      [],
+    )
+    == Error("character_look_pairs")
     as "opcode.0x25b.counts: the label table allows at most 27"
   assert insert([], [], list.repeat(0, 49))
     == Error("character_bones_at_most_48")
     as "opcode.0x25b.counts: at most 48 bone values"
-  assert insert(numbers(27), numbers(27), list.repeat(0, 48)) == Ok(Nil)
+  assert insert(
+      character_support.numbers(27),
+      character_support.numbers(27),
+      list.repeat(0, 48),
+    )
+    == Ok(Nil)
     as "27 pairs and 48 bones are the most a request carries"
   stop(store)
-}
-
-/// 1 to `count`.
-fn numbers(count: Int) -> List(Int) {
-  list.index_map(list.repeat(0, count), fn(_, index) { index + 1 })
 }
 
 fn is_created(answer: store.Answer) -> Bool {

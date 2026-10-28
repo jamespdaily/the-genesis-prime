@@ -27,6 +27,7 @@
 ////   opcode.0x36), the new character selected by the client's own rule
 ////   (lua.CharacterSelection.OnLoadFromCharacter.preselect).
 
+import character_support
 import client_tables
 import connection_rule_support as support
 import game_client
@@ -685,17 +686,14 @@ pub fn a_second_0x07e0_asks_the_store_again_and_sends_a_new_list_test() -> Nil {
 
 // ---- create and the play that follows ----
 
-/// A create request for CharacterCreation row 466 (class 1, race 1, sex 1,
-/// faction 167; a PreTutorial row with no entitlement and no cost), with 46
-/// bone values, which race 1, sex 1 carries (opcode.0x25b.counts).
+/// A create request for CharacterCreation row 466 with a path of 2 and the
+/// look of labels 2 and 21.
 fn a_create_request(name: String) -> create_character.CreateCharacter {
   CreateCharacter(
-    creation_id: 466,
-    name:,
+    ..character_support.create_request(name),
     path: 2,
     customisation_labels: [2, 21],
     customisation_values: [1, 2],
-    bone_values: list.repeat(0x3F800000, 46),
   )
 }
 
@@ -725,11 +723,7 @@ fn creating(
 fn create_result_of(
   taken: Step(Nil, Request),
 ) -> create_character_result.CreateCharacterResult {
-  let assert [Frame(message_id: 0x00DC, body:)] = heard(taken, keyed())
-    as "opcode.0xdc inside 0x3DC under the session key"
-  let assert Ok(result) = create_character_result.decode(body)
-    as "0x00DC decodes"
-  result
+  character_support.create_result_in(heard(taken, keyed()))
 }
 
 pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_and_its_answer_is_0x00dc_create_ok_test() -> Nil {
@@ -749,7 +743,7 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
           LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
           LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
         ],
-        bones: list.repeat(0x3F800000, 46),
+        bones: character_support.bones(46),
       ),
       character_slots: 3,
     ))
@@ -892,7 +886,7 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
           LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
           LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
         ],
-        bones: list.repeat(0x3F800000, 46),
+        bones: character_support.bones(46),
       ),
       character_slots: 3,
     ))

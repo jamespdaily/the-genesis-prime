@@ -43,11 +43,11 @@ import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type NewCharacter, type Request,
   Account, AccountFound, AccountId, Character, CharacterCreated, CharacterId,
-  Characters, CreateCharacter, FindAccount, ListCharacters, LookEntry, NameTaken,
+  Characters, CreateCharacter, FindAccount, ListCharacters, NameTaken,
   NoFreeSlot, NoSuchAccount, Unavailable,
 }
 import genesis_prime/store/sql
-import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import genesis_prime/table/id.{ClassId, RaceId}
 import gleam/erlang/process.{type Name}
 import gleam/list
 import gleam/otp/actor
@@ -164,10 +164,7 @@ fn character(row: sql.ListCharactersRow) -> Character {
     position_x: row.position_x,
     position_y: row.position_y,
     position_z: row.position_z,
-    look: list.zip(row.look_labels, row.look_values)
-      |> list.map(fn(pair) {
-        LookEntry(label: CharacterCustomizationLabelId(pair.0), value: pair.1)
-      }),
+    look: store.look(labels: row.look_labels, values: row.look_values),
     bones: row.bones,
   )
 }

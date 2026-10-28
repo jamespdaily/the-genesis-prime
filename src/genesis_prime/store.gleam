@@ -5,7 +5,9 @@
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/table/id.{
   type CharacterCustomizationLabelId, type ClassId, type RaceId,
+  CharacterCustomizationLabelId,
 }
+import gleam/list
 
 /// An account, keyed by the account table's id.
 pub type AccountId {
@@ -38,6 +40,19 @@ pub type CharacterId {
 /// one of the values CharacterCustomization lists for it, opcode.0x25b).
 pub type LookEntry {
   LookEntry(label: CharacterCustomizationLabelId, value: Int)
+}
+
+/// The look of parallel lists of label ids and values, as the client's create
+/// request and the character's row hold them, each label with the value at
+/// its position; the longer list's extra items are left out.
+pub fn look(
+  labels labels: List(Int),
+  values values: List(Int),
+) -> List(LookEntry) {
+  list.zip(labels, values)
+  |> list.map(fn(pair) {
+    LookEntry(label: CharacterCustomizationLabelId(pair.0), value: pair.1)
+  })
 }
 
 /// A character as the character list needs it: what the client's list shows

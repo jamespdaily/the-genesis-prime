@@ -109,19 +109,18 @@ pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_
   login_support.stop(started)
 }
 
-/// A create request for CharacterCreation row 466 (class 1, race 1, sex 1,
-/// faction 167; a PreTutorial row with no entitlement and no cost), with the
-/// 46 bone values race 1, sex 1 carries (opcode.0x25b.counts).
+/// A create request for CharacterCreation row 466 with a path of 1 and the
+/// look of labels 2 and 22, as the client's bytes.
 fn create_request(name: String) -> BitArray {
   let assert Ok(body) =
-    create_character.encode(CreateCharacter(
-      creation_id: 466,
-      name:,
-      path: 1,
-      customisation_labels: [2, 22],
-      customisation_values: [1, 1],
-      bone_values: list.repeat(0x3F800000, 46),
-    ))
+    create_character.encode(
+      CreateCharacter(
+        ..character_support.create_request(name),
+        path: 1,
+        customisation_labels: [2, 22],
+        customisation_values: [1, 1],
+      ),
+    )
     as "the request encodes"
   body
 }
@@ -129,10 +128,7 @@ fn create_request(name: String) -> BitArray {
 fn created_result(
   game: game_client.Game,
 ) -> create_character_result.CreateCharacterResult {
-  let assert [result] = game_client.read(game:, count: 1)
-  assert result.message_id == 0x00DC as "opcode.0xdc answers a create"
-  let assert Ok(decoded) = create_character_result.decode(result.body)
-  decoded
+  character_support.create_result_in(game_client.read(game:, count: 1))
 }
 
 /// Connects a client with the account's held session key and sends 0x07E0,
@@ -191,7 +187,7 @@ pub fn a_created_character_is_stored_answered_with_create_ok_and_listed_after_th
     && entry.faction_id == 167
     && entry.path == 1
     as "CharacterCreation row 466 and the request: class 1, race 1, sex 1, faction 167, path 1, level 1"
-  assert entry.bone_values == list.repeat(0x3F800000, 46)
+  assert entry.bone_values == character_support.bones(46)
     as "the bones come back as sent"
   assert entry.last_logged_out_days != 0
     as "lua.CharacterSelection.OnLoadFromCharacter.preselect: the new character carries the last logout the client's rule selects by"

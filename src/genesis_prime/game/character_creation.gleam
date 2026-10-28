@@ -18,11 +18,9 @@ import genesis_prime/game/appearance
 import genesis_prime/game/character_name
 import genesis_prime/message/create_character.{type CreateCharacter}
 import genesis_prime/message/create_result.{type CreateResult}
-import genesis_prime/store.{type NewCharacter, LookEntry, NewCharacter}
+import genesis_prime/store.{type NewCharacter, NewCharacter}
 import genesis_prime/table/character_creation.{type CharacterCreation}
-import genesis_prime/table/id.{
-  CharacterCreationId, CharacterCustomizationLabelId,
-}
+import genesis_prime/table/id.{CharacterCreationId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/int
@@ -62,6 +60,9 @@ pub type Refusal {
   /// The request holds another number of bone values than its race and sex
   /// have.
   WrongBoneCount(creation_id: Int, expected: Int, got: Int)
+  /// A bone value is a NaN or an infinity, which the real client's bone export
+  /// never gives and the list would send back to every client that reads it.
+  BoneNotFinite(creation_id: Int)
 }
 
 /// Checks a request against the client's tables: the name, then the row it
@@ -127,6 +128,10 @@ pub fn check_row(
     got != expected,
     Error(WrongBoneCount(creation_id:, expected:, got:)),
   )
+  use <- bool.guard(
+    list.any(request.bone_values, is_not_finite),
+    Error(BoneNotFinite(creation_id:)),
+  )
   Ok(NewCharacter(
     name: request.name,
     gender: row.sex,
@@ -134,13 +139,22 @@ pub fn check_row(
     class_id: character_creation.class_id(row),
     faction_id: row.faction_id,
     path: request.path,
-    look: list.zip(request.customisation_labels, request.customisation_values)
-      |> list.map(fn(pair) {
-        LookEntry(label: CharacterCustomizationLabelId(pair.0), value: pair.1)
-      }),
+    look: store.look(
+      labels: request.customisation_labels,
+      values: request.customisation_values,
+    ),
     bones: request.bone_values,
   ))
 }
+
+/// Whether the 32 bits are a NaN or an infinity: an exponent of all ones
+/// (IEEE 754 single precision, which ReadFloat 0x14006c1c0 keeps as it is).
+fn is_not_finite(bits: Int) -> Bool {
+  int.bitwise_and(bits, exponent_mask) == exponent_mask
+}
+
+/// The exponent bits of a 32-bit float.
+const exponent_mask = 0x7F800000
 
 /// The result the client shows for a refusal.
 pub fn result_of(refusal: Refusal) -> CreateResult {
@@ -154,7 +168,8 @@ pub fn result_of(refusal: Refusal) -> CreateResult {
     | CostsCurrency(..)
     | PathAbove3(..)
     | TooManyLabels(..)
-    | WrongBoneCount(..) -> create_result.CreateFailed
+    | WrongBoneCount(..)
+    | BoneNotFinite(..) -> create_result.CreateFailed
   }
 }
 
@@ -172,7 +187,8 @@ pub fn warning(refusal: Refusal) -> Option(String) {
     | CostsCurrency(..)
     | PathAbove3(..)
     | TooManyLabels(..)
-    | WrongBoneCount(..) -> Some(describe(refusal))
+    | WrongBoneCount(..)
+    | BoneNotFinite(..) -> Some(describe(refusal))
   }
 }
 
@@ -181,39 +197,35 @@ pub fn warning(refusal: Refusal) -> Option(String) {
 pub fn describe(refusal: Refusal) -> String {
   case refusal {
     NameBreaksRule -> "the name fails the client's text rule 0"
-    NoSuchRow(creation_id:) ->
-      "creation row " <> int.to_string(creation_id) <> " does not exist"
-    RowDisabled(creation_id:) ->
-      "creation row " <> int.to_string(creation_id) <> " is disabled"
-    ArkshipRow(creation_id:) ->
-      "creation row " <> int.to_string(creation_id) <> " is an Arkship row"
-    CostumeOnlyRow(creation_id:) ->
-      "creation row " <> int.to_string(creation_id) <> " is costume only"
+    NoSuchRow(creation_id:) -> row_text(creation_id) <> " does not exist"
+    RowDisabled(creation_id:) -> row_text(creation_id) <> " is disabled"
+    ArkshipRow(creation_id:) -> row_text(creation_id) <> " is an Arkship row"
+    CostumeOnlyRow(creation_id:) -> row_text(creation_id) <> " is costume only"
     NeedsEntitlement(creation_id:) ->
-      "creation row "
-      <> int.to_string(creation_id)
-      <> " needs an entitlement the account does not hold"
+      row_text(creation_id) <> " needs an entitlement the account does not hold"
     CostsCurrency(creation_id:) ->
-      "creation row "
-      <> int.to_string(creation_id)
+      row_text(creation_id)
       <> " costs account currency the account does not hold"
     PathAbove3(creation_id:, path:) ->
-      "creation row "
-      <> int.to_string(creation_id)
-      <> " was asked with path "
-      <> int.to_string(path)
+      row_text(creation_id) <> " was asked with path " <> int.to_string(path)
     TooManyLabels(creation_id:, count:) ->
-      "creation row "
-      <> int.to_string(creation_id)
+      row_text(creation_id)
       <> " was asked with "
       <> int.to_string(count)
       <> " customisation labels"
     WrongBoneCount(creation_id:, expected:, got:) ->
-      "creation row "
-      <> int.to_string(creation_id)
+      row_text(creation_id)
       <> " was asked with "
       <> int.to_string(got)
       <> " bone values, not "
       <> int.to_string(expected)
+    BoneNotFinite(creation_id:) ->
+      row_text(creation_id)
+      <> " was asked with a bone value that is no finite float"
   }
+}
+
+/// How a sentence of `describe` names the creation row.
+fn row_text(creation_id: Int) -> String {
+  "creation row " <> int.to_string(creation_id)
 }

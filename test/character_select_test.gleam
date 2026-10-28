@@ -17,6 +17,7 @@
 //// store is asked is the game connection's to hold, with the client's other
 //// frames (test/game_connection_test.gleam).
 
+import character_support
 import client_tables
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/character_select.{Ask, Send, Warn}
@@ -92,24 +93,17 @@ fn sent(effects: List(character_select.Effect)) -> List(Frame) {
 fn create_result_of(
   effects: List(character_select.Effect),
 ) -> create_character_result.CreateCharacterResult {
-  let assert [Frame(message_id: 0x00DC, body:)] = sent(effects)
-    as "opcode.0xdc: one result"
-  let assert Ok(result) = create_character_result.decode(body)
-    as "0x00DC decodes"
-  result
+  character_support.create_result_in(sent(effects))
 }
 
+/// A create request for CharacterCreation row 466 with a path of 1 and the
+/// look of labels 2 and 22.
 fn a_request(name: String) -> create_character.CreateCharacter {
-  // CharacterCreation row 466: class 1, race 1, sex 1, faction 167, a
-  // PreTutorial row with no entitlement and no cost; race 1, sex 1 carries 46
-  // bone values (opcode.0x25b.counts).
   CreateCharacter(
-    creation_id: 466,
-    name:,
+    ..character_support.create_request(name),
     path: 1,
     customisation_labels: [2, 22],
     customisation_values: [1, 1],
-    bone_values: list.repeat(0x3F800000, 46),
   )
 }
 
@@ -248,7 +242,7 @@ pub fn a_valid_request_asks_the_store_to_make_the_character_with_the_slot_count_
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
             LookEntry(label: CharacterCustomizationLabelId(22), value: 1),
           ],
-          bones: list.repeat(0x3F800000, 46),
+          bones: character_support.bones(46),
         ),
         character_slots: 2,
       )),
