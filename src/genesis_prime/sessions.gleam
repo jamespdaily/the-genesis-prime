@@ -71,6 +71,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
+import gleam/list
 
 /// The rule's name in a recording's header and in the server's tree.
 const rule_name = "genesis_prime/sessions"
@@ -97,14 +98,13 @@ type Slot {
   Slot(connection: ConnectionId, watch: WatchId)
 }
 
-/// The slots held, by account; each watch Sessions has open, with the
-/// account and connection it was opened for, so the end of a connection a
-/// takeover replaced is told from the end of the holder; and the number of the
-/// next watch.
+/// The slots held, by account; each watch Sessions has open, with the account
+/// it was opened for, so the end of a connection a takeover replaced is told
+/// from the end of the holder; and the number of the next watch.
 pub opaque type State {
   State(
     slots: Dict(AccountId, Slot),
-    watches: Dict(WatchId, #(AccountId, ConnectionId)),
+    watches: Dict(WatchId, AccountId),
     next_watch: Int,
   )
 }
@@ -144,48 +144,43 @@ fn claimed(
   message message: Message,
 ) -> #(State, Step(Outgoing, Nil)) {
   let Claim(account:, connection:) = message
-  case dict.get(state.slots, account) {
+  let held = dict.get(state.slots, account)
+  case held {
     Ok(Slot(connection: holder, ..)) if holder == connection -> #(
       state,
       Effects([Reply(caller, Claimed)]),
     )
-    Ok(Slot(connection: previous, ..)) -> #(
-      taken_by(state:, account:, connection:),
-      Effects([
-        Watch(watch: WatchId(state.next_watch), target: Connection(connection)),
-        Send(to: Connection(previous), message: TakenOver),
-        Reply(caller, Claimed),
-      ]),
-    )
-    Error(Nil) -> #(
-      taken_by(state:, account:, connection:),
-      Effects([
-        Watch(watch: WatchId(state.next_watch), target: Connection(connection)),
-        Reply(caller, Claimed),
-      ]),
-    )
+    Ok(Slot(..)) | Error(Nil) -> {
+      let told = case held {
+        Ok(Slot(connection: previous, ..)) -> [
+          Send(to: Connection(previous), message: TakenOver),
+        ]
+        Error(Nil) -> []
+      }
+      let watch = WatchId(state.next_watch)
+      #(
+        State(
+          slots: dict.insert(state.slots, account, Slot(connection:, watch:)),
+          watches: dict.insert(state.watches, watch, account),
+          next_watch: state.next_watch + 1,
+        ),
+        Effects(
+          list.flatten([
+            [Watch(watch:, target: Connection(connection))],
+            told,
+            [Reply(caller, Claimed)],
+          ]),
+        ),
+      )
+    }
   }
-}
-
-/// The state with `connection` holding `account`'s slot, under a new watch.
-fn taken_by(
-  state state: State,
-  account account: AccountId,
-  connection connection: ConnectionId,
-) -> State {
-  let watch = WatchId(state.next_watch)
-  State(
-    slots: dict.insert(state.slots, account, Slot(connection:, watch:)),
-    watches: dict.insert(state.watches, watch, #(account, connection)),
-    next_watch: state.next_watch + 1,
-  )
 }
 
 fn ended(
   state state: State,
   watch watch: WatchId,
 ) -> #(State, Step(Outgoing, Nil)) {
-  let assert Ok(#(account, _connection)) = dict.get(state.watches, watch)
+  let assert Ok(account) = dict.get(state.watches, watch)
     as "a watch ends only if Sessions opened it and has not seen it end"
   let watches = dict.delete(state.watches, watch)
   let slots = case dict.get(state.slots, account) {

@@ -22,17 +22,20 @@ import genesis_prime/step.{type WatchId, LogError}
 import genesis_prime/step/runtime
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Monitor, type Pid}
-import gleam/list
 import gleam/result
 
 /// The open watches of one shell.
 pub opaque type Watches {
-  Watches(monitors: Dict(WatchId, Monitor))
+  Watches(
+    monitors: Dict(WatchId, Monitor),
+    /// The same watches by monitor, so a DOWN is one lookup.
+    by_monitor: Dict(Monitor, WatchId),
+  )
 }
 
 /// No watch open.
 pub fn new() -> Watches {
-  Watches(monitors: dict.new())
+  Watches(monitors: dict.new(), by_monitor: dict.new())
 }
 
 /// Opens watch `watch` on the process the shell found, or on none; `shell`
@@ -55,12 +58,11 @@ pub fn open(
       panic as "a rule opened a watch whose id is already open"
     }
     False -> {
-      let pid = result.lazy_unwrap(target, ended_process)
-      Watches(monitors: dict.insert(
-        watches.monitors,
-        watch,
-        process.monitor(pid),
-      ))
+      let monitor = process.monitor(result.lazy_unwrap(target, ended_process))
+      Watches(
+        monitors: dict.insert(watches.monitors, watch, monitor),
+        by_monitor: dict.insert(watches.by_monitor, monitor, watch),
+      )
     }
   }
 }
@@ -76,7 +78,7 @@ pub fn close(watches watches: Watches, watch watch: WatchId) -> Watches {
   case dict.get(watches.monitors, watch) {
     Ok(monitor) -> {
       process.demonitor_process(monitor)
-      Watches(monitors: dict.delete(watches.monitors, watch))
+      forget(watches:, watch:, monitor:)
     }
     Error(Nil) -> watches
   }
@@ -88,9 +90,17 @@ pub fn ended(
   watches watches: Watches,
   monitor monitor: Monitor,
 ) -> Result(#(WatchId, Watches), Nil) {
-  dict.to_list(watches.monitors)
-  |> list.find(fn(entry) { entry.1 == monitor })
-  |> result.map(fn(entry) {
-    #(entry.0, Watches(monitors: dict.delete(watches.monitors, entry.0)))
-  })
+  use watch <- result.map(dict.get(watches.by_monitor, monitor))
+  #(watch, forget(watches:, watch:, monitor:))
+}
+
+fn forget(
+  watches watches: Watches,
+  watch watch: WatchId,
+  monitor monitor: Monitor,
+) -> Watches {
+  Watches(
+    monitors: dict.delete(watches.monitors, watch),
+    by_monitor: dict.delete(watches.by_monitor, monitor),
+  )
 }

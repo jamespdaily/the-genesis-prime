@@ -45,9 +45,8 @@
 //// - **The claim** makes this connection the account's one session
 ////   (genesis_prime/sessions). It follows the hand-off's answer, since the
 ////   account is known only then, and comes before the list, so a client that
-////   reaches character select holds the slot. The rule opens a watch on
-////   Sessions with each claim, numbered from 1 by a counter that does not go
-////   back. Sessions answers `Claimed` to every claim, sending the previous
+////   reaches character select holds the slot. The rule opens its one watch
+////   on Sessions (watch 1) with each claim. Sessions answers `Claimed` to every claim, sending the previous
 ////   holder `TakenOver` first.
 //// - **Taken over.** `Woken(TakenOver)`, when the connection holds the slot or
 ////   is claiming it again, writes 0x036A reason 19 (AccountDisconnected) under
@@ -114,8 +113,8 @@
 
 import genesis_prime/client_connection.{
   type Answer, type Link, type Message, type Request, AskHandOff, AskSessions,
-  AskStore, Asking, Bytes, Connect, Continue, End, FromHandOff, FromSessions,
-  FromStore, Inside, Otherwise, SentBySessions, Settled, Waiting,
+  AskStore, Asking, Bytes, Connect, Continue, Done, FromHandOff, FromSessions,
+  FromStore, Inside, Otherwise, SentBySessions, Settled,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -192,9 +191,6 @@ type Session {
     /// The cipher the connection's frames are read and written under: the
     /// base key's until 0x058F re-keys it.
     cipher: Cipher,
-    /// How many watches on Sessions the rule has opened; the open one, while
-    /// the connection holds the slot, is the last.
-    watches: Int,
     status: Status,
   )
 }
@@ -227,6 +223,12 @@ const claim_wait_ms = 100
 /// Sessions that does not come back: half a second, then it is told the
 /// server failed, as for the store.
 const claim_retries = 5
+
+/// The watch on Sessions: the connection's only one. A watch that ends is
+/// forgotten by the shell, and one dropped with `Unwatch` leaves nothing behind,
+/// so the id is free whenever a claim opens it again, and a watch left open is
+/// caught by the shell's refusal of an id already open.
+const sessions_watch = WatchId(1)
 
 /// The timer a connection waits on before it claims again; one runs at a
 /// time.
@@ -262,7 +264,6 @@ pub fn step(
             link: client_connection.link(connection:, peer:, seed:),
             pending: <<>>,
             cipher: cipher.base(),
-            watches: 0,
             status: AwaitingHelloReply,
           )),
           Effects([Write(hello_bytes(settings))]),
@@ -285,23 +286,11 @@ fn connected(
 ) -> #(State, Step(Nil, Request)) {
   case event {
     Woken(message: SentBySessions(message:)) ->
-      client_connection.settle(
-        handled: sessions_sent(session:, message:),
-        flow: flow(now),
-        carried: [],
-      )
+      settled(handled: sessions_sent(session:, message:), now:)
     WatchEnded(watch:) ->
-      client_connection.settle(
-        handled: sessions_ended(session:, watch:),
-        flow: flow(now),
-        carried: [],
-      )
+      settled(handled: sessions_ended(session:, watch:), now:)
     TimerFired(timer:) ->
-      client_connection.settle(
-        handled: claim_wait_over(session:, now:, timer:),
-        flow: flow(now),
-        carried: [],
-      )
+      settled(handled: claim_wait_over(session:, now:, timer:), now:)
     Started
     | Socket(..)
     | Asked(..)
@@ -338,11 +327,7 @@ fn heard(
       }
     }
     client_connection.Outcome(outcome:) ->
-      client_connection.settle(
-        handled: answered(session:, now:, outcome:),
-        flow: flow(now),
-        carried: [],
-      )
+      settled(handled: answered(session:, now:, outcome:), now:)
     Connect(..) -> #(
       Connected(session),
       client_connection.accepted_again(
@@ -353,6 +338,15 @@ fn heard(
     )
     Otherwise(step:) -> #(Connected(session), step)
   }
+}
+
+/// What an input decided, carried out as the rule takes the client's frames at
+/// the time of the input.
+fn settled(
+  handled handled: client_connection.Handled(Session),
+  now now: Now,
+) -> #(State, Step(Nil, Request)) {
+  client_connection.settle(handled:, flow: flow(now), carried: [])
 }
 
 /// Whether an ask is in flight, so the frames after the one that asked wait.
@@ -806,11 +800,9 @@ fn claim(
   select select: character_select.State,
   retries retries: Int,
 ) -> client_connection.Handled(Session) {
-  let watches = session.watches + 1
   ask(
     session: Session(
       ..session,
-      watches:,
       status: ClaimingSession(holder:, select:, retries:),
     ),
     now:,
@@ -818,7 +810,7 @@ fn claim(
       account: holder.account_id,
       connection: session.link.connection,
     )),
-    before: [Watch(watch: WatchId(watches), target: Sessions)],
+    before: [Watch(watch: sessions_watch, target: Sessions)],
   )
 }
 
@@ -850,13 +842,13 @@ fn claim_answered(
         text: "Sessions' answer is none a claim gets",
       )
     step.NotRunning if retries < claim_retries ->
-      Waiting(
+      Done(
         Session(
           ..session,
           status: ClaimingSession(holder:, select:, retries: retries + 1),
         ),
         [
-          Unwatch(watch: WatchId(session.watches)),
+          Unwatch(watch: sessions_watch),
           StartTimer(timer: claim_timer, after_ms: claim_wait_ms),
         ],
       )
@@ -905,10 +897,9 @@ fn sessions_ended(
   session session: Session,
   watch watch: WatchId,
 ) -> client_connection.Handled(Session) {
-  let open = WatchId(session.watches)
   case session.status {
-    InCharacterSelect(holder:, select:) if watch == open ->
-      Waiting(
+    InCharacterSelect(holder:, select:) if watch == sessions_watch ->
+      Done(
         Session(
           ..session,
           status: ClaimingSession(holder:, select:, retries: 0),
@@ -1035,7 +1026,7 @@ fn told(
   level level: step.LogLevel,
   text text: String,
 ) -> client_connection.Handled(Session) {
-  End(session, [
+  Done(session, [
     log(session:, level:, text:),
     notice(session:, reason:),
     Stop,
@@ -1045,7 +1036,7 @@ fn told(
 /// The server is stopping while an ask is out: the client is told, with no
 /// log line, since a stop is no failure.
 fn stopped(session: Session) -> client_connection.Handled(Session) {
-  End(session, list.append(server_stopping(session), [Stop]))
+  Done(session, list.append(server_stopping(session), [Stop]))
 }
 
 /// The client broke the protocol: an error log line and the end of the

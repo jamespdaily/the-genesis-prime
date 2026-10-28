@@ -39,7 +39,7 @@
 import genesis_prime/client_archive
 import genesis_prime/client_connection.{
   type Answer, type Link, type Request, AskHandOff, Asking, Bytes, Connect,
-  Continue, End, FromHandOff, FromSessions, FromStore, Otherwise,
+  Continue, Done, FromHandOff, FromSessions, FromStore, Otherwise,
 }
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{AuthWrapper}
@@ -361,7 +361,7 @@ fn refuse(
   let assert Ok(body) =
     login_refused.encode(LoginRefused(reason:, value: 0, field_3: 0))
     as "a reason is within 32 bits"
-  End(
+  Done(
     session,
     list.append(before, [
       Write(wrapped(Frame(login_refused.message_id, body))),

@@ -147,7 +147,7 @@ pub fn end_for(
   account_id account_id: Option(Int),
   text text: String,
 ) -> Handled(session) {
-  End(session, [log(link:, account_id:, level: LogError, text:), Stop])
+  Done(session, [log(link:, account_id:, level: LogError, text:), Stop])
 }
 
 /// The step of a rule that took bytes or an answer before the connection was
@@ -246,11 +246,10 @@ pub type Handled(session) {
   Continue(session: session, effects: List(Effect(Nil)))
   /// Carry out the effects, then ask; what follows in the bytes waits.
   Asking(session: session, effects: List(Effect(Nil)), ask: step.Ask(Request))
-  /// Carry out the effects, which end with `Stop`.
-  End(session: session, effects: List(Effect(Nil)))
-  /// Carry out the effects, then take no frame until another input: what the
-  /// connection waits for is a timer or a process, not the client's bytes.
-  Waiting(session: session, effects: List(Effect(Nil)))
+  /// Carry out the effects, then take no frame until another input. The
+  /// effects of a rule that ends the connection hold `Stop`; one that waits for
+  /// a timer or a process holds none.
+  Done(session: session, effects: List(Effect(Nil)))
 }
 
 /// How a rule takes what the client sent: the callbacks `drive` and `settle`
@@ -294,7 +293,7 @@ pub fn drive(
 
 /// Carries out what was decided after the effects already `carried`, the last
 /// first: on `Continue` `drive` takes the next item, on `Asking` the step ends
-/// in the ask, on `End` it ends. The effects leave in order, reversed once
+/// in the ask, on `Done` no frame is taken after the effects. The effects leave in order, reversed once
 /// here.
 pub fn settle(
   handled handled: Handled(session),
@@ -308,7 +307,7 @@ pub fn settle(
       flow.connected(session),
       EffectsThenAsk(in_order(carried:, then: effects), ask),
     )
-    End(session:, effects:) | Waiting(session:, effects:) -> #(
+    Done(session:, effects:) -> #(
       flow.connected(session),
       Effects(in_order(carried:, then: effects)),
     )

@@ -199,11 +199,24 @@ fn claiming() -> #(game_connection.State, Step(Nil, Request)) {
   )
 }
 
+/// The claim the connection asks Sessions: its account and its id.
+fn claim_ask() -> Request {
+  AskSessions(Claim(account: AccountId(7), connection: ConnectionId(1)))
+}
+
+/// Sessions' answer to the claim in `taken`.
+fn claimed(
+  state state: game_connection.State,
+  taken taken: Step(Nil, Request),
+) -> #(game_connection.State, Step(Nil, Request)) {
+  answer(state:, taken:, outcome: step.Answer(FromSessions(Claimed)))
+}
+
 /// The connection after Sessions answered the claim: in character select,
 /// nothing asked.
 fn in_select() -> game_connection.State {
   let #(state, taken) = claiming()
-  answer(state:, taken:, outcome: step.Answer(FromSessions(Claimed))).0
+  claimed(state:, taken:).0
 }
 
 /// The connection after 0x07E0, with its ask to the store.
@@ -324,12 +337,10 @@ pub fn message_0x058f_asks_the_hand_off_to_take_the_session_key_and_every_later_
       taken:,
       outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
     )
-  assert ask_request(taken)
-    == AskSessions(Claim(account: AccountId(7), connection: ConnectionId(1)))
+  assert ask_request(taken) == claim_ask()
     as "the account the hand-off named, claimed for this connection"
   assert support.writes(taken) == []
-  let #(state, _) =
-    answer(state:, taken:, outcome: step.Answer(FromSessions(Claimed)))
+  let #(state, _) = claimed(state:, taken:)
   // The next read is under the session key: the store is asked because 0x07E0
   // opened under it.
   let #(_, taken) = read(state, select_start())
@@ -360,11 +371,9 @@ pub fn message_0x07e0_in_the_same_read_as_0x058f_waits_until_the_hand_off_answer
       taken:,
       outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
     )
-  assert ask_request(taken)
-    == AskSessions(Claim(account: AccountId(7), connection: ConnectionId(1)))
+  assert ask_request(taken) == claim_ask()
     as "Sessions is asked first: 0x07E0 still waits in the bytes read"
-  let #(_, taken) =
-    answer(state:, taken:, outcome: step.Answer(FromSessions(Claimed)))
+  let #(_, taken) = claimed(state:, taken:)
   assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
     as "the holder's account, once Sessions answers"
   let assert Some(ask) = support.asked(taken)
@@ -606,8 +615,7 @@ pub fn a_first_message_other_than_0x058f_or_a_second_0x058f_is_logged_as_an_erro
       taken:,
       outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
     )
-  let #(_, taken) =
-    answer(state:, taken:, outcome: step.Answer(FromSessions(Claimed)))
+  let #(_, taken) = claimed(state:, taken:)
   assert support.stops(taken)
   assert list.length(support.logs_of(step: taken, level: LogError)) == 1
   // And one in character select.
@@ -658,8 +666,7 @@ pub fn frames_after_the_one_that_asked_wait_for_its_answer_and_are_then_taken_in
       taken:,
       outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
     )
-  let #(state, taken) =
-    answer(state:, taken:, outcome: step.Answer(FromSessions(Claimed)))
+  let #(state, taken) = claimed(state:, taken:)
   assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
   assert unhandled_ids(taken) == []
     as "0x038C follows 0x07E0 in the bytes and waits for the store's answer"
@@ -1217,17 +1224,6 @@ fn taken_over() -> Event(Message, Answer) {
   Woken(message: SentBySessions(message: TakenOver))
 }
 
-fn claim_ask() -> Request {
-  AskSessions(Claim(account: AccountId(7), connection: ConnectionId(1)))
-}
-
-fn claim_answered(
-  state state: game_connection.State,
-  taken taken: Step(Nil, Request),
-) -> game_connection.State {
-  answer(state:, taken:, outcome: step.Answer(FromSessions(Claimed))).0
-}
-
 /// A connection in character select with its list shown, which Sessions' end
 /// finds with state to keep.
 fn in_select_with_a_list() -> game_connection.State {
@@ -1238,7 +1234,7 @@ pub fn after_the_hand_off_the_account_is_claimed_with_a_watch_on_sessions_before
   use <- owned_test.run(10_000)
   let #(state, claim) = claiming()
   assert support.effects_of(claim) == [Watch(WatchId(1), Sessions)]
-    as "the rule watches Sessions with the claim, under watch 1, the first of a counter"
+    as "the rule watches Sessions with the claim, under its one watch id"
   assert ask_request(claim) == claim_ask()
   let assert Some(ask) = support.asked(claim)
   assert ask.deadline_ms == support.now_ms + 4000
@@ -1248,8 +1244,7 @@ pub fn after_the_hand_off_the_account_is_claimed_with_a_watch_on_sessions_before
   let #(state, taken) = read(state, select_start())
   assert support.asked(taken) == None
   assert support.effects_of(taken) == []
-  let #(_, taken) =
-    answer(state:, taken: claim, outcome: step.Answer(FromSessions(Claimed)))
+  let #(_, taken) = claimed(state:, taken: claim)
   assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
     as "the claim comes before the list: the frame that waited is taken once Sessions answers"
 }
@@ -1304,25 +1299,24 @@ pub fn the_end_of_the_watch_on_sessions_starts_a_timer_and_its_firing_claims_aga
   let #(state, taken) = read(state, select_start())
   assert support.asked(taken) == None && support.effects_of(taken) == []
   let #(state, taken) = feed(state, TimerFired(TimerId(1)))
-  assert support.effects_of(taken) == [Watch(WatchId(2), Sessions)]
-    as "the watch is opened again, under the next number"
+  assert support.effects_of(taken) == [Watch(WatchId(1), Sessions)]
+    as "the ended watch is forgotten, so the one watch is opened again under its id"
   assert ask_request(taken) == claim_ask()
   assert support.writes(taken) == [] as "the client sees nothing"
-  let #(_, taken) =
-    answer(state:, taken:, outcome: step.Answer(FromSessions(Claimed)))
+  let #(_, taken) = claimed(state:, taken:)
   assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
     as "Claimed puts the connection back in character select with its state, and the 0x07E0 that waited is taken"
 }
 
-pub fn a_second_end_of_sessions_claims_again_under_the_next_watch_number_test() -> Nil {
+pub fn a_second_end_of_sessions_claims_again_under_the_same_watch_id_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
   let #(state, taken) = feed(state, TimerFired(TimerId(1)))
-  let state = claim_answered(state:, taken:)
-  let #(state, taken) = feed(state, WatchEnded(WatchId(2)))
+  let state = claimed(state:, taken:).0
+  let #(state, taken) = feed(state, WatchEnded(WatchId(1)))
   assert support.effects_of(taken) == [StartTimer(TimerId(1), claim_wait_ms)]
   let #(_, taken) = feed(state, TimerFired(TimerId(1)))
-  assert support.effects_of(taken) == [Watch(WatchId(3), Sessions)]
+  assert support.effects_of(taken) == [Watch(WatchId(1), Sessions)]
 }
 
 pub fn a_watch_or_timer_the_rule_did_not_open_is_a_bug_with_an_error_and_the_end_test() -> Nil {
@@ -1347,25 +1341,21 @@ pub fn a_watch_or_timer_the_rule_did_not_open_is_a_bug_with_an_error_and_the_end
 pub fn a_claim_that_finds_sessions_not_running_is_made_again_after_a_wait_up_to_the_retries_then_reason_8_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = claiming()
-  let retry = fn(state, taken, watch) {
+  let retry = fn(held: #(game_connection.State, Step(Nil, Request)), _try) {
+    let #(state, taken) = held
     let #(state, taken) = answer(state:, taken:, outcome: NotRunning)
     assert support.effects_of(taken)
-      == [Unwatch(WatchId(watch)), StartTimer(TimerId(1), claim_wait_ms)]
+      == [Unwatch(WatchId(1)), StartTimer(TimerId(1), claim_wait_ms)]
       as "the watch on a Sessions that is not running is dropped, and the claim waits"
     assert support.asked(taken) == None
     assert support.writes(taken) == []
     let #(state, taken) = feed(state, TimerFired(TimerId(1)))
-    assert support.effects_of(taken) == [Watch(WatchId(watch + 1), Sessions)]
+    assert support.effects_of(taken) == [Watch(WatchId(1), Sessions)]
     assert ask_request(taken) == claim_ask()
     #(state, taken)
   }
   let #(state, taken) =
-    int.range(
-      from: 1,
-      to: claim_retries + 1,
-      with: #(state, taken),
-      run: fn(held, watch) { retry(held.0, held.1, watch) },
-    )
+    int.range(from: 1, to: claim_retries + 1, with: #(state, taken), run: retry)
   let #(_, taken) = answer(state:, taken:, outcome: NotRunning)
   assert disconnect(taken, keyed()) == LostUserServer
     as "after the retries the client is told the server failed, or it would wait on its prompt for good"
@@ -1379,7 +1369,7 @@ pub fn a_claim_that_finds_sessions_not_running_after_its_end_is_made_again_with_
   let #(state, taken) = feed(state, TimerFired(TimerId(1)))
   let #(state, taken) = answer(state:, taken:, outcome: NotRunning)
   assert support.effects_of(taken)
-    == [Unwatch(WatchId(2)), StartTimer(TimerId(1), claim_wait_ms)]
+    == [Unwatch(WatchId(1)), StartTimer(TimerId(1), claim_wait_ms)]
   let #(_, taken) = feed(state, TimerFired(TimerId(1)))
   assert ask_request(taken) == claim_ask()
 }

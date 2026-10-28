@@ -1,15 +1,15 @@
 //// A small service rule for the tests of asks and of the service shell: a
 //// latch that answers an ask when its key is opened, before or after the
 //// ask, so a test's answer never depends on which message reached the service
-//// first. It also holds the messages that make a service send, watch and
-//// unwatch, whose watches end as the opening of the key of the same number, and
+//// first. It also holds the messages that make a service send and
+//// watch, whose watches end as the opening of the key of the same number, and
 //// the messages that make it misbehave: a crash, and each effect a service
 //// shell refuses.
 
 import genesis_prime/step.{
   type Address, type CallerId, type Effect, type Input, type Step, Ask, AskId,
   Asked, Effects, EffectsThenAsk, Input, Reply, Send, StartTimer, Started, Stop,
-  Stopping, TimerId, Unwatch, Watch, WatchEnded, WatchId,
+  Stopping, TimerId, Watch, WatchEnded, WatchId,
 }
 import gleam/dict.{type Dict}
 import gleam/list
@@ -36,8 +36,6 @@ pub type Message {
   /// Watch the process at the address as watch `watch`, then answer with
   /// `Echoed(watch)`. The watch's end opens the key `watch`.
   WatchAddress(watch: Int, target: Address)
-  /// Stop watching watch `watch`, then answer with `Echoed(watch)`.
-  Release(watch: Int)
   /// The rule returns `StartTimer`, which a service shell refuses.
   TryTimer
   /// The rule ends its step in an ask, which a service shell refuses.
@@ -122,10 +120,6 @@ fn asked(
     WatchAddress(watch:, target:) -> #(
       state,
       Effects([Watch(WatchId(watch), target), Reply(caller, Echoed(watch))]),
-    )
-    Release(watch:) -> #(
-      state,
-      Effects([Unwatch(WatchId(watch)), Reply(caller, Echoed(watch))]),
     )
     TryTimer -> #(state, Effects([StartTimer(TimerId(1), 10)]))
     TryAsk -> #(

@@ -16,7 +16,9 @@
 //// hand-off holds the session key, the game hello, 0x058F and the cipher.
 
 import envoy
+import frame_reader
 import game_client
+import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
@@ -53,7 +55,20 @@ pub fn main() -> Nil {
       account_name: account,
     )
   game_client.send(game:, message_id: 0x07E0, body: <<>>)
-  list.each(heard(game:, have: <<>>, frames: []), describe)
+  case
+    frame_reader.read_until(
+      have: <<>>,
+      done: ends_the_wait(_, game.cipher),
+      next: fn() { tcp_client.receive_some(game.socket, wait_ms) },
+    )
+  {
+    Ok(outers) ->
+      list.each(
+        list.map(outers, game_client.in_the_game_wrapper(_, game.cipher)),
+        describe,
+      )
+    Error(Nil) -> io.println("second login: the game server wrote nothing more")
+  }
 }
 
 /// The environment variable `name`, or a stop that names it.
@@ -63,33 +78,13 @@ fn variable(name: String) -> String {
   value
 }
 
-/// The messages the game server writes, until the character list or a
-/// disconnect arrives, or the server stops writing.
-fn heard(
-  game game: game_client.Game,
-  have have: BitArray,
-  frames frames: List(Frame),
-) -> List(Frame) {
-  let assert Ok(#(outers, rest)) = frame.decode(have)
-    as "the game server wrote bytes that are frames"
-  let frames =
-    list.append(
-      frames,
-      list.map(outers, game_client.in_the_game_wrapper(_, game.cipher)),
-    )
-  case list.any(frames, ends_the_wait) {
-    True -> frames
-    False ->
-      case tcp_client.receive_some(game.socket, wait_ms) {
-        Ok(bytes) -> heard(game:, have: <<rest:bits, bytes:bits>>, frames:)
-        Error(Nil) -> frames
-      }
-  }
-}
-
-/// 0x0117, the character list, or 0x036A, a disconnect.
-fn ends_the_wait(message: Frame) -> Bool {
-  message.message_id == 0x0117 || message.message_id == 0x036A
+/// Whether the messages so far hold 0x0117, the character list, or 0x036A, a
+/// disconnect.
+fn ends_the_wait(outers: List(Frame), cipher: Cipher) -> Bool {
+  list.any(outers, fn(outer) {
+    let message = game_client.in_the_game_wrapper(outer, cipher)
+    message.message_id == 0x0117 || message.message_id == 0x036A
+  })
 }
 
 fn describe(message: Frame) -> Nil {
