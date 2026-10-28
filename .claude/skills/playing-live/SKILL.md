@@ -33,15 +33,15 @@ The client uploads its error reports to `crash.na.wildstar-online.com`, which st
 
 ## Seeing the screen
 
-`scripts/screenshot.sh` captures the client's window on the PC through a scheduled task that runs hidden, copies the picture back and always deletes the task. It never brings a window forward or moves focus: Jim may be using the PC.
+`scripts/screenshot.sh` captures the client's window on the PC through a scheduled task that runs hidden, copies the picture back and always deletes the task and the files it copied. It captures the client that `client.sh start` recorded, checked by pid and start time, and the first WildStar64 window when none is recorded. It never brings a window forward or moves focus: Jim may be using the PC.
 
 ## Driving the client
 
-`scripts/client.sh` starts, types into and closes the client on the PC in the person's session, through hidden scheduled tasks that it always deletes. It never takes focus: no SendInput, no SetForegroundWindow, and each start and each typing records the foreground window before and after and fails if it moved.
+`scripts/client.sh` starts, types into and closes the client on the PC in the person's session, through hidden scheduled tasks, run by `scripts/pc.sh` (which `scripts/screenshot.sh` and `scripts/client-log.sh` share), that it always deletes with the files it copied. It never takes focus: no SendInput, no SetForegroundWindow, and each start and each typing records the foreground window before and after and fails if it moved.
 
-- `client.sh start` refuses, changing nothing, when any WildStar64 process runs: Jim may be playing. Otherwise it starts the client from `GENESIS_PLAY_CLIENT_DIR` pointed at `GENESIS_PLAY_ADDRESS`, logged in from its command line with the account and password, and prints the pid, the program's SHA-256 and the window's style. Keep the client borderless: started behind the person's window it keeps drawing and takes posted input. The command line begins with `/auth` and the host because the client starts its launcher otherwise (fact 0x14000ae77).
-- `client.sh start --type-login` starts it without an account or password. Then `client.sh type <text>` and `client.sh key tab|enter` post the characters to its window one by one (facts 0x140112a60, 0x140111030, 0x1400e67a0).
-- `client.sh stop` closes the client that `start` recorded, by pid, and no other.
+- `client.sh start` refuses, changing nothing, when any WildStar64 process runs (the start script checks, just before it launches): Jim may be playing. Otherwise it starts the client from `GENESIS_PLAY_CLIENT_DIR` pointed at `GENESIS_PLAY_ADDRESS`, logged in from its command line with the account and password, and prints the pid, the process's start time, the program's SHA-256 and the window's style, and saves the pid and start time in `~/.genesis-prime/client.pid`. Keep the client borderless: started behind the person's window it keeps drawing and takes posted input. The command line begins with `/auth` and the host because the client starts its launcher otherwise (fact 0x14000ae77).
+- `client.sh start --type-login` starts it without an account or password. Then `client.sh type <text>` and `client.sh key tab|enter` post the characters to its window one by one (facts 0x140112a60, 0x140111030, 0x1400e67a0). A Tab or Enter inside the text is posted as that key, so a whole typed login is one call: `client.sh type $'<account>\t<password>\r'`. `type` and `key` refuse when no client is recorded, and act only on the process with the recorded pid, name and start time, never on the person's own client.
+- `client.sh stop` closes the client that `start` recorded, by pid and start time, and no other, and ends its process. A recorded pid that now belongs to another process is left alone.
 
 A session, in order:
 

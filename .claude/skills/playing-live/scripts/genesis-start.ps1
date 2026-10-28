@@ -1,14 +1,17 @@
 # Starts the WildStar client in the person's session without taking their focus, and records what
-# it started as. It reads genesis-start-args.txt (one value per line: the client's install folder,
+# it started as. It reads genesis-start.ps1.in (one value per line: the client's install folder,
 # the auth host, then the account and the password, or neither), deletes that file, and writes
-# genesis-start.txt last.
+# genesis-start.txt last, all at once (a .tmp moved into place). It refuses, launching nothing, when
+# a WildStar64 process already runs: the person may be playing.
 #
 # The client's command line must begin with /auth and the auth host, or it starts the launcher and
 # exits (fact 0x14000ae77). A scheduled task puts the program's name first, so the program is given
 # to CreateProcessW as the application name and the command line begins with /auth.
 #
-# The result records the window's style (GWL_STYLE). The play PC's client runs borderless (a popup
-# with no caption); started behind another window it keeps drawing and takes posted input.
+# The result records the process's start time (a file time in UTC: with the pid it names the
+# process for good, since a pid is reused) and the window's style (GWL_STYLE). The play PC's client
+# runs borderless (a popup with no caption); started behind another window it keeps drawing and
+# takes posted input.
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -31,13 +34,16 @@ public class Launch {
   [DllImport("user32.dll", EntryPoint = "GetWindowLongW")] public static extern uint GetWindowLong(IntPtr h, int index);}
 "@
 
-$argsFile = "$env:USERPROFILE\genesis-start-args.txt"
+$argsFile = "$PSCommandPath.in"
 $resultFile = "$env:USERPROFILE\genesis-start.txt"
 $started = 0
 try {
   $ErrorActionPreference = 'Stop'
   $values = @(Get-Content -Encoding UTF8 $argsFile)
   Remove-Item $argsFile -Force
+  if (Get-Process WildStar64 -ErrorAction SilentlyContinue) {
+    throw 'a WildStar64 process already runs on the PC; the person may be playing, so nothing was changed'
+  }
   $dir = Join-Path $values[0] 'Client64'
   $exe = Join-Path $dir 'WildStar64.exe'
   $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash
@@ -76,13 +82,15 @@ try {
   # The client may change its window's style once it has read its settings.
   Start-Sleep -Seconds 2
   $p.Refresh()
+  $startTime = $p.StartTime.ToFileTimeUtc()
   $style = [Launch]::GetWindowLong($p.MainWindowHandle, -16)
   $after = [Launch]::GetForegroundWindow().ToInt64()
-  $result = "pid=$started sha256=$hash style=0x$('{0:x8}' -f $style) foreground_before=$before foreground_after=$after foreground_kept=$($before -eq $after)"
+  $result = "pid=$started start=$startTime sha256=$hash style=0x$('{0:x8}' -f $style) foreground_before=$before foreground_after=$after foreground_kept=$($before -eq $after)"
 } catch {
   if ($started -ne 0) { Stop-Process -Id $started -Force -ErrorAction SilentlyContinue }
   $result = 'error: ' + ($_.Exception.Message -replace '\s+', ' ')
 } finally {
   Remove-Item $argsFile -Force -ErrorAction SilentlyContinue
 }
-$result | Out-File -Encoding ascii $resultFile
+$result | Out-File -Encoding ascii "$resultFile.tmp"
+Move-Item -Force "$resultFile.tmp" $resultFile

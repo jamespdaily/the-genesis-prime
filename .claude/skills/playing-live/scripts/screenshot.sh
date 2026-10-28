@@ -4,46 +4,24 @@
 #   screenshot.sh [destination.png]
 #
 # Needs GENESIS_PLAY_PC (user@host), read from ~/.genesis-prime/env.sh when it is there.
-# A hidden scheduled task runs genesis-shot.ps1 on the PC; the task is always deleted.
+# A hidden scheduled task runs genesis-shot.ps1 on the PC, by pc.sh; the task and the files it
+# copied are always deleted. When client.sh has recorded a client (client.pid beside env.sh), the
+# picture is of that process, checked by pid, name and start time; otherwise of the first WildStar64
+# window. SCREENSHOT_SECONDS (default 30) is how long to wait for the picture.
 set -euo pipefail
 
-here=$(cd "$(dirname "$0")" && pwd)
 destination=${1:-genesis-shot.png}
-[ -f "${GENESIS_HOME:-$HOME/.genesis-prime}/env.sh" ] && . "${GENESIS_HOME:-$HOME/.genesis-prime}/env.sh"
-: "${GENESIS_PLAY_PC:?set GENESIS_PLAY_PC (user@host) in ~/.genesis-prime/env.sh}"
-user=${GENESIS_PLAY_PC%@*}
-options=(-o BatchMode=yes -o ConnectTimeout=10)
+tool=screenshot
+. "$(dirname "$0")/pc.sh"
+seconds=${SCREENSHOT_SECONDS:-30}
 
-on_pc() { ssh "${options[@]}" "$GENESIS_PLAY_PC" "$1"; }
-delete_task() { on_pc 'schtasks /Delete /F /TN GenesisShot >NUL 2>&1' || true; }
-# The task is gone when the PC no longer finds it; anything else fails the run.
-finish() {
-  local status=$?
-  local query=0
-  delete_task
-  on_pc 'schtasks /Query /TN GenesisShot >NUL 2>&1' || query=$?
-  case $query in
-    0) echo "screenshot: the GenesisShot task is still on the PC; delete it there" >&2; exit 1 ;;
-    255) echo "screenshot: could not reach the PC to check the GenesisShot task is gone" >&2; exit 1 ;;
-  esac
-  exit $status
-}
-trap finish EXIT
-
+input=
+if [ -s "$home/client.pid" ]; then input=$home/client.pid; fi
+pc_track genesis-shot.png
 rm -f "$destination"
-scp -q "${options[@]}" "$here/genesis-shot.ps1" "$GENESIS_PLAY_PC:C:/Users/$user/genesis-shot.ps1"
-delete_task
-on_pc "del /Q %USERPROFILE%\\genesis-shot.png %USERPROFILE%\\genesis-shot.txt 2>NUL & schtasks /Create /F /TN GenesisShot /SC ONCE /ST 23:59 /IT /RU $user /TR \"conhost.exe --headless powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\\Users\\$user\\genesis-shot.ps1\" >NUL && schtasks /Run /TN GenesisShot >NUL"
-
-# The script writes genesis-shot.txt last, so the picture is ready once it is there.
-for _ in $(seq 1 "${SCREENSHOT_SECONDS:-30}"); do
-  result=$(on_pc 'type %USERPROFILE%\genesis-shot.txt 2>NUL' || true)
-  [ -n "$result" ] && break
-  sleep 1
-done
+run_task GenesisShot genesis-shot.ps1 genesis-shot.txt "$seconds" "$input"
 case "$result" in
   printwindow=True*) ;;
-  "") echo "screenshot: no picture after ${SCREENSHOT_SECONDS:-30} s" >&2; exit 1 ;;
   *) echo "screenshot: $result" >&2; exit 1 ;;
 esac
 scp -q "${options[@]}" "$GENESIS_PLAY_PC:C:/Users/$user/genesis-shot.png" "$destination"
