@@ -2,8 +2,8 @@
 //// with no socket, process or database. Expected values come from these
 //// places.
 //// - The recordings: a live login of the real client through both servers to
-////   the game port, with a create after it (`test/rule_recording/2026-10-28-create`),
-////   each closed with `End`, which counts 28 inputs for the STS connection and
+////   the game port, with a rename and a delete after it (`test/rule_recording/2026-10-28-delete-rename`),
+////   each closed with `End`, which counts 33 inputs for the STS connection and
 ////   5 for the auth connection.
 //// - The login rules read no game table, so these replays need no tables,
 ////   whatever digest a header holds.
@@ -28,7 +28,7 @@ pub fn the_live_sessions_sts_recording_replays_to_the_same_steps_test() -> Nil {
       step: sts_connection.step,
     )
   assert inputs == count as "the replay folds every input the End counts"
-  assert count == 28 as "the live session's STS connection took 28 inputs"
+  assert count == 33 as "the live session's STS connection took 33 inputs"
 }
 
 pub fn the_live_sessions_auth_recording_replays_to_the_same_steps_test() -> Nil {
