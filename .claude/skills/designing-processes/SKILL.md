@@ -29,6 +29,8 @@ The server is designed for the BEAM from the first line. Processes, messages, su
 
 A process with state is a shell plus one rule. A recorded session replays through the rule alone, so every decision must be in it.
 
+- A change to a rule's types makes its recordings refuse to replay ("record again"): record the session again live, and never re-stamp a recording.
+
 - The shell turns everything that reaches the process into the rule's inputs: socket reads, other processes' messages, a monitor's down, a late reply, a failed write, the server stopping. Each input carries the monotonic time and the system time, read once as the shell takes it.
 - The shell carries out the rule's effects in order and decides nothing. It never branches on a message's content.
 - Asking another process is an effect that ends the rule's step: the shell asks, waits up to the deadline and feeds back the outcome, which is the reply, not running, timed out or ended. Work the rule had not finished stays in its state.
