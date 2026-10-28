@@ -13,7 +13,8 @@ import gleam/result
 pub const message_id = 0x07DD
 
 /// The body of message 0x07DD, its fields in wire order. A field named
-/// `field_N` is the Nth of the body and has no use the client's code shows.
+/// `field_N` is the Nth of the body: its own doc names the fact that shows its
+/// value is safe, and one with no such doc has no use the client's code shows.
 pub type PlayCharacter {
   PlayCharacter(character_id: Int)
 }

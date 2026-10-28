@@ -15,7 +15,8 @@ import gleam/result
 pub const message_id = 0x0117
 
 /// The body of message 0x0117, its fields in wire order. A field named
-/// `field_N` is the Nth of the body and has no use the client's code shows.
+/// `field_N` is the Nth of the body: its own doc names the fact that shows its
+/// value is safe, and one with no such doc has no use the client's code shows.
 pub type CharacterList {
   CharacterList(
     server_time: Int,
@@ -28,6 +29,8 @@ pub type CharacterList {
     in_world_logoff_ms: Int,
     reservations: Int,
     max_characters: Int,
+    /// Safe by `0x14002167a`: the client's code gives this field no use the
+    /// server needs, and that fact shows its value is safe.
     field_11: Int,
     faction_restriction: Int,
     free_level_50_available: Int,

@@ -12,9 +12,16 @@ import genesis_prime/message/bit_stream.{
 import gleam/result
 
 /// The record's fields in wire order. A field named `field_N` is the Nth of the
-/// record and has no use the client's code shows.
+/// record: its own doc names the fact that shows its value is safe, and one
+/// with no such doc has no use the client's code shows.
 pub type UnitProperty {
-  UnitProperty(property_id: Int, field_2: Int, value: Int)
+  UnitProperty(
+    property_id: Int,
+    /// Safe by `vector.opcode.0x262.health`: the client's code gives this field
+    /// no use the server needs, and that fact shows its value is safe.
+    field_2: Int,
+    value: Int,
+  )
 }
 
 /// Writes the record's fields to the stream.

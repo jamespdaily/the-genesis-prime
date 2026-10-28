@@ -14,9 +14,15 @@ import gleam/result
 pub const message_id = 0x00E6
 
 /// The body of message 0x00E6, its fields in wire order. A field named
-/// `field_N` is the Nth of the body and has no use the client's code shows.
+/// `field_N` is the Nth of the body: its own doc names the fact that shows its
+/// value is safe, and one with no such doc has no use the client's code shows.
 pub type DeleteCharacterResult {
-  DeleteCharacterResult(result: DeleteResult, value: Int)
+  DeleteCharacterResult(
+    result: DeleteResult,
+    /// Safe by `opcode.0xe6.value`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
+    value: Int,
+  )
 }
 
 /// The message as the bytes of its body, or the first field that cannot be

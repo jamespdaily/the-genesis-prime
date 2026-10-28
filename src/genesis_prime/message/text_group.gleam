@@ -11,7 +11,8 @@ import genesis_prime/message/bit_stream.{
 import gleam/result
 
 /// The record's fields in wire order. A field named `field_N` is the Nth of the
-/// record and has no use the client's code shows.
+/// record: its own doc names the fact that shows its value is safe, and one
+/// with no such doc has no use the client's code shows.
 pub type TextGroup {
   TextGroup(field_1: Int, texts: List(String))
 }

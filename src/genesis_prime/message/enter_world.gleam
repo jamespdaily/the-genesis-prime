@@ -13,14 +13,19 @@ import gleam/result
 pub const message_id = 0x00AD
 
 /// The body of message 0x00AD, its fields in wire order. A field named
-/// `field_N` is the Nth of the body and has no use the client's code shows.
+/// `field_N` is the Nth of the body: its own doc names the fact that shows its
+/// value is safe, and one with no such doc has no use the client's code shows.
 pub type EnterWorld {
   EnterWorld(
     world_id: Int,
     position_x: Int,
     position_y: Int,
     position_z: Int,
+    /// Safe by `opcode.0xad.last_floats`: the client's code gives this field no
+    /// use the server needs, and that fact shows its value is safe.
     field_5: Int,
+    /// Safe by `opcode.0xad.last_floats`: the client's code gives this field no
+    /// use the server needs, and that fact shows its value is safe.
     field_6: Int,
   )
 }

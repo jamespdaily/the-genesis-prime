@@ -19,7 +19,8 @@ import gleam/result
 pub const message_id = 0x0262
 
 /// The body of message 0x0262, its fields in wire order. A field named
-/// `field_N` is the Nth of the body and has no use the client's code shows.
+/// `field_N` is the Nth of the body: its own doc names the fact that shows its
+/// value is safe, and one with no such doc has no use the client's code shows.
 pub type UnitCreatePlayer {
   UnitCreatePlayer(
     unit_id: Int,
@@ -49,10 +50,16 @@ pub type UnitCreatePlayer {
     base_faction_id: Int,
     tagged_by_unit_id: Int,
     tagged_by_group_id: Int,
+    /// Safe by `opcode.0x262.unit_fields`: the client's code gives this field
+    /// no use the server needs, and that fact shows its value is safe.
     field_31: Int,
+    /// Safe by `opcode.0x262.unit_fields`: the client's code gives this field
+    /// no use the server needs, and that fact shows its value is safe.
     field_33: Int,
     world_socket_id: Int,
     cluster_id: Int,
+    /// Safe by `opcode.0x262.unit_fields`: the client's code gives this field
+    /// no use the server needs, and that fact shows its value is safe.
     field_37: Int,
     minimap_marker_id: Int,
     display_info_id: Int,

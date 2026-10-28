@@ -14,9 +14,16 @@ import gleam/result
 pub const message_id = 0x00DC
 
 /// The body of message 0x00DC, its fields in wire order. A field named
-/// `field_N` is the Nth of the body and has no use the client's code shows.
+/// `field_N` is the Nth of the body: its own doc names the fact that shows its
+/// value is safe, and one with no such doc has no use the client's code shows.
 pub type CreateCharacterResult {
-  CreateCharacterResult(character_id: Int, field_2: Int, result: CreateResult)
+  CreateCharacterResult(
+    character_id: Int,
+    /// Safe by `opcode.0xdc.field_2`: the client's code gives this field no use
+    /// the server needs, and that fact shows its value is safe.
+    field_2: Int,
+    result: CreateResult,
+  )
 }
 
 /// The message as the bytes of its body, or the first field that cannot be
