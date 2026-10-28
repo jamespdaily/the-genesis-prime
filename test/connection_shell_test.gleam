@@ -164,6 +164,32 @@ pub fn a_rule_that_crashes_ends_only_its_connection_test() -> Nil {
     as "the listener still accepts and greets"
 }
 
+pub fn a_connection_that_crashes_leaves_another_open_connection_running_unchanged_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use server <- serving(crash_on_0xee_rule(), None, 1000)
+  let crashing = ask_support.connect(server)
+  let _hello = receive(crashing, 53)
+  let assert [crashing_process] = ask_support.connections(server)
+    as "one connection process"
+  let staying = ask_support.connect(server)
+  let _hello = receive(staying, 53)
+  let assert [staying_process] =
+    list.filter(ask_support.connections(server), fn(connection) {
+      connection != crashing_process
+    })
+    as "a second connection process, open beside the first"
+  let watched = process.monitor(crashing_process)
+  assert mug.send(crashing, <<0xEE>>) == Ok(Nil) as "the byte that crashes it"
+  let assert process.Abnormal(_) = ask_support.ended(watched)
+    as "the first connection crashed"
+  assert mug.send(staying, <<7, 0, 0, 0, 0, 0, 9>>) == Ok(Nil)
+    as "a ping on the connection that stayed"
+  assert receive(staying, 7) == <<7, 0, 0, 0, 1, 0, 9>>
+    as "opcode.0x1: the connection that stayed answers its ping after the other crashed"
+  assert ask_support.connections(server) == [staying_process]
+    as "the BEAM isolates a crash to its process: the connection that stayed is the same process it was before"
+}
+
 pub fn every_input_carries_one_time_reading_taken_as_the_shell_takes_it_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
