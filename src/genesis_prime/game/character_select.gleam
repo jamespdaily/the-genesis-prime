@@ -6,9 +6,9 @@
 ////
 //// ```
 //// game rule                              character select             effects
-//// the client's 0x07E0, account known ─▶ started(state, account_id)
-////                                                                   ─▶ AskCharacters(account)
-//// the store's rows                    ─▶ listed(state, ..)
+//// the client's 0x07E0, account known ─▶ started(account_id)
+////                                                                   ─▶ Ask(ListCharacters(account))
+//// the store's answer                  ─▶ answered(state, answer, ..)
 ////                                                                   ─▶ Send(0x0117)
 //// ```
 ////
@@ -27,10 +27,16 @@
 ////   class icon for class 1 to 20 and the path icon for path 0 to 3, and
 ////   builds the model from race, gender and class; with no characters it shows
 ////   "no characters found" (lua.CharacterSelection.OnLoadFromCharacter.list).
+//// - **Its asks and their answers are its own.** It asks the store itself and
+////   takes the store's answer in `answered`, which refuses an answer of a kind
+////   it did not ask for. The game connection's rule holds the client's frames
+////   while an ask is out (`waiting`), so a second 0x07E0 is taken only after
+////   the list is sent, and asks the store again.
 //// - **No answer.** The client waits for 0x0117 with no timeout
 ////   (lua.Character.OnCharacterList), so the game connection ends the
-////   connection when the store gives none; this module is given only rows.
-//// - **A second 0x07E0.** It asks the store again and sends a new list.
+////   connection, after telling the client, when an ask every store ask shares
+////   fails (the store unavailable, not running, ended or silent); this module
+////   is given only the answers a list gets.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/message/character_list.{CharacterList}
@@ -44,9 +50,8 @@ import gleam/list
 /// What a character select asks or sends; the game connection's rule turns
 /// each into its own effect.
 pub type Effect {
-  /// Ask the store for the account's characters; its answer comes back to
-  /// `listed`.
-  AskCharacters(account_id: AccountId)
+  /// Ask the store; its answer comes back to `answered`.
+  Ask(request: store.Request)
   /// Send this message to the client, in the game wrapper under the
   /// connection's current cipher.
   Send(frame: Frame)
@@ -54,45 +59,46 @@ pub type Effect {
 
 /// Where character select is.
 pub opaque type State {
-  /// The client has not asked for the list.
-  NotStarted
+  /// No ask is out.
+  Resting
   /// The store is asked for the characters.
-  Listing
-  /// The list is sent.
-  Listed
+  Asking
 }
 
 /// The state of a connection that has not entered character select.
 pub fn new() -> State {
-  NotStarted
+  Resting
 }
 
-/// The client's 0x07E0 was read for this account: asks the store for its
-/// characters, unless it is already asked, when its one answer is awaited.
-pub fn started(
-  state state: State,
-  account_id account_id: AccountId,
-) -> #(State, List(Effect)) {
+/// Whether the store's answer is awaited.
+pub fn waiting(state state: State) -> Bool {
   case state {
-    NotStarted | Listed -> #(Listing, [AskCharacters(account_id:)])
-    Listing -> #(Listing, [])
+    Asking -> True
+    Resting -> False
   }
 }
 
-/// The store's rows for the account: sends 0x0117 with one entry per
-/// character, in the order given. `filetime` is the system time of the input
-/// as a Windows FILETIME (genesis_prime/step), the server's time the client
-/// keeps the difference from. Rows nobody asked for are a bug of the game
-/// connection's rule, which asks only through `started`.
-pub fn listed(
+/// The client's 0x07E0 was read for this account: asks the store for its
+/// characters, whatever came before.
+pub fn started(account_id account_id: AccountId) -> #(State, List(Effect)) {
+  #(Asking, [Ask(request: store.ListCharacters(account_id:))])
+}
+
+/// The store's answer to an ask: for the characters, sends 0x0117 with one
+/// entry per character, in the order given. Another answer, or any answer
+/// while no ask is out, is none this module asked for and gives an `Error`.
+/// `filetime` is the system time of the input as a Windows FILETIME
+/// (genesis_prime/step), the server's time the client keeps the difference
+/// from.
+pub fn answered(
   state state: State,
+  answer answer: store.Answer,
   filetime filetime: Int,
   realm_id realm_id: Int,
   max_characters max_characters: Int,
-  characters characters: List(Character),
-) -> #(State, List(Effect)) {
-  case state {
-    Listing -> {
+) -> Result(#(State, List(Effect)), Nil) {
+  case state, answer {
+    Asking, store.Characters(characters:) -> {
       let assert Ok(body) =
         character_list.encode(CharacterList(
           server_time: filetime,
@@ -110,9 +116,15 @@ pub fn listed(
           free_level_50_available: 0,
         ))
         as "the list's values fit their fields: the table's checks hold each row's"
-      #(Listed, [Send(Frame(message_id: character_list.message_id, body:))])
+      Ok(
+        #(Resting, [Send(Frame(message_id: character_list.message_id, body:))]),
+      )
     }
-    NotStarted | Listed -> panic as "the store's rows came with no ask for them"
+    Resting, _
+    | Asking, store.Unavailable
+    | Asking, store.AccountFound(..)
+    | Asking, store.NoSuchAccount
+    -> Error(Nil)
   }
 }
 

@@ -68,7 +68,7 @@ import genesis_prime/login/sts_message.{
 import genesis_prime/login/sts_wire
 import genesis_prime/step.{
   type Effect, type Input, type Now, type Outcome, type Rule, type Step, Effects,
-  Log, LogError, LogInfo, LogLine, LogWarning, Rule, Stop, Write,
+  LogError, LogInfo, LogWarning, Rule, Stop, Write,
 }
 import genesis_prime/store.{
   type Account, AccountFound, FindAccount, NoSuchAccount, Unavailable,
@@ -169,7 +169,9 @@ pub fn step(
   case state {
     NotAccepted(settings:) -> {
       case
-        client_connection.hear(input.event, about: step.no_one, stopping: [])
+        client_connection.hear(input.event, about: step.no_one, stopping: fn() {
+          []
+        })
       {
         Connect(connection:, peer:, seed:) -> #(
           Connected(Session(
@@ -182,14 +184,7 @@ pub fn step(
         )
         Bytes(..) | client_connection.Outcome(..) -> #(
           state,
-          Effects([
-            Log(LogLine(
-              level: LogError,
-              text: "the STS rule took an input before the connection was accepted",
-              about: step.no_one,
-            )),
-            Stop,
-          ]),
+          client_connection.before_accepted(rule: "STS"),
         )
         Otherwise(step:) -> #(state, step)
       }
@@ -211,22 +206,23 @@ fn connected(
         link: session.link,
         account_id: account_id_of(session.status),
       ),
-      stopping: [],
+      stopping: fn() { [] },
     )
   {
     Bytes(bytes:) -> read(session:, now:, bytes:)
     client_connection.Outcome(outcome:) ->
-      settle(handled: answered(session:, outcome:), now:, carried: [])
+      client_connection.settle(
+        handled: answered(session:, outcome:),
+        flow: flow(now),
+        carried: [],
+      )
     Connect(..) -> #(
       Connected(session),
-      Effects([
-        log(
-          session:,
-          level: LogError,
-          text: "the STS rule was accepted a second time",
-        ),
-        Stop,
-      ]),
+      client_connection.accepted_again(
+        link: session.link,
+        account_id: account_id_of(session.status),
+        rule: "STS",
+      ),
     )
     Otherwise(step:) -> #(Connected(session), step)
   }
@@ -253,55 +249,37 @@ fn read(
     | Proven(stage: AwaitingLoginFinish, ..)
     | Proven(stage: AwaitingAccountList(..), ..)
     | Proven(stage: AwaitingTokenRequest(..), ..)
-    | Proven(stage: TokenGiven, ..) -> drive(session:, now:, carried: [])
+    | Proven(stage: TokenGiven, ..) ->
+      client_connection.drive(session:, flow: flow(now), carried: [])
   }
 }
 
-/// Takes the whole requests in the pending bytes in order until one asks or
-/// the bytes hold no more.
-fn drive(
-  session session: Session,
-  now now: Now,
-  carried carried: List(Effect(Nil)),
-) -> #(State, Step(Nil, Request)) {
-  case sts_wire.take(session.pending) {
-    Error(error) ->
-      settle(
-        handled: End(session, [
-          log(
-            session:,
-            level: LogError,
-            text: "the bytes are no STS request: " <> sts_wire.describe(error),
-          ),
-          Stop,
-        ]),
-        now:,
-        carried:,
-      )
-    Ok(None) -> #(Connected(session), Effects(carried))
-    Ok(Some(#(request, rest))) ->
-      settle(
-        handled: handle(
-          session: Session(..session, pending: rest),
-          now:,
-          request:,
+/// How the rule takes the client's requests, at the time of an input.
+fn flow(
+  now: Now,
+) -> client_connection.Flow(
+  Session,
+  sts_wire.Request,
+  sts_wire.WireError,
+  State,
+) {
+  client_connection.Flow(
+    pending: fn(session: Session) { session.pending },
+    take: sts_wire.take,
+    taking: fn(session, request, rest) {
+      handle(session: Session(..session, pending: rest), now:, request:)
+    },
+    refused: fn(session, error) {
+      End(session, [
+        log(
+          session:,
+          level: LogError,
+          text: "the bytes are no STS request: " <> sts_wire.describe(error),
         ),
-        now:,
-        carried:,
-      )
-  }
-}
-
-fn settle(
-  handled handled: client_connection.Handled(Session),
-  now now: Now,
-  carried carried: List(Effect(Nil)),
-) -> #(State, Step(Nil, Request)) {
-  client_connection.settle(
-    handled:,
-    carried:,
+        Stop,
+      ])
+    },
     connected: Connected,
-    drive: fn(session, carried) { drive(session:, now:, carried:) },
   )
 }
 

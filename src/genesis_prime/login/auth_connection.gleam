@@ -43,7 +43,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{AuthWrapper}
-import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
 import genesis_prime/hand_off.{type Holder, GameToken, Put, SessionKey, Take}
 import genesis_prime/login/guid.{type Guid}
@@ -54,7 +54,7 @@ import genesis_prime/message/login_refused.{LoginRefused}
 import genesis_prime/message/login_request
 import genesis_prime/step.{
   type Effect, type Input, type Now, type Outcome, type Rule, type Step, Effects,
-  Log, LogError, LogInfo, LogLine, LogWarning, Rule, Stop, Write,
+  LogError, LogInfo, LogWarning, Rule, Stop, Write,
 }
 import genesis_prime/store
 import gleam/list
@@ -153,7 +153,9 @@ pub fn step(
   case state {
     NotAccepted(settings:) ->
       case
-        client_connection.hear(input.event, about: step.no_one, stopping: [])
+        client_connection.hear(input.event, about: step.no_one, stopping: fn() {
+          []
+        })
       {
         Connect(connection:, peer:, seed:) -> {
           let planted = case settings.planted {
@@ -172,14 +174,7 @@ pub fn step(
         }
         Bytes(..) | client_connection.Outcome(..) -> #(
           state,
-          Effects([
-            Log(LogLine(
-              level: LogError,
-              text: "the auth rule took an input before the connection was accepted",
-              about: step.no_one,
-            )),
-            Stop,
-          ]),
+          client_connection.before_accepted(rule: "auth"),
         )
         Otherwise(step:) -> #(state, step)
       }
@@ -200,7 +195,7 @@ fn connected(
         session.link,
         account_id: account_id_of(session.status),
       ),
-      stopping: [],
+      stopping: fn() { [] },
     )
   {
     Bytes(bytes:) -> {
@@ -213,21 +208,22 @@ fn connected(
           Effects([]),
         )
         AwaitingLoginRequest | HandedOff(..) ->
-          drive(session:, now:, carried: [])
+          client_connection.drive(session:, flow: flow(now), carried: [])
       }
     }
     client_connection.Outcome(outcome:) ->
-      settle(handled: answered(session:, now:, outcome:), now:, carried: [])
+      client_connection.settle(
+        handled: answered(session:, now:, outcome:),
+        flow: flow(now),
+        carried: [],
+      )
     Connect(..) -> #(
       Connected(session),
-      Effects([
-        log(
-          session:,
-          level: LogError,
-          text: "the auth rule was accepted a second time",
-        ),
-        Stop,
-      ]),
+      client_connection.accepted_again(
+        link: session.link,
+        account_id: account_id_of(session.status),
+        rule: "auth",
+      ),
     )
     Otherwise(step:) -> #(Connected(session), step)
   }
@@ -246,45 +242,18 @@ fn wrapped(inner: Frame) -> BitArray {
   client_connection.wrapped(AuthWrapper, inner, cipher.base())
 }
 
-/// Takes the whole frames in the pending bytes in order until one asks or the
-/// bytes hold no more. A bad frame ends the connection after the whole frames
-/// before it.
-fn drive(
-  session session: Session,
-  now now: Now,
-  carried carried: List(Effect(Nil)),
-) -> #(State, Step(Nil, Request)) {
-  client_connection.drive(
-    session:,
-    carried:,
+/// How the rule takes the client's frames, at the time of an input.
+fn flow(now: Now) -> client_connection.Flow(Session, Frame, FrameError, State) {
+  client_connection.Flow(
     pending: fn(session: Session) { session.pending },
+    take: frame.take,
     taking: fn(session, whole, rest) {
       handle(session: Session(..session, pending: rest), now:, frame: whole)
     },
     refused: fn(session, error) {
-      End(session, [
-        log(
-          session:,
-          level: LogError,
-          text: "the bytes are no frame: " <> frame.describe(error),
-        ),
-        Stop,
-      ])
+      end_for(session, "the bytes are no frame: " <> frame.describe(error))
     },
     connected: Connected,
-  )
-}
-
-fn settle(
-  handled handled: client_connection.Handled(Session),
-  now now: Now,
-  carried carried: List(Effect(Nil)),
-) -> #(State, Step(Nil, Request)) {
-  client_connection.settle(
-    handled:,
-    carried:,
-    connected: Connected,
-    drive: fn(session, carried) { drive(session:, now:, carried:) },
   )
 }
 
@@ -312,15 +281,11 @@ fn handle(
           case login_request.decode(inner.body) {
             Ok(request) -> login_requested(session:, now:, request:)
             Error(error) ->
-              End(session, [
-                log(
-                  session:,
-                  level: LogError,
-                  text: "the login request 0x0592 does not decode: "
-                    <> bit_stream.describe_decode(error:),
-                ),
-                Stop,
-              ])
+              end_for(
+                session,
+                "the login request 0x0592 does not decode: "
+                  <> bit_stream.describe_decode(error:),
+              )
           }
         False -> unhandled(session, inner.message_id)
       }
@@ -333,14 +298,13 @@ fn unhandled(
   session: Session,
   message_id: Int,
 ) -> client_connection.Handled(Session) {
-  Continue(session, [
-    client_connection.unhandled(
-      link: session.link,
-      account_id: account_id_of(session.status),
-      server: "auth",
-      message_id:,
-    ),
-  ])
+  client_connection.unhandled(
+    session:,
+    link: session.link,
+    account_id: account_id_of(session.status),
+    server: "auth",
+    message_id:,
+  )
 }
 
 /// The client's login request: a build other than 16042 is refused; else the
@@ -421,11 +385,18 @@ fn timed_out(
   ])
 }
 
+/// The client broke the protocol: an error log line and the end of the
+/// connection.
 fn end_for(
   session: Session,
-  reason: String,
+  text: String,
 ) -> client_connection.Handled(Session) {
-  End(session, [log(session:, level: LogError, text: reason), Stop])
+  client_connection.end_for(
+    session:,
+    link: session.link,
+    account_id: account_id_of(session.status),
+    text:,
+  )
 }
 
 /// The answer to the ask in flight.

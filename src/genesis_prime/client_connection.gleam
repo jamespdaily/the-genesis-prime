@@ -10,15 +10,15 @@
 //// with `hear`, which decides what the client closing, a failed socket, a late
 //// answer and an input a connection is never given do, and ends the
 //// connection when the server stops after the effects the rule gives it.
-//// Each takes a request or frame at a time and says what it decided with
-//// `Handled`, which `settle` carries out. The rules that take the client's
-//// wrapper (the auth rule and the game rule) read each whole frame with
-//// `drive` and `open`, and write each message with `wrapped`.
+//// Each takes a request or frame at a time, through a `Flow` that `drive`
+//// runs, and says what it decided with `Handled`, which `settle` carries out.
+//// The rules that take the client's wrapper (the auth rule and the game rule)
+//// open each whole frame with `open`, and write each message with `wrapped`.
 
 import genesis_prime/connection/cipher.{type Cipher}
-import genesis_prime/connection/client_frame
-import genesis_prime/connection/encrypted_frame.{type Wrapper}
-import genesis_prime/connection/frame.{type Frame, type FrameError}
+import genesis_prime/connection/encrypted_frame.{type Wrapper, ClientWrapper}
+import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/connection/network_message
 import genesis_prime/hand_off
 import genesis_prime/random.{type Random}
 import genesis_prime/step.{
@@ -108,23 +108,71 @@ pub fn log(
   Log(LogLine(level:, text:, about: about(link:, account_id:)))
 }
 
-/// The log line of a whole frame of a message the rule does not take: it is
-/// logged and the connection goes on. `server` names whose rule it is, as the
-/// line says ("auth", "game").
+/// A whole frame of a message the rule does not take: logged as unhandled,
+/// and the connection goes on. `server` names whose rule it is, as the line
+/// says ("auth", "game").
 pub fn unhandled(
+  session session: session,
   link link: Link,
   account_id account_id: Option(Int),
   server server: String,
   message_id message_id: Int,
-) -> Effect(Nil) {
-  Log(LogLine(
-    level: LogWarning,
-    text: "unhandled " <> server <> " message " <> message_text(message_id:),
-    about: About(
-      ..about(link:, account_id:),
-      message: Some(#("unhandled", message_id)),
+) -> Handled(session) {
+  Continue(session, [
+    Log(LogLine(
+      level: LogWarning,
+      text: "unhandled " <> server <> " message " <> message_text(message_id:),
+      about: About(
+        ..about(link:, account_id:),
+        message: Some(#("unhandled", message_id)),
+      ),
+    )),
+  ])
+}
+
+/// The client broke the protocol: an error log line and the end of the
+/// connection, with nothing written to a client that is no client.
+pub fn end_for(
+  session session: session,
+  link link: Link,
+  account_id account_id: Option(Int),
+  text text: String,
+) -> Handled(session) {
+  End(session, [log(link:, account_id:, level: LogError, text:), Stop])
+}
+
+/// The step of a rule that took bytes or an answer before the connection was
+/// accepted: an error log line and the end of the connection. `rule` names
+/// whose rule it is, as the line says ("auth", "game", "STS").
+pub fn before_accepted(rule rule: String) -> Step(Nil, Request) {
+  Effects([
+    Log(LogLine(
+      level: LogError,
+      text: "the "
+        <> rule
+        <> " rule took an input before the connection was accepted",
+      about: step.no_one,
+    )),
+    Stop,
+  ])
+}
+
+/// The step of a rule that was accepted a second time: an error log line and
+/// the end of the connection. `rule` names whose rule it is, as the line says.
+pub fn accepted_again(
+  link link: Link,
+  account_id account_id: Option(Int),
+  rule rule: String,
+) -> Step(Nil, Request) {
+  Effects([
+    log(
+      link:,
+      account_id:,
+      level: LogError,
+      text: "the " <> rule <> " rule was accepted a second time",
     ),
-  ))
+    Stop,
+  ])
 }
 
 /// A message id as the log writes it: four hex digits, as in `0x0244`.
@@ -147,13 +195,14 @@ pub type Heard {
 
 /// Sorts an input: what the client closing, a failed socket and a late answer
 /// do is the same in every rule, so it is decided here; `about` says who a log
-/// line is about. The server stopping ends the connection after `stopping`,
-/// the effects the rule writes first: none for a connection with no one to
-/// tell, a notice for one whose client waits for the server's next message.
+/// line is about. The server stopping ends the connection after the effects
+/// `stopping` gives, which the rule writes first: none for a connection with
+/// no one to tell, a notice for one whose client waits for the server's next
+/// message. `stopping` is called only when the server stops.
 pub fn hear(
   event event: Event(Nil, Answer),
   about about: About,
-  stopping stopping: List(Effect(Nil)),
+  stopping stopping: fn() -> List(Effect(Nil)),
 ) -> Heard {
   let ends = fn(level, text) {
     Otherwise(Effects([Log(LogLine(level:, text:, about:)), Stop]))
@@ -164,7 +213,7 @@ pub fn hear(
     Socket(step.Read(bytes:)) -> Bytes(bytes:)
     Answered(outcome:, ..) -> Outcome(outcome:)
     Socket(PeerClosed) -> Otherwise(Effects([Stop]))
-    Stopping(..) -> Otherwise(Effects(list.append(stopping, [Stop])))
+    Stopping(..) -> Otherwise(Effects(list.append(stopping(), [Stop])))
     Socket(ReadFailed(failure:)) | Socket(WriteFailed(failure:)) ->
       ends(
         LogWarning,
@@ -189,27 +238,73 @@ pub type Handled(session) {
   End(session: session, effects: List(Effect(Nil)))
 }
 
-/// Carries out what was decided after the effects already `carried`: on
-/// `Continue` the rule's `drive` takes the next request or frame, on `Asking`
-/// the step ends in the ask, on `End` it ends.
+/// How a rule takes what the client sent: the callbacks `drive` and `settle`
+/// run it with, which a rule makes for each input from the time of the
+/// input. `item` is one request or frame the bytes hold and `error` what the
+/// bytes are when they are none.
+pub type Flow(session, item, error, state) {
+  Flow(
+    /// The bytes read and not yet taken.
+    pending: fn(session) -> BitArray,
+    /// The first whole item in the bytes and the bytes after it, `None` when
+    /// its end has not arrived.
+    take: fn(BitArray) -> Result(Option(#(item, BitArray)), error),
+    /// What one item does, given the bytes after it as `rest`, which it keeps
+    /// as the session's pending bytes.
+    taking: fn(session, item, BitArray) -> Handled(session),
+    /// What bytes that are no item do: the rule ends the connection.
+    refused: fn(session, error) -> Handled(session),
+    /// The rule's state for a session.
+    connected: fn(session) -> state,
+  )
+}
+
+/// Takes the whole items in a session's pending bytes in order, until one
+/// asks, the connection ends or the bytes hold no more; `refused` ends the
+/// connection for bytes that are no item, after the whole items before them.
+/// `carried` are the effects already decided, the last first.
+pub fn drive(
+  session session: session,
+  flow flow: Flow(session, item, error, state),
+  carried carried: List(Effect(Nil)),
+) -> #(state, Step(Nil, Request)) {
+  case flow.take(flow.pending(session)) {
+    Error(error) ->
+      settle(handled: flow.refused(session, error), flow:, carried:)
+    Ok(None) -> #(flow.connected(session), Effects(list.reverse(carried)))
+    Ok(Some(#(first, rest))) ->
+      settle(handled: flow.taking(session, first, rest), flow:, carried:)
+  }
+}
+
+/// Carries out what was decided after the effects already `carried`, the last
+/// first: on `Continue` `drive` takes the next item, on `Asking` the step ends
+/// in the ask, on `End` it ends. The effects leave in order, reversed once
+/// here.
 pub fn settle(
   handled handled: Handled(session),
+  flow flow: Flow(session, item, error, state),
   carried carried: List(Effect(Nil)),
-  connected connected: fn(session) -> state,
-  drive drive: fn(session, List(Effect(Nil))) -> #(state, Step(Nil, Request)),
 ) -> #(state, Step(Nil, Request)) {
   case handled {
     Continue(session:, effects:) ->
-      drive(session, list.append(carried, effects))
+      drive(session:, flow:, carried: list.fold(effects, carried, list.prepend))
     Asking(session:, effects:, ask:) -> #(
-      connected(session),
-      EffectsThenAsk(list.append(carried, effects), ask),
+      flow.connected(session),
+      EffectsThenAsk(in_order(carried:, then: effects), ask),
     )
     End(session:, effects:) -> #(
-      connected(session),
-      Effects(list.append(carried, effects)),
+      flow.connected(session),
+      Effects(in_order(carried:, then: effects)),
     )
   }
+}
+
+fn in_order(
+  carried carried: List(Effect(Nil)),
+  then effects: List(Effect(Nil)),
+) -> List(Effect(Nil)) {
+  list.append(list.reverse(carried), effects)
 }
 
 /// Why an ask had no answer, for the log: `who` is the process asked.
@@ -247,11 +342,14 @@ pub type Opened(session) {
   Inside(inner: Frame)
 }
 
-/// Sorts a whole frame from the client: a ping is answered, a pong or close
-/// notice accepted, a network message that does not decode ends the
-/// connection, a frame of a message the rule does not take is logged as
-/// unhandled by `server`, and the frame inside the client's wrapper, opened
-/// with `cipher`, is given to the rule.
+/// Sorts a whole frame from the client: the network layer's messages first
+/// (genesis_prime/connection/network_message), answered before any wrapper is
+/// looked at (a ping is answered, a pong or close notice accepted, a network
+/// message that does not decode ends the connection); then the client's
+/// wrapper, opened with `cipher` (genesis_prime/connection/encrypted_frame),
+/// whose inner frame is given to the rule; and a frame of a message the rule
+/// does not take, logged as unhandled by `server`. A wrapper or inner frame
+/// that is none the client's reader accepts ends the connection.
 pub fn open(
   session session: session,
   link link: Link,
@@ -260,75 +358,28 @@ pub fn open(
   frame whole: Frame,
   cipher cipher: Cipher,
 ) -> Opened(session) {
-  case client_frame.receive(frame: whole, cipher:) {
-    client_frame.Pong(bytes:) -> Settled(Continue(session, [Write(bytes)]))
-    client_frame.Noted -> Settled(Continue(session, []))
-    client_frame.Malformed(message_id:, ..) ->
-      Settled(
-        End(session, [
-          log(
-            link:,
-            account_id:,
-            level: LogError,
-            text: "a network message "
-              <> message_text(message_id:)
-              <> " does not decode",
-          ),
-          Stop,
-        ]),
-      )
-    client_frame.Unknown(message_id:) ->
-      Settled(
-        Continue(session, [unhandled(link:, account_id:, server:, message_id:)]),
-      )
-    client_frame.Broken(error:) ->
-      Settled(
-        End(session, [
-          log(
-            link:,
-            account_id:,
-            level: LogError,
-            text: "the wrapped frame is no frame: " <> frame.describe(error),
-          ),
-          Stop,
-        ]),
-      )
-    client_frame.Wrapped(inner:) -> Inside(inner:)
+  let ends = fn(text) { Settled(end_for(session:, link:, account_id:, text:)) }
+  let unknown = fn(message_id) {
+    Settled(unhandled(session:, link:, account_id:, server:, message_id:))
   }
-}
-
-/// Takes the whole frames in a session's pending bytes in order, until one
-/// asks, the connection ends or the bytes hold no more. `taking` takes one
-/// frame, given the bytes after it as `rest`, which it keeps as the
-/// session's pending bytes; `refused` ends the connection for bytes that are
-/// no frame, after the whole frames before them; `carried` are the effects
-/// already decided.
-pub fn drive(
-  session session: session,
-  carried carried: List(Effect(Nil)),
-  pending pending: fn(session) -> BitArray,
-  taking taking: fn(session, Frame, BitArray) -> Handled(session),
-  refused refused: fn(session, FrameError) -> Handled(session),
-  connected connected: fn(session) -> state,
-) -> #(state, Step(Nil, Request)) {
-  let next = fn(session, carried) {
-    drive(session:, carried:, pending:, taking:, refused:, connected:)
-  }
-  case frame.take(pending(session)) {
-    Error(error) ->
-      settle(
-        handled: refused(session, error),
-        carried:,
-        connected:,
-        drive: next,
+  case network_message.handle(frame: whole) {
+    network_message.Answer(bytes:) -> Settled(Continue(session, [Write(bytes)]))
+    network_message.Accepted -> Settled(Continue(session, []))
+    network_message.Malformed(message_id:, ..) ->
+      ends(
+        "a network message " <> message_text(message_id:) <> " does not decode",
       )
-    Ok(None) -> #(connected(session), Effects(carried))
-    Ok(Some(#(first, rest))) ->
-      settle(
-        handled: taking(session, first, rest),
-        carried:,
-        connected:,
-        drive: next,
-      )
+    network_message.NotNetwork ->
+      case whole.message_id == encrypted_frame.message_id(ClientWrapper) {
+        False -> unknown(whole.message_id)
+        True ->
+          case encrypted_frame.unwrap(whole, cipher) {
+            Ok(inner) -> Inside(inner:)
+            Error(encrypted_frame.NotAWrapper(message_id:)) ->
+              unknown(message_id)
+            Error(encrypted_frame.BadFrame(error)) ->
+              ends("the wrapped frame is no frame: " <> frame.describe(error))
+          }
+      }
   }
 }

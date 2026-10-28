@@ -36,8 +36,11 @@
 ////   bytes read and are taken once the answer comes, so 0x07E0 is taken after
 ////   the hand-off's answer, and 0x038C and 0x0241 after the store's.
 //// - **The character list** is character select's own feature
-////   (genesis_prime/game/character_select); the rule turns its effects into
-////   writes in the game wrapper and into the store ask.
+////   (genesis_prime/game/character_select): it makes its own store ask and
+////   takes the store's answer, and the rule turns its effects into writes in
+////   the game wrapper and into the ask. The failures every ask shares (no
+////   answer, or the store unavailable) are the rule's, so a feature added to
+////   character select adds no status here.
 //// - **The server never ends a connection after the hello without telling
 ////   the client**, which waits for the list with no timeout and would stay on
 ////   its prompt otherwise (lua.Character.OnCharacterList): 0x036A in the game
@@ -62,7 +65,7 @@
 ////   drops the client, which connects again from the login.
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
-////   (genesis_prime/connection/client_frame).
+////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
 //// - **Out of order.** A frame the client's reader would refuse ends the
 ////   connection; a whole frame of a message the rule does not take, 0x038C
 ////   with 0x082D inside it, 0x0241 and any other, is logged as unhandled and
@@ -74,7 +77,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
-import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
 import genesis_prime/game/character_select
 import genesis_prime/hand_off.{type Holder, SessionKey, Take}
@@ -85,7 +88,7 @@ import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/game_hello_reply
 import genesis_prime/step.{
   type Effect, type Input, type Now, type Outcome, type Rule, type Step, Effects,
-  Log, LogError, LogLine, LogWarning, Stop, Write,
+  LogWarning, Stop, Write,
 }
 import genesis_prime/store
 import gleam/int
@@ -139,10 +142,9 @@ type Status {
   /// The hand-off is asked to take the session key.
   TakingSessionKey
   /// The session key was held for `holder`; the client is in character
-  /// select, which holds its own state.
+  /// select, which holds its own state, asks the store itself and says when
+  /// its answer is awaited.
   InCharacterSelect(holder: Holder, select: character_select.State)
-  /// The store is asked for the holder's characters.
-  ListingCharacters(holder: Holder, select: character_select.State)
 }
 
 /// 0x036A's reasons (opcode.0x36a, 0x1400168a0).
@@ -170,7 +172,9 @@ pub fn step(
   case state {
     NotAccepted(settings:) ->
       case
-        client_connection.hear(input.event, about: step.no_one, stopping: [])
+        client_connection.hear(input.event, about: step.no_one, stopping: fn() {
+          []
+        })
       {
         Connect(connection:, peer:, seed:) -> #(
           Connected(Session(
@@ -184,14 +188,7 @@ pub fn step(
         )
         Bytes(..) | client_connection.Outcome(..) -> #(
           state,
-          Effects([
-            Log(LogLine(
-              level: LogError,
-              text: "the game rule took an input before the connection was accepted",
-              about: step.no_one,
-            )),
-            Stop,
-          ]),
+          client_connection.before_accepted(rule: "game"),
         )
         Otherwise(step:) -> #(state, step)
       }
@@ -212,37 +209,58 @@ fn connected(
         session.link,
         account_id: account_id_of(session.status),
       ),
-      stopping: [notice(session:, reason: reason_server_failure)],
+      stopping: fn() { server_stopping(session) },
     )
   {
     Bytes(bytes:) -> {
       let session =
         Session(..session, pending: <<session.pending:bits, bytes:bits>>)
-      case session.status {
+      case asking(session.status) {
         // A frame is taken only once the answer to the ask in flight comes.
-        TakingSessionKey | ListingCharacters(..) -> #(
-          Connected(session),
-          Effects([]),
-        )
-        AwaitingHelloReply | InCharacterSelect(..) ->
-          drive(session:, now:, carried: [])
+        True -> #(Connected(session), Effects([]))
+        False -> client_connection.drive(session:, flow: flow(now), carried: [])
       }
     }
     client_connection.Outcome(outcome:) ->
-      settle(handled: answered(session:, now:, outcome:), now:, carried: [])
+      client_connection.settle(
+        handled: answered(session:, now:, outcome:),
+        flow: flow(now),
+        carried: [],
+      )
     Connect(..) -> #(
       Connected(session),
-      Effects([
-        log(
-          session:,
-          level: LogError,
-          text: "the game rule was accepted a second time",
-        ),
-        Stop,
-      ]),
+      client_connection.accepted_again(
+        link: session.link,
+        account_id: account_id_of(session.status),
+        rule: "game",
+      ),
     )
     Otherwise(step:) -> #(Connected(session), step)
   }
+}
+
+/// Whether an ask is in flight, so the frames after the one that asked wait.
+fn asking(status: Status) -> Bool {
+  case status {
+    TakingSessionKey -> True
+    InCharacterSelect(select:, ..) -> character_select.waiting(select)
+    AwaitingHelloReply -> False
+  }
+}
+
+/// How the rule takes the client's frames, at the time of an input.
+fn flow(now: Now) -> client_connection.Flow(Session, Frame, FrameError, State) {
+  client_connection.Flow(
+    pending: fn(session: Session) { session.pending },
+    take: frame.take,
+    taking: fn(session, whole, rest) {
+      handle(session: Session(..session, pending: rest), now:, frame: whole)
+    },
+    refused: fn(session, error) {
+      end_for(session, "the bytes are no frame: " <> frame.describe(error))
+    },
+    connected: Connected,
+  )
 }
 
 /// The hello, in the game wrapper under the base key (genesis_prime/connection/hello).
@@ -267,39 +285,11 @@ fn notice(session session: Session, reason reason: Int) -> Effect(Nil) {
   to_client(session, Frame(disconnect_notice.message_id, body))
 }
 
-/// Takes the whole frames in the pending bytes in order until one asks or the
-/// bytes hold no more. A bad frame ends the connection after the whole frames
-/// before it.
-fn drive(
-  session session: Session,
-  now now: Now,
-  carried carried: List(Effect(Nil)),
-) -> #(State, Step(Nil, Request)) {
-  client_connection.drive(
-    session:,
-    carried:,
-    pending: fn(session: Session) { session.pending },
-    taking: fn(session, whole, rest) {
-      handle(session: Session(..session, pending: rest), now:, frame: whole)
-    },
-    refused: fn(session, error) {
-      end_for(session, "the bytes are no frame: " <> frame.describe(error))
-    },
-    connected: Connected,
-  )
-}
-
-fn settle(
-  handled handled: client_connection.Handled(Session),
-  now now: Now,
-  carried carried: List(Effect(Nil)),
-) -> #(State, Step(Nil, Request)) {
-  client_connection.settle(
-    handled:,
-    carried:,
-    connected: Connected,
-    drive: fn(session, carried) { drive(session:, now:, carried:) },
-  )
+/// What a connection writes before it ends when the server stops: the notice
+/// that the server failed, so the client leaves its prompt. A stop is no
+/// failure, so no log line comes with it.
+fn server_stopping(session: Session) -> List(Effect(Nil)) {
+  [notice(session:, reason: reason_server_failure)]
 }
 
 /// What one whole frame does: the network layer's messages first, then the
@@ -344,34 +334,25 @@ fn taken_message(
               <> client_connection.message_text(inner.message_id),
           )
       }
-    InCharacterSelect(holder:, select:) ->
+    InCharacterSelect(holder:, ..) ->
       case
         is_hello_reply,
         inner.message_id == character_select_start.message_id
       {
         True, _ -> end_for(session, "0x058F was sent a second time")
-        False, True -> select_started(session:, now:, holder:, select:, inner:)
-        False, False -> unhandled(session, inner.message_id)
+        False, True -> select_started(session:, now:, holder:, inner:)
+        False, False ->
+          client_connection.unhandled(
+            session:,
+            link: session.link,
+            account_id: account_id_of(session.status),
+            server: "game",
+            message_id: inner.message_id,
+          )
       }
-    TakingSessionKey | ListingCharacters(..) ->
+    TakingSessionKey ->
       end_for(session, "a frame was taken while an ask was out")
   }
-}
-
-/// A whole frame of a message the rule does not take: logged, and the
-/// connection goes on.
-fn unhandled(
-  session: Session,
-  message_id: Int,
-) -> client_connection.Handled(Session) {
-  Continue(session, [
-    client_connection.unhandled(
-      link: session.link,
-      account_id: account_id_of(session.status),
-      server: "game",
-      message_id:,
-    ),
-  ])
 }
 
 /// The client's 0x058F: the connection is keyed from the session key at once,
@@ -406,6 +387,7 @@ fn hello_replied(
             session: Session(..session, cipher: keyed, status: TakingSessionKey),
             now:,
             request: AskHandOff(Take(SessionKey(key:))),
+            before: [],
           )
       }
     }
@@ -420,13 +402,11 @@ fn describe_key_error(error: cipher.KeyError) -> String {
   }
 }
 
-/// The client's 0x07E0: character select asks the store for the holder's
-/// characters.
+/// The client's 0x07E0: character select starts for the holder's account.
 fn select_started(
   session session: Session,
   now now: Now,
   holder holder: Holder,
-  select select: character_select.State,
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
   case character_select_start.decode(inner.body) {
@@ -435,74 +415,50 @@ fn select_started(
         session,
         "0x07E0 does not decode: " <> bit_stream.describe_decode(error:),
       )
-    Ok(_) ->
+    Ok(_) -> {
+      let #(select, effects) = character_select.started(holder.account_id)
       carry_out(
-        session:,
+        session: Session(..session, status: InCharacterSelect(holder:, select:)),
         now:,
-        holder:,
-        outcome: character_select.started(select, holder.account_id),
+        effects:,
+        written: [],
       )
+    }
   }
 }
 
-/// Turns what character select decided into writes, and into the store's ask,
-/// which ends the step.
+/// Turns what character select decided into writes, and into its ask, which
+/// ends the step with what was written before it; `written` are the writes so
+/// far, the last first.
 fn carry_out(
   session session: Session,
   now now: Now,
-  holder holder: Holder,
-  outcome outcome: #(character_select.State, List(character_select.Effect)),
-) -> client_connection.Handled(Session) {
-  let #(select, effects) = outcome
-  carry_out_effects(
-    session: Session(..session, status: InCharacterSelect(holder:, select:)),
-    now:,
-    holder:,
-    select:,
-    effects:,
-    written: [],
-  )
-}
-
-fn carry_out_effects(
-  session session: Session,
-  now now: Now,
-  holder holder: Holder,
-  select select: character_select.State,
   effects effects: List(character_select.Effect),
   written written: List(Effect(Nil)),
 ) -> client_connection.Handled(Session) {
   case effects {
     [] -> Continue(session, list.reverse(written))
     [character_select.Send(frame:), ..rest] ->
-      carry_out_effects(
+      carry_out(session:, now:, effects: rest, written: [
+        to_client(session, frame),
+        ..written
+      ])
+    [character_select.Ask(request:), ..] ->
+      ask(
         session:,
         now:,
-        holder:,
-        select:,
-        effects: rest,
-        written: [to_client(session, frame), ..written],
+        request: AskStore(request),
+        before: list.reverse(written),
       )
-    [character_select.AskCharacters(account_id:), ..] -> {
-      let asking =
-        Session(..session, status: ListingCharacters(holder:, select:))
-      let #(link, made) =
-        client_connection.ask(
-          asking.link,
-          now:,
-          deadline_ms: asking.settings.ask_deadline_ms,
-          request: AskStore(store.ListCharacters(account_id:)),
-        )
-      Asking(Session(..asking, link:), list.reverse(written), made)
-    }
   }
 }
 
-/// Makes the connection's next ask of the hand-off.
+/// Makes the connection's next ask, after the effects `before`.
 fn ask(
   session session: Session,
   now now: Now,
   request request: Request,
+  before before: List(Effect(Nil)),
 ) -> client_connection.Handled(Session) {
   let #(link, made) =
     client_connection.ask(
@@ -511,7 +467,7 @@ fn ask(
       deadline_ms: session.settings.ask_deadline_ms,
       request:,
     )
-  Asking(Session(..session, link:), [], made)
+  Asking(Session(..session, link:), before, made)
 }
 
 /// The answer to the ask in flight.
@@ -522,10 +478,9 @@ fn answered(
 ) -> client_connection.Handled(Session) {
   case session.status {
     TakingSessionKey -> key_taken(session:, outcome:)
-    ListingCharacters(holder:, select:) ->
-      characters_listed(session:, now:, holder:, select:, outcome:)
-    AwaitingHelloReply | InCharacterSelect(..) ->
-      end_for(session, "an answer came when no ask was out")
+    InCharacterSelect(holder:, select:) ->
+      select_answered(session:, now:, holder:, select:, outcome:)
+    AwaitingHelloReply -> end_for(session, "an answer came when no ask was out")
   }
 }
 
@@ -557,7 +512,7 @@ fn key_taken(
       told(
         session:,
         reason: reason_server_failure,
-        level: LogError,
+        level: step.LogError,
         text: "the hand-off's answer is none a Take gets",
       )
     step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
@@ -571,9 +526,10 @@ fn key_taken(
   }
 }
 
-/// The store's answer to listing the holder's characters: the list, or a
-/// client that is told the server failed.
-fn characters_listed(
+/// The store's answer to character select's ask: the failures every store ask
+/// shares tell the client the server failed; any other answer is character
+/// select's to take.
+fn select_answered(
   session session: Session,
   now now: Now,
   holder holder: Holder,
@@ -581,19 +537,6 @@ fn characters_listed(
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case outcome {
-    step.Answer(FromStore(store.Characters(characters:))) ->
-      carry_out(
-        session:,
-        now:,
-        holder:,
-        outcome: character_select.listed(
-          select,
-          filetime: now.filetime,
-          realm_id: session.settings.realm_id,
-          max_characters: session.settings.max_characters,
-          characters:,
-        ),
-      )
     step.Answer(FromStore(store.Unavailable)) ->
       told(
         session:,
@@ -601,14 +544,40 @@ fn characters_listed(
         level: LogWarning,
         text: "the store is unavailable",
       )
-    step.Answer(FromStore(store.AccountFound(..)))
-    | step.Answer(FromStore(store.NoSuchAccount))
-    | step.Answer(FromHandOff(..)) ->
+    step.Answer(FromStore(answer)) ->
+      case
+        character_select.answered(
+          select,
+          answer,
+          filetime: now.filetime,
+          realm_id: session.settings.realm_id,
+          max_characters: session.settings.max_characters,
+        )
+      {
+        Ok(#(select, effects)) ->
+          carry_out(
+            session: Session(
+              ..session,
+              status: InCharacterSelect(holder:, select:),
+            ),
+            now:,
+            effects:,
+            written: [],
+          )
+        Error(Nil) ->
+          told(
+            session:,
+            reason: reason_server_failure,
+            level: step.LogError,
+            text: "the store's answer is none character select asked for",
+          )
+      }
+    step.Answer(FromHandOff(..)) ->
       told(
         session:,
         reason: reason_server_failure,
-        level: LogError,
-        text: "the store's answer is none a ListCharacters gets",
+        level: step.LogError,
+        text: "the hand-off's answer is none a store ask gets",
       )
     step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
       told(
@@ -639,7 +608,7 @@ fn told(
 /// The server is stopping while an ask is out: the client is told, with no
 /// log line, since a stop is no failure.
 fn stopped(session: Session) -> client_connection.Handled(Session) {
-  End(session, [notice(session:, reason: reason_server_failure), Stop])
+  End(session, list.append(server_stopping(session), [Stop]))
 }
 
 /// The client broke the protocol: an error log line and the end of the
@@ -648,7 +617,12 @@ fn end_for(
   session: Session,
   text: String,
 ) -> client_connection.Handled(Session) {
-  End(session, [log(session:, level: LogError, text:), Stop])
+  client_connection.end_for(
+    session:,
+    link: session.link,
+    account_id: account_id_of(session.status),
+    text:,
+  )
 }
 
 // ---- log lines ----
@@ -673,11 +647,7 @@ fn account_id_of(status: Status) -> Option(Int) {
     InCharacterSelect(
       holder: hand_off.Holder(account_id: store.AccountId(id), ..),
       ..,
-    )
-    | ListingCharacters(
-        holder: hand_off.Holder(account_id: store.AccountId(id), ..),
-        ..,
-      ) -> Some(id)
+    ) -> Some(id)
     AwaitingHelloReply | TakingSessionKey -> None
   }
 }
