@@ -20,6 +20,7 @@ From the main checkout, with every new `priv/migrations/*.sql` applied to the `g
 ```
 . setup_check/environment.sh
 export PGHOST=::1 PGPORT=5433 PGUSER=postgres PGDATABASE=genesis_play
+export GENESIS_GAME_ADDRESS=$GENESIS_PLAY_ADDRESS GENESIS_REALM_NAME=Genesis
 gleam run
 ```
 
@@ -58,3 +59,7 @@ A session, in order:
 9. `scripts/client.sh stop`, then `scripts/report.sh remove`, then stop the server.
 
 Save the `client.sh start` line, with the program's SHA-256, in the session folder.
+
+## A whole session without a person
+
+`scripts/session.sh <folder>` runs the session above from the server's start to the verdict, with background keys only (no click, no focus), so it needs neither Jim nor a free PC: it starts the server in record mode into the empty `<folder>`, installs the report addon, starts the client, presses Enter on the select screen to play the first character, collects the report and the client's log, stops the client, removes the addon, stops the server so every recording gets its End, then checks the report against that character's saved row in the database and the failure log (`scripts/session_verdict.py`). It exits non-zero on any miss, and a step that fails part-way still stops the client and the server and removes the addon. A passing folder holds the recordings, `client-start.txt`, `failures.txt`, the report as JSON and the verdict, ready to replay; a failed one keeps `Logs` and `Errors`, which name the PC's machine, so delete them before committing it. `session.sh --verdict <folder>` runs only the verdict, with no PC.
