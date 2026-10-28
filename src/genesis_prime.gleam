@@ -80,16 +80,15 @@ pub fn settings() -> server.Settings {
 /// defaults for what is not set.
 pub fn pool() -> pog.Config {
   let pool = pog.default_config(process.new_name("database_pool"))
-  let pool = case envoy.get("PGHOST") {
-    Ok(host) ->
+  let pool =
+    from_environment(pool, "PGHOST", fn(pool, host) {
       pool
       |> pog.host(host)
       |> pog.ip_version(case string.contains(host, ":") {
         True -> pog.Ipv6
         False -> pog.Ipv4
       })
-    Error(Nil) -> pool
-  }
+    })
   let pool = from_environment(pool, "PGUSER", pog.user)
   let pool = from_environment(pool, "PGDATABASE", pog.database)
   let pool = case envoy.get("PGPORT") {
@@ -100,10 +99,9 @@ pub fn pool() -> pog.Config {
       }
     Error(Nil) -> pool
   }
-  case envoy.get("PGPASSWORD") {
-    Ok(password) -> pog.password(pool, Some(password))
-    Error(Nil) -> pool
-  }
+  from_environment(pool, "PGPASSWORD", fn(pool, password) {
+    pog.password(pool, Some(password))
+  })
 }
 
 /// The pool's setting from an environment variable, or the pool as it is

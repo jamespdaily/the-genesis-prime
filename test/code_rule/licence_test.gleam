@@ -21,10 +21,10 @@
 ////   states its ISC licence only in its LICENSE file and on Hex).
 
 import code_rule/licence.{NoLicence, Unaccepted}
+import code_rule/source
 import gleam/list
 import gleam/string
 import owned_test
-import simplifile
 import unitest
 
 const accepted_list = [
@@ -35,16 +35,11 @@ const accepted_list = [
   "ISC",
 ]
 
-fn read(path: String) -> String {
-  let assert Ok(text) = simplifile.read(path) as { "could not read " <> path }
-  text
-}
-
 pub fn the_licence_file_is_the_apache_licence_2_0_text_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let lines =
-    string.split(read("LICENSE"), "\n")
+    string.split(source.read("LICENSE"), "\n")
     |> list.drop_while(fn(line) { line == "" })
     |> list.reverse
     |> list.drop_while(fn(line) { line == "" })
@@ -72,7 +67,7 @@ pub fn the_licence_file_is_the_apache_licence_2_0_text_test() -> Nil {
 pub fn the_project_file_names_the_apache_licence_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  assert licence.gleam_licences(read("gleam.toml")) == ["Apache-2.0"]
+  assert licence.gleam_licences(source.read("gleam.toml")) == ["Apache-2.0"]
 }
 
 pub fn the_licences_of_a_gleam_package_are_read_under_either_spelling_test() -> Nil {
@@ -128,7 +123,7 @@ pub fn the_accepted_list_is_read_from_the_project_file_test() -> Nil {
       "\n",
     )
   assert licence.accepted(planted) == ["Apache-2.0", "MIT"]
-  assert licence.accepted(read("gleam.toml")) == accepted_list
+  assert licence.accepted(source.read("gleam.toml")) == accepted_list
 }
 
 pub fn a_package_whose_licences_are_all_off_the_list_is_refused_naming_it_test() -> Nil {
@@ -170,10 +165,10 @@ pub fn a_package_with_no_licence_found_is_refused_test() -> Nil {
 pub fn every_package_in_the_manifest_has_an_accepted_licence_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
-  let manifest = read("manifest.toml")
+  let manifest = source.read("manifest.toml")
   let packages = licence.installed(manifest, "build/packages")
   assert list.length(packages) >= 40 as "the manifest packages were not found"
-  let project_file = read("gleam.toml")
+  let project_file = source.read("gleam.toml")
   let accepted = licence.accepted(project_file)
   let packages = licence.with_declared(packages, licence.declared(project_file))
   assert list.map(licence.refusals(packages, accepted), licence.describe) == []

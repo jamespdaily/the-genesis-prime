@@ -5,18 +5,12 @@
 
 import argv
 import genesis_prime/message_generator.{
-  type GeneratedFile, type Mismatch, Edited, GeneratedFile, Missing, Stale,
+  type GeneratedFile, type Mismatch, Edited, Missing, Stale,
 }
-import genesis_prime/message_schema
 import gleam/int
 import gleam/io
 import gleam/list
-import gleam/string
 import simplifile
-
-const schema_path = "src/genesis_prime/message/schema.toml"
-
-const directory = "src/genesis_prime/message"
 
 /// Ends the program with a status.
 @external(erlang, "erlang", "halt")
@@ -63,7 +57,7 @@ fn generate() -> Nil {
     "wrote "
     <> int.to_string(list.length(generated))
     <> " message modules from "
-    <> schema_path,
+    <> message_generator.schema_path,
   )
 }
 
@@ -91,47 +85,16 @@ fn describe(mismatch: Mismatch) -> String {
 }
 
 fn generated_files() -> List(GeneratedFile) {
-  case simplifile.read(schema_path) {
-    Error(error) ->
-      stop(
-        "could not read "
-        <> schema_path
-        <> ": "
-        <> simplifile.describe_error(error),
-      )
-    Ok(text) ->
-      case message_schema.parse(text) {
-        Error(error) ->
-          stop(schema_path <> ": " <> message_schema.describe(error))
-        Ok(schema) -> message_generator.generate(schema)
-      }
+  case message_generator.generated_files() {
+    Ok(files) -> files
+    Error(failure) -> stop(message_generator.describe_failure(failure))
   }
 }
 
 fn committed_files() -> List(GeneratedFile) {
-  case simplifile.get_files(directory) {
-    Error(error) ->
-      stop(
-        "could not list "
-        <> directory
-        <> ": "
-        <> simplifile.describe_error(error),
-      )
-    Ok(paths) ->
-      paths
-      |> list.filter(string.ends_with(_, ".gleam"))
-      |> list.map(fn(path) {
-        case simplifile.read(path) {
-          Ok(text) -> GeneratedFile(path:, text:)
-          Error(error) ->
-            stop(
-              "could not read "
-              <> path
-              <> ": "
-              <> simplifile.describe_error(error),
-            )
-        }
-      })
+  case message_generator.committed_files() {
+    Ok(files) -> files
+    Error(failure) -> stop(message_generator.describe_failure(failure))
   }
 }
 

@@ -18,7 +18,7 @@
 //// where `GENESIS_NO_CLIENT=1`.
 
 import client_tables
-import environment
+import envoy
 import genesis_prime/table/creature2
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store
@@ -44,7 +44,7 @@ fn load(entry: store.Entry) -> store.Tables {
 }
 
 fn client_present() -> Bool {
-  environment.get("GENESIS_NO_CLIENT") != Ok("1")
+  envoy.get("GENESIS_NO_CLIENT") != Ok("1")
 }
 
 pub fn creature2_rows_decode_to_the_values_the_file_holds_test() -> Nil {

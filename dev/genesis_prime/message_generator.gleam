@@ -11,7 +11,9 @@ import genesis_prime/message_schema.{
 }
 import gleam/int
 import gleam/list
+import gleam/result
 import gleam/string
+import simplifile
 
 /// One generated file: its path from the repository root and its text.
 pub type GeneratedFile {
@@ -36,6 +38,58 @@ pub const generated_marker = "//// Generated from `schema.toml`"
 const width = 80
 
 const directory = "src/genesis_prime/message"
+
+/// The schema file the codec is generated from.
+pub const schema_path = "src/genesis_prime/message/schema.toml"
+
+/// Why the schema or the committed files could not be read.
+pub type ReadFailure {
+  /// A file could not be read.
+  NotRead(path: String, error: simplifile.FileError)
+  /// A folder could not be listed.
+  NotListed(path: String, error: simplifile.FileError)
+  /// The schema file is not a schema.
+  NotASchema(path: String, error: message_schema.SchemaError)
+}
+
+/// The files the schema file generates.
+pub fn generated_files() -> Result(List(GeneratedFile), ReadFailure) {
+  use text <- result.try(
+    simplifile.read(schema_path)
+    |> result.map_error(NotRead(path: schema_path, error: _)),
+  )
+  use schema <- result.map(
+    message_schema.parse(text)
+    |> result.map_error(NotASchema(path: schema_path, error: _)),
+  )
+  generate(schema)
+}
+
+/// The `.gleam` files committed in the codec's folder.
+pub fn committed_files() -> Result(List(GeneratedFile), ReadFailure) {
+  use paths <- result.try(
+    simplifile.get_files(directory)
+    |> result.map_error(NotListed(path: directory, error: _)),
+  )
+  paths
+  |> list.filter(string.ends_with(_, ".gleam"))
+  |> list.try_map(fn(path) {
+    simplifile.read(path)
+    |> result.map(fn(text) { GeneratedFile(path:, text:) })
+    |> result.map_error(NotRead(path:, error: _))
+  })
+}
+
+/// A sentence that says which file or folder failed and why, for a person.
+pub fn describe_failure(failure: ReadFailure) -> String {
+  case failure {
+    NotRead(path:, error:) ->
+      "could not read " <> path <> ": " <> simplifile.describe_error(error)
+    NotListed(path:, error:) ->
+      "could not list " <> path <> ": " <> simplifile.describe_error(error)
+    NotASchema(path:, error:) -> path <> ": " <> message_schema.describe(error)
+  }
+}
 
 /// The files the schema generates: a module for each message, then each
 /// record, then the client message module.

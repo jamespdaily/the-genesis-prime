@@ -161,7 +161,7 @@ pub fn the_login_session_holds_the_login_request_in_its_wrapper_and_a_bare_ping_
 
 pub fn a_game_connection_recording_fails_the_read_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- in_folder
+  use folder <- recording_support.in_folder
   let path =
     plant(folder:, name: "game-001.recording", role: Game, bytes: ping_frame())
   assert recorded_client.read_folder(folder)
@@ -223,7 +223,7 @@ pub fn a_number_no_client_message_has_is_unknown_and_a_refused_body_is_malformed
 
 pub fn a_login_request_with_its_last_byte_cut_fails_naming_the_file_connection_message_and_error_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- in_folder
+  use folder <- recording_support.in_folder
   let body = recorded_login_request_body()
   let cut = bit_array.slice(body, 0, bit_array.byte_size(body) - 1)
   let assert Ok(cut) = cut as "the body is longer than one byte"
@@ -253,7 +253,7 @@ pub fn a_login_request_with_its_last_byte_cut_fails_naming_the_file_connection_m
 
 pub fn a_login_request_with_one_extra_byte_fails_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- in_folder
+  use folder <- recording_support.in_folder
   let body = <<recorded_login_request_body():bits, 0>>
   let path =
     plant(
@@ -276,7 +276,7 @@ pub fn a_login_request_with_one_extra_byte_fails_test() -> Nil {
 
 pub fn a_wrapper_ciphered_under_another_key_fails_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- in_folder
+  use folder <- recording_support.in_folder
   let path =
     plant(
       folder:,
@@ -296,7 +296,7 @@ pub fn a_wrapper_ciphered_under_another_key_fails_test() -> Nil {
 
 pub fn a_clear_request_after_key_data_in_the_same_chunk_fails_the_read_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- in_folder
+  use folder <- recording_support.in_folder
   // Every byte after the KeyData request is ciphered, so a request read in
   // the clear after it is never counted as ciphered or passed as read.
   let key_data = <<
@@ -315,7 +315,7 @@ pub fn a_clear_request_after_key_data_in_the_same_chunk_fails_the_read_test() ->
 
 pub fn an_unknown_platform_login_command_fails_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- in_folder
+  use folder <- recording_support.in_folder
   let path =
     plant(folder:, name: "sts-001.recording", role: Sts, bytes: <<
       "POST /Sts/Unknown STS/1.0\r\nl:0\r\n\r\n":utf8,
@@ -334,7 +334,7 @@ pub fn an_unknown_platform_login_command_fails_test() -> Nil {
 
 pub fn a_recording_that_ends_inside_a_message_fails_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- in_folder
+  use folder <- recording_support.in_folder
   let whole =
     wrapped(
       id: 0x0592,
@@ -528,13 +528,4 @@ fn plant(
   let assert Ok(Nil) = simplifile.write_bits(path, encoded)
     as "the planted recording was written"
   path
-}
-
-/// Runs `body` with a new folder under `build/`, and removes the folder after.
-fn in_folder(body: fn(String) -> a) -> a {
-  let folder = recording_support.new_folder()
-  let result = body(folder)
-  let assert Ok(Nil) = simplifile.delete(folder)
-    as "the test's folder was not removed"
-  result
 }

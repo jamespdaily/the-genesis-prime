@@ -3,7 +3,7 @@
 //// tests skip; anywhere else a missing table fails the test with the fix.
 
 import database_support
-import environment
+import envoy
 import genesis_prime/table
 import genesis_prime/table/loader/store
 import gleam/erlang/reference
@@ -14,13 +14,13 @@ import simplifile
 /// The folder `setup_check/extract_tables.py` fills: `GENESIS_TABLE_DIR`, else
 /// `tables` under `GENESIS_HOME`, else under `~/.genesis-prime`.
 pub fn folder() -> String {
-  case environment.get("GENESIS_TABLE_DIR") {
+  case envoy.get("GENESIS_TABLE_DIR") {
     Ok(folder) -> folder
     Error(Nil) ->
-      case environment.get("GENESIS_HOME") {
+      case envoy.get("GENESIS_HOME") {
         Ok(home) -> home <> "/tables"
         Error(Nil) -> {
-          let assert Ok(home) = environment.get("HOME")
+          let assert Ok(home) = envoy.get("HOME")
             as "neither GENESIS_TABLE_DIR, GENESIS_HOME nor HOME is set"
           home <> "/.genesis-prime/tables"
         }

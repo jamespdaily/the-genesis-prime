@@ -33,7 +33,11 @@ const effectful_imports = [
 pub fn allowed(project_file: String) -> Allowed {
   Allowed(
     effectful_modules: project_file.modules(project_file, "effectful_modules"),
-    pure_erlang: project_file.strings(project_file, "pure_erlang"),
+    pure_erlang: project_file.strings(project_file, [
+      "tools",
+      "code_rules",
+      "pure_erlang",
+    ]),
   )
 }
 

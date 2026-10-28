@@ -109,10 +109,15 @@ pub fn read_file(path: String) -> Result(Read, Failure) {
 }
 
 /// What a recording's client bytes hold.
-pub fn read(recorded: Recording) -> Result(Read, Problem) {
+fn read(recorded: Recording) -> Result(Read, Problem) {
   case recorded.header.role {
-    Sts -> read_sts(client_chunks(recorded.chunks))
-    Auth -> read_frames(client_bytes(recorded.chunks))
+    Sts ->
+      read_sts_chunks(
+        chunks: client_chunks(recorded.chunks),
+        pending: <<>>,
+        requests: [],
+      )
+    Auth -> read_frames(bit_array.concat(client_chunks(recorded.chunks)))
     Game -> Error(GameConnectionNotRead)
   }
 }
@@ -127,20 +132,12 @@ fn client_chunks(chunks: List(Chunk)) -> List(BitArray) {
   })
 }
 
-fn client_bytes(chunks: List(Chunk)) -> BitArray {
-  bit_array.concat(client_chunks(chunks))
-}
-
 /// Reads requests chunk by chunk until the KeyData request, and counts every
 /// byte after it as ciphered. A chunk is read whole, so a chunk that holds
 /// more after the KeyData request fails the read: a clear request there is
 /// reported, and ciphered bytes fail the wire reader. A clear request the
 /// client sent in a later chunk, before the reply that turns RC4 on, is
 /// counted with the ciphered bytes.
-fn read_sts(chunks: List(BitArray)) -> Result(Read, Problem) {
-  read_sts_chunks(chunks:, pending: <<>>, requests: [])
-}
-
 fn read_sts_chunks(
   chunks chunks: List(BitArray),
   pending pending: BitArray,

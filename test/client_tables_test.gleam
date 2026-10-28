@@ -3,7 +3,7 @@
 //// of the 384 tables in persistent terms at once.
 
 import client_tables
-import environment
+import envoy
 import genesis_prime/table
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization_label
@@ -20,7 +20,7 @@ import owned_test
 import unitest
 
 fn client_present() -> Bool {
-  environment.get("GENESIS_NO_CLIENT") != Ok("1")
+  envoy.get("GENESIS_NO_CLIENT") != Ok("1")
 }
 
 const callers = 4

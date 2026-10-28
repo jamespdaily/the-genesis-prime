@@ -10,7 +10,7 @@
 //// The real indexes are the four in the client's Patch folder, read only
 //// where the client is installed.
 
-import environment
+import envoy
 import genesis_prime/client_archive
 import gleam/bit_array
 import gleam/int
@@ -205,9 +205,9 @@ pub fn bytes_that_end_inside_the_aidx_block_are_truncated_test() -> Nil {
 
 pub fn each_real_index_in_the_client_gives_the_target_build_test() -> Nil {
   use <- owned_test.run(5000)
-  use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
+  use <- unitest.guard(envoy.get("GENESIS_NO_CLIENT") != Ok("1"))
   let executable =
-    environment.get("WILDSTAR_CLIENT_EXE")
+    envoy.get("WILDSTAR_CLIENT_EXE")
     |> result_or(default_client_executable)
   let patch_folder =
     string.remove_suffix(executable, "/Client64/WildStar64.exe") <> "/Patch/"

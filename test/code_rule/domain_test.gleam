@@ -12,10 +12,11 @@
 import code_rule/domain.{Domain}
 import code_rule/planted
 import code_rule/repository
+import code_rule/source
 import gleam/list
 import gleam/string
 import owned_test
-import simplifile
+
 import unitest
 
 fn listed() -> List(domain.Domain) {
@@ -23,11 +24,6 @@ fn listed() -> List(domain.Domain) {
     Domain(module: "genesis_prime/server", reason: "the top supervisor"),
     Domain(module: "genesis_prime/map", reason: "the map process"),
   ]
-}
-
-fn read(path: String) -> String {
-  let assert Ok(text) = simplifile.read(path) as { "could not read " <> path }
-  text
 }
 
 pub fn the_domains_are_read_with_their_reasons_from_the_project_file_test() -> Nil {
@@ -122,7 +118,7 @@ pub fn the_root_module_is_under_no_domain_and_is_not_a_breach_test() -> Nil {
 pub fn no_folder_or_module_under_src_is_outside_the_listed_domains_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  let domains = domain.domains(read("gleam.toml"))
+  let domains = domain.domains(source.read("gleam.toml"))
   assert domains != [] as "no domain is listed in gleam.toml"
   assert domain.unlisted(repository.sources(["src"]), domains) == []
 }
@@ -148,7 +144,7 @@ pub fn a_listed_domain_with_a_reason_is_not_a_breach_test() -> Nil {
 pub fn every_domain_listed_in_the_project_file_has_a_reason_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  let domains = domain.domains(read("gleam.toml"))
+  let domains = domain.domains(source.read("gleam.toml"))
   assert domains != [] as "no domain is listed in gleam.toml"
   assert domain.unexplained(domains) == []
 }

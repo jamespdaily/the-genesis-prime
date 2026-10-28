@@ -53,13 +53,12 @@
 ////   ask. `Write`, `Send`, `Watch`, `Unwatch`, `StartTimer`, `CancelTimer` and a
 ////   step that ends in an ask end the process with an error log naming them.
 
-import genesis_prime/rule_recording.{Taken}
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/step.{
-  type Event, type Rule, Asked, CallerId, Effects, EffectsThenAsk, Input,
-  LogError, Started, Stopping,
+  type Event, type Rule, Asked, CallerId, Effects, EffectsThenAsk, Started,
+  Stopping,
 }
-import genesis_prime/step/runtime
+import genesis_prime/step/runtime.{type ExitReason, Shutdown}
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Name, type Pid}
@@ -101,7 +100,7 @@ pub type Settings(settings, state, message, outgoing) {
     shutdown_ms: Int,
     /// Where its inputs are recorded; `None` unless the dev start turns
     /// recording on.
-    recorder: Option(Recorder(settings)),
+    recorder: Option(Recorder),
   )
 }
 
@@ -129,11 +128,6 @@ type Running(settings, state, message, outgoing) {
 type StartFailure {
   NameTaken
   RecordingNotOpened(error: FileError)
-}
-
-/// Why a process exits; the atom `shutdown`.
-type ExitReason {
-  Shutdown
 }
 
 /// The service as a permanent child of a supervisor, with `shutdown_ms` as
@@ -196,7 +190,11 @@ fn initialise(
   )
   process.trap_exits(True)
   use writer <- result.try(
-    file.open_if(settings.recorder, connection: runtime.unique_id())
+    file.open_if(
+      settings.recorder,
+      settings.rule,
+      connection: runtime.unique_id(),
+    )
     |> result.map_error(RecordingNotOpened),
   )
   let rule = settings.rule
@@ -269,10 +267,16 @@ fn take(
   now now: step.Now,
   event event: Event(message, Nil),
 ) -> Running(settings, state, message, outgoing) {
-  let input = Input(now:, event:)
-  let #(state, step) = running.settings.rule.step(running.state, input)
-  let writer = case file.append_if(running.writer, Taken(input:, step:)) {
-    Ok(writer) -> writer
+  let #(state, step, writer) = case
+    file.fold(
+      rule: running.settings.rule,
+      state: running.state,
+      writer: running.writer,
+      now:,
+      event:,
+    )
+  {
+    Ok(taken) -> taken
     Error(error) -> recording_failed(error)
   }
   let running = Running(..running, state:, writer:)
@@ -330,35 +334,18 @@ fn carry(
 
 /// Ends the recording and exits with the reason `shutdown`.
 fn stop(running: Running(settings, state, message, outgoing)) -> a {
-  case file.finish_if(running.writer) {
-    Ok(Nil) -> Nil
-    Error(error) ->
-      runtime.log(
-        LogError,
-        "the recording could not be finished: " <> file.describe(error),
-        step.no_one,
-      )
-  }
+  runtime.finish_recording(running.writer)
   exit_now(Shutdown)
 }
 
 /// Ends the process over an effect, or an ask, that a service does not carry
 /// out.
 fn refused(what: String) -> a {
-  runtime.log(
-    LogError,
-    "a rule returned " <> what <> ", which the service shell does not carry out",
-    step.no_one,
-  )
-  panic as "a rule returned an effect the service shell does not carry out"
+  runtime.unsupported(shell: "service shell", what:)
 }
 
 fn recording_failed(error: FileError) -> a {
-  runtime.log(
-    LogError,
-    "the recording could not be written: " <> file.describe(error),
-    step.no_one,
-  )
+  runtime.log_recording_failure(error)
   panic as "a service's recording could not be written"
 }
 

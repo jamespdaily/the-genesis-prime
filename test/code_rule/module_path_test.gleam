@@ -12,16 +12,12 @@
 import code_rule/module_path
 import code_rule/planted
 import code_rule/repository
+import code_rule/source
 import gleam/list
 import gleam/string
 import owned_test
-import simplifile
-import unitest
 
-fn read(path: String) -> String {
-  let assert Ok(text) = simplifile.read(path) as { "could not read " <> path }
-  text
-}
+import unitest
 
 pub fn a_folder_named_by_kind_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
@@ -171,7 +167,7 @@ pub fn a_path_with_no_package_name_is_not_a_breach_test() -> Nil {
 pub fn no_folder_or_module_under_src_is_named_for_a_package_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  let packages = module_path.packages(read("manifest.toml"))
+  let packages = module_path.packages(source.read("manifest.toml"))
   assert list.length(packages) >= 40 as "the manifest packages were not found"
   assert module_path.named_for_a_package(repository.sources(["src"]), packages)
     == []

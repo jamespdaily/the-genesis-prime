@@ -15,18 +15,17 @@
 import ask_support
 import asking_rule
 import database_support
-import genesis_prime/add_account/sql
 import genesis_prime/login/guid
 import genesis_prime/service/shell.{ToWorker}
 import genesis_prime/store.{
   Account, AccountFound, AccountId, FindAccount, NoSuchAccount, Unavailable,
 }
 import genesis_prime/store/worker
-import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/option.{None, Some}
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
+import login_support
 import owned_test
 import pog
 import pool_started
@@ -36,12 +35,12 @@ pub fn a_stored_login_name_gives_its_account_id_salt_verifier_and_game_account_i
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
   let id =
-    insert_account(
+    login_support.insert_account(
       pool: store.pool,
       login_name: "login-1",
       salt: <<1, 2, 3>>,
       verifier: <<4, 5, 6, 7>>,
-      game_account_id: "01234567-89ab-cdef-0123-456789abcdef",
+      game_account_id: a_game_account_id(),
     )
   // The GUID's wire bytes: 01234567 and the two 16-bit groups little-endian,
   // then the last 8 bytes as written.
@@ -67,12 +66,12 @@ pub fn an_unknown_login_name_gives_no_such_account_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
   let _id =
-    insert_account(
+    login_support.insert_account(
       pool: store.pool,
       login_name: "login-1",
       salt: <<1>>,
       verifier: <<2>>,
-      game_account_id: "01234567-89ab-cdef-0123-456789abcdef",
+      game_account_id: a_game_account_id(),
     )
   assert ask(store, "login-2") == NoSuchAccount as "no row has that login name"
   stop(store)
@@ -104,7 +103,7 @@ pub fn with_no_database_connection_the_answer_is_unavailable_and_the_asking_conn
   let client = ask_support.connect(server)
   ask_support.command(
     client,
-    ask_support.store_command,
+    asking_rule.store_command,
     1,
     wait_ms: ask_support.patient,
   )
@@ -112,7 +111,7 @@ pub fn with_no_database_connection_the_answer_is_unavailable_and_the_asking_conn
   let outcome = ask_support.read_record(client)
   assert outcome.code == asking_rule.code_unavailable
     as "the pool has no connection to the database"
-  ask_support.command(client, ask_support.ping_command, 9, wait_ms: 0)
+  ask_support.command(client, asking_rule.ping_command, 9, wait_ms: 0)
   assert ask_support.read_pong(client) == <<0x70, 9>>
     as "the connection goes on"
   ask_support.stop(server)
@@ -143,7 +142,7 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
   let client = ask_support.connect(server)
   // A transaction in another connection locks the table, so the query waits.
   let release = lock_table(store.pool)
-  ask_support.command(client, ask_support.store_command, 1, wait_ms: 300)
+  ask_support.command(client, asking_rule.store_command, 1, wait_ms: 300)
   let assert Ok(#(worker_pid, monitored)) =
     process.receive(workers, within: ask_support.event_wait_ms)
     as "the ask started a worker"
@@ -153,7 +152,7 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
   let outcome = ask_support.read_record(client)
   assert outcome.code == asking_rule.code_no_answer_in_time
     as "the query was still waiting for the lock at the deadline"
-  assert ask_support.ended(worker_ended) == shutdown()
+  assert ask_support.ended(worker_ended) == ask_support.shutdown()
     as "the asker ended the worker with exit shutdown, the lock still held"
   process.send(release, Nil)
   ask_support.stop(server)
@@ -170,7 +169,7 @@ pub fn a_worker_that_crashes_gives_ended_before_answer_and_the_store_goes_on_ser
   execute(store.pool, "alter table account rename to account_away")
   ask_support.command(
     client,
-    ask_support.store_command,
+    asking_rule.store_command,
     1,
     wait_ms: ask_support.patient,
   )
@@ -181,7 +180,7 @@ pub fn a_worker_that_crashes_gives_ended_before_answer_and_the_store_goes_on_ser
   execute(store.pool, "alter table account_away rename to account")
   ask_support.command(
     client,
-    ask_support.store_command,
+    asking_rule.store_command,
     1,
     wait_ms: ask_support.patient,
   )
@@ -199,6 +198,7 @@ pub fn with_the_stores_supervisor_not_running_an_ask_to_the_store_gives_not_runn
   let absent = process.new_name("store")
   let server =
     ask_support.start(
+      rule: asking_rule.rule(),
       directory: ask_support.directory(
         gate: process.new_name("gate"),
         store: Some(absent),
@@ -211,7 +211,7 @@ pub fn with_the_stores_supervisor_not_running_an_ask_to_the_store_gives_not_runn
   let client = ask_support.connect(server)
   ask_support.command(
     client,
-    ask_support.store_command,
+    asking_rule.store_command,
     1,
     wait_ms: ask_support.patient,
   )
@@ -219,7 +219,7 @@ pub fn with_the_stores_supervisor_not_running_an_ask_to_the_store_gives_not_runn
   let outcome = ask_support.read_record(client)
   assert outcome.code == asking_rule.code_not_running
     as "no process holds the store's name"
-  ask_support.command(client, ask_support.ping_command, 9, wait_ms: 0)
+  ask_support.command(client, asking_rule.ping_command, 9, wait_ms: 0)
   assert ask_support.read_pong(client) == <<0x70, 9>>
     as "the connection goes on"
   ask_support.stop(server)
@@ -300,6 +300,7 @@ fn start_asker(
   sent: fn(shell.Sent) -> Nil,
 ) -> ask_support.Server {
   ask_support.start(
+    rule: asking_rule.rule(),
     directory: ask_support.directory(
       gate: process.new_name("gate"),
       store: Some(store.name),
@@ -313,30 +314,20 @@ fn start_asker(
 
 /// Asks the store for a login name and waits for the answer.
 fn ask(store: Store, login_name: String) -> store.Answer {
-  let replies = process.new_subject()
-  let assert Ok(ToWorker(_)) =
-    worker.ask(store.name, FindAccount(login_name:), fn(answer) {
-      process.send(replies, answer)
+  let #(sent, answer) =
+    ask_support.ask_and_wait(send: fn(reply) {
+      worker.ask(store.name, FindAccount(login_name:), reply)
     })
-    as "the store started a worker"
-  let assert Ok(answer) =
-    process.receive(replies, within: ask_support.event_wait_ms)
-    as "the worker answered"
+  let assert ToWorker(_) = sent as "the store started a worker"
   answer
 }
 
-/// Inserts an account and returns the id the database gave it.
-fn insert_account(
-  pool pool: pog.Connection,
-  login_name login_name: String,
-  salt salt: BitArray,
-  verifier verifier: BitArray,
-  game_account_id game_account_id: String,
-) -> Int {
-  let assert Ok(pog.Returned(rows: [sql.InsertAccountRow(account_id:)], ..)) =
-    sql.insert_account(pool, login_name, salt, verifier, game_account_id)
-    as "the account was inserted"
-  account_id
+/// The GUID of the text the tests insert as an account's game account id.
+fn a_game_account_id() -> guid.Guid {
+  let assert Ok(game_account_id) =
+    guid.from_text("01234567-89ab-cdef-0123-456789abcdef")
+    as "the text is a GUID"
+  game_account_id
 }
 
 fn execute(pool: pog.Connection, sql: String) -> Nil {
@@ -369,8 +360,4 @@ fn lock_table(pool: pog.Connection) -> process.Subject(Nil) {
     process.receive(locked, within: ask_support.event_wait_ms)
     as "the table is locked"
   release
-}
-
-fn shutdown() -> process.ExitReason {
-  process.Abnormal(atom.to_dynamic(atom.create("shutdown")))
 }

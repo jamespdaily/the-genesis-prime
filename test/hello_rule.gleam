@@ -8,11 +8,10 @@ import genesis_prime/connection/network_message.{
 }
 import genesis_prime/message/server_hello.{type ServerHello}
 import genesis_prime/step.{
-  type Effect, type Input, type Step, About, Effects, Input, Log, LogLine,
-  LogWarning, Socket, Stop, Write,
+  type Effect, type Input, type Step, Effects, Input, Log, LogLine, LogWarning,
+  Socket, Stop, Write,
 }
 import gleam/list
-import gleam/option.{None}
 
 /// The rule's settings: the hello it greets each client with.
 pub type Settings {
@@ -97,16 +96,5 @@ fn hello_frame(state: State) -> BitArray {
 }
 
 fn warn(text: String) -> Effect(Nil) {
-  Log(LogLine(
-    level: LogWarning,
-    text:,
-    about: About(
-      connection: None,
-      peer: None,
-      account_id: None,
-      character_id: None,
-      map: None,
-      message: None,
-    ),
-  ))
+  Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }
