@@ -22,11 +22,11 @@ fn note_tree_read() -> Nil
 pub fn tree_reads() -> Int
 
 /// The directories whose Gleam source the rules read.
-const tree_directories = ["src", "test"]
+const tree_directories = ["src", "test", "dev"]
 
 /// Every `.gleam` file under each directory, which must hold at least one, so
 /// a rule checked over the repository cannot pass by finding nothing. The
-/// directories are `src` and `test`, read from disk once per run and shared by
+/// directories are `src`, `test` and `dev`, read from disk once per run and shared by
 /// every rule; a directory outside them holds nothing.
 pub fn sources(under directories: List(String)) -> List(SourceFile) {
   let tree =
