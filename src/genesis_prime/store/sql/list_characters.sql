@@ -13,7 +13,10 @@ select
   world_zone_id,
   position_x,
   position_y,
-  position_z
+  position_z,
+  look_labels,
+  look_values,
+  bones
 from character
 where account_id = $1
 order by character_id;
