@@ -17,7 +17,8 @@ with_folder(Base, Body) ->
         file:del_dir_r(Path)
     end.
 
-%% How many persistent terms are stored under a key of the form {Key, Index}.
+%% How many persistent terms are stored under a load's reference: a key of the form
+%% {{load_key, Reference}, Index}.
 persistent_terms_under(Key) ->
     length([Stored || {{Under, _Index} = Stored, _Term} <- persistent_term:get(),
-                      Under =:= Key]).
+                      Under =:= {load_key, Key}]).

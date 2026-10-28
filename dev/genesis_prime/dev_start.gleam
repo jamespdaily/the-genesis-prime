@@ -25,6 +25,7 @@ import genesis_prime/login/sts_connection
 import genesis_prime/rule_recording/file
 import genesis_prime/rule_types
 import genesis_prime/server
+import genesis_prime/table/loader/store
 import gleam/int
 import gleam/io
 import gleam/option.{type Option, None, Some}
@@ -79,18 +80,18 @@ fn start() -> Result(Nil, Failure) {
     server.Login(
       sts: server.Served(
         ..login.sts,
-        recorder: Some(recorder(folder:, types_digest: sts_digest)),
+        recorder: Some(recorder(folder:, tables:, types_digest: sts_digest)),
       ),
       auth: server.Served(
         ..login.auth,
         settings: auth,
-        recorder: Some(recorder(folder:, types_digest: auth_digest)),
+        recorder: Some(recorder(folder:, tables:, types_digest: auth_digest)),
       ),
     )
   let game =
     server.Served(
       ..settings.game,
-      recorder: Some(recorder(folder:, types_digest: game_digest)),
+      recorder: Some(recorder(folder:, tables:, types_digest: game_digest)),
     )
   genesis_prime.start(
     settings: server.Settings(..settings, login:, game:),
@@ -100,16 +101,17 @@ fn start() -> Result(Nil, Failure) {
 }
 
 /// The recorder of one rule's connections: a file in the folder for each,
-/// with a header that names the client's build; the shell adds the rule's name
-/// and settings.
+/// with a header that names the client's build and the digest of the game
+/// tables the server loaded; the shell adds the rule's name and settings.
 fn recorder(
   folder folder: String,
+  tables tables: store.Tables,
   types_digest types_digest: String,
 ) -> file.Recorder {
   file.recorder(
     folder:,
     client_build: client_archive.target_build,
-    tables_digest: None,
+    tables_digest: Some(store.digest(tables)),
     types_digest:,
   )
 }

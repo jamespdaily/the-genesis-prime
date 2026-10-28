@@ -23,9 +23,16 @@
 ////   (`game_table.schema`, `MatchGameTableSchema` 0x1407c19f0).
 //// - a missing row fails the load: CLAUDE.md, "Game tables load once at start
 ////   into named records; a missing row fails the load".
+//// - a load's digest is SHA-256 over each file's name, a zero byte and the
+////   file's bytes, in the order of the entries, as upper-case hex
+////   (genesis_prime/table/loader/store).
+//// - the server's tables are stored under one fixed key, so the tables a
+////   rule's settings hold are the same value in every run
+////   (genesis_prime/table/loader/store).
 
 import client_tables
 import envoy
+import fresh_node
 import genesis_prime/table
 import genesis_prime/table/creature2
 import genesis_prime/table/id
@@ -33,6 +40,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/localized_text
 import gleam/bit_array
+import gleam/crypto
 import gleam/erlang/reference
 import gleam/int
 import gleam/list
@@ -168,6 +176,75 @@ pub fn a_planted_table_loads_and_gives_each_row_by_id_and_nothing_for_a_gap_test
   store.unload(tables)
   assert planted_table.persistent_terms_under(key) == 0
     as "unload erases the table's term"
+}
+
+pub fn a_loads_digest_covers_each_files_name_and_bytes_and_changes_with_either_test() -> Nil {
+  use <- owned_test.run(5000)
+  let file = localized_text_file([localized_text_row(1, 7)])
+  let load_of = fn(file) {
+    use folder <- planted_table.in_folder([#("LocalizedText", file)])
+    let assert Ok(tables) =
+      store.load(
+        under: reference.new(),
+        from: folder,
+        entries: [localized_text.entry()],
+        requirements: [],
+      )
+      as "a planted table loads"
+    store.digest(tables)
+  }
+  assert load_of(file)
+    == bit_array.base16_encode(
+      crypto.hash(crypto.Sha256, <<"LocalizedText":utf8, 0, file:bits>>),
+    )
+    as "the digest is SHA-256 of the file's name, a zero byte and its bytes"
+  assert load_of(file) == load_of(file) as "the same files give the same digest"
+  assert load_of(file)
+    != load_of(localized_text_file([localized_text_row(1, 8)]))
+    as "another byte in the file gives another digest"
+}
+
+/// What the test below runs in a fresh node, where no other test holds the
+/// server's key: loads one planted table for the server twice. It is no test
+/// itself, as loading under the server's key replaces the terms of any other
+/// load under it.
+pub fn load_planted_tables_for_the_server_twice() -> Nil {
+  let file = localized_text_file([localized_text_row(1, 7)])
+  use folder <- planted_table.in_folder([#("LocalizedText", file)])
+  let load_for_server = fn() {
+    store.load_for_server(
+      from: folder,
+      entries: [localized_text.entry()],
+      requirements: [],
+    )
+  }
+  let load_under_a_key = fn() {
+    store.load(
+      under: reference.new(),
+      from: folder,
+      entries: [localized_text.entry()],
+      requirements: [],
+    )
+  }
+  let assert Ok(first) = load_for_server() as "the first load for the server"
+  let assert Ok(second) = load_for_server() as "the second load for the server"
+  assert first == second
+    as "the server's tables are the same value on every load, so a recording of settings that hold them replays"
+  assert localized_text.get(second, id.LocalizedTextId(1)) |> result.is_ok
+    as "the tables are read from the server's key"
+  assert load_under_a_key() != load_under_a_key()
+    as "a load under a key made for it holds a key of its own"
+}
+
+pub fn the_servers_tables_are_the_same_value_on_every_load_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert fresh_node.run(
+      module: "table_load_test",
+      function: "load_planted_tables_for_the_server_twice",
+      timeout_ms: 30_000,
+    )
+    == Ok(Nil)
+    as "two loads for the server hold equal tables in a node where nothing else holds its key"
 }
 
 pub fn a_failed_load_leaves_no_persistent_term_behind_test() -> Nil {

@@ -16,7 +16,7 @@ import gleam/crypto
 import gleam/erlang/process
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{type Option, None}
 import gleam/string
 import gleam/time/calendar.{Date}
 import mug
@@ -90,10 +90,20 @@ pub fn recorder(
   folder folder: String,
   rule_module rule_module: String,
 ) -> file.Recorder {
+  recorder_of_tables(folder:, rule_module:, tables_digest: None)
+}
+
+/// A recorder as `recorder` makes, whose header holds the digest of the game
+/// tables the rule reads.
+pub fn recorder_of_tables(
+  folder folder: String,
+  rule_module rule_module: String,
+  tables_digest tables_digest: Option(String),
+) -> file.Recorder {
   file.recorder(
     folder:,
     client_build: 16_042,
-    tables_digest: None,
+    tables_digest:,
     types_digest: types_digest(rule_module),
   )
 }

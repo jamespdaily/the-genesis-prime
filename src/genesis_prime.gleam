@@ -17,7 +17,6 @@ import genesis_prime/table/loader/store
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/charlist.{type Charlist}
 import gleam/erlang/process
-import gleam/erlang/reference
 import gleam/int
 import gleam/io
 import gleam/list
@@ -32,8 +31,9 @@ pub fn main() -> Nil {
 }
 
 /// Loads the game tables from the folder GENESIS_TABLE_DIR names, once, into
-/// their named records; a missing variable or a table that does not load
-/// stops the program with the reason. Gives the loaded tables, which the game
+/// their named records under the server's own key, which is the same in every
+/// run (genesis_prime/table/loader/store); a missing variable or a table that
+/// does not load stops the program with the reason. Gives the loaded tables, which the game
 /// connections read, and how many there are.
 pub fn load_tables() -> #(store.Tables, Int) {
   let folder = case envoy.get("GENESIS_TABLE_DIR") {
@@ -41,11 +41,8 @@ pub fn load_tables() -> #(store.Tables, Int) {
     Error(Nil) ->
       panic as "GENESIS_TABLE_DIR is not set; the server loads the client's game tables from the folder it names"
   }
-  let entries = table.entries()
-  case
-    store.load(under: reference.new(), from: folder, entries:, requirements: [])
-  {
-    Ok(tables) -> #(tables, list.length(entries))
+  case table.load_for_server(from: folder) {
+    Ok(tables) -> #(tables, list.length(table.entries()))
     Error(error) -> panic as store.describe(error)
   }
 }

@@ -794,3 +794,15 @@ pub fn load(
     requirements: requirement.all(),
   )
 }
+
+/// `load` under the server's own key, which is the same in every run: the load
+/// of the server's start and of a test that replays a recording.
+pub fn load_for_server(
+  from folder: String,
+) -> Result(store.Tables, store.LoadError) {
+  store.load_for_server(
+    from: folder,
+    entries: entries(),
+    requirements: requirement.all(),
+  )
+}
