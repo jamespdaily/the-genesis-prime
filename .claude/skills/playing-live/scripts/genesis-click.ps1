@@ -29,7 +29,10 @@ public class Click {
   [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref POINT p);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(ref POINT p);
   [DllImport("user32.dll")] public static extern uint SendInput(uint count, INPUT[] inputs, int size);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int x, int y, uint data, UIntPtr extra);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint from, uint to, bool attach);
   [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
@@ -76,6 +79,8 @@ try {
     [uint32]$ignored = 0
     $foregroundThread = [Click]::GetWindowThreadProcessId($foreground, [ref]$ignored)
     $thisThread = [Click]::GetCurrentThreadId()
+    [Click]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero)
+    [Click]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
     [Click]::AttachThreadInput($thisThread, $foregroundThread, $true) | Out-Null
     [Click]::BringWindowToTop($window) | Out-Null
     [Click]::SetForegroundWindow($window) | Out-Null
@@ -89,13 +94,14 @@ try {
   $point.Y = $y
   if (-not [Click]::ClientToScreen($window, [ref]$point)) { throw 'the client point has no screen point' }
   if (-not [Click]::SetCursorPos($point.X, $point.Y)) { throw 'the cursor could not be moved' }
-  # The client reads the cursor on its own frame, so it rests on the point before the press and
-  # the press is held, as a person's is.
+  # The client reads the real cursor on its own frame, so it rests on the point before the press.
   Start-Sleep -Milliseconds 300
-  Send-Button $leftDown
-  Start-Sleep -Milliseconds 150
-  Send-Button $leftUp
-  $result = "clicked=$x,$y screen=$($point.X),$($point.Y) pid=$($p.Id)"
+  [Click]::mouse_event($leftDown, 0, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 80
+  [Click]::mouse_event($leftUp, 0, 0, 0, [UIntPtr]::Zero)
+  $cursor = New-Object Click+POINT
+  [Click]::GetCursorPos([ref]$cursor) | Out-Null
+  $result = "clicked=$x,$y screen=$($point.X),$($point.Y) cursor_after=$($cursor.X),$($cursor.Y) foreground_is_client=$([Click]::GetForegroundWindow() -eq $window) pid=$($p.Id)"
 } catch {
   $result = 'error: ' + ($_.Exception.Message -replace '\s+', ' ')
 } finally {
