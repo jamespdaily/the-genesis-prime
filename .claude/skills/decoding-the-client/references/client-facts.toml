@@ -3696,3 +3696,130 @@ statement = "Realm select in the client's Lua: clicking a realm in the list call
 proof = "UI/PreGame/RealmSelect/RealmSelect.lua lines 115 (GetRealmList), 335-341 (SetCurrentRealm(nRealmId) from the row's data), 412-419 (OnAnimationFinished: nModelSequence == 1109 then SelectRealm()), 443 (ExitToCharacter); UI/PreGame/CharacterSelection/CharacterSelect.lua lines 682-693 (bRequiresRename shows the rename form, else SelectCharacter(tId)) and 1100; UI/PreGame/Character/Character.lua lines 1029, 1123, 1134 (CreateCharacter). Extracted copy in ui-extract."
 grade = "fairly sure"
 gap = "The Lua is read from the archive with a scratch extractor; RealmSelectScreenLib.SetCurrentRealm and SelectRealm are not read in the client (ChooseRealm is the code SelectRealm reaches, by its name only)."
+
+["0x1407a7780"]
+statement = "Makes the client's input device for the main window (the keys and mouse buttons that key bindings read). It registers raw input for the mouse only (usage page 1, usage 2, no flags, so the window gets WM_INPUT only while it is in the foreground); the keyboard is not registered for raw input, and the client imports no DirectInput or XInput. It starts with the device marked active when the foreground window is the main window."
+proof = "0x1407a7979 call [0x140959810] (user32.dll!GetForegroundWindow); 0x1407a7986 cmp rax, rbp (the window argument); 0x1407a7997 setz cl; 0x1407a799a mov [rbx+0x58], ecx (active flag). 0x1407a7bb6 mov qword [rsp+0x20], 0x20001 (RAWINPUTDEVICE usUsagePage 1, usUsage 2, dwFlags 0); 0x1407a7bbf mov [rsp+0x28], rbp (hwndTarget); 0x1407a7bad mov r8d, 0x10; 0x1407a7bc4 call [0x140959890] (user32.dll!RegisterRawInputDevices) with count 1. It stores the class table 0x140b78580 first. client_pe imports: no dinput8.dll, dinput.dll or xinput import; string_refs for 'dinput' and 'xinput' find nothing. Caller: 0x1404d6e30 (0x1404d6e96)."
+grade = "sure"
+name = "InitInputDevice"
+
+["0x1407ac6f0"]
+statement = "The input device's window-message handler. A mouse move keeps the pointer position from the message's own coordinates (low and high words of lParam). A key press or release (WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP) is keyed by the hardware scan code in lParam bits 16 to 24, not by the virtual key in wParam (the keypad Enter counts as Enter), and an auto-repeat press (lParam bit 30) is ignored; wParam is read only for Shift, Ctrl and Alt, and after every key message the modifier state is read again from the physical keyboard (ReadModifierKeys). Left, right, middle and extra button presses, releases, double clicks and the wheel (one step per 120) are noted as buttons. WM_INPUT is read only for relative mouse motion and only counts while mouse-look is on (IsMouseLookActive). WM_ACTIVATEAPP sets the device active or inactive; going inactive releases the held keys. WM_CHAR is not handled here."
+proof = "Ghidra disassembly: 0x1407ac71c cmp edx, 0x200; 0x1407ac728 jz 0x1407acabe: 0x1407acabe shr r10, 0x10; 0x1407acac2 movsx ecx, r9w; 0x1407acac6 movsx eax, r10w; 0x1407acaca mov [rbx+0x6a7c0], ecx; 0x1407acad0 mov [rbx+0x6a7c4], eax. Jump table at 0x1407ac73f for messages 0x1c..0x105: WM_ACTIVATEAPP 0x1407ac77f mov [rbx+0x58], esi (1) or 0x1407ac78c mov [rbx+0x58], r14d then 0x1407ac790 call [rax+0x78] (0x1407ac5b0 clears each held binding's state); WM_KEYDOWN 0x1407ac7bd bt r9, 0x1e (repeat), 0x1407ac7c8 shr r10d, 0x10 then and 0x1ff, 0x11c to 0x1c, call 0x1407ab6b0 (press by scan code); key up through 0x1407aba80; wParam compared with 0x10, 0x11, 0x12 only; each case ends with call 0x1407a8190. WM_INPUT: 0x1407ac988 mov edx, 0x10000003 (RID_INPUT); 0x1407ac9a0 call [0x140959950] (user32.dll!GetRawInputData); 0x1407ac9af cmp [rsp+0x40], edi (RIM_TYPEMOUSE 0); 0x1407ac9d6 call [rax+0xb8] (0x1407a9550) gates the sums. Buttons 0x201..0x20d through 0x1407aaf60 and 0x1407ab3a0; wheel divides the delta by 0x78. No case for 0x102. Data references only: the class table entry 0x140b78728 (0x140b78580 plus 0x1a8)."
+grade = "fairly sure"
+gap = "Which code calls the class table's entry 0x1a8 with the main window's messages is not read, so that every message reaches it in game is inferred; the press and release routines 0x1407ab6b0, 0x1407aba80 and 0x1407aaf60 are read from Ghidra's decompile only."
+name = "InputDeviceHandleMessage"
+
+["0x1407a9550"]
+statement = "Tells whether mouse-look is on: true only while the input device is active (its window is in the foreground) and the client has turned relative mouse mode on."
+proof = "0x1407a9550 cmp dword [rcx+0x58], 0x0; 0x1407a9554 jz 0x1407a9565; 0x1407a9556 cmp dword [rcx+0x6a874], 0x0; 0x1407a955d jz 0x1407a9565; 0x1407a955f mov eax, 0x1; 0x1407a9565 xor eax, eax. Entry 0xb8 of the class table 0x140b78580."
+grade = "fairly sure"
+gap = "That the second flag is relative mouse mode is inferred from its use: when it is on, button presses keep the summed WM_INPUT motion (0x1407aaf60) and 0x1407ac000 clips and later restores the cursor; the code that sets it is not read."
+name = "IsMouseLookActive"
+
+["0x1407acdf0"]
+statement = "The input device's update: marks the device active only when the foreground window is the main window or a window that holds it, and when that changes it locks or frees the cursor for mouse-look (SyncMouseLookCursor); it then runs the held-key and held-button repeats. So a message that sets the device active is undone on the next update while another window is in the foreground."
+proof = "0x1407ace16 call [0x140959810] (user32.dll!GetForegroundWindow); 0x1407ace2b call [0x140959960] (user32.dll!IsChild) with the foreground window as parent; 0x1407ace3d mov [rdi+0x58], eax; 0x1407ace53 call 0x1407ac000 when the mouse-look answer (entry 0xb8) changed. Caller: 0x1407abf70 (0x1407abf98), which is entry 0x168 of the class table 0x140b78580 (0x140b786e8) and also stores the millisecond clock."
+grade = "fairly sure"
+gap = "That 0x1407abf70 runs once a frame is inferred from its clock reads; its caller through the class table is not read. The repeat loop after the foreground check is read from Ghidra's decompile only."
+name = "UpdateInputDevice"
+
+["0x1407ac000"]
+statement = "Locks or frees the system cursor when mouse-look turns on or off. Turning on, it reads the real cursor position (GetCursorPos, kept in screen and window terms) and, unless the client runs in a remote session or the display mode is the fourth one, clips the cursor to the window; it also reads the mouse speed setting. Turning off, outside a remote session, it frees the clip and moves the real cursor back to the kept position (SetCursorPos). It is used only for mouse-look, so it does not move the cursor while mouse-look is off."
+proof = "0x1407ac00c call [rax+0xb8] (IsMouseLookActive) decides the branch. On: 0x1407ac026 call [0x140959770] (GetCursorPos); 0x1407ac048 call [0x1409597f0] (ScreenToClient); 0x1407ac04e cmp dword [rdi+0x6a878], 0x0 (GetSystemMetrics(0x1000), SM_REMOTESESSION, kept by InitInputDevice); 0x1407ac05e cmp dword [rax+0x48], 0x4 (the display mode of the window object at 0x140c65678); 0x1407ac06d GetClientRect, 0x1407ac09c and 0x1407ac0ab ClientToScreen, 0x1407ac0b6 call [0x140959780] (ClipCursor); 0x1407ac10d SystemParametersInfoW(0x70, SPI_GETMOUSESPEED). Off: 0x1407ac15f cmp dword [rdi+0x6a878], 0x0; 0x1407ac16f cmp dword [rax+0x48], 0x4; 0x1407ac177 ClipCursor(0); 0x1407ac189 call [0x1409597b0] (SetCursorPos) with the kept point. Callers: 0x1407ac1a0, 0x1407ac1f0, InputDeviceHandleMessage (0x1407ac7b3) and UpdateInputDevice (0x1407ace53)."
+grade = "fairly sure"
+gap = "The callers 0x1407ac1a0 and 0x1407ac1f0 are not read, nor the code that turns relative mouse mode on."
+name = "SyncMouseLookCursor"
+
+["0x1407a8190"]
+statement = "Reads Shift, Ctrl and Alt from the physical keyboard (GetAsyncKeyState of the generic Alt, Ctrl and Shift keys) into the input device's modifier state, masked by the modifiers it allows. A posted key message therefore cannot hold a modifier down."
+proof = "Ghidra decompile of 0x1407a8190: GetAsyncKeyState(0x12) bit 0x8000 gives 4, (0x11) gives 2, (0x10) gives 1; the sum is masked by the allowed set (7 from InitInputDevice) and stored. Import references 0x1407a81a7, 0x1407a81c0, 0x1407a81d3 read [0x1409598e8] (user32.dll!GetAsyncKeyState). Called seven times from InputDeviceHandleMessage."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile only."
+name = "ReadModifierKeys"
+
+["0x1400149a0"]
+statement = "The game window object's message handler, reached for every message the main window procedure passes on. On WM_ACTIVATEAPP it registers Print Screen hot keys while active and removes them when not; Alt+Enter flips a display setting, Alt+F1 flips a flag, and Alt with the backquote key opens the console when the command line asks for it. Every message then goes to the current screen's input method (for the login screen, LoginScreenInput), or to DefWindowProcW when there is no screen. It does not check which window is in the foreground."
+proof = "Entry 0x68 of the class table 0x140b55120 (0x140b55188), called by MainWindowProc. 0x1400149ca cmp r8d, 0x1c (RegisterHotKey / UnregisterHotKey with VK 0x2c); 0x1400149d4 cmp r8d, 0x104 with wParam 0xd, 0x70, 0xc0; 0x140014bbf mov rcx, [rbp+0x15b0] (the screen list); 0x140014bf0 cmp dword [rax+0x28], 0x4 (skips screens in state 4); 0x140014c17 call [r10+0x48] (the screen's input method)."
+grade = "fairly sure"
+gap = "The Alt+Enter setting and the Alt+F1 flag are not named; read from Ghidra's decompile apart from the instructions cited."
+name = "GameWindowHandleMessage"
+
+["0x140037000"]
+statement = "The login screen's input method. Escape on the form with no login under way runs 0x140008d70; Escape while a login is under way cancels it and resets the form (ResetLoginForm). Every message then goes to the pre-game screens' shared input method (PreGameStageInput)."
+proof = "Ghidra decompile: compares the login state with 0xb and the message with 0x100 and wParam 0x1b; state 0 calls 0x140008d70; otherwise releases the two requests held by the login, sets the state to 0 and calls 0x140039060 (call site 0x14003708e). Ends with a call of 0x14003e1e0. Entry 0x48 of the login screen's class table 0x140b55770 (0x140b557b8), whose entry 0x30 is UpdateLoginScreen."
+grade = "fairly sure"
+gap = "What 0x140008d70 does on Escape (likely leaving the client) is not read."
+name = "LoginScreenInput"
+
+["0x14003e1e0"]
+statement = "The pre-game screens' shared input method: notes player input for the idle timer (NotePreGameInput), then, while the screen's interface takes input (on the login screen, while no login is past its second state) and no child screen is open, hands the message to the screen's UI (UiHandleMessage) and stops there when the UI took it; otherwise it calls DefWindowProcW. It does not check which window is in the foreground."
+proof = "0x14003e211 call NotePreGameInput (0x140047fc0); 0x14003e216 cmp dword [rbx+0x90], 0x0 (UpdateLoginScreen sets it to login state below 2); 0x14003e246 mov rcx, [rbx+0x48]; 0x14003e258 call [rax+0x38] (entry 0x38 of the UI's class table 0x140b567d0, which is 0x1400e67a0); 0x14003e291 call [0x1409597c8] (DefWindowProcW)."
+grade = "sure"
+name = "PreGameStageInput"
+
+["0x1400e67a0"]
+statement = "The UI's window-message handler. It accepts only the messages the UI has enabled: WM_ACTIVATEAPP, WM_INPUTLANGCHANGE, WM_DISPLAYCHANGE, WM_KEYDOWN, WM_KEYUP, WM_CHAR, WM_SYSKEYDOWN, WM_SYSKEYUP, the IME messages and every mouse message from WM_MOUSEMOVE to WM_XBUTTONDBLCLK; any other message below WM_USER is refused. On WM_MOUSEMOVE it sets the UI's pointer from the message's own coordinates (lParam), scaled to the UI; a button message carries no position of its own and acts at the pointer the last WM_MOUSEMOVE set. Shift, Ctrl and Alt are read from the physical keyboard (GetAsyncKeyState). It then hands the message to the visible windows (DispatchUiMessage) and raises UI events for key presses, button presses and releases and the wheel. It does not check which window is in the foreground."
+proof = "0x1400e67b9 cmp r8d, 0x400; 0x1400e67c9 cmp byte [rdi+rax+0x328], 0x0 with rax the UI at [0x140c63650]; 0x1400e67d3 mov eax, 0x1 (refused). The table is cleared by 0x1400e19dc lea rcx, [r15+0x328] and set in 0x1400e18a0: 0x1400e1a45 mov byte [r15+0x344], 0x1 (0x1c); 0x1400e1a4d mov word [r15+0x429], 0x101 (0x101, 0x102); 0x1400e1a5f mov byte [r15+0x428], 0x1 (0x100); 0x1400e1a67, 0x1400e1a72, 0x1400e1a7d, 0x1400e1a88 (0x200..0x20d); 0x1400e1a92 mov word [r15+0x42c], 0x101 (0x104, 0x105); bytes for 0x51, 0x7e, 0x10d..0x10f, 0x281..0x283, 0x286, 0x288, 0x290. Pointer: 0x1400e6821 call 0x1400e6570 (move gives kind 4); 0x1400e682e cmp [rsp+0x70], 0x4; 0x1400e6864 mov rax, r15 (lParam); 0x1400e6867 movsx edx, r15w; 0x1400e686b shr rax, 0x10; 0x1400e686f movsx ecx, ax; scaled by the matrix at 0xc40..0xc70 and 0x1400e68d8 mov [rax], ecx into the pointer at [rbx+0xb10]. When an object is at [rbx+0x9b8] the coordinates go through its entry 0xd0 with lParam (0x1400e6850 mov r8, r15). GetAsyncKeyState at 0x1400e6967, 0x1400e6983, 0x1400e699a. Entry 0x38 of the class table 0x140b567d0 (0x140b56808), set by 0x1400e2ef0."
+grade = "sure"
+name = "UiHandleMessage"
+
+["0x1400e6570"]
+statement = "Sorts a mouse message for the UI: a move, a press, a release, a double click or the wheel, and for a button message which button (left, right, middle, or the first or second extra button by the high word of wParam). It reads no position."
+proof = "Ghidra decompile: a switch on 0x200..0x20d writing the kind (move 4, press 1, release 2, double click 3, wheel 5) and the button number kept by the UI for left, right and middle; for 0x20b..0x20d the high word of wParam 1 or 2 gives 3 or 4. Called by UiHandleMessage at 0x1400e6821 and by EditBoxHandleMessage."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile only."
+name = "ClassifyMouseMessage"
+
+["0x1400e6d10"]
+statement = "Hands a window message to the UI's windows: walks each stratum's windows and passes the message to each one that is visible (opacity above zero), enabled and not ignoring input, until one takes it; returns whether none took it."
+proof = "Ghidra decompile: loops over the strata at 0xc80 (count 0xc88), each window list at 0x38; tests the window's opacity at 0x288 above 0.0, its parent by 0x1400d1a60 and flag 0x10 at 0x1c; calls 0x1400c84b0 with the message. Entry 0x40 of the class table 0x140b567d0 (0x140b56810), called by UiHandleMessage."
+grade = "fairly sure"
+gap = "How 0x1400c84b0 routes keyboard messages to the window holding the UI's keyboard focus is not read; that the focused edit box gets WM_CHAR is read from the edit box's own handler (EditBoxHandleMessage)."
+name = "DispatchUiMessage"
+
+["0x140112a60"]
+statement = "An edit box's window-message handler. While the box holds the UI's keyboard focus (focus inside the client's UI, not Windows focus): WM_CHAR with a character code of 32 or more inserts that character (wParam) unless Ctrl is down for a shortcut (EditBoxCtrlShortcut); WM_CHAR Enter (13) in a single-line box drops the focus and raises the window event EditBoxReturn (EditBoxSubmitReturn), and in a multi-line box inserts a new line; WM_CHAR Tab (9) raises EditBoxTab when the box asks for it; Backspace (8) deletes; WM_KEYDOWN Escape raises EditBoxEscape and drops the focus; WM_KEYDOWN arrows, Home, End, Insert and Delete move or edit. While it does not hold the focus, a WM_CHAR Enter with scan code 28 (or slash with scan code 53) gives it the focus if the box takes focus on Enter. No foreground or active check."
+proof = "0x140112ab9 cmp [r15+0xb40], rcx (the UI's focused window is this box); 0x140112e94 cmp ebp, 0x102; 0x140112ece call 0x140112950; 0x140112edb cmp si, 0x20; 0x140112eeb call 0x14010f120 (insert wParam); 0x140112f25 call 0x14010f120 (new line, 10); 0x140112f32 call 0x140111030 (Return); Tab raises event 0x29 through 0x1400d4070; Escape (WM_KEYDOWN 0x1b) raises event 0x2a and calls 0x1400e8bf0; 0x140112fa0 cmp r8, 0xd with the scan code test (bits 16..24 equal 0x1c) and 0x140113008 cmp [r15+0xb40], 0x0 then 0x1400e8c50 (set focus). Event names from the table at 0x140c2c4d0. Data references: 0x140b56d68 (a class table entry)."
+grade = "fairly sure"
+gap = "Which class table holds 0x140b56d68 and that the login form's Account and Password are of this class are not read; the single-line flag (bit 0 of the box's style) comes from the form's XML, which was not read."
+name = "EditBoxHandleMessage"
+
+["0x140111030"]
+statement = "An edit box's Enter: when the box keeps a history it adds the text to it, drops the UI's keyboard focus if the box holds it, and raises the window event EditBoxReturn with the box's text."
+proof = "0x140111051 call [rax+0x40] (the text); 0x14011105a call 0x140110ee0 (history, when the style's sign bit is set); 0x140111071 call 0x1400e8bf0 (clear focus) after the focus test; 0x14011108d mov edx, 0x28; 0x14011109a call 0x1400d4070 (raise event 0x28). Bytes at 0x140c2c610 point to the text 'EditBoxReturn' (0x140a16e98), entry 0x28 of the event name table 0x140c2c4d0."
+grade = "sure"
+name = "EditBoxSubmitReturn"
+
+["0x140112950"]
+statement = "An edit box's Ctrl shortcuts on WM_CHAR: while the left or right Ctrl key is down (GetKeyState, the window thread's own key state), Ctrl+A selects all, Ctrl+C copies, Ctrl+V pastes, Ctrl+X cuts and Ctrl+Y and Ctrl+Z are swallowed."
+proof = "Ghidra decompile: GetKeyState(0xa3) and GetKeyState(0xa2) (import references 0x14011296a, 0x140112978 to [0x1409598d8]); character 1 calls 0x140111e60, 3 calls 0x140111ed0, 0x16 calls 0x140111d60, 0x18 calls 0x140111fd0, 0x19 and 0x1a return 1. Called by EditBoxHandleMessage at 0x140112ece."
+grade = "fairly sure"
+gap = "The four routines are named from the control characters only; they are not read."
+name = "EditBoxCtrlShortcut"
+
+["0x140c2c4d0"]
+statement = "The UI's window event name table, indexed by event number: 0x20 ButtonSignal, 0x28 EditBoxReturn, 0x29 EditBoxTab, 0x2a EditBoxEscape."
+proof = "Bytes at 0x140c2c5d0, 0x140c2c610, 0x140c2c618 and 0x140c2c620 read by client_pe: pointers to the texts ButtonSignal (0x140a16e08), EditBoxReturn (0x140a16e98), EditBoxTab (0x140a16ea8), EditBoxEscape (0x140a16eb8). The edit box raises 0x28 on Enter (0x14011108d mov edx, 0x28) and 0x29 on Tab, which fixes the table's start."
+grade = "sure"
+
+["0x1400395e0"]
+statement = "Builds the login screen's form from UI\\ClientLoginForms.xml (form LoginWindow) and finds its Account, Password and Save fields. When the command line gave both -account and -password it hides the form (the login then submits by itself, UpdateLoginScreen). Outside Steam it does not put the -account name in the Account field: when the Save box's setting is on it fills the field with the saved account name; it then puts the UI's keyboard focus on Password when the Account field has text and on Account when it is empty, and shows the field. With Steam it shows the -account name in the disabled account line instead."
+proof = "0x140039625 call 0x1400f52e0 (load LoginWindow); 0x140039819 cmp [rax+0x1658], 0x0 and 0x140039823 cmp [rax+0x1650], 0x0 (account, password); 0x140039838 call 0x1400d42f0 with edx 0 (hide). 0x14003990a cmp [0x140c63630], 0x0 (Steam; SteamIndicator shown when set). Non-Steam: 0x1400399ba cmp byte [rax+r12+0xc3ade0], 0x0 (the Save setting, the one the Save box shows); 0x1400399f8 call 0x14001c480 copying the saved name from 0x140c667e0; 0x140039a10 call [rax+0x50] (set the Account text); 0x140039a13 sub rdi, rbx; 0x140039a16 test rdi, -0x2 (empty text); 0x140039a37 call 0x1400e8c50 with Password when not empty, Account when empty. Steam: 0x140039921 and 0x140039965 mov rdx, [rdx+0x1658] into AccountInputDisabled."
+grade = "fairly sure"
+gap = "That 0x140c3ade0 is the Save box's setting and 0x140c667e0 the saved account name is read from their use with the Save box only, not from the settings table; the caller of this function is not read (no direct caller)."
+name = "BuildLoginWindow"
+
+["0x140039cb0"]
+statement = "The login form's OnLoginTab handler: with no login under way it moves the UI's keyboard focus from Account to Password, or from anything else to Account (always Password with Steam)."
+proof = "Named by the pair at 0x140c56550 (the name 'OnLoginTab', the function 0x140039cb0), registered with OnLoginReturn by 0x1400395c0. Ghidra decompile: the login state at 0xa8 must be 0; finds Account and Password; the focused window from 0x1400f26a0 and 0x1400e9140; then 0x1400e8c50."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; which window event the form binds to OnLoginTab (EditBoxTab by its name) is in the form's XML, which was not read."
+name = "OnLoginTab"
+
+["0x1403f3790"]
+statement = "In game, sets the UI's pointer from the real system cursor (GetCursorPos, converted to window terms) and refreshes the UI's hover. So in game the UI pointer does not always come from a posted WM_MOUSEMOVE."
+proof = "Ghidra decompile: GetCursorPos (0x1403f37bc read of [0x140959770]); ScreenToClient with the main window (0x1403f37d2 read of [0x1409597f0]); stores x and y in the UI's pointer at 0xb10; calls entry 0x78 of an object and 0x1400e6e80 on the UI. Caller: 0x1400344d0 (0x140034810)."
+grade = "fairly sure"
+gap = "When 0x1400344d0 calls it is not read; the other GetCursorPos users in game (0x1403e5de0, 0x1404b6860, 0x140627670, 0x140627c40, 0x140628090, 0x14062c9b0, 0x140280020) are not read, and may also read the real cursor for world picking."
+name = "SetUiCursorFromSystemCursor"
