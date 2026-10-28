@@ -13,4 +13,6 @@ You build one step to its approved test list. The brief gives you the list, the 
 
 Write the tests from the list first, then the code, running only the named tests, and hand back once, when both are done.
 
+Run `./check fast`, the full check (`./check`) and the CI variant (`GENESIS_NO_CLIENT=1 GENESIS_TABLE_DIR=/nonexistent ./check`) before you hand back.
+
 Report anything found outside the list, sorted as missing, a bug or a question, with its evidence.

@@ -11,6 +11,10 @@
 #   client.sh click <x> <y> --pc-free  takeover mode: brings the client's window forward, moves the real
 #                                    mouse to the client point (x, y) and clicks the left button there;
 #                                    refuses without --pc-free (or GENESIS_PC_FREE=1 in the environment)
+#   client.sh click <target> --pc-free  the same at a named point of the 3840x2160 client: enter-game,
+#                                    create-none and create-one (the create row with no or one
+#                                    character), next, novice, veteran, human, warrior, soldier,
+#                                    randomize, first-name, last-name
 #   client.sh stop                   closes the client this script started
 #
 # Needs GENESIS_PLAY_PC (user@host), GENESIS_PLAY_ADDRESS (the server host the client is pointed
@@ -28,7 +32,7 @@
 # it. It checks --pc-free or GENESIS_PC_FREE=1 before it touches the PC.
 set -euo pipefail
 
-usage() { sed -n '5,15p' "$0" >&2; exit 2; }
+usage() { sed -n '5,19p' "$0" >&2; exit 2; }
 
 command=${1:-}
 case "$command" in
@@ -42,6 +46,25 @@ case "$command" in
       *) usage ;;
     esac ;;
   click)
+    # Points read from screenshots of the client at 3840x2160 (a 1280 screenshot's point times 3).
+    case "${2:-}" in
+      enter-game) point='1920 2076' ;;
+      create-none) point='315 897' ;;
+      create-one) point='315 1011' ;;
+      next) point='3720 2046' ;;
+      novice) point='1554 1095' ;;
+      veteran) point='2292 1095' ;;
+      human) point='810 1350' ;;
+      warrior) point='1245 1425' ;;
+      soldier) point='1248 1275' ;;
+      randomize) point='180 795' ;;
+      first-name) point='1755 1986' ;;
+      last-name) point='2115 1986' ;;
+      *) point= ;;
+    esac
+    if [ -n "$point" ]; then
+      set -- click $point "${@:3}"
+    fi
     [ $# -eq 3 ] || { [ $# -eq 4 ] && [ "$4" = --pc-free ]; } || usage
     [[ $2 =~ ^[0-9]+$ && $3 =~ ^[0-9]+$ ]] || usage
     if [ $# -eq 3 ] && [ "${GENESIS_PC_FREE:-}" != 1 ]; then
