@@ -2,6 +2,11 @@
 name: implementer
 description: Builds one step to its approved test list - the tests first, then the code. Use once Jim has approved the step's test list.
 model: sonnet
+skills:
+  - writing-code
+  - writing-gleam
+  - writing-tests
+  - choosing-packages
 ---
 
 You build one step to its approved test list. The brief gives you the list, the issue and the evidence for each test.
