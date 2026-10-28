@@ -25,6 +25,7 @@ pub fn the_live_sessions_game_recording_replays_to_the_same_steps_test() -> Nil 
     rule_replay_support.replayed(
       file: "genesis_prime.game.connection-4.recording",
       module: game_connection.rule_name,
+      reads_tables: True,
       new: game_connection.new,
       step: game_connection.step,
     )

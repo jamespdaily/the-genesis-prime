@@ -9,7 +9,7 @@ import genesis_prime/rule_types
 import genesis_prime/step.{type Input, type Step, Rule}
 import genesis_prime/table/loader/store
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{Some}
 import simplifile
 
 /// The folder of the live session's recordings: a login of the real client
@@ -22,13 +22,15 @@ pub const folder = "test/rule_recording/2026-10-28-create/"
 /// and the inputs `End` counts. The replay fails unless every recorded step is
 /// the step the rule gives again, and unless the recording was made under the
 /// rule's types as the code stands (`rule_types.digest`) and, for a rule that
-/// reads the game tables, on the table files loaded now: a header with a
-/// tables digest loads the client's tables under the server's key, where the
-/// recorded settings name them, and a digest that differs fails the replay
-/// with `RecordAgain`.
+/// reads the game tables (`reads_tables`), on the table files loaded now: the
+/// replay loads the client's tables under the server's key, where the recorded
+/// settings name them, and a digest that differs from the header's fails the
+/// replay with `RecordAgain`. A rule that reads no table replays without the
+/// tables, whatever digest its header holds.
 pub fn replayed(
   file file: String,
   module module: String,
+  reads_tables reads_tables: Bool,
   new new: fn(settings) -> state,
   step step: fn(state, Input(Nil, Answer)) -> #(state, Step(Nil, Request)),
 ) -> #(Int, Int) {
@@ -37,9 +39,9 @@ pub fn replayed(
   let assert Ok(#(Header(settings:, tables_digest:, ..), records)) =
     rule_recording.read(bytes)
     as "the recording is a recording"
-  let loaded_digest = case tables_digest {
-    None -> None
-    Some(_) -> Some(store.digest(client_tables.shared()))
+  let loaded_digest = case reads_tables {
+    True -> Some(store.digest(client_tables.shared()))
+    False -> tables_digest
   }
   let records: List(rule_recording.Record(Nil, Answer, Nil, Request)) = records
   let assert Ok(End(count:)) = list.last(records)
