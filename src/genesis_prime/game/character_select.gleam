@@ -123,7 +123,7 @@ const just_now_days = -0.000001
 /// each into its own effect.
 pub type Effect {
   /// Ask the store; its answer comes back to the function of that request.
-  Ask(request: store.Request)
+  Ask(request: store.SelectRequest)
   /// Send this message to the client, in the game wrapper under the
   /// connection's current cipher.
   Send(frame: Frame)
@@ -325,20 +325,22 @@ pub fn deleted(
   answer answer: store.DeleteAnswer,
 ) -> Result(#(State, List(Effect)), Nil) {
   case state {
-    Deleting(character_id:) ->
-      Ok(case answer {
-        store.CharacterDeleted -> #(Resting, [
-          delete_result(result: delete_result.DeleteOk),
-        ])
-        store.NoSuchCharacter -> #(Resting, [
-          Warn(
-            text: "a delete of character "
-            <> int.to_string(character_id)
-            <> ", which the account does not have",
-          ),
-          delete_result(result: delete_result.DeleteFailed),
-        ])
-      })
+    Deleting(character_id:) -> {
+      let #(warning, result) = case answer {
+        store.CharacterDeleted -> #([], delete_result.DeleteOk)
+        store.NoSuchCharacter -> #(
+          [
+            Warn(
+              text: "a delete of character "
+              <> int.to_string(character_id)
+              <> ", which the account does not have",
+            ),
+          ],
+          delete_result.DeleteFailed,
+        )
+      }
+      Ok(#(Resting, list.append(warning, [delete_result(result:)])))
+    }
     Resting | Listing(..) | Creating | Renaming(..) -> Error(Nil)
   }
 }
@@ -355,35 +357,31 @@ pub fn renamed(
   answer answer: store.RenameAnswer,
 ) -> Result(#(State, List(Effect)), Nil) {
   case state {
-    Renaming(character_id:, name:) ->
-      Ok(case answer {
-        store.CharacterRenamed(name: stored) -> #(Resting, [
-          rename_result(
-            character_id:,
-            name: stored,
-            result: rename_result.RenameOk,
-          ),
-        ])
-        store.NewNameTaken -> #(Resting, [
-          rename_result(
-            character_id:,
-            name:,
-            result: rename_result.NameUnavailable,
-          ),
-        ])
-        store.NotRenamable -> #(Resting, [
-          Warn(
-            text: "a rename of character "
-            <> int.to_string(character_id)
-            <> ", which the account does not have or which is not marked",
-          ),
-          rename_result(
-            character_id:,
-            name:,
-            result: rename_result.RenameFailed,
-          ),
-        ])
-      })
+    Renaming(character_id:, name: asked) -> {
+      let #(warning, name, result) = case answer {
+        store.CharacterRenamed(name: stored) -> #(
+          [],
+          stored,
+          rename_result.RenameOk,
+        )
+        store.NewNameTaken -> #([], asked, rename_result.NameUnavailable)
+        store.NotRenamable -> #(
+          [
+            Warn(
+              text: "a rename of character "
+              <> int.to_string(character_id)
+              <> ", which the account does not have or which is not marked",
+            ),
+          ],
+          asked,
+          rename_result.RenameFailed,
+        )
+      }
+      Ok(#(
+        Resting,
+        list.append(warning, [rename_result(character_id:, name:, result:)]),
+      ))
+    }
     Resting | Listing(..) | Creating | Deleting(..) -> Error(Nil)
   }
 }

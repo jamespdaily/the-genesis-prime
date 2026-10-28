@@ -231,7 +231,7 @@ fn request_for(letter: Int, n: Int) -> Result(Request, Nil) {
     _ if letter == ignore_command -> Ok(OfGate(gate_rule.Ignore))
     _ if letter == crash_command -> Ok(OfGate(gate_rule.Crash))
     _ if letter == store_command ->
-      Ok(OfStore(store.FindAccount("login-" <> int.to_string(n))))
+      Ok(OfStore(store.Login(store.FindAccount("login-" <> int.to_string(n)))))
     _ -> Error(Nil)
   }
 }
@@ -269,16 +269,16 @@ fn coded(result: Outcome(Answer)) -> #(Int, Int) {
   case result {
     step.Answer(FromGate(gate_rule.Echoed(n))) -> #(code_echoed, n)
     step.Answer(FromGate(gate_rule.Opened(key:))) -> #(code_opened, key)
-    step.Answer(FromStore(store.ToFindAccount(store.AccountFound(account:)))) -> {
+    step.Answer(FromStore(store.ForLogin(store.AccountFound(account:)))) -> {
       let store.AccountId(id) = account.account_id
       #(code_account_found, id % 256)
     }
-    step.Answer(FromStore(store.ToFindAccount(store.NoSuchAccount))) -> #(
+    step.Answer(FromStore(store.ForLogin(store.NoSuchAccount))) -> #(
       code_no_such_account,
       0,
     )
     step.Answer(FromStore(store.Unavailable)) -> #(code_unavailable, 0)
-    step.Answer(FromStore(..)) ->
+    step.Answer(FromStore(store.ForSelect(..))) ->
       panic as "the asking rule asks for accounts only"
     NotRunning -> #(code_not_running, 0)
     NoAnswerInTime -> #(code_no_answer_in_time, 0)

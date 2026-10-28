@@ -6,6 +6,7 @@
 //// create, a delete or a rename answers with, decoded.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/mark_rename/sql as mark_rename_sql
 import genesis_prime/message/create_character.{
   type CreateCharacter, CreateCharacter,
 }
@@ -74,6 +75,15 @@ pub fn insert(
   let assert Ok(id) = try_insert(pool:, account:, name:, class_id:, path:)
     as "the character was inserted"
   id
+}
+
+/// Marks the character with the name for a rename, as the developer tool does,
+/// and checks that exactly one character has it.
+pub fn mark_for_rename(pool pool: pog.Connection, name name: String) -> Nil {
+  let assert Ok(returned) = mark_rename_sql.mark_for_rename(pool, name)
+    as "the developer tool's query ran"
+  assert list.length(returned.rows) == 1 as "one character has the name"
+  Nil
 }
 
 /// 1 to `count`.

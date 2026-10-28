@@ -128,6 +128,25 @@ fn create(
   )
 }
 
+fn delete(
+  character_id: Int,
+) -> #(character_select.State, List(character_select.Effect)) {
+  character_select.delete_requested(
+    account_id: AccountId(7),
+    request: DeleteCharacter(character_id:),
+  )
+}
+
+fn rename(
+  character_id: Int,
+  name: String,
+) -> #(character_select.State, List(character_select.Effect)) {
+  character_select.rename_requested(
+    account_id: AccountId(7),
+    request: RenameCharacter(character_id:, name:),
+  )
+}
+
 // ---- the list ----
 
 pub fn the_clients_0x07e0_asks_the_store_for_the_accounts_characters_test() -> Nil {
@@ -342,11 +361,7 @@ fn warnings(effects: List(character_select.Effect)) -> List(String) {
 
 pub fn the_clients_0x0352_asks_the_store_to_delete_the_character_of_the_account_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(state, effects) =
-    character_select.delete_requested(
-      account_id: AccountId(7),
-      request: DeleteCharacter(character_id: 0x1_0000_0002),
-    )
+  let #(state, effects) = delete(0x1_0000_0002)
   assert effects
     == [
       Ask(request: StoreDelete(
@@ -360,11 +375,7 @@ pub fn the_clients_0x0352_asks_the_store_to_delete_the_character_of_the_account_
 
 pub fn a_deleted_character_is_0x00e6_result_0_with_value_0_and_no_new_list_follows_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(asking, _) =
-    character_select.delete_requested(
-      account_id: AccountId(7),
-      request: DeleteCharacter(character_id: 5),
-    )
+  let #(asking, _) = delete(5)
   let assert Ok(#(state, effects)) =
     character_select.deleted(asking, CharacterDeleted)
   assert character_support.delete_result_in(sent(effects))
@@ -377,11 +388,7 @@ pub fn a_deleted_character_is_0x00e6_result_0_with_value_0_and_no_new_list_follo
 
 pub fn a_character_the_account_does_not_have_is_0x00e6_result_1_with_a_warning_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(asking, _) =
-    character_select.delete_requested(
-      account_id: AccountId(7),
-      request: DeleteCharacter(character_id: 5),
-    )
+  let #(asking, _) = delete(5)
   let assert Ok(#(state, effects)) =
     character_select.deleted(asking, NoSuchCharacter)
   assert character_support.delete_result_in(sent(effects))
@@ -407,11 +414,7 @@ pub fn a_delete_answer_with_no_delete_asked_is_none_character_select_takes_test(
 
 pub fn the_clients_0x0786_with_a_name_that_passes_rule_0_asks_the_store_to_rename_the_character_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(state, effects) =
-    character_select.rename_requested(
-      account_id: AccountId(7),
-      request: RenameCharacter(character_id: 5, name: "Ab Cd"),
-    )
+  let #(state, effects) = rename(5, "Ab Cd")
   assert effects
     == [
       Ask(request: StoreRename(
@@ -426,11 +429,7 @@ pub fn the_clients_0x0786_with_a_name_that_passes_rule_0_asks_the_store_to_renam
 
 pub fn a_name_that_fails_rule_0_is_0x014b_result_15_with_the_request_and_nothing_is_asked_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(state, effects) =
-    character_select.rename_requested(
-      account_id: AccountId(7),
-      request: RenameCharacter(character_id: 5, name: "Abcd"),
-    )
+  let #(state, effects) = rename(5, "Abcd")
   assert character_support.rename_result_in(sent(effects))
     == RenameCharacterResult(
       result: rename_result.NameLength,
@@ -447,11 +446,7 @@ pub fn a_name_that_fails_rule_0_is_0x014b_result_15_with_the_request_and_nothing
 pub fn the_stores_answer_to_a_rename_becomes_the_result_the_client_shows_test() -> Nil {
   use <- owned_test.run(60_000)
   let result_for = fn(answer) {
-    let #(asking, _) =
-      character_select.rename_requested(
-        account_id: AccountId(7),
-        request: RenameCharacter(character_id: 0x1_0000_0001, name: "Ab Cd"),
-      )
+    let #(asking, _) = rename(0x1_0000_0001, "Ab Cd")
     let assert Ok(#(state, effects)) = character_select.renamed(asking, answer)
     assert !character_select.waiting(state) as "the result is sent"
     #(character_support.rename_result_in(sent(effects)), warnings(effects))
@@ -492,11 +487,7 @@ pub fn a_rename_answer_with_no_rename_asked_is_none_character_select_takes_test(
   use <- owned_test.run(60_000)
   assert character_select.renamed(character_select.new(), NewNameTaken)
     == Error(Nil)
-  let #(deleting, _) =
-    character_select.delete_requested(
-      account_id: AccountId(7),
-      request: DeleteCharacter(character_id: 5),
-    )
+  let #(deleting, _) = delete(5)
   assert character_select.renamed(deleting, NotRenamable) == Error(Nil)
     as "a delete is asked for, not a rename"
 }

@@ -71,8 +71,8 @@ import genesis_prime/step.{
   LogError, LogInfo, LogWarning, Rule, Stop, Write,
 }
 import genesis_prime/store.{
-  type Account, AccountFound, FindAccount, NoSuchAccount, ToFindAccount,
-  Unavailable,
+  type Account, AccountFound, FindAccount, ForLogin, ForSelect, Login,
+  NoSuchAccount, Unavailable,
 }
 import gleam/int
 import gleam/option.{type Option, None, Some}
@@ -327,7 +327,7 @@ fn transact(
       ask(
         session: Session(..session, status: FindingAccount(sequence:)),
         now:,
-        request: AskStore(FindAccount(login_name:)),
+        request: AskStore(Login(FindAccount(login_name:))),
       )
     AwaitingProof(account:, challenge:), KeyData(bytes:) ->
       prove(session:, sequence:, account:, challenge:, key_data: bytes)
@@ -581,7 +581,7 @@ fn found(
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case outcome {
-    step.Answer(FromStore(ToFindAccount(AccountFound(account:)))) -> {
+    step.Answer(FromStore(ForLogin(AccountFound(account:)))) -> {
       let #(link, secret) = client_connection.draw(session.link, 32)
       let assert Ok(#(challenge, key_data)) =
         srp.challenge(
@@ -600,7 +600,7 @@ fn found(
         ],
       )
     }
-    step.Answer(FromStore(ToFindAccount(NoSuchAccount))) ->
+    step.Answer(FromStore(ForLogin(NoSuchAccount))) ->
       Continue(Session(..session, status: AwaitingLoginStart), [
         Write(refusal(sequence, invalid_credentials)),
       ])
@@ -608,10 +608,10 @@ fn found(
       timed_out(session:, sequence:, what: "the store was unavailable")
     step.Answer(FromHandOff(..)) ->
       end_for(session, "the hand-off answered the ask for the account")
-    step.Answer(FromStore(..)) ->
+    step.Answer(FromStore(ForSelect(..))) ->
       end_for(
         session,
-        "the store answered the ask for the account with another ask's answer",
+        "the store answered the ask for the account with an answer for character select",
       )
     step.NotRunning
     | step.NoAnswerInTime

@@ -67,10 +67,9 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{
   AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
-  CharacterRenamed, ListCharacters, LookEntry, NameStands, NameTaken,
-  NewCharacter, NewNameTaken, NoFreeSlot, NoSuchCharacter, NotRenamable,
-  ToCreateCharacter, ToDeleteCharacter, ToListCharacters, ToRenameCharacter,
-  Unavailable,
+  CharacterRenamed, Created, Deleted, ForSelect, ListCharacters, Listed,
+  LookEntry, NameStands, NameTaken, NewCharacter, NewNameTaken, NoFreeSlot,
+  NoSuchCharacter, NotRenamable, Renamed, Select, Unavailable,
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -208,7 +207,7 @@ fn listed(
   answer(
     state:,
     taken:,
-    outcome: step.Answer(FromStore(ToListCharacters(characters:))),
+    outcome: step.Answer(FromStore(ForSelect(Listed(characters:)))),
   )
 }
 
@@ -318,7 +317,7 @@ pub fn message_0x058f_asks_the_hand_off_to_take_the_session_key_and_every_later_
   // The next read is under the session key: the store is asked because 0x07E0
   // opened under it.
   let #(_, taken) = read(state, select_start())
-  assert ask_request(taken) == AskStore(ListCharacters(AccountId(7)))
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
     as "0x07E0 under the session key is read"
 }
 
@@ -345,7 +344,7 @@ pub fn message_0x07e0_in_the_same_read_as_0x058f_waits_until_the_hand_off_answer
       taken:,
       outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
     )
-  assert ask_request(taken) == AskStore(ListCharacters(AccountId(7)))
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
     as "the holder's account, once the hand-off answers"
   let assert Some(ask) = support.asked(taken)
   assert ask.deadline_ms == support.now_ms + 4000
@@ -517,8 +516,8 @@ pub fn a_store_answer_to_another_ask_than_the_one_out_gets_0x036a_reason_8_an_er
   use <- owned_test.run(10_000)
   list.each(
     [
-      step.Answer(FromStore(store.ToFindAccount(store.NoSuchAccount))),
-      step.Answer(FromStore(ToCreateCharacter(NameTaken))),
+      step.Answer(FromStore(store.ForLogin(store.NoSuchAccount))),
+      step.Answer(FromStore(ForSelect(Created(NameTaken)))),
     ],
     fn(outcome) {
       let #(state, taken) = listing()
@@ -633,14 +632,14 @@ pub fn frames_after_the_one_that_asked_wait_for_its_answer_and_are_then_taken_in
       taken:,
       outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
     )
-  assert ask_request(taken) == AskStore(ListCharacters(AccountId(7)))
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
   assert unhandled_ids(taken) == []
     as "0x038C follows 0x07E0 in the bytes and waits for the store's answer"
   let #(_, taken) =
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(ToListCharacters(characters: []))),
+      outcome: step.Answer(FromStore(ForSelect(Listed(characters: [])))),
     )
   let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, ..)] =
     heard(taken, keyed())
@@ -696,14 +695,14 @@ pub fn a_second_0x07e0_asks_the_store_again_and_sends_a_new_list_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, _) = listed(characters: [])
   let #(state, taken) = read(state, select_start())
-  assert ask_request(taken) == AskStore(ListCharacters(AccountId(7)))
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
     as "the client asked for its list again, so the store is asked again"
   let #(_, taken) =
     answer(
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(ToListCharacters([character(id: 5, name: "Eve", seed: 1)])),
+        FromStore(ForSelect(Listed([character(id: 5, name: "Eve", seed: 1)]))),
       ),
     )
   let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, body:)] =
@@ -759,23 +758,25 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
   use <- owned_test.run(10_000)
   let #(state, taken) = creating(a_create_request("Ab Cd"))
   assert ask_request(taken)
-    == AskStore(store.CreateCharacter(
-      account_id: AccountId(7),
-      character: NewCharacter(
-        name: "Ab Cd",
-        gender: 1,
-        race_id: RaceId(1),
-        class_id: ClassId(1),
-        faction_id: 167,
-        path: 2,
-        look: [
-          LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-          LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
-        ],
-        bones: character_support.bones(46),
-      ),
-      character_slots: 3,
-    ))
+    == AskStore(
+      store.Select(store.CreateCharacter(
+        account_id: AccountId(7),
+        character: NewCharacter(
+          name: "Ab Cd",
+          gender: 1,
+          race_id: RaceId(1),
+          class_id: ClassId(1),
+          faction_id: 167,
+          path: 2,
+          look: [
+            LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
+            LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+          ],
+          bones: character_support.bones(46),
+        ),
+        character_slots: 3,
+      )),
+    )
     as "opcode.0x25b, CharacterCreation row 466; the slot count is the settings'"
   assert support.writes(taken) == []
     as "nothing is written before the store answers"
@@ -784,7 +785,7 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(ToCreateCharacter(CharacterCreated(CharacterId(11)))),
+        FromStore(ForSelect(Created(CharacterCreated(CharacterId(11))))),
       ),
     )
   assert create_result_of(taken)
@@ -814,7 +815,7 @@ pub fn a_name_taken_in_any_case_and_an_account_at_its_slots_are_0x00dc_6_and_9_t
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(ToCreateCharacter(NameTaken))),
+      outcome: step.Answer(FromStore(ForSelect(Created(NameTaken)))),
     )
   assert create_result_of(taken).result == create_result.NameUnavailable
     as "lua.Character.OnCreateCharacterFailed: 6"
@@ -823,7 +824,7 @@ pub fn a_name_taken_in_any_case_and_an_account_at_its_slots_are_0x00dc_6_and_9_t
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(ToCreateCharacter(NoFreeSlot))),
+      outcome: step.Answer(FromStore(ForSelect(Created(NoFreeSlot)))),
     )
   assert create_result_of(taken).result == create_result.AccountFull
     as "lua.Character.OnCreateCharacterFailed: 9"
@@ -871,7 +872,7 @@ pub fn message_0x07dd_after_a_create_gets_0x0162_failed_then_0x0036_and_0x0117_w
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(ToCreateCharacter(CharacterCreated(CharacterId(11)))),
+        FromStore(ForSelect(Created(CharacterCreated(CharacterId(11))))),
       ),
     )
   let #(state, taken) = read(state, play_message(11))
@@ -880,7 +881,7 @@ pub fn message_0x07dd_after_a_create_gets_0x0162_failed_then_0x0036_and_0x0117_w
   assert play_character_refused.decode(body)
     == Ok(PlayCharacterRefused(result: play_refusal.Failed))
     as "opcode.0x162: 2 Failed is the generic refusal"
-  assert ask_request(taken) == AskStore(ListCharacters(AccountId(7)))
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
     as "the list is built again"
   let new = Character(..character(id: 11, name: "Ab Cd", seed: 1), level: 1)
   let #(_, taken) =
@@ -889,7 +890,7 @@ pub fn message_0x07dd_after_a_create_gets_0x0162_failed_then_0x0036_and_0x0117_w
       taken:,
       outcome: step.Answer(
         FromStore(
-          ToListCharacters([character(id: 5, name: "Eve", seed: 2), new]),
+          ForSelect(Listed([character(id: 5, name: "Eve", seed: 2), new])),
         ),
       ),
     )
@@ -916,23 +917,25 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
       play_message(11):bits,
     >>)
   assert ask_request(taken)
-    == AskStore(store.CreateCharacter(
-      account_id: AccountId(7),
-      character: NewCharacter(
-        name: "Ab Cd",
-        gender: 1,
-        race_id: RaceId(1),
-        class_id: ClassId(1),
-        faction_id: 167,
-        path: 2,
-        look: [
-          LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-          LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
-        ],
-        bones: character_support.bones(46),
-      ),
-      character_slots: 3,
-    ))
+    == AskStore(
+      store.Select(store.CreateCharacter(
+        account_id: AccountId(7),
+        character: NewCharacter(
+          name: "Ab Cd",
+          gender: 1,
+          race_id: RaceId(1),
+          class_id: ClassId(1),
+          faction_id: 167,
+          path: 2,
+          look: [
+            LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
+            LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+          ],
+          bones: character_support.bones(46),
+        ),
+        character_slots: 3,
+      )),
+    )
     as "only the create is asked while its answer is out"
   assert support.writes(taken) == []
   let #(_, taken) =
@@ -940,13 +943,13 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(ToCreateCharacter(CharacterCreated(CharacterId(11)))),
+        FromStore(ForSelect(Created(CharacterCreated(CharacterId(11))))),
       ),
     )
   let assert [Frame(message_id: 0x00DC, ..), Frame(message_id: 0x0162, ..)] =
     heard(taken, keyed())
     as "the result first, then the refusal of the play that waited"
-  assert ask_request(taken) == AskStore(ListCharacters(AccountId(7)))
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
 }
 
 // ---- delete and rename ----
@@ -981,10 +984,12 @@ pub fn message_0x0352_asks_the_store_to_delete_the_character_and_its_answer_is_0
   use <- owned_test.run(10_000)
   let #(state, taken) = deleting(11)
   assert ask_request(taken)
-    == AskStore(store.DeleteCharacter(
-      account_id: AccountId(7),
-      character_id: CharacterId(11),
-    ))
+    == AskStore(
+      store.Select(store.DeleteCharacter(
+        account_id: AccountId(7),
+        character_id: CharacterId(11),
+      )),
+    )
     as "opcode.0x352: the character's id, and the holder's account, which scopes the delete"
   assert support.writes(taken) == []
     as "nothing is written before the store answers"
@@ -992,7 +997,7 @@ pub fn message_0x0352_asks_the_store_to_delete_the_character_and_its_answer_is_0
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(ToDeleteCharacter(CharacterDeleted))),
+      outcome: step.Answer(FromStore(ForSelect(Deleted(CharacterDeleted)))),
     )
   assert character_support.delete_result_in(heard(taken, keyed()))
     == DeleteCharacterResult(result: delete_result.DeleteOk, value: 0)
@@ -1009,7 +1014,7 @@ pub fn a_delete_of_a_character_the_account_does_not_have_is_0x00e6_result_1_and_
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(ToDeleteCharacter(NoSuchCharacter))),
+      outcome: step.Answer(FromStore(ForSelect(Deleted(NoSuchCharacter)))),
     )
   assert character_support.delete_result_in(heard(taken, keyed()))
     == DeleteCharacterResult(result: delete_result.DeleteFailed, value: 0)
@@ -1025,18 +1030,20 @@ pub fn message_0x0786_asks_the_store_to_rename_the_character_and_its_answer_is_0
   use <- owned_test.run(10_000)
   let #(state, taken) = renaming(11, "Ab Cd")
   assert ask_request(taken)
-    == AskStore(store.RenameCharacter(
-      account_id: AccountId(7),
-      character_id: CharacterId(11),
-      name: "Ab Cd",
-    ))
+    == AskStore(
+      store.Select(store.RenameCharacter(
+        account_id: AccountId(7),
+        character_id: CharacterId(11),
+        name: "Ab Cd",
+      )),
+    )
     as "opcode.0x786: the character's id and the typed name"
   let #(_, taken) =
     answer(
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(ToRenameCharacter(CharacterRenamed(name: "Ab Cd"))),
+        FromStore(ForSelect(Renamed(CharacterRenamed(name: "Ab Cd")))),
       ),
     )
   assert character_support.rename_result_in(heard(taken, keyed()))
@@ -1056,7 +1063,7 @@ pub fn a_name_taken_a_name_failing_rule_0_and_a_character_that_is_not_renamable_
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(ToRenameCharacter(NewNameTaken))),
+      outcome: step.Answer(FromStore(ForSelect(Renamed(NewNameTaken)))),
     )
   assert character_support.rename_result_in(heard(taken, keyed())).result
     == rename_result.NameUnavailable
@@ -1073,7 +1080,7 @@ pub fn a_name_taken_a_name_failing_rule_0_and_a_character_that_is_not_renamable_
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(ToRenameCharacter(NotRenamable))),
+      outcome: step.Answer(FromStore(ForSelect(Renamed(NotRenamable)))),
     )
   assert character_support.rename_result_in(heard(taken, keyed())).result
     == rename_result.RenameFailed
@@ -1106,38 +1113,37 @@ pub fn a_store_that_gives_no_answer_to_a_delete_or_a_rename_gets_0x036a_reason_8
 
 pub fn a_store_answer_to_another_ask_than_a_delete_or_a_rename_is_a_bug_that_ends_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(state, taken) = deleting(11)
-  let #(_, taken) =
-    answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromStore(ToRenameCharacter(NewNameTaken))),
-    )
-  assert disconnect(taken, keyed()) == LostUserServer
-  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
-  let #(state, taken) = renaming(11, "Ab Cd")
-  let #(_, taken) =
-    answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromStore(ToDeleteCharacter(CharacterDeleted))),
-    )
-  assert disconnect(taken, keyed()) == LostUserServer
-  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  list.each(
+    [
+      #(deleting(11), ForSelect(Renamed(NewNameTaken))),
+      #(renaming(11, "Ab Cd"), ForSelect(Deleted(CharacterDeleted))),
+    ],
+    fn(asked) {
+      let #(#(state, taken), wrong) = asked
+      let #(_, taken) =
+        answer(state:, taken:, outcome: step.Answer(FromStore(wrong)))
+      assert disconnect(taken, keyed()) == LostUserServer
+      assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    },
+  )
 }
 
 pub fn a_0x0352_or_0x0786_the_clients_reader_would_refuse_ends_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
-  // opcode.0x352: 64 bits.
-  let #(_, taken) = read(in_select(), keyed_message(0x0352, <<1, 2>>))
-  assert support.stops(taken)
-  assert support.asked(taken) == None
-  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
-  // opcode.0x786: 64 bits and a wide text.
-  let #(_, taken) = read(in_select(), keyed_message(0x0786, <<1, 2>>))
-  assert support.stops(taken)
-  assert support.asked(taken) == None
-  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  list.each(
+    [
+      // opcode.0x352: 64 bits.
+      keyed_message(0x0352, <<1, 2>>),
+      // opcode.0x786: 64 bits and a wide text.
+      keyed_message(0x0786, <<1, 2>>),
+    ],
+    fn(cut) {
+      let #(_, taken) = read(in_select(), cut)
+      assert support.stops(taken)
+      assert support.asked(taken) == None
+      assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    },
+  )
 }
 
 pub fn a_0x025c_or_0x07dd_the_clients_reader_would_refuse_ends_the_connection_test() -> Nil {

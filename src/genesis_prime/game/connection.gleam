@@ -358,11 +358,58 @@ fn taken_message(
     InCharacterSelect(holder:, ..) ->
       case select_message(inner.message_id) {
         HelloReplyAgain -> end_for(session, "0x058F was sent a second time")
-        SelectStart -> select_started(session:, now:, holder:, inner:)
+        SelectStart ->
+          decoded_step(
+            session:,
+            now:,
+            holder:,
+            inner:,
+            decode: character_select_start.decode,
+            step: fn(_) { character_select.started(holder.account_id) },
+          )
         CreateRequest -> create_requested(session:, now:, holder:, inner:)
-        PlayRequest -> play_requested(session:, now:, holder:, inner:)
-        DeleteRequest -> delete_requested(session:, now:, holder:, inner:)
-        RenameRequest -> rename_requested(session:, now:, holder:, inner:)
+        PlayRequest ->
+          decoded_step(
+            session:,
+            now:,
+            holder:,
+            inner:,
+            decode: play_character.decode,
+            step: fn(request) {
+              character_select.play_requested(
+                account_id: holder.account_id,
+                request:,
+              )
+            },
+          )
+        DeleteRequest ->
+          decoded_step(
+            session:,
+            now:,
+            holder:,
+            inner:,
+            decode: delete_character.decode,
+            step: fn(request) {
+              character_select.delete_requested(
+                account_id: holder.account_id,
+                request:,
+              )
+            },
+          )
+        RenameRequest ->
+          decoded_step(
+            session:,
+            now:,
+            holder:,
+            inner:,
+            decode: rename_character.decode,
+            step: fn(request) {
+              character_select.rename_requested(
+                account_id: holder.account_id,
+                request:,
+              )
+            },
+          )
         NotTaken ->
           client_connection.unhandled(
             session:,
@@ -454,29 +501,6 @@ fn select_message(message_id: Int) -> SelectMessage {
   }
 }
 
-/// The client's 0x07E0: character select starts for the holder's account.
-fn select_started(
-  session session: Session,
-  now now: Now,
-  holder holder: Holder,
-  inner inner: Frame,
-) -> client_connection.Handled(Session) {
-  case character_select_start.decode(inner.body) {
-    Error(error) ->
-      end_for(
-        session,
-        "0x07E0 does not decode: " <> bit_stream.describe_decode(error:),
-      )
-    Ok(_) ->
-      select_step(
-        session:,
-        now:,
-        holder:,
-        step: character_select.started(holder.account_id),
-      )
-  }
-}
-
 /// The client's 0x025C: the whole frame of a 0x025B create request, which
 /// character select checks and asks the store to make.
 fn create_requested(
@@ -529,84 +553,27 @@ fn create_requested(
   }
 }
 
-/// The client's 0x07DD: the request to play a character, which character
-/// select refuses and answers with the list again.
-fn play_requested(
+/// A message of the client's that character select takes: its body decoded,
+/// and `step` gives character select's new state and effects for it. A body
+/// the client's reader would refuse ends the connection.
+fn decoded_step(
   session session: Session,
   now now: Now,
   holder holder: Holder,
   inner inner: Frame,
+  decode decode: fn(BitArray) -> Result(message, bit_stream.DecodeError),
+  step step: fn(message) ->
+    #(character_select.State, List(character_select.Effect)),
 ) -> client_connection.Handled(Session) {
-  case play_character.decode(inner.body) {
+  case decode(inner.body) {
     Error(error) ->
       end_for(
         session,
-        "0x07DD does not decode: " <> bit_stream.describe_decode(error:),
+        client_connection.message_text(inner.message_id)
+          <> " does not decode: "
+          <> bit_stream.describe_decode(error:),
       )
-    Ok(request) ->
-      select_step(
-        session:,
-        now:,
-        holder:,
-        step: character_select.play_requested(
-          account_id: holder.account_id,
-          request:,
-        ),
-      )
-  }
-}
-
-/// The client's 0x0352: the request to delete a character, which character
-/// select asks the store to carry out for the holder's account.
-fn delete_requested(
-  session session: Session,
-  now now: Now,
-  holder holder: Holder,
-  inner inner: Frame,
-) -> client_connection.Handled(Session) {
-  case delete_character.decode(inner.body) {
-    Error(error) ->
-      end_for(
-        session,
-        "0x0352 does not decode: " <> bit_stream.describe_decode(error:),
-      )
-    Ok(request) ->
-      select_step(
-        session:,
-        now:,
-        holder:,
-        step: character_select.delete_requested(
-          account_id: holder.account_id,
-          request:,
-        ),
-      )
-  }
-}
-
-/// The client's 0x0786: the request to rename a character, which character
-/// select checks and asks the store to carry out for the holder's account.
-fn rename_requested(
-  session session: Session,
-  now now: Now,
-  holder holder: Holder,
-  inner inner: Frame,
-) -> client_connection.Handled(Session) {
-  case rename_character.decode(inner.body) {
-    Error(error) ->
-      end_for(
-        session,
-        "0x0786 does not decode: " <> bit_stream.describe_decode(error:),
-      )
-    Ok(request) ->
-      select_step(
-        session:,
-        now:,
-        holder:,
-        step: character_select.rename_requested(
-          account_id: holder.account_id,
-          request:,
-        ),
-      )
+    Ok(message) -> select_step(session:, now:, holder:, step: step(message))
   }
 }
 
@@ -653,7 +620,7 @@ fn carry_out(
       ask(
         session:,
         now:,
-        request: AskStore(request),
+        request: AskStore(store.Select(request)),
         before: list.reverse(written),
       )
   }
@@ -750,48 +717,23 @@ fn select_answered(
         level: LogWarning,
         text: "the store is unavailable",
       )
-    step.Answer(FromStore(store.ToListCharacters(characters:))) ->
-      select_taken(
-        session:,
-        now:,
-        holder:,
-        taken: character_select.listed(
-          select,
-          characters:,
-          filetime: now.filetime,
-          realm_id: session.settings.realm_id,
-          max_characters: session.settings.max_characters,
-          tables: session.settings.tables,
-        ),
-      )
-    step.Answer(FromStore(store.ToCreateCharacter(answer:))) ->
-      select_taken(
-        session:,
-        now:,
-        holder:,
-        taken: character_select.created(select, answer),
-      )
-    step.Answer(FromStore(store.ToDeleteCharacter(answer:))) ->
-      select_taken(
-        session:,
-        now:,
-        holder:,
-        taken: character_select.deleted(select, answer),
-      )
-    step.Answer(FromStore(store.ToRenameCharacter(answer:))) ->
-      select_taken(
-        session:,
-        now:,
-        holder:,
-        taken: character_select.renamed(select, answer),
-      )
-    step.Answer(FromStore(..)) ->
-      told(
-        session:,
-        reason: LostUserServer,
-        level: step.LogError,
-        text: "the store's answer is none character select asked for",
-      )
+    step.Answer(FromStore(store.ForSelect(answer))) ->
+      select_taken(session:, now:, holder:, taken: case answer {
+        store.Listed(characters:) ->
+          character_select.listed(
+            select,
+            characters:,
+            filetime: now.filetime,
+            realm_id: session.settings.realm_id,
+            max_characters: session.settings.max_characters,
+            tables: session.settings.tables,
+          )
+        store.Created(answer:) -> character_select.created(select, answer)
+        store.Deleted(answer:) -> character_select.deleted(select, answer)
+        store.Renamed(answer:) -> character_select.renamed(select, answer)
+      })
+    step.Answer(FromStore(store.ForLogin(..))) ->
+      select_taken(session:, now:, holder:, taken: Error(Nil))
     step.Answer(FromHandOff(..)) ->
       told(
         session:,
@@ -823,13 +765,7 @@ fn select_taken(
   ),
 ) -> client_connection.Handled(Session) {
   case taken {
-    Ok(#(select, effects)) ->
-      carry_out(
-        session: Session(..session, status: InCharacterSelect(holder:, select:)),
-        now:,
-        effects:,
-        written: [],
-      )
+    Ok(step) -> select_step(session:, now:, holder:, step:)
     Error(Nil) ->
       told(
         session:,

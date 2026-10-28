@@ -47,13 +47,13 @@ import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type CharacterId,
   type CreateAnswer, type DeleteAnswer, type FindAccountAnswer,
-  type NewCharacter, type RenameAnswer, type Request, Account, AccountFound,
-  AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
-  CharacterRenamed, CreateCharacter, DeleteCharacter, FindAccount,
-  ListCharacters, NameStands, NameTaken, NeedsRename, NewNameTaken, NoFreeSlot,
-  NoSuchAccount, NoSuchCharacter, RenameCharacter, ToCreateCharacter,
-  ToDeleteCharacter, ToFindAccount, ToListCharacters, ToRenameCharacter,
-  Unavailable,
+  type NewCharacter, type RenameAnswer, type Request, type SelectAnswer,
+  type SelectRequest, Account, AccountFound, AccountId, Character,
+  CharacterCreated, CharacterDeleted, CharacterId, CharacterRenamed,
+  CreateCharacter, Created, DeleteCharacter, Deleted, FindAccount, ForLogin,
+  ForSelect, ListCharacters, Listed, Login, NameStands, NameTaken, NeedsRename,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, RenameCharacter,
+  Renamed, Select, Unavailable,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, RaceId}
@@ -115,27 +115,39 @@ fn start_worker(job: Job, pool: pog.Connection) -> actor.StartResult(Nil) {
   Ok(actor.Started(pid:, data: Nil))
 }
 
-/// Runs the ask's query on the pool, answers the asker and ends.
+/// Runs the ask's query on the pool, answers the asker and ends. `Error(Nil)`
+/// is the database being away, the failure every request shares.
 fn run(job: Job, pool: pog.Connection) -> Nil {
   let answer = case job.request {
-    FindAccount(login_name:) ->
+    Login(request: FindAccount(login_name:)) ->
       find_account(pool, login_name)
-      |> result.map(ToFindAccount)
+      |> result.map(ForLogin)
+    Select(request:) ->
+      select(pool, request)
+      |> result.map(ForSelect)
+  }
+  job.reply(result.unwrap(answer, Unavailable))
+}
+
+/// Runs one of character select's requests.
+fn select(
+  pool: pog.Connection,
+  request: SelectRequest,
+) -> Result(SelectAnswer, Nil) {
+  case request {
     ListCharacters(account_id:) ->
       list_characters(pool, account_id)
-      |> result.map(ToListCharacters)
+      |> result.map(Listed)
     CreateCharacter(account_id:, character:, character_slots:) ->
       create_character(pool:, account_id:, character:, character_slots:)
-      |> result.map(ToCreateCharacter)
+      |> result.map(Created)
     DeleteCharacter(account_id:, character_id:) ->
       delete_character(pool:, account_id:, character_id:)
-      |> result.map(ToDeleteCharacter)
+      |> result.map(Deleted)
     RenameCharacter(account_id:, character_id:, name:) ->
       rename_character(pool:, account_id:, character_id:, name:)
-      |> result.map(ToRenameCharacter)
+      |> result.map(Renamed)
   }
-  // `Error(Nil)` is the database being away, the failure every request shares.
-  job.reply(result.unwrap(answer, Unavailable))
 }
 
 /// The account with the login name, if there is one; `Error(Nil)` when the

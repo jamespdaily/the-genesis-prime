@@ -25,7 +25,6 @@ import connection_rule_support as support
 import game_client
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
 import genesis_prime/login/guid
-import genesis_prime/mark_rename/sql as mark_rename_sql
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
 import genesis_prime/message/create_character.{CreateCharacter}
@@ -276,13 +275,6 @@ fn listed_entries(
   list.characters
 }
 
-fn mark_for_rename(pool: pog.Connection, name: String) -> Nil {
-  let assert Ok(returned) = mark_rename_sql.mark_for_rename(pool, name)
-    as "the developer tool's query ran"
-  assert returned.rows != [] as "a character has the name"
-  Nil
-}
-
 pub fn a_delete_of_the_accounts_character_is_0x00e6_result_0_and_the_next_list_omits_it_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(started, port, account) = start()
@@ -339,7 +331,7 @@ pub fn a_rename_of_a_marked_character_is_0x014b_result_18_and_the_next_list_show
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let zed =
     character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
-  mark_for_rename(pool, "Zed")
+  character_support.mark_for_rename(pool:, name: "Zed")
   let game = in_select(started:, port:, account:)
   let assert [marked] = listed_entries(game)
   assert marked.requires_rename == 1
@@ -373,7 +365,7 @@ pub fn a_rename_to_a_name_taken_in_any_case_is_0x014b_16_and_changes_nothing_tes
       class_id: 4,
       path: 2,
     )
-  mark_for_rename(pool, "Zed")
+  character_support.mark_for_rename(pool:, name: "Zed")
   let game = in_select(started:, port:, account:)
   send_rename(game:, character_id: zed, name: "aBE cD")
   assert character_support.rename_result_in(game_client.read(game:, count: 1)).result

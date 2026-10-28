@@ -111,10 +111,22 @@ pub type NewCharacter {
   )
 }
 
-/// What a rule asks the store.
+/// What a rule asks the store, grouped by who asks: the STS login's request
+/// and the character select's, so a rule names only the group it does not ask
+/// as a mismatch.
 pub type Request {
+  Login(request: LoginRequest)
+  Select(request: SelectRequest)
+}
+
+/// What the STS login asks the store.
+pub type LoginRequest {
   /// The account with this login name.
   FindAccount(login_name: String)
+}
+
+/// What character select asks the store.
+pub type SelectRequest {
   /// The account's characters, in the order they were created.
   ListCharacters(account_id: AccountId)
   /// Makes the character for the account unless it already has
@@ -139,21 +151,27 @@ pub type Request {
 }
 
 /// What the store answers: the failure every request shares, or the answer to
-/// the request asked, wrapped in the request's own variant so a rule that
-/// asked one request takes only that request's answer type.
+/// the group of the request asked, so a rule that asks one group takes only
+/// that group's answers and names the other group once.
 pub type Answer {
   /// The database could not be reached, or did not answer within the
   /// query's own timeout. A read changed nothing, so asking again is safe; a
   /// create ran in one transaction, which committed or did not, and the
   /// account's list on its next login shows which.
   Unavailable
-  ToFindAccount(answer: FindAccountAnswer)
+  ForLogin(answer: FindAccountAnswer)
+  ForSelect(answer: SelectAnswer)
+}
+
+/// What the store answers character select, one variant for each of its
+/// requests.
+pub type SelectAnswer {
   /// The account's characters, in the order they were created; none when it
   /// has none, or when no such account exists.
-  ToListCharacters(characters: List(Character))
-  ToCreateCharacter(answer: CreateAnswer)
-  ToDeleteCharacter(answer: DeleteAnswer)
-  ToRenameCharacter(answer: RenameAnswer)
+  Listed(characters: List(Character))
+  Created(answer: CreateAnswer)
+  Deleted(answer: DeleteAnswer)
+  Renamed(answer: RenameAnswer)
 }
 
 /// What the store answers a `FindAccount`.
