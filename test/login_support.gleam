@@ -1,13 +1,15 @@
-//// The login's two listeners for the tests that start the server's tree:
+//// The listeners for the tests that start the server's tree:
 //// settings on ports the system picks and listener names made for each test,
 //// so tests run side by side without sharing a port or a name, and the tree
 //// itself, started on a database of the test's own with the account of the
 //// library's vector inserted.
 
 import ask_support
+import connection_rule_support as support
 import database_support
 import genesis_prime/add_account/sql
 import genesis_prime/connection/listener
+import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/guid
 import genesis_prime/login/sts_connection
@@ -16,7 +18,6 @@ import genesis_prime/server
 import gleam/erlang/process.{type Pid}
 import gleam/option.{None}
 import login_client.{type Ports, Ports}
-import login_rule_support as support
 import login_vectors as vector
 import pog
 import pool_started
@@ -61,8 +62,21 @@ pub fn login() -> server.Login {
       settings: auth_settings(),
       recorder: None,
     ),
-    send_deadline_ms: 300,
-    connection_shutdown_ms: 1000,
+  )
+}
+
+/// The game server's listener on a port the system picks, with a name made
+/// now and no recording.
+pub fn game() -> server.Served(game_connection.Settings) {
+  server.Served(
+    listener: process.new_name("test_game_listener"),
+    port: 0,
+    settings: game_connection.Settings(
+      realm_id: 1,
+      max_characters: 12,
+      ask_deadline_ms: 5000,
+    ),
+    recorder: None,
   )
 }
 
@@ -86,7 +100,10 @@ pub fn start() -> Started {
       store: process.new_name("store"),
       hand_off: process.new_name("hand_off"),
       hand_off_shutdown_ms: 1500,
+      send_deadline_ms: 300,
+      connection_shutdown_ms: 1000,
       login: login(),
+      game: game(),
     )
   let assert Ok(started) = server.start(settings) as "the tree started"
   process.unlink(started.pid)
@@ -96,14 +113,30 @@ pub fn start() -> Started {
   Started(tree: started.pid, settings:)
 }
 
-/// The ports the tree's two listeners opened.
+/// The ports the tree's three listeners opened.
 pub fn ports(started: Started) -> Ports {
   let login = started.settings.login
   let assert Ok(sts_port) = listener.port(login.sts.listener)
     as "the STS listener has a port"
   let assert Ok(auth_port) = listener.port(login.auth.listener)
     as "the auth listener has a port"
-  Ports(sts_port:, auth_port:)
+  let assert Ok(game_port) = listener.port(started.settings.game.listener)
+    as "the game listener has a port"
+  Ports(sts_port:, auth_port:, game_port:)
+}
+
+/// Starts the tree and inserts the account of the library's vector: the tree,
+/// its ports and the account's id.
+pub fn start_with_jim() -> #(Started, Ports, Int) {
+  let started = start()
+  let account_id = insert_jim(started)
+  #(started, ports(started), account_id)
+}
+
+/// Stops the tree and waits for it to end.
+pub fn stop(started: Started) -> Nil {
+  let _reason = ask_support.stop_tree(started.tree)
+  Nil
 }
 
 /// Inserts an account into the tree's database, as the add-account tool does,

@@ -16,7 +16,7 @@
 //// Every wait is for bytes the server writes, with a deadline a passing test
 //// never reaches.
 
-import ask_support
+import connection_rule_support as support
 import genesis_prime/hand_off
 import genesis_prime/login/guid
 import genesis_prime/login/rc4
@@ -24,33 +24,19 @@ import genesis_prime/login/sts_xml
 import genesis_prime/message/game_server_handoff
 import genesis_prime/message/login_accepted.{LoginAccepted}
 import genesis_prime/message/server_hello.{ServerHello}
-import genesis_prime/service/shell as service_shell
+import genesis_prime/service
 import genesis_prime/store.{AccountId}
 import gleam/bit_array
 import gleam/erlang/process
 import gleam/option.{Some}
 import login_client.{StsClient}
-import login_rule_support as support
 import login_support
 import login_vectors as vector
 import owned_test
 
-/// The tree, with the account of the library's vector inserted, its ports
-/// and the account's id.
-fn start() -> #(login_support.Started, login_client.Ports, Int) {
-  let started = login_support.start()
-  let account_id = login_support.insert_jim(started)
-  #(started, login_support.ports(started), account_id)
-}
-
-fn stop(started: login_support.Started) -> Nil {
-  let _reason = ask_support.stop_tree(started.tree)
-  Nil
-}
-
 pub fn the_sts_login_runs_plain_to_m2_and_then_both_ways_on_rc4_under_k_one_state_per_direction_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, ports, _account_id) = start()
+  let #(started, ports, _account_id) = login_support.start_with_jim()
   let client = login_client.sts_connect(ports)
   let #(answered, exchange) =
     login_client.srp_exchange(
@@ -101,12 +87,12 @@ pub fn the_sts_login_runs_plain_to_m2_and_then_both_ways_on_rc4_under_k_one_stat
     )
   assert listed.reply.status == 200
     as "each direction's state runs on across messages"
-  stop(started)
+  login_support.stop(started)
 }
 
 pub fn a_client_that_connects_to_the_auth_listener_gets_the_hello_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, ports, _account_id) = start()
+  let #(started, ports, _account_id) = login_support.start_with_jim()
   let socket = login_client.connect(ports.auth_port)
   let assert [hello] =
     login_client.read_frames(client: socket, have: <<>>, count: 1)
@@ -129,12 +115,12 @@ pub fn a_client_that_connects_to_the_auth_listener_gets_the_hello_test() -> Nil 
       field_11: 0,
     )
     as "CheckAuthServerVersion 0x140037b70: build 16042, checksum 0x097998A0; the realm's id; 0 in every field the client never reads"
-  stop(started)
+  login_support.stop(started)
 }
 
 pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_hand_off_keeps_the_session_key_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(started, ports, account_id) = start()
+  let #(started, ports, account_id) = login_support.start_with_jim()
   let login =
     login_client.sts_login(
       ports: ports,
@@ -164,7 +150,7 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
   let assert Ok(session_key) = guid.from_wire(handed.session_key)
   let answers = process.new_subject()
   let assert Ok(_) =
-    service_shell.call(
+    service.call(
       name: started.settings.hand_off,
       message: hand_off.Take(hand_off.SessionKey(session_key)),
       reply: fn(answer) { process.send(answers, answer) },
@@ -175,5 +161,5 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
     as "the hand-off answered"
   assert holder.account_id == AccountId(account_id)
   assert holder.login_name == vector.name
-  stop(started)
+  login_support.stop(started)
 }

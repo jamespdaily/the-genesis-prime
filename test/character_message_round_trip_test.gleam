@@ -159,13 +159,13 @@ fn character_list_entry(state: Int) -> #(CharacterListEntry, Int) {
   let #(path, state) = message_support.unsigned(state:, bits: 3)
   let #(disabled, state) = message_support.unsigned(state:, bits: 1)
   let #(requires_rename, state) = message_support.unsigned(state:, bits: 1)
-  let #(field_21, state) = message_support.unsigned(state:, bits: 32)
+  let #(costume_slot_mask, state) = message_support.unsigned(state:, bits: 32)
   let #(count, state) = message_support.up_to(state:, most: 15)
-  let #(customisation_labels, state) =
+  let #(costume_item_ids, state) =
     message_support.draw_list(state:, count:, draw: fn(state) {
       message_support.unsigned(state:, bits: 32)
     })
-  let #(customisation_values, state) =
+  let #(costume_dyes, state) =
     message_support.draw_list(state:, count:, draw: fn(state) {
       message_support.unsigned(state:, bits: 32)
     })
@@ -194,9 +194,9 @@ fn character_list_entry(state: Int) -> #(CharacterListEntry, Int) {
       path:,
       disabled:,
       requires_rename:,
-      field_21:,
-      customisation_labels:,
-      customisation_values:,
+      costume_slot_mask:,
+      costume_item_ids:,
+      costume_dyes:,
       bone_values:,
       last_logged_out_days:,
     ),
@@ -226,7 +226,7 @@ pub fn character_list_round_trips_test() -> Nil {
       let #(pending_removal_time, state) =
         message_support.unsigned(state:, bits: 32)
       let #(reservations, state) = message_support.unsigned(state:, bits: 32)
-      let #(field_10, state) = message_support.unsigned(state:, bits: 32)
+      let #(max_characters, state) = message_support.unsigned(state:, bits: 32)
       let #(field_11, state) = message_support.unsigned(state:, bits: 32)
       let #(faction_restriction, state) =
         message_support.unsigned(state:, bits: 14)
@@ -243,7 +243,7 @@ pub fn character_list_round_trips_test() -> Nil {
           pending_removal_character_id:,
           pending_removal_time:,
           reservations:,
-          field_10:,
+          max_characters:,
           field_11:,
           faction_restriction:,
           free_level_50_available:,

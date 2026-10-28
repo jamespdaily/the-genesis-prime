@@ -24,6 +24,8 @@ const allowed = [
   #("genesis_prime/record", 119),
   #("genesis_prime/dev_start", 146),
   #("genesis_prime/add_account", 146),
+  #("genesis_prime/add_character", 147),
+  #("genesis_prime/dev_database", 147),
 ]
 
 fn module_file(module: String, imports: List(String)) -> SourceFile {

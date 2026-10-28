@@ -1,6 +1,6 @@
 //// Starts the server for a live session, as `gleam run` does, with two
-//// changes only a developer makes: each STS and auth connection is recorded
-//// into a folder, for replay, and the auth server can plant one frame the
+//// changes only a developer makes: each STS, auth and game connection is
+//// recorded into a folder, for replay, and the auth server can plant one frame the
 //// client does not handle right after its hello, to prove the client's
 //// failure log brings back its id.
 ////
@@ -19,6 +19,7 @@ import argv
 import genesis_prime
 import genesis_prime/client_archive
 import genesis_prime/connection/frame.{Frame}
+import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/rule_recording/file
@@ -63,6 +64,7 @@ fn start() -> Result(Nil, Failure) {
   )
   use sts_digest <- result.try(digest(sts_connection.rule_name))
   use auth_digest <- result.try(digest(auth_connection.rule_name))
+  use game_digest <- result.try(digest(game_connection.rule_name))
   let tables = genesis_prime.load_tables()
   let settings = genesis_prime.settings()
   let login = settings.login
@@ -75,7 +77,6 @@ fn start() -> Result(Nil, Failure) {
     )
   let login =
     server.Login(
-      ..login,
       sts: server.Served(
         ..login.sts,
         recorder: Some(recorder(folder:, types_digest: sts_digest)),
@@ -86,7 +87,15 @@ fn start() -> Result(Nil, Failure) {
         recorder: Some(recorder(folder:, types_digest: auth_digest)),
       ),
     )
-  genesis_prime.start(settings: server.Settings(..settings, login:), tables:)
+  let game =
+    server.Served(
+      ..settings.game,
+      recorder: Some(recorder(folder:, types_digest: game_digest)),
+    )
+  genesis_prime.start(
+    settings: server.Settings(..settings, login:, game:),
+    tables:,
+  )
   Ok(Nil)
 }
 

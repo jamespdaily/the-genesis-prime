@@ -91,7 +91,7 @@
 ////   error naming the effect and ends the connection.
 
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
-import genesis_prime/service/shell.{type Sent, ToService, ToWorker}
+import genesis_prime/service.{type Sent, ToService, ToWorker}
 import genesis_prime/step.{
   type Ask, type AskId, type Effect, type Event, type Peer, type Rule,
   type SocketFailure, Accepted, Answer, Answered, AnsweredLate, ConnectionId,
@@ -122,7 +122,7 @@ pub type Settings(settings, state, message, answer, outgoing, request) {
     /// How the shell reaches the process a request names: it sends the
     /// request with `reply` and says where it went, or `Error(Nil)` when that
     /// process is not running. Made once at start from the services' names,
-    /// with `service/shell.call` and `store/worker.ask`; a rule never sees it.
+    /// with `service.call` and `store/worker.ask`; a rule never sees it.
     directory: fn(request, fn(answer) -> Nil) -> Result(Sent, Nil),
   )
 }

@@ -25,10 +25,11 @@
 //// - The rule's doc comment, as approved on the login card: the asks, the
 ////   token kept at LoginFinish, the refusals and the out-of-order cases.
 
-import genesis_prime/hand_off.{AlreadyHeld, GameToken, Holder, Kept, Put}
-import genesis_prime/login.{
+import connection_rule_support as support
+import genesis_prime/client_connection.{
   type Answer, type Request, AskHandOff, AskStore, FromHandOff, FromStore,
 }
+import genesis_prime/hand_off.{AlreadyHeld, GameToken, Holder, Kept, Put}
 import genesis_prime/login/guid
 import genesis_prime/login/rc4
 import genesis_prime/login/srp
@@ -47,7 +48,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import login_client
-import login_rule_support as support
 import login_support
 import login_vectors as vector
 import owned_test

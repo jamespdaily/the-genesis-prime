@@ -13,7 +13,7 @@ import asking_rule
 import gate_rule
 import genesis_prime/rule_recording.{type Record, End, Taken}
 import genesis_prime/rule_recording/file
-import genesis_prime/service/shell as service_shell
+import genesis_prime/service
 import genesis_prime/step.{
   Answered, AnsweredLate, EffectsThenAsk, Input, NoAnswerInTime,
 }
@@ -308,9 +308,7 @@ pub fn a_connection_step_of_stop_then_write_still_writes_the_bytes_before_the_so
 // ---- helpers ----
 
 fn start_with(
-  gate gate: process.Name(
-    service_shell.Call(gate_rule.Message, gate_rule.Answer),
-  ),
+  gate gate: process.Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   shutdown_ms shutdown_ms: Int,
   recorder recorder: Option(file.Recorder),
 ) -> ask_support.Server {

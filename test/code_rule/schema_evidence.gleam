@@ -4,11 +4,18 @@
 //// A field of a message the server sends that has no name must carry a
 //// `safe_by` key of the fact file, which shows the value the server sends is
 //// safe. A message is sent when it travels to the client, or both ways, and a
-//// module outside `src/genesis_prime/message/` imports its module.
+//// module outside `src/genesis_prime/message/` imports its module; a record is
+//// sent when a message that is sent holds it, directly or inside another
+//// record that is sent.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
-import genesis_prime/message_schema.{type Field, type Schema, ClientToServer}
+import genesis_prime/message_schema.{
+  type Field, type Record, type Schema, ArrayOfFloat32, ArrayOfRecord,
+  ArrayOfUnsigned, ArrayOfWideText, ClientToServer, Constant, CountedWideText,
+  Endpoint, Float32, Guid, RawBytes, Unsigned, UnsignedArrayCountedBy,
+  UnsignedBelow, WholeFrame, WideText,
+}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
@@ -55,20 +62,83 @@ type Owner {
 }
 
 fn owners(schema: Schema, sent_messages: List(String)) -> List(Owner) {
+  let sent =
+    list.filter(schema.messages, fn(message) {
+      message.direction != ClientToServer
+      && list.contains(sent_messages, message.name)
+    })
+  let sent_records =
+    records_reached(
+      records: schema.records,
+      from: list.flat_map(sent, fn(message) { message.fields }),
+      found: [],
+    )
   list.append(
     list.map(schema.messages, fn(message) {
       Owner(
         message.name,
         message.evidence,
         message.fields,
-        sent: message.direction != ClientToServer
-          && list.contains(sent_messages, message.name),
+        sent: list.contains(sent, message),
       )
     }),
     list.map(schema.records, fn(record) {
-      Owner(record.name, record.evidence, record.fields, sent: False)
+      Owner(
+        record.name,
+        record.evidence,
+        record.fields,
+        sent: list.contains(sent_records, record.name),
+      )
     }),
   )
+}
+
+/// The names of the records the fields hold in arrays, and the records those
+/// hold in turn, each once.
+fn records_reached(
+  records records: List(Record),
+  from fields: List(Field),
+  found found: List(String),
+) -> List(String) {
+  let named =
+    list.filter_map(fields, fn(field) {
+      case field.kind {
+        ArrayOfRecord(record:, ..) ->
+          case list.contains(found, record) {
+            True -> Error(Nil)
+            False -> Ok(record)
+          }
+        Unsigned(..)
+        | UnsignedBelow(..)
+        | Float32
+        | WideText
+        | CountedWideText(..)
+        | Guid
+        | Endpoint
+        | RawBytes(..)
+        | WholeFrame
+        | ArrayOfWideText(..)
+        | ArrayOfUnsigned(..)
+        | ArrayOfFloat32(..)
+        | UnsignedArrayCountedBy(..)
+        | Constant(..) -> Error(Nil)
+      }
+    })
+    |> list.unique
+  case named {
+    [] -> found
+    _ ->
+      records_reached(
+        records:,
+        from: list.flat_map(records, fn(record) {
+          case list.contains(named, record.name) {
+            True -> record.fields
+            False -> []
+          }
+        }),
+        found: list.append(found, named),
+      )
+  }
 }
 
 fn owners_breaches(

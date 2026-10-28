@@ -3,11 +3,11 @@
 //// definition: block n is HMAC-SHA256(key: seed, data: n as a 64-bit
 //// big-endian counter), each draw takes whole 32-byte blocks and drops the
 //// bytes it does not use (RFC 2104 for HMAC; `gleam/crypto` computes it in
-//// `login_rule_support.block`).
+//// `connection_rule_support.block`).
 
+import connection_rule_support as support
 import genesis_prime/random
 import gleam/bit_array
-import login_rule_support as support
 import owned_test
 
 /// The first `count` bytes of a block of the seed's random stream.

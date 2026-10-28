@@ -16,6 +16,7 @@ import genesis_prime/hand_off.{Holder, Kept, Put, SessionKey, Take, Taken}
 import genesis_prime/login/guid
 import genesis_prime/rule_recording.{type Record, End, Taken as Recorded}
 import genesis_prime/rule_recording/file
+import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{
   Asked, CallerId, Effects, Input, Reply, Started, Stop, Stopping,
@@ -79,19 +80,17 @@ pub fn an_ask_reaches_the_rule_as_asked_and_its_reply_reaches_the_asker_test() -
       game_account_id: a_guid(),
     )
   let replies = process.new_subject()
-  assert service_shell.call(
-      name,
-      Put(key:, holder:, lifetime_ms: 60_000),
-      fn(answer) { process.send(replies, answer) },
-    )
-    == Ok(service_shell.ToService(pid))
+  assert service.call(name, Put(key:, holder:, lifetime_ms: 60_000), fn(answer) {
+      process.send(replies, answer)
+    })
+    == Ok(service.ToService(pid))
     as "the call reached the process holding the name"
   assert process.receive(replies, within: ask_support.event_wait_ms) == Ok(Kept)
     as "the rule's reply reached the asker"
-  assert service_shell.call(name, Take(key:), fn(answer) {
+  assert service.call(name, Take(key:), fn(answer) {
       process.send(replies, answer)
     })
-    == Ok(service_shell.ToService(pid))
+    == Ok(service.ToService(pid))
   assert process.receive(replies, within: ask_support.event_wait_ms)
     == Ok(Taken(holder:))
     as "the second ask is answered with the holder the first one put"
@@ -267,8 +266,8 @@ pub fn a_refused_effect_ends_the_process_with_an_error_log_test() -> Nil {
       let logged = process.new_subject()
       let capture = log_capture.start(from: pid, into: logged)
       let service = process.monitor(pid)
-      let assert Ok(service_shell.ToService(_)) =
-        service_shell.call(gate, message, fn(_answer) { Nil })
+      let assert Ok(service.ToService(_)) =
+        service.call(gate, message, fn(_answer) { Nil })
         as "the gate took the ask"
       let assert process.Abnormal(_) = ask_support.ended(service)
         as "the service shell ended the process abnormally"
@@ -292,8 +291,8 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let service = process.monitor(pid)
   let replies = process.new_subject()
-  let assert Ok(service_shell.ToService(_)) =
-    service_shell.call(gate, gate_rule.StopThenReply, fn(answer) {
+  let assert Ok(service.ToService(_)) =
+    service.call(gate, gate_rule.StopThenReply, fn(answer) {
       process.send(replies, answer)
     })
     as "the gate took the ask"
@@ -321,7 +320,7 @@ fn start_tree(child: ChildSpecification(Nil)) -> process.Pid {
 }
 
 fn hand_off_child(
-  name name: process.Name(service_shell.Call(hand_off.Message, hand_off.Answer)),
+  name name: process.Name(service.Call(hand_off.Message, hand_off.Answer)),
   shutdown_ms shutdown_ms: Int,
   recorder recorder: Option(file.Recorder),
 ) -> ChildSpecification(Nil) {

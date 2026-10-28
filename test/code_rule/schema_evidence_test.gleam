@@ -240,6 +240,113 @@ pub fn a_message_the_client_sends_may_have_unnamed_fields_with_no_safe_by_test()
     as "the server never writes a client-to-server message, so no value of it is the server's to prove safe"
 }
 
+/// A message whose one field is an array of `planted_entry`, whose last field
+/// is an array of `planted_inner`; the fields of each record are given.
+fn schema_with_nested_records(
+  entry_fields entry_fields: List(String),
+  inner_fields inner_fields: List(String),
+) -> String {
+  string.join(
+    list.flatten([
+      [
+        "[[message]]",
+        "id = 0x0001",
+        "name = \"planted_hello\"",
+        "direction = \"server_to_client\"",
+        "evidence = \"opcode.0x1\"",
+        "summary = \"a planted message\"",
+        "fields = [",
+        "  { name = \"entries\", kind = \"array\", count_bits = 32, element = \"planted_entry\", evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },",
+        "]",
+        "",
+        "[[record]]",
+        "name = \"planted_entry\"",
+        "evidence = \"0x1400ac130\"",
+        "summary = \"a planted record\"",
+        "fields = [",
+      ],
+      entry_fields,
+      [
+        "  { name = \"inners\", kind = \"array\", count_bits = 4, element = \"planted_inner\", evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },",
+        "]",
+        "",
+        "[[record]]",
+        "name = \"planted_inner\"",
+        "evidence = \"0x1400ac130\"",
+        "summary = \"a planted record inside a record\"",
+        "fields = [",
+      ],
+      inner_fields,
+      ["]", ""],
+    ]),
+    "\n",
+  )
+}
+
+fn breach_rules(text: String, sent_messages: List(String)) -> List(String) {
+  schema_evidence.breaches(
+    file: SourceFile(path: "src/planted/schema.toml", text:),
+    fact_keys:,
+    sent_messages:,
+  )
+  |> list.map(fn(breach) { breach.rule })
+}
+
+pub fn an_unnamed_field_with_no_safe_by_in_a_record_a_message_the_server_sends_holds_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    schema_with_nested_records(
+      entry_fields: [named_field, unnamed_field],
+      inner_fields: [
+        named_field,
+      ],
+    )
+  let assert [breach] = breach_rules(text, ["planted_hello"])
+    as "the entry's field is sent inside the message's array, so it needs a name or a safe_by"
+  assert string.contains(breach, "planted_entry.field_3")
+    as "the breach names the record and the field"
+  assert breach_rules(text, []) == []
+    as "a message no module outside the message folder imports is never sent, nor its records"
+}
+
+pub fn an_unnamed_field_with_no_safe_by_in_a_record_inside_a_record_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    schema_with_nested_records(entry_fields: [named_field], inner_fields: [
+      named_field,
+      unnamed_field,
+    ])
+  let assert [breach] = breach_rules(text, ["planted_hello"])
+    as "the inner record is sent inside the entry, which is sent inside the message"
+  assert string.contains(breach, "planted_inner.field_3")
+  let safe =
+    schema_with_nested_records(entry_fields: [named_field], inner_fields: [
+      named_field,
+      unnamed_safe_field,
+    ])
+  assert breach_rules(safe, ["planted_hello"]) == []
+}
+
+pub fn a_record_only_a_message_the_client_sends_holds_may_have_unnamed_fields_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    string.replace(
+      schema_with_nested_records(
+        entry_fields: [named_field, unnamed_field],
+        inner_fields: [
+          unnamed_field,
+        ],
+      ),
+      "direction = \"server_to_client\"",
+      "direction = \"client_to_server\"",
+    )
+  assert breach_rules(text, ["planted_hello"]) == []
+    as "the server never writes a message the client sends, so no value of its records is the server's"
+}
+
 pub fn a_message_no_module_outside_the_message_folder_imports_is_not_sent_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
@@ -283,4 +390,25 @@ pub fn every_unnamed_field_of_a_message_the_server_sends_names_its_safe_by_in_th
     )
     == []
     as "CLAUDE.md: a value the server sends that the client never reads is shown safe by a fact"
+}
+
+pub fn the_game_servers_messages_with_their_records_name_every_field_or_its_safe_by_in_the_real_schema_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
+    as "the schema file could not be read"
+  let sent_messages =
+    schema_evidence.sent_messages(repository.sources(under: ["src"]))
+  assert list.all(
+    ["server_hello", "character_list", "disconnect_notice"],
+    list.contains(sent_messages, _),
+  )
+    as "the game rule imports the hello (through genesis_prime/connection/hello), the character list and the disconnect notice, so each is read as sent"
+  assert schema_evidence.breaches(
+      file: SourceFile(path: "src/genesis_prime/message/schema.toml", text:),
+      fact_keys: repository.fact_keys(),
+      sent_messages:,
+    )
+    == []
+    as "CLAUDE.md: a value the server sends that the client never reads is shown safe by a fact, in the character list's entry and its visuals as in the messages"
 }

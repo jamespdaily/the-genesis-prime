@@ -1,9 +1,11 @@
-//// What the tests of the two login rules share: the account of the library's
-//// vector, the inputs a shell gives, the effects of a step found by a helper,
-//// and the random bytes a seed gives, computed from their definition
+//// What the tests of the connection rules (STS, auth and game) share: the
+//// account of the library's vector, the inputs a shell gives, the client's
+//// bare ping, the effects of a step found by a helper, and the random bytes a
+//// seed gives, computed from their definition
 //// (block n = HMAC-SHA256(key: seed, data: n as 64 bits big-endian)) and not
 //// by `genesis_prime/random`.
 
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
   type Ask, type Effect, type Event, type Input, type LogLevel, type LogLine,
@@ -65,9 +67,24 @@ fn counting(
   }
 }
 
-/// An input at `now_ms`.
+/// An input at `now_ms` with the system time 0.
 pub fn input(event: Event(Nil, answer)) -> Input(Nil, answer) {
-  Input(now: Now(monotonic_ms: now_ms, filetime: 0), event:)
+  input_at(filetime: 0, event:)
+}
+
+/// An input at `now_ms` with this system time, as a Windows FILETIME.
+pub fn input_at(
+  filetime filetime: Int,
+  event event: Event(Nil, answer),
+) -> Input(Nil, answer) {
+  Input(now: Now(monotonic_ms: now_ms, filetime:), event:)
+}
+
+/// The bytes of the client's bare ping with this number (opcode.0x0: 0 to 19).
+pub fn ping(number: Int) -> BitArray {
+  let assert Ok(bytes) = frame.encode(0x0000, <<number>>)
+    as "a ping number is one byte"
+  bytes
 }
 
 /// Block `counter` of the seed's random stream: HMAC-SHA256 with the seed as
@@ -105,6 +122,15 @@ pub fn writes(step: Step(outgoing, request)) -> List(BitArray) {
       | Log(..)
       | Stop -> Error(Nil)
     }
+  })
+}
+
+/// Every frame the step writes, as the server wrote it.
+pub fn written_frames(step: Step(outgoing, request)) -> List(Frame) {
+  list.flat_map(writes(step), fn(bytes) {
+    let assert Ok(#(frames, <<>>)) = frame.decode(bytes)
+      as "the server writes whole frames"
+    frames
   })
 }
 

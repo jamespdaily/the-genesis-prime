@@ -35,9 +35,9 @@ pub type CharacterListEntry {
     path: Int,
     disabled: Int,
     requires_rename: Int,
-    field_21: Int,
-    customisation_labels: List(Int),
-    customisation_values: List(Int),
+    costume_slot_mask: Int,
+    costume_item_ids: List(Int),
+    costume_dyes: List(Int),
     bone_values: List(Int),
     last_logged_out_days: Int,
   )
@@ -79,17 +79,21 @@ pub fn write(
   |> bit_stream.write_unsigned("path", record.path, 3)
   |> bit_stream.write_unsigned("disabled", record.disabled, 1)
   |> bit_stream.write_unsigned("requires_rename", record.requires_rename, 1)
-  |> bit_stream.write_unsigned("field_21", record.field_21, 32)
+  |> bit_stream.write_unsigned(
+    "costume_slot_mask",
+    record.costume_slot_mask,
+    32,
+  )
   |> bit_stream.write_unsigned_array(
-    "customisation_labels",
-    record.customisation_labels,
+    "costume_item_ids",
+    record.costume_item_ids,
     4,
     32,
   )
   |> bit_stream.write_unsigned_array_like(
-    "customisation_values",
-    record.customisation_values,
-    record.customisation_labels,
+    "costume_dyes",
+    record.costume_dyes,
+    record.costume_item_ids,
     32,
   )
   |> bit_stream.write_float32_array("bone_values", record.bone_values, 32)
@@ -137,13 +141,20 @@ pub fn read(
     reader,
     1,
   ))
-  use #(field_21, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(customisation_labels, reader) <- result.try(
-    bit_stream.read_unsigned_array(reader, 4, 32),
-  )
-  use #(customisation_values, reader) <- result.try(
-    bit_stream.read_unsigned_array_like(reader, customisation_labels, 32),
-  )
+  use #(costume_slot_mask, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
+  use #(costume_item_ids, reader) <- result.try(bit_stream.read_unsigned_array(
+    reader,
+    4,
+    32,
+  ))
+  use #(costume_dyes, reader) <- result.try(bit_stream.read_unsigned_array_like(
+    reader,
+    costume_item_ids,
+    32,
+  ))
   use #(bone_values, reader) <- result.try(bit_stream.read_float32_array(
     reader,
     32,
@@ -173,9 +184,9 @@ pub fn read(
       path:,
       disabled:,
       requires_rename:,
-      field_21:,
-      customisation_labels:,
-      customisation_values:,
+      costume_slot_mask:,
+      costume_item_ids:,
+      costume_dyes:,
       bone_values:,
       last_logged_out_days:,
     ),

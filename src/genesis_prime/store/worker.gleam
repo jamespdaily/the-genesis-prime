@@ -23,22 +23,26 @@
 ////   exits the caller with `{noproc, {gen_server, call, _}}` rather than
 ////   returning an error; `ask` catches that exit, and only that one, as
 ////   `Error(Nil)`.
-//// - **Failures.** pog's `ConnectionUnavailable` and `QueryTimeout` answer
-////   `Unavailable`, and so does the pool not running: pgo's checkout exits
-////   with `{noproc, {pgo_pool, checkout, _}}` then, which the worker catches,
-////   and only that exit. Any other error is a bug in the query or the schema:
-////   the worker crashes with it, and the asker gets `EndedBeforeAnswer`.
+//// - **Failures.** One private `query` holds them for every request, so each
+////   request maps only its rows. pog's `ConnectionUnavailable` and
+////   `QueryTimeout` answer `Unavailable`, and so does the pool not running:
+////   pgo's checkout exits with `{noproc, {pgo_pool, checkout, _}}` then, which
+////   the worker catches, and only that exit. Any other error is a bug in the
+////   query or the schema: the worker crashes with it, and the asker gets
+////   `EndedBeforeAnswer`.
 //// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
 ////   an asker waiting on one gets `EndedBeforeAnswer`.
 
 import genesis_prime/login/guid
-import genesis_prime/service/shell.{type Sent, ToWorker}
+import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
-  type Answer, type Request, Account, AccountFound, AccountId, FindAccount,
-  NoSuchAccount, Unavailable,
+  type AccountId, type Answer, type Character, type Request, Account,
+  AccountFound, AccountId, Character, CharacterId, Characters, FindAccount,
+  ListCharacters, NoSuchAccount, Unavailable,
 }
 import genesis_prime/store/sql
 import gleam/erlang/process.{type Name}
+import gleam/list
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
@@ -94,18 +98,21 @@ fn start_worker(job: Job, pool: pog.Connection) -> actor.StartResult(Nil) {
   Ok(actor.Started(pid:, data: Nil))
 }
 
-/// Runs the query on the pool, answers the asker and ends.
+/// Runs the ask's query on the pool, answers the asker and ends.
 fn run(job: Job, pool: pog.Connection) -> Nil {
-  let FindAccount(login_name:) = job.request
-  let answer = case
-    unless_pool_not_running(fn() { sql.find_account(pool, login_name) })
-  {
-    // The pool is not running, as when it restarts.
+  let answer = case job.request {
+    FindAccount(login_name:) -> find_account(pool, login_name)
+    ListCharacters(account_id:) -> list_characters(pool, account_id)
+  }
+  job.reply(answer)
+}
+
+/// The account with the login name, if there is one.
+fn find_account(pool: pog.Connection, login_name: String) -> Answer {
+  case query(fn() { sql.find_account(pool, login_name) }) {
     Error(Nil) -> Unavailable
-    Ok(Error(pog.ConnectionUnavailable)) | Ok(Error(pog.QueryTimeout)) ->
-      Unavailable
-    Ok(Ok(pog.Returned(rows: [], ..))) -> NoSuchAccount
-    Ok(Ok(pog.Returned(rows: [row], ..))) -> {
+    Ok([]) -> NoSuchAccount
+    Ok([row]) -> {
       let assert Ok(game_account_id) = guid.from_text(row.game_account_id)
         as "the database holds game account ids that are GUIDs"
       AccountFound(Account(
@@ -116,15 +123,58 @@ fn run(job: Job, pool: pog.Connection) -> Nil {
         game_account_id:,
       ))
     }
-    Ok(Ok(pog.Returned(..))) ->
+    Ok(_) ->
       panic as "a login name is unique, so the query returns at most one account"
+  }
+}
+
+/// The account's characters in creation order; an account with none, or no
+/// such account, has an empty list.
+fn list_characters(pool: pog.Connection, account_id: AccountId) -> Answer {
+  let AccountId(account_id) = account_id
+  case query(fn() { sql.list_characters(pool, account_id) }) {
+    Error(Nil) -> Unavailable
+    Ok(rows) -> Characters(list.map(rows, character))
+  }
+}
+
+/// One row as the character it holds.
+fn character(row: sql.ListCharactersRow) -> Character {
+  Character(
+    character_id: CharacterId(row.character_id),
+    name: row.name,
+    gender: row.gender,
+    race_id: row.race_id,
+    class_id: row.class_id,
+    faction_id: row.faction_id,
+    level: row.level,
+    path: row.path,
+    world_id: row.world_id,
+    world_zone_id: row.world_zone_id,
+    position_x: row.position_x,
+    position_y: row.position_y,
+    position_z: row.position_z,
+  )
+}
+
+/// Runs one query on the pool and gives its rows, or `Error(Nil)` for the
+/// failures that answer `Unavailable`: the pool not running, as when it
+/// restarts, a connection that cannot be had and a query that timed out. Any
+/// other error is a bug in the query or the schema, and ends the worker.
+fn query(
+  run: fn() -> Result(pog.Returned(row), pog.QueryError),
+) -> Result(List(row), Nil) {
+  case unless_pool_not_running(run) {
+    Error(Nil) -> Error(Nil)
+    Ok(Error(pog.ConnectionUnavailable)) | Ok(Error(pog.QueryTimeout)) ->
+      Error(Nil)
+    Ok(Ok(pog.Returned(rows:, ..))) -> Ok(rows)
     Ok(Error(pog.ConstraintViolated(..) as error))
     | Ok(Error(pog.PostgresqlError(..) as error))
     | Ok(Error(pog.UnexpectedArgumentCount(..) as error))
     | Ok(Error(pog.UnexpectedArgumentType(..) as error))
     | Ok(Error(pog.UnexpectedResultType(..) as error)) -> exit_with(error)
   }
-  job.reply(answer)
 }
 
 @external(erlang, "store_worker_ffi", "unless_supervisor_not_running")
@@ -133,8 +183,8 @@ fn unless_supervisor_not_running(run: fn() -> a) -> Result(a, Nil)
 @external(erlang, "store_worker_ffi", "unless_pool_not_running")
 fn unless_pool_not_running(run: fn() -> a) -> Result(a, Nil)
 
-/// Ends the worker with the error as its exit reason. The account query
-/// failing in the database or in decoding its rows is a bug in the query or the
-/// schema, and the asker gets `EndedBeforeAnswer`.
+/// Ends the worker with the error as its exit reason. A query failing in the
+/// database or in decoding its rows is a bug in the query or the schema, and
+/// the asker gets `EndedBeforeAnswer`.
 @external(erlang, "erlang", "exit")
 fn exit_with(reason: pog.QueryError) -> a

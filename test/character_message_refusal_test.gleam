@@ -76,16 +76,16 @@ pub fn a_character_with_16_customisations_is_refused_test() -> Nil {
       path: 0,
       disabled: 0,
       requires_rename: 0,
-      field_21: 0,
-      customisation_labels: sixteen,
-      customisation_values: sixteen,
+      costume_slot_mask: 0,
+      costume_item_ids: sixteen,
+      costume_dyes: sixteen,
       bone_values: [],
       last_logged_out_days: 0,
     )
   assert bit_stream.new_writer()
     |> character_list_entry.write(entry)
     |> bit_stream.finish
-    == Error(bit_stream.ValueDoesNotFit("customisation_labels", 4, 16))
+    == Error(bit_stream.ValueDoesNotFit("costume_item_ids", 4, 16))
     as "ReadCharacterListEntry 0x14007F720: a character's customisation count is 4 bits, so 15 at most"
 }
 
