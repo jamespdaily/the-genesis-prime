@@ -32,13 +32,6 @@ pub type Game {
   Game(socket: Client, cipher: Cipher)
 }
 
-/// The cipher under the base key, which the client's first messages and the
-/// server's hello travel under.
-pub fn base_cipher() -> Cipher {
-  let assert Ok(base) = cipher.new(cipher.base_key) as "the base key"
-  base
-}
-
 /// The cipher the client keys from the session key right after sending 0x58F
 /// (HandleLoginGameServerHello 0x140038120).
 pub fn session_cipher(session_key session_key: BitArray) -> Cipher {
@@ -87,7 +80,7 @@ pub fn hello_reply(
   client_bytes(
     message_id: game_hello_reply.message_id,
     body: hello_reply_body(session_key:, account_name:),
-    cipher: base_cipher(),
+    cipher: cipher.base(),
   )
 }
 
@@ -113,7 +106,7 @@ pub fn open(port: Int) -> Client {
     as "the game server did not greet the client"
   assert outer.message_id == 0x03DC
     as "opcode.0x3dc: the game server's hello arrives inside 0x3DC"
-  let assert Ok(hello) = encrypted_frame.unwrap(outer, base_cipher())
+  let assert Ok(hello) = encrypted_frame.unwrap(outer, cipher.base())
     as "the hello opens under the base key, which the game connection holds until 0x58F"
   assert hello.message_id == 0x0003 as "opcode.0x3: the hello is message 3"
   let assert Ok(decoded) = server_hello.decode(hello.body)

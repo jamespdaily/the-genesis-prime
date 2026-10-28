@@ -5,6 +5,7 @@
 //// library's vector inserted.
 
 import ask_support
+import connection_rule_support as support
 import database_support
 import genesis_prime/add_account/sql
 import genesis_prime/connection/listener
@@ -17,7 +18,6 @@ import genesis_prime/server
 import gleam/erlang/process.{type Pid}
 import gleam/option.{None}
 import login_client.{type Ports, Ports}
-import login_rule_support as support
 import login_vectors as vector
 import pog
 import pool_started
@@ -113,14 +113,30 @@ pub fn start() -> Started {
   Started(tree: started.pid, settings:)
 }
 
-/// The ports the tree's two listeners opened.
+/// The ports the tree's three listeners opened.
 pub fn ports(started: Started) -> Ports {
   let login = started.settings.login
   let assert Ok(sts_port) = listener.port(login.sts.listener)
     as "the STS listener has a port"
   let assert Ok(auth_port) = listener.port(login.auth.listener)
     as "the auth listener has a port"
-  Ports(sts_port:, auth_port:)
+  let assert Ok(game_port) = listener.port(started.settings.game.listener)
+    as "the game listener has a port"
+  Ports(sts_port:, auth_port:, game_port:)
+}
+
+/// Starts the tree and inserts the account of the library's vector: the tree,
+/// its ports and the account's id.
+pub fn start_with_jim() -> #(Started, Ports, Int) {
+  let started = start()
+  let account_id = insert_jim(started)
+  #(started, ports(started), account_id)
+}
+
+/// Stops the tree and waits for it to end.
+pub fn stop(started: Started) -> Nil {
+  let _reason = ask_support.stop_tree(started.tree)
+  Nil
 }
 
 /// Inserts an account into the tree's database, as the add-account tool does,

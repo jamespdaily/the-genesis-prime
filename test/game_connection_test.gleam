@@ -21,6 +21,7 @@
 ////   that the game connection never stops without telling the client after
 ////   the hello.
 
+import connection_rule_support as support
 import game_client
 import genesis_prime/client_connection.{
   type Answer, type Request, AskHandOff, AskStore, FromHandOff, FromStore,
@@ -31,21 +32,20 @@ import genesis_prime/game/connection.{Settings} as game_connection
 import genesis_prime/hand_off.{
   AlreadyHeld, Holder, Kept, NoHolder, SessionKey, Take, Taken,
 }
+import genesis_prime/login/guid
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/step.{
-  type Event, type Outcome, type Step, ConnectionId, EndedBeforeAnswer, Input,
-  LogError, LogWarning, NoAnswerInTime, NotRunning, Now, OtherSocketFailure,
-  StoppedWaiting,
+  type Event, type Outcome, type Step, ConnectionId, EndedBeforeAnswer, LogError,
+  LogWarning, NoAnswerInTime, NotRunning, OtherSocketFailure, StoppedWaiting,
 }
 import genesis_prime/store.{
   AccountId, Character, CharacterId, Characters, ListCharacters, Unavailable,
 }
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import login_rule_support as support
 import owned_test
 
 /// What the tests' game connections are made with: a realm id and a
@@ -55,9 +55,10 @@ fn settings() -> game_connection.Settings {
 }
 
 /// The 16 bytes the client shows as its session key: 01 .. 10, as in the
-/// client's vector (vector.opcode.0x58f.body).
+/// client's vector (vector.opcode.0x58f.body), the wire bytes of the GUID
+/// `support.guid_of(1)` the hand-off is asked for.
 fn session_key() -> BitArray {
-  <<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16>>
+  guid.to_wire(support.guid_of(1))
 }
 
 fn holder() -> hand_off.Holder {
@@ -69,7 +70,7 @@ fn holder() -> hand_off.Holder {
 }
 
 fn base() -> Cipher {
-  game_client.base_cipher()
+  cipher.base()
 }
 
 fn keyed() -> Cipher {
@@ -83,10 +84,7 @@ fn feed(
   state: game_connection.State,
   event: Event(Nil, Answer),
 ) -> #(game_connection.State, Step(Nil, Request)) {
-  game_connection.step(
-    state,
-    Input(now: Now(monotonic_ms: support.now_ms, filetime:), event:),
-  )
+  game_connection.step(state, support.input_at(filetime:, event:))
 }
 
 fn read(
@@ -142,11 +140,6 @@ fn store_request() -> BitArray {
 
 fn activity() -> BitArray {
   keyed_message(0x0241, <<>>)
-}
-
-fn ping(number: Int) -> BitArray {
-  let assert Ok(bytes) = frame.encode(0x0000, <<number>>)
-  bytes
 }
 
 /// The connection after 0x058F, with its ask to take the session key.
@@ -530,12 +523,12 @@ pub fn a_first_message_other_than_0x058f_or_a_second_0x058f_is_logged_as_an_erro
 
 pub fn a_bare_ping_is_answered_with_a_bare_pong_with_the_same_number_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(_, taken) = read(connected(), ping(9))
+  let #(_, taken) = read(connected(), support.ping(9))
   assert support.writes(taken) == [<<7, 0, 0, 0, 1, 0, 9>>]
     as "opcode.0x1: the pong carries the ping's number, bare, before the client has answered the hello"
   assert !support.stops(taken)
   let #(state, _) = listed(characters: [])
-  let #(_, taken) = read(state, ping(3))
+  let #(_, taken) = read(state, support.ping(3))
   assert support.writes(taken) == [<<7, 0, 0, 0, 1, 0, 3>>]
     as "opcode.0x0: in character select too, the ping travels bare and is never ciphered"
 }
@@ -549,7 +542,7 @@ pub fn message_0x038c_carrying_0x082d_and_0x0241_are_logged_as_unhandled_and_the
     as "opcode.0x82d and opcode.0x241: the client sends them and waits for no answer, and no feature takes them yet; each frame is logged in order"
   assert support.writes(taken) == []
   assert !support.stops(taken)
-  let #(_, taken) = read(state, ping(1))
+  let #(_, taken) = read(state, support.ping(1))
   assert support.writes(taken) == [<<7, 0, 0, 0, 1, 0, 1>>]
     as "the connection goes on"
 }
@@ -593,7 +586,7 @@ pub fn a_frame_the_clients_reader_would_refuse_ends_the_connection_after_the_who
   // A wrapper whose inner length does not account for its body.
   let assert Ok(disagrees) = frame.encode(0x0244, <<100, 0, 0, 0, 1, 2, 3>>)
   list.each([below_header, ping_20, disagrees], fn(bad) {
-    let #(_, taken) = read(connected(), <<ping(4):bits, bad:bits>>)
+    let #(_, taken) = read(connected(), <<support.ping(4):bits, bad:bits>>)
     assert support.writes(taken) == [<<7, 0, 0, 0, 1, 0, 4>>]
       as "the ping before the bad frame is answered"
     assert support.stops(taken)
@@ -623,7 +616,7 @@ pub fn the_client_closing_a_socket_failure_and_a_late_answer_are_handled_as_in_t
   let state = in_select()
   let #(state, taken) = feed(state, step.AnsweredLate(ask: step.AskId(1)))
   assert support.effects_of(taken) == []
-  let #(_, taken) = read(state, ping(2))
+  let #(_, taken) = read(state, support.ping(2))
   assert support.writes(taken) == [<<7, 0, 0, 0, 1, 0, 2>>]
 }
 

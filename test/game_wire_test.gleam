@@ -11,34 +11,29 @@
 
 import ask_support
 import character_support
+import connection_rule_support as support
 import game_client
-import genesis_prime/connection/listener
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
+import genesis_prime/login/guid
 import genesis_prime/message/character_list
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
-import login_rule_support as support
 import login_support
 import owned_test
 import pog
 
-/// The 16 bytes the client shows as its session key.
-const session_key = <<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16>>
+/// The 16 bytes the client shows as its session key: the wire bytes of the
+/// GUID the hand-off holds.
+fn session_key() -> BitArray {
+  guid.to_wire(support.guid_of(1))
+}
 
 /// The tree with the account of the library's vector inserted, the game
 /// listener's port and the account.
 fn start() -> #(login_support.Started, Int, AccountId) {
-  let started = login_support.start()
-  let account = AccountId(login_support.insert_jim(started))
-  let assert Ok(port) = listener.port(started.settings.game.listener)
-    as "the game listener has a port"
-  #(started, port, account)
-}
-
-fn stop(started: login_support.Started) -> Nil {
-  let _reason = ask_support.stop_tree(started.tree)
-  Nil
+  let #(started, ports, account_id) = login_support.start_with_jim()
+  #(started, ports.game_port, AccountId(account_id))
 }
 
 /// Puts the session key in the tree's hand-off, held for the account.
@@ -70,7 +65,8 @@ pub fn a_client_with_a_held_session_key_gets_the_hello_and_then_the_list_of_its_
   let id =
     character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
   put_session_key(started, account)
-  let game = game_client.connect(port:, session_key:, account_name: "jim")
+  let game =
+    game_client.connect(port:, session_key: session_key(), account_name: "jim")
   game_client.send(game:, message_id: 0x07E0, body: <<>>)
   let assert [listed] = game_client.read(game:, count: 1)
   assert listed.message_id == 0x0117 as "opcode.0x117 follows 0x058F and 0x07E0"
@@ -83,18 +79,19 @@ pub fn a_client_with_a_held_session_key_gets_the_hello_and_then_the_list_of_its_
   assert entry.class_id == 4 && entry.path == 2 && entry.faction_id == 166
     as "the row's values, as character_support inserted them"
   game_client.close(game:)
-  stop(started)
+  login_support.stop(started)
 }
 
 pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_19_and_is_disconnected_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(started, port, _account) = start()
-  let game = game_client.connect(port:, session_key:, account_name: "jim")
+  let game =
+    game_client.connect(port:, session_key: session_key(), account_name: "jim")
   let assert [notice] = game_client.read(game:, count: 1)
   assert notice.message_id == 0x036A as "opcode.0x36a"
   assert disconnect_notice.decode(notice.body)
     == Ok(DisconnectNotice(reason: 19))
     as "0x1400168a0: 19 is 'This account has been disconnected', for a key the hand-off never held"
   assert game_client.closed(game:) as "the server closes the connection"
-  stop(started)
+  login_support.stop(started)
 }

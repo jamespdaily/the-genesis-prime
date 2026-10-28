@@ -26,9 +26,9 @@ import tcp_client.{type Client}
 /// milliseconds.
 const wait_ms = 5000
 
-/// The ports the login's two listeners opened.
+/// The ports the tree's three listeners opened.
 pub type Ports {
-  Ports(sts_port: Int, auth_port: Int)
+  Ports(sts_port: Int, auth_port: Int, game_port: Int)
 }
 
 pub fn connect(port: Int) -> Client {

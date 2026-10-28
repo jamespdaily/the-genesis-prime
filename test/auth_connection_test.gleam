@@ -19,6 +19,7 @@
 ////   big-endian); the session key is the first 16 bytes of block 0.
 //// - The rule's doc comment, as approved on the login card.
 
+import connection_rule_support as support
 import genesis_prime/client_connection.{
   type Answer, type Request, AskHandOff, FromHandOff,
 }
@@ -41,7 +42,6 @@ import genesis_prime/store.{AccountId}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import login_client
-import login_rule_support as support
 import login_support
 import owned_test
 import scripted_client.{StsLogin}
@@ -327,12 +327,8 @@ pub fn a_hand_off_that_does_not_answer_gets_0x63d_reason_12_and_a_warning_log_te
 
 pub fn a_ping_gets_its_pong_test() -> Nil {
   use <- owned_test.run(10_000)
-  let ping = fn(number: Int) {
-    let assert Ok(bytes) = frame.encode(0x0000, <<number>>)
-    bytes
-  }
   let state = connected(seed: support.seed(first: 1))
-  let #(state, taken) = read(state, ping(9))
+  let #(state, taken) = read(state, support.ping(9))
   assert support.writes(taken) == [<<7, 0, 0, 0, 1, 0, 9>>]
     as "opcode.0x1: the pong carries the ping's number, bare"
   assert !support.stops(taken)
@@ -347,7 +343,7 @@ pub fn a_ping_gets_its_pong_test() -> Nil {
     )
   let #(state, _taken) =
     answer(state:, taken:, outcome: step.Answer(FromHandOff(Kept)))
-  let #(_, taken) = read(state, ping(3))
+  let #(_, taken) = read(state, support.ping(3))
   assert support.writes(taken) == [<<7, 0, 0, 0, 1, 0, 3>>]
     as "the client's pings go on while it moves to the game server"
 }
