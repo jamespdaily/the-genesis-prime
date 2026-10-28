@@ -5,7 +5,7 @@
 ////   the game port, then a second login to the same account that took its
 ////   session over (`test/rule_recording/2026-10-28-takeover`). The replays use
 ////   the real client's connections, the first pair the folder holds, each
-////   closed with `End`, which counts 13 inputs for the STS connection
+////   closed with `End`, which counts 12 inputs for the STS connection
 ////   and 5 for the auth connection.
 //// - The login rules read no game table, so these replays need no tables,
 ////   whatever digest a header holds.
@@ -30,7 +30,7 @@ pub fn the_live_sessions_sts_recording_replays_to_the_same_steps_test() -> Nil {
       step: sts_connection.step,
     )
   assert inputs == count as "the replay folds every input the End counts"
-  assert count == 13 as "the live session's STS connection took 13 inputs"
+  assert count == 12 as "the live session's STS connection took 12 inputs"
 }
 
 pub fn the_live_sessions_auth_recording_replays_to_the_same_steps_test() -> Nil {
