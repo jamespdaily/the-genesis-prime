@@ -30,7 +30,6 @@ import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
 import gleam/dynamic/decode
-import gleam/list
 import login_support
 import owned_test
 import pog
