@@ -478,35 +478,38 @@ pub fn unit_create_player_round_trips_test() -> Nil {
       let #(race_id, state) = message_support.unsigned(state:, bits: 5)
       let #(class_id, state) = message_support.unsigned(state:, bits: 5)
       let #(gender, state) = message_support.unsigned(state:, bits: 2)
-      let #(field_9, state) = message_support.unsigned(state:, bits: 64)
-      let #(field_10, state) = unsigned_list(state:, most: 4, bits: 32)
-      let #(field_11, state) = message_support.field_text(state:)
-      let #(field_12, state) = message_support.unsigned(state:, bits: 4)
-      let #(field_13, state) = unsigned_list(state:, most: 4, bits: 64)
-      let #(field_14, state) = unsigned_list(state:, most: 4, bits: 32)
-      let #(path, state) = message_support.unsigned(state:, bits: 3)
-      let #(field_16, state) = message_support.unsigned(state:, bits: 8)
-      let #(field_17, state) = message_support.unsigned(state:, bits: 14)
-      let #(field_18, state) = message_support.unsigned(state:, bits: 8)
+      let #(group_id, state) = message_support.unsigned(state:, bits: 64)
+      let #(owned_unit_ids, state) = unsigned_list(state:, most: 4, bits: 32)
+      let #(guild_name, state) = message_support.field_text(state:)
+      let #(guild_type, state) = message_support.unsigned(state:, bits: 4)
+      let #(guild_ids, state) = unsigned_list(state:, most: 4, bits: 64)
+      let #(bone_values, state) = unsigned_list(state:, most: 4, bits: 32)
+      let #(pvp_flags, state) = message_support.unsigned(state:, bits: 3)
+      let #(premium_tier, state) = message_support.unsigned(state:, bits: 8)
+      let #(title_id, state) = message_support.unsigned(state:, bits: 14)
+      let #(create_flags, state) = message_support.unsigned(state:, bits: 8)
       let #(stats, state) = unit_stats(state)
       let #(server_time_estimate_start, state) =
         message_support.unsigned(state:, bits: 32)
       let #(movement_commands, state) = unit_position_commands(state)
       let #(properties, state) = unit_properties(state)
       let #(item_visuals, state) = item_visuals(state)
-      let #(field_25, state) = message_support.unsigned(state:, bits: 32)
+      let #(cast_id, state) = message_support.unsigned(state:, bits: 32)
       let #(faction_id, state) = message_support.unsigned(state:, bits: 14)
       let #(base_faction_id, state) = message_support.unsigned(state:, bits: 14)
-      let #(field_28, state) = message_support.unsigned(state:, bits: 32)
-      let #(field_29, state) = message_support.unsigned(state:, bits: 64)
+      let #(tagged_by_unit_id, state) =
+        message_support.unsigned(state:, bits: 32)
+      let #(tagged_by_group_id, state) =
+        message_support.unsigned(state:, bits: 64)
       let #(field_31, state) = message_support.unsigned(state:, bits: 1)
       let #(field_33, state) = message_support.unsigned(state:, bits: 64)
-      let #(field_34, state) = message_support.unsigned(state:, bits: 14)
-      let #(field_36, state) = message_support.unsigned(state:, bits: 32)
+      let #(world_socket_id, state) = message_support.unsigned(state:, bits: 14)
+      let #(cluster_id, state) = message_support.unsigned(state:, bits: 32)
       let #(field_37, state) = message_support.unsigned(state:, bits: 18)
-      let #(field_38, state) = message_support.unsigned(state:, bits: 14)
-      let #(field_39, state) = message_support.unsigned(state:, bits: 17)
-      let #(field_40, state) = message_support.unsigned(state:, bits: 15)
+      let #(minimap_marker_id, state) =
+        message_support.unsigned(state:, bits: 14)
+      let #(display_info_id, state) = message_support.unsigned(state:, bits: 17)
+      let #(outfit_info_id, state) = message_support.unsigned(state:, bits: 15)
       #(
         UnitCreatePlayer(
           unit_id:,
@@ -516,34 +519,34 @@ pub fn unit_create_player_round_trips_test() -> Nil {
           race_id:,
           class_id:,
           gender:,
-          field_9:,
-          field_10:,
-          field_11:,
-          field_12:,
-          field_13:,
-          field_14:,
-          path:,
-          field_16:,
-          field_17:,
-          field_18:,
+          group_id:,
+          owned_unit_ids:,
+          guild_name:,
+          guild_type:,
+          guild_ids:,
+          bone_values:,
+          pvp_flags:,
+          premium_tier:,
+          title_id:,
+          create_flags:,
           stats:,
           server_time_estimate_start:,
           movement_commands:,
           properties:,
           item_visuals:,
-          field_25:,
+          cast_id:,
           faction_id:,
           base_faction_id:,
-          field_28:,
-          field_29:,
+          tagged_by_unit_id:,
+          tagged_by_group_id:,
           field_31:,
           field_33:,
-          field_34:,
-          field_36:,
+          world_socket_id:,
+          cluster_id:,
           field_37:,
-          field_38:,
-          field_39:,
-          field_40:,
+          minimap_marker_id:,
+          display_info_id:,
+          outfit_info_id:,
         ),
         state,
       )

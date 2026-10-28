@@ -510,15 +510,21 @@ pub fn the_game_servers_messages_with_their_records_name_every_field_or_its_safe
       "create_character_result",
       "play_character_refused",
       "max_character_level",
+      "enter_world",
+      "unit_create_player",
+      "unit_is_player",
+      "client_control_granted",
+      "movement_send_interval",
+      "player_entered_world",
     ],
     list.contains(sent_messages, _),
   )
-    as "the game rule imports the hello (through genesis_prime/connection/hello), the character list, the disconnect notice, the create result, the play refusal and the highest level, so each is read as sent"
+    as "the game rule imports the hello (through genesis_prime/connection/hello), the character list, the disconnect notice, the create result, the play refusal and the highest level, and world entry imports the six messages that put the player in the world, so each is read as sent"
   assert schema_evidence.breaches(
       file: SourceFile(path: "src/genesis_prime/message/schema.toml", text:),
       fact_keys: repository.fact_keys(),
       sent_messages:,
     )
     == []
-    as "CLAUDE.md: a value the server sends that the client never reads is shown safe by a fact, in the character list's entry and its visuals as in the messages"
+    as "CLAUDE.md: a value the server sends that the client never reads is shown safe by a fact, in the character list's entry and its visuals as in the messages, and in the player's 0x262 with its stats, movement commands and properties, 0xAD, 0x19B and 0xF1"
 }

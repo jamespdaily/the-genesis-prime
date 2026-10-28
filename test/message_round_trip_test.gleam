@@ -391,16 +391,17 @@ pub fn movement_send_interval_round_trips_test() -> Nil {
     name: "message 0xf1",
     seed: 20_261_111,
     draw: fn(state) {
-      let #(field_1, state) = message_support.unsigned(state:, bits: 2)
-      let #(field_2, state) = message_support.unsigned(state:, bits: 32)
-      let #(field_3, state) = message_support.unsigned(state:, bits: 8)
+      let #(world_difficulty, state) = message_support.unsigned(state:, bits: 2)
+      let #(world_prime_level, state) =
+        message_support.unsigned(state:, bits: 32)
+      let #(world_flags, state) = message_support.unsigned(state:, bits: 8)
       let #(interval_milliseconds, state) =
         message_support.unsigned(state:, bits: 32)
       #(
         MovementSendInterval(
-          field_1:,
-          field_2:,
-          field_3:,
+          world_difficulty:,
+          world_prime_level:,
+          world_flags:,
           interval_milliseconds:,
         ),
         state,
