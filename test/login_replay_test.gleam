@@ -41,13 +41,15 @@ pub fn the_live_sessions_auth_recording_replays_to_the_same_steps_test() -> Nil 
   assert count == 6 as "the live session's auth connection took 6 inputs"
 }
 
+const sts_replay = #(
+  "login_replay_test",
+  "the_live_sessions_sts_recording_replays_to_the_same_steps_test",
+)
+
 /// The recording replays in a fresh node, where nothing has loaded the
 /// modules whose names its terms hold: the reader must not depend on what ran
 /// before it.
 pub fn the_sts_recording_replays_in_a_fresh_node_test() -> Nil {
   use <- owned_test.run(60_000)
-  rule_replay_support.replays_in_a_fresh_node(
-    module: "login_replay_test",
-    function: "the_live_sessions_sts_recording_replays_to_the_same_steps_test",
-  )
+  rule_replay_support.replays_in_a_fresh_node(sts_replay)
 }

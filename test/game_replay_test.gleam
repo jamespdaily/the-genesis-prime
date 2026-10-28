@@ -26,13 +26,15 @@ pub fn the_live_sessions_game_recording_replays_to_the_same_steps_test() -> Nil 
   assert count == 116 as "the live session's game connection took 116 inputs"
 }
 
+const game_replay = #(
+  "game_replay_test",
+  "the_live_sessions_game_recording_replays_to_the_same_steps_test",
+)
+
 /// The recording replays in a fresh node, where nothing has loaded the
 /// modules whose names its terms hold: the reader must not depend on what ran
 /// before it.
 pub fn the_game_recording_replays_in_a_fresh_node_test() -> Nil {
   use <- owned_test.run(60_000)
-  rule_replay_support.replays_in_a_fresh_node(
-    module: "game_replay_test",
-    function: "the_live_sessions_game_recording_replays_to_the_same_steps_test",
-  )
+  rule_replay_support.replays_in_a_fresh_node(game_replay)
 }

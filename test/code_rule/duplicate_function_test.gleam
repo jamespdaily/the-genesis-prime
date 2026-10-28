@@ -4,7 +4,7 @@
 //// their bodies are the same once string literals are alike; a body shorter
 //// than the minimum, a body repeated inside one module and a generated module
 //// are not breaches. An allow-list entry names a module, a function and the
-//// open issue that moves the copy, and an entry with no copy is a breach.
+//// reason the copy stays, and an entry with no copy is a breach.
 //// Every breach is planted in made-up files.
 
 import code_rule/duplicate_function
@@ -316,7 +316,7 @@ pub fn an_allowed_function_is_left_out_with_its_twin_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   assert duplicate_function.breaches(plain_pair(), allowed: [
-      #("src/planted/second.gleam", "second_total", 190),
+      #("src/planted/second.gleam", "second_total", "a planted reason"),
     ])
     == []
 }
@@ -346,17 +346,40 @@ pub fn an_allow_list_entry_with_no_copy_is_a_breach_test() -> Nil {
   ]
   let breaches =
     duplicate_function.breaches(files, allowed: [
-      #("src/planted/second.gleam", "second_total", 190),
-      #("src/planted/gone.gleam", "gone_total", 190),
+      #("src/planted/second.gleam", "second_total", "a planted reason"),
+      #("src/planted/gone.gleam", "gone_total", "a planted reason"),
     ])
   let assert [first, second] = breaches as "expected two stale entries"
   assert string.ends_with(first.rule, "src/planted/second.gleam second_total")
   assert string.ends_with(second.rule, "src/planted/gone.gleam gone_total")
 }
 
-/// Functions with the same body in two modules, each with the open issue that
-/// moves it to a shared module.
-const allowed = []
+/// Functions with the same body in two modules that stay as they are, each with
+/// the reason.
+const adapter =
+  "a rule's adapter: fills its own Session and handlers into client_connection's shared flow; the bodies match because the flow is shared"
+
+const oracle =
+  "the scripted client is an independent second reading of the login's SRP, the test's oracle; sharing the code would let the server check itself"
+
+const allowed = [
+  #("src/genesis_prime/game/connection.gleam", "flow", adapter),
+  #("src/genesis_prime/game/connection.gleam", "end_for", adapter),
+  #("src/genesis_prime/game/connection.gleam", "log", adapter),
+  #("src/genesis_prime/login/auth_connection.gleam", "flow", adapter),
+  #("src/genesis_prime/login/auth_connection.gleam", "ask", adapter),
+  #("src/genesis_prime/login/auth_connection.gleam", "end_for", adapter),
+  #("src/genesis_prime/login/auth_connection.gleam", "log", adapter),
+  #("src/genesis_prime/login/sts_connection.gleam", "ask", adapter),
+  #("src/genesis_prime/login/sts_connection.gleam", "log", adapter),
+  #("src/genesis_prime/login/srp.gleam", "bytes_number", oracle),
+  #("src/genesis_prime/login/srp.gleam", "digest_words", oracle),
+  #("src/genesis_prime/login/srp.gleam", "xor", oracle),
+  #("test/scripted_client.gleam", "number_from", oracle),
+  #("test/scripted_client.gleam", "digest_words", oracle),
+  #("test/scripted_client.gleam", "xor", oracle),
+  #("test/sts_connection_test.gleam", "little", oracle),
+]
 
 pub fn no_two_modules_hold_the_same_function_test() -> Nil {
   use <- owned_test.run(20_000)

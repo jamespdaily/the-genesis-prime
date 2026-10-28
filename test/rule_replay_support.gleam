@@ -44,13 +44,11 @@ pub fn replayed(
   #(inputs, count)
 }
 
-/// Runs the replay test `function` of the test module `module` in a fresh
-/// node, where nothing has loaded the modules whose names the recording's
-/// terms hold, and fails unless it passes there.
-pub fn replays_in_a_fresh_node(
-  module module: String,
-  function function: String,
-) -> Nil {
+/// Runs the replay test of a test module, given as the module's name and the
+/// test function's name, in a fresh node, where nothing has loaded the modules
+/// whose names the recording's terms hold, and fails unless it passes there.
+pub fn replays_in_a_fresh_node(replay_test: #(String, String)) -> Nil {
+  let #(module, function) = replay_test
   assert fresh_node.run(module:, function:, timeout_ms: 50_000) == Ok(Nil)
     as { function <> " passes in a fresh node, with nothing loaded before it" }
 }

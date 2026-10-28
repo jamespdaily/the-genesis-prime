@@ -33,9 +33,9 @@ type Candidate {
 }
 
 /// An allow-list entry: the path of a module, the name of one of its
-/// functions, and the number of the open issue that moves the copy.
+/// functions, and the one-line reason the copy stays.
 pub type Allowed =
-  #(String, String, Int)
+  #(String, String, String)
 
 /// Each function whose body is the same as the body of a function in another
 /// module, and each allow-list entry that names no such function.
