@@ -95,9 +95,8 @@ pub type Character {
 }
 
 /// A character to make, from a create request and the CharacterCreation row it
-/// names: the row gives the gender (its sex), race, class and faction.
-/// Everything else a new character has is the store's: level 1 and no world,
-/// zone or position until world entry.
+/// names: the row gives the gender (its sex), race, class and faction, and its
+/// start the place (genesis_prime/game/start_place). Level 1 is the store's.
 pub type NewCharacter {
   NewCharacter(
     name: String,
@@ -106,17 +105,30 @@ pub type NewCharacter {
     class_id: ClassId,
     faction_id: Int,
     path: Int,
+    world_id: Int,
+    world_zone_id: Int,
+    position_x: Float,
+    position_y: Float,
+    position_z: Float,
     look: List(LookEntry),
     bones: List(Int),
   )
 }
 
-/// What a rule asks the store, grouped by who asks: the STS login's request
-/// and the character select's, so a rule names only the group it does not ask
-/// as a mismatch.
+/// What a rule asks the store, grouped by who asks: the STS login's request,
+/// character select's and world entry's, so a rule names only the groups it
+/// does not ask as a mismatch.
 pub type Request {
   Login(request: LoginRequest)
   Select(request: SelectRequest)
+  World(request: WorldRequest)
+}
+
+/// What world entry asks the store.
+pub type WorldRequest {
+  /// The account's character with this id, with its saved place. The
+  /// account's id is in the read, so no other account's character is read.
+  LoadCharacter(account_id: AccountId, character_id: CharacterId)
 }
 
 /// What the STS login asks the store.
@@ -161,6 +173,15 @@ pub type Answer {
   Unavailable
   ForLogin(answer: FindAccountAnswer)
   ForSelect(answer: SelectAnswer)
+  ForWorld(answer: WorldAnswer)
+}
+
+/// What the store answers world entry.
+pub type WorldAnswer {
+  /// The account's character.
+  CharacterLoaded(character: Character)
+  /// The account has no character with the id.
+  NotTheAccounts
 }
 
 /// What the store answers character select, one variant for each of its

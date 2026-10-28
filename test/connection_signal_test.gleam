@@ -50,7 +50,7 @@ fn start(
 ) -> ask_support.Server {
   ask_support.start_joined(
     rule: signalling_rule.rule(),
-    directory: fn(_request, _reply) { Error(Nil) },
+    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     shutdown_ms: 1000,
     recorder: None,
     registry:,

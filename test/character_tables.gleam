@@ -7,6 +7,9 @@
 //// - CharacterCreation rows 21, 338, 339, 466, 530, 536 and 539.
 //// - CharacterCustomization rows 2, 9 and 10 and the labels they use, 2, 21
 ////   and 22 (CharacterCustomizationLabel).
+//// - WorldLocation2 rows 51596, 1594, 37015, 18987, 8223, 53050 and 53051,
+////   the start places (genesis_prime/game/start_place), with the world, zone
+////   and position of the client's row.
 //// - Bone counts: opcode.0x25b.counts gives 46 bone values for race 1, sex 1
 ////   and 48 for race 1, sex 0. The planted maps are that many rows of one
 ////   parameter that sets one part, which carry those counts; the real
@@ -14,6 +17,7 @@
 
 import character_support
 import database_support
+import genesis_prime/game/start_place.{type Place, Place}
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
@@ -21,9 +25,10 @@ import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
+import genesis_prime/table/world_location2
 import gleam/erlang/reference
 import gleam/list
-import planted_table.{type Cell, Boolean, Integer}
+import planted_table.{type Cell, Boolean, Float, Integer}
 
 /// The planted tables, loaded once per test run under a key of their own and
 /// never unloaded, as `client_tables.shared` does for the real ones.
@@ -38,6 +43,7 @@ fn load() -> store.Tables {
     file(character_customization_label.schema, label_rows()),
     file(customization_parameter.schema, parameter_rows()),
     file(customization_parameter_map.schema, map_rows()),
+    file(world_location2.schema, start_location_rows()),
   ])
   let assert Ok(tables) =
     store.load(
@@ -49,6 +55,7 @@ fn load() -> store.Tables {
         character_customization_label.entry(),
         customization_parameter.entry(),
         customization_parameter_map.entry(),
+        world_location2.entry(),
       ],
       requirements: [],
     )
@@ -264,4 +271,110 @@ fn map_rows() -> List(List(Cell)) {
     list.map(character_support.numbers(46), map(_, 1)),
     list.map(character_support.numbers(48), fn(index) { map(index + 46, 0) }),
   )
+}
+
+/// A WorldLocation2 row with the columns the server reads.
+fn location(
+  id id: Int,
+  world world: Int,
+  zone zone: Int,
+  position position: #(Float, Float, Float),
+) -> List(Cell) {
+  planted_table.row(world_location2.schema, [
+    #("ID", Integer(id)),
+    #("position0", Float(position.0)),
+    #("position1", Float(position.1)),
+    #("position2", Float(position.2)),
+    #("worldId", Integer(world)),
+    #("worldZoneId", Integer(zone)),
+  ])
+}
+
+/// The start places by their WorldLocation2 row id, each as the client's row
+/// holds its world, zone and position.
+pub fn start_locations() -> List(#(Int, Place)) {
+  [
+    #(
+      1594,
+      Place(
+        world_id: 426,
+        world_zone_id: 648,
+        x: 4110.7099609375,
+        y: -658.6248779296875,
+        z: -5145.47998046875,
+      ),
+    ),
+    #(
+      8223,
+      Place(
+        world_id: 870,
+        world_zone_id: 1236,
+        x: -8260.708984375,
+        y: -995.0770263671875,
+        z: -239.0409393310547,
+      ),
+    ),
+    #(
+      18_987,
+      Place(
+        world_id: 1387,
+        world_zone_id: 1411,
+        x: -3835.3408203125,
+        y: -980.2174072265625,
+        z: -6050.52392578125,
+      ),
+    ),
+    #(
+      37_015,
+      Place(
+        world_id: 990,
+        world_zone_id: 1417,
+        x: -771.822998046875,
+        y: -904.28515625,
+        z: -2269.56005859375,
+      ),
+    ),
+    #(
+      51_596,
+      Place(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 29.128599166870117,
+        y: -853.87158203125,
+        z: -560.18798828125,
+      ),
+    ),
+    #(
+      53_050,
+      Place(
+        world_id: 51,
+        world_zone_id: 4959,
+        x: 4074.340087890625,
+        y: -797.8367919921875,
+        z: -2399.3701171875,
+      ),
+    ),
+    #(
+      53_051,
+      Place(
+        world_id: 22,
+        world_zone_id: 4957,
+        x: -3343.580078125,
+        y: -887.464599609375,
+        z: -536.030029296875,
+      ),
+    ),
+  ]
+}
+
+/// The planted WorldLocation2 rows of the start places.
+fn start_location_rows() -> List(List(Cell)) {
+  list.map(start_locations(), fn(location_row) {
+    let #(id, place) = location_row
+    location(id:, world: place.world_id, zone: place.world_zone_id, position: #(
+      place.x,
+      place.y,
+      place.z,
+    ))
+  })
 }

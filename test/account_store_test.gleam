@@ -30,11 +30,12 @@ import genesis_prime/login/guid
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
   type AccountId, Account, AccountFound, AccountId, Character, CharacterCreated,
-  CharacterDeleted, CharacterId, CharacterRenamed, CreateCharacter, Created,
-  DeleteCharacter, Deleted, FindAccount, ForLogin, ForSelect, ListCharacters,
-  Listed, Login, LookEntry, NameStands, NameTaken, NeedsRename, NewCharacter,
-  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
-  RenameCharacter, Renamed, Select, Unavailable,
+  CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
+  CreateCharacter, Created, DeleteCharacter, Deleted, FindAccount, ForLogin,
+  ForSelect, ForWorld, ListCharacters, Listed, LoadCharacter, Login, LookEntry,
+  NameStands, NameTaken, NeedsRename, NewCharacter, NewNameTaken, NoFreeSlot,
+  NoSuchAccount, NoSuchCharacter, NotRenamable, NotTheAccounts, RenameCharacter,
+  Renamed, Select, Unavailable, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -690,7 +691,8 @@ pub fn a_rename_of_an_unmarked_or_another_accounts_character_or_of_none_is_not_r
 // ---- create ----
 
 /// A new character with the values of CharacterCreation row 466 (class 1,
-/// race 1, sex 1, faction 167), the path 2 and a look and bones.
+/// race 1, sex 1, faction 167), the path 2, the start place of
+/// WorldLocation2 row 51596 and a look and bones.
 fn a_new_character(name: String) -> store.NewCharacter {
   NewCharacter(
     name:,
@@ -699,6 +701,11 @@ fn a_new_character(name: String) -> store.NewCharacter {
     class_id: ClassId(1),
     faction_id: 167,
     path: 2,
+    world_id: 3460,
+    world_zone_id: 6009,
+    position_x: 29.128599166870117,
+    position_y: -853.87158203125,
+    position_z: -560.18798828125,
     look: [
       LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
       LookEntry(label: CharacterCustomizationLabelId(22), value: 4_000_000_000),
@@ -746,11 +753,11 @@ pub fn a_create_stores_the_character_at_level_1_with_the_values_it_was_given_and
           faction_id: 167,
           level: 1,
           path: 2,
-          world_id: 0,
-          world_zone_id: 0,
-          position_x: 0.0,
-          position_y: 0.0,
-          position_z: 0.0,
+          world_id: 3460,
+          world_zone_id: 6009,
+          position_x: 29.128599166870117,
+          position_y: -853.87158203125,
+          position_z: -560.18798828125,
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
             LookEntry(
@@ -763,7 +770,62 @@ pub fn a_create_stores_the_character_at_level_1_with_the_values_it_was_given_and
         ),
       ]),
     )
-    as "the card's design: race, sex, class and faction from the creation row, level 1, no world, zone or position until world entry, the look and the bones as the client sent them (32-bit values come back as they went in)"
+    as "the create's result: race, sex, class and faction from the creation row, level 1, the start place the create gave (World 3460, zone 6009 and the position of WorldLocation2 row 51596, as 32-bit floats), the look and the bones as the client sent them (32-bit values come back as they went in)"
+  stop(store)
+}
+
+pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_accounts_or_a_missing_one_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let other = insert_account(store, "login-2")
+  let mine =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Zed",
+      class_id: 4,
+      path: 2,
+    )
+  let theirs =
+    character_support.insert(
+      pool: store.pool,
+      account: other,
+      name: "Abe",
+      class_id: 4,
+      path: 2,
+    )
+  assert ask(store, World(LoadCharacter(account, CharacterId(mine))))
+    == ForWorld(
+      CharacterLoaded(Character(
+        character_id: CharacterId(mine),
+        name: "Zed",
+        gender: 1,
+        race_id: RaceId(3),
+        class_id: ClassId(4),
+        faction_id: 166,
+        level: 9,
+        path: 2,
+        world_id: 1387,
+        world_zone_id: 1100,
+        position_x: 1.5,
+        position_y: 2.5,
+        position_z: 3.5,
+        look: [],
+        bones: [],
+        naming: NameStands,
+      )),
+    )
+    as "the row as character_support inserted it: the saved world, zone and position come with it"
+  assert ask(store, World(LoadCharacter(account, CharacterId(theirs))))
+    == ForWorld(NotTheAccounts)
+    as "a modified client could name any id: the read is scoped by the account's id (genesis_prime/store)"
+  assert ask(
+      store,
+      World(LoadCharacter(account, CharacterId(account_id_nobody_has))),
+    )
+    == ForWorld(NotTheAccounts)
+    as "no row has the id"
   stop(store)
 }
 

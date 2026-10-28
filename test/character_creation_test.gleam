@@ -19,8 +19,8 @@ import character_support
 import character_tables
 import genesis_prime/game/character_creation.{
   ArkshipRow, BoneNotFinite, CostsCurrency, CostumeOnlyRow, NameBreaksRule,
-  NeedsEntitlement, NoSuchRow, PathAbove3, RowDisabled, TooManyLabels,
-  WrongBoneCount,
+  NeedsEntitlement, NoStartPlace, NoSuchRow, PathAbove3, RowDisabled,
+  TooManyLabels, WrongBoneCount,
 }
 import genesis_prime/message/create_character.{
   type CreateCharacter, CreateCharacter,
@@ -70,13 +70,35 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
       class_id: ClassId(1),
       faction_id: 167,
       path: 2,
+      world_id: 3460,
+      world_zone_id: 6009,
+      position_x: 29.128599166870117,
+      position_y: -853.87158203125,
+      position_z: -560.18798828125,
       look: [
         LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
         LookEntry(label: CharacterCustomizationLabelId(22), value: 1),
       ],
       bones: character_support.bones(46),
     ))
-    as "CharacterCreation row 466: class 1, race 1, sex 1, faction 167; the path, the labels with their values and the bone values as the request carries them (opcode.0x25b)"
+    as "CharacterCreation row 466: class 1, race 1, sex 1, faction 167; the path, the labels with their values and the bone values as the request carries them (opcode.0x25b); a PreTutorial start, so the place of WorldLocation2 row 51596: World 3460, zone 6009 and its position"
+}
+
+pub fn a_nexus_row_gives_the_character_the_place_of_its_veteran_start_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let assert Ok(character) =
+    character_creation.check(tables, request(338, "Ab Cd"))
+    as "CharacterCreation row 338 is an enabled Nexus row with no entitlement and no cost"
+  assert #(
+      character.world_id,
+      character.world_zone_id,
+      character.position_x,
+      character.position_y,
+      character.position_z,
+    )
+    == #(426, 648, 4110.7099609375, -658.6248779296875, -5145.47998046875)
+    as "row 338 is the Veteran start (3) of Exile (167) Human (1): WorldLocation2 row 1594, World 426, zone 648 (Jim's world database; the client's row)"
 }
 
 pub fn a_row_that_is_missing_disabled_arkship_costume_only_or_needs_what_the_account_lacks_is_refused_test() -> Nil {
@@ -169,6 +191,42 @@ pub fn a_path_above_3_too_many_labels_or_the_wrong_bone_count_is_refused_test() 
     as "race 1, sex 0 with 48 bone values"
 }
 
+pub fn a_start_race_or_faction_with_no_start_place_is_refused_and_says_which_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let assert Ok(row) = creation_table.get(tables:, id: CharacterCreationId(466))
+    as "CharacterCreation row 466 exists"
+  let check_row = fn(changed) {
+    character_creation.check_row(tables, changed, request(466, "Ab Cd"))
+  }
+  assert check_row(
+      creation_table.CharacterCreation(..row, character_creation_start_enum: 7),
+    )
+    == Error(NoStartPlace(
+      creation_id: 466,
+      start: 7,
+      faction_id: 167,
+      race_id: 1,
+    ))
+    as "no start of Jim's world database is 7 (genesis_prime/game/start_place): a start with no place is refused"
+  assert check_row(creation_table.CharacterCreation(..row, faction_id: 168))
+    == Error(NoStartPlace(
+      creation_id: 466,
+      start: 4,
+      faction_id: 168,
+      race_id: 1,
+    ))
+    as "no start place is of a faction other than 166 and 167"
+  assert character_creation.result_of(NoStartPlace(
+      creation_id: 466,
+      start: 7,
+      faction_id: 167,
+      race_id: 1,
+    ))
+    == create_result.CreateFailed
+    as "lua.Character.OnCreateCharacterFailed: 4 is shown as 'due to an error'"
+}
+
 pub fn a_bone_value_that_is_not_a_finite_float_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
@@ -215,6 +273,7 @@ pub fn every_refusal_but_the_name_is_create_failed_and_says_the_row_test() -> Ni
       TooManyLabels(creation_id: 7, count: 28),
       WrongBoneCount(creation_id: 7, expected: 46, got: 45),
       BoneNotFinite(creation_id: 7),
+      NoStartPlace(creation_id: 7, start: 7, faction_id: 167, race_id: 1),
     ],
     fn(refusal) {
       assert character_creation.result_of(refusal) == create_result.CreateFailed

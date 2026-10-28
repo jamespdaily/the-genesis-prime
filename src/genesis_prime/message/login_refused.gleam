@@ -13,9 +13,16 @@ import gleam/result
 pub const message_id = 0x063D
 
 /// The body of message 0x063D, its fields in wire order. A field named
-/// `field_N` is the Nth of the body and has no use the client's code shows.
+/// `field_N` is the Nth of the body: its own doc names the fact that shows its
+/// value is safe, and one with no such doc has no use the client's code shows.
 pub type LoginRefused {
-  LoginRefused(reason: Int, value: Int, field_3: Int)
+  LoginRefused(
+    reason: Int,
+    value: Int,
+    /// Safe by `opcode.0x63d`: the client's code gives this field no use the
+    /// server needs, and that fact shows its value is safe.
+    field_3: Int,
+  )
 }
 
 /// The message as the bytes of its body, or the first field that cannot be

@@ -16,7 +16,7 @@
 //// the client's 0x0786, decoded       ─▶ rename_requested(..)
 ////                                                                   ─▶ Ask(RenameCharacter(..))
 ////                                                                      or Send(0x014B), refused
-//// the client's 0x07DD, decoded       ─▶ play_requested(..)
+//// world entry refuses a play        ─▶ play_refused(..)
 ////                                                                   ─▶ Send(0x0162), Ask(ListCharacters(account))
 //// the store's answer                  ─▶ listed(..), created(..), deleted(..) or renamed(..)
 ////                                                                   ─▶ Send(0x0036), Send(0x0117)
@@ -34,7 +34,7 @@
 ////   its body visuals from its look (genesis_prime/game/appearance) and its
 ////   bone values as sent. Its worn visuals and costume are empty or 0: the
 ////   client never builds worn visuals from a creation row, and gear is the
-////   inventory's, which world entry sends (0x14004adb0, 0x140027380).
+////   inventory's (0x14004adb0, 0x140027380).
 //// - **What the client does with it.** It shows each character's name, level,
 ////   the Dominion frame for faction 166 and the Exile frame for any other, the
 ////   class icon for class 1 to 20 and the path icon for path 0 to 3, and
@@ -60,10 +60,11 @@
 ////   (opcode.0x14b, lua.CharacterSelection.OnCharacterRenameResult). A
 ////   character's entry carries the rename bit the client offers a rename by
 ////   (lua.CharacterSelection.OnSelectCharacter).
-//// - **Play, which the server refuses.** The client plays a created character
-////   with 0x07DD and waits for 0xAD or 0x162 with no timeout. World entry is
-////   not built, so the server sends 0x0162 with Failed and the list again,
-////   which closes the create screen and the refusal box together
+//// - **A play world entry refuses.** The client plays a character with 0x07DD
+////   and waits for 0xAD or 0x162 with no timeout (genesis_prime/game/world_entry).
+////   For a character the account does not have, or one with no saved place,
+////   world entry hands back here: the server sends 0x0162 with Failed and the
+////   list again, which closes the create screen and the refusal box together
 ////   (opcode.0x162.after_create). The list selects its character by the
 ////   client's own rule: the pending in-world character, else among the
 ////   characters with a last logout the one with the largest, else the first.
@@ -97,7 +98,6 @@ import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/delete_result.{type DeleteResult}
 import genesis_prime/message/float32
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
-import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
 import genesis_prime/message/rename_character.{type RenameCharacter}
@@ -203,19 +203,19 @@ pub fn create_requested(
   }
 }
 
-/// The client's request to play a character, read for this account: refused
-/// with Failed, since entering the world is not built, and the list is asked
-/// for again with that character selected.
-pub fn play_requested(
+/// World entry refused the client's request to play the character with this
+/// id: 0x0162 with Failed, and the list is asked for again with that character
+/// selected.
+pub fn play_refused(
   account_id account_id: AccountId,
-  request request: PlayCharacter,
+  character_id character_id: Int,
 ) -> #(State, List(Effect)) {
   let assert Ok(body) =
     play_character_refused.encode(PlayCharacterRefused(
       result: play_refusal.Failed,
     ))
     as "a refusal's value fits its field"
-  #(Listing(selected: Some(CharacterId(request.character_id))), [
+  #(Listing(selected: Some(CharacterId(character_id))), [
     Send(frame: Frame(message_id: play_character_refused.message_id, body:)),
     Ask(request: store.ListCharacters(account_id:)),
   ])

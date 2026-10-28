@@ -1,13 +1,15 @@
 //// Starts the server for a live session, as `gleam run` does, with two
-//// changes only a developer makes: each STS, auth and game connection, and
-//// Sessions, is recorded into a folder, for replay, and the auth server can
-//// plant one frame the client does not handle right after its hello, to prove
-//// the client's failure log brings back its id.
+//// changes only a developer makes: each STS, auth and game connection,
+//// Sessions and each map is recorded into a folder, for replay, and the auth
+//// server can plant one frame the client does not handle right after its
+//// hello, to prove the client's failure log brings back its id.
 ////
 //// `gleam run -m genesis_prime/dev_start -- <recording folder> [<planted message id>]`
 ////
-//// - `recording folder`: where each connection's and Sessions' recording is
-////   written, made when it is missing; by convention `test/rule_recording/<date>-<flow>`.
+//// - `recording folder`: where each connection's, Sessions' and each map's
+////   recording is written, made when it is missing; a map's file is named by
+////   its world, instance and incarnation; by convention
+////   `test/rule_recording/<date>-<flow>`.
 ////   The relay's recordings, a different format, are in `test/recording`.
 //// - `planted message id`: a message id, such as `0x0914`, sent once with an
 ////   empty body in the auth wrapper after the hello. Left out, nothing is
@@ -27,6 +29,7 @@ import genesis_prime/rule_types
 import genesis_prime/server
 import genesis_prime/sessions
 import genesis_prime/table/loader/store
+import genesis_prime/world_map/map as world_map
 import gleam/int
 import gleam/io
 import gleam/option.{type Option, None, Some}
@@ -68,6 +71,7 @@ fn start() -> Result(Nil, Failure) {
   use auth_digest <- result.try(digest(auth_connection.rule_name))
   use game_digest <- result.try(digest(game_connection.rule_name))
   use sessions_digest <- result.try(digest(sessions.rule_name))
+  use map_digest <- result.try(digest(world_map.rule_name))
   let #(tables, loaded) = genesis_prime.load_tables()
   let settings = genesis_prime.settings(tables:)
   let login = settings.login
@@ -105,6 +109,14 @@ fn start() -> Result(Nil, Failure) {
         tables:,
         types_digest: sessions_digest,
       )),
+      world: server.World(
+        ..settings.world,
+        map_recordings: Some(recorder(
+          folder:,
+          tables:,
+          types_digest: map_digest,
+        )),
+      ),
     ),
     tables: loaded,
   )

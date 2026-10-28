@@ -1,5 +1,8 @@
-//// The shell of a service: a named process with no socket that other
-//// processes ask, running one rule. Like a connection's shell
+//// The shell of a service: a process with no socket that other processes
+//// ask, running one rule. A singleton (the hand-off, Sessions) registers a
+//// name; a map is one of many and registers none: Maps holds the subject
+//// its start returns (genesis_prime/world_map/maps), since a name is an atom
+//// and maps come and go. Like a connection's shell
 //// (genesis_prime/connection/shell), it turns everything that reaches the
 //// process into the rule's inputs, carries out the rule's effects in order
 //// and decides nothing. It is a gleam_otp actor under a supervisor. How an
@@ -83,8 +86,8 @@ import genesis_prime/step.{
 import genesis_prime/step/runtime.{type ExitReason, Shutdown}
 import genesis_prime/step/watch.{type Watches}
 import gleam/dict.{type Dict}
-import gleam/erlang/process.{type Name, type Pid}
-import gleam/option.{type Option}
+import gleam/erlang/process.{type Name, type Pid, type Subject}
+import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
@@ -95,8 +98,6 @@ pub type Settings(settings, state, message, outgoing) {
     /// The rule. A service takes no answers and makes no asks, so those
     /// types are `Nil`; `outgoing` is what it answers with.
     rule: Rule(settings, state, message, Nil, outgoing, Nil),
-    /// The name it registers, made once at start.
-    name: Name(Call(message, outgoing)),
     /// How it finds the processes its rule watches and sends to.
     reach: Reach(outgoing),
     /// How long it has to stop once the supervisor stops it; the child's
@@ -138,44 +139,63 @@ type StartFailure {
   RecordingNotOpened(error: FileError)
 }
 
-/// The service as a permanent child of a supervisor, with `shutdown_ms` as
-/// its shutdown timeout.
+/// The service as a permanent child of a supervisor, registered under `name`,
+/// with `shutdown_ms` as its shutdown timeout. Askers find it by the name.
 pub fn supervised(
-  settings: Settings(settings, state, message, outgoing),
+  name name: Name(Call(message, outgoing)),
+  settings settings: Settings(settings, state, message, outgoing),
 ) -> ChildSpecification(Nil) {
   // The supervisor runs the start function, so its own pid is the parent.
-  supervision.worker(fn() { start(settings, process.self()) })
+  supervision.worker(fn() {
+    start(settings:, parent: process.self(), name: Some(name))
+    |> result.map(fn(started) { actor.Started(pid: started.pid, data: Nil) })
+  })
   |> supervision.restart(supervision.Permanent)
   |> supervision.timeout(ms: settings.shutdown_ms)
 }
 
-fn start(
+/// Starts a service with no name as a child of the supervisor that runs this
+/// function, such as the map supervisor, giving the subject askers send their
+/// calls to.
+pub fn start_unnamed(
   settings: Settings(settings, state, message, outgoing),
-  parent: Pid,
-) -> actor.StartResult(Nil) {
+) -> actor.StartResult(Subject(Call(message, outgoing))) {
+  start(settings:, parent: process.self(), name: None)
+}
+
+fn start(
+  settings settings: Settings(settings, state, message, outgoing),
+  parent parent: Pid,
+  name name: Option(Name(Call(message, outgoing))),
+) -> actor.StartResult(Subject(Call(message, outgoing))) {
   actor.new_with_initialiser(5000, fn(_subject) {
-    initialise(settings, parent) |> result.map_error(explain)
+    initialise(settings:, parent:, name:) |> result.map_error(explain)
   })
   |> actor.on_message(handle)
   |> actor.start
 }
 
-/// Registers the name, traps exits, opens the recording and takes `Started`.
+/// Registers the name (a named service) or makes the subject its callers send
+/// to (an unnamed one), traps exits, opens the recording and takes `Started`.
 fn initialise(
-  settings: Settings(settings, state, message, outgoing),
-  parent: Pid,
+  settings settings: Settings(settings, state, message, outgoing),
+  parent parent: Pid,
+  name name: Option(Name(Call(message, outgoing))),
 ) -> Result(
   actor.Initialised(
     Running(settings, state, message, outgoing),
     Mail(message, outgoing),
-    Nil,
+    Subject(Call(message, outgoing)),
   ),
   StartFailure,
 ) {
-  use Nil <- result.try(
-    process.register(process.self(), settings.name)
-    |> result.replace_error(NameTaken),
-  )
+  use calls <- result.try(case name {
+    Some(name) ->
+      process.register(process.self(), name)
+      |> result.replace(process.named_subject(name))
+      |> result.replace_error(NameTaken)
+    None -> Ok(process.new_subject())
+  })
   process.trap_exits(True)
   use writer <- result.try(
     file.open_if(
@@ -202,13 +222,13 @@ fn initialise(
     )
   let selector =
     process.new_selector()
-    |> process.select_map(process.named_subject(settings.name), Called)
+    |> process.select_map(calls, Called)
     |> process.select_trapped_exits(Exited)
     |> process.select_monitors(Ended)
   Ok(
     actor.initialised(running)
     |> actor.selecting(selector)
-    |> actor.returning(Nil),
+    |> actor.returning(calls),
   )
 }
 

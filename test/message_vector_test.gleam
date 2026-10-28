@@ -204,9 +204,9 @@ pub fn movement_send_interval_is_the_clients_74_bits_test() -> Nil {
     name: "vector.opcode.0xf1.body",
     body: message_support.hex("e359d148acd207000000"),
     value: MovementSendInterval(
-      field_1: 3,
-      field_2: 0x12345678,
-      field_3: 0xAB,
+      world_difficulty: 3,
+      world_prime_level: 0x12345678,
+      world_flags: 0xAB,
       interval_milliseconds: 500,
     ),
     encode: movement_send_interval.encode,

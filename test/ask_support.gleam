@@ -46,7 +46,7 @@ pub type Record {
 /// `recorder`.
 pub fn start(
   rule rule: Rule(settings, state, Nil, answer, Nil, request),
-  directory directory: fn(request, fn(answer) -> Nil) ->
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
     Result(service.Sent, Nil),
   shutdown_ms shutdown_ms: Int,
   recorder recorder: Option(Recorder),
@@ -67,7 +67,7 @@ pub fn start(
 /// when there is one, and find what their rule watches with `locate`.
 pub fn start_joined(
   rule rule: Rule(settings, state, message, answer, Nil, request),
-  directory directory: fn(request, fn(answer) -> Nil) ->
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
     Result(service.Sent, Nil),
   shutdown_ms shutdown_ms: Int,
   recorder recorder: Option(Recorder),
@@ -263,13 +263,15 @@ pub fn reaching(
   recorder recorder: Option(Recorder),
   reach reach: service.Reach(gate_rule.Answer),
 ) -> ChildSpecification(Nil) {
-  service_shell.supervised(service_shell.Settings(
-    rule: gate_as_rule(),
+  service_shell.supervised(
     name:,
-    reach:,
-    shutdown_ms:,
-    recorder:,
-  ))
+    settings: service_shell.Settings(
+      rule: gate_as_rule(),
+      reach:,
+      shutdown_ms:,
+      recorder:,
+    ),
+  )
 }
 
 /// The gate's rule as its shell runs it.
@@ -296,8 +298,8 @@ pub fn directory(
   gate gate: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   store store: Option(Name(factory_supervisor.Message(Job, Nil))),
   sent sent: fn(service.Sent) -> Nil,
-) -> fn(Request, fn(Answer) -> Nil) -> Result(service.Sent, Nil) {
-  fn(request, reply) {
+) -> fn(Request, Int, fn(Answer) -> Nil) -> Result(service.Sent, Nil) {
+  fn(request, _deadline_ms, reply) {
     let reached = case request, store {
       OfGate(message), _ ->
         service.call(gate, message, fn(answer) { reply(FromGate(answer)) })

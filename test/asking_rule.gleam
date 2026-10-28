@@ -278,7 +278,8 @@ fn coded(result: Outcome(Answer)) -> #(Int, Int) {
       0,
     )
     step.Answer(FromStore(store.Unavailable)) -> #(code_unavailable, 0)
-    step.Answer(FromStore(store.ForSelect(..))) ->
+    step.Answer(FromStore(store.ForSelect(..)))
+    | step.Answer(FromStore(store.ForWorld(..))) ->
       panic as "the asking rule asks for accounts only"
     NotRunning -> #(code_not_running, 0)
     NoAnswerInTime -> #(code_no_answer_in_time, 0)

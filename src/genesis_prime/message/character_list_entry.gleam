@@ -12,7 +12,8 @@ import genesis_prime/message/item_visual.{type ItemVisual}
 import gleam/result
 
 /// The record's fields in wire order. A field named `field_N` is the Nth of the
-/// record and has no use the client's code shows.
+/// record: its own doc names the fact that shows its value is safe, and one
+/// with no such doc has no use the client's code shows.
 pub type CharacterListEntry {
   CharacterListEntry(
     character_id: Int,
@@ -26,11 +27,17 @@ pub type CharacterListEntry {
     worn_visuals: List(ItemVisual),
     world_id: Int,
     world_zone_id: Int,
+    /// Safe by `opcode.0x117.character_unread`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_12: Int,
     position_x: Int,
     position_y: Int,
     position_z: Int,
+    /// Safe by `opcode.0x117.character_unread`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_16: Int,
+    /// Safe by `opcode.0x117.character_unread`: the client's code gives this
+    /// field no use the server needs, and that fact shows its value is safe.
     field_17: Int,
     path: Int,
     disabled: Int,

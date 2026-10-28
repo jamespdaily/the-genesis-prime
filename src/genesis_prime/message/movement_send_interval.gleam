@@ -13,12 +13,13 @@ import gleam/result
 pub const message_id = 0x00F1
 
 /// The body of message 0x00F1, its fields in wire order. A field named
-/// `field_N` is the Nth of the body and has no use the client's code shows.
+/// `field_N` is the Nth of the body: its own doc names the fact that shows its
+/// value is safe, and one with no such doc has no use the client's code shows.
 pub type MovementSendInterval {
   MovementSendInterval(
-    field_1: Int,
-    field_2: Int,
-    field_3: Int,
+    world_difficulty: Int,
+    world_prime_level: Int,
+    world_flags: Int,
     interval_milliseconds: Int,
   )
 }
@@ -27,9 +28,13 @@ pub type MovementSendInterval {
 /// written.
 pub fn encode(message: MovementSendInterval) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
-  |> bit_stream.write_unsigned("field_1", message.field_1, 2)
-  |> bit_stream.write_unsigned("field_2", message.field_2, 32)
-  |> bit_stream.write_unsigned("field_3", message.field_3, 8)
+  |> bit_stream.write_unsigned("world_difficulty", message.world_difficulty, 2)
+  |> bit_stream.write_unsigned(
+    "world_prime_level",
+    message.world_prime_level,
+    32,
+  )
+  |> bit_stream.write_unsigned("world_flags", message.world_flags, 8)
   |> bit_stream.write_unsigned(
     "interval_milliseconds",
     message.interval_milliseconds,
@@ -41,13 +46,24 @@ pub fn encode(message: MovementSendInterval) -> Result(BitArray, EncodeError) {
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(MovementSendInterval, DecodeError) {
   let reader = bit_stream.new_reader(body)
-  use #(field_1, reader) <- result.try(bit_stream.read_unsigned(reader, 2))
-  use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_3, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
+  use #(world_difficulty, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    2,
+  ))
+  use #(world_prime_level, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
+  use #(world_flags, reader) <- result.try(bit_stream.read_unsigned(reader, 8))
   use #(interval_milliseconds, reader) <- result.try(bit_stream.read_unsigned(
     reader,
     32,
   ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(MovementSendInterval(field_1:, field_2:, field_3:, interval_milliseconds:))
+  Ok(MovementSendInterval(
+    world_difficulty:,
+    world_prime_level:,
+    world_flags:,
+    interval_milliseconds:,
+  ))
 }

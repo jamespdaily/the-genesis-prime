@@ -155,8 +155,8 @@ fields = [
   { name = "position_x", kind = "float32", evidence = "0x14007e9e0", named_by = "opcode.0xad" },
   { name = "position_y", kind = "float32", evidence = "0x14007e9e0", named_by = "opcode.0xad" },
   { name = "position_z", kind = "float32", evidence = "0x14007e9e0", named_by = "opcode.0xad" },
-  { name = "field_5", kind = "float32", evidence = "0x14007e9e0" },
-  { name = "field_6", kind = "float32", evidence = "0x14007e9e0" },
+  { name = "field_5", kind = "float32", evidence = "0x14007e9e0", safe_by = "opcode.0xad.last_floats" },
+  { name = "field_6", kind = "float32", evidence = "0x14007e9e0", safe_by = "opcode.0xad.last_floats" },
 ]
 
 [[message]]
@@ -203,9 +203,9 @@ direction = "server_to_client"
 evidence = "opcode.0xf1"
 summary = "sets the interval at which the client sends the player's movement commands"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 2, evidence = "0x1400a37d0" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x1400a37d0" },
-  { name = "field_3", kind = "unsigned", bits = 8, evidence = "0x1400a37d0" },
+  { name = "world_difficulty", kind = "unsigned", bits = 2, evidence = "0x1400a37d0", named_by = "opcode.0xf1.fields" },
+  { name = "world_prime_level", kind = "unsigned", bits = 32, evidence = "0x1400a37d0", named_by = "opcode.0xf1.fields" },
+  { name = "world_flags", kind = "unsigned", bits = 8, evidence = "0x1400a37d0", named_by = "opcode.0xf1.fields" },
   { name = "interval_milliseconds", kind = "unsigned", bits = 32, evidence = "0x1400a37d0", named_by = "opcode.0xf1" },
 ]
 
@@ -398,38 +398,38 @@ fields = [
   { name = "race_id", kind = "unsigned", bits = 5, evidence = "0x1400962d0", named_by = "0x1400962d0" },
   { name = "class_id", kind = "unsigned", bits = 5, evidence = "0x1400962d0", named_by = "0x1400962d0" },
   { name = "gender", kind = "unsigned", bits = 2, evidence = "0x1400962d0", named_by = "0x1400962d0" },
-  { name = "field_9", kind = "unsigned", bits = 64, evidence = "0x1400962d0" },
-  { name = "field_10", kind = "array", count_bits = 8, element = "unsigned", element_bits = 32, evidence = "0x1400962d0" },
-  { name = "field_11", kind = "wide_text", evidence = "0x1400962d0" },
-  { name = "field_12", kind = "unsigned", bits = 4, evidence = "0x1400962d0" },
-  { name = "field_13", kind = "array", count_bits = 5, element = "unsigned", element_bits = 64, evidence = "0x1400962d0" },
-  { name = "field_14", kind = "array", count_bits = 6, element = "unsigned", element_bits = 32, evidence = "0x1400962d0" },
-  { name = "path", kind = "unsigned", bits = 3, evidence = "0x1400962d0", named_by = "0x1400962d0" },
-  { name = "field_16", kind = "unsigned", bits = 8, evidence = "0x1400962d0" },
-  { name = "field_17", kind = "unsigned", bits = 14, evidence = "0x1400962d0" },
-  { name = "field_18", kind = "unsigned", bits = 8, evidence = "0x140096fa0" },
+  { name = "group_id", kind = "unsigned", bits = 64, evidence = "0x1400962d0", named_by = "opcode.0x262.player_fields" },
+  { name = "owned_unit_ids", kind = "array", count_bits = 8, element = "unsigned", element_bits = 32, evidence = "0x1400962d0", named_by = "0x14047c1a0" },
+  { name = "guild_name", kind = "wide_text", evidence = "0x1400962d0", named_by = "0x14045b940" },
+  { name = "guild_type", kind = "unsigned", bits = 4, evidence = "0x1400962d0", named_by = "opcode.0x262.player_fields" },
+  { name = "guild_ids", kind = "array", count_bits = 5, element = "unsigned", element_bits = 64, evidence = "0x1400962d0", named_by = "opcode.0x262.player_fields" },
+  { name = "bone_values", kind = "array", count_bits = 6, element = "unsigned", element_bits = 32, evidence = "0x1400962d0", named_by = "opcode.0x262.player_fields" },
+  { name = "pvp_flags", kind = "unsigned", bits = 3, evidence = "0x1400962d0", named_by = "0x1403b48b0" },
+  { name = "premium_tier", kind = "unsigned", bits = 8, evidence = "0x1400962d0", named_by = "opcode.0x262.player_fields" },
+  { name = "title_id", kind = "unsigned", bits = 14, evidence = "0x1400962d0", named_by = "0x14045b6f0" },
+  { name = "create_flags", kind = "unsigned", bits = 8, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
   { name = "stats", kind = "array", count_bits = 5, element = "unit_stat", evidence = "0x140096fa0", named_by = "0x140458140" },
   { name = "server_time_estimate_start", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x1404586e0" },
   { name = "movement_commands", kind = "array", count_bits = 5, element = "unit_position_command", evidence = "0x140096fa0", named_by = "0x1404586e0" },
   { name = "properties", kind = "array", count_bits = 8, element = "unit_property", evidence = "0x140096fa0", named_by = "0x1404584b0" },
   { name = "item_visuals", kind = "array", count_bits = 7, element = "item_visual", evidence = "0x140096fa0", named_by = "0x1400ab890" },
   { name = "no_other_entries", kind = "constant", bits = 9, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "field_25", kind = "unsigned", bits = 32, evidence = "0x140096fa0" },
+  { name = "cast_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x1404697a0" },
   { name = "faction_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "base_faction_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "field_28", kind = "unsigned", bits = 32, evidence = "0x140096fa0" },
-  { name = "field_29", kind = "unsigned", bits = 64, evidence = "0x140096fa0" },
+  { name = "tagged_by_unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x14045bcd0" },
+  { name = "tagged_by_group_id", kind = "unsigned", bits = 64, evidence = "0x140096fa0", named_by = "0x14045bcd0" },
   { name = "first_tag", kind = "constant", bits = 2, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "field_31", kind = "unsigned", bits = 1, evidence = "0x140096fa0" },
+  { name = "field_31", kind = "unsigned", bits = 1, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
   { name = "second_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "field_33", kind = "unsigned", bits = 64, evidence = "0x140096fa0" },
-  { name = "field_34", kind = "unsigned", bits = 14, evidence = "0x140096fa0" },
+  { name = "field_33", kind = "unsigned", bits = 64, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
+  { name = "world_socket_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
   { name = "third_tag", kind = "constant", bits = 2, value = 1, evidence = "0x140096fa0", named_by = "opcode.0x262" },
-  { name = "field_36", kind = "unsigned", bits = 32, evidence = "0x140096fa0" },
-  { name = "field_37", kind = "unsigned", bits = 18, evidence = "0x140096fa0" },
-  { name = "field_38", kind = "unsigned", bits = 14, evidence = "0x140096fa0" },
-  { name = "field_39", kind = "unsigned", bits = 17, evidence = "0x140096fa0" },
-  { name = "field_40", kind = "unsigned", bits = 15, evidence = "0x140096fa0" },
+  { name = "cluster_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x14045ad90" },
+  { name = "field_37", kind = "unsigned", bits = 18, evidence = "0x140096fa0", safe_by = "opcode.0x262.unit_fields" },
+  { name = "minimap_marker_id", kind = "unsigned", bits = 14, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
+  { name = "display_info_id", kind = "unsigned", bits = 17, evidence = "0x140096fa0", named_by = "0x14047c210" },
+  { name = "outfit_info_id", kind = "unsigned", bits = 15, evidence = "0x140096fa0", named_by = "0x14047c320" },
 ]
 
 [[message]]
@@ -440,7 +440,7 @@ evidence = "opcode.0x19b"
 summary = "tells the client which unit is the player, so the camera and control follow it"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x14007a040", named_by = "opcode.0x19b" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x14007a040" },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x14007a040", safe_by = "opcode.0x19b.second_value" },
 ]
 
 [[message]]
@@ -491,7 +491,7 @@ evidence = "opcode.0x355"
 summary = "removes a unit from the world"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x14007c340", named_by = "opcode.0x355" },
-  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x14007c340" },
+  { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x14007c340", safe_by = "0x1403d98f0" },
 ]
 
 [[record]]
@@ -566,7 +566,7 @@ evidence = "0x1404584b0"
 summary = "one property of a new unit: its id (a UnitProperty2 id) and two values; the second is the one Unit:GetMaxHealth reads for id 7"
 fields = [
   { name = "property_id", kind = "unsigned", bits = 8, evidence = "0x1404584b0", named_by = "0x1404584b0" },
-  { name = "field_2", kind = "float32", evidence = "0x1404584b0" },
+  { name = "field_2", kind = "float32", evidence = "0x1404584b0", safe_by = "vector.opcode.0x262.health" },
   { name = "value", kind = "float32", evidence = "0x1404584b0", named_by = "0x1404584b0" },
 ]
 

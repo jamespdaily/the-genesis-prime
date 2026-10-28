@@ -184,7 +184,7 @@ fn message_module(message: Message) -> String {
         "///",
         "The body of message "
           <> hex_id(message.id)
-          <> ", its fields in wire order. A field named `field_N` is the Nth of the body and has no use the client's code shows.",
+          <> ", its fields in wire order. A field named `field_N` is the Nth of the body: its own doc names the fact that shows its value is safe, and one with no such doc has no use the client's code shows.",
       )
   }
   let unused = case held(message.fields) {
@@ -257,7 +257,7 @@ fn record_module(record: Record) -> String {
       imports(record.fields, ["DecodeError", "Reader", "Writer"]),
       wrap(
         "///",
-        "The record's fields in wire order. A field named `field_N` is the Nth of the record and has no use the client's code shows.",
+        "The record's fields in wire order. A field named `field_N` is the Nth of the record: its own doc names the fact that shows its value is safe, and one with no such doc has no use the client's code shows.",
       ),
       type_declaration(type_name, record.fields),
       [""],
@@ -558,17 +558,48 @@ fn type_import(
 fn type_declaration(type_name: String, fields: List(Field)) -> List(String) {
   let declaration = case held(fields) {
     [] -> ["  " <> type_name]
-    _ ->
-      call(
-        indent: 2,
-        head: type_name,
-        arguments: list.map(held(fields), fn(field) {
-          field.name <> ": " <> field_type(field)
-        }),
-        tail: "",
-      )
+    held_fields ->
+      case list.any(held_fields, fn(field) { option.is_some(field.safe_by) }) {
+        True -> documented_fields(type_name, held_fields)
+        False ->
+          call(
+            indent: 2,
+            head: type_name,
+            arguments: list.map(held_fields, fn(field) {
+              field.name <> ": " <> field_type(field)
+            }),
+            tail: "",
+          )
+      }
   }
   list.flatten([["pub type " <> type_name <> " {"], declaration, ["}"]])
+}
+
+/// The variant with one field to a line, each field with a `safe_by` carrying
+/// a doc that names the fact that shows its value is safe.
+fn documented_fields(type_name: String, fields: List(Field)) -> List(String) {
+  list.flatten([
+    ["  " <> type_name <> "("],
+    list.flat_map(fields, fn(field) {
+      list.append(safe_by_doc(field), [
+        "    " <> field.name <> ": " <> field_type(field) <> ",",
+      ])
+    }),
+    ["  )"],
+  ])
+}
+
+fn safe_by_doc(field: Field) -> List(String) {
+  case field.safe_by {
+    Some(fact) ->
+      wrap(
+        "    ///",
+        "Safe by `"
+          <> fact
+          <> "`: the client's code gives this field no use the server needs, and that fact shows its value is safe.",
+      )
+    None -> []
+  }
 }
 
 fn field_type(field: Field) -> String {

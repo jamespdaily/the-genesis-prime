@@ -11,8 +11,11 @@ import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
 import genesis_prime/table/id.{
   CharacterCreationId, CharacterCustomizationId, CharacterCustomizationLabelId,
+  WorldLocation2Id,
 }
+import genesis_prime/table/world_location2
 import gleam/list
+import gleam/pair
 import owned_test
 import unitest
 
@@ -75,4 +78,31 @@ pub fn the_planted_customization_rows_and_labels_are_the_clients_test() -> Nil {
   })
   assert list.all(character_customization.all(real), fn(row) { row.gender < 2 })
     as "the client's CharacterCustomization table has rows for genders 0 and 1 only"
+}
+
+pub fn the_planted_start_places_are_the_clients_world_location2_rows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let real = client_tables.shared()
+  let planted = character_tables.shared()
+  let ids = list.map(character_tables.start_locations(), pair.first)
+  assert list.length(world_location2.all(planted)) == list.length(ids)
+    as "the planted table holds exactly the start places"
+  list.each(ids, fn(id) {
+    let get = fn(tables) {
+      let assert Ok(row) =
+        world_location2.get(tables:, id: WorldLocation2Id(id))
+        as "the row exists"
+      #(
+        row.id,
+        row.position0,
+        row.position1,
+        row.position2,
+        row.world_id,
+        row.world_zone_id,
+      )
+    }
+    assert get(planted) == get(real)
+      as "WorldLocation2: the planted row has the real row's id, position, world and zone"
+  })
 }

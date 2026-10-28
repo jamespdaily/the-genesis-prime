@@ -245,20 +245,20 @@ pub fn a_movement_send_interval_with_a_wide_value_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
   let interval =
     MovementSendInterval(
-      field_1: 3,
-      field_2: 0,
-      field_3: 0xAB,
+      world_difficulty: 3,
+      world_prime_level: 0,
+      world_flags: 0xAB,
       interval_milliseconds: 500,
     )
   assert movement_send_interval.encode(
-      MovementSendInterval(..interval, field_1: 4),
+      MovementSendInterval(..interval, world_difficulty: 4),
     )
-    == Error(bit_stream.ValueDoesNotFit("field_1", 2, 4))
+    == Error(bit_stream.ValueDoesNotFit("world_difficulty", 2, 4))
     as "ReadMessage00F1Body 0x1400a37d0: a 2-bit value first"
   assert movement_send_interval.encode(
-      MovementSendInterval(..interval, field_3: 0x100),
+      MovementSendInterval(..interval, world_flags: 0x100),
     )
-    == Error(bit_stream.ValueDoesNotFit("field_3", 8, 0x100))
+    == Error(bit_stream.ValueDoesNotFit("world_flags", 8, 0x100))
     as "ReadMessage00F1Body 0x1400a37d0: an 8-bit value third"
 }
 

@@ -405,14 +405,9 @@ const oracle =
 
 const allowed = [
   #("src/genesis_prime/game/connection.gleam", "flow", adapter),
-  #("src/genesis_prime/game/connection.gleam", "end_for", adapter),
-  #("src/genesis_prime/game/connection.gleam", "log", adapter),
   #("src/genesis_prime/login/auth_connection.gleam", "flow", adapter),
   #("src/genesis_prime/login/auth_connection.gleam", "ask", adapter),
-  #("src/genesis_prime/login/auth_connection.gleam", "end_for", adapter),
-  #("src/genesis_prime/login/auth_connection.gleam", "log", adapter),
   #("src/genesis_prime/login/sts_connection.gleam", "ask", adapter),
-  #("src/genesis_prime/login/sts_connection.gleam", "log", adapter),
   #("src/genesis_prime/login/srp.gleam", "bytes_number", oracle),
   #("src/genesis_prime/login/srp.gleam", "digest_words", oracle),
   #("src/genesis_prime/login/srp.gleam", "xor", oracle),

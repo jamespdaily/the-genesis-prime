@@ -302,3 +302,18 @@ pub fn a_values_type_that_is_not_an_upper_camel_case_name_is_refused_test() -> N
     == Error(WrongTypeOfKey("cause", "values_type"))
     as "a Gleam type name starts with a capital, and its module name is made from it"
 }
+
+pub fn a_field_with_a_safe_by_says_its_value_is_safe_by_that_fact_and_one_without_does_not_test() -> Nil {
+  use <- owned_test.run(5000)
+  let files =
+    generated(schema_with(
+      "  { name = \"field_1\", kind = \"unsigned\", bits = 8, evidence = \"x\", safe_by = \"opcode.0x3\" },
+  { name = \"field_2\", kind = \"unsigned\", bits = 8, evidence = \"x\" },",
+    ))
+  let message = generated_file(files, "planted")
+  assert string.contains(
+    message,
+    "    /// Safe by `opcode.0x3`: the client's code gives this field no use the\n    /// server needs, and that fact shows its value is safe.\n    field_1: Int,\n    field_2: Int,",
+  )
+    as "the doc of the field with a safe_by names the fact, and the field with none has no doc"
+}

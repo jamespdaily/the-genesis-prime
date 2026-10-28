@@ -13,19 +13,36 @@ import gleam/result
 pub const message_id = 0x0003
 
 /// The body of message 0x0003, its fields in wire order. A field named
-/// `field_N` is the Nth of the body and has no use the client's code shows.
+/// `field_N` is the Nth of the body: its own doc names the fact that shows its
+/// value is safe, and one with no such doc has no use the client's code shows.
 pub type ServerHello {
   ServerHello(
     build: Int,
     realm_id: Int,
+    /// Safe by `opcode.0x3`: the client's code gives this field no use the
+    /// server needs, and that fact shows its value is safe.
     field_3: Int,
+    /// Safe by `opcode.0x3`: the client's code gives this field no use the
+    /// server needs, and that fact shows its value is safe.
     field_4: Int,
+    /// Safe by `opcode.0x3`: the client's code gives this field no use the
+    /// server needs, and that fact shows its value is safe.
     field_5: Int,
+    /// Safe by `opcode.0x3`: the client's code gives this field no use the
+    /// server needs, and that fact shows its value is safe.
     field_6: Int,
+    /// Safe by `opcode.0x3`: the client's code gives this field no use the
+    /// server needs, and that fact shows its value is safe.
     field_7: Int,
     message_table_checksum: Int,
+    /// Safe by `opcode.0x3`: the client's code gives this field no use the
+    /// server needs, and that fact shows its value is safe.
     field_9: Int,
+    /// Safe by `opcode.0x3`: the client's code gives this field no use the
+    /// server needs, and that fact shows its value is safe.
     field_10: Int,
+    /// Safe by `opcode.0x3`: the client's code gives this field no use the
+    /// server needs, and that fact shows its value is safe.
     field_11: Int,
   )
 }

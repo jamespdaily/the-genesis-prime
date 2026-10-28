@@ -9,6 +9,10 @@
 ////  │    └─ one worker per ask                            temporary
 ////  ├─ hand-off: service shell + hand-off rule, named    permanent
 ////  ├─ sessions: service shell + sessions rule, named    permanent
+////  ├─ world supervisor (rest_for_one, 3 restarts in 10 s)  permanent
+////  │    ├─ Maps: the registry actor, named              permanent
+////  │    └─ map supervisor: factory supervisor, named     permanent
+////  │         └─ one map per MapId: service shell + map rule, unnamed  temporary
 ////  ├─ login supervisor (one-for-one, 3 restarts in 10 s)  permanent
 ////  │    ├─ STS listener (6600): a connection shell per client
 ////  │    └─ auth listener (23115): a connection shell per client
@@ -18,9 +22,12 @@
 ////            joined to the registry under its ConnectionId
 //// ```
 ////
-//// The tree stops the game subtree, then the login subtree, before Sessions,
-//// the hand-off, the store and the pool they ask, so no connection is left
-//// asking a process that has stopped. One directory, made once in `start` from
+//// The tree stops the game subtree, then the login subtree, then the world
+//// subtree, before Sessions, the hand-off, the store and the pool they ask,
+//// so no connection is left asking a process that has stopped. A map's ask
+//// goes through Maps (genesis_prime/world_map/maps), which finds the map or
+//// starts it; a map's address is found the same way, never started, for a
+//// watch. One directory, made once in `start` from
 //// the store's, the hand-off's and Sessions' names, sends the asks of every
 //// listener's rules; one `Locate` and the sessions' `Reach`, made from the
 //// same names and the registry, find the processes a rule watches or sends to.
@@ -43,6 +50,10 @@
 ////   before the account's old connection claims again, is not caught: that
 ////   old connection's claim then takes the slot from it
 ////   (genesis_prime/sessions).
+//// - **Maps and the maps** (genesis_prime/world_map/maps): a map that ends is
+////   started again, empty, by the next ask for it; Maps' restart ends every
+////   map. Each in-world connection watches its map, so its end ends the
+////   connection with 0x036A reason 8, and its client logs in again.
 //// - **The registry** (the `pg` scope) starts with no members, so no
 ////   connection could be found. It is the game subtree's first child under
 ////   `rest_for_one`, so its restart also restarts the game listener: every
@@ -66,8 +77,8 @@
 ////   that each give their connections `connection_shutdown_ms`.
 
 import genesis_prime/client_connection.{
-  type Answer, type Request, AskHandOff, AskSessions, AskStore, FromHandOff,
-  FromSessions, FromStore, SentBySessions,
+  type Answer, type Request, AskHandOff, AskMap, AskSessions, AskStore,
+  FromHandOff, FromMap, FromSessions, FromStore, SentBySessions,
 }
 import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/registry.{type Registry}
@@ -82,12 +93,17 @@ import genesis_prime/service/shell as service_shell
 import genesis_prime/sessions
 import genesis_prime/step.{type Rule}
 import genesis_prime/store/worker.{type Job}
+import genesis_prime/world_map/map
+import genesis_prime/world_map/map_id
+import genesis_prime/world_map/maps
 import gleam/erlang/process.{type Name, type Pid}
+import gleam/int
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision
+import gleam/result
 import pog
 
 /// The names and settings the tree's children are started with, made once
@@ -112,6 +128,8 @@ pub type Settings {
     /// Where the game connections are found, made once with
     /// `registry.new`.
     registry: Registry,
+    /// The world subtree: Maps and the map supervisor.
+    world: World,
     /// How long a write may wait for a client's socket, on every listener.
     send_deadline_ms: Int,
     /// How long a connection has to stop once the server stops, on every
@@ -121,6 +139,25 @@ pub type Settings {
     login: Login,
     /// The game server's listener.
     game: Served(game_connection.Settings),
+  )
+}
+
+/// The world subtree's names and settings.
+pub type World {
+  World(
+    /// Maps, the registry that finds and starts maps.
+    maps: Name(maps.Message),
+    /// The map supervisor, whose children are the maps.
+    map_supervisor: Name(maps.MapSupervisor),
+    /// How long a watch's call to Maps may take; an ask's call ends at the
+    /// ask's own deadline.
+    maps_call_ms: Int,
+    /// How long a map has to stop.
+    map_shutdown_ms: Int,
+    /// Where each map's inputs are recorded, one file per run of a map, named
+    /// by its world, instance and incarnation; `None` unless the dev start
+    /// turns recording on.
+    map_recordings: Option(Recorder),
   )
 }
 
@@ -149,9 +186,11 @@ pub type Served(settings) {
 }
 
 /// How a rule's ask reaches the process it names, and how its answer comes
-/// back as the answer type of every connection rule.
+/// back as the answer type of every connection rule. It is given the ask's
+/// deadline on the monotonic clock, so a lookup on the way (Maps') ends by
+/// it.
 type Directory =
-  fn(Request, fn(Answer) -> Nil) -> Result(Sent, Nil)
+  fn(Request, Int, fn(Answer) -> Nil) -> Result(Sent, Nil)
 
 /// Starts the tree. A child that fails three times in ten seconds does not
 /// recover by restarting, so the tree gives up, the node stops, and the
@@ -170,40 +209,42 @@ pub fn start(
     name: settings.store,
     pool: pog.named_connection(settings.pool.pool_name),
   ))
-  |> supervisor.add(
-    service_shell.supervised(service_shell.Settings(
+  |> supervisor.add(service_shell.supervised(
+    name: settings.hand_off,
+    settings: service_shell.Settings(
       rule: hand_off.rule(),
-      name: settings.hand_off,
-      reach: service.Reach(locate: locate(settings), send: fn(_to, _answer) {
-        Error(Nil)
-      }),
+      reach: service.watch_only(locate: locate(settings)),
       shutdown_ms: settings.hand_off_shutdown_ms,
       recorder: None,
-    )),
-  )
-  |> supervisor.add(
-    service_shell.supervised(service_shell.Settings(
+    ),
+  ))
+  |> supervisor.add(service_shell.supervised(
+    name: settings.sessions,
+    settings: service_shell.Settings(
       rule: sessions.rule(),
-      name: settings.sessions,
       reach: sessions_reach(settings),
       shutdown_ms: settings.sessions_shutdown_ms,
       recorder: settings.sessions_recorder,
-    )),
-  )
+    ),
+  ))
+  |> supervisor.add(world(settings))
   |> supervisor.add(login(settings, directory))
   |> supervisor.add(game(settings, directory))
   |> supervisor.start
 }
 
-/// How a rule's ask reaches the process it names: to the store by its name
-/// and to the hand-off by its name, each answer wrapped in the answer type of
-/// every connection rule (`FromStore`, `FromHandOff`). Made once at start; it
-/// holds the two names, not the settings.
+/// How a rule's ask reaches the process it names: to the store by its name,
+/// to the hand-off and Sessions by theirs, and to a map through Maps, which
+/// finds it or starts it by the ask's deadline; each answer is wrapped in the
+/// answer type of every connection rule (`FromStore`, `FromHandOff`,
+/// `FromSessions`, `FromMap`). Made once at start; it holds the names, not
+/// the settings.
 fn directory(settings: Settings) -> Directory {
   let store = settings.store
   let hand_off = settings.hand_off
   let sessions = settings.sessions
-  fn(request: Request, reply: fn(Answer) -> Nil) {
+  let maps_name = settings.world.maps
+  fn(request: Request, deadline_ms: Int, reply: fn(Answer) -> Nil) {
     case request {
       AskStore(request:) ->
         worker.ask(store, request, fn(answer) { reply(FromStore(answer)) })
@@ -215,25 +256,37 @@ fn directory(settings: Settings) -> Directory {
         service.call(sessions, message, fn(answer) {
           reply(FromSessions(answer))
         })
+      AskMap(map:, message:) ->
+        maps.find_or_start(maps_name, map, deadline_ms)
+        |> result.try(fn(found) {
+          service.call_subject(found.subject, message, fn(answer) {
+            reply(FromMap(answer))
+          })
+        })
     }
   }
 }
 
-/// How a shell finds the process an address names, for a `Watch`: a service
-/// or the store by its name, a connection in the registry. No process holds a
-/// map's address yet.
+/// How a shell finds the process an address names, for a `Watch`: a service,
+/// Maps or the store by its name, a connection in the registry, and the run of
+/// a map that Maps finds without starting it.
 fn locate(settings: Settings) -> Locate {
   let store = settings.store
   let hand_off = settings.hand_off
   let sessions = settings.sessions
   let registry = settings.registry
+  let maps_name = settings.world.maps
+  let maps_call_ms = settings.world.maps_call_ms
   fn(address: step.Address) {
     case address {
       step.Sessions -> process.named(sessions)
       step.HandOff -> process.named(hand_off)
       step.Store -> process.named(store)
       step.Connection(connection:) -> registry.find(registry, connection)
-      step.Maps | step.Map(..) -> Error(Nil)
+      step.Maps -> process.named(maps_name)
+      step.Map(map:, incarnation:) ->
+        maps.find(maps_name, map, incarnation, maps_call_ms)
+        |> result.map(fn(found) { found.pid })
     }
   }
 }
@@ -252,6 +305,62 @@ fn sessions_reach(settings: Settings) -> Reach(sessions.Outgoing) {
         Error(Nil)
     }
   })
+}
+
+/// The world subtree: Maps, then the map supervisor, under a `rest_for_one`
+/// supervisor of their own, a permanent child of the server's.
+fn world(
+  settings: Settings,
+) -> supervision.ChildSpecification(supervisor.Supervisor) {
+  use tree <- subtree(supervisor.RestForOne)
+  add_world(tree:, world: settings.world, locate: locate(settings))
+}
+
+/// Adds Maps and the map supervisor to a `rest_for_one` supervisor, in that
+/// order: Maps' restart restarts the map supervisor, so every map ends with
+/// the registry that knew them. A map is started by the map supervisor with
+/// the rule of its id and incarnation, no name, a reach that finds what it
+/// watches with `locate`, and, when `world` records, a recording of its own,
+/// named by its world, instance and incarnation. The server's tree and the
+/// tests start the world with this function.
+pub fn add_world(
+  tree tree: supervisor.Builder,
+  world world: World,
+  locate locate: Locate,
+) -> supervisor.Builder {
+  tree
+  |> supervisor.add(maps.supervised(
+    name: world.maps,
+    supervisor: world.map_supervisor,
+  ))
+  |> supervisor.add(
+    maps.map_supervisor(
+      name: world.map_supervisor,
+      shutdown_ms: world.map_shutdown_ms,
+      start: fn(start: maps.MapStart) {
+        service_shell.start_unnamed(service_shell.Settings(
+          rule: map.rule(map: start.map, incarnation: start.incarnation),
+          reach: service.watch_only(locate:),
+          shutdown_ms: world.map_shutdown_ms,
+          recorder: option.map(world.map_recordings, file.labelled(
+            _,
+            map_label(start),
+          )),
+        ))
+      },
+    ),
+  )
+}
+
+/// What names a map's recording: its world, instance and incarnation.
+fn map_label(start: maps.MapStart) -> String {
+  let map_id.MapId(world_id:, instance:) = start.map
+  "world-"
+  <> int.to_string(world_id)
+  <> "-instance-"
+  <> int.to_string(instance)
+  <> "-incarnation-"
+  <> int.to_string(start.incarnation)
 }
 
 /// The login subtree: the STS listener, then the auth listener, under a

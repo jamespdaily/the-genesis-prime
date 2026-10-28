@@ -30,6 +30,8 @@ import genesis_prime/step.{
   WriteFailed,
 }
 import genesis_prime/store
+import genesis_prime/world_map/map
+import genesis_prime/world_map/map_id.{type MapId}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -40,6 +42,9 @@ pub type Request {
   AskStore(request: store.Request)
   AskHandOff(message: hand_off.Message)
   AskSessions(message: sessions.Message)
+  /// Ask the map, which Maps starts when it is not running
+  /// (genesis_prime/world_map/maps).
+  AskMap(map: MapId, message: map.Message)
 }
 
 /// What comes back from an ask, by the process asked.
@@ -47,6 +52,7 @@ pub type Answer {
   FromStore(answer: store.Answer)
   FromHandOff(answer: hand_off.Answer)
   FromSessions(answer: sessions.Outgoing)
+  FromMap(answer: map.Outgoing)
 }
 
 /// What another process sends a connection rule, by the process that sent
@@ -107,34 +113,30 @@ pub fn about(link link: Link, account_id account_id: Option(Int)) -> About {
   )
 }
 
-/// A log line of the connection.
+/// A log line of the connection, about `about`.
 pub fn log(
-  link link: Link,
-  account_id account_id: Option(Int),
+  about about: About,
   level level: step.LogLevel,
   text text: String,
 ) -> Effect(Nil) {
-  Log(LogLine(level:, text:, about: about(link:, account_id:)))
+  Log(LogLine(level:, text:, about:))
 }
 
-/// A whole frame of a message the rule does not take: logged as unhandled,
-/// and the connection goes on. `server` names whose rule it is, as the line
-/// says ("auth", "game").
+/// A whole frame of a message the rule does not take: logged as unhandled at
+/// `level`, and the connection goes on. `server` names whose rule it is, as
+/// the line says ("auth", "game").
 pub fn unhandled(
   session session: session,
-  link link: Link,
-  account_id account_id: Option(Int),
+  about about: About,
   server server: String,
   message_id message_id: Int,
+  level level: step.LogLevel,
 ) -> Handled(session) {
   Continue(session, [
     Log(LogLine(
-      level: LogWarning,
+      level:,
       text: "unhandled " <> server <> " message " <> message_text(message_id:),
-      about: About(
-        ..about(link:, account_id:),
-        message: Some(#("unhandled", message_id)),
-      ),
+      about: About(..about, message: Some(#("unhandled", message_id))),
     )),
   ])
 }
@@ -143,11 +145,10 @@ pub fn unhandled(
 /// connection, with nothing written to a client that is no client.
 pub fn end_for(
   session session: session,
-  link link: Link,
-  account_id account_id: Option(Int),
+  about about: About,
   text text: String,
 ) -> Handled(session) {
-  Done(session, [log(link:, account_id:, level: LogError, text:), Stop])
+  Done(session, [log(about:, level: LogError, text:), Stop])
 }
 
 /// The step of a rule that took bytes or an answer before the connection was
@@ -169,14 +170,12 @@ pub fn before_accepted(rule rule: String) -> Step(Nil, Request) {
 /// The step of a rule that was accepted a second time: an error log line and
 /// the end of the connection. `rule` names whose rule it is, as the line says.
 pub fn accepted_again(
-  link link: Link,
-  account_id account_id: Option(Int),
+  about about: About,
   rule rule: String,
 ) -> Step(Nil, Request) {
   Effects([
     log(
-      link:,
-      account_id:,
+      about:,
       level: LogError,
       text: "the " <> rule <> " rule was accepted a second time",
     ),
@@ -366,15 +365,14 @@ pub type Opened(session) {
 /// that is none the client's reader accepts ends the connection.
 pub fn open(
   session session: session,
-  link link: Link,
-  account_id account_id: Option(Int),
+  about about: About,
   server server: String,
   frame whole: Frame,
   cipher cipher: Cipher,
 ) -> Opened(session) {
-  let ends = fn(text) { Settled(end_for(session:, link:, account_id:, text:)) }
+  let ends = fn(text) { Settled(end_for(session:, about:, text:)) }
   let unknown = fn(message_id) {
-    Settled(unhandled(session:, link:, account_id:, server:, message_id:))
+    Settled(unhandled(session:, about:, server:, message_id:, level: LogWarning))
   }
   case network_message.handle(frame: whole) {
     network_message.Answer(bytes:) -> Settled(Continue(session, [Write(bytes)]))

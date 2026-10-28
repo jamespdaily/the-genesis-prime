@@ -21,8 +21,8 @@
 ////   no timeout, waits only for the starts queued before it.
 //// - **The store not running.** `start_child` on a name no process holds
 ////   exits the caller with `{noproc, {gen_server, call, _}}` rather than
-////   returning an error; `ask` catches that exit, and only that one, as
-////   `Error(Nil)`.
+////   returning an error; `ask` (through `service.start_child`) catches that
+////   exit, and only that one, as `Error(Nil)`.
 //// - **Failures.** One private `attempt` holds them for every request, so each
 ////   request maps only its rows. pog's `ConnectionUnavailable` and
 ////   `QueryTimeout` answer `Unavailable`, and so does the pool not running:
@@ -35,6 +35,9 @@
 ////   account's creates run one after another, and then inserts the character
 ////   unless the account already has its slots, in one statement; the name's
 ////   uniqueness is the index on `lower(name)`.
+//// - **A load is one statement.** World entry's read of a character names the
+////   account's id as well as the character's, so another account's character
+////   is never read; no row is `NotTheAccounts`.
 //// - **A delete and a rename are one statement each.** Both name the account's
 ////   id, so another account's character is never touched; a rename also
 ////   clears the character's mark in the same update, and its name's
@@ -46,17 +49,19 @@ import genesis_prime/login/guid
 import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type CharacterId,
-  type CreateAnswer, type DeleteAnswer, type FindAccountAnswer,
+  type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type Naming,
   type NewCharacter, type RenameAnswer, type Request, type SelectAnswer,
-  type SelectRequest, Account, AccountFound, AccountId, Character,
-  CharacterCreated, CharacterDeleted, CharacterId, CharacterRenamed,
-  CreateCharacter, Created, DeleteCharacter, Deleted, FindAccount, ForLogin,
-  ForSelect, ListCharacters, Listed, Login, NameStands, NameTaken, NeedsRename,
-  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, RenameCharacter,
-  Renamed, Select, Unavailable,
+  type SelectRequest, type WorldAnswer, type WorldRequest, Account, AccountFound,
+  AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
+  CharacterLoaded, CharacterRenamed, CreateCharacter, Created, DeleteCharacter,
+  Deleted, FindAccount, ForLogin, ForSelect, ForWorld, ListCharacters, Listed,
+  LoadCharacter, Login, NameStands, NameTaken, NeedsRename, NewNameTaken,
+  NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts, RenameCharacter,
+  Renamed, Select, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, RaceId}
+import gleam/bool
 import gleam/erlang/process.{type Name}
 import gleam/list
 import gleam/otp/actor
@@ -95,17 +100,8 @@ pub fn ask(
   request request: Request,
   reply reply: fn(Answer) -> Nil,
 ) -> Result(Sent, Nil) {
-  case
-    unless_supervisor_not_running(fn() {
-      factory_supervisor.start_child(
-        factory_supervisor.get_by_name(store),
-        Job(request:, reply:),
-      )
-    })
-  {
-    Ok(Ok(started)) -> Ok(ToWorker(pid: started.pid))
-    Ok(Error(_)) | Error(Nil) -> Error(Nil)
-  }
+  service.start_child(supervisor: store, argument: Job(request:, reply:))
+  |> result.map(fn(started) { ToWorker(pid: started.pid) })
 }
 
 /// Spawns the worker and returns at once, so the supervisor's start call
@@ -125,6 +121,9 @@ fn run(job: Job, pool: pog.Connection) -> Nil {
     Select(request:) ->
       select(pool, request)
       |> result.map(ForSelect)
+    World(request:) ->
+      world(pool, request)
+      |> result.map(ForWorld)
   }
   job.reply(result.unwrap(answer, Unavailable))
 }
@@ -175,6 +174,15 @@ fn find_account(
   }
 }
 
+/// Runs one of world entry's requests.
+fn world(
+  pool: pog.Connection,
+  request: WorldRequest,
+) -> Result(WorldAnswer, Nil) {
+  let LoadCharacter(account_id:, character_id:) = request
+  load_character(pool:, account_id:, character_id:)
+}
+
 /// The account's characters in creation order; an account with none, or no
 /// such account, has an empty list. `Error(Nil)` when the database is away.
 fn list_characters(
@@ -184,6 +192,45 @@ fn list_characters(
   let AccountId(account_id) = account_id
   query(fn() { sql.list_characters(pool, account_id) })
   |> result.map(list.map(_, character))
+}
+
+/// The account's character with the id, read in one statement that names the
+/// account too, so another account's character is never read;
+/// `NotTheAccounts` when it has none, and `Error(Nil)` when the database is
+/// away.
+fn load_character(
+  pool pool: pog.Connection,
+  account_id account_id: AccountId,
+  character_id character_id: CharacterId,
+) -> Result(WorldAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  use rows <- result.map(
+    query(fn() { sql.load_character(pool, character_id, account_id) }),
+  )
+  case rows {
+    [row] ->
+      CharacterLoaded(Character(
+        character_id: CharacterId(row.character_id),
+        name: row.name,
+        gender: row.gender,
+        race_id: RaceId(row.race_id),
+        class_id: ClassId(row.class_id),
+        faction_id: row.faction_id,
+        level: row.level,
+        path: row.path,
+        world_id: row.world_id,
+        world_zone_id: row.world_zone_id,
+        position_x: row.position_x,
+        position_y: row.position_y,
+        position_z: row.position_z,
+        look: store.look(labels: row.look_labels, values: row.look_values),
+        bones: row.bones,
+        naming: naming(row.needs_rename),
+      ))
+    [] -> NotTheAccounts
+    _ -> panic as "a character id is unique, so a read returns at most one"
+  }
 }
 
 /// One row as the character it holds.
@@ -204,11 +251,14 @@ fn character(row: sql.ListCharactersRow) -> Character {
     position_z: row.position_z,
     look: store.look(labels: row.look_labels, values: row.look_values),
     bones: row.bones,
-    naming: case row.needs_rename {
-      True -> NeedsRename
-      False -> NameStands
-    },
+    naming: naming(row.needs_rename),
   )
+}
+
+/// Whether the row's rename mark is set.
+fn naming(needs_rename: Bool) -> Naming {
+  use <- bool.guard(needs_rename, NeedsRename)
+  NameStands
 }
 
 /// Makes the character in one transaction: the account's row lock, then the
@@ -237,6 +287,11 @@ fn create_character(
         list.map(character.look, fn(entry) { entry.value }),
         character.bones,
         character_slots,
+        character.world_id,
+        character.world_zone_id,
+        character.position_x,
+        character.position_y,
+        character.position_z,
       )
     })
     |> result.map_error(fn(error) {
@@ -341,9 +396,6 @@ fn attempt(
     | Ok(Error(pog.UnexpectedResultType(..) as error)) -> exit_with(error)
   }
 }
-
-@external(erlang, "store_worker_ffi", "unless_supervisor_not_running")
-fn unless_supervisor_not_running(run: fn() -> a) -> Result(a, Nil)
 
 @external(erlang, "store_worker_ffi", "unless_pool_not_running")
 fn unless_pool_not_running(run: fn() -> a) -> Result(a, Nil)
