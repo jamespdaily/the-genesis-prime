@@ -20,7 +20,6 @@
 ////   ids have a handler").
 
 import client_tables
-import envoy
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{type EngineDeclaration, EngineDeclaration}
 import genesis_prime/coverage/measurement.{
@@ -40,10 +39,6 @@ import gleam/string
 import owned_test
 import planted_table.{Integer}
 import unitest
-
-fn client_present() -> Bool {
-  envoy.get("GENESIS_NO_CLIENT") != Ok("1")
-}
 
 /// Plants a QuestObjective table with one row per type value, ids from 1, and
 /// measures the engine over it.
@@ -293,7 +288,7 @@ fn heaviest_first(types: List(TypeLine)) -> Bool {
 
 pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_rows_test() -> Nil {
   use <- owned_test.run(600_000)
-  use <- unitest.guard(client_present())
+  use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   list.each(engine.all(), fn(declared) {
     let measured = measurement.measure(declared, tables)

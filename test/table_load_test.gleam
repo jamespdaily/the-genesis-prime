@@ -31,7 +31,6 @@
 ////   (genesis_prime/table/loader/store).
 
 import client_tables
-import envoy
 import fresh_node
 import genesis_prime/table
 import genesis_prime/table/creature2
@@ -50,10 +49,6 @@ import owned_test
 import planted_table.{Integer, Text, TextAt}
 import simplifile
 import unitest
-
-fn client_present() -> Bool {
-  envoy.get("GENESIS_NO_CLIENT") != Ok("1")
-}
 
 /// Every table file of the client, as the file's name without `.tbl`.
 fn the_clients_table_files() -> List(String) {
@@ -95,7 +90,7 @@ fn ids_of_lookup(
 
 pub fn every_client_table_loads_and_holds_the_rows_its_header_and_lookup_name_test() -> Nil {
   use <- owned_test.run(600_000)
-  use <- unitest.guard(client_present())
+  use <- unitest.guard(client_tables.present())
   let entries = table.entries()
   assert list.length(entries) == 384
     as "game_tables.ClientData: 384 game tables in ClientData"

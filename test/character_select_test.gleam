@@ -18,7 +18,7 @@
 //// frames (test/game_connection_test.gleam).
 
 import character_support
-import client_tables
+import character_tables
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/character_select.{Ask, Send, Warn}
 import genesis_prime/message/character_list
@@ -53,7 +53,7 @@ fn answered(
     filetime:,
     realm_id: 1,
     max_characters: 2,
-    tables: client_tables.shared(),
+    tables: character_tables.shared(),
   )
 }
 
@@ -113,7 +113,7 @@ fn create(
   character_select.create_requested(
     account_id: AccountId(7),
     request:,
-    tables: client_tables.shared(),
+    tables: character_tables.shared(),
     character_slots: 2,
   )
 }

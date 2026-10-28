@@ -28,7 +28,7 @@
 ////   (lua.CharacterSelection.OnLoadFromCharacter.preselect).
 
 import character_support
-import client_tables
+import character_tables
 import connection_rule_support as support
 import game_client
 import genesis_prime/client_connection.{
@@ -77,7 +77,7 @@ fn settings() -> game_connection.Settings {
     realm_id: 5,
     max_characters: 9,
     character_slots: 3,
-    tables: client_tables.shared(),
+    tables: character_tables.shared(),
     ask_deadline_ms: 4000,
   )
 }
@@ -374,10 +374,11 @@ pub fn the_stores_rows_become_one_entry_each_in_the_order_given_with_every_field
   let first = character(id: 42, name: "Ab", seed: 3)
   let second = character(id: 9, name: "Zéd Qu", seed: 8)
   let #(_, taken) = listed(characters: [first, second])
-  assert list.all(character_customization.all(client_tables.shared()), fn(row) {
-    row.gender < 2
-  })
-    as "the CharacterCustomization table has rows for genders 0 and 1 only, so a character of gender 2 or 3 has no body visual"
+  assert list.all(
+    character_customization.all(character_tables.shared()),
+    fn(row) { row.gender < 2 },
+  )
+    as "no CharacterCustomization row is for gender 2 or 3 (character_tables_test: the client's table has rows for genders 0 and 1 only), so a character of gender 2 or 3 has no body visual"
   let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, body:)] =
     heard(taken, keyed())
   let assert Ok(sent) = character_list.decode(body)

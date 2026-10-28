@@ -10,6 +10,13 @@ import gleam/list
 import gleam/string
 import simplifile
 
+/// Whether the client's files are on this machine: false only where
+/// `GENESIS_NO_CLIENT=1`, which CI sets. A test whose point is the client's real
+/// data begins with `use <- unitest.guard(client_tables.present())`.
+pub fn present() -> Bool {
+  envoy.get("GENESIS_NO_CLIENT") != Ok("1")
+}
+
 /// The folder `setup_check/extract_tables.py` fills: `GENESIS_TABLE_DIR`, else
 /// `tables` under `GENESIS_HOME`, else under `~/.genesis-prime`.
 pub fn folder() -> String {

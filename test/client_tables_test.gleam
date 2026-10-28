@@ -3,7 +3,6 @@
 //// of the 384 tables in persistent terms at once.
 
 import client_tables
-import envoy
 import genesis_prime/table
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization_label
@@ -19,15 +18,11 @@ import gleam/list
 import owned_test
 import unitest
 
-fn client_present() -> Bool {
-  envoy.get("GENESIS_NO_CLIENT") != Ok("1")
-}
-
 const callers = 4
 
 pub fn callers_in_different_processes_at_once_get_the_same_load_test() -> Nil {
   use <- owned_test.run(600_000)
-  use <- unitest.guard(client_present())
+  use <- unitest.guard(client_tables.present())
   let replies = process.new_subject()
   list.each(list.repeat(Nil, callers), fn(_) {
     process.spawn(fn() { process.send(replies, client_tables.shared()) })
@@ -47,7 +42,7 @@ pub fn callers_in_different_processes_at_once_get_the_same_load_test() -> Nil {
 
 pub fn the_shared_load_holds_every_one_of_the_clients_384_tables_test() -> Nil {
   use <- owned_test.run(600_000)
-  use <- unitest.guard(client_present())
+  use <- unitest.guard(client_tables.present())
   let entries = table.entries()
   assert list.length(entries) == 384
     as "game_tables.ClientData: 384 game tables in ClientData"
@@ -61,7 +56,7 @@ pub fn the_shared_load_holds_every_one_of_the_clients_384_tables_test() -> Nil {
 
 pub fn the_shared_load_holds_rows_of_the_tables_the_tests_that_moved_to_it_read_test() -> Nil {
   use <- owned_test.run(600_000)
-  use <- unitest.guard(client_present())
+  use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   // The tables the game server and the character tests read (test/game_server.gleam).
   let read = [

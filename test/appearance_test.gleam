@@ -29,6 +29,7 @@ import genesis_prime/table/id.{
 import gleam/int
 import gleam/list
 import owned_test
+import unitest
 
 /// A face (slot 25) row of race 1, sex 0 that the index holds (flags 2), with
 /// its labels and values (0 for none).
@@ -260,6 +261,7 @@ pub fn a_label_of_the_other_faction_is_ignored_and_its_rows_are_not_candidates_t
 
 pub fn a_human_males_face_from_the_real_rows_follows_the_looks_labels_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let index = appearance.index(tables:)
   // CharacterCustomization rows 2, 9 and 10 (race 1, sex 0, slot 25):
@@ -296,6 +298,7 @@ pub fn a_human_males_face_from_the_real_rows_follows_the_looks_labels_test() -> 
 
 pub fn every_slot_of_a_real_look_is_listed_once_in_slot_order_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let slots =
     appearance.body_visuals(
@@ -316,6 +319,7 @@ pub fn every_slot_of_a_real_look_is_listed_once_in_slot_order_test() -> Nil {
 
 pub fn a_race_and_sex_have_the_bone_count_the_clients_create_request_carries_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   // opcode.0x25b.counts: 48 for race 1, 3 and 12 male; 46 for race 1 and 3
   // female, races 4 and 5 both sexes, race 13 male and race 16 both sexes; 41

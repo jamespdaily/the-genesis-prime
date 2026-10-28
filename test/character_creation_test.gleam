@@ -5,8 +5,9 @@
 ////   it sends 0x25B: the row, its entitlement and cost, the path up to 3) and
 ////   the request's counts (opcode.0x25b, opcode.0x25b.counts: at most 27
 ////   labels, 41, 46 or 48 bones by race and sex).
-//// - The rows of the client's own CharacterCreation table, read from the real
-////   file: 466 is a PreTutorial row (class 1, race 1, sex 1, faction 167, no
+//// - The rows of the client's own CharacterCreation table, planted by
+////   `character_tables` (which `character_tables_test` compares with the real
+////   file): 466 is a PreTutorial row (class 1, race 1, sex 1, faction 167, no
 ////   entitlement, no cost), 338 and 339 Nexus rows, 539 a Level50 row costing
 ////   1 of account currency 13, 536 a Nexus row needing entitlement 61, 21 a
 ////   disabled Arkship row (start 0) and 530 a costume-only row (class 0).
@@ -15,7 +16,7 @@
 ////   to an error" for every other value, 4 CreateFailed among them.
 
 import character_support
-import client_tables
+import character_tables
 import genesis_prime/game/character_creation.{
   ArkshipRow, BoneNotFinite, CostsCurrency, CostumeOnlyRow, NameBreaksRule,
   NeedsEntitlement, NoSuchRow, PathAbove3, RowDisabled, TooManyLabels,
@@ -42,7 +43,7 @@ fn request(creation_id: Int, name: String) -> CreateCharacter {
 
 pub fn a_name_that_breaks_rule_0_is_name_length_before_the_row_is_read_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = client_tables.shared()
+  let tables = character_tables.shared()
   assert character_creation.check(tables, request(99_999, "Abcd"))
     == Error(NameBreaksRule)
     as "0x1403e1170: 'Abcd' is no name by rule 0, and the client checks the name before the row (0x140023e90)"
@@ -53,7 +54,7 @@ pub fn a_name_that_breaks_rule_0_is_name_length_before_the_row_is_read_test() ->
 
 pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = client_tables.shared()
+  let tables = character_tables.shared()
   let asked =
     CreateCharacter(
       ..request(466, "Ab Cd"),
@@ -80,7 +81,7 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
 
 pub fn a_row_that_is_missing_disabled_arkship_costume_only_or_needs_what_the_account_lacks_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = client_tables.shared()
+  let tables = character_tables.shared()
   assert character_creation.check(tables, request(99_999, "Ab Cd"))
     == Error(NoSuchRow(creation_id: 99_999))
     as "LuaCreateCharacter 0x140023e90: a missing row is refused"
@@ -100,14 +101,9 @@ pub fn a_row_that_is_missing_disabled_arkship_costume_only_or_needs_what_the_acc
   assert check_row(creation_table.CharacterCreation(..row, costume_only: True))
     == Error(CostumeOnlyRow(creation_id: 466))
     as "a costume-only row is for the create screen's model and makes no character (rows 530 and 531 have class 0)"
-  let assert Ok(arkship) =
-    creation_table.get(tables:, id: CharacterCreationId(21))
-    as "CharacterCreation row 21 exists"
-  assert arkship.character_creation_start_enum == 0 && !arkship.enabled
-    as "the real Arkship row 21 is disabled"
   assert character_creation.check(tables, request(21, "Ab Cd"))
     == Error(RowDisabled(creation_id: 21))
-    as "a real Arkship row is refused"
+    as "CharacterCreation row 21 is a disabled Arkship row (start 0), which is refused"
   assert character_creation.check(tables, request(530, "Ab Cd"))
     == Error(CostumeOnlyRow(creation_id: 530))
     as "CharacterCreation row 530: costume only, class 0"
@@ -121,7 +117,7 @@ pub fn a_row_that_is_missing_disabled_arkship_costume_only_or_needs_what_the_acc
 
 pub fn a_path_above_3_too_many_labels_or_the_wrong_bone_count_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = client_tables.shared()
+  let tables = character_tables.shared()
   assert result.is_ok(character_creation.check(
     tables,
     CreateCharacter(..request(466, "Ab Cd"), path: 3),
@@ -175,7 +171,7 @@ pub fn a_path_above_3_too_many_labels_or_the_wrong_bone_count_is_refused_test() 
 
 pub fn a_bone_value_that_is_not_a_finite_float_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
-  let tables = client_tables.shared()
+  let tables = character_tables.shared()
   let with_bone = fn(bits) {
     CreateCharacter(..request(466, "Ab Cd"), bone_values: [
       bits,

@@ -9,12 +9,15 @@
 //// - The recording's layout and replay in `genesis_prime/rule_recording`:
 ////   every recorded step must be the step the rule gives again.
 
+import client_tables
 import genesis_prime/game/connection as game_connection
 import owned_test
 import rule_replay_support
+import unitest
 
 pub fn the_live_sessions_game_recording_replays_to_the_same_steps_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
   let #(inputs, count) =
     rule_replay_support.replayed(
       file: "genesis_prime.game.connection-4.recording",
@@ -36,5 +39,6 @@ const game_replay = #(
 /// before it.
 pub fn the_game_recording_replays_in_a_fresh_node_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
   rule_replay_support.replays_in_a_fresh_node(game_replay)
 }
