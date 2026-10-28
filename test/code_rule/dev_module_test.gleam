@@ -25,6 +25,7 @@ const allowed = [
   #("genesis_prime/dev_start", 146),
   #("genesis_prime/add_account", 146),
   #("genesis_prime/add_character", 147),
+  #("genesis_prime/mark_rename", 180),
   #("genesis_prime/dev_database", 147),
 ]
 

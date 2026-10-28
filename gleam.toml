@@ -59,6 +59,7 @@ avoid_panic = "off"
 "src/genesis_prime/store/sql.gleam" = ["label_possible"]
 "dev/genesis_prime/add_account/sql.gleam" = ["label_possible"]
 "dev/genesis_prime/add_character/sql.gleam" = ["label_possible"]
+"dev/genesis_prime/mark_rename/sql.gleam" = ["label_possible"]
 # The recording's types are the shape the shell's record mode and the replay
 # are built on; no module records or replays, so no other module uses them.
 "src/genesis_prime/rule_recording.gleam" = ["unused_exports"]
