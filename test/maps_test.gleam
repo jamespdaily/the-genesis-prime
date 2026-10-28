@@ -305,13 +305,12 @@ pub fn the_recording_of_a_map_run_is_named_by_its_world_instance_and_incarnation
   use folder <- recording_support.in_folder
   let world = start_world(Some(folder))
   let found = started(world, ship)
-  let live = connection(world, 1)
-  let _joined = joined(found, 1)
-  let _joined_dead = joined(found, 2)
-  let ended = process.monitor(live)
-  process.kill(live)
-  let _reason = ask_support.ended(ended)
-  let _joined_after = joined(found, 3)
+  // Both joiners are connection ids no process holds, so each watch ends as
+  // the map's next input, in its own mailbox order. A live connection killed
+  // here would race the tree's stop: its end comes from another sender than
+  // the stop, so the map may stop before it takes it.
+  let _joined = joined(found, 2)
+  let _joined = joined(found, 3)
   let _reason = ask_support.stop_tree(world.tree)
   let bytes = recording_support.recording_in(folder)
   assert simplifile.read_bits(
@@ -342,7 +341,7 @@ pub fn the_recording_of_a_map_run_is_named_by_its_world_instance_and_incarnation
       None,
     )
     == Ok(count)
-    as "every recorded step is the step the rule gives again: the first input, the three joins, the three watches' ends and the stop"
-  assert count == 8
-    as "Started, three Asked, WatchEnded for the two dead connections' watches at once and for the killed one, and Stopping; the third join, answered after the kill, is taken after the killed connection's end"
+    as "every recorded step is the step the rule gives again: the first input, the two joins, the two watches' ends and the stop"
+  assert count == 6
+    as "Started, two Asked, each followed by the WatchEnded of its joiner's watch, and Stopping"
 }
