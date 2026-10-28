@@ -1,13 +1,13 @@
 //// Starts the server for a live session, as `gleam run` does, with two
-//// changes only a developer makes: each STS, auth and game connection is
-//// recorded into a folder, for replay, and the auth server can plant one frame the
-//// client does not handle right after its hello, to prove the client's
-//// failure log brings back its id.
+//// changes only a developer makes: each STS, auth and game connection, and
+//// Sessions, is recorded into a folder, for replay, and the auth server can
+//// plant one frame the client does not handle right after its hello, to prove
+//// the client's failure log brings back its id.
 ////
 //// `gleam run -m genesis_prime/dev_start -- <recording folder> [<planted message id>]`
 ////
-//// - `recording folder`: where each connection's recording is written, made
-////   when it is missing; by convention `test/rule_recording/<date>-<flow>`.
+//// - `recording folder`: where each connection's and Sessions' recording is
+////   written, made when it is missing; by convention `test/rule_recording/<date>-<flow>`.
 ////   The relay's recordings, a different format, are in `test/recording`.
 //// - `planted message id`: a message id, such as `0x0914`, sent once with an
 ////   empty body in the auth wrapper after the hello. Left out, nothing is
@@ -25,6 +25,7 @@ import genesis_prime/login/sts_connection
 import genesis_prime/rule_recording/file
 import genesis_prime/rule_types
 import genesis_prime/server
+import genesis_prime/sessions
 import genesis_prime/table/loader/store
 import gleam/int
 import gleam/io
@@ -66,6 +67,7 @@ fn start() -> Result(Nil, Failure) {
   use sts_digest <- result.try(digest(sts_connection.rule_name))
   use auth_digest <- result.try(digest(auth_connection.rule_name))
   use game_digest <- result.try(digest(game_connection.rule_name))
+  use sessions_digest <- result.try(digest(sessions.rule_name))
   let #(tables, loaded) = genesis_prime.load_tables()
   let settings = genesis_prime.settings(tables:)
   let login = settings.login
@@ -94,7 +96,16 @@ fn start() -> Result(Nil, Failure) {
       recorder: Some(recorder(folder:, tables:, types_digest: game_digest)),
     )
   genesis_prime.start(
-    settings: server.Settings(..settings, login:, game:),
+    settings: server.Settings(
+      ..settings,
+      login:,
+      game:,
+      sessions_recorder: Some(recorder(
+        folder:,
+        tables:,
+        types_digest: sessions_digest,
+      )),
+    ),
     tables: loaded,
   )
   Ok(Nil)

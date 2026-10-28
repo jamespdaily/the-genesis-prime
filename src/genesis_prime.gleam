@@ -77,6 +77,7 @@ pub fn settings(tables tables: store.Tables) -> server.Settings {
     hand_off_shutdown_ms: 5000,
     sessions: process.new_name("sessions"),
     sessions_shutdown_ms: 5000,
+    sessions_recorder: None,
     registry: registry.new(),
     send_deadline_ms: 2000,
     connection_shutdown_ms: 5000,

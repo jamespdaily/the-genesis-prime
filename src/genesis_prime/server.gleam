@@ -106,6 +106,9 @@ pub type Settings {
     sessions: Name(Call(sessions.Message, sessions.Outgoing)),
     /// How long Sessions has to stop.
     sessions_shutdown_ms: Int,
+    /// Where Sessions' inputs are recorded; `None` unless the dev start turns
+    /// recording on.
+    sessions_recorder: Option(Recorder),
     /// Where the game connections are found, made once with
     /// `registry.new`.
     registry: Registry,
@@ -184,7 +187,7 @@ pub fn start(
       name: settings.sessions,
       reach: sessions_reach(settings),
       shutdown_ms: settings.sessions_shutdown_ms,
-      recorder: None,
+      recorder: settings.sessions_recorder,
     )),
   )
   |> supervisor.add(login(settings, directory))

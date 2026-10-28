@@ -106,6 +106,7 @@ pub fn start() -> Started {
       hand_off_shutdown_ms: 1500,
       sessions: process.new_name("sessions"),
       sessions_shutdown_ms: 1500,
+      sessions_recorder: None,
       registry: registry.new(),
       send_deadline_ms: 300,
       connection_shutdown_ms: 1000,
