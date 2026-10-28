@@ -7,8 +7,9 @@
 ////
 //// Each rule fills in the type parameters with its own types:
 //// - `message`: what another process sends or asks it;
-//// - `outgoing`: what it sends another process without waiting, each value
-////   naming its receiver, and the answers it gives to asks;
+//// - `outgoing`: what it sends another process without waiting, and the
+////   answers it gives to asks; a send names its receiver in the effect
+////   (`Send(to, message)`), not in the message;
 //// - `request`: what it asks another process, each value naming the process
 ////   it asks;
 //// - `answer`: what comes back from its asks.
@@ -140,9 +141,11 @@ pub type Effect(outgoing) {
   /// Write bytes to the connection's socket. A failed write stops the step's
   /// remaining effects and comes back as `WriteFailed`.
   Write(bytes: BitArray)
-  /// Send another process a message without waiting. A receiver that is not
-  /// running drops it; a rule that must know watches the receiver.
-  Send(message: outgoing)
+  /// Send the process at `to` a message without waiting. The shell finds the
+  /// process from the address (a connection through OTP's `pg`, by its id);
+  /// a receiver that is not running drops the message, and a rule that must
+  /// know watches the receiver.
+  Send(to: Address, message: outgoing)
   /// Answer an ask. An answer to a caller that has ended or stopped waiting
   /// is dropped.
   Reply(caller: CallerId, answer: outgoing)

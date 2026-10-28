@@ -13,24 +13,34 @@ pub fn read(
   count count: Int,
   next next: fn() -> Result(BitArray, Nil),
 ) -> Result(List(Frame), Nil) {
-  collect(have:, found: [], count:, next:)
+  read_until(have:, done: fn(found) { list.length(found) >= count }, next:)
+}
+
+/// Reads until `done` says the frames found so far, whole and in order, are
+/// the ones wanted; `next` reads more, and its error ends the wait.
+pub fn read_until(
+  have have: BitArray,
+  done done: fn(List(Frame)) -> Bool,
+  next next: fn() -> Result(BitArray, Nil),
+) -> Result(List(Frame), Nil) {
+  collect(have:, found: [], done:, next:)
 }
 
 fn collect(
   have have: BitArray,
   found found: List(Frame),
-  count count: Int,
+  done done: fn(List(Frame)) -> Bool,
   next next: fn() -> Result(BitArray, Nil),
 ) -> Result(List(Frame), Nil) {
   let assert Ok(#(frames, leftover)) = frame.decode(have)
     as "the server wrote bytes that are frames"
   let found = list.append(found, frames)
-  case list.length(found) >= count {
+  case done(found) {
     True -> Ok(found)
     False ->
       case next() {
         Ok(bytes) ->
-          collect(have: <<leftover:bits, bytes:bits>>, found:, count:, next:)
+          collect(have: <<leftover:bits, bytes:bits>>, found:, done:, next:)
         Error(Nil) -> Error(Nil)
       }
   }

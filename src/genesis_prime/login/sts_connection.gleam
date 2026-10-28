@@ -55,7 +55,7 @@
 
 import genesis_prime/client_connection.{
   type Answer, type Link, type Request, AskHandOff, AskStore, Asking, Bytes,
-  Connect, Continue, End, FromHandOff, FromStore, Otherwise,
+  Connect, Continue, Done, FromHandOff, FromSessions, FromStore, Otherwise,
 }
 import genesis_prime/hand_off.{GameToken, Holder, Put}
 import genesis_prime/login/guid.{type Guid}
@@ -271,7 +271,7 @@ fn flow(
       handle(session: Session(..session, pending: rest), now:, request:)
     },
     refused: fn(session, error) {
-      End(session, [
+      Done(session, [
         log(
           session:,
           level: LogError,
@@ -300,7 +300,7 @@ fn handle(
         ),
       ])
     Error(error) ->
-      End(session, [
+      Done(session, [
         log(session:, level: LogError, text: sts_message.describe(error)),
         Stop,
       ])
@@ -445,7 +445,7 @@ fn out_of_order(
   session: Session,
   name: String,
 ) -> client_connection.Handled(Session) {
-  End(session, [
+  Done(session, [
     log(
       session:,
       level: LogError,
@@ -548,7 +548,7 @@ fn end_for(
   session: Session,
   reason: String,
 ) -> client_connection.Handled(Session) {
-  End(session, [log(session:, level: LogError, text: reason), Stop])
+  Done(session, [log(session:, level: LogError, text: reason), Stop])
 }
 
 fn refusal(sequence: Int, code: Int) -> BitArray {
@@ -608,6 +608,8 @@ fn found(
       timed_out(session:, sequence:, what: "the store was unavailable")
     step.Answer(FromHandOff(..)) ->
       end_for(session, "the hand-off answered the ask for the account")
+    step.Answer(FromSessions(..)) ->
+      end_for(session, "Sessions answered the ask for the account")
     step.Answer(FromStore(ForSelect(..))) ->
       end_for(
         session,
@@ -695,7 +697,8 @@ fn kept(
       timed_out("the hand-off already held the game token")
     step.Answer(FromHandOff(hand_off.Taken(..)))
     | step.Answer(FromHandOff(hand_off.NoHolder))
-    | step.Answer(FromStore(..)) ->
+    | step.Answer(FromStore(..))
+    | step.Answer(FromSessions(..)) ->
       end_for(session, "the hand-off's answer is none a Put gets")
     step.NotRunning
     | step.NoAnswerInTime

@@ -1,11 +1,13 @@
 //// Starts the server: it loads the client's game tables from the folder named
 //// by GENESIS_TABLE_DIR, stopping at once with the reason when one does not
 //// load, then starts the supervision tree, with the database named by PGHOST,
-//// PGPORT, PGUSER, PGPASSWORD and PGDATABASE, and keeps the node alive. It
+//// PGPORT, PGUSER, PGPASSWORD and PGDATABASE, and keeps the node alive until
+//// SIGTERM, which stops the tree in order and then the node. It
 //// serves the client's STS and auth logins (`login`) and the game server
 //// (`game`).
 
 import envoy
+import genesis_prime/connection/registry
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
@@ -50,8 +52,9 @@ pub fn load_tables() -> #(store.Tables, Int) {
 /// Starts the supervision tree with these settings and keeps the node alive.
 pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
   runtime.show_info_lines()
-  let assert Ok(_) = server.start(settings:)
+  let assert Ok(started) = server.start(settings:)
     as "the supervision tree did not start"
+  server.stop_on_sigterm(tree: started.pid)
   io.println(
     "the server loaded "
     <> int.to_string(tables)
@@ -74,6 +77,10 @@ pub fn settings(tables tables: store.Tables) -> server.Settings {
     store: process.new_name("store"),
     hand_off: process.new_name("hand_off"),
     hand_off_shutdown_ms: 5000,
+    sessions: process.new_name("sessions"),
+    sessions_shutdown_ms: 5000,
+    sessions_recorder: None,
+    registry: registry.new(),
     send_deadline_ms: 2000,
     connection_shutdown_ms: 5000,
     login: login(),

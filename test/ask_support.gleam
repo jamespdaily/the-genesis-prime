@@ -8,6 +8,7 @@ import asking_rule.{
 }
 import gate_rule
 import genesis_prime/connection/listener.{Listener}
+import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/connection/shell
 import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/service
@@ -51,6 +52,29 @@ pub fn start(
   recorder recorder: Option(Recorder),
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
+  start_joined(
+    rule:,
+    directory:,
+    shutdown_ms:,
+    recorder:,
+    registry: None,
+    locate: fn(_address) { Error(Nil) },
+    with:,
+  )
+}
+
+/// Starts a listener as `start` does, whose connections also join `registry`
+/// when there is one, and find what their rule watches with `locate`.
+pub fn start_joined(
+  rule rule: Rule(settings, state, message, answer, Nil, request),
+  directory directory: fn(request, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  shutdown_ms shutdown_ms: Int,
+  recorder recorder: Option(Recorder),
+  registry registry: Option(Registry),
+  locate locate: service.Locate,
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+) -> Server {
   let name = process.new_name("test_listener")
   let connection =
     shell.Settings(
@@ -59,6 +83,8 @@ pub fn start(
       shutdown_ms:,
       recorder:,
       directory:,
+      registry:,
+      locate:,
     )
   let assert Ok(started) =
     supervisor.new(supervisor.OneForOne)
@@ -211,15 +237,36 @@ pub fn connections(server: Server) -> List(Pid) {
   procs(server.name, atom.create("connections"))
 }
 
-/// The gate as a child of a supervisor, registered as `name`.
+/// The gate as a child of a supervisor, registered as `name`, that reaches
+/// no process.
 pub fn gate(
   name name: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   shutdown_ms shutdown_ms: Int,
   recorder recorder: Option(Recorder),
 ) -> ChildSpecification(Nil) {
+  reaching(
+    name:,
+    shutdown_ms:,
+    recorder:,
+    reach: service.Reach(
+      locate: fn(_address) { Error(Nil) },
+      send: fn(_to, _message) { Error(Nil) },
+    ),
+  )
+}
+
+/// The gate as a child of a supervisor, registered as `name`, that finds and
+/// sends to the processes `reach` gives.
+pub fn reaching(
+  name name: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
+  shutdown_ms shutdown_ms: Int,
+  recorder recorder: Option(Recorder),
+  reach reach: service.Reach(gate_rule.Answer),
+) -> ChildSpecification(Nil) {
   service_shell.supervised(service_shell.Settings(
     rule: gate_as_rule(),
     name:,
+    reach:,
     shutdown_ms:,
     recorder:,
   ))

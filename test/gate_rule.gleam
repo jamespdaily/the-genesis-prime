@@ -1,13 +1,15 @@
 //// A small service rule for the tests of asks and of the service shell: a
 //// latch that answers an ask when its key is opened, before or after the
 //// ask, so a test's answer never depends on which message reached the service
-//// first. It also holds the messages that make a service misbehave: a crash,
-//// and each effect a service shell refuses.
+//// first. It also holds the messages that make a service send and
+//// watch, whose watches end as the opening of the key of the same number, and
+//// the messages that make it misbehave: a crash, and each effect a service
+//// shell refuses.
 
 import genesis_prime/step.{
-  type CallerId, type Input, type Step, Ask, AskId, Asked, Effects,
-  EffectsThenAsk, Input, Reply, Send, Sessions, StartTimer, Started, Stop,
-  Stopping, TimerId, Watch, WatchId,
+  type Address, type CallerId, type Effect, type Input, type Step, Ask, AskId,
+  Asked, Effects, EffectsThenAsk, Input, Reply, Send, StartTimer, Started, Stop,
+  Stopping, TimerId, Watch, WatchEnded, WatchId,
 }
 import gleam/dict.{type Dict}
 import gleam/list
@@ -28,10 +30,12 @@ pub type Message {
   StopThenReply
   /// The rule crashes.
   Crash
-  /// The rule returns `Send`, which a service shell refuses.
-  TrySend
-  /// The rule returns `Watch`, which a service shell refuses.
-  TryWatch
+  /// Send `Echoed(n)` to the process at the address, then answer with
+  /// `Echoed(n)`.
+  SendTo(to: Address, n: Int)
+  /// Watch the process at the address as watch `watch`, then answer with
+  /// `Echoed(watch)`. The watch's end opens the key `watch`.
+  WatchAddress(watch: Int, target: Address)
   /// The rule returns `StartTimer`, which a service shell refuses.
   TryTimer
   /// The rule ends its step in an ask, which a service shell refuses.
@@ -64,13 +68,13 @@ pub fn step(
     Started -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
     Asked(caller:, message:) -> asked(state:, caller:, message:)
+    WatchEnded(watch: WatchId(key)) -> opened(state:, key:)
     step.Socket(..)
     | step.Woken(..)
-    | step.WatchEnded(..)
     | step.TimerFired(..)
     | step.Answered(..)
     | step.AnsweredLate(..) ->
-      panic as "a service takes Started, Asked and Stopping only"
+      panic as "a service takes Started, Asked, WatchEnded and Stopping only"
   }
 }
 
@@ -96,25 +100,27 @@ fn asked(
         )
       }
     Open(key:) -> {
-      let waiters = list.reverse(waiting_for(state, key))
+      let #(state, replies) = open(state:, key:)
       #(
-        State(
-          waiting: dict.delete(state.waiting, key),
-          opened: set.insert(state.opened, key),
-        ),
+        state,
         Effects(
-          list.append(
-            list.map(waiters, fn(waiter) { Reply(waiter, Opened(key)) }),
-            [Reply(caller, Echoed(list.length(waiters)))],
-          ),
+          list.append(replies, [
+            Reply(caller, Echoed(list.length(replies))),
+          ]),
         ),
       )
     }
     Ignore -> #(state, Effects([]))
     StopThenReply -> #(state, Effects([Stop, Reply(caller, Echoed(9))]))
     Crash -> panic as "the planted crash"
-    TrySend -> #(state, Effects([Send(Echoed(0))]))
-    TryWatch -> #(state, Effects([Watch(WatchId(1), Sessions)]))
+    SendTo(to:, n:) -> #(
+      state,
+      Effects([Send(to, Echoed(n)), Reply(caller, Echoed(n))]),
+    )
+    WatchAddress(watch:, target:) -> #(
+      state,
+      Effects([Watch(WatchId(watch), target), Reply(caller, Echoed(watch))]),
+    )
     TryTimer -> #(state, Effects([StartTimer(TimerId(1), 10)]))
     TryAsk -> #(
       state,
@@ -124,6 +130,25 @@ fn asked(
       ),
     )
   }
+}
+
+/// A watch's end: the key of its number is opened, with no caller to answer.
+fn opened(state state: State, key key: Int) -> #(State, Step(Answer, Nil)) {
+  let #(state, replies) = open(state:, key:)
+  #(state, Effects(replies))
+}
+
+/// Opens `key`: the replies to the callers waiting for it, in the order they
+/// asked.
+fn open(state state: State, key key: Int) -> #(State, List(Effect(Answer))) {
+  let waiters = list.reverse(waiting_for(state, key))
+  #(
+    State(
+      waiting: dict.delete(state.waiting, key),
+      opened: set.insert(state.opened, key),
+    ),
+    list.map(waiters, fn(waiter) { Reply(waiter, Opened(key)) }),
+  )
 }
 
 fn waiting_for(state: State, key: Int) -> List(CallerId) {

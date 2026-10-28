@@ -13,8 +13,9 @@
 ////                                 each way, is under the session key
 ////                                                                ─▶ hand-off: Take(SessionKey)
 //// 0x244{0x07E0}                   waits in the bytes read until the
-////   (same read, session key)      hand-off answers
-////   Taken(holder)                 the bytes are taken again       ─▶ store: ListCharacters(account)
+////   (same read, session key)      hand-off, then Sessions, answer
+////   Taken(holder)                 watches Sessions                ─▶ sessions: Claim(account, connection)
+////   Claimed                       the bytes are taken again       ─▶ store: ListCharacters(account)
 ////     Characters(rows)         ◀─ 0x3DC{0x0036 level}, 0x3DC{0x0117 character_list}, session key
 //// 0x244{0x025C{0x025B}}        ─▶ checked                         ─▶ store: CreateCharacter(..)
 ////     CharacterCreated(id)     ◀─ 0x3DC{0x00DC create result}, session key
@@ -23,6 +24,7 @@
 //// 0x244{0x038C{0x082D}}        ─▶ logged as unhandled
 //// 0x244{0x0241}                ─▶ logged as unhandled
 //// ping 0x0, bare               ◀─ pong 0x1, bare
+//// Sessions: TakenOver          ◀─ 0x3DC{0x036A reason 19}, session key; the connection ends
 //// ```
 ////
 //// - **The hello** is the first thing written: any game server message before
@@ -38,7 +40,34 @@
 ////   is logged as an error and ends the connection.
 //// - **Reads during an ask.** Frames after the one that asked stay in the
 ////   bytes read and are taken once the answer comes, so 0x07E0 is taken after
-////   the hand-off's answer, and 0x038C and 0x0241 after the store's.
+////   the hand-off's and Sessions' answers, and 0x038C and 0x0241 after the
+////   store's.
+//// - **The claim** makes this connection the account's one session
+////   (genesis_prime/sessions). It follows the hand-off's answer, since the
+////   account is known only then, and comes before the list, so a client that
+////   reaches character select holds the slot. The rule opens its one watch
+////   on Sessions (watch 1) with each claim. Sessions answers `Claimed` to every claim, sending the previous
+////   holder `TakenOver` first.
+//// - **Taken over.** `Woken(TakenOver)`, when the connection holds the slot or
+////   is claiming it again, writes 0x036A reason 19 (AccountDisconnected) under
+////   the cipher the connection holds, logs the takeover at info and ends the
+////   connection. The client drops to its error screen and shows "This account
+////   has been disconnected" (0x1400168a0, which only picks the text by the
+////   reason). The message is taken between steps, never while an ask is out:
+////   a takeover that arrives while the connection waits on an ask that then
+////   fails is never taken, because the failure ends the connection, so that
+////   client gets the failure's text (reason 8) and not the account's. Both
+////   texts end the connection; taking a delivery during an ask would make the
+////   shell decide by a message's content.
+//// - **Sessions ending.** When the watch on Sessions ends (`WatchEnded`) the
+////   connection waits `claim_wait_ms` on a timer, since a restarted Sessions
+////   is not yet there, then claims again (`TimerFired`), with its character
+////   select state kept and the frames it holds waiting for the answer; the
+////   client sees nothing. A claim that finds Sessions not running (the
+////   outcome `NotRunning`) drops its watch and waits again, up to
+////   `claim_retries` times, before the client is told the server failed. A
+////   claim Sessions does not answer, or that ends before its answer, is that
+////   failure at once.
 //// - **The character list and creating a character** are character select's
 ////   own feature (genesis_prime/game/character_select): it makes its own store
 ////   asks and takes the store's answers, and the rule turns its effects into
@@ -56,18 +85,22 @@
 ////   - reason 19, "This account has been disconnected", when the hand-off
 ////     does not hold the session key (never put, taken, or expired), with a
 ////     warning naming the peer;
+////   - reason 19 again, with an info line, for a connection taken over by a
+////     newer login of its account;
 ////   - reason 8, "Lost connection with user server.", for the server's own
-////     failure, with a warning: the hand-off or the store is not running, ended
-////     before it answered, gave no answer by the settings' ask deadline, or the
-////     store answers `Unavailable`; and with no log for the server stopping,
-////     whether it is waiting on an ask (`StoppedWaiting`) or not
-////     (`Stopping`).
+////     failure, with a warning: the hand-off, Sessions or the store is not
+////     running, ended before it answered, gave no answer by the settings' ask
+////     deadline, or the store answers `Unavailable`; and with no log for the
+////     server stopping, whether it is waiting on an ask (`StoppedWaiting`) or
+////     not (`Stopping`).
 ////   A client that breaks the protocol, closes, or whose socket fails is not
 ////   told: the rule logs the break and ends the connection.
 //// - **A process dying or a deadline passing.** The rule holds no process:
-////   a restart of the hand-off or the store is seen only as an ask's outcome
-////   (`NotRunning`, `EndedBeforeAnswer`), and a late answer
-////   (`AnsweredLate`) is dropped. A crash of the connection's own process
+////   a restart of the hand-off, Sessions or the store is seen only as an ask's
+////   outcome (`NotRunning`, `EndedBeforeAnswer`), or, for Sessions, as the end
+////   of its watch; a late answer (`AnsweredLate`) is dropped, also a late
+////   `Claimed`, which leaves the slot claimed by a connection that has ended
+////   and is freed by Sessions' watch on it. A crash of the connection's own process
 ////   drops the client, which connects again from the login.
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
@@ -79,8 +112,9 @@
 ////   unhandled and the connection goes on (opcode.0x241).
 
 import genesis_prime/client_connection.{
-  type Answer, type Link, type Request, AskHandOff, AskStore, Asking, Bytes,
-  Connect, Continue, End, FromHandOff, FromStore, Inside, Otherwise, Settled,
+  type Answer, type Link, type Message, type Request, AskHandOff, AskSessions,
+  AskStore, Asking, Bytes, Connect, Continue, Done, FromHandOff, FromSessions,
+  FromStore, Inside, Otherwise, SentBySessions, Settled,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -101,9 +135,12 @@ import genesis_prime/message/disconnect_reason.{
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/play_character
 import genesis_prime/message/rename_character
+import genesis_prime/sessions
 import genesis_prime/step.{
-  type Effect, type Input, type Now, type Outcome, type Rule, type Step, Effects,
-  LogWarning, Stop, Write,
+  type Effect, type Input, type Now, type Outcome, type Rule, type Step,
+  type TimerId, type WatchId, Answered, AnsweredLate, Asked, Effects, LogInfo,
+  LogWarning, Sessions, Socket, StartTimer, Started, Stop, Stopping, TimerFired,
+  TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken, Write,
 }
 import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
@@ -131,7 +168,7 @@ pub type Settings {
     /// The client's game tables, which a create request and the list's body
     /// visuals are read from.
     tables: table_store.Tables,
-    /// How long an ask to the hand-off or the store may take.
+    /// How long an ask to the hand-off, Sessions or the store may take.
     ask_deadline_ms: Int,
   )
 }
@@ -164,16 +201,43 @@ type Status {
   AwaitingHelloReply
   /// The hand-off is asked to take the session key.
   TakingSessionKey
-  /// The session key was held for `holder`; the client is in character
-  /// select, which holds its own state, asks the store itself and says when
-  /// its answer is awaited.
+  /// Sessions is asked to make the connection the account's session, or the
+  /// connection waits on the claim timer before it asks. `select` is the
+  /// character select the client is in after the answer: new for the first
+  /// claim, the one it was in when Sessions ended for a later one. `retries` is
+  /// how many times Sessions was not running for this claim.
+  ClaimingSession(holder: Holder, select: character_select.State, retries: Int)
+  /// The session key was held for `holder` and Sessions holds the account's
+  /// slot for this connection; the client is in character select, which holds
+  /// its own state, asks the store itself and says when its answer is awaited.
   InCharacterSelect(holder: Holder, select: character_select.State)
 }
+
+/// How long a connection waits before it claims again after Sessions ended or
+/// was not running. A restarted Sessions is started by its supervisor at once,
+/// so a short wait finds it; the client's screen shows nothing meanwhile.
+const claim_wait_ms = 100
+
+/// How many times a claim that finds Sessions not running is made again.
+/// With the wait, it bounds how long a client waits on its prompt for a
+/// Sessions that does not come back: half a second, then it is told the
+/// server failed, as for the store.
+const claim_retries = 5
+
+/// The watch on Sessions: the connection's only one. A watch that ends is
+/// forgotten by the shell, and one dropped with `Unwatch` leaves nothing behind,
+/// so the id is free whenever a claim opens it again, and a watch left open is
+/// caught by the shell's refusal of an id already open.
+const sessions_watch = WatchId(1)
+
+/// The timer a connection waits on before it claims again; one runs at a
+/// time.
+const claim_timer = TimerId(1)
 
 /// The rule as its connection shell runs it.
 pub fn rule(
   settings: Settings,
-) -> Rule(Settings, State, Nil, Answer, Nil, Request) {
+) -> Rule(Settings, State, Message, Answer, Nil, Request) {
   step.Rule(name: rule_name, settings:, new:, step:)
 }
 
@@ -185,7 +249,7 @@ pub fn new(settings: Settings) -> State {
 /// One input in, the new state and what the shell must do out.
 pub fn step(
   state state: State,
-  input input: Input(Nil, Answer),
+  input input: Input(Message, Answer),
 ) -> #(State, Step(Nil, Request)) {
   case state {
     NotAccepted(settings:) ->
@@ -218,7 +282,30 @@ pub fn step(
 fn connected(
   session session: Session,
   now now: Now,
-  event event: step.Event(Nil, Answer),
+  event event: step.Event(Message, Answer),
+) -> #(State, Step(Nil, Request)) {
+  case event {
+    Woken(message: SentBySessions(message:)) ->
+      settled(handled: sessions_sent(session:, message:), now:)
+    WatchEnded(watch:) ->
+      settled(handled: sessions_ended(session:, watch:), now:)
+    TimerFired(timer:) ->
+      settled(handled: claim_wait_over(session:, now:, timer:), now:)
+    Started
+    | Socket(..)
+    | Asked(..)
+    | Answered(..)
+    | AnsweredLate(..)
+    | Stopping(..) -> heard(session:, now:, event:)
+  }
+}
+
+/// An input the client's side or an ask's outcome gives, sorted by what every
+/// client connection rule does alike.
+fn heard(
+  session session: Session,
+  now now: Now,
+  event event: step.Event(Message, Answer),
 ) -> #(State, Step(Nil, Request)) {
   case
     client_connection.hear(
@@ -240,11 +327,7 @@ fn connected(
       }
     }
     client_connection.Outcome(outcome:) ->
-      client_connection.settle(
-        handled: answered(session:, now:, outcome:),
-        flow: flow(now),
-        carried: [],
-      )
+      settled(handled: answered(session:, now:, outcome:), now:)
     Connect(..) -> #(
       Connected(session),
       client_connection.accepted_again(
@@ -257,10 +340,19 @@ fn connected(
   }
 }
 
+/// What an input decided, carried out as the rule takes the client's frames at
+/// the time of the input.
+fn settled(
+  handled handled: client_connection.Handled(Session),
+  now now: Now,
+) -> #(State, Step(Nil, Request)) {
+  client_connection.settle(handled:, flow: flow(now), carried: [])
+}
+
 /// Whether an ask is in flight, so the frames after the one that asked wait.
 fn asking(status: Status) -> Bool {
   case status {
-    TakingSessionKey -> True
+    TakingSessionKey | ClaimingSession(..) -> True
     InCharacterSelect(select:, ..) -> character_select.waiting(select)
     AwaitingHelloReply -> False
   }
@@ -419,7 +511,7 @@ fn taken_message(
             message_id: inner.message_id,
           )
       }
-    TakingSessionKey ->
+    TakingSessionKey | ClaimingSession(..) ->
       end_for(session, "a frame was taken while an ask was out")
   }
 }
@@ -650,28 +742,25 @@ fn answered(
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case session.status {
-    TakingSessionKey -> key_taken(session:, outcome:)
+    TakingSessionKey -> key_taken(session:, now:, outcome:)
+    ClaimingSession(holder:, select:, retries:) ->
+      claim_answered(session:, holder:, select:, retries:, outcome:)
     InCharacterSelect(holder:, select:) ->
       select_answered(session:, now:, holder:, select:, outcome:)
     AwaitingHelloReply -> end_for(session, "an answer came when no ask was out")
   }
 }
 
-/// The hand-off's answer to taking the session key: the holder, or a client
-/// that is told it is disconnected.
+/// The hand-off's answer to taking the session key: the holder, whose account
+/// Sessions is asked to claim, or a client that is told it is disconnected.
 fn key_taken(
   session session: Session,
+  now now: Now,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case outcome {
     step.Answer(FromHandOff(hand_off.Taken(holder:))) ->
-      Continue(
-        Session(
-          ..session,
-          status: InCharacterSelect(holder:, select: character_select.new()),
-        ),
-        [],
-      )
+      claim(session:, now:, holder:, select: character_select.new(), retries: 0)
     step.Answer(FromHandOff(hand_off.NoHolder)) ->
       told(
         session:,
@@ -681,7 +770,8 @@ fn key_taken(
       )
     step.Answer(FromHandOff(hand_off.Kept))
     | step.Answer(FromHandOff(hand_off.AlreadyHeld))
-    | step.Answer(FromStore(..)) ->
+    | step.Answer(FromStore(..))
+    | step.Answer(FromSessions(..)) ->
       told(
         session:,
         reason: LostUserServer,
@@ -699,9 +789,154 @@ fn key_taken(
   }
 }
 
+/// Opens a watch on Sessions and asks it to make this connection the account's
+/// session; `select` is the character select the client is in once it
+/// answers. The watch is opened with every claim, so a restarted Sessions is
+/// watched again.
+fn claim(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  select select: character_select.State,
+  retries retries: Int,
+) -> client_connection.Handled(Session) {
+  ask(
+    session: Session(
+      ..session,
+      status: ClaimingSession(holder:, select:, retries:),
+    ),
+    now:,
+    request: AskSessions(sessions.Claim(
+      account: holder.account_id,
+      connection: session.link.connection,
+    )),
+    before: [Watch(watch: sessions_watch, target: Sessions)],
+  )
+}
+
+/// Sessions' answer to the claim: `Claimed` puts the client in character
+/// select, where it was, and the frames held are taken. Sessions not running
+/// is waited out up to `claim_retries` times, with the watch dropped; any
+/// other failure of the ask tells the client the server failed, as the store's
+/// do.
+fn claim_answered(
+  session session: Session,
+  holder holder: Holder,
+  select select: character_select.State,
+  retries retries: Int,
+  outcome outcome: Outcome(Answer),
+) -> client_connection.Handled(Session) {
+  case outcome {
+    step.Answer(FromSessions(sessions.Claimed)) ->
+      Continue(
+        Session(..session, status: InCharacterSelect(holder:, select:)),
+        [],
+      )
+    step.Answer(FromSessions(sessions.TakenOver))
+    | step.Answer(FromStore(..))
+    | step.Answer(FromHandOff(..)) ->
+      told(
+        session:,
+        reason: LostUserServer,
+        level: step.LogError,
+        text: "Sessions' answer is none a claim gets",
+      )
+    step.NotRunning if retries < claim_retries ->
+      Done(
+        Session(
+          ..session,
+          status: ClaimingSession(holder:, select:, retries: retries + 1),
+        ),
+        [
+          Unwatch(watch: sessions_watch),
+          StartTimer(timer: claim_timer, after_ms: claim_wait_ms),
+        ],
+      )
+    step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
+      told(
+        session:,
+        reason: LostUserServer,
+        level: LogWarning,
+        text: client_connection.without_answer(who: "Sessions", outcome:),
+      )
+    step.StoppedWaiting -> stopped(session)
+  }
+}
+
+/// What Sessions sent the connection: `TakenOver` tells the client its account
+/// was disconnected (0x036A reason 19) and ends the connection. `Claimed` is
+/// an answer, never sent, and is a bug, as is a takeover before the connection
+/// has claimed.
+fn sessions_sent(
+  session session: Session,
+  message message: sessions.Outgoing,
+) -> client_connection.Handled(Session) {
+  case message, session.status {
+    sessions.TakenOver, InCharacterSelect(..)
+    | sessions.TakenOver, ClaimingSession(..)
+    ->
+      told(
+        session:,
+        reason: AccountDisconnected,
+        level: LogInfo,
+        text: "a newer login of the account took the session over",
+      )
+    sessions.TakenOver, AwaitingHelloReply
+    | sessions.TakenOver, TakingSessionKey
+    -> end_for(session, "Sessions sent a takeover before the claim")
+    sessions.Claimed, _ ->
+      end_for(session, "Sessions sent an answer as a message")
+  }
+}
+
+/// The end of the watch on Sessions: the connection waits on the claim timer,
+/// then claims its account again from where it is. A watch this rule did not
+/// open, or one that ends while the connection is not in character select, is
+/// a bug.
+fn sessions_ended(
+  session session: Session,
+  watch watch: WatchId,
+) -> client_connection.Handled(Session) {
+  case session.status {
+    InCharacterSelect(holder:, select:) if watch == sessions_watch ->
+      Done(
+        Session(
+          ..session,
+          status: ClaimingSession(holder:, select:, retries: 0),
+        ),
+        [StartTimer(timer: claim_timer, after_ms: claim_wait_ms)],
+      )
+    InCharacterSelect(..)
+    | ClaimingSession(..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      end_for(session, "a watch the rule did not open ended")
+  }
+}
+
+/// The claim timer fired: the connection claims again. A timer the rule did
+/// not start, or one that fires when the connection is not waiting on it, is
+/// a bug.
+fn claim_wait_over(
+  session session: Session,
+  now now: Now,
+  timer timer: TimerId,
+) -> client_connection.Handled(Session) {
+  case session.status {
+    ClaimingSession(holder:, select:, retries:) if timer == claim_timer ->
+      claim(session:, now:, holder:, select:, retries:)
+    ClaimingSession(..)
+    | InCharacterSelect(..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      end_for(session, "a timer the rule did not start fired")
+  }
+}
+
 /// The store's answer to character select's ask: the failures every store ask
 /// shares tell the client the server failed; any other answer is character
-/// select's to take.
+/// select's to take. A takeover that waits behind a failing ask is never taken
+/// (the connection ends with this failure's text).
 fn select_answered(
   session session: Session,
   now now: Now,
@@ -740,6 +975,13 @@ fn select_answered(
         reason: LostUserServer,
         level: step.LogError,
         text: "the hand-off's answer is none a store ask gets",
+      )
+    step.Answer(FromSessions(..)) ->
+      told(
+        session:,
+        reason: LostUserServer,
+        level: step.LogError,
+        text: "Sessions' answer is none a store ask gets",
       )
     step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
       told(
@@ -784,7 +1026,7 @@ fn told(
   level level: step.LogLevel,
   text text: String,
 ) -> client_connection.Handled(Session) {
-  End(session, [
+  Done(session, [
     log(session:, level:, text:),
     notice(session:, reason:),
     Stop,
@@ -794,7 +1036,7 @@ fn told(
 /// The server is stopping while an ask is out: the client is told, with no
 /// log line, since a stop is no failure.
 fn stopped(session: Session) -> client_connection.Handled(Session) {
-  End(session, list.append(server_stopping(session), [Stop]))
+  Done(session, list.append(server_stopping(session), [Stop]))
 }
 
 /// The client broke the protocol: an error log line and the end of the
@@ -833,7 +1075,11 @@ fn account_id_of(status: Status) -> Option(Int) {
     InCharacterSelect(
       holder: hand_off.Holder(account_id: store.AccountId(id), ..),
       ..,
-    ) -> Some(id)
+    )
+    | ClaimingSession(
+        holder: hand_off.Holder(account_id: store.AccountId(id), ..),
+        ..,
+      ) -> Some(id)
     AwaitingHelloReply | TakingSessionKey -> None
   }
 }

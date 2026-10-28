@@ -170,27 +170,23 @@ pub fn no_module_in_src_breaks_the_rule_with_the_real_project_file_test() -> Nil
   assert list.flat_map(files, purity.breaches(_, allowed)) == []
 }
 
-pub fn the_game_connection_rule_and_the_features_it_holds_are_pure_rules_the_check_covers_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
+/// The source files at these paths, which must all be found, with the real
+/// project file's allow-lists: each is read by the purity rule and breaks
+/// nothing, and each is checked, not listed as effectful, since the same text
+/// with a process import is a breach.
+fn pure_rules_the_check_covers(
+  paths paths: List(String),
+) -> List(source.SourceFile) {
   let assert Ok(project_file) = simplifile.read("gleam.toml")
     as "gleam.toml could not be read"
   let allowed = purity.allowed(project_file)
-  let rules = [
-    "src/genesis_prime/game/connection.gleam",
-    "src/genesis_prime/game/character_select.gleam",
-    "src/genesis_prime/game/character_creation.gleam",
-    "src/genesis_prime/game/character_name.gleam",
-    "src/genesis_prime/game/appearance.gleam",
-  ]
   let files =
     list.filter(repository.sources(["src"]), fn(file) {
-      list.contains(rules, file.path)
+      list.contains(paths, file.path)
     })
-  assert list.length(files) == 5
+  assert list.length(files) == list.length(paths)
     as "every module is among the files the purity rule reads"
   assert list.flat_map(files, purity.breaches(_, allowed)) == []
-    as "CLAUDE.md: every game and connection decision is a rule, a pure function"
   // The harness can fail: the same modules with a process import are breaches.
   list.each(files, fn(file) {
     let with_effect =
@@ -200,5 +196,43 @@ pub fn the_game_connection_rule_and_the_features_it_holds_are_pure_rules_the_che
       )
     assert list.length(purity.breaches(with_effect, allowed)) == 1
       as { file.path <> " must be checked, not listed as effectful" }
+  })
+  files
+}
+
+pub fn the_game_connection_rule_and_the_features_it_holds_are_pure_rules_the_check_covers_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let _files =
+    pure_rules_the_check_covers(paths: [
+      "src/genesis_prime/game/connection.gleam",
+      "src/genesis_prime/game/character_select.gleam",
+      "src/genesis_prime/game/character_creation.gleam",
+      "src/genesis_prime/game/character_name.gleam",
+      "src/genesis_prime/game/appearance.gleam",
+    ])
+  Nil
+}
+
+pub fn the_sessions_rule_and_the_contract_it_runs_under_hold_no_pid_monitor_or_subject_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let files =
+    pure_rules_the_check_covers(paths: [
+      "src/genesis_prime/sessions.gleam",
+      "src/genesis_prime/step.gleam",
+      "src/genesis_prime/client_connection.gleam",
+      "src/genesis_prime/game/connection.gleam",
+    ])
+  list.each(files, fn(file) {
+    list.each(["Pid", "Monitor", "Subject"], fn(name) {
+      assert !string.contains(file.text, name)
+        as {
+          file.path
+          <> " names "
+          <> name
+          <> ", a process's handle: CLAUDE.md says no type a rule takes or returns holds one"
+        }
+    })
   })
 }

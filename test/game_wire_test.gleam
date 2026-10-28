@@ -107,6 +107,31 @@ pub fn a_client_with_a_held_session_key_gets_the_hello_and_then_the_list_of_its_
   login_support.stop(started)
 }
 
+pub fn a_second_login_to_the_account_disconnects_the_first_with_0x036a_reason_19_and_gets_its_list_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let _id =
+    character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
+  let first = in_select(started:, port:, account:)
+  let second = in_select(started:, port:, account:)
+  // The second login's list came after its claim, which sent the first
+  // connection its takeover.
+  let assert [notice] = game_client.read(game: first, count: 1)
+  assert notice.message_id == 0x036A as "opcode.0x36a"
+  assert disconnect_notice.decode(notice.body)
+    == Ok(DisconnectNotice(reason: AccountDisconnected))
+    as "0x1400168a0: 19 is 'This account has been disconnected', which the connection a newer login took over gets"
+  assert game_client.closed(game: first) as "and the server closes it"
+  // The newest login stays connected: its ping is answered.
+  game_client.send(game: second, message_id: 0x07E0, body: <<>>)
+  let assert [_level, listed] = game_client.read(game: second, count: 2)
+  assert listed.message_id == 0x0117
+    as "the second connection still plays: its list is asked and answered"
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
 pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_19_and_is_disconnected_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(started, port, _account) = start()

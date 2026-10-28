@@ -4,7 +4,13 @@
 //// (genesis_prime/store/worker), and says where it went with `Sent`, so the
 //// asker's shell knows what to watch and what to do at the deadline
 //// (genesis_prime/connection/shell). The `Call` is what reaches a service.
+////
+//// A rule also names processes by `Address`, to watch them and to send them a
+//// message without waiting. The server makes `Locate` and `Reach` once from
+//// the names it started its processes with, and its shells use them, so no
+//// rule holds a process id.
 
+import genesis_prime/step.{type Address}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Name, type Pid}
 
@@ -26,6 +32,27 @@ pub type Sent {
   /// it, so no work goes on for an asker that gave up, and no answer comes
   /// late.
   ToWorker(pid: Pid)
+}
+
+/// How a shell finds the process an address names, to watch it: its pid, or
+/// `Error(Nil)` when no process is running there, or the address names no
+/// process yet (a map). Made once at start by the server; a rule never sees
+/// it.
+pub type Locate =
+  fn(Address) -> Result(Pid, Nil)
+
+/// How a service's shell reaches the processes its rule names by address.
+/// Made once at start by the server, from the processes' names.
+pub type Reach(outgoing) {
+  Reach(
+    /// Where an address runs, for `Watch`.
+    locate: Locate,
+    /// Sends the process at the address the message, in the form that
+    /// process takes (a connection takes it as a `Woken` input), for `Send`.
+    /// `Error(Nil)` when no process is running there; the message is
+    /// dropped.
+    send: fn(Address, outgoing) -> Result(Nil, Nil),
+  )
 }
 
 /// Sends a service the message, for an asker's directory: `Error(Nil)` when

@@ -32,7 +32,8 @@ import character_tables
 import connection_rule_support as support
 import game_client
 import genesis_prime/client_connection.{
-  type Answer, type Request, AskHandOff, AskStore, FromHandOff, FromStore,
+  type Answer, type Message, type Request, AskHandOff, AskSessions, AskStore,
+  FromHandOff, FromSessions, FromStore, SentBySessions,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -61,9 +62,12 @@ import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/server_hello.{ServerHello}
+import genesis_prime/sessions.{Claim, Claimed, TakenOver}
 import genesis_prime/step.{
   type Event, type Outcome, type Step, ConnectionId, EndedBeforeAnswer, LogError,
-  LogWarning, NoAnswerInTime, NotRunning, OtherSocketFailure, StoppedWaiting,
+  LogInfo, LogWarning, NoAnswerInTime, NotRunning, OtherSocketFailure, Sessions,
+  StartTimer, StoppedWaiting, TimerFired, TimerId, Unwatch, Watch, WatchEnded,
+  WatchId, Woken,
 }
 import genesis_prime/store.{
   AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
@@ -73,6 +77,7 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import owned_test
@@ -118,7 +123,7 @@ const filetime = 133_900_000_000_000_000
 
 fn feed(
   state: game_connection.State,
-  event: Event(Nil, Answer),
+  event: Event(Message, Answer),
 ) -> #(game_connection.State, Step(Nil, Request)) {
   game_connection.step(state, support.input_at(filetime:, event:))
 }
@@ -183,15 +188,35 @@ fn replied() -> #(game_connection.State, Step(Nil, Request)) {
   read(connected(), hello_reply())
 }
 
-/// The connection after the hand-off held the key: in character select,
-/// nothing asked.
-fn in_select() -> game_connection.State {
+/// The connection after the hand-off held the key: Sessions asked to claim
+/// the account.
+fn claiming() -> #(game_connection.State, Step(Nil, Request)) {
   let #(state, taken) = replied()
   answer(
     state:,
     taken:,
     outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
-  ).0
+  )
+}
+
+/// The claim the connection asks Sessions: its account and its id.
+fn claim_ask() -> Request {
+  AskSessions(Claim(account: AccountId(7), connection: ConnectionId(1)))
+}
+
+/// Sessions' answer to the claim in `taken`.
+fn claimed(
+  state state: game_connection.State,
+  taken taken: Step(Nil, Request),
+) -> #(game_connection.State, Step(Nil, Request)) {
+  answer(state:, taken:, outcome: step.Answer(FromSessions(Claimed)))
+}
+
+/// The connection after Sessions answered the claim: in character select,
+/// nothing asked.
+fn in_select() -> game_connection.State {
+  let #(state, taken) = claiming()
+  claimed(state:, taken:).0
 }
 
 /// The connection after 0x07E0, with its ask to the store.
@@ -312,8 +337,10 @@ pub fn message_0x058f_asks_the_hand_off_to_take_the_session_key_and_every_later_
       taken:,
       outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
     )
-  assert support.asked(taken) == None
+  assert ask_request(taken) == claim_ask()
+    as "the account the hand-off named, claimed for this connection"
   assert support.writes(taken) == []
+  let #(state, _) = claimed(state:, taken:)
   // The next read is under the session key: the store is asked because 0x07E0
   // opened under it.
   let #(_, taken) = read(state, select_start())
@@ -338,14 +365,17 @@ pub fn message_0x07e0_in_the_same_read_as_0x058f_waits_until_the_hand_off_answer
     == AskHandOff(Take(SessionKey(key: support.guid_of(1))))
     as "only the hand-off is asked while the key is out: 0x07E0 waits in the bytes read"
   assert support.writes(taken) == []
-  let #(_, taken) =
+  let #(state, taken) =
     answer(
       state:,
       taken:,
       outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
     )
+  assert ask_request(taken) == claim_ask()
+    as "Sessions is asked first: 0x07E0 still waits in the bytes read"
+  let #(_, taken) = claimed(state:, taken:)
   assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
-    as "the holder's account, once the hand-off answers"
+    as "the holder's account, once Sessions answers"
   let assert Some(ask) = support.asked(taken)
   assert ask.deadline_ms == support.now_ms + 4000
   assert support.writes(taken) == []
@@ -541,6 +571,9 @@ pub fn the_server_stopping_after_the_hello_gets_0x036a_reason_8_under_the_cipher
   let #(state, taken) = replied()
   let #(_, taken) = answer(state:, taken:, outcome: StoppedWaiting)
   assert disconnect(taken, keyed()) == LostUserServer
+  let #(state, taken) = claiming()
+  let #(_, taken) = answer(state:, taken:, outcome: StoppedWaiting)
+  assert disconnect(taken, keyed()) == LostUserServer
   let #(state, taken) = listing()
   let #(_, taken) = answer(state:, taken:, outcome: StoppedWaiting)
   assert disconnect(taken, keyed()) == LostUserServer
@@ -576,12 +609,13 @@ pub fn a_first_message_other_than_0x058f_or_a_second_0x058f_is_logged_as_an_erro
       ),
     )
   let #(state, taken) = read(connected(), <<hello_reply():bits, second:bits>>)
-  let #(_, taken) =
+  let #(state, taken) =
     answer(
       state:,
       taken:,
       outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
     )
+  let #(_, taken) = claimed(state:, taken:)
   assert support.stops(taken)
   assert list.length(support.logs_of(step: taken, level: LogError)) == 1
   // And one in character select.
@@ -632,6 +666,7 @@ pub fn frames_after_the_one_that_asked_wait_for_its_answer_and_are_then_taken_in
       taken:,
       outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
     )
+  let #(state, taken) = claimed(state:, taken:)
   assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
   assert unhandled_ids(taken) == []
     as "0x038C follows 0x07E0 in the bytes and waits for the store's answer"
@@ -1167,4 +1202,236 @@ pub fn a_0x025c_or_0x07dd_the_clients_reader_would_refuse_ends_the_connection_te
   let #(_, taken) = read(in_select(), keyed_message(0x07DD, <<1, 2>>))
   assert support.stops(taken)
   assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+}
+
+// ---- one login per account ----
+//
+// Expected values come from these places: the rule's doc comment (the claim
+// follows the hand-off and comes before the list; Sessions ending is claimed
+// again after a short wait; a takeover disconnects the old connection), 0x036A
+// reason 19 for a takeover and reason 8 for the server's own failure
+// (0x1400168a0, opcode.0x36a), and the claim's contract in
+// `genesis_prime/sessions`. The wait is 100 ms and the retries of a claim that
+// finds Sessions not running are 5, as the rule's constants state.
+
+/// The wait, in milliseconds, before a claim is made again.
+const claim_wait_ms = 100
+
+/// How many times a claim that finds Sessions not running is made again.
+const claim_retries = 5
+
+fn taken_over() -> Event(Message, Answer) {
+  Woken(message: SentBySessions(message: TakenOver))
+}
+
+/// A connection in character select with its list shown, which Sessions' end
+/// finds with state to keep.
+fn in_select_with_a_list() -> game_connection.State {
+  listed(characters: []).0
+}
+
+pub fn after_the_hand_off_the_account_is_claimed_with_a_watch_on_sessions_before_the_list_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, claim) = claiming()
+  assert support.effects_of(claim) == [Watch(WatchId(1), Sessions)]
+    as "the rule watches Sessions with the claim, under its one watch id"
+  assert ask_request(claim) == claim_ask()
+  let assert Some(ask) = support.asked(claim)
+  assert ask.deadline_ms == support.now_ms + 4000
+    as "the settings' ask deadline from the time of the input"
+  // 0x07E0 arriving while the claim is out waits; the list is asked only after
+  // Sessions answers.
+  let #(state, taken) = read(state, select_start())
+  assert support.asked(taken) == None
+  assert support.effects_of(taken) == []
+  let #(_, taken) = claimed(state:, taken: claim)
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
+    as "the claim comes before the list: the frame that waited is taken once Sessions answers"
+}
+
+pub fn a_connection_given_taken_over_writes_0x036a_reason_19_under_its_cipher_and_ends_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = feed(in_select_with_a_list(), taken_over())
+  assert disconnect(taken, keyed()) == AccountDisconnected
+    as "0x1400168a0: 19 is 'This account has been disconnected', the account-level text, for the connection a newer login took over"
+  let assert [line] = support.logs_of(step: taken, level: LogInfo)
+    as "the takeover is logged at info, once"
+  assert line.about.connection == Some(ConnectionId(1))
+    && line.about.account_id == Some(7)
+    as "the line names the connection and the account"
+  assert support.asked(taken) == None
+  assert support.logs_of(step: taken, level: LogWarning) == []
+}
+
+pub fn a_takeover_while_the_connection_waits_to_claim_again_ends_it_with_reason_19_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
+  let #(_, taken) = feed(state, taken_over())
+  assert disconnect(taken, keyed()) == AccountDisconnected
+    as "a takeover Sessions sent before it ended still disconnects the old connection"
+}
+
+pub fn a_message_sessions_never_sends_or_one_before_the_claim_is_a_bug_with_an_error_and_the_end_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let answer_as_a_message = Woken(message: SentBySessions(message: Claimed))
+  list.each(
+    [
+      feed(in_select(), answer_as_a_message).1,
+      feed(connected(), taken_over()).1,
+      feed(replied().0, taken_over()).1,
+    ],
+    fn(taken) {
+      assert support.stops(taken)
+      assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+      assert support.writes(taken) == []
+        as "a connection that was no one's session has nothing to be told"
+    },
+  )
+}
+
+pub fn the_end_of_the_watch_on_sessions_starts_a_timer_and_its_firing_claims_again_from_where_the_connection_is_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
+  assert support.effects_of(taken) == [StartTimer(TimerId(1), claim_wait_ms)]
+    as "Sessions is likely still restarting, so the claim waits a moment"
+  assert support.asked(taken) == None
+  // Bytes that arrive during the wait are kept for after the claim.
+  let #(state, taken) = read(state, select_start())
+  assert support.asked(taken) == None && support.effects_of(taken) == []
+  let #(state, taken) = feed(state, TimerFired(TimerId(1)))
+  assert support.effects_of(taken) == [Watch(WatchId(1), Sessions)]
+    as "the ended watch is forgotten, so the one watch is opened again under its id"
+  assert ask_request(taken) == claim_ask()
+  assert support.writes(taken) == [] as "the client sees nothing"
+  let #(_, taken) = claimed(state:, taken:)
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
+    as "Claimed puts the connection back in character select with its state, and the 0x07E0 that waited is taken"
+}
+
+pub fn a_second_end_of_sessions_claims_again_under_the_same_watch_id_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
+  let #(state, taken) = feed(state, TimerFired(TimerId(1)))
+  let state = claimed(state:, taken:).0
+  let #(state, taken) = feed(state, WatchEnded(WatchId(1)))
+  assert support.effects_of(taken) == [StartTimer(TimerId(1), claim_wait_ms)]
+  let #(_, taken) = feed(state, TimerFired(TimerId(1)))
+  assert support.effects_of(taken) == [Watch(WatchId(1), Sessions)]
+}
+
+pub fn a_watch_or_timer_the_rule_did_not_open_is_a_bug_with_an_error_and_the_end_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(waiting, _) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
+  list.each(
+    [
+      feed(in_select_with_a_list(), WatchEnded(WatchId(9))).1,
+      feed(in_select_with_a_list(), TimerFired(TimerId(1))).1,
+      feed(waiting, WatchEnded(WatchId(1))).1,
+      feed(waiting, TimerFired(TimerId(2))).1,
+      feed(replied().0, WatchEnded(WatchId(1))).1,
+      feed(connected(), TimerFired(TimerId(1))).1,
+    ],
+    fn(taken) {
+      assert support.stops(taken)
+      assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    },
+  )
+}
+
+pub fn a_claim_that_finds_sessions_not_running_is_made_again_after_a_wait_up_to_the_retries_then_reason_8_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = claiming()
+  let retry = fn(held: #(game_connection.State, Step(Nil, Request)), _try) {
+    let #(state, taken) = held
+    let #(state, taken) = answer(state:, taken:, outcome: NotRunning)
+    assert support.effects_of(taken)
+      == [Unwatch(WatchId(1)), StartTimer(TimerId(1), claim_wait_ms)]
+      as "the watch on a Sessions that is not running is dropped, and the claim waits"
+    assert support.asked(taken) == None
+    assert support.writes(taken) == []
+    let #(state, taken) = feed(state, TimerFired(TimerId(1)))
+    assert support.effects_of(taken) == [Watch(WatchId(1), Sessions)]
+    assert ask_request(taken) == claim_ask()
+    #(state, taken)
+  }
+  let #(state, taken) =
+    int.range(from: 1, to: claim_retries + 1, with: #(state, taken), run: retry)
+  let #(_, taken) = answer(state:, taken:, outcome: NotRunning)
+  assert disconnect(taken, keyed()) == LostUserServer
+    as "after the retries the client is told the server failed, or it would wait on its prompt for good"
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+  assert support.says(line:, words: "sessions was not running")
+}
+
+pub fn a_claim_that_finds_sessions_not_running_after_its_end_is_made_again_with_the_same_bound_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
+  let #(state, taken) = feed(state, TimerFired(TimerId(1)))
+  let #(state, taken) = answer(state:, taken:, outcome: NotRunning)
+  assert support.effects_of(taken)
+    == [Unwatch(WatchId(1)), StartTimer(TimerId(1), claim_wait_ms)]
+  let #(_, taken) = feed(state, TimerFired(TimerId(1)))
+  assert ask_request(taken) == claim_ask()
+}
+
+pub fn a_claim_sessions_does_not_answer_gets_0x036a_reason_8_a_warning_and_the_connection_ends_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each([NoAnswerInTime, EndedBeforeAnswer], fn(outcome) {
+    let #(state, taken) = claiming()
+    let #(_, taken) = answer(state:, taken:, outcome:)
+    assert disconnect(taken, keyed()) == LostUserServer
+      as "0x1400168a0: 8 is 'Lost connection with user server.', as for the store"
+    let assert [line] = support.logs_of(step: taken, level: LogWarning)
+    assert line.about.peer == Some(support.peer)
+    assert line.about.account_id == Some(7)
+  })
+  // A claim that Sessions does not answer on a claim made again after its end.
+  let #(state, _) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
+  let #(state, taken) = feed(state, TimerFired(TimerId(1)))
+  let #(_, taken) = answer(state:, taken:, outcome: NoAnswerInTime)
+  assert disconnect(taken, keyed()) == LostUserServer
+}
+
+pub fn an_answer_to_the_claim_that_is_none_a_claim_gets_is_a_bug_with_reason_8_and_an_error_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      step.Answer(FromSessions(TakenOver)),
+      step.Answer(FromStore(Unavailable)),
+      step.Answer(FromHandOff(Kept)),
+    ],
+    fn(outcome) {
+      let #(state, taken) = claiming()
+      let #(_, taken) = answer(state:, taken:, outcome:)
+      assert disconnect(taken, keyed()) == LostUserServer
+      assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    },
+  )
+}
+
+pub fn the_server_stopping_while_a_claim_is_out_or_waited_for_gets_reason_8_with_no_log_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = claiming()
+  let #(_, out) = answer(state:, taken:, outcome: StoppedWaiting)
+  assert disconnect(out, keyed()) == LostUserServer
+  assert support.logs(out) == [] as "a stop is no failure"
+  let #(waiting, _) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
+  let #(_, stopping) = feed(waiting, step.Stopping(deadline_ms: 9000))
+  assert disconnect(stopping, keyed()) == LostUserServer
+  let #(_, closed) = feed(waiting, step.Socket(step.PeerClosed))
+  assert support.effects_of(closed) == [step.Stop]
+    as "a client that closes while the connection waits is not told"
+}
+
+pub fn a_takeover_queued_behind_a_failing_store_ask_ends_with_reason_8_not_reason_19_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The shell takes no other input while an ask is out, so a takeover that
+  // arrives meanwhile is taken after the ask's outcome; the outcome here ends
+  // the connection, so the takeover is never taken. This is the gap the rule
+  // states: the client gets the server-failure text, not the account's. Both
+  // end the connection.
+  let #(state, taken) = listing()
+  let #(_, taken) = answer(state:, taken:, outcome: NoAnswerInTime)
+  assert disconnect(taken, keyed()) == LostUserServer
+    as "a failing ask ends with reason 8 though a takeover waits behind it"
 }

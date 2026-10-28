@@ -3,7 +3,6 @@
 
 import client_tables
 import fresh_node
-import genesis_prime/client_connection.{type Answer, type Request}
 import genesis_prime/rule_recording.{End, Header}
 import genesis_prime/rule_types
 import genesis_prime/step.{type Input, type Step, Rule}
@@ -12,10 +11,10 @@ import gleam/list
 import gleam/option.{Some}
 import simplifile
 
-/// The folder of the live session's recordings: a login of the real client
-/// through the STS, auth and game servers, and the creation of a Veteran
-/// character, listed and selected afterwards.
-pub const folder = "test/rule_recording/2026-10-28-delete-rename/"
+/// The folder of the live session's recordings: the real client logged in
+/// through the STS, auth and game servers and left on the character select
+/// screen, then a second login to the same account that took its session over.
+pub const folder = "test/rule_recording/2026-10-28-takeover/"
 
 /// Replays the recording `file` of the folder through the rule `module`,
 /// whose settings are the ones its header holds, and gives the inputs replayed
@@ -32,7 +31,8 @@ pub fn replayed(
   module module: String,
   reads_tables reads_tables: Bool,
   new new: fn(settings) -> state,
-  step step: fn(state, Input(Nil, Answer)) -> #(state, Step(Nil, Request)),
+  step step: fn(state, Input(message, answer)) ->
+    #(state, Step(outgoing, request)),
 ) -> #(Int, Int) {
   let assert Ok(bytes) = simplifile.read_bits(folder <> file)
     as "the recording reads"
@@ -43,7 +43,8 @@ pub fn replayed(
     True -> Some(store.digest(client_tables.shared()))
     False -> tables_digest
   }
-  let records: List(rule_recording.Record(Nil, Answer, Nil, Request)) = records
+  let records: List(rule_recording.Record(message, answer, outgoing, request)) =
+    records
   let assert Ok(End(count:)) = list.last(records)
     as "the live session ended each connection, so each recording closes with End"
   let assert Ok(digest) =
