@@ -269,16 +269,16 @@ fn coded(result: Outcome(Answer)) -> #(Int, Int) {
   case result {
     step.Answer(FromGate(gate_rule.Echoed(n))) -> #(code_echoed, n)
     step.Answer(FromGate(gate_rule.Opened(key:))) -> #(code_opened, key)
-    step.Answer(FromStore(store.AccountFound(account:))) -> {
+    step.Answer(FromStore(store.ToFindAccount(store.AccountFound(account:)))) -> {
       let store.AccountId(id) = account.account_id
       #(code_account_found, id % 256)
     }
-    step.Answer(FromStore(store.NoSuchAccount)) -> #(code_no_such_account, 0)
+    step.Answer(FromStore(store.ToFindAccount(store.NoSuchAccount))) -> #(
+      code_no_such_account,
+      0,
+    )
     step.Answer(FromStore(store.Unavailable)) -> #(code_unavailable, 0)
-    step.Answer(FromStore(store.Characters(..)))
-    | step.Answer(FromStore(store.CharacterCreated(..)))
-    | step.Answer(FromStore(store.NameTaken))
-    | step.Answer(FromStore(store.NoFreeSlot)) ->
+    step.Answer(FromStore(..)) ->
       panic as "the asking rule asks for accounts only"
     NotRunning -> #(code_not_running, 0)
     NoAnswerInTime -> #(code_no_answer_in_time, 0)

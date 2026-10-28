@@ -686,35 +686,34 @@ fn select_answered(
         level: LogWarning,
         text: "the store is unavailable",
       )
-    step.Answer(FromStore(answer)) ->
-      case
-        character_select.answered(
+    step.Answer(FromStore(store.ToListCharacters(characters:))) ->
+      select_taken(
+        session:,
+        now:,
+        holder:,
+        taken: character_select.listed(
           select,
-          answer,
+          characters:,
           filetime: now.filetime,
           realm_id: session.settings.realm_id,
           max_characters: session.settings.max_characters,
           tables: session.settings.tables,
-        )
-      {
-        Ok(#(select, effects)) ->
-          carry_out(
-            session: Session(
-              ..session,
-              status: InCharacterSelect(holder:, select:),
-            ),
-            now:,
-            effects:,
-            written: [],
-          )
-        Error(Nil) ->
-          told(
-            session:,
-            reason: LostUserServer,
-            level: step.LogError,
-            text: "the store's answer is none character select asked for",
-          )
-      }
+        ),
+      )
+    step.Answer(FromStore(store.ToCreateCharacter(answer:))) ->
+      select_taken(
+        session:,
+        now:,
+        holder:,
+        taken: character_select.created(select, answer),
+      )
+    step.Answer(FromStore(..)) ->
+      told(
+        session:,
+        reason: LostUserServer,
+        level: step.LogError,
+        text: "the store's answer is none character select asked for",
+      )
     step.Answer(FromHandOff(..)) ->
       told(
         session:,
@@ -730,6 +729,36 @@ fn select_answered(
         text: client_connection.without_answer(who: "the store", outcome:),
       )
     step.StoppedWaiting -> stopped(session)
+  }
+}
+
+/// What character select made of the store's answer: its new state and
+/// effects carried out, or, for an answer it has no ask for, the client told
+/// the server failed.
+fn select_taken(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  taken taken: Result(
+    #(character_select.State, List(character_select.Effect)),
+    Nil,
+  ),
+) -> client_connection.Handled(Session) {
+  case taken {
+    Ok(#(select, effects)) ->
+      carry_out(
+        session: Session(..session, status: InCharacterSelect(holder:, select:)),
+        now:,
+        effects:,
+        written: [],
+      )
+    Error(Nil) ->
+      told(
+        session:,
+        reason: LostUserServer,
+        level: step.LogError,
+        text: "the store's answer is none character select asked for",
+      )
   }
 }
 

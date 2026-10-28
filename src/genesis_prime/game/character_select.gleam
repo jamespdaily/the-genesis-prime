@@ -13,7 +13,7 @@
 ////                                                                      or Send(0x00DC), refused
 //// the client's 0x07DD, decoded       ─▶ play_requested(..)
 ////                                                                   ─▶ Send(0x0162), Ask(ListCharacters(account))
-//// the store's answer                  ─▶ answered(state, answer, ..)
+//// the store's answer                  ─▶ listed(..) or created(..)
 ////                                                                   ─▶ Send(0x0036), Send(0x0117)
 ////                                                                      or Send(0x00DC)
 //// ```
@@ -52,8 +52,8 @@
 ////   ago, and every other with 0, which is none, so it is the one selected
 ////   (lua.CharacterSelection.OnLoadFromCharacter.preselect, 0x1401e83a0).
 //// - **Its asks and their answers are its own.** It asks the store itself and
-////   takes the store's answer in `answered`, which refuses an answer of a kind
-////   it did not ask for. The game connection's rule holds the client's frames
+////   takes each request's answer in the function of that request (`listed`,
+////   `created`), which refuses an answer while no such ask is out. The game connection's rule holds the client's frames
 ////   while an ask is out (`waiting`), so a second request is taken only after
 ////   the answer to the first.
 //// - **No answer.** The client waits for 0x0117 and for 0x00DC with no
@@ -94,7 +94,7 @@ const just_now_days = -0.000001
 /// What a character select asks or sends; the game connection's rule turns
 /// each into its own effect.
 pub type Effect {
-  /// Ask the store; its answer comes back to `answered`.
+  /// Ask the store; its answer comes back to the function of that request.
   Ask(request: store.Request)
   /// Send this message to the client, in the game wrapper under the
   /// connection's current cipher.
@@ -188,22 +188,21 @@ pub fn play_requested(
   ])
 }
 
-/// The store's answer to an ask: for the characters, sends 0x0036 and 0x0117
-/// with one entry per character, in the order given; for a create, sends
-/// 0x00DC with its result. Another answer, or any answer while no ask is out,
-/// is none this module asked for and gives an `Error`. `filetime` is the system
-/// time of the input as a Windows FILETIME (genesis_prime/step), the server's
-/// time the client keeps the difference from.
-pub fn answered(
+/// The store's answer to the ask for the characters: sends 0x0036 and 0x0117
+/// with one entry per character, in the order given. With no list asked for,
+/// it is none this module asked for and gives an `Error`. `filetime` is the
+/// system time of the input as a Windows FILETIME (genesis_prime/step), the
+/// server's time the client keeps the difference from.
+pub fn listed(
   state state: State,
-  answer answer: store.Answer,
+  characters characters: List(Character),
   filetime filetime: Int,
   realm_id realm_id: Int,
   max_characters max_characters: Int,
   tables tables: table_store.Tables,
 ) -> Result(#(State, List(Effect)), Nil) {
-  case state, answer {
-    Listing(selected:), store.Characters(characters:) ->
+  case state {
+    Listing(selected:) ->
       Ok(#(
         Resting,
         list_effects(
@@ -215,36 +214,34 @@ pub fn answered(
           tables:,
         ),
       ))
-    Creating, store.CharacterCreated(character_id: CharacterId(character_id)) ->
-      Ok(created(character_id:, result: create_result.CreateOk))
-    Creating, store.NameTaken ->
-      Ok(created(character_id: 0, result: create_result.NameUnavailable))
-    Creating, store.NoFreeSlot ->
-      Ok(created(character_id: 0, result: create_result.AccountFull))
-    Resting, store.Characters(..)
-    | Resting, store.CharacterCreated(..)
-    | Resting, store.NameTaken
-    | Resting, store.NoFreeSlot
-    | Resting, store.Unavailable
-    | Resting, store.AccountFound(..)
-    | Resting, store.NoSuchAccount
-    | Listing(..), store.CharacterCreated(..)
-    | Listing(..), store.NameTaken
-    | Listing(..), store.NoFreeSlot
-    | Listing(..), store.Unavailable
-    | Listing(..), store.AccountFound(..)
-    | Listing(..), store.NoSuchAccount
-    | Creating, store.Characters(..)
-    | Creating, store.Unavailable
-    | Creating, store.AccountFound(..)
-    | Creating, store.NoSuchAccount
-    -> Error(Nil)
+    Resting | Creating -> Error(Nil)
+  }
+}
+
+/// The store's answer to the ask to make a character: sends 0x00DC with the
+/// result. With no create asked for, it is none this module asked for and
+/// gives an `Error`.
+pub fn created(
+  state state: State,
+  answer answer: store.CreateAnswer,
+) -> Result(#(State, List(Effect)), Nil) {
+  case state {
+    Creating ->
+      Ok(case answer {
+        store.CharacterCreated(character_id: CharacterId(character_id)) ->
+          created_with(character_id:, result: create_result.CreateOk)
+        store.NameTaken ->
+          created_with(character_id: 0, result: create_result.NameUnavailable)
+        store.NoFreeSlot ->
+          created_with(character_id: 0, result: create_result.AccountFull)
+      })
+    Resting | Listing(..) -> Error(Nil)
   }
 }
 
 /// The transition a create's answer makes: the create is done, and 0x00DC
 /// tells the client the result.
-fn created(
+fn created_with(
   character_id character_id: Int,
   result result: CreateResult,
 ) -> #(State, List(Effect)) {

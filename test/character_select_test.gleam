@@ -12,8 +12,9 @@
 ////   the largest last-logout float among those that have one
 ////   (lua.CharacterSelection.OnLoadFromCharacter.preselect); 0 is none.
 //// - The rows the tests build, and the real CharacterCustomization rows.
-//// It asks the store itself and takes the store's answer in `answered`, which
-//// refuses an answer of a kind it did not ask for. A second 0x07E0 while the
+//// It asks the store itself and takes each request's answer in the function of
+//// that request (`listed`, `created`), which refuses one while no such ask is
+//// out. A second 0x07E0 while the
 //// store is asked is the game connection's to hold, with the client's other
 //// frames (test/game_connection_test.gleam).
 
@@ -33,8 +34,8 @@ import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
 import genesis_prime/store.{
   type Character, AccountId, Character, CharacterCreated, CharacterId,
-  Characters, CreateCharacter as StoreCreate, ListCharacters, LookEntry,
-  NameTaken, NewCharacter, NoFreeSlot, NoSuchAccount, Unavailable,
+  CreateCharacter as StoreCreate, ListCharacters, LookEntry, NameTaken,
+  NewCharacter, NoFreeSlot,
 }
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import gleam/list
@@ -43,13 +44,13 @@ import owned_test
 
 const filetime = 133_900_000_000_000_000
 
-fn answered(
+fn listed(
   state: character_select.State,
-  answer: store.Answer,
+  characters: List(Character),
 ) -> Result(#(character_select.State, List(character_select.Effect)), Nil) {
-  character_select.answered(
+  character_select.listed(
     state,
-    answer,
+    characters,
     filetime:,
     realm_id: 1,
     max_characters: 2,
@@ -128,36 +129,34 @@ pub fn the_clients_0x07e0_asks_the_store_for_the_accounts_characters_test() -> N
     as "the store's answer is awaited, so the game connection holds the client's frames"
 }
 
-pub fn an_answer_that_is_no_list_or_comes_with_no_ask_out_is_none_character_select_takes_test() -> Nil {
+pub fn an_answer_that_comes_with_no_ask_of_its_kind_out_is_none_character_select_takes_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(asking, _) = character_select.started(AccountId(7))
-  assert answered(asking, NoSuchAccount) == Error(Nil)
-    as "a login name's answer is none a list ask gets"
-  assert answered(asking, Unavailable) == Error(Nil)
-    as "the failures every store ask shares are the game connection's to handle"
-  assert answered(asking, CharacterCreated(character_id: CharacterId(1)))
+  assert character_select.created(
+      asking,
+      CharacterCreated(character_id: CharacterId(1)),
+    )
     == Error(Nil)
     as "a create's answer is none a list ask gets"
-  assert answered(character_select.new(), Characters([])) == Error(Nil)
+  assert listed(character_select.new(), []) == Error(Nil)
     as "rows nobody asked for"
-  let assert Ok(#(state, _)) = answered(asking, Characters([]))
+  let assert Ok(#(state, _)) = listed(asking, [])
   assert !character_select.waiting(state) as "the list is sent"
-  assert answered(state, Characters([])) == Error(Nil)
-    as "one ask has one answer"
+  assert listed(state, []) == Error(Nil) as "one ask has one answer"
+  let #(creating, _) = create(a_request("Ab Cd"))
+  assert listed(creating, []) == Error(Nil)
+    as "a list is none a create ask gets"
 }
 
 pub fn a_list_is_0x0036_with_the_accounts_highest_level_and_then_0x0117_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(asking, _) = character_select.started(AccountId(7))
   let assert Ok(#(_, effects)) =
-    answered(
-      asking,
-      Characters([
-        stored(id: 1, name: "Ab Cd", level: 12),
-        stored(id: 2, name: "Ef Gh", level: 50),
-        stored(id: 3, name: "Ij Kl", level: 3),
-      ]),
-    )
+    listed(asking, [
+      stored(id: 1, name: "Ab Cd", level: 12),
+      stored(id: 2, name: "Ef Gh", level: 50),
+      stored(id: 3, name: "Ij Kl", level: 3),
+    ])
   let assert [
     Frame(message_id: 0x0036, body: level),
     Frame(message_id: 0x0117, ..),
@@ -166,7 +165,7 @@ pub fn a_list_is_0x0036_with_the_accounts_highest_level_and_then_0x0117_test() -
   assert max_character_level.decode(level) == Ok(MaxCharacterLevel(50))
     as "opcode.0x36: the highest character level the account has reached, here 50"
   let #(asking, _) = character_select.started(AccountId(7))
-  let assert Ok(#(_, effects)) = answered(asking, Characters([]))
+  let assert Ok(#(_, effects)) = listed(asking, [])
   let assert [
     Frame(message_id: 0x0036, body: none),
     Frame(message_id: 0x0117, ..),
@@ -179,13 +178,10 @@ pub fn a_list_built_from_0x07e0_selects_no_character_by_its_logout_test() -> Nil
   use <- owned_test.run(60_000)
   let #(asking, _) = character_select.started(AccountId(7))
   let assert Ok(#(_, effects)) =
-    answered(
-      asking,
-      Characters([
-        stored(id: 1, name: "Ab Cd", level: 1),
-        stored(id: 2, name: "Ef Gh", level: 1),
-      ]),
-    )
+    listed(asking, [
+      stored(id: 1, name: "Ab Cd", level: 1),
+      stored(id: 2, name: "Ef Gh", level: 1),
+    ])
   assert list.map(entries(effects), fn(entry) { entry.last_logged_out_days })
     == [0, 0]
     as "lua.CharacterSelection.OnLoadFromCharacter.preselect: a character sent with 0 has no last logout, so the client selects the first in the list"
@@ -205,7 +201,7 @@ pub fn an_entry_carries_the_body_visuals_of_its_look_and_its_bones_test() -> Nil
       bones: [0x3F800000, 0x40000000],
     )
   let #(asking, _) = character_select.started(AccountId(7))
-  let assert Ok(#(_, effects)) = answered(asking, Characters([character]))
+  let assert Ok(#(_, effects)) = listed(asking, [character])
   let assert [entry] = entries(effects)
   assert list.contains(
     entry.body_visuals,
@@ -255,7 +251,7 @@ pub fn the_stores_answer_to_a_create_becomes_the_result_the_client_shows_test() 
   use <- owned_test.run(60_000)
   let result_for = fn(answer) {
     let #(asking, _) = create(a_request("Ab Cd"))
-    let assert Ok(#(state, effects)) = answered(asking, answer)
+    let assert Ok(#(state, effects)) = character_select.created(asking, answer)
     assert !character_select.waiting(state) as "the result is sent"
     create_result_of(effects)
   }
@@ -348,14 +344,11 @@ pub fn after_a_play_request_the_character_it_named_is_selected_by_the_clients_ru
       request: PlayCharacter(character_id: 2),
     )
   let assert Ok(#(state, effects)) =
-    answered(
-      asking,
-      Characters([
-        stored(id: 1, name: "Ab Cd", level: 4),
-        stored(id: 2, name: "Ef Gh", level: 1),
-        stored(id: 3, name: "Ij Kl", level: 9),
-      ]),
-    )
+    listed(asking, [
+      stored(id: 1, name: "Ab Cd", level: 4),
+      stored(id: 2, name: "Ef Gh", level: 1),
+      stored(id: 3, name: "Ij Kl", level: 9),
+    ])
   assert !character_select.waiting(state)
   let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, ..)] =
     sent(effects)
@@ -377,7 +370,7 @@ pub fn after_a_play_request_the_character_it_named_is_selected_by_the_clients_ru
       request: PlayCharacter(character_id: 99),
     )
   let assert Ok(#(_, effects)) =
-    answered(asking, Characters([stored(id: 1, name: "Ab Cd", level: 4)]))
+    listed(asking, [stored(id: 1, name: "Ab Cd", level: 4)])
   assert list.map(entries(effects), fn(entry) { entry.last_logged_out_days })
     == [0]
 }

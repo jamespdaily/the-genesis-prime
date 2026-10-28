@@ -30,8 +30,9 @@ import genesis_prime/login/guid
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
   type AccountId, Account, AccountFound, AccountId, Character, CharacterCreated,
-  CharacterId, Characters, FindAccount, ListCharacters, LookEntry, NameTaken,
-  NewCharacter, NoFreeSlot, NoSuchAccount, Unavailable,
+  CharacterId, FindAccount, ListCharacters, LookEntry, NameTaken, NewCharacter,
+  NoFreeSlot, NoSuchAccount, ToCreateCharacter, ToFindAccount, ToListCharacters,
+  Unavailable,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -68,13 +69,15 @@ pub fn a_stored_login_name_gives_its_account_id_salt_verifier_and_game_account_i
     >>)
     as "sixteen bytes are a GUID"
   assert ask(store, FindAccount("login-1"))
-    == AccountFound(Account(
-      account_id: AccountId(id),
-      login_name: "login-1",
-      srp_salt: <<1, 2, 3>>,
-      srp_verifier: <<4, 5, 6, 7>>,
-      game_account_id:,
-    ))
+    == ToFindAccount(
+      AccountFound(Account(
+        account_id: AccountId(id),
+        login_name: "login-1",
+        srp_salt: <<1, 2, 3>>,
+        srp_verifier: <<4, 5, 6, 7>>,
+        game_account_id:,
+      )),
+    )
     as "the row the test inserted, as the STS login needs it"
   stop(store)
 }
@@ -90,7 +93,7 @@ pub fn an_unknown_login_name_gives_no_such_account_test() -> Nil {
       verifier: <<2>>,
       game_account_id: a_game_account_id(),
     )
-  assert ask(store, FindAccount("login-2")) == NoSuchAccount
+  assert ask(store, FindAccount("login-2")) == ToFindAccount(NoSuchAccount)
     as "no row has that login name"
   stop(store)
 }
@@ -292,7 +295,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
       path: 1,
     )
   assert ask(store, ListCharacters(account))
-    == Characters([
+    == ToListCharacters([
       Character(
         character_id: CharacterId(first),
         name: "Zed",
@@ -336,10 +339,10 @@ pub fn an_account_with_no_characters_or_no_account_gives_an_empty_list_test() ->
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
   let account = insert_account(store, "login-1")
-  assert ask(store, ListCharacters(account)) == Characters([])
+  assert ask(store, ListCharacters(account)) == ToListCharacters([])
     as "no row has that account's id"
   assert ask(store, ListCharacters(AccountId(account_id_nobody_has)))
-    == Characters([])
+    == ToListCharacters([])
     as "the contract of store.Characters: none when no such account exists"
   stop(store)
 }
@@ -427,7 +430,7 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
     returned.rows
     as "the account of that login name got one row"
   assert ask(store, ListCharacters(account))
-    == Characters([
+    == ToListCharacters([
       Character(
         character_id: CharacterId(character_id),
         name: "Dev",
@@ -488,15 +491,18 @@ fn create(
   account account: AccountId,
   name name: String,
   slots slots: Int,
-) -> store.Answer {
-  ask(
-    store,
-    store.CreateCharacter(
-      account_id: account,
-      character: a_new_character(name),
-      character_slots: slots,
-    ),
-  )
+) -> store.CreateAnswer {
+  let assert ToCreateCharacter(answer) =
+    ask(
+      store,
+      store.CreateCharacter(
+        account_id: account,
+        character: a_new_character(name),
+        character_slots: slots,
+      ),
+    )
+    as "a create is answered with a create's answer"
+  answer
 }
 
 pub fn a_create_stores_the_character_at_level_1_with_the_values_it_was_given_and_the_list_returns_it_test() -> Nil {
@@ -507,7 +513,7 @@ pub fn a_create_stores_the_character_at_level_1_with_the_values_it_was_given_and
     create(store:, account: account, name: "Ab Cd", slots: 2)
     as "the first create of an account with 2 slots is stored"
   assert ask(store, ListCharacters(account))
-    == Characters([
+    == ToListCharacters([
       Character(
         character_id:,
         name: "Ab Cd",
@@ -547,9 +553,9 @@ pub fn a_name_taken_in_any_case_is_name_taken_and_nothing_is_stored_test() -> Ni
     as "lua.Character.OnCreateCharacterFailed: 6; a name is unique ignoring case, across accounts, held by a unique index on lower(name)"
   assert create(store:, account: account, name: "AB CD", slots: 2) == NameTaken
     as "the same account too"
-  assert ask(store, ListCharacters(other)) == Characters([])
+  assert ask(store, ListCharacters(other)) == ToListCharacters([])
     as "nothing was stored for the refused create"
-  let assert Characters([_]) = ask(store, ListCharacters(account))
+  let assert ToListCharacters([_]) = ask(store, ListCharacters(account))
     as "the account still holds its one character"
   let assert CharacterCreated(_) =
     create(store:, account: other, name: "Éb Cd", slots: 2)
@@ -569,7 +575,7 @@ pub fn an_account_at_its_slot_count_gets_no_free_slot_and_nothing_is_stored_test
     create(store:, account: account, name: "Ef Gh", slots: 2)
   assert create(store:, account: account, name: "Ij Kl", slots: 2) == NoFreeSlot
     as "lua.CharacterSelection.OnLoadFromCharacter: 2 slots without an entitlement; a create past them is account full (9)"
-  let assert Characters([_, _]) = ask(store, ListCharacters(account))
+  let assert ToListCharacters([_, _]) = ask(store, ListCharacters(account))
     as "nothing was stored for the refused create"
   let assert CharacterCreated(_) =
     create(store:, account: other, name: "Mn Op", slots: 2)
@@ -600,7 +606,7 @@ pub fn two_creates_at_once_for_an_account_with_one_slot_make_one_character_test(
   assert list.count(received, is_created) == 1
     as "storing-data: the slot count is held by Postgres, in one statement under the account's row lock, so racing creates of one account make one character"
   assert list.count(received, fn(answer) { answer == NoFreeSlot }) == 3
-  let assert Characters([_]) = ask(store, ListCharacters(account))
+  let assert ToListCharacters([_]) = ask(store, ListCharacters(account))
   stop(store)
 }
 
@@ -647,15 +653,10 @@ pub fn the_table_refuses_a_look_whose_labels_and_values_differ_in_number_and_a_t
   stop(store)
 }
 
-fn is_created(answer: store.Answer) -> Bool {
+fn is_created(answer: store.CreateAnswer) -> Bool {
   case answer {
     CharacterCreated(..) -> True
-    AccountFound(..)
-    | NoSuchAccount
-    | Characters(..)
-    | Unavailable
-    | NameTaken
-    | NoFreeSlot -> False
+    NameTaken | NoFreeSlot -> False
   }
 }
 

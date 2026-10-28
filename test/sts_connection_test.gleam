@@ -40,7 +40,8 @@ import genesis_prime/step.{
   LogError, LogWarning, NoAnswerInTime, NotRunning, StoppedWaiting,
 }
 import genesis_prime/store.{
-  AccountFound, AccountId, FindAccount, NoSuchAccount, Unavailable,
+  AccountFound, AccountId, FindAccount, NoSuchAccount, ToFindAccount,
+  Unavailable,
 }
 import gleam/bit_array
 import gleam/int
@@ -216,7 +217,9 @@ fn key_data_exchange(
     answer(
       session:,
       taken:,
-      outcome: step.Answer(FromStore(AccountFound(support.jim()))),
+      outcome: step.Answer(
+        FromStore(ToFindAccount(AccountFound(support.jim()))),
+      ),
     )
   let #(session, bytes) = hear(session, taken)
   let assert Ok(server_key_data) =
@@ -380,7 +383,9 @@ pub fn login_start_for_a_stored_account_answers_key_data_with_the_accounts_salt_
     answer(
       session:,
       taken:,
-      outcome: step.Answer(FromStore(AccountFound(support.jim()))),
+      outcome: step.Answer(
+        FromStore(ToFindAccount(AccountFound(support.jim()))),
+      ),
     )
   let assert [written] = support.writes(taken) as "one KeyData reply"
   let reply = reply_of(written)
@@ -396,7 +401,11 @@ pub fn login_start_for_an_unknown_name_answers_error_3002_and_nothing_is_ciphere
   use <- owned_test.run(10_000)
   let #(session, taken) = login_start(connected(seed: support.seed(first: 1)))
   let #(session, taken) =
-    answer(session:, taken:, outcome: step.Answer(FromStore(NoSuchAccount)))
+    answer(
+      session:,
+      taken:,
+      outcome: step.Answer(FromStore(ToFindAccount(NoSuchAccount))),
+    )
   let #(session, bytes) = hear(session, taken)
   assert_error_reply(bytes:, sequence: 1, code: 3002)
   assert session.receiving == None && session.sending == None
@@ -665,7 +674,9 @@ pub fn the_srp_secret_and_the_token_come_from_the_connections_seed_only_test() -
       answer(
         session:,
         taken:,
-        outcome: step.Answer(FromStore(AccountFound(support.jim()))),
+        outcome: step.Answer(
+          FromStore(ToFindAccount(AccountFound(support.jim()))),
+        ),
       )
     let assert [written] = support.writes(taken)
     let #(session, _exchange) = proven(seed:)

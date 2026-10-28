@@ -60,8 +60,9 @@ import genesis_prime/step.{
   LogWarning, NoAnswerInTime, NotRunning, OtherSocketFailure, StoppedWaiting,
 }
 import genesis_prime/store.{
-  AccountId, Character, CharacterCreated, CharacterId, Characters,
-  ListCharacters, LookEntry, NameTaken, NewCharacter, NoFreeSlot, Unavailable,
+  AccountId, Character, CharacterCreated, CharacterId, ListCharacters, LookEntry,
+  NameTaken, NewCharacter, NoFreeSlot, ToCreateCharacter, ToListCharacters,
+  Unavailable,
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -199,7 +200,7 @@ fn listed(
   answer(
     state:,
     taken:,
-    outcome: step.Answer(FromStore(Characters(characters:))),
+    outcome: step.Answer(FromStore(ToListCharacters(characters:))),
   )
 }
 
@@ -503,6 +504,24 @@ pub fn a_store_that_gives_no_answer_or_is_unavailable_gets_0x036a_reason_8_a_war
   )
 }
 
+pub fn a_store_answer_to_another_ask_than_the_one_out_gets_0x036a_reason_8_an_error_and_the_connection_ends_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      step.Answer(FromStore(store.ToFindAccount(store.NoSuchAccount))),
+      step.Answer(FromStore(ToCreateCharacter(NameTaken))),
+    ],
+    fn(outcome) {
+      let #(state, taken) = listing()
+      let #(_, taken) = answer(state:, taken:, outcome:)
+      assert disconnect(taken, keyed()) == LostUserServer
+        as "a list is asked for, so the client would wait on its prompt for good unless it is told"
+      assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+        as "an answer of another ask is a bug of the server's: an error"
+    },
+  )
+}
+
 pub fn the_server_stopping_after_the_hello_gets_0x036a_reason_8_under_the_cipher_held_and_the_connection_ends_test() -> Nil {
   use <- owned_test.run(10_000)
   // Waiting for 0x058F: the base key.
@@ -612,7 +631,7 @@ pub fn frames_after_the_one_that_asked_wait_for_its_answer_and_are_then_taken_in
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(Characters(characters: []))),
+      outcome: step.Answer(FromStore(ToListCharacters(characters: []))),
     )
   let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, ..)] =
     heard(taken, keyed())
@@ -675,7 +694,7 @@ pub fn a_second_0x07e0_asks_the_store_again_and_sends_a_new_list_test() -> Nil {
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(Characters([character(id: 5, name: "Eve", seed: 1)])),
+        FromStore(ToListCharacters([character(id: 5, name: "Eve", seed: 1)])),
       ),
     )
   let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, body:)] =
@@ -755,7 +774,9 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(CharacterCreated(CharacterId(11)))),
+      outcome: step.Answer(
+        FromStore(ToCreateCharacter(CharacterCreated(CharacterId(11)))),
+      ),
     )
   assert create_result_of(taken)
     == CreateCharacterResult(
@@ -781,12 +802,20 @@ pub fn a_name_taken_in_any_case_and_an_account_at_its_slots_are_0x00dc_6_and_9_t
   use <- owned_test.run(10_000)
   let #(state, taken) = creating(a_create_request("Ab Cd"))
   let #(_, taken) =
-    answer(state:, taken:, outcome: step.Answer(FromStore(NameTaken)))
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ToCreateCharacter(NameTaken))),
+    )
   assert create_result_of(taken).result == create_result.NameUnavailable
     as "lua.Character.OnCreateCharacterFailed: 6"
   let #(state, taken) = creating(a_create_request("Ab Cd"))
   let #(_, taken) =
-    answer(state:, taken:, outcome: step.Answer(FromStore(NoFreeSlot)))
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ToCreateCharacter(NoFreeSlot))),
+    )
   assert create_result_of(taken).result == create_result.AccountFull
     as "lua.Character.OnCreateCharacterFailed: 9"
   assert !support.stops(taken)
@@ -832,7 +861,9 @@ pub fn message_0x07dd_after_a_create_gets_0x0162_failed_then_0x0036_and_0x0117_w
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(CharacterCreated(CharacterId(11)))),
+      outcome: step.Answer(
+        FromStore(ToCreateCharacter(CharacterCreated(CharacterId(11)))),
+      ),
     )
   let #(state, taken) = read(state, play_message(11))
   let assert [Frame(message_id: 0x0162, body:)] = heard(taken, keyed())
@@ -848,7 +879,9 @@ pub fn message_0x07dd_after_a_create_gets_0x0162_failed_then_0x0036_and_0x0117_w
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(Characters([character(id: 5, name: "Eve", seed: 2), new])),
+        FromStore(
+          ToListCharacters([character(id: 5, name: "Eve", seed: 2), new]),
+        ),
       ),
     )
   let assert [
@@ -897,7 +930,9 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(CharacterCreated(CharacterId(11)))),
+      outcome: step.Answer(
+        FromStore(ToCreateCharacter(CharacterCreated(CharacterId(11)))),
+      ),
     )
   let assert [Frame(message_id: 0x00DC, ..), Frame(message_id: 0x0162, ..)] =
     heard(taken, keyed())

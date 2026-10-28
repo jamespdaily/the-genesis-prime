@@ -116,13 +116,30 @@ pub type Request {
   )
 }
 
-/// What the store answers.
+/// What the store answers: the failure every request shares, or the answer to
+/// the request asked, wrapped in the request's own variant so a rule that
+/// asked one request takes only that request's answer type.
 pub type Answer {
-  AccountFound(account: Account)
-  NoSuchAccount
+  /// The database could not be reached, or did not answer within the
+  /// query's own timeout. A read changed nothing, so asking again is safe; a
+  /// create ran in one transaction, which committed or did not, and the
+  /// account's list on its next login shows which.
+  Unavailable
+  ToFindAccount(answer: FindAccountAnswer)
   /// The account's characters, in the order they were created; none when it
   /// has none, or when no such account exists.
-  Characters(characters: List(Character))
+  ToListCharacters(characters: List(Character))
+  ToCreateCharacter(answer: CreateAnswer)
+}
+
+/// What the store answers a `FindAccount`.
+pub type FindAccountAnswer {
+  AccountFound(account: Account)
+  NoSuchAccount
+}
+
+/// What the store answers a `CreateCharacter`.
+pub type CreateAnswer {
   /// The character was made, with this id.
   CharacterCreated(character_id: CharacterId)
   /// Another character has the name, in any case; nothing was made.
@@ -130,9 +147,4 @@ pub type Answer {
   /// The account already has as many characters as its slots; nothing was
   /// made.
   NoFreeSlot
-  /// The database could not be reached, or did not answer within the
-  /// query's own timeout. A read changed nothing, so asking again is safe; a
-  /// create ran in one transaction, which committed or did not, and the
-  /// account's list on its next login shows which.
-  Unavailable
 }
