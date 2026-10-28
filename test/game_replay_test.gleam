@@ -1,12 +1,12 @@
 //// The live session's two game recordings, replayed through the game rule with
 //// no socket, process or database. Expected values come from these places.
-//// - The recording (`test/rule_recording/2026-10-28-player-path`): the real
-////   client's connection that played a level-3 Veteran character into the
-////   world, closed with `End`, which counts 100 inputs. A Novice entry is not
-////   in this session: selecting a second character takes a mouse click, and
-////   the session ran with background keys only. Its earlier recording no
-////   longer replays, since the entry now sends 0x6BC; the Novice place is
-////   tested in start_place_test.
+//// - The recording (`test/rule_recording/2026-10-28-full-session`): the real
+////   client's connection in a session the playing-live skill's `session.sh`
+////   ran with no person, which played a level-3 Veteran character into the
+////   world, closed with `End`, which counts 71 inputs. Its verdict, beside
+////   it, checked the client's own report of that character against its saved
+////   row. A Novice entry is not in it: selecting a second character takes a
+////   mouse click; the Novice place is tested in start_place_test.
 //// - The game tables: the header's digest of the table files the server
 ////   loaded; a replay on other files fails with "record again". The replay
 ////   reads the client's tables, so it is skipped where `GENESIS_NO_CLIENT=1`.
@@ -27,7 +27,7 @@ pub fn the_veteran_entrys_game_recording_replays_to_the_same_steps_test() -> Nil
   let #(inputs, count) =
     replayed(file: "genesis_prime.game.connection-5.recording")
   assert inputs == count as "the replay folds every input the End counts"
-  assert count == 100 as "the Veteran entry's connection took 100 inputs"
+  assert count == 71 as "the Veteran entry's connection took 71 inputs"
 }
 
 fn replayed(file file: String) -> #(Int, Int) {

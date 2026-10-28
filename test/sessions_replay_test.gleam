@@ -1,6 +1,6 @@
 //// The live session's Sessions recording, replayed through the sessions rule
 //// with no process. Expected values come from these places.
-//// - The recording (`test/rule_recording/2026-10-28-player-path`): the real
+//// - The recording (`test/rule_recording/2026-10-28-full-session`): the real
 ////   client's claim, the end of its connection's watch and the server's
 ////   stop, closed with `End`, which counts 4 inputs.
 //// - Sessions reads no game table, so the replay needs no tables, whatever
