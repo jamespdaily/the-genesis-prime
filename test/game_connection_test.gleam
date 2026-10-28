@@ -22,8 +22,8 @@
 ////   the hello.
 //// - World entry: the client's path from 0x07DD to control (the fact file's
 ////   opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc, opcode.0x636,
-////   opcode.0xf1 and opcode.0x61, and the order the client's handlers need), the player's
-////   0x262 against the client's own vector (vector.opcode.0x262.roxo_alive,
+////   opcode.0xf1 and opcode.0x61, and the order the client's handlers
+////   need), the player's 0x262 against the client's own vector (vector.opcode.0x262.roxo_alive,
 ////   tested with `player_unit_test`), the saved place a WorldLocation2 row
 ////   gives (character_tables), the map's join in the rule's doc comment, the
 ////   failures every ask shares (reason 8), and 0x038C carrying one whole inner

@@ -113,7 +113,7 @@ pub type Awaiting {
 const movement_send_interval_ms = 125
 
 /// The experience each path starts with: 0, which the client turns into path
-/// level 1 (opcode.0x6bc, PathLevel). No path experience is stored.
+/// level 1 (opcode.0x6bc, PathLevel.pathXP). No path experience is stored.
 const starting_path_experience = 0
 
 /// The days since the last path change 0x6BC carries: -1.0, so the client's
@@ -274,11 +274,8 @@ fn unit_is_player(unit_id unit_id: Int) -> Effect {
   Send(Frame(message_id: unit_is_player.message_id, body:))
 }
 
-/// 0x6BC with the character's stored path, no experience on any path, the bit
-/// of its own path as the only unlocked one (a new character picks one path on
-/// the create screen; the client holds no value for more, and its path tracker
-/// reads neither this nor the days) and -1.0 days since the last change
-/// (opcode.0x6bc).
+/// 0x6BC with the character's stored path as its only unlocked path, and the
+/// starting experience and change days (opcode.0x6bc).
 fn player_path(character character: Character) -> Effect {
   let assert Ok(body) =
     player_path.encode(PlayerPath(
@@ -290,7 +287,7 @@ fn player_path(character character: Character) -> Effect {
       unlocked_paths: int.bitwise_shift_left(1, character.path),
       last_path_change_days: float32.to_bits(path_change_days),
     ))
-    as "a stored path of the create screen's 0 to 3 fits the message's 3 bits and its bit the 4 of the unlocked paths"
+    as "a stored path of 0 to 3 fits the message's 3 bits, and its bit fits the 4 unlocked-path bits"
   Send(Frame(message_id: player_path.message_id, body:))
 }
 

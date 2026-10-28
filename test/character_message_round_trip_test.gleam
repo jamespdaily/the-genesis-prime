@@ -606,7 +606,7 @@ pub fn player_path_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
   message_support.round_trips(
     name: "message 0x6bc",
-    seed: 20_261_028,
+    seed: 20_261_219,
     draw: fn(state) {
       let #(path, state) = message_support.unsigned(state:, bits: 3)
       let #(soldier_experience, state) =

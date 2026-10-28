@@ -12,8 +12,8 @@
 ////   (lua.CharacterSelection.OnLoadFromCharacter); the place a create saves is
 ////   the WorldLocation2 row of its start (`character_tables`).
 //// - World entry: the client's 0x07DD is answered with 0xAD, 0x262, 0x19B,
-////   0x6BC, 0x636, 0xF1 and 0x61 (opcode.0xad and the others), the refusal of a play
-////   of a character the account does not have with 0x0162, 0x0036 and 0x0117
+////   0x6BC, 0x636, 0xF1 and 0x61 (opcode.0xad and the others), the refusal of
+////   a play of a character the account does not have with 0x0162, 0x0036 and 0x0117
 ////   (opcode.0x162.after_create, opcode.0x36), and the end of the player's map
 ////   with 0x036A reason 8 (0x1400168a0).
 //// - The delete path: 0x0352 is answered with 0x00E6 (opcode.0x352,

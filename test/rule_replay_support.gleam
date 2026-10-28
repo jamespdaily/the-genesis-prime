@@ -14,10 +14,8 @@ import simplifile
 
 /// The folder of the live session's recordings: the real client logged in
 /// through the STS, auth and game servers and played a level-3 Veteran
-/// character into the world and moved it; logged in again to the select
-/// screen; then logged in a third time, created a Novice character and played
-/// it into the world.
-pub const folder = "test/rule_recording/2026-10-28-world-entry/"
+/// character into the world, which sent it the player's path.
+pub const folder = "test/rule_recording/2026-10-28-player-path/"
 
 /// The names of the folder's recordings of the rule `module`, in order: the
 /// files the recorder named after the rule (`genesis_prime/rule_recording/file`).

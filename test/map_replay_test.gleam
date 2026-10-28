@@ -18,8 +18,8 @@ import rule_replay_support
 pub fn every_map_run_the_live_session_recorded_replays_to_the_same_steps_test() -> Nil {
   use <- owned_test.run(60_000)
   let files = rule_replay_support.recordings_of(module: map.rule_name)
-  assert list.length(files) == 2
-    as "the live session held two map runs: the Veteran start's world 426 and the Novice start's world 3460"
+  assert list.length(files) == 1
+    as "the live session held one map run: the Veteran start's world 426"
   list.each(files, fn(file) {
     let #(inputs, count) = replayed(file:)
     assert inputs == count
