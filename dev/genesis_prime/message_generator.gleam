@@ -11,6 +11,7 @@ import genesis_prime/message_schema.{
 }
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import simplifile
@@ -214,6 +215,7 @@ fn message_module(message: Message) -> String {
       type_doc,
       type_declaration(type_name, message.fields),
       [""],
+      value_types(message.fields),
       wrap(
         "///",
         "The message as the bytes of its body, or the first field that cannot be written.",
@@ -228,6 +230,7 @@ fn message_module(message: Message) -> String {
       decode_head,
       decode_body(message.fields, type_name),
       ["}"],
+      value_functions(message.fields),
     ]),
   )
 }
@@ -253,6 +256,7 @@ fn record_module(record: Record) -> String {
       ),
       type_declaration(type_name, record.fields),
       [""],
+      value_types(record.fields),
       ["/// Writes the record's fields to the stream."],
       function_head(
         name: "write",
@@ -270,6 +274,7 @@ fn record_module(record: Record) -> String {
       read_steps(record.fields),
       construct_with_reader(record.fields, type_name),
       ["}"],
+      value_functions(record.fields),
     ]),
   )
 }
@@ -470,7 +475,7 @@ fn type_declaration(type_name: String, fields: List(Field)) -> List(String) {
         indent: 2,
         head: type_name,
         arguments: list.map(held(fields), fn(field) {
-          field.name <> ": " <> field_type(field.kind)
+          field.name <> ": " <> field_type(field)
         }),
         tail: "",
       )
@@ -478,7 +483,14 @@ fn type_declaration(type_name: String, fields: List(Field)) -> List(String) {
   list.flatten([["pub type " <> type_name <> " {"], declaration, ["}"]])
 }
 
-fn field_type(kind: Kind) -> String {
+fn field_type(field: Field) -> String {
+  case field.named_values {
+    Some(named_values) -> named_values.type_name
+    None -> kind_type(field.kind)
+  }
+}
+
+fn kind_type(kind: Kind) -> String {
   case kind {
     message_schema.Unsigned(..)
     | message_schema.UnsignedBelow(..)
@@ -497,6 +509,88 @@ fn field_type(kind: Kind) -> String {
   }
 }
 
+/// The custom type of each field whose values the schema names, one case for
+/// each value and `Other` for any value the schema does not name.
+fn value_types(fields: List(Field)) -> List(String) {
+  list.flat_map(fields, fn(field) {
+    case field.named_values {
+      None -> []
+      Some(named_values) ->
+        list.flatten([
+          wrap(
+            "///",
+            "The values of the `"
+              <> field.name
+              <> "` field that `schema.toml` names, each with the evidence for its meaning, and `Other` for any value it does not name.",
+          ),
+          ["pub type " <> named_values.type_name <> " {"],
+          list.flat_map(named_values.values, fn(value) {
+            let evidence = case value.evidence {
+              Some(key) -> ", the fact file's `" <> key <> "`"
+              None -> ""
+            }
+            list.flatten([
+              wrap(
+                "  ///",
+                "The value " <> int.to_string(value.value) <> evidence <> ".",
+              ),
+              ["  " <> camel(value.name)],
+            ])
+          }),
+          ["  /// A value the schema does not name.", "  Other(Int)", "}", ""],
+        ])
+    }
+  })
+}
+
+/// The two functions that turn each valued field's type into its number for
+/// the encoder and back for the decoder, each preceded by a blank line.
+fn value_functions(fields: List(Field)) -> List(String) {
+  list.flat_map(fields, fn(field) {
+    case field.named_values {
+      None -> []
+      Some(named_values) -> {
+        let type_name = named_values.type_name
+        list.flatten([
+          [
+            "",
+            "/// The number the encoder writes for the `"
+              <> field.name
+              <> "` field's type.",
+            "fn "
+              <> field.name
+              <> "_to_value("
+              <> field.name
+              <> ": "
+              <> type_name
+              <> ") -> Int {",
+            "  case " <> field.name <> " {",
+          ],
+          list.map(named_values.values, fn(value) {
+            "    " <> camel(value.name) <> " -> " <> int.to_string(value.value)
+          }),
+          ["    Other(value) -> value", "  }", "}", ""],
+          [
+            "/// The `"
+              <> field.name
+              <> "` field's type for a number the decoder read.",
+            "fn "
+              <> field.name
+              <> "_from_value(value: Int) -> "
+              <> type_name
+              <> " {",
+            "  case value {",
+          ],
+          list.map(named_values.values, fn(value) {
+            "    " <> int.to_string(value.value) <> " -> " <> camel(value.name)
+          }),
+          ["    other -> Other(other)", "  }", "}"],
+        ])
+      }
+    }
+  })
+}
+
 /// The fields a generated type holds: every field but the constants, which the
 /// encoder writes and the decoder checks.
 fn held(fields: List(Field)) -> List(Field) {
@@ -511,7 +605,10 @@ fn held(fields: List(Field)) -> List(Field) {
 /// The pipeline step that writes a field of the value held in `owner`.
 fn write_step(field: Field, owner: String) -> List(String) {
   let name = "\"" <> field.name <> "\""
-  let value = owner <> "." <> field.name
+  let value = case field.named_values {
+    Some(_) -> field.name <> "_to_value(" <> owner <> "." <> field.name <> ")"
+    None -> owner <> "." <> field.name
+  }
   let #(function, arguments) = case field.kind {
     message_schema.Unsigned(bits:) -> #("write_unsigned", [
       name,
@@ -630,7 +727,21 @@ fn read_step(field: Field) -> List(String) {
     message_schema.Constant(..) -> "reader"
     _ -> "#(" <> field.name <> ", reader)"
   }
-  use_line(pattern:, call_head: "bit_stream." <> function, arguments:)
+  let read =
+    use_line(pattern:, call_head: "bit_stream." <> function, arguments:)
+  case field.named_values {
+    Some(_) ->
+      list.append(read, [
+        "  let "
+        <> field.name
+        <> " = "
+        <> field.name
+        <> "_from_value("
+        <> field.name
+        <> ")",
+      ])
+    None -> read
+  }
 }
 
 fn read_steps(fields: List(Field)) -> List(String) {

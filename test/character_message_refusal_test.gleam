@@ -105,7 +105,7 @@ pub fn a_result_wider_than_6_bits_is_refused_test() -> Nil {
   assert create_character_result.encode(CreateCharacterResult(
       character_id: 1,
       field_2: 0,
-      result: 64,
+      result: create_character_result.Other(64),
     ))
     == Error(bit_stream.ValueDoesNotFit("result", 6, 64))
     as "ReadMessage00DCBody 0x14007FD50: the result is 6 bits"

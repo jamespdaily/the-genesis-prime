@@ -6,10 +6,12 @@
 
 import genesis_prime/message_generator
 import genesis_prime/message_schema.{
-  ArrayOfFloat32, ArrayOfUnsigned, Both, Constant, UnknownCountField,
-  UnsignedArrayCountedBy, UnsignedBelow, WrongTypeOfKey,
+  ArrayOfFloat32, ArrayOfUnsigned, Both, Constant, DuplicateValue,
+  DuplicateValueName, NamedValues, UnknownCountField, UnsignedArrayCountedBy,
+  UnsignedBelow, ValuesOnOtherKind, WrongTypeOfKey,
 }
 import gleam/list
+import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 
@@ -129,4 +131,85 @@ pub fn a_limit_above_the_fields_width_is_refused_test() -> Nil {
     ))
     == Error(WrongTypeOfKey("number", "limit"))
     as "a 4-bit value is below 16 at the most"
+}
+
+const valued_field =
+  "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"Cause\", values = [ { value = 6, name = \"gone\", evidence = \"x\" }, { value = 19, name = \"timed_out\" } ] },"
+
+pub fn a_field_lists_its_named_values_with_their_evidence_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(schema) = message_schema.parse(schema_with(valued_field))
+    as "the planted schema parses"
+  let assert [message] = schema.messages as "one message"
+  let assert [field] = message.fields as "one field"
+  assert field.named_values
+    == Some(
+      NamedValues(type_name: "Cause", values: [
+        message_schema.Value(value: 6, name: "gone", evidence: Some("x")),
+        message_schema.Value(value: 19, name: "timed_out", evidence: None),
+      ]),
+    )
+    as "each value keeps its number, its name and the evidence it names, if any"
+}
+
+pub fn a_value_listed_twice_or_named_twice_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(schema_with(
+      "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"Cause\", values = [ { value = 6, name = \"gone\", evidence = \"x\" }, { value = 6, name = \"idle\", evidence = \"x\" } ] },",
+    ))
+    == Error(DuplicateValue(field: "cause", value: 6))
+    as "one number has one case"
+  assert message_schema.parse(schema_with(
+      "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"Cause\", values = [ { value = 6, name = \"gone\", evidence = \"x\" }, { value = 7, name = \"gone\", evidence = \"x\" } ] },",
+    ))
+    == Error(DuplicateValueName(field: "cause", name: "gone"))
+    as "one name is one case"
+}
+
+pub fn a_value_that_does_not_fit_the_fields_bits_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(schema_with(
+      "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"Cause\", values = [ { value = 32, name = \"gone\", evidence = \"x\" } ] },",
+    ))
+    == Error(WrongTypeOfKey("cause", "value"))
+    as "a 5-bit field holds 0 to 31"
+}
+
+pub fn values_on_a_field_that_is_not_an_unsigned_value_are_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(schema_with(
+      "  { name = \"cause\", kind = \"wide_text\", evidence = \"x\", values_type = \"Cause\", values = [ { value = 6, name = \"gone\", evidence = \"x\" } ] },",
+    ))
+    == Error(ValuesOnOtherKind("cause"))
+    as "only an unsigned value has numbers to name"
+}
+
+pub fn a_valued_field_is_a_custom_type_with_other_decoded_and_encoded_at_the_edge_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(schema) = message_schema.parse(schema_with(valued_field))
+    as "the planted schema parses"
+  let assert [file, _record, _client_message] =
+    message_generator.generate(schema)
+    as "one message and one record are two modules, and the client message module is the third"
+  list.each(
+    [
+      "pub type Cause {",
+      "  Gone\n",
+      "  TimedOut\n",
+      "  Other(Int)",
+      "Planted(cause: Cause)",
+      "bit_stream.write_unsigned(\"cause\", cause_to_value(message.cause), 5)",
+      "let cause = cause_from_value(cause)",
+      "    6 -> Gone",
+      "    19 -> TimedOut",
+      "    other -> Other(other)",
+      "    Gone -> 6",
+      "    TimedOut -> 19",
+      "    Other(value) -> value",
+    ],
+    fn(text) {
+      assert string.contains(file.text, text)
+        as { "the generated module holds `" <> text <> "`" }
+    },
+  )
 }

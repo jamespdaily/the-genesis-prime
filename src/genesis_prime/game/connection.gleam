@@ -84,7 +84,9 @@ import genesis_prime/hand_off.{type Holder, SessionKey, Take}
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
 import genesis_prime/message/character_select_start
-import genesis_prime/message/disconnect_notice.{DisconnectNotice}
+import genesis_prime/message/disconnect_notice.{
+  type DisconnectReason, AccountDisconnected, DisconnectNotice, LostUserServer,
+}
 import genesis_prime/message/game_hello_reply
 import genesis_prime/step.{
   type Effect, type Input, type Now, type Outcome, type Rule, type Step, Effects,
@@ -146,11 +148,6 @@ type Status {
   /// its answer is awaited.
   InCharacterSelect(holder: Holder, select: character_select.State)
 }
-
-/// 0x036A's reasons (opcode.0x36a, 0x1400168a0).
-const reason_server_failure = 8
-
-const reason_account_disconnected = 19
 
 /// The rule as its connection shell runs it.
 pub fn rule(
@@ -279,7 +276,10 @@ fn to_client(session: Session, inner: Frame) -> Effect(Nil) {
 
 /// 0x036A with the reason, in the game wrapper under the cipher the
 /// connection holds, so the client leaves its prompt.
-fn notice(session session: Session, reason reason: Int) -> Effect(Nil) {
+fn notice(
+  session session: Session,
+  reason reason: DisconnectReason,
+) -> Effect(Nil) {
   let assert Ok(body) = disconnect_notice.encode(DisconnectNotice(reason:))
     as "a reason is within 5 bits"
   to_client(session, Frame(disconnect_notice.message_id, body))
@@ -289,7 +289,7 @@ fn notice(session session: Session, reason reason: Int) -> Effect(Nil) {
 /// that the server failed, so the client leaves its prompt. A stop is no
 /// failure, so no log line comes with it.
 fn server_stopping(session: Session) -> List(Effect(Nil)) {
-  [notice(session:, reason: reason_server_failure)]
+  [notice(session:, reason: LostUserServer)]
 }
 
 /// What one whole frame does: the network layer's messages first, then the
@@ -502,7 +502,7 @@ fn key_taken(
     step.Answer(FromHandOff(hand_off.NoHolder)) ->
       told(
         session:,
-        reason: reason_account_disconnected,
+        reason: AccountDisconnected,
         level: LogWarning,
         text: "the hand-off does not hold the session key",
       )
@@ -511,14 +511,14 @@ fn key_taken(
     | step.Answer(FromStore(..)) ->
       told(
         session:,
-        reason: reason_server_failure,
+        reason: LostUserServer,
         level: step.LogError,
         text: "the hand-off's answer is none a Take gets",
       )
     step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
       told(
         session:,
-        reason: reason_server_failure,
+        reason: LostUserServer,
         level: LogWarning,
         text: client_connection.without_answer(who: "the hand-off", outcome:),
       )
@@ -540,7 +540,7 @@ fn select_answered(
     step.Answer(FromStore(store.Unavailable)) ->
       told(
         session:,
-        reason: reason_server_failure,
+        reason: LostUserServer,
         level: LogWarning,
         text: "the store is unavailable",
       )
@@ -567,7 +567,7 @@ fn select_answered(
         Error(Nil) ->
           told(
             session:,
-            reason: reason_server_failure,
+            reason: LostUserServer,
             level: step.LogError,
             text: "the store's answer is none character select asked for",
           )
@@ -575,14 +575,14 @@ fn select_answered(
     step.Answer(FromHandOff(..)) ->
       told(
         session:,
-        reason: reason_server_failure,
+        reason: LostUserServer,
         level: step.LogError,
         text: "the hand-off's answer is none a store ask gets",
       )
     step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
       told(
         session:,
-        reason: reason_server_failure,
+        reason: LostUserServer,
         level: LogWarning,
         text: client_connection.without_answer(who: "the store", outcome:),
       )
@@ -594,7 +594,7 @@ fn select_answered(
 /// why.
 fn told(
   session session: Session,
-  reason reason: Int,
+  reason reason: DisconnectReason,
   level level: step.LogLevel,
   text text: String,
 ) -> client_connection.Handled(Session) {

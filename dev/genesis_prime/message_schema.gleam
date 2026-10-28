@@ -47,7 +47,8 @@ pub type Record {
 /// its width, the key that says what it is when it has a name beyond its
 /// position, and, for a field with no name, the key that shows the value the
 /// server sends is safe. A field with no `evidence` is read as such, so the
-/// rule that every field names its evidence can report it.
+/// rule that every field names its evidence can report it. A field whose
+/// values the client's code names also lists them.
 pub type Field {
   Field(
     name: String,
@@ -55,7 +56,22 @@ pub type Field {
     evidence: Option(String),
     named_by: Option(String),
     safe_by: Option(String),
+    named_values: Option(NamedValues),
   )
+}
+
+/// The values of an unsigned field that the schema names: the name of the
+/// custom type the generator writes for the field, and each value with its
+/// name. Any other value the field holds is the type's `Other` case.
+pub type NamedValues {
+  NamedValues(type_name: String, values: List(Value))
+}
+
+/// One named value: its number, its name and the fact-file key that shows the
+/// client gives it that meaning. A value with no `evidence` is read as such,
+/// so the rule that every value names its evidence can report it.
+pub type Value {
+  Value(value: Int, name: String, evidence: Option(String))
 }
 
 /// How a field's value is written on the wire.
@@ -116,6 +132,12 @@ pub type SchemaError {
   /// A field is counted by a field that is not an array before it in the same
   /// message or record.
   UnknownCountField(field: String, counted_by: String)
+  /// A field lists values and is not an unsigned value.
+  ValuesOnOtherKind(field: String)
+  /// A field lists one number for two values.
+  DuplicateValue(field: String, value: Int)
+  /// A field gives one name to two values.
+  DuplicateValueName(field: String, name: String)
 }
 
 /// Reads the text of the schema file.
@@ -258,13 +280,80 @@ fn parse_field(
     kind: kind_name,
     record_names:,
   ))
+  use named_values <- result.try(parse_named_values(table:, field: name, kind:))
   Ok(Field(
     name:,
     kind:,
     evidence: optional_string(table, "evidence"),
     named_by: optional_string(table, "named_by"),
     safe_by: optional_string(table, "safe_by"),
+    named_values:,
   ))
+}
+
+/// The named values of a field, when it lists any: an unsigned field whose
+/// values are each below `2^bits`, with no number and no name twice.
+fn parse_named_values(
+  table table: Dict(String, Toml),
+  field field: String,
+  kind kind: Kind,
+) -> Result(Option(NamedValues), SchemaError) {
+  case tom.get_array(table, ["values"]), kind {
+    Error(tom.NotFound(_)), _ -> Ok(None)
+    Error(tom.WrongType(..)), _ -> Error(WrongTypeOfKey(field, "values"))
+    Ok(_), Unsigned(bits:) -> {
+      use type_name <- result.try(string_of(
+        table:,
+        owner: field,
+        key: "values_type",
+      ))
+      use value_tables <- result.try(tables(table:, owner: field, key: "values"))
+      use values <- result.try(
+        list.try_map(value_tables, parse_value(table: _, field:, bits:)),
+      )
+      use Nil <- result.try(
+        check_values_are_distinct(field:, values:, seen: []),
+      )
+      Ok(Some(NamedValues(type_name:, values:)))
+    }
+    Ok(_), _ -> Error(ValuesOnOtherKind(field))
+  }
+}
+
+fn parse_value(
+  table table: Dict(String, Toml),
+  field field: String,
+  bits bits: Int,
+) -> Result(Value, SchemaError) {
+  use value <- result.try(int_in(
+    table:,
+    owner: field,
+    key: "value",
+    least: 0,
+    most: int.bitwise_shift_left(1, bits) - 1,
+  ))
+  use name <- result.try(string_of(table:, owner: field, key: "name"))
+  Ok(Value(value:, name:, evidence: optional_string(table, "evidence")))
+}
+
+fn check_values_are_distinct(
+  field field: String,
+  values values: List(Value),
+  seen seen: List(Value),
+) -> Result(Nil, SchemaError) {
+  case values {
+    [] -> Ok(Nil)
+    [value, ..rest] ->
+      case
+        list.find(seen, fn(earlier) { earlier.value == value.value }),
+        list.find(seen, fn(earlier) { earlier.name == value.name })
+      {
+        Ok(_), _ -> Error(DuplicateValue(field:, value: value.value))
+        Error(Nil), Ok(_) -> Error(DuplicateValueName(field:, name: value.name))
+        Error(Nil), Error(Nil) ->
+          check_values_are_distinct(field:, values: rest, seen: [value, ..seen])
+      }
+  }
 }
 
 fn parse_kind(
@@ -478,5 +567,11 @@ pub fn describe(error: SchemaError) -> String {
       <> " is counted by "
       <> counted_by
       <> ", which is no array field before it"
+    ValuesOnOtherKind(field:) ->
+      field <> " lists values and is not an unsigned value"
+    DuplicateValue(field:, value:) ->
+      field <> " lists the value " <> int.to_string(value) <> " twice"
+    DuplicateValueName(field:, name:) ->
+      field <> " gives the name " <> name <> " to two values"
   }
 }

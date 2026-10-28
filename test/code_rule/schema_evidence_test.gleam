@@ -175,6 +175,109 @@ pub fn every_field_of_the_message_schema_names_its_evidence_test() -> Nil {
     as "CLAUDE.md: every packet layout lives in one schema with its evidence"
 }
 
+/// A field whose values are named, with the planted fact keys as evidence.
+fn valued_field(values values: String) -> String {
+  "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\", values_type = \"Cause\", values = [ "
+  <> values
+  <> " ] },"
+}
+
+pub fn a_named_value_whose_evidence_is_a_fact_key_is_not_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    schema(
+      fields: [
+        valued_field(
+          values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"idle\", evidence = \"opcode.0x1\" }",
+        ),
+      ],
+      record_fields: [good_field],
+    )
+  assert breach_lines(text) == []
+}
+
+pub fn a_named_value_that_names_no_evidence_is_a_breach_at_its_field_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    schema(
+      fields: [
+        valued_field(
+          values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"idle\" }",
+        ),
+      ],
+      record_fields: [good_field],
+    )
+  let assert [breach] =
+    schema_evidence.breaches(
+      file: SourceFile(path: "src/planted/schema.toml", text:),
+      fact_keys:,
+      sent_messages: [],
+    )
+    as "expected exactly one breach"
+  assert breach.line == 8 as "the field is the first line of the fields array"
+  assert string.contains(breach.rule, "planted_hello.cause")
+    as "the breach names the field"
+  assert string.contains(breach.rule, "idle")
+    as "the breach names the value that has no evidence"
+}
+
+pub fn a_named_value_whose_evidence_is_not_a_fact_key_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    schema(
+      fields: [
+        good_field,
+        valued_field(
+          values: "{ value = 6, name = \"gone\", evidence = \"opcode.0x7\" }",
+        ),
+      ],
+      record_fields: [good_field],
+    )
+  let assert [breach] =
+    schema_evidence.breaches(
+      file: SourceFile(path: "src/planted/schema.toml", text:),
+      fact_keys:,
+      sent_messages: [],
+    )
+    as "expected exactly one breach"
+  assert breach.line == 9
+    as "the valued field is the second line of the fields array"
+  assert string.contains(breach.rule, "opcode.0x7")
+    as "the breach names the key the fact file lacks"
+}
+
+pub fn a_value_or_a_name_that_two_values_share_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  assert breach_lines(
+      schema(
+        fields: [
+          valued_field(
+            values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 6, name = \"idle\", evidence = \"0x1400ac130\" }",
+          ),
+        ],
+        record_fields: [good_field],
+      ),
+    )
+    == [1]
+    as "two values of 6: the schema is refused, which the rule reports as a schema that is not one"
+  assert breach_lines(
+      schema(
+        fields: [
+          valued_field(
+            values: "{ value = 6, name = \"gone\", evidence = \"0x1400ac130\" }, { value = 7, name = \"gone\", evidence = \"0x1400ac130\" }",
+          ),
+        ],
+        record_fields: [good_field],
+      ),
+    )
+    == [1]
+    as "two values named gone: the schema is refused too"
+}
+
 const named_field =
   "  { name = \"build\", kind = \"unsigned\", bits = 32, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },"
 

@@ -16,7 +16,9 @@ import game_client
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
 import genesis_prime/login/guid
 import genesis_prime/message/character_list
-import genesis_prime/message/disconnect_notice.{DisconnectNotice}
+import genesis_prime/message/disconnect_notice.{
+  AccountDisconnected, DisconnectNotice,
+}
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
 import login_support
@@ -90,7 +92,7 @@ pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_
   let assert [notice] = game_client.read(game:, count: 1)
   assert notice.message_id == 0x036A as "opcode.0x36a"
   assert disconnect_notice.decode(notice.body)
-    == Ok(DisconnectNotice(reason: 19))
+    == Ok(DisconnectNotice(reason: AccountDisconnected))
     as "0x1400168a0: 19 is 'This account has been disconnected', for a key the hand-off never held"
   assert game_client.closed(game:) as "the server closes the connection"
   login_support.stop(started)

@@ -17,7 +17,11 @@ import genesis_prime/message/create_character_carrier.{CreateCharacterCarrier}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
-import genesis_prime/message/disconnect_notice.{DisconnectNotice}
+import genesis_prime/message/disconnect_notice.{
+  type DisconnectReason, AccountDisconnected, CriticalTransactionFailure,
+  DisconnectNotice, Inactivity, LoggedOutByGm, LostGatewayServer, LostUserServer,
+  LostWorldServer, OutOfGameTime,
+}
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/play_character.{PlayCharacter}
@@ -273,7 +277,16 @@ pub fn create_character_result_round_trips_test() -> Nil {
     draw: fn(state) {
       let #(character_id, state) = message_support.unsigned(state:, bits: 64)
       let #(field_2, state) = message_support.unsigned(state:, bits: 32)
-      let #(result, state) = message_support.unsigned(state:, bits: 6)
+      let #(value, state) = message_support.unsigned(state:, bits: 6)
+      let result = case value {
+        3 -> create_character_result.CreateOk
+        6 -> create_character_result.NameUnavailable
+        9 -> create_character_result.AccountFull
+        10 -> create_character_result.NameLength
+        11 -> create_character_result.OpposingFaction
+        44 -> create_character_result.CharactersOnline
+        other -> create_character_result.Other(other)
+      }
       #(CreateCharacterResult(character_id:, field_2:, result:), state)
     },
     encode: create_character_result.encode,
@@ -383,14 +396,32 @@ pub fn max_character_level_round_trips_test() -> Nil {
   )
 }
 
+/// The case the client's switch at 0x1400168a0 names for a value, or `Other`
+/// for a value it gives no text of its own (the fact file's `0x1400168a0`): a
+/// message holding `Other` of a named value decodes to the named case, so the
+/// drawn messages are the ones that decode to themselves.
+fn disconnect_reason(value: Int) -> DisconnectReason {
+  case value {
+    6 -> LoggedOutByGm
+    7 -> Inactivity
+    8 -> LostUserServer
+    12 -> LostGatewayServer
+    15 -> LostWorldServer
+    16 -> OutOfGameTime
+    19 -> AccountDisconnected
+    20 -> CriticalTransactionFailure
+    other -> disconnect_notice.Other(other)
+  }
+}
+
 pub fn disconnect_notice_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
   message_support.round_trips(
     name: "message 0x36a",
     seed: 20_261_212,
     draw: fn(state) {
-      let #(reason, state) = message_support.unsigned(state:, bits: 5)
-      #(DisconnectNotice(reason:), state)
+      let #(value, state) = message_support.unsigned(state:, bits: 5)
+      #(DisconnectNotice(reason: disconnect_reason(value)), state)
     },
     encode: disconnect_notice.encode,
     decode: disconnect_notice.decode,
