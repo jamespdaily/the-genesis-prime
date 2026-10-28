@@ -3837,7 +3837,7 @@ name = "ScanAddonFolder"
 statement = "Starts the in-world interface. It registers the world's Lua libraries, reads <roaming application data>\\NCSOFT\\WildStar\\Addons.xml (the per-account addon settings), then scans for addons three times: UI\\Addons and UI as Carbine addons, and <roaming application data>\\NCSOFT\\WildStar\\Addons as non-Carbine (user) addons, then loads them. This is the only place user addons are found: the pre-game screens never scan that folder."
 proof = "0x140538ff6 call 0x14040ad50 (chat set-up, which opens the chat log); 0x14053912a call 0x14050a3c0 (the world Lua libraries: DialogResponse, HousingLib and others, see RegisterDialogResponseLuaLibrary); 0x140539163 L'Addons.xml' (0x140b145a8) with 0x14053916f [rax+0xa7c], 0x140539176 [rax+0x1320], 0x140539182 L'NCSOFT'; 0x1405391e0 call 0x1401380c0; 0x1405391ec lea r8, L'Addons' (0x140b14598), 0x1405391f3 lea rdx, L'UI' (0x140b145c0), 0x140539201 mov r9b, 1, 0x140539204 call 0x1401396e0; 0x140539210 lea r8, (empty 0x1409f2214), 0x140539217 lea rdx, L'UI' (0x140b144d4), 0x140539225 mov r9b, 1, 0x140539228 call 0x1401396e0; 0x140539234 L'Addons' (0x140b14768) formatted at 0x14053926b with [rax+0xa7c], [rax+0x1320], L'NCSOFT'; 0x1405392ac xor r9d, r9d; 0x1405392af call 0x1401396e0; 0x1405393e8 call 0x140139ae0. Callers: 0x1403e68f0 (0x1403e6af8) and RestartWorldInterface (0x14053b526). ScanAddonFolder (0x1401396e0) has no other caller; the pre-game loader StartPreGameInterface adds only Carbine addons."
 grade = "fairly sure"
-gap = "What 0x1401380c0 does with Addons.xml (load conditions, disabled addons) and what 0x140139ae0 does when it loads them are not read; UI\\Addons is not checked against the archive."
+gap = "UI\\Addons is not checked against the archive. Addons.xml and the load are read in ReadAddonsXml (0x1401380c0) and LoadAddons (0x140139ae0)."
 name = "StartWorldInterface"
 
 ["0x1403e6af8"]
@@ -3860,8 +3860,8 @@ grade = "sure"
 name = "StartPreGameInterface"
 
 ["0x1400447f0"]
-statement = "The Lua global ReloadUI(): reloads the in-world interface (ReloadWorldInterface) and returns no values. Lua in the world can call it at any time; the Options addon does."
-proof = "Named by the pair at 0x140c56830 (the name 'ReloadUI' at 0x1409fe650, the function 0x1400447f0). 0x1400447f4 call 0x1400446d0; 0x1400447f9 xor eax, eax. UI/ProtectedAddons/Options/Options.lua line 1940 calls ReloadUI() (extracted copy in ui-extract)."
+statement = "The Lua function ReloadUI(): reloads the in-world interface (ReloadWorldInterface) and returns no values. Only a protected addon has it: the Options addon, under UI\\ProtectedAddons, calls it, while a user addon that calls ReloadUI finds a nil global (live, 2026-10-28: GenesisReport.lua raised 'attempt to call global ReloadUI (a nil value)'). A user addon reloads the interface with RequestReloadUI(), as Carbine's /reloadui command does (UI/Macros/Macros.lua line 119), which wrote GenesisReport's saved data in the same session."
+proof = "Named by the pair at 0x140c56830 (the name 'ReloadUI' at 0x1409fe650, the function 0x1400447f0). 0x1400447f4 call 0x1400446d0; 0x1400447f9 xor eax, eax. UI/ProtectedAddons/Options/Options.lua line 1940 calls ReloadUI() (extracted copy in ui-extract). Live, 2026-10-28: the user addon GenesisReport calling ReloadUI() raised the Addon Error 'attempt to call global ReloadUI (a nil value)'; calling RequestReloadUI() instead reloaded the interface and its OnSave wrote AddonSaveData\\GenesisReport_0_Acct.xml."
 grade = "sure"
 name = "LuaReloadUI"
 
@@ -3890,7 +3890,7 @@ name = "StopWorldInterface"
 statement = "Builds the path of an addon's saved data for a save level 0 to 3 (GameLib.CodeEnumAddonSaveLevel), under <roaming application data>\\NCSOFT\\WildStar\\AddonSaveData; from level 1 up the path also takes the logged-in account's name. A level above 3 or no addon builds nothing."
 proof = "0x14042413c cmp r15d, 3; 0x140424140 ja 0x14042551b; 0x140424133 test r13, r13 (no addon); 0x14042414d lea rcx, L'AddonSaveData' (0x140b005b8), 0x140424154 L'%s\\%s\\%s\\%s', 0x140424160 [rax+0xa7c], 0x140424167 [rax+0x1320], 0x140424173 L'NCSOFT', 0x140424190 call 0x14001b370; 0x14042422f L'\\' (0x1409e8e54); 0x140424261 cmp r15d, 1; 0x140424265 jl; 0x140424272 mov r14, [rax+0x1670] of the game object 0x140c635f0 (the account text). A nonzero stack flag sends it to 0x140423060 (0x1404240ee), which builds the same folder and formats L'%08x' (0x140b00650). Reached through the pointer table at 0x140b66e08. The archive's Lua uses CodeEnumAddonSaveLevel.Account and .Character in OnSave(eType) and OnRestore(eType, tData) (UI/AccountInventory/AccountInventory.lua line 111, UI/MatchMaker/MatchMaker.lua line 316)."
 grade = "fairly sure"
-gap = "The file names for each level (the realm and character parts, the extension) and the file format are not read; that game object 0x1670 is the account name is inferred from the account record's other uses, not read here."
+gap = "The realm and character parts of the path are not read from the instructions (SaveAddonObject 0x140185f30 records the names and format the client writes); that game object 0x1670 is the account name is inferred from the account record's other uses, not read here."
 name = "BuildAddonSaveDataPath"
 
 ["0x1404057a0"]
@@ -3937,6 +3937,121 @@ proof = "Named by the pair at 0x140c5af40 (the name 'GetPosition' at 0x140b2aa70
 grade = "fairly sure"
 gap = "The table's keys and the refresh rule (the 100 ms test at 0x140651d23 cmp ecx, 0x64) are not read in full; the key names are taken from the Lua."
 name = "LuaUnitGetPosition"
+
+["0x140653210"]
+statement = "Unit:GetLevel() in the UI's Lua: the unit's level as a number, a second level value when it is set (non-zero) and else the unit's own level; nil when no unit has the id or the unit carries flag 4 of its flag word."
+proof = "Named by the pair at 0x140c5afc0 (the name 'GetLevel' at 0x140b2ac50, the function 0x140653210). 0x140653231 call FindUnit; 0x14065323b mov ecx, [rax+0x28]; 0x14065323e shr ecx, 2; 0x140653243 test cl, 1 / 0x140653246 jnz (bit clear: a number) else 0x140653251 mov dword [rcx+0x8], 0 (nil); 0x140653263 mov ecx, [rax+0x3c]; 0x140653266 test ecx, ecx; 0x14065326a mov ecx, [rax+0x38]; 0x140653275 mov dword [rax+0x8], 3; 0x14065327c cvtdq2pd (a number)."
+grade = "fairly sure"
+gap = "The instructions are read; which message fields fill the unit's two level words (0x38 and 0x3c, likely the level and a scaled or mentored level) and what flag 4 of the word at 0x28 marks are not traced."
+name = "LuaUnitGetLevel"
+
+["0x140651bd0"]
+statement = "Unit:GetName() in the UI's Lua: the unit's name as a string, the empty string when the unit has no name; for an id no unit has, the empty string."
+proof = "Named by the pair at 0x140c5af30 (the name 'GetName' at 0x140b2aa68, the function 0x140651bd0). Decompiled: FindUnit; the unit's name text at 0x10, or the empty text at 0x140b7b704 when none (bytes at 0x140b7b704: 0000), converted to UTF-8 by 0x14018f0e0 and pushed by 0x140058710; no unit: the empty text at 0x1409f43d4 (bytes at 0x1409f43d4: 0000) converted the same way; a conversion with no buffer pushes nil."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; whether 0x14018f0e0 gives a buffer for an empty text (so an empty string rather than nil) is not read."
+name = "LuaUnitGetName"
+
+["0x140659ce0"]
+statement = "Unit:GetOverheadAnchor() in the UI's Lua: nil while the unit's model has not finished loading (and when no unit has the id); once the model is loaded, a table of the screen point above the unit's head, read by the Lua as .x and .y. It is the Lua call that tells whether a unit's model is loaded, the same model the end of loading waits for."
+proof = "Named by the pair at 0x140c5b370 (the name 'GetOverheadAnchor' at 0x140b2b170, the function 0x140659ce0). 0x140659d05 call FindUnit; 0x140659d13 cmp qword [rax+0x16e8], 0 / 0x140659d1b jz (nil); 0x140659d29 call 0x1404775f0, which projects the model's attachment point 0x19 (else 1, else the unit's position) to the screen and always returns 1 (decompiled); then a new table (type 5) with three values. The unit's 0x16e8 is the loaded model: 0x1404681c7 mov qword ptr [r14+0x16e8], r13 when the actor's load completes (DescribeUnitModel 0x140466ec0), and UpdateWorldStage tests it before the loading screen ends (0x140034774 cmp qword ptr [rax+0x16e8], r12). UI/Dialog/Dialog.lua line 683 reads tAnchor.x and tAnchor.y."
+grade = "fairly sure"
+gap = "The table's keys are taken from the Lua's use, not read; whether the point is set when the model is off screen is not read (0x1404775f0 returns 1 on every path, so the table is returned either way)."
+name = "LuaUnitGetOverheadAnchor"
+
+["0x140653660"]
+statement = "Unit:IsOccluded() in the UI's Lua: true only when the unit has a render object and that object reports itself occluded; false when it has none (its model not built), when no unit has the id, or when it is not occluded. It does not say the model is shown."
+proof = "Named by the pair at 0x140c5b150 (the name 'IsOccluded' at 0x140b2acb0, the function 0x140653660). 0x140653687 call FindUnit; 0x140653691 mov rcx, [rax+0x16f0]; 0x1406536a0 mov rdx, [rax+0x16f8]; 0x1406536aa jz (none: false); 0x1406536bb mov r9d, 1; 0x1406536c1 xor edx, edx; 0x1406536c6 call qword ptr [rax+0x108]; 0x1406536cc cmp eax, 1 (true only on 1)."
+grade = "fairly sure"
+gap = "What the render object's slot 0x108 answers with (0, 1) is not read; that 1 means occluded is taken from the function's name."
+name = "LuaUnitIsOccluded"
+
+["0x140649ad0"]
+statement = "Unit:IsValid() in the UI's Lua: true while the world has a unit with this unit's id, false otherwise."
+proof = "Named by the pair at 0x140c5a790 (the name 'IsValid' at 0x140b2a110, the function 0x140649ad0). Decompiled: argument 1 read by 0x1406622c0; FindUnit on the world 0x140c65898; a boolean of the result being non-null."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "LuaUnitIsValid"
+
+["0x140119b30"]
+statement = "Apollo.GetAPIVersion() in the UI's Lua: always the number 16. It is the API version the in-world interface loads addons for: a user addon's toc.xml must give APIVersion=\"16\" to load by default."
+proof = "Named by the pair at 0x140b57250 (the name 'GetAPIVersion' at 0x140a1dcd0, the function 0x140119b30). 0x140119b34 mov rdx, 0x4030000000000000 (16.0 as a double); 0x140119b41 mov dword [rax+0x8], 3 (a number); 0x140119b4d mov eax, 1 (one value). The in-world UI manager's constructor 0x1404218a0 sets its addon list's version: 0x1404222dc mov dword [rdi+0xa08], 0x10 (the list is at 0x9c0, so its 0x48; StartWorldInterface 0x1405391d9 add rcx, 0x9c0). The Addons.xml the client wrote on the play PC opens <Addons APIVersion=\"16\">."
+grade = "sure"
+name = "LuaApolloGetAPIVersion"
+
+["0x140136b00"]
+statement = "Decides whether an addon whose toc loaded is loaded when no load condition chose for it. Not when its LoadOnStart is 0. A user (non-Carbine) addon whose toc APIVersion is not 16 and that Addons.xml does not mark IgnoreVersionForceLoad is refused while the console variable ui.ignoreAPIVersionMismatchThresh is below 16 (it starts at 0; the Options screen's ignore-version box sets it to 16). LoadOnStart 1 loads. Any other LoadOnStart, 2 among them (what a newly found addon gets), loads unless the toc's Addon element has NoDefaultLoad=\"1\". So a user addon with APIVersion=\"16\" and no NoDefaultLoad loads with no click and nothing written in Addons.xml."
+proof = "0x140136b06 mov r8d, [rcx+0x10c] (LoadOnStart, NewAddon's seventh argument) / 0x140136b13 jnz / 0x140136b15 xor al, al; 0x140136b1e cmp byte [rcx+0x108], 0 (Carbine); 0x140136b27 test edx, edx; 0x140136b2b cmp dword [rcx+0xf8], edx (the toc's APIVersion); 0x140136b33 cmp byte [rcx+0x110], 0 (IgnoreVersionForceLoad); 0x140136b45 mov eax, [0x140c3da70] (2 levels); 0x140136b50 lea rcx, [0x140c3da80] (the variable's values); 0x140136b59 cmp [rcx+rax*4], edx / 0x140136b5c jl (refuse); 0x140136b5e cmp r8d, 1; 0x140136b91 lea rsi, L'NoDefaultLoad' (0x140a32ec0); 0x140136bf4 mov r13, [r14+0x1d8] (the toc attribute map); the value compared with L'1' (bytes at 0x1409d8ebc: 31000000). Caller LoadAddons: 0x140139bb4 mov edx, [r13+0x48] (16, set at 0x1404222dc). The variable: initializer 0x1409388c0 registers the name slot 0x140c3da68 (bytes at 0x140c3da68: c029a24001000000, 'ui.ignoreAPIVersionMismatchThresh' at 0x140a229c0) with values 0; OptionsScreen GetGlobalAddonIgnoreVersion 0x140044060 answers 16 <= value, SetGlobalAddonIgnoreVersion 0x140043fd0 stores 16 or 0 (decompiled). ScanAddonFolder 0x1401396e0 adds a new folder as AddAddon(list, folder, name, carbine, 2, 0, 0) (decompiled)."
+grade = "fairly sure"
+gap = "The NoDefaultLoad compare past 0x140136c3e and ScanAddonFolder's arguments are read from Ghidra's decompile; that the variable's level index picks the value the Options box sets is inferred. A live load of a user addon with APIVersion 16 would settle the outcome."
+name = "WillAddonLoad"
+
+["0x1401380c0"]
+statement = "Reads Addons.xml, the per-user addon settings, before the folders are scanned: only when its root Addons element's APIVersion is at least 16; then each Addon element adds an addon with its Folder, SubLoc, Carbine (0 or 1), LoadOnStart (2 when absent; 0 never, 1 always, 2 by default), IgnoreVersionForceLoad (0 or 1) and LoadCondition children (a Condition text and a LoadOnStart). A missing file, or no entry for an addon, leaves the addon to its defaults: nothing needs to be written there for a new user addon to load."
+proof = "Decompiled: ReadFileToMemory and the XML parser; the root's name compared with L'Addons'; L'APIVersion' read with '%d' and the list's version (its 0x48, 16) compared as list <= file before the L'Addon' loop; per element L'LoadOnStart' (default 2), L'Folder', L'SubLoc', L'Carbine', L'IgnoreVersionForceLoad', L'LoadCondition' with L'Condition' and L'LoadOnStart'; AddAddon(list, SubLoc, Folder, Carbine, LoadOnStart, IgnoreVersionForceLoad, conditions). Called by StartWorldInterface: 0x1405391d9 add rcx, 0x9c0; 0x1405391e0 call 0x1401380c0. The file the client wrote on the play PC: <Addons APIVersion=\"16\"> then lines such as <Addon Folder=\"Abilities\" SubLoc=\"\" Carbine=\"1\" LoadOnStart=\"2\" IgnoreVersionForceLoad=\"0\"/>."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile apart from the call; what a LoadCondition's Condition text names (account, realm or character, built by 0x1404326c0) is not read."
+name = "ReadAddonsXml"
+
+["0x140139ae0"]
+statement = "Loads the in-world addons after the scans. For each addon whose toc loaded, a load condition set for this character, realm or account decides yes or no; with none, WillAddonLoad decides. A chosen addon's Lua scripts are run and a user addon's load is logged; then each registered addon object gets its restore call (OnRestore). A refused addon is skipped with no window and no prompt: the loader shows nothing."
+proof = "0x140139b8a cmp byte [rdi+0x138], bl (toc loaded); 0x140139ba1 call 0x140421470; 0x140139bab cmp eax, 0x1 (yes); 0x140139bb0 test eax, eax (no); 0x140139bb4 mov edx, [r13+0x48]; 0x140139bbb call 0x140136b00; refused: 0x140139c21 cmp byte [rdi+0x108], 0x0 then 0x140139c3c call 0x1400035b0, which does nothing (0x1400035b5 xor eax, eax; 0x1400035b7 ret). Decompiled: chosen addons go through 0x1401374c0, a non-Carbine one with LogMessage(0xd, 2, ...); then 0x140185b10 for each registered object (it holds 'OnRestore' 0x140a3f470 at 0x140185e89). 0x140421470 (decompiled) returns 0 for an addon with OptionsScreen, FrontEndScreen or ExternalTool, else looks up levels 4, 3, 2 and returns the stored LoadOnStart, or 2 with none."
+grade = "fairly sure"
+gap = "The script runner 0x1401374c0 and the restore caller 0x140185b10 are read only for their strings and calls; where OnLoad is called, and its order against OnRestore, is not read."
+name = "LoadAddons"
+
+["0x1401361ed"]
+statement = "What the client reads from an addon's toc.xml: it may hold several Addon elements, and the client takes the one whose APIVersion is 16, else the one with the highest. From it: Name (the addon's name, used for its saved-data files), Author, Version, every attribute kept by name (NoDefaultLoad among them), each Script child's Name (a Lua file in the addon's folder, kept in order), and the FormXMLFile, SpriteXMLFile and ReplaceAddon children."
+proof = "LoadAddonToc 0x140135ad0, decompiled: the L'Addon' loop compares each element's L'APIVersion' with its second argument (the list's 16), keeping an element on equality, or when higher while the kept one is not equal; then 'Name' (0x140a31790), L'Author' (default L'[Unknown]'), the kept APIVersion stored, L'Version' read with '%d'; every attribute of the element copied into the addon's map (0x14013ce20); 0x1401361ed the L'Script' lookup (0x140a32e00), each child's 'Name' attribute appended to the script list; L'FormXMLFile', L'SpriteXMLFile', L'ReplaceAddon'."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the attribute names of FormXMLFile and SpriteXMLFile and what ReplaceAddon does for a user addon are not read."
+
+["GameLib.CodeEnumAddonSaveLevel"]
+statement = "The Lua enum of addon save levels: General 0, Account 1, Realm 2, Character 3. An addon's OnSave(eType) is asked once per level and OnRestore(eType, tData) gets back what it saved for that level."
+proof = "Registered at 0x14070a02c lea rdx, 'CodeEnumAddonSaveLevel' (0x140b43920), then 0x14070a0a0 lea rdx, 'General' (0x140b43918), 0x14070a11a lea rdx, 'Account' (0x140b43910), 'Realm' (0x140b43aa4), 'Character' (0x140b43a98), each set to a number (0x14070a0d0 mov dword [rax+0x8], 0x3). BuildAddonSaveDataPath 0x1404240b0 takes levels 0 to 3 (0x14042413c cmp r15d, 3) with the account from 1 up (0x140424261 cmp r15d, 1); its file-name parts follow the same order: L'_Gen', L'_Rlm', L'_Char' (0x140b00690). The client's own Lua: OnSave(eType) compared with .Account and .Character (UI/ErrorDialog/ErrorDialog.lua line 37)."
+grade = "fairly sure"
+gap = "The numbers are held in registers set before 0x14070a000 and are not read; the order 0 to 3 is from the path builder's range and the suffix order."
+
+["0x140185f30"]
+statement = "Saves one registered addon object: calls its OnSave(eType) and writes the table it returns as XML to the level's file under <roaming application data>\\NCSOFT\\WildStar\\AddonSaveData: <addon name>_<n>_Gen.xml, _Acct.xml, _Rlm.xml or _Char.xml, where n is the object's place among the addon's registered objects (0 for an addon with one). Account files sit in the account's folder (empty with this server's logins, so directly in AddonSaveData); realm and character files below it in <realm>\\<character>_<id>\\. The file: <?xml version=\"1.0\" encoding=\"UTF-8\"?> then <Document> with one N element per table entry: K=\"key\" for a string key or F=\"n\" for a number key, T the type (t table, n number, s string, b boolean), V the value (b as + or -, text XML-escaped); a t element holds its own N elements; an empty table is <Document/>. Tables, numbers, strings and booleans are kept."
+proof = "Decompiled: per index from the manager's slot 0x10, a path from slot 0x18, then 0x1400f3010 calls 'OnSave' (0x1409e0ee4) with the index plus one; a returned value converted by 0x14012e780 and written by 0x1401a7f50. Strings beside BuildAddonSaveDataPath 0x1404240b0: L'AddonSaveData' 0x140b005b8, L'.xml', L'_Char', L'_Rlm', L'%08x', L'_Gen', L'%016llx' (0x14042540a references L'_Char' 0x140b00690). Files the client wrote on the play PC (read 2026-10-28): AddonSaveData\\Death_0_Acct.xml is <Document> <N K=\"nSaveVersion\" T=\"n\" V=\"3\"/> <N K=\"bCasterRezzed\" T=\"b\" V=\"-\"/>; ErrorDialog_0_Acct.xml nests T=\"t\" elements with F=\"1\" to F=\"4\"; ZoneCompletion_0_Char.xml is <Document/>; across every file the types are n 4330, b 3334, t 2112, s 621 and none other; character files at AddonSaveData\\GenesisPrime\\Nyept Quadrorix_bbbbbbbbbbbbfbbb\\XPBar_0_Char.xml. The Inventory folder (objects ImprovedSalvage, InventoryBag, ItemPreview) gives Inventory_0_Char, Inventory_2_Char and Inventory_1_Acct; one-object addons give _0_. The account-level files written with this server's login sit directly in AddonSaveData (same time as that login's character files, 10/27 12:34:43); retail logins' files sit in a folder per account."
+grade = "fairly sure"
+gap = "The loop's count and index are not read from the instructions (n as the object's place is from the file names); the writer 0x1401a7f50 is not read, so what happens to functions, userdata or nil values is not known; why this server's login gives an empty account part (the account text the path builder reads at the game object's 0x1670) is not traced."
+name = "SaveAddonObject"
+
+["0x1400ea7b0"]
+statement = "Raises the UI event LuaError for an addon's error, unless a LuaError is already being raised: its handlers get (tAddon, strError, bCanIgnore). tAddon is the addon's table, with arErrors holding every error text the addon has had so far (1-based; the ErrorDialog addon also reads strName, bCarbine and strAuthor from it); strError is this error's text; bCanIgnore is true only when the caller allows it, the addon has at most 10 errors and its status is 6 or more. An error raised inside a LuaError handler raises no second event. Any addon may register for LuaError."
+proof = "Decompiled: returns when the manager's bytes 0x68 or 0x69 are set, sets 0x68 for the dispatch and clears it after; 'arErrors' (0x140a178e8) filled from the addon's error list ((0x208 - 0x200) >> 5 entries); the flag cleared when that count is above 10 or the status at 0x218 is below 6. 0x1400ea9b6 lea ecx, [rdx+0xc] (0xd); 0x1400ea9b9 call 0x1400035b0 (does nothing: 0x1400035b5 xor eax, eax; 0x1400035b7 ret); 0x1400ea9be lea edx, [rcx+0x32] (0x3f); 0x1400ea9d8 call 0x1400eaa10, which raises the event named by the table 0x140c2c4d0 at that index (decompiled); bytes at 0x140c2c6c8 (0x140c2c4d0 + 0x3f * 8): 3070a14001000000, the pointer to 'LuaError' at 0x140a17030. UI/ErrorDialog/ErrorDialog.lua line 81 Apollo.RegisterEventHandler('LuaError', 'OnLuaError', self) and line 261 OnLuaError(tAddon, strError, bCanIgnore)."
+grade = "fairly sure"
+gap = "The table fields set by 0x1400eff50 and 0x1400efeb0 (strName, bCarbine, strAuthor by the Lua's use) are not read; the guard byte 0x69 is not traced."
+name = "RaiseLuaError"
+
+["0x1400f2730"]
+statement = "Runs an addon's Lua function under an error handler and adds the call to the addon's timings. When the call fails and the function belongs to a known addon, the addon's status becomes 6, the error text is added to its errors, and LuaError is raised for it (allowed to be ignored when its status was above 5); for Lua that belongs to no addon the error is only logged."
+proof = "Decompiled: QueryPerformanceCounter around the call, the time added to the addon's 0x220, 0x228 and 0x230; on failure the message from the Lua stack (0x140056bb0); with an addon: 0x140137120 with 6 and the text, then 0x1400ea7b0(manager, addon, text, 5 < status); without: 0x140196bd0 (log). Callers: 0x1400e9d50 (0x1400ea174, 0x1400ea2b6), 0x1400f2b00, 0x1400f3040, 0x1400f3790."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; which Lua calls go through it (event handlers, timers, window events, OnSave, OnLoad) is not traced from its four callers, and errors in a Lua file's first run may take another path (0x140137860 also records errors)."
+name = "CallAddonLuaFunction"
+
+["0x140137120"]
+statement = "Records an error for an addon: sets its status to the given value and adds the text to its errors (the arErrors list); a status below 7 also adds one to the addon's error count."
+proof = "Decompiled: the status stored at the addon's 0x218; the text appended to the list at 0x200..0x208 (0x20 bytes an entry); for a status below 7 the count at 0x1f4 (500) raised by one; then a test of that count above 10."
+grade = "fairly sure"
+gap = "What the client does when the count passes 10 (suspend the addon or stop raising LuaError) is not read past the test."
+name = "RecordAddonError"
+
+["0x14013c8b0"]
+statement = "Apollo.GetAddonInfo(strName) in the UI's Lua, open to every addon: nil when the in-world interface has no addon of that name; otherwise a table describing it, with bCarbine, bLoadOnStart, eStatus, nAPIVersion, bIgnoreVersion, bHasConfigure, bRunning, nMemoryUsage, call timings, fLastModified, arReplacedAddons and arErrors (every error text the addon has had, 1-based). An addon can read another addon's errors with it at any time, including errors raised before it loaded."
+proof = "Named by the pair at 0x140b575d0 (the name 'GetAddonInfo' at 0x140a1e070, the function 0x14013c8b0) in the Apollo table that also holds GetAPIVersion (0x140b57250). Decompiled: the argument read as a string, the addon found by 0x14013a630 in the manager's list (0x9c0); none pushes nil; else 0x14013bd30 builds the table: names 'bCarbine', 'bLoadOnStart', 'nMemoryUsage', 'nTotalCalls', 'fTotalTime', 'fLongestCall', 'fCallTimePerSecond', 'fCallTimePerFrame', 'bRunning', 'eStatus', 'fLastModified', 'bIgnoreVersion', 'nAPIVersion', 'bHasConfigure', 'arErrors' (0x140a22d50, filled from the addon's error list at 0x200), 'arReplacedAddons'. The Options addon's GetAddonInfo (0x1400430b0) builds the same table and adds arLoadConditions."
+grade = "fairly sure"
+gap = "Whether the name 0x14013a630 matches is the toc's Name or the folder's is not read; the strName and strAuthor fields are set by calls not read."
+name = "LuaApolloGetAddonInfo"
+
+["lua.ErrorDialog.OnLuaError"]
+statement = "The line 'An error has occurred in Addon: X' in the chat's Debug channel and the Addon Error window both come from the Carbine ErrorDialog addon's LuaError handler, not from the client's code: for every LuaError it prints the localized LuaError_DebugOutput line with the addon's name (Print, the Debug channel), and it opens the window only for the addon's first error. When bCanIgnore is false the handler indexes an undefined global (wnd) and fails itself, so that window does not open and ErrorDialog gains an error of its own."
+proof = "UI/ErrorDialog/ErrorDialog.lua (extracted copy in ui-extract): line 81 registers LuaError; lines 261-297 OnLuaError: 269 Print(String_GetWeaselString(Apollo.GetString('LuaError_DebugOutput'), tAddon.strName)); 271-273 return when #tAddon.arErrors > 1; 276-282 bCanIgnore false reads wnd:FindChild with no local wnd defined; 288 Apollo.LoadForm(self.xmlDoc, 'AddonError', nil, self). A failure inside the handler raises no second LuaError (RaiseLuaError's guard)."
+grade = "fairly sure"
+gap = "The Lua is read from the extracted copy; that Print posts on ChatChannel_Debug is from the Lua's use (ChatLog.lua line 737 posts its own debug text with ChatSystemLib.PostOnChannel(ChatChannel_Debug)), not read in the client."
 
 ["0x140036cf0"]
 statement = "The login screen's update. While no login is under way, when the command line gave both -account and -password, it submits them (SubmitLogin); otherwise, when it gave -authtoken and -account, it logs in with the token (0x140038740) and forgets the token. So the client logs in by itself from its command line, with no input; returning to the login screen forgets the password (0x1400476a0), so this happens once."

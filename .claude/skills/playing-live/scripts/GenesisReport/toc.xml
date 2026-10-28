@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Addon Name="GenesisReport" Author="genesis-prime" Version="1" APIVersion="16">
+  <Script Name="GenesisReportAddons.lua"/>
+  <Script Name="GenesisReport.lua"/>
+</Addon>

@@ -77,7 +77,6 @@ esac
 
 tool=client
 . "$(dirname "$0")/pc.sh"
-state=$home/client.pid
 if [ "$command" = start ]; then
   : "${GENESIS_PLAY_ADDRESS:?set GENESIS_PLAY_ADDRESS (the server host the client is pointed at, an address on the PC network) in ~/.genesis-prime/env.sh}"
   : "${GENESIS_PLAY_CLIENT_DIR:?set GENESIS_PLAY_CLIENT_DIR (the client install folder, for example C:\\WildStar-HD) in ~/.genesis-prime/env.sh}"
@@ -86,13 +85,6 @@ if [ "$command" = start ]; then
     : "${GENESIS_PLAY_PASSWORD:?set GENESIS_PLAY_PASSWORD (the account password) in ~/.genesis-prime/env.sh}"
   fi
 fi
-
-# Reads the pid and start time the client had when started from $state into $pid and $started.
-read_state() {
-  [ -s "$state" ] || { echo "client: no $state; this script acts only on a client it started, and none is recorded" >&2; exit 1; }
-  read -r pid started < "$state"
-  [[ $pid =~ ^[0-9]+$ && ${started:-} =~ ^[0-9]+$ ]] || { echo "client: $state does not hold a pid and a start time" >&2; exit 1; }
-}
 
 # Saves the pid and start time that genesis-start.ps1 reported in $result.
 save_state() {
@@ -151,22 +143,16 @@ case "$command" in
     # not our client (the pid was reused) and nothing is touched. The process is ended outright: a
     # close asked from the ssh session cannot reach a window in the person's session (taskkill
     # without /F answers that the process can only be terminated forcefully).
-    status=0
-    out=$(on_pc_ps "try {
-  \$p = Get-Process -Id $pid -ErrorAction SilentlyContinue
-  if (-not \$p -or \$p.ProcessName -ne 'WildStar64' -or \$p.StartTime.ToFileTimeUtc() -ne $started) { 'gone' }
-  else {
-    \$p.Kill()
-    if (-not \$p.WaitForExit(5000)) { throw 'it is still running after the kill' }
-    'closed'
-  }
-} catch {
-  'error: ' + (\$_.Exception.Message -replace '\s+', ' ')
-  exit 1
-}") || status=$?
+    out=$(on_pc_ps_try "\$p = Get-Process -Id $pid -ErrorAction SilentlyContinue
+if (-not \$p -or \$p.ProcessName -ne 'WildStar64' -or \$p.StartTime.ToFileTimeUtc() -ne $started) { 'gone' }
+else {
+  \$p.Kill()
+  if (-not \$p.WaitForExit(5000)) { throw 'it is still running after the kill' }
+  'closed'
+}")
     case "$out" in
       closed) rm -f "$state"; echo "client $pid is closed" ;;
       gone) rm -f "$state"; echo "client $pid was not running; nothing was changed" ;;
-      *) echo "client: ${out#error: } (WildStar64 $pid, status $status)" >&2; exit 1 ;;
+      *) echo "client: the PC answered $out; WildStar64 $pid was not confirmed closed" >&2; exit 1 ;;
     esac ;;
 esac
