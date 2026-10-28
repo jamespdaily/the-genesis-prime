@@ -55,23 +55,13 @@ case "$command" in
   *) usage ;;
 esac
 
-[ -f "${GENESIS_HOME:-$HOME/.genesis-prime}/env.sh" ] && . "${GENESIS_HOME:-$HOME/.genesis-prime}/env.sh"
-: "${GENESIS_PLAY_PC:?set GENESIS_PLAY_PC (user@host) in ~/.genesis-prime/env.sh}"
+tool=client-log
+. "$(dirname "$0")/pc.sh"
 : "${GENESIS_PLAY_CLIENT_DIR:?set GENESIS_PLAY_CLIENT_DIR (the client install folder, for example C:\\WildStar-HD) in ~/.genesis-prime/env.sh}"
-options=(-o BatchMode=yes -o ConnectTimeout=10)
-
-# Runs a PowerShell script on the PC. It is passed encoded, so no quoting reaches the PC's shell.
-on_pc() {
-  local encoded
-  encoded=$(printf '%s' "\$ProgressPreference = 'SilentlyContinue'
-\$ErrorActionPreference = 'Stop'
-$1" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n')
-  ssh "${options[@]}" "$GENESIS_PLAY_PC" "powershell -NoProfile -NonInteractive -EncodedCommand $encoded" | tr -d '\r'
-}
 
 mkdir -p "$folder"
 if [ "$command" = start ]; then
-  on_pc '(Get-Date).ToString("o")' > "$folder/since.txt"
+  on_pc_ps '(Get-Date).ToString("o")' > "$folder/since.txt"
   echo "session start on the PC: $(cat "$folder/since.txt")"
   exit
 fi
@@ -81,7 +71,7 @@ since=$(cat "$folder/since.txt")
 # Both go into single-quoted PowerShell text, where an apostrophe is written twice.
 quoted_since=${since//\'/\'\'}
 quoted_dir=${GENESIS_PLAY_CLIENT_DIR//\'/\'\'}
-names=$(on_pc "\$since = [datetime]::Parse('$quoted_since')
+names=$(on_pc_ps "\$since = [datetime]::Parse('$quoted_since')
 foreach (\$part in 'Logs', 'Errors') {
   \$path = Join-Path '$quoted_dir' \$part
   if (Test-Path \$path) {
