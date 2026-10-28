@@ -180,8 +180,11 @@ function GenesisReport:SweepAddonErrors(tReport)
 end
 
 -- Fact 0x1406f6800: IsCharacterLoaded is true once every world-loading stage has passed.
--- ReloadUI (fact 0x1400447f0) runs OnSave, which writes the report; it is asked once, when the
--- character is loaded, the model is in and knReadySeconds have passed since both first held.
+-- RequestReloadUI reloads the in-world interface, which runs OnSave and writes the report; it is
+-- asked once, when the character is loaded, the model is in and knReadySeconds have passed since
+-- both first held. A user addon has no ReloadUI global: only the protected Options addon calls it
+-- (UI/ProtectedAddons/Options/Options.lua), and Carbine's /reloadui command calls
+-- RequestReloadUI (UI/Macros/Macros.lua).
 function GenesisReport:OnPoll()
 	if self.tRestored ~= nil then
 		self.timerPoll:Stop()
@@ -203,7 +206,7 @@ function GenesisReport:OnPoll()
 		if not self.bReloadAsked and os.time() - self.nReadySince >= knReadySeconds then
 			self.bReloadAsked = true
 			self.nReportedAt = os.time()
-			ReloadUI()
+			RequestReloadUI()
 		end
 	end
 end

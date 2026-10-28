@@ -3860,8 +3860,8 @@ grade = "sure"
 name = "StartPreGameInterface"
 
 ["0x1400447f0"]
-statement = "The Lua global ReloadUI(): reloads the in-world interface (ReloadWorldInterface) and returns no values. Lua in the world can call it at any time; the Options addon does."
-proof = "Named by the pair at 0x140c56830 (the name 'ReloadUI' at 0x1409fe650, the function 0x1400447f0). 0x1400447f4 call 0x1400446d0; 0x1400447f9 xor eax, eax. UI/ProtectedAddons/Options/Options.lua line 1940 calls ReloadUI() (extracted copy in ui-extract)."
+statement = "The Lua function ReloadUI(): reloads the in-world interface (ReloadWorldInterface) and returns no values. Only a protected addon has it: the Options addon, under UI\\ProtectedAddons, calls it, while a user addon that calls ReloadUI finds a nil global (live, 2026-10-28: GenesisReport.lua raised 'attempt to call global ReloadUI (a nil value)'). A user addon reloads the interface with RequestReloadUI(), as Carbine's /reloadui command does (UI/Macros/Macros.lua line 119), which wrote GenesisReport's saved data in the same session."
+proof = "Named by the pair at 0x140c56830 (the name 'ReloadUI' at 0x1409fe650, the function 0x1400447f0). 0x1400447f4 call 0x1400446d0; 0x1400447f9 xor eax, eax. UI/ProtectedAddons/Options/Options.lua line 1940 calls ReloadUI() (extracted copy in ui-extract). Live, 2026-10-28: the user addon GenesisReport calling ReloadUI() raised the Addon Error 'attempt to call global ReloadUI (a nil value)'; calling RequestReloadUI() instead reloaded the interface and its OnSave wrote AddonSaveData\\GenesisReport_0_Acct.xml."
 grade = "sure"
 name = "LuaReloadUI"
 
