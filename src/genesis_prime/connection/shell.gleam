@@ -9,9 +9,13 @@
 //// ```
 //// Ranch accepts ─▶ connection_shell_ffi:start_link ─▶ ranch:handshake ─▶ run
 ////   the recorder, when on, opens the file and writes the header
+////   the registry, when the settings hold one: the shell joins the group of
+////     Connection(id), so other processes find it (genesis_prime/connection/registry)
 ////   Socket(Accepted(connection id, peer, seed))  ─▶ step ─▶ effects
 ////   loop, the socket active once:
 ////     {tcp, bytes}        ─▶ Socket(Read(bytes))   ─▶ step ─▶ effects
+////     {woken, message}    ─▶ Woken(message)        ─▶ step ─▶ effects
+////     a watched process's DOWN ─▶ WatchEnded(id)   ─▶ step ─▶ effects
 ////     {tcp_closed}        ─▶ Socket(PeerClosed)    ─▶ step ─▶ effects
 ////     {tcp_error, reason} ─▶ Socket(ReadFailed(_)) ─▶ step ─▶ effects
 ////     the parent's exit   ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
@@ -85,19 +89,39 @@
 ////   supervisor that has stopped exits the call with `noproc`, which
 ////   `store/worker.ask` turns into `Error(Nil)`. When the directory returns
 ////   past the deadline, the outcome is `NoAnswerInTime` at once.
+//// - **A message delivered.** Another process sends the connection's pid
+////   `{woken, message}` (`registry.deliver`); the shell takes it between steps
+////   as `Woken(message)`, in the order it arrived among the socket's reads. One
+////   that arrives during an ask waits until the ask's outcome and the step it
+////   starts are done, like a read. A message for a connection that has ended is
+////   dropped by the VM, and one that arrives after the shell began to stop is
+////   dropped with the process. A connection with no registry in its settings is
+////   joined to no group, so no process can send it anything.
+//// - **A watch.** `Watch(id, target)` finds the target's pid with the settings'
+////   `locate`, monitors it and keeps the monitor under `id`. Its DOWN is taken
+////   between steps as `WatchEnded(id)`, once, and the shell forgets the watch. A
+////   target no process holds comes back as `WatchEnded(id)` as the next input,
+////   after the step's effects. `Unwatch(id)` drops the monitor and the DOWN
+////   already waiting. A watch's DOWN that arrives during an ask waits like a
+////   delivered message. An id already open ends the connection with an error
+////   log.
+//// - **The registry's scope ending.** The connection stays joined only as long
+////   as the scope lives; the tree restarts the game listener with the scope, so
+////   no connection outlives it (genesis_prime/connection/registry).
 //// - **Effects a connection does not carry out.** `Reply` (a connection is
-////   never asked), and `Send`, `Watch`, `Unwatch`, `StartTimer` and
+////   never asked), `Send` (no connection rule sends), `StartTimer` and
 ////   `CancelTimer`, which need processes no rule uses yet: the shell logs an
 ////   error naming the effect and ends the connection.
 
+import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
-import genesis_prime/service.{type Sent, ToService, ToWorker}
+import genesis_prime/service.{type Locate, type Sent, ToService, ToWorker}
 import genesis_prime/step.{
-  type Ask, type AskId, type Effect, type Event, type Peer, type Rule,
-  type SocketFailure, Accepted, Answer, Answered, AnsweredLate, ConnectionId,
-  Effects, EffectsThenAsk, EndedBeforeAnswer, LogWarning, NoAnswerInTime,
-  NotRunning, PeerClosed, ReadFailed, Socket, StoppedWaiting, Stopping,
-  WriteFailed,
+  type Ask, type AskId, type ConnectionId, type Effect, type Event, type Peer,
+  type Rule, type SocketFailure, type WatchId, Accepted, Answer, Answered,
+  AnsweredLate, ConnectionId, Effects, EffectsThenAsk, EndedBeforeAnswer,
+  LogWarning, NoAnswerInTime, NotRunning, PeerClosed, ReadFailed, Socket,
+  StoppedWaiting, Stopping, WriteFailed,
 }
 import genesis_prime/step/runtime.{Shutdown}
 import gleam/crypto
@@ -124,6 +148,13 @@ pub type Settings(settings, state, message, answer, outgoing, request) {
     /// process is not running. Made once at start from the services' names,
     /// with `service.call` and `store/worker.ask`; a rule never sees it.
     directory: fn(request, fn(answer) -> Nil) -> Result(Sent, Nil),
+    /// Where each connection joins as it is accepted, so other processes
+    /// find it by its id; `None` for a connection no process addresses (the
+    /// login's).
+    registry: Option(Registry),
+    /// How the shell finds the process a `Watch` names. Made once at start
+    /// from the processes' names; a rule never sees it.
+    locate: Locate,
   )
 }
 
@@ -131,7 +162,7 @@ pub type Settings(settings, state, message, answer, outgoing, request) {
 type ClientSocket
 
 /// What reaches the process between steps, as `connection_shell_ffi` sees it.
-type Arrived {
+type Arrived(message) {
   Read(bytes: BitArray)
   ClosedByPeer
   FailedToRead(failure: SocketFailure)
@@ -140,6 +171,10 @@ type Arrived {
   LateAnswer(tag: Reference)
   /// The end of a kept ask's target, by the ask's tag.
   KeptEnded(tag: Reference)
+  /// Another process sent the connection a message.
+  Delivered(message: message)
+  /// The end of a watched process, by its monitor.
+  WatchedEnded(monitor: Monitor)
 }
 
 /// How an ask's wait ended, as `connection_shell_ffi` sees it.
@@ -157,8 +192,9 @@ type Kept {
 }
 
 /// A running connection: its socket, its parent, its settings, the rule's
-/// state, the recording file when there is one, the asks kept by their tags
-/// and the stop deadline of a stop that arrived during an ask.
+/// state, the recording file when there is one, the asks kept by their tags,
+/// the monitor of each watch the rule has open and the stop deadline of a stop
+/// that arrived during an ask.
 type Running(settings, state, message, answer, outgoing, request) {
   Running(
     socket: ClientSocket,
@@ -167,6 +203,7 @@ type Running(settings, state, message, answer, outgoing, request) {
     state: state,
     writer: Option(file.Writer),
     kept: Dict(Reference, Kept),
+    watches: Dict(WatchId, Monitor),
     stopping: Option(Int),
   )
 }
@@ -204,8 +241,10 @@ pub fn run(
       state: rule.new(rule.settings),
       writer:,
       kept: dict.new(),
+      watches: dict.new(),
       stopping: None,
     )
+  join_registry(settings.registry, ConnectionId(connection))
   take(
     running:,
     now: runtime.now(),
@@ -314,8 +353,14 @@ fn carry(
         step.Stop -> carry(running:, effects: later, then: EndProcess)
         step.Send(..) -> not_built(running.socket, "Send")
         step.Reply(..) -> not_built(running.socket, "Reply")
-        step.Watch(..) -> not_built(running.socket, "Watch")
-        step.Unwatch(..) -> not_built(running.socket, "Unwatch")
+        step.Watch(watch:, target:) ->
+          carry(
+            running: open_watch(running:, watch:, target:),
+            effects: later,
+            then:,
+          )
+        step.Unwatch(watch:) ->
+          carry(running: close_watch(running:, watch:), effects: later, then:)
         step.StartTimer(..) -> not_built(running.socket, "StartTimer")
         step.CancelTimer(..) -> not_built(running.socket, "CancelTimer")
       }
@@ -363,7 +408,41 @@ fn next(
     }
     KeptEnded(tag:) ->
       next(Running(..running, kept: dict.delete(running.kept, tag)))
+    Delivered(message:) -> take(running:, now:, event: step.Woken(message:))
+    WatchedEnded(monitor:) -> watch_ended(running:, now:, monitor:)
   }
+}
+
+/// Joins the connection's group in the registry, when the settings hold one.
+fn join_registry(registry: Option(Registry), connection: ConnectionId) -> Nil {
+  todo as "the build follows the shape commit"
+}
+
+/// Monitors the process the address names under the watch's id.
+fn open_watch(
+  running running: Running(settings, state, message, answer, outgoing, request),
+  watch watch: WatchId,
+  target target: step.Address,
+) -> Running(settings, state, message, answer, outgoing, request) {
+  todo as "the build follows the shape commit"
+}
+
+/// Drops the watch's monitor, and the DOWN already waiting for it.
+fn close_watch(
+  running running: Running(settings, state, message, answer, outgoing, request),
+  watch watch: WatchId,
+) -> Running(settings, state, message, answer, outgoing, request) {
+  todo as "the build follows the shape commit"
+}
+
+/// Takes the end of a watched process as `WatchEnded` with the id of its
+/// watch; the DOWN of a monitor the shell does not hold is dropped.
+fn watch_ended(
+  running running: Running(settings, state, message, answer, outgoing, request),
+  now now: step.Now,
+  monitor monitor: Monitor,
+) -> Nil {
+  todo as "the build follows the shape commit"
 }
 
 /// Makes an ask through the settings' directory and waits for its outcome,
@@ -490,7 +569,7 @@ fn next_event(
   socket: ClientSocket,
   parent: Pid,
   kept: Dict(Reference, Kept),
-) -> Arrived
+) -> Arrived(message)
 
 @external(erlang, "connection_shell_ffi", "send_answer")
 fn send_answer(shell: Pid, tag: Reference, answer: answer) -> Nil

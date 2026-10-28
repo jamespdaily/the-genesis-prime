@@ -32,7 +32,7 @@ pub fn replayed(
   module module: String,
   reads_tables reads_tables: Bool,
   new new: fn(settings) -> state,
-  step step: fn(state, Input(Nil, Answer)) -> #(state, Step(Nil, Request)),
+  step step: fn(state, Input(message, Answer)) -> #(state, Step(Nil, Request)),
 ) -> #(Int, Int) {
   let assert Ok(bytes) = simplifile.read_bits(folder <> file)
     as "the recording reads"
@@ -43,7 +43,8 @@ pub fn replayed(
     True -> Some(store.digest(client_tables.shared()))
     False -> tables_digest
   }
-  let records: List(rule_recording.Record(Nil, Answer, Nil, Request)) = records
+  let records: List(rule_recording.Record(message, Answer, Nil, Request)) =
+    records
   let assert Ok(End(count:)) = list.last(records)
     as "the live session ended each connection, so each recording closes with End"
   let assert Ok(digest) =

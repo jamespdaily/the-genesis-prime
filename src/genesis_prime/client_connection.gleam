@@ -1,5 +1,5 @@
 //// What every client connection's rule asks other processes, what comes back,
-//// and what every such rule does alike: the STS rule
+//// what other processes send it, and what every such rule does alike: the STS rule
 //// (genesis_prime/login/sts_connection), the auth rule
 //// (genesis_prime/login/auth_connection) and the game rule
 //// (genesis_prime/game/connection). The server's directory sends each request
@@ -21,6 +21,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
 import genesis_prime/hand_off
 import genesis_prime/random.{type Random}
+import genesis_prime/sessions
 import genesis_prime/step.{
   type About, type ConnectionId, type Effect, type Event, type Now, type Outcome,
   type Peer, type Step, About, Accepted, Answered, AnsweredLate, AskId, Asked,
@@ -38,12 +39,20 @@ import gleam/string
 pub type Request {
   AskStore(request: store.Request)
   AskHandOff(message: hand_off.Message)
+  AskSessions(message: sessions.Message)
 }
 
 /// What comes back from an ask, by the process asked.
 pub type Answer {
   FromStore(answer: store.Answer)
   FromHandOff(answer: hand_off.Answer)
+  FromSessions(answer: sessions.Outgoing)
+}
+
+/// What another process sends a connection rule, by the process that sent
+/// it. Only the game rule is sent anything; the login's rules take `Nil`.
+pub type Message {
+  SentBySessions(message: sessions.Outgoing)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who
@@ -198,9 +207,12 @@ pub type Heard {
 /// line is about. The server stopping ends the connection after the effects
 /// `stopping` gives, which the rule writes first: none for a connection with
 /// no one to tell, a notice for one whose client waits for the server's next
-/// message. `stopping` is called only when the server stops.
+/// message. `stopping` is called only when the server stops. `Woken` and
+/// `WatchEnded` reach only the game rule, which takes them before it calls
+/// `hear`; to every rule before it watches, and to the login's rules, they are
+/// inputs a connection is never given.
 pub fn hear(
-  event event: Event(Nil, Answer),
+  event event: Event(message, Answer),
   about about: About,
   stopping stopping: fn() -> List(Effect(Nil)),
 ) -> Heard {

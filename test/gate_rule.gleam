@@ -113,7 +113,7 @@ fn asked(
     Ignore -> #(state, Effects([]))
     StopThenReply -> #(state, Effects([Stop, Reply(caller, Echoed(9))]))
     Crash -> panic as "the planted crash"
-    TrySend -> #(state, Effects([Send(Echoed(0))]))
+    TrySend -> #(state, Effects([Send(Sessions, Echoed(0))]))
     TryWatch -> #(state, Effects([Watch(WatchId(1), Sessions)]))
     TryTimer -> #(state, Effects([StartTimer(TimerId(1), 10)]))
     TryAsk -> #(

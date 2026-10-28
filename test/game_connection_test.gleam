@@ -32,7 +32,8 @@ import character_tables
 import connection_rule_support as support
 import game_client
 import genesis_prime/client_connection.{
-  type Answer, type Request, AskHandOff, AskStore, FromHandOff, FromStore,
+  type Answer, type Message, type Request, AskHandOff, AskStore, FromHandOff,
+  FromStore,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -118,7 +119,7 @@ const filetime = 133_900_000_000_000_000
 
 fn feed(
   state: game_connection.State,
-  event: Event(Nil, Answer),
+  event: Event(Message, Answer),
 ) -> #(game_connection.State, Step(Nil, Request)) {
   game_connection.step(state, support.input_at(filetime:, event:))
 }

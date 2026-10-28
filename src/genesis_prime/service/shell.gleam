@@ -14,6 +14,7 @@
 ////   Started                                         ─▶ step ─▶ effects
 ////   loop:
 ////     Call(message, reply)  ─▶ Asked(CallerId(n), message) ─▶ step ─▶ effects
+////     a watched process's DOWN ─▶ WatchEnded(id)           ─▶ step ─▶ effects
 ////     the parent's exit     ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
 ////   Reply(CallerId(n), answer): the shell calls that call's reply with the
 ////     answer and forgets the caller
@@ -49,19 +50,39 @@
 ////   a supervisor reports a permanent child that exits `normal` while it
 ////   shuts down as a failure, and restarts one that exits `shutdown` at any
 ////   other time.
+//// - **Send.** `Send(to, message)` looks `to` up with the settings' `reach` and
+////   hands the message to the process found, in the form its shell takes (a
+////   connection takes it as `Woken`). An address with no process running
+////   drops the message, with no input and no log line: a rule that must know
+////   watches the receiver.
+//// - **Watch.** `Watch(id, target)` finds `target` with the settings' `locate`
+////   and monitors it, keeping the monitor under `id` in the shell. The target's
+////   end comes back once as `WatchEnded(id)` and the shell forgets the watch. A
+////   target no process holds when the watch begins comes back as
+////   `WatchEnded(id)` as the next input, after the step's effects are carried
+////   out; one that ends between the lookup and the monitor fires the monitor at
+////   once. A rule's id that is already open ends the process with an error
+////   log: an id is unique among the open watches.
+//// - **Unwatch.** `Unwatch(id)` drops the monitor of `id` and flushes its DOWN
+////   from the mailbox, so no `WatchEnded` follows; an id with no open watch
+////   does nothing.
+//// - **A watch's end and a restart.** A watch lives in the process: a restarted
+////   service has no watches, and a rule that needs one opens it again from
+////   what it learns of its processes (Sessions has none to open: the
+////   connections claim again).
 //// - **Effects not carried out.** A service writes to no socket and makes no
-////   ask. `Write`, `Send`, `Watch`, `Unwatch`, `StartTimer`, `CancelTimer` and a
-////   step that ends in an ask end the process with an error log naming them.
+////   ask. `Write`, `StartTimer`, `CancelTimer` and a step that ends in an ask
+////   end the process with an error log naming them.
 
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
-import genesis_prime/service.{type Call, Call}
+import genesis_prime/service.{type Call, type Reach, Call}
 import genesis_prime/step.{
-  type Event, type Rule, Asked, CallerId, Effects, EffectsThenAsk, Started,
-  Stopping,
+  type Event, type Rule, type WatchId, Asked, CallerId, Effects, EffectsThenAsk,
+  Started, Stopping,
 }
 import genesis_prime/step/runtime.{type ExitReason, Shutdown}
 import gleam/dict.{type Dict}
-import gleam/erlang/process.{type Name, type Pid}
+import gleam/erlang/process.{type Monitor, type Name, type Pid}
 import gleam/option.{type Option}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
@@ -75,6 +96,8 @@ pub type Settings(settings, state, message, outgoing) {
     rule: Rule(settings, state, message, Nil, outgoing, Nil),
     /// The name it registers, made once at start.
     name: Name(Call(message, outgoing)),
+    /// How it finds the processes its rule watches and sends to.
+    reach: Reach(outgoing),
     /// How long it has to stop once the supervisor stops it; the child's
     /// shutdown timeout.
     shutdown_ms: Int,
@@ -88,11 +111,14 @@ pub type Settings(settings, state, message, outgoing) {
 type Mail(message, outgoing) {
   Called(call: Call(message, outgoing))
   Exited(exit: process.ExitMessage)
+  /// The end of a process the rule watches, by its monitor.
+  Ended(down: process.Down)
 }
 
 /// A running service: its settings, its parent, the rule's state, the
-/// recording file when there is one, and the calls not yet answered by the
-/// number the shell gave each.
+/// recording file when there is one, the calls not yet answered by the
+/// number the shell gave each, and the monitor of each watch the rule has
+/// open.
 type Running(settings, state, message, outgoing) {
   Running(
     settings: Settings(settings, state, message, outgoing),
@@ -101,6 +127,7 @@ type Running(settings, state, message, outgoing) {
     writer: Option(file.Writer),
     callers: Dict(Int, fn(outgoing) -> Nil),
     next_caller: Int,
+    watches: Dict(WatchId, Monitor),
   )
 }
 
@@ -167,6 +194,7 @@ fn initialise(
         writer:,
         callers: dict.new(),
         next_caller: 1,
+        watches: dict.new(),
       ),
       now: runtime.now(),
       event: Started,
@@ -175,6 +203,7 @@ fn initialise(
     process.new_selector()
     |> process.select_map(process.named_subject(settings.name), Called)
     |> process.select_trapped_exits(Exited)
+    |> process.select_monitors(Ended)
   Ok(
     actor.initialised(running)
     |> actor.selecting(selector)
@@ -204,6 +233,7 @@ fn handle(
         event: Asked(caller: CallerId(number), message:),
       ))
     }
+    Ended(down:) -> actor.continue(watch_ended(running:, down:))
     Exited(exit:) ->
       case exit.pid == running.parent {
         True -> {
@@ -283,13 +313,61 @@ fn carry(
         }
         step.Stop -> carry(running:, effects: later, ending: True)
         step.Write(..) -> refused("Write")
-        step.Send(..) -> refused("Send")
-        step.Watch(..) -> refused("Watch")
-        step.Unwatch(..) -> refused("Unwatch")
+        step.Send(to:, message:) ->
+          carry(
+            running: deliver(running:, to:, message:),
+            effects: later,
+            ending:,
+          )
+        step.Watch(watch:, target:) ->
+          carry(
+            running: open_watch(running:, watch:, target:),
+            effects: later,
+            ending:,
+          )
+        step.Unwatch(watch:) ->
+          carry(running: close_watch(running:, watch:), effects: later, ending:)
         step.StartTimer(..) -> refused("StartTimer")
         step.CancelTimer(..) -> refused("CancelTimer")
       }
   }
+}
+
+/// Hands the message to the process at the address, or drops it when no
+/// process runs there.
+fn deliver(
+  running running: Running(settings, state, message, outgoing),
+  to to: step.Address,
+  message message: outgoing,
+) -> Running(settings, state, message, outgoing) {
+  todo as "the build follows the shape commit"
+}
+
+/// Monitors the process at the address under the watch's id.
+fn open_watch(
+  running running: Running(settings, state, message, outgoing),
+  watch watch: WatchId,
+  target target: step.Address,
+) -> Running(settings, state, message, outgoing) {
+  todo as "the build follows the shape commit"
+}
+
+/// Drops the watch's monitor, and the DOWN already waiting for it.
+fn close_watch(
+  running running: Running(settings, state, message, outgoing),
+  watch watch: WatchId,
+) -> Running(settings, state, message, outgoing) {
+  todo as "the build follows the shape commit"
+}
+
+/// Takes the end of a watched process as `WatchEnded` with the id of its
+/// watch, and forgets the watch; the DOWN of a monitor the shell does not hold
+/// is dropped.
+fn watch_ended(
+  running running: Running(settings, state, message, outgoing),
+  down down: process.Down,
+) -> Running(settings, state, message, outgoing) {
+  todo as "the build follows the shape commit"
 }
 
 /// Ends the recording and exits with the reason `shutdown`.

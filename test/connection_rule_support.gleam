@@ -68,15 +68,15 @@ fn counting(
 }
 
 /// An input at `now_ms` with the system time 0.
-pub fn input(event: Event(Nil, answer)) -> Input(Nil, answer) {
+pub fn input(event: Event(message, answer)) -> Input(message, answer) {
   input_at(filetime: 0, event:)
 }
 
 /// An input at `now_ms` with this system time, as a Windows FILETIME.
 pub fn input_at(
   filetime filetime: Int,
-  event event: Event(Nil, answer),
-) -> Input(Nil, answer) {
+  event event: Event(message, answer),
+) -> Input(message, answer) {
   Input(now: Now(monotonic_ms: now_ms, filetime:), event:)
 }
 

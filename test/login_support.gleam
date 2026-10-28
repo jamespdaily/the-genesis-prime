@@ -10,6 +10,7 @@ import connection_rule_support as support
 import database_support
 import genesis_prime/add_account/sql
 import genesis_prime/connection/listener
+import genesis_prime/connection/registry
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/guid
@@ -103,6 +104,9 @@ pub fn start() -> Started {
       store: process.new_name("store"),
       hand_off: process.new_name("hand_off"),
       hand_off_shutdown_ms: 1500,
+      sessions: process.new_name("sessions"),
+      sessions_shutdown_ms: 1500,
+      registry: registry.new(),
       send_deadline_ms: 300,
       connection_shutdown_ms: 1000,
       login: login(),

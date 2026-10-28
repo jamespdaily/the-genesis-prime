@@ -59,6 +59,8 @@ pub fn start(
       shutdown_ms:,
       recorder:,
       directory:,
+      registry: None,
+      locate: fn(_address) { Error(Nil) },
     )
   let assert Ok(started) =
     supervisor.new(supervisor.OneForOne)
@@ -220,6 +222,10 @@ pub fn gate(
   service_shell.supervised(service_shell.Settings(
     rule: gate_as_rule(),
     name:,
+    reach: service.Reach(
+      locate: fn(_address) { Error(Nil) },
+      send: fn(_to, _message) { Error(Nil) },
+    ),
     shutdown_ms:,
     recorder:,
   ))

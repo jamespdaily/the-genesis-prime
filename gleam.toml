@@ -76,6 +76,7 @@ effectful_modules = [
   { module = "genesis_prime/server", reason = "starts the supervision tree" },
   { module = "genesis_prime/connection/shell", reason = "owns a client socket and carries out its rule's effects" },
   { module = "genesis_prime/connection/listener", reason = "starts a Ranch listener under the supervision tree" },
+  { module = "genesis_prime/connection/registry", reason = "starts OTP's pg scope under the supervision tree, and joins and looks in it for a connection shell" },
   { module = "genesis_prime/rule_recording/file", reason = "writes a connection's recording to a file" },
   { module = "genesis_prime/step/runtime", reason = "reads the clock and the node's unique numbers and writes log lines for a shell" },
   { module = "genesis_prime/service", reason = "reaches a named service by a send, for an asker's directory" },
@@ -99,6 +100,7 @@ domains = [
   { module = "genesis_prime/service", reason = "the shell of a named process with no socket that others ask" },
   { module = "genesis_prime/store", reason = "the asks a rule makes of the database, and the workers that run them" },
   { module = "genesis_prime/hand_off", reason = "the one-time keys a client carries from one server to the next" },
+  { module = "genesis_prime/sessions", reason = "who is logged in to the game server, one slot per account" },
   { module = "genesis_prime/random", reason = "the random values a rule draws from its connection's seed" },
 ]
 # Erlang functions a rule module's externals may call.

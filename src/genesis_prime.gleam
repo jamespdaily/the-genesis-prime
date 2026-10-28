@@ -6,6 +6,7 @@
 //// (`game`).
 
 import envoy
+import genesis_prime/connection/registry
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
@@ -74,6 +75,9 @@ pub fn settings(tables tables: store.Tables) -> server.Settings {
     store: process.new_name("store"),
     hand_off: process.new_name("hand_off"),
     hand_off_shutdown_ms: 5000,
+    sessions: process.new_name("sessions"),
+    sessions_shutdown_ms: 5000,
+    registry: registry.new(),
     send_deadline_ms: 2000,
     connection_shutdown_ms: 5000,
     login: login(),

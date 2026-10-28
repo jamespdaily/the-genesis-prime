@@ -55,7 +55,7 @@
 
 import genesis_prime/client_connection.{
   type Answer, type Link, type Request, AskHandOff, AskStore, Asking, Bytes,
-  Connect, Continue, End, FromHandOff, FromStore, Otherwise,
+  Connect, Continue, End, FromHandOff, FromSessions, FromStore, Otherwise,
 }
 import genesis_prime/hand_off.{GameToken, Holder, Put}
 import genesis_prime/login/guid.{type Guid}
@@ -608,6 +608,8 @@ fn found(
       timed_out(session:, sequence:, what: "the store was unavailable")
     step.Answer(FromHandOff(..)) ->
       end_for(session, "the hand-off answered the ask for the account")
+    step.Answer(FromSessions(..)) ->
+      end_for(session, "Sessions answered the ask for the account")
     step.Answer(FromStore(ForSelect(..))) ->
       end_for(
         session,
@@ -695,7 +697,8 @@ fn kept(
       timed_out("the hand-off already held the game token")
     step.Answer(FromHandOff(hand_off.Taken(..)))
     | step.Answer(FromHandOff(hand_off.NoHolder))
-    | step.Answer(FromStore(..)) ->
+    | step.Answer(FromStore(..))
+    | step.Answer(FromSessions(..)) ->
       end_for(session, "the hand-off's answer is none a Put gets")
     step.NotRunning
     | step.NoAnswerInTime

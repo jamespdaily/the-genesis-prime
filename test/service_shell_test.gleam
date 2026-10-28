@@ -327,6 +327,10 @@ fn hand_off_child(
   service_shell.supervised(service_shell.Settings(
     rule: hand_off.rule(),
     name:,
+    reach: service.Reach(
+      locate: fn(_address) { Error(Nil) },
+      send: fn(_to, _message) { Error(Nil) },
+    ),
     shutdown_ms:,
     recorder:,
   ))
