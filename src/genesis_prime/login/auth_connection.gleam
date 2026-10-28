@@ -37,31 +37,29 @@
 ////   as unhandled and the connection goes on.
 
 import genesis_prime/client_archive
-import genesis_prime/connection/cipher
-import genesis_prime/connection/encrypted_frame.{AuthWrapper, ClientWrapper}
-import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/connection/network_message
-import genesis_prime/hand_off.{type Holder, GameToken, Put, SessionKey, Take}
-import genesis_prime/login.{
+import genesis_prime/client_connection.{
   type Answer, type Link, type Request, AskHandOff, Asking, Bytes, Connect,
   Continue, End, FromHandOff, FromStore, Otherwise,
 }
+import genesis_prime/connection/cipher
+import genesis_prime/connection/client_frame
+import genesis_prime/connection/encrypted_frame.{AuthWrapper}
+import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/connection/hello
+import genesis_prime/hand_off.{type Holder, GameToken, Put, SessionKey, Take}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/message/bit_stream.{type Endpoint}
 import genesis_prime/message/game_server_handoff.{GameServerHandoff}
 import genesis_prime/message/login_accepted.{LoginAccepted}
 import genesis_prime/message/login_refused.{LoginRefused}
 import genesis_prime/message/login_request
-import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/step.{
-  type Effect, type Input, type Now, type Outcome, type Step, Effects, Log,
-  LogError, LogInfo, LogLine, LogWarning, Stop, Write,
+  type Effect, type Input, type Now, type Outcome, type Rule, type Step, Effects,
+  Log, LogError, LogInfo, LogLine, LogWarning, Rule, Stop, Write,
 }
 import genesis_prime/store
-import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/string
 
 /// The rule's name in a recording's header and in the server's tree.
 pub const rule_name = "genesis_prime/login/auth_connection"
@@ -126,12 +124,8 @@ type Status {
   HandedOff(holder: Holder)
 }
 
-/// The build the client must be, and the hello's build.
+/// The build the client must be.
 const build = client_archive.target_build
-
-/// The message table checksum the client checks in the hello
-/// (CheckAuthServerVersion 0x140037b70).
-const message_table_checksum = 0x097998A0
 
 /// 0x63d's reasons (opcode.0x63d).
 const reason_service_timeout = 12
@@ -139,6 +133,13 @@ const reason_service_timeout = 12
 const reason_invalid_login_token = 16
 
 const reason_version_mismatch = 19
+
+/// The rule as its connection shell runs it.
+pub fn rule(
+  settings: Settings,
+) -> Rule(Settings, State, Nil, Answer, Nil, Request) {
+  Rule(name: rule_name, settings:, new:, step:)
+}
 
 /// The rule's first state.
 pub fn new(settings: Settings) -> State {
@@ -152,7 +153,7 @@ pub fn step(
 ) -> #(State, Step(Nil, Request)) {
   case state {
     NotAccepted(settings:) ->
-      case login.hear(input.event, about: step.no_one) {
+      case client_connection.hear(input.event, about: step.no_one) {
         Connect(connection:, peer:, seed:) -> {
           let planted = case settings.planted {
             Some(planted) -> [Write(wrapped(planted))]
@@ -161,14 +162,14 @@ pub fn step(
           #(
             Connected(Session(
               settings:,
-              link: login.link(connection:, peer:, seed:),
+              link: client_connection.link(connection:, peer:, seed:),
               pending: <<>>,
               status: AwaitingLoginRequest,
             )),
-            Effects([Write(hello(settings.realm)), ..planted]),
+            Effects([Write(bare_hello(settings.realm)), ..planted]),
           )
         }
-        Bytes(..) | login.Outcome(..) -> #(
+        Bytes(..) | client_connection.Outcome(..) -> #(
           state,
           Effects([
             Log(LogLine(
@@ -192,9 +193,9 @@ fn connected(
   event event: step.Event(Nil, Answer),
 ) -> #(State, Step(Nil, Request)) {
   case
-    login.hear(
+    client_connection.hear(
       event,
-      about: login.about(
+      about: client_connection.about(
         session.link,
         account_id: account_id_of(session.status),
       ),
@@ -213,7 +214,7 @@ fn connected(
           drive(session:, now:, carried: [])
       }
     }
-    login.Outcome(outcome:) ->
+    client_connection.Outcome(outcome:) ->
       settle(handled: answered(session:, now:, outcome:), now:, carried: [])
     Connect(..) -> #(
       Connected(session),
@@ -230,25 +231,10 @@ fn connected(
   }
 }
 
-/// The hello, bare: the build and checksum the client checks, the realm's id,
-/// and 0 in every field the client never reads (opcode.0x3).
-fn hello(realm: Realm) -> BitArray {
-  let assert Ok(body) =
-    server_hello.encode(ServerHello(
-      build:,
-      realm_id: realm.id,
-      field_3: 0,
-      field_4: 0,
-      field_5: 0,
-      field_6: 0,
-      field_7: 0,
-      message_table_checksum:,
-      field_9: 0,
-      field_10: 0,
-      field_11: 0,
-    ))
-    as "the realm's id is within 32 bits"
-  let assert Ok(bytes) = frame.encode(server_hello.message_id, body)
+/// The hello, bare (genesis_prime/connection/hello).
+fn bare_hello(realm: Realm) -> BitArray {
+  let hello = hello.frame(realm_id: realm.id)
+  let assert Ok(bytes) = frame.encode(hello.message_id, hello.body)
     as "the hello is far below the size limit"
   bytes
 }
@@ -297,11 +283,11 @@ fn drive(
 }
 
 fn settle(
-  handled handled: login.Handled(Session),
+  handled handled: client_connection.Handled(Session),
   now now: Now,
   carried carried: List(Effect(Nil)),
 ) -> #(State, Step(Nil, Request)) {
-  login.settle(
+  client_connection.settle(
     handled:,
     carried:,
     connected: Connected,
@@ -314,39 +300,24 @@ fn settle(
 fn handle(
   session session: Session,
   now now: Now,
-  frame frame: Frame,
-) -> login.Handled(Session) {
-  case network_message.handle(frame:) {
-    network_message.Answer(bytes:) -> Continue(session, [Write(bytes)])
-    network_message.Accepted -> Continue(session, [])
-    network_message.Malformed(message_id:, ..) ->
+  frame whole: Frame,
+) -> client_connection.Handled(Session) {
+  case client_frame.receive(frame: whole, cipher: cipher.base()) {
+    client_frame.Pong(bytes:) -> Continue(session, [Write(bytes)])
+    client_frame.Noted -> Continue(session, [])
+    client_frame.Malformed(message_id:, ..) ->
       End(session, [
         log(
           session:,
           level: LogError,
           text: "a network message "
-            <> message_text(message_id)
+            <> client_connection.message_text(message_id)
             <> " does not decode",
         ),
         Stop,
       ])
-    network_message.NotNetwork ->
-      case frame.message_id == encrypted_frame.message_id(ClientWrapper) {
-        True -> unwrap(session:, now:, outer: frame)
-        False -> unhandled(session, frame.message_id)
-      }
-  }
-}
-
-fn unwrap(
-  session session: Session,
-  now now: Now,
-  outer outer: Frame,
-) -> login.Handled(Session) {
-  case encrypted_frame.unwrap(outer, cipher.base()) {
-    Error(encrypted_frame.NotAWrapper(..)) ->
-      unhandled(session, outer.message_id)
-    Error(encrypted_frame.BadFrame(error)) ->
+    client_frame.Unknown(message_id:) -> unhandled(session, message_id)
+    client_frame.Broken(error:) ->
       End(session, [
         log(
           session:,
@@ -355,7 +326,7 @@ fn unwrap(
         ),
         Stop,
       ])
-    Ok(inner) ->
+    client_frame.Wrapped(inner:) ->
       case inner.message_id == login_request.message_id {
         True ->
           case login_request.decode(inner.body) {
@@ -378,21 +349,18 @@ fn unwrap(
 
 /// A whole frame of a message the rule does not take: logged, and the
 /// connection goes on.
-fn unhandled(session: Session, message_id: Int) -> login.Handled(Session) {
+fn unhandled(
+  session: Session,
+  message_id: Int,
+) -> client_connection.Handled(Session) {
   Continue(session, [
-    Log(LogLine(
-      level: LogWarning,
-      text: "unhandled auth message " <> message_text(message_id),
-      about: step.About(
-        ..login.about(session.link, account_id_of(session.status)),
-        message: Some(#("unhandled", message_id)),
-      ),
-    )),
+    client_connection.unhandled(
+      link: session.link,
+      account_id: account_id_of(session.status),
+      server: "auth",
+      message_id:,
+    ),
   ])
-}
-
-fn message_text(message_id: Int) -> String {
-  "0x" <> string.pad_start(string.uppercase(int.to_base16(message_id)), 4, "0")
 }
 
 /// The client's login request: a build other than 16042 is refused; else the
@@ -401,7 +369,7 @@ fn login_requested(
   session session: Session,
   now now: Now,
   request request: login_request.LoginRequest,
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   case session.status {
     AwaitingLoginRequest ->
       case request.build == build {
@@ -428,9 +396,9 @@ fn ask(
   session session: Session,
   now now: Now,
   request request: Request,
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   let #(link, made) =
-    login.ask(
+    client_connection.ask(
       session.link,
       now:,
       deadline_ms: session.settings.ask_deadline_ms,
@@ -445,7 +413,7 @@ fn refuse(
   session session: Session,
   reason reason: Int,
   before before: List(Effect(Nil)),
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   let assert Ok(body) =
     login_refused.encode(LoginRefused(reason:, value: 0, field_3: 0))
     as "a reason is within 32 bits"
@@ -463,7 +431,7 @@ fn refuse(
 fn timed_out(
   session session: Session,
   what what: String,
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   refuse(session:, reason: reason_service_timeout, before: [
     log(
       session:,
@@ -473,7 +441,10 @@ fn timed_out(
   ])
 }
 
-fn end_for(session: Session, reason: String) -> login.Handled(Session) {
+fn end_for(
+  session: Session,
+  reason: String,
+) -> client_connection.Handled(Session) {
   End(session, [log(session:, level: LogError, text: reason), Stop])
 }
 
@@ -482,7 +453,7 @@ fn answered(
   session session: Session,
   now now: Now,
   outcome outcome: Outcome(Answer),
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   case session.status {
     TakingToken(user_id:) -> taken(session:, now:, user_id:, outcome:)
     KeepingSessionKey(holder:, session_key:) ->
@@ -499,12 +470,12 @@ fn taken(
   now now: Now,
   user_id user_id: Guid,
   outcome outcome: Outcome(Answer),
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   case outcome {
     step.Answer(FromHandOff(hand_off.Taken(holder:))) ->
       case holder.game_account_id == user_id {
         True -> {
-          let #(link, key_bytes) = login.draw(session.link, 16)
+          let #(link, key_bytes) = client_connection.draw(session.link, 16)
           let assert Ok(session_key) = guid.from_wire(key_bytes)
             as "sixteen bytes are a GUID"
           ask(
@@ -536,7 +507,7 @@ fn taken(
     | step.StoppedWaiting ->
       timed_out(
         session:,
-        what: login.without_answer(who: "the hand-off", outcome:),
+        what: client_connection.without_answer(who: "the hand-off", outcome:),
       )
   }
 }
@@ -547,7 +518,7 @@ fn kept(
   holder holder: Holder,
   session_key session_key: Guid,
   outcome outcome: Outcome(Answer),
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   case outcome {
     step.Answer(FromHandOff(hand_off.Kept)) ->
       handed_off(session:, holder:, session_key:)
@@ -563,7 +534,7 @@ fn kept(
     | step.StoppedWaiting ->
       timed_out(
         session:,
-        what: login.without_answer(who: "the hand-off", outcome:),
+        what: client_connection.without_answer(who: "the hand-off", outcome:),
       )
   }
 }
@@ -575,7 +546,7 @@ fn handed_off(
   session session: Session,
   holder holder: Holder,
   session_key session_key: Guid,
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   let realm = session.settings.realm
   let store.AccountId(account_id) = holder.account_id
   let assert Ok(accepted) =
@@ -623,7 +594,7 @@ fn log(
   level level: step.LogLevel,
   text text: String,
 ) -> Effect(Nil) {
-  login.log(
+  client_connection.log(
     link: session.link,
     account_id: account_id_of(session.status),
     level:,

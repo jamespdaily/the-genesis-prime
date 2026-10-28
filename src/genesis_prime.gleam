@@ -2,9 +2,11 @@
 //// by GENESIS_TABLE_DIR, stopping at once with the reason when one does not
 //// load, then starts the supervision tree, with the database named by PGHOST,
 //// PGPORT, PGUSER, PGPASSWORD and PGDATABASE, and keeps the node alive. It
-//// serves the client's STS and auth logins (`login`) and no game server.
+//// serves the client's STS and auth logins (`login`) and the game server
+//// (`game`).
 
 import envoy
+import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
@@ -57,8 +59,10 @@ pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
     <> int.to_string(tables)
     <> " game tables and serves the STS login on port "
     <> int.to_string(settings.login.sts.port)
-    <> " and the auth login on port "
-    <> int.to_string(settings.login.auth.port),
+    <> ", the auth login on port "
+    <> int.to_string(settings.login.auth.port)
+    <> " and the game server on port "
+    <> int.to_string(settings.game.port),
   )
   process.sleep_forever()
 }
@@ -71,7 +75,10 @@ pub fn settings() -> server.Settings {
     store: process.new_name("store"),
     hand_off: process.new_name("hand_off"),
     hand_off_shutdown_ms: 5000,
+    send_deadline_ms: 2000,
+    connection_shutdown_ms: 5000,
     login: login(),
+    game: game(),
   )
 }
 
@@ -117,11 +124,19 @@ fn from_environment(
   }
 }
 
+/// The realm's id, the same in the auth server's hand-off and the game
+/// server's hello and character list.
+const realm_id = 1
+
+/// The port the game server listens on and the auth server hands clients to:
+/// the client's default.
+const game_port = 24_000
+
 /// The login's listeners from the environment: GENESIS_GAME_ADDRESS, the IPv4
 /// address the client reaches the game server at, and GENESIS_REALM_NAME; the
-/// ports are the client's defaults (6600, 23115, 24000), the realm id 1, each
-/// key good for 60 s and each ask given 5 s. Recording is off and nothing is
-/// planted; the dev start (dev/genesis_prime/dev_start) changes both.
+/// ports are the client's defaults (6600, 23115), each key good for 60 s and
+/// each ask given 5 s. Recording is off and nothing is planted; the dev start
+/// (dev/genesis_prime/dev_start) changes both.
 fn login() -> server.Login {
   let address = case envoy.get("GENESIS_GAME_ADDRESS") {
     Ok(text) ->
@@ -153,9 +168,9 @@ fn login() -> server.Login {
       port: 23_115,
       settings: auth_connection.Settings(
         realm: auth_connection.Realm(
-          id: 1,
+          id: realm_id,
           name: realm_name,
-          game_server: Endpoint(address:, port: 24_000),
+          game_server: Endpoint(address:, port: game_port),
         ),
         ask_deadline_ms: 5000,
         session_key_lifetime_ms: 60_000,
@@ -163,8 +178,23 @@ fn login() -> server.Login {
       ),
       recorder: None,
     ),
-    send_deadline_ms: 2000,
-    connection_shutdown_ms: 5000,
+  )
+}
+
+/// The game server's listener: the client's default port, the realm the auth
+/// server hands clients to, 12 characters (the client's own base slot count,
+/// BaseCharacterSlots in opcode.0x968; the client reads no value of it) and
+/// each ask given 5 s. Recording is off; the dev start changes it.
+fn game() -> server.Served(game_connection.Settings) {
+  server.Served(
+    listener: process.new_name("game_listener"),
+    port: game_port,
+    settings: game_connection.Settings(
+      realm_id:,
+      max_characters: 12,
+      ask_deadline_ms: 5000,
+    ),
+    recorder: None,
   )
 }
 

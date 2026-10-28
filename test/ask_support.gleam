@@ -10,6 +10,7 @@ import gate_rule
 import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/shell
 import genesis_prime/rule_recording/file.{type Recorder}
+import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type Rule, Rule}
 import genesis_prime/store/worker.{type Job}
@@ -45,7 +46,7 @@ pub type Record {
 pub fn start(
   rule rule: Rule(settings, state, Nil, answer, Nil, request),
   directory directory: fn(request, fn(answer) -> Nil) ->
-    Result(service_shell.Sent, Nil),
+    Result(service.Sent, Nil),
   shutdown_ms shutdown_ms: Int,
   recorder recorder: Option(Recorder),
   with with: fn(supervisor.Builder) -> supervisor.Builder,
@@ -212,7 +213,7 @@ pub fn connections(server: Server) -> List(Pid) {
 
 /// The gate as a child of a supervisor, registered as `name`.
 pub fn gate(
-  name name: Name(service_shell.Call(gate_rule.Message, gate_rule.Answer)),
+  name name: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   shutdown_ms shutdown_ms: Int,
   recorder recorder: Option(Recorder),
 ) -> ChildSpecification(Nil) {
@@ -241,18 +242,18 @@ fn gate_as_rule() -> Rule(
   )
 }
 
-/// How a connection reaches what its rule asks: the gate by `service_shell.call`
+/// How a connection reaches what its rule asks: the gate by `service.call`
 /// and the store by `worker.ask`. A store that is `None` is not running. Each
 /// request that reaches a process is reported to `sent`.
 pub fn directory(
-  gate gate: Name(service_shell.Call(gate_rule.Message, gate_rule.Answer)),
+  gate gate: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   store store: Option(Name(factory_supervisor.Message(Job, Nil))),
-  sent sent: fn(service_shell.Sent) -> Nil,
-) -> fn(Request, fn(Answer) -> Nil) -> Result(service_shell.Sent, Nil) {
+  sent sent: fn(service.Sent) -> Nil,
+) -> fn(Request, fn(Answer) -> Nil) -> Result(service.Sent, Nil) {
   fn(request, reply) {
     let reached = case request, store {
       OfGate(message), _ ->
-        service_shell.call(gate, message, fn(answer) { reply(FromGate(answer)) })
+        service.call(gate, message, fn(answer) { reply(FromGate(answer)) })
       OfStore(request), Some(name) ->
         worker.ask(name, request, fn(answer) { reply(FromStore(answer)) })
       OfStore(_), None -> Error(Nil)
@@ -269,8 +270,8 @@ pub fn directory(
 /// process asked, as a directory does, and says where it went; returns that
 /// and the answer.
 pub fn ask_and_wait(
-  send send: fn(fn(answer) -> Nil) -> Result(service_shell.Sent, Nil),
-) -> #(service_shell.Sent, answer) {
+  send send: fn(fn(answer) -> Nil) -> Result(service.Sent, Nil),
+) -> #(service.Sent, answer) {
   let replies = process.new_subject()
   let assert Ok(sent) = send(fn(answer) { process.send(replies, answer) })
     as "the ask reached a process"
@@ -281,19 +282,19 @@ pub fn ask_and_wait(
 
 /// Asks the gate from the test, and waits for its answer.
 pub fn call_gate(
-  gate gate: Name(service_shell.Call(gate_rule.Message, gate_rule.Answer)),
+  gate gate: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   message message: gate_rule.Message,
 ) -> gate_rule.Answer {
   let #(sent, answer) =
-    ask_and_wait(send: fn(reply) { service_shell.call(gate, message, reply) })
-  let assert service_shell.ToService(_) = sent as "the gate is a service"
+    ask_and_wait(send: fn(reply) { service.call(gate, message, reply) })
+  let assert service.ToService(_) = sent as "the gate is a service"
   answer
 }
 
 /// Opens a key of the gate from the test, and returns how many callers were
 /// waiting for it.
 pub fn open_key(
-  gate gate: Name(service_shell.Call(gate_rule.Message, gate_rule.Answer)),
+  gate gate: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   key key: Int,
 ) -> Int {
   let assert gate_rule.Echoed(waiting) =
@@ -303,7 +304,7 @@ pub fn open_key(
 }
 
 /// A directory that reports nothing.
-pub fn unreported(_sent: service_shell.Sent) -> Nil {
+pub fn unreported(_sent: service.Sent) -> Nil {
   Nil
 }
 

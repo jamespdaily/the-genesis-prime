@@ -25,16 +25,49 @@ pub type Account {
   )
 }
 
+/// A character, keyed by the character table's id.
+pub type CharacterId {
+  CharacterId(Int)
+}
+
+/// A character as the character list needs it: what the client's list shows
+/// of it (lua.CharacterSelection.OnLoadFromCharacter.list) and what the list's
+/// entry carries (opcode.0x117). Each id keys the client table of its name;
+/// `gender` and `path` are the client's own numbers (the client shows paths 0
+/// to 3). The appearance is not here: nothing writes it yet.
+pub type Character {
+  Character(
+    character_id: CharacterId,
+    name: String,
+    gender: Int,
+    race_id: Int,
+    class_id: Int,
+    faction_id: Int,
+    level: Int,
+    path: Int,
+    world_id: Int,
+    world_zone_id: Int,
+    position_x: Float,
+    position_y: Float,
+    position_z: Float,
+  )
+}
+
 /// What a rule asks the store.
 pub type Request {
   /// The account with this login name.
   FindAccount(login_name: String)
+  /// The account's characters, in the order they were created.
+  ListCharacters(account_id: AccountId)
 }
 
 /// What the store answers.
 pub type Answer {
   AccountFound(account: Account)
   NoSuchAccount
+  /// The account's characters, in the order they were created; none when it
+  /// has none, or when no such account exists.
+  Characters(characters: List(Character))
   /// The database could not be reached, or did not answer within the
   /// query's own timeout. A read changed nothing, so asking again is safe.
   Unavailable

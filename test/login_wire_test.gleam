@@ -24,7 +24,7 @@ import genesis_prime/login/sts_xml
 import genesis_prime/message/game_server_handoff
 import genesis_prime/message/login_accepted.{LoginAccepted}
 import genesis_prime/message/server_hello.{ServerHello}
-import genesis_prime/service/shell as service_shell
+import genesis_prime/service
 import genesis_prime/store.{AccountId}
 import gleam/bit_array
 import gleam/erlang/process
@@ -164,7 +164,7 @@ pub fn a_login_request_with_the_stss_game_token_gets_0x591_then_0x3db_and_the_ha
   let assert Ok(session_key) = guid.from_wire(handed.session_key)
   let answers = process.new_subject()
   let assert Ok(_) =
-    service_shell.call(
+    service.call(
       name: started.settings.hand_off,
       message: hand_off.Take(hand_off.SessionKey(session_key)),
       reply: fn(answer) { process.send(answers, answer) },

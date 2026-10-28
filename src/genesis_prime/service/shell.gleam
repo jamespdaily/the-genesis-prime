@@ -2,9 +2,9 @@
 //// processes ask, running one rule. Like a connection's shell
 //// (genesis_prime/connection/shell), it turns everything that reaches the
 //// process into the rule's inputs, carries out the rule's effects in order
-//// and decides nothing. It is a gleam_otp actor under a supervisor. This
-//// module also holds how an asker reaches a service: the `Call` a service
-//// takes and the `Sent` an asker's directory gives back.
+//// and decides nothing. It is a gleam_otp actor under a supervisor. How an
+//// asker reaches a service, the `Call` a service takes, is in
+//// genesis_prime/service.
 ////
 //// One service, from start to end:
 ////
@@ -24,7 +24,7 @@
 ////
 //// ```
 //// asker                         directory                 service
-////   EffectsThenAsk(.., ask) ─▶ call(name, message, reply)
+////   EffectsThenAsk(.., ask) ─▶ service.call(name, message, reply)
 ////                                 name not registered ─▶ Error(Nil): NotRunning
 ////                                 else monitor, send ──▶ Call(message, reply)
 ////   waits until the ask's deadline                          Asked ─▶ step
@@ -54,38 +54,18 @@
 ////   step that ends in an ask end the process with an error log naming them.
 
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
+import genesis_prime/service.{type Call, Call}
 import genesis_prime/step.{
   type Event, type Rule, Asked, CallerId, Effects, EffectsThenAsk, Started,
   Stopping,
 }
 import genesis_prime/step/runtime.{type ExitReason, Shutdown}
 import gleam/dict.{type Dict}
-import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Name, type Pid}
 import gleam/option.{type Option}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
-
-/// What reaches a service when another process asks it: the message, and
-/// how to answer it. `reply` sends the answer to the asker, tagged with the
-/// ask, and never fails, so an answer to an asker that has gone is dropped.
-/// It holds a function, so it is a shell's type, never a rule's.
-pub type Call(message, answer) {
-  Call(message: message, reply: fn(answer) -> Nil)
-}
-
-/// Where an asker's request went, so the asker knows what to watch and what
-/// to do at the deadline.
-pub type Sent {
-  /// To a long-lived service. At the deadline it is left running, and its
-  /// answer may come late.
-  ToService(pid: Pid)
-  /// To a worker started for this ask alone. At the deadline the asker ends
-  /// it, so no work goes on for an asker that gave up, and no answer comes
-  /// late.
-  ToWorker(pid: Pid)
-}
 
 /// What a service is started with.
 pub type Settings(settings, state, message, outgoing) {
@@ -139,26 +119,6 @@ pub fn supervised(
   supervision.worker(fn() { start(settings, process.self()) })
   |> supervision.restart(supervision.Permanent)
   |> supervision.timeout(ms: settings.shutdown_ms)
-}
-
-/// Sends a service the message, for an asker's directory: `Error(Nil)` when
-/// no process holds the name, else `ToService` with the pid the asker
-/// monitors.
-pub fn call(
-  name name: Name(Call(message, answer)),
-  message message: message,
-  reply reply: fn(answer) -> Nil,
-) -> Result(Sent, Nil) {
-  case process.named(name) {
-    Error(Nil) -> Error(Nil)
-    Ok(pid) -> {
-      // The wire format of a named subject, sent to the pid found: a service
-      // that ends after the lookup drops the message, where a send by name
-      // would crash the asker.
-      let _sent = send_to(pid, #(name, Call(message:, reply:)))
-      Ok(ToService(pid:))
-    }
-  }
 }
 
 fn start(
@@ -356,12 +316,6 @@ fn explain(failure: StartFailure) -> String {
       "the recording could not be opened: " <> file.describe(error)
   }
 }
-
-@external(erlang, "erlang", "send")
-fn send_to(
-  pid: Pid,
-  message: #(Name(Call(message, answer)), Call(message, answer)),
-) -> Dynamic
 
 /// Raises the exit that ends this process with `reason`; a process that traps
 /// exits is not ended by an exit signal it sends itself.

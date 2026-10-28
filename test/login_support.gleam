@@ -1,4 +1,4 @@
-//// The login's two listeners for the tests that start the server's tree:
+//// The listeners for the tests that start the server's tree:
 //// settings on ports the system picks and listener names made for each test,
 //// so tests run side by side without sharing a port or a name, and the tree
 //// itself, started on a database of the test's own with the account of the
@@ -8,6 +8,7 @@ import ask_support
 import database_support
 import genesis_prime/add_account/sql
 import genesis_prime/connection/listener
+import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/guid
 import genesis_prime/login/sts_connection
@@ -61,8 +62,21 @@ pub fn login() -> server.Login {
       settings: auth_settings(),
       recorder: None,
     ),
-    send_deadline_ms: 300,
-    connection_shutdown_ms: 1000,
+  )
+}
+
+/// The game server's listener on a port the system picks, with a name made
+/// now and no recording.
+pub fn game() -> server.Served(game_connection.Settings) {
+  server.Served(
+    listener: process.new_name("test_game_listener"),
+    port: 0,
+    settings: game_connection.Settings(
+      realm_id: 1,
+      max_characters: 12,
+      ask_deadline_ms: 5000,
+    ),
+    recorder: None,
   )
 }
 
@@ -86,7 +100,10 @@ pub fn start() -> Started {
       store: process.new_name("store"),
       hand_off: process.new_name("hand_off"),
       hand_off_shutdown_ms: 1500,
+      send_deadline_ms: 300,
+      connection_shutdown_ms: 1000,
       login: login(),
+      game: game(),
     )
   let assert Ok(started) = server.start(settings) as "the tree started"
   process.unlink(started.pid)

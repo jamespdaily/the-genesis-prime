@@ -16,7 +16,7 @@ import ask_support
 import asking_rule
 import database_support
 import genesis_prime/login/guid
-import genesis_prime/service/shell.{ToWorker}
+import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
   Account, AccountFound, AccountId, FindAccount, NoSuchAccount, Unavailable,
 }
@@ -136,7 +136,7 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
             as "the test monitored the worker"
           Nil
         }
-        shell.ToService(..) -> Nil
+        service.ToService(..) -> Nil
       }
     })
   let client = ask_support.connect(server)
@@ -297,7 +297,7 @@ fn stop(store: Store) -> Nil {
 /// they ask to `sent`.
 fn start_asker(
   store: Store,
-  sent: fn(shell.Sent) -> Nil,
+  sent: fn(service.Sent) -> Nil,
 ) -> ask_support.Server {
   ask_support.start(
     rule: asking_rule.rule(),

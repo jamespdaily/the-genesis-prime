@@ -19,11 +19,13 @@
 ////   big-endian); the session key is the first 16 bytes of block 0.
 //// - The rule's doc comment, as approved on the login card.
 
+import genesis_prime/client_connection.{
+  type Answer, type Request, AskHandOff, FromHandOff,
+}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/hand_off.{
   AlreadyHeld, GameToken, Holder, Kept, NoHolder, Put, SessionKey, Take, Taken,
 }
-import genesis_prime/login.{type Answer, type Request, AskHandOff, FromHandOff}
 import genesis_prime/login/auth_connection.{Settings}
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream.{Endpoint}

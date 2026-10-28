@@ -10,7 +10,7 @@
 ////   every recorded step must be the step the rule gives again.
 
 import fresh_node
-import genesis_prime/login.{type Answer, type Request}
+import genesis_prime/client_connection.{type Answer, type Request}
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/rule_recording.{End, Header}

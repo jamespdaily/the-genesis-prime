@@ -53,11 +53,11 @@
 //// - **Reads during an ask.** A read's requests after the one that asked stay
 ////   in the state and are taken once the answer comes.
 
-import genesis_prime/hand_off.{GameToken, Holder, Put}
-import genesis_prime/login.{
+import genesis_prime/client_connection.{
   type Answer, type Link, type Request, AskHandOff, AskStore, Asking, Bytes,
   Connect, Continue, End, FromHandOff, FromStore, Otherwise,
 }
+import genesis_prime/hand_off.{GameToken, Holder, Put}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/login/rc4
 import genesis_prime/login/srp
@@ -67,8 +67,8 @@ import genesis_prime/login/sts_message.{
 }
 import genesis_prime/login/sts_wire
 import genesis_prime/step.{
-  type Effect, type Input, type Now, type Outcome, type Step, Effects, Log,
-  LogError, LogInfo, LogLine, LogWarning, Stop, Write,
+  type Effect, type Input, type Now, type Outcome, type Rule, type Step, Effects,
+  Log, LogError, LogInfo, LogLine, LogWarning, Rule, Stop, Write,
 }
 import genesis_prime/store.{
   type Account, AccountFound, FindAccount, NoSuchAccount, Unavailable,
@@ -149,6 +149,13 @@ const invalid_credentials = 3002
 /// "start timeout" and at LoginFinish "finish timeout".
 const service_timeout = 42
 
+/// The rule as its connection shell runs it.
+pub fn rule(
+  settings: Settings,
+) -> Rule(Settings, State, Nil, Answer, Nil, Request) {
+  Rule(name: rule_name, settings:, new:, step:)
+}
+
 /// The rule's first state.
 pub fn new(settings: Settings) -> State {
   NotAccepted(settings:)
@@ -161,17 +168,17 @@ pub fn step(
 ) -> #(State, Step(Nil, Request)) {
   case state {
     NotAccepted(settings:) -> {
-      case login.hear(input.event, about: step.no_one) {
+      case client_connection.hear(input.event, about: step.no_one) {
         Connect(connection:, peer:, seed:) -> #(
           Connected(Session(
             settings:,
-            link: login.link(connection:, peer:, seed:),
+            link: client_connection.link(connection:, peer:, seed:),
             pending: <<>>,
             status: AwaitingLoginStart,
           )),
           Effects([]),
         )
-        Bytes(..) | login.Outcome(..) -> #(
+        Bytes(..) | client_connection.Outcome(..) -> #(
           state,
           Effects([
             Log(LogLine(
@@ -196,16 +203,16 @@ fn connected(
   event event: step.Event(Nil, Answer),
 ) -> #(State, Step(Nil, Request)) {
   case
-    login.hear(
+    client_connection.hear(
       event,
-      about: login.about(
+      about: client_connection.about(
         link: session.link,
         account_id: account_id_of(session.status),
       ),
     )
   {
     Bytes(bytes:) -> read(session:, now:, bytes:)
-    login.Outcome(outcome:) ->
+    client_connection.Outcome(outcome:) ->
       settle(handled: answered(session:, outcome:), now:, carried: [])
     Connect(..) -> #(
       Connected(session),
@@ -283,11 +290,11 @@ fn drive(
 }
 
 fn settle(
-  handled handled: login.Handled(Session),
+  handled handled: client_connection.Handled(Session),
   now now: Now,
   carried carried: List(Effect(Nil)),
 ) -> #(State, Step(Nil, Request)) {
-  login.settle(
+  client_connection.settle(
     handled:,
     carried:,
     connected: Connected,
@@ -300,7 +307,7 @@ fn handle(
   session session: Session,
   now now: Now,
   request request: sts_wire.Request,
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   case sts_message.decode(request) {
     Error(UnknownCommand(protocol:, command:)) ->
       Continue(session, [
@@ -332,7 +339,7 @@ fn transact(
   now now: Now,
   sequence sequence: Int,
   transaction transaction: sts_message.Transaction,
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   case session.status, transaction {
     AwaitingLoginStart, LoginStart(login_name:, ..) ->
       ask(
@@ -343,7 +350,7 @@ fn transact(
     AwaitingProof(account:, challenge:), KeyData(bytes:) ->
       prove(session:, sequence:, account:, challenge:, key_data: bytes)
     Proven(account:, ciphers:, stage: AwaitingLoginFinish), LoginFinish -> {
-      let #(link, token_bytes) = login.draw(session.link, 16)
+      let #(link, token_bytes) = client_connection.draw(session.link, 16)
       let assert Ok(token) = guid.from_wire(token_bytes)
         as "sixteen bytes are a GUID"
       ask(
@@ -452,7 +459,10 @@ fn request_name(transaction: sts_message.Transaction) -> String {
 }
 
 /// A request the client never sends at that point ends the connection.
-fn out_of_order(session: Session, name: String) -> login.Handled(Session) {
+fn out_of_order(
+  session: Session,
+  name: String,
+) -> client_connection.Handled(Session) {
   End(session, [
     log(
       session:,
@@ -485,9 +495,9 @@ fn ask(
   session session: Session,
   now now: Now,
   request request: Request,
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   let #(link, made) =
-    login.ask(
+    client_connection.ask(
       session.link,
       now:,
       deadline_ms: session.settings.ask_deadline_ms,
@@ -505,7 +515,7 @@ fn prove(
   account account: Account,
   challenge challenge: srp.Challenge,
   key_data key_data: BitArray,
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   case srp.prove(challenge:, key_data:) {
     Ok(srp.Proven(session_key:, server_key_data:)) ->
       case session.pending {
@@ -552,7 +562,10 @@ fn prove(
   }
 }
 
-fn end_for(session: Session, reason: String) -> login.Handled(Session) {
+fn end_for(
+  session: Session,
+  reason: String,
+) -> client_connection.Handled(Session) {
   End(session, [log(session:, level: LogError, text: reason), Stop])
 }
 
@@ -564,7 +577,7 @@ fn refusal(sequence: Int, code: Int) -> BitArray {
 fn answered(
   session session: Session,
   outcome outcome: Outcome(Answer),
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   case session.status {
     FindingAccount(sequence:) -> found(session:, sequence:, outcome:)
     Proven(account:, ciphers:, stage: KeepingToken(sequence:, token:)) ->
@@ -584,10 +597,10 @@ fn found(
   session session: Session,
   sequence sequence: Int,
   outcome outcome: Outcome(Answer),
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   case outcome {
     step.Answer(FromStore(AccountFound(account:))) -> {
-      let #(link, secret) = login.draw(session.link, 32)
+      let #(link, secret) = client_connection.draw(session.link, 32)
       let assert Ok(#(challenge, key_data)) =
         srp.challenge(
           name: account.login_name,
@@ -613,6 +626,11 @@ fn found(
       timed_out(session:, sequence:, what: "the store was unavailable")
     step.Answer(FromHandOff(..)) ->
       end_for(session, "the hand-off answered the ask for the account")
+    step.Answer(FromStore(store.Characters(..))) ->
+      end_for(
+        session,
+        "the store answered the ask for the account with characters",
+      )
     step.NotRunning
     | step.NoAnswerInTime
     | step.EndedBeforeAnswer
@@ -620,7 +638,7 @@ fn found(
       timed_out(
         session:,
         sequence:,
-        what: login.without_answer(who: "the store", outcome:),
+        what: client_connection.without_answer(who: "the store", outcome:),
       )
   }
 }
@@ -631,7 +649,7 @@ fn timed_out(
   session session: Session,
   sequence sequence: Int,
   what what: String,
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   Continue(Session(..session, status: AwaitingLoginStart), [
     log(
       session:,
@@ -653,7 +671,7 @@ fn kept(
   token token: Guid,
   ciphers ciphers: Ciphers,
   outcome outcome: Outcome(Answer),
-) -> login.Handled(Session) {
+) -> client_connection.Handled(Session) {
   let timed_out = fn(what) {
     // Error 42, "finish timeout", ciphered, and a warning; the client may
     // send LoginFinish again.
@@ -701,7 +719,7 @@ fn kept(
     | step.NoAnswerInTime
     | step.EndedBeforeAnswer
     | step.StoppedWaiting ->
-      timed_out(login.without_answer(who: "the hand-off", outcome:))
+      timed_out(client_connection.without_answer(who: "the hand-off", outcome:))
   }
 }
 
@@ -744,7 +762,7 @@ fn log(
   level level: step.LogLevel,
   text text: String,
 ) -> Effect(Nil) {
-  login.log(
+  client_connection.log(
     link: session.link,
     account_id: account_id_of(session.status),
     level:,

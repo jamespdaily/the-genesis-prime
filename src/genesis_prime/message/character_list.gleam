@@ -27,7 +27,7 @@ pub type CharacterList {
     pending_removal_character_id: Int,
     pending_removal_time: Int,
     reservations: Int,
-    field_10: Int,
+    max_characters: Int,
     field_11: Int,
     faction_restriction: Int,
     free_level_50_available: Int,
@@ -74,7 +74,7 @@ pub fn encode(message: CharacterList) -> Result(BitArray, EncodeError) {
     32,
   )
   |> bit_stream.write_unsigned("reservations", message.reservations, 32)
-  |> bit_stream.write_unsigned("field_10", message.field_10, 32)
+  |> bit_stream.write_unsigned("max_characters", message.max_characters, 32)
   |> bit_stream.write_unsigned("field_11", message.field_11, 32)
   |> bit_stream.write_unsigned(
     "faction_restriction",
@@ -116,7 +116,10 @@ pub fn decode(body: BitArray) -> Result(CharacterList, DecodeError) {
     32,
   ))
   use #(reservations, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
-  use #(field_10, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(max_characters, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    32,
+  ))
   use #(field_11, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(faction_restriction, reader) <- result.try(bit_stream.read_unsigned(
     reader,
@@ -137,7 +140,7 @@ pub fn decode(body: BitArray) -> Result(CharacterList, DecodeError) {
     pending_removal_character_id:,
     pending_removal_time:,
     reservations:,
-    field_10:,
+    max_characters:,
     field_11:,
     faction_restriction:,
     free_level_50_available:,

@@ -226,7 +226,7 @@ pub fn character_list_round_trips_test() -> Nil {
       let #(pending_removal_time, state) =
         message_support.unsigned(state:, bits: 32)
       let #(reservations, state) = message_support.unsigned(state:, bits: 32)
-      let #(field_10, state) = message_support.unsigned(state:, bits: 32)
+      let #(max_characters, state) = message_support.unsigned(state:, bits: 32)
       let #(field_11, state) = message_support.unsigned(state:, bits: 32)
       let #(faction_restriction, state) =
         message_support.unsigned(state:, bits: 14)
@@ -243,7 +243,7 @@ pub fn character_list_round_trips_test() -> Nil {
           pending_removal_character_id:,
           pending_removal_time:,
           reservations:,
-          field_10:,
+          max_characters:,
           field_11:,
           faction_restriction:,
           free_level_50_available:,

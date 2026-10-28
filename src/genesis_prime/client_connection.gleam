@@ -1,16 +1,15 @@
-//// What the login's two rules ask other processes, what comes back, and what
-//// the two rules do alike. The STS rule (genesis_prime/login/sts_connection)
-//// asks the store for the account and the hand-off to keep the game token;
-//// the auth rule (genesis_prime/login/auth_connection) asks the hand-off to
-//// take the game token and to keep the session key. The server's directory
-//// sends each request to its process and wraps each answer
-//// (genesis_prime/server).
+//// What every client connection's rule asks other processes, what comes back,
+//// and what every such rule does alike: the STS rule
+//// (genesis_prime/login/sts_connection), the auth rule
+//// (genesis_prime/login/auth_connection) and the game rule
+//// (genesis_prime/game/connection). The server's directory sends each request
+//// to its process and wraps each answer (genesis_prime/server).
 ////
-//// Both rules keep a `Link`: who the connection is for their log lines, the
-//// seed's random source and the number of their last ask. Both sort an input
+//// Each rule keeps a `Link`: who the connection is for their log lines, the
+//// seed's random source and the number of their last ask. Each sorts an input
 //// with `hear`, which decides what the client closing, the server stopping, a
 //// failed socket, a late answer and an input a connection is never given do.
-//// Both take a request or frame at a time and say what it decided with
+//// Each takes a request or frame at a time and says what it decided with
 //// `Handled`, which `settle` carries out.
 
 import genesis_prime/hand_off
@@ -22,10 +21,12 @@ import genesis_prime/step.{
   ReadFailed, Socket, Started, Stop, Stopping, TimerFired, Woken, WriteFailed,
 }
 import genesis_prime/store
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, Some}
+import gleam/string
 
-/// What a login rule asks.
+/// What a connection rule asks.
 pub type Request {
   AskStore(request: store.Request)
   AskHandOff(message: hand_off.Message)
@@ -37,7 +38,7 @@ pub type Answer {
   FromHandOff(answer: hand_off.Answer)
 }
 
-/// What an accepted login connection keeps beside its rule's own state: who
+/// What an accepted connection keeps beside its rule's own state: who
 /// it is for log lines, the seed's random source, and the number of the last
 /// ask it made, so each ask has an id of its own.
 pub type Link {
@@ -99,7 +100,31 @@ pub fn log(
   Log(LogLine(level:, text:, about: about(link:, account_id:)))
 }
 
-/// What an input is to a login rule.
+/// The log line of a whole frame of a message the rule does not take: it is
+/// logged and the connection goes on. `server` names whose rule it is, as the
+/// line says ("auth", "game").
+pub fn unhandled(
+  link link: Link,
+  account_id account_id: Option(Int),
+  server server: String,
+  message_id message_id: Int,
+) -> Effect(Nil) {
+  Log(LogLine(
+    level: LogWarning,
+    text: "unhandled " <> server <> " message " <> message_text(message_id:),
+    about: About(
+      ..about(link:, account_id:),
+      message: Some(#("unhandled", message_id)),
+    ),
+  ))
+}
+
+/// A message id as the log writes it: four hex digits, as in `0x0244`.
+pub fn message_text(message_id message_id: Int) -> String {
+  "0x" <> string.pad_start(string.uppercase(int.to_base16(message_id)), 4, "0")
+}
+
+/// What an input is to a connection rule.
 pub type Heard {
   /// The connection was accepted.
   Connect(connection: ConnectionId, peer: Peer, seed: BitArray)
@@ -107,14 +132,14 @@ pub type Heard {
   Bytes(bytes: BitArray)
   /// The outcome of the ask the rule made.
   Outcome(outcome: Outcome(Answer))
-  /// An input both rules take the same way, or none a connection is given:
+  /// An input every rule takes the same way, or none a connection is given:
   /// the step to take, with the state unchanged.
   Otherwise(step: Step(Nil, Request))
 }
 
 /// Sorts an input: what the client closing, the server stopping, a failed
 /// socket, a late answer and an input a connection is never given do is the
-/// same in both rules, so it is decided here; `about` says who a log line is
+/// same in every rule, so it is decided here; `about` says who a log line is
 /// about.
 pub fn hear(event event: Event(Nil, Answer), about about: About) -> Heard {
   let ends = fn(level, text) {
@@ -133,7 +158,10 @@ pub fn hear(event event: Event(Nil, Answer), about about: About) -> Heard {
       )
     AnsweredLate(..) -> Otherwise(Effects([]))
     Started | Woken(..) | Asked(..) | step.WatchEnded(..) | TimerFired(..) ->
-      ends(LogError, "a login rule took an input a connection is never given")
+      ends(
+        LogError,
+        "a connection rule took an input a connection is never given",
+      )
   }
 }
 
