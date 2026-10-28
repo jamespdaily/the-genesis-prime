@@ -10,6 +10,7 @@ These hold in every language the project uses. Gleam's own conventions are in th
 ## Reuse
 
 - Before writing a helper, search the project's own code (`src/`, `dev/`, the test support modules and the scripts beside the one you change), the language's standard library (gleam_stdlib and OTP; Python's; the shell's tools) and the packages in use (the choosing-packages skill). Never copy a function from another module or script: move it to the one both callers share.
+- Never take an existing module as a template, even when a brief names it as the closest model: its glue and tests get copied. Import what it shares, and move what both need to a module both import.
 
 ## Modules and files
 
