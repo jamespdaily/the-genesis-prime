@@ -9,9 +9,7 @@
 //// vector; theirs come from the records `opcode.0x244`, `opcode.0x38c`,
 //// `vector.opcode.0x7e0.frame` and the writer 0x14007e1c0.
 
-import genesis_prime/message/bit_stream.{
-  type DecodeError, type EncodeError, Endpoint,
-}
+import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/message/character_select_start.{CharacterSelectStart}
 import genesis_prime/message/client_wrapper.{ClientWrapper}
 import genesis_prime/message/enter_world.{EnterWorld}
@@ -28,42 +26,14 @@ import genesis_prime/message/realm_select_start.{RealmSelectStart}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/message/text_group.{TextGroup}
 import genesis_prime/message/world_message.{WorldMessage}
-import gleam/bit_array
 import gleam/int
 import gleam/list
 import message_support
 import owned_test
 
-fn assert_vector(
-  name name: String,
-  body body: BitArray,
-  value value: a,
-  encode encode: fn(a) -> Result(BitArray, EncodeError),
-  decode decode: fn(BitArray) -> Result(a, DecodeError),
-) -> Nil {
-  assert decode(body) == Ok(value)
-    as { name <> ": the bytes decode to the record's values" }
-  assert encode(value) == Ok(body)
-    as { name <> ": the values encode back to the same bytes" }
-  let length = bit_array.byte_size(body)
-  int.range(from: 0, to: length, with: Nil, run: fn(_, shorter) {
-    let assert Ok(prefix) = bit_array.slice(body, 0, shorter)
-      as "a prefix of the vector exists"
-    assert decode(prefix) == Error(bit_stream.EndOfData)
-      as {
-        name
-        <> ": the first "
-        <> int.to_string(shorter)
-        <> " of "
-        <> int.to_string(length)
-        <> " bytes end inside a field"
-      }
-  })
-}
-
 pub fn server_hello_is_the_clients_373_bits_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0x3.body",
     body: message_support.hex(
       "aa3e0000 44332211 88776655 ccbbaa99 0807060504030201 efbe 1f14332fc157d75f19e3c2a2826242228264442404",
@@ -88,7 +58,7 @@ pub fn server_hello_is_the_clients_373_bits_test() -> Nil {
 
 pub fn login_request_is_the_clients_1168_bits_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0x592.body",
     body: message_support.hex(
       "aa3e0000 0102030405060708 0400 4a00 6900 6d00 0000 101112131415161718191a1b1c1d1e1f 202122232425262728292a2b2c2d2e2f 41000000 42000000 43000000 44000000 02 6100 04 6200 6300 00 51000000 52000000 53000000 54000000 55000000 60000000 02 6400 71000000 72000000 73000000 74000000 75000000 81000000 82000000 83000000 84000000 99000000",
@@ -161,7 +131,7 @@ fn string_of(character: String, count: Int) -> String {
 
 pub fn login_accepted_is_one_32_bit_value_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0x591.body",
     body: message_support.hex("01000000"),
     value: LoginAccepted(disconnected_for_lag: 1),
@@ -172,7 +142,7 @@ pub fn login_accepted_is_one_32_bit_value_test() -> Nil {
 
 pub fn game_server_handoff_is_the_clients_351_bits_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0x3db.body",
     body: message_support.hex(
       "0100007f c05d 0102030405060708090a0b0c0d0e0f10 88776655 0a 4e00 6500 7800 7500 7300 34120000 7bf36a",
@@ -193,7 +163,7 @@ pub fn game_server_handoff_is_the_clients_351_bits_test() -> Nil {
 
 pub fn game_hello_reply_is_the_clients_312_bits_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0x58f.body",
     body: message_support.hex(
       "d4c3b2a1 0102030405060708090a0b0c0d0e0f10 0000000000000000 06 6a00 6900 6d00 03000000",
@@ -212,7 +182,7 @@ pub fn game_hello_reply_is_the_clients_312_bits_test() -> Nil {
 
 pub fn enter_world_is_a_15_bit_value_and_five_floats_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0xad.body",
     body: message_support.hex("34120000c01f00001060004064210000000000003020"),
     value: EnterWorld(
@@ -230,7 +200,7 @@ pub fn enter_world_is_a_15_bit_value_and_five_floats_test() -> Nil {
 
 pub fn movement_send_interval_is_the_clients_74_bits_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0xf1.body",
     body: message_support.hex("e359d148acd207000000"),
     value: MovementSendInterval(
@@ -246,7 +216,7 @@ pub fn movement_send_interval_is_the_clients_74_bits_test() -> Nil {
 
 pub fn realm_handoff_is_the_clients_352_bits_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0x7a1.body",
     body: message_support.hex(
       "99000000 0102030405060708090a0b0c0d0e0f10 0100007f c15d 159c00ca00f000ea00e600 68240000 7c6f5e",
@@ -268,7 +238,7 @@ pub fn realm_handoff_is_the_clients_352_bits_test() -> Nil {
 
 pub fn realm_list_is_the_clients_734_bits_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0x761.body",
     body: message_support.hex(
       "1032547698badcfe 01000000 07000000 04 6200 6300 11110000 10000000 76 24240000 a0a1a2a3a4a5a6a7a8a9aaabacadaeaf ff7f0200008040180012121212121212121494941415959555000000c0cc0c0080800019008118c01800",
@@ -305,7 +275,7 @@ pub fn realm_list_is_the_clients_734_bits_test() -> Nil {
 
 pub fn a_realm_list_with_no_realms_and_no_groups_is_128_bits_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0x761.body (no realms, no groups)",
     body: message_support.hex("05000000 00000000 00000000 00000000"),
     value: RealmList(field_1: 5, realms: [], text_groups: []),
@@ -316,7 +286,7 @@ pub fn a_realm_list_with_no_realms_and_no_groups_is_128_bits_test() -> Nil {
 
 pub fn character_select_start_has_an_empty_body_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0x7e0.frame (the frame is only its 6 header bytes)",
     body: <<>>,
     value: CharacterSelectStart,
@@ -327,7 +297,7 @@ pub fn character_select_start_has_an_empty_body_test() -> Nil {
 
 pub fn realm_select_start_has_an_empty_body_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "opcode.0x7a4 (the frame is only the header 06 00 00 00 a4 07)",
     body: <<>>,
     value: RealmSelectStart,
@@ -338,7 +308,7 @@ pub fn realm_select_start_has_an_empty_body_test() -> Nil {
 
 pub fn the_client_wrapper_body_is_the_inner_frame_with_its_length_in_the_clear_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "vector.opcode.0x7e0.frame: the inner frame of 0x244 is 06 00 00 00 03 89",
     body: message_support.hex("06 00 00 00 03 89"),
     value: ClientWrapper(inner_frame: message_support.hex("06 00 00 00 03 89")),
@@ -349,7 +319,7 @@ pub fn the_client_wrapper_body_is_the_inner_frame_with_its_length_in_the_clear_t
 
 pub fn the_world_message_body_is_a_5_bit_value_then_the_inner_frame_test() -> Nil {
   use <- owned_test.run(5000)
-  assert_vector(
+  message_support.assert_vector(
     name: "opcode.0x38c: the value 3 in 5 bits, then the inner frame 06 00 00 00 e0 07 from the next byte",
     body: message_support.hex("03 06 00 00 00 e0 07"),
     value: WorldMessage(

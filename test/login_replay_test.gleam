@@ -10,7 +10,6 @@
 //// - The recording's layout and replay in `genesis_prime/rule_recording`:
 ////   every recorded step must be the step the rule gives again.
 
-import fresh_node
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import owned_test
@@ -47,11 +46,8 @@ pub fn the_live_sessions_auth_recording_replays_to_the_same_steps_test() -> Nil 
 /// before it.
 pub fn the_sts_recording_replays_in_a_fresh_node_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert fresh_node.run(
-      module: "login_replay_test",
-      function: "the_live_sessions_sts_recording_replays_to_the_same_steps_test",
-      timeout_ms: 50_000,
-    )
-    == Ok(Nil)
-    as "the STS recording replays with nothing loaded before it"
+  rule_replay_support.replays_in_a_fresh_node(
+    module: "login_replay_test",
+    function: "the_live_sessions_sts_recording_replays_to_the_same_steps_test",
+  )
 }
