@@ -84,6 +84,7 @@ effectful_modules = [
   { module = "genesis_prime/service/shell", reason = "runs a service's rule as a named actor and carries out its effects" },
   { module = "genesis_prime/store/worker", reason = "runs one ask's query on the database pool in a worker of its own" },
   { module = "genesis_prime/store/sql", reason = "the queries squirrel generates, run on pog's pool" },
+  { module = "genesis_prime/world_map/maps", reason = "the registry actor that finds a map by its id and starts it under the map supervisor, monitoring each" },
 ]
 # The game domains: each top-level folder or module under src/genesis_prime/.
 domains = [

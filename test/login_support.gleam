@@ -67,6 +67,18 @@ pub fn login() -> server.Login {
   )
 }
 
+/// The world subtree with names made now, no recording and a call to Maps that
+/// may take 2 s.
+pub fn world() -> server.World {
+  server.World(
+    maps: process.new_name("test_maps"),
+    map_supervisor: process.new_name("test_map_supervisor"),
+    maps_call_ms: 2000,
+    map_shutdown_ms: 1000,
+    map_recordings: None,
+  )
+}
+
 /// The game server's listener on a port the system picks, with a name made
 /// now and no recording.
 pub fn game() -> server.Served(game_connection.Settings) {
@@ -108,6 +120,7 @@ pub fn start() -> Started {
       sessions_shutdown_ms: 1500,
       sessions_recorder: None,
       registry: registry.new(),
+      world: world(),
       send_deadline_ms: 300,
       connection_shutdown_ms: 1000,
       login: login(),

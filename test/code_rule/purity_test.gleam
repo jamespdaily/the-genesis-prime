@@ -200,6 +200,29 @@ fn pure_rules_the_check_covers(
   files
 }
 
+pub fn the_map_rule_and_world_entry_and_what_they_build_are_pure_rules_the_check_covers_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let files =
+    pure_rules_the_check_covers(paths: [
+      "src/genesis_prime/world_map/map.gleam",
+      "src/genesis_prime/game/world_entry.gleam",
+      "src/genesis_prime/world_map/player_unit.gleam",
+      "src/genesis_prime/game/start_place.gleam",
+    ])
+  list.each(files, fn(file) {
+    list.each(["Pid", "Monitor", "Subject"], fn(name) {
+      assert !string.contains(file.text, name)
+        as {
+          file.path
+          <> " names "
+          <> name
+          <> ", a process's handle: CLAUDE.md says no type a rule takes or returns holds one"
+        }
+    })
+  })
+}
+
 pub fn the_game_connection_rule_and_the_features_it_holds_are_pure_rules_the_check_covers_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
@@ -210,6 +233,7 @@ pub fn the_game_connection_rule_and_the_features_it_holds_are_pure_rules_the_che
       "src/genesis_prime/game/character_creation.gleam",
       "src/genesis_prime/game/character_name.gleam",
       "src/genesis_prime/game/appearance.gleam",
+      "src/genesis_prime/game/world_entry.gleam",
     ])
   Nil
 }

@@ -33,6 +33,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
+import gleam/result
 import gleam/string
 import log_capture
 import mug
@@ -419,7 +420,7 @@ fn hand_off_child(
 ) -> ChildSpecification(Nil) {
   service_shell.supervised(service_shell.Settings(
     rule: hand_off.rule(),
-    name:,
+    registration: service_shell.Named(name),
     reach: service.Reach(
       locate: fn(_address) { Error(Nil) },
       send: fn(_to, _message) { Error(Nil) },
@@ -444,4 +445,94 @@ fn recorded(
     rule_recording.read(recording_support.recording_in(folder))
     as "the recording reads"
   records
+}
+
+// ---- a service with no name ----
+
+/// The hand-off's settings with no name, for a service found by its subject.
+fn unnamed_hand_off() -> service_shell.Settings(
+  Nil,
+  hand_off.State,
+  hand_off.Message,
+  hand_off.Answer,
+) {
+  service_shell.Settings(
+    rule: hand_off.rule(),
+    registration: service_shell.Unnamed,
+    reach: service.Reach(
+      locate: fn(_address) { Error(Nil) },
+      send: fn(_to, _message) { Error(Nil) },
+    ),
+    shutdown_ms: 1000,
+    recorder: None,
+  )
+}
+
+pub fn an_unnamed_service_is_asked_through_the_subject_its_start_returns_and_says_where_it_went_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let assert Ok(started) = service_shell.start_unnamed(unnamed_hand_off())
+    as "an unnamed service starts as a child of the process that runs the start"
+  let key = SessionKey(a_guid())
+  let holder =
+    Holder(
+      account_id: AccountId(7),
+      login_name: "login-7",
+      game_account_id: a_guid(),
+    )
+  let #(sent, answer) =
+    ask_support.ask_and_wait(send: fn(reply) {
+      service.call_subject(
+        started.data,
+        Put(key:, holder:, lifetime_ms: 60_000),
+        reply,
+      )
+    })
+  assert sent == service.ToService(started.pid)
+    as "the asker is told the service's own process, which it monitors"
+  assert answer == Kept as "the rule's reply reached the asker"
+  let #(_, answer) =
+    ask_support.ask_and_wait(send: fn(reply) {
+      service.call_subject(started.data, Take(key:), reply)
+    })
+  assert answer == Taken(holder:)
+    as "the second ask is answered by the same service"
+}
+
+pub fn a_message_to_an_unnamed_service_that_ended_is_dropped_and_its_pid_is_still_reported_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let assert Ok(started) = service_shell.start_unnamed(unnamed_hand_off())
+    as "an unnamed service starts"
+  process.unlink(started.pid)
+  let ended = process.monitor(started.pid)
+  process.kill(started.pid)
+  let _reason = ask_support.ended(ended)
+  assert service.call_subject(
+      started.data,
+      Take(key: SessionKey(a_guid())),
+      fn(_answer) { Nil },
+    )
+    == Ok(service.ToService(started.pid))
+    as "no process holds the subject, and the asker's monitor of the pid it is told gives EndedBeforeAnswer"
+}
+
+pub fn a_service_started_with_the_wrong_kind_of_registration_does_not_start_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // A supervisor that cannot start its child ends with the reason shutdown,
+  // which its linked starter would take as its own end.
+  process.trap_exits(True)
+  assert service_shell.start_unnamed(
+      service_shell.Settings(
+        ..unnamed_hand_off(),
+        registration: service_shell.Named(process.new_name("hand_off")),
+      ),
+    )
+    |> result.is_error
+    as "a named service started for its subject is a bug and fails the start"
+  let assert Error(_) =
+    supervisor.new(supervisor.OneForOne)
+    |> supervisor.restart_tolerance(intensity: 3, period: 10)
+    |> supervisor.add(service_shell.supervised(unnamed_hand_off()))
+    |> supervisor.start
+    as "an unnamed service started under its supervisor, which asks by name, is a bug and fails the start"
+  Nil
 }

@@ -9,12 +9,25 @@ import genesis_prime/step.{type Input, type Step, Rule}
 import genesis_prime/table/loader/store
 import gleam/list
 import gleam/option.{Some}
+import gleam/string
 import simplifile
 
 /// The folder of the live session's recordings: the real client logged in
 /// through the STS, auth and game servers and left on the character select
 /// screen, then a second login to the same account that took its session over.
 pub const folder = "test/rule_recording/2026-10-28-takeover/"
+
+/// The names of the folder's recordings of the rule `module`, in order: the
+/// files the recorder named after the rule (`genesis_prime/rule_recording/file`).
+/// A map is recorded once for each run, so a live session holds as many
+/// recordings of the map rule as maps ran.
+pub fn recordings_of(module module: String) -> List(String) {
+  let assert Ok(names) = simplifile.read_directory(folder)
+    as "the folder of the live session's recordings reads"
+  names
+  |> list.filter(string.starts_with(_, string.replace(module, "/", ".") <> "-"))
+  |> list.sort(string.compare)
+}
 
 /// Replays the recording `file` of the folder through the rule `module`,
 /// whose settings are the ones its header holds, and gives the inputs replayed

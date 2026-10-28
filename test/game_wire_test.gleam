@@ -8,9 +8,14 @@
 ////   (0x1400168a0).
 //// - The create path: 0x025C carries 0x025B (opcode.0x25c), the result is
 ////   0x00DC (opcode.0xdc, lua.Character.OnCreateCharacterFailed), and the
-////   client's 0x07DD after CreateOk gets 0x0162 Failed, 0x0036 and 0x0117
-////   (opcode.0x162.after_create, opcode.0x36), with the account's slots 2
-////   without an entitlement (lua.CharacterSelection.OnLoadFromCharacter).
+////   the account's slots 2 without an entitlement
+////   (lua.CharacterSelection.OnLoadFromCharacter); the place a create saves is
+////   the WorldLocation2 row of its start (`character_tables`).
+//// - World entry: the client's 0x07DD is answered with 0xAD, 0x262, 0x19B,
+////   0x636, 0xF1 and 0x61 (opcode.0xad and the others), the refusal of a play
+////   of a character the account does not have with 0x0162, 0x0036 and 0x0117
+////   (opcode.0x162.after_create, opcode.0x36), and the end of the player's map
+////   with 0x036A reason 8 (0x1400168a0).
 //// - The delete path: 0x0352 is answered with 0x00E6 (opcode.0x352,
 ////   opcode.0xe6, lua.CharacterSelection.OnCharacterDeleteResult), and the
 ////   rename path: 0x0786 is answered with 0x014B for a character the entry's
@@ -23,6 +28,7 @@ import ask_support
 import character_support
 import connection_rule_support as support
 import game_client
+import genesis_prime/connection/frame.{Frame}
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
 import genesis_prime/login/guid
 import genesis_prime/message/character_list
@@ -34,14 +40,21 @@ import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/delete_result
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
-import genesis_prime/message/disconnect_reason.{AccountDisconnected}
+import genesis_prime/message/disconnect_reason.{
+  AccountDisconnected, LostUserServer,
+}
+import genesis_prime/message/enter_world
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
+import genesis_prime/message/unit_create_player
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
+import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/maps
 import gleam/dynamic/decode
+import gleam/erlang/process
 import gleam/list
 import login_support
 import owned_test
@@ -192,7 +205,7 @@ fn names_of(pool: pog.Connection) -> List(String) {
   returned.rows
 }
 
-pub fn a_created_character_is_stored_answered_with_create_ok_and_listed_after_the_refused_play_test() -> Nil {
+pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_listed_and_played_into_the_world_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(started, port, account) = start()
   let pool = pog.named_connection(started.settings.pool.pool_name)
@@ -202,19 +215,8 @@ pub fn a_created_character_is_stored_answered_with_create_ok_and_listed_after_th
   assert created.result == create_result.CreateOk
     as "opcode.0xdc: a valid request is created"
   assert names_of(pool) == ["Ab Cd"] as "the character is stored"
-  game_client.send(game:, message_id: 0x07DD, body: {
-    let assert Ok(body) =
-      play_character.encode(PlayCharacter(character_id: created.character_id))
-      as "0x07DD encodes"
-    body
-  })
-  let assert [refused, level, listed] = game_client.read(game:, count: 3)
-    as "opcode.0x162.after_create: 0x0162, then 0x0036 and 0x0117"
-  assert refused.message_id == 0x0162
-  assert level.message_id == 0x0036
-  assert listed.message_id == 0x0117
-  let assert Ok(listing) = character_list.decode(listed.body)
-  let assert [entry] = listing.characters as "the list holds the new character"
+  let assert [entry] = listed_entries(game)
+    as "the list holds the new character"
   assert entry.character_id == created.character_id
     && entry.name == "Ab Cd"
     && entry.level == 1
@@ -226,10 +228,110 @@ pub fn a_created_character_is_stored_answered_with_create_ok_and_listed_after_th
     as "CharacterCreation row 466 and the request: class 1, race 1, sex 1, faction 167, path 1, level 1"
   assert entry.bone_values == character_support.bones(46)
     as "the bones come back as sent"
-  assert entry.last_logged_out_days != 0
-    as "lua.CharacterSelection.OnLoadFromCharacter.preselect: the new character carries the last logout the client's rule selects by"
+  assert entry.world_id == 3460
+    && entry.world_zone_id == 6009
+    && entry.position_x == 0x41E9075F
+    && entry.position_y == 0xC45577C8
+    && entry.position_z == 0xC40C0C08
+    as "row 466 is a PreTutorial start, WorldLocation2 row 51596: World 3460, zone 6009, and its position as 32-bit floats; the database kept them"
+  send_play(game:, character_id: created.character_id)
+  let burst = game_client.read(game:, count: 6)
+  assert list.map(burst, fn(frame) { frame.message_id })
+    == [0x00AD, 0x0262, 0x019B, 0x0636, 0x00F1, 0x0061]
+    as "the player enters the world: the messages in the client's order (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x636, opcode.0xf1, opcode.0x61)"
+  let assert [Frame(body: world, ..), Frame(body: unit, ..), ..] = burst
+  let assert Ok(entered) = enter_world.decode(world)
+  assert entered.world_id == 3460
+    && entered.position_x == entry.position_x
+    && entered.position_z == entry.position_z
+    as "0xAD carries the place the database saved"
+  let assert Ok(player) = unit_create_player.decode(unit)
+  assert player.character_id == created.character_id
+    && player.name == "Ab Cd"
+    && player.realm_id == 1
+    && player.unit_id == 1
+    as "0x262 is the character, in the realm of the settings, as the first unit of its map"
   game_client.close(game:)
   login_support.stop(started)
+}
+
+pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_and_the_list_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let other =
+    login_support.insert_account(
+      pool:,
+      login_name: "login-2",
+      salt: <<1>>,
+      verifier: <<1>>,
+      game_account_id: support.guid_of(0x22),
+    )
+  let theirs =
+    character_support.insert(
+      pool:,
+      account: AccountId(other),
+      name: "Abe",
+      class_id: 4,
+      path: 2,
+    )
+  let game = in_select(started:, port:, account:)
+  send_play(game:, character_id: theirs)
+  let assert [refused, level, listed] = game_client.read(game:, count: 3)
+    as "opcode.0x162.after_create: 0x0162, then 0x0036 and 0x0117"
+  assert refused.message_id == 0x0162
+  assert level.message_id == 0x0036
+  assert listed.message_id == 0x0117
+  let assert Ok(listing) = character_list.decode(listed.body)
+  assert listing.characters == []
+    as "the account has no characters: the read is scoped by its id, so another account's character is not played, nor listed"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let character =
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let game = in_select(started:, port:, account:)
+  send_play(game:, character_id: character)
+  let assert [_, _, _, _, _, _] = game_client.read(game:, count: 6)
+    as "the player entered the world"
+  // The player's map is the run the real Maps holds for the character's world.
+  let assert Ok(found) =
+    maps.find_or_start(
+      started.settings.world.maps,
+      MapId(world_id: 1387, instance: 0),
+      deadline_ms: ask_support.monotonic_ms() + ask_support.event_wait_ms,
+    )
+    as "the map is running, started by the play"
+  process.kill(found.pid)
+  let assert [Frame(message_id: 0x036A, body:)] =
+    game_client.read(game:, count: 1)
+    as "opcode.0x36a: the connection watches the map it is in, so its end tells the client"
+  assert disconnect_notice.decode(body)
+    == Ok(DisconnectNotice(reason: LostUserServer))
+    as "0x1400168a0: 8, 'Lost connection with user server.'"
+  assert game_client.closed(game:) as "and the connection ends"
+  login_support.stop(started)
+}
+
+/// Sends 0x07DD for the character.
+fn send_play(
+  game game: game_client.Game,
+  character_id character_id: Int,
+) -> Nil {
+  let assert Ok(body) = play_character.encode(PlayCharacter(character_id:))
+    as "0x07DD encodes"
+  game_client.send(game:, message_id: 0x07DD, body:)
 }
 
 pub fn a_name_taken_in_another_case_is_name_unavailable_and_nothing_more_is_stored_test() -> Nil {

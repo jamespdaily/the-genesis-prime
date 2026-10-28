@@ -568,7 +568,7 @@ fn make_ask(
   let tag = reference.new()
   let shell = process.self()
   let reply = fn(answer) { send_answer(shell, tag, answer) }
-  case running.settings.directory(ask.request, reply) {
+  case running.settings.directory(ask.request, ask.deadline_ms, reply) {
     Error(Nil) ->
       take(
         running:,

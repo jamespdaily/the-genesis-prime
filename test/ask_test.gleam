@@ -41,13 +41,13 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
   let server =
     ask_support.start(
       rule: asking_rule.rule(),
-      directory: fn(request, reply) {
+      directory: fn(request, deadline_ms, reply) {
         let acknowledged = process.new_subject()
-        process.send(calls, acknowledged)
+        process.send(calls, #(acknowledged, deadline_ms))
         let assert Ok(Nil) =
           process.receive(acknowledged, within: ask_support.event_wait_ms)
           as "the test read the step's write before the directory went on"
-        reaching_the_gate(request, reply)
+        reaching_the_gate(request, deadline_ms, reply)
       },
       shutdown_ms: 1000,
       recorder: None,
@@ -65,10 +65,12 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
     1,
     wait_ms: ask_support.patient,
   )
-  let assert Ok(acknowledged) =
+  let assert Ok(#(acknowledged, given_deadline)) =
     process.receive(calls, within: ask_support.event_wait_ms)
     as "the shell reached the directory"
   let asked = ask_support.read_record(client)
+  assert given_deadline == asked.milliseconds
+    as "the directory is given the ask's own deadline, so a lookup on the way to the process (Maps') ends by it"
   assert asked.letter == asking_rule.asked && asked.ask == 1
     as "the step's own write was carried out before the ask was made"
   process.send(acknowledged, Nil)

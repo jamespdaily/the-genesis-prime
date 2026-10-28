@@ -29,7 +29,7 @@ pub fn serve(folder: String) -> Nil {
     |> supervisor.add(
       service_shell.supervised(service_shell.Settings(
         rule: hand_off.rule(),
-        name: process.new_name("hand_off"),
+        registration: service_shell.Named(process.new_name("hand_off")),
         reach: service.Reach(
           locate: fn(_address) { Error(Nil) },
           send: fn(_to, _message) { Error(Nil) },

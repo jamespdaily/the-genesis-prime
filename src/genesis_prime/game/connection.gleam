@@ -1,7 +1,6 @@
 //// The rule of one game connection: the client's connection to the game
 //// server, from the hello through character select to the player in the
-//// world. It
-//// decides everything; its connection shell carries it out
+//// world. It decides everything; its connection shell carries it out
 //// (genesis_prime/connection/shell). The client reaches it with the session
 //// key the auth server's hand-off gave it (genesis_prime/login/auth_connection).
 ////
@@ -136,9 +135,9 @@
 ////   unhandled and the connection goes on (opcode.0x241).
 
 import genesis_prime/client_connection.{
-  type Answer, type Link, type Message, type Request, AskHandOff, AskSessions,
-  AskStore, Asking, Bytes, Connect, Continue, Done, FromHandOff, FromSessions,
-  FromStore, Inside, Otherwise, SentBySessions, Settled,
+  type Answer, type Link, type Message, type Request, AskHandOff, AskMap,
+  AskSessions, AskStore, Asking, Bytes, Connect, Continue, Done, FromHandOff,
+  FromMap, FromSessions, FromStore, Inside, Otherwise, SentBySessions, Settled,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -160,6 +159,7 @@ import genesis_prime/message/disconnect_reason.{
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/play_character
 import genesis_prime/message/rename_character
+import genesis_prime/message/world_message
 import genesis_prime/sessions
 import genesis_prime/step.{
   type Effect, type Input, type Now, type Outcome, type Rule, type Step,
@@ -331,8 +331,7 @@ fn connected(
   case event {
     Woken(message: SentBySessions(message:)) ->
       settled(handled: sessions_sent(session:, message:), now:)
-    WatchEnded(watch:) ->
-      settled(handled: sessions_ended(session:, watch:), now:)
+    WatchEnded(watch:) -> settled(handled: watch_ended(session:, watch:), now:)
     TimerFired(timer:) ->
       settled(handled: claim_wait_over(session:, now:, timer:), now:)
     Started
@@ -396,9 +395,9 @@ fn settled(
 /// Whether an ask is in flight, so the frames after the one that asked wait.
 fn asking(status: Status) -> Bool {
   case status {
-    TakingSessionKey | ClaimingSession(..) -> True
+    TakingSessionKey | ClaimingSession(..) | EnteringWorld(..) -> True
     InCharacterSelect(select:, ..) -> character_select.waiting(select)
-    AwaitingHelloReply -> False
+    AwaitingHelloReply | InWorld(..) -> False
   }
 }
 
@@ -504,20 +503,7 @@ fn taken_message(
             step: fn(_) { character_select.started(holder.account_id) },
           )
         CreateRequest -> create_requested(session:, now:, holder:, inner:)
-        PlayRequest ->
-          decoded_step(
-            session:,
-            now:,
-            holder:,
-            inner:,
-            decode: play_character.decode,
-            step: fn(request) {
-              character_select.play_requested(
-                account_id: holder.account_id,
-                request:,
-              )
-            },
-          )
+        PlayRequest -> play_requested(session:, now:, holder:, inner:)
         DeleteRequest ->
           decoded_step(
             session:,
@@ -546,17 +532,60 @@ fn taken_message(
               )
             },
           )
-        NotTaken ->
-          client_connection.unhandled(
-            session:,
-            link: session.link,
-            account_id: account_id_of(session.status),
-            server: "game",
-            message_id: inner.message_id,
-          )
+        WorldCarrier -> world_carried(session:, inner:)
+        NotTaken -> unhandled(session:, message_id: inner.message_id)
       }
-    TakingSessionKey | ClaimingSession(..) ->
+    InWorld(..) ->
+      case inner.message_id {
+        id if id == game_hello_reply.message_id ->
+          end_for(session, "0x058F was sent a second time")
+        id if id == world_message.message_id -> world_carried(session:, inner:)
+        id -> unhandled(session:, message_id: id)
+      }
+    TakingSessionKey | ClaimingSession(..) | EnteringWorld(..) ->
       end_for(session, "a frame was taken while an ask was out")
+  }
+}
+
+/// A whole frame of a message the rule does not take, logged as unhandled.
+fn unhandled(
+  session session: Session,
+  message_id message_id: Int,
+) -> client_connection.Handled(Session) {
+  let account_id = account_id_of(session.status)
+  client_connection.unhandled(
+    session:,
+    link: session.link,
+    account_id:,
+    server: "game",
+    message_id:,
+  )
+}
+
+/// The client's 0x038C: a 5-bit kind and one whole inner frame
+/// (opcode.0x38c), whose message is logged as unhandled under its own id,
+/// since no feature takes a world message yet. A body that holds no whole
+/// frame, or bytes after it, is one the client never writes, and ends the
+/// connection.
+fn world_carried(
+  session session: Session,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  case world_message.decode(inner.body) {
+    Error(error) ->
+      end_for(
+        session,
+        "0x038C does not decode: " <> bit_stream.describe_decode(error:),
+      )
+    Ok(carried) ->
+      case frame.parse(carried.inner_frame) {
+        Error(error) ->
+          end_for(
+            session,
+            "0x038C holds no whole frame: " <> frame.describe(error),
+          )
+        Ok(whole) -> unhandled(session:, message_id: whole.message_id)
+      }
   }
 }
 
@@ -621,6 +650,8 @@ type SelectMessage {
   DeleteRequest
   /// 0x0786, the request to rename a character.
   RenameRequest
+  /// 0x038C, which carries a world message.
+  WorldCarrier
   /// Any other message.
   NotTaken
 }
@@ -633,6 +664,7 @@ fn select_message(message_id: Int) -> SelectMessage {
     id if id == play_character.message_id -> PlayRequest
     id if id == delete_character.message_id -> DeleteRequest
     id if id == rename_character.message_id -> RenameRequest
+    id if id == world_message.message_id -> WorldCarrier
     _ -> NotTaken
   }
 }
@@ -731,6 +763,86 @@ fn select_step(
   )
 }
 
+/// The client's 0x07DD: world entry asks the store for the character, and the
+/// connection waits in `EnteringWorld`, with the select it came from for a
+/// refusal to hand back to.
+fn play_requested(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  let assert InCharacterSelect(select:, ..) = session.status
+    as "a play request is taken in character select"
+  case play_character.decode(inner.body) {
+    Error(error) ->
+      end_for(
+        session,
+        client_connection.message_text(inner.message_id)
+          <> " does not decode: "
+          <> bit_stream.describe_decode(error:),
+      )
+    Ok(request) -> {
+      let #(entry, effects) =
+        world_entry.play_requested(account_id: holder.account_id, request:)
+      entry_step(
+        session: Session(
+          ..session,
+          status: EnteringWorld(holder:, select:, entry:),
+        ),
+        now:,
+        effects:,
+      )
+    }
+  }
+}
+
+/// Turns what world entry decided into writes, log lines and its ask, which
+/// ends the step with what was written before it.
+fn entry_step(
+  session session: Session,
+  now now: Now,
+  effects effects: List(world_entry.Effect),
+) -> client_connection.Handled(Session) {
+  entry_carry_out(session:, now:, effects:, written: [])
+}
+
+/// `written` are the writes so far, the last first.
+fn entry_carry_out(
+  session session: Session,
+  now now: Now,
+  effects effects: List(world_entry.Effect),
+  written written: List(Effect(Nil)),
+) -> client_connection.Handled(Session) {
+  case effects {
+    [] -> Continue(session, list.reverse(written))
+    [world_entry.Send(frame:), ..rest] ->
+      entry_carry_out(session:, now:, effects: rest, written: [
+        to_client(session, frame),
+        ..written
+      ])
+    [world_entry.Warn(text:), ..rest] ->
+      entry_carry_out(session:, now:, effects: rest, written: [
+        log(session:, level: LogWarning, text:),
+        ..written
+      ])
+    [world_entry.AskStore(request:), ..] ->
+      ask(
+        session:,
+        now:,
+        request: AskStore(store.World(request)),
+        before: list.reverse(written),
+      )
+    [world_entry.AskMap(map:, message:), ..] ->
+      ask(
+        session:,
+        now:,
+        request: AskMap(map:, message:),
+        before: list.reverse(written),
+      )
+  }
+}
+
 /// Turns what character select decided into writes, and into its ask, which
 /// ends the step with what was written before it; `written` are the writes so
 /// far, the last first.
@@ -787,11 +899,14 @@ fn answered(
 ) -> client_connection.Handled(Session) {
   case session.status {
     TakingSessionKey -> key_taken(session:, now:, outcome:)
-    ClaimingSession(holder:, select:, retries:) ->
-      claim_answered(session:, holder:, select:, retries:, outcome:)
+    ClaimingSession(holder:, resume:, retries:) ->
+      claim_answered(session:, holder:, resume:, retries:, outcome:)
     InCharacterSelect(holder:, select:) ->
       select_answered(session:, now:, holder:, select:, outcome:)
-    AwaitingHelloReply -> end_for(session, "an answer came when no ask was out")
+    EnteringWorld(holder:, select:, entry:) ->
+      entry_answered(session:, now:, holder:, select:, entry:, outcome:)
+    AwaitingHelloReply | InWorld(..) ->
+      end_for(session, "an answer came when no ask was out")
   }
 }
 
@@ -804,7 +919,13 @@ fn key_taken(
 ) -> client_connection.Handled(Session) {
   case outcome {
     step.Answer(FromHandOff(hand_off.Taken(holder:))) ->
-      claim(session:, now:, holder:, select: character_select.new(), retries: 0)
+      claim(
+        session:,
+        now:,
+        holder:,
+        resume: ResumeSelect(select: character_select.new()),
+        retries: 0,
+      )
     step.Answer(FromHandOff(hand_off.NoHolder)) ->
       told(
         session:,
@@ -815,7 +936,8 @@ fn key_taken(
     step.Answer(FromHandOff(hand_off.Kept))
     | step.Answer(FromHandOff(hand_off.AlreadyHeld))
     | step.Answer(FromStore(..))
-    | step.Answer(FromSessions(..)) ->
+    | step.Answer(FromSessions(..))
+    | step.Answer(FromMap(..)) ->
       told(
         session:,
         reason: LostUserServer,
@@ -834,20 +956,19 @@ fn key_taken(
 }
 
 /// Opens a watch on Sessions and asks it to make this connection the account's
-/// session; `select` is the character select the client is in once it
-/// answers. The watch is opened with every claim, so a restarted Sessions is
-/// watched again.
+/// session; `resume` is where the client is once it answers. The watch is
+/// opened with every claim, so a restarted Sessions is watched again.
 fn claim(
   session session: Session,
   now now: Now,
   holder holder: Holder,
-  select select: character_select.State,
+  resume resume: Resume,
   retries retries: Int,
 ) -> client_connection.Handled(Session) {
   ask(
     session: Session(
       ..session,
-      status: ClaimingSession(holder:, select:, retries:),
+      status: ClaimingSession(holder:, resume:, retries:),
     ),
     now:,
     request: AskSessions(sessions.Claim(
@@ -858,27 +979,31 @@ fn claim(
   )
 }
 
-/// Sessions' answer to the claim: `Claimed` puts the client in character
-/// select, where it was, and the frames held are taken. Sessions not running
-/// is waited out up to `claim_retries` times, with the watch dropped; any
-/// other failure of the ask tells the client the server failed, as the store's
-/// do.
+/// Sessions' answer to the claim: `Claimed` puts the client where it was, in
+/// character select or in the world, and the frames held are taken. Sessions
+/// not running is waited out up to `claim_retries` times, with the watch
+/// dropped; any other failure of the ask tells the client the server failed,
+/// as the store's do.
 fn claim_answered(
   session session: Session,
   holder holder: Holder,
-  select select: character_select.State,
+  resume resume: Resume,
   retries retries: Int,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case outcome {
     step.Answer(FromSessions(sessions.Claimed)) ->
       Continue(
-        Session(..session, status: InCharacterSelect(holder:, select:)),
+        Session(..session, status: case resume {
+          ResumeSelect(select:) -> InCharacterSelect(holder:, select:)
+          ResumeWorld(entered:) -> InWorld(holder:, entered:)
+        }),
         [],
       )
     step.Answer(FromSessions(sessions.TakenOver))
     | step.Answer(FromStore(..))
-    | step.Answer(FromHandOff(..)) ->
+    | step.Answer(FromHandOff(..))
+    | step.Answer(FromMap(..)) ->
       told(
         session:,
         reason: LostUserServer,
@@ -889,7 +1014,7 @@ fn claim_answered(
       Done(
         Session(
           ..session,
-          status: ClaimingSession(holder:, select:, retries: retries + 1),
+          status: ClaimingSession(holder:, resume:, retries: retries + 1),
         ),
         [
           Unwatch(watch: sessions_watch),
@@ -918,6 +1043,8 @@ fn sessions_sent(
   case message, session.status {
     sessions.TakenOver, InCharacterSelect(..)
     | sessions.TakenOver, ClaimingSession(..)
+    | sessions.TakenOver, EnteringWorld(..)
+    | sessions.TakenOver, InWorld(..)
     ->
       told(
         session:,
@@ -933,29 +1060,52 @@ fn sessions_sent(
   }
 }
 
-/// The end of the watch on Sessions: the connection waits on the claim timer,
-/// then claims its account again from where it is. A watch this rule did not
-/// open, or one that ends while the connection is not in character select, is
-/// a bug.
-fn sessions_ended(
+/// The end of a watch the rule opened. Sessions' (`sessions_watch`): the
+/// connection waits on the claim timer, then claims its account again from
+/// where it is, in character select or in the world. The player's map
+/// (`map_watch`): the player is gone from the world, so the client is told the
+/// server failed (0x036A reason 8) and the connection ends. A watch this rule
+/// did not open, or one that ends where the connection holds none, is a bug.
+fn watch_ended(
   session session: Session,
   watch watch: WatchId,
 ) -> client_connection.Handled(Session) {
-  case session.status {
-    InCharacterSelect(holder:, select:) if watch == sessions_watch ->
-      Done(
-        Session(
-          ..session,
-          status: ClaimingSession(holder:, select:, retries: 0),
-        ),
-        [StartTimer(timer: claim_timer, after_ms: claim_wait_ms)],
+  case session.status, watch {
+    InCharacterSelect(holder:, select:), id if id == sessions_watch ->
+      waiting_to_claim(session:, holder:, resume: ResumeSelect(select:))
+    InWorld(holder:, entered:), id if id == sessions_watch ->
+      waiting_to_claim(session:, holder:, resume: ResumeWorld(entered:))
+    InWorld(..), id
+    | ClaimingSession(resume: ResumeWorld(..), ..), id
+      if id == map_watch
+    ->
+      told(
+        session:,
+        reason: LostUserServer,
+        level: LogWarning,
+        text: "the map the player is in ended",
       )
-    InCharacterSelect(..)
-    | ClaimingSession(..)
-    | AwaitingHelloReply
-    | TakingSessionKey ->
-      end_for(session, "a watch the rule did not open ended")
+    InCharacterSelect(..), _
+    | InWorld(..), _
+    | ClaimingSession(..), _
+    | EnteringWorld(..), _
+    | AwaitingHelloReply, _
+    | TakingSessionKey, _
+    -> end_for(session, "a watch the rule did not open ended")
   }
+}
+
+/// The connection waits on the claim timer before it claims its account
+/// again, with the place of the client kept.
+fn waiting_to_claim(
+  session session: Session,
+  holder holder: Holder,
+  resume resume: Resume,
+) -> client_connection.Handled(Session) {
+  Done(
+    Session(..session, status: ClaimingSession(holder:, resume:, retries: 0)),
+    [StartTimer(timer: claim_timer, after_ms: claim_wait_ms)],
+  )
 }
 
 /// The claim timer fired: the connection claims again. A timer the rule did
@@ -967,10 +1117,12 @@ fn claim_wait_over(
   timer timer: TimerId,
 ) -> client_connection.Handled(Session) {
   case session.status {
-    ClaimingSession(holder:, select:, retries:) if timer == claim_timer ->
-      claim(session:, now:, holder:, select:, retries:)
+    ClaimingSession(holder:, resume:, retries:) if timer == claim_timer ->
+      claim(session:, now:, holder:, resume:, retries:)
     ClaimingSession(..)
     | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | InWorld(..)
     | AwaitingHelloReply
     | TakingSessionKey ->
       end_for(session, "a timer the rule did not start fired")
@@ -1011,7 +1163,8 @@ fn select_answered(
         store.Deleted(answer:) -> character_select.deleted(select, answer)
         store.Renamed(answer:) -> character_select.renamed(select, answer)
       })
-    step.Answer(FromStore(store.ForLogin(..))) ->
+    step.Answer(FromStore(store.ForLogin(..)))
+    | step.Answer(FromStore(store.ForWorld(..))) ->
       select_taken(session:, now:, holder:, taken: Error(Nil))
     step.Answer(FromHandOff(..)) ->
       told(
@@ -1026,6 +1179,13 @@ fn select_answered(
         reason: LostUserServer,
         level: step.LogError,
         text: "Sessions' answer is none a store ask gets",
+      )
+    step.Answer(FromMap(..)) ->
+      told(
+        session:,
+        reason: LostUserServer,
+        level: step.LogError,
+        text: "a map's answer is none a store ask gets",
       )
     step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
       told(
@@ -1059,6 +1219,136 @@ fn select_taken(
         level: step.LogError,
         text: "the store's answer is none character select asked for",
       )
+  }
+}
+
+/// The answer to world entry's ask, which is the store's or the map's: the
+/// failures every ask shares tell the client the server failed; any other
+/// answer is world entry's to take. A refusal hands the client back to
+/// character select.
+fn entry_answered(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  select select: character_select.State,
+  entry entry: world_entry.State,
+  outcome outcome: Outcome(Answer),
+) -> client_connection.Handled(Session) {
+  case outcome {
+    step.Answer(FromStore(store.Unavailable)) ->
+      told(
+        session:,
+        reason: LostUserServer,
+        level: LogWarning,
+        text: "the store is unavailable",
+      )
+    step.Answer(FromStore(store.ForWorld(answer))) ->
+      case
+        world_entry.loaded(entry, answer:, connection: session.link.connection)
+      {
+        Ok(world_entry.Join(state:, effects:)) ->
+          entry_step(
+            session: Session(
+              ..session,
+              status: EnteringWorld(holder:, select:, entry: state),
+            ),
+            now:,
+            effects:,
+          )
+        Ok(world_entry.Refused(character_id:, warning:)) ->
+          select_step(
+            session:,
+            now:,
+            holder:,
+            step: refused_play(holder:, character_id:, warning:),
+          )
+        Error(Nil) -> entry_unasked(session)
+      }
+    step.Answer(FromMap(answer)) ->
+      case
+        world_entry.joined(
+          entry,
+          answer:,
+          realm_id: session.settings.realm_id,
+          tables: session.settings.tables,
+        )
+      {
+        Ok(#(entered, effects)) ->
+          in_the_world(session:, now:, holder:, entered:, effects:)
+        Error(Nil) -> entry_unasked(session)
+      }
+    step.Answer(FromStore(store.ForLogin(..)))
+    | step.Answer(FromStore(store.ForSelect(..)))
+    | step.Answer(FromHandOff(..))
+    | step.Answer(FromSessions(..)) -> entry_unasked(session)
+    step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
+      told(
+        session:,
+        reason: LostUserServer,
+        level: LogWarning,
+        text: client_connection.without_answer(
+          who: case world_entry.awaiting(entry) {
+            world_entry.AwaitingStore -> "the store"
+            world_entry.AwaitingMap -> "the map"
+          },
+          outcome:,
+        ),
+      )
+    step.StoppedWaiting -> stopped(session)
+  }
+}
+
+/// An answer that is none world entry asked for: a bug, so the client is told
+/// the server failed.
+fn entry_unasked(session: Session) -> client_connection.Handled(Session) {
+  told(
+    session:,
+    reason: LostUserServer,
+    level: step.LogError,
+    text: "the answer is none world entry asked for",
+  )
+}
+
+/// The play world entry refused: a warning, then character select sends 0x0162
+/// and asks for the list again.
+fn refused_play(
+  holder holder: Holder,
+  character_id character_id: Int,
+  warning warning: String,
+) -> #(character_select.State, List(character_select.Effect)) {
+  let #(select, effects) =
+    character_select.play_refused(account_id: holder.account_id, character_id:)
+  #(select, [character_select.Warn(text: warning), ..effects])
+}
+
+/// The player is in the world: the messages that put it there are written,
+/// and its map is watched.
+fn in_the_world(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  effects effects: List(world_entry.Effect),
+) -> client_connection.Handled(Session) {
+  case
+    entry_step(
+      session: Session(..session, status: InWorld(holder:, entered:)),
+      now:,
+      effects:,
+    )
+  {
+    Continue(session:, effects:) ->
+      Continue(
+        session,
+        list.append(effects, [
+          Watch(
+            watch: map_watch,
+            target: step.Map(map: entered.map, incarnation: entered.incarnation),
+          ),
+        ]),
+      )
+    Asking(..) | Done(..) ->
+      panic as "the messages that put the player in the world make no ask"
   }
 }
 
@@ -1120,6 +1410,11 @@ fn account_id_of(status: Status) -> Option(Int) {
       holder: hand_off.Holder(account_id: store.AccountId(id), ..),
       ..,
     )
+    | EnteringWorld(
+        holder: hand_off.Holder(account_id: store.AccountId(id), ..),
+        ..,
+      )
+    | InWorld(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
     | ClaimingSession(
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),
         ..,

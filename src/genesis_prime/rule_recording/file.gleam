@@ -19,6 +19,7 @@ pub opaque type Recorder {
     client_build: Int,
     tables_digest: Option(String),
     types_digest: String,
+    label: Option(String),
   )
 }
 
@@ -40,13 +41,20 @@ pub fn recorder(
   tables_digest tables_digest: Option(String),
   types_digest types_digest: String,
 ) -> Recorder {
-  Recorder(folder:, client_build:, tables_digest:, types_digest:)
+  Recorder(folder:, client_build:, tables_digest:, types_digest:, label: None)
+}
+
+/// The recorder that names each file it opens by `label` instead of the
+/// number of the connection or service, for a rule whose runs are known by
+/// what they are (a map by its world, instance and incarnation).
+pub fn labelled(recorder recorder: Recorder, label label: String) -> Recorder {
+  Recorder(..recorder, label: Some(label))
 }
 
 /// Opens the recording of one connection when there is a recorder; with none
-/// there is no recording. The file is named after the rule and the connection
-/// and starts with the header of `rule`; a file already there is never
-/// overwritten.
+/// there is no recording. The file is named after the rule and the connection,
+/// or the recorder's label, and starts with the header of `rule`; a file
+/// already there is never overwritten.
 pub fn open_if(
   recorder recorder: Option(Recorder),
   rule rule: Rule(settings, state, message, answer, outgoing, request),
@@ -60,7 +68,7 @@ pub fn open_if(
         <> "/"
         <> string.replace(rule.name, "/", ".")
         <> "-"
-        <> int.to_string(connection)
+        <> option.unwrap(recorder.label, int.to_string(connection))
         <> ".recording"
       let header =
         Header(

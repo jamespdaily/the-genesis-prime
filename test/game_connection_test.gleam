@@ -20,6 +20,14 @@
 //// - The rule's doc comment, as approved on the card, and the shape's change
 ////   that the game connection never stops without telling the client after
 ////   the hello.
+//// - World entry: the client's path from 0x07DD to control (the fact file's
+////   opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x636, opcode.0xf1 and
+////   opcode.0x61, and the order the client's handlers need), the player's
+////   0x262 against the client's own vector (vector.opcode.0x262.roxo_alive,
+////   tested with `player_unit_test`), the saved place a WorldLocation2 row
+////   gives (character_tables), the map's join in the rule's doc comment, the
+////   failures every ask shares (reason 8), and 0x038C carrying one whole inner
+////   frame (opcode.0x38c).
 //// - The create path: 0x025C carries the whole frame of 0x025B (opcode.0x25c),
 ////   the result is 0x00DC (opcode.0xdc, lua.Character.OnCreateCharacterFailed),
 ////   and after CreateOk the client's 0x07DD (opcode.0x7dd) gets 0x0162 Failed
@@ -32,8 +40,8 @@ import character_tables
 import connection_rule_support as support
 import game_client
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, AskHandOff, AskSessions, AskStore,
-  FromHandOff, FromSessions, FromStore, SentBySessions,
+  type Answer, type Message, type Request, AskHandOff, AskMap, AskSessions,
+  AskStore, FromHandOff, FromMap, FromSessions, FromStore, SentBySessions,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -44,6 +52,7 @@ import genesis_prime/hand_off.{
 import genesis_prime/login/guid
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
+import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
 import genesis_prime/message/create_result
@@ -54,29 +63,43 @@ import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
 }
+import genesis_prime/message/enter_world.{EnterWorld}
+import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
+import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
+import genesis_prime/message/player_entered_world
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/server_hello.{ServerHello}
+import genesis_prime/message/unit_create_player.{
+  type UnitCreatePlayer, UnitCreatePlayer,
+}
+import genesis_prime/message/unit_is_player.{UnitIsPlayer}
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/sessions.{Claim, Claimed, TakenOver}
 import genesis_prime/step.{
   type Event, type Outcome, type Step, ConnectionId, EndedBeforeAnswer, LogError,
-  LogInfo, LogWarning, NoAnswerInTime, NotRunning, OtherSocketFailure, Sessions,
-  StartTimer, StoppedWaiting, TimerFired, TimerId, Unwatch, Watch, WatchEnded,
-  WatchId, Woken,
+  LogInfo, LogWarning, Map, NoAnswerInTime, NotRunning, OtherSocketFailure,
+  Sessions, StartTimer, StoppedWaiting, TimerFired, TimerId, Unwatch, Watch,
+  WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store.{
   AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
-  CharacterRenamed, Created, Deleted, ForSelect, ListCharacters, Listed,
-  LookEntry, NameStands, NameTaken, NewCharacter, NewNameTaken, NoFreeSlot,
-  NoSuchCharacter, NotRenamable, Renamed, Select, Unavailable,
+  CharacterLoaded, CharacterRenamed, Created, Deleted, ForSelect, ForWorld,
+  ListCharacters, Listed, LoadCharacter, LookEntry, NameStands, NameTaken,
+  NewCharacter, NewNameTaken, NoFreeSlot, NoSuchCharacter, NotRenamable,
+  NotTheAccounts, Renamed, Select, Unavailable, World,
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import genesis_prime/world_map/map.{Join, Joined}
+import genesis_prime/world_map/map_id.{MapId}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -642,8 +665,8 @@ pub fn message_0x038c_carrying_0x082d_and_0x0241_are_logged_as_unhandled_and_the
   let #(state, _) = listed(characters: [])
   let #(state, taken) = read(state, <<store_request():bits, activity():bits>>)
   assert unhandled_ids(taken)
-    == [Some(#("unhandled", 0x038C)), Some(#("unhandled", 0x0241))]
-    as "opcode.0x82d and opcode.0x241: the client sends them and waits for no answer, and no feature takes them yet; each frame is logged in order"
+    == [Some(#("unhandled", 0x082D)), Some(#("unhandled", 0x0241))]
+    as "opcode.0x38c and opcode.0x82d: 0x038C carries the whole frame of 0x082D, which is logged under its own id; opcode.0x241: the client sends it and waits for no answer, and no feature takes it yet; each is logged in order"
   assert support.writes(taken) == []
   assert !support.stops(taken)
   let #(_, taken) = read(state, support.ping(1))
@@ -679,8 +702,8 @@ pub fn frames_after_the_one_that_asked_wait_for_its_answer_and_are_then_taken_in
   let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, ..)] =
     heard(taken, keyed())
     as "the list first"
-  assert unhandled_ids(taken) == [Some(#("unhandled", 0x038C))]
-    as "then the frame that waited"
+  assert unhandled_ids(taken) == [Some(#("unhandled", 0x082D))]
+    as "then the frame that waited, whose inner message 0x082D is logged under its own id (opcode.0x38c)"
 }
 
 pub fn a_frame_the_clients_reader_would_refuse_ends_the_connection_after_the_whole_frames_before_it_test() -> Nil {
@@ -803,6 +826,11 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
           class_id: ClassId(1),
           faction_id: 167,
           path: 2,
+          world_id: 3460,
+          world_zone_id: 6009,
+          position_x: 29.128599166870117,
+          position_y: -853.87158203125,
+          position_z: -560.18798828125,
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
             LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
@@ -812,7 +840,7 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
         character_slots: 3,
       )),
     )
-    as "opcode.0x25b, CharacterCreation row 466; the slot count is the settings'"
+    as "opcode.0x25b, CharacterCreation row 466; its PreTutorial start is WorldLocation2 row 51596 (World 3460, zone 6009 and its position); the slot count is the settings'"
   assert support.writes(taken) == []
     as "nothing is written before the store answers"
   let #(_, taken) =
@@ -899,18 +927,15 @@ pub fn a_store_that_gives_no_answer_to_a_create_gets_0x036a_reason_8_and_the_con
   )
 }
 
-pub fn message_0x07dd_after_a_create_gets_0x0162_failed_then_0x0036_and_0x0117_with_the_character_selected_test() -> Nil {
+pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_then_0x0036_and_0x0117_with_the_character_selected_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(state, taken) = creating(a_create_request("Ab Cd"))
-  let #(state, _) =
+  let #(state, taken) = playing(11)
+  let #(state, taken) =
     answer(
       state:,
       taken:,
-      outcome: step.Answer(
-        FromStore(ForSelect(Created(CharacterCreated(CharacterId(11))))),
-      ),
+      outcome: step.Answer(FromStore(ForWorld(NotTheAccounts))),
     )
-  let #(state, taken) = read(state, play_message(11))
   let assert [Frame(message_id: 0x0162, body:)] = heard(taken, keyed())
     as "opcode.0x162.after_create: the refusal is written first"
   assert play_character_refused.decode(body)
@@ -918,6 +943,10 @@ pub fn message_0x07dd_after_a_create_gets_0x0162_failed_then_0x0036_and_0x0117_w
     as "opcode.0x162: 2 Failed is the generic refusal"
   assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
     as "the list is built again"
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+    as "a play the real client would not send is logged once"
+  assert support.says(line, "11") as "the warning names the character's id"
+  assert line.about.account_id == Some(7)
   let new = Character(..character(id: 11, name: "Ab Cd", seed: 1), level: 1)
   let #(_, taken) =
     answer(
@@ -940,8 +969,28 @@ pub fn message_0x07dd_after_a_create_gets_0x0162_failed_then_0x0036_and_0x0117_w
   assert list.map(sent.characters, fn(entry) { entry.name }) == ["Eve", "Ab Cd"]
   let assert [0, chosen] =
     list.map(sent.characters, fn(entry) { entry.last_logged_out_days })
-    as "lua.CharacterSelection.OnLoadFromCharacter.preselect: only the new character has a last logout, so the client selects it"
+    as "lua.CharacterSelection.OnLoadFromCharacter.preselect: only the character named has a last logout, so the client selects it"
   assert chosen != 0
+}
+
+pub fn a_play_of_a_character_with_no_saved_place_is_refused_the_same_way_and_the_map_is_not_asked_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = playing(42)
+  let no_place = Character(..world_character(), world_id: 0)
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForWorld(CharacterLoaded(no_place)))),
+    )
+  let assert [Frame(message_id: 0x0162, body:)] = heard(taken, keyed())
+    as "the world 0 a character made before create wrote its start place has no World row, which 0xAD needs (opcode.0xad)"
+  assert play_character_refused.decode(body)
+    == Ok(PlayCharacterRefused(result: play_refusal.Failed))
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
+    as "the list again, and no map is asked"
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+  assert support.says(line, "no saved place")
 }
 
 pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> Nil {
@@ -962,6 +1011,11 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
           class_id: ClassId(1),
           faction_id: 167,
           path: 2,
+          world_id: 3460,
+          world_zone_id: 6009,
+          position_x: 29.128599166870117,
+          position_y: -853.87158203125,
+          position_z: -560.18798828125,
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
             LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
@@ -981,10 +1035,456 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
         FromStore(ForSelect(Created(CharacterCreated(CharacterId(11))))),
       ),
     )
-  let assert [Frame(message_id: 0x00DC, ..), Frame(message_id: 0x0162, ..)] =
-    heard(taken, keyed())
-    as "the result first, then the refusal of the play that waited"
-  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
+  let assert [Frame(message_id: 0x00DC, ..)] = heard(taken, keyed())
+    as "the result first"
+  assert ask_request(taken)
+    == AskStore(World(LoadCharacter(AccountId(7), CharacterId(11))))
+    as "then the play that waited: the character the create made is read for the world"
+}
+
+// ---- entering the world ----
+
+/// The connection after 0x07DD for the character, with its ask to the store.
+fn playing(character_id: Int) -> #(game_connection.State, Step(Nil, Request)) {
+  read(in_select(), play_message(character_id))
+}
+
+/// A Dominion human male, class 2, who stands in World 3460 at the place of
+/// WorldLocation2 row 51596 (the Novice start): its body is the look of
+/// CharacterCustomization row 10 (labels 21 = 2 and 2 = 1, display 137 on slot
+/// 25), and it has the 48 bone values race 1, sex 0 carries
+/// (opcode.0x25b.counts).
+fn world_character() -> store.Character {
+  Character(
+    character_id: CharacterId(42),
+    name: "Ab Cd",
+    gender: 0,
+    race_id: RaceId(1),
+    class_id: ClassId(2),
+    faction_id: 166,
+    level: 1,
+    path: 3,
+    world_id: 3460,
+    world_zone_id: 6009,
+    position_x: 29.128599166870117,
+    position_y: -853.87158203125,
+    position_z: -560.18798828125,
+    look: [
+      LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
+      LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+    ],
+    bones: character_support.bones(48),
+    naming: NameStands,
+  )
+}
+
+/// The connection after the store gave the character: the map is asked.
+fn joining() -> #(game_connection.State, Step(Nil, Request)) {
+  let #(state, taken) = playing(42)
+  answer(
+    state:,
+    taken:,
+    outcome: step.Answer(
+      FromStore(ForWorld(CharacterLoaded(world_character()))),
+    ),
+  )
+}
+
+/// The unit id and the run of the map the tests' map gives.
+const unit_id = 5
+
+const incarnation = 77
+
+/// The connection after the map took the player: the burst is written.
+fn entered() -> #(game_connection.State, Step(Nil, Request)) {
+  let #(state, taken) = joining()
+  answer(
+    state:,
+    taken:,
+    outcome: step.Answer(FromMap(Joined(unit_id:, incarnation:))),
+  )
+}
+
+/// The connection in the world, with its burst taken.
+fn in_world() -> game_connection.State {
+  entered().0
+}
+
+/// The 0x262 among the burst, decoded.
+fn player_in(taken: Step(Nil, Request)) -> UnitCreatePlayer {
+  let assert Ok(Frame(body:, ..)) =
+    list.find(heard(taken, keyed()), fn(frame) { frame.message_id == 0x0262 })
+    as "the burst holds 0x0262"
+  let assert Ok(player) = unit_create_player.decode(body) as "0x0262 decodes"
+  player
+}
+
+fn move_message(message_id: Int) -> BitArray {
+  keyed_message(message_id, <<0, 0, 0, 0>>)
+}
+
+pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answer_is_0xad_0x262_0x19b_0x636_0xf1_0x61_in_the_clients_order_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = playing(42)
+  assert ask_request(taken)
+    == AskStore(World(LoadCharacter(AccountId(7), CharacterId(42))))
+    as "opcode.0x7dd: the character's id, and the holder's account, which scopes the read"
+  let assert Some(ask) = support.asked(taken)
+  assert ask.deadline_ms == support.now_ms + 4000
+    as "the settings' ask deadline from the time of the input"
+  assert support.writes(taken) == []
+    as "nothing is written before the store answers"
+  let #(state, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(ForWorld(CharacterLoaded(world_character()))),
+      ),
+    )
+  assert ask_request(taken)
+    == AskMap(MapId(world_id: 3460, instance: 0), Join(ConnectionId(1), 42))
+    as "the saved world of the character, its one open instance, the connection's id and the character's id"
+  assert support.writes(taken) == []
+    as "nothing is written before the map answers"
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromMap(Joined(unit_id:, incarnation:))),
+    )
+  assert list.map(heard(taken, keyed()), fn(frame) { frame.message_id })
+    == [0x00AD, 0x0262, 0x019B, 0x0636, 0x00F1, 0x0061]
+    as "the order the client needs: 0xAD first; 0x262 before 0x19B; 0x19B before 0x636 and 0x61; 0xF1 after 0xAD (opcode.0xad, opcode.0x19b, opcode.0x636, opcode.0x61, opcode.0xf1)"
+  assert list.last(support.effects_of(taken))
+    == Ok(Watch(WatchId(2), Map(MapId(3460, 0), incarnation)))
+    as "the connection watches the run of the map that holds its player, after the burst"
+  assert support.asked(taken) == None
+  assert !support.stops(taken)
+}
+
+pub fn message_0xad_carries_the_saved_world_and_position_and_0_in_its_last_two_floats_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert [Frame(message_id: 0x00AD, body:), ..] =
+    heard(entered().1, keyed())
+  assert enter_world.decode(body)
+    == Ok(EnterWorld(
+      world_id: 3460,
+      position_x: 0x41E9075F,
+      position_y: 0xC45577C8,
+      position_z: 0xC40C0C08,
+      field_5: 0,
+      field_6: 0,
+    ))
+    as "opcode.0xad: World 3460 and the position of WorldLocation2 row 51596 as 32-bit floats (29.1286, -853.8716 and -560.1880 are 0x41E9075F, 0xC45577C8 and 0xC40C0C08); the fourth and fifth floats are never read, 0.0 (opcode.0xad.last_floats)"
+}
+
+pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body_and_bones_and_nothing_else_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert player_in(entered().1)
+    == UnitCreatePlayer(
+      unit_id: 5,
+      character_id: 42,
+      realm_id: 5,
+      name: "Ab Cd",
+      race_id: 1,
+      class_id: 2,
+      gender: 0,
+      group_id: 0,
+      owned_unit_ids: [],
+      guild_name: "",
+      guild_type: 0,
+      guild_ids: [],
+      bone_values: character_support.bones(48),
+      pvp_flags: 0,
+      premium_tier: 0,
+      title_id: 0,
+      create_flags: 0,
+      stats: [UnitStat(stat_id: 0, value: 136)],
+      server_time_estimate_start: 0,
+      movement_commands: [
+        UnitPositionCommand(
+          x: 0x41E9075F,
+          y: 0xC45577C8,
+          z: 0xC40C0C08,
+          blends: 0,
+        ),
+      ],
+      properties: [
+        UnitProperty(property_id: 7, field_2: 0x43080000, value: 0x43080000),
+      ],
+      item_visuals: [
+        ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0),
+      ],
+      cast_id: 0,
+      faction_id: 166,
+      base_faction_id: 166,
+      tagged_by_unit_id: 0,
+      tagged_by_group_id: 0,
+      field_31: 0,
+      field_33: 0,
+      world_socket_id: 0,
+      cluster_id: 0,
+      field_37: 0,
+      minimap_marker_id: 0,
+      display_info_id: 0,
+      outfit_info_id: 0,
+    )
+    as "opcode.0x262: the unit id the map gave, the row's character id, the settings' realm id, name, race, class, gender, both factions 166 (vector.opcode.0x262.roxo: a base faction with a row, or 0x19B fails); stat 0 and property 7 are 136 as the client's creation check needs (vector.opcode.0x262.health, 0x140457bc5); one kind 2 movement command at the saved position, which the client never moves to the ground after 0xAD (0x1403e828a); the body of the character list (CharacterCustomization row 10: display 137 on slot 25) and the stored bones; PvP flags 0, not the path 3 (0x1403b48b0); every other value is the client's no-value case (opcode.0x262.player_fields, opcode.0x262.unit_fields)"
+}
+
+pub fn message_0x19b_names_the_unit_0x636_gives_control_of_it_0xf1_is_all_zeros_and_0x61_is_empty_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let assert [
+    _,
+    _,
+    Frame(message_id: 0x019B, body: is_player),
+    Frame(message_id: 0x0636, body: control),
+    Frame(message_id: 0x00F1, body: interval),
+    Frame(message_id: 0x0061, body: entered_world),
+  ] = heard(entered().1, keyed())
+  assert unit_is_player.decode(is_player)
+    == Ok(UnitIsPlayer(unit_id: 5, field_2: 0))
+    as "opcode.0x19b: the first value is the unit id the map gave, which must be the unit 0x262 created; the second is never read (opcode.0x19b.second_value)"
+  assert client_control_granted.decode(control)
+    == Ok(ClientControlGranted(echo_value: 0, reset_movement: 1, unit_id: 5))
+    as "vector.opcode.0x636.body: the value 0, the reset bit 1 and the unit id"
+  assert movement_send_interval.decode(interval)
+    == Ok(MovementSendInterval(
+      world_difficulty: 0,
+      world_prime_level: 0,
+      world_flags: 0,
+      interval_milliseconds: 0,
+    ))
+    as "opcode.0xf1.fields: Normal difficulty, prime level 0 and no flags for an open world; the interval the client raises to its floor of 25 ms (opcode.0xf1)"
+  assert player_entered_world.decode(entered_world)
+    == Ok(player_entered_world.PlayerEnteredWorld)
+    as "opcode.0x61: the body is empty"
+}
+
+pub fn a_store_a_maps_or_a_map_that_gives_no_answer_ends_the_play_with_0x036a_reason_8_and_a_warning_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each([NoAnswerInTime, NotRunning, EndedBeforeAnswer], fn(outcome) {
+    list.each([#(playing(42), "the store"), #(joining(), "the map")], fn(asked) {
+      let #(#(state, taken), who) = asked
+      let #(_, taken) = answer(state:, taken:, outcome:)
+      assert disconnect(taken, keyed()) == LostUserServer
+        as "0x1400168a0 and opcode.0xad: the client waits for 0xAD or 0x162 with no timeout, so every failure ends with 0x036A, reason 8 for the server's own"
+      let assert [line] = support.logs_of(step: taken, level: LogWarning)
+        as "the failure is the server's: a warning"
+      assert support.says(line, who) as "the line names the process"
+      assert line.about.account_id == Some(7)
+    })
+  })
+  let #(state, taken) = playing(42)
+  let #(_, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromStore(Unavailable)))
+  assert disconnect(taken, keyed()) == LostUserServer
+    as "a store that is unavailable"
+  let assert [_] = support.logs_of(step: taken, level: LogWarning)
+  list.each([playing(42), joining()], fn(asked) {
+    let #(state, taken) = asked
+    let #(_, taken) = answer(state:, taken:, outcome: StoppedWaiting)
+    assert disconnect(taken, keyed()) == LostUserServer
+      as "the server stopping while the connection waits: the client is told"
+    assert support.logs(taken) == [] as "a stop is no failure"
+  })
+}
+
+pub fn an_answer_that_is_none_world_entry_asked_for_is_a_bug_with_reason_8_and_an_error_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      // The map's answer while the store is asked.
+      #(playing(42), step.Answer(FromMap(Joined(unit_id:, incarnation:)))),
+      // The store's answer while the map is asked.
+      #(
+        joining(),
+        step.Answer(FromStore(ForWorld(CharacterLoaded(world_character())))),
+      ),
+      // Another process's answers.
+      #(playing(42), step.Answer(FromStore(ForSelect(Listed([]))))),
+      #(playing(42), step.Answer(FromSessions(Claimed))),
+      #(playing(42), step.Answer(FromHandOff(Kept))),
+    ],
+    fn(asked) {
+      let #(#(state, taken), outcome) = asked
+      let #(_, taken) = answer(state:, taken:, outcome:)
+      assert disconnect(taken, keyed()) == LostUserServer
+        as "the client waits for 0xAD or 0x162, so it is told"
+      assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+        as "an answer of another ask is a bug of the server's: an error"
+    },
+  )
+}
+
+pub fn a_world_answer_when_character_select_asked_the_store_is_a_bug_with_reason_8_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = listing()
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForWorld(NotTheAccounts))),
+    )
+  assert disconnect(taken, keyed()) == LostUserServer
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  let #(state, taken) = listing()
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromMap(Joined(unit_id:, incarnation:))),
+    )
+  assert disconnect(taken, keyed()) == LostUserServer
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+}
+
+pub fn the_clients_movement_messages_after_entry_are_logged_as_unhandled_and_the_connection_goes_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let ids = [0x0635, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x0637]
+  let #(state, taken) =
+    read(in_world(), bit_array_join(list.map(ids, move_message)))
+  assert unhandled_ids(taken)
+    == list.map(ids, fn(id) { Some(#("unhandled", id)) })
+    as "opcode.0x635, opcode.0x636 (0x63A and 0x637 follow control), opcode.0xf2 and the movement the client sends: it waits for no answer, and no feature takes them yet; each is logged under its own id, in order"
+  assert support.writes(taken) == []
+  assert !support.stops(taken)
+  let #(_, taken) = read(state, support.ping(1))
+  assert support.writes(taken) == [<<7, 0, 0, 0, 1, 0, 1>>]
+    as "the connection goes on"
+}
+
+fn bit_array_join(parts: List(BitArray)) -> BitArray {
+  list.fold(parts, <<>>, fn(joined, part) { <<joined:bits, part:bits>> })
+}
+
+pub fn a_world_message_carries_one_whole_frame_whose_message_is_logged_under_its_own_id_in_character_select_and_in_the_world_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each([in_select(), in_world()], fn(state) {
+    let #(_, taken) = read(state, store_request())
+    assert unhandled_ids(taken) == [Some(#("unhandled", 0x082D))]
+      as "opcode.0x38c: a 5-bit value, then the world message's whole frame (0x14007e180); the inner message is logged as unhandled under its own id"
+    assert !support.stops(taken)
+    assert support.writes(taken) == []
+  })
+}
+
+pub fn a_world_message_with_no_whole_frame_or_bytes_after_it_is_one_the_client_never_writes_and_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let whole = game_client.world_body(kind: 3, message_id: 0x082D, body: <<1>>)
+  let bad = [
+    #(<<>>, "no kind byte"),
+    #(<<3>>, "a kind and no frame"),
+    #(<<3, 8, 0, 0>>, "a length cut short"),
+    #(<<3, 20, 0, 0, 0, 0x2D, 0x08, 1>>, "a length of 20 and 3 bytes"),
+    #(<<whole:bits, 0>>, "a byte after the frame"),
+  ]
+  list.each([in_select(), in_world()], fn(state) {
+    list.each(bad, fn(case_) {
+      let #(body, what) = case_
+      let #(_, taken) = read(state, keyed_message(0x038C, body))
+      assert support.stops(taken)
+        as { "opcode.0x38c: " <> what <> " ends the connection" }
+      assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+      assert support.asked(taken) == None
+    })
+  })
+}
+
+pub fn a_takeover_in_the_world_writes_0x036a_reason_19_and_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = feed(in_world(), taken_over())
+  assert disconnect(taken, keyed()) == AccountDisconnected
+    as "0x1400168a0: 19 is 'This account has been disconnected', for the connection a newer login took over, in the world as in character select"
+  let assert [line] = support.logs_of(step: taken, level: LogInfo)
+  assert line.about.account_id == Some(7)
+}
+
+pub fn the_end_of_the_players_map_ends_the_connection_with_0x036a_reason_8_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = feed(in_world(), WatchEnded(WatchId(2)))
+  assert disconnect(taken, keyed()) == LostUserServer
+    as "the player is gone from the world with its map, so the client is told the server failed, or it would stay in a world no server holds"
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+  assert line.about.account_id == Some(7)
+}
+
+pub fn a_watch_the_rule_did_not_open_ending_in_the_world_is_a_bug_with_an_error_and_the_end_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = feed(in_world(), WatchEnded(WatchId(9)))
+  assert support.stops(taken)
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  let #(_, taken) = feed(in_select_with_a_list(), WatchEnded(WatchId(2)))
+  assert support.stops(taken)
+    as "the map's watch is open only while the player is in the world"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+}
+
+pub fn the_end_of_sessions_in_the_world_claims_again_and_the_claim_puts_the_player_back_in_the_world_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = feed(in_world(), WatchEnded(WatchId(1)))
+  assert support.effects_of(taken) == [StartTimer(TimerId(1), 100)]
+    as "Sessions is likely still restarting, so the claim waits a moment, as in character select"
+  assert support.writes(taken) == [] as "the client sees nothing"
+  let #(state, taken) = feed(state, TimerFired(TimerId(1)))
+  assert support.effects_of(taken) == [Watch(WatchId(1), Sessions)]
+  assert ask_request(taken) == claim_ask()
+  let #(state, taken) = claimed(state:, taken:)
+  assert support.writes(taken) == []
+  // Back in the world: the movement the client sends is read as in the world,
+  // and the map's end ends the connection.
+  let #(state, taken) = read(state, move_message(0x0637))
+  assert unhandled_ids(taken) == [Some(#("unhandled", 0x0637))]
+    as "the claim kept where the client is, the player in the world"
+  let #(_, taken) = feed(state, WatchEnded(WatchId(2)))
+  assert disconnect(taken, keyed()) == LostUserServer
+    as "the map's watch is still open after the claim"
+}
+
+pub fn the_end_of_the_map_while_the_claim_waits_ends_the_connection_with_reason_8_and_a_takeover_with_reason_19_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = feed(in_world(), WatchEnded(WatchId(1)))
+  let #(_, taken) = feed(state, WatchEnded(WatchId(2)))
+  assert disconnect(taken, keyed()) == LostUserServer
+    as "the player's map ended while the connection waits to claim again"
+  let #(_, taken) = feed(state, taken_over())
+  assert disconnect(taken, keyed()) == AccountDisconnected
+}
+
+pub fn a_map_end_while_character_select_waits_to_claim_is_a_bug_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
+  let #(_, taken) = feed(state, WatchEnded(WatchId(2)))
+  assert support.stops(taken)
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+}
+
+pub fn the_server_stopping_in_the_world_tells_the_client_with_reason_8_under_the_session_key_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = feed(in_world(), step.Stopping(deadline_ms: 9000))
+  assert disconnect(taken, keyed()) == LostUserServer
+}
+
+pub fn a_second_0x058f_or_a_play_in_the_world_is_not_taken_again_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let second =
+    keyed_message(
+      0x058F,
+      game_client.hello_reply_body(
+        session_key: session_key(),
+        account_name: "jim",
+      ),
+    )
+  let #(_, taken) = read(in_world(), second)
+  assert support.stops(taken)
+    as "0x058F is sent once (opcode.0x58f), in the world as in character select"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  let #(_, taken) = read(in_world(), play_message(42))
+  assert unhandled_ids(taken) == [Some(#("unhandled", 0x07DD))]
+    as "a play of the client that is in the world already is logged as unhandled, and no store is asked"
+  assert support.asked(taken) == None
+  assert !support.stops(taken)
 }
 
 // ---- delete and rename ----

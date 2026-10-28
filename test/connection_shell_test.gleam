@@ -689,7 +689,7 @@ fn start(
 ) -> ask_support.Server {
   ask_support.start(
     rule:,
-    directory: fn(_request, _reply) { Error(Nil) },
+    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     shutdown_ms:,
     recorder:,
     with: fn(builder) { builder },

@@ -8,9 +8,10 @@
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
-  type Ask, type Effect, type Event, type Input, type LogLevel, type LogLine,
-  type Step, CancelTimer, Effects, EffectsThenAsk, Input, Log, Now, Peer, Reply,
-  Send, StartTimer, Stop, Unwatch, Watch, Write,
+  type Address, type Ask, type CallerId, type Effect, type Event, type Input,
+  type LogLevel, type LogLine, type Step, type WatchId, CancelTimer, Effects,
+  EffectsThenAsk, Input, Log, Now, Peer, Reply, Send, StartTimer, Stop, Unwatch,
+  Watch, Write,
 }
 import genesis_prime/store.{type Account, Account, AccountId}
 import gleam/bit_array
@@ -131,6 +132,41 @@ pub fn written_frames(step: Step(outgoing, request)) -> List(Frame) {
     let assert Ok(#(frames, <<>>)) = frame.decode(bytes)
       as "the server writes whole frames"
     frames
+  })
+}
+
+/// The answers the step gives its callers, each with the caller it is for, in
+/// order.
+pub fn replies(step: Step(outgoing, request)) -> List(#(CallerId, outgoing)) {
+  list.filter_map(effects_of(step), fn(effect) {
+    case effect {
+      Reply(caller:, answer:) -> Ok(#(caller, answer))
+      Send(..)
+      | Watch(..)
+      | Unwatch(..)
+      | StartTimer(..)
+      | CancelTimer(..)
+      | Log(..)
+      | Write(..)
+      | Stop -> Error(Nil)
+    }
+  })
+}
+
+/// The watches the step opens, each with the process it is on, in order.
+pub fn watches(step: Step(outgoing, request)) -> List(#(WatchId, Address)) {
+  list.filter_map(effects_of(step), fn(effect) {
+    case effect {
+      Watch(watch:, target:) -> Ok(#(watch, target))
+      Send(..)
+      | Reply(..)
+      | Unwatch(..)
+      | StartTimer(..)
+      | CancelTimer(..)
+      | Log(..)
+      | Write(..)
+      | Stop -> Error(Nil)
+    }
   })
 }
 

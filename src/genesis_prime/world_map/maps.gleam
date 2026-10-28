@@ -50,15 +50,23 @@
 //// - **The server stopping.** The world subtree starts before the login and
 ////   game subtrees, so it stops after them: no connection is left asking a
 ////   map that has stopped.
+//// - **A late reply.** An asker that gave up at its deadline may still be sent
+////   Maps' reply, which waits unread in its mailbox: the asker is a
+////   connection, and a lookup that failed ends it (the ask's outcome is
+////   `NoAnswerInTime`, a watch's end is `WatchEnded`, each ending the
+////   connection), so the reply goes with it.
 
 import genesis_prime/service.{type Call}
+import genesis_prime/step/runtime
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
+import gleam/int
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
+import gleam/result
 
 /// A running map: its process, to watch, its subject, to ask, and the
 /// incarnation it was started with.
@@ -96,18 +104,40 @@ type State {
   )
 }
 
+/// How long Maps has to stop, in milliseconds: it holds nothing to save.
+const shutdown_ms = 1000
+
 /// Maps, named, as a permanent child of the world supervisor.
 pub fn supervised(
   name name: Name(Message),
   supervisor supervisor: Name(MapSupervisor),
 ) -> ChildSpecification(Subject(Message)) {
-  todo as "built in the build"
+  supervision.worker(fn() {
+    actor.new_with_initialiser(5000, fn(subject) {
+      let selector =
+        process.new_selector()
+        |> process.select(subject)
+        |> process.select_monitors(MapEnded)
+      Ok(
+        actor.initialised(State(supervisor:, maps: dict.new()))
+        |> actor.selecting(selector)
+        |> actor.returning(subject),
+      )
+    })
+    |> actor.on_message(handle)
+    |> actor.named(name)
+    |> actor.start
+  })
+  |> supervision.restart(supervision.Permanent)
+  |> supervision.timeout(ms: shutdown_ms)
 }
 
 /// The map supervisor, named, whose children are maps started by `start`,
-/// each temporary: a map that ends is started again by the next find.
+/// each temporary: a map that ends is started again by the next find. A map
+/// has `shutdown_ms` to stop.
 pub fn map_supervisor(
   name name: Name(MapSupervisor),
+  shutdown_ms shutdown_ms: Int,
   start start: fn(MapStart) ->
     actor.StartResult(Subject(Call(map.Message, map.Outgoing))),
 ) -> ChildSpecification(
@@ -116,7 +146,14 @@ pub fn map_supervisor(
     Subject(Call(map.Message, map.Outgoing)),
   ),
 ) {
-  todo as "built in the build"
+  factory_supervisor.worker_child(start)
+  |> factory_supervisor.named(name)
+  |> factory_supervisor.restart_strategy(supervision.Temporary)
+  // A temporary map is never restarted, so this limit is never reached.
+  |> factory_supervisor.restart_tolerance(intensity: 1, period: 5)
+  |> factory_supervisor.timeout(ms: shutdown_ms)
+  |> factory_supervisor.supervised
+  |> supervision.restart(supervision.Permanent)
 }
 
 /// The running map, started when it is not running: `Error(Nil)` when Maps
@@ -127,7 +164,7 @@ pub fn find_or_start(
   map map: MapId,
   deadline_ms deadline_ms: Int,
 ) -> Result(MapProcess, Nil) {
-  todo as "built in the build"
+  ask(maps:, map:, start: True, deadline_ms:)
 }
 
 /// The run of the map with this incarnation, never started: `Error(Nil)`
@@ -139,5 +176,95 @@ pub fn find(
   incarnation incarnation: Int,
   call_ms call_ms: Int,
 ) -> Result(MapProcess, Nil) {
-  todo as "built in the build"
+  ask(
+    maps:,
+    map:,
+    start: False,
+    deadline_ms: runtime.now().monotonic_ms + call_ms,
+  )
+  |> result.try(fn(found) {
+    case found.incarnation == incarnation {
+      True -> Ok(found)
+      False -> Error(Nil)
+    }
+  })
+}
+
+/// Sends Maps the find and waits for its reply until the deadline.
+fn ask(
+  maps maps: Name(Message),
+  map map: MapId,
+  start start: Bool,
+  deadline_ms deadline_ms: Int,
+) -> Result(MapProcess, Nil) {
+  let reply = process.new_subject()
+  use _pid <- result.try(service.send_by_name(maps, Find(map:, start:, reply:)))
+  let wait_ms = int.max(deadline_ms - runtime.now().monotonic_ms, 0)
+  process.receive(reply, within: wait_ms) |> result.flatten
+}
+
+fn handle(state: State, message: Message) -> actor.Next(State, Message) {
+  case message {
+    Find(map:, start:, reply:) -> {
+      let #(state, found) = find_in(state:, map:, start:)
+      process.send(reply, found)
+      actor.continue(state)
+    }
+    MapEnded(down:) -> actor.continue(forget(state:, down:))
+  }
+}
+
+/// The running map, or, when `start`, the map just started.
+fn find_in(
+  state state: State,
+  map map: MapId,
+  start start: Bool,
+) -> #(State, Result(MapProcess, Nil)) {
+  case dict.get(state.maps, map) {
+    Ok(#(running, _monitor)) -> #(state, Ok(running))
+    Error(Nil) ->
+      case start {
+        True -> start_map(state:, map:)
+        False -> #(state, Error(Nil))
+      }
+  }
+}
+
+/// Starts the map under the map supervisor with a new incarnation, and keeps
+/// it with a monitor. `Error(Nil)` when the map supervisor is not running or
+/// the map does not start.
+fn start_map(
+  state state: State,
+  map map: MapId,
+) -> #(State, Result(MapProcess, Nil)) {
+  let incarnation = runtime.unique_id()
+  case
+    service.start_child(
+      supervisor: state.supervisor,
+      argument: MapStart(map:, incarnation:),
+    )
+  {
+    Error(Nil) -> #(state, Error(Nil))
+    Ok(started) -> {
+      let running =
+        MapProcess(pid: started.pid, subject: started.data, incarnation:)
+      let monitor = process.monitor(started.pid)
+      #(
+        State(..state, maps: dict.insert(state.maps, map, #(running, monitor))),
+        Ok(running),
+      )
+    }
+  }
+}
+
+/// Drops the map whose monitor fired, so the next find starts it again.
+fn forget(state state: State, down down: process.Down) -> State {
+  let monitor = case down {
+    process.ProcessDown(monitor:, ..) | process.PortDown(monitor:, ..) ->
+      monitor
+  }
+  State(
+    ..state,
+    maps: dict.filter(state.maps, fn(_map, held) { held.1 != monitor }),
+  )
 }

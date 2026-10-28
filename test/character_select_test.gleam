@@ -32,7 +32,6 @@ import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/delete_result
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
-import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
 import genesis_prime/message/rename_character.{RenameCharacter}
@@ -263,6 +262,11 @@ pub fn a_valid_request_asks_the_store_to_make_the_character_with_the_slot_count_
           class_id: ClassId(1),
           faction_id: 167,
           path: 1,
+          world_id: 3460,
+          world_zone_id: 6009,
+          position_x: 29.128599166870117,
+          position_y: -853.87158203125,
+          position_z: -560.18798828125,
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
             LookEntry(label: CharacterCustomizationLabelId(22), value: 1),
@@ -272,7 +276,7 @@ pub fn a_valid_request_asks_the_store_to_make_the_character_with_the_slot_count_
         character_slots: 2,
       )),
     ]
-    as "CharacterCreation row 466 gives class 1, race 1, sex 1 and faction 167; the request gives the name, path, look and bones; the slot count is the account's (lua.CharacterSelection.OnLoadFromCharacter: 2 without an entitlement)"
+    as "CharacterCreation row 466 gives class 1, race 1, sex 1 and faction 167, and its PreTutorial start WorldLocation2 row 51596 (World 3460, zone 6009 and its position); the request gives the name, path, look and bones; the slot count is the account's (lua.CharacterSelection.OnLoadFromCharacter: 2 without an entitlement)"
   assert character_select.waiting(state) as "the store's answer is awaited"
 }
 
@@ -511,31 +515,25 @@ pub fn an_entry_carries_the_rename_bit_from_the_characters_naming_and_the_in_wor
     as "lua.CharacterSelection.OnRemoveCountdown: the client reads a character still in the world only with a realm and an id that are not 0; no session enters the world yet"
 }
 
-// ---- play after a create ----
+// ---- a play world entry refuses ----
 
-pub fn a_play_request_is_refused_with_failed_and_the_list_is_asked_for_again_test() -> Nil {
+pub fn a_refused_play_is_0x0162_failed_and_the_list_is_asked_for_again_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(state, effects) =
-    character_select.play_requested(
-      account_id: AccountId(7),
-      request: PlayCharacter(character_id: 42),
-    )
+    character_select.play_refused(account_id: AccountId(7), character_id: 42)
   let assert [Send(Frame(message_id: 0x0162, body:)), Ask(request:)] = effects
     as "opcode.0x162.after_create: 0x0162 first, then the store is asked for the list"
   assert play_character_refused.decode(body)
     == Ok(PlayCharacterRefused(result: play_refusal.Failed))
-    as "opcode.0x162: 2 Failed is the generic refusal, and the world is not entered yet"
+    as "opcode.0x162: 2 Failed is the generic refusal"
   assert request == ListCharacters(account_id: AccountId(7))
   assert character_select.waiting(state)
 }
 
-pub fn after_a_play_request_the_character_it_named_is_selected_by_the_clients_rule_test() -> Nil {
+pub fn after_a_refused_play_the_character_it_named_is_selected_by_the_clients_rule_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(asking, _) =
-    character_select.play_requested(
-      account_id: AccountId(7),
-      request: PlayCharacter(character_id: 2),
-    )
+    character_select.play_refused(account_id: AccountId(7), character_id: 2)
   let assert Ok(#(state, effects)) =
     listed(asking, [
       stored(id: 1, name: "Ab Cd", level: 4),
@@ -545,7 +543,7 @@ pub fn after_a_play_request_the_character_it_named_is_selected_by_the_clients_ru
   assert !character_select.waiting(state)
   let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, ..)] =
     sent(effects)
-    as "opcode.0x36 and opcode.0x117 follow 0x0162, which was sent when the request came"
+    as "opcode.0x36 and opcode.0x117 follow 0x0162, which was sent when the play was refused"
   let days =
     list.map(entries(effects), fn(entry) { entry.last_logged_out_days })
   let assert [0, chosen, 0] = days
@@ -558,10 +556,7 @@ pub fn after_a_play_request_the_character_it_named_is_selected_by_the_clients_ru
     as "the list keeps the store's order"
   // A character the account does not have selects nobody by its logout.
   let #(asking, _) =
-    character_select.play_requested(
-      account_id: AccountId(7),
-      request: PlayCharacter(character_id: 99),
-    )
+    character_select.play_refused(account_id: AccountId(7), character_id: 99)
   let assert Ok(#(_, effects)) =
     listed(asking, [stored(id: 1, name: "Ab Cd", level: 4)])
   assert list.map(entries(effects), fn(entry) { entry.last_logged_out_days })

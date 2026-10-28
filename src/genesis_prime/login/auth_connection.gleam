@@ -39,7 +39,7 @@
 import genesis_prime/client_archive
 import genesis_prime/client_connection.{
   type Answer, type Link, type Request, AskHandOff, Asking, Bytes, Connect,
-  Continue, Done, FromHandOff, FromSessions, FromStore, Otherwise,
+  Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Otherwise,
 }
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{AuthWrapper}
@@ -451,7 +451,8 @@ fn taken(
     step.Answer(FromHandOff(hand_off.Kept))
     | step.Answer(FromHandOff(hand_off.AlreadyHeld))
     | step.Answer(FromStore(..))
-    | step.Answer(FromSessions(..)) ->
+    | step.Answer(FromSessions(..))
+    | step.Answer(FromMap(..)) ->
       end_for(session, "the hand-off's answer is none a Take gets")
     step.NotRunning
     | step.NoAnswerInTime
@@ -479,7 +480,8 @@ fn kept(
     step.Answer(FromHandOff(hand_off.Taken(..)))
     | step.Answer(FromHandOff(hand_off.NoHolder))
     | step.Answer(FromStore(..))
-    | step.Answer(FromSessions(..)) ->
+    | step.Answer(FromSessions(..))
+    | step.Answer(FromMap(..)) ->
       end_for(session, "the hand-off's answer is none a Put gets")
     step.NotRunning
     | step.NoAnswerInTime

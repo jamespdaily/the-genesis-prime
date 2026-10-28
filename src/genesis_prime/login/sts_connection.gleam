@@ -55,7 +55,8 @@
 
 import genesis_prime/client_connection.{
   type Answer, type Link, type Request, AskHandOff, AskStore, Asking, Bytes,
-  Connect, Continue, Done, FromHandOff, FromSessions, FromStore, Otherwise,
+  Connect, Continue, Done, FromHandOff, FromMap, FromSessions, FromStore,
+  Otherwise,
 }
 import genesis_prime/hand_off.{GameToken, Holder, Put}
 import genesis_prime/login/guid.{type Guid}
@@ -71,7 +72,7 @@ import genesis_prime/step.{
   LogError, LogInfo, LogWarning, Rule, Stop, Write,
 }
 import genesis_prime/store.{
-  type Account, AccountFound, FindAccount, ForLogin, ForSelect, Login,
+  type Account, AccountFound, FindAccount, ForLogin, ForSelect, ForWorld, Login,
   NoSuchAccount, Unavailable,
 }
 import gleam/int
@@ -610,10 +611,17 @@ fn found(
       end_for(session, "the hand-off answered the ask for the account")
     step.Answer(FromSessions(..)) ->
       end_for(session, "Sessions answered the ask for the account")
+    step.Answer(FromMap(..)) ->
+      end_for(session, "a map answered the ask for the account")
     step.Answer(FromStore(ForSelect(..))) ->
       end_for(
         session,
         "the store answered the ask for the account with an answer for character select",
+      )
+    step.Answer(FromStore(ForWorld(..))) ->
+      end_for(
+        session,
+        "the store answered the ask for the account with an answer for world entry",
       )
     step.NotRunning
     | step.NoAnswerInTime
@@ -698,7 +706,8 @@ fn kept(
     step.Answer(FromHandOff(hand_off.Taken(..)))
     | step.Answer(FromHandOff(hand_off.NoHolder))
     | step.Answer(FromStore(..))
-    | step.Answer(FromSessions(..)) ->
+    | step.Answer(FromSessions(..))
+    | step.Answer(FromMap(..)) ->
       end_for(session, "the hand-off's answer is none a Put gets")
     step.NotRunning
     | step.NoAnswerInTime

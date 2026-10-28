@@ -2,7 +2,10 @@
 //// - The tree in the doc comment of `genesis_prime/server`, as approved on the
 ////   login processes card: the pool, then the store, then the hand-off, each a
 ////   permanent child of a one-for-one supervisor that allows 3 restarts in
-////   10 seconds.
+////   10 seconds; and, as approved on the world entry card, the world subtree
+////   after Sessions and before the login and game subtrees: a `rest_for_one`
+////   supervisor of Maps and then the map supervisor, so Maps' restart ends
+////   every map.
 //// - The login's two listeners, the STS listener and then the auth listener,
 ////   each a permanent child that is a supervisor (Ranch's), as the doc comment
 ////   of `genesis_prime/server` draws them.
@@ -23,7 +26,7 @@ import owned_test
 import supervisor_children.{ChildSettings}
 import supervisor_flags.{Flags}
 
-pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_and_the_two_subtrees_in_that_order_each_with_its_settings_stated_test() -> Nil {
+pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_and_the_two_subtrees_in_that_order_each_with_its_settings_stated_test() -> Nil {
   use <- owned_test.run(60_000)
   let started = login_support.start()
   let settings = started.settings
@@ -38,8 +41,8 @@ pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_and_the_two_subt
   let children = supervisor_children.in_start_order(started.tree)
   assert list.take(children, 4) == [pool, store, hand_off, sessions]
     as "the pool starts first, then the store, the hand-off and Sessions"
-  assert list.length(children) == 6
-    as "the login subtree and the game subtree follow Sessions"
+  assert list.length(children) == 7
+    as "the world subtree, the login subtree and the game subtree follow Sessions"
   assert supervisor_flags.read(started.tree)
     == Flags(static_supervisor.OneForOne, 3, 10)
     as "one-for-one, 3 restarts in 10 seconds"
@@ -51,9 +54,26 @@ pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_and_the_two_subt
       ChildSettings(restart: Permanent, shutdown_ms: Some(1500)),
       ChildSettings(restart: Permanent, shutdown_ms: None),
       ChildSettings(restart: Permanent, shutdown_ms: None),
+      ChildSettings(restart: Permanent, shutdown_ms: None),
     ]
-    as "each child is permanent; the pool, the store and the two subtrees are supervisors, the hand-off and Sessions stop within their own times"
-  let assert [_, _, _, _, _, game] = children
+    as "each child is permanent; the pool, the store and the three subtrees are supervisors, the hand-off and Sessions stop within their own times"
+  let assert [_, _, _, _, world, _, game] = children
+  let world_children = supervisor_children.in_start_order(world)
+  let assert Ok(maps) = process.named(settings.world.maps)
+    as "Maps is registered"
+  let assert Ok(map_supervisor) = process.named(settings.world.map_supervisor)
+    as "the map supervisor is registered"
+  assert world_children == [maps, map_supervisor]
+    as "the world subtree holds Maps, then the map supervisor: Maps starts first, so it stops last"
+  assert supervisor_flags.read(world)
+    == Flags(static_supervisor.RestForOne, 3, 10)
+    as "rest for one, so a restarted Maps, which knows no map, restarts the map supervisor after it, and every map ends with it"
+  assert supervisor_children.settings_in_start_order(world)
+    == [
+      ChildSettings(restart: Permanent, shutdown_ms: Some(1000)),
+      ChildSettings(restart: Permanent, shutdown_ms: None),
+    ]
+    as "Maps stops within a second; the map supervisor is a supervisor"
   let game_children = supervisor_children.in_start_order(game)
   assert list.length(game_children) == 2
     as "the game subtree holds the registry and the game listener"

@@ -81,10 +81,24 @@ pub fn settings(tables tables: store.Tables) -> server.Settings {
     sessions_shutdown_ms: 5000,
     sessions_recorder: None,
     registry: registry.new(),
+    world: world(),
     send_deadline_ms: 2000,
     connection_shutdown_ms: 5000,
     login: login(),
     game: game(tables),
+  )
+}
+
+/// The world subtree's names, and its times: a watch's call to Maps may take
+/// 5 s, the same as an ask, and a map has 5 s to stop. Recording is off; the
+/// dev start changes it.
+fn world() -> server.World {
+  server.World(
+    maps: process.new_name("maps"),
+    map_supervisor: process.new_name("map_supervisor"),
+    maps_call_ms: 5000,
+    map_shutdown_ms: 5000,
+    map_recordings: None,
   )
 }
 
