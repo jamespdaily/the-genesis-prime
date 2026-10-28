@@ -20,6 +20,7 @@ From the main checkout, with every new `priv/migrations/*.sql` applied to the `g
 ```
 . setup_check/environment.sh
 export PGHOST=::1 PGPORT=5433 PGUSER=postgres PGDATABASE=genesis_play
+export GENESIS_GAME_ADDRESS=$GENESIS_PLAY_ADDRESS GENESIS_REALM_NAME=Genesis
 gleam run
 ```
 
@@ -53,8 +54,12 @@ A session, in order:
 4. `scripts/client.sh start`.
 5. Wait for the auth server's login-accepted log line, or a deadline.
 6. `scripts/screenshot.sh <folder>/screen.jpg`.
-7. When the report is wanted, enter the world from character select (`scripts/client.sh click enter-game --pc-free`), wait about 15 s, then `scripts/report.sh collect <folder>`.
+7. When the report is wanted, enter the world from character select: `scripts/client.sh key enter` (a background key; it plays the first character in the list), or, for another character, the takeover click (`scripts/client.sh click enter-game --pc-free`). Wait about 15 s, then `scripts/report.sh collect <folder>`.
 8. `scripts/client-log.sh collect <folder>`.
 9. `scripts/client.sh stop`, then `scripts/report.sh remove`, then stop the server.
 
 Save the `client.sh start` line, with the program's SHA-256, in the session folder.
+
+## A whole session without a person
+
+`scripts/session.sh <folder>` runs the session above, from the server's start to the verdict, into an empty or new `<folder>`. It needs no person and takes no focus. It exits non-zero on any miss and says which. A passing folder holds the recordings, `client-start.txt`, `client-end.txt`, `failures.txt`, the report as JSON and `verdict.txt`, ready to replay. A failed folder also keeps `Logs` and `Errors`, which name the PC's machine: delete them before committing it. `session.sh --verdict <folder>` judges a folder with no PC.

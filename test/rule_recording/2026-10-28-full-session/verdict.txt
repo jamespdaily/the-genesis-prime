@@ -1,0 +1,14 @@
+ok   the report names a character: strName = 'Tess Renamed'
+ok   the report is finished: bReported = True
+ok   the player is alive: bDead = False
+ok   the player has health: nHealth = 136
+ok   the player's unit is controlled: bControlled = True
+ok   the player's model is loaded: bModelLoaded = True
+ok   the level is the saved level: nLevel = 3, saved 3
+ok   the path is the saved path: ePath = 0, saved 0
+ok   the position is the saved place: 0.000 units from the saved place (at most 1.0)
+ok   no addon raised an error: tAddonErrors is empty
+ok   no Lua error event was raised: tLuaErrorEvents is empty
+ok   the client logged no failure: 0 failure line(s)
+ok   the client wrote no error report: none in Errors
+ok   the client ran to the end of the session: client.sh stop closed it

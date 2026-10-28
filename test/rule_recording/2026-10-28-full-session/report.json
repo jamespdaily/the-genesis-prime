@@ -1,0 +1,31 @@
+{
+  "nMaxHealth": 136,
+  "nTime": 1793218284,
+  "strName": "Tess Renamed",
+  "tPos": {
+    "y": -658.6248779296875,
+    "x": 4110.7099609375,
+    "z": -5145.47998046875
+  },
+  "arAddonsWithoutInfo": [
+    "GroupFrame",
+    "GuildContentPerks",
+    "Keybinding",
+    "NCCB",
+    "OptionsInterface",
+    "PubliceventTracker"
+  ],
+  "bModelLoaded": true,
+  "bControlled": true,
+  "nPolls": 13,
+  "nHealth": 136,
+  "bCharacterLoaded": true,
+  "bPlayerUnit": true,
+  "bReported": true,
+  "nLevel": 3,
+  "nReportedAt": 1793218284,
+  "tAddonErrors": {},
+  "bDead": false,
+  "tLuaErrorEvents": {},
+  "ePath": 0
+}
