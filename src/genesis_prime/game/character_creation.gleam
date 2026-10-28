@@ -8,7 +8,8 @@
 //// sex have).
 ////
 //// A request that passes gives the character to make: its gender, race, class
-//// and faction are the row's. Each refusal maps to one result the client
+//// and faction are the row's, and its place is its start's
+//// (genesis_prime/game/start_place). Each refusal maps to one result the client
 //// shows, in one place (`result_of`): a name that fails the rule is 10, "name
 //// length", and every other refusal is 4, "due to an error"
 //// (lua.Character.OnCreateCharacterFailed). A request the real client would not
@@ -16,6 +17,7 @@
 
 import genesis_prime/game/appearance
 import genesis_prime/game/character_name
+import genesis_prime/game/start_place
 import genesis_prime/message/create_character.{type CreateCharacter}
 import genesis_prime/message/create_result.{type CreateResult}
 import genesis_prime/store.{type NewCharacter, NewCharacter}
@@ -63,6 +65,9 @@ pub type Refusal {
   /// A bone value is a NaN or an infinity, which the real client's bone export
   /// never gives and the list would send back to every client that reads it.
   BoneNotFinite(creation_id: Int)
+  /// The row's start, race and faction have no start place
+  /// (genesis_prime/game/start_place).
+  NoStartPlace(creation_id: Int, start: Int, faction_id: Int, race_id: Int)
 }
 
 /// Checks a request against the client's tables: the name, then the row it
@@ -132,19 +137,42 @@ pub fn check_row(
     list.any(request.bone_values, is_not_finite),
     Error(BoneNotFinite(creation_id:)),
   )
-  Ok(NewCharacter(
-    name: request.name,
-    gender: row.sex,
-    race_id: character_creation.race_id(row),
-    class_id: character_creation.class_id(row),
-    faction_id: row.faction_id,
-    path: request.path,
-    look: store.look(
-      labels: request.customisation_labels,
-      values: request.customisation_values,
-    ),
-    bones: request.bone_values,
-  ))
+  let race_id = character_creation.race_id(row)
+  case
+    start_place.of(
+      tables:,
+      faction_id: row.faction_id,
+      race_id:,
+      start: row.character_creation_start_enum,
+    )
+  {
+    Error(Nil) ->
+      Error(NoStartPlace(
+        creation_id:,
+        start: row.character_creation_start_enum,
+        faction_id: row.faction_id,
+        race_id: race_id.value,
+      ))
+    Ok(place) ->
+      Ok(NewCharacter(
+        name: request.name,
+        gender: row.sex,
+        race_id:,
+        class_id: character_creation.class_id(row),
+        faction_id: row.faction_id,
+        path: request.path,
+        world_id: place.world_id,
+        world_zone_id: place.world_zone_id,
+        position_x: place.x,
+        position_y: place.y,
+        position_z: place.z,
+        look: store.look(
+          labels: request.customisation_labels,
+          values: request.customisation_values,
+        ),
+        bones: request.bone_values,
+      ))
+  }
 }
 
 /// Whether the 32 bits are a NaN or an infinity: an exponent of all ones
@@ -169,7 +197,8 @@ pub fn result_of(refusal: Refusal) -> CreateResult {
     | PathAbove3(..)
     | TooManyLabels(..)
     | WrongBoneCount(..)
-    | BoneNotFinite(..) -> create_result.CreateFailed
+    | BoneNotFinite(..)
+    | NoStartPlace(..) -> create_result.CreateFailed
   }
 }
 
@@ -188,7 +217,8 @@ pub fn warning(refusal: Refusal) -> Option(String) {
     | PathAbove3(..)
     | TooManyLabels(..)
     | WrongBoneCount(..)
-    | BoneNotFinite(..) -> Some(describe(refusal))
+    | BoneNotFinite(..)
+    | NoStartPlace(..) -> Some(describe(refusal))
   }
 }
 
@@ -222,6 +252,14 @@ pub fn describe(refusal: Refusal) -> String {
     BoneNotFinite(creation_id:) ->
       row_text(creation_id)
       <> " was asked with a bone value that is no finite float"
+    NoStartPlace(creation_id:, start:, faction_id:, race_id:) ->
+      row_text(creation_id)
+      <> " has no start place: start "
+      <> int.to_string(start)
+      <> ", faction "
+      <> int.to_string(faction_id)
+      <> ", race "
+      <> int.to_string(race_id)
   }
 }
 
