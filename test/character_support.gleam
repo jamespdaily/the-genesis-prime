@@ -3,13 +3,15 @@
 //// gender, faction, level, world, zone and position for each row, so a test
 //// varies only the name, the class and the path it checks. One valid create
 //// request, which a test varies with a record update, and the one result a
-//// create answers with, decoded.
+//// create, a delete or a rename answers with, decoded.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/message/create_character.{
   type CreateCharacter, CreateCharacter,
 }
 import genesis_prime/message/create_character_result.{type CreateCharacterResult}
+import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
+import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
 import genesis_prime/store.{type AccountId, AccountId}
 import gleam/dynamic/decode
 import gleam/list
@@ -107,5 +109,23 @@ pub fn create_result_in(frames: List(Frame)) -> CreateCharacterResult {
     as "opcode.0xdc: one result answers a create"
   let assert Ok(result) = create_character_result.decode(body)
     as "0x00DC decodes"
+  result
+}
+
+/// The one 0x00E6 among the frames a delete was answered with, decoded.
+pub fn delete_result_in(frames: List(Frame)) -> DeleteCharacterResult {
+  let assert [Frame(message_id: 0x00E6, body:)] = frames
+    as "opcode.0xe6: one result answers a delete"
+  let assert Ok(result) = delete_character_result.decode(body)
+    as "0x00E6 decodes"
+  result
+}
+
+/// The one 0x014B among the frames a rename was answered with, decoded.
+pub fn rename_result_in(frames: List(Frame)) -> RenameCharacterResult {
+  let assert [Frame(message_id: 0x014B, body:)] = frames
+    as "opcode.0x14b: one result answers a rename"
+  let assert Ok(result) = rename_character_result.decode(body)
+    as "0x014B decodes"
   result
 }

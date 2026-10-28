@@ -55,6 +55,16 @@ pub fn look(
   })
 }
 
+/// Whether a character's name stands or its player must pick another before
+/// playing it. The client offers a rename, not play, for a character whose
+/// list entry carries the needs-a-rename bit (bRequiresRename; opcode.0x117,
+/// lua.CharacterSelection.OnSelectCharacter), and a rename clears it
+/// (opcode.0x14b).
+pub type Naming {
+  NameStands
+  NeedsRename
+}
+
 /// A character as the character list needs it: what the client's list shows
 /// of it (lua.CharacterSelection.OnLoadFromCharacter.list) and what the list's
 /// entry carries (opcode.0x117). Each id keys the client table of its name,
@@ -62,7 +72,7 @@ pub fn look(
 /// name as one; `gender` and `path` are the client's own numbers (the client
 /// shows paths 0 to 3). `look` and `bones` are what the create request carried:
 /// the look's labels with their values, and each bone value as the 32 bits of
-/// its float.
+/// its float. `naming` is the entry's rename bit.
 pub type Character {
   Character(
     character_id: CharacterId,
@@ -80,6 +90,7 @@ pub type Character {
     position_z: Float,
     look: List(LookEntry),
     bones: List(Int),
+    naming: Naming,
   )
 }
 
@@ -114,6 +125,17 @@ pub type Request {
     character: NewCharacter,
     character_slots: Int,
   )
+  /// Deletes the account's character. The account's id is in the delete, so
+  /// no other account's character can be touched.
+  DeleteCharacter(account_id: AccountId, character_id: CharacterId)
+  /// Gives the account's character the name and clears its rename mark, in
+  /// one update, when the account has the character and it is marked. The name
+  /// must be unique ignoring case, held by the database.
+  RenameCharacter(
+    account_id: AccountId,
+    character_id: CharacterId,
+    name: String,
+  )
 }
 
 /// What the store answers: the failure every request shares, or the answer to
@@ -130,6 +152,8 @@ pub type Answer {
   /// has none, or when no such account exists.
   ToListCharacters(characters: List(Character))
   ToCreateCharacter(answer: CreateAnswer)
+  ToDeleteCharacter(answer: DeleteAnswer)
+  ToRenameCharacter(answer: RenameAnswer)
 }
 
 /// What the store answers a `FindAccount`.
@@ -147,4 +171,23 @@ pub type CreateAnswer {
   /// The account already has as many characters as its slots; nothing was
   /// made.
   NoFreeSlot
+}
+
+/// What the store answers a `DeleteCharacter`.
+pub type DeleteAnswer {
+  /// The character was deleted.
+  CharacterDeleted
+  /// The account has no such character; nothing was deleted.
+  NoSuchCharacter
+}
+
+/// What the store answers a `RenameCharacter`.
+pub type RenameAnswer {
+  /// The character has the name, as stored, and is no longer marked.
+  CharacterRenamed(name: String)
+  /// Another character has the name, in any case; nothing changed, and the
+  /// character is still marked.
+  NewNameTaken
+  /// The account has no such character, or it is not marked; nothing changed.
+  NotRenamable
 }

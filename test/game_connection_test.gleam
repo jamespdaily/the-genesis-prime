@@ -46,6 +46,9 @@ import genesis_prime/message/character_list_entry.{CharacterListEntry}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
 import genesis_prime/message/create_result
+import genesis_prime/message/delete_character.{DeleteCharacter}
+import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
+import genesis_prime/message/delete_result
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
@@ -54,14 +57,19 @@ import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
+import genesis_prime/message/rename_character.{RenameCharacter}
+import genesis_prime/message/rename_character_result.{RenameCharacterResult}
+import genesis_prime/message/rename_result
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/step.{
   type Event, type Outcome, type Step, ConnectionId, EndedBeforeAnswer, LogError,
   LogWarning, NoAnswerInTime, NotRunning, OtherSocketFailure, StoppedWaiting,
 }
 import genesis_prime/store.{
-  AccountId, Character, CharacterCreated, CharacterId, ListCharacters, LookEntry,
-  NameTaken, NewCharacter, NoFreeSlot, ToCreateCharacter, ToListCharacters,
+  AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
+  CharacterRenamed, ListCharacters, LookEntry, NameStands, NameTaken,
+  NewCharacter, NewNameTaken, NoFreeSlot, NoSuchCharacter, NotRenamable,
+  ToCreateCharacter, ToDeleteCharacter, ToListCharacters, ToRenameCharacter,
   Unavailable,
 }
 import genesis_prime/table/character_customization
@@ -257,6 +265,7 @@ fn character(id id: Int, name name: String, seed seed: Int) -> store.Character {
     position_z: 3.5,
     look: [],
     bones: [],
+    naming: NameStands,
   )
 }
 
@@ -938,6 +947,197 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
     heard(taken, keyed())
     as "the result first, then the refusal of the play that waited"
   assert ask_request(taken) == AskStore(ListCharacters(AccountId(7)))
+}
+
+// ---- delete and rename ----
+
+fn delete_message(character_id: Int) -> BitArray {
+  let assert Ok(body) = delete_character.encode(DeleteCharacter(character_id:))
+    as "0x0352 encodes"
+  keyed_message(0x0352, body)
+}
+
+fn rename_message(character_id: Int, name: String) -> BitArray {
+  let assert Ok(body) =
+    rename_character.encode(RenameCharacter(character_id:, name:))
+    as "0x0786 encodes"
+  keyed_message(0x0786, body)
+}
+
+/// The connection after a delete request, with its ask to the store.
+fn deleting(character_id: Int) -> #(game_connection.State, Step(Nil, Request)) {
+  read(in_select(), delete_message(character_id))
+}
+
+/// The connection after a rename request, with its ask to the store.
+fn renaming(
+  character_id: Int,
+  name: String,
+) -> #(game_connection.State, Step(Nil, Request)) {
+  read(in_select(), rename_message(character_id, name))
+}
+
+pub fn message_0x0352_asks_the_store_to_delete_the_character_and_its_answer_is_0x00e6_result_0_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = deleting(11)
+  assert ask_request(taken)
+    == AskStore(store.DeleteCharacter(
+      account_id: AccountId(7),
+      character_id: CharacterId(11),
+    ))
+    as "opcode.0x352: the character's id, and the holder's account, which scopes the delete"
+  assert support.writes(taken) == []
+    as "nothing is written before the store answers"
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ToDeleteCharacter(CharacterDeleted))),
+    )
+  assert character_support.delete_result_in(heard(taken, keyed()))
+    == DeleteCharacterResult(result: delete_result.DeleteOk, value: 0)
+    as "opcode.0xe6: result 0 and the value nothing reads (opcode.0xe6.value)"
+  assert !support.stops(taken) as "the connection goes on"
+  assert support.asked(taken) == None
+    as "lua.CharacterSelection.OnCharacterDeleteResult: the client rebuilds its list, so the store is not asked for it again"
+}
+
+pub fn a_delete_of_a_character_the_account_does_not_have_is_0x00e6_result_1_and_a_warning_with_the_account_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = deleting(11)
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ToDeleteCharacter(NoSuchCharacter))),
+    )
+  assert character_support.delete_result_in(heard(taken, keyed()))
+    == DeleteCharacterResult(result: delete_result.DeleteFailed, value: 0)
+    as "lua.CharacterSelection.OnCharacterDeleteResult: 1 shows 'Something went wrong...'"
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+    as "a request the real client would not send is logged once"
+  assert support.says(line, "11") as "the warning names the character's id"
+  assert line.about.account_id == Some(7)
+  assert !support.stops(taken)
+}
+
+pub fn message_0x0786_asks_the_store_to_rename_the_character_and_its_answer_is_0x014b_result_18_with_the_stored_name_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = renaming(11, "Ab Cd")
+  assert ask_request(taken)
+    == AskStore(store.RenameCharacter(
+      account_id: AccountId(7),
+      character_id: CharacterId(11),
+      name: "Ab Cd",
+    ))
+    as "opcode.0x786: the character's id and the typed name"
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(ToRenameCharacter(CharacterRenamed(name: "Ab Cd"))),
+      ),
+    )
+  assert character_support.rename_result_in(heard(taken, keyed()))
+    == RenameCharacterResult(
+      result: rename_result.RenameOk,
+      character_id: 11,
+      name: "Ab Cd",
+    )
+    as "opcode.0x14b: result 18 with the id and the name"
+  assert !support.stops(taken)
+}
+
+pub fn a_name_taken_a_name_failing_rule_0_and_a_character_that_is_not_renamable_are_0x014b_16_15_and_13_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = renaming(11, "Ab Cd")
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ToRenameCharacter(NewNameTaken))),
+    )
+  assert character_support.rename_result_in(heard(taken, keyed())).result
+    == rename_result.NameUnavailable
+    as "lua.CharacterSelection.OnCharacterRenameResult: 16"
+  let #(_, taken) = renaming(11, "Abcd")
+  assert support.asked(taken) == None as "nothing is stored"
+  assert character_support.rename_result_in(heard(taken, keyed())).result
+    == rename_result.NameLength
+    as "lua.CharacterSelection.OnCharacterRenameResult: 15"
+  assert support.logs_of(step: taken, level: LogWarning) == []
+    as "a name is a player's to mistype"
+  let #(state, taken) = renaming(11, "Ab Cd")
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ToRenameCharacter(NotRenamable))),
+    )
+  assert character_support.rename_result_in(heard(taken, keyed())).result
+    == rename_result.RenameFailed
+    as "lua.CharacterSelection.OnCharacterRenameResult: 13"
+  assert list.length(support.logs_of(step: taken, level: LogWarning)) == 1
+  assert !support.stops(taken)
+}
+
+pub fn a_store_that_gives_no_answer_to_a_delete_or_a_rename_gets_0x036a_reason_8_and_the_connection_ends_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      step.Answer(FromStore(Unavailable)),
+      NoAnswerInTime,
+      NotRunning,
+      EndedBeforeAnswer,
+      StoppedWaiting,
+    ],
+    fn(outcome) {
+      list.each([deleting(11), renaming(11, "Ab Cd")], fn(asked) {
+        let #(state, taken) = asked
+        let #(_, taken) = answer(state:, taken:, outcome:)
+        assert disconnect(taken, keyed()) == LostUserServer
+          as "0x1400168a0 and opcode.0xe6, opcode.0x14b: the client waits for the result with no timeout, so a request the store cannot answer ends with 0x036A, reason 8"
+        assert support.stops(taken)
+      })
+    },
+  )
+}
+
+pub fn a_store_answer_to_another_ask_than_a_delete_or_a_rename_is_a_bug_that_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = deleting(11)
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ToRenameCharacter(NewNameTaken))),
+    )
+  assert disconnect(taken, keyed()) == LostUserServer
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  let #(state, taken) = renaming(11, "Ab Cd")
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ToDeleteCharacter(CharacterDeleted))),
+    )
+  assert disconnect(taken, keyed()) == LostUserServer
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+}
+
+pub fn a_0x0352_or_0x0786_the_clients_reader_would_refuse_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // opcode.0x352: 64 bits.
+  let #(_, taken) = read(in_select(), keyed_message(0x0352, <<1, 2>>))
+  assert support.stops(taken)
+  assert support.asked(taken) == None
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  // opcode.0x786: 64 bits and a wide text.
+  let #(_, taken) = read(in_select(), keyed_message(0x0786, <<1, 2>>))
+  assert support.stops(taken)
+  assert support.asked(taken) == None
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
 }
 
 pub fn a_0x025c_or_0x07dd_the_clients_reader_would_refuse_ends_the_connection_test() -> Nil {

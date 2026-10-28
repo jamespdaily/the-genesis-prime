@@ -27,15 +27,23 @@ import genesis_prime/message/character_list_entry.{type CharacterListEntry}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
 import genesis_prime/message/create_result
+import genesis_prime/message/delete_character.{DeleteCharacter}
+import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
+import genesis_prime/message/delete_result
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
+import genesis_prime/message/rename_character.{RenameCharacter}
+import genesis_prime/message/rename_character_result.{RenameCharacterResult}
+import genesis_prime/message/rename_result
 import genesis_prime/store.{
-  type Character, AccountId, Character, CharacterCreated, CharacterId,
-  CreateCharacter as StoreCreate, ListCharacters, LookEntry, NameTaken,
-  NewCharacter, NoFreeSlot,
+  type Character, AccountId, Character, CharacterCreated, CharacterDeleted,
+  CharacterId, CharacterRenamed, CreateCharacter as StoreCreate,
+  DeleteCharacter as StoreDelete, ListCharacters, LookEntry, NameStands,
+  NameTaken, NeedsRename, NewCharacter, NewNameTaken, NoFreeSlot,
+  NoSuchCharacter, NotRenamable, RenameCharacter as StoreRename,
 }
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import gleam/list
@@ -77,6 +85,7 @@ fn stored(id id: Int, name name: String, level level: Int) -> Character {
     position_z: 0.0,
     look: [],
     bones: [],
+    naming: NameStands,
   )
 }
 
@@ -199,6 +208,7 @@ pub fn an_entry_carries_the_body_visuals_of_its_look_and_its_bones_test() -> Nil
         LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
       ],
       bones: [0x3F800000, 0x40000000],
+      naming: NameStands,
     )
   let #(asking, _) = character_select.started(AccountId(7))
   let assert Ok(#(_, effects)) = listed(asking, [character])
@@ -316,6 +326,198 @@ pub fn a_request_the_client_would_not_send_is_refused_with_a_warning_naming_the_
   })
     as "nothing is stored"
   assert !character_select.waiting(state)
+}
+
+// ---- delete ----
+
+/// The warnings among the effects.
+fn warnings(effects: List(character_select.Effect)) -> List(String) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      Warn(text:) -> Ok(text)
+      Ask(..) | Send(..) -> Error(Nil)
+    }
+  })
+}
+
+pub fn the_clients_0x0352_asks_the_store_to_delete_the_character_of_the_account_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, effects) =
+    character_select.delete_requested(
+      account_id: AccountId(7),
+      request: DeleteCharacter(character_id: 0x1_0000_0002),
+    )
+  assert effects
+    == [
+      Ask(request: StoreDelete(
+        account_id: AccountId(7),
+        character_id: CharacterId(0x1_0000_0002),
+      )),
+    ]
+    as "opcode.0x352: the request names the character by its id; the store deletes it only if the account has it"
+  assert character_select.waiting(state) as "the store's answer is awaited"
+}
+
+pub fn a_deleted_character_is_0x00e6_result_0_with_value_0_and_no_new_list_follows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(asking, _) =
+    character_select.delete_requested(
+      account_id: AccountId(7),
+      request: DeleteCharacter(character_id: 5),
+    )
+  let assert Ok(#(state, effects)) =
+    character_select.deleted(asking, CharacterDeleted)
+  assert character_support.delete_result_in(sent(effects))
+    == DeleteCharacterResult(result: delete_result.DeleteOk, value: 0)
+    as "opcode.0xe6: result 0 removes the character from the client's own list, and the value is read only for result 2 (opcode.0xe6.value), so 0 is safe"
+  assert list.length(effects) == 1
+    as "lua.CharacterSelection.OnCharacterDeleteResult: the client rebuilds its list itself, so no new 0x0117 is needed"
+  assert !character_select.waiting(state) as "the result is sent"
+}
+
+pub fn a_character_the_account_does_not_have_is_0x00e6_result_1_with_a_warning_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(asking, _) =
+    character_select.delete_requested(
+      account_id: AccountId(7),
+      request: DeleteCharacter(character_id: 5),
+    )
+  let assert Ok(#(state, effects)) =
+    character_select.deleted(asking, NoSuchCharacter)
+  assert character_support.delete_result_in(sent(effects))
+    == DeleteCharacterResult(result: delete_result.DeleteFailed, value: 0)
+    as "lua.CharacterSelection.OnCharacterDeleteResult: 1 DeleteFailed shows 'Something went wrong...'"
+  let assert [text] = warnings(effects)
+    as "the real client deletes only a listed character, so the request is logged once"
+  assert string.contains(text, "5") as "the warning names the character's id"
+  assert !character_select.waiting(state)
+}
+
+pub fn a_delete_answer_with_no_delete_asked_is_none_character_select_takes_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert character_select.deleted(character_select.new(), CharacterDeleted)
+    == Error(Nil)
+    as "no ask is out"
+  let #(listing, _) = character_select.started(AccountId(7))
+  assert character_select.deleted(listing, CharacterDeleted) == Error(Nil)
+    as "a list is asked for, not a delete"
+}
+
+// ---- rename ----
+
+pub fn the_clients_0x0786_with_a_name_that_passes_rule_0_asks_the_store_to_rename_the_character_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, effects) =
+    character_select.rename_requested(
+      account_id: AccountId(7),
+      request: RenameCharacter(character_id: 5, name: "Ab Cd"),
+    )
+  assert effects
+    == [
+      Ask(request: StoreRename(
+        account_id: AccountId(7),
+        character_id: CharacterId(5),
+        name: "Ab Cd",
+      )),
+    ]
+    as "opcode.0x786: the character's id and the name the player typed"
+  assert character_select.waiting(state)
+}
+
+pub fn a_name_that_fails_rule_0_is_0x014b_result_15_with_the_request_and_nothing_is_asked_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, effects) =
+    character_select.rename_requested(
+      account_id: AccountId(7),
+      request: RenameCharacter(character_id: 5, name: "Abcd"),
+    )
+  assert character_support.rename_result_in(sent(effects))
+    == RenameCharacterResult(
+      result: rename_result.NameLength,
+      character_id: 5,
+      name: "Abcd",
+    )
+    as "lua.CharacterSelection.OnCharacterRenameResult: 15 shows 'Character names may only contain 3 to 20 letters.'"
+  assert warnings(effects) == []
+    as "a name is a player's to mistype, so no warning, as for a create"
+  assert list.length(effects) == 1 as "nothing is asked, so nothing is stored"
+  assert !character_select.waiting(state)
+}
+
+pub fn the_stores_answer_to_a_rename_becomes_the_result_the_client_shows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let result_for = fn(answer) {
+    let #(asking, _) =
+      character_select.rename_requested(
+        account_id: AccountId(7),
+        request: RenameCharacter(character_id: 0x1_0000_0001, name: "Ab Cd"),
+      )
+    let assert Ok(#(state, effects)) = character_select.renamed(asking, answer)
+    assert !character_select.waiting(state) as "the result is sent"
+    #(character_support.rename_result_in(sent(effects)), warnings(effects))
+  }
+  assert result_for(CharacterRenamed(name: "Ab Cd"))
+    == #(
+      RenameCharacterResult(
+        result: rename_result.RenameOk,
+        character_id: 0x1_0000_0001,
+        name: "Ab Cd",
+      ),
+      [],
+    )
+    as "opcode.0x14b: 18 gives the listed character with that id the name and clears its mark; the name is the stored one"
+  assert result_for(NewNameTaken)
+    == #(
+      RenameCharacterResult(
+        result: rename_result.NameUnavailable,
+        character_id: 0x1_0000_0001,
+        name: "Ab Cd",
+      ),
+      [],
+    )
+    as "lua.CharacterSelection.OnCharacterRenameResult: 16 'The name you picked is unavailable.'"
+  let #(refused, logged) = result_for(NotRenamable)
+  assert refused
+    == RenameCharacterResult(
+      result: rename_result.RenameFailed,
+      character_id: 0x1_0000_0001,
+      name: "Ab Cd",
+    )
+    as "lua.CharacterSelection.OnCharacterRenameResult: 13 'We are unable to process your request at this time.'"
+  assert list.length(logged) == 1
+    as "the real client offers a rename only for a marked character of its own list, so the request is logged"
+}
+
+pub fn a_rename_answer_with_no_rename_asked_is_none_character_select_takes_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert character_select.renamed(character_select.new(), NewNameTaken)
+    == Error(Nil)
+  let #(deleting, _) =
+    character_select.delete_requested(
+      account_id: AccountId(7),
+      request: DeleteCharacter(character_id: 5),
+    )
+  assert character_select.renamed(deleting, NotRenamable) == Error(Nil)
+    as "a delete is asked for, not a rename"
+}
+
+pub fn an_entry_carries_the_rename_bit_from_the_characters_naming_and_the_in_world_fields_are_zeros_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(asking, _) = character_select.started(AccountId(7))
+  let assert Ok(#(_, effects)) =
+    listed(asking, [
+      Character(..stored(id: 1, name: "Ab Cd", level: 1), naming: NeedsRename),
+      stored(id: 2, name: "Ef Gh", level: 1),
+    ])
+  assert list.map(entries(effects), fn(entry) { entry.requires_rename })
+    == [1, 0]
+    as "lua.CharacterSelection.OnSelectCharacter: bRequiresRename opens the rename form; opcode.0x117 names the entry's bit"
+  let assert [_, Frame(message_id: 0x0117, body:)] = sent(effects)
+  let assert Ok(list_message) = character_list.decode(body)
+  assert list_message.in_world_realm_id == 0
+    && list_message.in_world_character_id == 0
+    && list_message.in_world_logoff_ms == 0
+    as "lua.CharacterSelection.OnRemoveCountdown: the client reads a character still in the world only with a realm and an id that are not 0; no session enters the world yet"
 }
 
 // ---- play after a create ----

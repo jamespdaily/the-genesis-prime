@@ -93,12 +93,14 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/character_select_start
 import genesis_prime/message/create_character
 import genesis_prime/message/create_character_carrier
+import genesis_prime/message/delete_character
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, LostUserServer,
 }
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/play_character
+import genesis_prime/message/rename_character
 import genesis_prime/step.{
   type Effect, type Input, type Now, type Outcome, type Rule, type Step, Effects,
   LogWarning, Stop, Write,
@@ -359,6 +361,8 @@ fn taken_message(
         SelectStart -> select_started(session:, now:, holder:, inner:)
         CreateRequest -> create_requested(session:, now:, holder:, inner:)
         PlayRequest -> play_requested(session:, now:, holder:, inner:)
+        DeleteRequest -> delete_requested(session:, now:, holder:, inner:)
+        RenameRequest -> rename_requested(session:, now:, holder:, inner:)
         NotTaken ->
           client_connection.unhandled(
             session:,
@@ -430,6 +434,10 @@ type SelectMessage {
   CreateRequest
   /// 0x07DD, the request to play a character.
   PlayRequest
+  /// 0x0352, the request to delete a character.
+  DeleteRequest
+  /// 0x0786, the request to rename a character.
+  RenameRequest
   /// Any other message.
   NotTaken
 }
@@ -440,6 +448,8 @@ fn select_message(message_id: Int) -> SelectMessage {
     id if id == character_select_start.message_id -> SelectStart
     id if id == create_character_carrier.message_id -> CreateRequest
     id if id == play_character.message_id -> PlayRequest
+    id if id == delete_character.message_id -> DeleteRequest
+    id if id == rename_character.message_id -> RenameRequest
     _ -> NotTaken
   }
 }
@@ -539,6 +549,60 @@ fn play_requested(
         now:,
         holder:,
         step: character_select.play_requested(
+          account_id: holder.account_id,
+          request:,
+        ),
+      )
+  }
+}
+
+/// The client's 0x0352: the request to delete a character, which character
+/// select asks the store to carry out for the holder's account.
+fn delete_requested(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  case delete_character.decode(inner.body) {
+    Error(error) ->
+      end_for(
+        session,
+        "0x0352 does not decode: " <> bit_stream.describe_decode(error:),
+      )
+    Ok(request) ->
+      select_step(
+        session:,
+        now:,
+        holder:,
+        step: character_select.delete_requested(
+          account_id: holder.account_id,
+          request:,
+        ),
+      )
+  }
+}
+
+/// The client's 0x0786: the request to rename a character, which character
+/// select checks and asks the store to carry out for the holder's account.
+fn rename_requested(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  case rename_character.decode(inner.body) {
+    Error(error) ->
+      end_for(
+        session,
+        "0x0786 does not decode: " <> bit_stream.describe_decode(error:),
+      )
+    Ok(request) ->
+      select_step(
+        session:,
+        now:,
+        holder:,
+        step: character_select.rename_requested(
           account_id: holder.account_id,
           request:,
         ),
@@ -706,6 +770,20 @@ fn select_answered(
         now:,
         holder:,
         taken: character_select.created(select, answer),
+      )
+    step.Answer(FromStore(store.ToDeleteCharacter(answer:))) ->
+      select_taken(
+        session:,
+        now:,
+        holder:,
+        taken: character_select.deleted(select, answer),
+      )
+    step.Answer(FromStore(store.ToRenameCharacter(answer:))) ->
+      select_taken(
+        session:,
+        now:,
+        holder:,
+        taken: character_select.renamed(select, answer),
       )
     step.Answer(FromStore(..)) ->
       told(

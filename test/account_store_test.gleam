@@ -27,12 +27,15 @@ import character_support
 import database_support
 import genesis_prime/add_character/sql as add_character_sql
 import genesis_prime/login/guid
+import genesis_prime/mark_rename/sql as mark_rename_sql
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
   type AccountId, Account, AccountFound, AccountId, Character, CharacterCreated,
-  CharacterId, FindAccount, ListCharacters, LookEntry, NameTaken, NewCharacter,
-  NoFreeSlot, NoSuchAccount, ToCreateCharacter, ToFindAccount, ToListCharacters,
-  Unavailable,
+  CharacterDeleted, CharacterId, CharacterRenamed, DeleteCharacter, FindAccount,
+  ListCharacters, LookEntry, NameStands, NameTaken, NeedsRename, NewCharacter,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
+  RenameCharacter, ToCreateCharacter, ToDeleteCharacter, ToFindAccount,
+  ToListCharacters, ToRenameCharacter, Unavailable,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -312,6 +315,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
         position_z: 3.5,
         look: [],
         bones: [],
+        naming: NameStands,
       ),
       Character(
         character_id: CharacterId(second),
@@ -329,6 +333,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
         position_z: 3.5,
         look: [],
         bones: [],
+        naming: NameStands,
       ),
     ])
     as "the account's two rows as inserted, in the order of their ids, and not the other account's row"
@@ -361,6 +366,12 @@ pub fn with_the_database_pool_not_running_a_list_of_characters_gives_unavailable
   let store = Store(tree: started.pid, pool:, name:)
   assert ask(store, ListCharacters(AccountId(1))) == Unavailable
     as "the pool is not running, so the query cannot reach the database"
+  assert ask(store, DeleteCharacter(AccountId(1), CharacterId(1)))
+    == Unavailable
+    as "a delete the database cannot be reached for is unavailable, not a character that is none"
+  assert ask(store, RenameCharacter(AccountId(1), CharacterId(1), "Ab Cd"))
+    == Unavailable
+    as "and so is a rename"
   stop(store)
 }
 
@@ -447,6 +458,7 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
         position_z: 0.0,
         look: [],
         bones: [],
+        naming: NameStands,
       ),
     ])
     as "the tool's doc comment: level 1, path 0, no world, zone or position"
@@ -462,6 +474,213 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
     )
     as "the query ran"
   assert none.rows == [] as "no account of that name gives no row"
+  stop(store)
+}
+
+// ---- delete and rename ----
+
+/// The names of the account's characters, in the order they were created.
+fn names_listed(store: Store, account: AccountId) -> List(String) {
+  let assert ToListCharacters(characters) = ask(store, ListCharacters(account))
+    as "a list is answered with a list"
+  list.map(characters, fn(character) { character.name })
+}
+
+/// Marks the character with the name for a rename, as the developer tool does.
+fn mark_for_rename(store: Store, name: String) -> Nil {
+  let assert Ok(returned) = mark_rename_sql.mark_for_rename(store.pool, name)
+    as "the tool's query ran"
+  assert list.length(returned.rows) == 1 as "one character has the name"
+  Nil
+}
+
+fn deleted(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+) -> store.DeleteAnswer {
+  let assert ToDeleteCharacter(answer) =
+    ask(store, DeleteCharacter(account, CharacterId(character_id)))
+    as "a delete is answered with a delete's answer"
+  answer
+}
+
+fn renamed(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+  name name: String,
+) -> store.RenameAnswer {
+  let assert ToRenameCharacter(answer) =
+    ask(store, RenameCharacter(account, CharacterId(character_id), name))
+    as "a rename is answered with a rename's answer"
+  answer
+}
+
+pub fn a_delete_removes_the_accounts_character_and_the_list_omits_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let zed =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Zed",
+      class_id: 4,
+      path: 2,
+    )
+  let _abe =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Abe",
+      class_id: 4,
+      path: 2,
+    )
+  assert deleted(store:, account: account, character_id: zed)
+    == CharacterDeleted
+    as "lua.CharacterSelection.OnCharacterDeleteResult: the character is removed and the result is 0"
+  assert names_listed(store, account) == ["Abe"]
+    as "the next list omits it and keeps the account's other character"
+  assert deleted(store:, account: account, character_id: zed) == NoSuchCharacter
+    as "a character deleted is gone, so a repeated delete finds none"
+  stop(store)
+}
+
+pub fn a_delete_of_another_accounts_character_or_of_none_is_no_such_character_and_deletes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let other = insert_account(store, "login-2")
+  let theirs =
+    character_support.insert(
+      pool: store.pool,
+      account: other,
+      name: "Cal",
+      class_id: 1,
+      path: 1,
+    )
+  assert deleted(store:, account: account, character_id: theirs)
+    == NoSuchCharacter
+    as "CLAUDE.md: a modified client could send any id, so the statement is scoped by the account's id"
+  assert deleted(store:, account: account, character_id: account_id_nobody_has)
+    == NoSuchCharacter
+  assert names_listed(store, other) == ["Cal"]
+    as "the other account's character is untouched"
+  stop(store)
+}
+
+pub fn a_rename_of_a_marked_character_stores_the_name_clears_the_mark_and_answers_the_stored_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let zed =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Zed",
+      class_id: 4,
+      path: 2,
+    )
+  assert naming_of(store, account) == [NameStands]
+    as "a character the table inserts needs no rename"
+  mark_for_rename(store, "Zed")
+  assert naming_of(store, account) == [NeedsRename]
+    as "opcode.0x117 carries the rename bit the client offers a rename by (lua.CharacterSelection.OnSelectCharacter)"
+  assert renamed(store:, account: account, character_id: zed, name: "Ab Cd")
+    == CharacterRenamed("Ab Cd")
+    as "opcode.0x14b: result 18 gives the id and the name the character now has"
+  assert names_listed(store, account) == ["Ab Cd"]
+  assert naming_of(store, account) == [NameStands]
+    as "opcode.0x14b: the character loses its needs-a-rename mark with the rename"
+  assert renamed(store:, account: account, character_id: zed, name: "Ef Gh")
+    == NotRenamable
+    as "the mark is cleared, so a second rename is none the client offers"
+  assert names_listed(store, account) == ["Ab Cd"]
+  stop(store)
+}
+
+/// How each of the account's characters stands for a rename, in the order they
+/// were created.
+fn naming_of(store: Store, account: AccountId) -> List(store.Naming) {
+  let assert ToListCharacters(characters) = ask(store, ListCharacters(account))
+    as "a list is answered with a list"
+  list.map(characters, fn(character) { character.naming })
+}
+
+pub fn a_rename_to_a_name_taken_in_any_case_is_new_name_taken_and_changes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let other = insert_account(store, "login-2")
+  let zed =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Zed",
+      class_id: 4,
+      path: 2,
+    )
+  let _abe =
+    character_support.insert(
+      pool: store.pool,
+      account: other,
+      name: "Abe",
+      class_id: 4,
+      path: 2,
+    )
+  mark_for_rename(store, "Zed")
+  assert renamed(store:, account: account, character_id: zed, name: "aBE")
+    == NewNameTaken
+    as "lua.CharacterSelection.OnCharacterRenameResult: 16; a name is unique ignoring case, across accounts, held by the unique index on lower(name) (migration 0003)"
+  assert names_listed(store, account) == ["Zed"]
+  assert naming_of(store, account) == [NeedsRename]
+    as "the refused rename left the mark, so the player can pick another name"
+  assert renamed(store:, account: account, character_id: zed, name: "Ab Cd")
+    == CharacterRenamed("Ab Cd")
+    as "and another name is taken"
+  stop(store)
+}
+
+pub fn a_rename_of_an_unmarked_or_another_accounts_character_or_of_none_is_not_renamable_and_changes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let other = insert_account(store, "login-2")
+  let mine =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Zed",
+      class_id: 4,
+      path: 2,
+    )
+  let theirs =
+    character_support.insert(
+      pool: store.pool,
+      account: other,
+      name: "Abe",
+      class_id: 4,
+      path: 2,
+    )
+  mark_for_rename(store, "Abe")
+  assert renamed(store:, account: account, character_id: mine, name: "Ab Cd")
+    == NotRenamable
+    as "lua.CharacterSelection.OnSelectCharacter: the client offers a rename only for a marked character"
+  assert renamed(store:, account: account, character_id: theirs, name: "Ab Cd")
+    == NotRenamable
+    as "a modified client could send any id: the update is scoped by the account's id, whatever the mark"
+  assert renamed(
+      store:,
+      account: account,
+      character_id: account_id_nobody_has,
+      name: "Ab Cd",
+    )
+    == NotRenamable
+  assert names_listed(store, account) == ["Zed"]
+  assert names_listed(store, other) == ["Abe"]
+  assert naming_of(store, other) == [NeedsRename]
+    as "the other account's character keeps its mark"
   stop(store)
 }
 
@@ -536,6 +755,7 @@ pub fn a_create_stores_the_character_at_level_1_with_the_values_it_was_given_and
           ),
         ],
         bones: [0xBF800000, 0x3F800000, 0],
+        naming: NameStands,
       ),
     ])
     as "the card's design: race, sex, class and faction from the creation row, level 1, no world, zone or position until world entry, the look and the bones as the client sent them (32-bit values come back as they went in)"

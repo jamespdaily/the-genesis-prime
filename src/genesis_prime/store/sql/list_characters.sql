@@ -16,7 +16,8 @@ select
   position_z,
   look_labels,
   look_values,
-  bones
+  bones,
+  needs_rename
 from character
 where account_id = $1
 order by character_id;

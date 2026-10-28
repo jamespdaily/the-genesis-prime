@@ -11,6 +11,11 @@
 ////   client's 0x07DD after CreateOk gets 0x0162 Failed, 0x0036 and 0x0117
 ////   (opcode.0x162.after_create, opcode.0x36), with the account's slots 2
 ////   without an entitlement (lua.CharacterSelection.OnLoadFromCharacter).
+//// - The delete path: 0x0352 is answered with 0x00E6 (opcode.0x352,
+////   opcode.0xe6, lua.CharacterSelection.OnCharacterDeleteResult), and the
+////   rename path: 0x0786 is answered with 0x014B for a character the entry's
+////   rename bit marks (opcode.0x786, opcode.0x14b,
+////   lua.CharacterSelection.OnCharacterRenameResult).
 //// Every wait is for bytes the server writes, with a deadline a passing test
 //// never reaches.
 
@@ -20,16 +25,25 @@ import connection_rule_support as support
 import game_client
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
 import genesis_prime/login/guid
+import genesis_prime/mark_rename/sql as mark_rename_sql
 import genesis_prime/message/character_list
+import genesis_prime/message/character_list_entry
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
+import genesis_prime/message/delete_character.{DeleteCharacter}
+import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
+import genesis_prime/message/delete_result
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{AccountDisconnected}
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/rename_character.{RenameCharacter}
+import genesis_prime/message/rename_character_result.{RenameCharacterResult}
+import genesis_prime/message/rename_result
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
 import gleam/dynamic/decode
+import gleam/list
 import login_support
 import owned_test
 import pog
@@ -228,6 +242,166 @@ pub fn an_account_at_its_two_slots_is_account_full_test() -> Nil {
   assert created_result(game).result == create_result.AccountFull
     as "lua.CharacterSelection.OnLoadFromCharacter: 2 slots without an entitlement; lua.Character.OnCreateCharacterFailed: 9"
   assert names_of(pool) == ["Abe", "Cal"] as "nothing more is stored"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+// ---- delete and rename ----
+
+fn send_delete(game: game_client.Game, character_id: Int) -> Nil {
+  let assert Ok(body) = delete_character.encode(DeleteCharacter(character_id:))
+    as "0x0352 encodes"
+  game_client.send(game:, message_id: 0x0352, body:)
+}
+
+fn send_rename(
+  game game: game_client.Game,
+  character_id character_id: Int,
+  name name: String,
+) -> Nil {
+  let assert Ok(body) =
+    rename_character.encode(RenameCharacter(character_id:, name:))
+    as "0x0786 encodes"
+  game_client.send(game:, message_id: 0x0786, body:)
+}
+
+/// Asks for the list again, as the client does when it opens character select,
+/// and gives its entries.
+fn listed_entries(
+  game: game_client.Game,
+) -> List(character_list_entry.CharacterListEntry) {
+  game_client.send(game:, message_id: 0x07E0, body: <<>>)
+  let assert [_level, listed] = game_client.read(game:, count: 2)
+  let assert Ok(list) = character_list.decode(listed.body)
+  list.characters
+}
+
+fn mark_for_rename(pool: pog.Connection, name: String) -> Nil {
+  let assert Ok(returned) = mark_rename_sql.mark_for_rename(pool, name)
+    as "the developer tool's query ran"
+  assert returned.rows != [] as "a character has the name"
+  Nil
+}
+
+pub fn a_delete_of_the_accounts_character_is_0x00e6_result_0_and_the_next_list_omits_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let zed =
+    character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
+  let _abe =
+    character_support.insert(pool:, account:, name: "Abe", class_id: 4, path: 2)
+  let game = in_select(started:, port:, account:)
+  send_delete(game, zed)
+  assert character_support.delete_result_in(game_client.read(game:, count: 1))
+    == DeleteCharacterResult(result: delete_result.DeleteOk, value: 0)
+    as "opcode.0xe6: result 0, and the value nothing reads (opcode.0xe6.value)"
+  assert names_of(pool) == ["Abe"] as "the row is deleted"
+  assert list.map(listed_entries(game), fn(entry) { entry.name }) == ["Abe"]
+    as "the next 0x0117 omits the deleted character"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_delete_of_a_character_another_account_has_is_0x00e6_result_1_and_deletes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let other =
+    AccountId(login_support.insert_account(
+      pool:,
+      login_name: "other",
+      salt: <<1>>,
+      verifier: <<2>>,
+      game_account_id: support.guid_of(0x22),
+    ))
+  let theirs =
+    character_support.insert(
+      pool:,
+      account: other,
+      name: "Cal",
+      class_id: 1,
+      path: 1,
+    )
+  let game = in_select(started:, port:, account:)
+  send_delete(game, theirs)
+  assert character_support.delete_result_in(game_client.read(game:, count: 1))
+    == DeleteCharacterResult(result: delete_result.DeleteFailed, value: 0)
+    as "lua.CharacterSelection.OnCharacterDeleteResult: 1; a modified client could send any id"
+  assert names_of(pool) == ["Cal"] as "nothing is deleted"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_rename_of_a_marked_character_is_0x014b_result_18_and_the_next_list_shows_the_name_with_the_bit_clear_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let zed =
+    character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
+  mark_for_rename(pool, "Zed")
+  let game = in_select(started:, port:, account:)
+  let assert [marked] = listed_entries(game)
+  assert marked.requires_rename == 1
+    as "opcode.0x117: the bit the client offers a rename by (lua.CharacterSelection.OnSelectCharacter)"
+  send_rename(game:, character_id: zed, name: "Ab Cd")
+  assert character_support.rename_result_in(game_client.read(game:, count: 1))
+    == RenameCharacterResult(
+      result: rename_result.RenameOk,
+      character_id: zed,
+      name: "Ab Cd",
+    )
+    as "opcode.0x14b: result 18 with the id and the stored name"
+  let assert [renamed] = listed_entries(game)
+  assert renamed.name == "Ab Cd" && renamed.requires_rename == 0
+    as "the row is renamed and unmarked"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_rename_to_a_name_taken_in_any_case_is_0x014b_16_and_changes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let zed =
+    character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
+  let _abe =
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Abe Cd",
+      class_id: 4,
+      path: 2,
+    )
+  mark_for_rename(pool, "Zed")
+  let game = in_select(started:, port:, account:)
+  send_rename(game:, character_id: zed, name: "aBE cD")
+  assert character_support.rename_result_in(game_client.read(game:, count: 1)).result
+    == rename_result.NameUnavailable
+    as "lua.CharacterSelection.OnCharacterRenameResult: 16; the unique index on lower(name) refuses it"
+  assert names_of(pool) == ["Zed", "Abe Cd"] as "nothing changes"
+  let assert [still_marked, _] = listed_entries(game)
+  assert still_marked.requires_rename == 1
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_rename_with_a_name_failing_rule_0_is_0x014b_15_and_an_unmarked_character_is_13_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let zed =
+    character_support.insert(pool:, account:, name: "Zed", class_id: 4, path: 2)
+  let game = in_select(started:, port:, account:)
+  send_rename(game:, character_id: zed, name: "Abcd")
+  assert character_support.rename_result_in(game_client.read(game:, count: 1)).result
+    == rename_result.NameLength
+    as "lua.CharacterSelection.OnCharacterRenameResult: 15; rule 0 wants a first and a last name"
+  send_rename(game:, character_id: zed, name: "Ab Cd")
+  assert character_support.rename_result_in(game_client.read(game:, count: 1)).result
+    == rename_result.RenameFailed
+    as "lua.CharacterSelection.OnCharacterRenameResult: 13; the character is not marked, so the client would not offer a rename"
+  assert names_of(pool) == ["Zed"] as "nothing changes"
   game_client.close(game:)
   login_support.stop(started)
 }
