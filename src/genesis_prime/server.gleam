@@ -114,6 +114,11 @@ pub type Served(settings) {
   )
 }
 
+/// How a rule's ask reaches the process it names, and how its answer comes
+/// back as the answer type of every connection rule.
+type Directory =
+  fn(Request, fn(Answer) -> Nil) -> Result(Sent, Nil)
+
 /// Starts the tree. A child that fails three times in ten seconds does not
 /// recover by restarting, so the tree gives up, the node stops, and the
 /// host starts it again.
@@ -148,9 +153,7 @@ pub fn start(
 /// and to the hand-off by its name, each answer wrapped in the answer type of
 /// every connection rule (`FromStore`, `FromHandOff`). Made once at start; it
 /// holds the two names, not the settings.
-fn directory(
-  settings: Settings,
-) -> fn(Request, fn(Answer) -> Nil) -> Result(Sent, Nil) {
+fn directory(settings: Settings) -> Directory {
   let store = settings.store
   let hand_off = settings.hand_off
   fn(request: Request, reply: fn(Answer) -> Nil) {
@@ -166,14 +169,13 @@ fn directory(
 }
 
 /// The login subtree: the STS listener, then the auth listener, under a
-/// supervisor of their own, a permanent child of the server's. It restarts one
-/// listener at a time, three times in ten seconds.
+/// supervisor of their own, a permanent child of the server's.
 fn login(
   settings: Settings,
-  directory: fn(Request, fn(Answer) -> Nil) -> Result(Sent, Nil),
+  directory: Directory,
 ) -> supervision.ChildSpecification(supervisor.Supervisor) {
-  supervisor.new(supervisor.OneForOne)
-  |> supervisor.restart_tolerance(intensity: 3, period: 10)
+  use tree <- subtree
+  tree
   |> serve(
     settings:,
     served: settings.login.sts,
@@ -186,23 +188,34 @@ fn login(
     rule: auth_connection.rule,
     directory:,
   )
-  |> supervisor.supervised
 }
 
 /// The game subtree: the game listener under a supervisor of its own, a
-/// permanent child of the server's, restarted three times in ten seconds.
+/// permanent child of the server's.
 fn game(
   settings: Settings,
-  directory: fn(Request, fn(Answer) -> Nil) -> Result(Sent, Nil),
+  directory: Directory,
 ) -> supervision.ChildSpecification(supervisor.Supervisor) {
-  supervisor.new(supervisor.OneForOne)
-  |> supervisor.restart_tolerance(intensity: 3, period: 10)
+  use tree <- subtree
+  tree
   |> serve(
     settings:,
     served: settings.game,
     rule: game_connection.rule,
     directory:,
   )
+}
+
+/// A subtree of the server's tree: a supervisor of its own that restarts one
+/// child at a time, three times in ten seconds, the limit of every subtree, so
+/// a fault in one child leaves the others as they are. `add` puts the
+/// subtree's children on it.
+fn subtree(
+  add: fn(supervisor.Builder) -> supervisor.Builder,
+) -> supervision.ChildSpecification(supervisor.Supervisor) {
+  supervisor.new(supervisor.OneForOne)
+  |> supervisor.restart_tolerance(intensity: 3, period: 10)
+  |> add
   |> supervisor.supervised
 }
 
@@ -215,7 +228,7 @@ fn serve(
   served served: Served(rule_settings),
   rule rule: fn(rule_settings) ->
     Rule(rule_settings, state, Nil, Answer, Nil, Request),
-  directory directory: fn(Request, fn(Answer) -> Nil) -> Result(Sent, Nil),
+  directory directory: Directory,
 ) -> supervisor.Builder {
   supervisor.add(
     tree,
