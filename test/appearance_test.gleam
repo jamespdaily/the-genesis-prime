@@ -94,9 +94,8 @@ fn visuals(
   faction faction: Int,
   look pairs: List(#(Int, Int)),
 ) -> List(item_visual.ItemVisual) {
-  appearance.body_visuals_from_rows(
-    rows:,
-    labels:,
+  appearance.body_visuals(
+    index: appearance.index_from_rows(rows:, labels:),
     race_id: RaceId(1),
     sex: 0,
     faction_id: faction,
@@ -262,6 +261,7 @@ pub fn a_label_of_the_other_faction_is_ignored_and_its_rows_are_not_candidates_t
 pub fn a_human_males_face_from_the_real_rows_follows_the_looks_labels_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = client_tables.shared()
+  let index = appearance.index(tables:)
   // CharacterCustomization rows 2, 9 and 10 (race 1, sex 0, slot 25):
   // row 2 labels 22 = 1 and 2 = 1, display 135; row 9 labels 22 = 2 and 2 = 1,
   // display 136; row 10 labels 21 = 2 and 2 = 1, display 137. CharacterCustomizationLabel:
@@ -269,7 +269,7 @@ pub fn a_human_males_face_from_the_real_rows_follows_the_looks_labels_test() -> 
   let face_of = fn(faction, pairs) {
     let visuals =
       appearance.body_visuals(
-        tables:,
+        index:,
         race_id: RaceId(1),
         sex: 0,
         faction_id: faction,
@@ -299,7 +299,7 @@ pub fn every_slot_of_a_real_look_is_listed_once_in_slot_order_test() -> Nil {
   let tables = client_tables.shared()
   let slots =
     appearance.body_visuals(
-      tables:,
+      index: appearance.index(tables:),
       race_id: RaceId(1),
       sex: 0,
       faction_id: 166,

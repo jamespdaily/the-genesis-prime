@@ -24,6 +24,10 @@
 ////   record (PickCustomizationDisplays 0x140031c90, vector.0x140031c90). The
 ////   client's output has a display of 0 for a slot whose rows were all taken
 ////   out; a slot with no row at all is left out here.
+//// - **Once for each list.** `index` reads the tables once into an `Index`: the
+////   faction of each label and the indexed rows of each race and sex, each
+////   with the faction it is filed under. The character list builds it once and
+////   every character's body is taken from it.
 //// - **The bones.** A create request carries one 32-bit float for each part
 ////   the race and sex's CustomizationParameterMap rows set in their
 ////   CustomizationParameter row (opcode.0x25b.counts).
@@ -36,90 +40,146 @@ import genesis_prime/table/character_customization_label.{
 }
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
-import genesis_prime/table/id.{type RaceId}
+import genesis_prime/table/id.{
+  type CharacterCustomizationLabelId, type Faction2Id, type ItemSlotId,
+  type RaceId, CharacterCustomizationLabelId, Faction2Id,
+}
 import genesis_prime/table/loader/store as table_store
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
-import gleam/option
+import gleam/option.{type Option, None, Some}
+import gleam/order
 import gleam/result
 
-/// The body visuals of a character's look, one for each slot a row shows, in
-/// slot order, for the race and sex and faction, from the client's tables.
-pub fn body_visuals(
-  tables tables: table_store.Tables,
-  race_id race_id: RaceId,
-  sex sex: Int,
-  faction_id faction_id: Int,
-  look look: List(LookEntry),
-) -> List(ItemVisual) {
-  body_visuals_from_rows(
-    rows: character_customization.all(tables),
-    labels: character_customization_label.all(tables),
-    race_id:,
-    sex:,
-    faction_id:,
-    look:,
+/// What the body visuals read of the client's tables, read once for a list of
+/// characters: the faction of each label, and the rows the client's index
+/// holds for each race and sex, each with the faction it is filed under.
+pub opaque type Index {
+  Index(
+    label_factions: Dict(CharacterCustomizationLabelId, Faction2Id),
+    rows: Dict(#(RaceId, Int), List(Filed)),
   )
 }
 
-/// The body visuals from the given rows of CharacterCustomization, in record
-/// order, and the given rows of CharacterCustomizationLabel.
-pub fn body_visuals_from_rows(
+/// A row of CharacterCustomization with the faction it is filed under.
+type Filed {
+  Filed(faction: Faction2Id, row: CharacterCustomization)
+}
+
+/// The index of the client's tables.
+pub fn index(tables tables: table_store.Tables) -> Index {
+  index_from_rows(
+    rows: character_customization.all(tables),
+    labels: character_customization_label.all(tables),
+  )
+}
+
+/// The index of the given rows of CharacterCustomization, in record order,
+/// and the given rows of CharacterCustomizationLabel.
+pub fn index_from_rows(
   rows rows: List(CharacterCustomization),
   labels labels: List(CharacterCustomizationLabel),
+) -> Index {
+  let label_factions =
+    list.map(labels, fn(label) {
+      #(
+        character_customization_label.id(label),
+        character_customization_label.faction2_id(label),
+      )
+    })
+    |> dict.from_list
+  let filed =
+    list.filter(rows, is_indexed)
+    |> list.fold(dict.new(), fn(filed, row) {
+      dict.upsert(
+        filed,
+        #(character_customization.race_id(row), row.gender),
+        fn(found) {
+          [
+            Filed(faction: row_faction(row, label_factions), row:),
+            ..option.unwrap(found, [])
+          ]
+        },
+      )
+    })
+    |> dict.map_values(fn(_race_and_sex, rows) { list.reverse(rows) })
+  Index(label_factions:, rows: filed)
+}
+
+/// The body visuals of a character's look, one for each slot a row shows, in
+/// slot order, for the race and sex and faction.
+pub fn body_visuals(
+  index index: Index,
   race_id race_id: RaceId,
   sex sex: Int,
   faction_id faction_id: Int,
   look look: List(LookEntry),
 ) -> List(ItemVisual) {
-  let label_factions =
-    list.map(labels, fn(label) { #(label.id, label.faction2_id) })
-    |> dict.from_list
+  let faction = Faction2Id(faction_id)
+  let label_factions = index.label_factions
   let candidates =
-    list.filter(rows, fn(row) {
-      row.race_id == race_id.value
-      && row.gender == sex
-      && is_indexed(row)
-      && faction_allows(
-        faction_id:,
-        row_faction: row_faction(row, label_factions),
-      )
+    dict.get(index.rows, #(race_id, sex))
+    |> result.unwrap([])
+    |> list.filter(fn(filed) {
+      faction_allows(faction:, row_faction: filed.faction)
     })
+    |> list.map(fn(filed) { filed.row })
   let held = held_values(candidates)
   let current =
     list.fold(look, lowest_values(held), fn(current, entry) {
-      let label = entry.label.value
       case
-        label_allowed(label:, label_factions:, faction_id:)
+        label_allowed(label: entry.label, label_factions:, faction:)
         && list.contains(
-          dict.get(held, label) |> result.unwrap([]),
+          dict.get(held, entry.label) |> result.unwrap([]),
           entry.value,
         )
       {
-        True -> dict.insert(current, label, entry.value)
+        True -> dict.insert(current, entry.label, entry.value)
         False -> current
       }
     })
-  let shown =
-    list.filter(candidates, fn(row) {
-      shows(row:, current:, label_factions:, faction_id:)
-    })
-  let slots =
-    list.map(shown, fn(row) { row.item_slot_id })
-    |> list.unique
-    |> list.sort(int.compare)
-  list.map(slots, fn(slot) {
-    let assert Ok(row) =
-      best(list.filter(shown, fn(row) { row.item_slot_id == slot }))
-      as "a slot taken from the shown rows has a row"
+  list.fold(candidates, dict.new(), fn(winners, row) {
+    case shows(row:, current:, label_factions:, faction:) {
+      False -> winners
+      True ->
+        dict.upsert(winners, character_customization.item_slot_id(row), winner(
+          _,
+          row,
+        ))
+    }
+  })
+  |> dict.to_list
+  |> list.sort(fn(first, second) { slot_order(first.0, second.0) })
+  |> list.map(fn(slot_and_row) {
+    let #(slot, row) = slot_and_row
     ItemVisual(
-      slot:,
+      slot: slot.value,
       display_id: row.item_display_id,
       item_color_set_id: 0,
       dye: 0,
     )
   })
+}
+
+/// The row a slot shows once `row` is considered: the row already found,
+/// unless `row` has strictly more pairs, so the earliest row wins a tie.
+fn winner(
+  found: Option(CharacterCustomization),
+  row: CharacterCustomization,
+) -> CharacterCustomization {
+  case found {
+    None -> row
+    Some(held) ->
+      case score(row) > score(held) {
+        True -> row
+        False -> held
+      }
+  }
+}
+
+fn slot_order(first: ItemSlotId, second: ItemSlotId) -> order.Order {
+  int.compare(first.value, second.value)
 }
 
 /// The number of bone values a create request carries for the race and sex:
@@ -131,17 +191,18 @@ pub fn bone_count(
   race_id race_id: RaceId,
   sex sex: Int,
 ) -> Int {
-  let parts =
-    customization_parameter.all(tables)
-    |> list.map(fn(parameter) { #(parameter.id, parts_set(parameter)) })
-    |> dict.from_list
   customization_parameter_map.all(tables)
   |> list.filter(fn(map) {
-    map.race_id == race_id.value && map.gender_enum == sex
+    customization_parameter_map.race_id(map) == race_id
+    && map.gender_enum == sex
   })
-  |> list.map(fn(map) {
-    dict.get(parts, map.customization_parameter_id) |> result.unwrap(0)
+  |> list.filter_map(fn(map) {
+    customization_parameter.get(
+      tables:,
+      id: customization_parameter_map.customization_parameter_id(map),
+    )
   })
+  |> list.map(parts_set)
   |> int.sum
 }
 
@@ -172,57 +233,63 @@ fn is_indexed(row: CharacterCustomization) -> Bool {
 /// one, else 0.
 fn row_faction(
   row: CharacterCustomization,
-  label_factions: Dict(Int, Int),
-) -> Int {
-  [
-    row.character_customization_label_id00,
-    row.character_customization_label_id01,
-  ]
-  |> list.filter_map(fn(label) {
-    case dict.get(label_factions, label) {
-      Ok(faction) if faction != 0 -> Ok(faction)
+  label_factions: Dict(CharacterCustomizationLabelId, Faction2Id),
+) -> Faction2Id {
+  labelled(row)
+  |> list.filter_map(fn(pair) {
+    case dict.get(label_factions, pair.0) {
+      Ok(faction) if faction != Faction2Id(0) -> Ok(faction)
       Ok(_) | Error(Nil) -> Error(Nil)
     }
   })
   |> list.first
-  |> result.unwrap(0)
+  |> result.unwrap(Faction2Id(0))
 }
 
 fn faction_allows(
-  faction_id faction_id: Int,
-  row_faction row_faction: Int,
+  faction faction: Faction2Id,
+  row_faction row_faction: Faction2Id,
 ) -> Bool {
-  row_faction == 0 || row_faction == faction_id
+  row_faction == Faction2Id(0) || row_faction == faction
 }
 
 /// Whether the label may be set for the faction: the label has a row of
 /// CharacterCustomizationLabel with faction 0 or the faction (SetLookLabel
 /// 0x1400310b0).
 fn label_allowed(
-  label label: Int,
-  label_factions label_factions: Dict(Int, Int),
-  faction_id faction_id: Int,
+  label label: CharacterCustomizationLabelId,
+  label_factions label_factions: Dict(CharacterCustomizationLabelId, Faction2Id),
+  faction faction: Faction2Id,
 ) -> Bool {
   case dict.get(label_factions, label) {
-    Ok(faction) -> faction == 0 || faction == faction_id
+    Ok(label_faction) -> faction_allows(faction:, row_faction: label_faction)
     Error(Nil) -> False
   }
 }
 
-/// The (label, value) pairs of a row, of its two label positions.
-fn pairs(row: CharacterCustomization) -> List(#(Int, Int)) {
+/// The (label, value) pairs of a row that have a label; the table's label 0
+/// is none.
+fn labelled(
+  row: CharacterCustomization,
+) -> List(#(CharacterCustomizationLabelId, Int)) {
   [
-    #(row.character_customization_label_id00, row.value00),
-    #(row.character_customization_label_id01, row.value01),
+    #(
+      character_customization.character_customization_label_id00(row),
+      row.value00,
+    ),
+    #(
+      character_customization.character_customization_label_id01(row),
+      row.value01,
+    ),
   ]
+  |> list.filter(fn(pair) { pair.0 != CharacterCustomizationLabelId(0) })
 }
 
 /// The values the candidate rows hold for each label they use.
 fn held_values(
   candidates: List(CharacterCustomization),
-) -> Dict(Int, List(Int)) {
-  list.flat_map(candidates, pairs)
-  |> list.filter(fn(pair) { pair.0 != 0 })
+) -> Dict(CharacterCustomizationLabelId, List(Int)) {
+  list.flat_map(candidates, labelled)
   |> list.fold(dict.new(), fn(held, pair) {
     dict.upsert(held, pair.0, fn(values) {
       [pair.1, ..option.unwrap(values, [])]
@@ -232,13 +299,15 @@ fn held_values(
 
 /// Each label at the lowest value a candidate row holds for it
 /// (ResetLook 0x140030e30).
-fn lowest_values(held: Dict(Int, List(Int))) -> Dict(Int, Int) {
-  dict.map_values(held, fn(_label, values) {
-    case values {
-      [first, ..rest] -> list.fold(rest, first, int.min)
-      [] -> 0
-    }
+fn lowest_values(
+  held: Dict(CharacterCustomizationLabelId, List(Int)),
+) -> Dict(CharacterCustomizationLabelId, Int) {
+  dict.to_list(held)
+  |> list.filter_map(fn(entry) {
+    list.reduce(entry.1, int.min)
+    |> result.map(fn(lowest) { #(entry.0, lowest) })
   })
+  |> dict.from_list
 }
 
 /// Whether the row is among a slot's rows for the look: a row with no label
@@ -246,41 +315,25 @@ fn lowest_values(held: Dict(Int, List(Int))) -> Dict(Int, Int) {
 /// that value in the look, and one of its labels is one the look applies.
 fn shows(
   row row: CharacterCustomization,
-  current current: Dict(Int, Int),
-  label_factions label_factions: Dict(Int, Int),
-  faction_id faction_id: Int,
+  current current: Dict(CharacterCustomizationLabelId, Int),
+  label_factions label_factions: Dict(CharacterCustomizationLabelId, Faction2Id),
+  faction faction: Faction2Id,
 ) -> Bool {
-  let labelled = list.filter(pairs(row), fn(pair) { pair.0 != 0 })
-  case labelled {
+  case labelled(row) {
     [] -> True
-    _ ->
-      list.all(labelled, fn(pair) {
+    pairs ->
+      list.all(pairs, fn(pair) {
         pair.1 == 0 || dict.get(current, pair.0) == Ok(pair.1)
       })
-      && list.any(labelled, fn(pair) {
-        label_allowed(label: pair.0, label_factions:, faction_id:)
+      && list.any(pairs, fn(pair) {
+        label_allowed(label: pair.0, label_factions:, faction:)
         && dict.get(current, pair.0) == Ok(pair.1)
       })
   }
 }
 
-/// The row with the most positions that hold both a label and a value other
-/// than 0; the first of them in record order on a tie.
-fn best(
-  rows: List(CharacterCustomization),
-) -> Result(CharacterCustomization, Nil) {
-  list.fold(rows, Error(Nil), fn(found, row) {
-    case found {
-      Error(Nil) -> Ok(row)
-      Ok(held) ->
-        case score(row) > score(held) {
-          True -> Ok(row)
-          False -> Ok(held)
-        }
-    }
-  })
-}
-
+/// How many positions of the row hold both a label and a value other than 0;
+/// the row with the most wins its slot.
 fn score(row: CharacterCustomization) -> Int {
-  list.count(pairs(row), fn(pair) { pair.0 != 0 && pair.1 != 0 })
+  list.count(labelled(row), fn(pair) { pair.1 != 0 })
 }

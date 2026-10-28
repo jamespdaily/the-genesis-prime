@@ -216,23 +216,11 @@ pub fn answered(
         ),
       ))
     Creating, store.CharacterCreated(character_id: CharacterId(character_id)) ->
-      Ok(
-        #(Resting, [
-          create_result(character_id:, result: create_result.CreateOk),
-        ]),
-      )
+      Ok(created(character_id:, result: create_result.CreateOk))
     Creating, store.NameTaken ->
-      Ok(
-        #(Resting, [
-          create_result(character_id: 0, result: create_result.NameUnavailable),
-        ]),
-      )
+      Ok(created(character_id: 0, result: create_result.NameUnavailable))
     Creating, store.NoFreeSlot ->
-      Ok(
-        #(Resting, [
-          create_result(character_id: 0, result: create_result.AccountFull),
-        ]),
-      )
+      Ok(created(character_id: 0, result: create_result.AccountFull))
     Resting, store.Characters(..)
     | Resting, store.CharacterCreated(..)
     | Resting, store.NameTaken
@@ -252,6 +240,15 @@ pub fn answered(
     | Creating, store.NoSuchAccount
     -> Error(Nil)
   }
+}
+
+/// The transition a create's answer makes: the create is done, and 0x00DC
+/// tells the client the result.
+fn created(
+  character_id character_id: Int,
+  result result: CreateResult,
+) -> #(State, List(Effect)) {
+  #(Resting, [create_result(character_id:, result:)])
 }
 
 /// 0x00DC with the character's id (0 for none) and the result.
@@ -287,11 +284,12 @@ fn list_effects(
       ),
     )
     as "a level of the table's checks fits its 32 bits"
+  let index = appearance.index(tables:)
   let assert Ok(body) =
     character_list.encode(CharacterList(
       server_time: filetime,
       characters: list.map(characters, fn(character) {
-        entry(character:, selected:, tables:)
+        entry(character:, selected:, index:)
       }),
       enabled_creation_ids: [],
       disabled_creation_ids: [],
@@ -320,7 +318,7 @@ fn list_effects(
 fn entry(
   character character: Character,
   selected selected: Option(CharacterId),
-  tables tables: table_store.Tables,
+  index index: appearance.Index,
 ) -> CharacterListEntry {
   let CharacterId(character_id) = character.character_id
   CharacterListEntry(
@@ -332,7 +330,7 @@ fn entry(
     faction_id: character.faction_id,
     level: character.level,
     body_visuals: appearance.body_visuals(
-      tables:,
+      index:,
       race_id: character.race_id,
       sex: character.gender,
       faction_id: character.faction_id,
