@@ -7,12 +7,12 @@
 //// exits with 1 when the tables do not load or an engine declares a type no
 //// row uses.
 
-import envoy
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine
 import genesis_prime/coverage/measurement.{type Measurement, Measured}
 import genesis_prime/table
 import genesis_prime/table/loader/store
+import genesis_prime/table_folder
 import gleam/erlang/reference
 import gleam/int
 import gleam/io
@@ -22,7 +22,7 @@ import simplifile
 
 /// Runs the measure.
 pub fn main() -> Nil {
-  let folder = tables_folder()
+  let folder = table_folder.path()
   case table.load(under: reference.new(), from: folder) {
     Error(error) -> {
       io.println(
@@ -67,18 +67,6 @@ fn breaches(measurements: List(Measurement)) -> List(String) {
       Measured(breaches: [], ..) | measurement.Unmeasured(..) -> Error(Nil)
     }
   })
-}
-
-fn tables_folder() -> String {
-  case envoy.get("GENESIS_TABLE_DIR") {
-    Ok(folder) -> folder
-    Error(Nil) ->
-      case envoy.get("GENESIS_HOME"), envoy.get("HOME") {
-        Ok(home), _ -> home <> "/tables"
-        Error(Nil), Ok(home) -> home <> "/.genesis-prime/tables"
-        Error(Nil), Error(Nil) -> "tables"
-      }
-  }
 }
 
 fn describe(error: store.LoadError) -> String {
