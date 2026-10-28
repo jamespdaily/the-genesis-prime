@@ -82,7 +82,7 @@ import genesis_prime/service/shell as service_shell
 import genesis_prime/sessions
 import genesis_prime/step.{type Rule}
 import genesis_prime/store/worker.{type Job}
-import gleam/erlang/process.{type Name}
+import gleam/erlang/process.{type Name, type Pid}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
@@ -343,3 +343,14 @@ fn serve(
     )),
   )
 }
+
+/// Stops the tree, then the VM, when the host sends SIGTERM. The tree is
+/// started outside an application, which the VM's own stop does not shut down,
+/// so without this its processes get no `Stopping` and no recording gets its
+/// `End`. Other signals are handled as the VM does.
+pub fn stop_on_sigterm(tree tree: Pid) -> Nil {
+  stop_tree_on_sigterm(tree)
+}
+
+@external(erlang, "server_shutdown_ffi", "stop_tree_on_sigterm")
+fn stop_tree_on_sigterm(tree: Pid) -> Nil
