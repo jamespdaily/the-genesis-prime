@@ -1,12 +1,11 @@
 //// The live session's two game recordings, replayed through the game rule with
 //// no socket, process or database. Expected values come from these places.
-//// - The recordings (`test/rule_recording/2026-10-28-takeover`): the real
-////   client's connection, on the select screen when a second login to its
-////   account took the session over, which writes 0x036A reason 19 and ends it
-////   (`takeover`), and the second login's connection, which claimed the
-////   account and got its character list (`second`). Each closed with `End`,
-////   which counts 80 inputs for the first and 6 for the
-////   second.
+//// - The recordings (`test/rule_recording/2026-10-28-world-entry`): the real
+////   client's connection that played a level-3 Veteran character into the
+////   world and moved it (`veteran`), and a later connection of the same
+////   client that created a Novice character and played it into the world
+////   (`novice`). Each closed with `End`, which counts 1500 inputs for the
+////   first and 910 for the second.
 //// - The game tables: the header's digest of the table files the server
 ////   loaded; a replay on other files fails with "record again". The replay
 ////   reads the client's tables, so it is skipped where `GENESIS_NO_CLIENT=1`.
@@ -21,22 +20,22 @@ import owned_test
 import rule_replay_support
 import unitest
 
-pub fn the_live_sessions_game_recording_replays_to_the_same_steps_test() -> Nil {
+pub fn the_veteran_entrys_game_recording_replays_to_the_same_steps_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(inputs, count) =
     replayed(file: "genesis_prime.game.connection-5.recording")
   assert inputs == count as "the replay folds every input the End counts"
-  assert count == 80 as "the taken-over connection took 80 inputs"
+  assert count == 1500 as "the Veteran entry's connection took 1500 inputs"
 }
 
-pub fn the_second_logins_game_recording_replays_to_the_same_steps_test() -> Nil {
+pub fn the_novice_entrys_game_recording_replays_to_the_same_steps_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let #(inputs, count) =
-    replayed(file: "genesis_prime.game.connection-9.recording")
+    replayed(file: "genesis_prime.game.connection-19.recording")
   assert inputs == count as "the replay folds every input the End counts"
-  assert count == 6 as "the second login's connection took 6 inputs"
+  assert count == 910 as "the Novice entry's connection took 910 inputs"
 }
 
 fn replayed(file file: String) -> #(Int, Int) {
@@ -51,7 +50,7 @@ fn replayed(file file: String) -> #(Int, Int) {
 
 const game_replay = #(
   "game_replay_test",
-  "the_live_sessions_game_recording_replays_to_the_same_steps_test",
+  "the_veteran_entrys_game_recording_replays_to_the_same_steps_test",
 )
 
 /// The recording replays in a fresh node, where nothing has loaded the
