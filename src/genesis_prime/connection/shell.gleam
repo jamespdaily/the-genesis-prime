@@ -98,19 +98,27 @@
 ////   dropped with the process. A connection with no registry in its settings is
 ////   joined to no group, so no process can send it anything.
 //// - **A watch.** `Watch(id, target)` finds the target's pid with the settings'
-////   `locate`, monitors it and keeps the monitor under `id`. Its DOWN is taken
-////   between steps as `WatchEnded(id)`, once, and the shell forgets the watch. A
-////   target no process holds comes back as `WatchEnded(id)` as the next input,
-////   after the step's effects. `Unwatch(id)` drops the monitor and the DOWN
-////   already waiting. A watch's DOWN that arrives during an ask waits like a
-////   delivered message. An id already open ends the connection with an error
+////   `locate`, monitors it and keeps the monitor under `id`
+////   (genesis_prime/step/watch). Its DOWN is taken between steps as
+////   `WatchEnded(id)`, once, and the shell forgets the watch. A target no
+////   process holds comes back as `WatchEnded(id)` as the next input once the
+////   step is done, and after the outcome of an ask the step ends in, since
+////   no other input is taken meanwhile. `Unwatch(id)` drops the monitor and the
+////   DOWN already waiting. A watch's DOWN that arrives during an ask waits like
+////   a delivered message. An id already open ends the connection with an error
 ////   log.
+//// - **A timer.** `StartTimer(id, ms)` starts an `erlang:send_after` that sends
+////   the shell `{timer_fired, id}`, kept under `id`. It is taken between steps
+////   as `TimerFired(id)`, once, and the shell forgets the timer; one that fires
+////   during an ask waits like a delivered message. `CancelTimer(id)` cancels it
+////   and flushes its message if it had fired, so no `TimerFired` follows; an id
+////   with no running timer does nothing. An id already running ends the
+////   connection with an error log.
 //// - **The registry's scope ending.** The connection stays joined only as long
 ////   as the scope lives; the tree restarts the game listener with the scope, so
 ////   no connection outlives it (genesis_prime/connection/registry).
 //// - **Effects a connection does not carry out.** `Reply` (a connection is
-////   never asked), `Send` (no connection rule sends), `StartTimer` and
-////   `CancelTimer`, which need processes no rule uses yet: the shell logs an
+////   never asked) and `Send` (no connection rule sends): the shell logs an
 ////   error naming the effect and ends the connection.
 
 import genesis_prime/connection/registry.{type Registry}
@@ -118,12 +126,13 @@ import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/service.{type Locate, type Sent, ToService, ToWorker}
 import genesis_prime/step.{
   type Ask, type AskId, type ConnectionId, type Effect, type Event, type Peer,
-  type Rule, type SocketFailure, type WatchId, Accepted, Answer, Answered,
+  type Rule, type SocketFailure, type TimerId, Accepted, Answer, Answered,
   AnsweredLate, ConnectionId, Effects, EffectsThenAsk, EndedBeforeAnswer,
-  LogWarning, NoAnswerInTime, NotRunning, PeerClosed, ReadFailed, Socket,
-  StoppedWaiting, Stopping, WriteFailed,
+  LogError, LogWarning, NoAnswerInTime, NotRunning, PeerClosed, ReadFailed,
+  Socket, StoppedWaiting, Stopping, WriteFailed,
 }
 import genesis_prime/step/runtime.{Shutdown}
+import genesis_prime/step/watch.{type Watches}
 import gleam/crypto
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
@@ -173,9 +182,14 @@ type Arrived(message) {
   KeptEnded(tag: Reference)
   /// Another process sent the connection a message.
   Delivered(message: message)
-  /// The end of a watched process, by its monitor.
+  /// The end of a monitored process that is no kept ask's, by its monitor.
   WatchedEnded(monitor: Monitor)
+  /// A timer the rule started fired.
+  TimerElapsed(timer: TimerId)
 }
+
+/// A timer the shell started: what `erlang:send_after` returned.
+type Timer
 
 /// How an ask's wait ended, as `connection_shell_ffi` sees it.
 type Waited(answer) {
@@ -193,8 +207,8 @@ type Kept {
 
 /// A running connection: its socket, its parent, its settings, the rule's
 /// state, the recording file when there is one, the asks kept by their tags,
-/// the monitor of each watch the rule has open and the stop deadline of a stop
-/// that arrived during an ask.
+/// the monitor of each watch the rule has open, each timer it has running and
+/// the stop deadline of a stop that arrived during an ask.
 type Running(settings, state, message, answer, outgoing, request) {
   Running(
     socket: ClientSocket,
@@ -203,7 +217,8 @@ type Running(settings, state, message, answer, outgoing, request) {
     state: state,
     writer: Option(file.Writer),
     kept: Dict(Reference, Kept),
-    watches: Dict(WatchId, Monitor),
+    watches: Watches,
+    timers: Dict(TimerId, Timer),
     stopping: Option(Int),
   )
 }
@@ -241,7 +256,8 @@ pub fn run(
       state: rule.new(rule.settings),
       writer:,
       kept: dict.new(),
-      watches: dict.new(),
+      watches: watch.new(),
+      timers: dict.new(),
       stopping: None,
     )
   join_registry(settings.registry, ConnectionId(connection))
@@ -361,8 +377,18 @@ fn carry(
           )
         step.Unwatch(watch:) ->
           carry(running: close_watch(running:, watch:), effects: later, then:)
-        step.StartTimer(..) -> not_built(running.socket, "StartTimer")
-        step.CancelTimer(..) -> not_built(running.socket, "CancelTimer")
+        step.StartTimer(timer:, after_ms:) ->
+          carry(
+            running: start_timer_for(running:, timer:, after_ms:),
+            effects: later,
+            then:,
+          )
+        step.CancelTimer(timer:) ->
+          carry(
+            running: cancel_timer_of(running:, timer:),
+            effects: later,
+            then:,
+          )
       }
   }
 }
@@ -410,39 +436,105 @@ fn next(
       next(Running(..running, kept: dict.delete(running.kept, tag)))
     Delivered(message:) -> take(running:, now:, event: step.Woken(message:))
     WatchedEnded(monitor:) -> watch_ended(running:, now:, monitor:)
+    TimerElapsed(timer:) -> {
+      let assert Ok(_started) = dict.get(running.timers, timer)
+        as "a timer's message is taken only for a timer the shell started and has not cancelled"
+      take(
+        running: Running(..running, timers: dict.delete(running.timers, timer)),
+        now:,
+        event: step.TimerFired(timer:),
+      )
+    }
   }
 }
 
 /// Joins the connection's group in the registry, when the settings hold one.
 fn join_registry(registry: Option(Registry), connection: ConnectionId) -> Nil {
-  todo as "the build follows the shape commit"
+  case registry {
+    Some(registry) -> registry.join(registry:, connection:)
+    None -> Nil
+  }
 }
 
 /// Monitors the process the address names under the watch's id.
 fn open_watch(
   running running: Running(settings, state, message, answer, outgoing, request),
-  watch watch: WatchId,
+  watch watch: step.WatchId,
   target target: step.Address,
 ) -> Running(settings, state, message, answer, outgoing, request) {
-  todo as "the build follows the shape commit"
+  Running(
+    ..running,
+    watches: watch.open(
+      watches: running.watches,
+      watch:,
+      target: running.settings.locate(target),
+      shell: "connection shell",
+    ),
+  )
 }
 
 /// Drops the watch's monitor, and the DOWN already waiting for it.
 fn close_watch(
   running running: Running(settings, state, message, answer, outgoing, request),
-  watch watch: WatchId,
+  watch watch: step.WatchId,
 ) -> Running(settings, state, message, answer, outgoing, request) {
-  todo as "the build follows the shape commit"
+  Running(..running, watches: watch.close(watches: running.watches, watch:))
 }
 
 /// Takes the end of a watched process as `WatchEnded` with the id of its
-/// watch; the DOWN of a monitor the shell does not hold is dropped.
+/// watch; the DOWN of a monitor the shell holds under no watch is dropped.
 fn watch_ended(
   running running: Running(settings, state, message, answer, outgoing, request),
   now now: step.Now,
   monitor monitor: Monitor,
 ) -> Nil {
-  todo as "the build follows the shape commit"
+  case watch.ended(watches: running.watches, monitor:) {
+    Ok(#(watch, watches)) ->
+      take(
+        running: Running(..running, watches:),
+        now:,
+        event: step.WatchEnded(watch:),
+      )
+    Error(Nil) -> next(running)
+  }
+}
+
+/// Starts the timer the rule named; an id already running ends the connection.
+fn start_timer_for(
+  running running: Running(settings, state, message, answer, outgoing, request),
+  timer timer: TimerId,
+  after_ms after_ms: Int,
+) -> Running(settings, state, message, answer, outgoing, request) {
+  case dict.has_key(running.timers, timer) {
+    True -> {
+      runtime.log(
+        LogError,
+        "a rule started a timer whose id is already running, which the connection shell does not carry out",
+        step.no_one,
+      )
+      close(running.socket)
+      panic as "a rule started a timer whose id is already running"
+    }
+    False ->
+      Running(
+        ..running,
+        timers: dict.insert(running.timers, timer, start_timer(timer, after_ms)),
+      )
+  }
+}
+
+/// Cancels the timer the rule named, and drops its message if it had fired.
+fn cancel_timer_of(
+  running running: Running(settings, state, message, answer, outgoing, request),
+  timer timer: TimerId,
+) -> Running(settings, state, message, answer, outgoing, request) {
+  case dict.get(running.timers, timer) {
+    Ok(started) -> {
+      cancel_timer(timer, started)
+      Running(..running, timers: dict.delete(running.timers, timer))
+    }
+    Error(Nil) -> running
+  }
 }
 
 /// Makes an ask through the settings' directory and waits for its outcome,
@@ -570,6 +662,12 @@ fn next_event(
   parent: Pid,
   kept: Dict(Reference, Kept),
 ) -> Arrived(message)
+
+@external(erlang, "connection_shell_ffi", "start_timer")
+fn start_timer(timer: TimerId, after_ms: Int) -> Timer
+
+@external(erlang, "connection_shell_ffi", "cancel_timer")
+fn cancel_timer(timer: TimerId, started: Timer) -> Nil
 
 @external(erlang, "connection_shell_ffi", "send_answer")
 fn send_answer(shell: Pid, tag: Reference, answer: answer) -> Nil

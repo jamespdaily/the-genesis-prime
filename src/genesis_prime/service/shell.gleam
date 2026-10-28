@@ -78,11 +78,12 @@ import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/service.{type Call, type Reach, Call}
 import genesis_prime/step.{
   type Event, type Rule, type WatchId, Asked, CallerId, Effects, EffectsThenAsk,
-  Started, Stopping,
+  Started, Stopping, WatchEnded,
 }
 import genesis_prime/step/runtime.{type ExitReason, Shutdown}
+import genesis_prime/step/watch.{type Watches}
 import gleam/dict.{type Dict}
-import gleam/erlang/process.{type Monitor, type Name, type Pid}
+import gleam/erlang/process.{type Name, type Pid}
 import gleam/option.{type Option}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
@@ -127,7 +128,7 @@ type Running(settings, state, message, outgoing) {
     writer: Option(file.Writer),
     callers: Dict(Int, fn(outgoing) -> Nil),
     next_caller: Int,
-    watches: Dict(WatchId, Monitor),
+    watches: Watches,
   )
 }
 
@@ -194,7 +195,7 @@ fn initialise(
         writer:,
         callers: dict.new(),
         next_caller: 1,
-        watches: dict.new(),
+        watches: watch.new(),
       ),
       now: runtime.now(),
       event: Started,
@@ -340,7 +341,8 @@ fn deliver(
   to to: step.Address,
   message message: outgoing,
 ) -> Running(settings, state, message, outgoing) {
-  todo as "the build follows the shape commit"
+  let _delivered = running.settings.reach.send(to, message)
+  running
 }
 
 /// Monitors the process at the address under the watch's id.
@@ -349,7 +351,15 @@ fn open_watch(
   watch watch: WatchId,
   target target: step.Address,
 ) -> Running(settings, state, message, outgoing) {
-  todo as "the build follows the shape commit"
+  Running(
+    ..running,
+    watches: watch.open(
+      watches: running.watches,
+      watch:,
+      target: running.settings.reach.locate(target),
+      shell: "service shell",
+    ),
+  )
 }
 
 /// Drops the watch's monitor, and the DOWN already waiting for it.
@@ -357,7 +367,7 @@ fn close_watch(
   running running: Running(settings, state, message, outgoing),
   watch watch: WatchId,
 ) -> Running(settings, state, message, outgoing) {
-  todo as "the build follows the shape commit"
+  Running(..running, watches: watch.close(watches: running.watches, watch:))
 }
 
 /// Takes the end of a watched process as `WatchEnded` with the id of its
@@ -367,7 +377,19 @@ fn watch_ended(
   running running: Running(settings, state, message, outgoing),
   down down: process.Down,
 ) -> Running(settings, state, message, outgoing) {
-  todo as "the build follows the shape commit"
+  let monitor = case down {
+    process.ProcessDown(monitor:, ..) | process.PortDown(monitor:, ..) ->
+      monitor
+  }
+  case watch.ended(watches: running.watches, monitor:) {
+    Ok(#(watch, watches)) ->
+      take(
+        running: Running(..running, watches:),
+        now: runtime.now(),
+        event: WatchEnded(watch:),
+      )
+    Error(Nil) -> running
+  }
 }
 
 /// Ends the recording and exits with the reason `shutdown`.

@@ -4,6 +4,12 @@
 ////   as approved on the login processes card: its first input, how callers are
 ////   numbered, what a stop gives and which effects it refuses.
 //// - The hand-off's answers in the doc comment of `genesis_prime/hand_off`.
+//// - Send, Watch and Unwatch in the same doc comment: the address is looked up
+////   with the settings' `reach`, a watch's end comes back once as
+////   `WatchEnded` with the watch's id, a target no process holds comes back as
+////   the next input, an unwatched watch's end does not come back, and an id
+////   already open ends the process with an error log. The gate answers
+////   `Opened(n)` to a caller waiting for key `n` when watch `n` ends.
 //// - OTP's supervisor: a permanent child is restarted when it crashes, and
 ////   `supervisor:which_children` answers after the supervisor has handled the
 ////   exit it already received.
@@ -19,7 +25,8 @@ import genesis_prime/rule_recording/file
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{
-  Asked, CallerId, Effects, Input, Reply, Started, Stop, Stopping,
+  type Address, Asked, CallerId, Connection, ConnectionId, Effects, Input, Reply,
+  Sessions, Started, Stop, Stopping, Store,
 }
 import genesis_prime/store.{AccountId}
 import gleam/erlang/process
@@ -248,8 +255,6 @@ pub fn a_refused_effect_ends_the_process_with_an_error_log_test() -> Nil {
   use <- owned_test.run(60_000)
   list.each(
     [
-      #(gate_rule.TrySend, "Send"),
-      #(gate_rule.TryWatch, "Watch"),
       #(gate_rule.TryTimer, "StartTimer"),
       #(gate_rule.TryAsk, "ask"),
     ],
@@ -283,6 +288,149 @@ pub fn a_refused_effect_ends_the_process_with_an_error_log_test() -> Nil {
   )
 }
 
+pub fn a_send_is_handed_to_the_receivers_address_and_one_to_a_receiver_not_running_is_dropped_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let sent = process.new_subject()
+  let running = Connection(ConnectionId(1))
+  let reach =
+    service.Reach(locate: fn(_address) { Error(Nil) }, send: fn(to, message) {
+      process.send(sent, #(to, message))
+      case to == running {
+        True -> Ok(Nil)
+        False -> Error(Nil)
+      }
+    })
+  let gate = process.new_name("gate")
+  let tree =
+    start_tree(ask_support.reaching(
+      name: gate,
+      shutdown_ms: 1000,
+      recorder: None,
+      reach:,
+    ))
+  let assert Ok(pid) = process.named(gate) as "the gate runs"
+  assert ask_support.call_gate(gate, gate_rule.SendTo(running, 3))
+    == gate_rule.Echoed(3)
+    as "the step went on to its reply"
+  assert process.receive(sent, within: ask_support.event_wait_ms)
+    == Ok(#(running, gate_rule.Echoed(3)))
+    as "the shell asked reach to send the rule's message to the rule's address"
+  let absent = Connection(ConnectionId(2))
+  assert ask_support.call_gate(gate, gate_rule.SendTo(absent, 4))
+    == gate_rule.Echoed(4)
+    as "a receiver that is not running drops the message and the step goes on"
+  assert process.receive(sent, within: ask_support.event_wait_ms)
+    == Ok(#(absent, gate_rule.Echoed(4)))
+  assert process.named(gate) == Ok(pid)
+    as "the same process goes on: a dropped message is no failure"
+  let _reason = ask_support.stop_tree(tree)
+  Nil
+}
+
+pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watchs_id_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let target = process.spawn_unlinked(process.sleep_forever)
+  let gate = process.new_name("gate")
+  let tree = start_tree(watching(gate:, locating: Sessions, at: target))
+  let replies = process.new_subject()
+  let assert Ok(service.ToService(_)) =
+    service.call(gate, gate_rule.Await(key: 1), fn(answer) {
+      process.send(replies, answer)
+    })
+    as "the gate took the wait for key 1"
+  assert ask_support.call_gate(gate, gate_rule.WatchAddress(1, Sessions))
+    == gate_rule.Echoed(1)
+    as "the address is found with reach's locate, which names the target"
+  assert ask_support.call_gate(gate, gate_rule.Echo(0)) == gate_rule.Echoed(0)
+  assert process.receive(replies, within: 0) == Error(Nil)
+    as "the target runs, so the watch has not ended"
+  let ended = process.monitor(target)
+  process.kill(target)
+  let _reason = ask_support.ended(ended)
+  assert process.receive(replies, within: ask_support.event_wait_ms)
+    == Ok(gate_rule.Opened(1))
+    as "the target's end reached the rule as WatchEnded(WatchId(1))"
+  let _reason = ask_support.stop_tree(tree)
+  Nil
+}
+
+pub fn a_watch_on_an_address_no_process_holds_comes_back_as_watch_ended_after_the_step_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let target = process.spawn_unlinked(process.sleep_forever)
+  let gate = process.new_name("gate")
+  let tree = start_tree(watching(gate:, locating: Sessions, at: target))
+  let replies = process.new_subject()
+  let assert Ok(service.ToService(_)) =
+    service.call(gate, gate_rule.Await(key: 2), fn(answer) {
+      process.send(replies, answer)
+    })
+    as "the gate took the wait for key 2"
+  assert ask_support.call_gate(gate, gate_rule.WatchAddress(2, Store))
+    == gate_rule.Echoed(2)
+    as "the step with the watch is carried out to its reply"
+  assert process.receive(replies, within: ask_support.event_wait_ms)
+    == Ok(gate_rule.Opened(2))
+    as "no process holds Store's address, so the watch's end is the next input"
+  process.kill(target)
+  let _reason = ask_support.stop_tree(tree)
+  Nil
+}
+
+pub fn an_unwatch_drops_the_watch_so_the_targets_end_gives_no_watch_ended_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let target = process.spawn_unlinked(process.sleep_forever)
+  let gate = process.new_name("gate")
+  let tree = start_tree(watching(gate:, locating: Sessions, at: target))
+  assert ask_support.call_gate(gate, gate_rule.WatchAddress(3, Sessions))
+    == gate_rule.Echoed(3)
+  assert ask_support.call_gate(gate, gate_rule.Release(3))
+    == gate_rule.Echoed(3)
+  let ended = process.monitor(target)
+  process.kill(target)
+  let _reason = ask_support.ended(ended)
+  // Asks from one process reach the gate in order, and the gate answers a wait
+  // for an open key in the step that takes it: once the next ask is answered, a
+  // WatchEnded the target's end had sent would already have opened key 3.
+  let replies = process.new_subject()
+  let assert Ok(service.ToService(_)) =
+    service.call(gate, gate_rule.Await(key: 3), fn(answer) {
+      process.send(replies, answer)
+    })
+    as "the gate took the wait for key 3"
+  assert ask_support.call_gate(gate, gate_rule.Echo(0)) == gate_rule.Echoed(0)
+  assert process.receive(replies, within: 0) == Error(Nil)
+    as "key 3 is not open: the unwatched target's end gave no WatchEnded"
+  let _reason = ask_support.stop_tree(tree)
+  Nil
+}
+
+pub fn a_watch_id_already_open_ends_the_process_with_an_error_log_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let target = process.spawn_unlinked(process.sleep_forever)
+  let gate = process.new_name("gate")
+  let tree = start_tree(watching(gate:, locating: Sessions, at: target))
+  let assert Ok(pid) = process.named(gate) as "the gate runs"
+  assert ask_support.call_gate(gate, gate_rule.WatchAddress(4, Sessions))
+    == gate_rule.Echoed(4)
+  let logged = process.new_subject()
+  let capture = log_capture.start(from: pid, into: logged)
+  let service = process.monitor(pid)
+  let assert Ok(service.ToService(_)) =
+    service.call(gate, gate_rule.WatchAddress(4, Sessions), fn(_answer) { Nil })
+    as "the gate took the second watch with the same id"
+  let assert process.Abnormal(_) = ask_support.ended(service)
+    as "the service shell ended the process abnormally"
+  let assert Ok(#("error", text)) =
+    process.receive(logged, within: ask_support.event_wait_ms)
+    as "the first thing logged is an error"
+  assert string.contains(text, "already open")
+    as "the error says the watch's id is already open"
+  log_capture.stop(capture)
+  process.kill(target)
+  let _reason = ask_support.stop_tree(tree)
+  Nil
+}
+
 pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_process_ends_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
@@ -306,6 +454,29 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
 }
 
 // ---- helpers ----
+
+/// The gate as a child whose `locate` finds `target` at `locating` and no
+/// process at any other address.
+fn watching(
+  gate gate: process.Name(service.Call(gate_rule.Message, gate_rule.Answer)),
+  locating locating: Address,
+  at target: process.Pid,
+) -> ChildSpecification(Nil) {
+  ask_support.reaching(
+    name: gate,
+    shutdown_ms: 1000,
+    recorder: None,
+    reach: service.Reach(
+      locate: fn(address) {
+        case address == locating {
+          True -> Ok(target)
+          False -> Error(Nil)
+        }
+      },
+      send: fn(_to, _message) { Error(Nil) },
+    ),
+  )
+}
 
 fn start_tree(child: ChildSpecification(Nil)) -> process.Pid {
   let assert Ok(started) =

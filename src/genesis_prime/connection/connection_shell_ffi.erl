@@ -8,7 +8,7 @@
 
 -export([start_link/3, start_listener/4, listener_port/1, handshake/2,
          read_once/1, next_event/3, send/2, close/1, peer/1,
-         send_answer/3, await_answer/4]).
+         send_answer/3, await_answer/4, start_timer/2, cancel_timer/2]).
 
 %% Starts the connection's process, linked to Ranch's connection supervisor,
 %% which is the calling process and the shell's parent.
@@ -60,10 +60,13 @@ read_once(Socket) ->
     end.
 
 %% Waits for what reaches the process next: a read, the peer's close, a read
-%% failure, or the parent's stop. Kept maps the tag of each ask whose outcome
-%% was NoAnswerInTime or StoppedWaiting to {kept, Ask, Monitor}: its late answer
-%% comes as {late_answer, Tag} and its target's end as {kept_ended, Tag}. The
-%% answer or end of a tag that is not kept, and another process's exit, are not
+%% failure, the parent's stop, a message another process delivered
+%% ({woken, Message}, which registry.deliver sends), a timer's firing or the end
+%% of a monitored process. Kept maps the tag of each ask whose outcome was
+%% NoAnswerInTime or StoppedWaiting to {kept, Ask, Monitor}: its late answer
+%% comes as {late_answer, Tag} and its target's end as {kept_ended, Tag}. A DOWN
+%% that is no kept ask's is a watch's: the shell finds the watch by the monitor.
+%% The answer of a tag that is not kept, and another process's exit, are not
 %% the shell's and are dropped, so the mailbox never fills with them.
 next_event(Socket, Parent, Kept) ->
     receive
@@ -75,10 +78,12 @@ next_event(Socket, Parent, Kept) ->
         {ask_answer, Tag, _Answer} when is_map_key(Tag, Kept) ->
             {late_answer, Tag};
         {ask_answer, _Tag, _Answer} -> next_event(Socket, Parent, Kept);
+        {woken, Message} -> {delivered, Message};
+        {timer_fired, TimerId} -> {timer_elapsed, TimerId};
         {'DOWN', Monitor, process, _Pid, _Reason} ->
             case kept_with_monitor(Monitor, Kept) of
                 {ok, Tag} -> {kept_ended, Tag};
-                error -> next_event(Socket, Parent, Kept)
+                error -> {watched_ended, Monitor}
             end
     end.
 
@@ -113,6 +118,18 @@ await_answer(Tag, Monitor, Parent, DeadlineMs) ->
             after Remaining -> deadline_passed
             end
     end.
+
+%% Starts a timer that sends this process {timer_fired, TimerId} after AfterMs,
+%% and gives the timer.
+start_timer(TimerId, AfterMs) ->
+    erlang:send_after(AfterMs, self(), {timer_fired, TimerId}).
+
+%% Cancels a timer and flushes its message from the mailbox when it fired
+%% before the cancel, so a cancelled timer never reaches the rule.
+cancel_timer(TimerId, Timer) ->
+    _ = erlang:cancel_timer(Timer),
+    receive {timer_fired, TimerId} -> ok after 0 -> ok end,
+    nil.
 
 %% Writes the bytes; a write that waits past the socket's send deadline fails
 %% as send_timed_out and closes the socket.

@@ -79,6 +79,7 @@ effectful_modules = [
   { module = "genesis_prime/connection/registry", reason = "starts OTP's pg scope under the supervision tree, and joins and looks in it for a connection shell" },
   { module = "genesis_prime/rule_recording/file", reason = "writes a connection's recording to a file" },
   { module = "genesis_prime/step/runtime", reason = "reads the clock and the node's unique numbers and writes log lines for a shell" },
+  { module = "genesis_prime/step/watch", reason = "monitors the processes a shell's rule watches, for the service shell and the connection shell" },
   { module = "genesis_prime/service", reason = "reaches a named service by a send, for an asker's directory" },
   { module = "genesis_prime/service/shell", reason = "runs a service's rule as a named actor and carries out its effects" },
   { module = "genesis_prime/store/worker", reason = "runs one ask's query on the database pool in a worker of its own" },
