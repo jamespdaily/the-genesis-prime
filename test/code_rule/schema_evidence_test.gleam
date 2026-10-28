@@ -503,10 +503,17 @@ pub fn the_game_servers_messages_with_their_records_name_every_field_or_its_safe
   let sent_messages =
     schema_evidence.sent_messages(repository.sources(under: ["src"]))
   assert list.all(
-    ["server_hello", "character_list", "disconnect_notice"],
+    [
+      "server_hello",
+      "character_list",
+      "disconnect_notice",
+      "create_character_result",
+      "play_character_refused",
+      "max_character_level",
+    ],
     list.contains(sent_messages, _),
   )
-    as "the game rule imports the hello (through genesis_prime/connection/hello), the character list and the disconnect notice, so each is read as sent"
+    as "the game rule imports the hello (through genesis_prime/connection/hello), the character list, the disconnect notice, the create result, the play refusal and the highest level, so each is read as sent"
   assert schema_evidence.breaches(
       file: SourceFile(path: "src/genesis_prime/message/schema.toml", text:),
       fact_keys: repository.fact_keys(),

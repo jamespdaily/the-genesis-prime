@@ -5,6 +5,7 @@
 //// library's vector inserted.
 
 import ask_support
+import client_tables
 import connection_rule_support as support
 import database_support
 import genesis_prime/add_account/sql
@@ -74,6 +75,8 @@ pub fn game() -> server.Served(game_connection.Settings) {
     settings: game_connection.Settings(
       realm_id: 1,
       max_characters: 12,
+      character_slots: 2,
+      tables: client_tables.shared(),
       ask_deadline_ms: 5000,
     ),
     recorder: None,

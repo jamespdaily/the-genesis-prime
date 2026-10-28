@@ -65,8 +65,8 @@ fn start() -> Result(Nil, Failure) {
   use sts_digest <- result.try(digest(sts_connection.rule_name))
   use auth_digest <- result.try(digest(auth_connection.rule_name))
   use game_digest <- result.try(digest(game_connection.rule_name))
-  let tables = genesis_prime.load_tables()
-  let settings = genesis_prime.settings()
+  let #(tables, loaded) = genesis_prime.load_tables()
+  let settings = genesis_prime.settings(tables:)
   let login = settings.login
   let auth =
     auth_connection.Settings(
@@ -94,7 +94,7 @@ fn start() -> Result(Nil, Failure) {
     )
   genesis_prime.start(
     settings: server.Settings(..settings, login:, game:),
-    tables:,
+    tables: loaded,
   )
   Ok(Nil)
 }

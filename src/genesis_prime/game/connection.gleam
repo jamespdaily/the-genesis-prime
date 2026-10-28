@@ -15,7 +15,11 @@
 //// 0x244{0x07E0}                   waits in the bytes read until the
 ////   (same read, session key)      hand-off answers
 ////   Taken(holder)                 the bytes are taken again       ─▶ store: ListCharacters(account)
-////     Characters(rows)         ◀─ 0x3DC{0x0117 character_list}, session key
+////     Characters(rows)         ◀─ 0x3DC{0x0036 level}, 0x3DC{0x0117 character_list}, session key
+//// 0x244{0x025C{0x025B}}        ─▶ checked                         ─▶ store: CreateCharacter(..)
+////     CharacterCreated(id)     ◀─ 0x3DC{0x00DC create result}, session key
+//// 0x244{0x07DD}                ◀─ 0x3DC{0x0162 refused}           ─▶ store: ListCharacters(account)
+////     Characters(rows)         ◀─ 0x0036, 0x0117, as above
 //// 0x244{0x038C{0x082D}}        ─▶ logged as unhandled
 //// 0x244{0x0241}                ─▶ logged as unhandled
 //// ping 0x0, bare               ◀─ pong 0x1, bare
@@ -35,12 +39,14 @@
 //// - **Reads during an ask.** Frames after the one that asked stay in the
 ////   bytes read and are taken once the answer comes, so 0x07E0 is taken after
 ////   the hand-off's answer, and 0x038C and 0x0241 after the store's.
-//// - **The character list** is character select's own feature
-////   (genesis_prime/game/character_select): it makes its own store ask and
-////   takes the store's answer, and the rule turns its effects into writes in
-////   the game wrapper and into the ask. The failures every ask shares (no
-////   answer, or the store unavailable) are the rule's, so a feature added to
-////   character select adds no status here.
+//// - **The character list and creating a character** are character select's
+////   own feature (genesis_prime/game/character_select): it makes its own store
+////   asks and takes the store's answers, and the rule turns its effects into
+////   writes in the game wrapper, log lines and the ask. The rule decodes what
+////   the client sent into typed values first: 0x025C carries the whole frame
+////   of 0x025B (opcode.0x25c), and 0x07DD is the client's play request. The
+////   failures every ask shares (no answer, or the store unavailable) are the
+////   rule's, so a request added to character select adds no status here.
 //// - **The server never ends a connection after the hello without telling
 ////   the client**, which waits for the list with no timeout and would stay on
 ////   its prompt otherwise (lua.Character.OnCharacterList): 0x036A in the game
@@ -67,9 +73,10 @@
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
 //// - **Out of order.** A frame the client's reader would refuse ends the
-////   connection; a whole frame of a message the rule does not take, 0x038C
-////   with 0x082D inside it, 0x0241 and any other, is logged as unhandled and
-////   the connection goes on (opcode.0x241).
+////   connection, as does a 0x025C that holds no 0x025B or a 0x025B or 0x07DD
+////   whose body is cut; a whole frame of a message the rule does not take,
+////   0x038C with 0x082D inside it, 0x0241 and any other, is logged as
+////   unhandled and the connection goes on (opcode.0x241).
 
 import genesis_prime/client_connection.{
   type Answer, type Link, type Request, AskHandOff, AskStore, Asking, Bytes,
@@ -84,16 +91,20 @@ import genesis_prime/hand_off.{type Holder, SessionKey, Take}
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
 import genesis_prime/message/character_select_start
+import genesis_prime/message/create_character
+import genesis_prime/message/create_character_carrier
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, LostUserServer,
 }
 import genesis_prime/message/game_hello_reply
+import genesis_prime/message/play_character
 import genesis_prime/step.{
   type Effect, type Input, type Now, type Outcome, type Rule, type Step, Effects,
   LogWarning, Stop, Write,
 }
 import genesis_prime/store
+import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -111,6 +122,13 @@ pub type Settings {
     /// The number of characters the client's list is told the account may
     /// have; the Lua keeps it and nothing reads it (lua.Character.OnCharacterList).
     max_characters: Int,
+    /// The characters an account may have: the client's own count of slots
+    /// for an account with no entitlement, which no message carries
+    /// (lua.CharacterSelection.OnLoadFromCharacter).
+    character_slots: Int,
+    /// The client's game tables, which a create request and the list's body
+    /// visuals are read from.
+    tables: table_store.Tables,
     /// How long an ask to the hand-off or the store may take.
     ask_deadline_ms: Int,
   )
@@ -336,13 +354,12 @@ fn taken_message(
           )
       }
     InCharacterSelect(holder:, ..) ->
-      case
-        is_hello_reply,
-        inner.message_id == character_select_start.message_id
-      {
-        True, _ -> end_for(session, "0x058F was sent a second time")
-        False, True -> select_started(session:, now:, holder:, inner:)
-        False, False ->
+      case select_message(inner.message_id) {
+        HelloReplyAgain -> end_for(session, "0x058F was sent a second time")
+        SelectStart -> select_started(session:, now:, holder:, inner:)
+        CreateRequest -> create_requested(session:, now:, holder:, inner:)
+        PlayRequest -> play_requested(session:, now:, holder:, inner:)
+        NotTaken ->
           client_connection.unhandled(
             session:,
             link: session.link,
@@ -403,6 +420,30 @@ fn describe_key_error(error: cipher.KeyError) -> String {
   }
 }
 
+/// Which of the client's messages character select takes a message is.
+type SelectMessage {
+  /// A second 0x058F.
+  HelloReplyAgain
+  /// 0x07E0.
+  SelectStart
+  /// 0x025C, which carries a create request.
+  CreateRequest
+  /// 0x07DD, the request to play a character.
+  PlayRequest
+  /// Any other message.
+  NotTaken
+}
+
+fn select_message(message_id: Int) -> SelectMessage {
+  case message_id {
+    id if id == game_hello_reply.message_id -> HelloReplyAgain
+    id if id == character_select_start.message_id -> SelectStart
+    id if id == create_character_carrier.message_id -> CreateRequest
+    id if id == play_character.message_id -> PlayRequest
+    _ -> NotTaken
+  }
+}
+
 /// The client's 0x07E0: character select starts for the holder's account.
 fn select_started(
   session session: Session,
@@ -416,16 +457,111 @@ fn select_started(
         session,
         "0x07E0 does not decode: " <> bit_stream.describe_decode(error:),
       )
-    Ok(_) -> {
-      let #(select, effects) = character_select.started(holder.account_id)
-      carry_out(
-        session: Session(..session, status: InCharacterSelect(holder:, select:)),
+    Ok(_) ->
+      select_step(
+        session:,
         now:,
-        effects:,
-        written: [],
+        holder:,
+        step: character_select.started(holder.account_id),
       )
-    }
   }
+}
+
+/// The client's 0x025C: the whole frame of a 0x025B create request, which
+/// character select checks and asks the store to make.
+fn create_requested(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  case create_character_carrier.decode(inner.body) {
+    Error(error) ->
+      end_for(
+        session,
+        "0x025C does not decode: " <> bit_stream.describe_decode(error:),
+      )
+    Ok(carrier) ->
+      case frame.parse(carrier.inner_frame) {
+        Error(error) ->
+          end_for(
+            session,
+            "0x025C holds no whole frame: " <> frame.describe(error),
+          )
+        Ok(whole) if whole.message_id != create_character.message_id ->
+          end_for(
+            session,
+            "0x025C holds "
+              <> client_connection.message_text(whole.message_id)
+              <> ", not 0x025B",
+          )
+        Ok(whole) ->
+          case create_character.decode(whole.body) {
+            Error(error) ->
+              end_for(
+                session,
+                "0x025B does not decode: " <> bit_stream.describe_decode(error:),
+              )
+            Ok(request) ->
+              select_step(
+                session:,
+                now:,
+                holder:,
+                step: character_select.create_requested(
+                  account_id: holder.account_id,
+                  request:,
+                  tables: session.settings.tables,
+                  character_slots: session.settings.character_slots,
+                ),
+              )
+          }
+      }
+  }
+}
+
+/// The client's 0x07DD: the request to play a character, which character
+/// select refuses and answers with the list again.
+fn play_requested(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  case play_character.decode(inner.body) {
+    Error(error) ->
+      end_for(
+        session,
+        "0x07DD does not decode: " <> bit_stream.describe_decode(error:),
+      )
+    Ok(request) ->
+      select_step(
+        session:,
+        now:,
+        holder:,
+        step: character_select.play_requested(
+          account_id: holder.account_id,
+          request:,
+        ),
+      )
+  }
+}
+
+/// Character select's new state and what it decided, carried out.
+fn select_step(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  step step: #(character_select.State, List(character_select.Effect)),
+) -> client_connection.Handled(Session) {
+  carry_out(
+    session: Session(
+      ..session,
+      status: InCharacterSelect(holder:, select: step.0),
+    ),
+    now:,
+    effects: step.1,
+    written: [],
+  )
 }
 
 /// Turns what character select decided into writes, and into its ask, which
@@ -442,6 +578,11 @@ fn carry_out(
     [character_select.Send(frame:), ..rest] ->
       carry_out(session:, now:, effects: rest, written: [
         to_client(session, frame),
+        ..written
+      ])
+    [character_select.Warn(text:), ..rest] ->
+      carry_out(session:, now:, effects: rest, written: [
+        log(session:, level: LogWarning, text:),
         ..written
       ])
     [character_select.Ask(request:), ..] ->
@@ -553,6 +694,7 @@ fn select_answered(
           filetime: now.filetime,
           realm_id: session.settings.realm_id,
           max_characters: session.settings.max_characters,
+          tables: session.settings.tables,
         )
       {
         Ok(#(select, effects)) ->
