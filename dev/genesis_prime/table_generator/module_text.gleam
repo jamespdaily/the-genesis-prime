@@ -5,8 +5,9 @@
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table_generator/difference
 import genesis_prime/table_generator/naming
-import genesis_prime/table_generator/reference.{type Table, Table}
+import genesis_prime/table_generator/reference.{type Table}
 import gleam/bool
+import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/result
@@ -44,21 +45,23 @@ type Reader {
   Reader(field: String, column: String, table: Table)
 }
 
-/// The module for a table: `file` is the name of its file without `.tbl`, and
-/// `tables` is every table that is loaded, which the columns that hold their
-/// ids are matched against.
+/// A table's module, and the columns of the table that name an id of no
+/// loaded table, by the client's column names.
+pub type Rendered {
+  Rendered(text: String, unmatched: List(String))
+}
+
+/// The module for a table: `file` is the name of its file without `.tbl`,
+/// `table` is the table's names, and `tables` is every table that is loaded,
+/// which the columns that hold their ids are matched against.
 pub fn render(
   file file: String,
   description description: tbl_file.Description,
-  tables tables: List(Table),
-) -> Result(String, ModuleError) {
+  table own: Table,
+  tables tables: Dict(String, Table),
+) -> Result(Rendered, ModuleError) {
   let table = description.table
-  use type_name <- result.try(
-    naming.type_name(table) |> result.map_error(Unnamed),
-  )
-  use snake <- result.try(
-    naming.module_name(table) |> result.map_error(Unnamed),
-  )
+  let type_name = own.type_name
   use <- bool.guard(
     when: list.contains(prelude_types, type_name),
     return: Error(ReservedTypeName(table)),
@@ -77,43 +80,71 @@ pub fn render(
     )),
   )
   use fields <- result.try(name_fields(table, placed))
-  let own = Table(snake:, type_name:)
-  let readers = readers(fields:, own:, tables:)
-  Ok(string.join(
-    [
-      header(file, table),
-      imports(fields:, own:, readers:),
-      row_type(type_name:, table:, fields:),
-      schema(file, description),
-      entry(table),
-      get(own, table),
-      all(type_name, table),
-      list.map(readers, reader(type_name, _)) |> string.join("\n"),
-      row_id(type_name),
-      decoder(type_name, fields),
-    ],
-    "\n",
-  ))
+  let #(readers, unmatched) = readers(fields:, own:, tables:)
+  let text =
+    string.join(
+      [
+        header(file, table),
+        imports(fields:, own:, readers:),
+        row_type(type_name:, table:, fields:),
+        schema(file, description),
+        entry(table),
+        get(own, table),
+        all(type_name, table),
+        list.map(readers, reader(type_name, _)) |> string.join("\n"),
+        row_id(type_name),
+        decoder(type_name, fields),
+      ],
+      "\n",
+    )
+  Ok(Rendered(text:, unmatched:))
+}
+
+fn has_id_column(columns: List(tbl_file.Column)) -> Bool {
+  case columns {
+    [tbl_file.Column(name:, column_type: tbl_file.Integer32), ..] ->
+      string.lowercase(name) == "id"
+    _ -> False
+  }
 }
 
 /// The readers of a table: its own `id` column, and each 32-bit integer column
-/// whose name follows another table's name with `_id`.
+/// whose name follows another table's name with `_id`; and the client names of
+/// the 32-bit integer columns that have the word `id` and follow no table's
+/// name.
 fn readers(
   fields fields: List(NamedField),
   own own: Table,
-  tables tables: List(Table),
-) -> List(Reader) {
-  list.filter_map(fields, fn(named) {
-    let column = named.placed.column
-    case column.column_type, named.field {
-      tbl_file.Integer32, "id" ->
-        Ok(Reader(field: named.field, column: column.name, table: own))
-      tbl_file.Integer32, field ->
-        reference.referenced_table(column: field, tables:)
-        |> result.map(fn(table) { Reader(field:, column: column.name, table:) })
-      _, _ -> Error(Nil)
-    }
-  })
+  tables tables: Dict(String, Table),
+) -> #(List(Reader), List(String)) {
+  let #(readers, unmatched) =
+    list.fold(fields, #([], []), fn(found, named) {
+      let #(readers, unmatched) = found
+      let column = named.placed.column
+      case column.column_type, named.field {
+        tbl_file.Integer32, "id" -> #(
+          [
+            Reader(field: named.field, column: column.name, table: own),
+            ..readers
+          ],
+          unmatched,
+        )
+        tbl_file.Integer32, field ->
+          case reference.referenced_table(column: field, tables:) {
+            Ok(table) -> #(
+              [Reader(field:, column: column.name, table:), ..readers],
+              unmatched,
+            )
+            Error(Nil) ->
+              case reference.names_an_id(field) {
+                True -> #(readers, [column.name, ..unmatched])
+                False -> #(readers, unmatched)
+              }
+          }
+        _, _ -> found
+      }
+    })
+  #(list.reverse(readers), list.reverse(unmatched))
 }
 
 /// The id type of a table, which `genesis_prime/table/id` holds.
@@ -149,14 +180,6 @@ fn reader(type_name: String, reader: Reader) -> String {
   )
 }
 
-fn has_id_column(columns: List(tbl_file.Column)) -> Bool {
-  case columns {
-    [tbl_file.Column(name:, column_type: tbl_file.Integer32), ..] ->
-      string.lowercase(name) == "id"
-    _ -> False
-  }
-}
-
 /// Names every field, refusing two with one name.
 fn name_fields(
   table: String,
@@ -189,8 +212,7 @@ fn header(file: String, table: String) -> String {
         <> " table: its row type, its schema and the decoder",
       "//// of its records. The layout is the client's (game_table.file, game_table.schema",
       "//// and game_table.column_type in the fact file); the table loads only when its",
-      "//// file's header equals `schema`.",
-      "//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.",
+      "//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.",
       "",
     ],
     "\n",

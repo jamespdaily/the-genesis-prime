@@ -50,15 +50,9 @@ const table_folder = "genesis_prime/table"
 
 const registry_path = "genesis_prime/table.gleam"
 
-/// A table file read: its file name, its header, its module name and its
-/// place among the tables.
+/// A table file read: its file name, its header and its names.
 type Named {
-  Named(
-    file: String,
-    description: tbl_file.Description,
-    module: String,
-    table: Table,
-  )
+  Named(file: String, description: tbl_file.Description, table: Table)
 }
 
 /// A column that names an id of a table, when no loaded table has that name:
@@ -67,64 +61,63 @@ pub type IdColumn {
   IdColumn(table: String, column: String)
 }
 
+/// The generated code and what the generation found.
+pub type Generated {
+  Generated(
+    /// The code as path to text.
+    files: Dict(String, String),
+    /// The columns that name an id of no loaded table, in table and column
+    /// order.
+    unmatched: List(IdColumn),
+  )
+}
+
 /// The generated code as path to text, one entry per `.tbl` file given as file
 /// name without extension and bytes, plus the `genesis_prime/table` module and
-/// the typed ids of `genesis_prime/table/id`. A path is relative to the source
-/// folder: `genesis_prime/table/creature2.gleam`. The text is unformatted.
+/// the typed ids of `genesis_prime/table/id`, and the columns that name an id
+/// of no loaded table. A path is relative to the source folder:
+/// `genesis_prime/table/creature2.gleam`. The text is unformatted.
 pub fn generate(
   tables tables: List(#(String, BitArray)),
-) -> Result(Dict(String, String), GenerateError) {
+) -> Result(Generated, GenerateError) {
   use named <- result.try(named_tables(tables))
   let known = list.map(named, fn(table) { table.table })
+  let index = reference.index(known)
   use modules <- result.try(
     list.try_map(named, fn(table) {
       module_text.render(
         file: table.file,
         description: table.description,
-        tables: known,
+        table: table.table,
+        tables: index,
       )
-      |> result.map(fn(text) { #(table.module, text) })
+      |> result.map(fn(rendered) { #(table, rendered) })
       |> result.map_error(BadTable(table.file, _))
     }),
   )
   let registry =
-    registry_text.render(list.map(named, fn(table) { table.module }))
-  list.map(modules, fn(module) {
-    #(table_folder <> "/" <> module.0 <> ".gleam", module.1)
-  })
-  |> list.prepend(#(
-    table_folder <> "/" <> id_text.module_name <> ".gleam",
-    id_text.render(known),
-  ))
-  |> list.prepend(#(registry_path, registry))
-  |> dict.from_list
-  |> Ok
-}
-
-/// The columns of the tables that have the word `id` in their names and name
-/// no loaded table's id, in table and column order.
-pub fn unmatched_id_columns(
-  tables tables: List(#(String, BitArray)),
-) -> Result(List(IdColumn), GenerateError) {
-  use named <- result.map(named_tables(tables))
-  let known = list.map(named, fn(table) { table.table })
-  list.flat_map(named, fn(table) {
-    list.drop(table.description.columns, 1)
-    |> list.filter_map(fn(column) {
-      case column.column_type, naming.field_name(column.name) {
-        tbl_file.Integer32, Ok(field) ->
-          case
-            reference.names_an_id(field),
-            reference.referenced_table(column: field, tables: known)
-          {
-            True, Error(Nil) ->
-              Ok(IdColumn(table: table.description.table, column: column.name))
-            _, _ -> Error(Nil)
-          }
-        _, _ -> Error(Nil)
-      }
+    registry_text.render(list.map(named, fn(table) { table.table.snake }))
+  let files =
+    list.map(modules, fn(module) {
+      #(
+        table_folder <> "/" <> { module.0 }.table.snake <> ".gleam",
+        { module.1 }.text,
+      )
     })
-  })
+    |> list.prepend(#(
+      table_folder <> "/" <> id_text.module_name <> ".gleam",
+      id_text.render(known),
+    ))
+    |> list.prepend(#(registry_path, registry))
+    |> dict.from_list
+  let unmatched =
+    list.flat_map(modules, fn(module) {
+      list.map({ module.1 }.unmatched, IdColumn(
+        { module.0 }.description.table,
+        _,
+      ))
+    })
+  Ok(Generated(files:, unmatched:))
 }
 
 /// Reads each file's header and names its table, in file-name order, refusing
@@ -136,17 +129,14 @@ fn named_tables(
   list.try_fold(sorted, [], fn(made, table) {
     let #(file, bytes) = table
     use named <- result.try(name_table(file, bytes))
+    let module = named.table.snake
     use <- bool.guard(
-      when: named.module == id_text.module_name,
-      return: Error(ReservedModule(module: named.module, file:)),
+      when: module == id_text.module_name,
+      return: Error(ReservedModule(module:, file:)),
     )
-    case list.find(made, fn(other: Named) { other.module == named.module }) {
+    case list.find(made, fn(other: Named) { other.table.snake == module }) {
       Ok(other) ->
-        Error(DuplicateModule(
-          module: named.module,
-          first: other.file,
-          second: file,
-        ))
+        Error(DuplicateModule(module:, first: other.file, second: file))
       Error(Nil) -> Ok([named, ..made])
     }
   })
@@ -158,18 +148,13 @@ fn name_table(file: String, bytes: BitArray) -> Result(Named, GenerateError) {
     tbl_file.describe(bytes) |> result.replace_error(UnreadableTable(file)),
   )
   let unnamed = fn(error) { BadTable(file, module_text.Unnamed(error)) }
-  use module <- result.try(
+  use snake <- result.try(
     naming.module_name(description.table) |> result.map_error(unnamed),
   )
   use type_name <- result.try(
     naming.type_name(description.table) |> result.map_error(unnamed),
   )
-  Ok(Named(
-    file:,
-    description:,
-    module:,
-    table: Table(snake: module, type_name:),
-  ))
+  Ok(Named(file:, description:, table: Table(snake:, type_name:)))
 }
 
 /// The `.tbl` files in the folder, as file name without extension and bytes.
@@ -189,18 +174,17 @@ fn read_tables(
   })
 }
 
-/// The generated code, formatted by `gleam format`, as path to text.
-fn generate_formatted(
-  folder: String,
-) -> Result(Dict(String, String), GenerateError) {
+/// The generated code, formatted by `gleam format`, with what the generation
+/// found. The folder is read once.
+fn generate_formatted(folder: String) -> Result(Generated, GenerateError) {
   use tables <- result.try(read_tables(folder))
   use generated <- result.try(generate(tables:))
   let scratch = scratch_folder(temporary_folder())
-  let formatted = format_in(scratch, generated)
+  let formatted = format_in(scratch, generated.files)
   use _ <- result.try(
     simplifile.delete(scratch) |> result.replace_error(Unwritable(scratch)),
   )
-  formatted
+  result.map(formatted, fn(files) { Generated(..generated, files:) })
 }
 
 fn format_in(
@@ -270,15 +254,16 @@ fn read_committed(source: String) -> Dict(String, String) {
 
 /// Generates the code from the `.tbl` files in `folder`, writes it under
 /// `source` (the folder that holds `genesis_prime/`) and formats it. A
-/// generated file the generator no longer writes is deleted.
+/// generated file the generator no longer writes is deleted. It gives the
+/// columns that name an id of no loaded table.
 pub fn write(
   tables folder: String,
   into source: String,
-) -> Result(Nil, GenerateError) {
+) -> Result(List(IdColumn), GenerateError) {
   use generated <- result.try(generate_formatted(folder))
   let committed = read_committed(source)
-  use _ <- result.try(write_files(source, generated))
-  difference.between(generated:, committed:)
+  use _ <- result.try(write_files(source, generated.files))
+  difference.between(generated: generated.files, committed:)
   |> list.filter_map(fn(difference) {
     case difference {
       difference.Extra(path:) -> Ok(path)
@@ -289,6 +274,13 @@ pub fn write(
     simplifile.delete(source <> "/" <> path)
     |> result.replace_error(Unwritable(path))
   })
+  |> result.replace(generated.unmatched)
+}
+
+/// What a check found: how the committed code differs from the generated, and
+/// the columns that name an id of no loaded table.
+pub type Checked {
+  Checked(differences: List(Difference), unmatched: List(IdColumn))
 }
 
 /// Generates the code from the `.tbl` files in `folder` and compares it with
@@ -296,9 +288,15 @@ pub fn write(
 pub fn check(
   tables folder: String,
   against source: String,
-) -> Result(List(Difference), GenerateError) {
+) -> Result(Checked, GenerateError) {
   use generated <- result.try(generate_formatted(folder))
-  Ok(difference.between(generated:, committed: read_committed(source)))
+  Ok(Checked(
+    differences: difference.between(
+      generated: generated.files,
+      committed: read_committed(source),
+    ),
+    unmatched: generated.unmatched,
+  ))
 }
 
 /// The differences a check found, for printing.
@@ -324,14 +322,10 @@ pub fn main() -> Nil {
       io.println(
         "generated tables not compared: GENESIS_NO_CLIENT=1, no client",
       )
-    ["check"], _ -> {
+    ["check"], _ ->
       finish(check(tables: table_folder.path(), against: "src"), report_check)
-      report_unmatched(table_folder.path())
-    }
-    ["write"], _ -> {
+    ["write"], _ ->
       finish(write(tables: table_folder.path(), into: "src"), report_write)
-      report_unmatched(table_folder.path())
-    }
     _, _ -> {
       io.println(
         "usage: gleam run -m genesis_prime/table_generator write | check",
@@ -355,26 +349,26 @@ fn finish(
 }
 
 /// Prints the columns that name an id of no loaded table.
-fn report_unmatched(folder: String) -> Nil {
-  finish(result.try(read_tables(folder), unmatched_id_columns), fn(columns) {
-    io.println(
-      int.to_string(list.length(columns))
-      <> " columns name an id of no loaded table and stay Int:",
-    )
-    list.each(columns, fn(column) {
-      io.println("  " <> column.table <> "." <> column.column)
-    })
+fn report_unmatched(columns: List(IdColumn)) -> Nil {
+  io.println(
+    int.to_string(list.length(columns))
+    <> " columns name an id of no loaded table and stay Int:",
+  )
+  list.each(columns, fn(column) {
+    io.println("  " <> column.table <> "." <> column.column)
   })
 }
 
-fn report_write(_written: Nil) -> Nil {
+fn report_write(unmatched: List(IdColumn)) -> Nil {
   io.println("generated tables written under src/genesis_prime")
+  report_unmatched(unmatched)
 }
 
-fn report_check(differences: List(Difference)) -> Nil {
-  case differences {
+fn report_check(checked: Checked) -> Nil {
+  report_unmatched(checked.unmatched)
+  case checked.differences {
     [] -> io.println("generated tables match the client's headers")
-    _ -> {
+    differences -> {
       io.println(report(differences))
       io.println(
         "regenerate with: gleam run -m genesis_prime/table_generator write",

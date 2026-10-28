@@ -2,8 +2,7 @@
 //// The client's SoundReplace table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
-//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
 import genesis_prime/table/id.{
   type SoundEventId, type SoundReplaceDescriptionId, type SoundReplaceId,

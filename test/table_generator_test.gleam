@@ -27,13 +27,16 @@
 
 import genesis_prime/table/loader/tbl_file.{type Schema, Column, Schema}
 import genesis_prime/table_generator
-import genesis_prime/table_generator/difference.{Changed, Extra, Missing}
+import genesis_prime/table_generator/difference.{
+  type Difference, Changed, Extra, Missing,
+}
 import genesis_prime/table_generator/module_text
 import genesis_prime/table_generator/naming
-import genesis_prime/table_generator/reference.{Table}
+import genesis_prime/table_generator/reference.{type Table, Table}
 import gleam/dict
 import gleam/list
 import gleam/option.{Some}
+import gleam/result
 import gleam/string
 import owned_test
 import planted_table.{Integer}
@@ -109,7 +112,21 @@ fn planted_file(schema: Schema) -> BitArray {
 fn generated(
   tables: List(#(String, BitArray)),
 ) -> Result(dict.Dict(String, String), table_generator.GenerateError) {
-  table_generator.generate(tables)
+  table_generator.generate(tables) |> result.map(fn(made) { made.files })
+}
+
+/// The differences between the committed code and what the tables generate.
+fn differences(
+  folder: String,
+  source: String,
+) -> Result(List(Difference), table_generator.GenerateError) {
+  table_generator.check(folder, against: source)
+  |> result.map(fn(checked) { checked.differences })
+}
+
+/// The table a column names, among tables given as a list.
+fn referenced(column: String, tables: List(Table)) -> Result(Table, Nil) {
+  reference.referenced_table(column, reference.index(tables))
 }
 
 /// A planted table with only an id.
@@ -275,7 +292,7 @@ fn with_written_code(body: fn(String, String) -> a) -> a {
   ]
   use folder <- planted_table.in_folder(tables)
   use source <- planted_table.in_folder([])
-  let assert Ok(Nil) = table_generator.write(folder, into: source)
+  let assert Ok(_) = table_generator.write(folder, into: source)
     as "the planted tables are written"
   body(folder, source)
 }
@@ -283,7 +300,7 @@ fn with_written_code(body: fn(String, String) -> a) -> a {
 pub fn code_checked_right_after_it_is_written_has_no_difference_test() -> Nil {
   use <- owned_test.run(60_000)
   use folder, source <- with_written_code
-  assert table_generator.check(folder, against: source) == Ok([])
+  assert differences(folder, source) == Ok([])
     as "the check regenerates the same formatted code"
 }
 
@@ -296,7 +313,7 @@ pub fn a_hand_edit_of_a_generated_module_is_a_difference_test() -> Nil {
       "\npub const edited_by_hand = 1\n",
     )
     as "the generated module can be edited"
-  assert table_generator.check(folder, against: source)
+  assert differences(folder, source)
     == Ok([Changed("genesis_prime/table/planted_thing.gleam")])
     as "CLAUDE.md: the codec is generated and never edited by hand; the check names the edited file"
 }
@@ -307,7 +324,7 @@ pub fn a_deleted_generated_module_is_a_difference_test() -> Nil {
   let assert Ok(Nil) =
     simplifile.delete(source <> "/genesis_prime/table/planted_other.gleam")
     as "the generated module can be deleted"
-  assert table_generator.check(folder, against: source)
+  assert differences(folder, source)
     == Ok([Missing("genesis_prime/table/planted_other.gleam")])
     as "the generator writes the module and the source has none"
 }
@@ -317,7 +334,7 @@ pub fn a_generated_module_of_a_table_the_client_lacks_is_a_difference_test() -> 
   use folder, source <- with_written_code
   let assert Ok(Nil) = simplifile.delete(folder <> "/PlantedOther.tbl")
     as "the planted table can be removed from the client's folder"
-  assert table_generator.check(folder, against: source)
+  assert differences(folder, source)
     == Ok([
       Changed("genesis_prime/table.gleam"),
       Changed("genesis_prime/table/id.gleam"),
@@ -445,10 +462,12 @@ pub fn a_column_that_names_no_loaded_table_stays_an_int_with_no_reader_test() ->
     as "a float column has no reader"
 }
 
-pub fn a_column_that_names_an_id_of_no_loaded_table_is_listed_test() -> Nil {
+pub fn a_column_that_names_an_id_of_no_loaded_table_is_listed_with_the_generated_files_test() -> Nil {
   use <- owned_test.run(5000)
-  assert table_generator.unmatched_id_columns(reference_tables())
-    == Ok([table_generator.IdColumn("PlantedOwner", "plantedMoonId")])
+  let assert Ok(made) = table_generator.generate(reference_tables())
+    as "the planted tables are generated"
+  assert made.unmatched
+    == [table_generator.IdColumn("PlantedOwner", "plantedMoonId")]
     as "plantedMoonId has the word id and no table is named PlantedMoon; plantedSpellIdle has no id word; the ones that match tables are not listed"
 }
 
@@ -459,30 +478,28 @@ pub fn the_longest_table_name_that_matches_a_column_wins_test() -> Nil {
   let key = Table(snake: "planted_key", type_name: "PlantedKey")
   let key_id = Table(snake: "planted_key_id", type_name: "PlantedKeyId")
   let tables = [spell, base, key, key_id]
-  assert reference.referenced_table("planted_spell_id", tables) == Ok(spell)
+  assert referenced("planted_spell_id", tables) == Ok(spell)
     as "the name, `_id` and the end of the column"
-  assert reference.referenced_table("planted_spell_base_id", tables) == Ok(base)
+  assert referenced("planted_spell_base_id", tables) == Ok(base)
     as "planted_spell_base_id is the id of PlantedSpellBase, not of PlantedSpell, whose `_id` it does not follow"
-  assert reference.referenced_table("planted_spell_base_id01", tables)
-    == Ok(base)
+  assert referenced("planted_spell_base_id01", tables) == Ok(base)
     as "a digit may follow the id, as in the client's spell4IdAttackPrimary00"
-  assert reference.referenced_table("planted_spell_id_attack00", tables)
-    == Ok(spell)
+  assert referenced("planted_spell_id_attack00", tables) == Ok(spell)
     as "an underscore may follow the id"
-  assert reference.referenced_table("planted_key_id_id", tables) == Ok(key_id)
+  assert referenced("planted_key_id_id", tables) == Ok(key_id)
     as "planted_key_id_id follows both planted_key_id and planted_key_id_id, and the longer name is the table it names"
-  assert reference.referenced_table("planted_key_id_owner", tables) == Ok(key)
+  assert referenced("planted_key_id_owner", tables) == Ok(key)
     as "the shorter name when only it matches"
 }
 
 pub fn a_column_whose_name_goes_on_with_a_letter_after_id_names_no_table_test() -> Nil {
   use <- owned_test.run(5000)
   let spell = Table(snake: "planted_spell", type_name: "PlantedSpell")
-  assert reference.referenced_table("planted_spell_idle", [spell]) == Error(Nil)
+  assert referenced("planted_spell_idle", [spell]) == Error(Nil)
     as "`idle` is a word of its own, not the id word"
-  assert reference.referenced_table("planted_spell", [spell]) == Error(Nil)
+  assert referenced("planted_spell", [spell]) == Error(Nil)
     as "a column of the table's name with no `_id` is not its id"
-  assert reference.referenced_table("planted_moon_id", [spell]) == Error(Nil)
+  assert referenced("planted_moon_id", [spell]) == Error(Nil)
     as "no loaded table is named planted_moon"
 }
 
@@ -514,7 +531,21 @@ pub fn a_hand_edit_of_the_id_module_is_a_difference_test() -> Nil {
       "\npub const edited_by_hand = 1\n",
     )
     as "the id module can be edited"
-  assert table_generator.check(folder, against: source)
+  assert differences(folder, source)
     == Ok([Changed("genesis_prime/table/id.gleam")])
     as "CLAUDE.md: generated code is never edited by hand; the check names the edited file"
+}
+
+pub fn write_and_check_give_the_columns_that_name_no_loaded_table_with_one_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use folder <- planted_table.in_folder(reference_tables())
+  use source <- planted_table.in_folder([])
+  let expected = [table_generator.IdColumn("PlantedOwner", "plantedMoonId")]
+  assert table_generator.write(folder, into: source) == Ok(expected)
+    as "write gives the list from the same generation that wrote the files"
+  let assert Ok(checked) = table_generator.check(folder, against: source)
+    as "the check runs"
+  assert checked.differences == []
+    as "the check regenerates the same formatted code"
+  assert checked.unmatched == expected as "the check gives the same list"
 }
