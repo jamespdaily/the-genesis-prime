@@ -207,10 +207,10 @@ pub type Heard {
 /// line is about. The server stopping ends the connection after the effects
 /// `stopping` gives, which the rule writes first: none for a connection with
 /// no one to tell, a notice for one whose client waits for the server's next
-/// message. `stopping` is called only when the server stops. `Woken` and
-/// `WatchEnded` reach only the game rule, which takes them before it calls
-/// `hear`; to every rule before it watches, and to the login's rules, they are
-/// inputs a connection is never given.
+/// message. `stopping` is called only when the server stops. `Woken`,
+/// `WatchEnded` and `TimerFired` reach only the game rule, which takes them
+/// before it calls `hear`; to every rule before it watches or starts a timer,
+/// and to the login's rules, they are inputs a connection is never given.
 pub fn hear(
   event event: Event(message, Answer),
   about about: About,
@@ -248,6 +248,9 @@ pub type Handled(session) {
   Asking(session: session, effects: List(Effect(Nil)), ask: step.Ask(Request))
   /// Carry out the effects, which end with `Stop`.
   End(session: session, effects: List(Effect(Nil)))
+  /// Carry out the effects, then take no frame until another input: what the
+  /// connection waits for is a timer or a process, not the client's bytes.
+  Waiting(session: session, effects: List(Effect(Nil)))
 }
 
 /// How a rule takes what the client sent: the callbacks `drive` and `settle`
@@ -305,7 +308,7 @@ pub fn settle(
       flow.connected(session),
       EffectsThenAsk(in_order(carried:, then: effects), ask),
     )
-    End(session:, effects:) -> #(
+    End(session:, effects:) | Waiting(session:, effects:) -> #(
       flow.connected(session),
       Effects(in_order(carried:, then: effects)),
     )

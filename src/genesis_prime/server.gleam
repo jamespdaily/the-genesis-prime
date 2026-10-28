@@ -35,10 +35,11 @@
 ////   key the hand-off no longer holds is refused and disconnected, and logs in
 ////   again.
 //// - **Sessions** starts with no slots. Each game connection watches it, so
-////   each takes the end of its watch and claims again, and the slots match the
-////   connections alive; a claim that finds Sessions not yet running, or that
-////   it does not answer, ends that connection with 0x036A reason 8, and its
-////   client logs in again. A client that logs in to an account during the gap,
+////   each takes the end of its watch, waits a moment and claims again, and the
+////   slots match the connections alive; a claim that finds Sessions not yet
+////   running is made again a few times, and one it does not answer ends that
+////   connection with 0x036A reason 8, as does the last of the retries, and its
+////   client logs in again (genesis_prime/game/connection). A client that logs in to an account during the gap,
 ////   before the account's old connection claims again, is not caught: that
 ////   old connection's claim then takes the slot from it
 ////   (genesis_prime/sessions).
