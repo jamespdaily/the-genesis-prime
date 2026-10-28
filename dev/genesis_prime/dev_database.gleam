@@ -5,17 +5,18 @@
 
 import genesis_prime
 import gleam/erlang/process
+import gleam/io
 import pog
 
 /// Why a query on the developer's database gave no rows.
 pub type Failure {
   /// The pool could not start or never had a connection.
   DatabaseDown
-  /// The database refused the row, naming the constraint.
+  /// The database refused the change, naming the constraint.
   Refused(constraint: String)
   /// The query failed for another reason.
-  NotInserted(reason: String)
-  /// The query ran out of time, so the row may have been added.
+  NotChanged(reason: String)
+  /// The query ran out of time, so the change may have been made.
   TimedOut
 }
 
@@ -58,26 +59,46 @@ fn attempt(
         False -> Error(DatabaseDown)
       }
     Error(pog.PostgresqlError(name:, message:, ..)) ->
-      Error(NotInserted(name <> ": " <> message))
+      Error(NotChanged(name <> ": " <> message))
     Error(pog.UnexpectedArgumentCount(..))
     | Error(pog.UnexpectedArgumentType(..))
     | Error(pog.UnexpectedResultType(..)) ->
-      Error(NotInserted("the query and the table do not match"))
+      Error(NotChanged("the query and the table do not match"))
   }
 }
 
-/// A sentence that says why a query failed; `what` names the row, as in "the
-/// database refused the account".
-pub fn describe(failure failure: Failure, what what: String) -> String {
+/// A sentence that says why a query failed; `change` is what the tool tried,
+/// as in "add the account".
+pub fn describe(failure failure: Failure, change change: String) -> String {
   case failure {
     DatabaseDown ->
       "the database could not be reached: check PGHOST, PGPORT, PGUSER, PGPASSWORD and PGDATABASE"
     Refused(constraint:) ->
-      "the database refused the " <> what <> ": " <> constraint
-    NotInserted(reason:) -> "the " <> what <> " was not added: " <> reason
+      "the database refused to " <> change <> ": " <> constraint
+    NotChanged(reason:) -> "could not " <> change <> ": " <> reason
     TimedOut ->
-      "the database gave no answer about the "
-      <> what
-      <> " in time: it may have been added, so look before adding it again"
+      "the database gave no answer in time to "
+      <> change
+      <> ": it may have been done, so look before trying again"
   }
 }
+
+/// Ends a developer tool: prints what the tool did on success, or the
+/// sentence `describe` gives for its failure on the error stream and halts
+/// with status 1.
+pub fn finish(
+  result result: Result(String, failure),
+  describe describe: fn(failure) -> String,
+) -> Nil {
+  case result {
+    Ok(done) -> io.println(done)
+    Error(failure) -> {
+      io.println_error(describe(failure))
+      halt(1)
+    }
+  }
+}
+
+/// Ends the program with a status.
+@external(erlang, "erlang", "halt")
+fn halt(status: Int) -> Nil
