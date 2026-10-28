@@ -2,8 +2,11 @@
 //// The client's BugCategory table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type BugCategoryId, type LocalizedTextId, BugCategoryId, LocalizedTextId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -33,14 +36,24 @@ pub fn entry() -> store.Entry {
 /// The row of the BugCategory table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: BugCategoryId,
 ) -> Result(BugCategory, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the BugCategory table, in id order.
 pub fn all(tables: store.Tables) -> List(BugCategory) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: BugCategory) -> BugCategoryId {
+  BugCategoryId(row.id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: BugCategory) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
 }
 
 fn row_id(row: BugCategory) -> Int {

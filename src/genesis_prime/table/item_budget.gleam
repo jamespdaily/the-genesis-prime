@@ -2,8 +2,9 @@
 //// The client's ItemBudget table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{type ItemBudgetId, ItemBudgetId}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -42,13 +43,21 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the ItemBudget table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(ItemBudget, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: ItemBudgetId,
+) -> Result(ItemBudget, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ItemBudget table, in id order.
 pub fn all(tables: store.Tables) -> List(ItemBudget) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ItemBudget) -> ItemBudgetId {
+  ItemBudgetId(row.id)
 }
 
 fn row_id(row: ItemBudget) -> Int {

@@ -2,8 +2,15 @@
 //// The client's Spell4Base table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type ClassId, type ClientSideInteractionId, type Creature2Id,
+  type LocalizedTextId, type Spell4BaseId, type Spell4SpellTypesId,
+  type Spell4TargetAngleId, type TargetGroupId, type WorldZoneId, ClassId,
+  ClientSideInteractionId, Creature2Id, LocalizedTextId, Spell4BaseId,
+  Spell4SpellTypesId, Spell4TargetAngleId, TargetGroupId, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -211,13 +218,76 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Spell4Base table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Spell4Base, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: Spell4BaseId,
+) -> Result(Spell4Base, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Spell4Base table, in id order.
 pub fn all(tables: store.Tables) -> List(Spell4Base) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Spell4Base) -> Spell4BaseId {
+  Spell4BaseId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: Spell4Base) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the spell4TargetAngleId column, as the typed id of the Spell4TargetAngle table.
+pub fn spell4_target_angle_id(row: Spell4Base) -> Spell4TargetAngleId {
+  Spell4TargetAngleId(row.spell4_target_angle_id)
+}
+
+/// The id in the targetGroupIdCastGroup column, as the typed id of the TargetGroup table.
+pub fn target_group_id_cast_group(row: Spell4Base) -> TargetGroupId {
+  TargetGroupId(row.target_group_id_cast_group)
+}
+
+/// The id in the creature2IdPositionalAoe column, as the typed id of the Creature2 table.
+pub fn creature2_id_positional_aoe(row: Spell4Base) -> Creature2Id {
+  Creature2Id(row.creature2_id_positional_aoe)
+}
+
+/// The id in the targetGroupIdAoeGroup column, as the typed id of the TargetGroup table.
+pub fn target_group_id_aoe_group(row: Spell4Base) -> TargetGroupId {
+  TargetGroupId(row.target_group_id_aoe_group)
+}
+
+/// The id in the spell4BaseIdPrerequisiteSpell column, as the typed id of the Spell4Base table.
+pub fn spell4_base_id_prerequisite_spell(row: Spell4Base) -> Spell4BaseId {
+  Spell4BaseId(row.spell4_base_id_prerequisite_spell)
+}
+
+/// The id in the worldZoneIdZoneRequired column, as the typed id of the WorldZone table.
+pub fn world_zone_id_zone_required(row: Spell4Base) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id_zone_required)
+}
+
+/// The id in the spell4SpellTypesIdSpellType column, as the typed id of the Spell4SpellTypes table.
+pub fn spell4_spell_types_id_spell_type(row: Spell4Base) -> Spell4SpellTypesId {
+  Spell4SpellTypesId(row.spell4_spell_types_id_spell_type)
+}
+
+/// The id in the classIdPlayer column, as the typed id of the Class table.
+pub fn class_id_player(row: Spell4Base) -> ClassId {
+  ClassId(row.class_id_player)
+}
+
+/// The id in the clientSideInteractionId column, as the typed id of the ClientSideInteraction table.
+pub fn client_side_interaction_id(row: Spell4Base) -> ClientSideInteractionId {
+  ClientSideInteractionId(row.client_side_interaction_id)
+}
+
+/// The id in the localizedTextIdLASTierPoint column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_las_tier_point(row: Spell4Base) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_las_tier_point)
 }
 
 fn row_id(row: Spell4Base) -> Int {

@@ -2,8 +2,14 @@
 //// The client's PathSettlerImprovementGroup table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type LocalizedTextId, type PathSettlerHubId,
+  type PathSettlerImprovementGroupId, type PathSettlerImprovementId,
+  type WorldLocation2Id, Creature2Id, LocalizedTextId, PathSettlerHubId,
+  PathSettlerImprovementGroupId, PathSettlerImprovementId, WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -100,14 +106,82 @@ pub fn entry() -> store.Entry {
 /// The row of the PathSettlerImprovementGroup table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathSettlerImprovementGroupId,
 ) -> Result(PathSettlerImprovementGroup, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathSettlerImprovementGroup table, in id order.
 pub fn all(tables: store.Tables) -> List(PathSettlerImprovementGroup) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathSettlerImprovementGroup) -> PathSettlerImprovementGroupId {
+  PathSettlerImprovementGroupId(row.id)
+}
+
+/// The id in the pathSettlerHubId column, as the typed id of the PathSettlerHub table.
+pub fn path_settler_hub_id(
+  row: PathSettlerImprovementGroup,
+) -> PathSettlerHubId {
+  PathSettlerHubId(row.path_settler_hub_id)
+}
+
+/// The id in the creature2IdDepot column, as the typed id of the Creature2 table.
+pub fn creature2_id_depot(row: PathSettlerImprovementGroup) -> Creature2Id {
+  Creature2Id(row.creature2_id_depot)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(
+  row: PathSettlerImprovementGroup,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the pathSettlerImprovementGroupIdOutpostRequired column, as the typed id of the PathSettlerImprovementGroup table.
+pub fn path_settler_improvement_group_id_outpost_required(
+  row: PathSettlerImprovementGroup,
+) -> PathSettlerImprovementGroupId {
+  PathSettlerImprovementGroupId(
+    row.path_settler_improvement_group_id_outpost_required,
+  )
+}
+
+/// The id in the pathSettlerImprovementIdTier00 column, as the typed id of the PathSettlerImprovement table.
+pub fn path_settler_improvement_id_tier00(
+  row: PathSettlerImprovementGroup,
+) -> PathSettlerImprovementId {
+  PathSettlerImprovementId(row.path_settler_improvement_id_tier00)
+}
+
+/// The id in the pathSettlerImprovementIdTier01 column, as the typed id of the PathSettlerImprovement table.
+pub fn path_settler_improvement_id_tier01(
+  row: PathSettlerImprovementGroup,
+) -> PathSettlerImprovementId {
+  PathSettlerImprovementId(row.path_settler_improvement_id_tier01)
+}
+
+/// The id in the pathSettlerImprovementIdTier02 column, as the typed id of the PathSettlerImprovement table.
+pub fn path_settler_improvement_id_tier02(
+  row: PathSettlerImprovementGroup,
+) -> PathSettlerImprovementId {
+  PathSettlerImprovementId(row.path_settler_improvement_id_tier02)
+}
+
+/// The id in the pathSettlerImprovementIdTier03 column, as the typed id of the PathSettlerImprovement table.
+pub fn path_settler_improvement_id_tier03(
+  row: PathSettlerImprovementGroup,
+) -> PathSettlerImprovementId {
+  PathSettlerImprovementId(row.path_settler_improvement_id_tier03)
+}
+
+/// The id in the worldLocation2IdDisplayPoint column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_display_point(
+  row: PathSettlerImprovementGroup,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_display_point)
 }
 
 fn row_id(row: PathSettlerImprovementGroup) -> Int {

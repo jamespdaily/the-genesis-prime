@@ -2,8 +2,15 @@
 //// The client's Achievement table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type AchievementCategoryId, type AchievementGroupId, type AchievementId,
+  type AchievementSubGroupId, type CharacterTitleId, type LocalizedTextId,
+  type PrerequisiteId, type WorldZoneId, AchievementCategoryId,
+  AchievementGroupId, AchievementId, AchievementSubGroupId, CharacterTitleId,
+  LocalizedTextId, PrerequisiteId, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -121,14 +128,84 @@ pub fn entry() -> store.Entry {
 /// The row of the Achievement table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: AchievementId,
 ) -> Result(Achievement, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Achievement table, in id order.
 pub fn all(tables: store.Tables) -> List(Achievement) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Achievement) -> AchievementId {
+  AchievementId(row.id)
+}
+
+/// The id in the achievementCategoryId column, as the typed id of the AchievementCategory table.
+pub fn achievement_category_id(row: Achievement) -> AchievementCategoryId {
+  AchievementCategoryId(row.achievement_category_id)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: Achievement) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the localizedTextIdTitle column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_title(row: Achievement) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_title)
+}
+
+/// The id in the localizedTextIdDesc column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_desc(row: Achievement) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_desc)
+}
+
+/// The id in the localizedTextIdProgress column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_progress(row: Achievement) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_progress)
+}
+
+/// The id in the characterTitleId column, as the typed id of the CharacterTitle table.
+pub fn character_title_id(row: Achievement) -> CharacterTitleId {
+  CharacterTitleId(row.character_title_id)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: Achievement) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
+}
+
+/// The id in the prerequisiteIdServer column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_server(row: Achievement) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_server)
+}
+
+/// The id in the prerequisiteIdObjective column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_objective(row: Achievement) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_objective)
+}
+
+/// The id in the prerequisiteIdObjectiveAlt column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_objective_alt(row: Achievement) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_objective_alt)
+}
+
+/// The id in the achievementIdParentTier column, as the typed id of the Achievement table.
+pub fn achievement_id_parent_tier(row: Achievement) -> AchievementId {
+  AchievementId(row.achievement_id_parent_tier)
+}
+
+/// The id in the achievementGroupId column, as the typed id of the AchievementGroup table.
+pub fn achievement_group_id(row: Achievement) -> AchievementGroupId {
+  AchievementGroupId(row.achievement_group_id)
+}
+
+/// The id in the achievementSubGroupId column, as the typed id of the AchievementSubGroup table.
+pub fn achievement_sub_group_id(row: Achievement) -> AchievementSubGroupId {
+  AchievementSubGroupId(row.achievement_sub_group_id)
 }
 
 fn row_id(row: Achievement) -> Int {

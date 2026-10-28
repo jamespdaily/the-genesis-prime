@@ -2,8 +2,17 @@
 //// The client's Quest2 table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Faction2Id, type LocalizedTextId, type PeriodicQuestGroupId,
+  type PrerequisiteId, type Quest2DifficultyId, type Quest2Id,
+  type QuestCategoryId, type QuestDirectionId, type VirtualItemId,
+  type WorldLocation2Id, type WorldZoneId, Faction2Id, LocalizedTextId,
+  PeriodicQuestGroupId, PrerequisiteId, Quest2DifficultyId, Quest2Id,
+  QuestCategoryId, QuestDirectionId, VirtualItemId, WorldLocation2Id,
+  WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -486,13 +495,273 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Quest2 table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Quest2, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: Quest2Id,
+) -> Result(Quest2, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Quest2 table, in id order.
 pub fn all(tables: store.Tables) -> List(Quest2) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Quest2) -> Quest2Id {
+  Quest2Id(row.id)
+}
+
+/// The id in the localizedTextIdTitle column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_title(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_title)
+}
+
+/// The id in the localizedTextIdText column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: Quest2) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the localizedTextIdCompletionOverride column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_completion_override(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_completion_override)
+}
+
+/// The id in the localizedTextIdGiverTextUnknown column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_giver_text_unknown(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_giver_text_unknown)
+}
+
+/// The id in the localizedTextIdGiverTextAccepted column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_giver_text_accepted(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_giver_text_accepted)
+}
+
+/// The id in the localizedTextIdReceiverTextAccepted column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_receiver_text_accepted(
+  row: Quest2,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_receiver_text_accepted)
+}
+
+/// The id in the localizedTextIdReceiverTextAchieved column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_receiver_text_achieved(
+  row: Quest2,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_receiver_text_achieved)
+}
+
+/// The id in the localizedTextIdGiverSayAccepted column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_giver_say_accepted(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_giver_say_accepted)
+}
+
+/// The id in the localizedTextIdReceiverSayCompleted column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_receiver_say_completed(
+  row: Quest2,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_receiver_say_completed)
+}
+
+/// The id in the localizedTextIdAcceptResponse column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_accept_response(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_accept_response)
+}
+
+/// The id in the localizedTextIdCompleteResponse column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_complete_response(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_complete_response)
+}
+
+/// The id in the WorldLocation2IdReceiver column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_receiver(row: Quest2) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_receiver)
+}
+
+/// The id in the worldLocation2IdAltReceiver00 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_alt_receiver00(row: Quest2) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_alt_receiver00)
+}
+
+/// The id in the worldLocation2IdAltReceiver01 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_alt_receiver01(row: Quest2) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_alt_receiver01)
+}
+
+/// The id in the worldLocation2IdAltReceiver02 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_alt_receiver02(row: Quest2) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_alt_receiver02)
+}
+
+/// The id in the prerequisiteIdAltReceiver00 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_alt_receiver00(row: Quest2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_alt_receiver00)
+}
+
+/// The id in the prerequisiteIdAltReceiver01 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_alt_receiver01(row: Quest2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_alt_receiver01)
+}
+
+/// The id in the prerequisiteIdAltReceiver02 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_alt_receiver02(row: Quest2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_alt_receiver02)
+}
+
+/// The id in the questDirectionIdAltReceiver00 column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id_alt_receiver00(row: Quest2) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id_alt_receiver00)
+}
+
+/// The id in the questDirectionIdAltReceiver01 column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id_alt_receiver01(row: Quest2) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id_alt_receiver01)
+}
+
+/// The id in the questDirectionIdAltReceiver02 column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id_alt_receiver02(row: Quest2) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id_alt_receiver02)
+}
+
+/// The id in the localizedTextIdCompletedSummary column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_completed_summary(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_completed_summary)
+}
+
+/// The id in the localizedTextIdGiverIncompleteResponse column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_giver_incomplete_response(
+  row: Quest2,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_giver_incomplete_response)
+}
+
+/// The id in the localizedTextIdReceiverIncompleteResponse column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_receiver_incomplete_response(
+  row: Quest2,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_receiver_incomplete_response)
+}
+
+/// The id in the quest2DifficultyId column, as the typed id of the Quest2Difficulty table.
+pub fn quest2_difficulty_id(row: Quest2) -> Quest2DifficultyId {
+  Quest2DifficultyId(row.quest2_difficulty_id)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: Quest2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
+}
+
+/// The id in the localizedTextIdCompletedObjectiveShort column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_completed_objective_short(
+  row: Quest2,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_completed_objective_short)
+}
+
+/// The id in the localizedTextIdMoreInfoSay00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_more_info_say00(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_more_info_say00)
+}
+
+/// The id in the localizedTextIdMoreInfoSay01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_more_info_say01(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_more_info_say01)
+}
+
+/// The id in the localizedTextIdMoreInfoSay02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_more_info_say02(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_more_info_say02)
+}
+
+/// The id in the localizedTextIdMoreInfoSay03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_more_info_say03(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_more_info_say03)
+}
+
+/// The id in the localizedTextIdMoreInfoSay04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_more_info_say04(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_more_info_say04)
+}
+
+/// The id in the localizedTextIdMoreInfoText00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_more_info_text00(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_more_info_text00)
+}
+
+/// The id in the localizedTextIdMoreInfoText01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_more_info_text01(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_more_info_text01)
+}
+
+/// The id in the localizedTextIdMoreInfoText02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_more_info_text02(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_more_info_text02)
+}
+
+/// The id in the localizedTextIdMoreInfoText03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_more_info_text03(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_more_info_text03)
+}
+
+/// The id in the localizedTextIdMoreInfoText04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_more_info_text04(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_more_info_text04)
+}
+
+/// The id in the virtualItemIdPushed00 column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id_pushed00(row: Quest2) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id_pushed00)
+}
+
+/// The id in the virtualItemIdPushed01 column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id_pushed01(row: Quest2) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id_pushed01)
+}
+
+/// The id in the virtualItemIdPushed02 column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id_pushed02(row: Quest2) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id_pushed02)
+}
+
+/// The id in the virtualItemIdPushed03 column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id_pushed03(row: Quest2) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id_pushed03)
+}
+
+/// The id in the questDirectionIdCompletion column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id_completion(row: Quest2) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id_completion)
+}
+
+/// The id in the faction2IdRewardReputation00 column, as the typed id of the Faction2 table.
+pub fn faction2_id_reward_reputation00(row: Quest2) -> Faction2Id {
+  Faction2Id(row.faction2_id_reward_reputation00)
+}
+
+/// The id in the faction2IdRewardReputation01 column, as the typed id of the Faction2 table.
+pub fn faction2_id_reward_reputation01(row: Quest2) -> Faction2Id {
+  Faction2Id(row.faction2_id_reward_reputation01)
+}
+
+/// The id in the questCategoryId column, as the typed id of the QuestCategory table.
+pub fn quest_category_id(row: Quest2) -> QuestCategoryId {
+  QuestCategoryId(row.quest_category_id)
+}
+
+/// The id in the localizedTextIdGiverSayDecline column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_giver_say_decline(row: Quest2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_giver_say_decline)
+}
+
+/// The id in the periodicQuestGroupId column, as the typed id of the PeriodicQuestGroup table.
+pub fn periodic_quest_group_id(row: Quest2) -> PeriodicQuestGroupId {
+  PeriodicQuestGroupId(row.periodic_quest_group_id)
 }
 
 fn row_id(row: Quest2) -> Int {

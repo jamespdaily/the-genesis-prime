@@ -1,6 +1,9 @@
 //// Every field of the message schema names its evidence: a key of the client's
 //// fact file that gives its width, and, when its name is more than its
-//// position, a key that says what it is. So does every message and record.
+//// position, a key that says what it is. So does every message and record, and
+//// every named value of a field, which names the key that shows the client
+//// gives the value that meaning (the schema reader refuses a number or a name
+//// listed twice).
 //// A field of a message the server sends that has no name must carry a
 //// `safe_by` key of the fact file, which shows the value the server sends is
 //// safe. A message is sent when it travels to the client, or both ways, and a
@@ -217,7 +220,24 @@ fn field_breaches(
     ]
     None, _ -> []
   }
-  list.flatten([evidence, named_by, safe_by])
+  let values = case field.named_values {
+    None -> []
+    Some(named_values) ->
+      list.flat_map(named_values.values, fn(value) {
+        let where = where <> " value " <> value.name
+        case value.evidence {
+          None -> [
+            Breach(
+              path: file.path,
+              line:,
+              rule: "a schema value that names no evidence: " <> where,
+            ),
+          ]
+          Some(key) -> unknown_key(file:, line:, where:, key:, fact_keys:)
+        }
+      })
+  }
+  list.flatten([evidence, named_by, safe_by, values])
 }
 
 fn unknown_key(

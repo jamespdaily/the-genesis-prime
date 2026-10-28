@@ -2,8 +2,12 @@
 //// The client's PathScientistCreatureInfo table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type PathScientistCreatureInfoId, type PrerequisiteId, type Spell4Id,
+  PathScientistCreatureInfoId, PrerequisiteId, Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -79,14 +83,65 @@ pub fn entry() -> store.Entry {
 /// The row of the PathScientistCreatureInfo table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathScientistCreatureInfoId,
 ) -> Result(PathScientistCreatureInfo, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathScientistCreatureInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(PathScientistCreatureInfo) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathScientistCreatureInfo) -> PathScientistCreatureInfoId {
+  PathScientistCreatureInfoId(row.id)
+}
+
+/// The id in the prerequisiteIdScan column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_scan(row: PathScientistCreatureInfo) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_scan)
+}
+
+/// The id in the prerequisiteIdRawScan column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_raw_scan(
+  row: PathScientistCreatureInfo,
+) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_raw_scan)
+}
+
+/// The id in the prerequisiteIdScanCreature column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_scan_creature(
+  row: PathScientistCreatureInfo,
+) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_scan_creature)
+}
+
+/// The id in the prerequisiteIdRawScanCreature column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_raw_scan_creature(
+  row: PathScientistCreatureInfo,
+) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_raw_scan_creature)
+}
+
+/// The id in the spell4IdBuff00 column, as the typed id of the Spell4 table.
+pub fn spell4_id_buff00(row: PathScientistCreatureInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_buff00)
+}
+
+/// The id in the spell4IdBuff01 column, as the typed id of the Spell4 table.
+pub fn spell4_id_buff01(row: PathScientistCreatureInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_buff01)
+}
+
+/// The id in the spell4IdBuff02 column, as the typed id of the Spell4 table.
+pub fn spell4_id_buff02(row: PathScientistCreatureInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_buff02)
+}
+
+/// The id in the spell4IdBuff03 column, as the typed id of the Spell4 table.
+pub fn spell4_id_buff03(row: PathScientistCreatureInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_buff03)
 }
 
 fn row_id(row: PathScientistCreatureInfo) -> Int {

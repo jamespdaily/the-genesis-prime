@@ -2,8 +2,14 @@
 //// The client's HousingPropertyInfo table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type HousingMapInfoId, type HousingPropertyInfoId, type LocalizedTextId,
+  type WorldId, type WorldLayerId, type WorldLocation2Id, type WorldZoneId,
+  HousingMapInfoId, HousingPropertyInfoId, LocalizedTextId, WorldId,
+  WorldLayerId, WorldLocation2Id, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -79,14 +85,64 @@ pub fn entry() -> store.Entry {
 /// The row of the HousingPropertyInfo table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: HousingPropertyInfoId,
 ) -> Result(HousingPropertyInfo, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the HousingPropertyInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(HousingPropertyInfo) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: HousingPropertyInfo) -> HousingPropertyInfoId {
+  HousingPropertyInfoId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: HousingPropertyInfo) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the worldId column, as the typed id of the World table.
+pub fn world_id(row: HousingPropertyInfo) -> WorldId {
+  WorldId(row.world_id)
+}
+
+/// The id in the housingMapInfoId column, as the typed id of the HousingMapInfo table.
+pub fn housing_map_info_id(row: HousingPropertyInfo) -> HousingMapInfoId {
+  HousingMapInfoId(row.housing_map_info_id)
+}
+
+/// The id in the worldLocation2Id column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id(row: HousingPropertyInfo) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: HousingPropertyInfo) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the worldLayerIdDefault00 column, as the typed id of the WorldLayer table.
+pub fn world_layer_id_default00(row: HousingPropertyInfo) -> WorldLayerId {
+  WorldLayerId(row.world_layer_id_default00)
+}
+
+/// The id in the worldLayerIdDefault01 column, as the typed id of the WorldLayer table.
+pub fn world_layer_id_default01(row: HousingPropertyInfo) -> WorldLayerId {
+  WorldLayerId(row.world_layer_id_default01)
+}
+
+/// The id in the worldLayerIdDefault02 column, as the typed id of the WorldLayer table.
+pub fn world_layer_id_default02(row: HousingPropertyInfo) -> WorldLayerId {
+  WorldLayerId(row.world_layer_id_default02)
+}
+
+/// The id in the worldLayerIdDefault03 column, as the typed id of the WorldLayer table.
+pub fn world_layer_id_default03(row: HousingPropertyInfo) -> WorldLayerId {
+  WorldLayerId(row.world_layer_id_default03)
 }
 
 fn row_id(row: HousingPropertyInfo) -> Int {

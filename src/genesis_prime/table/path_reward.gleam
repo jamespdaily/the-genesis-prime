@@ -2,8 +2,14 @@
 //// The client's PathReward table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type CharacterTitleId, type Item2Id, type PathRewardId,
+  type PathScientistScanBotProfileId, type PrerequisiteId, type Quest2Id,
+  type Spell4Id, CharacterTitleId, Item2Id, PathRewardId,
+  PathScientistScanBotProfileId, PrerequisiteId, Quest2Id, Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -58,13 +64,53 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the PathReward table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(PathReward, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: PathRewardId,
+) -> Result(PathReward, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathReward table, in id order.
 pub fn all(tables: store.Tables) -> List(PathReward) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathReward) -> PathRewardId {
+  PathRewardId(row.id)
+}
+
+/// The id in the spell4Id column, as the typed id of the Spell4 table.
+pub fn spell4_id(row: PathReward) -> Spell4Id {
+  Spell4Id(row.spell4_id)
+}
+
+/// The id in the item2Id column, as the typed id of the Item2 table.
+pub fn item2_id(row: PathReward) -> Item2Id {
+  Item2Id(row.item2_id)
+}
+
+/// The id in the quest2Id column, as the typed id of the Quest2 table.
+pub fn quest2_id(row: PathReward) -> Quest2Id {
+  Quest2Id(row.quest2_id)
+}
+
+/// The id in the characterTitleId column, as the typed id of the CharacterTitle table.
+pub fn character_title_id(row: PathReward) -> CharacterTitleId {
+  CharacterTitleId(row.character_title_id)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: PathReward) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
+}
+
+/// The id in the pathScientistScanBotProfileId column, as the typed id of the PathScientistScanBotProfile table.
+pub fn path_scientist_scan_bot_profile_id(
+  row: PathReward,
+) -> PathScientistScanBotProfileId {
+  PathScientistScanBotProfileId(row.path_scientist_scan_bot_profile_id)
 }
 
 fn row_id(row: PathReward) -> Int {

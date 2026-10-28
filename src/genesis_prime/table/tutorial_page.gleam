@@ -2,8 +2,13 @@
 //// The client's TutorialPage table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type SoundEventId, type TutorialId,
+  type TutorialLayoutId, type TutorialPageId, LocalizedTextId, SoundEventId,
+  TutorialId, TutorialLayoutId, TutorialPageId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -69,14 +74,54 @@ pub fn entry() -> store.Entry {
 /// The row of the TutorialPage table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: TutorialPageId,
 ) -> Result(TutorialPage, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the TutorialPage table, in id order.
 pub fn all(tables: store.Tables) -> List(TutorialPage) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: TutorialPage) -> TutorialPageId {
+  TutorialPageId(row.id)
+}
+
+/// The id in the tutorialId column, as the typed id of the Tutorial table.
+pub fn tutorial_id(row: TutorialPage) -> TutorialId {
+  TutorialId(row.tutorial_id)
+}
+
+/// The id in the tutorialLayoutId column, as the typed id of the TutorialLayout table.
+pub fn tutorial_layout_id(row: TutorialPage) -> TutorialLayoutId {
+  TutorialLayoutId(row.tutorial_layout_id)
+}
+
+/// The id in the localizedTextIdTitle column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_title(row: TutorialPage) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_title)
+}
+
+/// The id in the localizedTextIdBody00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_body00(row: TutorialPage) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_body00)
+}
+
+/// The id in the localizedTextIdBody01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_body01(row: TutorialPage) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_body01)
+}
+
+/// The id in the localizedTextIdBody02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_body02(row: TutorialPage) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_body02)
+}
+
+/// The id in the soundEventId column, as the typed id of the SoundEvent table.
+pub fn sound_event_id(row: TutorialPage) -> SoundEventId {
+  SoundEventId(row.sound_event_id)
 }
 
 fn row_id(row: TutorialPage) -> Int {

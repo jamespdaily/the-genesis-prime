@@ -2,8 +2,12 @@
 //// The client's ModelSequenceByWeapon table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type ModelSequenceByWeaponId, type ModelSequenceId, ModelSequenceByWeaponId,
+  ModelSequenceId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -86,14 +90,82 @@ pub fn entry() -> store.Entry {
 /// The row of the ModelSequenceByWeapon table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ModelSequenceByWeaponId,
 ) -> Result(ModelSequenceByWeapon, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ModelSequenceByWeapon table, in id order.
 pub fn all(tables: store.Tables) -> List(ModelSequenceByWeapon) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ModelSequenceByWeapon) -> ModelSequenceByWeaponId {
+  ModelSequenceByWeaponId(row.id)
+}
+
+/// The id in the modelSequenceId column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id(row: ModelSequenceByWeapon) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id)
+}
+
+/// The id in the modelSequenceId1H column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id1_h(row: ModelSequenceByWeapon) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id1_h)
+}
+
+/// The id in the modelSequenceId2H column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id2_h(row: ModelSequenceByWeapon) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id2_h)
+}
+
+/// The id in the modelSequenceId2HL column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id2_hl(row: ModelSequenceByWeapon) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id2_hl)
+}
+
+/// The id in the modelSequenceId2HGun column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id2_h_gun(row: ModelSequenceByWeapon) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id2_h_gun)
+}
+
+/// The id in the modelSequenceIdPistols column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_pistols(
+  row: ModelSequenceByWeapon,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_pistols)
+}
+
+/// The id in the modelSequenceIdClaws column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_claws(row: ModelSequenceByWeapon) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_claws)
+}
+
+/// The id in the modelSequenceIdShockPaddles column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_shock_paddles(
+  row: ModelSequenceByWeapon,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_shock_paddles)
+}
+
+/// The id in the modelSequenceIdEsper column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_esper(row: ModelSequenceByWeapon) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_esper)
+}
+
+/// The id in the modelSequenceIdPsyblade column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_psyblade(
+  row: ModelSequenceByWeapon,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_psyblade)
+}
+
+/// The id in the modelSequenceIdHeavygun column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_heavygun(
+  row: ModelSequenceByWeapon,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_heavygun)
 }
 
 fn row_id(row: ModelSequenceByWeapon) -> Int {

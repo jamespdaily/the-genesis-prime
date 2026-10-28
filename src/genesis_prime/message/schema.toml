@@ -286,7 +286,7 @@ summary = "the result of a create-character request, with the new character's id
 fields = [
   { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x14007fd50", named_by = "opcode.0xdc" },
   { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x14007fd50" },
-  { name = "result", kind = "unsigned", bits = 6, evidence = "0x14007fd50", named_by = "opcode.0xdc" },
+  { name = "result", kind = "unsigned", bits = 6, evidence = "0x14007fd50", named_by = "opcode.0xdc", values_type = "CreateResult", values = [ { value = 3, name = "create_ok", evidence = "opcode.0xdc" }, { value = 6, name = "name_unavailable", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 9, name = "account_full", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 10, name = "name_length", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 11, name = "opposing_faction", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 44, name = "characters_online", evidence = "lua.Character.OnCreateCharacterFailed" } ] },
 ]
 
 [[message]]
@@ -370,7 +370,7 @@ direction = "server_to_client"
 evidence = "opcode.0x36a"
 summary = "tells the client it is being disconnected, with the reason it shows as a text"
 fields = [
-  { name = "reason", kind = "unsigned", bits = 5, evidence = "opcode.0x36a", named_by = "opcode.0x36a" },
+  { name = "reason", kind = "unsigned", bits = 5, evidence = "opcode.0x36a", named_by = "opcode.0x36a", values_type = "DisconnectReason", values = [ { value = 6, name = "logged_out_by_gm", evidence = "0x1400168a0" }, { value = 7, name = "inactivity", evidence = "0x1400168a0" }, { value = 8, name = "lost_user_server", evidence = "0x1400168a0" }, { value = 12, name = "lost_gateway_server", evidence = "0x1400168a0" }, { value = 15, name = "lost_world_server", evidence = "0x1400168a0" }, { value = 16, name = "out_of_game_time", evidence = "0x1400168a0" }, { value = 19, name = "account_disconnected", evidence = "0x1400168a0" }, { value = 20, name = "critical_transaction_failure", evidence = "0x1400168a0" } ] },
 ]
 
 [[message]]

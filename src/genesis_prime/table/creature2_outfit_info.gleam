@@ -2,8 +2,12 @@
 //// The client's Creature2OutfitInfo table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Creature2OutfitInfoId, type ItemColorSetId, type ItemDisplayId,
+  Creature2OutfitInfoId, ItemColorSetId, ItemDisplayId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -58,14 +62,79 @@ pub fn entry() -> store.Entry {
 /// The row of the Creature2OutfitInfo table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Creature2OutfitInfoId,
 ) -> Result(Creature2OutfitInfo, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Creature2OutfitInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(Creature2OutfitInfo) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Creature2OutfitInfo) -> Creature2OutfitInfoId {
+  Creature2OutfitInfoId(row.id)
+}
+
+/// The id in the itemDisplayId00 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id00(row: Creature2OutfitInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id00)
+}
+
+/// The id in the itemDisplayId01 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id01(row: Creature2OutfitInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id01)
+}
+
+/// The id in the itemDisplayId02 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id02(row: Creature2OutfitInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id02)
+}
+
+/// The id in the itemDisplayId03 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id03(row: Creature2OutfitInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id03)
+}
+
+/// The id in the itemDisplayId04 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id04(row: Creature2OutfitInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id04)
+}
+
+/// The id in the itemDisplayId05 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id05(row: Creature2OutfitInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id05)
+}
+
+/// The id in the itemColorSetId00 column, as the typed id of the ItemColorSet table.
+pub fn item_color_set_id00(row: Creature2OutfitInfo) -> ItemColorSetId {
+  ItemColorSetId(row.item_color_set_id00)
+}
+
+/// The id in the itemColorSetId01 column, as the typed id of the ItemColorSet table.
+pub fn item_color_set_id01(row: Creature2OutfitInfo) -> ItemColorSetId {
+  ItemColorSetId(row.item_color_set_id01)
+}
+
+/// The id in the itemColorSetId02 column, as the typed id of the ItemColorSet table.
+pub fn item_color_set_id02(row: Creature2OutfitInfo) -> ItemColorSetId {
+  ItemColorSetId(row.item_color_set_id02)
+}
+
+/// The id in the itemColorSetId03 column, as the typed id of the ItemColorSet table.
+pub fn item_color_set_id03(row: Creature2OutfitInfo) -> ItemColorSetId {
+  ItemColorSetId(row.item_color_set_id03)
+}
+
+/// The id in the itemColorSetId04 column, as the typed id of the ItemColorSet table.
+pub fn item_color_set_id04(row: Creature2OutfitInfo) -> ItemColorSetId {
+  ItemColorSetId(row.item_color_set_id04)
+}
+
+/// The id in the itemColorSetId05 column, as the typed id of the ItemColorSet table.
+pub fn item_color_set_id05(row: Creature2OutfitInfo) -> ItemColorSetId {
+  ItemColorSetId(row.item_color_set_id05)
 }
 
 fn row_id(row: Creature2OutfitInfo) -> Int {

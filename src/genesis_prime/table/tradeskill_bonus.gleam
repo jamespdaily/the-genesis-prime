@@ -2,8 +2,12 @@
 //// The client's TradeskillBonus table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type AchievementId, type LocalizedTextId, type TradeskillBonusId,
+  AchievementId, LocalizedTextId, TradeskillBonusId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -123,14 +127,34 @@ pub fn entry() -> store.Entry {
 /// The row of the TradeskillBonus table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: TradeskillBonusId,
 ) -> Result(TradeskillBonus, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the TradeskillBonus table, in id order.
 pub fn all(tables: store.Tables) -> List(TradeskillBonus) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: TradeskillBonus) -> TradeskillBonusId {
+  TradeskillBonusId(row.id)
+}
+
+/// The id in the achievementId column, as the typed id of the Achievement table.
+pub fn achievement_id(row: TradeskillBonus) -> AchievementId {
+  AchievementId(row.achievement_id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: TradeskillBonus) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdTooltip column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_tooltip(row: TradeskillBonus) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_tooltip)
 }
 
 fn row_id(row: TradeskillBonus) -> Int {

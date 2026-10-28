@@ -2,8 +2,13 @@
 //// The client's GossipEntry table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type GossipEntryId, type GossipSetId, type LocalizedTextId,
+  type PrerequisiteId, GossipEntryId, GossipSetId, LocalizedTextId,
+  PrerequisiteId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -42,14 +47,34 @@ pub fn entry() -> store.Entry {
 /// The row of the GossipEntry table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: GossipEntryId,
 ) -> Result(GossipEntry, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the GossipEntry table, in id order.
 pub fn all(tables: store.Tables) -> List(GossipEntry) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: GossipEntry) -> GossipEntryId {
+  GossipEntryId(row.id)
+}
+
+/// The id in the gossipSetId column, as the typed id of the GossipSet table.
+pub fn gossip_set_id(row: GossipEntry) -> GossipSetId {
+  GossipSetId(row.gossip_set_id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: GossipEntry) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: GossipEntry) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
 }
 
 fn row_id(row: GossipEntry) -> Int {

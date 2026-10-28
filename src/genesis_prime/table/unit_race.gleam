@@ -2,8 +2,12 @@
 //// The client's UnitRace table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type SoundCombatLoopId, type SoundEventId, type SoundSwitchId, type UnitRaceId,
+  SoundCombatLoopId, SoundEventId, SoundSwitchId, UnitRaceId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -64,13 +68,41 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the UnitRace table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(UnitRace, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: UnitRaceId,
+) -> Result(UnitRace, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the UnitRace table, in id order.
 pub fn all(tables: store.Tables) -> List(UnitRace) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: UnitRace) -> UnitRaceId {
+  UnitRaceId(row.id)
+}
+
+/// The id in the soundEventIdAggro column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_aggro(row: UnitRace) -> SoundEventId {
+  SoundEventId(row.sound_event_id_aggro)
+}
+
+/// The id in the soundEventIdAware column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_aware(row: UnitRace) -> SoundEventId {
+  SoundEventId(row.sound_event_id_aware)
+}
+
+/// The id in the soundSwitchIdModel column, as the typed id of the SoundSwitch table.
+pub fn sound_switch_id_model(row: UnitRace) -> SoundSwitchId {
+  SoundSwitchId(row.sound_switch_id_model)
+}
+
+/// The id in the soundCombatLoopId column, as the typed id of the SoundCombatLoop table.
+pub fn sound_combat_loop_id(row: UnitRace) -> SoundCombatLoopId {
+  SoundCombatLoopId(row.sound_combat_loop_id)
 }
 
 fn row_id(row: UnitRace) -> Int {

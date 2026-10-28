@@ -2,8 +2,13 @@
 //// The client's ModelEventVisualJoin table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type MaterialTypeId, type ModelEventId, type ModelEventVisualJoinId,
+  type ModelSequenceId, type VisualEffectId, MaterialTypeId, ModelEventId,
+  ModelEventVisualJoinId, ModelSequenceId, VisualEffectId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -48,14 +53,39 @@ pub fn entry() -> store.Entry {
 /// The row of the ModelEventVisualJoin table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ModelEventVisualJoinId,
 ) -> Result(ModelEventVisualJoin, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ModelEventVisualJoin table, in id order.
 pub fn all(tables: store.Tables) -> List(ModelEventVisualJoin) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ModelEventVisualJoin) -> ModelEventVisualJoinId {
+  ModelEventVisualJoinId(row.id)
+}
+
+/// The id in the materialTypeId column, as the typed id of the MaterialType table.
+pub fn material_type_id(row: ModelEventVisualJoin) -> MaterialTypeId {
+  MaterialTypeId(row.material_type_id)
+}
+
+/// The id in the modelEventId column, as the typed id of the ModelEvent table.
+pub fn model_event_id(row: ModelEventVisualJoin) -> ModelEventId {
+  ModelEventId(row.model_event_id)
+}
+
+/// The id in the visualEffectId column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id(row: ModelEventVisualJoin) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id)
+}
+
+/// The id in the modelSequenceId column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id(row: ModelEventVisualJoin) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id)
 }
 
 fn row_id(row: ModelEventVisualJoin) -> Int {

@@ -2,8 +2,12 @@
 //// The client's AttributeMiniMilestoneGroup table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type AttributeMiniMilestoneGroupId, type UnitProperty2Id,
+  AttributeMiniMilestoneGroupId, UnitProperty2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -574,14 +578,334 @@ pub fn entry() -> store.Entry {
 /// The row of the AttributeMiniMilestoneGroup table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: AttributeMiniMilestoneGroupId,
 ) -> Result(AttributeMiniMilestoneGroup, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the AttributeMiniMilestoneGroup table, in id order.
 pub fn all(tables: store.Tables) -> List(AttributeMiniMilestoneGroup) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: AttributeMiniMilestoneGroup) -> AttributeMiniMilestoneGroupId {
+  AttributeMiniMilestoneGroupId(row.id)
+}
+
+/// The id in the unitProperty2IdSecondaryStat00 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat00(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat00)
+}
+
+/// The id in the unitProperty2IdSecondaryStat01 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat01(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat01)
+}
+
+/// The id in the unitProperty2IdSecondaryStat02 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat02(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat02)
+}
+
+/// The id in the unitProperty2IdSecondaryStat03 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat03(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat03)
+}
+
+/// The id in the unitProperty2IdSecondaryStat04 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat04(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat04)
+}
+
+/// The id in the unitProperty2IdSecondaryStat05 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat05(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat05)
+}
+
+/// The id in the unitProperty2IdSecondaryStat06 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat06(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat06)
+}
+
+/// The id in the unitProperty2IdSecondaryStat07 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat07(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat07)
+}
+
+/// The id in the unitProperty2IdSecondaryStat08 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat08(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat08)
+}
+
+/// The id in the unitProperty2IdSecondaryStat09 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat09(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat09)
+}
+
+/// The id in the unitProperty2IdSecondaryStat10 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat10(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat10)
+}
+
+/// The id in the unitProperty2IdSecondaryStat11 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat11(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat11)
+}
+
+/// The id in the unitProperty2IdSecondaryStat12 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat12(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat12)
+}
+
+/// The id in the unitProperty2IdSecondaryStat13 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat13(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat13)
+}
+
+/// The id in the unitProperty2IdSecondaryStat14 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat14(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat14)
+}
+
+/// The id in the unitProperty2IdSecondaryStat15 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat15(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat15)
+}
+
+/// The id in the unitProperty2IdSecondaryStat16 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat16(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat16)
+}
+
+/// The id in the unitProperty2IdSecondaryStat17 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat17(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat17)
+}
+
+/// The id in the unitProperty2IdSecondaryStat18 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat18(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat18)
+}
+
+/// The id in the unitProperty2IdSecondaryStat19 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat19(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat19)
+}
+
+/// The id in the unitProperty2IdSecondaryStat20 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat20(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat20)
+}
+
+/// The id in the unitProperty2IdSecondaryStat21 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat21(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat21)
+}
+
+/// The id in the unitProperty2IdSecondaryStat22 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat22(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat22)
+}
+
+/// The id in the unitProperty2IdSecondaryStat23 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat23(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat23)
+}
+
+/// The id in the unitProperty2IdSecondaryStat24 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat24(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat24)
+}
+
+/// The id in the unitProperty2IdSecondaryStat25 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat25(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat25)
+}
+
+/// The id in the unitProperty2IdSecondaryStat26 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat26(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat26)
+}
+
+/// The id in the unitProperty2IdSecondaryStat27 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat27(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat27)
+}
+
+/// The id in the unitProperty2IdSecondaryStat28 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat28(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat28)
+}
+
+/// The id in the unitProperty2IdSecondaryStat29 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat29(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat29)
+}
+
+/// The id in the unitProperty2IdSecondaryStat30 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat30(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat30)
+}
+
+/// The id in the unitProperty2IdSecondaryStat31 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat31(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat31)
+}
+
+/// The id in the unitProperty2IdSecondaryStat32 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat32(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat32)
+}
+
+/// The id in the unitProperty2IdSecondaryStat33 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat33(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat33)
+}
+
+/// The id in the unitProperty2IdSecondaryStat34 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat34(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat34)
+}
+
+/// The id in the unitProperty2IdSecondaryStat35 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat35(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat35)
+}
+
+/// The id in the unitProperty2IdSecondaryStat36 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat36(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat36)
+}
+
+/// The id in the unitProperty2IdSecondaryStat37 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat37(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat37)
+}
+
+/// The id in the unitProperty2IdSecondaryStat38 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat38(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat38)
+}
+
+/// The id in the unitProperty2IdSecondaryStat39 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat39(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat39)
+}
+
+/// The id in the unitProperty2IdSecondaryStat40 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat40(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat40)
+}
+
+/// The id in the unitProperty2IdSecondaryStat41 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat41(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat41)
+}
+
+/// The id in the unitProperty2IdSecondaryStat42 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat42(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat42)
+}
+
+/// The id in the unitProperty2IdSecondaryStat43 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat43(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat43)
+}
+
+/// The id in the unitProperty2IdSecondaryStat44 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat44(
+  row: AttributeMiniMilestoneGroup,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat44)
 }
 
 fn row_id(row: AttributeMiniMilestoneGroup) -> Int {

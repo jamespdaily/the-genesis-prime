@@ -2,8 +2,12 @@
 //// The client's Creature2Affiliation table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Creature2AffiliationId, type LocalizedTextId, type MiniMapMarkerId,
+  Creature2AffiliationId, LocalizedTextId, MiniMapMarkerId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -47,14 +51,29 @@ pub fn entry() -> store.Entry {
 /// The row of the Creature2Affiliation table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Creature2AffiliationId,
 ) -> Result(Creature2Affiliation, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Creature2Affiliation table, in id order.
 pub fn all(tables: store.Tables) -> List(Creature2Affiliation) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Creature2Affiliation) -> Creature2AffiliationId {
+  Creature2AffiliationId(row.id)
+}
+
+/// The id in the localizedTextIdTitle column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_title(row: Creature2Affiliation) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_title)
+}
+
+/// The id in the miniMapMarkerId column, as the typed id of the MiniMapMarker table.
+pub fn mini_map_marker_id(row: Creature2Affiliation) -> MiniMapMarkerId {
+  MiniMapMarkerId(row.mini_map_marker_id)
 }
 
 fn row_id(row: Creature2Affiliation) -> Int {

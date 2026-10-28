@@ -2,8 +2,13 @@
 //// The client's UnitVehicle table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type SoundEventId, type UnitVehicleId,
+  type WaterSurfaceEffectId, LocalizedTextId, SoundEventId, UnitVehicleId,
+  WaterSurfaceEffectId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -135,14 +140,67 @@ pub fn entry() -> store.Entry {
 /// The row of the UnitVehicle table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: UnitVehicleId,
 ) -> Result(UnitVehicle, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the UnitVehicle table, in id order.
 pub fn all(tables: store.Tables) -> List(UnitVehicle) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: UnitVehicle) -> UnitVehicleId {
+  UnitVehicleId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: UnitVehicle) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdTooltip column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_tooltip(row: UnitVehicle) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_tooltip)
+}
+
+/// The id in the soundEventIdTakeoff column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_takeoff(row: UnitVehicle) -> SoundEventId {
+  SoundEventId(row.sound_event_id_takeoff)
+}
+
+/// The id in the soundEventIdLanding column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_landing(row: UnitVehicle) -> SoundEventId {
+  SoundEventId(row.sound_event_id_landing)
+}
+
+/// The id in the waterSurfaceEffectIdMoving column, as the typed id of the WaterSurfaceEffect table.
+pub fn water_surface_effect_id_moving(
+  row: UnitVehicle,
+) -> WaterSurfaceEffectId {
+  WaterSurfaceEffectId(row.water_surface_effect_id_moving)
+}
+
+/// The id in the waterSurfaceEffectIdStanding column, as the typed id of the WaterSurfaceEffect table.
+pub fn water_surface_effect_id_standing(
+  row: UnitVehicle,
+) -> WaterSurfaceEffectId {
+  WaterSurfaceEffectId(row.water_surface_effect_id_standing)
+}
+
+/// The id in the waterSurfaceEffectIdJumpIn column, as the typed id of the WaterSurfaceEffect table.
+pub fn water_surface_effect_id_jump_in(
+  row: UnitVehicle,
+) -> WaterSurfaceEffectId {
+  WaterSurfaceEffectId(row.water_surface_effect_id_jump_in)
+}
+
+/// The id in the waterSurfaceEffectIdJumpOut column, as the typed id of the WaterSurfaceEffect table.
+pub fn water_surface_effect_id_jump_out(
+  row: UnitVehicle,
+) -> WaterSurfaceEffectId {
+  WaterSurfaceEffectId(row.water_surface_effect_id_jump_out)
 }
 
 fn row_id(row: UnitVehicle) -> Int {

@@ -2,8 +2,12 @@
 //// The client's ZoneCompletion table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type CharacterTitleId, type MapZoneId, type ZoneCompletionId, CharacterTitleId,
+  MapZoneId, ZoneCompletionId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -61,14 +65,29 @@ pub fn entry() -> store.Entry {
 /// The row of the ZoneCompletion table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ZoneCompletionId,
 ) -> Result(ZoneCompletion, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ZoneCompletion table, in id order.
 pub fn all(tables: store.Tables) -> List(ZoneCompletion) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ZoneCompletion) -> ZoneCompletionId {
+  ZoneCompletionId(row.id)
+}
+
+/// The id in the mapZoneId column, as the typed id of the MapZone table.
+pub fn map_zone_id(row: ZoneCompletion) -> MapZoneId {
+  MapZoneId(row.map_zone_id)
+}
+
+/// The id in the characterTitleIdReward column, as the typed id of the CharacterTitle table.
+pub fn character_title_id_reward(row: ZoneCompletion) -> CharacterTitleId {
+  CharacterTitleId(row.character_title_id_reward)
 }
 
 fn row_id(row: ZoneCompletion) -> Int {

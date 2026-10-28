@@ -2,8 +2,13 @@
 //// The client's LevelUpUnlock table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LevelUpUnlockId, type LevelUpUnlockTypeId, type LocalizedTextId,
+  type PrerequisiteId, LevelUpUnlockId, LevelUpUnlockTypeId, LocalizedTextId,
+  PrerequisiteId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -61,14 +66,34 @@ pub fn entry() -> store.Entry {
 /// The row of the LevelUpUnlock table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: LevelUpUnlockId,
 ) -> Result(LevelUpUnlock, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the LevelUpUnlock table, in id order.
 pub fn all(tables: store.Tables) -> List(LevelUpUnlock) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: LevelUpUnlock) -> LevelUpUnlockId {
+  LevelUpUnlockId(row.id)
+}
+
+/// The id in the levelUpUnlockTypeId column, as the typed id of the LevelUpUnlockType table.
+pub fn level_up_unlock_type_id(row: LevelUpUnlock) -> LevelUpUnlockTypeId {
+  LevelUpUnlockTypeId(row.level_up_unlock_type_id)
+}
+
+/// The id in the localizedTextIdDescription column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description(row: LevelUpUnlock) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: LevelUpUnlock) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
 }
 
 fn row_id(row: LevelUpUnlock) -> Int {

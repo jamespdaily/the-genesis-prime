@@ -21,9 +21,15 @@ import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_carrier
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
+import genesis_prime/message/create_result
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
+import genesis_prime/message/disconnect_reason.{
+  type DisconnectReason, AccountDisconnected, CriticalTransactionFailure,
+  Inactivity, LoggedOutByGm, LostGatewayServer, LostUserServer, LostWorldServer,
+  OutOfGameTime,
+}
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/play_character.{PlayCharacter}
@@ -189,11 +195,56 @@ pub fn create_character_result_is_the_clients_102_bits_test() -> Nil {
     value: CreateCharacterResult(
       character_id: 0x1122334455667788,
       field_2: 0xCAFE,
-      result: 3,
+      result: create_result.CreateOk,
     ),
     encode: create_character_result.encode,
     decode: create_character_result.decode,
   )
+}
+
+/// The results the client's creation Lua names, with the case each is named
+/// by: 3 CreateOk (opcode.0xdc), and, in lua.Character.OnCreateCharacterFailed,
+/// 6 CreateFailed_UniqueName, 9 CreateFailed_AccountFull, 10
+/// CreateFailed_InvalidName, 11 CreateFailed_Faction and 44
+/// CreateFailed_CharacterOnline.
+fn create_results() -> List(#(Int, create_result.CreateResult)) {
+  [
+    #(3, create_result.CreateOk),
+    #(6, create_result.NameUnavailable),
+    #(9, create_result.AccountFull),
+    #(10, create_result.NameLength),
+    #(11, create_result.OpposingFaction),
+    #(44, create_result.CharactersOnline),
+  ]
+}
+
+pub fn every_create_result_the_client_names_decodes_to_its_case_and_any_other_to_other_test() -> Nil {
+  use <- owned_test.run(5000)
+  int.range(from: 0, to: 64, with: Nil, run: fn(_, value) {
+    let expected = case list.key_find(create_results(), value) {
+      Ok(named) -> named
+      Error(Nil) -> create_result.Other(value)
+    }
+    let body = <<
+      0x1122334455667788:size(64)-little,
+      0xCAFE:size(32)-little,
+      value:size(8),
+    >>
+    let message =
+      CreateCharacterResult(
+        character_id: 0x1122334455667788,
+        field_2: 0xCAFE,
+        result: expected,
+      )
+    assert create_character_result.decode(body) == Ok(message)
+      as {
+        "opcode.0xdc: result "
+        <> int.to_string(value)
+        <> " is the named case when the client's Lua names it, and any other value is Other"
+      }
+    assert create_character_result.encode(message) == Ok(body)
+      as "a named case is written as the number it names"
+  })
 }
 
 pub fn play_character_is_one_64_bit_id_test() -> Nil {
@@ -594,29 +645,83 @@ pub fn each_message_module_holds_the_clients_message_number_test() -> Nil {
 
 pub fn a_disconnect_notice_is_one_5_bit_reason_test() -> Nil {
   use <- owned_test.run(5000)
-  assert disconnect_notice.encode(DisconnectNotice(reason: 0x1F))
+  assert disconnect_notice.encode(
+      DisconnectNotice(reason: disconnect_reason.Other(0x1F)),
+    )
     == Ok(message_support.hex("1f"))
     as "opcode.0x36a: the reader reads 5 bits (0x14007e95e mov r8d, 0x5); vector.0x140336380.fields: a 5-bit 0x1F is the byte 1f"
   assert disconnect_notice.decode(message_support.hex("14"))
-    == Ok(DisconnectNotice(reason: 20))
+    == Ok(DisconnectNotice(reason: CriticalTransactionFailure))
     as "opcode.0x36a: reason 20 has its own text"
-  assert disconnect_notice.encode(DisconnectNotice(reason: 32))
+  assert disconnect_notice.encode(
+      DisconnectNotice(reason: disconnect_reason.Other(32)),
+    )
     == Error(bit_stream.ValueDoesNotFit("reason", 5, 32))
     as "opcode.0x36a: a reason is 5 bits"
 }
 
+/// The reasons the client's switch at 0x1400168a0 gives a text of their own,
+/// with the case each is named by: 6 text 584168, 7 text 680846, 8 text
+/// 584165, 12 text 584167, 15 text 584166, 16 text 617189, 19 text 730766 and
+/// 20 text 734720 (the fact file's `0x1400168a0`).
+fn disconnect_reasons() -> List(#(Int, DisconnectReason)) {
+  [
+    #(6, LoggedOutByGm),
+    #(7, Inactivity),
+    #(8, LostUserServer),
+    #(12, LostGatewayServer),
+    #(15, LostWorldServer),
+    #(16, OutOfGameTime),
+    #(19, AccountDisconnected),
+    #(20, CriticalTransactionFailure),
+  ]
+}
+
+pub fn every_disconnect_reason_the_client_names_decodes_to_its_case_and_any_other_to_other_test() -> Nil {
+  use <- owned_test.run(5000)
+  int.range(from: 0, to: 32, with: Nil, run: fn(_, value) {
+    let expected = case list.key_find(disconnect_reasons(), value) {
+      Ok(named) -> named
+      Error(Nil) -> disconnect_reason.Other(value)
+    }
+    assert disconnect_notice.decode(<<value>>)
+      == Ok(DisconnectNotice(reason: expected))
+      as {
+        "0x1400168a0: reason "
+        <> int.to_string(value)
+        <> " is the named case when the switch has a text for it, and any other value is Other"
+      }
+    assert disconnect_notice.encode(
+        DisconnectNotice(reason: disconnect_reason.Other(value)),
+      )
+      == Ok(<<value>>)
+      as "a value held as Other is written as its number, named or not"
+    assert disconnect_notice.encode(DisconnectNotice(reason: expected))
+      == Ok(<<value>>)
+      as "a named case is written as the number it names"
+  })
+}
+
 pub fn disconnect_notice_is_the_clients_5_bits_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each([#("06", 6), #("13", 19), #("14", 20), #("1f", 31)], fn(case_) {
-    message_support.assert_vector(
-      name: "vector.opcode.0x36a.body, reason " <> int.to_string(case_.1),
-      body: message_support.hex(case_.0),
-      value: DisconnectNotice(reason: case_.1),
-      encode: disconnect_notice.encode,
-      decode: disconnect_notice.decode,
-    )
-  })
+  list.each(
+    [
+      #("06", LoggedOutByGm),
+      #("13", AccountDisconnected),
+      #("14", CriticalTransactionFailure),
+      #("1f", disconnect_reason.Other(31)),
+    ],
+    fn(case_) {
+      message_support.assert_vector(
+        name: "vector.opcode.0x36a.body, reason " <> case_.0,
+        body: message_support.hex(case_.0),
+        value: DisconnectNotice(reason: case_.1),
+        encode: disconnect_notice.encode,
+        decode: disconnect_notice.decode,
+      )
+    },
+  )
   assert disconnect_notice.decode(message_support.hex("e6"))
-    == Ok(DisconnectNotice(reason: 6))
+    == Ok(DisconnectNotice(reason: LoggedOutByGm))
     as "vector.opcode.0x36a.body: the client reads e6 as reason 6 in 5 bits, its top 3 bits left unread"
 }

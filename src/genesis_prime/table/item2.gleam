@@ -2,8 +2,23 @@
 //// The client's Item2 table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type CurrencyTypeId, type Faction2Id, type GenericUnlockSetId,
+  type HousingDecorInfoId, type HousingWarplotBossTokenId, type Item2CategoryId,
+  type Item2FamilyId, type Item2Id, type Item2TypeId, type ItemBudgetId,
+  type ItemColorSetId, type ItemDisplayId, type ItemImbuementId,
+  type ItemQualityId, type ItemRuneInstanceId, type ItemSpecialId,
+  type ItemStatId, type LocalizedTextId, type PrerequisiteId, type Quest2Id,
+  type SoundEventId, type TradeskillAdditiveId, type TradeskillCatalystId,
+  CurrencyTypeId, Faction2Id, GenericUnlockSetId, HousingDecorInfoId,
+  HousingWarplotBossTokenId, Item2CategoryId, Item2FamilyId, Item2Id,
+  Item2TypeId, ItemBudgetId, ItemColorSetId, ItemDisplayId, ItemImbuementId,
+  ItemQualityId, ItemRuneInstanceId, ItemSpecialId, ItemStatId, LocalizedTextId,
+  PrerequisiteId, Quest2Id, SoundEventId, TradeskillAdditiveId,
+  TradeskillCatalystId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -195,13 +210,153 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Item2 table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Item2, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(tables tables: store.Tables, id id: Item2Id) -> Result(Item2, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Item2 table, in id order.
 pub fn all(tables: store.Tables) -> List(Item2) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Item2) -> Item2Id {
+  Item2Id(row.id)
+}
+
+/// The id in the itemBudgetId column, as the typed id of the ItemBudget table.
+pub fn item_budget_id(row: Item2) -> ItemBudgetId {
+  ItemBudgetId(row.item_budget_id)
+}
+
+/// The id in the itemStatId column, as the typed id of the ItemStat table.
+pub fn item_stat_id(row: Item2) -> ItemStatId {
+  ItemStatId(row.item_stat_id)
+}
+
+/// The id in the itemRuneInstanceId column, as the typed id of the ItemRuneInstance table.
+pub fn item_rune_instance_id(row: Item2) -> ItemRuneInstanceId {
+  ItemRuneInstanceId(row.item_rune_instance_id)
+}
+
+/// The id in the itemQualityId column, as the typed id of the ItemQuality table.
+pub fn item_quality_id(row: Item2) -> ItemQualityId {
+  ItemQualityId(row.item_quality_id)
+}
+
+/// The id in the itemSpecialId00 column, as the typed id of the ItemSpecial table.
+pub fn item_special_id00(row: Item2) -> ItemSpecialId {
+  ItemSpecialId(row.item_special_id00)
+}
+
+/// The id in the itemImbuementId column, as the typed id of the ItemImbuement table.
+pub fn item_imbuement_id(row: Item2) -> ItemImbuementId {
+  ItemImbuementId(row.item_imbuement_id)
+}
+
+/// The id in the item2FamilyId column, as the typed id of the Item2Family table.
+pub fn item2_family_id(row: Item2) -> Item2FamilyId {
+  Item2FamilyId(row.item2_family_id)
+}
+
+/// The id in the item2CategoryId column, as the typed id of the Item2Category table.
+pub fn item2_category_id(row: Item2) -> Item2CategoryId {
+  Item2CategoryId(row.item2_category_id)
+}
+
+/// The id in the item2TypeId column, as the typed id of the Item2Type table.
+pub fn item2_type_id(row: Item2) -> Item2TypeId {
+  Item2TypeId(row.item2_type_id)
+}
+
+/// The id in the itemDisplayId column, as the typed id of the ItemDisplay table.
+pub fn item_display_id(row: Item2) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id)
+}
+
+/// The id in the faction2IdRequired column, as the typed id of the Faction2 table.
+pub fn faction2_id_required(row: Item2) -> Faction2Id {
+  Faction2Id(row.faction2_id_required)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: Item2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
+}
+
+/// The id in the quest2IdActivation column, as the typed id of the Quest2 table.
+pub fn quest2_id_activation(row: Item2) -> Quest2Id {
+  Quest2Id(row.quest2_id_activation)
+}
+
+/// The id in the quest2IdActivationRequired column, as the typed id of the Quest2 table.
+pub fn quest2_id_activation_required(row: Item2) -> Quest2Id {
+  Quest2Id(row.quest2_id_activation_required)
+}
+
+/// The id in the tradeskillAdditiveId column, as the typed id of the TradeskillAdditive table.
+pub fn tradeskill_additive_id(row: Item2) -> TradeskillAdditiveId {
+  TradeskillAdditiveId(row.tradeskill_additive_id)
+}
+
+/// The id in the tradeskillCatalystId column, as the typed id of the TradeskillCatalyst table.
+pub fn tradeskill_catalyst_id(row: Item2) -> TradeskillCatalystId {
+  TradeskillCatalystId(row.tradeskill_catalyst_id)
+}
+
+/// The id in the housingDecorInfoId column, as the typed id of the HousingDecorInfo table.
+pub fn housing_decor_info_id(row: Item2) -> HousingDecorInfoId {
+  HousingDecorInfoId(row.housing_decor_info_id)
+}
+
+/// The id in the housingWarplotBossTokenId column, as the typed id of the HousingWarplotBossToken table.
+pub fn housing_warplot_boss_token_id(row: Item2) -> HousingWarplotBossTokenId {
+  HousingWarplotBossTokenId(row.housing_warplot_boss_token_id)
+}
+
+/// The id in the genericUnlockSetId column, as the typed id of the GenericUnlockSet table.
+pub fn generic_unlock_set_id(row: Item2) -> GenericUnlockSetId {
+  GenericUnlockSetId(row.generic_unlock_set_id)
+}
+
+/// The id in the currencyTypeId0 column, as the typed id of the CurrencyType table.
+pub fn currency_type_id0(row: Item2) -> CurrencyTypeId {
+  CurrencyTypeId(row.currency_type_id0)
+}
+
+/// The id in the currencyTypeId1 column, as the typed id of the CurrencyType table.
+pub fn currency_type_id1(row: Item2) -> CurrencyTypeId {
+  CurrencyTypeId(row.currency_type_id1)
+}
+
+/// The id in the currencyTypeId0SellToVendor column, as the typed id of the CurrencyType table.
+pub fn currency_type_id0_sell_to_vendor(row: Item2) -> CurrencyTypeId {
+  CurrencyTypeId(row.currency_type_id0_sell_to_vendor)
+}
+
+/// The id in the currencyTypeId1SellToVendor column, as the typed id of the CurrencyType table.
+pub fn currency_type_id1_sell_to_vendor(row: Item2) -> CurrencyTypeId {
+  CurrencyTypeId(row.currency_type_id1_sell_to_vendor)
+}
+
+/// The id in the itemColorSetId column, as the typed id of the ItemColorSet table.
+pub fn item_color_set_id(row: Item2) -> ItemColorSetId {
+  ItemColorSetId(row.item_color_set_id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: Item2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdTooltip column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_tooltip(row: Item2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_tooltip)
+}
+
+/// The id in the soundEventIdEquip column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_equip(row: Item2) -> SoundEventId {
+  SoundEventId(row.sound_event_id_equip)
 }
 
 fn row_id(row: Item2) -> Int {

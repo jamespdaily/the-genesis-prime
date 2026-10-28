@@ -28,6 +28,7 @@ import client_tables
 import envoy
 import genesis_prime/table
 import genesis_prime/table/creature2
+import genesis_prime/table/id
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/localized_text
@@ -148,17 +149,17 @@ pub fn a_planted_table_loads_and_gives_each_row_by_id_and_nothing_for_a_gap_test
       requirements: [],
     )
     as "a planted table with two rows loads"
-  let assert Ok(one) = localized_text.get(tables, 1)
+  let assert Ok(one) = localized_text.get(tables, id.LocalizedTextId(1))
     as "id 1 has a record: lookup entry 0"
   assert one.version == 7 as "the planted version of id 1"
-  let assert Ok(three) = localized_text.get(tables, 3)
+  let assert Ok(three) = localized_text.get(tables, id.LocalizedTextId(3))
     as "id 3 has a record: lookup entry 1"
   assert three.version == 9 as "the planted version of id 3"
-  assert localized_text.get(tables, 2) == Error(Nil)
+  assert localized_text.get(tables, id.LocalizedTextId(2)) == Error(Nil)
     as "GameTableRecordById 0x1407c10d0: an id whose lookup entry is 0xffffffff has no record"
-  assert localized_text.get(tables, 0) == Error(Nil)
+  assert localized_text.get(tables, id.LocalizedTextId(0)) == Error(Nil)
     as "id 0 has lookup entry 0xffffffff"
-  assert localized_text.get(tables, 4) == Error(Nil)
+  assert localized_text.get(tables, id.LocalizedTextId(4)) == Error(Nil)
     as "0x1407c1108 cmp edi, [r8 + 0x48]: an id at or past the lookup count (4) has no record"
   assert list.map(localized_text.all(tables), fn(row) { row.id }) == [1, 3]
     as "the rows in id order"
@@ -211,8 +212,11 @@ fn creature2_names_a_localized_text() -> store.Requirement {
     to_table: "LocalizedText",
     missing: fn(tables) {
       creature2.all(tables)
-      |> list.map(fn(row) { row.localized_text_id_name })
-      |> list.filter(fn(id) { result.is_error(localized_text.get(tables, id)) })
+      |> list.map(creature2.localized_text_id_name)
+      |> list.filter(fn(text_id) {
+        result.is_error(localized_text.get(tables, text_id))
+      })
+      |> list.map(fn(text_id) { text_id.value })
     },
   )
 }
@@ -490,7 +494,8 @@ pub fn a_string_in_the_string_data_loads_with_its_text_test() -> Nil {
   let assert Ok(tables) =
     creature2_with([#("description", Text("Planted Creature"))])
     as "a string written into the string data resolves"
-  let assert Ok(row) = creature2.get(tables, 1) as "id 1 has a record"
+  let assert Ok(row) = creature2.get(tables, id.Creature2Id(1))
+    as "id 1 has a record"
   assert row.description == "Planted Creature"
     as "the UTF-16 text the planted string data holds"
   store.unload(tables)

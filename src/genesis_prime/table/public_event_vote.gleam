@@ -2,8 +2,12 @@
 //// The client's PublicEventVote table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type PublicEventVoteId, LocalizedTextId,
+  PublicEventVoteId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -99,14 +103,79 @@ pub fn entry() -> store.Entry {
 /// The row of the PublicEventVote table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PublicEventVoteId,
 ) -> Result(PublicEventVote, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PublicEventVote table, in id order.
 pub fn all(tables: store.Tables) -> List(PublicEventVote) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PublicEventVote) -> PublicEventVoteId {
+  PublicEventVoteId(row.id)
+}
+
+/// The id in the localizedTextIdTitle column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_title(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_title)
+}
+
+/// The id in the localizedTextIdDescription column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description)
+}
+
+/// The id in the localizedTextIdOption00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_option00(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_option00)
+}
+
+/// The id in the localizedTextIdOption01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_option01(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_option01)
+}
+
+/// The id in the localizedTextIdOption02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_option02(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_option02)
+}
+
+/// The id in the localizedTextIdOption03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_option03(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_option03)
+}
+
+/// The id in the localizedTextIdOption04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_option04(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_option04)
+}
+
+/// The id in the localizedTextIdLabel00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_label00(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_label00)
+}
+
+/// The id in the localizedTextIdLabel01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_label01(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_label01)
+}
+
+/// The id in the localizedTextIdLabel02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_label02(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_label02)
+}
+
+/// The id in the localizedTextIdLabel03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_label03(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_label03)
+}
+
+/// The id in the localizedTextIdLabel04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_label04(row: PublicEventVote) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_label04)
 }
 
 fn row_id(row: PublicEventVote) -> Int {

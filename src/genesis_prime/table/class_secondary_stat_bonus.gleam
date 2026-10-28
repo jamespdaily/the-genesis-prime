@@ -2,8 +2,12 @@
 //// The client's ClassSecondaryStatBonus table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type ClassSecondaryStatBonusId, type UnitProperty2Id,
+  ClassSecondaryStatBonusId, UnitProperty2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -55,14 +59,40 @@ pub fn entry() -> store.Entry {
 /// The row of the ClassSecondaryStatBonus table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ClassSecondaryStatBonusId,
 ) -> Result(ClassSecondaryStatBonus, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ClassSecondaryStatBonus table, in id order.
 pub fn all(tables: store.Tables) -> List(ClassSecondaryStatBonus) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ClassSecondaryStatBonus) -> ClassSecondaryStatBonusId {
+  ClassSecondaryStatBonusId(row.id)
+}
+
+/// The id in the unitProperty2IdSecondaryStat00 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat00(
+  row: ClassSecondaryStatBonus,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat00)
+}
+
+/// The id in the unitProperty2IdSecondaryStat01 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat01(
+  row: ClassSecondaryStatBonus,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat01)
+}
+
+/// The id in the unitProperty2IdSecondaryStat02 column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id_secondary_stat02(
+  row: ClassSecondaryStatBonus,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id_secondary_stat02)
 }
 
 fn row_id(row: ClassSecondaryStatBonus) -> Int {

@@ -2,8 +2,12 @@
 //// The client's MapZonePOI table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type MapZoneId, type MapZonePOIId, type MapZoneSpriteId,
+  LocalizedTextId, MapZoneId, MapZonePOIId, MapZoneSpriteId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -44,13 +48,36 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the MapZonePOI table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(MapZonePOI, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: MapZonePOIId,
+) -> Result(MapZonePOI, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the MapZonePOI table, in id order.
 pub fn all(tables: store.Tables) -> List(MapZonePOI) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: MapZonePOI) -> MapZonePOIId {
+  MapZonePOIId(row.id)
+}
+
+/// The id in the mapZoneId column, as the typed id of the MapZone table.
+pub fn map_zone_id(row: MapZonePOI) -> MapZoneId {
+  MapZoneId(row.map_zone_id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: MapZonePOI) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
+}
+
+/// The id in the mapZoneSpriteId column, as the typed id of the MapZoneSprite table.
+pub fn map_zone_sprite_id(row: MapZonePOI) -> MapZoneSpriteId {
+  MapZoneSpriteId(row.map_zone_sprite_id)
 }
 
 fn row_id(row: MapZonePOI) -> Int {

@@ -2,8 +2,13 @@
 //// The client's PathExplorerPowerMap table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type PathExplorerPowerMapId, type VisualEffectId,
+  type WorldLocation2Id, LocalizedTextId, PathExplorerPowerMapId, VisualEffectId,
+  WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -58,14 +63,36 @@ pub fn entry() -> store.Entry {
 /// The row of the PathExplorerPowerMap table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathExplorerPowerMapId,
 ) -> Result(PathExplorerPowerMap, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathExplorerPowerMap table, in id order.
 pub fn all(tables: store.Tables) -> List(PathExplorerPowerMap) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathExplorerPowerMap) -> PathExplorerPowerMapId {
+  PathExplorerPowerMapId(row.id)
+}
+
+/// The id in the worldLocation2IdVisual column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_visual(
+  row: PathExplorerPowerMap,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_visual)
+}
+
+/// The id in the visualEffectIdInactive column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_inactive(row: PathExplorerPowerMap) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_inactive)
+}
+
+/// The id in the localizedTextIdInfo column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_info(row: PathExplorerPowerMap) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_info)
 }
 
 fn row_id(row: PathExplorerPowerMap) -> Int {

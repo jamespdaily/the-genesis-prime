@@ -2,8 +2,15 @@
 //// The client's Challenge table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type ChallengeId, type ChallengeTierId, type LocalizedTextId,
+  type QuestDirectionId, type RewardTrackId, type TargetGroupId,
+  type VirtualItemId, type WorldLocation2Id, type WorldZoneId, ChallengeId,
+  ChallengeTierId, LocalizedTextId, QuestDirectionId, RewardTrackId,
+  TargetGroupId, VirtualItemId, WorldLocation2Id, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -122,13 +129,101 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Challenge table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Challenge, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: ChallengeId,
+) -> Result(Challenge, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Challenge table, in id order.
 pub fn all(tables: store.Tables) -> List(Challenge) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Challenge) -> ChallengeId {
+  ChallengeId(row.id)
+}
+
+/// The id in the worldZoneIdRestriction column, as the typed id of the WorldZone table.
+pub fn world_zone_id_restriction(row: Challenge) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id_restriction)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: Challenge) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the worldLocation2IdIndicator column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_indicator(row: Challenge) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_indicator)
+}
+
+/// The id in the worldLocation2IdStartLocation column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_start_location(row: Challenge) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_start_location)
+}
+
+/// The id in the challengeTierId00 column, as the typed id of the ChallengeTier table.
+pub fn challenge_tier_id00(row: Challenge) -> ChallengeTierId {
+  ChallengeTierId(row.challenge_tier_id00)
+}
+
+/// The id in the challengeTierId01 column, as the typed id of the ChallengeTier table.
+pub fn challenge_tier_id01(row: Challenge) -> ChallengeTierId {
+  ChallengeTierId(row.challenge_tier_id01)
+}
+
+/// The id in the challengeTierId02 column, as the typed id of the ChallengeTier table.
+pub fn challenge_tier_id02(row: Challenge) -> ChallengeTierId {
+  ChallengeTierId(row.challenge_tier_id02)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: Challenge) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdProgress column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_progress(row: Challenge) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_progress)
+}
+
+/// The id in the localizedTextIdAreaRestriction column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_area_restriction(row: Challenge) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_area_restriction)
+}
+
+/// The id in the localizedTextIdLocation column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_location(row: Challenge) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_location)
+}
+
+/// The id in the virtualItemIdDisplay column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id_display(row: Challenge) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id_display)
+}
+
+/// The id in the targetGroupIdRewardPane column, as the typed id of the TargetGroup table.
+pub fn target_group_id_reward_pane(row: Challenge) -> TargetGroupId {
+  TargetGroupId(row.target_group_id_reward_pane)
+}
+
+/// The id in the questDirectionIdActive column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id_active(row: Challenge) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id_active)
+}
+
+/// The id in the questDirectionIdInactive column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id_inactive(row: Challenge) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id_inactive)
+}
+
+/// The id in the rewardTrackId column, as the typed id of the RewardTrack table.
+pub fn reward_track_id(row: Challenge) -> RewardTrackId {
+  RewardTrackId(row.reward_track_id)
 }
 
 fn row_id(row: Challenge) -> Int {

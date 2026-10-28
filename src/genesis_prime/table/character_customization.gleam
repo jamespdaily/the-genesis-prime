@@ -2,8 +2,13 @@
 //// The client's CharacterCustomization table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type CharacterCustomizationId, type CharacterCustomizationLabelId,
+  type ItemDisplayId, type ItemSlotId, type RaceId, CharacterCustomizationId,
+  CharacterCustomizationLabelId, ItemDisplayId, ItemSlotId, RaceId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -58,14 +63,48 @@ pub fn entry() -> store.Entry {
 /// The row of the CharacterCustomization table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: CharacterCustomizationId,
 ) -> Result(CharacterCustomization, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the CharacterCustomization table, in id order.
 pub fn all(tables: store.Tables) -> List(CharacterCustomization) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: CharacterCustomization) -> CharacterCustomizationId {
+  CharacterCustomizationId(row.id)
+}
+
+/// The id in the raceId column, as the typed id of the Race table.
+pub fn race_id(row: CharacterCustomization) -> RaceId {
+  RaceId(row.race_id)
+}
+
+/// The id in the itemSlotId column, as the typed id of the ItemSlot table.
+pub fn item_slot_id(row: CharacterCustomization) -> ItemSlotId {
+  ItemSlotId(row.item_slot_id)
+}
+
+/// The id in the itemDisplayId column, as the typed id of the ItemDisplay table.
+pub fn item_display_id(row: CharacterCustomization) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id)
+}
+
+/// The id in the characterCustomizationLabelId00 column, as the typed id of the CharacterCustomizationLabel table.
+pub fn character_customization_label_id00(
+  row: CharacterCustomization,
+) -> CharacterCustomizationLabelId {
+  CharacterCustomizationLabelId(row.character_customization_label_id00)
+}
+
+/// The id in the characterCustomizationLabelId01 column, as the typed id of the CharacterCustomizationLabel table.
+pub fn character_customization_label_id01(
+  row: CharacterCustomization,
+) -> CharacterCustomizationLabelId {
+  CharacterCustomizationLabelId(row.character_customization_label_id01)
 }
 
 fn row_id(row: CharacterCustomization) -> Int {

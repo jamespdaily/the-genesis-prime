@@ -2,8 +2,12 @@
 //// The client's Spell4Effects table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type PrerequisiteId, type Spell4EffectGroupListId, type Spell4EffectsId,
+  PrerequisiteId, Spell4EffectGroupListId, Spell4EffectsId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -146,14 +150,55 @@ pub fn entry() -> store.Entry {
 /// The row of the Spell4Effects table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Spell4EffectsId,
 ) -> Result(Spell4Effects, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Spell4Effects table, in id order.
 pub fn all(tables: store.Tables) -> List(Spell4Effects) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Spell4Effects) -> Spell4EffectsId {
+  Spell4EffectsId(row.id)
+}
+
+/// The id in the spell4EffectGroupListId column, as the typed id of the Spell4EffectGroupList table.
+pub fn spell4_effect_group_list_id(
+  row: Spell4Effects,
+) -> Spell4EffectGroupListId {
+  Spell4EffectGroupListId(row.spell4_effect_group_list_id)
+}
+
+/// The id in the prerequisiteIdCasterApply column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_caster_apply(row: Spell4Effects) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_caster_apply)
+}
+
+/// The id in the prerequisiteIdTargetApply column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_target_apply(row: Spell4Effects) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_target_apply)
+}
+
+/// The id in the prerequisiteIdCasterPersistence column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_caster_persistence(
+  row: Spell4Effects,
+) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_caster_persistence)
+}
+
+/// The id in the prerequisiteIdTargetPersistence column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_target_persistence(
+  row: Spell4Effects,
+) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_target_persistence)
+}
+
+/// The id in the prerequisiteIdTargetSuspend column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_target_suspend(row: Spell4Effects) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_target_suspend)
 }
 
 fn row_id(row: Spell4Effects) -> Int {

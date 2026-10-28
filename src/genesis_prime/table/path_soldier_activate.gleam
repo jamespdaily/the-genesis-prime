@@ -2,8 +2,12 @@
 //// The client's PathSoldierActivate table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type PathSoldierActivateId, type TargetGroupId, Creature2Id,
+  PathSoldierActivateId, TargetGroupId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -45,14 +49,29 @@ pub fn entry() -> store.Entry {
 /// The row of the PathSoldierActivate table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathSoldierActivateId,
 ) -> Result(PathSoldierActivate, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathSoldierActivate table, in id order.
 pub fn all(tables: store.Tables) -> List(PathSoldierActivate) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathSoldierActivate) -> PathSoldierActivateId {
+  PathSoldierActivateId(row.id)
+}
+
+/// The id in the creature2Id column, as the typed id of the Creature2 table.
+pub fn creature2_id(row: PathSoldierActivate) -> Creature2Id {
+  Creature2Id(row.creature2_id)
+}
+
+/// The id in the targetGroupId column, as the typed id of the TargetGroup table.
+pub fn target_group_id(row: PathSoldierActivate) -> TargetGroupId {
+  TargetGroupId(row.target_group_id)
 }
 
 fn row_id(row: PathSoldierActivate) -> Int {

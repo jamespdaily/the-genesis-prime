@@ -2,8 +2,14 @@
 //// The client's PathSettlerHub table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Item2Id, type LocalizedTextId, type PathSettlerHubId,
+  type PublicEventObjectiveId, type WorldLocation2Id, type WorldZoneId, Item2Id,
+  LocalizedTextId, PathSettlerHubId, PublicEventObjectiveId, WorldLocation2Id,
+  WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -162,14 +168,166 @@ pub fn entry() -> store.Entry {
 /// The row of the PathSettlerHub table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathSettlerHubId,
 ) -> Result(PathSettlerHub, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathSettlerHub table, in id order.
 pub fn all(tables: store.Tables) -> List(PathSettlerHub) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathSettlerHub) -> PathSettlerHubId {
+  PathSettlerHubId(row.id)
+}
+
+/// The id in the localizedTextIdEconomy column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_economy(row: PathSettlerHub) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_economy)
+}
+
+/// The id in the localizedTextIdSecurity column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_security(row: PathSettlerHub) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_security)
+}
+
+/// The id in the localizedTextIdQualityOfLife column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_quality_of_life(
+  row: PathSettlerHub,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_quality_of_life)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: PathSettlerHub) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the item2IdResource00 column, as the typed id of the Item2 table.
+pub fn item2_id_resource00(row: PathSettlerHub) -> Item2Id {
+  Item2Id(row.item2_id_resource00)
+}
+
+/// The id in the item2IdResource01 column, as the typed id of the Item2 table.
+pub fn item2_id_resource01(row: PathSettlerHub) -> Item2Id {
+  Item2Id(row.item2_id_resource01)
+}
+
+/// The id in the item2IdResource02 column, as the typed id of the Item2 table.
+pub fn item2_id_resource02(row: PathSettlerHub) -> Item2Id {
+  Item2Id(row.item2_id_resource02)
+}
+
+/// The id in the publicEventObjectiveIdResource00 column, as the typed id of the PublicEventObjective table.
+pub fn public_event_objective_id_resource00(
+  row: PathSettlerHub,
+) -> PublicEventObjectiveId {
+  PublicEventObjectiveId(row.public_event_objective_id_resource00)
+}
+
+/// The id in the publicEventObjectiveIdResource01 column, as the typed id of the PublicEventObjective table.
+pub fn public_event_objective_id_resource01(
+  row: PathSettlerHub,
+) -> PublicEventObjectiveId {
+  PublicEventObjectiveId(row.public_event_objective_id_resource01)
+}
+
+/// The id in the publicEventObjectiveIdResource02 column, as the typed id of the PublicEventObjective table.
+pub fn public_event_objective_id_resource02(
+  row: PathSettlerHub,
+) -> PublicEventObjectiveId {
+  PublicEventObjectiveId(row.public_event_objective_id_resource02)
+}
+
+/// The id in the worldLocation2IdMapResource00Loc00 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource00_loc00(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource00_loc00)
+}
+
+/// The id in the worldLocation2IdMapResource00Loc01 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource00_loc01(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource00_loc01)
+}
+
+/// The id in the worldLocation2IdMapResource00Loc02 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource00_loc02(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource00_loc02)
+}
+
+/// The id in the worldLocation2IdMapResource00Loc03 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource00_loc03(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource00_loc03)
+}
+
+/// The id in the worldLocation2IdMapResource01Loc00 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource01_loc00(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource01_loc00)
+}
+
+/// The id in the worldLocation2IdMapResource01Loc01 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource01_loc01(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource01_loc01)
+}
+
+/// The id in the worldLocation2IdMapResource01Loc02 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource01_loc02(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource01_loc02)
+}
+
+/// The id in the worldLocation2IdMapResource01Loc03 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource01_loc03(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource01_loc03)
+}
+
+/// The id in the worldLocation2IdMapResource02Loc00 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource02_loc00(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource02_loc00)
+}
+
+/// The id in the worldLocation2IdMapResource02Loc01 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource02_loc01(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource02_loc01)
+}
+
+/// The id in the worldLocation2IdMapResource02Loc02 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource02_loc02(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource02_loc02)
+}
+
+/// The id in the worldLocation2IdMapResource02Loc03 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_map_resource02_loc03(
+  row: PathSettlerHub,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_map_resource02_loc03)
+}
+
+/// The id in the localizedTextIdRewardNotify column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_reward_notify(row: PathSettlerHub) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_reward_notify)
 }
 
 fn row_id(row: PathSettlerHub) -> Int {

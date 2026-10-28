@@ -2,8 +2,12 @@
 //// The client's HousingWarplotBossToken table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type HousingPlugItemId, type HousingWarplotBossTokenId, type Spell4Id,
+  HousingPlugItemId, HousingWarplotBossTokenId, Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -46,14 +50,31 @@ pub fn entry() -> store.Entry {
 /// The row of the HousingWarplotBossToken table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: HousingWarplotBossTokenId,
 ) -> Result(HousingWarplotBossToken, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the HousingWarplotBossToken table, in id order.
 pub fn all(tables: store.Tables) -> List(HousingWarplotBossToken) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: HousingWarplotBossToken) -> HousingWarplotBossTokenId {
+  HousingWarplotBossTokenId(row.id)
+}
+
+/// The id in the spell4IdSummon column, as the typed id of the Spell4 table.
+pub fn spell4_id_summon(row: HousingWarplotBossToken) -> Spell4Id {
+  Spell4Id(row.spell4_id_summon)
+}
+
+/// The id in the housingPlugItemIdLinked column, as the typed id of the HousingPlugItem table.
+pub fn housing_plug_item_id_linked(
+  row: HousingWarplotBossToken,
+) -> HousingPlugItemId {
+  HousingPlugItemId(row.housing_plug_item_id_linked)
 }
 
 fn row_id(row: HousingWarplotBossToken) -> Int {

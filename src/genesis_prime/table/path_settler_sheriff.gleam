@@ -2,8 +2,13 @@
 //// The client's PathSettlerSheriff table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type CharacterTitleId, type LocalizedTextId, type PathSettlerSheriffId,
+  type Quest2Id, CharacterTitleId, LocalizedTextId, PathSettlerSheriffId,
+  Quest2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -119,14 +124,120 @@ pub fn entry() -> store.Entry {
 /// The row of the PathSettlerSheriff table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathSettlerSheriffId,
 ) -> Result(PathSettlerSheriff, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathSettlerSheriff table, in id order.
 pub fn all(tables: store.Tables) -> List(PathSettlerSheriff) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathSettlerSheriff) -> PathSettlerSheriffId {
+  PathSettlerSheriffId(row.id)
+}
+
+/// The id in the quest2IdSheriff00 column, as the typed id of the Quest2 table.
+pub fn quest2_id_sheriff00(row: PathSettlerSheriff) -> Quest2Id {
+  Quest2Id(row.quest2_id_sheriff00)
+}
+
+/// The id in the quest2IdSheriff01 column, as the typed id of the Quest2 table.
+pub fn quest2_id_sheriff01(row: PathSettlerSheriff) -> Quest2Id {
+  Quest2Id(row.quest2_id_sheriff01)
+}
+
+/// The id in the quest2IdSheriff02 column, as the typed id of the Quest2 table.
+pub fn quest2_id_sheriff02(row: PathSettlerSheriff) -> Quest2Id {
+  Quest2Id(row.quest2_id_sheriff02)
+}
+
+/// The id in the quest2IdSheriff03 column, as the typed id of the Quest2 table.
+pub fn quest2_id_sheriff03(row: PathSettlerSheriff) -> Quest2Id {
+  Quest2Id(row.quest2_id_sheriff03)
+}
+
+/// The id in the quest2IdSheriff04 column, as the typed id of the Quest2 table.
+pub fn quest2_id_sheriff04(row: PathSettlerSheriff) -> Quest2Id {
+  Quest2Id(row.quest2_id_sheriff04)
+}
+
+/// The id in the quest2IdSheriff05 column, as the typed id of the Quest2 table.
+pub fn quest2_id_sheriff05(row: PathSettlerSheriff) -> Quest2Id {
+  Quest2Id(row.quest2_id_sheriff05)
+}
+
+/// The id in the quest2IdSheriff06 column, as the typed id of the Quest2 table.
+pub fn quest2_id_sheriff06(row: PathSettlerSheriff) -> Quest2Id {
+  Quest2Id(row.quest2_id_sheriff06)
+}
+
+/// The id in the quest2IdSheriff07 column, as the typed id of the Quest2 table.
+pub fn quest2_id_sheriff07(row: PathSettlerSheriff) -> Quest2Id {
+  Quest2Id(row.quest2_id_sheriff07)
+}
+
+/// The id in the localizedTextIdDescription00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description00(
+  row: PathSettlerSheriff,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description00)
+}
+
+/// The id in the localizedTextIdDescription01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description01(
+  row: PathSettlerSheriff,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description01)
+}
+
+/// The id in the localizedTextIdDescription02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description02(
+  row: PathSettlerSheriff,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description02)
+}
+
+/// The id in the localizedTextIdDescription03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description03(
+  row: PathSettlerSheriff,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description03)
+}
+
+/// The id in the localizedTextIdDescription04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description04(
+  row: PathSettlerSheriff,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description04)
+}
+
+/// The id in the localizedTextIdDescription05 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description05(
+  row: PathSettlerSheriff,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description05)
+}
+
+/// The id in the localizedTextIdDescription06 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description06(
+  row: PathSettlerSheriff,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description06)
+}
+
+/// The id in the localizedTextIdDescription07 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description07(
+  row: PathSettlerSheriff,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description07)
+}
+
+/// The id in the characterTitleIdReward column, as the typed id of the CharacterTitle table.
+pub fn character_title_id_reward(row: PathSettlerSheriff) -> CharacterTitleId {
+  CharacterTitleId(row.character_title_id_reward)
 }
 
 fn row_id(row: PathSettlerSheriff) -> Int {

@@ -2,8 +2,14 @@
 //// The client's PublicEvent table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LiveEventId, type LocalizedTextId, type PublicEventId,
+  type RewardRotationContentId, type WorldId, type WorldLocation2Id,
+  type WorldZoneId, LiveEventId, LocalizedTextId, PublicEventId,
+  RewardRotationContentId, WorldId, WorldLocation2Id, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -76,14 +82,59 @@ pub fn entry() -> store.Entry {
 /// The row of the PublicEvent table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PublicEventId,
 ) -> Result(PublicEvent, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PublicEvent table, in id order.
 pub fn all(tables: store.Tables) -> List(PublicEvent) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PublicEvent) -> PublicEventId {
+  PublicEventId(row.id)
+}
+
+/// The id in the worldId column, as the typed id of the World table.
+pub fn world_id(row: PublicEvent) -> WorldId {
+  WorldId(row.world_id)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: PublicEvent) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: PublicEvent) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the worldLocation2Id column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id(row: PublicEvent) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id)
+}
+
+/// The id in the publicEventIdParent column, as the typed id of the PublicEvent table.
+pub fn public_event_id_parent(row: PublicEvent) -> PublicEventId {
+  PublicEventId(row.public_event_id_parent)
+}
+
+/// The id in the liveEventIdLifetime column, as the typed id of the LiveEvent table.
+pub fn live_event_id_lifetime(row: PublicEvent) -> LiveEventId {
+  LiveEventId(row.live_event_id_lifetime)
+}
+
+/// The id in the localizedTextIdEnd column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_end(row: PublicEvent) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_end)
+}
+
+/// The id in the rewardRotationContentId column, as the typed id of the RewardRotationContent table.
+pub fn reward_rotation_content_id(row: PublicEvent) -> RewardRotationContentId {
+  RewardRotationContentId(row.reward_rotation_content_id)
 }
 
 fn row_id(row: PublicEvent) -> Int {

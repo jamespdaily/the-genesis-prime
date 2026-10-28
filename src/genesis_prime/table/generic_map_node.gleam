@@ -2,8 +2,13 @@
 //// The client's GenericMapNode table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type GenericMapId, type GenericMapNodeId, type LocalizedTextId,
+  type WorldLocation2Id, GenericMapId, GenericMapNodeId, LocalizedTextId,
+  WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -58,14 +63,39 @@ pub fn entry() -> store.Entry {
 /// The row of the GenericMapNode table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: GenericMapNodeId,
 ) -> Result(GenericMapNode, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the GenericMapNode table, in id order.
 pub fn all(tables: store.Tables) -> List(GenericMapNode) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: GenericMapNode) -> GenericMapNodeId {
+  GenericMapNodeId(row.id)
+}
+
+/// The id in the genericMapId column, as the typed id of the GenericMap table.
+pub fn generic_map_id(row: GenericMapNode) -> GenericMapId {
+  GenericMapId(row.generic_map_id)
+}
+
+/// The id in the worldLocation2Id column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id(row: GenericMapNode) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: GenericMapNode) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdDescription column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description(row: GenericMapNode) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description)
 }
 
 fn row_id(row: GenericMapNode) -> Int {

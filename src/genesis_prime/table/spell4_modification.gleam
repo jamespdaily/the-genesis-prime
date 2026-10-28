@@ -2,8 +2,12 @@
 //// The client's Spell4Modification table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Spell4EffectsId, type Spell4ModificationId, Spell4EffectsId,
+  Spell4ModificationId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -56,14 +60,24 @@ pub fn entry() -> store.Entry {
 /// The row of the Spell4Modification table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Spell4ModificationId,
 ) -> Result(Spell4Modification, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Spell4Modification table, in id order.
 pub fn all(tables: store.Tables) -> List(Spell4Modification) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Spell4Modification) -> Spell4ModificationId {
+  Spell4ModificationId(row.id)
+}
+
+/// The id in the spell4EffectsId column, as the typed id of the Spell4Effects table.
+pub fn spell4_effects_id(row: Spell4Modification) -> Spell4EffectsId {
+  Spell4EffectsId(row.spell4_effects_id)
 }
 
 fn row_id(row: Spell4Modification) -> Int {

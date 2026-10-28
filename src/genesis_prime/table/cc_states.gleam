@@ -2,8 +2,13 @@
 //// The client's CCStates table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type CCStateDiminishingReturnsId, type CCStatesId, type LocalizedTextId,
+  type VisualEffectId, CCStateDiminishingReturnsId, CCStatesId, LocalizedTextId,
+  VisualEffectId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -58,13 +63,48 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the CCStates table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(CCStates, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: CCStatesId,
+) -> Result(CCStates, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the CCStates table, in id order.
 pub fn all(tables: store.Tables) -> List(CCStates) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: CCStates) -> CCStatesId {
+  CCStatesId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: CCStates) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the visualEffectId00 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id00(row: CCStates) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id00)
+}
+
+/// The id in the visualEffectId01 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id01(row: CCStates) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id01)
+}
+
+/// The id in the visualEffectId02 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id02(row: CCStates) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id02)
+}
+
+/// The id in the ccStateDiminishingReturnsId column, as the typed id of the CCStateDiminishingReturns table.
+pub fn cc_state_diminishing_returns_id(
+  row: CCStates,
+) -> CCStateDiminishingReturnsId {
+  CCStateDiminishingReturnsId(row.cc_state_diminishing_returns_id)
 }
 
 fn row_id(row: CCStates) -> Int {

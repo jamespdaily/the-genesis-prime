@@ -2,8 +2,12 @@
 //// The client's CharacterCustomizationLabel table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type CharacterCustomizationLabelId, type Faction2Id, type LocalizedTextId,
+  CharacterCustomizationLabelId, Faction2Id, LocalizedTextId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -40,14 +44,29 @@ pub fn entry() -> store.Entry {
 /// The row of the CharacterCustomizationLabel table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: CharacterCustomizationLabelId,
 ) -> Result(CharacterCustomizationLabel, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the CharacterCustomizationLabel table, in id order.
 pub fn all(tables: store.Tables) -> List(CharacterCustomizationLabel) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: CharacterCustomizationLabel) -> CharacterCustomizationLabelId {
+  CharacterCustomizationLabelId(row.id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: CharacterCustomizationLabel) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
+}
+
+/// The id in the faction2Id column, as the typed id of the Faction2 table.
+pub fn faction2_id(row: CharacterCustomizationLabel) -> Faction2Id {
+  Faction2Id(row.faction2_id)
 }
 
 fn row_id(row: CharacterCustomizationLabel) -> Int {

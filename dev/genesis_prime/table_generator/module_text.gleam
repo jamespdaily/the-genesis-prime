@@ -5,7 +5,9 @@
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table_generator/difference
 import genesis_prime/table_generator/naming
+import genesis_prime/table_generator/reference.{type Table}
 import gleam/bool
+import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/result
@@ -37,15 +39,29 @@ type NamedField {
   NamedField(position: Int, field: String, placed: tbl_file.Field)
 }
 
-/// The module for a table: `file` is the name of its file without `.tbl`.
+/// A function that gives a column's integer as the typed id of the table whose
+/// id it holds.
+type Reader {
+  Reader(field: String, column: String, table: Table)
+}
+
+/// A table's module, and the columns of the table that name an id of no
+/// loaded table, by the client's column names.
+pub type Rendered {
+  Rendered(text: String, unmatched: List(String))
+}
+
+/// The module for a table: `file` is the name of its file without `.tbl`,
+/// `table` is the table's names, and `tables` is every table that is loaded,
+/// which the columns that hold their ids are matched against.
 pub fn render(
   file file: String,
   description description: tbl_file.Description,
-) -> Result(String, ModuleError) {
+  table own: Table,
+  tables tables: Dict(String, Table),
+) -> Result(Rendered, ModuleError) {
   let table = description.table
-  use type_name <- result.try(
-    naming.type_name(table) |> result.map_error(Unnamed),
-  )
+  let type_name = own.type_name
   use <- bool.guard(
     when: list.contains(prelude_types, type_name),
     return: Error(ReservedTypeName(table)),
@@ -64,20 +80,24 @@ pub fn render(
     )),
   )
   use fields <- result.try(name_fields(table, placed))
-  Ok(string.join(
-    [
-      header(file, table),
-      imports(fields),
-      row_type(type_name:, table:, fields:),
-      schema(file, description),
-      entry(table),
-      get(type_name, table),
-      all(type_name, table),
-      row_id(type_name),
-      decoder(type_name, fields),
-    ],
-    "\n",
-  ))
+  let #(readers, unmatched) = readers(fields:, own:, tables:)
+  let text =
+    string.join(
+      [
+        header(file, table),
+        imports(fields:, own:, readers:),
+        row_type(type_name:, table:, fields:),
+        schema(file, description),
+        entry(table),
+        get(own, table),
+        all(type_name, table),
+        list.map(readers, reader(type_name, _)) |> string.join("\n"),
+        row_id(type_name),
+        decoder(type_name, fields),
+      ],
+      "\n",
+    )
+  Ok(Rendered(text:, unmatched:))
 }
 
 fn has_id_column(columns: List(tbl_file.Column)) -> Bool {
@@ -86,6 +106,78 @@ fn has_id_column(columns: List(tbl_file.Column)) -> Bool {
       string.lowercase(name) == "id"
     _ -> False
   }
+}
+
+/// The readers of a table: its own `id` column, and each 32-bit integer column
+/// whose name follows another table's name with `_id`; and the client names of
+/// the 32-bit integer columns that have the word `id` and follow no table's
+/// name.
+fn readers(
+  fields fields: List(NamedField),
+  own own: Table,
+  tables tables: Dict(String, Table),
+) -> #(List(Reader), List(String)) {
+  let #(readers, unmatched) =
+    list.fold(fields, #([], []), fn(found, named) {
+      let #(readers, unmatched) = found
+      let column = named.placed.column
+      case column.column_type, named.field {
+        tbl_file.Integer32, "id" -> #(
+          [
+            Reader(field: named.field, column: column.name, table: own),
+            ..readers
+          ],
+          unmatched,
+        )
+        tbl_file.Integer32, field ->
+          case reference.referenced_table(column: field, tables:) {
+            Ok(table) -> #(
+              [Reader(field:, column: column.name, table:), ..readers],
+              unmatched,
+            )
+            Error(Nil) ->
+              case reference.names_an_id(field) {
+                True -> #(readers, [column.name, ..unmatched])
+                False -> #(readers, unmatched)
+              }
+          }
+        _, _ -> found
+      }
+    })
+  #(list.reverse(readers), list.reverse(unmatched))
+}
+
+/// The id type of a table, which `genesis_prime/table/id` holds.
+fn id_type(table: Table) -> String {
+  table.type_name <> "Id"
+}
+
+fn reader(type_name: String, reader: Reader) -> String {
+  let description = case reader.field {
+    "id" -> "/// The row's own id, as the typed id of its table."
+    _ ->
+      "/// The id in the "
+      <> reader.column
+      <> " column, as the typed id of the "
+      <> reader.table.type_name
+      <> " table."
+  }
+  string.join(
+    [
+      description,
+      "pub fn "
+        <> reader.field
+        <> "(row: "
+        <> type_name
+        <> ") -> "
+        <> id_type(reader.table)
+        <> " {",
+      "  " <> id_type(reader.table) <> "(row." <> reader.field <> ")",
+      "}",
+      "",
+    ],
+    "\n",
+  )
 }
 
 /// Names every field, refusing two with one name.
@@ -120,17 +212,28 @@ fn header(file: String, table: String) -> String {
         <> " table: its row type, its schema and the decoder",
       "//// of its records. The layout is the client's (game_table.file, game_table.schema",
       "//// and game_table.column_type in the fact file); the table loads only when its",
-      "//// file's header equals `schema`.",
+      "//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.",
       "",
     ],
     "\n",
   )
 }
 
-fn imports(fields: List(NamedField)) -> String {
+fn imports(
+  fields fields: List(NamedField),
+  own own: Table,
+  readers readers: List(Reader),
+) -> String {
   let converts = list.any(fields, fn(named) { converted(named.placed.column) })
+  let id_items =
+    [own, ..list.map(readers, fn(reader) { reader.table })]
+    |> list.map(id_type)
+    |> list.unique
+    |> list.sort(string.compare)
+    |> list.flat_map(fn(name) { ["type " <> name, name] })
   string.join(
     [
+      "import genesis_prime/table/id.{" <> string.join(id_items, ", ") <> "}",
       "import genesis_prime/table/loader/store",
       "import genesis_prime/table/loader/tbl_file",
       ..case converts {
@@ -235,7 +338,7 @@ fn entry(table: String) -> String {
   )
 }
 
-fn get(type_name: String, table: String) -> String {
+fn get(own: Table, table: String) -> String {
   string.join(
     [
       "/// The row of the "
@@ -243,9 +346,9 @@ fn get(type_name: String, table: String) -> String {
         <> " table with the id, or an error when it has none.",
       "pub fn get(",
       "  tables tables: store.Tables,",
-      "  id id: Int,",
-      ") -> Result(" <> type_name <> ", Nil) {",
-      "  store.row(tables, schema.table, id)",
+      "  id id: " <> id_type(own) <> ",",
+      ") -> Result(" <> own.type_name <> ", Nil) {",
+      "  store.row(tables, schema.table, id.value)",
       "}",
       "",
     ],

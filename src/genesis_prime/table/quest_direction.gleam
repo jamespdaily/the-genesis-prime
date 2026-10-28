@@ -2,8 +2,12 @@
 //// The client's QuestDirection table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type QuestDirectionEntryId, type QuestDirectionId, type WorldZoneId,
+  QuestDirectionEntryId, QuestDirectionId, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -124,14 +128,136 @@ pub fn entry() -> store.Entry {
 /// The row of the QuestDirection table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: QuestDirectionId,
 ) -> Result(QuestDirection, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the QuestDirection table, in id order.
 pub fn all(tables: store.Tables) -> List(QuestDirection) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: QuestDirection) -> QuestDirectionId {
+  QuestDirectionId(row.id)
+}
+
+/// The id in the questDirectionEntryId00 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id00(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id00)
+}
+
+/// The id in the questDirectionEntryId01 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id01(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id01)
+}
+
+/// The id in the questDirectionEntryId02 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id02(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id02)
+}
+
+/// The id in the questDirectionEntryId03 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id03(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id03)
+}
+
+/// The id in the questDirectionEntryId04 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id04(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id04)
+}
+
+/// The id in the questDirectionEntryId05 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id05(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id05)
+}
+
+/// The id in the questDirectionEntryId06 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id06(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id06)
+}
+
+/// The id in the questDirectionEntryId07 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id07(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id07)
+}
+
+/// The id in the questDirectionEntryId08 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id08(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id08)
+}
+
+/// The id in the questDirectionEntryId09 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id09(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id09)
+}
+
+/// The id in the questDirectionEntryId10 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id10(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id10)
+}
+
+/// The id in the questDirectionEntryId11 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id11(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id11)
+}
+
+/// The id in the questDirectionEntryId12 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id12(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id12)
+}
+
+/// The id in the questDirectionEntryId13 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id13(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id13)
+}
+
+/// The id in the questDirectionEntryId14 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id14(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id14)
+}
+
+/// The id in the questDirectionEntryId15 column, as the typed id of the QuestDirectionEntry table.
+pub fn quest_direction_entry_id15(
+  row: QuestDirection,
+) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.quest_direction_entry_id15)
+}
+
+/// The id in the worldZoneIdExcludedZone column, as the typed id of the WorldZone table.
+pub fn world_zone_id_excluded_zone(row: QuestDirection) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id_excluded_zone)
 }
 
 fn row_id(row: QuestDirection) -> Int {

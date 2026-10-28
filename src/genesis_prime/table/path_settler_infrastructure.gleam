@@ -2,8 +2,14 @@
 //// The client's PathSettlerInfrastructure table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type LocalizedTextId, type PathSettlerHubId,
+  type PathSettlerInfrastructureId, type Spell4Id, type WorldZoneId, Creature2Id,
+  LocalizedTextId, PathSettlerHubId, PathSettlerInfrastructureId, Spell4Id,
+  WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -104,14 +110,80 @@ pub fn entry() -> store.Entry {
 /// The row of the PathSettlerInfrastructure table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathSettlerInfrastructureId,
 ) -> Result(PathSettlerInfrastructure, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathSettlerInfrastructure table, in id order.
 pub fn all(tables: store.Tables) -> List(PathSettlerInfrastructure) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathSettlerInfrastructure) -> PathSettlerInfrastructureId {
+  PathSettlerInfrastructureId(row.id)
+}
+
+/// The id in the pathSettlerHubId00 column, as the typed id of the PathSettlerHub table.
+pub fn path_settler_hub_id00(
+  row: PathSettlerInfrastructure,
+) -> PathSettlerHubId {
+  PathSettlerHubId(row.path_settler_hub_id00)
+}
+
+/// The id in the pathSettlerHubId01 column, as the typed id of the PathSettlerHub table.
+pub fn path_settler_hub_id01(
+  row: PathSettlerInfrastructure,
+) -> PathSettlerHubId {
+  PathSettlerHubId(row.path_settler_hub_id01)
+}
+
+/// The id in the localizedTextIdObjective column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_objective(
+  row: PathSettlerInfrastructure,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_objective)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: PathSettlerInfrastructure) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the creature2IdDepot column, as the typed id of the Creature2 table.
+pub fn creature2_id_depot(row: PathSettlerInfrastructure) -> Creature2Id {
+  Creature2Id(row.creature2_id_depot)
+}
+
+/// The id in the creature2IdResource00 column, as the typed id of the Creature2 table.
+pub fn creature2_id_resource00(row: PathSettlerInfrastructure) -> Creature2Id {
+  Creature2Id(row.creature2_id_resource00)
+}
+
+/// The id in the creature2IdResource01 column, as the typed id of the Creature2 table.
+pub fn creature2_id_resource01(row: PathSettlerInfrastructure) -> Creature2Id {
+  Creature2Id(row.creature2_id_resource01)
+}
+
+/// The id in the creature2IdResource02 column, as the typed id of the Creature2 table.
+pub fn creature2_id_resource02(row: PathSettlerInfrastructure) -> Creature2Id {
+  Creature2Id(row.creature2_id_resource02)
+}
+
+/// The id in the spell4IdResource00 column, as the typed id of the Spell4 table.
+pub fn spell4_id_resource00(row: PathSettlerInfrastructure) -> Spell4Id {
+  Spell4Id(row.spell4_id_resource00)
+}
+
+/// The id in the spell4IdResource01 column, as the typed id of the Spell4 table.
+pub fn spell4_id_resource01(row: PathSettlerInfrastructure) -> Spell4Id {
+  Spell4Id(row.spell4_id_resource01)
+}
+
+/// The id in the spell4IdResource02 column, as the typed id of the Spell4 table.
+pub fn spell4_id_resource02(row: PathSettlerInfrastructure) -> Spell4Id {
+  Spell4Id(row.spell4_id_resource02)
 }
 
 fn row_id(row: PathSettlerInfrastructure) -> Int {

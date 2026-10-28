@@ -2,8 +2,12 @@
 //// The client's PeriodicQuestGroup table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type PeriodicQuestGroupId, type PeriodicQuestSetId, PeriodicQuestGroupId,
+  PeriodicQuestSetId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -58,14 +62,24 @@ pub fn entry() -> store.Entry {
 /// The row of the PeriodicQuestGroup table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PeriodicQuestGroupId,
 ) -> Result(PeriodicQuestGroup, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PeriodicQuestGroup table, in id order.
 pub fn all(tables: store.Tables) -> List(PeriodicQuestGroup) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PeriodicQuestGroup) -> PeriodicQuestGroupId {
+  PeriodicQuestGroupId(row.id)
+}
+
+/// The id in the periodicQuestSetId column, as the typed id of the PeriodicQuestSet table.
+pub fn periodic_quest_set_id(row: PeriodicQuestGroup) -> PeriodicQuestSetId {
+  PeriodicQuestSetId(row.periodic_quest_set_id)
 }
 
 fn row_id(row: PeriodicQuestGroup) -> Int {

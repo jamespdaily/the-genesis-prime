@@ -2,8 +2,11 @@
 //// The client's ArchiveLink table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type ArchiveArticleId, type ArchiveLinkId, ArchiveArticleId, ArchiveLinkId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -46,14 +49,29 @@ pub fn entry() -> store.Entry {
 /// The row of the ArchiveLink table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ArchiveLinkId,
 ) -> Result(ArchiveLink, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ArchiveLink table, in id order.
 pub fn all(tables: store.Tables) -> List(ArchiveLink) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ArchiveLink) -> ArchiveLinkId {
+  ArchiveLinkId(row.id)
+}
+
+/// The id in the archiveArticleIdParent column, as the typed id of the ArchiveArticle table.
+pub fn archive_article_id_parent(row: ArchiveLink) -> ArchiveArticleId {
+  ArchiveArticleId(row.archive_article_id_parent)
+}
+
+/// The id in the archiveArticleIdChild column, as the typed id of the ArchiveArticle table.
+pub fn archive_article_id_child(row: ArchiveLink) -> ArchiveArticleId {
+  ArchiveArticleId(row.archive_article_id_child)
 }
 
 fn row_id(row: ArchiveLink) -> Int {

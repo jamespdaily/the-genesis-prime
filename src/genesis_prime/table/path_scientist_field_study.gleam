@@ -2,8 +2,13 @@
 //// The client's PathScientistFieldStudy table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type LocalizedTextId, type PathScientistFieldStudyId,
+  type TargetGroupId, type WorldLocation2Id, Creature2Id, LocalizedTextId,
+  PathScientistFieldStudyId, TargetGroupId, WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -139,14 +144,141 @@ pub fn entry() -> store.Entry {
 /// The row of the PathScientistFieldStudy table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathScientistFieldStudyId,
 ) -> Result(PathScientistFieldStudy, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathScientistFieldStudy table, in id order.
 pub fn all(tables: store.Tables) -> List(PathScientistFieldStudy) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathScientistFieldStudy) -> PathScientistFieldStudyId {
+  PathScientistFieldStudyId(row.id)
+}
+
+/// The id in the creature2Id column, as the typed id of the Creature2 table.
+pub fn creature2_id(row: PathScientistFieldStudy) -> Creature2Id {
+  Creature2Id(row.creature2_id)
+}
+
+/// The id in the targetGroupId column, as the typed id of the TargetGroup table.
+pub fn target_group_id(row: PathScientistFieldStudy) -> TargetGroupId {
+  TargetGroupId(row.target_group_id)
+}
+
+/// The id in the localizedTextIdChecklist00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_checklist00(
+  row: PathScientistFieldStudy,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_checklist00)
+}
+
+/// The id in the localizedTextIdChecklist01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_checklist01(
+  row: PathScientistFieldStudy,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_checklist01)
+}
+
+/// The id in the localizedTextIdChecklist02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_checklist02(
+  row: PathScientistFieldStudy,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_checklist02)
+}
+
+/// The id in the localizedTextIdChecklist03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_checklist03(
+  row: PathScientistFieldStudy,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_checklist03)
+}
+
+/// The id in the localizedTextIdChecklist04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_checklist04(
+  row: PathScientistFieldStudy,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_checklist04)
+}
+
+/// The id in the localizedTextIdChecklist05 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_checklist05(
+  row: PathScientistFieldStudy,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_checklist05)
+}
+
+/// The id in the localizedTextIdChecklist06 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_checklist06(
+  row: PathScientistFieldStudy,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_checklist06)
+}
+
+/// The id in the localizedTextIdChecklist07 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_checklist07(
+  row: PathScientistFieldStudy,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_checklist07)
+}
+
+/// The id in the worldLocation2IdIndicator00 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_indicator00(
+  row: PathScientistFieldStudy,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_indicator00)
+}
+
+/// The id in the worldLocation2IdIndicator01 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_indicator01(
+  row: PathScientistFieldStudy,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_indicator01)
+}
+
+/// The id in the worldLocation2IdIndicator02 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_indicator02(
+  row: PathScientistFieldStudy,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_indicator02)
+}
+
+/// The id in the worldLocation2IdIndicator03 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_indicator03(
+  row: PathScientistFieldStudy,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_indicator03)
+}
+
+/// The id in the worldLocation2IdIndicator04 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_indicator04(
+  row: PathScientistFieldStudy,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_indicator04)
+}
+
+/// The id in the worldLocation2IdIndicator05 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_indicator05(
+  row: PathScientistFieldStudy,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_indicator05)
+}
+
+/// The id in the worldLocation2IdIndicator06 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_indicator06(
+  row: PathScientistFieldStudy,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_indicator06)
+}
+
+/// The id in the worldLocation2IdIndicator07 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_indicator07(
+  row: PathScientistFieldStudy,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_indicator07)
 }
 
 fn row_id(row: PathScientistFieldStudy) -> Int {

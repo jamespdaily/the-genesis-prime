@@ -2,8 +2,13 @@
 //// The client's PathExplorerScavengerClue table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type LocalizedTextId, type PathExplorerScavengerClueId,
+  type TargetGroupId, type WorldLocation2Id, Creature2Id, LocalizedTextId,
+  PathExplorerScavengerClueId, TargetGroupId, WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -55,14 +60,43 @@ pub fn entry() -> store.Entry {
 /// The row of the PathExplorerScavengerClue table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathExplorerScavengerClueId,
 ) -> Result(PathExplorerScavengerClue, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathExplorerScavengerClue table, in id order.
 pub fn all(tables: store.Tables) -> List(PathExplorerScavengerClue) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathExplorerScavengerClue) -> PathExplorerScavengerClueId {
+  PathExplorerScavengerClueId(row.id)
+}
+
+/// The id in the localizedTextIdClue column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_clue(
+  row: PathExplorerScavengerClue,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_clue)
+}
+
+/// The id in the creature2Id column, as the typed id of the Creature2 table.
+pub fn creature2_id(row: PathExplorerScavengerClue) -> Creature2Id {
+  Creature2Id(row.creature2_id)
+}
+
+/// The id in the targetGroupId column, as the typed id of the TargetGroup table.
+pub fn target_group_id(row: PathExplorerScavengerClue) -> TargetGroupId {
+  TargetGroupId(row.target_group_id)
+}
+
+/// The id in the worldLocation2IdMiniMap column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_mini_map(
+  row: PathExplorerScavengerClue,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_mini_map)
 }
 
 fn row_id(row: PathExplorerScavengerClue) -> Int {

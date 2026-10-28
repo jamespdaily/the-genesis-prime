@@ -2,8 +2,15 @@
 //// The client's PublicEventObjective table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LiveEventId, type LocalizedTextId, type PublicEventId,
+  type PublicEventObjectiveId, type PublicEventTeamId, type QuestDirectionId,
+  type TargetGroupId, type WorldLocation2Id, LiveEventId, LocalizedTextId,
+  PublicEventId, PublicEventObjectiveId, PublicEventTeamId, QuestDirectionId,
+  TargetGroupId, WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -117,14 +124,92 @@ pub fn entry() -> store.Entry {
 /// The row of the PublicEventObjective table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PublicEventObjectiveId,
 ) -> Result(PublicEventObjective, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PublicEventObjective table, in id order.
 pub fn all(tables: store.Tables) -> List(PublicEventObjective) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PublicEventObjective) -> PublicEventObjectiveId {
+  PublicEventObjectiveId(row.id)
+}
+
+/// The id in the publicEventId column, as the typed id of the PublicEvent table.
+pub fn public_event_id(row: PublicEventObjective) -> PublicEventId {
+  PublicEventId(row.public_event_id)
+}
+
+/// The id in the worldLocation2Id column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id(row: PublicEventObjective) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id)
+}
+
+/// The id in the publicEventTeamId column, as the typed id of the PublicEventTeam table.
+pub fn public_event_team_id(row: PublicEventObjective) -> PublicEventTeamId {
+  PublicEventTeamId(row.public_event_team_id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: PublicEventObjective) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
+}
+
+/// The id in the localizedTextIdOtherTeam column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_other_team(
+  row: PublicEventObjective,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_other_team)
+}
+
+/// The id in the localizedTextIdShort column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_short(row: PublicEventObjective) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_short)
+}
+
+/// The id in the localizedTextIdOtherTeamShort column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_other_team_short(
+  row: PublicEventObjective,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_other_team_short)
+}
+
+/// The id in the targetGroupIdRewardPane column, as the typed id of the TargetGroup table.
+pub fn target_group_id_reward_pane(row: PublicEventObjective) -> TargetGroupId {
+  TargetGroupId(row.target_group_id_reward_pane)
+}
+
+/// The id in the liveEventIdCounter column, as the typed id of the LiveEvent table.
+pub fn live_event_id_counter(row: PublicEventObjective) -> LiveEventId {
+  LiveEventId(row.live_event_id_counter)
+}
+
+/// The id in the publicEventObjectiveIdParent column, as the typed id of the PublicEventObjective table.
+pub fn public_event_objective_id_parent(
+  row: PublicEventObjective,
+) -> PublicEventObjectiveId {
+  PublicEventObjectiveId(row.public_event_objective_id_parent)
+}
+
+/// The id in the questDirectionId column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id(row: PublicEventObjective) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id)
+}
+
+/// The id in the localizedTextIdParticipantAdd column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_participant_add(
+  row: PublicEventObjective,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_participant_add)
+}
+
+/// The id in the localizedTextIdStart column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_start(row: PublicEventObjective) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_start)
 }
 
 fn row_id(row: PublicEventObjective) -> Int {

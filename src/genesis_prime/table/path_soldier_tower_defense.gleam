@@ -2,8 +2,13 @@
 //// The client's PathSoldierTowerDefense table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type PathSoldierEventId, type PathSoldierTowerDefenseId,
+  type Spell4Id, type WorldLocation2Id, LocalizedTextId, PathSoldierEventId,
+  PathSoldierTowerDefenseId, Spell4Id, WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -68,14 +73,43 @@ pub fn entry() -> store.Entry {
 /// The row of the PathSoldierTowerDefense table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathSoldierTowerDefenseId,
 ) -> Result(PathSoldierTowerDefense, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathSoldierTowerDefense table, in id order.
 pub fn all(tables: store.Tables) -> List(PathSoldierTowerDefense) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathSoldierTowerDefense) -> PathSoldierTowerDefenseId {
+  PathSoldierTowerDefenseId(row.id)
+}
+
+/// The id in the pathSoldierEventId column, as the typed id of the PathSoldierEvent table.
+pub fn path_soldier_event_id(
+  row: PathSoldierTowerDefense,
+) -> PathSoldierEventId {
+  PathSoldierEventId(row.path_soldier_event_id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: PathSoldierTowerDefense) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the worldLocation2IdDisplay column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_display(
+  row: PathSoldierTowerDefense,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_display)
+}
+
+/// The id in the spell4Id column, as the typed id of the Spell4 table.
+pub fn spell4_id(row: PathSoldierTowerDefense) -> Spell4Id {
+  Spell4Id(row.spell4_id)
 }
 
 fn row_id(row: PathSoldierTowerDefense) -> Int {

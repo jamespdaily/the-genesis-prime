@@ -2,8 +2,12 @@
 //// The client's ItemImbuement table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type ItemImbuementId, type ItemImbuementRewardId, type Quest2Id,
+  ItemImbuementId, ItemImbuementRewardId, Quest2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -139,14 +143,169 @@ pub fn entry() -> store.Entry {
 /// The row of the ItemImbuement table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ItemImbuementId,
 ) -> Result(ItemImbuement, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ItemImbuement table, in id order.
 pub fn all(tables: store.Tables) -> List(ItemImbuement) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ItemImbuement) -> ItemImbuementId {
+  ItemImbuementId(row.id)
+}
+
+/// The id in the quest2Id00 column, as the typed id of the Quest2 table.
+pub fn quest2_id00(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id00)
+}
+
+/// The id in the quest2Id01 column, as the typed id of the Quest2 table.
+pub fn quest2_id01(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id01)
+}
+
+/// The id in the quest2Id02 column, as the typed id of the Quest2 table.
+pub fn quest2_id02(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id02)
+}
+
+/// The id in the quest2Id03 column, as the typed id of the Quest2 table.
+pub fn quest2_id03(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id03)
+}
+
+/// The id in the quest2Id04 column, as the typed id of the Quest2 table.
+pub fn quest2_id04(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id04)
+}
+
+/// The id in the quest2Id05 column, as the typed id of the Quest2 table.
+pub fn quest2_id05(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id05)
+}
+
+/// The id in the quest2Id06 column, as the typed id of the Quest2 table.
+pub fn quest2_id06(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id06)
+}
+
+/// The id in the quest2Id07 column, as the typed id of the Quest2 table.
+pub fn quest2_id07(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id07)
+}
+
+/// The id in the quest2Id08 column, as the typed id of the Quest2 table.
+pub fn quest2_id08(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id08)
+}
+
+/// The id in the quest2Id09 column, as the typed id of the Quest2 table.
+pub fn quest2_id09(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id09)
+}
+
+/// The id in the quest2Id10 column, as the typed id of the Quest2 table.
+pub fn quest2_id10(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id10)
+}
+
+/// The id in the quest2Id11 column, as the typed id of the Quest2 table.
+pub fn quest2_id11(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id11)
+}
+
+/// The id in the quest2Id12 column, as the typed id of the Quest2 table.
+pub fn quest2_id12(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id12)
+}
+
+/// The id in the quest2Id13 column, as the typed id of the Quest2 table.
+pub fn quest2_id13(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id13)
+}
+
+/// The id in the quest2Id14 column, as the typed id of the Quest2 table.
+pub fn quest2_id14(row: ItemImbuement) -> Quest2Id {
+  Quest2Id(row.quest2_id14)
+}
+
+/// The id in the itemImbuementRewardId00 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id00(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id00)
+}
+
+/// The id in the itemImbuementRewardId01 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id01(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id01)
+}
+
+/// The id in the itemImbuementRewardId02 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id02(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id02)
+}
+
+/// The id in the itemImbuementRewardId03 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id03(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id03)
+}
+
+/// The id in the itemImbuementRewardId04 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id04(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id04)
+}
+
+/// The id in the itemImbuementRewardId05 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id05(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id05)
+}
+
+/// The id in the itemImbuementRewardId06 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id06(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id06)
+}
+
+/// The id in the itemImbuementRewardId07 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id07(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id07)
+}
+
+/// The id in the itemImbuementRewardId08 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id08(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id08)
+}
+
+/// The id in the itemImbuementRewardId09 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id09(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id09)
+}
+
+/// The id in the itemImbuementRewardId10 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id10(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id10)
+}
+
+/// The id in the itemImbuementRewardId11 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id11(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id11)
+}
+
+/// The id in the itemImbuementRewardId12 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id12(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id12)
+}
+
+/// The id in the itemImbuementRewardId13 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id13(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id13)
+}
+
+/// The id in the itemImbuementRewardId14 column, as the typed id of the ItemImbuementReward table.
+pub fn item_imbuement_reward_id14(row: ItemImbuement) -> ItemImbuementRewardId {
+  ItemImbuementRewardId(row.item_imbuement_reward_id14)
 }
 
 fn row_id(row: ItemImbuement) -> Int {

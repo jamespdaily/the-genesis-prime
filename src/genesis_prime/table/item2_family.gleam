@@ -2,8 +2,12 @@
 //// The client's Item2Family table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Item2FamilyId, type LocalizedTextId, type SoundEventId, Item2FamilyId,
+  LocalizedTextId, SoundEventId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -47,14 +51,29 @@ pub fn entry() -> store.Entry {
 /// The row of the Item2Family table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Item2FamilyId,
 ) -> Result(Item2Family, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Item2Family table, in id order.
 pub fn all(tables: store.Tables) -> List(Item2Family) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Item2Family) -> Item2FamilyId {
+  Item2FamilyId(row.id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: Item2Family) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
+}
+
+/// The id in the soundEventIdEquip column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_equip(row: Item2Family) -> SoundEventId {
+  SoundEventId(row.sound_event_id_equip)
 }
 
 fn row_id(row: Item2Family) -> Int {

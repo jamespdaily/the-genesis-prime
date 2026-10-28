@@ -2,8 +2,12 @@
 //// The client's Emotes table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type EmotesId, type LocalizedTextId, type ModelSequenceId, type VisualEffectId,
+  EmotesId, LocalizedTextId, ModelSequenceId, VisualEffectId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -125,13 +129,81 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Emotes table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Emotes, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: EmotesId,
+) -> Result(Emotes, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Emotes table, in id order.
 pub fn all(tables: store.Tables) -> List(Emotes) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Emotes) -> EmotesId {
+  EmotesId(row.id)
+}
+
+/// The id in the localizedTextIdNoArgToAll column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_no_arg_to_all(row: Emotes) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_no_arg_to_all)
+}
+
+/// The id in the localizedTextIdNoArgToSelf column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_no_arg_to_self(row: Emotes) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_no_arg_to_self)
+}
+
+/// The id in the localizedTextIdArgToAll column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_arg_to_all(row: Emotes) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_arg_to_all)
+}
+
+/// The id in the localizedTextIdArgToArg column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_arg_to_arg(row: Emotes) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_arg_to_arg)
+}
+
+/// The id in the localizedTextIdArgToSelf column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_arg_to_self(row: Emotes) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_arg_to_self)
+}
+
+/// The id in the localizedTextIdSelfToAll column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_self_to_all(row: Emotes) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_self_to_all)
+}
+
+/// The id in the localizedTextIdSelfToSelf column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_self_to_self(row: Emotes) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_self_to_self)
+}
+
+/// The id in the localizedTextIdCommand column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_command(row: Emotes) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_command)
+}
+
+/// The id in the localizedTextIdNotFoundToAll column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_not_found_to_all(row: Emotes) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_not_found_to_all)
+}
+
+/// The id in the localizedTextIdNotFoundToSelf column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_not_found_to_self(row: Emotes) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_not_found_to_self)
+}
+
+/// The id in the modelSequenceIdStandState column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_stand_state(row: Emotes) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_stand_state)
+}
+
+/// The id in the visualEffectId column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id(row: Emotes) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id)
 }
 
 fn row_id(row: Emotes) -> Int {

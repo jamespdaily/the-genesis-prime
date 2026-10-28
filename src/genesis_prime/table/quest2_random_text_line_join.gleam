@@ -2,8 +2,12 @@
 //// The client's Quest2RandomTextLineJoin table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Quest2Id, type Quest2RandomTextLineJoinId, type RandomTextLineId,
+  Quest2Id, Quest2RandomTextLineJoinId, RandomTextLineId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -40,14 +44,29 @@ pub fn entry() -> store.Entry {
 /// The row of the Quest2RandomTextLineJoin table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Quest2RandomTextLineJoinId,
 ) -> Result(Quest2RandomTextLineJoin, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Quest2RandomTextLineJoin table, in id order.
 pub fn all(tables: store.Tables) -> List(Quest2RandomTextLineJoin) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Quest2RandomTextLineJoin) -> Quest2RandomTextLineJoinId {
+  Quest2RandomTextLineJoinId(row.id)
+}
+
+/// The id in the quest2Id column, as the typed id of the Quest2 table.
+pub fn quest2_id(row: Quest2RandomTextLineJoin) -> Quest2Id {
+  Quest2Id(row.quest2_id)
+}
+
+/// The id in the randomTextLineId column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id(row: Quest2RandomTextLineJoin) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id)
 }
 
 fn row_id(row: Quest2RandomTextLineJoin) -> Int {

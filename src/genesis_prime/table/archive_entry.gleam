@@ -2,8 +2,13 @@
 //// The client's ArchiveEntry table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type ArchiveEntryId, type CharacterTitleId, type Creature2Id,
+  type LocalizedTextId, ArchiveEntryId, CharacterTitleId, Creature2Id,
+  LocalizedTextId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -129,14 +134,106 @@ pub fn entry() -> store.Entry {
 /// The row of the ArchiveEntry table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ArchiveEntryId,
 ) -> Result(ArchiveEntry, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ArchiveEntry table, in id order.
 pub fn all(tables: store.Tables) -> List(ArchiveEntry) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ArchiveEntry) -> ArchiveEntryId {
+  ArchiveEntryId(row.id)
+}
+
+/// The id in the localizedTextIdHeading column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_heading(row: ArchiveEntry) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_heading)
+}
+
+/// The id in the localizedTextIdText00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text00(row: ArchiveEntry) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text00)
+}
+
+/// The id in the localizedTextIdText01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text01(row: ArchiveEntry) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text01)
+}
+
+/// The id in the localizedTextIdText02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text02(row: ArchiveEntry) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text02)
+}
+
+/// The id in the localizedTextIdText03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text03(row: ArchiveEntry) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text03)
+}
+
+/// The id in the localizedTextIdText04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text04(row: ArchiveEntry) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text04)
+}
+
+/// The id in the localizedTextIdText05 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text05(row: ArchiveEntry) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text05)
+}
+
+/// The id in the localizedTextIdTextScientist00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text_scientist00(
+  row: ArchiveEntry,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text_scientist00)
+}
+
+/// The id in the localizedTextIdTextScientist01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text_scientist01(
+  row: ArchiveEntry,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text_scientist01)
+}
+
+/// The id in the localizedTextIdTextScientist02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text_scientist02(
+  row: ArchiveEntry,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text_scientist02)
+}
+
+/// The id in the localizedTextIdTextScientist03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text_scientist03(
+  row: ArchiveEntry,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text_scientist03)
+}
+
+/// The id in the localizedTextIdTextScientist04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text_scientist04(
+  row: ArchiveEntry,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text_scientist04)
+}
+
+/// The id in the localizedTextIdTextScientist05 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text_scientist05(
+  row: ArchiveEntry,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text_scientist05)
+}
+
+/// The id in the creature2IdPortrait column, as the typed id of the Creature2 table.
+pub fn creature2_id_portrait(row: ArchiveEntry) -> Creature2Id {
+  Creature2Id(row.creature2_id_portrait)
+}
+
+/// The id in the characterTitleIdReward column, as the typed id of the CharacterTitle table.
+pub fn character_title_id_reward(row: ArchiveEntry) -> CharacterTitleId {
+  CharacterTitleId(row.character_title_id_reward)
 }
 
 fn row_id(row: ArchiveEntry) -> Int {

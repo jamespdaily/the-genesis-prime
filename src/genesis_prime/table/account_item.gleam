@@ -2,8 +2,14 @@
 //// The client's AccountItem table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type AccountItemCooldownGroupId, type AccountItemId, type EntitlementId,
+  type GenericUnlockSetId, type Item2Id, type PrerequisiteId,
+  type StoreDisplayInfoId, AccountItemCooldownGroupId, AccountItemId,
+  EntitlementId, GenericUnlockSetId, Item2Id, PrerequisiteId, StoreDisplayInfoId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -94,14 +100,56 @@ pub fn entry() -> store.Entry {
 /// The row of the AccountItem table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: AccountItemId,
 ) -> Result(AccountItem, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the AccountItem table, in id order.
 pub fn all(tables: store.Tables) -> List(AccountItem) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: AccountItem) -> AccountItemId {
+  AccountItemId(row.id)
+}
+
+/// The id in the item2Id column, as the typed id of the Item2 table.
+pub fn item2_id(row: AccountItem) -> Item2Id {
+  Item2Id(row.item2_id)
+}
+
+/// The id in the entitlementId column, as the typed id of the Entitlement table.
+pub fn entitlement_id(row: AccountItem) -> EntitlementId {
+  EntitlementId(row.entitlement_id)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: AccountItem) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
+}
+
+/// The id in the accountItemCooldownGroupId column, as the typed id of the AccountItemCooldownGroup table.
+pub fn account_item_cooldown_group_id(
+  row: AccountItem,
+) -> AccountItemCooldownGroupId {
+  AccountItemCooldownGroupId(row.account_item_cooldown_group_id)
+}
+
+/// The id in the storeDisplayInfoId column, as the typed id of the StoreDisplayInfo table.
+pub fn store_display_info_id(row: AccountItem) -> StoreDisplayInfoId {
+  StoreDisplayInfoId(row.store_display_info_id)
+}
+
+/// The id in the entitlementIdPurchase column, as the typed id of the Entitlement table.
+pub fn entitlement_id_purchase(row: AccountItem) -> EntitlementId {
+  EntitlementId(row.entitlement_id_purchase)
+}
+
+/// The id in the genericUnlockSetId column, as the typed id of the GenericUnlockSet table.
+pub fn generic_unlock_set_id(row: AccountItem) -> GenericUnlockSetId {
+  GenericUnlockSetId(row.generic_unlock_set_id)
 }
 
 fn row_id(row: AccountItem) -> Int {

@@ -2,8 +2,12 @@
 //// The client's Spell4VisualGroup table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Spell4VisualGroupId, type Spell4VisualId, type VisualEffectId,
+  Spell4VisualGroupId, Spell4VisualId, VisualEffectId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -219,14 +223,206 @@ pub fn entry() -> store.Entry {
 /// The row of the Spell4VisualGroup table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Spell4VisualGroupId,
 ) -> Result(Spell4VisualGroup, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Spell4VisualGroup table, in id order.
 pub fn all(tables: store.Tables) -> List(Spell4VisualGroup) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Spell4VisualGroup) -> Spell4VisualGroupId {
+  Spell4VisualGroupId(row.id)
+}
+
+/// The id in the spell4VisualIdVisual00 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual00(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual00)
+}
+
+/// The id in the spell4VisualIdVisual01 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual01(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual01)
+}
+
+/// The id in the spell4VisualIdVisual02 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual02(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual02)
+}
+
+/// The id in the spell4VisualIdVisual03 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual03(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual03)
+}
+
+/// The id in the spell4VisualIdVisual04 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual04(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual04)
+}
+
+/// The id in the spell4VisualIdVisual05 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual05(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual05)
+}
+
+/// The id in the spell4VisualIdVisual06 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual06(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual06)
+}
+
+/// The id in the spell4VisualIdVisual07 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual07(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual07)
+}
+
+/// The id in the spell4VisualIdVisual08 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual08(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual08)
+}
+
+/// The id in the spell4VisualIdVisual09 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual09(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual09)
+}
+
+/// The id in the spell4VisualIdVisual10 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual10(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual10)
+}
+
+/// The id in the spell4VisualIdVisual11 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual11(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual11)
+}
+
+/// The id in the spell4VisualIdVisual12 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual12(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual12)
+}
+
+/// The id in the spell4VisualIdVisual13 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual13(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual13)
+}
+
+/// The id in the spell4VisualIdVisual14 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual14(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual14)
+}
+
+/// The id in the spell4VisualIdVisual15 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual15(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual15)
+}
+
+/// The id in the spell4VisualIdVisual16 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual16(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual16)
+}
+
+/// The id in the spell4VisualIdVisual17 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual17(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual17)
+}
+
+/// The id in the spell4VisualIdVisual18 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual18(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual18)
+}
+
+/// The id in the spell4VisualIdVisual19 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual19(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual19)
+}
+
+/// The id in the spell4VisualIdVisual20 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual20(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual20)
+}
+
+/// The id in the spell4VisualIdVisual21 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual21(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual21)
+}
+
+/// The id in the spell4VisualIdVisual22 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual22(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual22)
+}
+
+/// The id in the spell4VisualIdVisual23 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual23(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual23)
+}
+
+/// The id in the spell4VisualIdVisual24 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual24(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual24)
+}
+
+/// The id in the spell4VisualIdVisual25 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual25(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual25)
+}
+
+/// The id in the spell4VisualIdVisual26 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual26(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual26)
+}
+
+/// The id in the spell4VisualIdVisual27 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual27(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual27)
+}
+
+/// The id in the spell4VisualIdVisual28 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual28(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual28)
+}
+
+/// The id in the spell4VisualIdVisual29 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual29(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual29)
+}
+
+/// The id in the spell4VisualIdVisual30 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual30(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual30)
+}
+
+/// The id in the spell4VisualIdVisual31 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual31(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual31)
+}
+
+/// The id in the spell4VisualIdVisual32 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual32(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual32)
+}
+
+/// The id in the spell4VisualIdVisual33 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual33(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual33)
+}
+
+/// The id in the spell4VisualIdVisual34 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual34(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual34)
+}
+
+/// The id in the spell4VisualIdVisual35 column, as the typed id of the Spell4Visual table.
+pub fn spell4_visual_id_visual35(row: Spell4VisualGroup) -> Spell4VisualId {
+  Spell4VisualId(row.spell4_visual_id_visual35)
+}
+
+/// The id in the visualEffectIdPrimaryCaster column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_primary_caster(
+  row: Spell4VisualGroup,
+) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_primary_caster)
 }
 
 fn row_id(row: Spell4VisualGroup) -> Int {

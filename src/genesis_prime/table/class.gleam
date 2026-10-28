@@ -2,8 +2,15 @@
 //// The client's Class table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type AttributeMilestoneGroupId, type AttributeMiniMilestoneGroupId,
+  type ClassId, type ClassSecondaryStatBonusId, type LocalizedTextId,
+  type PrerequisiteId, type Spell4Id, AttributeMilestoneGroupId,
+  AttributeMiniMilestoneGroupId, ClassId, ClassSecondaryStatBonusId,
+  LocalizedTextId, PrerequisiteId, Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -331,13 +338,262 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Class table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Class, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(tables tables: store.Tables, id id: ClassId) -> Result(Class, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Class table, in id order.
 pub fn all(tables: store.Tables) -> List(Class) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Class) -> ClassId {
+  ClassId(row.id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: Class) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
+}
+
+/// The id in the localizedTextIdNameFemale column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name_female(row: Class) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name_female)
+}
+
+/// The id in the spell4IdInnateAbilityActive00 column, as the typed id of the Spell4 table.
+pub fn spell4_id_innate_ability_active00(row: Class) -> Spell4Id {
+  Spell4Id(row.spell4_id_innate_ability_active00)
+}
+
+/// The id in the spell4IdInnateAbilityActive01 column, as the typed id of the Spell4 table.
+pub fn spell4_id_innate_ability_active01(row: Class) -> Spell4Id {
+  Spell4Id(row.spell4_id_innate_ability_active01)
+}
+
+/// The id in the spell4IdInnateAbilityActive02 column, as the typed id of the Spell4 table.
+pub fn spell4_id_innate_ability_active02(row: Class) -> Spell4Id {
+  Spell4Id(row.spell4_id_innate_ability_active02)
+}
+
+/// The id in the spell4IdInnateAbilityPassive00 column, as the typed id of the Spell4 table.
+pub fn spell4_id_innate_ability_passive00(row: Class) -> Spell4Id {
+  Spell4Id(row.spell4_id_innate_ability_passive00)
+}
+
+/// The id in the spell4IdInnateAbilityPassive01 column, as the typed id of the Spell4 table.
+pub fn spell4_id_innate_ability_passive01(row: Class) -> Spell4Id {
+  Spell4Id(row.spell4_id_innate_ability_passive01)
+}
+
+/// The id in the spell4IdInnateAbilityPassive02 column, as the typed id of the Spell4 table.
+pub fn spell4_id_innate_ability_passive02(row: Class) -> Spell4Id {
+  Spell4Id(row.spell4_id_innate_ability_passive02)
+}
+
+/// The id in the prerequisiteIdInnateAbility00 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_innate_ability00(row: Class) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_innate_ability00)
+}
+
+/// The id in the prerequisiteIdInnateAbility01 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_innate_ability01(row: Class) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_innate_ability01)
+}
+
+/// The id in the prerequisiteIdInnateAbility02 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_innate_ability02(row: Class) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_innate_ability02)
+}
+
+/// The id in the spell4IdAttackPrimary00 column, as the typed id of the Spell4 table.
+pub fn spell4_id_attack_primary00(row: Class) -> Spell4Id {
+  Spell4Id(row.spell4_id_attack_primary00)
+}
+
+/// The id in the spell4IdAttackPrimary01 column, as the typed id of the Spell4 table.
+pub fn spell4_id_attack_primary01(row: Class) -> Spell4Id {
+  Spell4Id(row.spell4_id_attack_primary01)
+}
+
+/// The id in the spell4IdAttackUnarmed00 column, as the typed id of the Spell4 table.
+pub fn spell4_id_attack_unarmed00(row: Class) -> Spell4Id {
+  Spell4Id(row.spell4_id_attack_unarmed00)
+}
+
+/// The id in the spell4IdAttackUnarmed01 column, as the typed id of the Spell4 table.
+pub fn spell4_id_attack_unarmed01(row: Class) -> Spell4Id {
+  Spell4Id(row.spell4_id_attack_unarmed01)
+}
+
+/// The id in the spell4IdResAbility column, as the typed id of the Spell4 table.
+pub fn spell4_id_res_ability(row: Class) -> Spell4Id {
+  Spell4Id(row.spell4_id_res_ability)
+}
+
+/// The id in the localizedTextIdDescription column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description(row: Class) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description)
+}
+
+/// The id in the classIdForClassApModifier column, as the typed id of the Class table.
+pub fn class_id_for_class_ap_modifier(row: Class) -> ClassId {
+  ClassId(row.class_id_for_class_ap_modifier)
+}
+
+/// The id in the localizedTextIdResourceAlert00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_resource_alert00(row: Class) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_resource_alert00)
+}
+
+/// The id in the localizedTextIdResourceAlert01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_resource_alert01(row: Class) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_resource_alert01)
+}
+
+/// The id in the localizedTextIdResourceAlert02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_resource_alert02(row: Class) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_resource_alert02)
+}
+
+/// The id in the localizedTextIdResourceAlert03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_resource_alert03(row: Class) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_resource_alert03)
+}
+
+/// The id in the localizedTextIdResourceAlert04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_resource_alert04(row: Class) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_resource_alert04)
+}
+
+/// The id in the localizedTextIdResourceAlert05 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_resource_alert05(row: Class) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_resource_alert05)
+}
+
+/// The id in the localizedTextIdResourceAlert06 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_resource_alert06(row: Class) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_resource_alert06)
+}
+
+/// The id in the localizedTextIdResourceAlert07 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_resource_alert07(row: Class) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_resource_alert07)
+}
+
+/// The id in the attributeMilestoneGroupId00 column, as the typed id of the AttributeMilestoneGroup table.
+pub fn attribute_milestone_group_id00(row: Class) -> AttributeMilestoneGroupId {
+  AttributeMilestoneGroupId(row.attribute_milestone_group_id00)
+}
+
+/// The id in the attributeMilestoneGroupId01 column, as the typed id of the AttributeMilestoneGroup table.
+pub fn attribute_milestone_group_id01(row: Class) -> AttributeMilestoneGroupId {
+  AttributeMilestoneGroupId(row.attribute_milestone_group_id01)
+}
+
+/// The id in the attributeMilestoneGroupId02 column, as the typed id of the AttributeMilestoneGroup table.
+pub fn attribute_milestone_group_id02(row: Class) -> AttributeMilestoneGroupId {
+  AttributeMilestoneGroupId(row.attribute_milestone_group_id02)
+}
+
+/// The id in the attributeMilestoneGroupId03 column, as the typed id of the AttributeMilestoneGroup table.
+pub fn attribute_milestone_group_id03(row: Class) -> AttributeMilestoneGroupId {
+  AttributeMilestoneGroupId(row.attribute_milestone_group_id03)
+}
+
+/// The id in the attributeMilestoneGroupId04 column, as the typed id of the AttributeMilestoneGroup table.
+pub fn attribute_milestone_group_id04(row: Class) -> AttributeMilestoneGroupId {
+  AttributeMilestoneGroupId(row.attribute_milestone_group_id04)
+}
+
+/// The id in the attributeMilestoneGroupId05 column, as the typed id of the AttributeMilestoneGroup table.
+pub fn attribute_milestone_group_id05(row: Class) -> AttributeMilestoneGroupId {
+  AttributeMilestoneGroupId(row.attribute_milestone_group_id05)
+}
+
+/// The id in the classSecondaryStatBonusId00 column, as the typed id of the ClassSecondaryStatBonus table.
+pub fn class_secondary_stat_bonus_id00(
+  row: Class,
+) -> ClassSecondaryStatBonusId {
+  ClassSecondaryStatBonusId(row.class_secondary_stat_bonus_id00)
+}
+
+/// The id in the classSecondaryStatBonusId01 column, as the typed id of the ClassSecondaryStatBonus table.
+pub fn class_secondary_stat_bonus_id01(
+  row: Class,
+) -> ClassSecondaryStatBonusId {
+  ClassSecondaryStatBonusId(row.class_secondary_stat_bonus_id01)
+}
+
+/// The id in the classSecondaryStatBonusId02 column, as the typed id of the ClassSecondaryStatBonus table.
+pub fn class_secondary_stat_bonus_id02(
+  row: Class,
+) -> ClassSecondaryStatBonusId {
+  ClassSecondaryStatBonusId(row.class_secondary_stat_bonus_id02)
+}
+
+/// The id in the classSecondaryStatBonusId03 column, as the typed id of the ClassSecondaryStatBonus table.
+pub fn class_secondary_stat_bonus_id03(
+  row: Class,
+) -> ClassSecondaryStatBonusId {
+  ClassSecondaryStatBonusId(row.class_secondary_stat_bonus_id03)
+}
+
+/// The id in the classSecondaryStatBonusId04 column, as the typed id of the ClassSecondaryStatBonus table.
+pub fn class_secondary_stat_bonus_id04(
+  row: Class,
+) -> ClassSecondaryStatBonusId {
+  ClassSecondaryStatBonusId(row.class_secondary_stat_bonus_id04)
+}
+
+/// The id in the classSecondaryStatBonusId05 column, as the typed id of the ClassSecondaryStatBonus table.
+pub fn class_secondary_stat_bonus_id05(
+  row: Class,
+) -> ClassSecondaryStatBonusId {
+  ClassSecondaryStatBonusId(row.class_secondary_stat_bonus_id05)
+}
+
+/// The id in the attributeMiniMilestoneGroupId00 column, as the typed id of the AttributeMiniMilestoneGroup table.
+pub fn attribute_mini_milestone_group_id00(
+  row: Class,
+) -> AttributeMiniMilestoneGroupId {
+  AttributeMiniMilestoneGroupId(row.attribute_mini_milestone_group_id00)
+}
+
+/// The id in the attributeMiniMilestoneGroupId01 column, as the typed id of the AttributeMiniMilestoneGroup table.
+pub fn attribute_mini_milestone_group_id01(
+  row: Class,
+) -> AttributeMiniMilestoneGroupId {
+  AttributeMiniMilestoneGroupId(row.attribute_mini_milestone_group_id01)
+}
+
+/// The id in the attributeMiniMilestoneGroupId02 column, as the typed id of the AttributeMiniMilestoneGroup table.
+pub fn attribute_mini_milestone_group_id02(
+  row: Class,
+) -> AttributeMiniMilestoneGroupId {
+  AttributeMiniMilestoneGroupId(row.attribute_mini_milestone_group_id02)
+}
+
+/// The id in the attributeMiniMilestoneGroupId03 column, as the typed id of the AttributeMiniMilestoneGroup table.
+pub fn attribute_mini_milestone_group_id03(
+  row: Class,
+) -> AttributeMiniMilestoneGroupId {
+  AttributeMiniMilestoneGroupId(row.attribute_mini_milestone_group_id03)
+}
+
+/// The id in the attributeMiniMilestoneGroupId04 column, as the typed id of the AttributeMiniMilestoneGroup table.
+pub fn attribute_mini_milestone_group_id04(
+  row: Class,
+) -> AttributeMiniMilestoneGroupId {
+  AttributeMiniMilestoneGroupId(row.attribute_mini_milestone_group_id04)
+}
+
+/// The id in the attributeMiniMilestoneGroupId05 column, as the typed id of the AttributeMiniMilestoneGroup table.
+pub fn attribute_mini_milestone_group_id05(
+  row: Class,
+) -> AttributeMiniMilestoneGroupId {
+  AttributeMiniMilestoneGroupId(row.attribute_mini_milestone_group_id05)
 }
 
 fn row_id(row: Class) -> Int {

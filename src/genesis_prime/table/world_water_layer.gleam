@@ -2,8 +2,9 @@
 //// The client's WorldWaterLayer table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{type WorldWaterLayerId, WorldWaterLayerId}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -66,14 +67,19 @@ pub fn entry() -> store.Entry {
 /// The row of the WorldWaterLayer table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: WorldWaterLayerId,
 ) -> Result(WorldWaterLayer, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the WorldWaterLayer table, in id order.
 pub fn all(tables: store.Tables) -> List(WorldWaterLayer) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: WorldWaterLayer) -> WorldWaterLayerId {
+  WorldWaterLayerId(row.id)
 }
 
 fn row_id(row: WorldWaterLayer) -> Int {

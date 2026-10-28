@@ -2,8 +2,13 @@
 //// The client's PathScientistExperimentationPattern table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type PathMissionId, type PathScientistExperimentationId,
+  type PathScientistExperimentationPatternId, LocalizedTextId, PathMissionId,
+  PathScientistExperimentationId, PathScientistExperimentationPatternId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -54,14 +59,49 @@ pub fn entry() -> store.Entry {
 /// The row of the PathScientistExperimentationPattern table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathScientistExperimentationPatternId,
 ) -> Result(PathScientistExperimentationPattern, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathScientistExperimentationPattern table, in id order.
 pub fn all(tables: store.Tables) -> List(PathScientistExperimentationPattern) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(
+  row: PathScientistExperimentationPattern,
+) -> PathScientistExperimentationPatternId {
+  PathScientistExperimentationPatternId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(
+  row: PathScientistExperimentationPattern,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdDescription column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description(
+  row: PathScientistExperimentationPattern,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description)
+}
+
+/// The id in the pathMissionId column, as the typed id of the PathMission table.
+pub fn path_mission_id(
+  row: PathScientistExperimentationPattern,
+) -> PathMissionId {
+  PathMissionId(row.path_mission_id)
+}
+
+/// The id in the pathScientistExperimentationId column, as the typed id of the PathScientistExperimentation table.
+pub fn path_scientist_experimentation_id(
+  row: PathScientistExperimentationPattern,
+) -> PathScientistExperimentationId {
+  PathScientistExperimentationId(row.path_scientist_experimentation_id)
 }
 
 fn row_id(row: PathScientistExperimentationPattern) -> Int {

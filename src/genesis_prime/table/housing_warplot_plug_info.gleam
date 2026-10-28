@@ -2,8 +2,12 @@
 //// The client's HousingWarplotPlugInfo table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type HousingPlugItemId, type HousingWarplotPlugInfoId, type Spell4Id,
+  HousingPlugItemId, HousingWarplotPlugInfoId, Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -107,14 +111,84 @@ pub fn entry() -> store.Entry {
 /// The row of the HousingWarplotPlugInfo table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: HousingWarplotPlugInfoId,
 ) -> Result(HousingWarplotPlugInfo, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the HousingWarplotPlugInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(HousingWarplotPlugInfo) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: HousingWarplotPlugInfo) -> HousingWarplotPlugInfoId {
+  HousingWarplotPlugInfoId(row.id)
+}
+
+/// The id in the housingPlugItemId column, as the typed id of the HousingPlugItem table.
+pub fn housing_plug_item_id(row: HousingWarplotPlugInfo) -> HousingPlugItemId {
+  HousingPlugItemId(row.housing_plug_item_id)
+}
+
+/// The id in the spell4IdAbility00 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability00(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability00)
+}
+
+/// The id in the spell4IdAbility01 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability01(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability01)
+}
+
+/// The id in the spell4IdAbility02 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability02(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability02)
+}
+
+/// The id in the spell4IdAbility03 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability03(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability03)
+}
+
+/// The id in the spell4IdAbility04 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability04(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability04)
+}
+
+/// The id in the spell4IdAbility05 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability05(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability05)
+}
+
+/// The id in the spell4IdAbility06 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability06(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability06)
+}
+
+/// The id in the spell4IdAbility07 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability07(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability07)
+}
+
+/// The id in the spell4IdAbility08 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability08(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability08)
+}
+
+/// The id in the spell4IdAbility09 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability09(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability09)
+}
+
+/// The id in the spell4IdAbility10 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability10(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability10)
+}
+
+/// The id in the spell4IdAbility11 column, as the typed id of the Spell4 table.
+pub fn spell4_id_ability11(row: HousingWarplotPlugInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_ability11)
 }
 
 fn row_id(row: HousingWarplotPlugInfo) -> Int {

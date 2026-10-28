@@ -2,8 +2,11 @@
 //// The client's TradeskillCatalystOrdering table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type TradeskillCatalystOrderingId, TradeskillCatalystOrderingId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -44,14 +47,19 @@ pub fn entry() -> store.Entry {
 /// The row of the TradeskillCatalystOrdering table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: TradeskillCatalystOrderingId,
 ) -> Result(TradeskillCatalystOrdering, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the TradeskillCatalystOrdering table, in id order.
 pub fn all(tables: store.Tables) -> List(TradeskillCatalystOrdering) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: TradeskillCatalystOrdering) -> TradeskillCatalystOrderingId {
+  TradeskillCatalystOrderingId(row.id)
 }
 
 fn row_id(row: TradeskillCatalystOrdering) -> Int {

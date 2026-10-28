@@ -2,8 +2,14 @@
 //// The client's PathMission table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type LocalizedTextId, type PathEpisodeId, type PathMissionId,
+  type PrerequisiteId, type QuestDirectionId, type WorldLocation2Id, Creature2Id,
+  LocalizedTextId, PathEpisodeId, PathMissionId, PrerequisiteId,
+  QuestDirectionId, WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -116,14 +122,89 @@ pub fn entry() -> store.Entry {
 /// The row of the PathMission table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathMissionId,
 ) -> Result(PathMission, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathMission table, in id order.
 pub fn all(tables: store.Tables) -> List(PathMission) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathMission) -> PathMissionId {
+  PathMissionId(row.id)
+}
+
+/// The id in the creature2IdUnlock column, as the typed id of the Creature2 table.
+pub fn creature2_id_unlock(row: PathMission) -> Creature2Id {
+  Creature2Id(row.creature2_id_unlock)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: PathMission) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdSummary column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_summary(row: PathMission) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_summary)
+}
+
+/// The id in the pathEpisodeId column, as the typed id of the PathEpisode table.
+pub fn path_episode_id(row: PathMission) -> PathEpisodeId {
+  PathEpisodeId(row.path_episode_id)
+}
+
+/// The id in the worldLocation2Id00 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id00(row: PathMission) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id00)
+}
+
+/// The id in the worldLocation2Id01 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id01(row: PathMission) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id01)
+}
+
+/// The id in the worldLocation2Id02 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id02(row: PathMission) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id02)
+}
+
+/// The id in the worldLocation2Id03 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id03(row: PathMission) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id03)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: PathMission) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
+}
+
+/// The id in the localizedTextIdCommunicator column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_communicator(row: PathMission) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_communicator)
+}
+
+/// The id in the localizedTextIdUnlock column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_unlock(row: PathMission) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_unlock)
+}
+
+/// The id in the localizedTextIdSoldierOrders column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_soldier_orders(row: PathMission) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_soldier_orders)
+}
+
+/// The id in the creature2IdContactOverride column, as the typed id of the Creature2 table.
+pub fn creature2_id_contact_override(row: PathMission) -> Creature2Id {
+  Creature2Id(row.creature2_id_contact_override)
+}
+
+/// The id in the questDirectionId column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id(row: PathMission) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id)
 }
 
 fn row_id(row: PathMission) -> Int {

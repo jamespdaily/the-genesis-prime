@@ -2,8 +2,13 @@
 //// The client's PublicEventUnitPropertyModifier table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type PublicEventId, type PublicEventUnitPropertyModifierId,
+  type UnitProperty2Id, PublicEventId, PublicEventUnitPropertyModifierId,
+  UnitProperty2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -40,14 +45,33 @@ pub fn entry() -> store.Entry {
 /// The row of the PublicEventUnitPropertyModifier table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PublicEventUnitPropertyModifierId,
 ) -> Result(PublicEventUnitPropertyModifier, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PublicEventUnitPropertyModifier table, in id order.
 pub fn all(tables: store.Tables) -> List(PublicEventUnitPropertyModifier) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(
+  row: PublicEventUnitPropertyModifier,
+) -> PublicEventUnitPropertyModifierId {
+  PublicEventUnitPropertyModifierId(row.id)
+}
+
+/// The id in the publicEventId column, as the typed id of the PublicEvent table.
+pub fn public_event_id(row: PublicEventUnitPropertyModifier) -> PublicEventId {
+  PublicEventId(row.public_event_id)
+}
+
+/// The id in the unitProperty2Id column, as the typed id of the UnitProperty2 table.
+pub fn unit_property2_id(
+  row: PublicEventUnitPropertyModifier,
+) -> UnitProperty2Id {
+  UnitProperty2Id(row.unit_property2_id)
 }
 
 fn row_id(row: PublicEventUnitPropertyModifier) -> Int {

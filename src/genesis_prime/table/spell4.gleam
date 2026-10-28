@@ -2,8 +2,19 @@
 //// The client's Spell4 table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type PrerequisiteId, type Spell4AoeTargetConstraintsId,
+  type Spell4BaseId, type Spell4CCConditionsId, type Spell4ClientMissileId,
+  type Spell4ConditionsId, type Spell4GroupListId, type Spell4Id,
+  type Spell4ReagentId, type Spell4RunnerId, type Spell4StackGroupId,
+  type Spell4TagId, type Spell4VisualGroupId, type SpellCoolDownId,
+  LocalizedTextId, PrerequisiteId, Spell4AoeTargetConstraintsId, Spell4BaseId,
+  Spell4CCConditionsId, Spell4ClientMissileId, Spell4ConditionsId,
+  Spell4GroupListId, Spell4Id, Spell4ReagentId, Spell4RunnerId,
+  Spell4StackGroupId, Spell4TagId, Spell4VisualGroupId, SpellCoolDownId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -452,13 +463,279 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Spell4 table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Spell4, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: Spell4Id,
+) -> Result(Spell4, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Spell4 table, in id order.
 pub fn all(tables: store.Tables) -> List(Spell4) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Spell4) -> Spell4Id {
+  Spell4Id(row.id)
+}
+
+/// The id in the spell4BaseIdBaseSpell column, as the typed id of the Spell4Base table.
+pub fn spell4_base_id_base_spell(row: Spell4) -> Spell4BaseId {
+  Spell4BaseId(row.spell4_base_id_base_spell)
+}
+
+/// The id in the localizedTextIdActionBarTooltip column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_action_bar_tooltip(row: Spell4) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_action_bar_tooltip)
+}
+
+/// The id in the spell4VisualGroupId column, as the typed id of the Spell4VisualGroup table.
+pub fn spell4_visual_group_id(row: Spell4) -> Spell4VisualGroupId {
+  Spell4VisualGroupId(row.spell4_visual_group_id)
+}
+
+/// The id in the spell4IdCastEvent00 column, as the typed id of the Spell4 table.
+pub fn spell4_id_cast_event00(row: Spell4) -> Spell4Id {
+  Spell4Id(row.spell4_id_cast_event00)
+}
+
+/// The id in the spell4IdCastEvent01 column, as the typed id of the Spell4 table.
+pub fn spell4_id_cast_event01(row: Spell4) -> Spell4Id {
+  Spell4Id(row.spell4_id_cast_event01)
+}
+
+/// The id in the spell4IdCastEvent02 column, as the typed id of the Spell4 table.
+pub fn spell4_id_cast_event02(row: Spell4) -> Spell4Id {
+  Spell4Id(row.spell4_id_cast_event02)
+}
+
+/// The id in the spell4IdCastEvent03 column, as the typed id of the Spell4 table.
+pub fn spell4_id_cast_event03(row: Spell4) -> Spell4Id {
+  Spell4Id(row.spell4_id_cast_event03)
+}
+
+/// The id in the spell4ReagentId00 column, as the typed id of the Spell4Reagent table.
+pub fn spell4_reagent_id00(row: Spell4) -> Spell4ReagentId {
+  Spell4ReagentId(row.spell4_reagent_id00)
+}
+
+/// The id in the spell4ReagentId01 column, as the typed id of the Spell4Reagent table.
+pub fn spell4_reagent_id01(row: Spell4) -> Spell4ReagentId {
+  Spell4ReagentId(row.spell4_reagent_id01)
+}
+
+/// The id in the spell4ReagentId02 column, as the typed id of the Spell4Reagent table.
+pub fn spell4_reagent_id02(row: Spell4) -> Spell4ReagentId {
+  Spell4ReagentId(row.spell4_reagent_id02)
+}
+
+/// The id in the spell4RunnerId00 column, as the typed id of the Spell4Runner table.
+pub fn spell4_runner_id00(row: Spell4) -> Spell4RunnerId {
+  Spell4RunnerId(row.spell4_runner_id00)
+}
+
+/// The id in the spell4RunnerId01 column, as the typed id of the Spell4Runner table.
+pub fn spell4_runner_id01(row: Spell4) -> Spell4RunnerId {
+  Spell4RunnerId(row.spell4_runner_id01)
+}
+
+/// The id in the prerequisiteIdRunner00 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_runner00(row: Spell4) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_runner00)
+}
+
+/// The id in the prerequisiteIdRunner01 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_runner01(row: Spell4) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_runner01)
+}
+
+/// The id in the spell4IdMechanicAlternateSpell column, as the typed id of the Spell4 table.
+pub fn spell4_id_mechanic_alternate_spell(row: Spell4) -> Spell4Id {
+  Spell4Id(row.spell4_id_mechanic_alternate_spell)
+}
+
+/// The id in the spell4IdPetSwitch column, as the typed id of the Spell4 table.
+pub fn spell4_id_pet_switch(row: Spell4) -> Spell4Id {
+  Spell4Id(row.spell4_id_pet_switch)
+}
+
+/// The id in the spell4TagId00 column, as the typed id of the Spell4Tag table.
+pub fn spell4_tag_id00(row: Spell4) -> Spell4TagId {
+  Spell4TagId(row.spell4_tag_id00)
+}
+
+/// The id in the spell4TagId01 column, as the typed id of the Spell4Tag table.
+pub fn spell4_tag_id01(row: Spell4) -> Spell4TagId {
+  Spell4TagId(row.spell4_tag_id01)
+}
+
+/// The id in the spell4TagId02 column, as the typed id of the Spell4Tag table.
+pub fn spell4_tag_id02(row: Spell4) -> Spell4TagId {
+  Spell4TagId(row.spell4_tag_id02)
+}
+
+/// The id in the spell4TagId03 column, as the typed id of the Spell4Tag table.
+pub fn spell4_tag_id03(row: Spell4) -> Spell4TagId {
+  Spell4TagId(row.spell4_tag_id03)
+}
+
+/// The id in the spell4TagId04 column, as the typed id of the Spell4Tag table.
+pub fn spell4_tag_id04(row: Spell4) -> Spell4TagId {
+  Spell4TagId(row.spell4_tag_id04)
+}
+
+/// The id in the localizedTextIdCasterIconSpellText column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_caster_icon_spell_text(
+  row: Spell4,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_caster_icon_spell_text)
+}
+
+/// The id in the localizedTextIdPrimaryTargetIconSpellText column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_primary_target_icon_spell_text(
+  row: Spell4,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_primary_target_icon_spell_text)
+}
+
+/// The id in the localizedTextIdSecondaryTargetIconSpellText column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_secondary_target_icon_spell_text(
+  row: Spell4,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_secondary_target_icon_spell_text)
+}
+
+/// The id in the localizedTextIdLASTier column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_las_tier(row: Spell4) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_las_tier)
+}
+
+/// The id in the localizedTextIdTooltipCastInfo column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_tooltip_cast_info(row: Spell4) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_tooltip_cast_info)
+}
+
+/// The id in the localizedTextIdTooltipCostInfo column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_tooltip_cost_info(row: Spell4) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_tooltip_cost_info)
+}
+
+/// The id in the spell4AoeTargetConstraintsId column, as the typed id of the Spell4AoeTargetConstraints table.
+pub fn spell4_aoe_target_constraints_id(
+  row: Spell4,
+) -> Spell4AoeTargetConstraintsId {
+  Spell4AoeTargetConstraintsId(row.spell4_aoe_target_constraints_id)
+}
+
+/// The id in the spell4ConditionsIdCaster column, as the typed id of the Spell4Conditions table.
+pub fn spell4_conditions_id_caster(row: Spell4) -> Spell4ConditionsId {
+  Spell4ConditionsId(row.spell4_conditions_id_caster)
+}
+
+/// The id in the spell4ConditionsIdTarget column, as the typed id of the Spell4Conditions table.
+pub fn spell4_conditions_id_target(row: Spell4) -> Spell4ConditionsId {
+  Spell4ConditionsId(row.spell4_conditions_id_target)
+}
+
+/// The id in the spell4CCConditionsIdCaster column, as the typed id of the Spell4CCConditions table.
+pub fn spell4_cc_conditions_id_caster(row: Spell4) -> Spell4CCConditionsId {
+  Spell4CCConditionsId(row.spell4_cc_conditions_id_caster)
+}
+
+/// The id in the spell4CCConditionsIdTarget column, as the typed id of the Spell4CCConditions table.
+pub fn spell4_cc_conditions_id_target(row: Spell4) -> Spell4CCConditionsId {
+  Spell4CCConditionsId(row.spell4_cc_conditions_id_target)
+}
+
+/// The id in the spellCoolDownIdGlobal column, as the typed id of the SpellCoolDown table.
+pub fn spell_cool_down_id_global(row: Spell4) -> SpellCoolDownId {
+  SpellCoolDownId(row.spell_cool_down_id_global)
+}
+
+/// The id in the spellCoolDownId00 column, as the typed id of the SpellCoolDown table.
+pub fn spell_cool_down_id00(row: Spell4) -> SpellCoolDownId {
+  SpellCoolDownId(row.spell_cool_down_id00)
+}
+
+/// The id in the spellCoolDownId01 column, as the typed id of the SpellCoolDown table.
+pub fn spell_cool_down_id01(row: Spell4) -> SpellCoolDownId {
+  SpellCoolDownId(row.spell_cool_down_id01)
+}
+
+/// The id in the spellCoolDownId02 column, as the typed id of the SpellCoolDown table.
+pub fn spell_cool_down_id02(row: Spell4) -> SpellCoolDownId {
+  SpellCoolDownId(row.spell_cool_down_id02)
+}
+
+/// The id in the spell4GroupListId column, as the typed id of the Spell4GroupList table.
+pub fn spell4_group_list_id(row: Spell4) -> Spell4GroupListId {
+  Spell4GroupListId(row.spell4_group_list_id)
+}
+
+/// The id in the spell4ClientMissileId00 column, as the typed id of the Spell4ClientMissile table.
+pub fn spell4_client_missile_id00(row: Spell4) -> Spell4ClientMissileId {
+  Spell4ClientMissileId(row.spell4_client_missile_id00)
+}
+
+/// The id in the spell4ClientMissileId01 column, as the typed id of the Spell4ClientMissile table.
+pub fn spell4_client_missile_id01(row: Spell4) -> Spell4ClientMissileId {
+  Spell4ClientMissileId(row.spell4_client_missile_id01)
+}
+
+/// The id in the spell4ClientMissileId02 column, as the typed id of the Spell4ClientMissile table.
+pub fn spell4_client_missile_id02(row: Spell4) -> Spell4ClientMissileId {
+  Spell4ClientMissileId(row.spell4_client_missile_id02)
+}
+
+/// The id in the spell4ClientMissileId03 column, as the typed id of the Spell4ClientMissile table.
+pub fn spell4_client_missile_id03(row: Spell4) -> Spell4ClientMissileId {
+  Spell4ClientMissileId(row.spell4_client_missile_id03)
+}
+
+/// The id in the spell4ClientMissileId04 column, as the typed id of the Spell4ClientMissile table.
+pub fn spell4_client_missile_id04(row: Spell4) -> Spell4ClientMissileId {
+  Spell4ClientMissileId(row.spell4_client_missile_id04)
+}
+
+/// The id in the spell4ClientMissileId05 column, as the typed id of the Spell4ClientMissile table.
+pub fn spell4_client_missile_id05(row: Spell4) -> Spell4ClientMissileId {
+  Spell4ClientMissileId(row.spell4_client_missile_id05)
+}
+
+/// The id in the spell4StackGroupId column, as the typed id of the Spell4StackGroup table.
+pub fn spell4_stack_group_id(row: Spell4) -> Spell4StackGroupId {
+  Spell4StackGroupId(row.spell4_stack_group_id)
+}
+
+/// The id in the prerequisiteIdCasterCast column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_caster_cast(row: Spell4) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_caster_cast)
+}
+
+/// The id in the prerequisiteIdTargetCast column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_target_cast(row: Spell4) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_target_cast)
+}
+
+/// The id in the prerequisiteIdCasterPersistence column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_caster_persistence(row: Spell4) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_caster_persistence)
+}
+
+/// The id in the prerequisiteIdTargetPersistence column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_target_persistence(row: Spell4) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_target_persistence)
+}
+
+/// The id in the prerequisiteIdAoeTarget column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_aoe_target(row: Spell4) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_aoe_target)
+}
+
+/// The id in the prerequisiteIdAoePreferredTarget column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_aoe_preferred_target(row: Spell4) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_aoe_preferred_target)
 }
 
 fn row_id(row: Spell4) -> Int {

@@ -2,8 +2,14 @@
 //// The client's CommunicatorMessages table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type ClassId, type CommunicatorMessagesId, type LocalizedTextId,
+  type PrerequisiteId, type RaceId, type WorldId, type WorldZoneId, ClassId,
+  CommunicatorMessagesId, LocalizedTextId, PrerequisiteId, RaceId, WorldId,
+  WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -106,14 +112,56 @@ pub fn entry() -> store.Entry {
 /// The row of the CommunicatorMessages table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: CommunicatorMessagesId,
 ) -> Result(CommunicatorMessages, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the CommunicatorMessages table, in id order.
 pub fn all(tables: store.Tables) -> List(CommunicatorMessages) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: CommunicatorMessages) -> CommunicatorMessagesId {
+  CommunicatorMessagesId(row.id)
+}
+
+/// The id in the localizedTextIdMessage column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_message(row: CommunicatorMessages) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_message)
+}
+
+/// The id in the worldId column, as the typed id of the World table.
+pub fn world_id(row: CommunicatorMessages) -> WorldId {
+  WorldId(row.world_id)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: CommunicatorMessages) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the classId column, as the typed id of the Class table.
+pub fn class_id(row: CommunicatorMessages) -> ClassId {
+  ClassId(row.class_id)
+}
+
+/// The id in the raceId column, as the typed id of the Race table.
+pub fn race_id(row: CommunicatorMessages) -> RaceId {
+  RaceId(row.race_id)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: CommunicatorMessages) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
+}
+
+/// The id in the communicatorMessagesIdNext column, as the typed id of the CommunicatorMessages table.
+pub fn communicator_messages_id_next(
+  row: CommunicatorMessages,
+) -> CommunicatorMessagesId {
+  CommunicatorMessagesId(row.communicator_messages_id_next)
 }
 
 fn row_id(row: CommunicatorMessages) -> Int {

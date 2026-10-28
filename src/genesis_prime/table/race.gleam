@@ -2,8 +2,13 @@
 //// The client's Race table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type ItemDisplayId, type LocalizedTextId, type ModelMeshId, type RaceId,
+  type SoundEventId, type SoundSwitchId, ItemDisplayId, LocalizedTextId,
+  ModelMeshId, RaceId, SoundEventId, SoundSwitchId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -144,13 +149,83 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Race table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Race, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(tables tables: store.Tables, id id: RaceId) -> Result(Race, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Race table, in id order.
 pub fn all(tables: store.Tables) -> List(Race) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Race) -> RaceId {
+  RaceId(row.id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: Race) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
+}
+
+/// The id in the localizedTextIdNameFemale column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name_female(row: Race) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name_female)
+}
+
+/// The id in the soundEventIdMaleHealthStart column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_male_health_start(row: Race) -> SoundEventId {
+  SoundEventId(row.sound_event_id_male_health_start)
+}
+
+/// The id in the soundEventIdFemaleHealthStart column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_female_health_start(row: Race) -> SoundEventId {
+  SoundEventId(row.sound_event_id_female_health_start)
+}
+
+/// The id in the soundEventIdMaleHealthStop column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_male_health_stop(row: Race) -> SoundEventId {
+  SoundEventId(row.sound_event_id_male_health_stop)
+}
+
+/// The id in the soundEventIdFemaleHealthStop column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_female_health_stop(row: Race) -> SoundEventId {
+  SoundEventId(row.sound_event_id_female_health_stop)
+}
+
+/// The id in the itemDisplayIdUnderwearLegsMale column, as the typed id of the ItemDisplay table.
+pub fn item_display_id_underwear_legs_male(row: Race) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id_underwear_legs_male)
+}
+
+/// The id in the itemDisplayIdUnderwearLegsFemale column, as the typed id of the ItemDisplay table.
+pub fn item_display_id_underwear_legs_female(row: Race) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id_underwear_legs_female)
+}
+
+/// The id in the itemDisplayIdUnderwearChestFemale column, as the typed id of the ItemDisplay table.
+pub fn item_display_id_underwear_chest_female(row: Race) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id_underwear_chest_female)
+}
+
+/// The id in the itemDisplayIdArmCannon column, as the typed id of the ItemDisplay table.
+pub fn item_display_id_arm_cannon(row: Race) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id_arm_cannon)
+}
+
+/// The id in the soundSwitchId column, as the typed id of the SoundSwitch table.
+pub fn sound_switch_id(row: Race) -> SoundSwitchId {
+  SoundSwitchId(row.sound_switch_id)
+}
+
+/// The id in the modelMeshIdMountItemMale column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id_mount_item_male(row: Race) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id_mount_item_male)
+}
+
+/// The id in the modelMeshIdMountItemFemale column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id_mount_item_female(row: Race) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id_mount_item_female)
 }
 
 fn row_id(row: Race) -> Int {

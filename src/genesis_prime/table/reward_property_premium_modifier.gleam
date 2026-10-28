@@ -2,8 +2,13 @@
 //// The client's RewardPropertyPremiumModifier table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type EntitlementId, type RewardPropertyId,
+  type RewardPropertyPremiumModifierId, EntitlementId, RewardPropertyId,
+  RewardPropertyPremiumModifierId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -59,14 +64,35 @@ pub fn entry() -> store.Entry {
 /// The row of the RewardPropertyPremiumModifier table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: RewardPropertyPremiumModifierId,
 ) -> Result(RewardPropertyPremiumModifier, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the RewardPropertyPremiumModifier table, in id order.
 pub fn all(tables: store.Tables) -> List(RewardPropertyPremiumModifier) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(
+  row: RewardPropertyPremiumModifier,
+) -> RewardPropertyPremiumModifierId {
+  RewardPropertyPremiumModifierId(row.id)
+}
+
+/// The id in the rewardPropertyId column, as the typed id of the RewardProperty table.
+pub fn reward_property_id(
+  row: RewardPropertyPremiumModifier,
+) -> RewardPropertyId {
+  RewardPropertyId(row.reward_property_id)
+}
+
+/// The id in the entitlementIdModifierCount column, as the typed id of the Entitlement table.
+pub fn entitlement_id_modifier_count(
+  row: RewardPropertyPremiumModifier,
+) -> EntitlementId {
+  EntitlementId(row.entitlement_id_modifier_count)
 }
 
 fn row_id(row: RewardPropertyPremiumModifier) -> Int {

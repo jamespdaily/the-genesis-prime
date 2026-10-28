@@ -2,8 +2,12 @@
 //// The client's WorldLocation2 table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type WorldId, type WorldLocation2Id, type WorldZoneId, WorldId,
+  WorldLocation2Id, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -61,14 +65,29 @@ pub fn entry() -> store.Entry {
 /// The row of the WorldLocation2 table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: WorldLocation2Id,
 ) -> Result(WorldLocation2, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the WorldLocation2 table, in id order.
 pub fn all(tables: store.Tables) -> List(WorldLocation2) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: WorldLocation2) -> WorldLocation2Id {
+  WorldLocation2Id(row.id)
+}
+
+/// The id in the worldId column, as the typed id of the World table.
+pub fn world_id(row: WorldLocation2) -> WorldId {
+  WorldId(row.world_id)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: WorldLocation2) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
 }
 
 fn row_id(row: WorldLocation2) -> Int {

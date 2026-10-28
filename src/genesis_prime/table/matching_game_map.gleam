@@ -2,8 +2,14 @@
 //// The client's MatchingGameMap table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type AchievementCategoryId, type LocalizedTextId, type MatchingGameMapId,
+  type MatchingGameTypeId, type PrerequisiteId, type WorldId,
+  AchievementCategoryId, LocalizedTextId, MatchingGameMapId, MatchingGameTypeId,
+  PrerequisiteId, WorldId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -68,14 +74,49 @@ pub fn entry() -> store.Entry {
 /// The row of the MatchingGameMap table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: MatchingGameMapId,
 ) -> Result(MatchingGameMap, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the MatchingGameMap table, in id order.
 pub fn all(tables: store.Tables) -> List(MatchingGameMap) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: MatchingGameMap) -> MatchingGameMapId {
+  MatchingGameMapId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: MatchingGameMap) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdDescription column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description(row: MatchingGameMap) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description)
+}
+
+/// The id in the matchingGameTypeId column, as the typed id of the MatchingGameType table.
+pub fn matching_game_type_id(row: MatchingGameMap) -> MatchingGameTypeId {
+  MatchingGameTypeId(row.matching_game_type_id)
+}
+
+/// The id in the worldId column, as the typed id of the World table.
+pub fn world_id(row: MatchingGameMap) -> WorldId {
+  WorldId(row.world_id)
+}
+
+/// The id in the achievementCategoryId column, as the typed id of the AchievementCategory table.
+pub fn achievement_category_id(row: MatchingGameMap) -> AchievementCategoryId {
+  AchievementCategoryId(row.achievement_category_id)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: MatchingGameMap) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
 }
 
 fn row_id(row: MatchingGameMap) -> Int {

@@ -9,6 +9,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/string
 import tom.{type Toml}
 
 /// Every message and every record the schema holds.
@@ -47,7 +48,8 @@ pub type Record {
 /// its width, the key that says what it is when it has a name beyond its
 /// position, and, for a field with no name, the key that shows the value the
 /// server sends is safe. A field with no `evidence` is read as such, so the
-/// rule that every field names its evidence can report it.
+/// rule that every field names its evidence can report it. A field whose
+/// values the client's code names also lists them.
 pub type Field {
   Field(
     name: String,
@@ -55,7 +57,22 @@ pub type Field {
     evidence: Option(String),
     named_by: Option(String),
     safe_by: Option(String),
+    named_values: Option(NamedValues),
   )
+}
+
+/// The values of an unsigned field that the schema names: the name of the
+/// custom type the generator writes for the field, and each value with its
+/// name. Any other value the field holds is the type's `Other` case.
+pub type NamedValues {
+  NamedValues(type_name: String, values: List(Value))
+}
+
+/// One named value: its number, its name and the fact-file key that shows the
+/// client gives it that meaning. A value with no `evidence` is read as such,
+/// so the rule that every value names its evidence can report it.
+pub type Value {
+  Value(value: Int, name: String, evidence: Option(String))
 }
 
 /// How a field's value is written on the wire.
@@ -116,6 +133,18 @@ pub type SchemaError {
   /// A field is counted by a field that is not an array before it in the same
   /// message or record.
   UnknownCountField(field: String, counted_by: String)
+  /// A field lists values and is not an unsigned value.
+  ValuesOnOtherKind(field: String)
+  /// A field lists one number for two values.
+  DuplicateValue(field: String, value: Int)
+  /// A field gives one name to two values.
+  DuplicateValueName(field: String, name: String)
+  /// A field names a value `other`, which is the case of the type's own
+  /// fallback.
+  ValueNamedOther(field: String)
+  /// Two fields have one `values_type` and different lists of values, so the
+  /// type is two things.
+  ConflictingValues(type_name: String)
 }
 
 /// Reads the text of the schema file.
@@ -142,7 +171,33 @@ pub fn parse(text: String) -> Result(Schema, SchemaError) {
   use messages <- result.try(
     list.try_map(message_tables, parse_message(_, record_names)),
   )
+  use Nil <- result.try(check_values_types(messages:, records:))
   Ok(Schema(messages:, records:))
+}
+
+/// Every field that names a `values_type` lists the same values as every
+/// other field with that name, so each type is one module.
+fn check_values_types(
+  messages messages: List(Message),
+  records records: List(Record),
+) -> Result(Nil, SchemaError) {
+  let named =
+    list.append(
+      list.flat_map(messages, fn(message) { message.fields }),
+      list.flat_map(records, fn(record) { record.fields }),
+    )
+    |> list.filter_map(fn(field) { option.to_result(field.named_values, Nil) })
+  list.try_fold(named, [], fn(seen: List(NamedValues), values) {
+    case
+      list.find(seen, fn(earlier) { earlier.type_name == values.type_name })
+    {
+      Ok(earlier) if earlier != values ->
+        Error(ConflictingValues(values.type_name))
+      Ok(_) -> Ok(seen)
+      Error(Nil) -> Ok([values, ..seen])
+    }
+  })
+  |> result.replace(Nil)
 }
 
 fn parse_message(
@@ -258,13 +313,106 @@ fn parse_field(
     kind: kind_name,
     record_names:,
   ))
+  use named_values <- result.try(parse_named_values(table:, field: name, kind:))
   Ok(Field(
     name:,
     kind:,
     evidence: optional_string(table, "evidence"),
     named_by: optional_string(table, "named_by"),
     safe_by: optional_string(table, "safe_by"),
+    named_values:,
   ))
+}
+
+/// The named values of a field, when it lists any: an unsigned field whose
+/// values are each below `2^bits`, with no number and no name twice.
+fn parse_named_values(
+  table table: Dict(String, Toml),
+  field field: String,
+  kind kind: Kind,
+) -> Result(Option(NamedValues), SchemaError) {
+  case tom.get_array(table, ["values"]), kind {
+    Error(tom.NotFound(_)), _ -> Ok(None)
+    Error(tom.WrongType(..)), _ -> Error(WrongTypeOfKey(field, "values"))
+    Ok(_), Unsigned(bits:) -> {
+      use type_name <- result.try(string_of(
+        table:,
+        owner: field,
+        key: "values_type",
+      ))
+      use Nil <- result.try(case upper_camel_case(type_name) {
+        True -> Ok(Nil)
+        False -> Error(WrongTypeOfKey(field, "values_type"))
+      })
+      use value_tables <- result.try(tables(table:, owner: field, key: "values"))
+      use values <- result.try(
+        list.try_map(value_tables, parse_value(table: _, field:, bits:)),
+      )
+      use Nil <- result.try(
+        case list.any(values, fn(value) { value.name == "other" }) {
+          True -> Error(ValueNamedOther(field))
+          False -> Ok(Nil)
+        },
+      )
+      use Nil <- result.try(
+        check_values_are_distinct(field:, values:, seen: []),
+      )
+      Ok(Some(NamedValues(type_name:, values:)))
+    }
+    Ok(_), _ -> Error(ValuesOnOtherKind(field))
+  }
+}
+
+/// A capital letter and then letters and digits: a Gleam type name, from which
+/// the module's name is made.
+fn upper_camel_case(name: String) -> Bool {
+  case string.to_graphemes(name) {
+    [first, ..rest] ->
+      first != string.lowercase(first)
+      && list.all([first, ..rest], fn(letter) {
+        string.contains(
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+          letter,
+        )
+      })
+    [] -> False
+  }
+}
+
+fn parse_value(
+  table table: Dict(String, Toml),
+  field field: String,
+  bits bits: Int,
+) -> Result(Value, SchemaError) {
+  use value <- result.try(int_in(
+    table:,
+    owner: field,
+    key: "value",
+    least: 0,
+    most: int.bitwise_shift_left(1, bits) - 1,
+  ))
+  use name <- result.try(string_of(table:, owner: field, key: "name"))
+  Ok(Value(value:, name:, evidence: optional_string(table, "evidence")))
+}
+
+fn check_values_are_distinct(
+  field field: String,
+  values values: List(Value),
+  seen seen: List(Value),
+) -> Result(Nil, SchemaError) {
+  case values {
+    [] -> Ok(Nil)
+    [value, ..rest] ->
+      case
+        list.find(seen, fn(earlier) { earlier.value == value.value }),
+        list.find(seen, fn(earlier) { earlier.name == value.name })
+      {
+        Ok(_), _ -> Error(DuplicateValue(field:, value: value.value))
+        Error(Nil), Ok(_) -> Error(DuplicateValueName(field:, name: value.name))
+        Error(Nil), Error(Nil) ->
+          check_values_are_distinct(field:, values: rest, seen: [value, ..seen])
+      }
+  }
 }
 
 fn parse_kind(
@@ -478,5 +626,15 @@ pub fn describe(error: SchemaError) -> String {
       <> " is counted by "
       <> counted_by
       <> ", which is no array field before it"
+    ValuesOnOtherKind(field:) ->
+      field <> " lists values and is not an unsigned value"
+    DuplicateValue(field:, value:) ->
+      field <> " lists the value " <> int.to_string(value) <> " twice"
+    DuplicateValueName(field:, name:) ->
+      field <> " gives the name " <> name <> " to two values"
+    ValueNamedOther(field:) ->
+      field <> " names a value other, which is its type's own fallback"
+    ConflictingValues(type_name:) ->
+      type_name <> " is the values type of fields with different values"
   }
 }

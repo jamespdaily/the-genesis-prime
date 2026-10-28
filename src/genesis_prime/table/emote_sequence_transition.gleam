@@ -2,8 +2,12 @@
 //// The client's EmoteSequenceTransition table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type EmoteSequenceTransitionId, type EmotesId, type ModelSequenceId,
+  EmoteSequenceTransitionId, EmotesId, ModelSequenceId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -42,14 +46,34 @@ pub fn entry() -> store.Entry {
 /// The row of the EmoteSequenceTransition table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: EmoteSequenceTransitionId,
 ) -> Result(EmoteSequenceTransition, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the EmoteSequenceTransition table, in id order.
 pub fn all(tables: store.Tables) -> List(EmoteSequenceTransition) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: EmoteSequenceTransition) -> EmoteSequenceTransitionId {
+  EmoteSequenceTransitionId(row.id)
+}
+
+/// The id in the emotesIdTo column, as the typed id of the Emotes table.
+pub fn emotes_id_to(row: EmoteSequenceTransition) -> EmotesId {
+  EmotesId(row.emotes_id_to)
+}
+
+/// The id in the emotesIdFrom column, as the typed id of the Emotes table.
+pub fn emotes_id_from(row: EmoteSequenceTransition) -> EmotesId {
+  EmotesId(row.emotes_id_from)
+}
+
+/// The id in the modelSequenceId column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id(row: EmoteSequenceTransition) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id)
 }
 
 fn row_id(row: EmoteSequenceTransition) -> Int {

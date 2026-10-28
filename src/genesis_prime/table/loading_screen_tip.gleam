@@ -2,8 +2,12 @@
 //// The client's LoadingScreenTip table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type LoadingScreenTipId, type LocalizedTextId, LoadingScreenTipId,
+  LocalizedTextId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -33,14 +37,24 @@ pub fn entry() -> store.Entry {
 /// The row of the LoadingScreenTip table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: LoadingScreenTipId,
 ) -> Result(LoadingScreenTip, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the LoadingScreenTip table, in id order.
 pub fn all(tables: store.Tables) -> List(LoadingScreenTip) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: LoadingScreenTip) -> LoadingScreenTipId {
+  LoadingScreenTipId(row.id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: LoadingScreenTip) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
 }
 
 fn row_id(row: LoadingScreenTip) -> Int {

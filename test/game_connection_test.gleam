@@ -36,6 +36,9 @@ import genesis_prime/login/guid
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
+import genesis_prime/message/disconnect_reason.{
+  AccountDisconnected, LostUserServer,
+}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/step.{
   type Event, type Outcome, type Step, ConnectionId, EndedBeforeAnswer, LogError,
@@ -185,7 +188,10 @@ fn heard(taken: Step(Nil, Request), cipher: Cipher) -> List(Frame) {
 }
 
 /// The one 0x036A the step writes, under `cipher`, with the connection ended.
-fn disconnect(taken: Step(Nil, Request), cipher: Cipher) -> Int {
+fn disconnect(
+  taken: Step(Nil, Request),
+  cipher: Cipher,
+) -> disconnect_reason.DisconnectReason {
   let assert [Frame(message_id: 0x036A, body:)] = heard(taken, cipher)
     as "one 0x036A in its wrapper, under the cipher the connection holds"
   let assert Ok(DisconnectNotice(reason:)) = disconnect_notice.decode(body)
@@ -405,7 +411,7 @@ pub fn a_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_19_a_warning_
   let #(state, taken) = replied()
   let #(_, taken) =
     answer(state:, taken:, outcome: step.Answer(FromHandOff(NoHolder)))
-  assert disconnect(taken, keyed()) == 19
+  assert disconnect(taken, keyed()) == AccountDisconnected
     as "0x1400168a0: 19 is 'This account has been disconnected', for a key never put, taken or expired"
   let assert [line] = support.logs_of(step: taken, level: LogWarning)
     as "the refusal is logged once"
@@ -420,7 +426,7 @@ pub fn a_hand_off_that_gives_no_answer_gets_0x036a_reason_8_a_warning_and_the_co
   list.each([NoAnswerInTime, NotRunning, EndedBeforeAnswer], fn(outcome) {
     let #(state, taken) = replied()
     let #(_, taken) = answer(state:, taken:, outcome:)
-    assert disconnect(taken, keyed()) == 8
+    assert disconnect(taken, keyed()) == LostUserServer
       as "0x1400168a0: 8 is 'Lost connection with user server.', for the server's own failure"
     let assert [line] = support.logs_of(step: taken, level: LogWarning)
       as "the failure is the server's: a warning"
@@ -431,12 +437,12 @@ pub fn a_hand_off_that_gives_no_answer_gets_0x036a_reason_8_a_warning_and_the_co
   let #(state, taken) = replied()
   let #(_, taken) =
     answer(state:, taken:, outcome: step.Answer(FromHandOff(Kept)))
-  assert disconnect(taken, keyed()) == 8
+  assert disconnect(taken, keyed()) == LostUserServer
   assert list.length(support.logs_of(step: taken, level: LogError)) == 1
   let #(state, taken) = replied()
   let #(_, taken) =
     answer(state:, taken:, outcome: step.Answer(FromHandOff(AlreadyHeld)))
-  assert disconnect(taken, keyed()) == 8
+  assert disconnect(taken, keyed()) == LostUserServer
 }
 
 pub fn a_store_that_gives_no_answer_or_is_unavailable_gets_0x036a_reason_8_a_warning_and_the_connection_ends_test() -> Nil {
@@ -451,7 +457,7 @@ pub fn a_store_that_gives_no_answer_or_is_unavailable_gets_0x036a_reason_8_a_war
     fn(outcome) {
       let #(state, taken) = listing()
       let #(_, taken) = answer(state:, taken:, outcome:)
-      assert disconnect(taken, keyed()) == 8
+      assert disconnect(taken, keyed()) == LostUserServer
         as "0x1400168a0: the client waits for 0x0117 with no timeout (lua.Character.OnCharacterList), so every failure ends with 0x036A, reason 8 for the server's own"
       let assert [line] = support.logs_of(step: taken, level: LogWarning)
       assert line.about.peer == Some(support.peer)
@@ -464,20 +470,20 @@ pub fn the_server_stopping_after_the_hello_gets_0x036a_reason_8_under_the_cipher
   use <- owned_test.run(10_000)
   // Waiting for 0x058F: the base key.
   let #(_, taken) = feed(connected(), step.Stopping(deadline_ms: 9000))
-  assert disconnect(taken, base()) == 8
+  assert disconnect(taken, base()) == LostUserServer
     as "opcode.0x36a: the client is told, or it would wait on its prompt for good"
   // Part-way through an ask: the shell gives StoppedWaiting, then the step
   // that ends without an ask is the end.
   let #(state, taken) = replied()
   let #(_, taken) = answer(state:, taken:, outcome: StoppedWaiting)
-  assert disconnect(taken, keyed()) == 8
+  assert disconnect(taken, keyed()) == LostUserServer
   let #(state, taken) = listing()
   let #(_, taken) = answer(state:, taken:, outcome: StoppedWaiting)
-  assert disconnect(taken, keyed()) == 8
+  assert disconnect(taken, keyed()) == LostUserServer
   // In character select with the list sent: the session key.
   let #(state, _) = listed(characters: [])
   let #(_, taken) = feed(state, step.Stopping(deadline_ms: 9000))
-  assert disconnect(taken, keyed()) == 8
+  assert disconnect(taken, keyed()) == LostUserServer
   // Before the connection is accepted there is no client to tell.
   let #(_, taken) =
     feed(game_connection.new(settings()), step.Stopping(deadline_ms: 9000))

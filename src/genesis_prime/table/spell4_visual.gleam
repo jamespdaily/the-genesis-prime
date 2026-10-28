@@ -2,8 +2,14 @@
 //// The client's Spell4Visual table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type ModelAttachmentId, type ModelEventId, type PrerequisiteId,
+  type Spell4VisualId, type TelegraphDamageId, type VisualEffectId,
+  ModelAttachmentId, ModelEventId, PrerequisiteId, Spell4VisualId,
+  TelegraphDamageId, VisualEffectId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -148,14 +154,49 @@ pub fn entry() -> store.Entry {
 /// The row of the Spell4Visual table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Spell4VisualId,
 ) -> Result(Spell4Visual, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Spell4Visual table, in id order.
 pub fn all(tables: store.Tables) -> List(Spell4Visual) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Spell4Visual) -> Spell4VisualId {
+  Spell4VisualId(row.id)
+}
+
+/// The id in the visualEffectId column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id(row: Spell4Visual) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id)
+}
+
+/// The id in the visualEffectIdSound column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_sound(row: Spell4Visual) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_sound)
+}
+
+/// The id in the modelEventIdDelay column, as the typed id of the ModelEvent table.
+pub fn model_event_id_delay(row: Spell4Visual) -> ModelEventId {
+  ModelEventId(row.model_event_id_delay)
+}
+
+/// The id in the modelAttachmentIdCaster column, as the typed id of the ModelAttachment table.
+pub fn model_attachment_id_caster(row: Spell4Visual) -> ModelAttachmentId {
+  ModelAttachmentId(row.model_attachment_id_caster)
+}
+
+/// The id in the telegraphDamageIdAttach column, as the typed id of the TelegraphDamage table.
+pub fn telegraph_damage_id_attach(row: Spell4Visual) -> TelegraphDamageId {
+  TelegraphDamageId(row.telegraph_damage_id_attach)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: Spell4Visual) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
 }
 
 fn row_id(row: Spell4Visual) -> Int {

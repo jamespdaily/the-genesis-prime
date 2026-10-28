@@ -2,8 +2,12 @@
 //// The client's PrimalMatrixNode table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type PrimalMatrixNodeId, type PrimalMatrixRewardId, PrimalMatrixNodeId,
+  PrimalMatrixRewardId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -88,14 +92,61 @@ pub fn entry() -> store.Entry {
 /// The row of the PrimalMatrixNode table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PrimalMatrixNodeId,
 ) -> Result(PrimalMatrixNode, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PrimalMatrixNode table, in id order.
 pub fn all(tables: store.Tables) -> List(PrimalMatrixNode) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PrimalMatrixNode) -> PrimalMatrixNodeId {
+  PrimalMatrixNodeId(row.id)
+}
+
+/// The id in the primalMatrixRewardIdWarrior column, as the typed id of the PrimalMatrixReward table.
+pub fn primal_matrix_reward_id_warrior(
+  row: PrimalMatrixNode,
+) -> PrimalMatrixRewardId {
+  PrimalMatrixRewardId(row.primal_matrix_reward_id_warrior)
+}
+
+/// The id in the primalMatrixRewardIdEngineer column, as the typed id of the PrimalMatrixReward table.
+pub fn primal_matrix_reward_id_engineer(
+  row: PrimalMatrixNode,
+) -> PrimalMatrixRewardId {
+  PrimalMatrixRewardId(row.primal_matrix_reward_id_engineer)
+}
+
+/// The id in the primalMatrixRewardIdEsper column, as the typed id of the PrimalMatrixReward table.
+pub fn primal_matrix_reward_id_esper(
+  row: PrimalMatrixNode,
+) -> PrimalMatrixRewardId {
+  PrimalMatrixRewardId(row.primal_matrix_reward_id_esper)
+}
+
+/// The id in the primalMatrixRewardIdMedic column, as the typed id of the PrimalMatrixReward table.
+pub fn primal_matrix_reward_id_medic(
+  row: PrimalMatrixNode,
+) -> PrimalMatrixRewardId {
+  PrimalMatrixRewardId(row.primal_matrix_reward_id_medic)
+}
+
+/// The id in the primalMatrixRewardIdStalker column, as the typed id of the PrimalMatrixReward table.
+pub fn primal_matrix_reward_id_stalker(
+  row: PrimalMatrixNode,
+) -> PrimalMatrixRewardId {
+  PrimalMatrixRewardId(row.primal_matrix_reward_id_stalker)
+}
+
+/// The id in the primalMatrixRewardIdSpellslinger column, as the typed id of the PrimalMatrixReward table.
+pub fn primal_matrix_reward_id_spellslinger(
+  row: PrimalMatrixNode,
+) -> PrimalMatrixRewardId {
+  PrimalMatrixRewardId(row.primal_matrix_reward_id_spellslinger)
 }
 
 fn row_id(row: PrimalMatrixNode) -> Int {

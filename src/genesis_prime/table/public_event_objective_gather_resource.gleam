@@ -2,8 +2,12 @@
 //// The client's PublicEventObjectiveGatherResource table: its row type, its schema and the decoder
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
-//// file's header equals `schema`.
+//// file's header equals `schema`. Rows keep plain `Int` ids; `get` and the readers give the typed ids of `genesis_prime/table/id`, whose doc says why.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type PublicEventObjectiveGatherResourceId, type Spell4Id,
+  Creature2Id, PublicEventObjectiveGatherResourceId, Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -66,14 +70,63 @@ pub fn entry() -> store.Entry {
 /// The row of the PublicEventObjectiveGatherResource table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PublicEventObjectiveGatherResourceId,
 ) -> Result(PublicEventObjectiveGatherResource, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PublicEventObjectiveGatherResource table, in id order.
 pub fn all(tables: store.Tables) -> List(PublicEventObjectiveGatherResource) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(
+  row: PublicEventObjectiveGatherResource,
+) -> PublicEventObjectiveGatherResourceId {
+  PublicEventObjectiveGatherResourceId(row.id)
+}
+
+/// The id in the creature2IdContainer column, as the typed id of the Creature2 table.
+pub fn creature2_id_container(
+  row: PublicEventObjectiveGatherResource,
+) -> Creature2Id {
+  Creature2Id(row.creature2_id_container)
+}
+
+/// The id in the creature2IdResource column, as the typed id of the Creature2 table.
+pub fn creature2_id_resource(
+  row: PublicEventObjectiveGatherResource,
+) -> Creature2Id {
+  Creature2Id(row.creature2_id_resource)
+}
+
+/// The id in the spell4IdResource column, as the typed id of the Spell4 table.
+pub fn spell4_id_resource(row: PublicEventObjectiveGatherResource) -> Spell4Id {
+  Spell4Id(row.spell4_id_resource)
+}
+
+/// The id in the creature2IdStolenResource column, as the typed id of the Creature2 table.
+pub fn creature2_id_stolen_resource(
+  row: PublicEventObjectiveGatherResource,
+) -> Creature2Id {
+  Creature2Id(row.creature2_id_stolen_resource)
+}
+
+/// The id in the spell4IdStolenResource column, as the typed id of the Spell4 table.
+pub fn spell4_id_stolen_resource(
+  row: PublicEventObjectiveGatherResource,
+) -> Spell4Id {
+  Spell4Id(row.spell4_id_stolen_resource)
+}
+
+/// The id in the publicEventObjectiveGatherResourceIdOpposing column, as the typed id of the PublicEventObjectiveGatherResource table.
+pub fn public_event_objective_gather_resource_id_opposing(
+  row: PublicEventObjectiveGatherResource,
+) -> PublicEventObjectiveGatherResourceId {
+  PublicEventObjectiveGatherResourceId(
+    row.public_event_objective_gather_resource_id_opposing,
+  )
 }
 
 fn row_id(row: PublicEventObjectiveGatherResource) -> Int {
