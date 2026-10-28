@@ -1,9 +1,8 @@
 //// The live session's Sessions recording, replayed through the sessions rule
 //// with no process. Expected values come from these places.
-//// - The recording (`test/rule_recording/2026-10-28-world-entry`): the real
-////   client's claims from its three game connections, the end of each
-////   connection's watch and the server's stop, closed with `End`, which
-////   counts 8 inputs.
+//// - The recording (`test/rule_recording/2026-10-28-player-path`): the real
+////   client's claim, the end of its connection's watch and the server's
+////   stop, closed with `End`, which counts 4 inputs.
 //// - Sessions reads no game table, so the replay needs no tables, whatever
 ////   digest the header holds.
 //// - The rule's types as the code stands (`rule_types.digest`): a recording
@@ -19,7 +18,7 @@ pub fn the_live_sessions_sessions_recording_replays_to_the_same_steps_test() -> 
   use <- owned_test.run(60_000)
   let #(inputs, count) = replayed()
   assert inputs == count as "the replay folds every input the End counts"
-  assert count == 8 as "Sessions took 8 inputs in the live session"
+  assert count == 4 as "Sessions took 4 inputs in the live session"
 }
 
 const sessions_replay = #(

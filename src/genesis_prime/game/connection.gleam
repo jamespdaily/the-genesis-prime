@@ -21,7 +21,7 @@
 ////     CharacterCreated(id)     ◀─ 0x3DC{0x00DC create result}, session key
 //// 0x244{0x07DD}                ─▶ world entry                     ─▶ store: LoadCharacter(account, id)
 ////     CharacterLoaded(row)                                        ─▶ map MapId(world, 0): Join(connection, id)
-////       Joined(unit)           ◀─ 0xAD, 0x262, 0x19B, 0x636, 0xF1, 0x61; watches the map (watch 2)
+////       Joined(unit)           ◀─ 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1, 0x61; watches the map (watch 2)
 ////     NotTheAccounts, or no place ◀─ 0x3DC{0x0162 refused}       ─▶ store: ListCharacters(account)
 ////       Characters(rows)       ◀─ 0x0036, 0x0117, as above
 //// in the world: 0x635, 0x63A, 0xD5, 0x63B, 0xF2, 0x637 ─▶ logged as unhandled

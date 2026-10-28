@@ -37,6 +37,7 @@ import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
+import genesis_prime/message/player_path.{PlayerPath}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
@@ -429,6 +430,25 @@ pub fn unit_is_player_is_two_32_bit_values_test() -> Nil {
   )
 }
 
+pub fn player_path_is_a_path_four_experiences_the_unlocked_paths_and_a_float_in_the_order_of_0x14008d480_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_vector(
+    name: "0x14008d480 (the path in bits 0 to 2, the experience of each path in bits 3 to 130, the unlocked paths in bits 131 to 134, the float in bits 135 to 166: 167 bits, 21 bytes)",
+    body: message_support.hex("0a000000 10000000 18000000 20000000 200000c0 5f"),
+    value: PlayerPath(
+      path: 2,
+      soldier_experience: 1,
+      settler_experience: 2,
+      scientist_experience: 3,
+      explorer_experience: 4,
+      unlocked_paths: 4,
+      last_path_change_days: 0xBF800000,
+    ),
+    encode: player_path.encode,
+    decode: player_path.decode,
+  )
+}
+
 pub fn player_entered_world_has_an_empty_body_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_vector(
@@ -723,6 +743,8 @@ pub fn each_message_module_holds_the_clients_message_number_test() -> Nil {
     as "opcode.0x262: registered at 0x140074aea mov edx, 0x262"
   assert unit_is_player.message_id == 0x019B
     as "opcode.0x19b: registered at 0x140071973 mov edx, 0x19b"
+  assert player_path.message_id == 0x06BC
+    as "opcode.0x6bc: registered at 0x140071cba mov edx, 0x6bc"
   assert terrain_loaded.message_id == 0x00F2
     as "opcode.0xf2: registered at 0x140070fc6 mov edx, 0xf2"
   assert player_entered_world.message_id == 0x0061

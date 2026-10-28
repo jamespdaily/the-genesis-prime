@@ -444,6 +444,22 @@ fields = [
 ]
 
 [[message]]
+id = 0x06BC
+name = "player_path"
+direction = "server_to_client"
+evidence = "opcode.0x6bc"
+summary = "gives the client the player's path, its experience on each of the four paths, the unlocked paths and the days since the last path change, after message 0x19B has set the player"
+fields = [
+  { name = "path", kind = "unsigned", bits = 3, evidence = "0x14008d480", named_by = "opcode.0x6bc" },
+  { name = "soldier_experience", kind = "unsigned", bits = 32, evidence = "0x14008d480", named_by = "opcode.0x6bc" },
+  { name = "settler_experience", kind = "unsigned", bits = 32, evidence = "0x14008d480", named_by = "opcode.0x6bc" },
+  { name = "scientist_experience", kind = "unsigned", bits = 32, evidence = "0x14008d480", named_by = "opcode.0x6bc" },
+  { name = "explorer_experience", kind = "unsigned", bits = 32, evidence = "0x14008d480", named_by = "opcode.0x6bc" },
+  { name = "unlocked_paths", kind = "unsigned", bits = 4, evidence = "0x14008d480", named_by = "opcode.0x6bc" },
+  { name = "last_path_change_days", kind = "float32", evidence = "0x14008d480", named_by = "opcode.0x6bc" },
+]
+
+[[message]]
 id = 0x0636
 name = "client_control_granted"
 direction = "server_to_client"
