@@ -18,9 +18,10 @@
 ////   (opcode.0x117, 0x14002167a, opcode.0x117.character_unread). The creation
 ////   id arrays are empty: the client then offers the CharacterCreation rows
 ////   its own `enabled` column sets (0x140021bb0). An entry holds each field
-////   of the character's row; its two visual arrays and customisation values
-////   are empty, since nothing writes an appearance yet, so the model may draw
-////   dark.
+////   of the character's row. Its two visual lists, costume slot mask,
+////   costume item ids and costume dyes are empty or 0, since no character has
+////   an appearance stored, so the client dresses its model in no costume slot
+////   (0x140027380) and the model may draw dark.
 //// - **What the client does with it.** It shows each character's name, level,
 ////   the Dominion frame for faction 166 and the Exile frame for any other, the
 ////   class icon for class 1 to 20 and the path icon for path 0 to 3, and
@@ -31,8 +32,14 @@
 ////   connection when the store gives none; this module is given only rows.
 //// - **A second 0x07E0.** It asks the store again and sends a new list.
 
-import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/store.{type AccountId, type Character}
+import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/message/character_list.{CharacterList}
+import genesis_prime/message/character_list_entry.{
+  type CharacterListEntry, CharacterListEntry,
+}
+import genesis_prime/message/float32
+import genesis_prime/store.{type AccountId, type Character, CharacterId}
+import gleam/list
 
 /// What a character select asks or sends; the game connection's rule turns
 /// each into its own effect.
@@ -57,22 +64,26 @@ pub opaque type State {
 
 /// The state of a connection that has not entered character select.
 pub fn new() -> State {
-  todo as "the build follows the shape commit"
+  NotStarted
 }
 
 /// The client's 0x07E0 was read for this account: asks the store for its
-/// characters.
+/// characters, unless it is already asked, when its one answer is awaited.
 pub fn started(
   state state: State,
   account_id account_id: AccountId,
 ) -> #(State, List(Effect)) {
-  todo as "the build follows the shape commit"
+  case state {
+    NotStarted | Listed -> #(Listing, [AskCharacters(account_id:)])
+    Listing -> #(Listing, [])
+  }
 }
 
 /// The store's rows for the account: sends 0x0117 with one entry per
 /// character, in the order given. `filetime` is the system time of the input
 /// as a Windows FILETIME (genesis_prime/step), the server's time the client
-/// keeps the difference from.
+/// keeps the difference from. Rows nobody asked for are a bug of the game
+/// connection's rule, which asks only through `started`.
 pub fn listed(
   state state: State,
   filetime filetime: Int,
@@ -80,5 +91,62 @@ pub fn listed(
   max_characters max_characters: Int,
   characters characters: List(Character),
 ) -> #(State, List(Effect)) {
-  todo as "the build follows the shape commit"
+  case state {
+    Listing -> {
+      let assert Ok(body) =
+        character_list.encode(CharacterList(
+          server_time: filetime,
+          characters: list.map(characters, entry),
+          enabled_creation_ids: [],
+          disabled_creation_ids: [],
+          realm_id:,
+          pending_removal_realm_id: 0,
+          pending_removal_character_id: 0,
+          pending_removal_time: 0,
+          reservations: 0,
+          max_characters:,
+          field_11: 0,
+          faction_restriction: 0,
+          free_level_50_available: 0,
+        ))
+        as "the list's values fit their fields: the table's checks hold each row's"
+      #(Listed, [Send(Frame(message_id: character_list.message_id, body:))])
+    }
+    NotStarted | Listed -> panic as "the store's rows came with no ask for them"
+  }
+}
+
+/// One character as its entry in the list: each field of the row, no
+/// disabled or rename flag, 0 in the three fields the client never reads, and
+/// no costume slot (a mask of 0 and no items or dyes, 0x140027380) and no
+/// bones, since no character has an appearance stored.
+fn entry(character: Character) -> CharacterListEntry {
+  let CharacterId(character_id) = character.character_id
+  CharacterListEntry(
+    character_id:,
+    name: character.name,
+    gender: character.gender,
+    race_id: character.race_id,
+    class_id: character.class_id,
+    faction_id: character.faction_id,
+    level: character.level,
+    body_visuals: [],
+    worn_visuals: [],
+    world_id: character.world_id,
+    world_zone_id: character.world_zone_id,
+    field_12: 0,
+    position_x: float32.to_bits(character.position_x),
+    position_y: float32.to_bits(character.position_y),
+    position_z: float32.to_bits(character.position_z),
+    field_16: 0,
+    field_17: 0,
+    path: character.path,
+    disabled: 0,
+    requires_rename: 0,
+    costume_slot_mask: 0,
+    costume_item_ids: [],
+    costume_dyes: [],
+    bone_values: [],
+    last_logged_out_days: 0,
+  )
 }

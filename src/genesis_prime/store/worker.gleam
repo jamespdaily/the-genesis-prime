@@ -37,8 +37,8 @@ import genesis_prime/login/guid
 import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type Request, Account,
-  AccountFound, AccountId, Characters, FindAccount, ListCharacters,
-  NoSuchAccount, Unavailable,
+  AccountFound, AccountId, Character, CharacterId, Characters, FindAccount,
+  ListCharacters, NoSuchAccount, Unavailable,
 }
 import genesis_prime/store/sql
 import gleam/erlang/process.{type Name}
@@ -140,7 +140,21 @@ fn list_characters(pool: pog.Connection, account_id: AccountId) -> Answer {
 
 /// One row as the character it holds.
 fn character(row: sql.ListCharactersRow) -> Character {
-  todo as "the build follows the shape commit"
+  Character(
+    character_id: CharacterId(row.character_id),
+    name: row.name,
+    gender: row.gender,
+    race_id: row.race_id,
+    class_id: row.class_id,
+    faction_id: row.faction_id,
+    level: row.level,
+    path: row.path,
+    world_id: row.world_id,
+    world_zone_id: row.world_zone_id,
+    position_x: row.position_x,
+    position_y: row.position_y,
+    position_z: row.position_z,
+  )
 }
 
 /// Runs one query on the pool and gives its rows, or `Error(Nil)` for the
