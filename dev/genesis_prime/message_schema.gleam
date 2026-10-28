@@ -9,6 +9,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/string
 import tom.{type Toml}
 
 /// Every message and every record the schema holds.
@@ -138,6 +139,12 @@ pub type SchemaError {
   DuplicateValue(field: String, value: Int)
   /// A field gives one name to two values.
   DuplicateValueName(field: String, name: String)
+  /// A field names a value `other`, which is the case of the type's own
+  /// fallback.
+  ValueNamedOther(field: String)
+  /// Two fields have one `values_type` and different lists of values, so the
+  /// type is two things.
+  ConflictingValues(type_name: String)
 }
 
 /// Reads the text of the schema file.
@@ -164,7 +171,33 @@ pub fn parse(text: String) -> Result(Schema, SchemaError) {
   use messages <- result.try(
     list.try_map(message_tables, parse_message(_, record_names)),
   )
+  use Nil <- result.try(check_values_types(messages:, records:))
   Ok(Schema(messages:, records:))
+}
+
+/// Every field that names a `values_type` lists the same values as every
+/// other field with that name, so each type is one module.
+fn check_values_types(
+  messages messages: List(Message),
+  records records: List(Record),
+) -> Result(Nil, SchemaError) {
+  let named =
+    list.append(
+      list.flat_map(messages, fn(message) { message.fields }),
+      list.flat_map(records, fn(record) { record.fields }),
+    )
+    |> list.filter_map(fn(field) { option.to_result(field.named_values, Nil) })
+  list.try_fold(named, [], fn(seen: List(NamedValues), values) {
+    case
+      list.find(seen, fn(earlier) { earlier.type_name == values.type_name })
+    {
+      Ok(earlier) if earlier != values ->
+        Error(ConflictingValues(values.type_name))
+      Ok(_) -> Ok(seen)
+      Error(Nil) -> Ok([values, ..seen])
+    }
+  })
+  |> result.replace(Nil)
 }
 
 fn parse_message(
@@ -307,9 +340,19 @@ fn parse_named_values(
         owner: field,
         key: "values_type",
       ))
+      use Nil <- result.try(case upper_camel_case(type_name) {
+        True -> Ok(Nil)
+        False -> Error(WrongTypeOfKey(field, "values_type"))
+      })
       use value_tables <- result.try(tables(table:, owner: field, key: "values"))
       use values <- result.try(
         list.try_map(value_tables, parse_value(table: _, field:, bits:)),
+      )
+      use Nil <- result.try(
+        case list.any(values, fn(value) { value.name == "other" }) {
+          True -> Error(ValueNamedOther(field))
+          False -> Ok(Nil)
+        },
       )
       use Nil <- result.try(
         check_values_are_distinct(field:, values:, seen: []),
@@ -317,6 +360,22 @@ fn parse_named_values(
       Ok(Some(NamedValues(type_name:, values:)))
     }
     Ok(_), _ -> Error(ValuesOnOtherKind(field))
+  }
+}
+
+/// A capital letter and then letters and digits: a Gleam type name, from which
+/// the module's name is made.
+fn upper_camel_case(name: String) -> Bool {
+  case string.to_graphemes(name) {
+    [first, ..rest] ->
+      first != string.lowercase(first)
+      && list.all([first, ..rest], fn(letter) {
+        string.contains(
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+          letter,
+        )
+      })
+    [] -> False
   }
 }
 
@@ -573,5 +632,9 @@ pub fn describe(error: SchemaError) -> String {
       field <> " lists the value " <> int.to_string(value) <> " twice"
     DuplicateValueName(field:, name:) ->
       field <> " gives the name " <> name <> " to two values"
+    ValueNamedOther(field:) ->
+      field <> " names a value other, which is its type's own fallback"
+    ConflictingValues(type_name:) ->
+      type_name <> " is the values type of fields with different values"
   }
 }

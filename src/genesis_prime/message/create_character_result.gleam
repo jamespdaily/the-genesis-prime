@@ -7,6 +7,7 @@
 //// `opcode.0xdc` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
+import genesis_prime/message/create_result.{type CreateResult}
 import gleam/result
 
 /// The message's number.
@@ -18,32 +19,17 @@ pub type CreateCharacterResult {
   CreateCharacterResult(character_id: Int, field_2: Int, result: CreateResult)
 }
 
-/// The values of the `result` field that `schema.toml` names, each with the
-/// evidence for its meaning, and `Other` for any value it does not name.
-pub type CreateResult {
-  /// The value 3, the fact file's `opcode.0xdc`.
-  CreateOk
-  /// The value 6, the fact file's `lua.Character.OnCreateCharacterFailed`.
-  NameUnavailable
-  /// The value 9, the fact file's `lua.Character.OnCreateCharacterFailed`.
-  AccountFull
-  /// The value 10, the fact file's `lua.Character.OnCreateCharacterFailed`.
-  NameLength
-  /// The value 11, the fact file's `lua.Character.OnCreateCharacterFailed`.
-  OpposingFaction
-  /// The value 44, the fact file's `lua.Character.OnCreateCharacterFailed`.
-  CharactersOnline
-  /// A value the schema does not name.
-  Other(Int)
-}
-
 /// The message as the bytes of its body, or the first field that cannot be
 /// written.
 pub fn encode(message: CreateCharacterResult) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_unsigned("character_id", message.character_id, 64)
   |> bit_stream.write_unsigned("field_2", message.field_2, 32)
-  |> bit_stream.write_unsigned("result", result_to_value(message.result), 6)
+  |> bit_stream.write_unsigned(
+    "result",
+    create_result.to_value(message.result),
+    6,
+  )
   |> bit_stream.finish
 }
 
@@ -53,33 +39,7 @@ pub fn decode(body: BitArray) -> Result(CreateCharacterResult, DecodeError) {
   use #(character_id, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
   use #(field_2, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
   use #(result, reader) <- result.try(bit_stream.read_unsigned(reader, 6))
-  let result = result_from_value(result)
+  let result = create_result.from_value(result)
   use Nil <- result.try(bit_stream.finish_reading(reader))
   Ok(CreateCharacterResult(character_id:, field_2:, result:))
-}
-
-/// The number the encoder writes for the `result` field's type.
-fn result_to_value(result: CreateResult) -> Int {
-  case result {
-    CreateOk -> 3
-    NameUnavailable -> 6
-    AccountFull -> 9
-    NameLength -> 10
-    OpposingFaction -> 11
-    CharactersOnline -> 44
-    Other(value) -> value
-  }
-}
-
-/// The `result` field's type for a number the decoder read.
-fn result_from_value(value: Int) -> CreateResult {
-  case value {
-    3 -> CreateOk
-    6 -> NameUnavailable
-    9 -> AccountFull
-    10 -> NameLength
-    11 -> OpposingFaction
-    44 -> CharactersOnline
-    other -> Other(other)
-  }
 }

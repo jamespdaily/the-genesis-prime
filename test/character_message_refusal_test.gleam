@@ -9,6 +9,7 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
+import genesis_prime/message/create_result
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
@@ -105,7 +106,7 @@ pub fn a_result_wider_than_6_bits_is_refused_test() -> Nil {
   assert create_character_result.encode(CreateCharacterResult(
       character_id: 1,
       field_2: 0,
-      result: create_character_result.Other(64),
+      result: create_result.Other(64),
     ))
     == Error(bit_stream.ValueDoesNotFit("result", 6, 64))
     as "ReadMessage00DCBody 0x14007FD50: the result is 6 bits"

@@ -6,9 +6,10 @@
 
 import genesis_prime/message_generator
 import genesis_prime/message_schema.{
-  ArrayOfFloat32, ArrayOfUnsigned, Both, Constant, DuplicateValue,
-  DuplicateValueName, NamedValues, UnknownCountField, UnsignedArrayCountedBy,
-  UnsignedBelow, ValuesOnOtherKind, WrongTypeOfKey,
+  ArrayOfFloat32, ArrayOfUnsigned, Both, ConflictingValues, Constant,
+  DuplicateValue, DuplicateValueName, NamedValues, UnknownCountField,
+  UnsignedArrayCountedBy, UnsignedBelow, ValueNamedOther, ValuesOnOtherKind,
+  WrongTypeOfKey,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -184,32 +185,120 @@ pub fn values_on_a_field_that_is_not_an_unsigned_value_are_refused_test() -> Nil
     as "only an unsigned value has numbers to name"
 }
 
-pub fn a_valued_field_is_a_custom_type_with_other_decoded_and_encoded_at_the_edge_test() -> Nil {
-  use <- owned_test.run(5000)
-  let assert Ok(schema) = message_schema.parse(schema_with(valued_field))
+/// The generated file of a module, by its file name.
+fn generated_file(
+  files: List(message_generator.GeneratedFile),
+  name: String,
+) -> String {
+  let assert Ok(file) =
+    list.find(files, fn(file) {
+      string.ends_with(file.path, "/" <> name <> ".gleam")
+    })
+    as { "the schema generates " <> name }
+  file.text
+}
+
+fn generated(text: String) -> List(message_generator.GeneratedFile) {
+  let assert Ok(schema) = message_schema.parse(text)
     as "the planted schema parses"
-  let assert [file, _record, _client_message] =
-    message_generator.generate(schema)
-    as "one message and one record are two modules, and the client message module is the third"
+  message_generator.generate(schema)
+}
+
+pub fn a_valued_field_is_a_custom_type_in_a_module_of_its_own_with_other_test() -> Nil {
+  use <- owned_test.run(5000)
+  let files = generated(schema_with(valued_field))
+  let values = generated_file(files, "cause")
   list.each(
     [
       "pub type Cause {",
       "  Gone\n",
       "  TimedOut\n",
       "  Other(Int)",
-      "Planted(cause: Cause)",
-      "bit_stream.write_unsigned(\"cause\", cause_to_value(message.cause), 5)",
-      "let cause = cause_from_value(cause)",
+      "pub fn to_value(value: Cause) -> Int {",
+      "    Gone -> 6",
+      "    TimedOut -> 19",
+      "    Other(number) -> number",
+      "pub fn from_value(number: Int) -> Cause {",
       "    6 -> Gone",
       "    19 -> TimedOut",
       "    other -> Other(other)",
-      "    Gone -> 6",
-      "    TimedOut -> 19",
-      "    Other(value) -> value",
     ],
     fn(text) {
-      assert string.contains(file.text, text)
-        as { "the generated module holds `" <> text <> "`" }
+      assert string.contains(values, text)
+        as { "the module of the values holds `" <> text <> "`" }
     },
   )
+  let message = generated_file(files, "planted")
+  list.each(
+    [
+      "import genesis_prime/message/cause.{type Cause}",
+      "Planted(cause: Cause)",
+      "bit_stream.write_unsigned(\"cause\", cause.to_value(message.cause), 5)",
+      "let cause = cause.from_value(cause)",
+    ],
+    fn(text) {
+      assert string.contains(message, text)
+        as { "the message converts at the edge: `" <> text <> "`" }
+    },
+  )
+  assert !string.contains(message, "Other")
+    as "the message module holds no case of the values, so another field's cannot collide with it"
+}
+
+pub fn two_valued_fields_of_one_message_have_one_module_each_and_no_shared_case_test() -> Nil {
+  use <- owned_test.run(5000)
+  let files =
+    generated(schema_with(
+      "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"Cause\", values = [ { value = 6, name = \"gone\", evidence = \"x\" } ] },
+  { name = \"mood\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"Mood\", values = [ { value = 6, name = \"gone\", evidence = \"x\" } ] },",
+    ))
+  assert string.contains(generated_file(files, "cause"), "Other(Int)")
+    as "the first type has its own fallback"
+  assert string.contains(generated_file(files, "mood"), "Other(Int)")
+    as "the second type has its own fallback, and a case of one name in both is no collision"
+  let message = generated_file(files, "planted")
+  assert string.contains(message, "Planted(cause: Cause, mood: Mood)")
+    as "the message holds both"
+}
+
+pub fn two_fields_of_one_values_type_and_list_share_one_module_test() -> Nil {
+  use <- owned_test.run(5000)
+  let files =
+    generated(schema_with(
+      "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"Cause\", values = [ { value = 6, name = \"gone\", evidence = \"x\" } ] },
+  { name = \"earlier_cause\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"Cause\", values = [ { value = 6, name = \"gone\", evidence = \"x\" } ] },",
+    ))
+  assert list.count(files, fn(file) {
+      string.ends_with(file.path, "/cause.gleam")
+    })
+    == 1
+    as "one module for the one type"
+}
+
+pub fn a_values_type_used_with_two_different_lists_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(schema_with(
+      "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"Cause\", values = [ { value = 6, name = \"gone\", evidence = \"x\" } ] },
+  { name = \"earlier_cause\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"Cause\", values = [ { value = 7, name = \"gone\", evidence = \"x\" } ] },",
+    ))
+    == Error(ConflictingValues("Cause"))
+    as "one type is one module, so its values are one list"
+}
+
+pub fn a_value_named_other_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(schema_with(
+      "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"Cause\", values = [ { value = 6, name = \"other\", evidence = \"x\" } ] },",
+    ))
+    == Error(ValueNamedOther("cause"))
+    as "the type's own fallback is the case Other"
+}
+
+pub fn a_values_type_that_is_not_an_upper_camel_case_name_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(schema_with(
+      "  { name = \"cause\", kind = \"unsigned\", bits = 5, evidence = \"x\", values_type = \"cause\", values = [ { value = 6, name = \"gone\", evidence = \"x\" } ] },",
+    ))
+    == Error(WrongTypeOfKey("cause", "values_type"))
+    as "a Gleam type name starts with a capital, and its module name is made from it"
 }

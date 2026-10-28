@@ -21,12 +21,14 @@ import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_carrier
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
+import genesis_prime/message/create_result
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
-import genesis_prime/message/disconnect_notice.{
+import genesis_prime/message/disconnect_notice.{DisconnectNotice}
+import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, CriticalTransactionFailure,
-  DisconnectNotice, Inactivity, LoggedOutByGm, LostGatewayServer, LostUserServer,
-  LostWorldServer, OutOfGameTime,
+  Inactivity, LoggedOutByGm, LostGatewayServer, LostUserServer, LostWorldServer,
+  OutOfGameTime,
 }
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
@@ -193,7 +195,7 @@ pub fn create_character_result_is_the_clients_102_bits_test() -> Nil {
     value: CreateCharacterResult(
       character_id: 0x1122334455667788,
       field_2: 0xCAFE,
-      result: create_character_result.CreateOk,
+      result: create_result.CreateOk,
     ),
     encode: create_character_result.encode,
     decode: create_character_result.decode,
@@ -205,14 +207,14 @@ pub fn create_character_result_is_the_clients_102_bits_test() -> Nil {
 /// 6 CreateFailed_UniqueName, 9 CreateFailed_AccountFull, 10
 /// CreateFailed_InvalidName, 11 CreateFailed_Faction and 44
 /// CreateFailed_CharacterOnline.
-fn create_results() -> List(#(Int, create_character_result.CreateResult)) {
+fn create_results() -> List(#(Int, create_result.CreateResult)) {
   [
-    #(3, create_character_result.CreateOk),
-    #(6, create_character_result.NameUnavailable),
-    #(9, create_character_result.AccountFull),
-    #(10, create_character_result.NameLength),
-    #(11, create_character_result.OpposingFaction),
-    #(44, create_character_result.CharactersOnline),
+    #(3, create_result.CreateOk),
+    #(6, create_result.NameUnavailable),
+    #(9, create_result.AccountFull),
+    #(10, create_result.NameLength),
+    #(11, create_result.OpposingFaction),
+    #(44, create_result.CharactersOnline),
   ]
 }
 
@@ -221,7 +223,7 @@ pub fn every_create_result_the_client_names_decodes_to_its_case_and_any_other_to
   int.range(from: 0, to: 64, with: Nil, run: fn(_, value) {
     let expected = case list.key_find(create_results(), value) {
       Ok(named) -> named
-      Error(Nil) -> create_character_result.Other(value)
+      Error(Nil) -> create_result.Other(value)
     }
     let body = <<
       0x1122334455667788:size(64)-little,
@@ -644,7 +646,7 @@ pub fn each_message_module_holds_the_clients_message_number_test() -> Nil {
 pub fn a_disconnect_notice_is_one_5_bit_reason_test() -> Nil {
   use <- owned_test.run(5000)
   assert disconnect_notice.encode(
-      DisconnectNotice(reason: disconnect_notice.Other(0x1F)),
+      DisconnectNotice(reason: disconnect_reason.Other(0x1F)),
     )
     == Ok(message_support.hex("1f"))
     as "opcode.0x36a: the reader reads 5 bits (0x14007e95e mov r8d, 0x5); vector.0x140336380.fields: a 5-bit 0x1F is the byte 1f"
@@ -652,7 +654,7 @@ pub fn a_disconnect_notice_is_one_5_bit_reason_test() -> Nil {
     == Ok(DisconnectNotice(reason: CriticalTransactionFailure))
     as "opcode.0x36a: reason 20 has its own text"
   assert disconnect_notice.encode(
-      DisconnectNotice(reason: disconnect_notice.Other(32)),
+      DisconnectNotice(reason: disconnect_reason.Other(32)),
     )
     == Error(bit_stream.ValueDoesNotFit("reason", 5, 32))
     as "opcode.0x36a: a reason is 5 bits"
@@ -680,7 +682,7 @@ pub fn every_disconnect_reason_the_client_names_decodes_to_its_case_and_any_othe
   int.range(from: 0, to: 32, with: Nil, run: fn(_, value) {
     let expected = case list.key_find(disconnect_reasons(), value) {
       Ok(named) -> named
-      Error(Nil) -> disconnect_notice.Other(value)
+      Error(Nil) -> disconnect_reason.Other(value)
     }
     assert disconnect_notice.decode(<<value>>)
       == Ok(DisconnectNotice(reason: expected))
@@ -690,7 +692,7 @@ pub fn every_disconnect_reason_the_client_names_decodes_to_its_case_and_any_othe
         <> " is the named case when the switch has a text for it, and any other value is Other"
       }
     assert disconnect_notice.encode(
-        DisconnectNotice(reason: disconnect_notice.Other(value)),
+        DisconnectNotice(reason: disconnect_reason.Other(value)),
       )
       == Ok(<<value>>)
       as "a value held as Other is written as its number, named or not"
@@ -707,7 +709,7 @@ pub fn disconnect_notice_is_the_clients_5_bits_test() -> Nil {
       #("06", LoggedOutByGm),
       #("13", AccountDisconnected),
       #("14", CriticalTransactionFailure),
-      #("1f", disconnect_notice.Other(31)),
+      #("1f", disconnect_reason.Other(31)),
     ],
     fn(case_) {
       message_support.assert_vector(

@@ -84,8 +84,9 @@ import genesis_prime/hand_off.{type Holder, SessionKey, Take}
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
 import genesis_prime/message/character_select_start
-import genesis_prime/message/disconnect_notice.{
-  type DisconnectReason, AccountDisconnected, DisconnectNotice, LostUserServer,
+import genesis_prime/message/disconnect_notice.{DisconnectNotice}
+import genesis_prime/message/disconnect_reason.{
+  type DisconnectReason, AccountDisconnected, LostUserServer,
 }
 import genesis_prime/message/game_hello_reply
 import genesis_prime/step.{

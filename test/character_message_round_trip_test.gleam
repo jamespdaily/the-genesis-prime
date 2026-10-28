@@ -15,12 +15,14 @@ import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_carrier.{CreateCharacterCarrier}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
+import genesis_prime/message/create_result
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
-import genesis_prime/message/disconnect_notice.{
+import genesis_prime/message/disconnect_notice.{DisconnectNotice}
+import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, CriticalTransactionFailure,
-  DisconnectNotice, Inactivity, LoggedOutByGm, LostGatewayServer, LostUserServer,
-  LostWorldServer, OutOfGameTime,
+  Inactivity, LoggedOutByGm, LostGatewayServer, LostUserServer, LostWorldServer,
+  OutOfGameTime,
 }
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
@@ -279,13 +281,13 @@ pub fn create_character_result_round_trips_test() -> Nil {
       let #(field_2, state) = message_support.unsigned(state:, bits: 32)
       let #(value, state) = message_support.unsigned(state:, bits: 6)
       let result = case value {
-        3 -> create_character_result.CreateOk
-        6 -> create_character_result.NameUnavailable
-        9 -> create_character_result.AccountFull
-        10 -> create_character_result.NameLength
-        11 -> create_character_result.OpposingFaction
-        44 -> create_character_result.CharactersOnline
-        other -> create_character_result.Other(other)
+        3 -> create_result.CreateOk
+        6 -> create_result.NameUnavailable
+        9 -> create_result.AccountFull
+        10 -> create_result.NameLength
+        11 -> create_result.OpposingFaction
+        44 -> create_result.CharactersOnline
+        other -> create_result.Other(other)
       }
       #(CreateCharacterResult(character_id:, field_2:, result:), state)
     },
@@ -410,7 +412,7 @@ fn disconnect_reason(value: Int) -> DisconnectReason {
     16 -> OutOfGameTime
     19 -> AccountDisconnected
     20 -> CriticalTransactionFailure
-    other -> disconnect_notice.Other(other)
+    other -> disconnect_reason.Other(other)
   }
 }
 

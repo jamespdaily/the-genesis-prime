@@ -35,8 +35,9 @@ import genesis_prime/hand_off.{
 import genesis_prime/login/guid
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
-import genesis_prime/message/disconnect_notice.{
-  AccountDisconnected, DisconnectNotice, LostUserServer,
+import genesis_prime/message/disconnect_notice.{DisconnectNotice}
+import genesis_prime/message/disconnect_reason.{
+  AccountDisconnected, LostUserServer,
 }
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/step.{
@@ -190,7 +191,7 @@ fn heard(taken: Step(Nil, Request), cipher: Cipher) -> List(Frame) {
 fn disconnect(
   taken: Step(Nil, Request),
   cipher: Cipher,
-) -> disconnect_notice.DisconnectReason {
+) -> disconnect_reason.DisconnectReason {
   let assert [Frame(message_id: 0x036A, body:)] = heard(taken, cipher)
     as "one 0x036A in its wrapper, under the cipher the connection holds"
   let assert Ok(DisconnectNotice(reason:)) = disconnect_notice.decode(body)

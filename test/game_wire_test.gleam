@@ -16,9 +16,8 @@ import game_client
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
 import genesis_prime/login/guid
 import genesis_prime/message/character_list
-import genesis_prime/message/disconnect_notice.{
-  AccountDisconnected, DisconnectNotice,
-}
+import genesis_prime/message/disconnect_notice.{DisconnectNotice}
+import genesis_prime/message/disconnect_reason.{AccountDisconnected}
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
 import login_support

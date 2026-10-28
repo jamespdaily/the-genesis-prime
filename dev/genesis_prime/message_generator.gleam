@@ -7,7 +7,8 @@
 //// file that does not.
 
 import genesis_prime/message_schema.{
-  type Field, type Kind, type Message, type Record, type Schema,
+  type Field, type Kind, type Message, type NamedValues, type Record,
+  type Schema,
 }
 import gleam/int
 import gleam/list
@@ -93,7 +94,7 @@ pub fn describe_failure(failure: ReadFailure) -> String {
 }
 
 /// The files the schema generates: a module for each message, then each
-/// record, then the client message module.
+/// record, then each type of named values, then the client message module.
 pub fn generate(schema: Schema) -> List(GeneratedFile) {
   list.flatten([
     list.map(schema.messages, fn(message) {
@@ -106,6 +107,12 @@ pub fn generate(schema: Schema) -> List(GeneratedFile) {
       GeneratedFile(
         path: directory <> "/" <> record.name <> ".gleam",
         text: record_module(record),
+      )
+    }),
+    list.map(values_types(schema), fn(named_values) {
+      GeneratedFile(
+        path: directory <> "/" <> values_module(named_values) <> ".gleam",
+        text: values_module_text(named_values),
       )
     }),
     [
@@ -215,7 +222,6 @@ fn message_module(message: Message) -> String {
       type_doc,
       type_declaration(type_name, message.fields),
       [""],
-      value_types(message.fields),
       wrap(
         "///",
         "The message as the bytes of its body, or the first field that cannot be written.",
@@ -230,7 +236,6 @@ fn message_module(message: Message) -> String {
       decode_head,
       decode_body(message.fields, type_name),
       ["}"],
-      value_functions(message.fields),
     ]),
   )
 }
@@ -256,7 +261,6 @@ fn record_module(record: Record) -> String {
       ),
       type_declaration(type_name, record.fields),
       [""],
-      value_types(record.fields),
       ["/// Writes the record's fields to the stream."],
       function_head(
         name: "write",
@@ -274,7 +278,6 @@ fn record_module(record: Record) -> String {
       read_steps(record.fields),
       construct_with_reader(record.fields, type_name),
       ["}"],
-      value_functions(record.fields),
     ]),
   )
 }
@@ -295,12 +298,7 @@ fn client_message_module(messages: List(Message)) -> String {
   let module_imports =
     list.sort(sent, fn(left, right) { string.compare(left.name, right.name) })
     |> list.flat_map(fn(message) {
-      let path = "import genesis_prime/message/" <> message.name <> ".{"
-      let item = "type " <> camel(message.name)
-      case string.length(path <> item <> "}") <= width {
-        True -> [path <> item <> "}"]
-        False -> [path, "  " <> item <> ",", "}"]
-      }
+      type_import(module: message.name, type_name: camel(message.name))
     })
   lines_to_text(
     list.flatten([
@@ -410,6 +408,87 @@ fn case_arm(
   }
 }
 
+/// The types of named values the schema's fields use, each once, in the order
+/// the fields first use them.
+fn values_types(schema: Schema) -> List(NamedValues) {
+  list.append(
+    list.flat_map(schema.messages, fn(message) { message.fields }),
+    list.flat_map(schema.records, fn(record) { record.fields }),
+  )
+  |> list.filter_map(fn(field) { option.to_result(field.named_values, Nil) })
+  |> list.unique
+}
+
+/// The name of the module of a type of named values: the type's name in snake
+/// case.
+fn values_module(named_values: NamedValues) -> String {
+  string.to_graphemes(named_values.type_name)
+  |> list.index_map(fn(letter, index) {
+    case letter != string.lowercase(letter) && index > 0 {
+      True -> "_" <> string.lowercase(letter)
+      False -> string.lowercase(letter)
+    }
+  })
+  |> string.concat
+}
+
+/// The module of a type of named values: the type with a case for each value
+/// and `Other` for any value the schema does not name, and the two functions
+/// the codecs use to write and read it as a number.
+fn values_module_text(named_values: NamedValues) -> String {
+  let type_name = named_values.type_name
+  let head =
+    wrap(
+      "////",
+      "The values of "
+        <> type_name
+        <> " that `schema.toml` names, each with the evidence for its meaning, and `Other` for any value it does not name.",
+    )
+  lines_to_text(
+    list.flatten([
+      header(head),
+      wrap("///", "The values of a field, as the client's code names them."),
+      ["pub type " <> type_name <> " {"],
+      list.flat_map(named_values.values, fn(value) {
+        let evidence = case value.evidence {
+          Some(key) -> ", the fact file's `" <> key <> "`"
+          None -> ""
+        }
+        list.flatten([
+          wrap(
+            "  ///",
+            "The value " <> int.to_string(value.value) <> evidence <> ".",
+          ),
+          ["  " <> camel(value.name)],
+        ])
+      }),
+      ["  /// A value the schema does not name.", "  Other(Int)", "}", ""],
+      ["/// The number the encoder writes for a value."],
+      function_head(
+        name: "to_value",
+        parameters: ["value: " <> type_name],
+        returns: "Int",
+      ),
+      ["  case value {"],
+      list.map(named_values.values, fn(value) {
+        "    " <> camel(value.name) <> " -> " <> int.to_string(value.value)
+      }),
+      ["    Other(number) -> number", "  }", "}", ""],
+      ["/// The value for a number the decoder read."],
+      function_head(
+        name: "from_value",
+        parameters: ["number: Int"],
+        returns: type_name,
+      ),
+      ["  case number {"],
+      list.map(named_values.values, fn(value) {
+        "    " <> int.to_string(value.value) <> " -> " <> camel(value.name)
+      }),
+      ["    other -> Other(other)", "  }", "}"],
+    ]),
+  )
+}
+
 fn header(description: List(String)) -> List(String) {
   list.flatten([
     [
@@ -443,28 +522,37 @@ fn imports(fields: List(Field), types: List(String)) -> List(String) {
     ]
     False -> [bit_stream_line]
   }
-  let records =
+  let modules =
     list.filter_map(fields, fn(field) {
-      case field.kind {
-        message_schema.ArrayOfRecord(record:, ..) -> Ok(record)
-        _ -> Error(Nil)
+      case field.kind, field.named_values {
+        message_schema.ArrayOfRecord(record:, ..), _ ->
+          Ok(#(record, camel(record)))
+        _, Some(named_values) ->
+          Ok(#(values_module(named_values), named_values.type_name))
+        _, None -> Error(Nil)
       }
     })
     |> list.unique
-    |> list.sort(string.compare)
-  let record_imports =
-    list.map(records, fn(record) {
-      "import genesis_prime/message/"
-      <> record
-      <> ".{type "
-      <> camel(record)
-      <> "}"
+    |> list.sort(fn(first, second) { string.compare(first.0, second.0) })
+  let module_imports =
+    list.flat_map(modules, fn(module) {
+      type_import(module: module.0, type_name: module.1)
     })
-  list.flatten([
-    bit_stream_import,
-    record_imports,
-    ["import gleam/result", ""],
-  ])
+  list.flatten([bit_stream_import, module_imports, ["import gleam/result", ""]])
+}
+
+/// The import of one type from a message module, as `gleam format` lays it
+/// out: on one line when it fits, else with the type on a line of its own.
+fn type_import(
+  module module: String,
+  type_name type_name: String,
+) -> List(String) {
+  let path = "import genesis_prime/message/" <> module <> ".{"
+  let item = "type " <> type_name
+  case string.length(path <> item <> "}") <= width {
+    True -> [path <> item <> "}"]
+    False -> [path, "  " <> item <> ",", "}"]
+  }
 }
 
 fn type_declaration(type_name: String, fields: List(Field)) -> List(String) {
@@ -509,88 +597,6 @@ fn kind_type(kind: Kind) -> String {
   }
 }
 
-/// The custom type of each field whose values the schema names, one case for
-/// each value and `Other` for any value the schema does not name.
-fn value_types(fields: List(Field)) -> List(String) {
-  list.flat_map(fields, fn(field) {
-    case field.named_values {
-      None -> []
-      Some(named_values) ->
-        list.flatten([
-          wrap(
-            "///",
-            "The values of the `"
-              <> field.name
-              <> "` field that `schema.toml` names, each with the evidence for its meaning, and `Other` for any value it does not name.",
-          ),
-          ["pub type " <> named_values.type_name <> " {"],
-          list.flat_map(named_values.values, fn(value) {
-            let evidence = case value.evidence {
-              Some(key) -> ", the fact file's `" <> key <> "`"
-              None -> ""
-            }
-            list.flatten([
-              wrap(
-                "  ///",
-                "The value " <> int.to_string(value.value) <> evidence <> ".",
-              ),
-              ["  " <> camel(value.name)],
-            ])
-          }),
-          ["  /// A value the schema does not name.", "  Other(Int)", "}", ""],
-        ])
-    }
-  })
-}
-
-/// The two functions that turn each valued field's type into its number for
-/// the encoder and back for the decoder, each preceded by a blank line.
-fn value_functions(fields: List(Field)) -> List(String) {
-  list.flat_map(fields, fn(field) {
-    case field.named_values {
-      None -> []
-      Some(named_values) -> {
-        let type_name = named_values.type_name
-        list.flatten([
-          [
-            "",
-            "/// The number the encoder writes for the `"
-              <> field.name
-              <> "` field's type.",
-            "fn "
-              <> field.name
-              <> "_to_value("
-              <> field.name
-              <> ": "
-              <> type_name
-              <> ") -> Int {",
-            "  case " <> field.name <> " {",
-          ],
-          list.map(named_values.values, fn(value) {
-            "    " <> camel(value.name) <> " -> " <> int.to_string(value.value)
-          }),
-          ["    Other(value) -> value", "  }", "}", ""],
-          [
-            "/// The `"
-              <> field.name
-              <> "` field's type for a number the decoder read.",
-            "fn "
-              <> field.name
-              <> "_from_value(value: Int) -> "
-              <> type_name
-              <> " {",
-            "  case value {",
-          ],
-          list.map(named_values.values, fn(value) {
-            "    " <> int.to_string(value.value) <> " -> " <> camel(value.name)
-          }),
-          ["    other -> Other(other)", "  }", "}"],
-        ])
-      }
-    }
-  })
-}
-
 /// The fields a generated type holds: every field but the constants, which the
 /// encoder writes and the decoder checks.
 fn held(fields: List(Field)) -> List(Field) {
@@ -606,7 +612,13 @@ fn held(fields: List(Field)) -> List(Field) {
 fn write_step(field: Field, owner: String) -> List(String) {
   let name = "\"" <> field.name <> "\""
   let value = case field.named_values {
-    Some(_) -> field.name <> "_to_value(" <> owner <> "." <> field.name <> ")"
+    Some(named_values) ->
+      values_module(named_values)
+      <> ".to_value("
+      <> owner
+      <> "."
+      <> field.name
+      <> ")"
     None -> owner <> "." <> field.name
   }
   let #(function, arguments) = case field.kind {
@@ -730,13 +742,13 @@ fn read_step(field: Field) -> List(String) {
   let read =
     use_line(pattern:, call_head: "bit_stream." <> function, arguments:)
   case field.named_values {
-    Some(_) ->
+    Some(named_values) ->
       list.append(read, [
         "  let "
         <> field.name
         <> " = "
-        <> field.name
-        <> "_from_value("
+        <> values_module(named_values)
+        <> ".from_value("
         <> field.name
         <> ")",
       ])
