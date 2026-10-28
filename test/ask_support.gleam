@@ -29,23 +29,6 @@ pub const event_wait_ms = 5000
 /// a passing test never reaches.
 pub const patient = 20_000
 
-/// The letters of the asking rule's commands.
-pub const echo_command = 0x45
-
-pub const await_command = 0x57
-
-pub const open_command = 0x4F
-
-pub const ignore_command = 0x49
-
-pub const crash_command = 0x43
-
-pub const store_command = 0x53
-
-pub const ping_command = 0x50
-
-pub const stop_then_write_command = 0x51
-
 /// A running listener and the tree it started under.
 pub type Server {
   Server(supervisor: Pid, name: Name(Nil), port: Int)
@@ -56,20 +39,21 @@ pub type Record {
   Record(letter: Int, ask: Int, code: Int, extra: Int, milliseconds: Int)
 }
 
-/// Starts a listener whose connections run the asking rule with this
-/// directory, beside what `with` adds to the same supervisor. A test with
-/// another recorder passes it in `recorder`.
+/// Starts a listener whose connections run `rule` with this directory, beside
+/// what `with` adds to the same supervisor. A test with a recorder passes it in
+/// `recorder`.
 pub fn start(
-  directory directory: fn(Request, fn(Answer) -> Nil) ->
+  rule rule: Rule(settings, state, Nil, answer, Nil, request),
+  directory directory: fn(request, fn(answer) -> Nil) ->
     Result(service_shell.Sent, Nil),
   shutdown_ms shutdown_ms: Int,
-  recorder recorder: Option(Recorder(Nil)),
+  recorder recorder: Option(Recorder),
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
   let name = process.new_name("test_listener")
   let connection =
     shell.Settings(
-      rule: asking_rule.rule(),
+      rule:,
       send_deadline_ms: 300,
       shutdown_ms:,
       recorder:,
@@ -155,16 +139,15 @@ pub fn stop_tree(tree: Pid) -> process.ExitReason {
   ended(begin_stop_tree(tree))
 }
 
-/// Sends the server's tree the exit the server's own stop sends, and watches
-/// it.
-pub fn begin_stop(server: Server) -> process.Monitor {
-  begin_stop_tree(server.supervisor)
-}
-
 /// Stops the server's tree and waits for it to end.
 pub fn stop(server: Server) -> Nil {
   let _reason = stop_tree(server.supervisor)
   Nil
+}
+
+/// Why a process the server's stop ended exits: the atom `shutdown`.
+pub fn shutdown() -> process.ExitReason {
+  process.Abnormal(atom.to_dynamic(atom.create("shutdown")))
 }
 
 /// Waits for a watched process to end and says how.
@@ -231,7 +214,7 @@ pub fn connections(server: Server) -> List(Pid) {
 pub fn gate(
   name name: Name(service_shell.Call(gate_rule.Message, gate_rule.Answer)),
   shutdown_ms shutdown_ms: Int,
-  recorder recorder: Option(Recorder(Nil)),
+  recorder recorder: Option(Recorder),
 ) -> ChildSpecification(Nil) {
   service_shell.supervised(service_shell.Settings(
     rule: gate_as_rule(),
@@ -242,7 +225,7 @@ pub fn gate(
 }
 
 /// The gate's rule as its shell runs it.
-pub fn gate_as_rule() -> Rule(
+fn gate_as_rule() -> Rule(
   Nil,
   gate_rule.State,
   gate_rule.Message,
@@ -282,19 +265,28 @@ pub fn directory(
   }
 }
 
+/// Asks from the test and waits for the answer. `send` hands the reply to the
+/// process asked, as a directory does, and says where it went; returns that
+/// and the answer.
+pub fn ask_and_wait(
+  send send: fn(fn(answer) -> Nil) -> Result(service_shell.Sent, Nil),
+) -> #(service_shell.Sent, answer) {
+  let replies = process.new_subject()
+  let assert Ok(sent) = send(fn(answer) { process.send(replies, answer) })
+    as "the ask reached a process"
+  let assert Ok(answer) = process.receive(replies, within: event_wait_ms)
+    as "the process answered"
+  #(sent, answer)
+}
+
 /// Asks the gate from the test, and waits for its answer.
 pub fn call_gate(
   gate gate: Name(service_shell.Call(gate_rule.Message, gate_rule.Answer)),
   message message: gate_rule.Message,
 ) -> gate_rule.Answer {
-  let replies = process.new_subject()
-  let assert Ok(service_shell.ToService(_)) =
-    service_shell.call(gate, message, fn(answer) {
-      process.send(replies, answer)
-    })
-    as "the gate runs"
-  let assert Ok(answer) = process.receive(replies, within: event_wait_ms)
-    as "the gate answered"
+  let #(sent, answer) =
+    ask_and_wait(send: fn(reply) { service_shell.call(gate, message, reply) })
+  let assert service_shell.ToService(_) = sent as "the gate is a service"
   answer
 }
 
@@ -317,3 +309,12 @@ pub fn unreported(_sent: service_shell.Sent) -> Nil {
 
 @external(erlang, "ranch", "procs")
 fn procs(ref: Name(Nil), kind: atom.Atom) -> List(Pid)
+
+/// The test's own reading of the monotonic clock, in milliseconds, to set
+/// beside the readings a shell takes.
+pub fn monotonic_ms() -> Int {
+  monotonic_time(atom.create("millisecond"))
+}
+
+@external(erlang, "erlang", "monotonic_time")
+fn monotonic_time(unit: atom.Atom) -> Int

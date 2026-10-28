@@ -30,7 +30,7 @@ import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/service/shell.{type Call, type Sent} as service_shell
-import genesis_prime/step.{type Rule, Rule}
+import genesis_prime/step.{type Input, type Step, Rule}
 import genesis_prime/store/worker.{type Job}
 import gleam/erlang/process.{type Name}
 import gleam/option.{type Option, None}
@@ -81,7 +81,7 @@ pub type Served(settings) {
     listener: Name(Nil),
     port: Int,
     settings: settings,
-    recorder: Option(Recorder(settings)),
+    recorder: Option(Recorder),
   )
 }
 
@@ -103,12 +103,7 @@ pub fn start(
   ))
   |> supervisor.add(
     service_shell.supervised(service_shell.Settings(
-      rule: Rule(
-        name: "genesis_prime/hand_off",
-        settings: Nil,
-        new: hand_off.new,
-        step: hand_off.step,
-      ),
+      rule: hand_off.rule(),
       name: settings.hand_off,
       shutdown_ms: settings.hand_off_shutdown_ms,
       recorder: None,
@@ -143,33 +138,31 @@ fn add_login(
   |> serve(
     login:,
     served: login.sts,
-    rule: Rule(
-      name: sts_connection.rule_name,
-      settings: login.sts.settings,
-      new: sts_connection.new,
-      step: sts_connection.step,
-    ),
+    name: sts_connection.rule_name,
+    new: sts_connection.new,
+    step: sts_connection.step,
     directory:,
   )
   |> serve(
     login:,
     served: login.auth,
-    rule: Rule(
-      name: auth_connection.rule_name,
-      settings: login.auth.settings,
-      new: auth_connection.new,
-      step: auth_connection.step,
-    ),
+    name: auth_connection.rule_name,
+    new: auth_connection.new,
+    step: auth_connection.step,
     directory:,
   )
 }
 
-/// Adds one login listener, whose connections run `rule`.
+/// Adds one login listener, whose connections run the rule made from `name`,
+/// the listener's own settings, `new` and `step`.
 fn serve(
   tree: supervisor.Builder,
   login login: Login,
   served served: Served(settings),
-  rule rule: Rule(settings, state, Nil, login.Answer, Nil, login.Request),
+  name name: String,
+  new new: fn(settings) -> state,
+  step step: fn(state, Input(Nil, login.Answer)) ->
+    #(state, Step(Nil, login.Request)),
   directory directory: fn(login.Request, fn(login.Answer) -> Nil) ->
     Result(Sent, Nil),
 ) -> supervisor.Builder {
@@ -179,7 +172,7 @@ fn serve(
       name: served.listener,
       port: served.port,
       connection: connection_shell.Settings(
-        rule:,
+        rule: Rule(name:, settings: served.settings, new:, step:),
         send_deadline_ms: login.send_deadline_ms,
         shutdown_ms: login.connection_shutdown_ms,
         recorder: served.recorder,

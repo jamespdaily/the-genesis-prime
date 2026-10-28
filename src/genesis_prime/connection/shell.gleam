@@ -90,20 +90,20 @@
 ////   `CancelTimer`, which need processes no rule uses yet: the shell logs an
 ////   error naming the effect and ends the connection.
 
-import genesis_prime/rule_recording.{Taken}
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/service/shell.{type Sent, ToService, ToWorker}
 import genesis_prime/step.{
   type Ask, type AskId, type Effect, type Event, type Peer, type Rule,
   type SocketFailure, Accepted, Answer, Answered, AnsweredLate, ConnectionId,
-  Effects, EffectsThenAsk, EndedBeforeAnswer, Input, LogError, LogWarning,
-  NoAnswerInTime, NotRunning, PeerClosed, ReadFailed, Socket, StoppedWaiting,
-  Stopping, WriteFailed,
+  Effects, EffectsThenAsk, EndedBeforeAnswer, LogWarning, NoAnswerInTime,
+  NotRunning, PeerClosed, ReadFailed, Socket, StoppedWaiting, Stopping,
+  WriteFailed,
 }
-import genesis_prime/step/runtime
+import genesis_prime/step/runtime.{Shutdown}
+import gleam/crypto
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
-import gleam/erlang/process.{type Pid}
+import gleam/erlang/process.{type Monitor, type Pid}
 import gleam/erlang/reference.{type Reference}
 import gleam/option.{type Option, None, Some}
 
@@ -118,7 +118,7 @@ pub type Settings(settings, state, message, answer, outgoing, request) {
     shutdown_ms: Int,
     /// Where each connection's inputs are recorded; `None` unless the dev
     /// start turns recording on.
-    recorder: Option(Recorder(settings)),
+    recorder: Option(Recorder),
     /// How the shell reaches the process a request names: it sends the
     /// request with `reply` and says where it went, or `Error(Nil)` when that
     /// process is not running. Made once at start from the services' names,
@@ -153,12 +153,7 @@ type Waited(answer) {
 /// An ask whose outcome came without an answer: its tag and its monitor are
 /// kept until the target answers or ends.
 type Kept {
-  Kept(ask: AskId, monitor: Reference)
-}
-
-/// Why a process is asked to exit; the atom `shutdown`.
-type ExitReason {
-  Shutdown
+  Kept(ask: AskId, monitor: Monitor)
 }
 
 /// A running connection: its socket, its parent, its settings, the rule's
@@ -194,7 +189,9 @@ pub fn run(
 ) -> Nil {
   let socket = handshake(ranch_ref, settings.send_deadline_ms)
   let connection = runtime.unique_id()
-  let writer = case file.open_if(settings.recorder, connection:) {
+  let writer = case
+    file.open_if(settings.recorder, settings.rule, connection:)
+  {
     Ok(writer) -> writer
     Error(error) -> recording_failed(socket, error)
   }
@@ -215,7 +212,7 @@ pub fn run(
     event: Socket(Accepted(
       connection: ConnectionId(connection),
       peer: peer(socket),
-      seed: seed(),
+      seed: crypto.strong_random_bytes(32),
     )),
   )
 }
@@ -226,10 +223,16 @@ fn take(
   now now: step.Now,
   event event: Event(message, answer),
 ) -> Nil {
-  let input = Input(now:, event:)
-  let #(state, step) = running.settings.rule.step(running.state, input)
-  let writer = case file.append_if(running.writer, Taken(input:, step:)) {
-    Ok(writer) -> writer
+  let #(state, step, writer) = case
+    file.fold(
+      rule: running.settings.rule,
+      state: running.state,
+      writer: running.writer,
+      now:,
+      event:,
+    )
+  {
+    Ok(taken) -> taken
     Error(error) -> recording_failed(running.socket, error)
   }
   let running = Running(..running, state:, writer:)
@@ -351,7 +354,7 @@ fn next(
     LateAnswer(tag:) -> {
       let assert Ok(Kept(ask:, monitor:)) = dict.get(running.kept, tag)
         as "an answer is taken as late only for a tag the shell kept"
-      unwatch(monitor)
+      process.demonitor_process(monitor)
       take(
         running: Running(..running, kept: dict.delete(running.kept, tag)),
         now:,
@@ -392,7 +395,7 @@ fn wait_for_answer(
   tag tag: Reference,
   sent sent: Sent,
 ) -> Nil {
-  let monitor = watch(target(sent))
+  let monitor = process.monitor(target(sent))
   let waited = await_answer(tag, monitor, running.parent, ask.deadline_ms)
   let known = runtime.now()
   let #(running, outcome) = case waited {
@@ -426,8 +429,7 @@ fn target(sent: Sent) -> Pid {
 fn end_worker(sent: Sent) -> Nil {
   case sent {
     ToWorker(pid:) -> {
-      exit_process(pid, Shutdown)
-      Nil
+      process.send_abnormal_exit(pid, Shutdown)
     }
     ToService(..) -> Nil
   }
@@ -438,7 +440,7 @@ fn keep(
   running running: Running(settings, state, message, answer, outgoing, request),
   tag tag: Reference,
   ask ask: AskId,
-  monitor monitor: Reference,
+  monitor monitor: Monitor,
 ) -> Running(settings, state, message, answer, outgoing, request) {
   Running(..running, kept: dict.insert(running.kept, tag, Kept(ask:, monitor:)))
 }
@@ -460,39 +462,21 @@ fn stop(
   running: Running(settings, state, message, answer, outgoing, request),
 ) -> Nil {
   close(running.socket)
-  case file.finish_if(running.writer) {
-    Ok(Nil) -> Nil
-    Error(error) -> log_recording_failure(error)
-  }
+  runtime.finish_recording(running.writer)
 }
 
 /// Ends the connection before the step's effects, since its input could not
 /// be recorded.
 fn recording_failed(socket: ClientSocket, error: FileError) -> a {
-  log_recording_failure(error)
+  runtime.log_recording_failure(error)
   close(socket)
   panic as "a connection's recording could not be written"
 }
 
-fn log_recording_failure(error: FileError) -> Nil {
-  runtime.log(
-    LogError,
-    "the recording could not be written: " <> file.describe(error),
-    step.no_one,
-  )
-}
-
 /// Ends the connection over an effect the shell does not carry out yet.
 fn not_built(socket: ClientSocket, effect: String) -> a {
-  runtime.log(
-    LogError,
-    "a rule returned "
-      <> effect
-      <> ", which the connection shell does not carry out",
-    step.no_one,
-  )
   close(socket)
-  panic as "a rule returned an effect the connection shell does not carry out"
+  runtime.unsupported(shell: "connection shell", what: effect)
 }
 
 @external(erlang, "connection_shell_ffi", "handshake")
@@ -508,25 +492,16 @@ fn next_event(
   kept: Dict(Reference, Kept),
 ) -> Arrived
 
-@external(erlang, "connection_shell_ffi", "watch")
-fn watch(pid: Pid) -> Reference
-
-@external(erlang, "connection_shell_ffi", "unwatch")
-fn unwatch(monitor: Reference) -> Nil
-
 @external(erlang, "connection_shell_ffi", "send_answer")
 fn send_answer(shell: Pid, tag: Reference, answer: answer) -> Nil
 
 @external(erlang, "connection_shell_ffi", "await_answer")
 fn await_answer(
   tag: Reference,
-  monitor: Reference,
+  monitor: Monitor,
   parent: Pid,
   deadline_ms: Int,
 ) -> Waited(answer)
-
-@external(erlang, "erlang", "exit")
-fn exit_process(pid: Pid, reason: ExitReason) -> Bool
 
 @external(erlang, "connection_shell_ffi", "send")
 fn send(socket: ClientSocket, bytes: BitArray) -> Result(Nil, SocketFailure)
@@ -536,8 +511,3 @@ fn close(socket: ClientSocket) -> Nil
 
 @external(erlang, "connection_shell_ffi", "peer")
 fn peer(socket: ClientSocket) -> Peer
-
-/// 32 bytes from the operating system's strong random source, the seed of a
-/// new connection.
-@external(erlang, "connection_shell_ffi", "seed")
-fn seed() -> BitArray

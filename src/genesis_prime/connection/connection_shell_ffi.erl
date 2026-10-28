@@ -7,7 +7,7 @@
 -behaviour(ranch_protocol).
 
 -export([start_link/3, start_listener/4, listener_port/1, handshake/2,
-         read_once/1, next_event/3, send/2, close/1, peer/1, seed/0, watch/1, unwatch/1,
+         read_once/1, next_event/3, send/2, close/1, peer/1,
          send_answer/3, await_answer/4]).
 
 %% Starts the connection's process, linked to Ranch's connection supervisor,
@@ -89,15 +89,6 @@ kept_with_monitor(Monitor, Kept) ->
         [] -> error
     end.
 
-%% Starts watching the process an ask went to.
-watch(Pid) ->
-    erlang:monitor(process, Pid).
-
-%% Stops watching, and drops a DOWN already sent.
-unwatch(Monitor) ->
-    erlang:demonitor(Monitor, [flush]),
-    nil.
-
 %% What an ask's target calls to answer it; it never fails, and an answer to a
 %% shell that has ended is dropped.
 send_answer(Shell, Tag, Answer) ->
@@ -141,9 +132,6 @@ peer(Socket) ->
         {ok, {Address, Port}} -> {peer, list_to_binary(inet:ntoa(Address)), Port};
         {error, _} -> {peer, <<"unknown">>, 0}
     end.
-
-seed() ->
-    crypto:strong_rand_bytes(32).
 
 failure(closed) -> closed;
 failure(econnreset) -> reset;

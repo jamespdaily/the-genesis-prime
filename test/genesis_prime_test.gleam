@@ -1,4 +1,4 @@
-import environment
+import envoy
 import unitest
 
 /// Runs the tests. The tests tagged `serial` share a machine-wide resource (a
@@ -6,7 +6,7 @@ import unitest
 /// `GENESIS_TEST_SKIP_SERIAL=1` they are skipped, and `./check` runs them in a
 /// second run of their own, one at a time (`gleam test -- --tag serial`).
 pub fn main() -> Nil {
-  let skipped = case environment.get("GENESIS_TEST_SKIP_SERIAL") {
+  let skipped = case envoy.get("GENESIS_TEST_SKIP_SERIAL") {
     Ok("1") -> ["serial"]
     _ -> []
   }

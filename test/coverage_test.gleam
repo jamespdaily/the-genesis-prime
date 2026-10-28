@@ -20,7 +20,7 @@
 ////   ids have a handler").
 
 import client_tables
-import environment
+import envoy
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine.{type EngineDeclaration, EngineDeclaration}
 import genesis_prime/coverage/measurement.{
@@ -42,7 +42,7 @@ import planted_table.{Integer}
 import unitest
 
 fn client_present() -> Bool {
-  environment.get("GENESIS_NO_CLIENT") != Ok("1")
+  envoy.get("GENESIS_NO_CLIENT") != Ok("1")
 }
 
 /// Plants a QuestObjective table with one row per type value, ids from 1, and

@@ -3,9 +3,9 @@
 //// administration pool, and a watcher that drops what the run made when the
 //// VM ends however it ends.
 
-import environment
-import gleam/dynamic.{type Dynamic}
-import gleam/erlang/process.{type Name, type Pid}
+import envoy
+import genesis_prime/step/runtime
+import gleam/erlang/process.{type Name}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option}
@@ -47,21 +47,21 @@ pub type CommandFailed {
 
 /// Reads the server's address from the environment.
 pub fn settings() -> Settings {
-  let host = result.unwrap(environment.get("PGHOST"), "/tmp")
+  let host = result.unwrap(envoy.get("PGHOST"), "/tmp")
   let tcp_host = case string.starts_with(host, "/") {
-    True -> result.unwrap(environment.get("PGTCPHOST"), "::1")
+    True -> result.unwrap(envoy.get("PGTCPHOST"), "::1")
     False -> host
   }
   let port =
-    environment.get("PGPORT")
+    envoy.get("PGPORT")
     |> result.try(int.parse)
     |> result.unwrap(5433)
   Settings(
     host:,
     tcp_host:,
     port:,
-    user: result.unwrap(environment.get("PGUSER"), "postgres"),
-    password: option.from_result(environment.get("PGPASSWORD")),
+    user: result.unwrap(envoy.get("PGUSER"), "postgres"),
+    password: option.from_result(envoy.get("PGPASSWORD")),
   )
 }
 
@@ -97,10 +97,7 @@ pub fn shared() -> Shared {
 }
 
 /// Runs one statement as the administrator, on the `postgres` database.
-pub fn execute(
-  on shared: Shared,
-  sql sql: String,
-) -> Result(Nil, pog.QueryError) {
+fn execute(on shared: Shared, sql sql: String) -> Result(Nil, pog.QueryError) {
   pog.query(sql)
   |> pog.timeout(60_000)
   |> pog.execute(on: shared.admin)
@@ -110,7 +107,7 @@ pub fn execute(
 /// A database of its own for one test: a copy of the migrated template, with
 /// a name no other test has. The run's watcher drops it when the VM ends.
 pub fn new_database(on shared: Shared) -> String {
-  let name = shared.run <> "_" <> int.to_string(unique())
+  let name = shared.run <> "_" <> int.to_string(runtime.unique_id())
   let assert Ok(Nil) =
     execute(
       on: shared,
@@ -148,17 +145,9 @@ fn start_for_the_run(work: fn() -> a) -> a {
   }
 }
 
-/// Stops a pool as OTP stops any server, which stops its connections.
-@external(erlang, "gen_server", "stop")
-pub fn stop_pool(pool: Pid) -> Dynamic
-
 /// Runs `create` once per key in this VM; every caller gets the same value.
 @external(erlang, "database_support_ffi", "once")
 pub fn once(key: String, create: fn() -> a) -> a
-
-/// An integer no other call in this VM has returned.
-@external(erlang, "database_support_ffi", "unique")
-pub fn unique() -> Int
 
 fn create_shared() -> Shared {
   let settings = settings()

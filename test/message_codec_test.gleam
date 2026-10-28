@@ -9,34 +9,20 @@
 import genesis_prime/message_generator.{
   type GeneratedFile, Edited, GeneratedFile, Missing, Stale,
 }
-import genesis_prime/message_schema
 import gleam/list
 import gleam/string
 import owned_test
-import simplifile
-
-const schema_path = "src/genesis_prime/message/schema.toml"
-
-const directory = "src/genesis_prime/message"
 
 fn generated() -> List(GeneratedFile) {
-  let assert Ok(text) = simplifile.read(schema_path)
-    as "the schema file could not be read"
-  let assert Ok(schema) = message_schema.parse(text)
-    as "the schema file is a schema"
-  message_generator.generate(schema)
+  let assert Ok(files) = message_generator.generated_files()
+    as "the schema file reads and is a schema"
+  files
 }
 
 fn committed() -> List(GeneratedFile) {
-  let assert Ok(paths) = simplifile.get_files(directory)
-    as "the codec directory could not be listed"
-  paths
-  |> list.filter(string.ends_with(_, ".gleam"))
-  |> list.map(fn(path) {
-    let assert Ok(text) = simplifile.read(path)
-      as { "a committed file could not be read: " <> path }
-    GeneratedFile(path:, text:)
-  })
+  let assert Ok(files) = message_generator.committed_files()
+    as "the committed codec files read"
+  files
 }
 
 fn file_named(files: List(GeneratedFile), name: String) -> GeneratedFile {

@@ -28,7 +28,7 @@
 
 import gate_rule
 import genesis_prime/step.{
-  type Effect, type Input, type Outcome, type Rule, type Step, About, Accepted,
+  type Effect, type Input, type Outcome, type Rule, type Step, Accepted,
   Answered, AnsweredLate, Ask, AskId, Effects, EffectsThenAsk, EndedBeforeAnswer,
   Input, Log, LogLine, LogWarning, NoAnswerInTime, NotRunning, PeerClosed, Read,
   ReadFailed, Rule, Socket, Stop, StoppedWaiting, Stopping, Write, WriteFailed,
@@ -36,7 +36,6 @@ import genesis_prime/step.{
 import genesis_prime/store
 import gleam/int
 import gleam/list
-import gleam/option.{None}
 import gleam/set.{type Set}
 
 /// What the rule asks, each naming the process it asks.
@@ -56,6 +55,23 @@ pub type Answer {
 pub type State {
   State(pending: BitArray, next_ask: Int, late: Set(Int), stopping: Bool)
 }
+
+/// The letters of the commands.
+pub const echo_command = 0x45
+
+pub const await_command = 0x57
+
+pub const open_command = 0x4F
+
+pub const ignore_command = 0x49
+
+pub const crash_command = 0x43
+
+pub const store_command = 0x53
+
+pub const ping_command = 0x50
+
+pub const stop_then_write_command = 0x51
 
 /// The letters that start a record.
 pub const asked = 0x61
@@ -180,74 +196,43 @@ fn run(
   written written: List(Effect(Nil)),
 ) -> #(State, Step(Nil, Request)) {
   case state.pending {
-    <<0x50, n, _wait:16, rest:bytes>> ->
-      run(state: State(..state, pending: rest), now:, written: [
-        Write(<<0x70, n>>),
-        ..written
-      ])
-    <<0x51, n, _wait:16, rest:bytes>> -> #(
-      State(..state, pending: rest),
-      Effects(list.reverse([Write(<<0x71, n>>), Stop, ..written])),
-    )
-    <<0x45, n, wait:16, rest:bytes>> ->
-      ask(
-        state:,
-        now:,
-        written:,
-        rest:,
-        request: OfGate(gate_rule.Echo(n)),
-        wait:,
-      )
-    <<0x57, n, wait:16, rest:bytes>> ->
-      ask(
-        state:,
-        now:,
-        written:,
-        rest:,
-        request: OfGate(gate_rule.Await(n)),
-        wait:,
-      )
-    <<0x4F, n, wait:16, rest:bytes>> ->
-      ask(
-        state:,
-        now:,
-        written:,
-        rest:,
-        request: OfGate(gate_rule.Open(n)),
-        wait:,
-      )
-    <<0x49, _, wait:16, rest:bytes>> ->
-      ask(
-        state:,
-        now:,
-        written:,
-        rest:,
-        request: OfGate(gate_rule.Ignore),
-        wait:,
-      )
-    <<0x43, _, wait:16, rest:bytes>> ->
-      ask(
-        state:,
-        now:,
-        written:,
-        rest:,
-        request: OfGate(gate_rule.Crash),
-        wait:,
-      )
-    <<0x53, n, wait:16, rest:bytes>> ->
-      ask(
-        state:,
-        now:,
-        written:,
-        rest:,
-        request: OfStore(store.FindAccount("login-" <> int.to_string(n))),
-        wait:,
-      )
-    <<_, _, _, _, _:bytes>> -> #(
-      state,
-      Effects(list.reverse([Stop, warn("an unknown command"), ..written])),
-    )
+    <<letter, n, wait:16, rest:bytes>> ->
+      case letter {
+        _ if letter == ping_command ->
+          run(state: State(..state, pending: rest), now:, written: [
+            Write(<<0x70, n>>),
+            ..written
+          ])
+        _ if letter == stop_then_write_command -> #(
+          State(..state, pending: rest),
+          Effects(list.reverse([Write(<<0x71, n>>), Stop, ..written])),
+        )
+        _ ->
+          case request_for(letter, n) {
+            Ok(request) -> ask(state:, now:, written:, rest:, request:, wait:)
+            Error(Nil) -> #(
+              state,
+              Effects(
+                list.reverse([Stop, warn("an unknown command"), ..written]),
+              ),
+            )
+          }
+      }
     _ -> #(state, Effects(list.reverse(written)))
+  }
+}
+
+/// The request a command's letter asks for, with its byte `n`.
+fn request_for(letter: Int, n: Int) -> Result(Request, Nil) {
+  case letter {
+    _ if letter == echo_command -> Ok(OfGate(gate_rule.Echo(n)))
+    _ if letter == await_command -> Ok(OfGate(gate_rule.Await(n)))
+    _ if letter == open_command -> Ok(OfGate(gate_rule.Open(n)))
+    _ if letter == ignore_command -> Ok(OfGate(gate_rule.Ignore))
+    _ if letter == crash_command -> Ok(OfGate(gate_rule.Crash))
+    _ if letter == store_command ->
+      Ok(OfStore(store.FindAccount("login-" <> int.to_string(n))))
+    _ -> Error(Nil)
   }
 }
 
@@ -308,16 +293,5 @@ fn record(
 }
 
 fn warn(text: String) -> Effect(Nil) {
-  Log(LogLine(
-    level: LogWarning,
-    text:,
-    about: About(
-      connection: None,
-      peer: None,
-      account_id: None,
-      character_id: None,
-      map: None,
-      message: None,
-    ),
-  ))
+  Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }

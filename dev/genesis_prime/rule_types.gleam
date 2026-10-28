@@ -166,9 +166,19 @@ fn follow(
     [found, ..rest] -> {
       let skip =
         set.contains(seen, found)
-        || path_of(found.0, source_roots) == Error(Nil)
+        || {
+          !dict.has_key(modules, found.0)
+          && path_of(found.0, source_roots) == Error(Nil)
+        }
       case skip {
-        True -> follow(queue: rest, source_roots:, modules:, seen:, printed:)
+        True ->
+          follow(
+            queue: rest,
+            source_roots:,
+            modules:,
+            seen: set.insert(seen, found),
+            printed:,
+          )
         False -> {
           use #(module, modules) <- result.try(load(
             name: found.0,
@@ -285,18 +295,13 @@ fn print_all(types: List(glance.Type), context: Context) -> String {
 /// A type as text, each name written with its full module.
 fn print(type_: glance.Type, context: Context) -> String {
   case type_ {
-    glance.NamedType(name:, module: qualifier, parameters: [], ..) -> {
-      let #(defined_in, real_name) = resolve(name:, qualifier:, context:)
-      defined_in <> "." <> real_name
-    }
     glance.NamedType(name:, module: qualifier, parameters:, ..) -> {
       let #(defined_in, real_name) = resolve(name:, qualifier:, context:)
-      defined_in
-      <> "."
-      <> real_name
-      <> "("
-      <> print_all(parameters, context)
-      <> ")"
+      let arguments = case parameters {
+        [] -> ""
+        _ -> "(" <> print_all(parameters, context) <> ")"
+      }
+      defined_in <> "." <> real_name <> arguments
     }
     glance.TupleType(elements:, ..) ->
       "#(" <> print_all(elements, context) <> ")"

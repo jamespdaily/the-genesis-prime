@@ -83,17 +83,9 @@ pub fn replay(
   rule rule: Rule(settings, state, message, answer, outgoing, request),
   types_digest types_digest: String,
 ) -> Result(Int, ReplayFailure(outgoing, request)) {
-  use records <- result.try(split(bytes, []))
-  case records {
-    [] -> Error(Incomplete(records: 0))
-    [first, ..rest] -> {
-      use header <- result.try(
-        decode_header(first) |> result.replace_error(NotARecord(index: 0)),
-      )
-      use Nil <- result.try(check_header(header:, rule:, types_digest:))
-      fold(records: rest, rule:, state: rule.new(rule.settings), index: 0)
-    }
-  }
+  use #(header, rest) <- result.try(split_header(bytes))
+  use Nil <- result.try(check_header(header:, rule:, types_digest:))
+  fold(records: rest, rule:, state: rule.new(rule.settings), index: 0)
 }
 
 /// The header and every record a recording holds, in order, for a person or
@@ -104,21 +96,32 @@ pub fn read(
   #(Header(settings), List(Record(message, answer, outgoing, request))),
   ReplayFailure(outgoing, request),
 ) {
+  use #(header, rest) <- result.try(split_header(bytes))
+  use decoded <- result.map(
+    list.index_map(rest, fn(record, index) {
+      decode_record(record)
+      |> result.replace_error(NotARecord(index: index + 1))
+    })
+    |> result.all,
+  )
+  #(header, decoded)
+}
+
+/// The header the bytes start with and the bytes of the records after it.
+fn split_header(
+  bytes: BitArray,
+) -> Result(
+  #(Header(settings), List(BitArray)),
+  ReplayFailure(outgoing, request),
+) {
   use records <- result.try(split(bytes, []))
   case records {
     [] -> Error(Incomplete(records: 0))
     [first, ..rest] -> {
-      use header <- result.try(
+      use header <- result.map(
         decode_header(first) |> result.replace_error(NotARecord(index: 0)),
       )
-      use decoded <- result.map(
-        list.index_map(rest, fn(record, index) { #(record, index + 1) })
-        |> list.try_map(fn(numbered) {
-          decode_record(numbered.0)
-          |> result.replace_error(NotARecord(index: numbered.1))
-        }),
-      )
-      #(header, decoded)
+      #(header, rest)
     }
   }
 }

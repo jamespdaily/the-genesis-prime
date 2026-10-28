@@ -25,7 +25,7 @@
 ////   into named records; a missing row fails the load".
 
 import client_tables
-import environment
+import envoy
 import genesis_prime/table
 import genesis_prime/table/creature2
 import genesis_prime/table/loader/store
@@ -43,7 +43,7 @@ import simplifile
 import unitest
 
 fn client_present() -> Bool {
-  environment.get("GENESIS_NO_CLIENT") != Ok("1")
+  envoy.get("GENESIS_NO_CLIENT") != Ok("1")
 }
 
 /// Every table file of the client, as the file's name without `.tbl`.

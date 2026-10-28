@@ -1,5 +1,5 @@
 -module(database_support_ffi).
--export([once/2, unique/0, run_identifier/0, run_command/3, open_watcher/3]).
+-export([once/2, run_identifier/0, run_command/3, open_watcher/3]).
 
 %% Runs Create once in this VM, whichever test asks first, and gives every
 %% later caller the same value. The value lives in a persistent term, written
@@ -26,10 +26,6 @@ once(Key, Create) ->
                 infinity
             )
     end.
-
-%% A positive integer no other call in this VM has returned.
-unique() ->
-    erlang:unique_integer([positive]).
 
 %% The operating system process id and start time of this VM, as one word that
 %% is safe in a database name.

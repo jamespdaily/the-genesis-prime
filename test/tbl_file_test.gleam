@@ -17,7 +17,7 @@
 ////   the file (`game_table.file`).
 
 import client_tables
-import environment
+import envoy
 import genesis_prime/table/creature2
 import genesis_prime/table/item2
 import genesis_prime/table/loader/tbl_file.{Column, Description, Field}
@@ -182,7 +182,7 @@ pub fn a_file_that_ends_inside_its_column_table_is_refused_test() -> Nil {
 
 pub fn the_clients_creature2_file_is_described_by_its_header_test() -> Nil {
   use <- owned_test.run(60_000)
-  use <- unitest.guard(environment.get("GENESIS_NO_CLIENT") != Ok("1"))
+  use <- unitest.guard(envoy.get("GENESIS_NO_CLIENT") != Ok("1"))
   let assert Ok(description) =
     tbl_file.describe(client_tables.read("Creature2"))
     as "Creature2.tbl has a readable header"

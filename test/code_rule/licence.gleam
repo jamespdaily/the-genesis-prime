@@ -1,7 +1,9 @@
 //// The licence rule: every package the project uses carries a licence the
 //// project accepts, and the project's own licence is Apache-2.0.
 
+import code_rule/project_file
 import gleam/list
+import gleam/result
 import gleam/string
 import simplifile
 import tom
@@ -18,16 +20,15 @@ pub type Refusal {
 /// text of a Gleam project file. A list that is absent is empty, so every
 /// package is refused.
 pub fn accepted(project_file: String) -> List(String) {
-  strings(parse(project_file), ["tools", "licences", "accepted"])
+  project_file.strings(project_file, ["tools", "licences", "accepted"])
 }
 
 /// The licences declared by the text of a Gleam project file, under
 /// `licences` or, as glexer writes it, `licenses`. A file that declares none
 /// gives an empty list.
 pub fn gleam_licences(project_file: String) -> List(String) {
-  let parsed = parse(project_file)
-  case strings(parsed, ["licences"]) {
-    [] -> strings(parsed, ["licenses"])
+  case project_file.strings(project_file, ["licences"]) {
+    [] -> project_file.strings(project_file, ["licenses"])
     licences -> licences
   }
 }
@@ -35,18 +36,13 @@ pub fn gleam_licences(project_file: String) -> List(String) {
 /// The licences declared by the text of an Erlang package's `.app.src`, in its
 /// `{licenses, [...]}` entry. A file that declares none gives an empty list.
 pub fn erlang_licences(app_source: String) -> List(String) {
-  case string.split_once(app_source, "{licenses") {
-    Error(Nil) -> []
-    Ok(#(_, after_key)) ->
-      case string.split_once(after_key, "[") {
-        Error(Nil) -> []
-        Ok(#(_, after_open)) ->
-          case string.split_once(after_open, "]") {
-            Error(Nil) -> []
-            Ok(#(entries, _)) -> quoted(entries)
-          }
-      }
+  let found = {
+    use #(_, after_key) <- result.try(string.split_once(app_source, "{licenses"))
+    use #(_, after_open) <- result.try(string.split_once(after_key, "["))
+    use #(entries, _) <- result.map(string.split_once(after_open, "]"))
+    quoted(entries)
   }
+  result.unwrap(found, [])
 }
 
 /// The licences named under `declared` in `[tools.licences]` of the text of
@@ -54,24 +50,20 @@ pub fn erlang_licences(app_source: String) -> List(String) {
 /// declares no licence where `installed` reads it, checked by hand and
 /// written with where it was checked (`evidence`).
 pub fn declared(project_file: String) -> List(#(String, String)) {
-  let assert tom.Table(table) = parse(project_file)
-    as "a parsed file is a table"
-  case tom.get_array(table, ["tools", "licences", "declared"]) {
-    Error(tom.NotFound(..)) -> []
-    Error(tom.WrongType(..)) -> panic as "tools.licences.declared is not a list"
-    Ok(entries) ->
-      list.map(entries, fn(entry) {
-        let assert Ok(fields) = tom.as_table(entry)
-          as "an entry of tools.licences.declared is not a table"
-        let assert Ok(package) = tom.get_string(fields, ["package"])
-          as "a declared licence names no package"
-        let assert Ok(named) = tom.get_string(fields, ["licence"])
-          as "a declared licence names no licence"
-        let assert Ok(_evidence) = tom.get_string(fields, ["evidence"])
-          as "a declared licence says not where it was checked"
-        #(package, named)
-      })
-  }
+  list.map(
+    project_file.entries(project_file, path: ["tools", "licences", "declared"]),
+    fn(entry) {
+      let assert Ok(fields) = tom.as_table(entry)
+        as "an entry of tools.licences.declared is not a table"
+      let assert Ok(package) = tom.get_string(fields, ["package"])
+        as "a declared licence names no package"
+      let assert Ok(named) = tom.get_string(fields, ["licence"])
+        as "a declared licence names no licence"
+      let assert Ok(_evidence) = tom.get_string(fields, ["evidence"])
+        as "a declared licence says not where it was checked"
+      #(package, named)
+    },
+  )
 }
 
 /// The packages with each one that declares no licence given its declared
@@ -131,18 +123,10 @@ pub fn installed(
   manifest manifest: String,
   packages_directory packages_directory: String,
 ) -> List(#(String, List(String))) {
-  let assert Ok(parsed) = tom.parse(manifest) as "the manifest does not parse"
-  let assert Ok(packages) = tom.get_array(parsed, ["packages"])
-    as "the manifest lists no packages"
-  list.map(packages, fn(package) {
-    let assert Ok(table) = tom.as_table(package)
-      as "a manifest package is not a table"
-    let assert Ok(name) = tom.get_string(table, ["name"])
-      as "a manifest package has no name"
-    let assert Ok(build_tools) = tom.get_array(table, ["build_tools"])
-      as "a manifest package has no build tools"
+  list.map(project_file.manifest_packages(manifest), fn(package) {
+    let #(name, build_tools) = package
     let directory = packages_directory <> "/" <> name
-    let licences = case list.contains(build_tools, tom.String("gleam")) {
+    let licences = case list.contains(build_tools, "gleam") {
       True -> list.map(read(directory <> "/gleam.toml"), gleam_licences)
       False ->
         list.map(
@@ -166,27 +150,6 @@ fn read(path: String) -> List(String) {
         <> simplifile.describe_error(error)
         <> ")"
       }
-  }
-}
-
-fn parse(project_file: String) -> tom.Toml {
-  let assert Ok(parsed) = tom.parse(project_file)
-    as "the project file does not parse"
-  tom.Table(parsed)
-}
-
-fn strings(parsed: tom.Toml, keys: List(String)) -> List(String) {
-  let assert tom.Table(table) = parsed as "a parsed file is a table"
-  case tom.get_array(table, keys) {
-    Ok(entries) ->
-      list.map(entries, fn(entry) {
-        let assert Ok(text) = tom.as_string(entry)
-          as { "an entry of " <> string.join(keys, ".") <> " is not a string" }
-        text
-      })
-    Error(tom.NotFound(..)) -> []
-    Error(tom.WrongType(..)) ->
-      panic as { string.join(keys, ".") <> " is not a list" }
   }
 }
 

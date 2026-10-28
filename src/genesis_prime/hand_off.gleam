@@ -15,11 +15,15 @@
 
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
-  type Input, type Step, Answered, AnsweredLate, Asked, Effects, Reply, Socket,
-  Started, Stop, Stopping, TimerFired, WatchEnded, Woken,
+  type Input, type Rule, type Step, Answered, AnsweredLate, Asked, Effects,
+  Reply, Rule, Socket, Started, Stop, Stopping, TimerFired, WatchEnded, Woken,
 }
 import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
+import gleam/option.{type Option, None, Some}
+
+/// The rule's name in a recording's header and in the server's tree.
+pub const rule_name = "genesis_prime/hand_off"
 
 /// A one-time key. The two kinds never match each other, so a game token is
 /// never taken as a session key.
@@ -62,14 +66,21 @@ pub type Answer {
 }
 
 /// The keys held, each with the monotonic time in milliseconds at which it
-/// expires.
+/// expires, and the earliest of those times, or `None` when no key is held.
+/// An input before it has no key to drop, so it does not look at them; a key
+/// taken leaves the earliest time as it was, which is early, never late.
 pub opaque type State {
-  State(keys: Dict(Key, #(Holder, Int)))
+  State(keys: Dict(Key, #(Holder, Int)), next_expiry: Option(Int))
+}
+
+/// The rule as its service shell runs it.
+pub fn rule() -> Rule(Nil, State, Message, Nil, Answer, Nil) {
+  Rule(name: rule_name, settings: Nil, new:, step:)
 }
 
 /// The hand-off's first state: no keys.
 pub fn new(_settings: Nil) -> State {
-  State(keys: dict.new())
+  State(keys: dict.new(), next_expiry: None)
 }
 
 /// One input in, the new state and what the shell must do out. `Asked` is
@@ -106,7 +117,25 @@ pub fn key_count(state: State) -> Int {
 
 /// A key lives until its expiry: at the expiry time it is gone.
 fn drop_expired(state: State, now: Int) -> State {
-  State(keys: dict.filter(state.keys, fn(_key, kept) { kept.1 > now }))
+  case state.next_expiry {
+    Some(next_expiry) if now >= next_expiry -> {
+      let keys = dict.filter(state.keys, fn(_key, kept) { kept.1 > now })
+      let next_expiry = dict.fold(keys, None, earliest)
+      State(keys:, next_expiry:)
+    }
+    Some(_) | None -> state
+  }
+}
+
+fn earliest(
+  earliest: Option(Int),
+  _key: Key,
+  kept: #(Holder, Int),
+) -> Option(Int) {
+  case earliest {
+    Some(time) if time <= kept.1 -> earliest
+    Some(_) | None -> Some(kept.1)
+  }
 }
 
 fn answer(
@@ -118,17 +147,24 @@ fn answer(
     Put(key:, holder:, lifetime_ms:) ->
       case dict.has_key(state.keys, key) {
         True -> #(state, AlreadyHeld)
-        False -> #(
-          State(
-            keys: dict.insert(state.keys, key, #(holder, now + lifetime_ms)),
-          ),
-          Kept,
-        )
+        False -> {
+          let expiry = now + lifetime_ms
+          #(
+            State(
+              keys: dict.insert(state.keys, key, #(holder, expiry)),
+              next_expiry: case state.next_expiry {
+                Some(time) if time <= expiry -> state.next_expiry
+                Some(_) | None -> Some(expiry)
+              },
+            ),
+            Kept,
+          )
+        }
       }
     Take(key:) ->
       case dict.get(state.keys, key) {
         Ok(#(holder, _expiry)) -> #(
-          State(keys: dict.delete(state.keys, key)),
+          State(..state, keys: dict.delete(state.keys, key)),
           Taken(holder:),
         )
         Error(Nil) -> #(state, NoHolder)

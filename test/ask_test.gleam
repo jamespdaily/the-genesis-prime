@@ -11,14 +11,12 @@
 import ask_support
 import asking_rule
 import gate_rule
-import genesis_prime/rule_recording.{type Record, End, Header, Taken}
+import genesis_prime/rule_recording.{type Record, End, Taken}
 import genesis_prime/rule_recording/file
-import genesis_prime/rule_types
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{
   Answered, AnsweredLate, EffectsThenAsk, Input, NoAnswerInTime,
 }
-import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -26,7 +24,6 @@ import gleam/otp/static_supervisor as supervisor
 import mug
 import owned_test
 import recording_support
-import simplifile
 
 /// How long an ask whose deadline is meant to pass waits, in milliseconds.
 const short = 300
@@ -43,6 +40,7 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
     ask_support.directory(gate:, store: None, sent: ask_support.unreported)
   let server =
     ask_support.start(
+      rule: asking_rule.rule(),
       directory: fn(request, reply) {
         let acknowledged = process.new_subject()
         process.send(calls, acknowledged)
@@ -63,7 +61,7 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
   let client = ask_support.connect(server)
   ask_support.command(
     client,
-    ask_support.await_command,
+    asking_rule.await_command,
     1,
     wait_ms: ask_support.patient,
   )
@@ -76,7 +74,7 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
   process.send(acknowledged, Nil)
   // The client sends while the ask is open; the shell reads it only after the
   // outcome, since the socket is not read again while the shell waits.
-  ask_support.command(client, ask_support.ping_command, 7, wait_ms: 0)
+  ask_support.command(client, asking_rule.ping_command, 7, wait_ms: 0)
   let _waiting = ask_support.open_key(gate, 1)
   let outcome = ask_support.read_record(client)
   assert outcome.letter == asking_rule.outcome
@@ -97,6 +95,7 @@ pub fn an_ask_to_an_address_with_no_running_process_gives_not_running_at_once_an
   let sent = process.new_subject()
   let server =
     ask_support.start(
+      rule: asking_rule.rule(),
       directory: ask_support.directory(gate:, store: None, sent: fn(reached) {
         process.send(sent, reached)
       }),
@@ -107,7 +106,7 @@ pub fn an_ask_to_an_address_with_no_running_process_gives_not_running_at_once_an
   let client = ask_support.connect(server)
   ask_support.command(
     client,
-    ask_support.echo_command,
+    asking_rule.echo_command,
     1,
     wait_ms: ask_support.patient,
   )
@@ -126,9 +125,9 @@ pub fn an_ask_to_an_address_with_no_running_process_gives_not_running_at_once_an
 pub fn a_target_that_never_answers_gives_no_answer_in_time_and_not_before_the_deadline_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with_gate(gate, None)
+  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
   let client = ask_support.connect(server)
-  ask_support.command(client, ask_support.ignore_command, 0, wait_ms: short)
+  ask_support.command(client, asking_rule.ignore_command, 0, wait_ms: short)
   let asked = ask_support.read_record(client)
   let outcome = ask_support.read_record(client)
   assert outcome.letter == asking_rule.outcome
@@ -142,11 +141,11 @@ pub fn a_target_that_never_answers_gives_no_answer_in_time_and_not_before_the_de
 pub fn a_target_that_ends_before_answering_gives_ended_before_answer_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with_gate(gate, None)
+  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
-    ask_support.crash_command,
+    asking_rule.crash_command,
     0,
     wait_ms: ask_support.patient,
   )
@@ -162,9 +161,9 @@ pub fn a_target_that_ends_before_answering_gives_ended_before_answer_test() -> N
 pub fn an_answer_after_the_deadline_comes_as_answered_late_and_is_never_taken_for_a_newer_asks_answer_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with_gate(gate, None)
+  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
   let client = ask_support.connect(server)
-  ask_support.command(client, ask_support.await_command, 1, wait_ms: short)
+  ask_support.command(client, asking_rule.await_command, 1, wait_ms: short)
   let _asked_first = ask_support.read_record(client)
   let first = ask_support.read_record(client)
   assert first.ask == 1 && first.code == asking_rule.code_no_answer_in_time
@@ -173,7 +172,7 @@ pub fn an_answer_after_the_deadline_comes_as_answered_late_and_is_never_taken_fo
   // answer this ask, 2, in that order: the older answer is in the mailbox first.
   ask_support.command(
     client,
-    ask_support.open_command,
+    asking_rule.open_command,
     1,
     wait_ms: ask_support.patient,
   )
@@ -193,20 +192,20 @@ pub fn a_stop_during_an_ask_ends_the_wait_at_once_and_stopping_counts_from_the_s
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
   let shutdown_ms = 2000
-  let server = start_with_gate_stopping_in(gate, shutdown_ms)
+  let server = start_with(gate:, shutdown_ms:, recorder: None)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
-    ask_support.await_command,
+    asking_rule.await_command,
     1,
     wait_ms: ask_support.patient,
   )
   let asked = ask_support.read_record(client)
-  let before_stop = monotonic_ms()
-  let stopped = ask_support.begin_stop(server)
+  let before_stop = ask_support.monotonic_ms()
+  let stopped = ask_support.begin_stop_tree(server.supervisor)
   let outcome = ask_support.read_record(client)
   let stopping = ask_support.read_record(client)
-  let after_stopping = monotonic_ms()
+  let after_stopping = ask_support.monotonic_ms()
   assert outcome.ask == 1 && outcome.code == asking_rule.code_stopped_waiting
     as "the stop ended the wait"
   assert outcome.milliseconds < asked.milliseconds
@@ -221,37 +220,45 @@ pub fn a_stop_during_an_ask_ends_the_wait_at_once_and_stopping_counts_from_the_s
   let late = ask_support.read_record(client)
   assert late.letter == asking_rule.late && late.ask == 1
     as "the answer after the stop comes as AnsweredLate"
-  assert ask_support.ended(stopped) == shutdown()
+  assert ask_support.ended(stopped) == ask_support.shutdown()
     as "the tree stopped when the rule had stopped"
 }
 
 pub fn a_recorded_session_with_asks_replays_to_the_same_steps_with_no_other_process_test() -> Nil {
   use <- owned_test.run(60_000)
-  use folder <- in_folder
+  use folder <- recording_support.in_folder
   let gate = process.new_name("gate")
-  let server = start_with_gate(gate, Some(recorder(folder)))
+  let server =
+    start_with(
+      gate:,
+      shutdown_ms: 1000,
+      recorder: Some(recording_support.recorder(
+        folder,
+        rule_module: "asking_rule",
+      )),
+    )
   let client = ask_support.connect(server)
   ask_support.command(
     client,
-    ask_support.echo_command,
+    asking_rule.echo_command,
     5,
     wait_ms: ask_support.patient,
   )
   let _asked = ask_support.read_record(client)
   let _echoed = ask_support.read_record(client)
-  ask_support.command(client, ask_support.await_command, 1, wait_ms: short)
+  ask_support.command(client, asking_rule.await_command, 1, wait_ms: short)
   let _asked = ask_support.read_record(client)
   let _timed_out = ask_support.read_record(client)
   ask_support.command(
     client,
-    ask_support.open_command,
+    asking_rule.open_command,
     1,
     wait_ms: ask_support.patient,
   )
   let _asked = ask_support.read_record(client)
   let _opened = ask_support.read_record(client)
   let _late = ask_support.read_record(client)
-  ask_support.command(client, ask_support.ping_command, 3, wait_ms: 0)
+  ask_support.command(client, asking_rule.ping_command, 3, wait_ms: 0)
   let _pong = ask_support.read_pong(client)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
@@ -261,7 +268,7 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_steps_with_no_other_proc
   ask_support.stop(server)
   assert process.named(gate) == Error(Nil)
     as "no other process runs: the gate and the listener are gone"
-  let bytes = recording_in(folder)
+  let bytes = recording_support.recording_in(folder)
   let assert Ok(#(_, records)) = rule_recording.read(bytes)
     as "the recording reads"
   assert list.count(records, is_ask) == 3
@@ -269,7 +276,11 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_steps_with_no_other_proc
   assert list.any(records, is_timed_out) && list.any(records, is_late)
     as "the session holds an ask that timed out and its late answer"
   let assert Ok(count) =
-    rule_recording.replay(bytes, asking_rule.rule(), digest())
+    rule_recording.replay(
+      bytes,
+      asking_rule.rule(),
+      recording_support.types_digest("asking_rule"),
+    )
     as "every recorded step is the step the rule gives again"
   assert list.last(records) == Ok(End(count:))
     as "End counts the inputs the replay folded"
@@ -278,11 +289,11 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_steps_with_no_other_proc
 pub fn a_connection_step_of_stop_then_write_still_writes_the_bytes_before_the_socket_closes_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with_gate(gate, None)
+  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
-    ask_support.stop_then_write_command,
+    asking_rule.stop_then_write_command,
     4,
     wait_ms: 0,
   )
@@ -296,28 +307,15 @@ pub fn a_connection_step_of_stop_then_write_still_writes_the_bytes_before_the_so
 
 // ---- helpers ----
 
-fn start_with_gate(
-  gate: process.Name(service_shell.Call(gate_rule.Message, gate_rule.Answer)),
-  recorder: Option(file.Recorder(Nil)),
-) -> ask_support.Server {
-  start_with(gate:, shutdown_ms: 1000, recorder:)
-}
-
-fn start_with_gate_stopping_in(
-  gate: process.Name(service_shell.Call(gate_rule.Message, gate_rule.Answer)),
-  shutdown_ms: Int,
-) -> ask_support.Server {
-  start_with(gate:, shutdown_ms:, recorder: None)
-}
-
 fn start_with(
   gate gate: process.Name(
     service_shell.Call(gate_rule.Message, gate_rule.Answer),
   ),
   shutdown_ms shutdown_ms: Int,
-  recorder recorder: Option(file.Recorder(Nil)),
+  recorder recorder: Option(file.Recorder),
 ) -> ask_support.Server {
   ask_support.start(
+    rule: asking_rule.rule(),
     directory: ask_support.directory(
       gate:,
       store: None,
@@ -332,47 +330,6 @@ fn start_with(
       )
     },
   )
-}
-
-fn shutdown() -> process.ExitReason {
-  process.Abnormal(atom.to_dynamic(atom.create("shutdown")))
-}
-
-fn recorder(folder: String) -> file.Recorder(Nil) {
-  file.recorder(
-    folder:,
-    header: Header(
-      format: rule_recording.format,
-      rule: "asking_rule",
-      client_build: 16_042,
-      tables_digest: None,
-      settings: Nil,
-      types_digest: digest(),
-    ),
-  )
-}
-
-fn digest() -> String {
-  let assert Ok(digest) =
-    rule_types.digest(rule_module: "asking_rule", source_roots: ["src", "test"])
-    as "the asking rule's types digest"
-  digest
-}
-
-fn in_folder(body: fn(String) -> a) -> a {
-  let folder = recording_support.new_folder()
-  let result = body(folder)
-  let assert Ok(Nil) = simplifile.delete(folder) as "the folder was removed"
-  result
-}
-
-/// The one recording in the folder.
-fn recording_in(folder: String) -> BitArray {
-  let assert Ok([name]) = simplifile.read_directory(folder)
-    as "one recording in the folder"
-  let assert Ok(bytes) = simplifile.read_bits(folder <> "/" <> name)
-    as "the recording reads"
-  bytes
 }
 
 fn is_ask(
@@ -402,10 +359,3 @@ fn is_late(
     Taken(..) | End(..) -> False
   }
 }
-
-fn monotonic_ms() -> Int {
-  monotonic_time(atom.create("millisecond"))
-}
-
-@external(erlang, "erlang", "monotonic_time")
-fn monotonic_time(unit: atom.Atom) -> Int

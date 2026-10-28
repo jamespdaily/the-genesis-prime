@@ -14,6 +14,12 @@ pub type Breach {
   Breach(path: String, line: Int, rule: String)
 }
 
+/// The text of a file, which a test cannot go on without.
+pub fn read(path: String) -> String {
+  let assert Ok(text) = simplifile.read(path) as { "could not read " <> path }
+  text
+}
+
 /// Every `.gleam` file under a directory, sorted by path.
 pub fn files(under directory: String) -> List(SourceFile) {
   let assert Ok(paths) = simplifile.get_files(directory)
@@ -21,9 +27,5 @@ pub fn files(under directory: String) -> List(SourceFile) {
   paths
   |> list.filter(string.ends_with(_, ".gleam"))
   |> list.sort(string.compare)
-  |> list.map(fn(path) {
-    let assert Ok(text) = simplifile.read(path)
-      as { "the source file could not be read: " <> path }
-    SourceFile(path:, text:)
-  })
+  |> list.map(fn(path) { SourceFile(path:, text: read(path)) })
 }

@@ -21,7 +21,6 @@ import genesis_prime/client_archive
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
-import genesis_prime/rule_recording.{Header}
 import genesis_prime/rule_recording/file
 import genesis_prime/rule_types
 import genesis_prime/server
@@ -79,22 +78,12 @@ fn start() -> Result(Nil, Failure) {
       ..login,
       sts: server.Served(
         ..login.sts,
-        recorder: Some(recorder(
-          folder:,
-          rule: sts_connection.rule_name,
-          settings: login.sts.settings,
-          types_digest: sts_digest,
-        )),
+        recorder: Some(recorder(folder:, types_digest: sts_digest)),
       ),
       auth: server.Served(
         ..login.auth,
         settings: auth,
-        recorder: Some(recorder(
-          folder:,
-          rule: auth_connection.rule_name,
-          settings: auth,
-          types_digest: auth_digest,
-        )),
+        recorder: Some(recorder(folder:, types_digest: auth_digest)),
       ),
     )
   genesis_prime.start(settings: server.Settings(..settings, login:), tables:)
@@ -102,23 +91,17 @@ fn start() -> Result(Nil, Failure) {
 }
 
 /// The recorder of one rule's connections: a file in the folder for each,
-/// with a header that names the rule, the client's build and the settings.
+/// with a header that names the client's build; the shell adds the rule's name
+/// and settings.
 fn recorder(
   folder folder: String,
-  rule rule: String,
-  settings settings: settings,
   types_digest types_digest: String,
-) -> file.Recorder(settings) {
+) -> file.Recorder {
   file.recorder(
     folder:,
-    header: Header(
-      format: rule_recording.format,
-      rule:,
-      client_build: client_archive.target_build,
-      tables_digest: None,
-      settings:,
-      types_digest:,
-    ),
+    client_build: client_archive.target_build,
+    tables_digest: None,
+    types_digest:,
   )
 }
 

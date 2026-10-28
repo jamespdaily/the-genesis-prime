@@ -14,15 +14,13 @@ import asking_rule
 import gate_rule
 import genesis_prime/hand_off.{Holder, Kept, Put, SessionKey, Take, Taken}
 import genesis_prime/login/guid
-import genesis_prime/rule_recording.{type Record, End, Header, Taken as Recorded}
+import genesis_prime/rule_recording.{type Record, End, Taken as Recorded}
 import genesis_prime/rule_recording/file
-import genesis_prime/rule_types
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{
-  Asked, CallerId, Effects, Input, Reply, Rule, Started, Stop, Stopping,
+  Asked, CallerId, Effects, Input, Reply, Started, Stop, Stopping,
 }
 import genesis_prime/store.{AccountId}
-import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -33,18 +31,20 @@ import log_capture
 import mug
 import owned_test
 import recording_support
-import simplifile
 import supervisor_children
 
 pub fn a_service_starts_under_its_supervisor_by_its_name_and_its_first_input_is_started_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- in_folder
+  use folder <- recording_support.in_folder
   let name = process.new_name("hand_off")
   let tree =
     start_tree(hand_off_child(
       name:,
       shutdown_ms: 1000,
-      recorder: Some(recorder(folder)),
+      recorder: Some(recording_support.recorder(
+        folder,
+        rule_module: hand_off.rule_name,
+      )),
     ))
   let assert Ok(pid) = process.named(name) as "the name is registered"
   assert supervisor_children.in_start_order(tree) == [pid]
@@ -59,13 +59,16 @@ pub fn a_service_starts_under_its_supervisor_by_its_name_and_its_first_input_is_
 
 pub fn an_ask_reaches_the_rule_as_asked_and_its_reply_reaches_the_asker_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- in_folder
+  use folder <- recording_support.in_folder
   let name = process.new_name("hand_off")
   let tree =
     start_tree(hand_off_child(
       name:,
       shutdown_ms: 1000,
-      recorder: Some(recorder(folder)),
+      recorder: Some(recording_support.recorder(
+        folder,
+        rule_module: hand_off.rule_name,
+      )),
     ))
   let assert Ok(pid) = process.named(name) as "the name is registered"
   let key = SessionKey(a_guid())
@@ -117,6 +120,7 @@ pub fn a_reply_to_an_asker_that_stopped_waiting_is_dropped_and_the_process_goes_
   let gate = process.new_name("gate")
   let server =
     ask_support.start(
+      rule: asking_rule.rule(),
       directory: ask_support.directory(
         gate:,
         store: None,
@@ -133,7 +137,7 @@ pub fn a_reply_to_an_asker_that_stopped_waiting_is_dropped_and_the_process_goes_
     )
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let client = ask_support.connect(server)
-  ask_support.command(client, ask_support.await_command, 1, wait_ms: 300)
+  ask_support.command(client, asking_rule.await_command, 1, wait_ms: 300)
   let _asked = ask_support.read_record(client)
   let timed_out = ask_support.read_record(client)
   assert timed_out.code == asking_rule.code_no_answer_in_time
@@ -153,23 +157,26 @@ pub fn a_reply_to_an_asker_that_stopped_waiting_is_dropped_and_the_process_goes_
 
 pub fn the_trees_stop_arrives_as_stopping_with_the_childs_shutdown_time_from_its_arrival_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- in_folder
+  use folder <- recording_support.in_folder
   let name = process.new_name("hand_off")
   let shutdown_ms = 1500
   let tree =
     start_tree(hand_off_child(
       name:,
       shutdown_ms: shutdown_ms,
-      recorder: Some(recorder(folder)),
+      recorder: Some(recording_support.recorder(
+        folder,
+        rule_module: hand_off.rule_name,
+      )),
     ))
   let assert Ok(pid) = process.named(name) as "the name is registered"
   let service = process.monitor(pid)
-  let before_stop = monotonic_ms()
+  let before_stop = ask_support.monotonic_ms()
   let stopped = ask_support.begin_stop_tree(tree)
-  assert ask_support.ended(service) == shutdown()
+  assert ask_support.ended(service) == ask_support.shutdown()
     as "the service exits with the reason shutdown, never normal"
   let _reason = ask_support.ended(stopped)
-  let after_stop = monotonic_ms()
+  let after_stop = ask_support.monotonic_ms()
   let assert [
     Recorded(..),
     Recorded(input: Input(event: Stopping(deadline_ms:), ..), step: stop),
@@ -187,6 +194,7 @@ pub fn a_crash_in_the_rule_restarts_it_empty_and_an_ask_made_meanwhile_gets_ende
   let gate = process.new_name("gate")
   let server =
     ask_support.start(
+      rule: asking_rule.rule(),
       directory: ask_support.directory(
         gate:,
         store: None,
@@ -205,7 +213,7 @@ pub fn a_crash_in_the_rule_restarts_it_empty_and_an_ask_made_meanwhile_gets_ende
   let client = ask_support.connect(server)
   ask_support.command(
     client,
-    ask_support.open_command,
+    asking_rule.open_command,
     5,
     wait_ms: ask_support.patient,
   )
@@ -215,7 +223,7 @@ pub fn a_crash_in_the_rule_restarts_it_empty_and_an_ask_made_meanwhile_gets_ende
     as "key 5 is open in the gate's state"
   ask_support.command(
     client,
-    ask_support.crash_command,
+    asking_rule.crash_command,
     0,
     wait_ms: ask_support.patient,
   )
@@ -229,7 +237,7 @@ pub fn a_crash_in_the_rule_restarts_it_empty_and_an_ask_made_meanwhile_gets_ende
       not: first,
       within_ms: ask_support.event_wait_ms,
     )
-  ask_support.command(client, ask_support.await_command, 5, wait_ms: 300)
+  ask_support.command(client, asking_rule.await_command, 5, wait_ms: 300)
   let _asked = ask_support.read_record(client)
   let waited = ask_support.read_record(client)
   assert waited.code == asking_rule.code_no_answer_in_time
@@ -292,7 +300,7 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
   assert process.receive(replies, within: ask_support.event_wait_ms)
     == Ok(gate_rule.Echoed(9))
     as "the reply after Stop was carried out"
-  assert ask_support.ended(service) == shutdown()
+  assert ask_support.ended(service) == ask_support.shutdown()
     as "and then the process ended with the reason shutdown"
   let _reason = ask_support.stop_tree(tree)
   Nil
@@ -315,15 +323,10 @@ fn start_tree(child: ChildSpecification(Nil)) -> process.Pid {
 fn hand_off_child(
   name name: process.Name(service_shell.Call(hand_off.Message, hand_off.Answer)),
   shutdown_ms shutdown_ms: Int,
-  recorder recorder: Option(file.Recorder(Nil)),
+  recorder recorder: Option(file.Recorder),
 ) -> ChildSpecification(Nil) {
   service_shell.supervised(service_shell.Settings(
-    rule: Rule(
-      name: "genesis_prime/hand_off",
-      settings: Nil,
-      new: hand_off.new,
-      step: hand_off.step,
-    ),
+    rule: hand_off.rule(),
     name:,
     shutdown_ms:,
     recorder:,
@@ -337,53 +340,12 @@ fn a_guid() -> guid.Guid {
   guid
 }
 
-fn recorder(folder: String) -> file.Recorder(Nil) {
-  let assert Ok(digest) =
-    rule_types.digest(rule_module: "genesis_prime/hand_off", source_roots: [
-      "src",
-      "test",
-    ])
-    as "the hand-off rule's types digest"
-  file.recorder(
-    folder:,
-    header: Header(
-      format: rule_recording.format,
-      rule: "genesis_prime/hand_off",
-      client_build: 16_042,
-      tables_digest: None,
-      settings: Nil,
-      types_digest: digest,
-    ),
-  )
-}
-
-fn in_folder(body: fn(String) -> a) -> a {
-  let folder = recording_support.new_folder()
-  let result = body(folder)
-  let assert Ok(Nil) = simplifile.delete(folder) as "the folder was removed"
-  result
-}
-
 /// The records of the one recording in the folder, after the header.
 fn recorded(
   folder: String,
 ) -> List(Record(hand_off.Message, Nil, hand_off.Answer, Nil)) {
-  let assert Ok([name]) = simplifile.read_directory(folder)
-    as "one recording in the folder"
-  let assert Ok(bytes) = simplifile.read_bits(folder <> "/" <> name)
-    as "the recording reads"
-  let assert Ok(#(_, records)) = rule_recording.read(bytes)
+  let assert Ok(#(_, records)) =
+    rule_recording.read(recording_support.recording_in(folder))
     as "the recording reads"
   records
 }
-
-fn shutdown() -> process.ExitReason {
-  process.Abnormal(atom.to_dynamic(atom.create("shutdown")))
-}
-
-fn monotonic_ms() -> Int {
-  monotonic_time(atom.create("millisecond"))
-}
-
-@external(erlang, "erlang", "monotonic_time")
-fn monotonic_time(unit: atom.Atom) -> Int

@@ -14,7 +14,7 @@ import code_rule/source.{type SourceFile, SourceFile}
 import gleam/list
 import gleam/string
 import owned_test
-import simplifile
+
 import unitest
 
 /// Modules of `dev/` that no check, test or CI job uses, each with the open
@@ -193,7 +193,7 @@ pub fn every_module_in_dev_is_used_or_allowed_with_an_issue_test() -> Nil {
     |> list.filter(fn(path) {
       path == "check" || string.starts_with(path, ".github/workflows/")
     })
-    |> list.map(fn(path) { SourceFile(path:, text: read(path)) })
+    |> list.map(fn(path) { SourceFile(path:, text: source.read(path)) })
   assert list.length(runners) >= 2
     as "the check and the workflows were not found"
   assert dev_module.breaches(
@@ -203,11 +203,6 @@ pub fn every_module_in_dev_is_used_or_allowed_with_an_issue_test() -> Nil {
       allowed:,
     )
     == []
-}
-
-fn read(path: String) -> String {
-  let assert Ok(text) = simplifile.read(path) as { "could not read " <> path }
-  text
 }
 
 pub fn a_commented_out_import_does_not_use_a_module_test() -> Nil {
