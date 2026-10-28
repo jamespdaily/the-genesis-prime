@@ -612,6 +612,13 @@ fn found(
         session,
         "the store answered the ask for the account with characters",
       )
+    step.Answer(FromStore(store.CharacterCreated(..)))
+    | step.Answer(FromStore(store.NameTaken))
+    | step.Answer(FromStore(store.NoFreeSlot)) ->
+      end_for(
+        session,
+        "the store answered the ask for the account with the result of a create",
+      )
     step.NotRunning
     | step.NoAnswerInTime
     | step.EndedBeforeAnswer

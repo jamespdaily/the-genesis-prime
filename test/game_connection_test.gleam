@@ -20,7 +20,15 @@
 //// - The rule's doc comment, as approved on the card, and the shape's change
 ////   that the game connection never stops without telling the client after
 ////   the hello.
+//// - The create path: 0x025C carries the whole frame of 0x025B (opcode.0x25c),
+////   the result is 0x00DC (opcode.0xdc, lua.Character.OnCreateCharacterFailed),
+////   and after CreateOk the client's 0x07DD (opcode.0x7dd) gets 0x0162 Failed
+////   and then the list again, 0x0036 before 0x0117 (opcode.0x162.after_create,
+////   opcode.0x36), the new character selected by the client's own rule
+////   (lua.CharacterSelection.OnLoadFromCharacter.preselect).
 
+import character_support
+import character_tables
 import connection_rule_support as support
 import game_client
 import genesis_prime/client_connection.{
@@ -35,26 +43,43 @@ import genesis_prime/hand_off.{
 import genesis_prime/login/guid
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
+import genesis_prime/message/create_character.{CreateCharacter}
+import genesis_prime/message/create_character_result.{CreateCharacterResult}
+import genesis_prime/message/create_result
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
 }
+import genesis_prime/message/max_character_level.{MaxCharacterLevel}
+import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
+import genesis_prime/message/play_refusal
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/step.{
   type Event, type Outcome, type Step, ConnectionId, EndedBeforeAnswer, LogError,
   LogWarning, NoAnswerInTime, NotRunning, OtherSocketFailure, StoppedWaiting,
 }
 import genesis_prime/store.{
-  AccountId, Character, CharacterId, Characters, ListCharacters, Unavailable,
+  AccountId, Character, CharacterCreated, CharacterId, Characters,
+  ListCharacters, LookEntry, NameTaken, NewCharacter, NoFreeSlot, Unavailable,
 }
+import genesis_prime/table/character_customization
+import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import owned_test
 
 /// What the tests' game connections are made with: a realm id and a
-/// character limit the hello and the list must carry, and a deadline.
+/// character limit the hello and the list must carry, the number of character
+/// slots a create is told, the client's tables and a deadline.
 fn settings() -> game_connection.Settings {
-  Settings(realm_id: 5, max_characters: 9, ask_deadline_ms: 4000)
+  Settings(
+    realm_id: 5,
+    max_characters: 9,
+    character_slots: 3,
+    tables: character_tables.shared(),
+    ask_deadline_ms: 4000,
+  )
 }
 
 /// The 16 bytes the client shows as its session key: 01 .. 10, as in the
@@ -211,13 +236,16 @@ fn unhandled_ids(taken: Step(Nil, Request)) -> List(Option(#(String, Int))) {
   })
 }
 
+/// A stored character whose gender is 2 or 3, which no CharacterCustomization
+/// row has, so its entry holds no body visuals whatever its race
+/// (`character_customization.all` below shows it).
 fn character(id id: Int, name name: String, seed seed: Int) -> store.Character {
   Character(
     character_id: CharacterId(id),
     name:,
-    gender: seed % 4,
-    race_id: 1 + seed % 30,
-    class_id: 1 + seed % 20,
+    gender: 2 + seed % 2,
+    race_id: RaceId(1 + seed % 30),
+    class_id: ClassId(1 + seed % 20),
     faction_id: 166 - seed % 2,
     level: 10 + seed,
     path: seed % 4,
@@ -226,6 +254,8 @@ fn character(id id: Int, name name: String, seed seed: Int) -> store.Character {
     position_x: 1.5,
     position_y: 2.5,
     position_z: 3.5,
+    look: [],
+    bones: [],
   )
 }
 
@@ -315,8 +345,9 @@ pub fn message_0x07e0_in_the_same_read_as_0x058f_waits_until_the_hand_off_answer
 pub fn the_stores_rows_become_0x0117_under_the_session_key_with_no_characters_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) = listed(characters: [])
-  let assert [Frame(message_id: 0x0117, body:)] = heard(taken, keyed())
-    as "opcode.0x117 inside 0x3DC under the session key"
+  let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, body:)] =
+    heard(taken, keyed())
+    as "opcode.0x36 and opcode.0x117 inside 0x3DC under the session key"
   assert character_list.decode(body)
     == Ok(CharacterList(
       server_time: filetime,
@@ -343,7 +374,13 @@ pub fn the_stores_rows_become_one_entry_each_in_the_order_given_with_every_field
   let first = character(id: 42, name: "Ab", seed: 3)
   let second = character(id: 9, name: "Zéd Qu", seed: 8)
   let #(_, taken) = listed(characters: [first, second])
-  let assert [Frame(message_id: 0x0117, body:)] = heard(taken, keyed())
+  assert list.all(
+    character_customization.all(character_tables.shared()),
+    fn(row) { row.gender < 2 },
+  )
+    as "no CharacterCustomization row is for gender 2 or 3 (character_tables_test: the client's table has rows for genders 0 and 1 only), so a character of gender 2 or 3 has no body visual"
+  let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, body:)] =
+    heard(taken, keyed())
   let assert Ok(sent) = character_list.decode(body)
   assert sent.characters
     == [
@@ -377,7 +414,7 @@ pub fn the_stores_rows_become_one_entry_each_in_the_order_given_with_every_field
       CharacterListEntry(
         character_id: 9,
         name: "Zéd Qu",
-        gender: 0,
+        gender: 2,
         race_id: 9,
         class_id: 9,
         faction_id: 166,
@@ -402,7 +439,7 @@ pub fn the_stores_rows_become_one_entry_each_in_the_order_given_with_every_field
         last_logged_out_days: 0,
       ),
     ]
-    as "0x14007f720 and the rows: each field of the entry is the row's; the three unread fields 0 (opcode.0x117.character_unread); not disabled, no rename; costume mask 0 and no costume items or dyes, since no appearance is written yet (0x140027380); no bones; 0 days since logout; floats 1.5, 2.5 and 3.5 as the bits 0x3FC00000, 0x40200000 and 0x40600000"
+    as "0x14007f720 and the rows: each field of the entry is the row's; the three unread fields 0 (opcode.0x117.character_unread); not disabled, no rename; costume mask 0 and no costume items or dyes, since the characters have no look, and no CharacterCustomization row has their gender (0x140027380); no bones; 0 days since logout; floats 1.5, 2.5 and 3.5 as the bits 0x3FC00000, 0x40200000 and 0x40600000"
   assert sent.server_time == filetime && sent.realm_id == 5
 }
 
@@ -577,7 +614,8 @@ pub fn frames_after_the_one_that_asked_wait_for_its_answer_and_are_then_taken_in
       taken:,
       outcome: step.Answer(FromStore(Characters(characters: []))),
     )
-  let assert [Frame(message_id: 0x0117, ..)] = heard(taken, keyed())
+  let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, ..)] =
+    heard(taken, keyed())
     as "the list first"
   assert unhandled_ids(taken) == [Some(#("unhandled", 0x038C))]
     as "then the frame that waited"
@@ -640,8 +678,252 @@ pub fn a_second_0x07e0_asks_the_store_again_and_sends_a_new_list_test() -> Nil {
         FromStore(Characters([character(id: 5, name: "Eve", seed: 1)])),
       ),
     )
-  let assert [Frame(message_id: 0x0117, body:)] = heard(taken, keyed())
+  let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, body:)] =
+    heard(taken, keyed())
   let assert Ok(sent) = character_list.decode(body)
   assert list.map(sent.characters, fn(entry) { entry.name }) == ["Eve"]
     as "the new list holds what the store gave this time"
+}
+
+// ---- create and the play that follows ----
+
+/// A create request for CharacterCreation row 466 with a path of 2 and the
+/// look of labels 2 and 21.
+fn a_create_request(name: String) -> create_character.CreateCharacter {
+  CreateCharacter(
+    ..character_support.create_request(name),
+    path: 2,
+    customisation_labels: [2, 21],
+    customisation_values: [1, 2],
+  )
+}
+
+/// The bytes of a create request as the client sends it: the whole frame of
+/// 0x025B as the body of 0x025C (opcode.0x25c), under the session key.
+fn create_message(request: create_character.CreateCharacter) -> BitArray {
+  let assert Ok(body) = create_character.encode(request)
+    as "the request encodes"
+  let assert Ok(plain) = frame.encode(0x025B, body) as "0x025B frames"
+  keyed_message(0x025C, plain)
+}
+
+fn play_message(character_id: Int) -> BitArray {
+  let assert Ok(body) = play_character.encode(PlayCharacter(character_id:))
+    as "0x07DD encodes"
+  keyed_message(0x07DD, body)
+}
+
+/// The connection after a create request, with its ask to the store.
+fn creating(
+  request: create_character.CreateCharacter,
+) -> #(game_connection.State, Step(Nil, Request)) {
+  read(in_select(), create_message(request))
+}
+
+/// The one 0x00DC the step writes, decoded.
+fn create_result_of(
+  taken: Step(Nil, Request),
+) -> create_character_result.CreateCharacterResult {
+  character_support.create_result_in(heard(taken, keyed()))
+}
+
+pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_and_its_answer_is_0x00dc_create_ok_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = creating(a_create_request("Ab Cd"))
+  assert ask_request(taken)
+    == AskStore(store.CreateCharacter(
+      account_id: AccountId(7),
+      character: NewCharacter(
+        name: "Ab Cd",
+        gender: 1,
+        race_id: RaceId(1),
+        class_id: ClassId(1),
+        faction_id: 167,
+        path: 2,
+        look: [
+          LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
+          LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+        ],
+        bones: character_support.bones(46),
+      ),
+      character_slots: 3,
+    ))
+    as "opcode.0x25b, CharacterCreation row 466; the slot count is the settings'"
+  assert support.writes(taken) == []
+    as "nothing is written before the store answers"
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(CharacterCreated(CharacterId(11)))),
+    )
+  assert create_result_of(taken)
+    == CreateCharacterResult(
+      character_id: 11,
+      field_2: 0,
+      result: create_result.CreateOk,
+    )
+    as "opcode.0xdc: the new character's id and CreateOk"
+  assert !support.stops(taken) as "the connection goes on to the play request"
+  assert support.asked(taken) == None
+}
+
+pub fn a_name_that_fails_rule_0_is_0x00dc_name_length_and_nothing_is_asked_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = creating(a_create_request("Abcd"))
+  assert support.asked(taken) == None as "nothing is stored"
+  assert create_result_of(taken).result == create_result.NameLength
+    as "lua.Character.OnCreateCharacterFailed: 10"
+  assert !support.stops(taken)
+}
+
+pub fn a_name_taken_in_any_case_and_an_account_at_its_slots_are_0x00dc_6_and_9_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = creating(a_create_request("Ab Cd"))
+  let #(_, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromStore(NameTaken)))
+  assert create_result_of(taken).result == create_result.NameUnavailable
+    as "lua.Character.OnCreateCharacterFailed: 6"
+  let #(state, taken) = creating(a_create_request("Ab Cd"))
+  let #(_, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromStore(NoFreeSlot)))
+  assert create_result_of(taken).result == create_result.AccountFull
+    as "lua.Character.OnCreateCharacterFailed: 9"
+  assert !support.stops(taken)
+}
+
+pub fn a_request_the_client_would_not_send_is_0x00dc_create_failed_with_a_warning_naming_the_row_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    creating(CreateCharacter(..a_create_request("Ab Cd"), creation_id: 539))
+  assert support.asked(taken) == None as "nothing is stored"
+  assert create_result_of(taken).result == create_result.CreateFailed
+    as "lua.Character.OnCreateCharacterFailed: 4 is 'due to an error'; CharacterCreation row 539 is a Level50 row that costs currency the account lacks"
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+    as "the refusal is logged once"
+  assert support.says(line, "539") as "the warning names the creation row"
+  assert line.about.account_id == Some(7)
+  assert !support.stops(taken)
+}
+
+pub fn a_store_that_gives_no_answer_to_a_create_gets_0x036a_reason_8_and_the_connection_ends_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      step.Answer(FromStore(Unavailable)),
+      NoAnswerInTime,
+      NotRunning,
+      EndedBeforeAnswer,
+      StoppedWaiting,
+    ],
+    fn(outcome) {
+      let #(state, taken) = creating(a_create_request("Ab Cd"))
+      let #(_, taken) = answer(state:, taken:, outcome:)
+      assert disconnect(taken, keyed()) == LostUserServer
+        as "0x1400168a0 and lua.Character.OnCharacterList: the client waits with no timeout, so a create the store cannot answer ends with 0x036A, reason 8, as a list does"
+    },
+  )
+}
+
+pub fn message_0x07dd_after_a_create_gets_0x0162_failed_then_0x0036_and_0x0117_with_the_character_selected_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = creating(a_create_request("Ab Cd"))
+  let #(state, _) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(CharacterCreated(CharacterId(11)))),
+    )
+  let #(state, taken) = read(state, play_message(11))
+  let assert [Frame(message_id: 0x0162, body:)] = heard(taken, keyed())
+    as "opcode.0x162.after_create: the refusal is written first"
+  assert play_character_refused.decode(body)
+    == Ok(PlayCharacterRefused(result: play_refusal.Failed))
+    as "opcode.0x162: 2 Failed is the generic refusal"
+  assert ask_request(taken) == AskStore(ListCharacters(AccountId(7)))
+    as "the list is built again"
+  let new = Character(..character(id: 11, name: "Ab Cd", seed: 1), level: 1)
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(Characters([character(id: 5, name: "Eve", seed: 2), new])),
+      ),
+    )
+  let assert [
+    Frame(message_id: 0x0036, body: level),
+    Frame(message_id: 0x0117, body: list_body),
+  ] = heard(taken, keyed())
+    as "opcode.0x36 then opcode.0x117"
+  assert max_character_level.decode(level) == Ok(MaxCharacterLevel(12))
+    as "opcode.0x36: the highest level of the account's characters (Eve's 12; the new character's is 1)"
+  let assert Ok(sent) = character_list.decode(list_body)
+  assert list.map(sent.characters, fn(entry) { entry.name }) == ["Eve", "Ab Cd"]
+  let assert [0, chosen] =
+    list.map(sent.characters, fn(entry) { entry.last_logged_out_days })
+    as "lua.CharacterSelection.OnLoadFromCharacter.preselect: only the new character has a last logout, so the client selects it"
+  assert chosen != 0
+}
+
+pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) =
+    read(in_select(), <<
+      create_message(a_create_request("Ab Cd")):bits,
+      play_message(11):bits,
+    >>)
+  assert ask_request(taken)
+    == AskStore(store.CreateCharacter(
+      account_id: AccountId(7),
+      character: NewCharacter(
+        name: "Ab Cd",
+        gender: 1,
+        race_id: RaceId(1),
+        class_id: ClassId(1),
+        faction_id: 167,
+        path: 2,
+        look: [
+          LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
+          LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+        ],
+        bones: character_support.bones(46),
+      ),
+      character_slots: 3,
+    ))
+    as "only the create is asked while its answer is out"
+  assert support.writes(taken) == []
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(CharacterCreated(CharacterId(11)))),
+    )
+  let assert [Frame(message_id: 0x00DC, ..), Frame(message_id: 0x0162, ..)] =
+    heard(taken, keyed())
+    as "the result first, then the refusal of the play that waited"
+  assert ask_request(taken) == AskStore(ListCharacters(AccountId(7)))
+}
+
+pub fn a_0x025c_or_0x07dd_the_clients_reader_would_refuse_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The carrier's whole frame is not a frame.
+  let #(_, taken) = read(in_select(), keyed_message(0x025C, <<1, 2, 3>>))
+  assert support.stops(taken)
+    as "opcode.0x25c: the carrier holds a whole frame the client wrote"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  // The carrier holds another message than 0x025B.
+  let assert Ok(other) = frame.encode(0x07DD, <<0, 0, 0, 0, 0, 0, 0, 0>>)
+  let #(_, taken) = read(in_select(), keyed_message(0x025C, other))
+  assert support.stops(taken) as "opcode.0x25c carries 0x025B and nothing else"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  // A 0x025B body that is cut short.
+  let assert Ok(cut) = frame.encode(0x025B, <<1, 2>>)
+  let #(_, taken) = read(in_select(), keyed_message(0x025C, cut))
+  assert support.stops(taken)
+  assert support.asked(taken) == None
+  // A 0x07DD body that is cut short (opcode.0x7dd: 64 bits).
+  let #(_, taken) = read(in_select(), keyed_message(0x07DD, <<1, 2>>))
+  assert support.stops(taken)
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
 }

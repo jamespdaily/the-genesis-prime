@@ -8,6 +8,8 @@
 pub type CreateResult {
   /// The value 3, the fact file's `opcode.0xdc`.
   CreateOk
+  /// The value 4, the fact file's `lua.Character.OnCreateCharacterFailed`.
+  CreateFailed
   /// The value 6, the fact file's `lua.Character.OnCreateCharacterFailed`.
   NameUnavailable
   /// The value 9, the fact file's `lua.Character.OnCreateCharacterFailed`.
@@ -26,6 +28,7 @@ pub type CreateResult {
 pub fn to_value(value: CreateResult) -> Int {
   case value {
     CreateOk -> 3
+    CreateFailed -> 4
     NameUnavailable -> 6
     AccountFull -> 9
     NameLength -> 10
@@ -39,6 +42,7 @@ pub fn to_value(value: CreateResult) -> Int {
 pub fn from_value(number: Int) -> CreateResult {
   case number {
     3 -> CreateOk
+    4 -> CreateFailed
     6 -> NameUnavailable
     9 -> AccountFull
     10 -> NameLength

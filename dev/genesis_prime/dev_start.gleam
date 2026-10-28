@@ -25,6 +25,7 @@ import genesis_prime/login/sts_connection
 import genesis_prime/rule_recording/file
 import genesis_prime/rule_types
 import genesis_prime/server
+import genesis_prime/table/loader/store
 import gleam/int
 import gleam/io
 import gleam/option.{type Option, None, Some}
@@ -65,8 +66,8 @@ fn start() -> Result(Nil, Failure) {
   use sts_digest <- result.try(digest(sts_connection.rule_name))
   use auth_digest <- result.try(digest(auth_connection.rule_name))
   use game_digest <- result.try(digest(game_connection.rule_name))
-  let tables = genesis_prime.load_tables()
-  let settings = genesis_prime.settings()
+  let #(tables, loaded) = genesis_prime.load_tables()
+  let settings = genesis_prime.settings(tables:)
   let login = settings.login
   let auth =
     auth_connection.Settings(
@@ -79,37 +80,38 @@ fn start() -> Result(Nil, Failure) {
     server.Login(
       sts: server.Served(
         ..login.sts,
-        recorder: Some(recorder(folder:, types_digest: sts_digest)),
+        recorder: Some(recorder(folder:, tables:, types_digest: sts_digest)),
       ),
       auth: server.Served(
         ..login.auth,
         settings: auth,
-        recorder: Some(recorder(folder:, types_digest: auth_digest)),
+        recorder: Some(recorder(folder:, tables:, types_digest: auth_digest)),
       ),
     )
   let game =
     server.Served(
       ..settings.game,
-      recorder: Some(recorder(folder:, types_digest: game_digest)),
+      recorder: Some(recorder(folder:, tables:, types_digest: game_digest)),
     )
   genesis_prime.start(
     settings: server.Settings(..settings, login:, game:),
-    tables:,
+    tables: loaded,
   )
   Ok(Nil)
 }
 
 /// The recorder of one rule's connections: a file in the folder for each,
-/// with a header that names the client's build; the shell adds the rule's name
-/// and settings.
+/// with a header that names the client's build and the digest of the game
+/// tables the server loaded; the shell adds the rule's name and settings.
 fn recorder(
   folder folder: String,
+  tables tables: store.Tables,
   types_digest types_digest: String,
 ) -> file.Recorder {
   file.recorder(
     folder:,
     client_build: client_archive.target_build,
-    tables_digest: None,
+    tables_digest: Some(store.digest(tables)),
     types_digest:,
   )
 }

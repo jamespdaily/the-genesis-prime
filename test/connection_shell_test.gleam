@@ -29,6 +29,7 @@ import gleam/bit_array
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import gleam/time/timestamp
 import hello_rule
@@ -164,6 +165,32 @@ pub fn a_rule_that_crashes_ends_only_its_connection_test() -> Nil {
     as "the listener still accepts and greets"
 }
 
+pub fn a_connection_that_crashes_leaves_another_open_connection_running_unchanged_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use server <- serving(crash_on_0xee_rule(), None, 1000)
+  let crashing = ask_support.connect(server)
+  let _hello = receive(crashing, 53)
+  let assert [crashing_process] = ask_support.connections(server)
+    as "one connection process"
+  let staying = ask_support.connect(server)
+  let _hello = receive(staying, 53)
+  let assert [staying_process] =
+    list.filter(ask_support.connections(server), fn(connection) {
+      connection != crashing_process
+    })
+    as "a second connection process, open beside the first"
+  let watched = process.monitor(crashing_process)
+  assert mug.send(crashing, <<0xEE>>) == Ok(Nil) as "the byte that crashes it"
+  let assert process.Abnormal(_) = ask_support.ended(watched)
+    as "the first connection crashed"
+  assert mug.send(staying, <<7, 0, 0, 0, 0, 0, 9>>) == Ok(Nil)
+    as "a ping on the connection that stayed"
+  assert receive(staying, 7) == <<7, 0, 0, 0, 1, 0, 9>>
+    as "opcode.0x1: the connection that stayed answers its ping after the other crashed"
+  assert ask_support.connections(server) == [staying_process]
+    as "the BEAM isolates a crash to its process: the connection that stayed is the same process it was before"
+}
+
 pub fn every_input_carries_one_time_reading_taken_as_the_shell_takes_it_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
@@ -246,6 +273,7 @@ pub fn replay_gives_the_same_steps_with_no_socket_test() -> Nil {
       recording_support.recording_in(folder),
       rule,
       recording_support.types_digest("hello_rule"),
+      None,
     )
     == Ok(inputs)
     as "every recorded step is the step the rule gives again"
@@ -294,6 +322,7 @@ pub fn a_changed_byte_in_a_recorded_read_fails_replay_at_that_record_test() -> N
       file,
       rule,
       recording_support.types_digest("hello_rule"),
+      None,
     )
     as "the changed read now gives pong 6, not the recorded pong 5"
   assert failed_at == index as "replay fails at the changed read"
@@ -315,6 +344,7 @@ pub fn a_cut_recording_or_a_wrong_end_count_fails_test() -> Nil {
       without_end,
       rule,
       recording_support.types_digest("hello_rule"),
+      None,
     )
     as "no End: the process never finished"
   let assert Ok(cut) = bit_array.slice(bytes, 0, bit_array.byte_size(bytes) - 1)
@@ -324,6 +354,7 @@ pub fn a_cut_recording_or_a_wrong_end_count_fails_test() -> Nil {
       cut,
       rule,
       recording_support.types_digest("hello_rule"),
+      None,
     )
     as "a record cut short"
   let wrong = <<
@@ -334,6 +365,7 @@ pub fn a_cut_recording_or_a_wrong_end_count_fails_test() -> Nil {
       wrong,
       rule,
       recording_support.types_digest("hello_rule"),
+      None,
     )
     == Error(CountDiffers(end: inputs + 1, records: inputs))
     as "End must count the records"
@@ -349,12 +381,47 @@ pub fn another_rule_name_or_type_digest_fails_with_record_again_test() -> Nil {
       bytes,
       Rule(..rule, name: "another"),
       recording_support.types_digest("hello_rule"),
+      None,
     )
     == Error(RecordAgain(reason: "the rule"))
     as "the header names another rule"
-  assert rule_recording.replay(bytes, rule, "another digest")
+  assert rule_recording.replay(bytes, rule, "another digest", None)
     == Error(RecordAgain(reason: "the rule's types"))
     as "the rule's types have changed since the recording"
+}
+
+pub fn a_recording_replays_only_on_the_game_tables_it_was_recorded_on_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let rule = hello_rule_as_rule()
+  record_one_ping_of(
+    rule:,
+    recorder: recording_support.recorder_of_tables(
+      folder:,
+      rule_module: "hello_rule",
+      tables_digest: Some("A1B2"),
+    ),
+    number: 5,
+  )
+  let bytes = recording_support.recording_in(folder)
+  let assert Ok(#(header, _)) = rule_recording.read(bytes)
+    as "the recording reads"
+  assert header.tables_digest == Some("A1B2")
+    as "the recorder writes the digest of the tables the server loaded into the header"
+  let types_digest = recording_support.types_digest("hello_rule")
+  assert result.is_ok(rule_recording.replay(
+    bytes,
+    rule,
+    types_digest,
+    Some("A1B2"),
+  ))
+    as "the same tables replay"
+  assert rule_recording.replay(bytes, rule, types_digest, Some("C3D4"))
+    == Error(RecordAgain(reason: "the game tables"))
+    as "other table files than the recording was made on: record again"
+  assert rule_recording.replay(bytes, rule, types_digest, None)
+    == Error(RecordAgain(reason: "the game tables"))
+    as "a recording of a rule that read tables does not replay with none loaded"
 }
 
 pub fn the_servers_own_code_never_turns_recording_on_test() -> Nil {
@@ -424,6 +491,7 @@ pub fn a_rule_that_does_not_stop_in_time_is_killed_and_its_recording_is_incomple
       bytes,
       rule,
       recording_support.types_digest("hello_rule"),
+      None,
     )
     as "the header, accept and Stopping, then nothing: killed at the deadline"
   Nil
@@ -586,11 +654,21 @@ fn record_one_ping(
   folder folder: String,
   number number: Int,
 ) -> Nil {
-  use server <- serving(
-    rule,
-    Some(recording_support.recorder(folder, rule_module: "hello_rule")),
-    1000,
+  record_one_ping_of(
+    rule:,
+    recorder: recording_support.recorder(folder, rule_module: "hello_rule"),
+    number:,
   )
+}
+
+/// Records a session of one ping with `number` through the recorder, then the
+/// client's close.
+fn record_one_ping_of(
+  rule rule: HelloRule,
+  recorder recorder: file.Recorder,
+  number number: Int,
+) -> Nil {
+  use server <- serving(rule, Some(recorder), 1000)
   let client = ask_support.connect(server)
   let _hello = receive(client, 53)
   assert mug.send(client, <<7, 0, 0, 0, 0, 0, number>>) == Ok(Nil) as "a ping"

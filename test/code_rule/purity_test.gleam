@@ -170,7 +170,7 @@ pub fn no_module_in_src_breaks_the_rule_with_the_real_project_file_test() -> Nil
   assert list.flat_map(files, purity.breaches(_, allowed)) == []
 }
 
-pub fn the_game_connection_rule_and_character_select_are_pure_rules_the_check_covers_test() -> Nil {
+pub fn the_game_connection_rule_and_the_features_it_holds_are_pure_rules_the_check_covers_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let assert Ok(project_file) = simplifile.read("gleam.toml")
@@ -179,13 +179,16 @@ pub fn the_game_connection_rule_and_character_select_are_pure_rules_the_check_co
   let rules = [
     "src/genesis_prime/game/connection.gleam",
     "src/genesis_prime/game/character_select.gleam",
+    "src/genesis_prime/game/character_creation.gleam",
+    "src/genesis_prime/game/character_name.gleam",
+    "src/genesis_prime/game/appearance.gleam",
   ]
   let files =
     list.filter(repository.sources(["src"]), fn(file) {
       list.contains(rules, file.path)
     })
-  assert list.length(files) == 2
-    as "both modules are among the files the purity rule reads"
+  assert list.length(files) == 5
+    as "every module is among the files the purity rule reads"
   assert list.flat_map(files, purity.breaches(_, allowed)) == []
     as "CLAUDE.md: every game and connection decision is a rule, a pure function"
   // The harness can fail: the same modules with a process import are breaches.

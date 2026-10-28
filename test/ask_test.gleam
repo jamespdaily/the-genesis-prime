@@ -280,6 +280,7 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_steps_with_no_other_proc
       bytes,
       asking_rule.rule(),
       recording_support.types_digest("asking_rule"),
+      None,
     )
     as "every recorded step is the step the rule gives again"
   assert list.last(records) == Ok(End(count:))

@@ -17,7 +17,6 @@ import genesis_prime/table/loader/store
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/charlist.{type Charlist}
 import gleam/erlang/process
-import gleam/erlang/reference
 import gleam/int
 import gleam/io
 import gleam/list
@@ -27,24 +26,23 @@ import gleam/string
 import pog
 
 pub fn main() -> Nil {
-  let tables = load_tables()
-  start(settings: settings(), tables:)
+  let #(tables, count) = load_tables()
+  start(settings: settings(tables:), tables: count)
 }
 
 /// Loads the game tables from the folder GENESIS_TABLE_DIR names, once, into
-/// their named records; a missing variable or a table that does not load
-/// stops the program with the reason. Gives how many tables it loaded.
-pub fn load_tables() -> Int {
+/// their named records under the server's own key, which is the same in every
+/// run (genesis_prime/table/loader/store); a missing variable or a table that
+/// does not load stops the program with the reason. Gives the loaded tables, which the game
+/// connections read, and how many there are.
+pub fn load_tables() -> #(store.Tables, Int) {
   let folder = case envoy.get("GENESIS_TABLE_DIR") {
     Ok(folder) -> folder
     Error(Nil) ->
       panic as "GENESIS_TABLE_DIR is not set; the server loads the client's game tables from the folder it names"
   }
-  let entries = table.entries()
-  case
-    store.load(under: reference.new(), from: folder, entries:, requirements: [])
-  {
-    Ok(_tables) -> list.length(entries)
+  case table.load_for_server(from: folder) {
+    Ok(tables) -> #(tables, list.length(table.entries()))
     Error(error) -> panic as store.describe(error)
   }
 }
@@ -68,8 +66,9 @@ pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
 }
 
 /// The tree's settings: the database from the environment, with Postgres's
-/// own defaults for what is not set, and a fresh name for each child.
-pub fn settings() -> server.Settings {
+/// own defaults for what is not set, a fresh name for each child, and the
+/// game tables the game connections read.
+pub fn settings(tables tables: store.Tables) -> server.Settings {
   server.Settings(
     pool: pool(),
     store: process.new_name("store"),
@@ -78,7 +77,7 @@ pub fn settings() -> server.Settings {
     send_deadline_ms: 2000,
     connection_shutdown_ms: 5000,
     login: login(),
-    game: game(),
+    game: game(tables),
   )
 }
 
@@ -182,16 +181,21 @@ fn login() -> server.Login {
 }
 
 /// The game server's listener: the client's default port, the realm the auth
-/// server hands clients to, 12 characters (the client's own base slot count,
-/// BaseCharacterSlots in opcode.0x968; the client reads no value of it) and
-/// each ask given 5 s. Recording is off; the dev start changes it.
-fn game() -> server.Served(game_connection.Settings) {
+/// server hands clients to, 12 characters in the list's field (the client's own
+/// base slot count, BaseCharacterSlots in opcode.0x968; the client reads no
+/// value of it), 2 character slots for an account (the count the client's
+/// tables give an account with no entitlement,
+/// lua.CharacterSelection.OnLoadFromCharacter), the game tables and each ask
+/// given 5 s. Recording is off; the dev start changes it.
+fn game(tables: store.Tables) -> server.Served(game_connection.Settings) {
   server.Served(
     listener: process.new_name("game_listener"),
     port: game_port,
     settings: game_connection.Settings(
       realm_id:,
       max_characters: 12,
+      character_slots: 2,
+      tables:,
       ask_deadline_ms: 5000,
     ),
     recorder: None,
