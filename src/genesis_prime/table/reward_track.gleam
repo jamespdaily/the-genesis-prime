@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type PrerequisiteId, type RewardTrackId, LocalizedTextId,
+  PrerequisiteId, RewardTrackId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -113,14 +118,39 @@ pub fn entry() -> store.Entry {
 /// The row of the RewardTrack table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: RewardTrackId,
 ) -> Result(RewardTrack, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the RewardTrack table, in id order.
 pub fn all(tables: store.Tables) -> List(RewardTrack) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: RewardTrack) -> RewardTrackId {
+  RewardTrackId(row.id)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: RewardTrack) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: RewardTrack) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
+}
+
+/// The id in the localizedTextIdSummary column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_summary(row: RewardTrack) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_summary)
+}
+
+/// The id in the rewardTrackIdParent column, as the typed id of the RewardTrack table.
+pub fn reward_track_id_parent(row: RewardTrack) -> RewardTrackId {
+  RewardTrackId(row.reward_track_id_parent)
 }
 
 fn row_id(row: RewardTrack) -> Int {

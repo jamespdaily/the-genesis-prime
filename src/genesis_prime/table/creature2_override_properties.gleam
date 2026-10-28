@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type Creature2OverridePropertiesId, Creature2Id,
+  Creature2OverridePropertiesId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -43,14 +48,24 @@ pub fn entry() -> store.Entry {
 /// The row of the Creature2OverrideProperties table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Creature2OverridePropertiesId,
 ) -> Result(Creature2OverrideProperties, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Creature2OverrideProperties table, in id order.
 pub fn all(tables: store.Tables) -> List(Creature2OverrideProperties) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Creature2OverrideProperties) -> Creature2OverridePropertiesId {
+  Creature2OverridePropertiesId(row.id)
+}
+
+/// The id in the creature2Id column, as the typed id of the Creature2 table.
+pub fn creature2_id(row: Creature2OverrideProperties) -> Creature2Id {
+  Creature2Id(row.creature2_id)
 }
 
 fn row_id(row: Creature2OverrideProperties) -> Int {

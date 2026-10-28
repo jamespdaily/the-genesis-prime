@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type ItemSpecialId, type LocalizedTextId, type PrerequisiteId, type Spell4Id,
+  ItemSpecialId, LocalizedTextId, PrerequisiteId, Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -51,14 +56,39 @@ pub fn entry() -> store.Entry {
 /// The row of the ItemSpecial table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ItemSpecialId,
 ) -> Result(ItemSpecial, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ItemSpecial table, in id order.
 pub fn all(tables: store.Tables) -> List(ItemSpecial) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ItemSpecial) -> ItemSpecialId {
+  ItemSpecialId(row.id)
+}
+
+/// The id in the prerequisiteIdGeneric00 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_generic00(row: ItemSpecial) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_generic00)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: ItemSpecial) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the spell4IdOnEquip column, as the typed id of the Spell4 table.
+pub fn spell4_id_on_equip(row: ItemSpecial) -> Spell4Id {
+  Spell4Id(row.spell4_id_on_equip)
+}
+
+/// The id in the spell4IdOnActivate column, as the typed id of the Spell4 table.
+pub fn spell4_id_on_activate(row: ItemSpecial) -> Spell4Id {
+  Spell4Id(row.spell4_id_on_activate)
 }
 
 fn row_id(row: ItemSpecial) -> Int {

@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type HousingDecorInfoId, type HousingResidenceInfoId,
+  type HousingWallpaperInfoId, type WorldLocation2Id, HousingDecorInfoId,
+  HousingResidenceInfoId, HousingWallpaperInfoId, WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -94,14 +100,103 @@ pub fn entry() -> store.Entry {
 /// The row of the HousingResidenceInfo table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: HousingResidenceInfoId,
 ) -> Result(HousingResidenceInfo, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the HousingResidenceInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(HousingResidenceInfo) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: HousingResidenceInfo) -> HousingResidenceInfoId {
+  HousingResidenceInfoId(row.id)
+}
+
+/// The id in the housingDecorInfoIdDefaultRoof column, as the typed id of the HousingDecorInfo table.
+pub fn housing_decor_info_id_default_roof(
+  row: HousingResidenceInfo,
+) -> HousingDecorInfoId {
+  HousingDecorInfoId(row.housing_decor_info_id_default_roof)
+}
+
+/// The id in the housingDecorInfoIdDefaultEntryway column, as the typed id of the HousingDecorInfo table.
+pub fn housing_decor_info_id_default_entryway(
+  row: HousingResidenceInfo,
+) -> HousingDecorInfoId {
+  HousingDecorInfoId(row.housing_decor_info_id_default_entryway)
+}
+
+/// The id in the housingDecorInfoIdDefaultDoor column, as the typed id of the HousingDecorInfo table.
+pub fn housing_decor_info_id_default_door(
+  row: HousingResidenceInfo,
+) -> HousingDecorInfoId {
+  HousingDecorInfoId(row.housing_decor_info_id_default_door)
+}
+
+/// The id in the housingWallpaperInfoIdDefault column, as the typed id of the HousingWallpaperInfo table.
+pub fn housing_wallpaper_info_id_default(
+  row: HousingResidenceInfo,
+) -> HousingWallpaperInfoId {
+  HousingWallpaperInfoId(row.housing_wallpaper_info_id_default)
+}
+
+/// The id in the worldLocation2IdInside00 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_inside00(
+  row: HousingResidenceInfo,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_inside00)
+}
+
+/// The id in the worldLocation2IdInside01 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_inside01(
+  row: HousingResidenceInfo,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_inside01)
+}
+
+/// The id in the worldLocation2IdInside02 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_inside02(
+  row: HousingResidenceInfo,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_inside02)
+}
+
+/// The id in the worldLocation2IdInside03 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_inside03(
+  row: HousingResidenceInfo,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_inside03)
+}
+
+/// The id in the worldLocation2IdOutside00 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_outside00(
+  row: HousingResidenceInfo,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_outside00)
+}
+
+/// The id in the worldLocation2IdOutside01 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_outside01(
+  row: HousingResidenceInfo,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_outside01)
+}
+
+/// The id in the worldLocation2IdOutside02 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_outside02(
+  row: HousingResidenceInfo,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_outside02)
+}
+
+/// The id in the worldLocation2IdOutside03 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_outside03(
+  row: HousingResidenceInfo,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_outside03)
 }
 
 fn row_id(row: HousingResidenceInfo) -> Int {

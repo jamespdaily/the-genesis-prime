@@ -3,7 +3,11 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type SoundBankId, type SoundEventId, SoundBankId, SoundEventId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -59,13 +63,61 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the SoundEvent table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(SoundEvent, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: SoundEventId,
+) -> Result(SoundEvent, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the SoundEvent table, in id order.
 pub fn all(tables: store.Tables) -> List(SoundEvent) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: SoundEvent) -> SoundEventId {
+  SoundEventId(row.id)
+}
+
+/// The id in the soundBankId00 column, as the typed id of the SoundBank table.
+pub fn sound_bank_id00(row: SoundEvent) -> SoundBankId {
+  SoundBankId(row.sound_bank_id00)
+}
+
+/// The id in the soundBankId01 column, as the typed id of the SoundBank table.
+pub fn sound_bank_id01(row: SoundEvent) -> SoundBankId {
+  SoundBankId(row.sound_bank_id01)
+}
+
+/// The id in the soundBankId02 column, as the typed id of the SoundBank table.
+pub fn sound_bank_id02(row: SoundEvent) -> SoundBankId {
+  SoundBankId(row.sound_bank_id02)
+}
+
+/// The id in the soundBankId03 column, as the typed id of the SoundBank table.
+pub fn sound_bank_id03(row: SoundEvent) -> SoundBankId {
+  SoundBankId(row.sound_bank_id03)
+}
+
+/// The id in the soundBankId04 column, as the typed id of the SoundBank table.
+pub fn sound_bank_id04(row: SoundEvent) -> SoundBankId {
+  SoundBankId(row.sound_bank_id04)
+}
+
+/// The id in the soundBankId05 column, as the typed id of the SoundBank table.
+pub fn sound_bank_id05(row: SoundEvent) -> SoundBankId {
+  SoundBankId(row.sound_bank_id05)
+}
+
+/// The id in the soundBankId06 column, as the typed id of the SoundBank table.
+pub fn sound_bank_id06(row: SoundEvent) -> SoundBankId {
+  SoundBankId(row.sound_bank_id06)
+}
+
+/// The id in the soundBankId07 column, as the typed id of the SoundBank table.
+pub fn sound_bank_id07(row: SoundEvent) -> SoundBankId {
+  SoundBankId(row.sound_bank_id07)
 }
 
 fn row_id(row: SoundEvent) -> Int {

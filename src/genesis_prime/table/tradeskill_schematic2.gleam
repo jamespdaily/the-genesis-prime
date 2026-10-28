@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Item2Id, type LocalizedTextId, type TradeskillCatalystOrderingId,
+  type TradeskillSchematic2Id, Item2Id, LocalizedTextId,
+  TradeskillCatalystOrderingId, TradeskillSchematic2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -132,14 +138,78 @@ pub fn entry() -> store.Entry {
 /// The row of the TradeskillSchematic2 table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: TradeskillSchematic2Id,
 ) -> Result(TradeskillSchematic2, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the TradeskillSchematic2 table, in id order.
 pub fn all(tables: store.Tables) -> List(TradeskillSchematic2) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: TradeskillSchematic2) -> TradeskillSchematic2Id {
+  TradeskillSchematic2Id(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: TradeskillSchematic2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the item2IdOutput column, as the typed id of the Item2 table.
+pub fn item2_id_output(row: TradeskillSchematic2) -> Item2Id {
+  Item2Id(row.item2_id_output)
+}
+
+/// The id in the item2IdOutputFail column, as the typed id of the Item2 table.
+pub fn item2_id_output_fail(row: TradeskillSchematic2) -> Item2Id {
+  Item2Id(row.item2_id_output_fail)
+}
+
+/// The id in the item2IdMaterial00 column, as the typed id of the Item2 table.
+pub fn item2_id_material00(row: TradeskillSchematic2) -> Item2Id {
+  Item2Id(row.item2_id_material00)
+}
+
+/// The id in the item2IdMaterial01 column, as the typed id of the Item2 table.
+pub fn item2_id_material01(row: TradeskillSchematic2) -> Item2Id {
+  Item2Id(row.item2_id_material01)
+}
+
+/// The id in the item2IdMaterial02 column, as the typed id of the Item2 table.
+pub fn item2_id_material02(row: TradeskillSchematic2) -> Item2Id {
+  Item2Id(row.item2_id_material02)
+}
+
+/// The id in the item2IdMaterial03 column, as the typed id of the Item2 table.
+pub fn item2_id_material03(row: TradeskillSchematic2) -> Item2Id {
+  Item2Id(row.item2_id_material03)
+}
+
+/// The id in the item2IdMaterial04 column, as the typed id of the Item2 table.
+pub fn item2_id_material04(row: TradeskillSchematic2) -> Item2Id {
+  Item2Id(row.item2_id_material04)
+}
+
+/// The id in the tradeskillSchematic2IdParent column, as the typed id of the TradeskillSchematic2 table.
+pub fn tradeskill_schematic2_id_parent(
+  row: TradeskillSchematic2,
+) -> TradeskillSchematic2Id {
+  TradeskillSchematic2Id(row.tradeskill_schematic2_id_parent)
+}
+
+/// The id in the item2IdOutputCrit column, as the typed id of the Item2 table.
+pub fn item2_id_output_crit(row: TradeskillSchematic2) -> Item2Id {
+  Item2Id(row.item2_id_output_crit)
+}
+
+/// The id in the tradeskillCatalystOrderingId column, as the typed id of the TradeskillCatalystOrdering table.
+pub fn tradeskill_catalyst_ordering_id(
+  row: TradeskillSchematic2,
+) -> TradeskillCatalystOrderingId {
+  TradeskillCatalystOrderingId(row.tradeskill_catalyst_ordering_id)
 }
 
 fn row_id(row: TradeskillSchematic2) -> Int {

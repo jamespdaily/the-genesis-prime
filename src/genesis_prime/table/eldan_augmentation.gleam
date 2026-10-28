@@ -3,7 +3,14 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type ClassId, type EldanAugmentationCategoryId, type EldanAugmentationId,
+  type Item2Id, type LocalizedTextId, type Spell4Id, ClassId,
+  EldanAugmentationCategoryId, EldanAugmentationId, Item2Id, LocalizedTextId,
+  Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -68,14 +75,58 @@ pub fn entry() -> store.Entry {
 /// The row of the EldanAugmentation table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: EldanAugmentationId,
 ) -> Result(EldanAugmentation, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the EldanAugmentation table, in id order.
 pub fn all(tables: store.Tables) -> List(EldanAugmentation) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: EldanAugmentation) -> EldanAugmentationId {
+  EldanAugmentationId(row.id)
+}
+
+/// The id in the classId column, as the typed id of the Class table.
+pub fn class_id(row: EldanAugmentation) -> ClassId {
+  ClassId(row.class_id)
+}
+
+/// The id in the eldanAugmentationIdRequired column, as the typed id of the EldanAugmentation table.
+pub fn eldan_augmentation_id_required(
+  row: EldanAugmentation,
+) -> EldanAugmentationId {
+  EldanAugmentationId(row.eldan_augmentation_id_required)
+}
+
+/// The id in the spell4IdAugment column, as the typed id of the Spell4 table.
+pub fn spell4_id_augment(row: EldanAugmentation) -> Spell4Id {
+  Spell4Id(row.spell4_id_augment)
+}
+
+/// The id in the item2IdUnlock column, as the typed id of the Item2 table.
+pub fn item2_id_unlock(row: EldanAugmentation) -> Item2Id {
+  Item2Id(row.item2_id_unlock)
+}
+
+/// The id in the eldanAugmentationCategoryId column, as the typed id of the EldanAugmentationCategory table.
+pub fn eldan_augmentation_category_id(
+  row: EldanAugmentation,
+) -> EldanAugmentationCategoryId {
+  EldanAugmentationCategoryId(row.eldan_augmentation_category_id)
+}
+
+/// The id in the localizedTextIdTitle column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_title(row: EldanAugmentation) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_title)
+}
+
+/// The id in the localizedTextIdTooltip column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_tooltip(row: EldanAugmentation) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_tooltip)
 }
 
 fn row_id(row: EldanAugmentation) -> Int {

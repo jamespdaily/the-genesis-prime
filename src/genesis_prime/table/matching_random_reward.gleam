@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type CurrencyTypeId, type Item2Id, type MatchingRandomRewardId, CurrencyTypeId,
+  Item2Id, MatchingRandomRewardId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -76,14 +81,41 @@ pub fn entry() -> store.Entry {
 /// The row of the MatchingRandomReward table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: MatchingRandomRewardId,
 ) -> Result(MatchingRandomReward, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the MatchingRandomReward table, in id order.
 pub fn all(tables: store.Tables) -> List(MatchingRandomReward) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: MatchingRandomReward) -> MatchingRandomRewardId {
+  MatchingRandomRewardId(row.id)
+}
+
+/// The id in the item2Id column, as the typed id of the Item2 table.
+pub fn item2_id(row: MatchingRandomReward) -> Item2Id {
+  Item2Id(row.item2_id)
+}
+
+/// The id in the currencyTypeId column, as the typed id of the CurrencyType table.
+pub fn currency_type_id(row: MatchingRandomReward) -> CurrencyTypeId {
+  CurrencyTypeId(row.currency_type_id)
+}
+
+/// The id in the item2IdLevelScale column, as the typed id of the Item2 table.
+pub fn item2_id_level_scale(row: MatchingRandomReward) -> Item2Id {
+  Item2Id(row.item2_id_level_scale)
+}
+
+/// The id in the currencyTypeIdLevelScale column, as the typed id of the CurrencyType table.
+pub fn currency_type_id_level_scale(
+  row: MatchingRandomReward,
+) -> CurrencyTypeId {
+  CurrencyTypeId(row.currency_type_id_level_scale)
 }
 
 fn row_id(row: MatchingRandomReward) -> Int {

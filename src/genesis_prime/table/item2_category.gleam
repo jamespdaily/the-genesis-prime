@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Item2CategoryId, type Item2FamilyId, type ItemProficiencyId,
+  type LocalizedTextId, type SoundEventId, Item2CategoryId, Item2FamilyId,
+  ItemProficiencyId, LocalizedTextId, SoundEventId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -67,14 +73,39 @@ pub fn entry() -> store.Entry {
 /// The row of the Item2Category table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Item2CategoryId,
 ) -> Result(Item2Category, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Item2Category table, in id order.
 pub fn all(tables: store.Tables) -> List(Item2Category) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Item2Category) -> Item2CategoryId {
+  Item2CategoryId(row.id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: Item2Category) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
+}
+
+/// The id in the itemProficiencyId column, as the typed id of the ItemProficiency table.
+pub fn item_proficiency_id(row: Item2Category) -> ItemProficiencyId {
+  ItemProficiencyId(row.item_proficiency_id)
+}
+
+/// The id in the soundEventIdEquip column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_equip(row: Item2Category) -> SoundEventId {
+  SoundEventId(row.sound_event_id_equip)
+}
+
+/// The id in the item2FamilyId column, as the typed id of the Item2Family table.
+pub fn item2_family_id(row: Item2Category) -> Item2FamilyId {
+  Item2FamilyId(row.item2_family_id)
 }
 
 fn row_id(row: Item2Category) -> Int {

@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type SoundEnvironmentId, type SoundEventId, type SoundMusicSetId,
+  type SoundZoneKitId, type WorldZoneId, SoundEnvironmentId, SoundEventId,
+  SoundMusicSetId, SoundZoneKitId, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -100,14 +106,81 @@ pub fn entry() -> store.Entry {
 /// The row of the SoundZoneKit table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: SoundZoneKitId,
 ) -> Result(SoundZoneKit, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the SoundZoneKit table, in id order.
 pub fn all(tables: store.Tables) -> List(SoundZoneKit) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: SoundZoneKit) -> SoundZoneKitId {
+  SoundZoneKitId(row.id)
+}
+
+/// The id in the soundZoneKitIdParent column, as the typed id of the SoundZoneKit table.
+pub fn sound_zone_kit_id_parent(row: SoundZoneKit) -> SoundZoneKitId {
+  SoundZoneKitId(row.sound_zone_kit_id_parent)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: SoundZoneKit) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the soundMusicSetId column, as the typed id of the SoundMusicSet table.
+pub fn sound_music_set_id(row: SoundZoneKit) -> SoundMusicSetId {
+  SoundMusicSetId(row.sound_music_set_id)
+}
+
+/// The id in the soundEventIdIntro column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_intro(row: SoundZoneKit) -> SoundEventId {
+  SoundEventId(row.sound_event_id_intro)
+}
+
+/// The id in the soundEventIdMusicMood column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_music_mood(row: SoundZoneKit) -> SoundEventId {
+  SoundEventId(row.sound_event_id_music_mood)
+}
+
+/// The id in the soundEventIdAmbientDay column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_ambient_day(row: SoundZoneKit) -> SoundEventId {
+  SoundEventId(row.sound_event_id_ambient_day)
+}
+
+/// The id in the soundEventIdAmbientNight column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_ambient_night(row: SoundZoneKit) -> SoundEventId {
+  SoundEventId(row.sound_event_id_ambient_night)
+}
+
+/// The id in the soundEventIdAmbientUnderwater column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_ambient_underwater(row: SoundZoneKit) -> SoundEventId {
+  SoundEventId(row.sound_event_id_ambient_underwater)
+}
+
+/// The id in the soundEventIdAmbientStop column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_ambient_stop(row: SoundZoneKit) -> SoundEventId {
+  SoundEventId(row.sound_event_id_ambient_stop)
+}
+
+/// The id in the soundEventIdAmbientPreStopOverride column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_ambient_pre_stop_override(
+  row: SoundZoneKit,
+) -> SoundEventId {
+  SoundEventId(row.sound_event_id_ambient_pre_stop_override)
+}
+
+/// The id in the soundEnvironmentId00 column, as the typed id of the SoundEnvironment table.
+pub fn sound_environment_id00(row: SoundZoneKit) -> SoundEnvironmentId {
+  SoundEnvironmentId(row.sound_environment_id00)
+}
+
+/// The id in the soundEnvironmentId01 column, as the typed id of the SoundEnvironment table.
+pub fn sound_environment_id01(row: SoundZoneKit) -> SoundEnvironmentId {
+  SoundEnvironmentId(row.sound_environment_id01)
 }
 
 fn row_id(row: SoundZoneKit) -> Int {

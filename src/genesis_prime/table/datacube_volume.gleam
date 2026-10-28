@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type DatacubeId, type DatacubeVolumeId, type LocalizedTextId, DatacubeId,
+  DatacubeVolumeId, LocalizedTextId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -74,14 +79,104 @@ pub fn entry() -> store.Entry {
 /// The row of the DatacubeVolume table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: DatacubeVolumeId,
 ) -> Result(DatacubeVolume, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the DatacubeVolume table, in id order.
 pub fn all(tables: store.Tables) -> List(DatacubeVolume) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: DatacubeVolume) -> DatacubeVolumeId {
+  DatacubeVolumeId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: DatacubeVolume) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the datacubeId00 column, as the typed id of the Datacube table.
+pub fn datacube_id00(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id00)
+}
+
+/// The id in the datacubeId01 column, as the typed id of the Datacube table.
+pub fn datacube_id01(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id01)
+}
+
+/// The id in the datacubeId02 column, as the typed id of the Datacube table.
+pub fn datacube_id02(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id02)
+}
+
+/// The id in the datacubeId03 column, as the typed id of the Datacube table.
+pub fn datacube_id03(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id03)
+}
+
+/// The id in the datacubeId04 column, as the typed id of the Datacube table.
+pub fn datacube_id04(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id04)
+}
+
+/// The id in the datacubeId05 column, as the typed id of the Datacube table.
+pub fn datacube_id05(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id05)
+}
+
+/// The id in the datacubeId06 column, as the typed id of the Datacube table.
+pub fn datacube_id06(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id06)
+}
+
+/// The id in the datacubeId07 column, as the typed id of the Datacube table.
+pub fn datacube_id07(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id07)
+}
+
+/// The id in the datacubeId08 column, as the typed id of the Datacube table.
+pub fn datacube_id08(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id08)
+}
+
+/// The id in the datacubeId09 column, as the typed id of the Datacube table.
+pub fn datacube_id09(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id09)
+}
+
+/// The id in the datacubeId10 column, as the typed id of the Datacube table.
+pub fn datacube_id10(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id10)
+}
+
+/// The id in the datacubeId11 column, as the typed id of the Datacube table.
+pub fn datacube_id11(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id11)
+}
+
+/// The id in the datacubeId12 column, as the typed id of the Datacube table.
+pub fn datacube_id12(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id12)
+}
+
+/// The id in the datacubeId13 column, as the typed id of the Datacube table.
+pub fn datacube_id13(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id13)
+}
+
+/// The id in the datacubeId14 column, as the typed id of the Datacube table.
+pub fn datacube_id14(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id14)
+}
+
+/// The id in the datacubeId15 column, as the typed id of the Datacube table.
+pub fn datacube_id15(row: DatacubeVolume) -> DatacubeId {
+  DatacubeId(row.datacube_id15)
 }
 
 fn row_id(row: DatacubeVolume) -> Int {

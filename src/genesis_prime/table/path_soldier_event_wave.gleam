@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type PathSoldierEventId, type PathSoldierEventWaveId, type SoundZoneKitId,
+  PathSoldierEventId, PathSoldierEventWaveId, SoundZoneKitId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -43,14 +48,29 @@ pub fn entry() -> store.Entry {
 /// The row of the PathSoldierEventWave table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathSoldierEventWaveId,
 ) -> Result(PathSoldierEventWave, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathSoldierEventWave table, in id order.
 pub fn all(tables: store.Tables) -> List(PathSoldierEventWave) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathSoldierEventWave) -> PathSoldierEventWaveId {
+  PathSoldierEventWaveId(row.id)
+}
+
+/// The id in the pathSoldierEventId column, as the typed id of the PathSoldierEvent table.
+pub fn path_soldier_event_id(row: PathSoldierEventWave) -> PathSoldierEventId {
+  PathSoldierEventId(row.path_soldier_event_id)
+}
+
+/// The id in the soundZoneKitId column, as the typed id of the SoundZoneKit table.
+pub fn sound_zone_kit_id(row: PathSoldierEventWave) -> SoundZoneKitId {
+  SoundZoneKitId(row.sound_zone_kit_id)
 }
 
 fn row_id(row: PathSoldierEventWave) -> Int {

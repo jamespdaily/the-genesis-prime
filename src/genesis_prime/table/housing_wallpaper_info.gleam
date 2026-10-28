@@ -3,7 +3,15 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type AccountItemId, type HousingWallpaperInfoId, type LocalizedTextId,
+  type PrerequisiteId, type ReplaceableMaterialInfoId, type SoundZoneKitId,
+  type WorldLayerId, type WorldSkyId, AccountItemId, HousingWallpaperInfoId,
+  LocalizedTextId, PrerequisiteId, ReplaceableMaterialInfoId, SoundZoneKitId,
+  WorldLayerId, WorldSkyId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -79,14 +87,76 @@ pub fn entry() -> store.Entry {
 /// The row of the HousingWallpaperInfo table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: HousingWallpaperInfoId,
 ) -> Result(HousingWallpaperInfo, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the HousingWallpaperInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(HousingWallpaperInfo) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: HousingWallpaperInfo) -> HousingWallpaperInfoId {
+  HousingWallpaperInfoId(row.id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: HousingWallpaperInfo) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
+}
+
+/// The id in the replaceableMaterialInfoId column, as the typed id of the ReplaceableMaterialInfo table.
+pub fn replaceable_material_info_id(
+  row: HousingWallpaperInfo,
+) -> ReplaceableMaterialInfoId {
+  ReplaceableMaterialInfoId(row.replaceable_material_info_id)
+}
+
+/// The id in the worldSkyId column, as the typed id of the WorldSky table.
+pub fn world_sky_id(row: HousingWallpaperInfo) -> WorldSkyId {
+  WorldSkyId(row.world_sky_id)
+}
+
+/// The id in the prerequisiteIdUnlock column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_unlock(row: HousingWallpaperInfo) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_unlock)
+}
+
+/// The id in the prerequisiteIdUse column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_use(row: HousingWallpaperInfo) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_use)
+}
+
+/// The id in the soundZoneKitId column, as the typed id of the SoundZoneKit table.
+pub fn sound_zone_kit_id(row: HousingWallpaperInfo) -> SoundZoneKitId {
+  SoundZoneKitId(row.sound_zone_kit_id)
+}
+
+/// The id in the worldLayerId00 column, as the typed id of the WorldLayer table.
+pub fn world_layer_id00(row: HousingWallpaperInfo) -> WorldLayerId {
+  WorldLayerId(row.world_layer_id00)
+}
+
+/// The id in the worldLayerId01 column, as the typed id of the WorldLayer table.
+pub fn world_layer_id01(row: HousingWallpaperInfo) -> WorldLayerId {
+  WorldLayerId(row.world_layer_id01)
+}
+
+/// The id in the worldLayerId02 column, as the typed id of the WorldLayer table.
+pub fn world_layer_id02(row: HousingWallpaperInfo) -> WorldLayerId {
+  WorldLayerId(row.world_layer_id02)
+}
+
+/// The id in the worldLayerId03 column, as the typed id of the WorldLayer table.
+pub fn world_layer_id03(row: HousingWallpaperInfo) -> WorldLayerId {
+  WorldLayerId(row.world_layer_id03)
+}
+
+/// The id in the accountItemIdUpsell column, as the typed id of the AccountItem table.
+pub fn account_item_id_upsell(row: HousingWallpaperInfo) -> AccountItemId {
+  AccountItemId(row.account_item_id_upsell)
 }
 
 fn row_id(row: HousingWallpaperInfo) -> Int {

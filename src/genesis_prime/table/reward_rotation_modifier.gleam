@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type RewardPropertyId, type RewardRotationModifierId, RewardPropertyId,
+  RewardRotationModifierId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -50,14 +55,24 @@ pub fn entry() -> store.Entry {
 /// The row of the RewardRotationModifier table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: RewardRotationModifierId,
 ) -> Result(RewardRotationModifier, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the RewardRotationModifier table, in id order.
 pub fn all(tables: store.Tables) -> List(RewardRotationModifier) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: RewardRotationModifier) -> RewardRotationModifierId {
+  RewardRotationModifierId(row.id)
+}
+
+/// The id in the rewardPropertyId column, as the typed id of the RewardProperty table.
+pub fn reward_property_id(row: RewardRotationModifier) -> RewardPropertyId {
+  RewardPropertyId(row.reward_property_id)
 }
 
 fn row_id(row: RewardRotationModifier) -> Int {

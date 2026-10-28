@@ -3,7 +3,14 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type ArchiveArticleId, type ArchiveCategoryId, type ArchiveEntryId,
+  type CharacterTitleId, type Creature2Id, type LocalizedTextId,
+  type WorldZoneId, ArchiveArticleId, ArchiveCategoryId, ArchiveEntryId,
+  CharacterTitleId, Creature2Id, LocalizedTextId, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -143,14 +150,169 @@ pub fn entry() -> store.Entry {
 /// The row of the ArchiveArticle table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ArchiveArticleId,
 ) -> Result(ArchiveArticle, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ArchiveArticle table, in id order.
 pub fn all(tables: store.Tables) -> List(ArchiveArticle) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ArchiveArticle) -> ArchiveArticleId {
+  ArchiveArticleId(row.id)
+}
+
+/// The id in the creature2IdPortrait column, as the typed id of the Creature2 table.
+pub fn creature2_id_portrait(row: ArchiveArticle) -> Creature2Id {
+  Creature2Id(row.creature2_id_portrait)
+}
+
+/// The id in the localizedTextIdTitle column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_title(row: ArchiveArticle) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_title)
+}
+
+/// The id in the localizedTextIdText00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text00(row: ArchiveArticle) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text00)
+}
+
+/// The id in the localizedTextIdText01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text01(row: ArchiveArticle) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text01)
+}
+
+/// The id in the localizedTextIdText02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text02(row: ArchiveArticle) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text02)
+}
+
+/// The id in the localizedTextIdText03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text03(row: ArchiveArticle) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text03)
+}
+
+/// The id in the localizedTextIdText04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text04(row: ArchiveArticle) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text04)
+}
+
+/// The id in the localizedTextIdText05 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text05(row: ArchiveArticle) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text05)
+}
+
+/// The id in the archiveEntryId00 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id00(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id00)
+}
+
+/// The id in the archiveEntryId01 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id01(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id01)
+}
+
+/// The id in the archiveEntryId02 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id02(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id02)
+}
+
+/// The id in the archiveEntryId03 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id03(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id03)
+}
+
+/// The id in the archiveEntryId04 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id04(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id04)
+}
+
+/// The id in the archiveEntryId05 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id05(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id05)
+}
+
+/// The id in the archiveEntryId06 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id06(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id06)
+}
+
+/// The id in the archiveEntryId07 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id07(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id07)
+}
+
+/// The id in the archiveEntryId08 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id08(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id08)
+}
+
+/// The id in the archiveEntryId09 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id09(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id09)
+}
+
+/// The id in the archiveEntryId10 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id10(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id10)
+}
+
+/// The id in the archiveEntryId11 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id11(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id11)
+}
+
+/// The id in the archiveEntryId12 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id12(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id12)
+}
+
+/// The id in the archiveEntryId13 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id13(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id13)
+}
+
+/// The id in the archiveEntryId14 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id14(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id14)
+}
+
+/// The id in the archiveEntryId15 column, as the typed id of the ArchiveEntry table.
+pub fn archive_entry_id15(row: ArchiveArticle) -> ArchiveEntryId {
+  ArchiveEntryId(row.archive_entry_id15)
+}
+
+/// The id in the archiveCategoryId00 column, as the typed id of the ArchiveCategory table.
+pub fn archive_category_id00(row: ArchiveArticle) -> ArchiveCategoryId {
+  ArchiveCategoryId(row.archive_category_id00)
+}
+
+/// The id in the archiveCategoryId01 column, as the typed id of the ArchiveCategory table.
+pub fn archive_category_id01(row: ArchiveArticle) -> ArchiveCategoryId {
+  ArchiveCategoryId(row.archive_category_id01)
+}
+
+/// The id in the archiveCategoryId02 column, as the typed id of the ArchiveCategory table.
+pub fn archive_category_id02(row: ArchiveArticle) -> ArchiveCategoryId {
+  ArchiveCategoryId(row.archive_category_id02)
+}
+
+/// The id in the localizedTextIdToolTip column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_tool_tip(row: ArchiveArticle) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_tool_tip)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: ArchiveArticle) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the characterTitleIdReward column, as the typed id of the CharacterTitle table.
+pub fn character_title_id_reward(row: ArchiveArticle) -> CharacterTitleId {
+  CharacterTitleId(row.character_title_id_reward)
 }
 
 fn row_id(row: ArchiveArticle) -> Int {

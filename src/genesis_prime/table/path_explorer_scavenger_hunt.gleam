@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type LocalizedTextId, type PathExplorerScavengerClueId,
+  type PathExplorerScavengerHuntId, type Spell4Id, Creature2Id, LocalizedTextId,
+  PathExplorerScavengerClueId, PathExplorerScavengerHuntId, Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -81,14 +87,85 @@ pub fn entry() -> store.Entry {
 /// The row of the PathExplorerScavengerHunt table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathExplorerScavengerHuntId,
 ) -> Result(PathExplorerScavengerHunt, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathExplorerScavengerHunt table, in id order.
 pub fn all(tables: store.Tables) -> List(PathExplorerScavengerHunt) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathExplorerScavengerHunt) -> PathExplorerScavengerHuntId {
+  PathExplorerScavengerHuntId(row.id)
+}
+
+/// The id in the creature2IdStart column, as the typed id of the Creature2 table.
+pub fn creature2_id_start(row: PathExplorerScavengerHunt) -> Creature2Id {
+  Creature2Id(row.creature2_id_start)
+}
+
+/// The id in the pathExplorerScavengerClueId00 column, as the typed id of the PathExplorerScavengerClue table.
+pub fn path_explorer_scavenger_clue_id00(
+  row: PathExplorerScavengerHunt,
+) -> PathExplorerScavengerClueId {
+  PathExplorerScavengerClueId(row.path_explorer_scavenger_clue_id00)
+}
+
+/// The id in the pathExplorerScavengerClueId01 column, as the typed id of the PathExplorerScavengerClue table.
+pub fn path_explorer_scavenger_clue_id01(
+  row: PathExplorerScavengerHunt,
+) -> PathExplorerScavengerClueId {
+  PathExplorerScavengerClueId(row.path_explorer_scavenger_clue_id01)
+}
+
+/// The id in the pathExplorerScavengerClueId02 column, as the typed id of the PathExplorerScavengerClue table.
+pub fn path_explorer_scavenger_clue_id02(
+  row: PathExplorerScavengerHunt,
+) -> PathExplorerScavengerClueId {
+  PathExplorerScavengerClueId(row.path_explorer_scavenger_clue_id02)
+}
+
+/// The id in the pathExplorerScavengerClueId03 column, as the typed id of the PathExplorerScavengerClue table.
+pub fn path_explorer_scavenger_clue_id03(
+  row: PathExplorerScavengerHunt,
+) -> PathExplorerScavengerClueId {
+  PathExplorerScavengerClueId(row.path_explorer_scavenger_clue_id03)
+}
+
+/// The id in the pathExplorerScavengerClueId04 column, as the typed id of the PathExplorerScavengerClue table.
+pub fn path_explorer_scavenger_clue_id04(
+  row: PathExplorerScavengerHunt,
+) -> PathExplorerScavengerClueId {
+  PathExplorerScavengerClueId(row.path_explorer_scavenger_clue_id04)
+}
+
+/// The id in the pathExplorerScavengerClueId05 column, as the typed id of the PathExplorerScavengerClue table.
+pub fn path_explorer_scavenger_clue_id05(
+  row: PathExplorerScavengerHunt,
+) -> PathExplorerScavengerClueId {
+  PathExplorerScavengerClueId(row.path_explorer_scavenger_clue_id05)
+}
+
+/// The id in the pathExplorerScavengerClueId06 column, as the typed id of the PathExplorerScavengerClue table.
+pub fn path_explorer_scavenger_clue_id06(
+  row: PathExplorerScavengerHunt,
+) -> PathExplorerScavengerClueId {
+  PathExplorerScavengerClueId(row.path_explorer_scavenger_clue_id06)
+}
+
+/// The id in the localizedTextIdStart column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_start(
+  row: PathExplorerScavengerHunt,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_start)
+}
+
+/// The id in the spell4IdRelic column, as the typed id of the Spell4 table.
+pub fn spell4_id_relic(row: PathExplorerScavengerHunt) -> Spell4Id {
+  Spell4Id(row.spell4_id_relic)
 }
 
 fn row_id(row: PathExplorerScavengerHunt) -> Int {

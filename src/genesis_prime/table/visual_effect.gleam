@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type ModelAttachmentId, type ModelSequenceId, type PrerequisiteId,
+  type SoundEventId, type SoundZoneKitId, type VisualEffectId, ModelAttachmentId,
+  ModelSequenceId, PrerequisiteId, SoundEventId, SoundZoneKitId, VisualEffectId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -148,14 +154,84 @@ pub fn entry() -> store.Entry {
 /// The row of the VisualEffect table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: VisualEffectId,
 ) -> Result(VisualEffect, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the VisualEffect table, in id order.
 pub fn all(tables: store.Tables) -> List(VisualEffect) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: VisualEffect) -> VisualEffectId {
+  VisualEffectId(row.id)
+}
+
+/// The id in the modelAttachmentId column, as the typed id of the ModelAttachment table.
+pub fn model_attachment_id(row: VisualEffect) -> ModelAttachmentId {
+  ModelAttachmentId(row.model_attachment_id)
+}
+
+/// The id in the modelSequenceIdTarget00 column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_target00(row: VisualEffect) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_target00)
+}
+
+/// The id in the modelSequenceIdTarget01 column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_target01(row: VisualEffect) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_target01)
+}
+
+/// The id in the modelSequenceIdTarget02 column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_target02(row: VisualEffect) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_target02)
+}
+
+/// The id in the soundEventId00 column, as the typed id of the SoundEvent table.
+pub fn sound_event_id00(row: VisualEffect) -> SoundEventId {
+  SoundEventId(row.sound_event_id00)
+}
+
+/// The id in the soundEventId01 column, as the typed id of the SoundEvent table.
+pub fn sound_event_id01(row: VisualEffect) -> SoundEventId {
+  SoundEventId(row.sound_event_id01)
+}
+
+/// The id in the soundEventId02 column, as the typed id of the SoundEvent table.
+pub fn sound_event_id02(row: VisualEffect) -> SoundEventId {
+  SoundEventId(row.sound_event_id02)
+}
+
+/// The id in the soundEventId03 column, as the typed id of the SoundEvent table.
+pub fn sound_event_id03(row: VisualEffect) -> SoundEventId {
+  SoundEventId(row.sound_event_id03)
+}
+
+/// The id in the soundEventId04 column, as the typed id of the SoundEvent table.
+pub fn sound_event_id04(row: VisualEffect) -> SoundEventId {
+  SoundEventId(row.sound_event_id04)
+}
+
+/// The id in the soundEventId05 column, as the typed id of the SoundEvent table.
+pub fn sound_event_id05(row: VisualEffect) -> SoundEventId {
+  SoundEventId(row.sound_event_id05)
+}
+
+/// The id in the soundEventIdStop column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_stop(row: VisualEffect) -> SoundEventId {
+  SoundEventId(row.sound_event_id_stop)
+}
+
+/// The id in the soundZoneKitId column, as the typed id of the SoundZoneKit table.
+pub fn sound_zone_kit_id(row: VisualEffect) -> SoundZoneKitId {
+  SoundZoneKitId(row.sound_zone_kit_id)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: VisualEffect) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
 }
 
 fn row_id(row: VisualEffect) -> Int {

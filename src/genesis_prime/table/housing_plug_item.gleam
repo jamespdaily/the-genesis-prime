@@ -3,7 +3,16 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type AccountItemId, type GameFormulaId, type HousingBuildId,
+  type HousingContributionInfoId, type HousingPlotTypeId, type HousingPlugItemId,
+  type HousingResourceId, type LocalizedTextId, type PrerequisiteId,
+  type WorldId, AccountItemId, GameFormulaId, HousingBuildId,
+  HousingContributionInfoId, HousingPlotTypeId, HousingPlugItemId,
+  HousingResourceId, LocalizedTextId, PrerequisiteId, WorldId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -237,14 +246,245 @@ pub fn entry() -> store.Entry {
 /// The row of the HousingPlugItem table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: HousingPlugItemId,
 ) -> Result(HousingPlugItem, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the HousingPlugItem table, in id order.
 pub fn all(tables: store.Tables) -> List(HousingPlugItem) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: HousingPlugItem) -> HousingPlugItemId {
+  HousingPlugItemId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: HousingPlugItem) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the housingPlotTypeId column, as the typed id of the HousingPlotType table.
+pub fn housing_plot_type_id(row: HousingPlugItem) -> HousingPlotTypeId {
+  HousingPlotTypeId(row.housing_plot_type_id)
+}
+
+/// The id in the localizedTextIdTooltip column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_tooltip(row: HousingPlugItem) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_tooltip)
+}
+
+/// The id in the worldIdPlug00 column, as the typed id of the World table.
+pub fn world_id_plug00(row: HousingPlugItem) -> WorldId {
+  WorldId(row.world_id_plug00)
+}
+
+/// The id in the worldIdPlug01 column, as the typed id of the World table.
+pub fn world_id_plug01(row: HousingPlugItem) -> WorldId {
+  WorldId(row.world_id_plug01)
+}
+
+/// The id in the worldIdPlug02 column, as the typed id of the World table.
+pub fn world_id_plug02(row: HousingPlugItem) -> WorldId {
+  WorldId(row.world_id_plug02)
+}
+
+/// The id in the worldIdPlug03 column, as the typed id of the World table.
+pub fn world_id_plug03(row: HousingPlugItem) -> WorldId {
+  WorldId(row.world_id_plug03)
+}
+
+/// The id in the housingResourceIdProvided00 column, as the typed id of the HousingResource table.
+pub fn housing_resource_id_provided00(
+  row: HousingPlugItem,
+) -> HousingResourceId {
+  HousingResourceId(row.housing_resource_id_provided00)
+}
+
+/// The id in the housingResourceIdProvided01 column, as the typed id of the HousingResource table.
+pub fn housing_resource_id_provided01(
+  row: HousingPlugItem,
+) -> HousingResourceId {
+  HousingResourceId(row.housing_resource_id_provided01)
+}
+
+/// The id in the housingResourceIdProvided02 column, as the typed id of the HousingResource table.
+pub fn housing_resource_id_provided02(
+  row: HousingPlugItem,
+) -> HousingResourceId {
+  HousingResourceId(row.housing_resource_id_provided02)
+}
+
+/// The id in the housingResourceIdProvided03 column, as the typed id of the HousingResource table.
+pub fn housing_resource_id_provided03(
+  row: HousingPlugItem,
+) -> HousingResourceId {
+  HousingResourceId(row.housing_resource_id_provided03)
+}
+
+/// The id in the housingResourceIdProvided04 column, as the typed id of the HousingResource table.
+pub fn housing_resource_id_provided04(
+  row: HousingPlugItem,
+) -> HousingResourceId {
+  HousingResourceId(row.housing_resource_id_provided04)
+}
+
+/// The id in the housingResourceIdPrerequisite00 column, as the typed id of the HousingResource table.
+pub fn housing_resource_id_prerequisite00(
+  row: HousingPlugItem,
+) -> HousingResourceId {
+  HousingResourceId(row.housing_resource_id_prerequisite00)
+}
+
+/// The id in the housingResourceIdPrerequisite01 column, as the typed id of the HousingResource table.
+pub fn housing_resource_id_prerequisite01(
+  row: HousingPlugItem,
+) -> HousingResourceId {
+  HousingResourceId(row.housing_resource_id_prerequisite01)
+}
+
+/// The id in the housingResourceIdPrerequisite02 column, as the typed id of the HousingResource table.
+pub fn housing_resource_id_prerequisite02(
+  row: HousingPlugItem,
+) -> HousingResourceId {
+  HousingResourceId(row.housing_resource_id_prerequisite02)
+}
+
+/// The id in the housingContributionInfoId00 column, as the typed id of the HousingContributionInfo table.
+pub fn housing_contribution_info_id00(
+  row: HousingPlugItem,
+) -> HousingContributionInfoId {
+  HousingContributionInfoId(row.housing_contribution_info_id00)
+}
+
+/// The id in the housingContributionInfoId01 column, as the typed id of the HousingContributionInfo table.
+pub fn housing_contribution_info_id01(
+  row: HousingPlugItem,
+) -> HousingContributionInfoId {
+  HousingContributionInfoId(row.housing_contribution_info_id01)
+}
+
+/// The id in the housingContributionInfoId02 column, as the typed id of the HousingContributionInfo table.
+pub fn housing_contribution_info_id02(
+  row: HousingPlugItem,
+) -> HousingContributionInfoId {
+  HousingContributionInfoId(row.housing_contribution_info_id02)
+}
+
+/// The id in the housingContributionInfoId03 column, as the typed id of the HousingContributionInfo table.
+pub fn housing_contribution_info_id03(
+  row: HousingPlugItem,
+) -> HousingContributionInfoId {
+  HousingContributionInfoId(row.housing_contribution_info_id03)
+}
+
+/// The id in the housingContributionInfoId04 column, as the typed id of the HousingContributionInfo table.
+pub fn housing_contribution_info_id04(
+  row: HousingPlugItem,
+) -> HousingContributionInfoId {
+  HousingContributionInfoId(row.housing_contribution_info_id04)
+}
+
+/// The id in the housingPlugItemIdNextUpgrade column, as the typed id of the HousingPlugItem table.
+pub fn housing_plug_item_id_next_upgrade(
+  row: HousingPlugItem,
+) -> HousingPlugItemId {
+  HousingPlugItemId(row.housing_plug_item_id_next_upgrade)
+}
+
+/// The id in the localizedTextIdPrereqTooltip00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_prereq_tooltip00(
+  row: HousingPlugItem,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_prereq_tooltip00)
+}
+
+/// The id in the localizedTextIdPrereqTooltip01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_prereq_tooltip01(
+  row: HousingPlugItem,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_prereq_tooltip01)
+}
+
+/// The id in the localizedTextIdPrereqTooltip02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_prereq_tooltip02(
+  row: HousingPlugItem,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_prereq_tooltip02)
+}
+
+/// The id in the prerequisiteId00 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id00(row: HousingPlugItem) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id00)
+}
+
+/// The id in the prerequisiteId01 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id01(row: HousingPlugItem) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id01)
+}
+
+/// The id in the prerequisiteId02 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id02(row: HousingPlugItem) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id02)
+}
+
+/// The id in the prerequisiteIdUnlock column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_unlock(row: HousingPlugItem) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_unlock)
+}
+
+/// The id in the housingBuildId column, as the typed id of the HousingBuild table.
+pub fn housing_build_id(row: HousingPlugItem) -> HousingBuildId {
+  HousingBuildId(row.housing_build_id)
+}
+
+/// The id in the housingContributionInfoIdUpkeepCost00 column, as the typed id of the HousingContributionInfo table.
+pub fn housing_contribution_info_id_upkeep_cost00(
+  row: HousingPlugItem,
+) -> HousingContributionInfoId {
+  HousingContributionInfoId(row.housing_contribution_info_id_upkeep_cost00)
+}
+
+/// The id in the housingContributionInfoIdUpkeepCost01 column, as the typed id of the HousingContributionInfo table.
+pub fn housing_contribution_info_id_upkeep_cost01(
+  row: HousingPlugItem,
+) -> HousingContributionInfoId {
+  HousingContributionInfoId(row.housing_contribution_info_id_upkeep_cost01)
+}
+
+/// The id in the housingContributionInfoIdUpkeepCost02 column, as the typed id of the HousingContributionInfo table.
+pub fn housing_contribution_info_id_upkeep_cost02(
+  row: HousingPlugItem,
+) -> HousingContributionInfoId {
+  HousingContributionInfoId(row.housing_contribution_info_id_upkeep_cost02)
+}
+
+/// The id in the housingContributionInfoIdUpkeepCost03 column, as the typed id of the HousingContributionInfo table.
+pub fn housing_contribution_info_id_upkeep_cost03(
+  row: HousingPlugItem,
+) -> HousingContributionInfoId {
+  HousingContributionInfoId(row.housing_contribution_info_id_upkeep_cost03)
+}
+
+/// The id in the housingContributionInfoIdUpkeepCost04 column, as the typed id of the HousingContributionInfo table.
+pub fn housing_contribution_info_id_upkeep_cost04(
+  row: HousingPlugItem,
+) -> HousingContributionInfoId {
+  HousingContributionInfoId(row.housing_contribution_info_id_upkeep_cost04)
+}
+
+/// The id in the gameFormulaIdHousingBuildBonus column, as the typed id of the GameFormula table.
+pub fn game_formula_id_housing_build_bonus(
+  row: HousingPlugItem,
+) -> GameFormulaId {
+  GameFormulaId(row.game_formula_id_housing_build_bonus)
+}
+
+/// The id in the accountItemIdUpsell column, as the typed id of the AccountItem table.
+pub fn account_item_id_upsell(row: HousingPlugItem) -> AccountItemId {
+  AccountItemId(row.account_item_id_upsell)
 }
 
 fn row_id(row: HousingPlugItem) -> Int {

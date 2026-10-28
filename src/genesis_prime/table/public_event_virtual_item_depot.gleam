@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type PublicEventVirtualItemDepotId, type VirtualItemId,
+  Creature2Id, PublicEventVirtualItemDepotId, VirtualItemId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -48,14 +53,54 @@ pub fn entry() -> store.Entry {
 /// The row of the PublicEventVirtualItemDepot table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PublicEventVirtualItemDepotId,
 ) -> Result(PublicEventVirtualItemDepot, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PublicEventVirtualItemDepot table, in id order.
 pub fn all(tables: store.Tables) -> List(PublicEventVirtualItemDepot) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PublicEventVirtualItemDepot) -> PublicEventVirtualItemDepotId {
+  PublicEventVirtualItemDepotId(row.id)
+}
+
+/// The id in the creature2Id column, as the typed id of the Creature2 table.
+pub fn creature2_id(row: PublicEventVirtualItemDepot) -> Creature2Id {
+  Creature2Id(row.creature2_id)
+}
+
+/// The id in the virtualItemId00 column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id00(row: PublicEventVirtualItemDepot) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id00)
+}
+
+/// The id in the virtualItemId01 column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id01(row: PublicEventVirtualItemDepot) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id01)
+}
+
+/// The id in the virtualItemId02 column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id02(row: PublicEventVirtualItemDepot) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id02)
+}
+
+/// The id in the virtualItemId03 column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id03(row: PublicEventVirtualItemDepot) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id03)
+}
+
+/// The id in the virtualItemId04 column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id04(row: PublicEventVirtualItemDepot) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id04)
+}
+
+/// The id in the virtualItemId05 column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id05(row: PublicEventVirtualItemDepot) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id05)
 }
 
 fn row_id(row: PublicEventVirtualItemDepot) -> Int {

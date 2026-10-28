@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Item2Id, type TradeskillMaterialCategoryId, type TradeskillMaterialId,
+  Item2Id, TradeskillMaterialCategoryId, TradeskillMaterialId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -48,14 +53,36 @@ pub fn entry() -> store.Entry {
 /// The row of the TradeskillMaterial table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: TradeskillMaterialId,
 ) -> Result(TradeskillMaterial, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the TradeskillMaterial table, in id order.
 pub fn all(tables: store.Tables) -> List(TradeskillMaterial) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: TradeskillMaterial) -> TradeskillMaterialId {
+  TradeskillMaterialId(row.id)
+}
+
+/// The id in the item2IdStatRevolution column, as the typed id of the Item2 table.
+pub fn item2_id_stat_revolution(row: TradeskillMaterial) -> Item2Id {
+  Item2Id(row.item2_id_stat_revolution)
+}
+
+/// The id in the item2Id column, as the typed id of the Item2 table.
+pub fn item2_id(row: TradeskillMaterial) -> Item2Id {
+  Item2Id(row.item2_id)
+}
+
+/// The id in the tradeskillMaterialCategoryId column, as the typed id of the TradeskillMaterialCategory table.
+pub fn tradeskill_material_category_id(
+  row: TradeskillMaterial,
+) -> TradeskillMaterialCategoryId {
+  TradeskillMaterialCategoryId(row.tradeskill_material_category_id)
 }
 
 fn row_id(row: TradeskillMaterial) -> Int {

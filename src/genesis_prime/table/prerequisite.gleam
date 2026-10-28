@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type PrerequisiteId, type PrerequisiteTypeId,
+  LocalizedTextId, PrerequisiteId, PrerequisiteTypeId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -83,14 +88,39 @@ pub fn entry() -> store.Entry {
 /// The row of the Prerequisite table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PrerequisiteId,
 ) -> Result(Prerequisite, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Prerequisite table, in id order.
 pub fn all(tables: store.Tables) -> List(Prerequisite) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Prerequisite) -> PrerequisiteId {
+  PrerequisiteId(row.id)
+}
+
+/// The id in the prerequisiteTypeId0 column, as the typed id of the PrerequisiteType table.
+pub fn prerequisite_type_id0(row: Prerequisite) -> PrerequisiteTypeId {
+  PrerequisiteTypeId(row.prerequisite_type_id0)
+}
+
+/// The id in the prerequisiteTypeId1 column, as the typed id of the PrerequisiteType table.
+pub fn prerequisite_type_id1(row: Prerequisite) -> PrerequisiteTypeId {
+  PrerequisiteTypeId(row.prerequisite_type_id1)
+}
+
+/// The id in the prerequisiteTypeId2 column, as the typed id of the PrerequisiteType table.
+pub fn prerequisite_type_id2(row: Prerequisite) -> PrerequisiteTypeId {
+  PrerequisiteTypeId(row.prerequisite_type_id2)
+}
+
+/// The id in the localizedTextIdFailure column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_failure(row: Prerequisite) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_failure)
 }
 
 fn row_id(row: Prerequisite) -> Int {

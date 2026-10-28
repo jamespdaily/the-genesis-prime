@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type ClientSideInteractionId, type LocalizedTextId, type VisualEffectId,
+  ClientSideInteractionId, LocalizedTextId, VisualEffectId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -115,14 +120,96 @@ pub fn entry() -> store.Entry {
 /// The row of the ClientSideInteraction table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ClientSideInteractionId,
 ) -> Result(ClientSideInteraction, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ClientSideInteraction table, in id order.
 pub fn all(tables: store.Tables) -> List(ClientSideInteraction) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ClientSideInteraction) -> ClientSideInteractionId {
+  ClientSideInteractionId(row.id)
+}
+
+/// The id in the visualEffectId0 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id0(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id0)
+}
+
+/// The id in the visualEffectId1 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id1(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id1)
+}
+
+/// The id in the visualEffectId2 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id2(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id2)
+}
+
+/// The id in the visualEffectId3 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id3(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id3)
+}
+
+/// The id in the visualEffectIdTarget00 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_target00(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_target00)
+}
+
+/// The id in the visualEffectIdTarget01 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_target01(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_target01)
+}
+
+/// The id in the visualEffectIdTarget02 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_target02(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_target02)
+}
+
+/// The id in the visualEffectIdTarget03 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_target03(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_target03)
+}
+
+/// The id in the visualEffectIdTarget04 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_target04(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_target04)
+}
+
+/// The id in the visualEffectIdCaster00 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_caster00(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_caster00)
+}
+
+/// The id in the visualEffectIdCaster01 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_caster01(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_caster01)
+}
+
+/// The id in the visualEffectIdCaster02 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_caster02(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_caster02)
+}
+
+/// The id in the visualEffectIdCaster03 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_caster03(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_caster03)
+}
+
+/// The id in the visualEffectIdCaster04 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_caster04(row: ClientSideInteraction) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_caster04)
+}
+
+/// The id in the localizedTextIdContext column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_context(
+  row: ClientSideInteraction,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_context)
 }
 
 fn row_id(row: ClientSideInteraction) -> Int {

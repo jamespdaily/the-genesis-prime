@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type RewardRotationContentId, type SoundZoneKitId,
+  type WorldLocation2Id, type WorldZoneId, LocalizedTextId,
+  RewardRotationContentId, SoundZoneKitId, WorldLocation2Id, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -60,13 +66,41 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the WorldZone table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(WorldZone, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: WorldZoneId,
+) -> Result(WorldZone, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the WorldZone table, in id order.
 pub fn all(tables: store.Tables) -> List(WorldZone) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: WorldZone) -> WorldZoneId {
+  WorldZoneId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: WorldZone) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the soundZoneKitId column, as the typed id of the SoundZoneKit table.
+pub fn sound_zone_kit_id(row: WorldZone) -> SoundZoneKitId {
+  SoundZoneKitId(row.sound_zone_kit_id)
+}
+
+/// The id in the worldLocation2IdExit column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_exit(row: WorldZone) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_exit)
+}
+
+/// The id in the rewardRotationContentId column, as the typed id of the RewardRotationContent table.
+pub fn reward_rotation_content_id(row: WorldZone) -> RewardRotationContentId {
+  RewardRotationContentId(row.reward_rotation_content_id)
 }
 
 fn row_id(row: WorldZone) -> Int {

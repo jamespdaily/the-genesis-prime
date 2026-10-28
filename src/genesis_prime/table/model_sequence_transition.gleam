@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type ModelSequenceId, type ModelSequenceTransitionId, ModelSequenceId,
+  ModelSequenceTransitionId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -49,14 +54,36 @@ pub fn entry() -> store.Entry {
 /// The row of the ModelSequenceTransition table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ModelSequenceTransitionId,
 ) -> Result(ModelSequenceTransition, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ModelSequenceTransition table, in id order.
 pub fn all(tables: store.Tables) -> List(ModelSequenceTransition) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ModelSequenceTransition) -> ModelSequenceTransitionId {
+  ModelSequenceTransitionId(row.id)
+}
+
+/// The id in the modelSequenceIdFrom column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_from(row: ModelSequenceTransition) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_from)
+}
+
+/// The id in the modelSequenceIdTo column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_to(row: ModelSequenceTransition) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_to)
+}
+
+/// The id in the modelSequenceIdTransition column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_transition(
+  row: ModelSequenceTransition,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_transition)
 }
 
 fn row_id(row: ModelSequenceTransition) -> Int {

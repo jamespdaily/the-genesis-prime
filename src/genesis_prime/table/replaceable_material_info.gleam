@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type MaterialTypeId, type ReplaceableMaterialInfoId, MaterialTypeId,
+  ReplaceableMaterialInfoId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -233,14 +238,39 @@ pub fn entry() -> store.Entry {
 /// The row of the ReplaceableMaterialInfo table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ReplaceableMaterialInfoId,
 ) -> Result(ReplaceableMaterialInfo, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ReplaceableMaterialInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(ReplaceableMaterialInfo) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ReplaceableMaterialInfo) -> ReplaceableMaterialInfoId {
+  ReplaceableMaterialInfoId(row.id)
+}
+
+/// The id in the materialTypeId00 column, as the typed id of the MaterialType table.
+pub fn material_type_id00(row: ReplaceableMaterialInfo) -> MaterialTypeId {
+  MaterialTypeId(row.material_type_id00)
+}
+
+/// The id in the materialTypeId01 column, as the typed id of the MaterialType table.
+pub fn material_type_id01(row: ReplaceableMaterialInfo) -> MaterialTypeId {
+  MaterialTypeId(row.material_type_id01)
+}
+
+/// The id in the materialTypeId02 column, as the typed id of the MaterialType table.
+pub fn material_type_id02(row: ReplaceableMaterialInfo) -> MaterialTypeId {
+  MaterialTypeId(row.material_type_id02)
+}
+
+/// The id in the materialTypeId03 column, as the typed id of the MaterialType table.
+pub fn material_type_id03(row: ReplaceableMaterialInfo) -> MaterialTypeId {
+  MaterialTypeId(row.material_type_id03)
 }
 
 fn row_id(row: ReplaceableMaterialInfo) -> Int {

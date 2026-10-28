@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type QuestDirectionEntryId, type WorldLocation2Id, type WorldZoneId,
+  QuestDirectionEntryId, WorldLocation2Id, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -53,14 +58,36 @@ pub fn entry() -> store.Entry {
 /// The row of the QuestDirectionEntry table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: QuestDirectionEntryId,
 ) -> Result(QuestDirectionEntry, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the QuestDirectionEntry table, in id order.
 pub fn all(tables: store.Tables) -> List(QuestDirectionEntry) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: QuestDirectionEntry) -> QuestDirectionEntryId {
+  QuestDirectionEntryId(row.id)
+}
+
+/// The id in the worldLocation2Id column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id(row: QuestDirectionEntry) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id)
+}
+
+/// The id in the worldLocation2IdInactive column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_inactive(
+  row: QuestDirectionEntry,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_inactive)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: QuestDirectionEntry) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
 }
 
 fn row_id(row: QuestDirectionEntry) -> Int {

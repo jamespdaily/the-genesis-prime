@@ -3,7 +3,14 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type PathExplorerAreaId, type PathExplorerNodeId,
+  type QuestDirectionId, type Spline2Id, type VisualEffectId,
+  type WorldLocation2Id, LocalizedTextId, PathExplorerAreaId, PathExplorerNodeId,
+  QuestDirectionId, Spline2Id, VisualEffectId, WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -52,14 +59,51 @@ pub fn entry() -> store.Entry {
 /// The row of the PathExplorerNode table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathExplorerNodeId,
 ) -> Result(PathExplorerNode, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathExplorerNode table, in id order.
 pub fn all(tables: store.Tables) -> List(PathExplorerNode) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathExplorerNode) -> PathExplorerNodeId {
+  PathExplorerNodeId(row.id)
+}
+
+/// The id in the pathExplorerAreaId column, as the typed id of the PathExplorerArea table.
+pub fn path_explorer_area_id(row: PathExplorerNode) -> PathExplorerAreaId {
+  PathExplorerAreaId(row.path_explorer_area_id)
+}
+
+/// The id in the worldLocation2Id column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id(row: PathExplorerNode) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id)
+}
+
+/// The id in the spline2Id column, as the typed id of the Spline2 table.
+pub fn spline2_id(row: PathExplorerNode) -> Spline2Id {
+  Spline2Id(row.spline2_id)
+}
+
+/// The id in the localizedTextIdSettlerButton column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_settler_button(
+  row: PathExplorerNode,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_settler_button)
+}
+
+/// The id in the questDirectionId column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id(row: PathExplorerNode) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id)
+}
+
+/// The id in the visualEffectId column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id(row: PathExplorerNode) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id)
 }
 
 fn row_id(row: PathExplorerNode) -> Int {

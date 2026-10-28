@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type ModelSequenceBySeatPostureId, type ModelSequenceId,
+  ModelSequenceBySeatPostureId, ModelSequenceId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -71,14 +76,73 @@ pub fn entry() -> store.Entry {
 /// The row of the ModelSequenceBySeatPosture table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ModelSequenceBySeatPostureId,
 ) -> Result(ModelSequenceBySeatPosture, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ModelSequenceBySeatPosture table, in id order.
 pub fn all(tables: store.Tables) -> List(ModelSequenceBySeatPosture) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ModelSequenceBySeatPosture) -> ModelSequenceBySeatPostureId {
+  ModelSequenceBySeatPostureId(row.id)
+}
+
+/// The id in the modelSequenceId column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id(row: ModelSequenceBySeatPosture) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id)
+}
+
+/// The id in the modelSequenceIdNarrow column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_narrow(
+  row: ModelSequenceBySeatPosture,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_narrow)
+}
+
+/// The id in the modelSequenceIdMedium column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_medium(
+  row: ModelSequenceBySeatPosture,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_medium)
+}
+
+/// The id in the modelSequenceIdWide column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_wide(
+  row: ModelSequenceBySeatPosture,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_wide)
+}
+
+/// The id in the modelSequenceIdBike column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_bike(
+  row: ModelSequenceBySeatPosture,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_bike)
+}
+
+/// The id in the modelSequenceIdHoverBoard column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_hover_board(
+  row: ModelSequenceBySeatPosture,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_hover_board)
+}
+
+/// The id in the modelSequenceIdGlider column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_glider(
+  row: ModelSequenceBySeatPosture,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_glider)
+}
+
+/// The id in the modelSequenceIdTank column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_tank(
+  row: ModelSequenceBySeatPosture,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_tank)
 }
 
 fn row_id(row: ModelSequenceBySeatPosture) -> Int {

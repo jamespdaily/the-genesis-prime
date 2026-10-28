@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type DatacubeId, type LocalizedTextId, type QuestDirectionId,
+  type SoundEventId, type WorldLocation2Id, type WorldZoneId, DatacubeId,
+  LocalizedTextId, QuestDirectionId, SoundEventId, WorldLocation2Id, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -87,13 +93,76 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Datacube table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Datacube, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: DatacubeId,
+) -> Result(Datacube, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Datacube table, in id order.
 pub fn all(tables: store.Tables) -> List(Datacube) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Datacube) -> DatacubeId {
+  DatacubeId(row.id)
+}
+
+/// The id in the localizedTextIdTitle column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_title(row: Datacube) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_title)
+}
+
+/// The id in the localizedTextIdText00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text00(row: Datacube) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text00)
+}
+
+/// The id in the localizedTextIdText01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text01(row: Datacube) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text01)
+}
+
+/// The id in the localizedTextIdText02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text02(row: Datacube) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text02)
+}
+
+/// The id in the localizedTextIdText03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text03(row: Datacube) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text03)
+}
+
+/// The id in the localizedTextIdText04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text04(row: Datacube) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text04)
+}
+
+/// The id in the localizedTextIdText05 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_text05(row: Datacube) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_text05)
+}
+
+/// The id in the soundEventId column, as the typed id of the SoundEvent table.
+pub fn sound_event_id(row: Datacube) -> SoundEventId {
+  SoundEventId(row.sound_event_id)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: Datacube) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the worldLocation2Id column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id(row: Datacube) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id)
+}
+
+/// The id in the questDirectionId column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id(row: Datacube) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id)
 }
 
 fn row_id(row: Datacube) -> Int {

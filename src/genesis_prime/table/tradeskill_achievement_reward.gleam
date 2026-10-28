@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type AchievementId, type Faction2Id, type TradeskillAchievementRewardId,
+  AchievementId, Faction2Id, TradeskillAchievementRewardId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -82,14 +87,29 @@ pub fn entry() -> store.Entry {
 /// The row of the TradeskillAchievementReward table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: TradeskillAchievementRewardId,
 ) -> Result(TradeskillAchievementReward, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the TradeskillAchievementReward table, in id order.
 pub fn all(tables: store.Tables) -> List(TradeskillAchievementReward) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: TradeskillAchievementReward) -> TradeskillAchievementRewardId {
+  TradeskillAchievementRewardId(row.id)
+}
+
+/// The id in the achievementId column, as the typed id of the Achievement table.
+pub fn achievement_id(row: TradeskillAchievementReward) -> AchievementId {
+  AchievementId(row.achievement_id)
+}
+
+/// The id in the faction2Id column, as the typed id of the Faction2 table.
+pub fn faction2_id(row: TradeskillAchievementReward) -> Faction2Id {
+  Faction2Id(row.faction2_id)
 }
 
 fn row_id(row: TradeskillAchievementReward) -> Int {

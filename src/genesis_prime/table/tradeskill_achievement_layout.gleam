@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type AchievementId, type TradeskillAchievementLayoutId, AchievementId,
+  TradeskillAchievementLayoutId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -65,14 +70,59 @@ pub fn entry() -> store.Entry {
 /// The row of the TradeskillAchievementLayout table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: TradeskillAchievementLayoutId,
 ) -> Result(TradeskillAchievementLayout, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the TradeskillAchievementLayout table, in id order.
 pub fn all(tables: store.Tables) -> List(TradeskillAchievementLayout) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: TradeskillAchievementLayout) -> TradeskillAchievementLayoutId {
+  TradeskillAchievementLayoutId(row.id)
+}
+
+/// The id in the achievementId column, as the typed id of the Achievement table.
+pub fn achievement_id(row: TradeskillAchievementLayout) -> AchievementId {
+  AchievementId(row.achievement_id)
+}
+
+/// The id in the achievementIdParent00 column, as the typed id of the Achievement table.
+pub fn achievement_id_parent00(
+  row: TradeskillAchievementLayout,
+) -> AchievementId {
+  AchievementId(row.achievement_id_parent00)
+}
+
+/// The id in the achievementIdParent01 column, as the typed id of the Achievement table.
+pub fn achievement_id_parent01(
+  row: TradeskillAchievementLayout,
+) -> AchievementId {
+  AchievementId(row.achievement_id_parent01)
+}
+
+/// The id in the achievementIdParent02 column, as the typed id of the Achievement table.
+pub fn achievement_id_parent02(
+  row: TradeskillAchievementLayout,
+) -> AchievementId {
+  AchievementId(row.achievement_id_parent02)
+}
+
+/// The id in the achievementIdParent03 column, as the typed id of the Achievement table.
+pub fn achievement_id_parent03(
+  row: TradeskillAchievementLayout,
+) -> AchievementId {
+  AchievementId(row.achievement_id_parent03)
+}
+
+/// The id in the achievementIdParent04 column, as the typed id of the Achievement table.
+pub fn achievement_id_parent04(
+  row: TradeskillAchievementLayout,
+) -> AchievementId {
+  AchievementId(row.achievement_id_parent04)
 }
 
 fn row_id(row: TradeskillAchievementLayout) -> Int {

@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Item2Id, type LiveEventDisplayItemId, type LiveEventId, type StoreLinkId,
+  Item2Id, LiveEventDisplayItemId, LiveEventId, StoreLinkId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -40,14 +45,34 @@ pub fn entry() -> store.Entry {
 /// The row of the LiveEventDisplayItem table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: LiveEventDisplayItemId,
 ) -> Result(LiveEventDisplayItem, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the LiveEventDisplayItem table, in id order.
 pub fn all(tables: store.Tables) -> List(LiveEventDisplayItem) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: LiveEventDisplayItem) -> LiveEventDisplayItemId {
+  LiveEventDisplayItemId(row.id)
+}
+
+/// The id in the liveEventId column, as the typed id of the LiveEvent table.
+pub fn live_event_id(row: LiveEventDisplayItem) -> LiveEventId {
+  LiveEventId(row.live_event_id)
+}
+
+/// The id in the item2Id column, as the typed id of the Item2 table.
+pub fn item2_id(row: LiveEventDisplayItem) -> Item2Id {
+  Item2Id(row.item2_id)
+}
+
+/// The id in the storeLinkId column, as the typed id of the StoreLink table.
+pub fn store_link_id(row: LiveEventDisplayItem) -> StoreLinkId {
+  StoreLinkId(row.store_link_id)
 }
 
 fn row_id(row: LiveEventDisplayItem) -> Int {

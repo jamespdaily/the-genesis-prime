@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type MapContinentId, type MapZoneId, type PrerequisiteId,
+  type RewardTrackId, type WorldZoneId, LocalizedTextId, MapContinentId,
+  MapZoneId, PrerequisiteId, RewardTrackId, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -65,13 +71,51 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the MapZone table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(MapZone, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: MapZoneId,
+) -> Result(MapZone, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the MapZone table, in id order.
 pub fn all(tables: store.Tables) -> List(MapZone) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: MapZone) -> MapZoneId {
+  MapZoneId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: MapZone) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the mapContinentId column, as the typed id of the MapContinent table.
+pub fn map_continent_id(row: MapZone) -> MapContinentId {
+  MapContinentId(row.map_continent_id)
+}
+
+/// The id in the mapZoneIdParent column, as the typed id of the MapZone table.
+pub fn map_zone_id_parent(row: MapZone) -> MapZoneId {
+  MapZoneId(row.map_zone_id_parent)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: MapZone) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the prerequisiteIdVisibility column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_visibility(row: MapZone) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_visibility)
+}
+
+/// The id in the rewardTrackId column, as the typed id of the RewardTrack table.
+pub fn reward_track_id(row: MapZone) -> RewardTrackId {
+  RewardTrackId(row.reward_track_id)
 }
 
 fn row_id(row: MapZone) -> Int {

@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Creature2ActionTextId, type LocalizedTextId, Creature2ActionTextId,
+  LocalizedTextId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -103,14 +108,103 @@ pub fn entry() -> store.Entry {
 /// The row of the Creature2ActionText table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Creature2ActionTextId,
 ) -> Result(Creature2ActionText, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Creature2ActionText table, in id order.
 pub fn all(tables: store.Tables) -> List(Creature2ActionText) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Creature2ActionText) -> Creature2ActionTextId {
+  Creature2ActionTextId(row.id)
+}
+
+/// The id in the localizedTextIdOnEnterCombat00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_enter_combat00(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_enter_combat00)
+}
+
+/// The id in the localizedTextIdOnEnterCombat01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_enter_combat01(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_enter_combat01)
+}
+
+/// The id in the localizedTextIdOnEnterCombat02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_enter_combat02(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_enter_combat02)
+}
+
+/// The id in the localizedTextIdOnEnterCombat03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_enter_combat03(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_enter_combat03)
+}
+
+/// The id in the localizedTextIdOnDeath00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_death00(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_death00)
+}
+
+/// The id in the localizedTextIdOnDeath01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_death01(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_death01)
+}
+
+/// The id in the localizedTextIdOnDeath02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_death02(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_death02)
+}
+
+/// The id in the localizedTextIdOnDeath03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_death03(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_death03)
+}
+
+/// The id in the localizedTextIdOnKill00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_kill00(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_kill00)
+}
+
+/// The id in the localizedTextIdOnKill01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_kill01(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_kill01)
+}
+
+/// The id in the localizedTextIdOnKill02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_kill02(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_kill02)
+}
+
+/// The id in the localizedTextIdOnKill03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_on_kill03(
+  row: Creature2ActionText,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_on_kill03)
 }
 
 fn row_id(row: Creature2ActionText) -> Int {

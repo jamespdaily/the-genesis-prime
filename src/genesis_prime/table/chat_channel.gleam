@@ -3,7 +3,11 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type ChatChannelId, type LocalizedTextId, ChatChannelId, LocalizedTextId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -74,14 +78,44 @@ pub fn entry() -> store.Entry {
 /// The row of the ChatChannel table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ChatChannelId,
 ) -> Result(ChatChannel, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ChatChannel table, in id order.
 pub fn all(tables: store.Tables) -> List(ChatChannel) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ChatChannel) -> ChatChannelId {
+  ChatChannelId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: ChatChannel) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdCommand column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_command(row: ChatChannel) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_command)
+}
+
+/// The id in the localizedTextIdAbbreviation column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_abbreviation(row: ChatChannel) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_abbreviation)
+}
+
+/// The id in the localizedTextIdAlternate00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_alternate00(row: ChatChannel) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_alternate00)
+}
+
+/// The id in the localizedTextIdAlternate01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_alternate01(row: ChatChannel) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_alternate01)
 }
 
 fn row_id(row: ChatChannel) -> Int {

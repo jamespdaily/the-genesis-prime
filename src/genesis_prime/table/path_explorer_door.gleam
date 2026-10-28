@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type PathExplorerDoorId, type TargetGroupId, type WorldZoneId,
+  PathExplorerDoorId, TargetGroupId, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -49,14 +54,34 @@ pub fn entry() -> store.Entry {
 /// The row of the PathExplorerDoor table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathExplorerDoorId,
 ) -> Result(PathExplorerDoor, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathExplorerDoor table, in id order.
 pub fn all(tables: store.Tables) -> List(PathExplorerDoor) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathExplorerDoor) -> PathExplorerDoorId {
+  PathExplorerDoorId(row.id)
+}
+
+/// The id in the worldZoneIdInsideMicro column, as the typed id of the WorldZone table.
+pub fn world_zone_id_inside_micro(row: PathExplorerDoor) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id_inside_micro)
+}
+
+/// The id in the targetGroupIdActivate column, as the typed id of the TargetGroup table.
+pub fn target_group_id_activate(row: PathExplorerDoor) -> TargetGroupId {
+  TargetGroupId(row.target_group_id_activate)
+}
+
+/// The id in the targetGroupIdKill column, as the typed id of the TargetGroup table.
+pub fn target_group_id_kill(row: PathExplorerDoor) -> TargetGroupId {
+  TargetGroupId(row.target_group_id_kill)
 }
 
 fn row_id(row: PathExplorerDoor) -> Int {

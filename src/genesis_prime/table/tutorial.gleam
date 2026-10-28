@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type PrerequisiteId, type TutorialAnchorId,
+  type TutorialId, LocalizedTextId, PrerequisiteId, TutorialAnchorId, TutorialId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -50,13 +55,36 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Tutorial table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Tutorial, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: TutorialId,
+) -> Result(Tutorial, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Tutorial table, in id order.
 pub fn all(tables: store.Tables) -> List(Tutorial) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Tutorial) -> TutorialId {
+  TutorialId(row.id)
+}
+
+/// The id in the localizedTextIdContextualPopup column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_contextual_popup(row: Tutorial) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_contextual_popup)
+}
+
+/// The id in the tutorialAnchorId column, as the typed id of the TutorialAnchor table.
+pub fn tutorial_anchor_id(row: Tutorial) -> TutorialAnchorId {
+  TutorialAnchorId(row.tutorial_anchor_id)
+}
+
+/// The id in the prerequisiteId column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id(row: Tutorial) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id)
 }
 
 fn row_id(row: Tutorial) -> Int {

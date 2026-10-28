@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Creature2DisplayGroupEntryId, type Creature2DisplayInfoId,
+  Creature2DisplayGroupEntryId, Creature2DisplayInfoId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -46,14 +51,26 @@ pub fn entry() -> store.Entry {
 /// The row of the Creature2DisplayGroupEntry table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Creature2DisplayGroupEntryId,
 ) -> Result(Creature2DisplayGroupEntry, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Creature2DisplayGroupEntry table, in id order.
 pub fn all(tables: store.Tables) -> List(Creature2DisplayGroupEntry) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Creature2DisplayGroupEntry) -> Creature2DisplayGroupEntryId {
+  Creature2DisplayGroupEntryId(row.id)
+}
+
+/// The id in the creature2DisplayInfoId column, as the typed id of the Creature2DisplayInfo table.
+pub fn creature2_display_info_id(
+  row: Creature2DisplayGroupEntry,
+) -> Creature2DisplayInfoId {
+  Creature2DisplayInfoId(row.creature2_display_info_id)
 }
 
 fn row_id(row: Creature2DisplayGroupEntry) -> Int {

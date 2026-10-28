@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type EpisodeId, type LocalizedTextId, type QuestHubId, type WorldZoneId,
+  EpisodeId, LocalizedTextId, QuestHubId, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -60,13 +65,51 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Episode table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Episode, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: EpisodeId,
+) -> Result(Episode, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Episode table, in id order.
 pub fn all(tables: store.Tables) -> List(Episode) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Episode) -> EpisodeId {
+  EpisodeId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: Episode) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdBriefing column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_briefing(row: Episode) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_briefing)
+}
+
+/// The id in the localizedTextIdEndSummary column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_end_summary(row: Episode) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_end_summary)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: Episode) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the questHubIdExile column, as the typed id of the QuestHub table.
+pub fn quest_hub_id_exile(row: Episode) -> QuestHubId {
+  QuestHubId(row.quest_hub_id_exile)
+}
+
+/// The id in the questHubIdDominion column, as the typed id of the QuestHub table.
+pub fn quest_hub_id_dominion(row: Episode) -> QuestHubId {
+  QuestHubId(row.quest_hub_id_dominion)
 }
 
 fn row_id(row: Episode) -> Int {

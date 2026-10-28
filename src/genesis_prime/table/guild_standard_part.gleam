@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type GuildStandardPartId, type ItemDisplayId, type LocalizedTextId,
+  GuildStandardPartId, ItemDisplayId, LocalizedTextId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -49,14 +54,29 @@ pub fn entry() -> store.Entry {
 /// The row of the GuildStandardPart table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: GuildStandardPartId,
 ) -> Result(GuildStandardPart, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the GuildStandardPart table, in id order.
 pub fn all(tables: store.Tables) -> List(GuildStandardPart) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: GuildStandardPart) -> GuildStandardPartId {
+  GuildStandardPartId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: GuildStandardPart) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the itemDisplayIdStandard column, as the typed id of the ItemDisplay table.
+pub fn item_display_id_standard(row: GuildStandardPart) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id_standard)
 }
 
 fn row_id(row: GuildStandardPart) -> Int {

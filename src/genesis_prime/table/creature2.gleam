@@ -3,7 +3,31 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type ArchiveArticleId, type BindPointId, type Creature2ActionSetId,
+  type Creature2ActionTextId, type Creature2AffiliationId,
+  type Creature2ArcheTypeId, type Creature2DifficultyId,
+  type Creature2DisplayInfoId, type Creature2Id, type Creature2ModelInfoId,
+  type Creature2ResistId, type Creature2TierId, type DatacubeId,
+  type DatacubeVolumeId, type GenericStringGroupsId, type GossipSetId,
+  type InstancePortalId, type Item2Id, type LocalizedTextId,
+  type ModelSequenceId, type PathMissionId, type PathScientistExperimentationId,
+  type PrerequisiteId, type RandomTextLineId, type ResourceConversionGroupId,
+  type SoundCombatLoopId, type SoundEventId, type SoundSwitchId, type Spell4Id,
+  type Spell4VisualGroupId, type TaxiNodeId, type TradeskillHarvestingInfoId,
+  type UnitRaceId, type UnitVehicleId, ArchiveArticleId, BindPointId,
+  Creature2ActionSetId, Creature2ActionTextId, Creature2AffiliationId,
+  Creature2ArcheTypeId, Creature2DifficultyId, Creature2DisplayInfoId,
+  Creature2Id, Creature2ModelInfoId, Creature2ResistId, Creature2TierId,
+  DatacubeId, DatacubeVolumeId, GenericStringGroupsId, GossipSetId,
+  InstancePortalId, Item2Id, LocalizedTextId, ModelSequenceId, PathMissionId,
+  PathScientistExperimentationId, PrerequisiteId, RandomTextLineId,
+  ResourceConversionGroupId, SoundCombatLoopId, SoundEventId, SoundSwitchId,
+  Spell4Id, Spell4VisualGroupId, TaxiNodeId, TradeskillHarvestingInfoId,
+  UnitRaceId, UnitVehicleId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -662,13 +686,485 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Creature2 table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Creature2, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: Creature2Id,
+) -> Result(Creature2, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Creature2 table, in id order.
 pub fn all(tables: store.Tables) -> List(Creature2) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Creature2) -> Creature2Id {
+  Creature2Id(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: Creature2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the unitRaceId column, as the typed id of the UnitRace table.
+pub fn unit_race_id(row: Creature2) -> UnitRaceId {
+  UnitRaceId(row.unit_race_id)
+}
+
+/// The id in the creature2DifficultyId column, as the typed id of the Creature2Difficulty table.
+pub fn creature2_difficulty_id(row: Creature2) -> Creature2DifficultyId {
+  Creature2DifficultyId(row.creature2_difficulty_id)
+}
+
+/// The id in the creature2ArcheTypeId column, as the typed id of the Creature2ArcheType table.
+pub fn creature2_arche_type_id(row: Creature2) -> Creature2ArcheTypeId {
+  Creature2ArcheTypeId(row.creature2_arche_type_id)
+}
+
+/// The id in the creature2TierId column, as the typed id of the Creature2Tier table.
+pub fn creature2_tier_id(row: Creature2) -> Creature2TierId {
+  Creature2TierId(row.creature2_tier_id)
+}
+
+/// The id in the creature2ModelInfoId column, as the typed id of the Creature2ModelInfo table.
+pub fn creature2_model_info_id(row: Creature2) -> Creature2ModelInfoId {
+  Creature2ModelInfoId(row.creature2_model_info_id)
+}
+
+/// The id in the prerequisiteIdVisibility column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_visibility(row: Creature2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_visibility)
+}
+
+/// The id in the spell4IdActivate00 column, as the typed id of the Spell4 table.
+pub fn spell4_id_activate00(row: Creature2) -> Spell4Id {
+  Spell4Id(row.spell4_id_activate00)
+}
+
+/// The id in the spell4IdActivate01 column, as the typed id of the Spell4 table.
+pub fn spell4_id_activate01(row: Creature2) -> Spell4Id {
+  Spell4Id(row.spell4_id_activate01)
+}
+
+/// The id in the spell4IdActivate02 column, as the typed id of the Spell4 table.
+pub fn spell4_id_activate02(row: Creature2) -> Spell4Id {
+  Spell4Id(row.spell4_id_activate02)
+}
+
+/// The id in the spell4IdActivate03 column, as the typed id of the Spell4 table.
+pub fn spell4_id_activate03(row: Creature2) -> Spell4Id {
+  Spell4Id(row.spell4_id_activate03)
+}
+
+/// The id in the prerequisiteIdActivateSpell00 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_activate_spell00(row: Creature2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_activate_spell00)
+}
+
+/// The id in the prerequisiteIdActivateSpell01 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_activate_spell01(row: Creature2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_activate_spell01)
+}
+
+/// The id in the prerequisiteIdActivateSpell02 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_activate_spell02(row: Creature2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_activate_spell02)
+}
+
+/// The id in the prerequisiteIdActivateSpell03 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_activate_spell03(row: Creature2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_activate_spell03)
+}
+
+/// The id in the localizedTextIdActivateSpellText column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_activate_spell_text(
+  row: Creature2,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_activate_spell_text)
+}
+
+/// The id in the spell4VisualGroupIdActivateSpell column, as the typed id of the Spell4VisualGroup table.
+pub fn spell4_visual_group_id_activate_spell(
+  row: Creature2,
+) -> Spell4VisualGroupId {
+  Spell4VisualGroupId(row.spell4_visual_group_id_activate_spell)
+}
+
+/// The id in the prerequisiteIdAnimState column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_anim_state(row: Creature2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_anim_state)
+}
+
+/// The id in the item2IdMTXKey00 column, as the typed id of the Item2 table.
+pub fn item2_id_mtx_key00(row: Creature2) -> Item2Id {
+  Item2Id(row.item2_id_mtx_key00)
+}
+
+/// The id in the item2IdMTXKey01 column, as the typed id of the Item2 table.
+pub fn item2_id_mtx_key01(row: Creature2) -> Item2Id {
+  Item2Id(row.item2_id_mtx_key01)
+}
+
+/// The id in the bindPointId column, as the typed id of the BindPoint table.
+pub fn bind_point_id(row: Creature2) -> BindPointId {
+  BindPointId(row.bind_point_id)
+}
+
+/// The id in the resourceConversionGroupId column, as the typed id of the ResourceConversionGroup table.
+pub fn resource_conversion_group_id(
+  row: Creature2,
+) -> ResourceConversionGroupId {
+  ResourceConversionGroupId(row.resource_conversion_group_id)
+}
+
+/// The id in the taxiNodeId column, as the typed id of the TaxiNode table.
+pub fn taxi_node_id(row: Creature2) -> TaxiNodeId {
+  TaxiNodeId(row.taxi_node_id)
+}
+
+/// The id in the pathScientistExperimentationId column, as the typed id of the PathScientistExperimentation table.
+pub fn path_scientist_experimentation_id(
+  row: Creature2,
+) -> PathScientistExperimentationId {
+  PathScientistExperimentationId(row.path_scientist_experimentation_id)
+}
+
+/// The id in the datacubeId column, as the typed id of the Datacube table.
+pub fn datacube_id(row: Creature2) -> DatacubeId {
+  DatacubeId(row.datacube_id)
+}
+
+/// The id in the datacubeVolumeId column, as the typed id of the DatacubeVolume table.
+pub fn datacube_volume_id(row: Creature2) -> DatacubeVolumeId {
+  DatacubeVolumeId(row.datacube_volume_id)
+}
+
+/// The id in the creature2AffiliationId column, as the typed id of the Creature2Affiliation table.
+pub fn creature2_affiliation_id(row: Creature2) -> Creature2AffiliationId {
+  Creature2AffiliationId(row.creature2_affiliation_id)
+}
+
+/// The id in the soundEventIdAggro column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_aggro(row: Creature2) -> SoundEventId {
+  SoundEventId(row.sound_event_id_aggro)
+}
+
+/// The id in the soundEventIdAware column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_aware(row: Creature2) -> SoundEventId {
+  SoundEventId(row.sound_event_id_aware)
+}
+
+/// The id in the soundSwitchIdModel column, as the typed id of the SoundSwitch table.
+pub fn sound_switch_id_model(row: Creature2) -> SoundSwitchId {
+  SoundSwitchId(row.sound_switch_id_model)
+}
+
+/// The id in the soundCombatLoopId column, as the typed id of the SoundCombatLoop table.
+pub fn sound_combat_loop_id(row: Creature2) -> SoundCombatLoopId {
+  SoundCombatLoopId(row.sound_combat_loop_id)
+}
+
+/// The id in the randomTextLineIdGoodbye00 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_goodbye00(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_goodbye00)
+}
+
+/// The id in the randomTextLineIdGoodbye01 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_goodbye01(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_goodbye01)
+}
+
+/// The id in the randomTextLineIdGoodbye02 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_goodbye02(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_goodbye02)
+}
+
+/// The id in the randomTextLineIdGoodbye03 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_goodbye03(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_goodbye03)
+}
+
+/// The id in the randomTextLineIdGoodbye04 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_goodbye04(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_goodbye04)
+}
+
+/// The id in the randomTextLineIdGoodbye05 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_goodbye05(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_goodbye05)
+}
+
+/// The id in the randomTextLineIdGoodbye06 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_goodbye06(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_goodbye06)
+}
+
+/// The id in the randomTextLineIdGoodbye07 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_goodbye07(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_goodbye07)
+}
+
+/// The id in the randomTextLineIdGoodbye08 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_goodbye08(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_goodbye08)
+}
+
+/// The id in the randomTextLineIdGoodbye09 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_goodbye09(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_goodbye09)
+}
+
+/// The id in the randomTextLineIdHello00 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_hello00(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_hello00)
+}
+
+/// The id in the randomTextLineIdHello01 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_hello01(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_hello01)
+}
+
+/// The id in the randomTextLineIdHello02 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_hello02(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_hello02)
+}
+
+/// The id in the randomTextLineIdHello03 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_hello03(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_hello03)
+}
+
+/// The id in the randomTextLineIdHello04 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_hello04(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_hello04)
+}
+
+/// The id in the randomTextLineIdHello05 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_hello05(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_hello05)
+}
+
+/// The id in the randomTextLineIdHello06 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_hello06(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_hello06)
+}
+
+/// The id in the randomTextLineIdHello07 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_hello07(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_hello07)
+}
+
+/// The id in the randomTextLineIdHello08 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_hello08(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_hello08)
+}
+
+/// The id in the randomTextLineIdHello09 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_hello09(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_hello09)
+}
+
+/// The id in the randomTextLineIdIntro column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_intro(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_intro)
+}
+
+/// The id in the localizedTextIdDefaultGreeting column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_default_greeting(row: Creature2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_default_greeting)
+}
+
+/// The id in the randomTextLineIdReturn00 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_return00(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_return00)
+}
+
+/// The id in the randomTextLineIdReturn01 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_return01(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_return01)
+}
+
+/// The id in the randomTextLineIdReturn02 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_return02(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_return02)
+}
+
+/// The id in the randomTextLineIdReturn03 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_return03(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_return03)
+}
+
+/// The id in the randomTextLineIdReturn04 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_return04(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_return04)
+}
+
+/// The id in the randomTextLineIdReturn05 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_return05(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_return05)
+}
+
+/// The id in the randomTextLineIdReturn06 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_return06(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_return06)
+}
+
+/// The id in the randomTextLineIdReturn07 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_return07(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_return07)
+}
+
+/// The id in the randomTextLineIdReturn08 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_return08(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_return08)
+}
+
+/// The id in the randomTextLineIdReturn09 column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_return09(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_return09)
+}
+
+/// The id in the localizedTextIdReturnGreeting column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_return_greeting(row: Creature2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_return_greeting)
+}
+
+/// The id in the randomTextLineIdCompleted column, as the typed id of the RandomTextLine table.
+pub fn random_text_line_id_completed(row: Creature2) -> RandomTextLineId {
+  RandomTextLineId(row.random_text_line_id_completed)
+}
+
+/// The id in the localizedTextIdCompletedGreeting column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_completed_greeting(row: Creature2) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_completed_greeting)
+}
+
+/// The id in the gossipSetId column, as the typed id of the GossipSet table.
+pub fn gossip_set_id(row: Creature2) -> GossipSetId {
+  GossipSetId(row.gossip_set_id)
+}
+
+/// The id in the spell4VisualGroupIdAttached column, as the typed id of the Spell4VisualGroup table.
+pub fn spell4_visual_group_id_attached(row: Creature2) -> Spell4VisualGroupId {
+  Spell4VisualGroupId(row.spell4_visual_group_id_attached)
+}
+
+/// The id in the genericStringGroupsIdInteractContext column, as the typed id of the GenericStringGroups table.
+pub fn generic_string_groups_id_interact_context(
+  row: Creature2,
+) -> GenericStringGroupsId {
+  GenericStringGroupsId(row.generic_string_groups_id_interact_context)
+}
+
+/// The id in the creature2ActionSetId column, as the typed id of the Creature2ActionSet table.
+pub fn creature2_action_set_id(row: Creature2) -> Creature2ActionSetId {
+  Creature2ActionSetId(row.creature2_action_set_id)
+}
+
+/// The id in the creature2ActionTextId column, as the typed id of the Creature2ActionText table.
+pub fn creature2_action_text_id(row: Creature2) -> Creature2ActionTextId {
+  Creature2ActionTextId(row.creature2_action_text_id)
+}
+
+/// The id in the pathMissionIdSoldier column, as the typed id of the PathMission table.
+pub fn path_mission_id_soldier(row: Creature2) -> PathMissionId {
+  PathMissionId(row.path_mission_id_soldier)
+}
+
+/// The id in the instancePortalId column, as the typed id of the InstancePortal table.
+pub fn instance_portal_id(row: Creature2) -> InstancePortalId {
+  InstancePortalId(row.instance_portal_id)
+}
+
+/// The id in the modelSequenceIdAnimationPriority00 column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_animation_priority00(
+  row: Creature2,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_animation_priority00)
+}
+
+/// The id in the modelSequenceIdAnimationPriority01 column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_animation_priority01(
+  row: Creature2,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_animation_priority01)
+}
+
+/// The id in the modelSequenceIdAnimationPriority02 column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_animation_priority02(
+  row: Creature2,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_animation_priority02)
+}
+
+/// The id in the modelSequenceIdAnimationPriority03 column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_animation_priority03(
+  row: Creature2,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_animation_priority03)
+}
+
+/// The id in the modelSequenceIdAnimationPriority04 column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_animation_priority04(
+  row: Creature2,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_animation_priority04)
+}
+
+/// The id in the prerequisiteIdPriority00 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_priority00(row: Creature2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_priority00)
+}
+
+/// The id in the prerequisiteIdPriority01 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_priority01(row: Creature2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_priority01)
+}
+
+/// The id in the prerequisiteIdPriority02 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_priority02(row: Creature2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_priority02)
+}
+
+/// The id in the prerequisiteIdPriority03 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_priority03(row: Creature2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_priority03)
+}
+
+/// The id in the prerequisiteIdPriority04 column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_priority04(row: Creature2) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_priority04)
+}
+
+/// The id in the archiveArticleIdInteractUnlock column, as the typed id of the ArchiveArticle table.
+pub fn archive_article_id_interact_unlock(row: Creature2) -> ArchiveArticleId {
+  ArchiveArticleId(row.archive_article_id_interact_unlock)
+}
+
+/// The id in the tradeskillHarvestingInfoId column, as the typed id of the TradeskillHarvestingInfo table.
+pub fn tradeskill_harvesting_info_id(
+  row: Creature2,
+) -> TradeskillHarvestingInfoId {
+  TradeskillHarvestingInfoId(row.tradeskill_harvesting_info_id)
+}
+
+/// The id in the creature2ResistId column, as the typed id of the Creature2Resist table.
+pub fn creature2_resist_id(row: Creature2) -> Creature2ResistId {
+  Creature2ResistId(row.creature2_resist_id)
+}
+
+/// The id in the unitVehicleId column, as the typed id of the UnitVehicle table.
+pub fn unit_vehicle_id(row: Creature2) -> UnitVehicleId {
+  UnitVehicleId(row.unit_vehicle_id)
+}
+
+/// The id in the creature2DisplayInfoIdPortraitOverride column, as the typed id of the Creature2DisplayInfo table.
+pub fn creature2_display_info_id_portrait_override(
+  row: Creature2,
+) -> Creature2DisplayInfoId {
+  Creature2DisplayInfoId(row.creature2_display_info_id_portrait_override)
 }
 
 fn row_id(row: Creature2) -> Int {

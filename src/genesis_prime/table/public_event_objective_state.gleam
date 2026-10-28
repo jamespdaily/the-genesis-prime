@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type PublicEventObjectiveStateId, LocalizedTextId,
+  PublicEventObjectiveStateId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -114,14 +119,131 @@ pub fn entry() -> store.Entry {
 /// The row of the PublicEventObjectiveState table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PublicEventObjectiveStateId,
 ) -> Result(PublicEventObjectiveState, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PublicEventObjectiveState table, in id order.
 pub fn all(tables: store.Tables) -> List(PublicEventObjectiveState) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PublicEventObjectiveState) -> PublicEventObjectiveStateId {
+  PublicEventObjectiveStateId(row.id)
+}
+
+/// The id in the localizedTextIdState00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state00(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state00)
+}
+
+/// The id in the localizedTextIdState01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state01(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state01)
+}
+
+/// The id in the localizedTextIdState02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state02(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state02)
+}
+
+/// The id in the localizedTextIdState03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state03(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state03)
+}
+
+/// The id in the localizedTextIdState04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state04(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state04)
+}
+
+/// The id in the localizedTextIdState05 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state05(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state05)
+}
+
+/// The id in the localizedTextIdState06 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state06(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state06)
+}
+
+/// The id in the localizedTextIdState07 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state07(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state07)
+}
+
+/// The id in the localizedTextIdState08 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state08(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state08)
+}
+
+/// The id in the localizedTextIdState09 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state09(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state09)
+}
+
+/// The id in the localizedTextIdState10 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state10(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state10)
+}
+
+/// The id in the localizedTextIdState11 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state11(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state11)
+}
+
+/// The id in the localizedTextIdState12 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state12(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state12)
+}
+
+/// The id in the localizedTextIdState13 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state13(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state13)
+}
+
+/// The id in the localizedTextIdState14 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state14(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state14)
+}
+
+/// The id in the localizedTextIdState15 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_state15(
+  row: PublicEventObjectiveState,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_state15)
 }
 
 fn row_id(row: PublicEventObjectiveState) -> Int {

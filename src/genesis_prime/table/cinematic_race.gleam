@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type CinematicId, type CinematicRaceId, type RaceId, CinematicId,
+  CinematicRaceId, RaceId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -43,14 +48,29 @@ pub fn entry() -> store.Entry {
 /// The row of the CinematicRace table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: CinematicRaceId,
 ) -> Result(CinematicRace, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the CinematicRace table, in id order.
 pub fn all(tables: store.Tables) -> List(CinematicRace) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: CinematicRace) -> CinematicRaceId {
+  CinematicRaceId(row.id)
+}
+
+/// The id in the cinematicId column, as the typed id of the Cinematic table.
+pub fn cinematic_id(row: CinematicRace) -> CinematicId {
+  CinematicId(row.cinematic_id)
+}
+
+/// The id in the raceId column, as the typed id of the Race table.
+pub fn race_id(row: CinematicRace) -> RaceId {
+  RaceId(row.race_id)
 }
 
 fn row_id(row: CinematicRace) -> Int {

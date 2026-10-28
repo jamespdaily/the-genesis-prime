@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type QuestDirectionId, type QuestObjectiveId,
+  type TargetGroupId, LocalizedTextId, QuestDirectionId, QuestObjectiveId,
+  TargetGroupId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -81,14 +87,39 @@ pub fn entry() -> store.Entry {
 /// The row of the QuestObjective table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: QuestObjectiveId,
 ) -> Result(QuestObjective, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the QuestObjective table, in id order.
 pub fn all(tables: store.Tables) -> List(QuestObjective) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: QuestObjective) -> QuestObjectiveId {
+  QuestObjectiveId(row.id)
+}
+
+/// The id in the localizedTextIdFull column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_full(row: QuestObjective) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_full)
+}
+
+/// The id in the localizedTextIdShort column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_short(row: QuestObjective) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_short)
+}
+
+/// The id in the targetGroupIdRewardPane column, as the typed id of the TargetGroup table.
+pub fn target_group_id_reward_pane(row: QuestObjective) -> TargetGroupId {
+  TargetGroupId(row.target_group_id_reward_pane)
+}
+
+/// The id in the questDirectionId column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id(row: QuestObjective) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id)
 }
 
 fn row_id(row: QuestObjective) -> Int {

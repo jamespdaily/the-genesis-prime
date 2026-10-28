@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type CharacterTitleId, type EntitlementId, type LocalizedTextId, type Spell4Id,
+  CharacterTitleId, EntitlementId, LocalizedTextId, Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -58,14 +63,39 @@ pub fn entry() -> store.Entry {
 /// The row of the Entitlement table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: EntitlementId,
 ) -> Result(Entitlement, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Entitlement table, in id order.
 pub fn all(tables: store.Tables) -> List(Entitlement) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Entitlement) -> EntitlementId {
+  EntitlementId(row.id)
+}
+
+/// The id in the spell4IdPersistentBuff column, as the typed id of the Spell4 table.
+pub fn spell4_id_persistent_buff(row: Entitlement) -> Spell4Id {
+  Spell4Id(row.spell4_id_persistent_buff)
+}
+
+/// The id in the characterTitleId column, as the typed id of the CharacterTitle table.
+pub fn character_title_id(row: Entitlement) -> CharacterTitleId {
+  CharacterTitleId(row.character_title_id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: Entitlement) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdDescription column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description(row: Entitlement) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description)
 }
 
 fn row_id(row: Entitlement) -> Int {

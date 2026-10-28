@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type PathEpisodeId, type WorldId, type WorldZoneId,
+  LocalizedTextId, PathEpisodeId, WorldId, WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -50,14 +55,39 @@ pub fn entry() -> store.Entry {
 /// The row of the PathEpisode table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathEpisodeId,
 ) -> Result(PathEpisode, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathEpisode table, in id order.
 pub fn all(tables: store.Tables) -> List(PathEpisode) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathEpisode) -> PathEpisodeId {
+  PathEpisodeId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: PathEpisode) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdSummary column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_summary(row: PathEpisode) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_summary)
+}
+
+/// The id in the worldId column, as the typed id of the World table.
+pub fn world_id(row: PathEpisode) -> WorldId {
+  WorldId(row.world_id)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: PathEpisode) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
 }
 
 fn row_id(row: PathEpisode) -> Int {

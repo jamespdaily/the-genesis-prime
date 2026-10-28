@@ -3,7 +3,15 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type AccountCurrencyTypeId, type Creature2Id, type Item2CategoryId,
+  type Item2FamilyId, type Item2Id, type Item2TypeId, type LootPinataInfoId,
+  type SoundEventId, type VirtualItemId, AccountCurrencyTypeId, Creature2Id,
+  Item2CategoryId, Item2FamilyId, Item2Id, Item2TypeId, LootPinataInfoId,
+  SoundEventId, VirtualItemId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -55,14 +63,59 @@ pub fn entry() -> store.Entry {
 /// The row of the LootPinataInfo table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: LootPinataInfoId,
 ) -> Result(LootPinataInfo, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the LootPinataInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(LootPinataInfo) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: LootPinataInfo) -> LootPinataInfoId {
+  LootPinataInfoId(row.id)
+}
+
+/// The id in the item2Id column, as the typed id of the Item2 table.
+pub fn item2_id(row: LootPinataInfo) -> Item2Id {
+  Item2Id(row.item2_id)
+}
+
+/// The id in the item2TypeId column, as the typed id of the Item2Type table.
+pub fn item2_type_id(row: LootPinataInfo) -> Item2TypeId {
+  Item2TypeId(row.item2_type_id)
+}
+
+/// The id in the item2CategoryId column, as the typed id of the Item2Category table.
+pub fn item2_category_id(row: LootPinataInfo) -> Item2CategoryId {
+  Item2CategoryId(row.item2_category_id)
+}
+
+/// The id in the item2FamilyId column, as the typed id of the Item2Family table.
+pub fn item2_family_id(row: LootPinataInfo) -> Item2FamilyId {
+  Item2FamilyId(row.item2_family_id)
+}
+
+/// The id in the virtualItemId column, as the typed id of the VirtualItem table.
+pub fn virtual_item_id(row: LootPinataInfo) -> VirtualItemId {
+  VirtualItemId(row.virtual_item_id)
+}
+
+/// The id in the accountCurrencyTypeId column, as the typed id of the AccountCurrencyType table.
+pub fn account_currency_type_id(row: LootPinataInfo) -> AccountCurrencyTypeId {
+  AccountCurrencyTypeId(row.account_currency_type_id)
+}
+
+/// The id in the creature2IdChest column, as the typed id of the Creature2 table.
+pub fn creature2_id_chest(row: LootPinataInfo) -> Creature2Id {
+  Creature2Id(row.creature2_id_chest)
+}
+
+/// The id in the soundEventId column, as the typed id of the SoundEvent table.
+pub fn sound_event_id(row: LootPinataInfo) -> SoundEventId {
+  SoundEventId(row.sound_event_id)
 }
 
 fn row_id(row: LootPinataInfo) -> Int {

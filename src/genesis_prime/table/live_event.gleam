@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type CurrencyTypeId, type LiveEventId, type LocalizedTextId,
+  type WorldLocation2Id, CurrencyTypeId, LiveEventId, LocalizedTextId,
+  WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -93,13 +99,58 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the LiveEvent table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(LiveEvent, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: LiveEventId,
+) -> Result(LiveEvent, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the LiveEvent table, in id order.
 pub fn all(tables: store.Tables) -> List(LiveEvent) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: LiveEvent) -> LiveEventId {
+  LiveEventId(row.id)
+}
+
+/// The id in the liveEventIdParent column, as the typed id of the LiveEvent table.
+pub fn live_event_id_parent(row: LiveEvent) -> LiveEventId {
+  LiveEventId(row.live_event_id_parent)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: LiveEvent) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdSummary column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_summary(row: LiveEvent) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_summary)
+}
+
+/// The id in the currencyTypeIdEarned column, as the typed id of the CurrencyType table.
+pub fn currency_type_id_earned(row: LiveEvent) -> CurrencyTypeId {
+  CurrencyTypeId(row.currency_type_id_earned)
+}
+
+/// The id in the localizedTextIdCurrencyEarnedTooltip column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_currency_earned_tooltip(
+  row: LiveEvent,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_currency_earned_tooltip)
+}
+
+/// The id in the worldLocation2IdExile column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_exile(row: LiveEvent) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_exile)
+}
+
+/// The id in the worldLocation2IdDominion column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_dominion(row: LiveEvent) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_dominion)
 }
 
 fn row_id(row: LiveEvent) -> Int {

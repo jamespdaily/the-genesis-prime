@@ -3,7 +3,15 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type HookAssetId, type HookTypeId, type HousingDecorInfoId,
+  type HousingDecorLimitCategoryId, type HousingDecorTypeId,
+  type LocalizedTextId, type PrerequisiteId, type Spell4Id, Creature2Id,
+  HookAssetId, HookTypeId, HousingDecorInfoId, HousingDecorLimitCategoryId,
+  HousingDecorTypeId, LocalizedTextId, PrerequisiteId, Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -86,14 +94,61 @@ pub fn entry() -> store.Entry {
 /// The row of the HousingDecorInfo table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: HousingDecorInfoId,
 ) -> Result(HousingDecorInfo, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the HousingDecorInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(HousingDecorInfo) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: HousingDecorInfo) -> HousingDecorInfoId {
+  HousingDecorInfoId(row.id)
+}
+
+/// The id in the housingDecorTypeId column, as the typed id of the HousingDecorType table.
+pub fn housing_decor_type_id(row: HousingDecorInfo) -> HousingDecorTypeId {
+  HousingDecorTypeId(row.housing_decor_type_id)
+}
+
+/// The id in the hookTypeId column, as the typed id of the HookType table.
+pub fn hook_type_id(row: HousingDecorInfo) -> HookTypeId {
+  HookTypeId(row.hook_type_id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: HousingDecorInfo) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the hookAssetId column, as the typed id of the HookAsset table.
+pub fn hook_asset_id(row: HousingDecorInfo) -> HookAssetId {
+  HookAssetId(row.hook_asset_id)
+}
+
+/// The id in the creature2IdActiveProp column, as the typed id of the Creature2 table.
+pub fn creature2_id_active_prop(row: HousingDecorInfo) -> Creature2Id {
+  Creature2Id(row.creature2_id_active_prop)
+}
+
+/// The id in the prerequisiteIdUnlock column, as the typed id of the Prerequisite table.
+pub fn prerequisite_id_unlock(row: HousingDecorInfo) -> PrerequisiteId {
+  PrerequisiteId(row.prerequisite_id_unlock)
+}
+
+/// The id in the spell4IdInteriorBuff column, as the typed id of the Spell4 table.
+pub fn spell4_id_interior_buff(row: HousingDecorInfo) -> Spell4Id {
+  Spell4Id(row.spell4_id_interior_buff)
+}
+
+/// The id in the housingDecorLimitCategoryId column, as the typed id of the HousingDecorLimitCategory table.
+pub fn housing_decor_limit_category_id(
+  row: HousingDecorInfo,
+) -> HousingDecorLimitCategoryId {
+  HousingDecorLimitCategoryId(row.housing_decor_limit_category_id)
 }
 
 fn row_id(row: HousingDecorInfo) -> Int {

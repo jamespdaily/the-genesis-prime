@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type FinishingMoveDeathVisualId, type ModelSequenceId, type VisualEffectId,
+  FinishingMoveDeathVisualId, ModelSequenceId, VisualEffectId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -75,14 +80,47 @@ pub fn entry() -> store.Entry {
 /// The row of the FinishingMoveDeathVisual table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: FinishingMoveDeathVisualId,
 ) -> Result(FinishingMoveDeathVisual, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the FinishingMoveDeathVisual table, in id order.
 pub fn all(tables: store.Tables) -> List(FinishingMoveDeathVisual) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: FinishingMoveDeathVisual) -> FinishingMoveDeathVisualId {
+  FinishingMoveDeathVisualId(row.id)
+}
+
+/// The id in the modelSequenceIdDeath column, as the typed id of the ModelSequence table.
+pub fn model_sequence_id_death(
+  row: FinishingMoveDeathVisual,
+) -> ModelSequenceId {
+  ModelSequenceId(row.model_sequence_id_death)
+}
+
+/// The id in the visualEffectIdDeath00 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_death00(
+  row: FinishingMoveDeathVisual,
+) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_death00)
+}
+
+/// The id in the visualEffectIdDeath01 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_death01(
+  row: FinishingMoveDeathVisual,
+) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_death01)
+}
+
+/// The id in the visualEffectIdDeath02 column, as the typed id of the VisualEffect table.
+pub fn visual_effect_id_death02(
+  row: FinishingMoveDeathVisual,
+) -> VisualEffectId {
+  VisualEffectId(row.visual_effect_id_death02)
 }
 
 fn row_id(row: FinishingMoveDeathVisual) -> Int {

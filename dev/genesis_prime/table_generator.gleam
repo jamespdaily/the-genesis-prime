@@ -6,16 +6,20 @@
 //// folder named by `GENESIS_TABLE_DIR`. `gleam run -m genesis_prime/table_generator check`
 //// generates into a scratch folder and fails when the committed code differs;
 //// it does nothing where `GENESIS_NO_CLIENT=1`, because there is no client to
-//// read. Both format what they write with `gleam format`.
+//// read. Both format what they write with `gleam format`, and both print the
+//// columns that name an id of no loaded table, which stay `Int`.
 
 import argv
 import envoy
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table_folder
 import genesis_prime/table_generator/difference.{type Difference}
+import genesis_prime/table_generator/id_text
 import genesis_prime/table_generator/module_text
 import genesis_prime/table_generator/naming
+import genesis_prime/table_generator/reference.{type Table, Table}
 import genesis_prime/table_generator/registry_text
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/io
@@ -34,6 +38,8 @@ pub type GenerateError {
   BadTable(file: String, error: module_text.ModuleError)
   /// Two tables have the same module name.
   DuplicateModule(module: String, first: String, second: String)
+  /// A table has the module name of the typed ids.
+  ReservedModule(module: String, file: String)
   /// A generated file could not be written.
   Unwritable(path: String)
   /// `gleam format` failed on the generated files.
@@ -44,56 +50,126 @@ const table_folder = "genesis_prime/table"
 
 const registry_path = "genesis_prime/table.gleam"
 
+/// A table file read: its file name, its header, its module name and its
+/// place among the tables.
+type Named {
+  Named(
+    file: String,
+    description: tbl_file.Description,
+    module: String,
+    table: Table,
+  )
+}
+
+/// A column that names an id of a table, when no loaded table has that name:
+/// the client's table and column names. Its field stays an `Int`.
+pub type IdColumn {
+  IdColumn(table: String, column: String)
+}
+
 /// The generated code as path to text, one entry per `.tbl` file given as file
-/// name without extension and bytes, plus the `genesis_prime/table` module. A
-/// path is relative to the source folder: `genesis_prime/table/creature2.gleam`.
-/// The text is unformatted.
+/// name without extension and bytes, plus the `genesis_prime/table` module and
+/// the typed ids of `genesis_prime/table/id`. A path is relative to the source
+/// folder: `genesis_prime/table/creature2.gleam`. The text is unformatted.
 pub fn generate(
   tables tables: List(#(String, BitArray)),
 ) -> Result(Dict(String, String), GenerateError) {
-  let sorted = list.sort(tables, fn(a, b) { string.compare(a.0, b.0) })
+  use named <- result.try(named_tables(tables))
+  let known = list.map(named, fn(table) { table.table })
   use modules <- result.try(
-    list.try_fold(sorted, [], fn(made, table) {
-      let #(file, bytes) = table
-      use #(module, text) <- result.try(module_of(file, bytes))
-      case
-        list.find(made, fn(other: #(String, String, String)) {
-          other.0 == module
-        })
-      {
-        Ok(#(_, first, _)) ->
-          Error(DuplicateModule(module:, first:, second: file))
-        Error(Nil) -> Ok([#(module, file, text), ..made])
-      }
+    list.try_map(named, fn(table) {
+      module_text.render(
+        file: table.file,
+        description: table.description,
+        tables: known,
+      )
+      |> result.map(fn(text) { #(table.module, text) })
+      |> result.map_error(BadTable(table.file, _))
     }),
   )
-  let modules = list.reverse(modules)
   let registry =
-    registry_text.render(list.map(modules, fn(module) { module.0 }))
+    registry_text.render(list.map(named, fn(table) { table.module }))
   list.map(modules, fn(module) {
-    #(table_folder <> "/" <> module.0 <> ".gleam", module.2)
+    #(table_folder <> "/" <> module.0 <> ".gleam", module.1)
   })
+  |> list.prepend(#(
+    table_folder <> "/" <> id_text.module_name <> ".gleam",
+    id_text.render(known),
+  ))
   |> list.prepend(#(registry_path, registry))
   |> dict.from_list
   |> Ok
 }
 
-fn module_of(
-  file: String,
-  bytes: BitArray,
-) -> Result(#(String, String), GenerateError) {
+/// The columns of the tables that have the word `id` in their names and name
+/// no loaded table's id, in table and column order.
+pub fn unmatched_id_columns(
+  tables tables: List(#(String, BitArray)),
+) -> Result(List(IdColumn), GenerateError) {
+  use named <- result.map(named_tables(tables))
+  let known = list.map(named, fn(table) { table.table })
+  list.flat_map(named, fn(table) {
+    list.drop(table.description.columns, 1)
+    |> list.filter_map(fn(column) {
+      case column.column_type, naming.field_name(column.name) {
+        tbl_file.Integer32, Ok(field) ->
+          case
+            reference.names_an_id(field),
+            reference.referenced_table(column: field, tables: known)
+          {
+            True, Error(Nil) ->
+              Ok(IdColumn(table: table.description.table, column: column.name))
+            _, _ -> Error(Nil)
+          }
+        _, _ -> Error(Nil)
+      }
+    })
+  })
+}
+
+/// Reads each file's header and names its table, in file-name order, refusing
+/// two tables with one module name and a table named as the typed ids' module.
+fn named_tables(
+  tables: List(#(String, BitArray)),
+) -> Result(List(Named), GenerateError) {
+  let sorted = list.sort(tables, fn(a, b) { string.compare(a.0, b.0) })
+  list.try_fold(sorted, [], fn(made, table) {
+    let #(file, bytes) = table
+    use named <- result.try(name_table(file, bytes))
+    use <- bool.guard(
+      when: named.module == id_text.module_name,
+      return: Error(ReservedModule(module: named.module, file:)),
+    )
+    case list.find(made, fn(other: Named) { other.module == named.module }) {
+      Ok(other) ->
+        Error(DuplicateModule(
+          module: named.module,
+          first: other.file,
+          second: file,
+        ))
+      Error(Nil) -> Ok([named, ..made])
+    }
+  })
+  |> result.map(list.reverse)
+}
+
+fn name_table(file: String, bytes: BitArray) -> Result(Named, GenerateError) {
   use description <- result.try(
     tbl_file.describe(bytes) |> result.replace_error(UnreadableTable(file)),
   )
+  let unnamed = fn(error) { BadTable(file, module_text.Unnamed(error)) }
   use module <- result.try(
-    naming.module_name(description.table)
-    |> result.map_error(fn(error) { BadTable(file, module_text.Unnamed(error)) }),
+    naming.module_name(description.table) |> result.map_error(unnamed),
   )
-  use text <- result.try(
-    module_text.render(file:, description:)
-    |> result.map_error(BadTable(file, _)),
+  use type_name <- result.try(
+    naming.type_name(description.table) |> result.map_error(unnamed),
   )
-  Ok(#(module, text))
+  Ok(Named(
+    file:,
+    description:,
+    module:,
+    table: Table(snake: module, type_name:),
+  ))
 }
 
 /// The `.tbl` files in the folder, as file name without extension and bytes.
@@ -248,10 +324,14 @@ pub fn main() -> Nil {
       io.println(
         "generated tables not compared: GENESIS_NO_CLIENT=1, no client",
       )
-    ["check"], _ ->
+    ["check"], _ -> {
       finish(check(tables: table_folder.path(), against: "src"), report_check)
-    ["write"], _ ->
+      report_unmatched(table_folder.path())
+    }
+    ["write"], _ -> {
       finish(write(tables: table_folder.path(), into: "src"), report_write)
+      report_unmatched(table_folder.path())
+    }
     _, _ -> {
       io.println(
         "usage: gleam run -m genesis_prime/table_generator write | check",
@@ -272,6 +352,19 @@ fn finish(
       halt_with(1)
     }
   }
+}
+
+/// Prints the columns that name an id of no loaded table.
+fn report_unmatched(folder: String) -> Nil {
+  finish(result.try(read_tables(folder), unmatched_id_columns), fn(columns) {
+    io.println(
+      int.to_string(list.length(columns))
+      <> " columns name an id of no loaded table and stay Int:",
+    )
+    list.each(columns, fn(column) {
+      io.println("  " <> column.table <> "." <> column.column)
+    })
+  })
 }
 
 fn report_write(_written: Nil) -> Nil {
@@ -301,6 +394,8 @@ fn describe(error: GenerateError) -> String {
     BadTable(file:, error:) -> file <> ".tbl: " <> describe_module(error)
     DuplicateModule(module:, first:, second:) ->
       first <> ".tbl and " <> second <> ".tbl are both the module " <> module
+    ReservedModule(module:, file:) ->
+      file <> ".tbl is the module " <> module <> ", which holds the typed ids"
     Unwritable(path:) -> path <> " could not be written"
     FormatFailed(output:) -> "gleam format failed: " <> output
   }

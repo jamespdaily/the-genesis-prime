@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Creature2Id, type PathExplorerDoorEntranceId, type PathExplorerDoorId,
+  type WorldLocation2Id, Creature2Id, PathExplorerDoorEntranceId,
+  PathExplorerDoorId, WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -61,14 +67,43 @@ pub fn entry() -> store.Entry {
 /// The row of the PathExplorerDoorEntrance table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathExplorerDoorEntranceId,
 ) -> Result(PathExplorerDoorEntrance, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathExplorerDoorEntrance table, in id order.
 pub fn all(tables: store.Tables) -> List(PathExplorerDoorEntrance) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathExplorerDoorEntrance) -> PathExplorerDoorEntranceId {
+  PathExplorerDoorEntranceId(row.id)
+}
+
+/// The id in the creature2IdSurface column, as the typed id of the Creature2 table.
+pub fn creature2_id_surface(row: PathExplorerDoorEntrance) -> Creature2Id {
+  Creature2Id(row.creature2_id_surface)
+}
+
+/// The id in the creature2IdMicro column, as the typed id of the Creature2 table.
+pub fn creature2_id_micro(row: PathExplorerDoorEntrance) -> Creature2Id {
+  Creature2Id(row.creature2_id_micro)
+}
+
+/// The id in the pathExplorerDoorId column, as the typed id of the PathExplorerDoor table.
+pub fn path_explorer_door_id(
+  row: PathExplorerDoorEntrance,
+) -> PathExplorerDoorId {
+  PathExplorerDoorId(row.path_explorer_door_id)
+}
+
+/// The id in the worldLocation2IdSurfaceRevealed column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id_surface_revealed(
+  row: PathExplorerDoorEntrance,
+) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id_surface_revealed)
 }
 
 fn row_id(row: PathExplorerDoorEntrance) -> Int {

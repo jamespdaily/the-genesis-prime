@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type CharacterCreationArmorSetId, type ClassId, type ItemDisplayId,
+  CharacterCreationArmorSetId, ClassId, ItemDisplayId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -65,14 +70,84 @@ pub fn entry() -> store.Entry {
 /// The row of the CharacterCreationArmorSet table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: CharacterCreationArmorSetId,
 ) -> Result(CharacterCreationArmorSet, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the CharacterCreationArmorSet table, in id order.
 pub fn all(tables: store.Tables) -> List(CharacterCreationArmorSet) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: CharacterCreationArmorSet) -> CharacterCreationArmorSetId {
+  CharacterCreationArmorSetId(row.id)
+}
+
+/// The id in the classId column, as the typed id of the Class table.
+pub fn class_id(row: CharacterCreationArmorSet) -> ClassId {
+  ClassId(row.class_id)
+}
+
+/// The id in the itemDisplayId00 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id00(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id00)
+}
+
+/// The id in the itemDisplayId01 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id01(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id01)
+}
+
+/// The id in the itemDisplayId02 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id02(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id02)
+}
+
+/// The id in the itemDisplayId03 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id03(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id03)
+}
+
+/// The id in the itemDisplayId04 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id04(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id04)
+}
+
+/// The id in the itemDisplayId05 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id05(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id05)
+}
+
+/// The id in the itemDisplayId06 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id06(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id06)
+}
+
+/// The id in the itemDisplayId07 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id07(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id07)
+}
+
+/// The id in the itemDisplayId08 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id08(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id08)
+}
+
+/// The id in the itemDisplayId09 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id09(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id09)
+}
+
+/// The id in the itemDisplayId10 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id10(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id10)
+}
+
+/// The id in the itemDisplayId11 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id11(row: CharacterCreationArmorSet) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id11)
 }
 
 fn row_id(row: CharacterCreationArmorSet) -> Int {

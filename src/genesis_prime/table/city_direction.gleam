@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type CityDirectionId, type LocalizedTextId, type WorldLocation2Id,
+  type WorldZoneId, CityDirectionId, LocalizedTextId, WorldLocation2Id,
+  WorldZoneId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -66,14 +72,49 @@ pub fn entry() -> store.Entry {
 /// The row of the CityDirection table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: CityDirectionId,
 ) -> Result(CityDirection, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the CityDirection table, in id order.
 pub fn all(tables: store.Tables) -> List(CityDirection) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: CityDirection) -> CityDirectionId {
+  CityDirectionId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: CityDirection) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the worldZoneId column, as the typed id of the WorldZone table.
+pub fn world_zone_id(row: CityDirection) -> WorldZoneId {
+  WorldZoneId(row.world_zone_id)
+}
+
+/// The id in the worldLocation2Id00 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id00(row: CityDirection) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id00)
+}
+
+/// The id in the worldLocation2Id01 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id01(row: CityDirection) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id01)
+}
+
+/// The id in the worldLocation2Id02 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id02(row: CityDirection) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id02)
+}
+
+/// The id in the worldLocation2Id03 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id03(row: CityDirection) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id03)
 }
 
 fn row_id(row: CityDirection) -> Int {

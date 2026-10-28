@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type CharacterTitleId, type LocalizedTextId, type PathSettlerMayorId,
+  type QuestDirectionId, type WorldLocation2Id, CharacterTitleId,
+  LocalizedTextId, PathSettlerMayorId, QuestDirectionId, WorldLocation2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -159,14 +165,144 @@ pub fn entry() -> store.Entry {
 /// The row of the PathSettlerMayor table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: PathSettlerMayorId,
 ) -> Result(PathSettlerMayor, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the PathSettlerMayor table, in id order.
 pub fn all(tables: store.Tables) -> List(PathSettlerMayor) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: PathSettlerMayor) -> PathSettlerMayorId {
+  PathSettlerMayorId(row.id)
+}
+
+/// The id in the localizedTextId00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id00(row: PathSettlerMayor) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id00)
+}
+
+/// The id in the localizedTextId01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id01(row: PathSettlerMayor) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id01)
+}
+
+/// The id in the localizedTextId02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id02(row: PathSettlerMayor) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id02)
+}
+
+/// The id in the localizedTextId03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id03(row: PathSettlerMayor) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id03)
+}
+
+/// The id in the localizedTextId04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id04(row: PathSettlerMayor) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id04)
+}
+
+/// The id in the localizedTextId05 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id05(row: PathSettlerMayor) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id05)
+}
+
+/// The id in the localizedTextId06 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id06(row: PathSettlerMayor) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id06)
+}
+
+/// The id in the localizedTextId07 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id07(row: PathSettlerMayor) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id07)
+}
+
+/// The id in the worldLocation2Id00 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id00(row: PathSettlerMayor) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id00)
+}
+
+/// The id in the worldLocation2Id01 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id01(row: PathSettlerMayor) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id01)
+}
+
+/// The id in the worldLocation2Id02 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id02(row: PathSettlerMayor) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id02)
+}
+
+/// The id in the worldLocation2Id03 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id03(row: PathSettlerMayor) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id03)
+}
+
+/// The id in the worldLocation2Id04 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id04(row: PathSettlerMayor) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id04)
+}
+
+/// The id in the worldLocation2Id05 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id05(row: PathSettlerMayor) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id05)
+}
+
+/// The id in the worldLocation2Id06 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id06(row: PathSettlerMayor) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id06)
+}
+
+/// The id in the worldLocation2Id07 column, as the typed id of the WorldLocation2 table.
+pub fn world_location2_id07(row: PathSettlerMayor) -> WorldLocation2Id {
+  WorldLocation2Id(row.world_location2_id07)
+}
+
+/// The id in the questDirectionId00 column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id00(row: PathSettlerMayor) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id00)
+}
+
+/// The id in the questDirectionId01 column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id01(row: PathSettlerMayor) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id01)
+}
+
+/// The id in the questDirectionId02 column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id02(row: PathSettlerMayor) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id02)
+}
+
+/// The id in the questDirectionId03 column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id03(row: PathSettlerMayor) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id03)
+}
+
+/// The id in the questDirectionId04 column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id04(row: PathSettlerMayor) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id04)
+}
+
+/// The id in the questDirectionId05 column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id05(row: PathSettlerMayor) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id05)
+}
+
+/// The id in the questDirectionId06 column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id06(row: PathSettlerMayor) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id06)
+}
+
+/// The id in the questDirectionId07 column, as the typed id of the QuestDirection table.
+pub fn quest_direction_id07(row: PathSettlerMayor) -> QuestDirectionId {
+  QuestDirectionId(row.quest_direction_id07)
+}
+
+/// The id in the characterTitleIdReward column, as the typed id of the CharacterTitle table.
+pub fn character_title_id_reward(row: PathSettlerMayor) -> CharacterTitleId {
+  CharacterTitleId(row.character_title_id_reward)
 }
 
 fn row_id(row: PathSettlerMayor) -> Int {

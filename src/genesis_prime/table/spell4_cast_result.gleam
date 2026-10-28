@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type SoundEventId, type Spell4CastResultId,
+  LocalizedTextId, SoundEventId, Spell4CastResultId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -49,14 +54,31 @@ pub fn entry() -> store.Entry {
 /// The row of the Spell4CastResult table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Spell4CastResultId,
 ) -> Result(Spell4CastResult, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Spell4CastResult table, in id order.
 pub fn all(tables: store.Tables) -> List(Spell4CastResult) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Spell4CastResult) -> Spell4CastResultId {
+  Spell4CastResultId(row.id)
+}
+
+/// The id in the localizedTextIdDisplayText column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_display_text(
+  row: Spell4CastResult,
+) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_display_text)
+}
+
+/// The id in the soundEventId column, as the typed id of the SoundEvent table.
+pub fn sound_event_id(row: Spell4CastResult) -> SoundEventId {
+  SoundEventId(row.sound_event_id)
 }
 
 fn row_id(row: Spell4CastResult) -> Int {

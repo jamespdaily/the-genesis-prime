@@ -3,7 +3,11 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type TaxiNodeId, type TaxiRouteId, TaxiNodeId, TaxiRouteId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -41,13 +45,31 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the TaxiRoute table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(TaxiRoute, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: TaxiRouteId,
+) -> Result(TaxiRoute, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the TaxiRoute table, in id order.
 pub fn all(tables: store.Tables) -> List(TaxiRoute) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: TaxiRoute) -> TaxiRouteId {
+  TaxiRouteId(row.id)
+}
+
+/// The id in the taxiNodeIdSource column, as the typed id of the TaxiNode table.
+pub fn taxi_node_id_source(row: TaxiRoute) -> TaxiNodeId {
+  TaxiNodeId(row.taxi_node_id_source)
+}
+
+/// The id in the taxiNodeIdDestination column, as the typed id of the TaxiNode table.
+pub fn taxi_node_id_destination(row: TaxiRoute) -> TaxiNodeId {
+  TaxiNodeId(row.taxi_node_id_destination)
 }
 
 fn row_id(row: TaxiRoute) -> Int {

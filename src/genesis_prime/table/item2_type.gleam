@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Item2CategoryId, type Item2TypeId, type ItemSlotId, type LocalizedTextId,
+  type SoundEventId, Item2CategoryId, Item2TypeId, ItemSlotId, LocalizedTextId,
+  SoundEventId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -57,13 +63,46 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Item2Type table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Item2Type, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: Item2TypeId,
+) -> Result(Item2Type, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Item2Type table, in id order.
 pub fn all(tables: store.Tables) -> List(Item2Type) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Item2Type) -> Item2TypeId {
+  Item2TypeId(row.id)
+}
+
+/// The id in the localizedTextId column, as the typed id of the LocalizedText table.
+pub fn localized_text_id(row: Item2Type) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id)
+}
+
+/// The id in the itemSlotId column, as the typed id of the ItemSlot table.
+pub fn item_slot_id(row: Item2Type) -> ItemSlotId {
+  ItemSlotId(row.item_slot_id)
+}
+
+/// The id in the soundEventIdLoot column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_loot(row: Item2Type) -> SoundEventId {
+  SoundEventId(row.sound_event_id_loot)
+}
+
+/// The id in the soundEventIdEquip column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_equip(row: Item2Type) -> SoundEventId {
+  SoundEventId(row.sound_event_id_equip)
+}
+
+/// The id in the Item2CategoryId column, as the typed id of the Item2Category table.
+pub fn item2_category_id(row: Item2Type) -> Item2CategoryId {
+  Item2CategoryId(row.item2_category_id)
 }
 
 fn row_id(row: Item2Type) -> Int {

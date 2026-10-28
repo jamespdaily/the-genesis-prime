@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type HousingContributionInfoId, type HousingContributionTypeId, type Item2Id,
+  HousingContributionInfoId, HousingContributionTypeId, Item2Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -79,14 +84,51 @@ pub fn entry() -> store.Entry {
 /// The row of the HousingContributionInfo table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: HousingContributionInfoId,
 ) -> Result(HousingContributionInfo, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the HousingContributionInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(HousingContributionInfo) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: HousingContributionInfo) -> HousingContributionInfoId {
+  HousingContributionInfoId(row.id)
+}
+
+/// The id in the housingContributionTypeId column, as the typed id of the HousingContributionType table.
+pub fn housing_contribution_type_id(
+  row: HousingContributionInfo,
+) -> HousingContributionTypeId {
+  HousingContributionTypeId(row.housing_contribution_type_id)
+}
+
+/// The id in the item2IdTier00 column, as the typed id of the Item2 table.
+pub fn item2_id_tier00(row: HousingContributionInfo) -> Item2Id {
+  Item2Id(row.item2_id_tier00)
+}
+
+/// The id in the item2IdTier01 column, as the typed id of the Item2 table.
+pub fn item2_id_tier01(row: HousingContributionInfo) -> Item2Id {
+  Item2Id(row.item2_id_tier01)
+}
+
+/// The id in the item2IdTier02 column, as the typed id of the Item2 table.
+pub fn item2_id_tier02(row: HousingContributionInfo) -> Item2Id {
+  Item2Id(row.item2_id_tier02)
+}
+
+/// The id in the item2IdTier03 column, as the typed id of the Item2 table.
+pub fn item2_id_tier03(row: HousingContributionInfo) -> Item2Id {
+  Item2Id(row.item2_id_tier03)
+}
+
+/// The id in the item2IdTier04 column, as the typed id of the Item2 table.
+pub fn item2_id_tier04(row: HousingContributionInfo) -> Item2Id {
+  Item2Id(row.item2_id_tier04)
 }
 
 fn row_id(row: HousingContributionInfo) -> Int {

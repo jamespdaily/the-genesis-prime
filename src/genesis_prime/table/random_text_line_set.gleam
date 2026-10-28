@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type LocalizedTextId, type RandomTextLineSetId, LocalizedTextId,
+  RandomTextLineSetId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -259,14 +264,94 @@ pub fn entry() -> store.Entry {
 /// The row of the RandomTextLineSet table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: RandomTextLineSetId,
 ) -> Result(RandomTextLineSet, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the RandomTextLineSet table, in id order.
 pub fn all(tables: store.Tables) -> List(RandomTextLineSet) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: RandomTextLineSet) -> RandomTextLineSetId {
+  RandomTextLineSetId(row.id)
+}
+
+/// The id in the localizedTextId00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id00(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id00)
+}
+
+/// The id in the localizedTextId01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id01(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id01)
+}
+
+/// The id in the localizedTextId02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id02(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id02)
+}
+
+/// The id in the localizedTextId03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id03(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id03)
+}
+
+/// The id in the localizedTextId04 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id04(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id04)
+}
+
+/// The id in the localizedTextId05 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id05(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id05)
+}
+
+/// The id in the localizedTextId06 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id06(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id06)
+}
+
+/// The id in the localizedTextId07 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id07(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id07)
+}
+
+/// The id in the localizedTextId08 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id08(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id08)
+}
+
+/// The id in the localizedTextId09 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id09(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id09)
+}
+
+/// The id in the localizedTextId10 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id10(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id10)
+}
+
+/// The id in the localizedTextId11 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id11(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id11)
+}
+
+/// The id in the localizedTextId12 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id12(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id12)
+}
+
+/// The id in the localizedTextId13 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id13(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id13)
+}
+
+/// The id in the localizedTextId14 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id14(row: RandomTextLineSet) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id14)
 }
 
 fn row_id(row: RandomTextLineSet) -> Int {

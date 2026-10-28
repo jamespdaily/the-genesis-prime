@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type SoundEventId, type SoundReplaceDescriptionId, type SoundReplaceId,
+  SoundEventId, SoundReplaceDescriptionId, SoundReplaceId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -43,14 +48,36 @@ pub fn entry() -> store.Entry {
 /// The row of the SoundReplace table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: SoundReplaceId,
 ) -> Result(SoundReplace, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the SoundReplace table, in id order.
 pub fn all(tables: store.Tables) -> List(SoundReplace) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: SoundReplace) -> SoundReplaceId {
+  SoundReplaceId(row.id)
+}
+
+/// The id in the soundReplaceDescriptionId column, as the typed id of the SoundReplaceDescription table.
+pub fn sound_replace_description_id(
+  row: SoundReplace,
+) -> SoundReplaceDescriptionId {
+  SoundReplaceDescriptionId(row.sound_replace_description_id)
+}
+
+/// The id in the soundEventIdOld column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_old(row: SoundReplace) -> SoundEventId {
+  SoundEventId(row.sound_event_id_old)
+}
+
+/// The id in the soundEventIdNew column, as the typed id of the SoundEvent table.
+pub fn sound_event_id_new(row: SoundReplace) -> SoundEventId {
+  SoundEventId(row.sound_event_id_new)
 }
 
 fn row_id(row: SoundReplace) -> Int {

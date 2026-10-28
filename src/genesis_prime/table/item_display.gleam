@@ -3,7 +3,14 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Item2TypeId, type ItemColorSetId, type ItemDisplayId,
+  type ModelAttachmentId, type ModelMeshId, type ModelPoseId,
+  type SoundReplaceDescriptionId, Item2TypeId, ItemColorSetId, ItemDisplayId,
+  ModelAttachmentId, ModelMeshId, ModelPoseId, SoundReplaceDescriptionId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -154,14 +161,66 @@ pub fn entry() -> store.Entry {
 /// The row of the ItemDisplay table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: ItemDisplayId,
 ) -> Result(ItemDisplay, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the ItemDisplay table, in id order.
 pub fn all(tables: store.Tables) -> List(ItemDisplay) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: ItemDisplay) -> ItemDisplayId {
+  ItemDisplayId(row.id)
+}
+
+/// The id in the item2TypeId column, as the typed id of the Item2Type table.
+pub fn item2_type_id(row: ItemDisplay) -> Item2TypeId {
+  Item2TypeId(row.item2_type_id)
+}
+
+/// The id in the modelAttachmentIdAttached column, as the typed id of the ModelAttachment table.
+pub fn model_attachment_id_attached(row: ItemDisplay) -> ModelAttachmentId {
+  ModelAttachmentId(row.model_attachment_id_attached)
+}
+
+/// The id in the modelMeshId00 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id00(row: ItemDisplay) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id00)
+}
+
+/// The id in the modelMeshId01 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id01(row: ItemDisplay) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id01)
+}
+
+/// The id in the modelMeshId02 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id02(row: ItemDisplay) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id02)
+}
+
+/// The id in the modelMeshId03 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id03(row: ItemDisplay) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id03)
+}
+
+/// The id in the soundReplaceDescriptionId column, as the typed id of the SoundReplaceDescription table.
+pub fn sound_replace_description_id(
+  row: ItemDisplay,
+) -> SoundReplaceDescriptionId {
+  SoundReplaceDescriptionId(row.sound_replace_description_id)
+}
+
+/// The id in the itemColorSetId column, as the typed id of the ItemColorSet table.
+pub fn item_color_set_id(row: ItemDisplay) -> ItemColorSetId {
+  ItemColorSetId(row.item_color_set_id)
+}
+
+/// The id in the modelPoseId column, as the typed id of the ModelPose table.
+pub fn model_pose_id(row: ItemDisplay) -> ModelPoseId {
+  ModelPoseId(row.model_pose_id)
 }
 
 fn row_id(row: ItemDisplay) -> Int {

@@ -3,7 +3,12 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type AchievementId, type GuildPerkId, type LocalizedTextId, type Spell4Id,
+  AchievementId, GuildPerkId, LocalizedTextId, Spell4Id,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -79,13 +84,56 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the GuildPerk table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(GuildPerk, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: GuildPerkId,
+) -> Result(GuildPerk, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the GuildPerk table, in id order.
 pub fn all(tables: store.Tables) -> List(GuildPerk) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: GuildPerk) -> GuildPerkId {
+  GuildPerkId(row.id)
+}
+
+/// The id in the localizedTextIdTitle column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_title(row: GuildPerk) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_title)
+}
+
+/// The id in the localizedTextIdDescription column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description(row: GuildPerk) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description)
+}
+
+/// The id in the spell4IdActivate column, as the typed id of the Spell4 table.
+pub fn spell4_id_activate(row: GuildPerk) -> Spell4Id {
+  Spell4Id(row.spell4_id_activate)
+}
+
+/// The id in the guildPerkIdRequired00 column, as the typed id of the GuildPerk table.
+pub fn guild_perk_id_required00(row: GuildPerk) -> GuildPerkId {
+  GuildPerkId(row.guild_perk_id_required00)
+}
+
+/// The id in the guildPerkIdRequired01 column, as the typed id of the GuildPerk table.
+pub fn guild_perk_id_required01(row: GuildPerk) -> GuildPerkId {
+  GuildPerkId(row.guild_perk_id_required01)
+}
+
+/// The id in the guildPerkIdRequired02 column, as the typed id of the GuildPerk table.
+pub fn guild_perk_id_required02(row: GuildPerk) -> GuildPerkId {
+  GuildPerkId(row.guild_perk_id_required02)
+}
+
+/// The id in the achievementIdRequired column, as the typed id of the Achievement table.
+pub fn achievement_id_required(row: GuildPerk) -> AchievementId {
+  AchievementId(row.achievement_id_required)
 }
 
 fn row_id(row: GuildPerk) -> Int {

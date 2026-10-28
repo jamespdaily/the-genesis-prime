@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type AchievementCategoryId, type LocalizedTextId, type TradeskillId,
+  type TutorialId, AchievementCategoryId, LocalizedTextId, TradeskillId,
+  TutorialId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 
@@ -73,13 +79,61 @@ pub fn entry() -> store.Entry {
 }
 
 /// The row of the Tradeskill table with the id, or an error when it has none.
-pub fn get(tables tables: store.Tables, id id: Int) -> Result(Tradeskill, Nil) {
-  store.row(tables, schema.table, id)
+pub fn get(
+  tables tables: store.Tables,
+  id id: TradeskillId,
+) -> Result(Tradeskill, Nil) {
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Tradeskill table, in id order.
 pub fn all(tables: store.Tables) -> List(Tradeskill) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Tradeskill) -> TradeskillId {
+  TradeskillId(row.id)
+}
+
+/// The id in the localizedTextIdName column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_name(row: Tradeskill) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_name)
+}
+
+/// The id in the localizedTextIdDescription column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_description(row: Tradeskill) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_description)
+}
+
+/// The id in the tutorialId column, as the typed id of the Tutorial table.
+pub fn tutorial_id(row: Tradeskill) -> TutorialId {
+  TutorialId(row.tutorial_id)
+}
+
+/// The id in the achievementCategoryId column, as the typed id of the AchievementCategory table.
+pub fn achievement_category_id(row: Tradeskill) -> AchievementCategoryId {
+  AchievementCategoryId(row.achievement_category_id)
+}
+
+/// The id in the localizedTextIdAxisName00 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_axis_name00(row: Tradeskill) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_axis_name00)
+}
+
+/// The id in the localizedTextIdAxisName01 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_axis_name01(row: Tradeskill) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_axis_name01)
+}
+
+/// The id in the localizedTextIdAxisName02 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_axis_name02(row: Tradeskill) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_axis_name02)
+}
+
+/// The id in the localizedTextIdAxisName03 column, as the typed id of the LocalizedText table.
+pub fn localized_text_id_axis_name03(row: Tradeskill) -> LocalizedTextId {
+  LocalizedTextId(row.localized_text_id_axis_name03)
 }
 
 fn row_id(row: Tradeskill) -> Int {

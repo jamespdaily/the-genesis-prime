@@ -3,7 +3,13 @@
 //// of its records. The layout is the client's (game_table.file, game_table.schema
 //// and game_table.column_type in the fact file); the table loads only when its
 //// file's header equals `schema`.
+//// Rows keep plain `Int` ids: typed ids in the client's 26,362,088 id cells would add about 603 MB (measured); `get` and the readers give the typed ids of `genesis_prime/table/id`.
 
+import genesis_prime/table/id.{
+  type Creature2DisplayInfoId, type ItemDisplayId, type MaterialDataId,
+  type ModelMeshId, type RaceId, Creature2DisplayInfoId, ItemDisplayId,
+  MaterialDataId, ModelMeshId, RaceId,
+}
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import gleam/result
@@ -225,14 +231,256 @@ pub fn entry() -> store.Entry {
 /// The row of the Creature2DisplayInfo table with the id, or an error when it has none.
 pub fn get(
   tables tables: store.Tables,
-  id id: Int,
+  id id: Creature2DisplayInfoId,
 ) -> Result(Creature2DisplayInfo, Nil) {
-  store.row(tables, schema.table, id)
+  store.row(tables, schema.table, id.value)
 }
 
 /// Every row of the Creature2DisplayInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(Creature2DisplayInfo) {
   store.rows(tables, schema.table)
+}
+
+/// The row's own id, as the typed id of its table.
+pub fn id(row: Creature2DisplayInfo) -> Creature2DisplayInfoId {
+  Creature2DisplayInfoId(row.id)
+}
+
+/// The id in the materialDataIdSkinColor0 column, as the typed id of the MaterialData table.
+pub fn material_data_id_skin_color0(
+  row: Creature2DisplayInfo,
+) -> MaterialDataId {
+  MaterialDataId(row.material_data_id_skin_color0)
+}
+
+/// The id in the materialDataIdSkinColor1 column, as the typed id of the MaterialData table.
+pub fn material_data_id_skin_color1(
+  row: Creature2DisplayInfo,
+) -> MaterialDataId {
+  MaterialDataId(row.material_data_id_skin_color1)
+}
+
+/// The id in the materialDataIdWeaponColor0 column, as the typed id of the MaterialData table.
+pub fn material_data_id_weapon_color0(
+  row: Creature2DisplayInfo,
+) -> MaterialDataId {
+  MaterialDataId(row.material_data_id_weapon_color0)
+}
+
+/// The id in the materialDataIdWeaponColor1 column, as the typed id of the MaterialData table.
+pub fn material_data_id_weapon_color1(
+  row: Creature2DisplayInfo,
+) -> MaterialDataId {
+  MaterialDataId(row.material_data_id_weapon_color1)
+}
+
+/// The id in the materialDataIdArmorColor0 column, as the typed id of the MaterialData table.
+pub fn material_data_id_armor_color0(
+  row: Creature2DisplayInfo,
+) -> MaterialDataId {
+  MaterialDataId(row.material_data_id_armor_color0)
+}
+
+/// The id in the materialDataIdArmorColor1 column, as the typed id of the MaterialData table.
+pub fn material_data_id_armor_color1(
+  row: Creature2DisplayInfo,
+) -> MaterialDataId {
+  MaterialDataId(row.material_data_id_armor_color1)
+}
+
+/// The id in the materialDataIdDefault0 column, as the typed id of the MaterialData table.
+pub fn material_data_id_default0(row: Creature2DisplayInfo) -> MaterialDataId {
+  MaterialDataId(row.material_data_id_default0)
+}
+
+/// The id in the materialDataIdDefault1 column, as the typed id of the MaterialData table.
+pub fn material_data_id_default1(row: Creature2DisplayInfo) -> MaterialDataId {
+  MaterialDataId(row.material_data_id_default1)
+}
+
+/// The id in the raceId column, as the typed id of the Race table.
+pub fn race_id(row: Creature2DisplayInfo) -> RaceId {
+  RaceId(row.race_id)
+}
+
+/// The id in the itemDisplayId00 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id00(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id00)
+}
+
+/// The id in the itemDisplayId01 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id01(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id01)
+}
+
+/// The id in the itemDisplayId02 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id02(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id02)
+}
+
+/// The id in the itemDisplayId03 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id03(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id03)
+}
+
+/// The id in the itemDisplayId04 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id04(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id04)
+}
+
+/// The id in the itemDisplayId05 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id05(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id05)
+}
+
+/// The id in the itemDisplayId06 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id06(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id06)
+}
+
+/// The id in the itemDisplayId07 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id07(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id07)
+}
+
+/// The id in the itemDisplayId08 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id08(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id08)
+}
+
+/// The id in the itemDisplayId09 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id09(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id09)
+}
+
+/// The id in the itemDisplayId10 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id10(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id10)
+}
+
+/// The id in the itemDisplayId11 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id11(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id11)
+}
+
+/// The id in the itemDisplayId12 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id12(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id12)
+}
+
+/// The id in the itemDisplayId13 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id13(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id13)
+}
+
+/// The id in the itemDisplayId14 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id14(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id14)
+}
+
+/// The id in the itemDisplayId15 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id15(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id15)
+}
+
+/// The id in the itemDisplayId16 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id16(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id16)
+}
+
+/// The id in the itemDisplayId17 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id17(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id17)
+}
+
+/// The id in the itemDisplayId18 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id18(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id18)
+}
+
+/// The id in the itemDisplayId19 column, as the typed id of the ItemDisplay table.
+pub fn item_display_id19(row: Creature2DisplayInfo) -> ItemDisplayId {
+  ItemDisplayId(row.item_display_id19)
+}
+
+/// The id in the modelMeshId00 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id00(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id00)
+}
+
+/// The id in the modelMeshId01 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id01(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id01)
+}
+
+/// The id in the modelMeshId02 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id02(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id02)
+}
+
+/// The id in the modelMeshId03 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id03(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id03)
+}
+
+/// The id in the modelMeshId04 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id04(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id04)
+}
+
+/// The id in the modelMeshId05 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id05(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id05)
+}
+
+/// The id in the modelMeshId06 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id06(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id06)
+}
+
+/// The id in the modelMeshId07 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id07(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id07)
+}
+
+/// The id in the modelMeshId08 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id08(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id08)
+}
+
+/// The id in the modelMeshId09 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id09(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id09)
+}
+
+/// The id in the modelMeshId10 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id10(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id10)
+}
+
+/// The id in the modelMeshId11 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id11(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id11)
+}
+
+/// The id in the modelMeshId12 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id12(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id12)
+}
+
+/// The id in the modelMeshId13 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id13(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id13)
+}
+
+/// The id in the modelMeshId14 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id14(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id14)
+}
+
+/// The id in the modelMeshId15 column, as the typed id of the ModelMesh table.
+pub fn model_mesh_id15(row: Creature2DisplayInfo) -> ModelMeshId {
+  ModelMeshId(row.model_mesh_id15)
 }
 
 fn row_id(row: Creature2DisplayInfo) -> Int {
