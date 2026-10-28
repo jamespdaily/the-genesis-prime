@@ -1,6 +1,7 @@
 //// What the replay tests of the connection rules share: a recording read and
 //// replayed through its rule with no socket, process or database.
 
+import fresh_node
 import genesis_prime/client_connection.{type Answer, type Request}
 import genesis_prime/rule_recording.{End, Header}
 import genesis_prime/rule_types
@@ -41,4 +42,13 @@ pub fn replayed(
     )
     as "every recorded step is the step the rule gives again"
   #(inputs, count)
+}
+
+/// Runs the replay test of a test module, given as the module's name and the
+/// test function's name, in a fresh node, where nothing has loaded the modules
+/// whose names the recording's terms hold, and fails unless it passes there.
+pub fn replays_in_a_fresh_node(replay_test: #(String, String)) -> Nil {
+  let #(module, function) = replay_test
+  assert fresh_node.run(module:, function:, timeout_ms: 50_000) == Ok(Nil)
+    as { function <> " passes in a fresh node, with nothing loaded before it" }
 }

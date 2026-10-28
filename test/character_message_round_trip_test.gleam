@@ -5,7 +5,6 @@
 //// is as wide as the schema's, and a list with no count of its own is as long
 //// as the list that counts it.
 
-import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{
   type CharacterListEntry, CharacterListEntry,
@@ -35,48 +34,8 @@ import genesis_prime/message/unit_position_command.{
 }
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
-import gleam/int
 import message_support
 import owned_test
-
-const cases = 1000
-
-fn round_trips(
-  name name: String,
-  seed seed: Int,
-  draw draw: fn(Int) -> #(a, Int),
-  encode encode: fn(a) -> Result(BitArray, EncodeError),
-  decode decode: fn(BitArray) -> Result(a, DecodeError),
-) -> Nil {
-  let checked =
-    int.range(from: 0, to: cases, with: #(seed, 0), run: fn(state, number) {
-      let #(random, checked) = state
-      let #(message, random) = draw(random)
-      let assert Ok(bytes) = encode(message)
-        as {
-          name
-          <> " case "
-          <> int.to_string(number)
-          <> ": every field is within its width, so the message encodes"
-        }
-      assert decode(bytes) == Ok(message)
-        as {
-          name
-          <> " case "
-          <> int.to_string(number)
-          <> ": the bytes decode to the message encoded"
-        }
-      assert encode(message) == Ok(bytes)
-        as {
-          name
-          <> " case "
-          <> int.to_string(number)
-          <> ": encoding is repeatable"
-        }
-      #(random, checked + 1)
-    })
-  assert checked.1 == cases as "every generated case was checked"
-}
 
 fn unsigned_list(
   state state: Int,
@@ -206,7 +165,7 @@ fn character_list_entry(state: Int) -> #(CharacterListEntry, Int) {
 
 pub fn character_list_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x117",
     seed: 20_261_201,
     draw: fn(state) {
@@ -258,7 +217,7 @@ pub fn character_list_round_trips_test() -> Nil {
 
 pub fn create_character_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x25b",
     seed: 20_261_202,
     draw: fn(state) {
@@ -294,7 +253,7 @@ pub fn create_character_round_trips_test() -> Nil {
 
 pub fn create_character_carrier_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x25c",
     seed: 20_261_203,
     draw: fn(state) {
@@ -308,7 +267,7 @@ pub fn create_character_carrier_round_trips_test() -> Nil {
 
 pub fn create_character_result_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0xdc",
     seed: 20_261_204,
     draw: fn(state) {
@@ -324,7 +283,7 @@ pub fn create_character_result_round_trips_test() -> Nil {
 
 pub fn play_character_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x7dd",
     seed: 20_261_205,
     draw: fn(state) {
@@ -338,7 +297,7 @@ pub fn play_character_round_trips_test() -> Nil {
 
 pub fn play_character_refused_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x162",
     seed: 20_261_206,
     draw: fn(state) {
@@ -352,7 +311,7 @@ pub fn play_character_refused_round_trips_test() -> Nil {
 
 pub fn delete_character_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x352",
     seed: 20_261_207,
     draw: fn(state) {
@@ -366,7 +325,7 @@ pub fn delete_character_round_trips_test() -> Nil {
 
 pub fn delete_character_result_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0xe6",
     seed: 20_261_208,
     draw: fn(state) {
@@ -381,7 +340,7 @@ pub fn delete_character_result_round_trips_test() -> Nil {
 
 pub fn rename_character_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x786",
     seed: 20_261_209,
     draw: fn(state) {
@@ -396,7 +355,7 @@ pub fn rename_character_round_trips_test() -> Nil {
 
 pub fn rename_character_result_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x14b",
     seed: 20_261_210,
     draw: fn(state) {
@@ -412,7 +371,7 @@ pub fn rename_character_result_round_trips_test() -> Nil {
 
 pub fn max_character_level_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x36",
     seed: 20_261_211,
     draw: fn(state) {
@@ -426,7 +385,7 @@ pub fn max_character_level_round_trips_test() -> Nil {
 
 pub fn disconnect_notice_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x36a",
     seed: 20_261_212,
     draw: fn(state) {
@@ -440,7 +399,7 @@ pub fn disconnect_notice_round_trips_test() -> Nil {
 
 pub fn choose_realm_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x7df",
     seed: 20_261_213,
     draw: fn(state) {
@@ -454,7 +413,7 @@ pub fn choose_realm_round_trips_test() -> Nil {
 
 pub fn unit_create_player_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x262",
     seed: 20_261_214,
     draw: fn(state) {
@@ -542,7 +501,7 @@ pub fn unit_create_player_round_trips_test() -> Nil {
 
 pub fn client_control_granted_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x636",
     seed: 20_261_401,
     draw: fn(state) {
@@ -558,7 +517,7 @@ pub fn client_control_granted_round_trips_test() -> Nil {
 
 pub fn client_control_echoed_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x635",
     seed: 20_261_402,
     draw: fn(state) {
@@ -572,7 +531,7 @@ pub fn client_control_echoed_round_trips_test() -> Nil {
 
 pub fn unit_is_player_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x19b",
     seed: 20_261_215,
     draw: fn(state) {
@@ -587,7 +546,7 @@ pub fn unit_is_player_round_trips_test() -> Nil {
 
 pub fn terrain_loaded_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0xf2",
     seed: 20_261_216,
     draw: fn(state) {
@@ -601,7 +560,7 @@ pub fn terrain_loaded_round_trips_test() -> Nil {
 
 pub fn player_entered_world_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x61",
     seed: 20_261_217,
     draw: fn(state) { #(PlayerEnteredWorld, state) },
@@ -612,7 +571,7 @@ pub fn player_entered_world_round_trips_test() -> Nil {
 
 pub fn unit_destroyed_round_trips_test() -> Nil {
   use <- owned_test.run(60_000)
-  round_trips(
+  message_support.round_trips(
     name: "message 0x355",
     seed: 20_261_218,
     draw: fn(state) {

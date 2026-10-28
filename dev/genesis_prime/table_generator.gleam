@@ -11,6 +11,7 @@
 import argv
 import envoy
 import genesis_prime/table/loader/tbl_file
+import genesis_prime/table_folder
 import genesis_prime/table_generator/difference.{type Difference}
 import genesis_prime/table_generator/module_text
 import genesis_prime/table_generator/naming
@@ -248,27 +249,15 @@ pub fn main() -> Nil {
         "generated tables not compared: GENESIS_NO_CLIENT=1, no client",
       )
     ["check"], _ ->
-      finish(check(tables: tables_folder(), against: "src"), report_check)
+      finish(check(tables: table_folder.path(), against: "src"), report_check)
     ["write"], _ ->
-      finish(write(tables: tables_folder(), into: "src"), report_write)
+      finish(write(tables: table_folder.path(), into: "src"), report_write)
     _, _ -> {
       io.println(
         "usage: gleam run -m genesis_prime/table_generator write | check",
       )
       halt_with(2)
     }
-  }
-}
-
-fn tables_folder() -> String {
-  case envoy.get("GENESIS_TABLE_DIR") {
-    Ok(folder) -> folder
-    Error(Nil) ->
-      case envoy.get("GENESIS_HOME"), envoy.get("HOME") {
-        Ok(home), _ -> home <> "/tables"
-        Error(Nil), Ok(home) -> home <> "/.genesis-prime/tables"
-        Error(Nil), Error(Nil) -> "tables"
-      }
   }
 }
 

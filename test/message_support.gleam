@@ -175,3 +175,51 @@ pub fn set_bits(
   let changed = int.bitwise_or(cleared, int.bitwise_shift_left(value, at))
   <<changed:size(size)-little>>
 }
+
+/// How many seeded messages each round-trip test draws.
+const round_trip_cases = 1000
+
+/// Checks a message kind over `round_trip_cases` seeded draws: each message
+/// encodes, the bytes decode to the message, and encoding it again gives the
+/// same bytes.
+pub fn round_trips(
+  name name: String,
+  seed seed: Int,
+  draw draw: fn(Int) -> #(a, Int),
+  encode encode: fn(a) -> Result(BitArray, EncodeError),
+  decode decode: fn(BitArray) -> Result(a, DecodeError),
+) -> Nil {
+  let checked =
+    int.range(
+      from: 0,
+      to: round_trip_cases,
+      with: #(seed, 0),
+      run: fn(state, number) {
+        let #(random, checked) = state
+        let #(message, random) = draw(random)
+        let assert Ok(bytes) = encode(message)
+          as {
+            name
+            <> " case "
+            <> int.to_string(number)
+            <> ": every field is within its width, so the message encodes"
+          }
+        assert decode(bytes) == Ok(message)
+          as {
+            name
+            <> " case "
+            <> int.to_string(number)
+            <> ": the bytes decode to the message encoded"
+          }
+        assert encode(message) == Ok(bytes)
+          as {
+            name
+            <> " case "
+            <> int.to_string(number)
+            <> ": encoding is repeatable"
+          }
+        #(random, checked + 1)
+      },
+    )
+  assert checked.1 == round_trip_cases as "every generated case was checked"
+}
