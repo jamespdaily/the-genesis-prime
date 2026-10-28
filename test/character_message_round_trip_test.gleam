@@ -31,6 +31,7 @@ import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
+import genesis_prime/message/player_path.{PlayerPath}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
@@ -598,6 +599,42 @@ pub fn unit_is_player_round_trips_test() -> Nil {
     },
     encode: unit_is_player.encode,
     decode: unit_is_player.decode,
+  )
+}
+
+pub fn player_path_round_trips_test() -> Nil {
+  use <- owned_test.run(60_000)
+  message_support.round_trips(
+    name: "message 0x6bc",
+    seed: 20_261_028,
+    draw: fn(state) {
+      let #(path, state) = message_support.unsigned(state:, bits: 3)
+      let #(soldier_experience, state) =
+        message_support.unsigned(state:, bits: 32)
+      let #(settler_experience, state) =
+        message_support.unsigned(state:, bits: 32)
+      let #(scientist_experience, state) =
+        message_support.unsigned(state:, bits: 32)
+      let #(explorer_experience, state) =
+        message_support.unsigned(state:, bits: 32)
+      let #(unlocked_paths, state) = message_support.unsigned(state:, bits: 4)
+      let #(last_path_change_days, state) =
+        message_support.unsigned(state:, bits: 32)
+      #(
+        PlayerPath(
+          path:,
+          soldier_experience:,
+          settler_experience:,
+          scientist_experience:,
+          explorer_experience:,
+          unlocked_paths:,
+          last_path_change_days:,
+        ),
+        state,
+      )
+    },
+    encode: player_path.encode,
+    decode: player_path.decode,
   )
 }
 

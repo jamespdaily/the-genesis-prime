@@ -21,8 +21,8 @@
 ////   that the game connection never stops without telling the client after
 ////   the hello.
 //// - World entry: the client's path from 0x07DD to control (the fact file's
-////   opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x636, opcode.0xf1 and
-////   opcode.0x61, and the order the client's handlers need), the player's
+////   opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc, opcode.0x636,
+////   opcode.0xf1 and opcode.0x61, and the order the client's handlers need), the player's
 ////   0x262 against the client's own vector (vector.opcode.0x262.roxo_alive,
 ////   tested with `player_unit_test`), the saved place a WorldLocation2 row
 ////   gives (character_tables), the map's join in the rule's doc comment, the
@@ -71,6 +71,7 @@ import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world
+import genesis_prime/message/player_path.{PlayerPath}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
@@ -1124,7 +1125,7 @@ fn move_message(message_id: Int) -> BitArray {
   keyed_message(message_id, <<0, 0, 0, 0>>)
 }
 
-pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answer_is_0xad_0x262_0x19b_0x636_0xf1_0x61_in_the_clients_order_test() -> Nil {
+pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answer_is_0xad_0x262_0x19b_0x6bc_0x636_0xf1_0x61_in_the_clients_order_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = playing(42)
   assert ask_request(taken)
@@ -1155,8 +1156,8 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
       outcome: step.Answer(FromMap(Joined(unit_id:, incarnation:))),
     )
   assert list.map(heard(taken, keyed()), fn(frame) { frame.message_id })
-    == [0x00AD, 0x0262, 0x019B, 0x0636, 0x00F1, 0x0061]
-    as "the order the client needs: 0xAD first; 0x262 before 0x19B; 0x19B before 0x636 and 0x61; 0xF1 after 0xAD (opcode.0xad, opcode.0x19b, opcode.0x636, opcode.0x61, opcode.0xf1)"
+    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
+    as "the order the client needs: 0xAD first; 0x262 before 0x19B; 0x19B before 0x6BC, 0x636 and 0x61 (the client drops 0x6BC until 0x19B has set the player, opcode.0x6bc); 0xF1 after 0xAD (opcode.0xad, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0x61, opcode.0xf1)"
   assert list.last(support.effects_of(taken))
     == Ok(Watch(WatchId(2), Map(MapId(3460, 0), incarnation)))
     as "the connection watches the run of the map that holds its player, after the burst"
@@ -1237,12 +1238,13 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
     as "opcode.0x262: the unit id the map gave, the row's character id, the settings' realm id, name, race, class, gender, both factions 166 (vector.opcode.0x262.roxo: a base faction with a row, or 0x19B fails); stat 0 and property 7 are 136 as the client's creation check needs (vector.opcode.0x262.health, 0x140457bc5), and stat 10 is the character's level 1 (0x140458140); one kind 2 movement command at the saved position, which the client never moves to the ground after 0xAD (0x1403e828a); the body of the character list (CharacterCustomization row 10: display 137 on slot 25) and the stored bones; PvP flags 0, not the path 3 (0x1403b48b0); every other value is the client's no-value case (opcode.0x262.player_fields, opcode.0x262.unit_fields)"
 }
 
-pub fn message_0x19b_names_the_unit_0x636_gives_control_of_it_0xf1_keeps_the_clients_interval_and_0x61_is_empty_test() -> Nil {
+pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_it_0xf1_keeps_the_clients_interval_and_0x61_is_empty_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert [
     _,
     _,
     Frame(message_id: 0x019B, body: is_player),
+    Frame(message_id: 0x06BC, body: path_body),
     Frame(message_id: 0x0636, body: control),
     Frame(message_id: 0x00F1, body: interval),
     Frame(message_id: 0x0061, body: entered_world),
@@ -1250,6 +1252,17 @@ pub fn message_0x19b_names_the_unit_0x636_gives_control_of_it_0xf1_keeps_the_cli
   assert unit_is_player.decode(is_player)
     == Ok(UnitIsPlayer(unit_id: 5, field_2: 0))
     as "opcode.0x19b: the first value is the unit id the map gave, which must be the unit 0x262 created; the second is never read (opcode.0x19b.second_value)"
+  assert player_path.decode(path_body)
+    == Ok(PlayerPath(
+      path: 3,
+      soldier_experience: 0,
+      settler_experience: 0,
+      scientist_experience: 0,
+      explorer_experience: 0,
+      unlocked_paths: 8,
+      last_path_change_days: 0xBF800000,
+    ))
+    as "opcode.0x6bc: the stored path 3 (Explorer); experience 0 on each path, which is path level 1 (PathLevel); only the character's own path unlocked, bit 3 is 8; -1.0 days (0xBF800000), so no path change cooldown is left (GameFormula 2366: 1800 seconds)"
   assert client_control_granted.decode(control)
     == Ok(ClientControlGranted(echo_value: 0, reset_movement: 1, unit_id: 5))
     as "vector.opcode.0x636.body: the value 0, the reset bit 1 and the unit id"

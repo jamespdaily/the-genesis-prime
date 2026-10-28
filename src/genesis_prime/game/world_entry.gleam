@@ -9,15 +9,20 @@
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
 //// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, id)
 ////                                                 (or Refused: the rule hands back to select)
-//// Joined(unit id, run)       ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x636, 0xF1, 0x61,
-////                                                 WatchMap(map, run)
+//// Joined(unit id, run)       ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1,
+////                                                 0x61, WatchMap(map, run)
 //// ```
 ////
 //// - **The order** is the client's: 0xAD first; 0x262 before 0x19B; 0x19B
-////   before 0x636 and 0x61 (0x1403b5ad0, 0x14057a630, 0x1403c74d0). 0xF1
-////   sets the flag loading's last stage waits on (0x1403b67e0).
+////   before 0x6BC, 0x636 and 0x61 (0x1403b5ad0, 0x14057a630, 0x1403c74d0,
+////   and 0x6BC's case 0x1403ecc9b, which does nothing until 0x19B has set the
+////   player). 0xF1 sets the flag loading's last stage waits on (0x1403b67e0).
 //// - **0xAD** carries the saved world and position, and 0.0 in its last two
 ////   floats, which neither entry path reads (opcode.0xad.last_floats).
+//// - **0x6BC** carries the character's stored path, experience 0 on each of the
+////   four paths (path level 1), only the character's own path unlocked and
+////   -1.0 days since the last path change, which leaves no change cooldown
+////   (opcode.0x6bc). The client's path tracker reads the path and the levels.
 //// - **0x636** carries the player's unit id, the value 0 and the reset bit
 ////   1 (vector.opcode.0x636.body); the client echoes the value in 0x635.
 //// - **0xF1:** Normal difficulty 0, prime level 0, flags 0, for an open world
@@ -45,6 +50,7 @@ import genesis_prime/message/float32
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
+import genesis_prime/message/player_path.{PlayerPath}
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/step.{type ConnectionId}
@@ -105,6 +111,15 @@ pub type Awaiting {
 /// client's own until 0xF1 arrives (opcode.0xf1, 0x140c3a004). The client
 /// raises a value below 25 to 25.
 const movement_send_interval_ms = 125
+
+/// The experience each path starts with: 0, which the client turns into path
+/// level 1 (opcode.0x6bc, PathLevel). No path experience is stored.
+const starting_path_experience = 0
+
+/// The days since the last path change 0x6BC carries: -1.0, so the client's
+/// change cooldown (GameFormula 2366: 1800 seconds from the last change) has
+/// run out. No path change is stored (opcode.0x6bc).
+const path_change_days = -1.0
 
 /// The instance every world is entered at: open worlds share one.
 const open_world_instance = 0
@@ -196,6 +211,7 @@ pub fn joined(
             enter_world(character:),
             player_created(character:, unit_id:, realm_id:, tables:),
             unit_is_player(unit_id:),
+            player_path(character:),
             control_granted(unit_id:),
             movement_interval(),
             entered_world(),
@@ -256,6 +272,26 @@ fn unit_is_player(unit_id unit_id: Int) -> Effect {
     unit_is_player.encode(UnitIsPlayer(unit_id:, field_2: 0))
     as "a unit id of 32 bits fits the message"
   Send(Frame(message_id: unit_is_player.message_id, body:))
+}
+
+/// 0x6BC with the character's stored path, no experience on any path, the bit
+/// of its own path as the only unlocked one (a new character picks one path on
+/// the create screen; the client holds no value for more, and its path tracker
+/// reads neither this nor the days) and -1.0 days since the last change
+/// (opcode.0x6bc).
+fn player_path(character character: Character) -> Effect {
+  let assert Ok(body) =
+    player_path.encode(PlayerPath(
+      path: character.path,
+      soldier_experience: starting_path_experience,
+      settler_experience: starting_path_experience,
+      scientist_experience: starting_path_experience,
+      explorer_experience: starting_path_experience,
+      unlocked_paths: int.bitwise_shift_left(1, character.path),
+      last_path_change_days: float32.to_bits(path_change_days),
+    ))
+    as "a stored path of the create screen's 0 to 3 fits the message's 3 bits and its bit the 4 of the unlocked paths"
+  Send(Frame(message_id: player_path.message_id, body:))
 }
 
 /// 0x636 with the value 0, the reset bit 1 and the player's unit id

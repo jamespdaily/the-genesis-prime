@@ -12,7 +12,7 @@
 ////   (lua.CharacterSelection.OnLoadFromCharacter); the place a create saves is
 ////   the WorldLocation2 row of its start (`character_tables`).
 //// - World entry: the client's 0x07DD is answered with 0xAD, 0x262, 0x19B,
-////   0x636, 0xF1 and 0x61 (opcode.0xad and the others), the refusal of a play
+////   0x6BC, 0x636, 0xF1 and 0x61 (opcode.0xad and the others), the refusal of a play
 ////   of a character the account does not have with 0x0162, 0x0036 and 0x0117
 ////   (opcode.0x162.after_create, opcode.0x36), and the end of the player's map
 ////   with 0x036A reason 8 (0x1400168a0).
@@ -235,10 +235,10 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
     && entry.position_z == 0xC40C0C08
     as "row 466 is a PreTutorial start, WorldLocation2 row 51596: World 3460, zone 6009, and its position as 32-bit floats; the database kept them"
   send_play(game:, character_id: created.character_id)
-  let burst = game_client.read(game:, count: 6)
+  let burst = game_client.read(game:, count: 7)
   assert list.map(burst, fn(frame) { frame.message_id })
-    == [0x00AD, 0x0262, 0x019B, 0x0636, 0x00F1, 0x0061]
-    as "the player enters the world: the messages in the client's order (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x636, opcode.0xf1, opcode.0x61)"
+    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
+    as "the player enters the world: the messages in the client's order (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0xf1, opcode.0x61)"
   let assert [Frame(body: world, ..), Frame(body: unit, ..), ..] = burst
   let assert Ok(entered) = enter_world.decode(world)
   assert entered.world_id == 3460
@@ -303,7 +303,7 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let assert [_, _, _, _, _, _] = game_client.read(game:, count: 6)
+  let assert [_, _, _, _, _, _, _] = game_client.read(game:, count: 7)
     as "the player entered the world"
   // The player's map is the run the real Maps holds for the character's world.
   let assert Ok(found) =
