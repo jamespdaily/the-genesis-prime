@@ -3,7 +3,7 @@
 //// - The recording (`test/rule_recording/2026-10-28-full-session`): the real
 ////   client's connection in a session the playing-live skill's `session.sh`
 ////   ran with no person, which played a level-3 Veteran character into the
-////   world, closed with `End`, which counts 71 inputs. Its verdict, beside
+////   world, closed with `End`, which counts 62 inputs. Its verdict, beside
 ////   it, checked the client's own report of that character against its saved
 ////   row. A Novice entry is not in it: selecting a second character takes a
 ////   mouse click; the Novice place is tested in start_place_test.
@@ -27,7 +27,7 @@ pub fn the_veteran_entrys_game_recording_replays_to_the_same_steps_test() -> Nil
   let #(inputs, count) =
     replayed(file: "genesis_prime.game.connection-5.recording")
   assert inputs == count as "the replay folds every input the End counts"
-  assert count == 71 as "the Veteran entry's connection took 71 inputs"
+  assert count == 62 as "the Veteran entry's connection took 62 inputs"
 }
 
 fn replayed(file file: String) -> #(Int, Int) {

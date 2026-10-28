@@ -10,3 +10,5 @@ ok   the position is the saved place: 0.000 units from the saved place (at most 
 ok   no addon raised an error: tAddonErrors is empty
 ok   no Lua error event was raised: tLuaErrorEvents is empty
 ok   the client logged no failure: 0 failure line(s)
+ok   the client wrote no error report: none in Errors
+ok   the client ran to the end of the session: client.sh stop closed it
