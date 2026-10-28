@@ -10,17 +10,16 @@
 # Why a posted message is not enough (facts): the client's UI pointer is the real cursor
 # (GetCursorPos, converted to window terms, 0x1403f3790), so a click posted to the window moves no
 # pointer and a hover never shows. The point is a client point: ClientToScreen turns it into the
-# screen point SetCursorPos and SendInput act on, with the process DPI aware so both are in the
-# window's own pixels (the borderless window is 3840x2160).
+# screen point SetCursorPos acts on (the press is mouse_event), with the process DPI aware so both
+# are in the window's own pixels (the borderless window is 3840x2160). The point must lie inside the
+# window's client rectangle, and the window under the cursor must be the client's before the press,
+# or nothing is pressed.
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 public class Click {
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
-  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT {
-    public int dx, dy; public uint mouseData, dwFlags, time; public IntPtr dwExtraInfo;
-  }
-  [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public MOUSEINPUT mi; }
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
@@ -30,7 +29,9 @@ public class Click {
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref POINT p);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern bool GetCursorPos(ref POINT p);
-  [DllImport("user32.dll")] public static extern uint SendInput(uint count, INPUT[] inputs, int size);
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
+  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h, uint flags);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int x, int y, uint data, UIntPtr extra);
   [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
@@ -45,20 +46,11 @@ $resultFile = "$env:USERPROFILE\genesis-click-result.txt"
 $leftDown = 0x0002
 $leftUp = 0x0004
 $restore = 9
-
-# One left-button event through SendInput.
-function Send-Button([uint32]$flags) {
-  $press = New-Object Click+INPUT
-  $press.type = 0
-  $press.mi.dwFlags = $flags
-  $sent = [Click]::SendInput(1, @($press), [Runtime.InteropServices.Marshal]::SizeOf([type][Click+INPUT]))
-  if ($sent -ne 1) { throw "SendInput sent $sent events" }
-}
+$rootAncestor = 2
 
 try {
   $ErrorActionPreference = 'Stop'
   $lines = (Get-Content -Raw -Encoding UTF8 $inputFile) -split "`n"
-  Remove-Item $inputFile -Force
   $wanted = [int]$lines[0]
   $wantedStart = [int64]$lines[1]
   $x = [int]$lines[2]
@@ -89,6 +81,11 @@ try {
   }
   if ([Click]::GetForegroundWindow() -ne $window) { throw 'the window could not be brought forward' }
 
+  $client = New-Object Click+RECT
+  if (-not [Click]::GetClientRect($window, [ref]$client)) { throw 'the window has no client rectangle' }
+  if ($x -lt $client.Left -or $y -lt $client.Top -or $x -ge $client.Right -or $y -ge $client.Bottom) {
+    throw "the point $x,$y is outside the client rectangle $($client.Right)x$($client.Bottom)"
+  }
   $point = New-Object Click+POINT
   $point.X = $x
   $point.Y = $y
@@ -96,6 +93,11 @@ try {
   if (-not [Click]::SetCursorPos($point.X, $point.Y)) { throw 'the cursor could not be moved' }
   # The client reads the real cursor on its own frame, so it rests on the point before the press.
   Start-Sleep -Milliseconds 300
+  # The press goes to whatever is under the cursor, so it is made only when that is the client's window.
+  $under = [Click]::WindowFromPoint($point)
+  if ($under -eq 0 -or [Click]::GetAncestor($under, $rootAncestor) -ne $window) {
+    throw "the window under the cursor at $($point.X),$($point.Y) is not the client's"
+  }
   [Click]::mouse_event($leftDown, 0, 0, 0, [UIntPtr]::Zero)
   Start-Sleep -Milliseconds 80
   [Click]::mouse_event($leftUp, 0, 0, 0, [UIntPtr]::Zero)
