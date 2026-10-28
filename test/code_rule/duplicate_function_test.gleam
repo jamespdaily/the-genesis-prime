@@ -11,6 +11,8 @@ import code_rule/duplicate_function
 import code_rule/planted
 import code_rule/repository
 import code_rule/source.{type SourceFile}
+import genesis_prime/message_generator
+import genesis_prime/table_generator/difference
 import gleam/list
 import gleam/string
 import owned_test
@@ -297,19 +299,58 @@ pub fn a_generated_module_is_skipped_test() -> Nil {
   let by_generator =
     generated(
       "src/planted/message/one.gleam",
-      "//// Generated from `schema.toml` by `planted/generate`.",
+      message_generator.generated_marker <> " by `planted/generate`.",
+    )
+  let by_table_generator =
+    generated(
+      "src/planted/table/one.gleam",
+      difference.generated_marker <> " from the client's DB/One.tbl.",
     )
   let by_squirrel =
     generated(
       "src/planted/store/sql.gleam",
-      "//// > This module was generated automatically using v4.7.0 of",
+      "//// > 🐿️ This module was generated automatically using v4.7.0 of",
     )
   let by_hand = generated("src/planted/by_hand.gleam", "//// Written by hand.")
   assert duplicate_function.breaches([by_generator, by_squirrel], allowed: [])
     == []
+  assert duplicate_function.breaches([by_table_generator, by_hand], allowed: [])
+    == []
   assert duplicate_function.breaches([by_generator, by_hand], allowed: []) == []
     as "a generated module is not compared with a hand-written one"
   assert duplicate_function.breaches([by_squirrel, by_hand], allowed: []) == []
+}
+
+pub fn a_hand_written_doc_that_mentions_generated_code_is_compared_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  // The rule skips only a generator's exact header; prose that starts with
+  // "Generated" or says something "was generated automatically" is a person's.
+  let module = fn(path, header) {
+    planted.file(path:, lines: [
+      header,
+      "",
+      ..long_function(
+        name: "adapted_total",
+        name_text: "alpha",
+        count: "1",
+        variable: "n",
+      )
+    ])
+  }
+  let first =
+    module(
+      "src/planted/adapter.gleam",
+      "//// Generated packets are handled by this hand-written adapter.",
+    )
+  let second =
+    module(
+      "src/planted/other.gleam",
+      "//// This text was generated automatically by a person's editor.",
+    )
+  assert list.length(duplicate_function.breaches([first, second], allowed: []))
+    == 2
+    as "both hand-written copies are breaches"
 }
 
 pub fn an_allowed_function_is_left_out_with_its_twin_test() -> Nil {

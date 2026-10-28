@@ -3,6 +3,8 @@
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
+import genesis_prime/message_generator
+import genesis_prime/table_generator/difference
 import glance.{type Expression, type Pattern, type Span, type Statement}
 import gleam/dict
 import gleam/int
@@ -162,14 +164,21 @@ fn copy_breaches(group: List(Candidate)) -> List(Breach) {
   })
 }
 
-/// Whether the file's leading `////` lines say that a generator wrote it.
+/// The line squirrel writes into each module it generates.
+const squirrel_marker = "//// > 🐿️ This module was generated automatically using"
+
+/// Whether one of the file's leading `////` lines is the exact header a
+/// generator writes: the table generator's and the message generator's own
+/// markers, or squirrel's. A hand-written doc comment that merely mentions
+/// generated code does not match.
 fn generated(file: SourceFile) -> Bool {
   file.text
   |> string.split("\n")
   |> list.take_while(string.starts_with(_, "////"))
   |> list.any(fn(line) {
-    string.starts_with(line, "//// Generated ")
-    || string.contains(line, "was generated automatically")
+    string.starts_with(line, difference.generated_marker)
+    || string.starts_with(line, message_generator.generated_marker)
+    || string.starts_with(line, squirrel_marker)
   })
 }
 
