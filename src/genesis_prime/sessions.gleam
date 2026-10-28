@@ -44,8 +44,8 @@
 ////   `WatchEnded(w1)`; the slot names `w2`, so nothing is freed, and `w1` is
 ////   forgotten.
 //// - **Sessions restarts.** The new process has no slots and no watches. Each
-////   game connection watches Sessions, so each takes `WatchEnded` and claims
-////   again (genesis_prime/game/connection); the claims run in the order they
+////   game connection watches Sessions, so each takes `WatchEnded` and, after a
+////   short wait, claims again (genesis_prime/game/connection); the claims run in the order they
 ////   arrive, so the slots match the connections alive. A client that logs in
 ////   to the account during the gap, before the old connection claims again,
 ////   is not caught: when the old connection's claim then comes, it takes the
@@ -65,14 +65,15 @@
 
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type Input, type Rule, type Step,
-  type WatchId, Answered, AnsweredLate, Asked, Effects, Rule, Socket, Started,
-  Stop, Stopping, TimerFired, WatchEnded, Woken,
+  type WatchId, Answered, AnsweredLate, Asked, Connection, Effects, Reply, Rule,
+  Send, Socket, Started, Stop, Stopping, TimerFired, Watch, WatchEnded, WatchId,
+  Woken,
 }
 import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
 
 /// The rule's name in a recording's header and in the server's tree.
-pub const rule_name = "genesis_prime/sessions"
+const rule_name = "genesis_prime/sessions"
 
 /// What another process asks Sessions.
 pub type Message {
@@ -115,7 +116,7 @@ pub fn rule() -> Rule(Nil, State, Message, Nil, Outgoing, Nil) {
 
 /// Sessions' first state: no slots and no watches.
 pub fn new(_settings: Nil) -> State {
-  todo as "the build follows the shape commit"
+  State(slots: dict.new(), watches: dict.new(), next_watch: 1)
 }
 
 /// One input in, the new state and what the shell must do out. `Asked` with a
@@ -142,12 +143,55 @@ fn claimed(
   caller caller: CallerId,
   message message: Message,
 ) -> #(State, Step(Outgoing, Nil)) {
-  todo as "the build follows the shape commit"
+  let Claim(account:, connection:) = message
+  case dict.get(state.slots, account) {
+    Ok(Slot(connection: holder, ..)) if holder == connection -> #(
+      state,
+      Effects([Reply(caller, Claimed)]),
+    )
+    Ok(Slot(connection: previous, ..)) -> #(
+      taken_by(state:, account:, connection:),
+      Effects([
+        Watch(watch: WatchId(state.next_watch), target: Connection(connection)),
+        Send(to: Connection(previous), message: TakenOver),
+        Reply(caller, Claimed),
+      ]),
+    )
+    Error(Nil) -> #(
+      taken_by(state:, account:, connection:),
+      Effects([
+        Watch(watch: WatchId(state.next_watch), target: Connection(connection)),
+        Reply(caller, Claimed),
+      ]),
+    )
+  }
+}
+
+/// The state with `connection` holding `account`'s slot, under a new watch.
+fn taken_by(
+  state state: State,
+  account account: AccountId,
+  connection connection: ConnectionId,
+) -> State {
+  let watch = WatchId(state.next_watch)
+  State(
+    slots: dict.insert(state.slots, account, Slot(connection:, watch:)),
+    watches: dict.insert(state.watches, watch, #(account, connection)),
+    next_watch: state.next_watch + 1,
+  )
 }
 
 fn ended(
   state state: State,
   watch watch: WatchId,
 ) -> #(State, Step(Outgoing, Nil)) {
-  todo as "the build follows the shape commit"
+  let assert Ok(#(account, _connection)) = dict.get(state.watches, watch)
+    as "a watch ends only if Sessions opened it and has not seen it end"
+  let watches = dict.delete(state.watches, watch)
+  let slots = case dict.get(state.slots, account) {
+    Ok(Slot(watch: held, ..)) if held == watch ->
+      dict.delete(state.slots, account)
+    Ok(Slot(..)) | Error(Nil) -> state.slots
+  }
+  #(State(..state, slots:, watches:), Effects([]))
 }

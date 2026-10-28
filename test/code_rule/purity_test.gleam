@@ -202,3 +202,38 @@ pub fn the_game_connection_rule_and_the_features_it_holds_are_pure_rules_the_che
       as { file.path <> " must be checked, not listed as effectful" }
   })
 }
+
+pub fn the_sessions_rule_and_the_contract_it_runs_under_hold_no_pid_monitor_or_subject_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let assert Ok(project_file) = simplifile.read("gleam.toml")
+    as "gleam.toml could not be read"
+  let allowed = purity.allowed(project_file)
+  let rules = [
+    "src/genesis_prime/sessions.gleam",
+    "src/genesis_prime/step.gleam",
+    "src/genesis_prime/client_connection.gleam",
+    "src/genesis_prime/game/connection.gleam",
+  ]
+  let files =
+    list.filter(repository.sources(["src"]), fn(file) {
+      list.contains(rules, file.path)
+    })
+  assert list.length(files) == 4
+    as "every module is among the files the purity rule reads"
+  assert list.flat_map(files, purity.breaches(_, allowed)) == []
+    as "CLAUDE.md: no type a rule takes or returns holds a process; a process module is never imported, so no Pid, Monitor or Subject can be named"
+  list.each(files, fn(file) {
+    let with_effect =
+      SourceFile(
+        path: file.path,
+        text: file.text <> "\nimport gleam/erlang/process\n",
+      )
+    assert list.length(purity.breaches(with_effect, allowed)) == 1
+      as { file.path <> " must be checked, not listed as effectful" }
+    list.each(["Pid", "Monitor", "Subject"], fn(name) {
+      assert !string.contains(file.text, name)
+        as { file.path <> " names " <> name <> ", a process's handle" }
+    })
+  })
+}
