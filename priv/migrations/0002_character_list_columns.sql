@@ -8,6 +8,8 @@
 --
 -- Each check is what the client's code allows or what the entry's field can
 -- carry (its width in the message, ReadCharacterListEntry 0x14007f720):
+-- - name 1 to 32 characters: the client copies at most 32 characters of a name
+--   (CopyCharacterListEntry 0x1400201f0), and a name of none shows nothing;
 -- - class 1 to 20: the client shows ClassIcon_<class> for the classes 1 to 20;
 -- - path 0 to 3: the client shows PathIcon_<path + 1> up to 4, so paths 0 to 3;
 -- - gender (2 bits), race (5 bits) and the two world ids (15 bits) fit the
@@ -15,7 +17,8 @@
 -- - faction and level are 32 bits in the entry and never negative.
 alter table character
   add column name text not null
-    constraint character_name_not_empty check (name <> ''),
+    constraint character_name_shown_by_the_client
+      check (char_length(name) between 1 and 32),
   add column gender smallint not null
     constraint character_gender_fits_the_entry check (gender between 0 and 3),
   add column race_id smallint not null

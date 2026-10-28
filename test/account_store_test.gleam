@@ -31,6 +31,7 @@ import gleam/erlang/process
 import gleam/option.{None, Some}
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
+import gleam/string
 import login_support
 import owned_test
 import pog
@@ -56,7 +57,7 @@ pub fn a_stored_login_name_gives_its_account_id_salt_verifier_and_game_account_i
       0x89, 0xAB, 0xCD, 0xEF,
     >>)
     as "sixteen bytes are a GUID"
-  assert ask(store, "login-1")
+  assert ask(store, FindAccount("login-1"))
     == AccountFound(Account(
       account_id: AccountId(id),
       login_name: "login-1",
@@ -79,7 +80,8 @@ pub fn an_unknown_login_name_gives_no_such_account_test() -> Nil {
       verifier: <<2>>,
       game_account_id: a_game_account_id(),
     )
-  assert ask(store, "login-2") == NoSuchAccount as "no row has that login name"
+  assert ask(store, FindAccount("login-2")) == NoSuchAccount
+    as "no row has that login name"
   stop(store)
 }
 
@@ -244,7 +246,7 @@ pub fn with_the_database_pool_not_running_an_ask_to_the_store_gives_unavailable_
   process.unlink(started.pid)
   ask_support.guard(started.pid)
   let store = Store(tree: started.pid, pool:, name:)
-  assert ask(store, "login-1") == Unavailable
+  assert ask(store, FindAccount("login-1")) == Unavailable
     as "the pool is not running, so the query cannot reach the database"
   stop(store)
 }
@@ -279,7 +281,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
       class_id: 1,
       path: 1,
     )
-  assert ask_characters(store, account)
+  assert ask(store, ListCharacters(account))
     == Characters([
       Character(
         character_id: CharacterId(first),
@@ -320,9 +322,9 @@ pub fn an_account_with_no_characters_or_no_account_gives_an_empty_list_test() ->
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
   let account = insert_account(store, "login-1")
-  assert ask_characters(store, account) == Characters([])
+  assert ask(store, ListCharacters(account)) == Characters([])
     as "no row has that account's id"
-  assert ask_characters(store, AccountId(account_id_nobody_has))
+  assert ask(store, ListCharacters(AccountId(account_id_nobody_has)))
     == Characters([])
     as "the contract of store.Characters: none when no such account exists"
   stop(store)
@@ -340,21 +342,21 @@ pub fn with_the_database_pool_not_running_a_list_of_characters_gives_unavailable
   process.unlink(started.pid)
   ask_support.guard(started.pid)
   let store = Store(tree: started.pid, pool:, name:)
-  assert ask_characters(store, AccountId(1)) == Unavailable
+  assert ask(store, ListCharacters(AccountId(1))) == Unavailable
     as "the pool is not running, so the query cannot reach the database"
   stop(store)
 }
 
-pub fn the_table_refuses_a_class_outside_1_to_20_and_a_path_outside_0_to_3_test() -> Nil {
+pub fn the_table_refuses_a_class_outside_1_to_20_a_path_outside_0_to_3_and_a_name_outside_1_to_32_characters_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
   let account = insert_account(store, "login-1")
-  let refused = fn(class_id, path) {
+  let refused = fn(name, class_id, path) {
     case
       character_support.try_insert(
         pool: store.pool,
         account:,
-        name: "Eve",
+        name:,
         class_id:,
         path:,
       )
@@ -365,16 +367,27 @@ pub fn the_table_refuses_a_class_outside_1_to_20_and_a_path_outside_0_to_3_test(
         "a failure that is no constraint"
     }
   }
-  assert refused(0, 0) == "character_class_shown_by_the_client"
+  assert refused("Eve", 0, 0) == "character_class_shown_by_the_client"
     as "the client shows ClassIcon_<class> for the classes 1 to 20, so class 0 has no icon"
-  assert refused(21, 0) == "character_class_shown_by_the_client"
+  assert refused("Eve", 21, 0) == "character_class_shown_by_the_client"
     as "and class 21 has none"
-  assert refused(1, 4) == "character_path_shown_by_the_client"
+  assert refused("Eve", 1, 4) == "character_path_shown_by_the_client"
     as "the client shows PathIcon_<path + 1> up to 4, so path 4 has no icon"
-  assert refused(1, -1) == "character_path_shown_by_the_client"
+  assert refused("Eve", 1, -1) == "character_path_shown_by_the_client"
   // The edges the client does show are taken.
-  assert refused(1, 0) == "accepted"
-  assert refused(20, 3) == "accepted"
+  assert refused("Eve", 1, 0) == "accepted"
+  assert refused("Eve", 20, 3) == "accepted"
+  // 0x1400201f0: the client copies at most 32 characters of a name (0x21 wide
+  // characters with the zero), and a name of none has nothing to show.
+  assert refused("", 1, 0) == "character_name_shown_by_the_client"
+    as "no name is no name the list can show"
+  assert refused(string.repeat("a", 33), 1, 0)
+    == "character_name_shown_by_the_client"
+    as "the client keeps 32 characters, so a 33rd is one it would cut"
+  assert refused(string.repeat("a", 32), 1, 0) == "accepted"
+    as "32 characters is the most the client keeps"
+  assert refused(string.repeat("é", 32), 1, 0) == "accepted"
+    as "the 32 are characters, not bytes"
   stop(store)
 }
 
@@ -382,31 +395,31 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
   let account = insert_account(store, "login-1")
-  // Sex 1, race 3, class 4 and faction 166, as one CharacterCreation row gives
-  // them; the tool's other columns are its defaults.
+  // Sex 1, race 1, class 1 and faction 167, as CharacterCreation rows 21, 338,
+  // 402, 466 and 539 give them; the tool's other columns are its defaults.
   let assert Ok(returned) =
     add_character_sql.insert_character(
       store.pool,
       "login-1",
       "Dev",
       1,
-      3,
-      4,
-      166,
+      1,
+      1,
+      167,
     )
     as "the tool's query ran"
   let assert [add_character_sql.InsertCharacterRow(character_id:)] =
     returned.rows
     as "the account of that login name got one row"
-  assert ask_characters(store, account)
+  assert ask(store, ListCharacters(account))
     == Characters([
       Character(
         character_id: CharacterId(character_id),
         name: "Dev",
         gender: 1,
-        race_id: 3,
-        class_id: 4,
-        faction_id: 166,
+        race_id: 1,
+        class_id: 1,
+        faction_id: 167,
         level: 1,
         path: 0,
         world_id: 0,
@@ -423,9 +436,9 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
       "nobody",
       "Dev",
       1,
-      3,
-      4,
-      166,
+      1,
+      1,
+      167,
     )
     as "the query ran"
   assert none.rows == [] as "no account of that name gives no row"
@@ -455,16 +468,6 @@ fn game_account_id_of(login_name: String) -> guid.Guid {
   }
     as "the text is a GUID"
   game_account_id
-}
-
-/// Asks the store for an account's characters and waits for the answer.
-fn ask_characters(store: Store, account_id: AccountId) -> store.Answer {
-  let #(sent, answer) =
-    ask_support.ask_and_wait(send: fn(reply) {
-      worker.ask(store.name, ListCharacters(account_id:), reply)
-    })
-  let assert ToWorker(_) = sent as "the store started a worker"
-  answer
 }
 
 /// A running pool and store: the tree they run in, the pool as a connection
@@ -534,11 +537,11 @@ fn start_asker(
   )
 }
 
-/// Asks the store for a login name and waits for the answer.
-fn ask(store: Store, login_name: String) -> store.Answer {
+/// Asks the store and waits for the answer.
+fn ask(store: Store, request: store.Request) -> store.Answer {
   let #(sent, answer) =
     ask_support.ask_and_wait(send: fn(reply) {
-      worker.ask(store.name, FindAccount(login_name:), reply)
+      worker.ask(store.name, request, reply)
     })
   let assert ToWorker(_) = sent as "the store started a worker"
   answer
