@@ -23,9 +23,9 @@ pub type CharacterList {
     enabled_creation_ids: List(Int),
     disabled_creation_ids: List(Int),
     realm_id: Int,
-    pending_removal_realm_id: Int,
-    pending_removal_character_id: Int,
-    pending_removal_time: Int,
+    in_world_realm_id: Int,
+    in_world_character_id: Int,
+    in_world_logoff_ms: Int,
     reservations: Int,
     max_characters: Int,
     field_11: Int,
@@ -59,18 +59,18 @@ pub fn encode(message: CharacterList) -> Result(BitArray, EncodeError) {
   )
   |> bit_stream.write_unsigned("realm_id", message.realm_id, 14)
   |> bit_stream.write_unsigned(
-    "pending_removal_realm_id",
-    message.pending_removal_realm_id,
+    "in_world_realm_id",
+    message.in_world_realm_id,
     14,
   )
   |> bit_stream.write_unsigned(
-    "pending_removal_character_id",
-    message.pending_removal_character_id,
+    "in_world_character_id",
+    message.in_world_character_id,
     64,
   )
   |> bit_stream.write_unsigned(
-    "pending_removal_time",
-    message.pending_removal_time,
+    "in_world_logoff_ms",
+    message.in_world_logoff_ms,
     32,
   )
   |> bit_stream.write_unsigned("reservations", message.reservations, 32)
@@ -105,13 +105,15 @@ pub fn decode(body: BitArray) -> Result(CharacterList, DecodeError) {
     bit_stream.read_unsigned_array(reader, 32, 32),
   )
   use #(realm_id, reader) <- result.try(bit_stream.read_unsigned(reader, 14))
-  use #(pending_removal_realm_id, reader) <- result.try(
-    bit_stream.read_unsigned(reader, 14),
-  )
-  use #(pending_removal_character_id, reader) <- result.try(
-    bit_stream.read_unsigned(reader, 64),
-  )
-  use #(pending_removal_time, reader) <- result.try(bit_stream.read_unsigned(
+  use #(in_world_realm_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    14,
+  ))
+  use #(in_world_character_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    64,
+  ))
+  use #(in_world_logoff_ms, reader) <- result.try(bit_stream.read_unsigned(
     reader,
     32,
   ))
@@ -136,9 +138,9 @@ pub fn decode(body: BitArray) -> Result(CharacterList, DecodeError) {
     enabled_creation_ids:,
     disabled_creation_ids:,
     realm_id:,
-    pending_removal_realm_id:,
-    pending_removal_character_id:,
-    pending_removal_time:,
+    in_world_realm_id:,
+    in_world_character_id:,
+    in_world_logoff_ms:,
     reservations:,
     max_characters:,
     field_11:,

@@ -242,9 +242,9 @@ fields = [
   { name = "enabled_creation_ids", kind = "array", count_bits = 32, element = "unsigned", element_bits = 32, evidence = "0x14007fab0", named_by = "opcode.0x117" },
   { name = "disabled_creation_ids", kind = "array", count_bits = 32, element = "unsigned", element_bits = 32, evidence = "0x14007fab0", named_by = "opcode.0x117" },
   { name = "realm_id", kind = "unsigned", bits = 14, evidence = "0x14007fab0", named_by = "opcode.0x117" },
-  { name = "pending_removal_realm_id", kind = "unsigned", bits = 14, evidence = "0x1400852f0", named_by = "opcode.0x117" },
-  { name = "pending_removal_character_id", kind = "unsigned", bits = 64, evidence = "0x1400852f0", named_by = "opcode.0x117" },
-  { name = "pending_removal_time", kind = "unsigned", bits = 32, evidence = "0x14007fab0", named_by = "opcode.0x117" },
+  { name = "in_world_realm_id", kind = "unsigned", bits = 14, evidence = "0x1400852f0", named_by = "opcode.0x117" },
+  { name = "in_world_character_id", kind = "unsigned", bits = 64, evidence = "0x1400852f0", named_by = "lua.CharacterSelection.OnRemoveCountdown" },
+  { name = "in_world_logoff_ms", kind = "unsigned", bits = 32, evidence = "0x14007fab0", named_by = "lua.CharacterSelection.OnRemoveCountdown" },
   { name = "reservations", kind = "unsigned", bits = 32, evidence = "0x14007fab0", named_by = "opcode.0x117" },
   { name = "max_characters", kind = "unsigned", bits = 32, evidence = "0x14007fab0", named_by = "lua.Character.OnCharacterList" },
   { name = "field_11", kind = "unsigned", bits = 32, evidence = "0x14007fab0", safe_by = "0x14002167a" },
@@ -326,8 +326,8 @@ direction = "server_to_client"
 evidence = "opcode.0xe6"
 summary = "the result of a delete-character request; the client removes the character from its list on result 0"
 fields = [
-  { name = "result", kind = "unsigned", bits = 6, evidence = "0x14007fcf0", named_by = "opcode.0xe6" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x14007fcf0" },
+  { name = "result", kind = "unsigned", bits = 6, evidence = "0x14007fcf0", named_by = "opcode.0xe6", values_type = "DeleteResult", values = [ { value = 0, name = "delete_ok", evidence = "opcode.0xe6" }, { value = 1, name = "delete_failed", evidence = "lua.CharacterSelection.OnCharacterDeleteResult" }, { value = 2, name = "guild_master", evidence = "lua.CharacterSelection.OnCharacterDeleteResult" }, { value = 42, name = "characters_online", evidence = "lua.CharacterSelection.OnCharacterDeleteResult" } ] },
+  { name = "value", kind = "unsigned", bits = 32, evidence = "0x14007fcf0", safe_by = "opcode.0xe6.value" },
 ]
 
 [[message]]
@@ -348,7 +348,7 @@ direction = "server_to_client"
 evidence = "opcode.0x14b"
 summary = "the result of a rename request; on result 18 the client gives the listed character the name"
 fields = [
-  { name = "result", kind = "unsigned", bits = 6, evidence = "0x140080460", named_by = "opcode.0x14b" },
+  { name = "result", kind = "unsigned", bits = 6, evidence = "0x140080460", named_by = "opcode.0x14b", values_type = "RenameResult", values = [ { value = 13, name = "rename_failed", evidence = "lua.CharacterSelection.OnCharacterRenameResult" }, { value = 14, name = "internal_error", evidence = "lua.CharacterSelection.OnCharacterRenameResult" }, { value = 15, name = "name_length", evidence = "lua.CharacterSelection.OnCharacterRenameResult" }, { value = 16, name = "name_unavailable", evidence = "lua.CharacterSelection.OnCharacterRenameResult" }, { value = 17, name = "no_rename", evidence = "lua.CharacterSelection.OnCharacterRenameResult" }, { value = 18, name = "rename_ok", evidence = "opcode.0x14b" }, { value = 43, name = "characters_online", evidence = "lua.CharacterSelection.OnCharacterRenameResult" } ] },
   { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x140080460", named_by = "opcode.0x14b" },
   { name = "name", kind = "wide_text", evidence = "0x140080460", named_by = "opcode.0x14b" },
 ]
