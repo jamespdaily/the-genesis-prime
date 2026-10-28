@@ -7,6 +7,10 @@
 #   on_pc <cmd text>             runs a command in the PC's cmd.exe
 #   on_pc_ps <powershell text>   runs PowerShell text on the PC, passed encoded so no quoting
 #                                reaches the PC's shell; stops on the first error
+#   on_pc_ps_try <powershell text>  the same, run in a try block: an error ends it with its message,
+#                                which this prints after ${tool}: and returns 1 for, and otherwise it
+#                                prints the text's output. Call it as out=$(on_pc_ps_try ...) so the
+#                                script ends on the failure
 #   run_task <task> <script> <result file> <seconds> [input file]
 #                                copies <script> (and the input, as <script>.in) to the PC's profile,
 #                                runs it as the hidden task <task> in the person's session, waits on
@@ -46,6 +50,21 @@ $1" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n'
 
 on_pc_ps() {
   ssh "${options[@]}" "$GENESIS_PLAY_PC" "powershell -NoProfile -NonInteractive -EncodedCommand $(ps_encode "$1")" | tr -d '\r'
+}
+
+on_pc_ps_try() {
+  local output status=0
+  output=$(on_pc_ps "try {
+$1
+} catch {
+  'error: ' + (\$_.Exception.Message -replace '\s+', ' ')
+  exit 1
+}") || status=$?
+  case "$output" in
+    error:*) echo "${tool:-pc}: ${output#error: }" >&2; return 1 ;;
+  esac
+  [ "$status" -eq 0 ] || { echo "${tool:-pc}: the PC's PowerShell failed (status $status)" >&2; return 1; }
+  printf '%s\n' "$output"
 }
 
 pc_track() { pc_files+=("$1"); }

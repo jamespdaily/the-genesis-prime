@@ -143,22 +143,16 @@ case "$command" in
     # not our client (the pid was reused) and nothing is touched. The process is ended outright: a
     # close asked from the ssh session cannot reach a window in the person's session (taskkill
     # without /F answers that the process can only be terminated forcefully).
-    status=0
-    out=$(on_pc_ps "try {
-  \$p = Get-Process -Id $pid -ErrorAction SilentlyContinue
-  if (-not \$p -or \$p.ProcessName -ne 'WildStar64' -or \$p.StartTime.ToFileTimeUtc() -ne $started) { 'gone' }
-  else {
-    \$p.Kill()
-    if (-not \$p.WaitForExit(5000)) { throw 'it is still running after the kill' }
-    'closed'
-  }
-} catch {
-  'error: ' + (\$_.Exception.Message -replace '\s+', ' ')
-  exit 1
-}") || status=$?
+    out=$(on_pc_ps_try "\$p = Get-Process -Id $pid -ErrorAction SilentlyContinue
+if (-not \$p -or \$p.ProcessName -ne 'WildStar64' -or \$p.StartTime.ToFileTimeUtc() -ne $started) { 'gone' }
+else {
+  \$p.Kill()
+  if (-not \$p.WaitForExit(5000)) { throw 'it is still running after the kill' }
+  'closed'
+}")
     case "$out" in
       closed) rm -f "$state"; echo "client $pid is closed" ;;
       gone) rm -f "$state"; echo "client $pid was not running; nothing was changed" ;;
-      *) echo "client: ${out#error: } (WildStar64 $pid, status $status)" >&2; exit 1 ;;
+      *) echo "client: the PC answered $out; WildStar64 $pid was not confirmed closed" >&2; exit 1 ;;
     esac ;;
 esac

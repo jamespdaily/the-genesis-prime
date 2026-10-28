@@ -9,10 +9,6 @@ T is the value's type (t table, n number, s string, b boolean); V is the value (
 <Document/>. A table whose keys are the numbers 1 to n is a JSON list; any other table is a JSON
 object with its keys as text, which an empty table is too.
 
-report.sh collect uses this on the GenesisReport addon's report. A document without the addon's
-bReported flag is converted too, with a warning on standard error: the addon sets it just before
-its own reload, so a document without it was written some other way.
-
 Exits 1, printing nothing to standard output, on a file that is not a saved-addon document.
 """
 
@@ -71,7 +67,7 @@ def convert(text):
 
 def main(arguments):
     if len(arguments) != 2:
-        print(__doc__.split("\n\n")[0], file=sys.stderr)
+        print("usage: python3 -I report_xml.py <file.xml>", file=sys.stderr)
         return 2
     try:
         with open(arguments[1], encoding="utf-8") as saved:
@@ -79,8 +75,6 @@ def main(arguments):
     except (OSError, ValueError, ElementTree.ParseError) as error:
         print(f"report_xml: {arguments[1]}: {error}", file=sys.stderr)
         return 1
-    if not (isinstance(report, dict) and report.get("bReported") is True):
-        print("report_xml: the document has no bReported = true; it was not written by the addon's own reload", file=sys.stderr)
     print(json.dumps(report, indent=2))
     return 0
 

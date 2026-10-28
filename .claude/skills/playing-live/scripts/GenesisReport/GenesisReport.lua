@@ -2,8 +2,7 @@
 -- player's state, and the errors the addons raised. Once the character is loaded and its model is
 -- in, it reloads the interface once: the client runs each addon's OnSave on a reload (fact
 -- 0x1400446d0) and writes the Account-level table to AddonSaveData\GenesisReport_0_Acct.xml (facts
--- 0x140185f30, 0x1404240b0). report.sh installs it before a session and removes it after, since it
--- reloads the interface once per entry.
+-- 0x140185f30, 0x1404240b0).
 --
 -- The saved table holds only tables, numbers, strings and booleans (fact 0x140185f30).
 
@@ -12,29 +11,19 @@ require "GameLib"
 require "PlayerPathLib"
 require "Unit"
 
-local GenesisReport = {}
+local GenesisReport =
+{
+	nPolls = 0,
+	tReport = {},
+	tLuaErrorEvents = {},
+	bReloadAsked = false,
+}
 
 local knPollSeconds = 1.0
 local knReadySeconds = 10
 
 function GenesisReport:Init()
 	Apollo.RegisterAddon(self)
-end
-
-function GenesisReport:new(o)
-	o = o or {}
-	setmetatable(o, self)
-	self.__index = self
-
-	o.nPolls = 0
-	o.tReport = {}
-	o.tLuaErrorEvents = {}
-	o.nReadySince = nil
-	o.nReportedAt = nil
-	o.tRestored = nil
-	o.bReloadAsked = false
-
-	return o
 end
 
 -- The strings of a list, as a new list of text (arErrors holds each error's text, 1-based; facts
@@ -158,8 +147,8 @@ end
 
 -- Facts 0x14013c8b0 and 0x140137120: Apollo.GetAddonInfo(strName).arErrors lists every error the
 -- addon has had, including those raised before this addon loaded; nil for a name the interface does
--- not have (tAddonsWithoutInfo keeps those names, since whether a name is the toc's or the folder's
--- is not settled). GenesisReportAddons is the list report.sh install writes.
+-- not have; those names are listed in arAddonsWithoutInfo. GenesisReportAddons is the list of names
+-- to sweep, loaded from GenesisReportAddons.lua before this file.
 function GenesisReport:SweepAddonErrors(tReport)
 	local tAddonErrors = {}
 	local arWithoutInfo = {}
@@ -180,11 +169,7 @@ function GenesisReport:SweepAddonErrors(tReport)
 end
 
 -- Fact 0x1406f6800: IsCharacterLoaded is true once every world-loading stage has passed.
--- RequestReloadUI reloads the in-world interface, which runs OnSave and writes the report; it is
--- asked once, when the character is loaded, the model is in and knReadySeconds have passed since
--- both first held. A user addon has no ReloadUI global: only the protected Options addon calls it
--- (UI/ProtectedAddons/Options/Options.lua), and Carbine's /reloadui command calls
--- RequestReloadUI (UI/Macros/Macros.lua).
+-- RequestReloadUI: a user addon has no ReloadUI (fact 0x1400447f0).
 function GenesisReport:OnPoll()
 	if self.tRestored ~= nil then
 		self.timerPoll:Stop()
@@ -192,7 +177,8 @@ function GenesisReport:OnPoll()
 	end
 
 	self.nPolls = self.nPolls + 1
-	local tReport = { nPolls = self.nPolls, nTime = os.time() }
+	local nNow = os.time()
+	local tReport = { nPolls = self.nPolls, nTime = nNow }
 	tReport.bCharacterLoaded = GameLib.IsCharacterLoaded() and true or false
 	local bModelLoaded = self:ReadPlayer(tReport)
 	self:ReadPath(tReport)
@@ -201,15 +187,14 @@ function GenesisReport:OnPoll()
 
 	if tReport.bCharacterLoaded and bModelLoaded then
 		if self.nReadySince == nil then
-			self.nReadySince = os.time()
+			self.nReadySince = nNow
 		end
-		if not self.bReloadAsked and os.time() - self.nReadySince >= knReadySeconds then
+		if not self.bReloadAsked and nNow - self.nReadySince >= knReadySeconds then
 			self.bReloadAsked = true
-			self.nReportedAt = os.time()
+			self.nReportedAt = nNow
 			RequestReloadUI()
 		end
 	end
 end
 
-local GenesisReportInst = GenesisReport:new()
-GenesisReportInst:Init()
+GenesisReport:Init()
