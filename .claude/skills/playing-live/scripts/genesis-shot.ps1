@@ -3,8 +3,9 @@
 # genesis-shot.ps1.in when that is there ("<pid> <start time>", the file client.sh keeps: the pid of
 # the client it started and that process's start time as a file time in UTC) and captures only the
 # process with that pid, the name WildStar64 and that start time; with no input it captures the
-# first WildStar64 window. It writes genesis-shot.png, then genesis-shot.txt last, all at once (a
-# .tmp moved into place).
+# first WildStar64 window. It writes genesis-shot.jpg, then genesis-shot.txt last, all at once (a
+# .tmp moved into place). The picture is a JPEG of quality 90: a 4K PNG of the client is about
+# 4.5 MB, and each one crosses the network.
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System;
@@ -18,7 +19,7 @@ public class Shot {
 "@
 [Shot]::SetProcessDPIAware() | Out-Null
 $inputFile = "$PSCommandPath.in"
-$out = "$env:USERPROFILE\genesis-shot.png"
+$out = "$env:USERPROFILE\genesis-shot.jpg"
 $resultFile = "$env:USERPROFILE\genesis-shot.txt"
 try {
   $ErrorActionPreference = 'Stop'
@@ -42,7 +43,10 @@ try {
   $dc = $g.GetHdc()
   $ok = [Shot]::PrintWindow($p.MainWindowHandle, $dc, 2)
   $g.ReleaseHdc($dc)
-  $bmp.Save($out, [System.Drawing.Imaging.ImageFormat]::Png)
+  $jpeg = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.FormatID -eq [System.Drawing.Imaging.ImageFormat]::Jpeg.Guid }
+  $quality = New-Object System.Drawing.Imaging.EncoderParameters 1
+  $quality.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality, [long]90)
+  $bmp.Save($out, $jpeg, $quality)
   $result = "printwindow=$ok size=${w}x${h}"
 } catch {
   $result = 'error: ' + ($_.Exception.Message -replace '\s+', ' ')

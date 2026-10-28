@@ -50,7 +50,7 @@ A session, in order:
 2. `scripts/client-log.sh start <folder>`.
 3. `scripts/client.sh start`.
 4. Wait for the auth server's login-accepted log line, or a deadline.
-5. `scripts/screenshot.sh <folder>/screen.png`.
+5. `scripts/screenshot.sh <folder>/screen.jpg`.
 6. `scripts/client-log.sh collect <folder>`.
 7. `scripts/client.sh stop`, then stop the server.
 
