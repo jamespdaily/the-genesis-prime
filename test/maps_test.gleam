@@ -265,7 +265,7 @@ pub fn an_ask_past_its_deadline_is_never_sent_to_maps_test() -> Nil {
     as "the asker's deadline had passed before it sent, so Maps is never asked: the find would start a map nobody waits for"
 }
 
-pub fn a_map_gives_each_player_a_unit_id_and_forgets_it_when_its_connection_ends_test() -> Nil {
+pub fn a_map_gives_each_player_a_unit_id_and_never_gives_one_twice_after_a_leave_test() -> Nil {
   use <- owned_test.run(30_000)
   let world = start_world(None)
   let found = started(world, ship)
@@ -279,10 +279,14 @@ pub fn a_map_gives_each_player_a_unit_id_and_forgets_it_when_its_connection_ends
   let ended = process.monitor(first_connection)
   process.kill(first_connection)
   let _reason = ask_support.ended(ended)
-  let _again = connection(world, 1)
-  assert joined(found, 1)
+  // The next joiner is another connection: a rejoin by the killed one's id
+  // would race the map's taking of its end, which comes from another sender
+  // than this test's join. That the end removes the player is the rule's,
+  // tested in map_test.
+  let _next = connection(world, 4)
+  assert joined(found, 4)
     == map.Joined(unit_id: 3, incarnation: found.incarnation)
-    as "the connection ended, and the map took its end before this join in its mailbox, so its player was removed: the next join is a new unit, never unit 1 again"
+    as "a player that joins after one has left is a new unit, never unit 1 again"
 }
 
 pub fn a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_test() -> Nil {
@@ -305,13 +309,12 @@ pub fn the_recording_of_a_map_run_is_named_by_its_world_instance_and_incarnation
   use folder <- recording_support.in_folder
   let world = start_world(Some(folder))
   let found = started(world, ship)
-  let live = connection(world, 1)
-  let _joined = joined(found, 1)
-  let _joined_dead = joined(found, 2)
-  let ended = process.monitor(live)
-  process.kill(live)
-  let _reason = ask_support.ended(ended)
-  let _joined_after = joined(found, 3)
+  // Both joiners are connection ids no process holds, so each watch ends as
+  // the map's next input, in its own mailbox order. A live connection killed
+  // here would race the tree's stop: its end comes from another sender than
+  // the stop, so the map may stop before it takes it.
+  let _joined = joined(found, 2)
+  let _joined = joined(found, 3)
   let _reason = ask_support.stop_tree(world.tree)
   let bytes = recording_support.recording_in(folder)
   assert simplifile.read_bits(
@@ -342,7 +345,7 @@ pub fn the_recording_of_a_map_run_is_named_by_its_world_instance_and_incarnation
       None,
     )
     == Ok(count)
-    as "every recorded step is the step the rule gives again: the first input, the three joins, the three watches' ends and the stop"
-  assert count == 8
-    as "Started, three Asked, WatchEnded for the two dead connections' watches at once and for the killed one, and Stopping; the third join, answered after the kill, is taken after the killed connection's end"
+    as "every recorded step is the step the rule gives again: the first input, the two joins, the two watches' ends and the stop"
+  assert count == 6
+    as "Started, two Asked, each followed by the WatchEnded of its joiner's watch, and Stopping"
 }
