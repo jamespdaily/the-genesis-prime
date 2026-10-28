@@ -77,7 +77,6 @@ esac
 
 tool=client
 . "$(dirname "$0")/pc.sh"
-state=$home/client.pid
 if [ "$command" = start ]; then
   : "${GENESIS_PLAY_ADDRESS:?set GENESIS_PLAY_ADDRESS (the server host the client is pointed at, an address on the PC network) in ~/.genesis-prime/env.sh}"
   : "${GENESIS_PLAY_CLIENT_DIR:?set GENESIS_PLAY_CLIENT_DIR (the client install folder, for example C:\\WildStar-HD) in ~/.genesis-prime/env.sh}"
@@ -86,13 +85,6 @@ if [ "$command" = start ]; then
     : "${GENESIS_PLAY_PASSWORD:?set GENESIS_PLAY_PASSWORD (the account password) in ~/.genesis-prime/env.sh}"
   fi
 fi
-
-# Reads the pid and start time the client had when started from $state into $pid and $started.
-read_state() {
-  [ -s "$state" ] || { echo "client: no $state; this script acts only on a client it started, and none is recorded" >&2; exit 1; }
-  read -r pid started < "$state"
-  [[ $pid =~ ^[0-9]+$ && ${started:-} =~ ^[0-9]+$ ]] || { echo "client: $state does not hold a pid and a start time" >&2; exit 1; }
-}
 
 # Saves the pid and start time that genesis-start.ps1 reported in $result.
 save_state() {

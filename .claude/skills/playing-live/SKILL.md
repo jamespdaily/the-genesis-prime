@@ -37,21 +37,24 @@ The client uploads its error reports to `crash.na.wildstar-online.com`, which st
 
 ## Driving the client
 
-`scripts/client.sh` starts, types into and closes the client on the PC in the person's session, through hidden scheduled tasks, run by `scripts/pc.sh` (which `scripts/screenshot.sh` and `scripts/client-log.sh` share), that it always deletes with the files it copied. Except `click` (takeover mode, below), it never takes focus: no SendInput, no SetForegroundWindow, and each start and each typing records the foreground window before and after and fails if it moved.
+`scripts/client.sh` starts, types into and closes the client on the PC in the person's session, through hidden scheduled tasks, run by `scripts/pc.sh` (which `scripts/screenshot.sh`, `scripts/client-log.sh` and `scripts/report.sh` share), that it always deletes with the files it copied. Except `click` (takeover mode, below), it never takes focus: no SendInput, no SetForegroundWindow, and each start and each typing records the foreground window before and after and fails if it moved.
 
 - `client.sh start` refuses, changing nothing, when any WildStar64 process runs (the start script checks, just before it launches): Jim may be playing. Otherwise it starts the client from `GENESIS_PLAY_CLIENT_DIR` pointed at `GENESIS_PLAY_ADDRESS`, logged in from its command line with the account and password, and prints the pid, the process's start time, the program's SHA-256 and the window's style, and saves the pid and start time in `~/.genesis-prime/client.pid`. Keep the client borderless: started behind the person's window it keeps drawing and takes posted input. The command line begins with `/auth` and the host because the client starts its launcher otherwise (fact 0x14000ae77).
 - `client.sh start --type-login` starts it without an account or password. Then `client.sh type <text>` and `client.sh key tab|enter` post the characters to its window one by one (facts 0x140112a60, 0x140111030, 0x1400e67a0). A Tab or Enter inside the text is posted as that key, so a whole typed login is one call: `client.sh type $'<account>\t<password>\r'`. `type` and `key` refuse when no client is recorded, and act only on the process with the recorded pid, name and start time, never on the person's own client.
 - `client.sh click <x> <y> --pc-free` is takeover mode, for the screens the client reads the real cursor on (fact 0x1403f3790), where a posted click never lands. It runs only with `--pc-free` or `GENESIS_PC_FREE=1`, set only when Jim has said the PC is free, and refuses without it before it touches the PC. Then it brings the recorded client's window forward, moves the real mouse to the client point (x, y) and clicks the left button there (SetForegroundWindow, SetCursorPos, mouse_event, by `genesis-click.ps1`), only for a point inside the window's client rectangle and only when the window under the cursor is the client's, on the recorded pid and start time only, as `type` does. A named target (`client.sh click enter-game --pc-free`) is a point read from screenshots of the 3840x2160 client, listed in the script; for any other point, or a target that misses, read the point from a screenshot (`scripts/screenshot.sh`).
 - `client.sh stop` closes the client that `start` recorded, by pid and start time, and no other, and ends its process. A recorded pid that now belongs to another process is left alone.
+- `scripts/report.sh` brings back what the client's Lua sees of an entry: the player's state (alive, health, controlled, model loaded, name, level, path, position) and every addon error, the "An error has occurred in Addon" lines the client's log file does not record. `install` writes the GenesisReport addon (`scripts/GenesisReport/`) into the PC's Addons folder, with the names of the addons the PC has installed, and deletes any old report. `install --with-broken` also installs GenesisBroken (`scripts/GenesisBroken/`), an addon that fails on load, for the check that errors come back. Both `install` and `remove` refuse, changing nothing, while any WildStar64 process runs. Once the character is loaded and its model is in, the addon waits 10 s and reloads the interface once; the client writes the report on that reload. `collect <folder>` copies the report back, writes `<folder>/report.json` and prints it, and refuses a report older than the start of the client `client.sh start` recorded. `remove` takes both addons off the PC. The addon never stays installed: it reloads the interface once per entry, which Jim's own play must not get.
 
 A session, in order:
 
 1. Start the server in record mode: `gleam run -m genesis_prime/dev_start -- <folder>`.
 2. `scripts/client-log.sh start <folder>`.
-3. `scripts/client.sh start`.
-4. Wait for the auth server's login-accepted log line, or a deadline.
-5. `scripts/screenshot.sh <folder>/screen.jpg`.
-6. `scripts/client-log.sh collect <folder>`.
-7. `scripts/client.sh stop`, then stop the server.
+3. `scripts/report.sh install`, before the client starts: the client reads its addons when the world starts.
+4. `scripts/client.sh start`.
+5. Wait for the auth server's login-accepted log line, or a deadline.
+6. `scripts/screenshot.sh <folder>/screen.jpg`.
+7. When the report is wanted, enter the world from character select (`scripts/client.sh click enter-game --pc-free`), wait about 15 s, then `scripts/report.sh collect <folder>`.
+8. `scripts/client-log.sh collect <folder>`.
+9. `scripts/client.sh stop`, then `scripts/report.sh remove`, then stop the server.
 
 Save the `client.sh start` line, with the program's SHA-256, in the session folder.

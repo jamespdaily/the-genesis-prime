@@ -1,5 +1,5 @@
-# How the playing-live scripts reach the play PC. Sourced by client.sh, screenshot.sh and
-# client-log.sh, never run; the script that sources it has set -euo pipefail, and may set `tool`
+# How the playing-live scripts reach the play PC. Sourced by client.sh, screenshot.sh, client-log.sh
+# and report.sh, never run; the script that sources it has set -euo pipefail, and may set `tool`
 # (its name, the prefix of every message here) first.
 #
 # It reads ~/.genesis-prime/env.sh (or $GENESIS_HOME/env.sh) and needs GENESIS_PLAY_PC (user@host),
@@ -16,6 +16,9 @@
 #                                (after ending the task) and on "foreground_kept=False" (after
 #                                calling on_focus_lost, when the caller defined it).
 #   pc_track <file>              a file the script leaves in the PC's profile, deleted at the end
+#   read_state                   reads the pid and start time (a file time in UTC) of the client that
+#                                client.sh start recorded in $state (client.pid beside env.sh) into
+#                                $pid and $started; ends the script when none is recorded
 # A trap on EXIT deletes only the tasks and files this run used, in one ssh, and fails when any is
 # still on the PC or the PC cannot be reached. A run that used none (stop) does not call the PC.
 # PowerShell runs without -ExecutionPolicy Bypass: the PC's CurrentUser policy is RemoteSigned.
@@ -31,6 +34,7 @@ pc_tmp=$(mktemp -d)
 pc_tasks=()
 pc_files=()
 result=
+state=$home/client.pid
 
 on_pc() { ssh "${options[@]}" "$GENESIS_PLAY_PC" "$1"; }
 
@@ -45,6 +49,12 @@ on_pc_ps() {
 }
 
 pc_track() { pc_files+=("$1"); }
+
+read_state() {
+  [ -s "$state" ] || { echo "${tool:-pc}: no $state; client.sh start records the client it starts there, and none is recorded" >&2; exit 1; }
+  read -r pid started < "$state"
+  [[ $pid =~ ^[0-9]+$ && ${started:-} =~ ^[0-9]+$ ]] || { echo "${tool:-pc}: $state does not hold a pid and a start time" >&2; exit 1; }
+}
 
 run_task() {
   local task=$1 script=$2 file=$3 seconds=$4 input=${5:-}
