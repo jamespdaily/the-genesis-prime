@@ -168,7 +168,9 @@ pub fn step(
 ) -> #(State, Step(Nil, Request)) {
   case state {
     NotAccepted(settings:) -> {
-      case client_connection.hear(input.event, about: step.no_one) {
+      case
+        client_connection.hear(input.event, about: step.no_one, stopping: [])
+      {
         Connect(connection:, peer:, seed:) -> #(
           Connected(Session(
             settings:,
@@ -209,6 +211,7 @@ fn connected(
         link: session.link,
         account_id: account_id_of(session.status),
       ),
+      stopping: [],
     )
   {
     Bytes(bytes:) -> read(session:, now:, bytes:)

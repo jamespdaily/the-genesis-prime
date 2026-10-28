@@ -42,7 +42,6 @@ import genesis_prime/client_connection.{
   Continue, End, FromHandOff, FromStore, Otherwise,
 }
 import genesis_prime/connection/cipher
-import genesis_prime/connection/client_frame
 import genesis_prime/connection/encrypted_frame.{AuthWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/hello
@@ -153,7 +152,9 @@ pub fn step(
 ) -> #(State, Step(Nil, Request)) {
   case state {
     NotAccepted(settings:) ->
-      case client_connection.hear(input.event, about: step.no_one) {
+      case
+        client_connection.hear(input.event, about: step.no_one, stopping: [])
+      {
         Connect(connection:, peer:, seed:) -> {
           let planted = case settings.planted {
             Some(planted) -> [Write(wrapped(planted))]
@@ -199,6 +200,7 @@ fn connected(
         session.link,
         account_id: account_id_of(session.status),
       ),
+      stopping: [],
     )
   {
     Bytes(bytes:) -> {
@@ -241,9 +243,7 @@ fn bare_hello(realm: Realm) -> BitArray {
 
 /// A frame in the auth wrapper, under the client's base key.
 fn wrapped(inner: Frame) -> BitArray {
-  let assert Ok(bytes) = encrypted_frame.wrap(AuthWrapper, inner, cipher.base())
-    as "the frame is far below the size limit"
-  bytes
+  client_connection.wrapped(AuthWrapper, inner, cipher.base())
 }
 
 /// Takes the whole frames in the pending bytes in order until one asks or the
@@ -254,32 +254,25 @@ fn drive(
   now now: Now,
   carried carried: List(Effect(Nil)),
 ) -> #(State, Step(Nil, Request)) {
-  case frame.take(session.pending) {
-    Error(error) ->
-      settle(
-        handled: End(session, [
-          log(
-            session:,
-            level: LogError,
-            text: "the bytes are no frame: " <> frame.describe(error),
-          ),
-          Stop,
-        ]),
-        now:,
-        carried:,
-      )
-    Ok(None) -> #(Connected(session), Effects(carried))
-    Ok(Some(#(first, rest))) ->
-      settle(
-        handled: handle(
-          session: Session(..session, pending: rest),
-          now:,
-          frame: first,
+  client_connection.drive(
+    session:,
+    carried:,
+    pending: fn(session: Session) { session.pending },
+    taking: fn(session, whole, rest) {
+      handle(session: Session(..session, pending: rest), now:, frame: whole)
+    },
+    refused: fn(session, error) {
+      End(session, [
+        log(
+          session:,
+          level: LogError,
+          text: "the bytes are no frame: " <> frame.describe(error),
         ),
-        now:,
-        carried:,
-      )
-  }
+        Stop,
+      ])
+    },
+    connected: Connected,
+  )
 }
 
 fn settle(
@@ -302,31 +295,18 @@ fn handle(
   now now: Now,
   frame whole: Frame,
 ) -> client_connection.Handled(Session) {
-  case client_frame.receive(frame: whole, cipher: cipher.base()) {
-    client_frame.Pong(bytes:) -> Continue(session, [Write(bytes)])
-    client_frame.Noted -> Continue(session, [])
-    client_frame.Malformed(message_id:, ..) ->
-      End(session, [
-        log(
-          session:,
-          level: LogError,
-          text: "a network message "
-            <> client_connection.message_text(message_id)
-            <> " does not decode",
-        ),
-        Stop,
-      ])
-    client_frame.Unknown(message_id:) -> unhandled(session, message_id)
-    client_frame.Broken(error:) ->
-      End(session, [
-        log(
-          session:,
-          level: LogError,
-          text: "the wrapped frame is no frame: " <> frame.describe(error),
-        ),
-        Stop,
-      ])
-    client_frame.Wrapped(inner:) ->
+  case
+    client_connection.open(
+      session:,
+      link: session.link,
+      account_id: account_id_of(session.status),
+      server: "auth",
+      frame: whole,
+      cipher: cipher.base(),
+    )
+  {
+    client_connection.Settled(handled:) -> handled
+    client_connection.Inside(inner:) ->
       case inner.message_id == login_request.message_id {
         True ->
           case login_request.decode(inner.body) {

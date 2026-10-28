@@ -7,23 +7,31 @@
 ////
 //// Each rule keeps a `Link`: who the connection is for their log lines, the
 //// seed's random source and the number of their last ask. Each sorts an input
-//// with `hear`, which decides what the client closing, the server stopping, a
-//// failed socket, a late answer and an input a connection is never given do.
+//// with `hear`, which decides what the client closing, a failed socket, a late
+//// answer and an input a connection is never given do, and ends the
+//// connection when the server stops after the effects the rule gives it.
 //// Each takes a request or frame at a time and says what it decided with
-//// `Handled`, which `settle` carries out.
+//// `Handled`, which `settle` carries out. The rules that take the client's
+//// wrapper (the auth rule and the game rule) read each whole frame with
+//// `drive` and `open`, and write each message with `wrapped`.
 
+import genesis_prime/connection/cipher.{type Cipher}
+import genesis_prime/connection/client_frame
+import genesis_prime/connection/encrypted_frame.{type Wrapper}
+import genesis_prime/connection/frame.{type Frame, type FrameError}
 import genesis_prime/hand_off
 import genesis_prime/random.{type Random}
 import genesis_prime/step.{
   type About, type ConnectionId, type Effect, type Event, type Now, type Outcome,
   type Peer, type Step, About, Accepted, Answered, AnsweredLate, AskId, Asked,
   Effects, EffectsThenAsk, Log, LogError, LogLine, LogWarning, PeerClosed,
-  ReadFailed, Socket, Started, Stop, Stopping, TimerFired, Woken, WriteFailed,
+  ReadFailed, Socket, Started, Stop, Stopping, TimerFired, Woken, Write,
+  WriteFailed,
 }
 import genesis_prime/store
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/string
 
 /// What a connection rule asks.
@@ -137,11 +145,16 @@ pub type Heard {
   Otherwise(step: Step(Nil, Request))
 }
 
-/// Sorts an input: what the client closing, the server stopping, a failed
-/// socket, a late answer and an input a connection is never given do is the
-/// same in every rule, so it is decided here; `about` says who a log line is
-/// about.
-pub fn hear(event event: Event(Nil, Answer), about about: About) -> Heard {
+/// Sorts an input: what the client closing, a failed socket and a late answer
+/// do is the same in every rule, so it is decided here; `about` says who a log
+/// line is about. The server stopping ends the connection after `stopping`,
+/// the effects the rule writes first: none for a connection with no one to
+/// tell, a notice for one whose client waits for the server's next message.
+pub fn hear(
+  event event: Event(Nil, Answer),
+  about about: About,
+  stopping stopping: List(Effect(Nil)),
+) -> Heard {
   let ends = fn(level, text) {
     Otherwise(Effects([Log(LogLine(level:, text:, about:)), Stop]))
   }
@@ -150,7 +163,8 @@ pub fn hear(event event: Event(Nil, Answer), about about: About) -> Heard {
       Connect(connection:, peer:, seed:)
     Socket(step.Read(bytes:)) -> Bytes(bytes:)
     Answered(outcome:, ..) -> Outcome(outcome:)
-    Socket(PeerClosed) | Stopping(..) -> Otherwise(Effects([Stop]))
+    Socket(PeerClosed) -> Otherwise(Effects([Stop]))
+    Stopping(..) -> Otherwise(Effects(list.append(stopping, [Stop])))
     Socket(ReadFailed(failure:)) | Socket(WriteFailed(failure:)) ->
       ends(
         LogWarning,
@@ -209,5 +223,112 @@ pub fn without_answer(
     step.EndedBeforeAnswer -> who <> " ended before it answered"
     step.StoppedWaiting -> "the server began stopping"
     step.Answer(..) -> who <> " gave an answer"
+  }
+}
+
+/// A message as the bytes to write: its frame in `wrapper`, under `cipher`.
+pub fn wrapped(
+  wrapper wrapper: Wrapper,
+  inner inner: Frame,
+  cipher cipher: Cipher,
+) -> BitArray {
+  let assert Ok(bytes) = encrypted_frame.wrap(wrapper, inner, cipher)
+    as "a message the rule writes is far below the size limit"
+  bytes
+}
+
+/// What a whole frame from the client is to a rule that takes the client's
+/// wrapper.
+pub type Opened(session) {
+  /// The network layer's message, a frame the rule does not take, or a frame
+  /// that is none the client's reader accepts: decided.
+  Settled(handled: Handled(session))
+  /// The frame inside the client's wrapper, for the rule to take.
+  Inside(inner: Frame)
+}
+
+/// Sorts a whole frame from the client: a ping is answered, a pong or close
+/// notice accepted, a network message that does not decode ends the
+/// connection, a frame of a message the rule does not take is logged as
+/// unhandled by `server`, and the frame inside the client's wrapper, opened
+/// with `cipher`, is given to the rule.
+pub fn open(
+  session session: session,
+  link link: Link,
+  account_id account_id: Option(Int),
+  server server: String,
+  frame whole: Frame,
+  cipher cipher: Cipher,
+) -> Opened(session) {
+  case client_frame.receive(frame: whole, cipher:) {
+    client_frame.Pong(bytes:) -> Settled(Continue(session, [Write(bytes)]))
+    client_frame.Noted -> Settled(Continue(session, []))
+    client_frame.Malformed(message_id:, ..) ->
+      Settled(
+        End(session, [
+          log(
+            link:,
+            account_id:,
+            level: LogError,
+            text: "a network message "
+              <> message_text(message_id:)
+              <> " does not decode",
+          ),
+          Stop,
+        ]),
+      )
+    client_frame.Unknown(message_id:) ->
+      Settled(
+        Continue(session, [unhandled(link:, account_id:, server:, message_id:)]),
+      )
+    client_frame.Broken(error:) ->
+      Settled(
+        End(session, [
+          log(
+            link:,
+            account_id:,
+            level: LogError,
+            text: "the wrapped frame is no frame: " <> frame.describe(error),
+          ),
+          Stop,
+        ]),
+      )
+    client_frame.Wrapped(inner:) -> Inside(inner:)
+  }
+}
+
+/// Takes the whole frames in a session's pending bytes in order, until one
+/// asks, the connection ends or the bytes hold no more. `taking` takes one
+/// frame, given the bytes after it as `rest`, which it keeps as the
+/// session's pending bytes; `refused` ends the connection for bytes that are
+/// no frame, after the whole frames before them; `carried` are the effects
+/// already decided.
+pub fn drive(
+  session session: session,
+  carried carried: List(Effect(Nil)),
+  pending pending: fn(session) -> BitArray,
+  taking taking: fn(session, Frame, BitArray) -> Handled(session),
+  refused refused: fn(session, FrameError) -> Handled(session),
+  connected connected: fn(session) -> state,
+) -> #(state, Step(Nil, Request)) {
+  let next = fn(session, carried) {
+    drive(session:, carried:, pending:, taking:, refused:, connected:)
+  }
+  case frame.take(pending(session)) {
+    Error(error) ->
+      settle(
+        handled: refused(session, error),
+        carried:,
+        connected:,
+        drive: next,
+      )
+    Ok(None) -> #(connected(session), Effects(carried))
+    Ok(Some(#(first, rest))) ->
+      settle(
+        handled: taking(session, first, rest),
+        carried:,
+        connected:,
+        drive: next,
+      )
   }
 }

@@ -4,6 +4,7 @@
 //// (block n = HMAC-SHA256(key: seed, data: n as 64 bits big-endian)) and not
 //// by `genesis_prime/random`.
 
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
   type Ask, type Effect, type Event, type Input, type LogLevel, type LogLine,
@@ -105,6 +106,15 @@ pub fn writes(step: Step(outgoing, request)) -> List(BitArray) {
       | Log(..)
       | Stop -> Error(Nil)
     }
+  })
+}
+
+/// Every frame the step writes, as the server wrote it.
+pub fn written_frames(step: Step(outgoing, request)) -> List(Frame) {
+  list.flat_map(writes(step), fn(bytes) {
+    let assert Ok(#(frames, <<>>)) = frame.decode(bytes)
+      as "the server writes whole frames"
+    frames
   })
 }
 

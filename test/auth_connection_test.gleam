@@ -118,19 +118,10 @@ fn answer(
   feed(state, step.Answered(ask: ask.ask, outcome:))
 }
 
-/// Every frame the step writes, as the server wrote it.
-fn written_frames(taken: Step(Nil, Request)) -> List(Frame) {
-  list.flat_map(support.writes(taken), fn(bytes) {
-    let assert Ok(#(frames, <<>>)) = frame.decode(bytes)
-      as "the server writes whole frames"
-    frames
-  })
-}
-
 /// Every frame the step writes, as the client reads it: each must be in a
 /// 0x76 wrapper, which is opened under the base key.
 fn heard(taken: Step(Nil, Request)) -> List(Frame) {
-  list.map(written_frames(taken), login_client.in_the_auth_wrapper)
+  list.map(support.written_frames(taken), login_client.in_the_auth_wrapper)
 }
 
 /// The one refusal the step writes, whole, with the connection ended.
@@ -176,7 +167,7 @@ fn token_taken(
 pub fn on_connect_the_server_sends_the_hello_with_build_16042_the_checksum_and_the_realm_id_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) = accepted(seed: support.seed(first: 1), planted: None)
-  let assert [Frame(message_id: 0x0003, body:)] = written_frames(taken)
+  let assert [Frame(message_id: 0x0003, body:)] = support.written_frames(taken)
     as "one bare frame, message 3, and nothing else"
   let assert [written] = support.writes(taken)
   let assert Ok(#([bare], <<>>)) = frame.decode(written)
@@ -201,7 +192,7 @@ pub fn on_connect_the_server_sends_the_hello_with_build_16042_the_checksum_and_t
   let planted = Frame(message_id: 0x0914, body: <<>>)
   let #(_, taken) =
     accepted(seed: support.seed(first: 1), planted: Some(planted))
-  let assert [first, second] = written_frames(taken)
+  let assert [first, second] = support.written_frames(taken)
     as "the hello, then the planted frame"
   assert first.message_id == 0x0003
   assert login_client.in_the_auth_wrapper(second) == planted
