@@ -595,9 +595,9 @@ fields = [
   { name = "path", kind = "unsigned", bits = 3, evidence = "0x14007f720", named_by = "0x14007f720" },
   { name = "disabled", kind = "unsigned", bits = 1, evidence = "0x14007f720", named_by = "0x14007f720" },
   { name = "requires_rename", kind = "unsigned", bits = 1, evidence = "0x14007f720", named_by = "0x14007f720" },
-  { name = "field_21", kind = "unsigned", bits = 32, evidence = "0x14007f720" },
-  { name = "customisation_labels", kind = "array", count_bits = 4, element = "unsigned", element_bits = 32, evidence = "0x14007f720", named_by = "0x14007f720" },
-  { name = "customisation_values", kind = "array", counted_by = "customisation_labels", element = "unsigned", element_bits = 32, evidence = "0x14007f720", named_by = "0x14007f720" },
+  { name = "costume_slot_mask", kind = "unsigned", bits = 32, evidence = "0x14007f720", named_by = "0x140027380" },
+  { name = "costume_item_ids", kind = "array", count_bits = 4, element = "unsigned", element_bits = 32, evidence = "0x14007f720", named_by = "0x140027380" },
+  { name = "costume_dyes", kind = "array", counted_by = "costume_item_ids", element = "unsigned", element_bits = 32, evidence = "0x14007f720", named_by = "0x140027380" },
   { name = "bone_values", kind = "array", count_bits = 32, element = "float32", evidence = "0x14007f720", named_by = "0x14007f720" },
   { name = "last_logged_out_days", kind = "float32", evidence = "0x14007f720", named_by = "0x14007f720" },
 ]
