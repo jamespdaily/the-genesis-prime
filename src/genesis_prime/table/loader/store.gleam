@@ -1,20 +1,42 @@
 //// The client's game tables as persistent terms: one term per table, a tuple
 //// of its rows indexed by id, written once by `load` and never replaced. A
-//// load reads each table's file, writes its term under a key made for that
-//// load, then checks that every row the server requires exists; when anything
-//// fails it erases what it wrote.
+//// load reads each table's file, writes its term under its key, then checks
+//// that every row the server requires exists; when anything fails it erases
+//// what it wrote. A load also digests the files it read.
+////
+//// - **The server's key is fixed.** The server's tables are stored under
+////   `ServerKey`, a constant the server writes, so the tables a rule's
+////   settings hold are the same value in every run and a recording of the
+////   settings compares equal to a replay's. Any other load (a test's, the
+////   coverage measure's) takes a key made for it, so two loads never share
+////   terms. Only the server's own start and the tests that replay a
+////   recording load under `ServerKey`, and each once in a run.
+//// - **The digest** is SHA-256 over every file read, each preceded by its
+////   name, in the order of the entries. A recording's header holds it, so a
+////   replay on other table files is told to record again.
 
 import genesis_prime/table/loader/tbl_file
+import gleam/bit_array
+import gleam/crypto
 import gleam/erlang/reference.{type Reference}
 import gleam/int
 import gleam/list
 import gleam/result
 import simplifile
 
+/// What a load's terms are stored under.
+pub opaque type Key {
+  /// The server's own key, the same in every run.
+  ServerKey
+  /// A key made for one load.
+  LoadKey(Reference)
+}
+
 /// The tables of one load. It holds the key their terms are stored under, so a
-/// process that reads a table is started with it.
+/// process that reads a table is started with it, and the digest of the files
+/// they were read from.
 pub opaque type Tables {
-  Tables(key: Reference, tables: List(String))
+  Tables(key: Key, tables: List(String), digest: String)
 }
 
 /// One table the loader reads: the client's name, its file, and how to read
@@ -25,7 +47,7 @@ pub opaque type Entry {
     schema: tbl_file.Schema,
     table: String,
     file: String,
-    put: fn(BitArray, Reference) -> Result(Nil, tbl_file.FileError),
+    put: fn(BitArray, Key) -> Result(Nil, tbl_file.FileError),
     ids: fn(Tables) -> List(Int),
   )
 }
@@ -99,6 +121,11 @@ pub fn entry(
   )
 }
 
+/// The digest of the files the tables were read from, as upper-case hex.
+pub fn digest(tables: Tables) -> String {
+  tables.digest
+}
+
 /// The schema the entry's file is read by.
 pub fn schema(entry: Entry) -> tbl_file.Schema {
   entry.schema
@@ -123,13 +150,41 @@ pub fn load(
   entries entries: List(Entry),
   requirements requirements: List(Requirement),
 ) -> Result(Tables, LoadError) {
-  case put_each(key:, folder:, entries:, written: []) {
+  load_under(key: LoadKey(key), folder:, entries:, requirements:)
+}
+
+/// `load` under the server's own key. The server loads once at start, and a
+/// test that replays a recording loads once in its run; a second load under
+/// this key replaces the terms of the first.
+pub fn load_for_server(
+  from folder: String,
+  entries entries: List(Entry),
+  requirements requirements: List(Requirement),
+) -> Result(Tables, LoadError) {
+  load_under(key: ServerKey, folder:, entries:, requirements:)
+}
+
+fn load_under(
+  key key: Key,
+  folder folder: String,
+  entries entries: List(Entry),
+  requirements requirements: List(Requirement),
+) -> Result(Tables, LoadError) {
+  case
+    put_each(
+      key:,
+      folder:,
+      entries:,
+      written: [],
+      hasher: crypto.new_hasher(crypto.Sha256),
+    )
+  {
     Error(#(error, written)) -> {
-      unload(Tables(key:, tables: written))
+      unload(Tables(key:, tables: written, digest: ""))
       Error(error)
     }
-    Ok(written) -> {
-      let tables = Tables(key:, tables: written)
+    Ok(#(written, digest)) -> {
+      let tables = Tables(key:, tables: written, digest:)
       case first_missing_row(tables, requirements) {
         Ok(Nil) -> Ok(tables)
         Error(error) -> {
@@ -141,20 +196,22 @@ pub fn load(
   }
 }
 
-/// Reads and writes each entry in turn, giving the tables written, or the
-/// first error with the tables written before it.
+/// Reads and writes each entry in turn, giving the tables written and the
+/// digest of the files read, or the first error with the tables written
+/// before it.
 fn put_each(
-  key key: Reference,
+  key key: Key,
   folder folder: String,
   entries entries: List(Entry),
   written written: List(String),
-) -> Result(List(String), #(LoadError, List(String))) {
+  hasher hasher: crypto.Hasher,
+) -> Result(#(List(String), String), #(LoadError, List(String))) {
   case entries {
-    [] -> Ok(written)
+    [] -> Ok(#(written, bit_array.base16_encode(crypto.digest(hasher))))
     [entry, ..rest] ->
-      case put_one(key:, folder:, entry:) {
-        Ok(Nil) ->
-          put_each(key:, folder:, entries: rest, written: [
+      case put_one(key:, folder:, entry:, hasher:) {
+        Ok(hasher) ->
+          put_each(key:, folder:, entries: rest, hasher:, written: [
             entry.table,
             ..written
           ])
@@ -163,17 +220,25 @@ fn put_each(
   }
 }
 
+/// Reads one entry's file and writes its term, giving the hasher with the
+/// file's name and bytes added.
 fn put_one(
-  key key: Reference,
+  key key: Key,
   folder folder: String,
   entry entry: Entry,
-) -> Result(Nil, LoadError) {
+  hasher hasher: crypto.Hasher,
+) -> Result(crypto.Hasher, LoadError) {
   use bytes <- result.try(
     simplifile.read_bits(folder <> "/" <> entry.file <> ".tbl")
     |> result.map_error(TableFileUnreadable(entry.file, _)),
   )
-  entry.put(bytes, key)
-  |> result.map_error(TableFileInvalid(entry.table, _))
+  use Nil <- result.map(
+    entry.put(bytes, key)
+    |> result.map_error(TableFileInvalid(entry.table, _)),
+  )
+  hasher
+  |> crypto.hash_chunk(<<entry.file:utf8, 0>>)
+  |> crypto.hash_chunk(bytes)
 }
 
 fn first_missing_row(
@@ -218,12 +283,12 @@ pub fn rows(tables tables: Tables, table table: String) -> List(row) {
 
 /// Writes a table's term.
 @external(erlang, "store_ffi", "put")
-fn put_term(key: #(Reference, String), table: tbl_file.Table(row)) -> Nil
+fn put_term(key: #(Key, String), table: tbl_file.Table(row)) -> Nil
 
 /// A table's term. The type of its rows is the caller's to name.
 @external(erlang, "persistent_term", "get")
-fn get_term(key: #(Reference, String)) -> tbl_file.Table(row)
+fn get_term(key: #(Key, String)) -> tbl_file.Table(row)
 
 /// Erases a table's term.
 @external(erlang, "store_ffi", "erase")
-fn erase_term(key: #(Reference, String)) -> Nil
+fn erase_term(key: #(Key, String)) -> Nil

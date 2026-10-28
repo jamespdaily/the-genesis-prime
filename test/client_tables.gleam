@@ -6,10 +6,16 @@ import database_support
 import envoy
 import genesis_prime/table
 import genesis_prime/table/loader/store
-import gleam/erlang/reference
 import gleam/list
 import gleam/string
 import simplifile
+
+/// Whether the client's files are on this machine: false only where
+/// `GENESIS_NO_CLIENT=1`, which CI sets. A test whose point is the client's real
+/// data begins with `use <- unitest.guard(client_tables.present())`.
+pub fn present() -> Bool {
+  envoy.get("GENESIS_NO_CLIENT") != Ok("1")
+}
 
 /// The folder `setup_check/extract_tables.py` fills: `GENESIS_TABLE_DIR`, else
 /// `tables` under `GENESIS_HOME`, else under `~/.genesis-prime`.
@@ -54,14 +60,16 @@ pub fn files() -> List(String) {
   |> list.sort(string.compare)
 }
 
-/// Every one of the client's 384 tables, loaded once per test run: the first
-/// caller loads them, every later caller in any test process gets the same
-/// `Tables`. A failed load stops the caller, naming the table. Never unload
-/// them, and never load the tables again for a test that reads the real files;
-/// a test of the load itself loads its own and unloads it.
+/// Every one of the client's 384 tables, loaded once per test run under the
+/// server's own key: the first caller loads them, every later caller in any
+/// test process gets the same `Tables`, and a recording of the game rule
+/// replays on them, as its settings hold the tables under that key. A failed
+/// load stops the caller, naming the table. Never unload them, and never load
+/// the tables again for a test that reads the real files; a test of the load
+/// itself loads its own under a key of its own and unloads it.
 pub fn shared() -> store.Tables {
   database_support.once("client_tables", fn() {
-    case table.load(under: reference.new(), from: folder()) {
+    case table.load_for_server(from: folder()) {
       Ok(tables) -> tables
       Error(error) ->
         panic as {

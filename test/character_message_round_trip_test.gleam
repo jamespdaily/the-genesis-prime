@@ -28,6 +28,7 @@ import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
+import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
@@ -282,6 +283,7 @@ pub fn create_character_result_round_trips_test() -> Nil {
       let #(value, state) = message_support.unsigned(state:, bits: 6)
       let result = case value {
         3 -> create_result.CreateOk
+        4 -> create_result.CreateFailed
         6 -> create_result.NameUnavailable
         9 -> create_result.AccountFull
         10 -> create_result.NameLength
@@ -316,8 +318,15 @@ pub fn play_character_refused_round_trips_test() -> Nil {
     name: "message 0x162",
     seed: 20_261_206,
     draw: fn(state) {
-      let #(field_1, state) = message_support.unsigned(state:, bits: 3)
-      #(PlayCharacterRefused(field_1:), state)
+      let #(value, state) = message_support.unsigned(state:, bits: 3)
+      let result = case value {
+        1 -> play_refusal.FailedRename
+        2 -> play_refusal.Failed
+        3 -> play_refusal.FailedDisabled
+        4 -> play_refusal.CharacterInWorld
+        other -> play_refusal.Other(other)
+      }
+      #(PlayCharacterRefused(result:), state)
     },
     encode: play_character_refused.encode,
     decode: play_character_refused.decode,

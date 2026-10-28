@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Starts the WildStar client on the PC in the person's session, types into it and closes it, without
-# moving focus: Jim may be using the PC.
+# moving focus: Jim may be using the PC. Only click, in takeover mode, takes the focus and the mouse.
 #
 #   client.sh start [--type-login]   starts the client hidden and logged in from its command line;
 #                                    with --type-login, without an account or password
@@ -8,6 +8,9 @@
 #                                    a Tab (\t) or Enter (\r) in the text is posted as that key, so a
 #                                    whole login is one call: client.sh type $'<account>\t<password>\r'
 #   client.sh key tab|enter          posts WM_CHAR 0x09 or 0x0D
+#   client.sh click <x> <y> --pc-free  takeover mode: brings the client's window forward, moves the real
+#                                    mouse to the client point (x, y) and clicks the left button there;
+#                                    refuses without --pc-free (or GENESIS_PC_FREE=1 in the environment)
 #   client.sh stop                   closes the client this script started
 #
 # Needs GENESIS_PLAY_PC (user@host), GENESIS_PLAY_ADDRESS (the server host the client is pointed
@@ -18,11 +21,14 @@
 # hidden scheduled task (GenesisClient, GenesisInput), by pc.sh; the task and the files it copied
 # are always deleted. start refuses, in the script and before it launches anything, when any
 # WildStar64 process runs, and saves the client's pid and start time in client.pid beside env.sh.
-# type, key and stop act only on the process with that pid, that name and that start time, so a
-# reused pid never reaches another client; with no client recorded, type and key refuse.
+# type, key, click and stop act only on the process with that pid, that name and that start time, so
+# a reused pid never reaches another client; with no client recorded, type, key and click refuse.
+# click runs genesis-click.ps1 (task GenesisClick) and is the one command that moves focus: the
+# client reads the real cursor for its pointer (fact 0x1403f3790), so a posted click never reaches
+# it. It checks --pc-free or GENESIS_PC_FREE=1 before it touches the PC.
 set -euo pipefail
 
-usage() { sed -n '5,11p' "$0" >&2; exit 2; }
+usage() { sed -n '5,15p' "$0" >&2; exit 2; }
 
 command=${1:-}
 case "$command" in
@@ -35,6 +41,13 @@ case "$command" in
       enter) text=$'\r' ;;
       *) usage ;;
     esac ;;
+  click)
+    [ $# -eq 3 ] || { [ $# -eq 4 ] && [ "$4" = --pc-free ]; } || usage
+    [[ $2 =~ ^[0-9]+$ && $3 =~ ^[0-9]+$ ]] || usage
+    if [ $# -eq 3 ] && [ "${GENESIS_PC_FREE:-}" != 1 ]; then
+      echo "client: click takes the PC's focus and mouse; it runs only with --pc-free or GENESIS_PC_FREE=1, when the PC is free" >&2
+      exit 1
+    fi ;;
   stop) [ $# -eq 1 ] || usage ;;
   *) usage ;;
 esac
@@ -78,6 +91,17 @@ send_input() {
   esac
 }
 
+# Clicks the client point $1, $2 with the real mouse (takeover mode, checked above).
+send_click() {
+  read_state
+  printf '%s\n%s\n%s\n%s' "$pid" "$started" "$1" "$2" > "$pc_tmp/click"
+  run_task GenesisClick genesis-click.ps1 genesis-click-result.txt 30 "$pc_tmp/click"
+  case "$result" in
+    clicked=*) echo "$result" ;;
+    *) echo "client: $result" >&2; exit 1 ;;
+  esac
+}
+
 case "$command" in
   start)
     # run_task calls this when the start moved the person's focus: the client runs, so it is recorded.
@@ -97,6 +121,7 @@ case "$command" in
     save_state ;;
   type) send_input "$2" ;;
   key) send_input "$text" ;;
+  click) send_click "$2" "$3" ;;
   stop)
     read_state
     # On the PC in one call: the process must be WildStar64 with the recorded start time, or it is

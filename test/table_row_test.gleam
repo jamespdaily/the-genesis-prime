@@ -18,7 +18,6 @@
 //// where `GENESIS_NO_CLIENT=1`.
 
 import client_tables
-import envoy
 import genesis_prime/table/creature2
 import genesis_prime/table/id
 import genesis_prime/table/item2
@@ -44,13 +43,9 @@ fn load(entry: store.Entry) -> store.Tables {
   tables
 }
 
-fn client_present() -> Bool {
-  envoy.get("GENESIS_NO_CLIENT") != Ok("1")
-}
-
 pub fn creature2_rows_decode_to_the_values_the_file_holds_test() -> Nil {
   use <- owned_test.run(120_000)
-  use <- unitest.guard(client_present())
+  use <- unitest.guard(client_tables.present())
   let tables = load(creature2.entry())
   let assert Ok(first) = creature2.get(tables, id.Creature2Id(1))
     as "Creature2.tbl: lookup entry of id 1 (file offset 0x2afa204) is row 0"
@@ -88,7 +83,7 @@ pub fn creature2_rows_decode_to_the_values_the_file_holds_test() -> Nil {
 
 pub fn a_32_bit_integer_column_is_read_as_a_signed_number_test() -> Nil {
   use <- owned_test.run(120_000)
-  use <- unitest.guard(client_present())
+  use <- unitest.guard(client_tables.present())
   let tables = load(creature2.entry())
   let assert Ok(first) = creature2.get(tables, id.Creature2Id(1))
     as "Creature2.tbl: id 1 has a row"
@@ -102,7 +97,7 @@ pub fn a_32_bit_integer_column_is_read_as_a_signed_number_test() -> Nil {
 
 pub fn spell4_rows_decode_to_the_values_the_file_holds_test() -> Nil {
   use <- owned_test.run(120_000)
-  use <- unitest.guard(client_present())
+  use <- unitest.guard(client_tables.present())
   let tables = load(spell4.entry())
   let assert Ok(first) = spell4.get(tables, id.Spell4Id(1))
     as "Spell4.tbl: lookup entry of id 1 (file offset 0x21c7e24) is row 0"
@@ -133,7 +128,7 @@ pub fn spell4_rows_decode_to_the_values_the_file_holds_test() -> Nil {
 
 pub fn item2_rows_decode_to_the_values_the_file_holds_test() -> Nil {
   use <- owned_test.run(120_000)
-  use <- unitest.guard(client_present())
+  use <- unitest.guard(client_tables.present())
   let tables = load(item2.entry())
   let assert Ok(first) = item2.get(tables, id.Item2Id(1))
     as "Item2.tbl: lookup entry of id 1 (file offset 0xe9dfc4) is row 0"
@@ -169,7 +164,7 @@ pub fn item2_rows_decode_to_the_values_the_file_holds_test() -> Nil {
 
 pub fn spline2_node_rows_decode_to_the_values_the_file_holds_test() -> Nil {
   use <- owned_test.run(120_000)
-  use <- unitest.guard(client_present())
+  use <- unitest.guard(client_tables.present())
   let tables = load(spline2_node.entry())
   let assert Ok(first) = spline2_node.get(tables, id.Spline2NodeId(41_581))
     as "Spline2Node.tbl: lookup entry of id 41581 (file offset 0x147bfb4) is row 0"
@@ -207,7 +202,7 @@ pub fn spline2_node_rows_decode_to_the_values_the_file_holds_test() -> Nil {
 
 pub fn localized_text_rows_decode_to_the_values_the_file_holds_test() -> Nil {
   use <- owned_test.run(120_000)
-  use <- unitest.guard(client_present())
+  use <- unitest.guard(client_tables.present())
   let tables = load(localized_text.entry())
   let assert Ok(first) = localized_text.get(tables, id.LocalizedTextId(1))
     as "LocalizedText.tbl: lookup entry of id 1 (file offset 0xe666d4) is row 0"

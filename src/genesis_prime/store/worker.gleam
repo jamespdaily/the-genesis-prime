@@ -23,29 +23,37 @@
 ////   exits the caller with `{noproc, {gen_server, call, _}}` rather than
 ////   returning an error; `ask` catches that exit, and only that one, as
 ////   `Error(Nil)`.
-//// - **Failures.** One private `query` holds them for every request, so each
+//// - **Failures.** One private `attempt` holds them for every request, so each
 ////   request maps only its rows. pog's `ConnectionUnavailable` and
 ////   `QueryTimeout` answer `Unavailable`, and so does the pool not running:
 ////   pgo's checkout exits with `{noproc, {pgo_pool, checkout, _}}` then, which
-////   the worker catches, and only that exit. Any other error is a bug in the
-////   query or the schema: the worker crashes with it, and the asker gets
-////   `EndedBeforeAnswer`.
+////   the worker catches, and only that exit. A constraint the database
+////   refused is the request's to map: a create maps its name's unique index to
+////   `NameTaken`. Any other error is a bug in the query or the schema: the
+////   worker crashes with it, and the asker gets `EndedBeforeAnswer`.
+//// - **A create is one transaction.** It takes the account's row lock, so one
+////   account's creates run one after another, and then inserts the character
+////   unless the account already has its slots, in one statement; the name's
+////   uniqueness is the index on `lower(name)`.
 //// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
 ////   an asker waiting on one gets `EndedBeforeAnswer`.
 
 import genesis_prime/login/guid
 import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
-  type AccountId, type Answer, type Character, type Request, Account,
-  AccountFound, AccountId, Character, CharacterId, Characters, FindAccount,
-  ListCharacters, NoSuchAccount, Unavailable,
+  type AccountId, type Answer, type Character, type NewCharacter, type Request,
+  Account, AccountFound, AccountId, Character, CharacterCreated, CharacterId,
+  Characters, CreateCharacter, FindAccount, ListCharacters, NameTaken,
+  NoFreeSlot, NoSuchAccount, Unavailable,
 }
 import genesis_prime/store/sql
+import genesis_prime/table/id.{ClassId, RaceId}
 import gleam/erlang/process.{type Name}
 import gleam/list
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
+import gleam/result
 import pog
 
 /// What one worker is started with: the ask, and how to answer it.
@@ -103,6 +111,8 @@ fn run(job: Job, pool: pog.Connection) -> Nil {
   let answer = case job.request {
     FindAccount(login_name:) -> find_account(pool, login_name)
     ListCharacters(account_id:) -> list_characters(pool, account_id)
+    CreateCharacter(account_id:, character:, character_slots:) ->
+      create_character(pool:, account_id:, character:, character_slots:)
   }
   job.reply(answer)
 }
@@ -144,8 +154,8 @@ fn character(row: sql.ListCharactersRow) -> Character {
     character_id: CharacterId(row.character_id),
     name: row.name,
     gender: row.gender,
-    race_id: row.race_id,
-    class_id: row.class_id,
+    race_id: RaceId(row.race_id),
+    class_id: ClassId(row.class_id),
     faction_id: row.faction_id,
     level: row.level,
     path: row.path,
@@ -154,23 +164,94 @@ fn character(row: sql.ListCharactersRow) -> Character {
     position_x: row.position_x,
     position_y: row.position_y,
     position_z: row.position_z,
+    look: store.look(labels: row.look_labels, values: row.look_values),
+    bones: row.bones,
   )
 }
 
-/// Runs one query on the pool and gives its rows, or `Error(Nil)` for the
-/// failures that answer `Unavailable`: the pool not running, as when it
-/// restarts, a connection that cannot be had and a query that timed out. Any
-/// other error is a bug in the query or the schema, and ends the worker.
+/// Makes the character in one transaction: the account's row lock, then the
+/// insert, which makes no row once the account has its slots. The name's unique
+/// index refusing the row is `NameTaken`.
+fn create_character(
+  pool pool: pog.Connection,
+  account_id account_id: AccountId,
+  character character: NewCharacter,
+  character_slots character_slots: Int,
+) -> Answer {
+  let AccountId(account_id) = account_id
+  let transaction = fn() {
+    pog.transaction(pool, fn(connection) {
+      use _locked <- result.try(sql.lock_account(connection, account_id))
+      sql.create_character(
+        connection,
+        account_id,
+        character.name,
+        character.gender,
+        character.race_id.value,
+        character.class_id.value,
+        character.faction_id,
+        character.path,
+        list.map(character.look, fn(entry) { entry.label.value }),
+        list.map(character.look, fn(entry) { entry.value }),
+        character.bones,
+        character_slots,
+      )
+    })
+    |> result.map_error(fn(error) {
+      case error {
+        pog.TransactionQueryError(error) | pog.TransactionRolledBack(error) ->
+          error
+      }
+    })
+  }
+  case attempt(transaction) {
+    Ok([row]) -> CharacterCreated(CharacterId(row.character_id))
+    Ok([]) -> NoFreeSlot
+    Ok(_) -> panic as "one insert of one row makes at most one character"
+    Error(Unreachable) -> Unavailable
+    Error(Refused(constraint: "character_name_unique", ..)) -> NameTaken
+    Error(Refused(error:, ..)) -> exit_with(error)
+  }
+}
+
+/// Why a unit of work on the pool gave no rows.
+type Failure {
+  /// The pool is not running, no connection can be had or the query timed out.
+  Unreachable
+  /// The database refused a change for a constraint, whose name and error are
+  /// here.
+  Refused(constraint: String, error: pog.QueryError)
+}
+
+/// Runs one read on the pool and gives its rows, or `Error(Nil)` for the
+/// failures that answer `Unavailable`. Any other error is a bug in the query
+/// or the schema, and ends the worker.
 fn query(
   run: fn() -> Result(pog.Returned(row), pog.QueryError),
 ) -> Result(List(row), Nil) {
+  case attempt(run) {
+    Ok(rows) -> Ok(rows)
+    Error(Unreachable) -> Error(Nil)
+    Error(Refused(error:, ..)) -> exit_with(error)
+  }
+}
+
+/// Runs one unit of work on the pool and gives its rows, or why it gave none:
+/// the pool not running, as when it restarts, a connection that cannot be had
+/// and a query that timed out are `Unreachable`, and a constraint the database
+/// refused is `Refused`. Any other error is a bug in the query or the schema,
+/// and ends the worker.
+fn attempt(
+  run: fn() -> Result(pog.Returned(row), pog.QueryError),
+) -> Result(List(row), Failure) {
   case unless_pool_not_running(run) {
-    Error(Nil) -> Error(Nil)
+    Error(Nil) -> Error(Unreachable)
     Ok(Error(pog.ConnectionUnavailable)) | Ok(Error(pog.QueryTimeout)) ->
-      Error(Nil)
+      Error(Unreachable)
     Ok(Ok(pog.Returned(rows:, ..))) -> Ok(rows)
-    Ok(Error(pog.ConstraintViolated(..) as error))
-    | Ok(Error(pog.PostgresqlError(..) as error))
+    Ok(Error(pog.ConstraintViolated(constraint:, ..) as error)) ->
+      Error(Refused(constraint:, error:))
+    Ok(Error(pog.PostgresqlError(..) as error))
     | Ok(Error(pog.UnexpectedArgumentCount(..) as error))
     | Ok(Error(pog.UnexpectedArgumentType(..) as error))
     | Ok(Error(pog.UnexpectedResultType(..) as error)) -> exit_with(error)

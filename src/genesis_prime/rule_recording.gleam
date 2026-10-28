@@ -51,8 +51,9 @@ pub type ReplayFailure(outgoing, request) {
   Incomplete(records: Int)
   /// `End` counts another number of records than the file holds.
   CountDiffers(end: Int, records: Int)
-  /// The header is of another format, rule, settings or type digest, so the
-  /// session must be recorded again; `reason` names which.
+  /// The header is of another format, rule, settings, type digest or game
+  /// table digest, so the session must be recorded again; `reason` names
+  /// which.
   RecordAgain(reason: String)
   /// The record at `index` (from 0, the header being 0) is not a term of
   /// this format: a byte of it changed, or it was cut.
@@ -75,16 +76,23 @@ pub fn encode(record: a) -> BitArray {
 
 /// Folds every recorded input through `rule`, from its first state, and
 /// compares each step with the recorded one. `types_digest` is the digest of
-/// the rule's types as the code stands; a header with another refuses to
-/// replay. Returns how many inputs replayed. The header's rule name and type
+/// the rule's types as the code stands, and `tables_digest` the digest of the
+/// game tables loaded now, `None` for a rule that reads none; a header with
+/// another of either refuses to replay. Returns how many inputs replayed. The header's rule name and type
 /// digest are checked before any input is read as the rule's types.
 pub fn replay(
   bytes bytes: BitArray,
   rule rule: Rule(settings, state, message, answer, outgoing, request),
   types_digest types_digest: String,
+  tables_digest tables_digest: Option(String),
 ) -> Result(Int, ReplayFailure(outgoing, request)) {
   use #(header, rest) <- result.try(split_header(bytes))
-  use Nil <- result.try(check_header(header:, rule:, types_digest:))
+  use Nil <- result.try(check_header(
+    header:,
+    rule:,
+    types_digest:,
+    tables_digest:,
+  ))
   fold(records: rest, rule:, state: rule.new(rule.settings), index: 0)
 }
 
@@ -144,6 +152,7 @@ fn check_header(
   header header: Header(settings),
   rule rule: Rule(settings, state, message, answer, outgoing, request),
   types_digest types_digest: String,
+  tables_digest tables_digest: Option(String),
 ) -> Result(Nil, ReplayFailure(outgoing, request)) {
   case header {
     Header(format: version, ..) if version != format ->
@@ -152,6 +161,8 @@ fn check_header(
       Error(RecordAgain(reason: "the rule"))
     Header(types_digest: digest, ..) if digest != types_digest ->
       Error(RecordAgain(reason: "the rule's types"))
+    Header(tables_digest: digest, ..) if digest != tables_digest ->
+      Error(RecordAgain(reason: "the game tables"))
     Header(settings:, ..) if settings != rule.settings ->
       Error(RecordAgain(reason: "the rule's settings"))
     Header(..) -> Ok(Nil)
