@@ -77,6 +77,47 @@ returning character_id;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `delete_character` query
+/// defined in `./src/genesis_prime/store/sql/delete_character.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type DeleteCharacterRow {
+  DeleteCharacterRow(character_id: Int)
+}
+
+/// Deletes the account's character with this id. The account's id is in the
+/// statement, so another account's character, which a modified client could
+/// name, is never touched. No row means the account has no such character.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn delete_character(
+  db: pog.Connection,
+  character_id: Int,
+  account_id: Int,
+) -> Result(pog.Returned(DeleteCharacterRow), pog.QueryError) {
+  let decoder = {
+    use character_id <- decode.field(0, decode.int)
+    decode.success(DeleteCharacterRow(character_id:))
+  }
+
+  "-- Deletes the account's character with this id. The account's id is in the
+-- statement, so another account's character, which a modified client could
+-- name, is never touched. No row means the account has no such character.
+delete from character
+where character_id = $1 and account_id = $2
+returning character_id;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
+  |> pog.parameter(pog.int(account_id))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `find_account` query
 /// defined in `./src/genesis_prime/store/sql/find_account.sql`.
 ///
@@ -161,6 +202,7 @@ pub type ListCharactersRow {
     look_labels: List(Int),
     look_values: List(Int),
     bones: List(Int),
+    needs_rename: Bool,
   )
 }
 
@@ -191,6 +233,7 @@ pub fn list_characters(
     use look_labels <- decode.field(13, decode.list(decode.int))
     use look_values <- decode.field(14, decode.list(decode.int))
     use bones <- decode.field(15, decode.list(decode.int))
+    use needs_rename <- decode.field(16, decode.bool)
     decode.success(ListCharactersRow(
       character_id:,
       name:,
@@ -208,6 +251,7 @@ pub fn list_characters(
       look_labels:,
       look_values:,
       bones:,
+      needs_rename:,
     ))
   }
 
@@ -229,7 +273,8 @@ select
   position_z,
   look_labels,
   look_values,
-  bones
+  bones,
+  needs_rename
 from character
 where account_id = $1
 order by character_id;
@@ -276,6 +321,52 @@ for update;
 "
   |> pog.query
   |> pog.parameter(pog.int(account_id))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `rename_character` query
+/// defined in `./src/genesis_prime/store/sql/rename_character.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type RenameCharacterRow {
+  RenameCharacterRow(name: String)
+}
+
+/// Gives the account's marked character the name and clears the mark, in one
+/// update. No row means the account has no such character or it is not marked.
+/// A name that another character holds in any case breaks the unique index on
+/// lower(name), which the caller reports as its own error, and the mark stays.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn rename_character(
+  db: pog.Connection,
+  character_id: Int,
+  account_id: Int,
+  arg_3: String,
+) -> Result(pog.Returned(RenameCharacterRow), pog.QueryError) {
+  let decoder = {
+    use name <- decode.field(0, decode.string)
+    decode.success(RenameCharacterRow(name:))
+  }
+
+  "-- Gives the account's marked character the name and clears the mark, in one
+-- update. No row means the account has no such character or it is not marked.
+-- A name that another character holds in any case breaks the unique index on
+-- lower(name), which the caller reports as its own error, and the mark stays.
+update character
+set name = $3, needs_rename = false
+where character_id = $1 and account_id = $2 and needs_rename
+returning name;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
+  |> pog.parameter(pog.int(account_id))
+  |> pog.parameter(pog.text(arg_3))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

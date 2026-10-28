@@ -24,6 +24,7 @@ import genesis_prime/message/create_character_result.{CreateCharacterResult}
 import genesis_prime/message/create_result
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
+import genesis_prime/message/delete_result
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, CriticalTransactionFailure,
@@ -38,6 +39,7 @@ import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
+import genesis_prime/message/rename_result
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
@@ -107,9 +109,9 @@ pub fn the_character_list_is_the_clients_1372_bits_test() -> Nil {
       enabled_creation_ids: [0x11],
       disabled_creation_ids: [0x21, 0x22],
       realm_id: 0x99,
-      pending_removal_realm_id: 0x99,
-      pending_removal_character_id: 0x0102030405060708,
-      pending_removal_time: 600,
+      in_world_realm_id: 0x99,
+      in_world_character_id: 0x0102030405060708,
+      in_world_logoff_ms: 600,
       reservations: 3,
       max_characters: 12,
       field_11: 0x5C5C,
@@ -134,9 +136,9 @@ pub fn a_character_list_with_no_characters_and_empty_lists_is_395_bits_test() ->
       enabled_creation_ids: [],
       disabled_creation_ids: [],
       realm_id: 0x99,
-      pending_removal_realm_id: 0,
-      pending_removal_character_id: 0,
-      pending_removal_time: 0,
+      in_world_realm_id: 0,
+      in_world_character_id: 0,
+      in_world_logoff_ms: 0,
       reservations: 0,
       max_characters: 0,
       field_11: 0,
@@ -298,10 +300,96 @@ pub fn delete_character_result_is_the_clients_38_bits_test() -> Nil {
   message_support.assert_vector(
     name: "vector.opcode.0xe6.body",
     body: message_support.hex("008d040000"),
-    value: DeleteCharacterResult(result: 0, field_2: 0x1234),
+    value: DeleteCharacterResult(result: delete_result.DeleteOk, value: 0x1234),
     encode: delete_character_result.encode,
     decode: delete_character_result.decode,
   )
+}
+
+/// The results the client's character select names for a delete, with the case
+/// each is named by: 0 DeleteOk (opcode.0xe6) and, in
+/// lua.CharacterSelection.OnCharacterDeleteResult, 1 DeleteFailed, 2
+/// DeleteFailed_GuildMaster and 42 DeleteFailed_CharacterOnline.
+fn delete_results() -> List(#(Int, delete_result.DeleteResult)) {
+  [
+    #(0, delete_result.DeleteOk),
+    #(1, delete_result.DeleteFailed),
+    #(2, delete_result.GuildMaster),
+    #(42, delete_result.CharactersOnline),
+  ]
+}
+
+pub fn every_delete_result_the_client_names_decodes_to_its_case_and_any_other_to_other_test() -> Nil {
+  use <- owned_test.run(5000)
+  int.range(from: 0, to: 64, with: Nil, run: fn(_, value) {
+    let expected = case list.key_find(delete_results(), value) {
+      Ok(named) -> named
+      Error(Nil) -> delete_result.Other(value)
+    }
+    let message = DeleteCharacterResult(result: expected, value: 0xCAFE)
+    let assert Ok(body) = delete_character_result.encode(message)
+      as "a result of 6 bits and a value of 32 bits encode"
+    assert first_six_bits(body) == value
+      as "a named case is written as the number it names"
+    assert delete_character_result.decode(body) == Ok(message)
+      as {
+        "lua.CharacterSelection.OnCharacterDeleteResult: result "
+        <> int.to_string(value)
+        <> " is the named case when the client's Lua names it, and any other value is Other"
+      }
+  })
+}
+
+/// The results the client's character select names for a rename, with the case
+/// each is named by: 18 RenameOk (opcode.0x14b) and, in
+/// lua.CharacterSelection.OnCharacterRenameResult, 13 RenameFailed, 14
+/// RenameFailed_Internal, 15 RenameFailed_InvalidName, 16
+/// RenameFailed_UniqueName, 17 RenameFailed_NoRename and 43
+/// RenameFailed_CharacterOnline.
+fn rename_results() -> List(#(Int, rename_result.RenameResult)) {
+  [
+    #(13, rename_result.RenameFailed),
+    #(14, rename_result.InternalError),
+    #(15, rename_result.NameLength),
+    #(16, rename_result.NameUnavailable),
+    #(17, rename_result.NoRename),
+    #(18, rename_result.RenameOk),
+    #(43, rename_result.CharactersOnline),
+  ]
+}
+
+pub fn every_rename_result_the_client_names_decodes_to_its_case_and_any_other_to_other_test() -> Nil {
+  use <- owned_test.run(5000)
+  int.range(from: 0, to: 64, with: Nil, run: fn(_, value) {
+    let expected = case list.key_find(rename_results(), value) {
+      Ok(named) -> named
+      Error(Nil) -> rename_result.Other(value)
+    }
+    let message =
+      RenameCharacterResult(
+        result: expected,
+        character_id: 0x0102030405060708,
+        name: "Cd Ef",
+      )
+    let assert Ok(body) = rename_character_result.encode(message)
+      as "a result of 6 bits and a short name encode"
+    assert first_six_bits(body) == value
+      as "a named case is written as the number it names"
+    assert rename_character_result.decode(body) == Ok(message)
+      as {
+        "lua.CharacterSelection.OnCharacterRenameResult: result "
+        <> int.to_string(value)
+        <> " is the named case when the client's Lua names it, and any other value is Other"
+      }
+  })
+}
+
+/// The value of a body's first six bits, which the bit stream packs from each
+/// byte's low bit up (vector.opcode.0xe6.body: result 0 is the low six bits of its first byte, 0x00).
+fn first_six_bits(body: BitArray) -> Int {
+  let assert <<_:size(2), value:size(6), _:bits>> = body
+    as "a body of at least one byte"
+  value
 }
 
 pub fn rename_character_result_is_the_clients_158_bits_test() -> Nil {
@@ -310,7 +398,7 @@ pub fn rename_character_result_is_the_clients_158_bits_test() -> Nil {
     name: "vector.opcode.0x14b.body",
     body: message_support.hex("12c2814101c1804080c210001900084011801900"),
     value: RenameCharacterResult(
-      result: 18,
+      result: rename_result.RenameOk,
       character_id: 0x0102030405060708,
       name: "Cd Ef",
     ),

@@ -18,6 +18,7 @@ import genesis_prime/message/create_character_result.{CreateCharacterResult}
 import genesis_prime/message/create_result
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
+import genesis_prime/message/delete_result
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, CriticalTransactionFailure,
@@ -32,6 +33,7 @@ import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
+import genesis_prime/message/rename_result
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
@@ -185,11 +187,11 @@ pub fn character_list_round_trips_test() -> Nil {
       let #(disabled_creation_ids, state) =
         unsigned_list(state:, most: 4, bits: 32)
       let #(realm_id, state) = message_support.unsigned(state:, bits: 14)
-      let #(pending_removal_realm_id, state) =
+      let #(in_world_realm_id, state) =
         message_support.unsigned(state:, bits: 14)
-      let #(pending_removal_character_id, state) =
+      let #(in_world_character_id, state) =
         message_support.unsigned(state:, bits: 64)
-      let #(pending_removal_time, state) =
+      let #(in_world_logoff_ms, state) =
         message_support.unsigned(state:, bits: 32)
       let #(reservations, state) = message_support.unsigned(state:, bits: 32)
       let #(max_characters, state) = message_support.unsigned(state:, bits: 32)
@@ -205,9 +207,9 @@ pub fn character_list_round_trips_test() -> Nil {
           enabled_creation_ids:,
           disabled_creation_ids:,
           realm_id:,
-          pending_removal_realm_id:,
-          pending_removal_character_id:,
-          pending_removal_time:,
+          in_world_realm_id:,
+          in_world_character_id:,
+          in_world_logoff_ms:,
           reservations:,
           max_characters:,
           field_11:,
@@ -354,8 +356,11 @@ pub fn delete_character_result_round_trips_test() -> Nil {
     seed: 20_261_208,
     draw: fn(state) {
       let #(result, state) = message_support.unsigned(state:, bits: 6)
-      let #(field_2, state) = message_support.unsigned(state:, bits: 32)
-      #(DeleteCharacterResult(result:, field_2:), state)
+      let #(value, state) = message_support.unsigned(state:, bits: 32)
+      #(
+        DeleteCharacterResult(result: delete_result.from_value(result), value:),
+        state,
+      )
     },
     encode: delete_character_result.encode,
     decode: delete_character_result.decode,
@@ -386,7 +391,14 @@ pub fn rename_character_result_round_trips_test() -> Nil {
       let #(result, state) = message_support.unsigned(state:, bits: 6)
       let #(character_id, state) = message_support.unsigned(state:, bits: 64)
       let #(name, state) = message_support.field_text(state:)
-      #(RenameCharacterResult(result:, character_id:, name:), state)
+      #(
+        RenameCharacterResult(
+          result: rename_result.from_value(result),
+          character_id:,
+          name:,
+        ),
+        state,
+      )
     },
     encode: rename_character_result.encode,
     decode: rename_character_result.decode,

@@ -11,11 +11,16 @@
 //// the client's 0x025B, decoded       ─▶ create_requested(..)
 ////                                                                   ─▶ Ask(CreateCharacter(..))
 ////                                                                      or Send(0x00DC), refused
+//// the client's 0x0352, decoded       ─▶ delete_requested(..)
+////                                                                   ─▶ Ask(DeleteCharacter(..))
+//// the client's 0x0786, decoded       ─▶ rename_requested(..)
+////                                                                   ─▶ Ask(RenameCharacter(..))
+////                                                                      or Send(0x014B), refused
 //// the client's 0x07DD, decoded       ─▶ play_requested(..)
 ////                                                                   ─▶ Send(0x0162), Ask(ListCharacters(account))
-//// the store's answer                  ─▶ answered(state, answer, ..)
+//// the store's answer                  ─▶ listed(..), created(..), deleted(..) or renamed(..)
 ////                                                                   ─▶ Send(0x0036), Send(0x0117)
-////                                                                      or Send(0x00DC)
+////                                                                      or Send(0x00DC), Send(0x00E6) or Send(0x014B)
 //// ```
 ////
 //// - **The list.** 0x0036 carries the highest level among the account's
@@ -41,6 +46,20 @@
 ////   refusal maps to, with 0 for the character and for the field the client
 ////   never reads (opcode.0xdc, opcode.0xdc.field_2). A request that fails the
 ////   checks is refused at once and the store is not asked.
+//// - **Delete.** The store deletes the character only when the account has
+////   it; 0x00E6 answers with result 0 and a value of 0, which the client reads
+////   only for a guild leader's count, or with result 1 and a warning for a
+////   character the account does not have. The client removes the character
+////   from its own list and rebuilds it, so no 0x0117 follows
+////   (opcode.0xe6, opcode.0xe6.value, lua.CharacterSelection.OnCharacterDeleteResult).
+//// - **Rename.** A name that fails rule 0 is refused at once with 0x014B result
+////   15; else the store renames the character when the account has it and it is
+////   marked, and clears the mark. 0x014B answers 18 with the id and the stored
+////   name, 16 for a name another character has in any case, and 13 with a
+////   warning for a character that is not the account's or not marked
+////   (opcode.0x14b, lua.CharacterSelection.OnCharacterRenameResult). A
+////   character's entry carries the rename bit the client offers a rename by
+////   (lua.CharacterSelection.OnSelectCharacter).
 //// - **Play, which the server refuses.** The client plays a created character
 ////   with 0x07DD and waits for 0xAD or 0x162 with no timeout. World entry is
 ////   not built, so the server sends 0x0162 with Failed and the list again,
@@ -52,8 +71,8 @@
 ////   ago, and every other with 0, which is none, so it is the one selected
 ////   (lua.CharacterSelection.OnLoadFromCharacter.preselect, 0x1401e83a0).
 //// - **Its asks and their answers are its own.** It asks the store itself and
-////   takes the store's answer in `answered`, which refuses an answer of a kind
-////   it did not ask for. The game connection's rule holds the client's frames
+////   takes each request's answer in the function of that request (`listed`,
+////   `created`, `deleted`, `renamed`), which refuses an answer while no such ask is out. The game connection's rule holds the client's frames
 ////   while an ask is out (`waiting`), so a second request is taken only after
 ////   the answer to the first.
 //// - **No answer.** The client waits for 0x0117 and for 0x00DC with no
@@ -65,6 +84,7 @@
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
+import genesis_prime/game/character_name
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{
   type CharacterListEntry, CharacterListEntry,
@@ -72,15 +92,23 @@ import genesis_prime/message/character_list_entry.{
 import genesis_prime/message/create_character.{type CreateCharacter}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
 import genesis_prime/message/create_result.{type CreateResult}
+import genesis_prime/message/delete_character.{type DeleteCharacter}
+import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
+import genesis_prime/message/delete_result.{type DeleteResult}
 import genesis_prime/message/float32
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
+import genesis_prime/message/rename_character.{type RenameCharacter}
+import genesis_prime/message/rename_character_result.{RenameCharacterResult}
+import genesis_prime/message/rename_result.{type RenameResult}
 import genesis_prime/store.{
-  type AccountId, type Character, type CharacterId, CharacterId,
+  type AccountId, type Character, type CharacterId, CharacterId, NameStands,
+  NeedsRename,
 }
 import genesis_prime/table/loader/store as table_store
+import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -94,8 +122,8 @@ const just_now_days = -0.000001
 /// What a character select asks or sends; the game connection's rule turns
 /// each into its own effect.
 pub type Effect {
-  /// Ask the store; its answer comes back to `answered`.
-  Ask(request: store.Request)
+  /// Ask the store; its answer comes back to the function of that request.
+  Ask(request: store.SelectRequest)
   /// Send this message to the client, in the game wrapper under the
   /// connection's current cipher.
   Send(frame: Frame)
@@ -112,6 +140,11 @@ pub opaque type State {
   Listing(selected: Option(CharacterId))
   /// The store is asked to make a character.
   Creating
+  /// The store is asked to delete the character with this id.
+  Deleting(character_id: Int)
+  /// The store is asked to rename the character with this id, which the
+  /// answer's result names back to the client.
+  Renaming(character_id: Int, name: String)
 }
 
 /// The state of a connection that has not entered character select.
@@ -122,7 +155,7 @@ pub fn new() -> State {
 /// Whether the store's answer is awaited.
 pub fn waiting(state state: State) -> Bool {
   case state {
-    Listing(..) | Creating -> True
+    Listing(..) | Creating | Deleting(..) | Renaming(..) -> True
     Resting -> False
   }
 }
@@ -188,22 +221,63 @@ pub fn play_requested(
   ])
 }
 
-/// The store's answer to an ask: for the characters, sends 0x0036 and 0x0117
-/// with one entry per character, in the order given; for a create, sends
-/// 0x00DC with its result. Another answer, or any answer while no ask is out,
-/// is none this module asked for and gives an `Error`. `filetime` is the system
-/// time of the input as a Windows FILETIME (genesis_prime/step), the server's
-/// time the client keeps the difference from.
-pub fn answered(
+/// The client's request to delete a character, read for this account: the
+/// store is asked to delete it, which it does only for a character the account
+/// has.
+pub fn delete_requested(
+  account_id account_id: AccountId,
+  request request: DeleteCharacter,
+) -> #(State, List(Effect)) {
+  #(Deleting(character_id: request.character_id), [
+    Ask(request: store.DeleteCharacter(
+      account_id:,
+      character_id: CharacterId(request.character_id),
+    )),
+  ])
+}
+
+/// The client's request to rename a character, read for this account: refused
+/// at once with 0x014B when the name fails the client's text rule 0 (which the
+/// real client checks first, so no warning), else the store is asked to rename
+/// the character.
+pub fn rename_requested(
+  account_id account_id: AccountId,
+  request request: RenameCharacter,
+) -> #(State, List(Effect)) {
+  use <- bool.guard(
+    !character_name.is_valid(request.name),
+    #(Resting, [
+      rename_result(
+        character_id: request.character_id,
+        name: request.name,
+        result: rename_result.NameLength,
+      ),
+    ]),
+  )
+  #(Renaming(character_id: request.character_id, name: request.name), [
+    Ask(request: store.RenameCharacter(
+      account_id:,
+      character_id: CharacterId(request.character_id),
+      name: request.name,
+    )),
+  ])
+}
+
+/// The store's answer to the ask for the characters: sends 0x0036 and 0x0117
+/// with one entry per character, in the order given. With no list asked for,
+/// it is none this module asked for and gives an `Error`. `filetime` is the
+/// system time of the input as a Windows FILETIME (genesis_prime/step), the
+/// server's time the client keeps the difference from.
+pub fn listed(
   state state: State,
-  answer answer: store.Answer,
+  characters characters: List(Character),
   filetime filetime: Int,
   realm_id realm_id: Int,
   max_characters max_characters: Int,
   tables tables: table_store.Tables,
 ) -> Result(#(State, List(Effect)), Nil) {
-  case state, answer {
-    Listing(selected:), store.Characters(characters:) ->
+  case state {
+    Listing(selected:) ->
       Ok(#(
         Resting,
         list_effects(
@@ -215,36 +289,106 @@ pub fn answered(
           tables:,
         ),
       ))
-    Creating, store.CharacterCreated(character_id: CharacterId(character_id)) ->
-      Ok(created(character_id:, result: create_result.CreateOk))
-    Creating, store.NameTaken ->
-      Ok(created(character_id: 0, result: create_result.NameUnavailable))
-    Creating, store.NoFreeSlot ->
-      Ok(created(character_id: 0, result: create_result.AccountFull))
-    Resting, store.Characters(..)
-    | Resting, store.CharacterCreated(..)
-    | Resting, store.NameTaken
-    | Resting, store.NoFreeSlot
-    | Resting, store.Unavailable
-    | Resting, store.AccountFound(..)
-    | Resting, store.NoSuchAccount
-    | Listing(..), store.CharacterCreated(..)
-    | Listing(..), store.NameTaken
-    | Listing(..), store.NoFreeSlot
-    | Listing(..), store.Unavailable
-    | Listing(..), store.AccountFound(..)
-    | Listing(..), store.NoSuchAccount
-    | Creating, store.Characters(..)
-    | Creating, store.Unavailable
-    | Creating, store.AccountFound(..)
-    | Creating, store.NoSuchAccount
-    -> Error(Nil)
+    Resting | Creating | Deleting(..) | Renaming(..) -> Error(Nil)
+  }
+}
+
+/// The store's answer to the ask to make a character: sends 0x00DC with the
+/// result. With no create asked for, it is none this module asked for and
+/// gives an `Error`.
+pub fn created(
+  state state: State,
+  answer answer: store.CreateAnswer,
+) -> Result(#(State, List(Effect)), Nil) {
+  case state {
+    Creating ->
+      Ok(case answer {
+        store.CharacterCreated(character_id: CharacterId(character_id)) ->
+          created_with(character_id:, result: create_result.CreateOk)
+        store.NameTaken ->
+          created_with(character_id: 0, result: create_result.NameUnavailable)
+        store.NoFreeSlot ->
+          created_with(character_id: 0, result: create_result.AccountFull)
+      })
+    Resting | Listing(..) | Deleting(..) | Renaming(..) -> Error(Nil)
+  }
+}
+
+/// The store's answer to the ask to delete a character: sends 0x00E6 with the
+/// result. The client removes the character from its own list on result 0 and
+/// rebuilds the list, so no 0x0117 follows. For a character the account does
+/// not have the result is 1, and a warning says so, since the real client
+/// deletes only a character of its list. With no delete asked for, it is none
+/// this module asked for and gives an `Error`.
+pub fn deleted(
+  state state: State,
+  answer answer: store.DeleteAnswer,
+) -> Result(#(State, List(Effect)), Nil) {
+  case state {
+    Deleting(character_id:) -> {
+      let #(warning, result) = case answer {
+        store.CharacterDeleted -> #([], delete_result.DeleteOk)
+        store.NoSuchCharacter -> #(
+          [
+            Warn(
+              text: "a delete of character "
+              <> int.to_string(character_id)
+              <> ", which the account does not have",
+            ),
+          ],
+          delete_result.DeleteFailed,
+        )
+      }
+      Ok(#(Resting, list.append(warning, [delete_result(result:)])))
+    }
+    Resting | Listing(..) | Creating | Renaming(..) -> Error(Nil)
+  }
+}
+
+/// The store's answer to the ask to rename a character: sends 0x014B with the
+/// result, the character's id and the name: the stored one for result 18,
+/// which the client gives the listed character, else the request's. A
+/// character the account does not have or that is not marked is 13 with a
+/// warning, since the real client offers a rename only for a marked character
+/// of its list. With no rename asked for, it is none this module asked for and
+/// gives an `Error`.
+pub fn renamed(
+  state state: State,
+  answer answer: store.RenameAnswer,
+) -> Result(#(State, List(Effect)), Nil) {
+  case state {
+    Renaming(character_id:, name: asked) -> {
+      let #(warning, name, result) = case answer {
+        store.CharacterRenamed(name: stored) -> #(
+          [],
+          stored,
+          rename_result.RenameOk,
+        )
+        store.NewNameTaken -> #([], asked, rename_result.NameUnavailable)
+        store.NotRenamable -> #(
+          [
+            Warn(
+              text: "a rename of character "
+              <> int.to_string(character_id)
+              <> ", which the account does not have or which is not marked",
+            ),
+          ],
+          asked,
+          rename_result.RenameFailed,
+        )
+      }
+      Ok(#(
+        Resting,
+        list.append(warning, [rename_result(character_id:, name:, result:)]),
+      ))
+    }
+    Resting | Listing(..) | Creating | Deleting(..) -> Error(Nil)
   }
 }
 
 /// The transition a create's answer makes: the create is done, and 0x00DC
 /// tells the client the result.
-fn created(
+fn created_with(
   character_id character_id: Int,
   result result: CreateResult,
 ) -> #(State, List(Effect)) {
@@ -264,6 +408,31 @@ fn create_result(
     ))
     as "an id of the table's 64 bits and a result of 6 bits fit their fields"
   Send(frame: Frame(message_id: create_character_result.message_id, body:))
+}
+
+/// 0x00E6 with the result and 0 in the value, which the client reads only for
+/// a guild leader's count (opcode.0xe6.value).
+fn delete_result(result result: DeleteResult) -> Effect {
+  let assert Ok(body) =
+    delete_character_result.encode(DeleteCharacterResult(result:, value: 0))
+    as "a result of 6 bits and a value of 32 bits fit their fields"
+  Send(frame: Frame(message_id: delete_character_result.message_id, body:))
+}
+
+/// 0x014B with the result, the character's id and the name.
+fn rename_result(
+  character_id character_id: Int,
+  name name: String,
+  result result: RenameResult,
+) -> Effect {
+  let assert Ok(body) =
+    rename_character_result.encode(RenameCharacterResult(
+      result:,
+      character_id:,
+      name:,
+    ))
+    as "an id of 64 bits, a result of 6 bits and a name the client or the store gave fit their fields"
+  Send(frame: Frame(message_id: rename_character_result.message_id, body:))
 }
 
 /// 0x0036 with the highest level and 0x0117 with the list.
@@ -294,9 +463,9 @@ fn list_effects(
       enabled_creation_ids: [],
       disabled_creation_ids: [],
       realm_id:,
-      pending_removal_realm_id: 0,
-      pending_removal_character_id: 0,
-      pending_removal_time: 0,
+      in_world_realm_id: 0,
+      in_world_character_id: 0,
+      in_world_logoff_ms: 0,
       reservations: 0,
       max_characters:,
       field_11: 0,
@@ -311,7 +480,7 @@ fn list_effects(
 }
 
 /// One character as its entry in the list: each field of the row, the body
-/// visuals of its look, no disabled or rename flag, 0 in the three fields the
+/// visuals of its look, no disabled flag, its rename bit from its naming, 0 in the three fields the
 /// client never reads, no worn visuals and no costume slot (a mask of 0 and no
 /// items or dyes), and its bone values; a last logout only for the selected
 /// character.
@@ -347,7 +516,10 @@ fn entry(
     field_17: 0,
     path: character.path,
     disabled: 0,
-    requires_rename: 0,
+    requires_rename: case character.naming {
+      NeedsRename -> 1
+      NameStands -> 0
+    },
     costume_slot_mask: 0,
     costume_item_ids: [],
     costume_dyes: [],

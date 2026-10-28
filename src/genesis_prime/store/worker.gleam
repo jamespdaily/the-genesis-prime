@@ -35,16 +35,25 @@
 ////   account's creates run one after another, and then inserts the character
 ////   unless the account already has its slots, in one statement; the name's
 ////   uniqueness is the index on `lower(name)`.
+//// - **A delete and a rename are one statement each.** Both name the account's
+////   id, so another account's character is never touched; a rename also
+////   clears the character's mark in the same update, and its name's
+////   uniqueness is the same index as a create's.
 //// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
 ////   an asker waiting on one gets `EndedBeforeAnswer`.
 
 import genesis_prime/login/guid
 import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
-  type AccountId, type Answer, type Character, type NewCharacter, type Request,
-  Account, AccountFound, AccountId, Character, CharacterCreated, CharacterId,
-  Characters, CreateCharacter, FindAccount, ListCharacters, NameTaken,
-  NoFreeSlot, NoSuchAccount, Unavailable,
+  type AccountId, type Answer, type Character, type CharacterId,
+  type CreateAnswer, type DeleteAnswer, type FindAccountAnswer,
+  type NewCharacter, type RenameAnswer, type Request, type SelectAnswer,
+  type SelectRequest, Account, AccountFound, AccountId, Character,
+  CharacterCreated, CharacterDeleted, CharacterId, CharacterRenamed,
+  CreateCharacter, Created, DeleteCharacter, Deleted, FindAccount, ForLogin,
+  ForSelect, ListCharacters, Listed, Login, NameStands, NameTaken, NeedsRename,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, RenameCharacter,
+  Renamed, Select, Unavailable,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, RaceId}
@@ -106,23 +115,51 @@ fn start_worker(job: Job, pool: pog.Connection) -> actor.StartResult(Nil) {
   Ok(actor.Started(pid:, data: Nil))
 }
 
-/// Runs the ask's query on the pool, answers the asker and ends.
+/// Runs the ask's query on the pool, answers the asker and ends. `Error(Nil)`
+/// is the database being away, the failure every request shares.
 fn run(job: Job, pool: pog.Connection) -> Nil {
   let answer = case job.request {
-    FindAccount(login_name:) -> find_account(pool, login_name)
-    ListCharacters(account_id:) -> list_characters(pool, account_id)
-    CreateCharacter(account_id:, character:, character_slots:) ->
-      create_character(pool:, account_id:, character:, character_slots:)
+    Login(request: FindAccount(login_name:)) ->
+      find_account(pool, login_name)
+      |> result.map(ForLogin)
+    Select(request:) ->
+      select(pool, request)
+      |> result.map(ForSelect)
   }
-  job.reply(answer)
+  job.reply(result.unwrap(answer, Unavailable))
 }
 
-/// The account with the login name, if there is one.
-fn find_account(pool: pog.Connection, login_name: String) -> Answer {
-  case query(fn() { sql.find_account(pool, login_name) }) {
-    Error(Nil) -> Unavailable
-    Ok([]) -> NoSuchAccount
-    Ok([row]) -> {
+/// Runs one of character select's requests.
+fn select(
+  pool: pog.Connection,
+  request: SelectRequest,
+) -> Result(SelectAnswer, Nil) {
+  case request {
+    ListCharacters(account_id:) ->
+      list_characters(pool, account_id)
+      |> result.map(Listed)
+    CreateCharacter(account_id:, character:, character_slots:) ->
+      create_character(pool:, account_id:, character:, character_slots:)
+      |> result.map(Created)
+    DeleteCharacter(account_id:, character_id:) ->
+      delete_character(pool:, account_id:, character_id:)
+      |> result.map(Deleted)
+    RenameCharacter(account_id:, character_id:, name:) ->
+      rename_character(pool:, account_id:, character_id:, name:)
+      |> result.map(Renamed)
+  }
+}
+
+/// The account with the login name, if there is one; `Error(Nil)` when the
+/// database is away.
+fn find_account(
+  pool: pog.Connection,
+  login_name: String,
+) -> Result(FindAccountAnswer, Nil) {
+  use rows <- result.map(query(fn() { sql.find_account(pool, login_name) }))
+  case rows {
+    [] -> NoSuchAccount
+    [row] -> {
       let assert Ok(game_account_id) = guid.from_text(row.game_account_id)
         as "the database holds game account ids that are GUIDs"
       AccountFound(Account(
@@ -133,19 +170,20 @@ fn find_account(pool: pog.Connection, login_name: String) -> Answer {
         game_account_id:,
       ))
     }
-    Ok(_) ->
+    _ ->
       panic as "a login name is unique, so the query returns at most one account"
   }
 }
 
 /// The account's characters in creation order; an account with none, or no
-/// such account, has an empty list.
-fn list_characters(pool: pog.Connection, account_id: AccountId) -> Answer {
+/// such account, has an empty list. `Error(Nil)` when the database is away.
+fn list_characters(
+  pool: pog.Connection,
+  account_id: AccountId,
+) -> Result(List(Character), Nil) {
   let AccountId(account_id) = account_id
-  case query(fn() { sql.list_characters(pool, account_id) }) {
-    Error(Nil) -> Unavailable
-    Ok(rows) -> Characters(list.map(rows, character))
-  }
+  query(fn() { sql.list_characters(pool, account_id) })
+  |> result.map(list.map(_, character))
 }
 
 /// One row as the character it holds.
@@ -166,6 +204,10 @@ fn character(row: sql.ListCharactersRow) -> Character {
     position_z: row.position_z,
     look: store.look(labels: row.look_labels, values: row.look_values),
     bones: row.bones,
+    naming: case row.needs_rename {
+      True -> NeedsRename
+      False -> NameStands
+    },
   )
 }
 
@@ -177,7 +219,7 @@ fn create_character(
   account_id account_id: AccountId,
   character character: NewCharacter,
   character_slots character_slots: Int,
-) -> Answer {
+) -> Result(CreateAnswer, Nil) {
   let AccountId(account_id) = account_id
   let transaction = fn() {
     pog.transaction(pool, fn(connection) {
@@ -205,11 +247,53 @@ fn create_character(
     })
   }
   case attempt(transaction) {
-    Ok([row]) -> CharacterCreated(CharacterId(row.character_id))
-    Ok([]) -> NoFreeSlot
+    Ok([row]) -> Ok(CharacterCreated(CharacterId(row.character_id)))
+    Ok([]) -> Ok(NoFreeSlot)
     Ok(_) -> panic as "one insert of one row makes at most one character"
-    Error(Unreachable) -> Unavailable
-    Error(Refused(constraint: "character_name_unique", ..)) -> NameTaken
+    Error(Unreachable) -> Error(Nil)
+    Error(Refused(constraint: "character_name_unique", ..)) -> Ok(NameTaken)
+    Error(Refused(error:, ..)) -> exit_with(error)
+  }
+}
+
+/// Deletes the account's character with the id in one statement, which names
+/// the account too; `Error(Nil)` when the database is away.
+fn delete_character(
+  pool pool: pog.Connection,
+  account_id account_id: AccountId,
+  character_id character_id: CharacterId,
+) -> Result(DeleteAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  use rows <- result.map(
+    query(fn() { sql.delete_character(pool, character_id, account_id) }),
+  )
+  case rows {
+    [_] -> CharacterDeleted
+    [] -> NoSuchCharacter
+    _ -> panic as "a character id is unique, so a delete removes at most one"
+  }
+}
+
+/// Gives the account's marked character the name and clears the mark in one
+/// update. The name's unique index refusing the row is `NewNameTaken`;
+/// `Error(Nil)` when the database is away.
+fn rename_character(
+  pool pool: pog.Connection,
+  account_id account_id: AccountId,
+  character_id character_id: CharacterId,
+  name name: String,
+) -> Result(RenameAnswer, Nil) {
+  let AccountId(account_id) = account_id
+  let CharacterId(character_id) = character_id
+  case
+    attempt(fn() { sql.rename_character(pool, character_id, account_id, name) })
+  {
+    Ok([row]) -> Ok(CharacterRenamed(name: row.name))
+    Ok([]) -> Ok(store.NotRenamable)
+    Ok(_) -> panic as "a character id is unique, so a rename changes at most one"
+    Error(Unreachable) -> Error(Nil)
+    Error(Refused(constraint: "character_name_unique", ..)) -> Ok(NewNameTaken)
     Error(Refused(error:, ..)) -> exit_with(error)
   }
 }

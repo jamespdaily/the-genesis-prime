@@ -16,7 +16,6 @@ import genesis_prime/login/guid
 import genesis_prime/login/srp
 import gleam/crypto
 import gleam/int
-import gleam/io
 import gleam/result
 import gleam/string
 
@@ -28,18 +27,8 @@ type Failure {
 }
 
 pub fn main() -> Nil {
-  case add() {
-    Ok(account_id) -> io.println("added the account " <> account_id)
-    Error(failure) -> {
-      io.println_error(describe(failure))
-      halt(1)
-    }
-  }
+  dev_database.finish(result: add(), describe:)
 }
-
-/// Ends the program with a status.
-@external(erlang, "erlang", "halt")
-fn halt(status: Int) -> Nil
 
 fn add() -> Result(String, Failure) {
   case argv.load().arguments {
@@ -75,14 +64,14 @@ fn insert(
   case rows {
     [sql.InsertAccountRow(account_id:)] ->
       Ok(
-        login_name
+        "added the account "
+        <> login_name
         <> " with the id "
         <> int.to_string(account_id)
         <> " and the game account "
         <> game_account_id,
       )
-    _ ->
-      Error(Database(dev_database.NotInserted("the database returned no id")))
+    _ -> Error(Database(dev_database.NotChanged("the database returned no id")))
   }
 }
 
@@ -91,6 +80,7 @@ fn describe(failure: Failure) -> String {
     WrongArguments ->
       "usage: gleam run -m genesis_prime/add_account -- <login name> <password>"
     EmptyLoginName -> "the login name is empty"
-    Database(failure:) -> dev_database.describe(failure:, what: "account")
+    Database(failure:) ->
+      dev_database.describe(failure:, change: "add the account")
   }
 }

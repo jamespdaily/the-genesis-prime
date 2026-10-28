@@ -15,7 +15,6 @@ import argv
 import genesis_prime/add_character/sql
 import genesis_prime/dev_database
 import gleam/int
-import gleam/io
 import gleam/result
 import gleam/string
 
@@ -28,18 +27,8 @@ type Failure {
 }
 
 pub fn main() -> Nil {
-  case add() {
-    Ok(added) -> io.println("added the character " <> added)
-    Error(failure) -> {
-      io.println_error(describe(failure))
-      halt(1)
-    }
-  }
+  dev_database.finish(result: add(), describe:)
 }
-
-/// Ends the program with a status.
-@external(erlang, "erlang", "halt")
-fn halt(status: Int) -> Nil
 
 fn add() -> Result(String, Failure) {
   case argv.load().arguments {
@@ -64,7 +53,8 @@ fn add() -> Result(String, Failure) {
       case rows {
         [sql.InsertCharacterRow(character_id:)] ->
           Ok(
-            name
+            "added the character "
+            <> name
             <> " with the id "
             <> int.to_string(character_id)
             <> " for "
@@ -87,6 +77,7 @@ fn describe(failure: Failure) -> String {
       "usage: gleam run -m genesis_prime/add_character -- <login name> <character name> <race id> <sex> <class id> <faction id>"
     NotANumber(argument:) -> "not a number: " <> argument
     NoSuchAccount(login_name:) -> "no account has the login name " <> login_name
-    Database(failure:) -> dev_database.describe(failure:, what: "character")
+    Database(failure:) ->
+      dev_database.describe(failure:, change: "add the character")
   }
 }

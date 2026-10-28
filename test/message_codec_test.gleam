@@ -55,6 +55,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/create_result.gleam",
       "src/genesis_prime/message/delete_character.gleam",
       "src/genesis_prime/message/delete_character_result.gleam",
+      "src/genesis_prime/message/delete_result.gleam",
       "src/genesis_prime/message/disconnect_notice.gleam",
       "src/genesis_prime/message/disconnect_reason.gleam",
       "src/genesis_prime/message/enter_world.gleam",
@@ -78,6 +79,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/realm_select_start.gleam",
       "src/genesis_prime/message/rename_character.gleam",
       "src/genesis_prime/message/rename_character_result.gleam",
+      "src/genesis_prime/message/rename_result.gleam",
       "src/genesis_prime/message/server_hello.gleam",
       "src/genesis_prime/message/terrain_loaded.gleam",
       "src/genesis_prime/message/text_group.gleam",
@@ -89,7 +91,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/unit_stat.gleam",
       "src/genesis_prime/message/world_message.gleam",
     ]
-    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list, the 20 messages and 5 records of character select and entering the world, the network layer's 3 messages (ping, pong and close notice), the auth server's login refusal 0x63d, the 3 modules of the named values (the disconnect reasons, the create results and the play refusals), and the client message module that decodes every message the client sends by its number"
+    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list, the 20 messages and 5 records of character select and entering the world, the network layer's 3 messages (ping, pong and close notice), the auth server's login refusal 0x63d, the 5 modules of the named values (the disconnect reasons, the create results, the play refusals, the delete results and the rename results), and the client message module that decodes every message the client sends by its number"
 }
 
 pub fn the_committed_codec_is_what_the_schema_generates_test() -> Nil {
