@@ -18,6 +18,9 @@
 ////   ◀─ Joined(u)          ◀─ Reply(caller, Joined(u))
 //// ```
 ////
+//// - **The incarnation** is in every `Joined`, so the joiner watches the run
+////   of the map that holds its player, not a later one started after this
+////   one ended.
 //// - **Unit ids** start at 1 and are never given twice in the map's life,
 ////   whoever leaves: the client refuses a 0x262 whose unit id it has already
 ////   seen (opcode.0x262). The 32-bit field's limit is not handled: a map
@@ -42,9 +45,10 @@ import gleam/dict.{type Dict}
 /// The rule's name in a recording's header.
 pub const rule_name = "genesis_prime/world_map/map"
 
-/// What a map is started with: which map it is.
+/// What a map is started with: which map it is, and the incarnation Maps
+/// gave this run of it, unique in the node's life.
 pub type Settings {
-  Settings(map: MapId)
+  Settings(map: MapId, incarnation: Int)
 }
 
 /// What a connection asks a map.
@@ -55,8 +59,9 @@ pub type Message {
 
 /// A map's answers.
 pub type Outgoing {
-  /// The player is in the map with this unit id.
-  Joined(unit_id: Int)
+  /// The player is in this run of the map with this unit id; the joiner
+  /// watches `Map(map, incarnation)`.
+  Joined(unit_id: Int, incarnation: Int)
 }
 
 /// A map's players and what it gives next.
@@ -75,8 +80,11 @@ type Player {
 }
 
 /// The map's rule, as its service shell runs it.
-pub fn rule(map map: MapId) -> Rule(Settings, State, Message, Nil, Outgoing, Nil) {
-  step.Rule(name: rule_name, settings: Settings(map:), new:, step:)
+pub fn rule(
+  map map: MapId,
+  incarnation incarnation: Int,
+) -> Rule(Settings, State, Message, Nil, Outgoing, Nil) {
+  step.Rule(name: rule_name, settings: Settings(map:, incarnation:), new:, step:)
 }
 
 /// A map's first state: no players; unit id 1 and watch 1 are next.

@@ -23,10 +23,20 @@
 ////   service.call_subject(map's subject, Join, reply) ──────────────▶ map
 //// ```
 ////
-//// - **The call is timed** (`call_ms`, a start argument): a call up the tree
-////   to a registry (the designing-processes skill). No answer in time, Maps
+//// - **The call is timed**: a call up the tree to a registry (the
+////   designing-processes skill). For an ask it ends at the ask's own
+////   deadline, which the directory is given, so the lookup never holds the
+////   asker past it; a watch's lookup takes `call_ms`. No answer in time, Maps
 ////   not running, or a start that fails is `Error(Nil)`, which the asker's
 ////   shell gives its rule as `NotRunning`.
+//// - **Incarnations.** Each start gets a new incarnation, unique in the
+////   node's life, and the map answers it with every `Joined`; `find` takes
+////   it, so a joiner watches the run that holds its player, and a watch on a
+////   run that ended ends at once.
+//// - **Why not a rule.** Maps' only choice is "running, or start it", like
+////   the connection registry (a `pg` scope) and the store's factory
+////   supervisor, which are OTP processes with no rule. It holds process
+////   handles, which a rule may not, and makes no game decision to replay.
 //// - **`find`** answers only a running map and never starts one; a watch
 ////   uses it, so watching a map that is not running ends the watch at once.
 //// - **A map ends.** Maps' monitor drops it, so the next find starts it
@@ -50,14 +60,25 @@ import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 
-/// A running map: its process, to watch, and its subject, to ask.
+/// A running map: its process, to watch, its subject, to ask, and the
+/// incarnation it was started with.
 pub type MapProcess {
-  MapProcess(pid: Pid, subject: Subject(Call(map.Message, map.Outgoing)))
+  MapProcess(
+    pid: Pid,
+    subject: Subject(Call(map.Message, map.Outgoing)),
+    incarnation: Int,
+  )
 }
 
-/// The map supervisor's messages: a map's id starts a map.
+/// What the map supervisor starts a map with: its id, and an incarnation
+/// Maps takes from `runtime.unique_id` as it starts it.
+pub type MapStart {
+  MapStart(map: MapId, incarnation: Int)
+}
+
+/// The map supervisor's messages.
 pub type MapSupervisor =
-  factory_supervisor.Message(MapId, Subject(Call(map.Message, map.Outgoing)))
+  factory_supervisor.Message(MapStart, Subject(Call(map.Message, map.Outgoing)))
 
 /// What reaches Maps.
 pub opaque type Message {
@@ -87,29 +108,35 @@ pub fn supervised(
 /// each temporary: a map that ends is started again by the next find.
 pub fn map_supervisor(
   name name: Name(MapSupervisor),
-  start start: fn(MapId) ->
+  start start: fn(MapStart) ->
     actor.StartResult(Subject(Call(map.Message, map.Outgoing))),
 ) -> ChildSpecification(
-  factory_supervisor.Supervisor(MapId, Subject(Call(map.Message, map.Outgoing))),
+  factory_supervisor.Supervisor(
+    MapStart,
+    Subject(Call(map.Message, map.Outgoing)),
+  ),
 ) {
   todo as "built in the build"
 }
 
 /// The running map, started when it is not running: `Error(Nil)` when Maps
-/// does not answer within `call_ms`, is not running, or the start fails.
+/// does not answer by `deadline_ms` on the monotonic clock (the asker's
+/// ask's deadline), is not running, or the start fails.
 pub fn find_or_start(
   maps maps: Name(Message),
   map map: MapId,
-  call_ms call_ms: Int,
+  deadline_ms deadline_ms: Int,
 ) -> Result(MapProcess, Nil) {
   todo as "built in the build"
 }
 
-/// The running map, never started: `Error(Nil)` when it is not running or
-/// Maps does not answer within `call_ms`.
+/// The run of the map with this incarnation, never started: `Error(Nil)`
+/// when it is not running (another incarnation is not it), or Maps does not
+/// answer within `call_ms`. A watch's locate uses it.
 pub fn find(
   maps maps: Name(Message),
   map map: MapId,
+  incarnation incarnation: Int,
   call_ms call_ms: Int,
 ) -> Result(MapProcess, Nil) {
   todo as "built in the build"

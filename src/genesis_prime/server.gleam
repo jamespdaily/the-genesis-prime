@@ -145,8 +145,8 @@ pub type World {
     maps: Name(maps.Message),
     /// The map supervisor, whose children are the maps.
     map_supervisor: Name(maps.MapSupervisor),
-    /// How long a call to Maps may take, from a connection's directory or
-    /// locate.
+    /// How long a watch's call to Maps may take; an ask's call ends at the
+    /// ask's own deadline.
     maps_call_ms: Int,
     /// How long a map has to stop.
     map_shutdown_ms: Int,
@@ -181,9 +181,11 @@ pub type Served(settings) {
 }
 
 /// How a rule's ask reaches the process it names, and how its answer comes
-/// back as the answer type of every connection rule.
+/// back as the answer type of every connection rule. It is given the ask's
+/// deadline on the monotonic clock, so a lookup on the way (Maps') ends by
+/// it.
 type Directory =
-  fn(Request, fn(Answer) -> Nil) -> Result(Sent, Nil)
+  fn(Request, Int, fn(Answer) -> Nil) -> Result(Sent, Nil)
 
 /// Starts the tree. A child that fails three times in ten seconds does not
 /// recover by restarting, so the tree gives up, the node stops, and the

@@ -202,8 +202,11 @@ pub type Address {
   Store
   /// The registry that starts and finds maps.
   Maps
-  /// One map.
-  Map(map: MapId)
+  /// One map, in the one run of it that started with `incarnation`
+  /// (genesis_prime/world_map/maps): a map that ends and is started again
+  /// is another address, so a watch never lands on a copy that never held
+  /// the watcher's player.
+  Map(map: MapId, incarnation: Int)
   /// One connection.
   Connection(connection: ConnectionId)
 }

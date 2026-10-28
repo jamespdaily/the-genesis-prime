@@ -71,10 +71,10 @@ pub type Loaded {
   Refused(character_id: Int, warning: String)
 }
 
-/// A player in the world: its map and unit id, which the rule keeps, and
-/// watches the map by.
+/// A player in the world: its map, the run of the map that took it, which
+/// the rule watches as `Map(map, incarnation)`, and its unit id.
 pub type Entered {
-  Entered(map: MapId, unit_id: Int)
+  Entered(map: MapId, incarnation: Int, unit_id: Int)
 }
 
 /// The client's 0x07DD, read for this account: the store is asked for the

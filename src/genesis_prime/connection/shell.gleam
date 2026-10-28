@@ -55,7 +55,7 @@
 ////   input, until the outcome:
 ////
 //// ```
-//// directory(request, reply)
+//// directory(request, the ask's deadline, reply)
 ////   Error(Nil)              ─▶ Answered(ask, NotRunning), nothing sent
 ////   Ok(ToService(pid))      ─▶ monitor pid, wait until the ask's deadline
 ////   Ok(ToWorker(pid))       ─▶ monitor pid, wait until the ask's deadline
@@ -160,7 +160,7 @@ pub type Settings(settings, state, message, answer, outgoing, request) {
     /// request with `reply` and says where it went, or `Error(Nil)` when that
     /// process is not running. Made once at start from the services' names,
     /// with `service.call` and `store/worker.ask`; a rule never sees it.
-    directory: fn(request, fn(answer) -> Nil) -> Result(Sent, Nil),
+    directory: fn(request, Int, fn(answer) -> Nil) -> Result(Sent, Nil),
     /// Where each connection joins as it is accepted, so other processes
     /// find it by its id; `None` for a connection no process addresses (the
     /// login's).
