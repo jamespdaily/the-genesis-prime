@@ -1,9 +1,12 @@
 //// The live session's game recording, replayed through the game rule with no
 //// socket, process or database. Expected values come from these places.
-//// - The recording: a live login of the real client to the game server, with
-////   one character on the account
-////   (`test/rule_recording/2026-10-27-character-list`), closed with `End`,
-////   which counts 116 inputs.
+//// - The recording: a live login of the real client to the game server and the
+////   creation of a Veteran character, listed and selected afterwards
+////   (`test/rule_recording/2026-10-28-create`), closed with `End`, which
+////   counts 633 inputs.
+//// - The game tables: the header's digest of the table files the server
+////   loaded; a replay on other files fails with "record again". The replay
+////   reads the client's tables, so it is skipped where `GENESIS_NO_CLIENT=1`.
 //// - The rule's types as the code stands (`rule_types.digest`): a recording
 ////   made under other types refuses to replay.
 //// - The recording's layout and replay in `genesis_prime/rule_recording`:
@@ -26,7 +29,7 @@ pub fn the_live_sessions_game_recording_replays_to_the_same_steps_test() -> Nil 
       step: game_connection.step,
     )
   assert inputs == count as "the replay folds every input the End counts"
-  assert count == 116 as "the live session's game connection took 116 inputs"
+  assert count == 633 as "the live session's game connection took 633 inputs"
 }
 
 const game_replay = #(

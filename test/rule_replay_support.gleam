@@ -13,8 +13,9 @@ import gleam/option.{None, Some}
 import simplifile
 
 /// The folder of the live session's recordings: a login of the real client
-/// through the STS, auth and game servers, with one character on the account.
-pub const folder = "test/rule_recording/2026-10-27-character-list/"
+/// through the STS, auth and game servers, and the creation of a Veteran
+/// character, listed and selected afterwards.
+pub const folder = "test/rule_recording/2026-10-28-create/"
 
 /// Replays the recording `file` of the folder through the rule `module`,
 /// whose settings are the ones its header holds, and gives the inputs replayed
