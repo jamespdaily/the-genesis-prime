@@ -9,6 +9,10 @@
 ////  │    └─ one worker per ask                            temporary
 ////  ├─ hand-off: service shell + hand-off rule, named    permanent
 ////  ├─ sessions: service shell + sessions rule, named    permanent
+////  ├─ world supervisor (rest_for_one, 3 restarts in 10 s)  permanent
+////  │    ├─ Maps: the registry actor, named              permanent
+////  │    └─ map supervisor: factory supervisor, named     permanent
+////  │         └─ one map per MapId: service shell + map rule, unnamed  temporary
 ////  ├─ login supervisor (one-for-one, 3 restarts in 10 s)  permanent
 ////  │    ├─ STS listener (6600): a connection shell per client
 ////  │    └─ auth listener (23115): a connection shell per client
@@ -18,9 +22,12 @@
 ////            joined to the registry under its ConnectionId
 //// ```
 ////
-//// The tree stops the game subtree, then the login subtree, before Sessions,
-//// the hand-off, the store and the pool they ask, so no connection is left
-//// asking a process that has stopped. One directory, made once in `start` from
+//// The tree stops the game subtree, then the login subtree, then the world
+//// subtree, before Sessions, the hand-off, the store and the pool they ask,
+//// so no connection is left asking a process that has stopped. A map's ask
+//// goes through Maps (genesis_prime/world_map/maps), which finds the map or
+//// starts it; a map's address is found the same way, never started, for a
+//// watch. One directory, made once in `start` from
 //// the store's, the hand-off's and Sessions' names, sends the asks of every
 //// listener's rules; one `Locate` and the sessions' `Reach`, made from the
 //// same names and the registry, find the processes a rule watches or sends to.
@@ -43,6 +50,10 @@
 ////   before the account's old connection claims again, is not caught: that
 ////   old connection's claim then takes the slot from it
 ////   (genesis_prime/sessions).
+//// - **Maps and the maps** (genesis_prime/world_map/maps): a map that ends is
+////   started again, empty, by the next ask for it; Maps' restart ends every
+////   map. Each in-world connection watches its map, so its end ends the
+////   connection with 0x036A reason 8, and its client logs in again.
 //// - **The registry** (the `pg` scope) starts with no members, so no
 ////   connection could be found. It is the game subtree's first child under
 ////   `rest_for_one`, so its restart also restarts the game listener: every
@@ -82,6 +93,7 @@ import genesis_prime/service/shell as service_shell
 import genesis_prime/sessions
 import genesis_prime/step.{type Rule}
 import genesis_prime/store/worker.{type Job}
+import genesis_prime/world_map/maps
 import gleam/erlang/process.{type Name, type Pid}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
@@ -112,6 +124,8 @@ pub type Settings {
     /// Where the game connections are found, made once with
     /// `registry.new`.
     registry: Registry,
+    /// The world subtree: Maps and the map supervisor.
+    world: World,
     /// How long a write may wait for a client's socket, on every listener.
     send_deadline_ms: Int,
     /// How long a connection has to stop once the server stops, on every
@@ -121,6 +135,24 @@ pub type Settings {
     login: Login,
     /// The game server's listener.
     game: Served(game_connection.Settings),
+  )
+}
+
+/// The world subtree's names and settings.
+pub type World {
+  World(
+    /// Maps, the registry that finds and starts maps.
+    maps: Name(maps.Message),
+    /// The map supervisor, whose children are the maps.
+    map_supervisor: Name(maps.MapSupervisor),
+    /// How long a call to Maps may take, from a connection's directory or
+    /// locate.
+    maps_call_ms: Int,
+    /// How long a map has to stop.
+    map_shutdown_ms: Int,
+    /// The folder each map's inputs are recorded in, one file per map;
+    /// `None` unless the dev start turns recording on.
+    map_recordings: Option(String),
   )
 }
 

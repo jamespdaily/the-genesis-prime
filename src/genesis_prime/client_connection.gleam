@@ -30,6 +30,8 @@ import genesis_prime/step.{
   WriteFailed,
 }
 import genesis_prime/store
+import genesis_prime/world_map/map
+import genesis_prime/world_map/map_id.{type MapId}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -40,6 +42,9 @@ pub type Request {
   AskStore(request: store.Request)
   AskHandOff(message: hand_off.Message)
   AskSessions(message: sessions.Message)
+  /// Ask the map, which Maps starts when it is not running
+  /// (genesis_prime/world_map/maps).
+  AskMap(map: MapId, message: map.Message)
 }
 
 /// What comes back from an ask, by the process asked.
@@ -47,6 +52,7 @@ pub type Answer {
   FromStore(answer: store.Answer)
   FromHandOff(answer: hand_off.Answer)
   FromSessions(answer: sessions.Outgoing)
+  FromMap(answer: map.Outgoing)
 }
 
 /// What another process sends a connection rule, by the process that sent

@@ -1,5 +1,6 @@
 //// The rule of one game connection: the client's connection to the game
-//// server, from the hello to the character list its select screen shows. It
+//// server, from the hello through character select to the player in the
+//// world. It
 //// decides everything; its connection shell carries it out
 //// (genesis_prime/connection/shell). The client reaches it with the session
 //// key the auth server's hand-off gave it (genesis_prime/login/auth_connection).
@@ -19,9 +20,14 @@
 ////     Characters(rows)         ◀─ 0x3DC{0x0036 level}, 0x3DC{0x0117 character_list}, session key
 //// 0x244{0x025C{0x025B}}        ─▶ checked                         ─▶ store: CreateCharacter(..)
 ////     CharacterCreated(id)     ◀─ 0x3DC{0x00DC create result}, session key
-//// 0x244{0x07DD}                ◀─ 0x3DC{0x0162 refused}           ─▶ store: ListCharacters(account)
-////     Characters(rows)         ◀─ 0x0036, 0x0117, as above
-//// 0x244{0x038C{0x082D}}        ─▶ logged as unhandled
+//// 0x244{0x07DD}                ─▶ world entry                     ─▶ store: LoadCharacter(account, id)
+////     CharacterLoaded(row)                                        ─▶ map MapId(world, 0): Join(connection, id)
+////       Joined(unit)           ◀─ 0xAD, 0x262, 0x19B, 0x636, 0xF1, 0x61; watches the map (watch 2)
+////     NotTheAccounts, or no place ◀─ 0x3DC{0x0162 refused}       ─▶ store: ListCharacters(account)
+////       Characters(rows)       ◀─ 0x0036, 0x0117, as above
+//// in the world: 0x635, 0x63A, 0xD5, 0x63B, 0xF2, 0x637 ─▶ logged as unhandled
+//// the map ends (watch 2)       ◀─ 0x3DC{0x036A reason 8}; the connection ends
+//// 0x244{0x038C{kind, inner}}  ─▶ the inner message logged as unhandled under its own id
 //// 0x244{0x0241}                ─▶ logged as unhandled
 //// ping 0x0, bare               ◀─ pong 0x1, bare
 //// Sessions: TakenOver          ◀─ 0x3DC{0x036A reason 19}, session key; the connection ends
@@ -102,6 +108,24 @@
 ////   `Claimed`, which leaves the slot claimed by a connection that has ended
 ////   and is freed by Sessions' watch on it. A crash of the connection's own process
 ////   drops the client, which connects again from the login.
+//// - **Entering the world** is world entry's own feature
+////   (genesis_prime/game/world_entry), as character select is: it asks the
+////   store and the map, and the rule turns its effects into writes, the asks
+////   and its watch on the map. The map's ask goes through Maps, which starts
+////   the map when it is not running (genesis_prime/world_map/maps); a map
+////   that cannot be reached, ends before its answer or gives none in time
+////   ends the connection with reason 8, as the store does.
+//// - **In the world** the connection watches its map (watch 2): the map's
+////   end, a crash or a restart of Maps, ends the connection with 0x036A
+////   reason 8, since the player is gone from the world. The map watches the
+////   connection, so a connection that ends leaves its map. A takeover ends
+////   it with reason 19, as in character select.
+//// - **Sessions ending in the world.** The claim again keeps where the
+////   client is: character select's state, or the player in the world.
+//// - **0x038C** carries a 5-bit kind in its first byte, then exactly one whole
+////   frame (0x14007e180, opcode.0x38c); the inner message is logged as
+////   unhandled under its own id. A body that holds no whole frame, or bytes
+////   after it, is one the client never writes, and ends the connection.
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
@@ -121,6 +145,7 @@ import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
 import genesis_prime/game/character_select
+import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder, SessionKey, Take}
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
@@ -202,15 +227,31 @@ type Status {
   /// The hand-off is asked to take the session key.
   TakingSessionKey
   /// Sessions is asked to make the connection the account's session, or the
-  /// connection waits on the claim timer before it asks. `select` is the
-  /// character select the client is in after the answer: new for the first
-  /// claim, the one it was in when Sessions ended for a later one. `retries` is
+  /// connection waits on the claim timer before it asks. `resume` is where the
+  /// client is after the answer: a new character select for the first claim;
+  /// the select it was in, or its player in the world, for a later one. `retries` is
   /// how many times Sessions was not running for this claim.
-  ClaimingSession(holder: Holder, select: character_select.State, retries: Int)
+  ClaimingSession(holder: Holder, resume: Resume, retries: Int)
   /// The session key was held for `holder` and Sessions holds the account's
   /// slot for this connection; the client is in character select, which holds
   /// its own state, asks the store itself and says when its answer is awaited.
   InCharacterSelect(holder: Holder, select: character_select.State)
+  /// The client asked to play a character; world entry asks the store, then
+  /// the map. `select` is where a refusal hands the client back to.
+  EnteringWorld(
+    holder: Holder,
+    select: character_select.State,
+    entry: world_entry.State,
+  )
+  /// The player is in the world, in `entered`'s map, which the connection
+  /// watches (`map_watch`).
+  InWorld(holder: Holder, entered: world_entry.Entered)
+}
+
+/// Where a claim made again after Sessions ended puts the client back.
+type Resume {
+  ResumeSelect(select: character_select.State)
+  ResumeWorld(entered: world_entry.Entered)
 }
 
 /// How long a connection waits before it claims again after Sessions ended or
@@ -229,6 +270,9 @@ const claim_retries = 5
 /// so the id is free whenever a claim opens it again, and a watch left open is
 /// caught by the shell's refusal of an id already open.
 const sessions_watch = WatchId(1)
+
+/// The watch on the player's map, open while the player is in the world.
+const map_watch = WatchId(2)
 
 /// The timer a connection waits on before it claims again; one runs at a
 /// time.

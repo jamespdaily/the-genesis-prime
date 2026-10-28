@@ -12,7 +12,7 @@
 
 import genesis_prime/step.{type Address}
 import gleam/dynamic.{type Dynamic}
-import gleam/erlang/process.{type Name, type Pid}
+import gleam/erlang/process.{type Name, type Pid, type Subject}
 
 /// What reaches a service when another process asks it: the message, and
 /// how to answer it. `reply` sends the answer to the asker, tagged with the
@@ -73,6 +73,18 @@ pub fn call(
       Ok(ToService(pid:))
     }
   }
+}
+
+/// Sends a service the message through the subject its start returned, for
+/// an asker's directory: `ToService` with the subject's owner, which the
+/// asker monitors. A service that has ended drops the message, and the
+/// asker's monitor gives `EndedBeforeAnswer`.
+pub fn call_subject(
+  subject subject: Subject(Call(message, answer)),
+  message message: message,
+  reply reply: fn(answer) -> Nil,
+) -> Result(Sent, Nil) {
+  todo as "built in the build"
 }
 
 @external(erlang, "erlang", "send")

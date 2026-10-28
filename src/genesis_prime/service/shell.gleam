@@ -1,5 +1,8 @@
-//// The shell of a service: a named process with no socket that other
-//// processes ask, running one rule. Like a connection's shell
+//// The shell of a service: a process with no socket that other processes
+//// ask, running one rule. A singleton (the hand-off, Sessions) registers a
+//// name; a map is one of many and registers none: Maps holds the subject
+//// its start returns (genesis_prime/world_map/maps), since a name is an atom
+//// and maps come and go. Like a connection's shell
 //// (genesis_prime/connection/shell), it turns everything that reaches the
 //// process into the rule's inputs, carries out the rule's effects in order
 //// and decides nothing. It is a gleam_otp actor under a supervisor. How an
@@ -83,7 +86,7 @@ import genesis_prime/step.{
 import genesis_prime/step/runtime.{type ExitReason, Shutdown}
 import genesis_prime/step/watch.{type Watches}
 import gleam/dict.{type Dict}
-import gleam/erlang/process.{type Name, type Pid}
+import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/option.{type Option}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
@@ -95,8 +98,8 @@ pub type Settings(settings, state, message, outgoing) {
     /// The rule. A service takes no answers and makes no asks, so those
     /// types are `Nil`; `outgoing` is what it answers with.
     rule: Rule(settings, state, message, Nil, outgoing, Nil),
-    /// The name it registers, made once at start.
-    name: Name(Call(message, outgoing)),
+    /// The name it registers, or none.
+    registration: Registration(message, outgoing),
     /// How it finds the processes its rule watches and sends to.
     reach: Reach(outgoing),
     /// How long it has to stop once the supervisor stops it; the child's
@@ -106,6 +109,14 @@ pub type Settings(settings, state, message, outgoing) {
     /// recording on.
     recorder: Option(Recorder),
   )
+}
+
+/// How askers find a service.
+pub type Registration(message, outgoing) {
+  /// By the name it registers, made once at start.
+  Named(name: Name(Call(message, outgoing)))
+  /// By the subject its start returns.
+  Unnamed
 }
 
 /// What reaches the actor: a call, or an exit signal it traps.
@@ -147,6 +158,16 @@ pub fn supervised(
   supervision.worker(fn() { start(settings, process.self()) })
   |> supervision.restart(supervision.Permanent)
   |> supervision.timeout(ms: settings.shutdown_ms)
+}
+
+/// Starts an unnamed service as a child of the supervisor that runs this
+/// function, such as the map supervisor, giving the subject askers send their
+/// calls to. Its settings' registration is `Unnamed`; a `Named` one is a bug
+/// and fails the start.
+pub fn start_unnamed(
+  settings: Settings(settings, state, message, outgoing),
+) -> actor.StartResult(Subject(Call(message, outgoing))) {
+  todo as "built in the build"
 }
 
 fn start(
