@@ -15,11 +15,14 @@ pub type Failure {
   Refused(constraint: String)
   /// The query failed for another reason.
   NotInserted(reason: String)
+  /// The query ran out of time, so the row may have been added.
+  TimedOut
 }
 
 /// How many times the query is tried while the pool has no connection yet: it
 /// opens its connections after it starts, and a query made before one is open
-/// is answered as unavailable.
+/// is answered as unavailable, without having run. A query that timed out may
+/// have run, so it is never tried again.
 const connection_attempts = 5
 
 /// How long to wait before trying again, in milliseconds.
@@ -45,7 +48,8 @@ fn attempt(
     Ok(pog.Returned(rows:, ..)) -> Ok(rows)
     Error(pog.ConstraintViolated(constraint:, ..)) ->
       Error(Refused(constraint:))
-    Error(pog.ConnectionUnavailable) | Error(pog.QueryTimeout) ->
+    Error(pog.QueryTimeout) -> Error(TimedOut)
+    Error(pog.ConnectionUnavailable) ->
       case attempts > 1 {
         True -> {
           process.sleep(connection_wait_ms)
@@ -71,5 +75,9 @@ pub fn describe(failure failure: Failure, what what: String) -> String {
     Refused(constraint:) ->
       "the database refused the " <> what <> ": " <> constraint
     NotInserted(reason:) -> "the " <> what <> " was not added: " <> reason
+    TimedOut ->
+      "the database gave no answer about the "
+      <> what
+      <> " in time: it may have been added, so look before adding it again"
   }
 }
