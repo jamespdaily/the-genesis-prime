@@ -202,14 +202,9 @@ fn connected(
   event event: step.Event(Nil, Answer),
 ) -> #(State, Step(Nil, Request)) {
   case
-    client_connection.hear(
-      event,
-      about: client_connection.about(
-        link: session.link,
-        account_id: account_id_of(session.status),
-      ),
-      stopping: fn() { [] },
-    )
+    client_connection.hear(event, about: about_of(session), stopping: fn() {
+      []
+    })
   {
     Bytes(bytes:) -> read(session:, now:, bytes:)
     client_connection.Outcome(outcome:) ->
@@ -220,11 +215,7 @@ fn connected(
       )
     Connect(..) -> #(
       Connected(session),
-      client_connection.accepted_again(
-        link: session.link,
-        account_id: account_id_of(session.status),
-        rule: "STS",
-      ),
+      client_connection.accepted_again(about: about_of(session), rule: "STS"),
     )
     Otherwise(step:) -> #(Connected(session), step)
   }
@@ -756,11 +747,15 @@ fn log(
   level level: step.LogLevel,
   text text: String,
 ) -> Effect(Nil) {
-  client_connection.log(
+  client_connection.log(about: about_of(session), level:, text:)
+}
+
+/// What a log line of the login is about: the connection, the peer and the
+/// account once the store has found it.
+fn about_of(session: Session) -> step.About {
+  client_connection.about(
     link: session.link,
     account_id: account_id_of(session.status),
-    level:,
-    text:,
   )
 }
 

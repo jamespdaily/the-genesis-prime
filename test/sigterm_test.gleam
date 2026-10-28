@@ -26,21 +26,18 @@ import recording_support
 pub fn serve(folder: String) -> Nil {
   let assert Ok(started) =
     supervisor.new(supervisor.OneForOne)
-    |> supervisor.add(
-      service_shell.supervised(service_shell.Settings(
+    |> supervisor.add(service_shell.supervised(
+      name: process.new_name("hand_off"),
+      settings: service_shell.Settings(
         rule: hand_off.rule(),
-        registration: service_shell.Named(process.new_name("hand_off")),
-        reach: service.Reach(
-          locate: fn(_address) { Error(Nil) },
-          send: fn(_to, _message) { Error(Nil) },
-        ),
+        reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
         shutdown_ms: 5000,
         recorder: Some(recording_support.recorder(
           folder,
           rule_module: hand_off.rule_name,
         )),
-      )),
-    )
+      ),
+    ))
     |> supervisor.start
     as "the tree started"
   process.unlink(started.pid)

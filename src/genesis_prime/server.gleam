@@ -209,26 +209,24 @@ pub fn start(
     name: settings.store,
     pool: pog.named_connection(settings.pool.pool_name),
   ))
-  |> supervisor.add(
-    service_shell.supervised(service_shell.Settings(
+  |> supervisor.add(service_shell.supervised(
+    name: settings.hand_off,
+    settings: service_shell.Settings(
       rule: hand_off.rule(),
-      registration: service_shell.Named(settings.hand_off),
-      reach: service.Reach(locate: locate(settings), send: fn(_to, _answer) {
-        Error(Nil)
-      }),
+      reach: service.watch_only(locate: locate(settings)),
       shutdown_ms: settings.hand_off_shutdown_ms,
       recorder: None,
-    )),
-  )
-  |> supervisor.add(
-    service_shell.supervised(service_shell.Settings(
+    ),
+  ))
+  |> supervisor.add(service_shell.supervised(
+    name: settings.sessions,
+    settings: service_shell.Settings(
       rule: sessions.rule(),
-      registration: service_shell.Named(settings.sessions),
       reach: sessions_reach(settings),
       shutdown_ms: settings.sessions_shutdown_ms,
       recorder: settings.sessions_recorder,
-    )),
-  )
+    ),
+  ))
   |> supervisor.add(world(settings))
   |> supervisor.add(login(settings, directory))
   |> supervisor.add(game(settings, directory))
@@ -310,17 +308,26 @@ fn sessions_reach(settings: Settings) -> Reach(sessions.Outgoing) {
 }
 
 /// The world subtree: Maps, then the map supervisor, under a `rest_for_one`
-/// supervisor of their own, a permanent child of the server's. Maps' restart
-/// restarts the map supervisor, so every map ends with the registry that
-/// knew them. A map is started by the map supervisor with the rule of its id
-/// and incarnation, no name, the reach every service has, and, when the dev
-/// start records, a recording of its own, named by its world, instance and
-/// incarnation.
+/// supervisor of their own, a permanent child of the server's.
 fn world(
   settings: Settings,
 ) -> supervision.ChildSpecification(supervisor.Supervisor) {
   use tree <- subtree(supervisor.RestForOne)
-  let world = settings.world
+  add_world(tree:, world: settings.world, locate: locate(settings))
+}
+
+/// Adds Maps and the map supervisor to a `rest_for_one` supervisor, in that
+/// order: Maps' restart restarts the map supervisor, so every map ends with
+/// the registry that knew them. A map is started by the map supervisor with
+/// the rule of its id and incarnation, no name, a reach that finds what it
+/// watches with `locate`, and, when `world` records, a recording of its own,
+/// named by its world, instance and incarnation. The server's tree and the
+/// tests start the world with this function.
+pub fn add_world(
+  tree tree: supervisor.Builder,
+  world world: World,
+  locate locate: Locate,
+) -> supervisor.Builder {
   tree
   |> supervisor.add(maps.supervised(
     name: world.maps,
@@ -333,10 +340,7 @@ fn world(
       start: fn(start: maps.MapStart) {
         service_shell.start_unnamed(service_shell.Settings(
           rule: map.rule(map: start.map, incarnation: start.incarnation),
-          registration: service_shell.Unnamed,
-          reach: service.Reach(locate: locate(settings), send: fn(_to, _answer) {
-            Error(Nil)
-          }),
+          reach: service.watch_only(locate:),
           shutdown_ms: world.map_shutdown_ms,
           recorder: option.map(world.map_recordings, file.labelled(
             _,

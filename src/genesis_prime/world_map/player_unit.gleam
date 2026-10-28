@@ -1,14 +1,15 @@
 //// A player character's unit as message 0x262 creates it in the client: the
 //// character's own values, alive at its saved place, with the body the
-//// character list shows. The map sends other players' units with it in a
-//// later card, so it lives with the map, not the connection.
+//// character list shows. It lives with the map, which owns the units the
+//// client sees, not with the connection.
 ////
 //// - **Alive:** stat 0 (health) above 0, or the client creates the player
-////   dead (0x140457bc5). The client holds no player health by class and
-////   level (0x1404585c0), and no retail record has one yet, so health and
-////   property 7 (Base Health) are `stand_in_health`, 136, the client's
-////   level-1 creature Base Health (CreatureLevel row 1). Missing: a player's
-////   health, listed in the coverage measure until a stats card owns it.
+////   dead (0x140457bc5). No client table or retail record gives a player's
+////   health by class and level (0x1404585c0), so health and property 7 (Base
+////   Health) are `stand_in_health`, 136, the client's level-1 creature Base
+////   Health (CreatureLevel row 1). A player's health is missing in the
+////   coverage measure.
+//// - **Level:** stat 10 is the character's level (0x140458140).
 //// - **Place:** one kind 2 movement command at the saved position; after 0xAD
 ////   the client never drops the player to the ground, so it must be on the
 ////   floor (0x1404586e0, 0x1403e828a).
@@ -31,12 +32,16 @@ import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/store.{type Character, CharacterId}
 import gleam/int
 
-/// A level-1 player's health until a stats card gives the real one: the
-/// client's level-1 creature Base Health (0x1404585c0).
+/// Every player's health: the client's level-1 creature Base Health
+/// (0x1404585c0), which stands in for a health no table gives.
 pub const stand_in_health = 136
 
 /// The stat the client keeps a unit's health in (0x140458140).
 const health_stat = 0
+
+/// The stat the client keeps a unit's level in (0x140458140); a unit created
+/// without it is level 1 (0x1404543c1).
+const level_stat = 10
 
 /// The UnitProperty2 id of Base Health, the property Unit:GetMaxHealth reads
 /// (0x1404584b0).
@@ -70,7 +75,10 @@ pub fn create(
     premium_tier: 0,
     title_id: 0,
     create_flags: 0,
-    stats: [UnitStat(stat_id: health_stat, value: stand_in_health)],
+    stats: [
+      UnitStat(stat_id: health_stat, value: stand_in_health),
+      UnitStat(stat_id: level_stat, value: character.level),
+    ],
     server_time_estimate_start: 0,
     movement_commands: [
       UnitPositionCommand(

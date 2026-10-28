@@ -143,7 +143,7 @@ pub fn check_row(
       tables:,
       faction_id: row.faction_id,
       race_id:,
-      start: row.character_creation_start_enum,
+      start: start_place.start(enum_value: row.character_creation_start_enum),
     )
   {
     Error(Nil) ->

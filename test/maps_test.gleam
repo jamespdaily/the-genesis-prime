@@ -1,8 +1,7 @@
 //// Maps and the maps it starts (`genesis_prime/world_map/maps`), started under
 //// a world supervisor as the server's tree starts them. Expected values come
 //// from these places.
-//// - The doc comment of `genesis_prime/world_map/maps`, as approved on the
-////   world entry card and changed by Codex's shape review: the first find for
+//// - The doc comment of `genesis_prime/world_map/maps`: the first find for
 ////   a map starts it, the next finds the same run; each start has an
 ////   incarnation, unique in the node's life; `find` answers only the run with
 ////   the incarnation it is given and never starts a map; a map that ended is
@@ -17,11 +16,10 @@
 
 import ask_support
 import genesis_prime/connection/registry.{type Registry}
-import genesis_prime/rule_recording.{Taken as Recorded}
-import genesis_prime/rule_recording/file
+import genesis_prime/rule_recording
+import genesis_prime/server
 import genesis_prime/service
-import genesis_prime/service/shell as service_shell
-import genesis_prime/step.{type Address, Connection, ConnectionId, WatchEnded}
+import genesis_prime/step.{type Address, Connection, ConnectionId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/maps.{type MapProcess}
@@ -30,7 +28,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
-import gleam/result
 import owned_test
 import recording_support
 import simplifile
@@ -44,38 +41,24 @@ type World {
 
 fn start_world(recording_folder: Option(String)) -> World {
   let maps_name = process.new_name("maps")
-  let supervisor_name = process.new_name("map_supervisor")
   let scope = registry.new()
-  let assert Ok(started) =
+  let world =
+    server.World(
+      maps: maps_name,
+      map_supervisor: process.new_name("map_supervisor"),
+      maps_call_ms: 1000,
+      map_shutdown_ms: 1000,
+      map_recordings: option.map(recording_folder, recording_support.recorder(
+        _,
+        map.rule_name,
+      )),
+    )
+  let tree =
     supervisor.new(supervisor.RestForOne)
     |> supervisor.restart_tolerance(intensity: 3, period: 10)
     |> supervisor.add(registry.supervised(scope))
-    |> supervisor.add(maps.supervised(
-      name: maps_name,
-      supervisor: supervisor_name,
-    ))
-    |> supervisor.add(
-      maps.map_supervisor(
-        name: supervisor_name,
-        shutdown_ms: 1000,
-        start: fn(start: maps.MapStart) {
-          service_shell.start_unnamed(service_shell.Settings(
-            rule: map.rule(map: start.map, incarnation: start.incarnation),
-            registration: service_shell.Unnamed,
-            reach: service.Reach(locate: locate(scope, _), send: fn(_, _) {
-              Error(Nil)
-            }),
-            shutdown_ms: 1000,
-            recorder: option.map(recording_folder, fn(folder) {
-              file.labelled(
-                recording_support.recorder(folder, map.rule_name),
-                "run-" <> int.to_string(start.incarnation),
-              )
-            }),
-          ))
-        },
-      ),
-    )
+  let assert Ok(started) =
+    server.add_world(tree:, world:, locate: locate(scope, _))
     |> supervisor.start
     as "the world tree started"
   process.unlink(started.pid)
@@ -139,7 +122,7 @@ pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test
   let world = start_world(None)
   assert maps.find(world.maps, ship, incarnation: 1, call_ms: 1000)
     == Error(Nil)
-    as "find never starts a map: none is running yet"
+    as "find never starts a map: no map is running"
   let first = started(world, ship)
   let second = started(world, ship)
   assert second == first
@@ -265,10 +248,26 @@ pub fn an_ask_is_given_up_at_the_askers_deadline_and_maps_not_running_is_an_erro
   assert maps.find(nobody, ship, incarnation: 1, call_ms: 1000) == Error(Nil)
 }
 
+pub fn an_ask_past_its_deadline_is_never_sent_to_maps_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let stand_in = process.new_name("stand_in_maps")
+  let assert Ok(Nil) = process.register(process.self(), stand_in)
+    as "the test process holds the name Maps would"
+  assert maps.find_or_start(
+      stand_in,
+      ship,
+      deadline_ms: ask_support.monotonic_ms() - 1,
+    )
+    == Error(Nil)
+  let anything =
+    process.new_selector() |> process.select_other(fn(message) { message })
+  assert process.selector_receive(anything, within: 0) == Error(Nil)
+    as "the asker's deadline had passed before it sent, so Maps is never asked: the find would start a map nobody waits for"
+}
+
 pub fn a_map_gives_each_player_a_unit_id_and_forgets_it_when_its_connection_ends_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let world = start_world(Some(folder))
+  let world = start_world(None)
   let found = started(world, ship)
   let first_connection = connection(world, 1)
   assert joined(found, 1)
@@ -280,63 +279,10 @@ pub fn a_map_gives_each_player_a_unit_id_and_forgets_it_when_its_connection_ends
   let ended = process.monitor(first_connection)
   process.kill(first_connection)
   let _reason = ask_support.ended(ended)
-  await_input_recorded(folder, found.incarnation, fn(input) {
-    input.event == WatchEnded(watch: step.WatchId(1))
-  })
   let _again = connection(world, 1)
   assert joined(found, 1)
     == map.Joined(unit_id: 3, incarnation: found.incarnation)
-    as "the connection ended, so its player was removed: its next join is a new unit, never unit 1 again"
-}
-
-/// Waits until the map run's recording holds an input that `matches`; the
-/// rule's step is folded before the record is written, so the map's state has
-/// changed by then. The wait is bounded.
-fn await_input_recorded(
-  folder: String,
-  incarnation: Int,
-  matches: fn(step.Input(map.Message, Nil)) -> Bool,
-) -> Nil {
-  await_recorded_within(folder:, incarnation:, matches:, polls: 5000)
-}
-
-fn await_recorded_within(
-  folder folder: String,
-  incarnation incarnation: Int,
-  matches matches: fn(step.Input(map.Message, Nil)) -> Bool,
-  polls polls: Int,
-) -> Nil {
-  let path =
-    folder
-    <> "/genesis_prime.world_map.map-run-"
-    <> int.to_string(incarnation)
-    <> ".recording"
-  let seen =
-    simplifile.read_bits(path)
-    |> result.replace_error(Nil)
-    |> result.try(fn(bytes) {
-      rule_recording.read(bytes) |> result.replace_error(Nil)
-    })
-    |> result.map(fn(read) {
-      list.any(
-        read.1,
-        fn(record: rule_recording.Record(map.Message, Nil, map.Outgoing, Nil)) {
-          case record {
-            Recorded(input:, ..) -> matches(input)
-            rule_recording.End(..) -> False
-          }
-        },
-      )
-    })
-    |> result.unwrap(False)
-  case seen, polls > 0 {
-    True, _ -> Nil
-    False, True -> {
-      process.sleep(1)
-      await_recorded_within(folder:, incarnation:, matches:, polls: polls - 1)
-    }
-    False, False -> panic as "the map never took the input"
-  }
+    as "the connection ended, and the map took its end before this join in its mailbox, so its player was removed: the next join is a new unit, never unit 1 again"
 }
 
 pub fn a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_test() -> Nil {
@@ -365,11 +311,17 @@ pub fn the_recording_of_a_map_run_is_named_by_its_world_instance_and_incarnation
   let ended = process.monitor(live)
   process.kill(live)
   let _reason = ask_support.ended(ended)
-  await_input_recorded(folder, found.incarnation, fn(input) {
-    input.event == WatchEnded(watch: step.WatchId(1))
-  })
+  let _joined_after = joined(found, 3)
   let _reason = ask_support.stop_tree(world.tree)
   let bytes = recording_support.recording_in(folder)
+  assert simplifile.read_bits(
+      folder
+      <> "/genesis_prime.world_map.map-world-3460-instance-0-incarnation-"
+      <> int.to_string(found.incarnation)
+      <> ".recording",
+    )
+    == Ok(bytes)
+    as "the file is named by the map's world, instance and incarnation, as the server names it"
   let assert Ok(#(header, records)) = rule_recording.read(bytes)
     as "the recording reads"
   assert header.rule == map.rule_name
@@ -390,7 +342,7 @@ pub fn the_recording_of_a_map_run_is_named_by_its_world_instance_and_incarnation
       None,
     )
     == Ok(count)
-    as "every recorded step is the step the rule gives again: the first input, the two joins, the two watches' ends and the stop"
-  assert count == 6
-    as "Started, two Asked, WatchEnded for the dead connection's watch at once and for the killed one, and Stopping"
+    as "every recorded step is the step the rule gives again: the first input, the three joins, the three watches' ends and the stop"
+  assert count == 8
+    as "Started, three Asked, WatchEnded for the two dead connections' watches at once and for the killed one, and Stopping; the third join, answered after the kill, is taken after the killed connection's end"
 }

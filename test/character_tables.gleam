@@ -17,6 +17,7 @@
 
 import character_support
 import database_support
+import genesis_prime/game/start_place.{type Place, Place}
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
@@ -289,43 +290,91 @@ fn location(
   ])
 }
 
-/// The start places, each as the client's row holds it.
-fn start_location_rows() -> List(List(Cell)) {
+/// The start places by their WorldLocation2 row id, each as the client's row
+/// holds its world, zone and position.
+pub fn start_locations() -> List(#(Int, Place)) {
   [
-    location(id: 1594, world: 426, zone: 648, position: #(
-      4110.7099609375,
-      -658.6248779296875,
-      -5145.47998046875,
-    )),
-    location(id: 8223, world: 870, zone: 1236, position: #(
-      -8260.708984375,
-      -995.0770263671875,
-      -239.0409393310547,
-    )),
-    location(id: 18_987, world: 1387, zone: 1411, position: #(
-      -3835.3408203125,
-      -980.2174072265625,
-      -6050.52392578125,
-    )),
-    location(id: 37_015, world: 990, zone: 1417, position: #(
-      -771.822998046875,
-      -904.28515625,
-      -2269.56005859375,
-    )),
-    location(id: 51_596, world: 3460, zone: 6009, position: #(
-      29.128599166870117,
-      -853.87158203125,
-      -560.18798828125,
-    )),
-    location(id: 53_050, world: 51, zone: 4959, position: #(
-      4074.340087890625,
-      -797.8367919921875,
-      -2399.3701171875,
-    )),
-    location(id: 53_051, world: 22, zone: 4957, position: #(
-      -3343.580078125,
-      -887.464599609375,
-      -536.030029296875,
-    )),
+    #(
+      1594,
+      Place(
+        world_id: 426,
+        world_zone_id: 648,
+        x: 4110.7099609375,
+        y: -658.6248779296875,
+        z: -5145.47998046875,
+      ),
+    ),
+    #(
+      8223,
+      Place(
+        world_id: 870,
+        world_zone_id: 1236,
+        x: -8260.708984375,
+        y: -995.0770263671875,
+        z: -239.0409393310547,
+      ),
+    ),
+    #(
+      18_987,
+      Place(
+        world_id: 1387,
+        world_zone_id: 1411,
+        x: -3835.3408203125,
+        y: -980.2174072265625,
+        z: -6050.52392578125,
+      ),
+    ),
+    #(
+      37_015,
+      Place(
+        world_id: 990,
+        world_zone_id: 1417,
+        x: -771.822998046875,
+        y: -904.28515625,
+        z: -2269.56005859375,
+      ),
+    ),
+    #(
+      51_596,
+      Place(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 29.128599166870117,
+        y: -853.87158203125,
+        z: -560.18798828125,
+      ),
+    ),
+    #(
+      53_050,
+      Place(
+        world_id: 51,
+        world_zone_id: 4959,
+        x: 4074.340087890625,
+        y: -797.8367919921875,
+        z: -2399.3701171875,
+      ),
+    ),
+    #(
+      53_051,
+      Place(
+        world_id: 22,
+        world_zone_id: 4957,
+        x: -3343.580078125,
+        y: -887.464599609375,
+        z: -536.030029296875,
+      ),
+    ),
   ]
+}
+
+/// The planted WorldLocation2 rows of the start places.
+fn start_location_rows() -> List(List(Cell)) {
+  list.map(start_locations(), fn(location_row) {
+    let #(id, place) = location_row
+    location(id:, world: place.world_id, zone: place.world_zone_id, position: #(
+      place.x,
+      place.y,
+      place.z,
+    ))
+  })
 }

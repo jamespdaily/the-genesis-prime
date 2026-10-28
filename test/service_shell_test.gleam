@@ -33,7 +33,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
-import gleam/result
 import gleam/string
 import log_capture
 import mug
@@ -418,16 +417,15 @@ fn hand_off_child(
   shutdown_ms shutdown_ms: Int,
   recorder recorder: Option(file.Recorder),
 ) -> ChildSpecification(Nil) {
-  service_shell.supervised(service_shell.Settings(
-    rule: hand_off.rule(),
-    registration: service_shell.Named(name),
-    reach: service.Reach(
-      locate: fn(_address) { Error(Nil) },
-      send: fn(_to, _message) { Error(Nil) },
+  service_shell.supervised(
+    name:,
+    settings: service_shell.Settings(
+      rule: hand_off.rule(),
+      reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
+      shutdown_ms:,
+      recorder:,
     ),
-    shutdown_ms:,
-    recorder:,
-  ))
+  )
 }
 
 fn a_guid() -> guid.Guid {
@@ -458,11 +456,7 @@ fn unnamed_hand_off() -> service_shell.Settings(
 ) {
   service_shell.Settings(
     rule: hand_off.rule(),
-    registration: service_shell.Unnamed,
-    reach: service.Reach(
-      locate: fn(_address) { Error(Nil) },
-      send: fn(_to, _message) { Error(Nil) },
-    ),
+    reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
     shutdown_ms: 1000,
     recorder: None,
   )
@@ -513,26 +507,4 @@ pub fn a_message_to_an_unnamed_service_that_ended_is_dropped_and_its_pid_is_stil
     )
     == Ok(service.ToService(started.pid))
     as "no process holds the subject, and the asker's monitor of the pid it is told gives EndedBeforeAnswer"
-}
-
-pub fn a_service_started_with_the_wrong_kind_of_registration_does_not_start_test() -> Nil {
-  use <- owned_test.run(30_000)
-  // A supervisor that cannot start its child ends with the reason shutdown,
-  // which its linked starter would take as its own end.
-  process.trap_exits(True)
-  assert service_shell.start_unnamed(
-      service_shell.Settings(
-        ..unnamed_hand_off(),
-        registration: service_shell.Named(process.new_name("hand_off")),
-      ),
-    )
-    |> result.is_error
-    as "a named service started for its subject is a bug and fails the start"
-  let assert Error(_) =
-    supervisor.new(supervisor.OneForOne)
-    |> supervisor.restart_tolerance(intensity: 3, period: 10)
-    |> supervisor.add(service_shell.supervised(unnamed_hand_off()))
-    |> supervisor.start
-    as "an unnamed service started under its supervisor, which asks by name, is a bug and fails the start"
-  Nil
 }

@@ -35,7 +35,7 @@
 ////   player stays until its connection's watch ends, which the joining
 ////   connection's end then gives.
 //// - **The server stopping.** `Stopping` stops the rule at once; its players
-////   are not saved, since no position is read yet.
+////   are not saved, since the server reads no position.
 //// - **Started** does nothing: a map starts empty.
 
 import genesis_prime/step.{
@@ -147,9 +147,12 @@ fn joined(
       Effects([
         log_error(
           state:,
-          text: "connection "
-            <> connection_text(connection)
-            <> " joined the map a second time, as character "
+          about: step.About(
+            ..step.no_one,
+            connection: Some(connection),
+            character_id: Some(character_id),
+          ),
+          text: "the connection joined the map a second time, as character "
             <> int.to_string(character_id)
             <> "; it is already unit "
             <> int.to_string(player.unit_id)
@@ -201,21 +204,25 @@ fn ended(
     Error(Nil) -> #(
       state,
       Effects([
-        log_error(state:, text: "a watch ended that names no player of the map"),
+        log_error(
+          state:,
+          about: step.no_one,
+          text: "a watch ended that names no player of the map",
+        ),
       ]),
     )
   }
 }
 
-fn log_error(state state: State, text text: String) -> step.Effect(Outgoing) {
+/// An error line about the map, and what `about` adds.
+fn log_error(
+  state state: State,
+  about about: step.About,
+  text text: String,
+) -> step.Effect(Outgoing) {
   Log(LogLine(
     level: LogError,
     text:,
-    about: step.About(..step.no_one, map: Some(state.settings.map)),
+    about: step.About(..about, map: Some(state.settings.map)),
   ))
-}
-
-fn connection_text(connection: ConnectionId) -> String {
-  let step.ConnectionId(number) = connection
-  int.to_string(number)
 }

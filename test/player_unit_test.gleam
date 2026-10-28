@@ -9,13 +9,17 @@
 ////   bits. The path is 0 there, as the PvP flags are, so the vector fits the
 ////   unit this module builds.
 //// - The stand-in: health is 136, the client's level-1 creature Base Health
-////   (0x1404585c0), until a stats card owns the player's.
+////   (0x1404585c0); no client table or retail record gives a player's health.
+//// - The level: stat 10 of the unit's stats is its level, and a unit created
+////   without it is level 1 (0x140458140, 0x1404543c1).
 
 import genesis_prime/message/item_visual.{ItemVisual}
-import genesis_prime/message/unit_create_player
+import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
+import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, RaceId}
 import genesis_prime/world_map/player_unit
+import gleam/list
 import message_support
 import owned_test
 
@@ -43,16 +47,13 @@ fn roxo() -> store.Character {
 
 pub fn the_unit_of_the_live_character_is_the_clients_1120_bits_test() -> Nil {
   use <- owned_test.run(10_000)
+  let unit =
+    player_unit.create(character: roxo(), unit_id: 1, realm_id: 1, visuals: [])
   let assert Ok(body) =
     unit_create_player.encode(
-      player_unit.create(
-        character: roxo(),
-        unit_id: 1,
-        realm_id: 1,
-        visuals: [],
-      ),
+      UnitCreatePlayer(..unit, stats: [UnitStat(stat_id: 0, value: 136)]),
     )
-    as "the unit encodes"
+    as "the unit encodes, with the vector's one stat: the vector holds no stat 10, and the level stat is tested apart"
   assert body
     == message_support.hex(
       "0100000054000000000000004000e02105f0068007f006000230054007f006d006000730074007f006e006500630020000000000000000000000000000000001800800000000000010c44cfb639168913c70dfdffd908003000084210000842100000000008053e0140000000000000000000000004000000000000000000040000000000000000000000000",
@@ -84,4 +85,19 @@ pub fn the_stand_in_health_is_the_clients_level_1_creature_base_health_test() ->
   use <- owned_test.run(10_000)
   assert player_unit.stand_in_health == 136
     as "vector.opcode.0x262.health: 136 is what SetUnitStatsFromCreate stores as the unit's health, so the creation check (0x140457bc5) reads non-zero and the unit is not created dead"
+}
+
+pub fn the_unit_carries_its_characters_level_as_stat_10_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let unit =
+    player_unit.create(
+      character: Character(..roxo(), level: 3),
+      unit_id: 1,
+      realm_id: 1,
+      visuals: [],
+    )
+  assert list.contains(unit.stats, UnitStat(stat_id: 10, value: 3))
+    as "0x140458140: stat 10, in the integer form, is the unit's level; a unit created without it is level 1 (0x1404543c1), so a level 3 character needs it"
+  assert list.contains(unit.stats, UnitStat(stat_id: 0, value: 136))
+    as "stat 0 stays the health that keeps the unit alive (0x140457bc5)"
 }

@@ -1,7 +1,7 @@
 //// Where a new character starts (`genesis_prime/game/start_place`). Expected
 //// values come from these places.
-//// - Jim's world database (wildstar-knowledge, world-data/start_location.tsv,
-////   read under Jim's exception, 2026-10-28): the WorldLocation2 row of each
+//// - Jim's world database (wildstar-knowledge, world-data/start_location.tsv):
+////   the WorldLocation2 row of each
 ////   start of each race and faction. Novice (characterCreationStartEnum 4):
 ////   row 51596 for every race and faction. Veteran (3): Exile Human and
 ////   Granok 1594, Aurin and Mordesh 37015; Dominion Cassian and Mechari
@@ -19,7 +19,9 @@ import character_tables
 import client_tables
 import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
-import genesis_prime/game/start_place.{Place}
+import genesis_prime/game/start_place.{
+  type Place, type Start, Level50, Novice, OtherStart, Place, Veteran,
+}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/store.{NewCharacter}
 import genesis_prime/table/character_creation as creation_table
@@ -29,102 +31,52 @@ import genesis_prime/table/world_location2
 import gleam/erlang/reference
 import gleam/int
 import gleam/list
+import gleam/pair
 import owned_test
 import planted_table.{Float, Integer}
 import unitest
-
-const novice = 4
-
-const veteran = 3
-
-const level_50 = 5
 
 const dominion = 166
 
 const exile = 167
 
-/// The places of WorldLocation2 rows as the client holds them, by row id.
-fn place_of_row(row_id: Int) -> start_place.Place {
-  case row_id {
-    51_596 ->
-      Place(
-        world_id: 3460,
-        world_zone_id: 6009,
-        x: 29.128599166870117,
-        y: -853.87158203125,
-        z: -560.18798828125,
-      )
-    1594 ->
-      Place(
-        world_id: 426,
-        world_zone_id: 648,
-        x: 4110.7099609375,
-        y: -658.6248779296875,
-        z: -5145.47998046875,
-      )
-    37_015 ->
-      Place(
-        world_id: 990,
-        world_zone_id: 1417,
-        x: -771.822998046875,
-        y: -904.28515625,
-        z: -2269.56005859375,
-      )
-    18_987 ->
-      Place(
-        world_id: 1387,
-        world_zone_id: 1411,
-        x: -3835.3408203125,
-        y: -980.2174072265625,
-        z: -6050.52392578125,
-      )
-    8223 ->
-      Place(
-        world_id: 870,
-        world_zone_id: 1236,
-        x: -8260.708984375,
-        y: -995.0770263671875,
-        z: -239.0409393310547,
-      )
-    53_050 ->
-      Place(
-        world_id: 51,
-        world_zone_id: 4959,
-        x: 4074.340087890625,
-        y: -797.8367919921875,
-        z: -2399.3701171875,
-      )
-    53_051 ->
-      Place(
-        world_id: 22,
-        world_zone_id: 4957,
-        x: -3343.580078125,
-        y: -887.464599609375,
-        z: -536.030029296875,
-      )
-    _ -> panic as "the test names a row it has no place for"
-  }
+/// The place of the WorldLocation2 row, as the client's row holds it
+/// (`character_tables.start_locations`).
+fn place_of_row(row_id: Int) -> Place {
+  let assert Ok(place) =
+    list.key_find(character_tables.start_locations(), row_id)
+    as "the test names a row the planted tables hold"
+  place
 }
 
 /// Each start of each race and faction with the row Jim's world database
 /// gives it: start, faction, race and the WorldLocation2 row.
-fn starts() -> List(#(Int, Int, Int, Int)) {
+fn starts() -> List(#(Start, Int, Int, Int)) {
   list.flatten([
-    list.map([1, 3, 4, 16], fn(race) { #(novice, exile, race, 51_596) }),
-    list.map([1, 5, 12, 13], fn(race) { #(novice, dominion, race, 51_596) }),
+    list.map([1, 3, 4, 16], fn(race) { #(Novice, exile, race, 51_596) }),
+    list.map([1, 5, 12, 13], fn(race) { #(Novice, dominion, race, 51_596) }),
     [
-      #(veteran, exile, 1, 1594),
-      #(veteran, exile, 3, 1594),
-      #(veteran, exile, 4, 37_015),
-      #(veteran, exile, 16, 37_015),
-      #(veteran, dominion, 1, 18_987),
-      #(veteran, dominion, 12, 18_987),
-      #(veteran, dominion, 5, 8223),
-      #(veteran, dominion, 13, 8223),
+      #(Veteran, exile, 1, 1594),
+      #(Veteran, exile, 3, 1594),
+      #(Veteran, exile, 4, 37_015),
+      #(Veteran, exile, 16, 37_015),
+      #(Veteran, dominion, 1, 18_987),
+      #(Veteran, dominion, 12, 18_987),
+      #(Veteran, dominion, 5, 8223),
+      #(Veteran, dominion, 13, 8223),
     ],
-    list.map([1, 3, 4, 16], fn(race) { #(level_50, exile, race, 53_050) }),
-    list.map([1, 5, 12, 13], fn(race) { #(level_50, dominion, race, 53_051) }),
+    list.map([1, 3, 4, 16], fn(race) { #(Level50, exile, race, 53_050) }),
+    list.map([1, 5, 12, 13], fn(race) { #(Level50, dominion, race, 53_051) }),
   ])
+}
+
+fn start_name(start: Start) -> String {
+  case start {
+    Veteran -> "Veteran"
+    Novice -> "Novice"
+    Level50 -> "Level 50"
+    OtherStart(enum_value:) -> "other " <> int.to_string(enum_value)
+  }
 }
 
 pub fn each_start_of_each_race_and_faction_is_the_place_of_its_world_location2_row_on_planted_tables_test() -> Nil {
@@ -141,7 +93,7 @@ pub fn each_start_of_each_race_and_faction_is_the_place_of_its_world_location2_r
       == Ok(place_of_row(row_id))
       as {
         "start "
-        <> int.to_string(start)
+        <> start_name(start)
         <> ", faction "
         <> int.to_string(faction_id)
         <> ", race "
@@ -159,16 +111,17 @@ pub fn a_start_race_or_faction_with_no_row_has_no_place_test() -> Nil {
   let none = fn(faction_id, race_id, start) {
     start_place.of(tables:, faction_id:, race_id: RaceId(race_id), start:)
   }
-  assert none(exile, 1, 0) == Error(Nil)
+  assert none(exile, 1, OtherStart(0)) == Error(Nil)
     as "the Arkship start (0) has no start place in Jim's world database"
-  assert none(exile, 1, 6) == Error(Nil) as "a start the database does not know"
-  assert none(165, 1, veteran) == Error(Nil)
+  assert none(exile, 1, OtherStart(6)) == Error(Nil)
+    as "a start the database does not know"
+  assert none(165, 1, Veteran) == Error(Nil)
     as "a faction that is neither Dominion nor Exile"
-  assert none(exile, 5, veteran) == Error(Nil)
+  assert none(exile, 5, Veteran) == Error(Nil)
     as "Draken is a Dominion race: no Exile Draken has a start"
-  assert none(dominion, 3, level_50) == Error(Nil)
+  assert none(dominion, 3, Level50) == Error(Nil)
     as "Granok is an Exile race: no Dominion Granok has a start"
-  assert none(exile, 9, novice) == Error(Nil) as "race 9 is no player race"
+  assert none(exile, 9, Novice) == Error(Nil) as "race 9 is no player race"
 }
 
 pub fn each_start_of_each_race_and_faction_is_the_place_of_its_world_location2_row_in_the_clients_tables_test() -> Nil {
@@ -206,8 +159,8 @@ pub fn every_enabled_character_creation_row_of_a_start_has_a_start_place_in_the_
       row.enabled
       && !row.costume_only
       && list.contains(
-        [novice, veteran, level_50],
-        row.character_creation_start_enum,
+        [Novice, Veteran, Level50],
+        start_place.start(enum_value: row.character_creation_start_enum),
       )
     })
   assert rows != [] as "the client's table has enabled rows of these starts"
@@ -216,7 +169,7 @@ pub fn every_enabled_character_creation_row_of_a_start_has_a_start_place_in_the_
         tables:,
         faction_id: row.faction_id,
         race_id: creation_table.race_id(row),
-        start: row.character_creation_start_enum,
+        start: start_place.start(enum_value: row.character_creation_start_enum),
       )
       != Error(Nil)
       as {
@@ -236,14 +189,15 @@ pub fn a_create_of_each_start_of_each_race_and_faction_saves_the_place_of_its_wo
       row.enabled
       && !row.costume_only
       && list.contains(
-        [novice, veteran, level_50],
-        row.character_creation_start_enum,
+        [Novice, Veteran, Level50],
+        start_place.start(enum_value: row.character_creation_start_enum),
       )
     })
   list.each(rows, fn(row) {
     let assert Ok(#(_, _, _, row_id)) =
       list.find(starts(), fn(start) {
-        start.0 == row.character_creation_start_enum
+        start.0
+        == start_place.start(enum_value: row.character_creation_start_enum)
         && start.1 == row.faction_id
         && start.2 == row.race_id
       })
@@ -347,7 +301,7 @@ fn load_with_rows(
 
 pub fn the_table_load_fails_when_a_start_places_row_is_missing_test() -> Nil {
   use <- owned_test.run(60_000)
-  let all = [1594, 8223, 18_987, 37_015, 51_596, 53_050, 53_051]
+  let all = list.map(character_tables.start_locations(), pair.first)
   let assert Ok(tables) = load_with_rows(all)
     as "every row of the start places loads"
   table_store.unload(tables)

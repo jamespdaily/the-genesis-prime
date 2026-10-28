@@ -87,7 +87,7 @@ import genesis_prime/step/runtime.{type ExitReason, Shutdown}
 import genesis_prime/step/watch.{type Watches}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Name, type Pid, type Subject}
-import gleam/option.{type Option}
+import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
@@ -98,8 +98,6 @@ pub type Settings(settings, state, message, outgoing) {
     /// The rule. A service takes no answers and makes no asks, so those
     /// types are `Nil`; `outgoing` is what it answers with.
     rule: Rule(settings, state, message, Nil, outgoing, Nil),
-    /// The name it registers, or none.
-    registration: Registration(message, outgoing),
     /// How it finds the processes its rule watches and sends to.
     reach: Reach(outgoing),
     /// How long it has to stop once the supervisor stops it; the child's
@@ -109,14 +107,6 @@ pub type Settings(settings, state, message, outgoing) {
     /// recording on.
     recorder: Option(Recorder),
   )
-}
-
-/// How askers find a service.
-pub type Registration(message, outgoing) {
-  /// By the name it registers, made once at start.
-  Named(name: Name(Call(message, outgoing)))
-  /// By the subject its start returns.
-  Unnamed
 }
 
 /// What reaches the actor: a call, or an exit signal it traps.
@@ -146,51 +136,40 @@ type Running(settings, state, message, outgoing) {
 /// Why a service could not start.
 type StartFailure {
   NameTaken
-  /// A named service was started without a name.
-  NameMissing
-  /// An unnamed service was started with a name.
-  NameGiven
   RecordingNotOpened(error: FileError)
 }
 
-/// The service as a permanent child of a supervisor, with `shutdown_ms` as
-/// its shutdown timeout. Its settings' registration is `Named`; an `Unnamed`
-/// one is a bug and fails the start.
+/// The service as a permanent child of a supervisor, registered under `name`,
+/// with `shutdown_ms` as its shutdown timeout. Askers find it by the name.
 pub fn supervised(
-  settings: Settings(settings, state, message, outgoing),
+  name name: Name(Call(message, outgoing)),
+  settings settings: Settings(settings, state, message, outgoing),
 ) -> ChildSpecification(Nil) {
   // The supervisor runs the start function, so its own pid is the parent.
   supervision.worker(fn() {
-    case settings.registration {
-      Named(..) ->
-        start(settings, process.self())
-        |> result.map(fn(started) { actor.Started(pid: started.pid, data: Nil) })
-      Unnamed -> Error(actor.InitFailed(explain(NameMissing)))
-    }
+    start(settings:, parent: process.self(), name: Some(name))
+    |> result.map(fn(started) { actor.Started(pid: started.pid, data: Nil) })
   })
   |> supervision.restart(supervision.Permanent)
   |> supervision.timeout(ms: settings.shutdown_ms)
 }
 
-/// Starts an unnamed service as a child of the supervisor that runs this
+/// Starts a service with no name as a child of the supervisor that runs this
 /// function, such as the map supervisor, giving the subject askers send their
-/// calls to. Its settings' registration is `Unnamed`; a `Named` one is a bug
-/// and fails the start.
+/// calls to.
 pub fn start_unnamed(
   settings: Settings(settings, state, message, outgoing),
 ) -> actor.StartResult(Subject(Call(message, outgoing))) {
-  case settings.registration {
-    Unnamed -> start(settings, process.self())
-    Named(..) -> Error(actor.InitFailed(explain(NameGiven)))
-  }
+  start(settings:, parent: process.self(), name: None)
 }
 
 fn start(
-  settings: Settings(settings, state, message, outgoing),
-  parent: Pid,
+  settings settings: Settings(settings, state, message, outgoing),
+  parent parent: Pid,
+  name name: Option(Name(Call(message, outgoing))),
 ) -> actor.StartResult(Subject(Call(message, outgoing))) {
   actor.new_with_initialiser(5000, fn(_subject) {
-    initialise(settings, parent) |> result.map_error(explain)
+    initialise(settings:, parent:, name:) |> result.map_error(explain)
   })
   |> actor.on_message(handle)
   |> actor.start
@@ -199,8 +178,9 @@ fn start(
 /// Registers the name (a named service) or makes the subject its callers send
 /// to (an unnamed one), traps exits, opens the recording and takes `Started`.
 fn initialise(
-  settings: Settings(settings, state, message, outgoing),
-  parent: Pid,
+  settings settings: Settings(settings, state, message, outgoing),
+  parent parent: Pid,
+  name name: Option(Name(Call(message, outgoing))),
 ) -> Result(
   actor.Initialised(
     Running(settings, state, message, outgoing),
@@ -209,12 +189,12 @@ fn initialise(
   ),
   StartFailure,
 ) {
-  use calls <- result.try(case settings.registration {
-    Named(name:) ->
+  use calls <- result.try(case name {
+    Some(name) ->
       process.register(process.self(), name)
       |> result.replace(process.named_subject(name))
       |> result.replace_error(NameTaken)
-    Unnamed -> Ok(process.new_subject())
+    None -> Ok(process.new_subject())
   })
   process.trap_exits(True)
   use writer <- result.try(
@@ -452,8 +432,6 @@ fn recording_failed(error: FileError) -> a {
 fn explain(failure: StartFailure) -> String {
   case failure {
     NameTaken -> "the service's name is already registered"
-    NameMissing -> "a service started under its supervisor has no name"
-    NameGiven -> "a service started for its subject has a name"
     RecordingNotOpened(error:) ->
       "the recording could not be opened: " <> file.describe(error)
   }

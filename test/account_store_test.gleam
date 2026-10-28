@@ -770,7 +770,7 @@ pub fn a_create_stores_the_character_at_level_1_with_the_values_it_was_given_and
         ),
       ]),
     )
-    as "the card's design: race, sex, class and faction from the creation row, level 1, the start place the create gave (World 3460, zone 6009 and the position of WorldLocation2 row 51596, as 32-bit floats), the look and the bones as the client sent them (32-bit values come back as they went in)"
+    as "the create's result: race, sex, class and faction from the creation row, level 1, the start place the create gave (World 3460, zone 6009 and the position of WorldLocation2 row 51596, as 32-bit floats), the look and the bones as the client sent them (32-bit values come back as they went in)"
   stop(store)
 }
 

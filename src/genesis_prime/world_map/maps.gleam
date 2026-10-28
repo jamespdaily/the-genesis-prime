@@ -62,7 +62,6 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
-import gleam/int
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
@@ -88,10 +87,19 @@ pub type MapStart {
 pub type MapSupervisor =
   factory_supervisor.Message(MapStart, Subject(Call(map.Message, map.Outgoing)))
 
+/// What a find does when the map is not running.
+pub type Lookup {
+  /// Start the map.
+  FindOrStart
+  /// Answer that it is not running.
+  FindOnly
+}
+
 /// What reaches Maps.
 pub opaque type Message {
-  /// Find the map; start it when `start` and it is not running.
-  Find(map: MapId, start: Bool, reply: Subject(Result(MapProcess, Nil)))
+  /// Find the map; start it when `lookup` is `FindOrStart` and it is not
+  /// running.
+  Find(map: MapId, lookup: Lookup, reply: Subject(Result(MapProcess, Nil)))
   /// A map Maps started has ended.
   MapEnded(down: process.Down)
 }
@@ -164,7 +172,7 @@ pub fn find_or_start(
   map map: MapId,
   deadline_ms deadline_ms: Int,
 ) -> Result(MapProcess, Nil) {
-  ask(maps:, map:, start: True, deadline_ms:)
+  ask(maps:, map:, lookup: FindOrStart, deadline_ms:)
 }
 
 /// The run of the map with this incarnation, never started: `Error(Nil)`
@@ -179,7 +187,7 @@ pub fn find(
   ask(
     maps:,
     map:,
-    start: False,
+    lookup: FindOnly,
     deadline_ms: runtime.now().monotonic_ms + call_ms,
   )
   |> result.try(fn(found) {
@@ -190,23 +198,35 @@ pub fn find(
   })
 }
 
-/// Sends Maps the find and waits for its reply until the deadline.
+/// Sends Maps the find and waits for its reply until the deadline. An ask
+/// whose deadline has passed is never sent, and a reply that is already
+/// queued once the deadline passes is never taken.
 fn ask(
   maps maps: Name(Message),
   map map: MapId,
-  start start: Bool,
+  lookup lookup: Lookup,
   deadline_ms deadline_ms: Int,
 ) -> Result(MapProcess, Nil) {
+  use _left <- result.try(time_left(deadline_ms))
   let reply = process.new_subject()
-  use _pid <- result.try(service.send_by_name(maps, Find(map:, start:, reply:)))
-  let wait_ms = int.max(deadline_ms - runtime.now().monotonic_ms, 0)
-  process.receive(reply, within: wait_ms) |> result.flatten
+  use _pid <- result.try(service.send_by_name(maps, Find(map:, lookup:, reply:)))
+  use left <- result.try(time_left(deadline_ms))
+  process.receive(reply, within: left) |> result.flatten
+}
+
+/// The time left until the deadline on the monotonic clock, or `Error(Nil)`
+/// when it has passed.
+fn time_left(deadline_ms: Int) -> Result(Int, Nil) {
+  case deadline_ms - runtime.now().monotonic_ms {
+    left if left > 0 -> Ok(left)
+    _ -> Error(Nil)
+  }
 }
 
 fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   case message {
-    Find(map:, start:, reply:) -> {
-      let #(state, found) = find_in(state:, map:, start:)
+    Find(map:, lookup:, reply:) -> {
+      let #(state, found) = find_in(state:, map:, lookup:)
       process.send(reply, found)
       actor.continue(state)
     }
@@ -214,18 +234,18 @@ fn handle(state: State, message: Message) -> actor.Next(State, Message) {
   }
 }
 
-/// The running map, or, when `start`, the map just started.
+/// The running map, or, for `FindOrStart`, the map just started.
 fn find_in(
   state state: State,
   map map: MapId,
-  start start: Bool,
+  lookup lookup: Lookup,
 ) -> #(State, Result(MapProcess, Nil)) {
   case dict.get(state.maps, map) {
     Ok(#(running, _monitor)) -> #(state, Ok(running))
     Error(Nil) ->
-      case start {
-        True -> start_map(state:, map:)
-        False -> #(state, Error(Nil))
+      case lookup {
+        FindOrStart -> start_map(state:, map:)
+        FindOnly -> #(state, Error(Nil))
       }
   }
 }

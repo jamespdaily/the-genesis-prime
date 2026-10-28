@@ -2,15 +2,15 @@
 //// store's read of it, through its map's join, to the messages that put the
 //// player in the world. Like character select it is a feature of the game
 //// connection's rule (genesis_prime/game/connection): it makes its own asks
-//// and takes their answers, and the rule turns its effects into writes, log
-//// lines, asks and its watch on the map.
+//// and takes their answers, and the rule turns its effects into writes, asks
+//// and its watch on the map.
 ////
 //// ```
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
 //// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, id)
 ////                                                 (or Refused: the rule hands back to select)
-//// Joined(unit id, run)       ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x636, 0xF1, 0x61
-////                                                 Entered(map, run, unit id): the rule watches the map
+//// Joined(unit id, run)       ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x636, 0xF1, 0x61,
+////                                                 WatchMap(map, run)
 //// ```
 ////
 //// - **The order** is the client's: 0xAD first; 0x262 before 0x19B; 0x19B
@@ -21,8 +21,8 @@
 //// - **0x636** carries the player's unit id, the value 0 and the reset bit
 ////   1 (vector.opcode.0x636.body); the client echoes the value in 0x635.
 //// - **0xF1:** Normal difficulty 0, prime level 0, flags 0, for an open world
-////   (opcode.0xf1.fields), and the send interval 0, which the client raises
-////   to its floor of 25 ms (opcode.0xf1).
+////   (opcode.0xf1.fields), and the send interval 125 ms, the client's own
+////   until 0xF1 arrives (opcode.0xf1); a value below 25 is raised to 25.
 //// - **0x19B:** the player's unit id; its second value is never read, 0
 ////   (opcode.0x19b.second_value).
 //// - **Refused.** A character the account does not have, or one with no
@@ -34,8 +34,8 @@
 ////   asked, or the reverse) is `Error(Nil)`, as character select gives, and the
 ////   rule treats it as a bug.
 //// - **Instance 0** for every world: open worlds share one instance
-////   (genesis_prime/world_map/map_id). An instanced start world is not met
-////   yet.
+////   (genesis_prime/world_map/map_id), so an instanced world has no instance
+////   to ask for.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/appearance
@@ -48,7 +48,9 @@ import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/step.{type ConnectionId}
-import genesis_prime/store.{type AccountId, type Character, CharacterId}
+import genesis_prime/store.{
+  type AccountId, type Character, type CharacterId, CharacterId,
+}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
@@ -65,14 +67,15 @@ pub type Effect {
   /// Send this message to the client, in the game wrapper under the
   /// connection's cipher.
   Send(frame: Frame)
-  /// Log this as a warning: a request the real client would not send.
-  Warn(text: String)
+  /// Watch the run of the map that took the player: its end comes back to the
+  /// connection's rule.
+  WatchMap(map: MapId, incarnation: Int)
 }
 
 /// Where world entry is.
 pub opaque type State {
   /// The store is asked for the character.
-  Loading(character_id: Int)
+  Loading(character_id: CharacterId)
   /// The map is asked to take the character.
   Joining(character: Character, map: MapId)
 }
@@ -85,10 +88,10 @@ pub type Loaded {
   Refused(character_id: Int, warning: String)
 }
 
-/// A player in the world: its map, the run of the map that took it, which
-/// the rule watches as `Map(map, incarnation)`, and its unit id.
+/// A player in the world: its character, its map, the run of the map that took
+/// it, which the rule watches as `Map(map, incarnation)`, and its unit id.
 pub type Entered {
-  Entered(map: MapId, incarnation: Int, unit_id: Int)
+  Entered(character_id: CharacterId, map: MapId, incarnation: Int, unit_id: Int)
 }
 
 /// The process whose answer world entry waits for, for the log line of an ask
@@ -97,6 +100,11 @@ pub type Awaiting {
   AwaitingStore
   AwaitingMap
 }
+
+/// The movement send interval 0xF1 carries, in milliseconds: 125, the
+/// client's own until 0xF1 arrives (opcode.0xf1, 0x140c3a004). The client
+/// raises a value below 25 to 25.
+const movement_send_interval_ms = 125
 
 /// The instance every world is entered at: open worlds share one.
 const open_world_instance = 0
@@ -107,7 +115,7 @@ pub fn play_requested(
   account_id account_id: AccountId,
   request request: PlayCharacter,
 ) -> #(State, List(Effect)) {
-  #(Loading(character_id: request.character_id), [
+  #(Loading(character_id: CharacterId(request.character_id)), [
     AskStore(request: store.LoadCharacter(
       account_id:,
       character_id: CharacterId(request.character_id),
@@ -133,7 +141,7 @@ pub fn loaded(
   connection connection: ConnectionId,
 ) -> Result(Loaded, Nil) {
   case state {
-    Loading(character_id:) ->
+    Loading(character_id: CharacterId(character_id)) ->
       Ok(case answer {
         store.NotTheAccounts ->
           Refused(
@@ -164,7 +172,8 @@ pub fn loaded(
 }
 
 /// The map's answer to `loaded`'s ask: the messages that put the player in
-/// the world, in the client's order. With no join asked for, it is none this
+/// the world, in the client's order, then the watch on the run of the map that
+/// took it. With no join asked for, it is none this
 /// module asked for and gives an `Error`.
 pub fn joined(
   state state: State,
@@ -176,14 +185,23 @@ pub fn joined(
     Joining(character:, map:) -> {
       let map.Joined(unit_id:, incarnation:) = answer
       Ok(
-        #(Entered(map:, incarnation:, unit_id:), [
-          enter_world(character:),
-          player_created(character:, unit_id:, realm_id:, tables:),
-          unit_is_player(unit_id:),
-          control_granted(unit_id:),
-          movement_interval(),
-          entered_world(),
-        ]),
+        #(
+          Entered(
+            character_id: character.character_id,
+            map:,
+            incarnation:,
+            unit_id:,
+          ),
+          [
+            enter_world(character:),
+            player_created(character:, unit_id:, realm_id:, tables:),
+            unit_is_player(unit_id:),
+            control_granted(unit_id:),
+            movement_interval(),
+            entered_world(),
+            WatchMap(map:, incarnation:),
+          ],
+        ),
       )
     }
     Loading(..) -> Error(Nil)
@@ -253,17 +271,17 @@ fn control_granted(unit_id unit_id: Int) -> Effect {
   Send(Frame(message_id: client_control_granted.message_id, body:))
 }
 
-/// 0xF1 with difficulty 0, prime level 0, flags 0 and an interval of 0
-/// (opcode.0xf1.fields).
+/// 0xF1 with difficulty 0, prime level 0, flags 0 and the client's own
+/// movement send interval (opcode.0xf1.fields).
 fn movement_interval() -> Effect {
   let assert Ok(body) =
     movement_send_interval.encode(MovementSendInterval(
       world_difficulty: 0,
       world_prime_level: 0,
       world_flags: 0,
-      interval_milliseconds: 0,
+      interval_milliseconds: movement_send_interval_ms,
     ))
-    as "zeros fit the message"
+    as "the message's fields fit their values"
   Send(Frame(message_id: movement_send_interval.message_id, body:))
 }
 

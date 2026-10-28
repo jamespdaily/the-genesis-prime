@@ -128,6 +128,11 @@
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
+//// - **Unhandled messages** are logged as a warning the first time an id comes
+////   on the connection, and at debug for each repeat of it: in the world the
+////   client sends 0x0637 on every move, up to 8 a second (0x140c3a004).
+//// - **Log lines** carry the connection, the peer and the account once the
+////   hand-off has named it, and in the world the map and the character.
 //// - **Out of order.** A frame the client's reader would refuse ends the
 ////   connection, as does a 0x025C that holds no 0x025B or a 0x025B or 0x07DD
 ////   whose body is cut; a whole frame of a message the rule does not take,
@@ -162,17 +167,20 @@ import genesis_prime/message/rename_character
 import genesis_prime/message/world_message
 import genesis_prime/sessions
 import genesis_prime/step.{
-  type Effect, type Input, type Now, type Outcome, type Rule, type Step,
-  type TimerId, type WatchId, Answered, AnsweredLate, Asked, Effects, LogInfo,
-  LogWarning, Sessions, Socket, StartTimer, Started, Stop, Stopping, TimerFired,
-  TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken, Write,
+  type About, type Effect, type Input, type Now, type Outcome, type Rule,
+  type Step, type TimerId, type WatchId, About, Answered, AnsweredLate, Asked,
+  Effects, LogDebug, LogInfo, LogWarning, Sessions, Socket, StartTimer, Started,
+  Stop, Stopping, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId,
+  Woken, Write,
 }
 import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/map_id.{type MapId}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set.{type Set}
 
 /// The rule's name in a recording's header and in the server's tree.
 pub const rule_name = "genesis_prime/game/connection"
@@ -216,6 +224,9 @@ type Session {
     /// The cipher the connection's frames are read and written under: the
     /// base key's until 0x058F re-keys it.
     cipher: Cipher,
+    /// The ids of the messages already logged as unhandled on this
+    /// connection: the first of an id is a warning, a repeat a debug line.
+    unhandled_logged: Set(Int),
     status: Status,
   )
 }
@@ -308,6 +319,7 @@ pub fn step(
             link: client_connection.link(connection:, peer:, seed:),
             pending: <<>>,
             cipher: cipher.base(),
+            unhandled_logged: set.new(),
             status: AwaitingHelloReply,
           )),
           Effects([Write(hello_bytes(settings))]),
@@ -351,14 +363,9 @@ fn heard(
   event event: step.Event(Message, Answer),
 ) -> #(State, Step(Nil, Request)) {
   case
-    client_connection.hear(
-      event,
-      about: client_connection.about(
-        session.link,
-        account_id: account_id_of(session.status),
-      ),
-      stopping: fn() { server_stopping(session) },
-    )
+    client_connection.hear(event, about: about_of(session), stopping: fn() {
+      server_stopping(session)
+    })
   {
     Bytes(bytes:) -> {
       let session =
@@ -373,11 +380,7 @@ fn heard(
       settled(handled: answered(session:, now:, outcome:), now:)
     Connect(..) -> #(
       Connected(session),
-      client_connection.accepted_again(
-        link: session.link,
-        account_id: account_id_of(session.status),
-        rule: "game",
-      ),
+      client_connection.accepted_again(about: about_of(session), rule: "game"),
     )
     Otherwise(step:) -> #(Connected(session), step)
   }
@@ -458,8 +461,7 @@ fn handle(
   case
     client_connection.open(
       session:,
-      link: session.link,
-      account_id: account_id_of(session.status),
+      about: about_of(session),
       server: "game",
       frame: whole,
       cipher: session.cipher,
@@ -490,45 +492,56 @@ fn taken_message(
               <> client_connection.message_text(inner.message_id),
           )
       }
-    InCharacterSelect(holder:, ..) ->
+    InCharacterSelect(holder:, select:) ->
       case select_message(inner.message_id) {
         HelloReplyAgain -> end_for(session, "0x058F was sent a second time")
         SelectStart ->
           decoded_step(
             session:,
-            now:,
-            holder:,
             inner:,
             decode: character_select_start.decode,
-            step: fn(_) { character_select.started(holder.account_id) },
+            then: fn(_) {
+              select_step(
+                session:,
+                now:,
+                holder:,
+                step: character_select.started(holder.account_id),
+              )
+            },
           )
         CreateRequest -> create_requested(session:, now:, holder:, inner:)
-        PlayRequest -> play_requested(session:, now:, holder:, inner:)
+        PlayRequest -> play_requested(session:, now:, holder:, select:, inner:)
         DeleteRequest ->
           decoded_step(
             session:,
-            now:,
-            holder:,
             inner:,
             decode: delete_character.decode,
-            step: fn(request) {
-              character_select.delete_requested(
-                account_id: holder.account_id,
-                request:,
+            then: fn(request) {
+              select_step(
+                session:,
+                now:,
+                holder:,
+                step: character_select.delete_requested(
+                  account_id: holder.account_id,
+                  request:,
+                ),
               )
             },
           )
         RenameRequest ->
           decoded_step(
             session:,
-            now:,
-            holder:,
             inner:,
             decode: rename_character.decode,
-            step: fn(request) {
-              character_select.rename_requested(
-                account_id: holder.account_id,
-                request:,
+            then: fn(request) {
+              select_step(
+                session:,
+                now:,
+                holder:,
+                step: character_select.rename_requested(
+                  account_id: holder.account_id,
+                  request:,
+                ),
               )
             },
           )
@@ -547,26 +560,35 @@ fn taken_message(
   }
 }
 
-/// A whole frame of a message the rule does not take, logged as unhandled.
+/// A whole frame of a message the rule does not take, logged as unhandled:
+/// a warning the first time its id comes on the connection, and a debug line
+/// for each repeat, since the client sends some of them on every move.
 fn unhandled(
   session session: Session,
   message_id message_id: Int,
 ) -> client_connection.Handled(Session) {
-  let account_id = account_id_of(session.status)
+  let level = case set.contains(session.unhandled_logged, message_id) {
+    True -> LogDebug
+    False -> LogWarning
+  }
+  let session =
+    Session(
+      ..session,
+      unhandled_logged: set.insert(session.unhandled_logged, message_id),
+    )
   client_connection.unhandled(
     session:,
-    link: session.link,
-    account_id:,
+    about: about_of(session),
     server: "game",
     message_id:,
+    level:,
   )
 }
 
 /// The client's 0x038C: a 5-bit kind and one whole inner frame
-/// (opcode.0x38c), whose message is logged as unhandled under its own id,
-/// since no feature takes a world message yet. A body that holds no whole
-/// frame, or bytes after it, is one the client never writes, and ends the
-/// connection.
+/// (opcode.0x38c), whose message is logged as unhandled under its own id; no
+/// feature takes a world message. A body that holds no whole frame, or bytes
+/// after it, is one the client never writes, and ends the connection.
 fn world_carried(
   session session: Session,
   inner inner: Frame,
@@ -721,17 +743,13 @@ fn create_requested(
   }
 }
 
-/// A message of the client's that character select takes: its body decoded,
-/// and `step` gives character select's new state and effects for it. A body
+/// A message of the client's whose body is decoded: `then` takes it. A body
 /// the client's reader would refuse ends the connection.
 fn decoded_step(
   session session: Session,
-  now now: Now,
-  holder holder: Holder,
   inner inner: Frame,
   decode decode: fn(BitArray) -> Result(message, bit_stream.DecodeError),
-  step step: fn(message) ->
-    #(character_select.State, List(character_select.Effect)),
+  then then: fn(message) -> client_connection.Handled(Session),
 ) -> client_connection.Handled(Session) {
   case decode(inner.body) {
     Error(error) ->
@@ -741,7 +759,7 @@ fn decoded_step(
           <> " does not decode: "
           <> bit_stream.describe_decode(error:),
       )
-    Ok(message) -> select_step(session:, now:, holder:, step: step(message))
+    Ok(message) -> then(message)
   }
 }
 
@@ -758,7 +776,7 @@ fn select_step(
       status: InCharacterSelect(holder:, select: step.0),
     ),
     now:,
-    effects: step.1,
+    effects: list.map(step.1, from_select),
     written: [],
   )
 }
@@ -770,107 +788,80 @@ fn play_requested(
   session session: Session,
   now now: Now,
   holder holder: Holder,
+  select select: character_select.State,
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
-  let assert InCharacterSelect(select:, ..) = session.status
-    as "a play request is taken in character select"
-  case play_character.decode(inner.body) {
-    Error(error) ->
-      end_for(
-        session,
-        client_connection.message_text(inner.message_id)
-          <> " does not decode: "
-          <> bit_stream.describe_decode(error:),
-      )
-    Ok(request) -> {
-      let #(entry, effects) =
-        world_entry.play_requested(account_id: holder.account_id, request:)
-      entry_step(
-        session: Session(
-          ..session,
-          status: EnteringWorld(holder:, select:, entry:),
-        ),
-        now:,
-        effects:,
-      )
-    }
+  use request <- decoded_step(session:, inner:, decode: play_character.decode)
+  let #(entry, effects) =
+    world_entry.play_requested(account_id: holder.account_id, request:)
+  carry_out(
+    session: Session(..session, status: EnteringWorld(holder:, select:, entry:)),
+    now:,
+    effects: list.map(effects, from_entry),
+    written: [],
+  )
+}
+
+/// What a feature of the rule decided that the rule carries out, in order.
+type Decided {
+  /// Send the client a message, in the game wrapper under the cipher the
+  /// connection holds.
+  ToClient(frame: Frame)
+  /// Log a warning.
+  Warning(text: String)
+  /// Make the connection's next ask, which ends the step.
+  Asks(request: Request)
+  /// Watch the run of the map that holds the player (`map_watch`).
+  WatchesMap(map: MapId, incarnation: Int)
+}
+
+fn from_select(effect: character_select.Effect) -> Decided {
+  case effect {
+    character_select.Send(frame:) -> ToClient(frame:)
+    character_select.Warn(text:) -> Warning(text:)
+    character_select.Ask(request:) ->
+      Asks(request: AskStore(store.Select(request)))
   }
 }
 
-/// Turns what world entry decided into writes, log lines and its ask, which
-/// ends the step with what was written before it.
-fn entry_step(
-  session session: Session,
-  now now: Now,
-  effects effects: List(world_entry.Effect),
-) -> client_connection.Handled(Session) {
-  entry_carry_out(session:, now:, effects:, written: [])
-}
-
-/// `written` are the writes so far, the last first.
-fn entry_carry_out(
-  session session: Session,
-  now now: Now,
-  effects effects: List(world_entry.Effect),
-  written written: List(Effect(Nil)),
-) -> client_connection.Handled(Session) {
-  case effects {
-    [] -> Continue(session, list.reverse(written))
-    [world_entry.Send(frame:), ..rest] ->
-      entry_carry_out(session:, now:, effects: rest, written: [
-        to_client(session, frame),
-        ..written
-      ])
-    [world_entry.Warn(text:), ..rest] ->
-      entry_carry_out(session:, now:, effects: rest, written: [
-        log(session:, level: LogWarning, text:),
-        ..written
-      ])
-    [world_entry.AskStore(request:), ..] ->
-      ask(
-        session:,
-        now:,
-        request: AskStore(store.World(request)),
-        before: list.reverse(written),
-      )
-    [world_entry.AskMap(map:, message:), ..] ->
-      ask(
-        session:,
-        now:,
-        request: AskMap(map:, message:),
-        before: list.reverse(written),
-      )
+fn from_entry(effect: world_entry.Effect) -> Decided {
+  case effect {
+    world_entry.Send(frame:) -> ToClient(frame:)
+    world_entry.AskStore(request:) ->
+      Asks(request: AskStore(store.World(request)))
+    world_entry.AskMap(map:, message:) -> Asks(request: AskMap(map:, message:))
+    world_entry.WatchMap(map:, incarnation:) -> WatchesMap(map:, incarnation:)
   }
 }
 
-/// Turns what character select decided into writes, and into its ask, which
-/// ends the step with what was written before it; `written` are the writes so
-/// far, the last first.
+/// Turns what a feature decided into writes, log lines and a watch, and into
+/// its ask, which ends the step with what was decided before it; `written`
+/// are the effects so far, the last first.
 fn carry_out(
   session session: Session,
   now now: Now,
-  effects effects: List(character_select.Effect),
+  effects effects: List(Decided),
   written written: List(Effect(Nil)),
 ) -> client_connection.Handled(Session) {
   case effects {
     [] -> Continue(session, list.reverse(written))
-    [character_select.Send(frame:), ..rest] ->
+    [ToClient(frame:), ..rest] ->
       carry_out(session:, now:, effects: rest, written: [
         to_client(session, frame),
         ..written
       ])
-    [character_select.Warn(text:), ..rest] ->
+    [Warning(text:), ..rest] ->
       carry_out(session:, now:, effects: rest, written: [
         log(session:, level: LogWarning, text:),
         ..written
       ])
-    [character_select.Ask(request:), ..] ->
-      ask(
-        session:,
-        now:,
-        request: AskStore(store.Select(request)),
-        before: list.reverse(written),
-      )
+    [WatchesMap(map:, incarnation:), ..rest] ->
+      carry_out(session:, now:, effects: rest, written: [
+        Watch(watch: map_watch, target: step.Map(map:, incarnation:)),
+        ..written
+      ])
+    [Asks(request:), ..] ->
+      ask(session:, now:, request:, before: list.reverse(written))
   }
 }
 
@@ -1247,13 +1238,14 @@ fn entry_answered(
         world_entry.loaded(entry, answer:, connection: session.link.connection)
       {
         Ok(world_entry.Join(state:, effects:)) ->
-          entry_step(
+          carry_out(
             session: Session(
               ..session,
               status: EnteringWorld(holder:, select:, entry: state),
             ),
             now:,
-            effects:,
+            effects: list.map(effects, from_entry),
+            written: [],
           )
         Ok(world_entry.Refused(character_id:, warning:)) ->
           select_step(
@@ -1330,26 +1322,12 @@ fn in_the_world(
   entered entered: world_entry.Entered,
   effects effects: List(world_entry.Effect),
 ) -> client_connection.Handled(Session) {
-  case
-    entry_step(
-      session: Session(..session, status: InWorld(holder:, entered:)),
-      now:,
-      effects:,
-    )
-  {
-    Continue(session:, effects:) ->
-      Continue(
-        session,
-        list.append(effects, [
-          Watch(
-            watch: map_watch,
-            target: step.Map(map: entered.map, incarnation: entered.incarnation),
-          ),
-        ]),
-      )
-    Asking(..) | Done(..) ->
-      panic as "the messages that put the player in the world make no ask"
-  }
+  carry_out(
+    session: Session(..session, status: InWorld(holder:, entered:)),
+    now:,
+    effects: list.map(effects, from_entry),
+    written: [],
+  )
 }
 
 /// The connection ends after 0x036A with the reason, and a log line saying
@@ -1379,12 +1357,7 @@ fn end_for(
   session: Session,
   text: String,
 ) -> client_connection.Handled(Session) {
-  client_connection.end_for(
-    session:,
-    link: session.link,
-    account_id: account_id_of(session.status),
-    text:,
-  )
+  client_connection.end_for(session:, about: about_of(session), text:)
 }
 
 // ---- log lines ----
@@ -1394,12 +1367,36 @@ fn log(
   level level: step.LogLevel,
   text text: String,
 ) -> Effect(Nil) {
-  client_connection.log(
-    link: session.link,
-    account_id: account_id_of(session.status),
-    level:,
-    text:,
-  )
+  client_connection.log(about: about_of(session), level:, text:)
+}
+
+/// What a log line of the connection is about: the connection, the peer and
+/// the account once the hand-off has named it; in the world also the map and
+/// the character.
+fn about_of(session: Session) -> About {
+  let about =
+    client_connection.about(
+      session.link,
+      account_id: account_id_of(session.status),
+    )
+  case entered_of(session.status) {
+    Some(world_entry.Entered(character_id: store.CharacterId(id), map:, ..)) ->
+      About(..about, character_id: Some(id), map: Some(map))
+    None -> about
+  }
+}
+
+/// The player in the world, while the connection holds one.
+fn entered_of(status: Status) -> Option(world_entry.Entered) {
+  case status {
+    InWorld(entered:, ..)
+    | ClaimingSession(resume: ResumeWorld(entered:), ..) -> Some(entered)
+    ClaimingSession(resume: ResumeSelect(..), ..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> None
+  }
 }
 
 /// The id of the account the connection is for, once the hand-off has named

@@ -263,13 +263,15 @@ pub fn reaching(
   recorder recorder: Option(Recorder),
   reach reach: service.Reach(gate_rule.Answer),
 ) -> ChildSpecification(Nil) {
-  service_shell.supervised(service_shell.Settings(
-    rule: gate_as_rule(),
-    registration: service_shell.Named(name),
-    reach:,
-    shutdown_ms:,
-    recorder:,
-  ))
+  service_shell.supervised(
+    name:,
+    settings: service_shell.Settings(
+      rule: gate_as_rule(),
+      reach:,
+      shutdown_ms:,
+      recorder:,
+    ),
+  )
 }
 
 /// The gate's rule as its shell runs it.

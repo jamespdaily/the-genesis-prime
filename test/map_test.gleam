@@ -1,7 +1,7 @@
 //// The map's rule (`genesis_prime/world_map/map`), run as the pure function it
 //// is: inputs in, new state and effects out. Expected values come from these
 //// places.
-//// - The rule's doc comment, as approved on the world entry card: a join is
+//// - The rule's doc comment: a join is
 ////   answered with a unit id from 1, with the map's incarnation, and opens a
 ////   watch on the player's connection; a connection's end removes its player;
 ////   a second join answers the unit id the connection has and logs an error; a
@@ -144,7 +144,14 @@ pub fn a_second_join_from_a_connection_in_the_map_answers_its_unit_id_and_logs_a
     as "the join is answered with the unit id the connection has"
   let assert [line] = support.logs_of(step: second, level: LogError)
     as "the connection's rule joins once: a second is a bug, logged as an error"
-  assert line.about.map == Some(MapId(world_id: 3460, instance: 0))
+  assert line.about
+    == step.About(
+      ..step.no_one,
+      connection: Some(ConnectionId(7)),
+      character_id: Some(107),
+      map: Some(MapId(world_id: 3460, instance: 0)),
+    )
+    as "the line is about the connection, its character and the map, in its metadata, not in its text"
   assert support.watches(second) == [] as "no second watch is opened"
   assert list.length(support.effects_of(second)) == 2
     as "the error and the answer are all the step holds: nothing else changes"
@@ -157,8 +164,11 @@ pub fn a_watch_that_names_no_player_is_an_error_and_changes_nothing_test() -> Ni
   use <- owned_test.run(5000)
   let #(state, first) = join(state: started(), connection: 7, caller: 1)
   let #(state, taken) = feed(state, WatchEnded(WatchId(9)))
-  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  let assert [line] = support.logs_of(step: taken, level: LogError)
     as "a watch the rule never opened is a bug"
+  assert line.about
+    == step.About(..step.no_one, map: Some(MapId(world_id: 3460, instance: 0)))
+    as "the line is about the map only: no connection or character is known"
   let #(_, second) = join(state:, connection: 7, caller: 2)
   assert unit_of(second, 2) == unit_of(first, 1)
     as "the player of connection 7 is still in the map"

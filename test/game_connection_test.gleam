@@ -100,6 +100,7 @@ import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import genesis_prime/world_map/map.{Join, Joined}
 import genesis_prime/world_map/map_id.{MapId}
+import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -666,7 +667,7 @@ pub fn message_0x038c_carrying_0x082d_and_0x0241_are_logged_as_unhandled_and_the
   let #(state, taken) = read(state, <<store_request():bits, activity():bits>>)
   assert unhandled_ids(taken)
     == [Some(#("unhandled", 0x082D)), Some(#("unhandled", 0x0241))]
-    as "opcode.0x38c and opcode.0x82d: 0x038C carries the whole frame of 0x082D, which is logged under its own id; opcode.0x241: the client sends it and waits for no answer, and no feature takes it yet; each is logged in order"
+    as "opcode.0x38c and opcode.0x82d: 0x038C carries the whole frame of 0x082D, which is logged under its own id; opcode.0x241: the client sends it and waits for no answer, and no feature takes it; each is logged in order"
   assert support.writes(taken) == []
   assert !support.stops(taken)
   let #(_, taken) = read(state, support.ping(1))
@@ -1200,7 +1201,10 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
       premium_tier: 0,
       title_id: 0,
       create_flags: 0,
-      stats: [UnitStat(stat_id: 0, value: 136)],
+      stats: [
+        UnitStat(stat_id: 0, value: 136),
+        UnitStat(stat_id: 10, value: 1),
+      ],
       server_time_estimate_start: 0,
       movement_commands: [
         UnitPositionCommand(
@@ -1230,10 +1234,10 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
       display_info_id: 0,
       outfit_info_id: 0,
     )
-    as "opcode.0x262: the unit id the map gave, the row's character id, the settings' realm id, name, race, class, gender, both factions 166 (vector.opcode.0x262.roxo: a base faction with a row, or 0x19B fails); stat 0 and property 7 are 136 as the client's creation check needs (vector.opcode.0x262.health, 0x140457bc5); one kind 2 movement command at the saved position, which the client never moves to the ground after 0xAD (0x1403e828a); the body of the character list (CharacterCustomization row 10: display 137 on slot 25) and the stored bones; PvP flags 0, not the path 3 (0x1403b48b0); every other value is the client's no-value case (opcode.0x262.player_fields, opcode.0x262.unit_fields)"
+    as "opcode.0x262: the unit id the map gave, the row's character id, the settings' realm id, name, race, class, gender, both factions 166 (vector.opcode.0x262.roxo: a base faction with a row, or 0x19B fails); stat 0 and property 7 are 136 as the client's creation check needs (vector.opcode.0x262.health, 0x140457bc5), and stat 10 is the character's level 1 (0x140458140); one kind 2 movement command at the saved position, which the client never moves to the ground after 0xAD (0x1403e828a); the body of the character list (CharacterCustomization row 10: display 137 on slot 25) and the stored bones; PvP flags 0, not the path 3 (0x1403b48b0); every other value is the client's no-value case (opcode.0x262.player_fields, opcode.0x262.unit_fields)"
 }
 
-pub fn message_0x19b_names_the_unit_0x636_gives_control_of_it_0xf1_is_all_zeros_and_0x61_is_empty_test() -> Nil {
+pub fn message_0x19b_names_the_unit_0x636_gives_control_of_it_0xf1_keeps_the_clients_interval_and_0x61_is_empty_test() -> Nil {
   use <- owned_test.run(10_000)
   let assert [
     _,
@@ -1254,9 +1258,9 @@ pub fn message_0x19b_names_the_unit_0x636_gives_control_of_it_0xf1_is_all_zeros_
       world_difficulty: 0,
       world_prime_level: 0,
       world_flags: 0,
-      interval_milliseconds: 0,
+      interval_milliseconds: 125,
     ))
-    as "opcode.0xf1.fields: Normal difficulty, prime level 0 and no flags for an open world; the interval the client raises to its floor of 25 ms (opcode.0xf1)"
+    as "opcode.0xf1.fields: Normal difficulty, prime level 0 and no flags for an open world; the interval 125 ms, the client's own until 0xF1 arrives (opcode.0xf1, 0x140c3a004; below 25 the client raises it to 25)"
   assert player_entered_world.decode(entered_world)
     == Ok(player_entered_world.PlayerEnteredWorld)
     as "opcode.0x61: the body is empty"
@@ -1344,10 +1348,10 @@ pub fn the_clients_movement_messages_after_entry_are_logged_as_unhandled_and_the
   use <- owned_test.run(10_000)
   let ids = [0x0635, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x0637]
   let #(state, taken) =
-    read(in_world(), bit_array_join(list.map(ids, move_message)))
+    read(in_world(), bit_array.concat(list.map(ids, move_message)))
   assert unhandled_ids(taken)
     == list.map(ids, fn(id) { Some(#("unhandled", id)) })
-    as "opcode.0x635, opcode.0x636 (0x63A and 0x637 follow control), opcode.0xf2 and the movement the client sends: it waits for no answer, and no feature takes them yet; each is logged under its own id, in order"
+    as "opcode.0x635, opcode.0x636 (0x63A and 0x637 follow control), opcode.0xf2 and the movement the client sends: it waits for no answer, and no feature takes them; each is logged under its own id, in order"
   assert support.writes(taken) == []
   assert !support.stops(taken)
   let #(_, taken) = read(state, support.ping(1))
@@ -1355,8 +1359,21 @@ pub fn the_clients_movement_messages_after_entry_are_logged_as_unhandled_and_the
     as "the connection goes on"
 }
 
-fn bit_array_join(parts: List(BitArray)) -> BitArray {
-  list.fold(parts, <<>>, fn(joined, part) { <<joined:bits, part:bits>> })
+pub fn an_unhandled_message_id_is_a_warning_the_first_time_on_a_connection_and_a_debug_line_after_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = read(in_world(), move_message(0x0637))
+  let assert [first] = support.logs(taken)
+  assert first.level == LogWarning
+    as "the first 0x637 of the connection is logged as unhandled, as a warning"
+  assert first.about.message == Some(#("unhandled", 0x0637))
+  let #(state, taken) = read(state, move_message(0x0637))
+  let assert [again] = support.logs(taken)
+  assert again.level == step.LogDebug
+    as "opcode.0x637: the client sends it on every move, up to 8 a second, so a repeat of an id already logged is a debug line"
+  assert again.about.message == Some(#("unhandled", 0x0637))
+  let #(_, taken) = read(state, move_message(0x0635))
+  let assert [other] = support.logs(taken)
+  assert other.level == LogWarning as "another id is its first: a warning"
 }
 
 pub fn a_world_message_carries_one_whole_frame_whose_message_is_logged_under_its_own_id_in_character_select_and_in_the_world_test() -> Nil {
@@ -1408,6 +1425,27 @@ pub fn the_end_of_the_players_map_ends_the_connection_with_0x036a_reason_8_test(
     as "the player is gone from the world with its map, so the client is told the server failed, or it would stay in a world no server holds"
   let assert [line] = support.logs_of(step: taken, level: LogWarning)
   assert line.about.account_id == Some(7)
+}
+
+pub fn a_log_line_in_the_world_is_about_the_players_map_and_character_and_one_in_character_select_is_not_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = feed(in_world(), WatchEnded(WatchId(2)))
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+  assert line.about.map == Some(MapId(world_id: 3460, instance: 0))
+    as "every line of a connection in the world says where: the map the player is in"
+  assert line.about.character_id == Some(42)
+    as "and who: the character the player plays"
+  assert line.about.connection == Some(ConnectionId(1))
+  let #(_, taken) = feed(in_select_with_a_list(), taken_over())
+  let assert [line] = support.logs_of(step: taken, level: LogInfo)
+  assert line.about.map == None && line.about.character_id == None
+    as "in character select the connection is in no map and plays no character"
+  let #(_, taken) = read(in_world(), keyed_message(0x0244, <<>>))
+  assert list.all(support.logs(taken), fn(line) {
+    line.about.map == Some(MapId(world_id: 3460, instance: 0))
+    && line.about.character_id == Some(42)
+  })
+    as "the lines of the shared connection code, which log a refused frame, carry them too"
 }
 
 pub fn a_watch_the_rule_did_not_open_ending_in_the_world_is_a_bug_with_an_error_and_the_end_test() -> Nil {

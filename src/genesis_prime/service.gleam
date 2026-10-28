@@ -40,9 +40,8 @@ pub type Sent {
 }
 
 /// How a shell finds the process an address names, to watch it: its pid, or
-/// `Error(Nil)` when no process is running there, or the address names no
-/// process yet (a map). Made once at start by the server; a rule never sees
-/// it.
+/// `Error(Nil)` when no process is running there. Made once at start by the
+/// server; a rule never sees it.
 pub type Locate =
   fn(Address) -> Result(Pid, Nil)
 
@@ -58,6 +57,12 @@ pub type Reach(outgoing) {
     /// dropped.
     send: fn(Address, outgoing) -> Result(Nil, Nil),
   )
+}
+
+/// A reach for a service that only watches: every send finds no process, so
+/// the message is dropped.
+pub fn watch_only(locate locate: Locate) -> Reach(outgoing) {
+  Reach(locate:, send: fn(_to, _message) { Error(Nil) })
 }
 
 /// Sends a service the message, for an asker's directory: `Error(Nil)` when

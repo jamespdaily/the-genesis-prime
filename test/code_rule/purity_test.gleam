@@ -200,16 +200,9 @@ fn pure_rules_the_check_covers(
   files
 }
 
-pub fn the_map_rule_and_world_entry_and_what_they_build_are_pure_rules_the_check_covers_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let files =
-    pure_rules_the_check_covers(paths: [
-      "src/genesis_prime/world_map/map.gleam",
-      "src/genesis_prime/game/world_entry.gleam",
-      "src/genesis_prime/world_map/player_unit.gleam",
-      "src/genesis_prime/game/start_place.gleam",
-    ])
+/// Each file names no process handle: CLAUDE.md says no type a rule takes or
+/// returns holds one.
+fn hold_no_process_handle(files: List(source.SourceFile)) -> Nil {
   list.each(files, fn(file) {
     list.each(["Pid", "Monitor", "Subject"], fn(name) {
       assert !string.contains(file.text, name)
@@ -221,6 +214,19 @@ pub fn the_map_rule_and_world_entry_and_what_they_build_are_pure_rules_the_check
         }
     })
   })
+}
+
+pub fn the_map_rule_and_world_entry_and_what_they_build_are_pure_rules_the_check_covers_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let files =
+    pure_rules_the_check_covers(paths: [
+      "src/genesis_prime/world_map/map.gleam",
+      "src/genesis_prime/game/world_entry.gleam",
+      "src/genesis_prime/world_map/player_unit.gleam",
+      "src/genesis_prime/game/start_place.gleam",
+    ])
+  hold_no_process_handle(files)
 }
 
 pub fn the_game_connection_rule_and_the_features_it_holds_are_pure_rules_the_check_covers_test() -> Nil {
@@ -248,15 +254,5 @@ pub fn the_sessions_rule_and_the_contract_it_runs_under_hold_no_pid_monitor_or_s
       "src/genesis_prime/client_connection.gleam",
       "src/genesis_prime/game/connection.gleam",
     ])
-  list.each(files, fn(file) {
-    list.each(["Pid", "Monitor", "Subject"], fn(name) {
-      assert !string.contains(file.text, name)
-        as {
-          file.path
-          <> " names "
-          <> name
-          <> ", a process's handle: CLAUDE.md says no type a rule takes or returns holds one"
-        }
-    })
-  })
+  hold_no_process_handle(files)
 }

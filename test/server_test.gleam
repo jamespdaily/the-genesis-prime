@@ -2,7 +2,7 @@
 //// - The tree in the doc comment of `genesis_prime/server`, as approved on the
 ////   login processes card: the pool, then the store, then the hand-off, each a
 ////   permanent child of a one-for-one supervisor that allows 3 restarts in
-////   10 seconds; and, as approved on the world entry card, the world subtree
+////   10 seconds; and the world subtree
 ////   after Sessions and before the login and game subtrees: a `rest_for_one`
 ////   supervisor of Maps and then the map supervisor, so Maps' restart ends
 ////   every map.
