@@ -8,8 +8,7 @@
 //// milliseconds, used by a timer.
 ////
 //// ```
-//// 'W' n    watch n on Sessions            'A' n    watch n on Store
-//// 'U' n    stop watching n                'T' n ms start timer n, which fires after ms
+//// 'W' n    watch n on Sessions            'T' n ms start timer n, which fires after ms
 //// 'X' n    cancel timer n                 'P' n    write the record 'p' n
 //// ```
 ////
@@ -27,8 +26,8 @@
 import genesis_prime/step.{
   type Effect, type Input, type Rule, type Step, Accepted, CancelTimer, Effects,
   Input, Log, LogLine, LogWarning, PeerClosed, Read, ReadFailed, Rule, Sessions,
-  Socket, StartTimer, Stop, Store, TimerFired, TimerId, Unwatch, Watch,
-  WatchEnded, WatchId, Woken, Write, WriteFailed,
+  Socket, StartTimer, Stop, TimerFired, TimerId, Watch, WatchEnded, WatchId,
+  Woken, Write, WriteFailed,
 }
 import gleam/list
 
@@ -39,10 +38,6 @@ pub type State {
 
 /// The letters of the commands.
 pub const watch_command = 0x57
-
-pub const watch_absent_command = 0x41
-
-pub const unwatch_command = 0x55
 
 pub const timer_command = 0x54
 
@@ -116,8 +111,6 @@ fn command(
 ) -> Effect(Nil) {
   case letter {
     _ if letter == watch_command -> Watch(WatchId(n), Sessions)
-    _ if letter == watch_absent_command -> Watch(WatchId(n), Store)
-    _ if letter == unwatch_command -> Unwatch(WatchId(n))
     _ if letter == timer_command -> StartTimer(TimerId(n), milliseconds)
     _ if letter == cancel_command -> CancelTimer(TimerId(n))
     _ if letter == pong_command -> record(pong, n)

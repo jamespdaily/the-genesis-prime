@@ -8,7 +8,7 @@
 
 -export([start_link/3, start_listener/4, listener_port/1, handshake/2,
          read_once/1, next_event/3, send/2, close/1, peer/1,
-         send_answer/3, await_answer/4, start_timer/2, cancel_timer/2]).
+         send_answer/3, await_answer/4, start_timer/2, cancel_timer/3]).
 
 %% Starts the connection's process, linked to Ranch's connection supervisor,
 %% which is the calling process and the shell's parent.
@@ -79,7 +79,8 @@ next_event(Socket, Parent, Kept) ->
             {late_answer, Tag};
         {ask_answer, _Tag, _Answer} -> next_event(Socket, Parent, Kept);
         {woken, Message} -> {delivered, Message};
-        {timer_fired, TimerId} -> {timer_elapsed, TimerId};
+        {timer_fired, TimerId, Reference} ->
+            {timer_elapsed, TimerId, Reference};
         {'DOWN', Monitor, process, _Pid, _Reason} ->
             case kept_with_monitor(Monitor, Kept) of
                 {ok, Tag} -> {kept_ended, Tag};
@@ -119,16 +120,20 @@ await_answer(Tag, Monitor, Parent, DeadlineMs) ->
             end
     end.
 
-%% Starts a timer that sends this process {timer_fired, TimerId} after AfterMs,
-%% and gives the timer.
+%% Starts a timer that sends this process {timer_fired, TimerId, Reference}
+%% after AfterMs, and gives the timer with its reference, which the shell keeps
+%% as the timer's own: a message of another reference is a stale one.
 start_timer(TimerId, AfterMs) ->
-    erlang:send_after(AfterMs, self(), {timer_fired, TimerId}).
+    Reference = make_ref(),
+    Timer = erlang:send_after(AfterMs, self(), {timer_fired, TimerId, Reference}),
+    {Timer, Reference}.
 
 %% Cancels a timer and flushes its message from the mailbox when it fired
-%% before the cancel, so a cancelled timer never reaches the rule.
-cancel_timer(TimerId, Timer) ->
+%% before the cancel. A message still in flight when the cancel is made is not
+%% recalled; the shell discards it by its reference.
+cancel_timer(TimerId, Timer, Reference) ->
     _ = erlang:cancel_timer(Timer),
-    receive {timer_fired, TimerId} -> ok after 0 -> ok end,
+    receive {timer_fired, TimerId, Reference} -> ok after 0 -> ok end,
     nil.
 
 %% Writes the bytes; a write that waits past the socket's send deadline fails

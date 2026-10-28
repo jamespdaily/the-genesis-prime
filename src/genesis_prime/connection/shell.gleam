@@ -108,11 +108,15 @@
 ////   a delivered message. An id already open ends the connection with an error
 ////   log.
 //// - **A timer.** `StartTimer(id, ms)` starts an `erlang:send_after` that sends
-////   the shell `{timer_fired, id}`, kept under `id`. It is taken between steps
-////   as `TimerFired(id)`, once, and the shell forgets the timer; one that fires
-////   during an ask waits like a delivered message. `CancelTimer(id)` cancels it
-////   and flushes its message if it had fired, so no `TimerFired` follows; an id
-////   with no running timer does nothing. An id already running ends the
+////   the shell `{timer_fired, id, reference}`, kept under `id` with its own
+////   reference. It is taken between steps as `TimerFired(id)`, once, and the
+////   shell forgets the timer; one that fires during an ask waits like a
+////   delivered message. `CancelTimer(id)` cancels it and flushes its message if
+////   it had fired, so no `TimerFired` follows; a message already in flight
+////   when it is cancelled is discarded on arrival, as is any message whose
+////   reference is not the current timer's of that id, so a cancelled timer's
+////   message never fires a restarted timer of the same id. An id with no
+////   running timer is cancelled to nothing. An id already running ends the
 ////   connection with an error log.
 //// - **The registry's scope ending.** The connection stays joined only as long
 ////   as the scope lives; the tree restarts the game listener with the scope, so
@@ -184,12 +188,19 @@ type Arrived(message) {
   Delivered(message: message)
   /// The end of a monitored process that is no kept ask's, by its monitor.
   WatchedEnded(monitor: Monitor)
-  /// A timer the rule started fired.
-  TimerElapsed(timer: TimerId)
+  /// A timer fired: its message names the timer's id and the reference of the
+  /// start it came from.
+  TimerElapsed(timer: TimerId, reference: Reference)
 }
 
 /// A timer the shell started: what `erlang:send_after` returned.
 type Timer
+
+/// A running timer and the reference its message carries, which tells its
+/// timeout from a stale one of an earlier timer of the same id.
+type Started {
+  Started(timer: Timer, reference: Reference)
+}
 
 /// How an ask's wait ended, as `connection_shell_ffi` sees it.
 type Waited(answer) {
@@ -218,7 +229,7 @@ type Running(settings, state, message, answer, outgoing, request) {
     writer: Option(file.Writer),
     kept: Dict(Reference, Kept),
     watches: Watches,
-    timers: Dict(TimerId, Timer),
+    timers: Dict(TimerId, Started),
     stopping: Option(Int),
   )
 }
@@ -436,15 +447,19 @@ fn next(
       next(Running(..running, kept: dict.delete(running.kept, tag)))
     Delivered(message:) -> take(running:, now:, event: step.Woken(message:))
     WatchedEnded(monitor:) -> watch_ended(running:, now:, monitor:)
-    TimerElapsed(timer:) -> {
-      let assert Ok(_started) = dict.get(running.timers, timer)
-        as "a timer's message is taken only for a timer the shell started and has not cancelled"
-      take(
-        running: Running(..running, timers: dict.delete(running.timers, timer)),
-        now:,
-        event: step.TimerFired(timer:),
-      )
-    }
+    TimerElapsed(timer:, reference:) ->
+      case dict.get(running.timers, timer) {
+        Ok(Started(reference: current, ..)) if current == reference ->
+          take(
+            running: Running(
+              ..running,
+              timers: dict.delete(running.timers, timer),
+            ),
+            now:,
+            event: step.TimerFired(timer:),
+          )
+        Ok(Started(..)) | Error(Nil) -> next(running)
+      }
   }
 }
 
@@ -515,22 +530,29 @@ fn start_timer_for(
       close(running.socket)
       panic as "a rule started a timer whose id is already running"
     }
-    False ->
+    False -> {
+      let #(started, reference) = start_timer(timer, after_ms)
       Running(
         ..running,
-        timers: dict.insert(running.timers, timer, start_timer(timer, after_ms)),
+        timers: dict.insert(
+          running.timers,
+          timer,
+          Started(timer: started, reference:),
+        ),
       )
+    }
   }
 }
 
-/// Cancels the timer the rule named, and drops its message if it had fired.
+/// Cancels the timer the rule named, and drops its message if it had fired. A
+/// message already in flight is discarded when it arrives, by its reference.
 fn cancel_timer_of(
   running running: Running(settings, state, message, answer, outgoing, request),
   timer timer: TimerId,
 ) -> Running(settings, state, message, answer, outgoing, request) {
   case dict.get(running.timers, timer) {
-    Ok(started) -> {
-      cancel_timer(timer, started)
+    Ok(Started(timer: started, reference:)) -> {
+      cancel_timer(timer, started, reference)
       Running(..running, timers: dict.delete(running.timers, timer))
     }
     Error(Nil) -> running
@@ -664,10 +686,10 @@ fn next_event(
 ) -> Arrived(message)
 
 @external(erlang, "connection_shell_ffi", "start_timer")
-fn start_timer(timer: TimerId, after_ms: Int) -> Timer
+fn start_timer(timer: TimerId, after_ms: Int) -> #(Timer, Reference)
 
 @external(erlang, "connection_shell_ffi", "cancel_timer")
-fn cancel_timer(timer: TimerId, started: Timer) -> Nil
+fn cancel_timer(timer: TimerId, started: Timer, of: Reference) -> Nil
 
 @external(erlang, "connection_shell_ffi", "send_answer")
 fn send_answer(shell: Pid, tag: Reference, answer: answer) -> Nil

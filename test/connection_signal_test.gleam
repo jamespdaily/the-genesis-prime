@@ -4,10 +4,9 @@
 //// - The shell's contract in the doc comment of `genesis_prime/connection/shell`:
 ////   a connection joins the registry as it is accepted; a message delivered to
 ////   it reaches the rule as `Woken`; a watch's end comes back once as
-////   `WatchEnded` with the watch's id, an address no process holds comes back
-////   the same way, an unwatched watch's end does not come back, and an id
-////   already open ends the connection with an error log; a timer fires once as
-////   `TimerFired` and a cancelled one never does.
+////   `WatchEnded` with the watch's id (the watches themselves are tested in
+////   `watch_test`); a timer fires once as `TimerFired`, a cancelled one never
+////   does, and a timeout whose reference is not the timer's own is discarded.
 //// - OTP's `erlang:send_after` and `erlang:cancel_timer`: a message already sent
 ////   when the timer is cancelled stays in the mailbox, which is the reason the
 ////   shell flushes it.
@@ -17,32 +16,33 @@
 import ask_support
 import genesis_prime/connection/registry
 import genesis_prime/step.{type Address, ConnectionId, Sessions, TimerId}
+import gleam/dynamic.{type Dynamic}
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process.{type Pid}
+import gleam/erlang/reference.{type Reference}
 import gleam/option.{None, Some}
 import gleam/otp/static_supervisor as supervisor
-import gleam/string
-import log_capture
 import mug
 import owned_test
 import signalling_rule
+import socket_watch
 
 /// One record the signalling rule wrote.
 type Record {
   Record(letter: Int, number: Int)
 }
 
-/// A timer the shell started: the reference `erlang:send_after` returned.
+/// A timer the shell started: what `erlang:send_after` returned.
 type Timer
 
 @external(erlang, "connection_shell_ffi", "start_timer")
-fn start_timer(timer: step.TimerId, after_ms: Int) -> Timer
+fn start_timer(timer: step.TimerId, after_ms: Int) -> #(Timer, Reference)
 
 @external(erlang, "connection_shell_ffi", "cancel_timer")
-fn cancel_timer(timer: step.TimerId, started: Timer) -> Nil
+fn cancel_timer(timer: step.TimerId, started: Timer, of: Reference) -> Nil
 
-@external(erlang, "erlang", "process_info")
-fn process_info(pid: Pid, item: Atom) -> #(Atom, Int)
+@external(erlang, "erlang", "send")
+fn send_timeout(to: Pid, message: #(Atom, step.TimerId, Reference)) -> Dynamic
 
 fn start(
   registry registry: option.Option(registry.Registry),
@@ -76,17 +76,6 @@ fn start(
 /// A process the rule's watches name as Sessions, which a test ends.
 fn a_sessions() -> Pid {
   process.spawn_unlinked(process.sleep_forever)
-}
-
-fn command(
-  client client: mug.Socket,
-  letter letter: Int,
-  n n: Int,
-  milliseconds milliseconds: Int,
-) -> Nil {
-  let assert Ok(Nil) = mug.send(client, <<letter, n, milliseconds:16>>)
-    as "the command was sent"
-  Nil
 }
 
 fn read_record(client: mug.Socket) -> Record {
@@ -172,8 +161,18 @@ pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watch
   let server = start(registry: None, sessions:)
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
-  command(client:, letter: signalling_rule.watch_command, n: 1, milliseconds: 0)
-  command(client:, letter: signalling_rule.pong_command, n: 5, milliseconds: 0)
+  ask_support.command(
+    client:,
+    letter: signalling_rule.watch_command,
+    n: 1,
+    wait_ms: 0,
+  )
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 5,
+    wait_ms: 0,
+  )
   assert read_record(client) == Record(signalling_rule.pong, 5)
     as "the watch is open and the target runs, so nothing has ended"
   let ended = process.monitor(sessions)
@@ -181,71 +180,14 @@ pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watch
   let _reason = ask_support.ended(ended)
   assert read_record(client) == Record(signalling_rule.watch_ended, 1)
     as "the target's end reached the rule as WatchEnded(WatchId(1))"
-  command(client:, letter: signalling_rule.pong_command, n: 6, milliseconds: 0)
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 6,
+    wait_ms: 0,
+  )
   assert read_record(client) == Record(signalling_rule.pong, 6)
     as "the end came once"
-  ask_support.stop(server)
-}
-
-pub fn a_watch_on_an_address_no_process_holds_comes_back_as_watch_ended_test() -> Nil {
-  use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: a_sessions())
-  let client = ask_support.connect(server)
-  let _id = accepted_id(client)
-  command(
-    client:,
-    letter: signalling_rule.watch_absent_command,
-    n: 2,
-    milliseconds: 0,
-  )
-  assert read_record(client) == Record(signalling_rule.watch_ended, 2)
-    as "no process holds Store's address, so the watch ends at once"
-  ask_support.stop(server)
-}
-
-pub fn an_unwatch_drops_the_watch_so_the_targets_end_gives_no_watch_ended_test() -> Nil {
-  use <- owned_test.run(30_000)
-  let sessions = a_sessions()
-  let server = start(registry: None, sessions:)
-  let client = ask_support.connect(server)
-  let _id = accepted_id(client)
-  command(client:, letter: signalling_rule.watch_command, n: 3, milliseconds: 0)
-  command(
-    client:,
-    letter: signalling_rule.unwatch_command,
-    n: 3,
-    milliseconds: 0,
-  )
-  command(client:, letter: signalling_rule.pong_command, n: 1, milliseconds: 0)
-  assert read_record(client) == Record(signalling_rule.pong, 1)
-  let ended = process.monitor(sessions)
-  process.kill(sessions)
-  let _reason = ask_support.ended(ended)
-  command(client:, letter: signalling_rule.pong_command, n: 2, milliseconds: 0)
-  assert read_record(client) == Record(signalling_rule.pong, 2)
-    as "the next record is the pong: the target's end sent the rule nothing, since a DOWN waiting in the mailbox comes before the client's bytes"
-  ask_support.stop(server)
-}
-
-pub fn a_watch_id_already_open_ends_the_connection_with_an_error_log_test() -> Nil {
-  use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: a_sessions())
-  let client = ask_support.connect(server)
-  let _id = accepted_id(client)
-  let assert [connection] = ask_support.connections(server)
-  let logged = process.new_subject()
-  let capture = log_capture.start(from: connection, into: logged)
-  let gone = process.monitor(connection)
-  command(client:, letter: signalling_rule.watch_command, n: 4, milliseconds: 0)
-  command(client:, letter: signalling_rule.watch_command, n: 4, milliseconds: 0)
-  let assert process.Abnormal(_) = ask_support.ended(gone)
-    as "the shell ended the connection abnormally"
-  let assert Ok(#("error", text)) =
-    process.receive(logged, within: ask_support.event_wait_ms)
-    as "the first thing logged is an error"
-  assert string.contains(text, "already open")
-    as "the error says the watch's id is already open"
-  log_capture.stop(capture)
   ask_support.stop(server)
 }
 
@@ -254,15 +196,20 @@ pub fn a_timer_fires_once_as_timer_fired_with_its_id_test() -> Nil {
   let server = start(registry: None, sessions: a_sessions())
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
-  command(
+  ask_support.command(
     client:,
     letter: signalling_rule.timer_command,
     n: 1,
-    milliseconds: 20,
+    wait_ms: 20,
   )
   assert read_record(client) == Record(signalling_rule.timer_fired, 1)
     as "the timer fired as TimerFired(TimerId(1))"
-  command(client:, letter: signalling_rule.pong_command, n: 2, milliseconds: 0)
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 2,
+    wait_ms: 0,
+  )
   assert read_record(client) == Record(signalling_rule.pong, 2)
     as "the timer fired once"
   ask_support.stop(server)
@@ -274,23 +221,23 @@ pub fn a_cancelled_timer_never_fires_test() -> Nil {
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   // Timer 1 would fire first; timer 2 is the witness that time passed.
-  command(
+  ask_support.command(
     client:,
     letter: signalling_rule.timer_command,
     n: 1,
-    milliseconds: 30,
+    wait_ms: 30,
   )
-  command(
+  ask_support.command(
     client:,
     letter: signalling_rule.timer_command,
     n: 2,
-    milliseconds: 90,
+    wait_ms: 90,
   )
-  command(
+  ask_support.command(
     client:,
     letter: signalling_rule.cancel_command,
     n: 1,
-    milliseconds: 0,
+    wait_ms: 0,
   )
   assert read_record(client) == Record(signalling_rule.timer_fired, 2)
     as "timer 2 fired and timer 1, due earlier, did not"
@@ -299,17 +246,71 @@ pub fn a_cancelled_timer_never_fires_test() -> Nil {
 
 pub fn cancelling_a_timer_that_already_fired_flushes_its_message_from_the_mailbox_test() -> Nil {
   use <- owned_test.run(30_000)
-  let timer = start_timer(TimerId(1), 0)
+  let #(timer, reference) = start_timer(TimerId(1), 0)
   wait_for_message()
   assert queued() == 1 as "the timer fired, and its message waits"
-  cancel_timer(TimerId(1), timer)
+  cancel_timer(TimerId(1), timer, reference)
   assert queued() == 0
     as "the cancel found no timer to stop and flushed the message, so it never reaches the rule"
 }
 
+pub fn a_timeout_of_a_cancelled_or_replaced_timer_is_discarded_by_its_reference_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let server = start(registry: None, sessions: a_sessions())
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  let assert [connection] = ask_support.connections(server)
+  // Timer 1 is cancelled and started again, so its first timeout, which
+  // `erlang:cancel_timer` cannot recall once it is in flight, carries a
+  // reference that is no longer the timer's own.
+  ask_support.command(
+    client:,
+    letter: signalling_rule.timer_command,
+    n: 1,
+    wait_ms: 60_000,
+  )
+  ask_support.command(
+    client:,
+    letter: signalling_rule.cancel_command,
+    n: 1,
+    wait_ms: 0,
+  )
+  ask_support.command(
+    client:,
+    letter: signalling_rule.timer_command,
+    n: 1,
+    wait_ms: 60_000,
+  )
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 4,
+    wait_ms: 0,
+  )
+  assert read_record(client) == Record(signalling_rule.pong, 4)
+    as "the timers are set"
+  let _sent =
+    send_timeout(connection, #(timer_fired(), TimerId(1), reference.new()))
+  let _sent =
+    send_timeout(connection, #(timer_fired(), TimerId(2), reference.new()))
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 5,
+    wait_ms: 0,
+  )
+  assert read_record(client) == Record(signalling_rule.pong, 5)
+    as "the stale timeouts, of a running timer's id and of an id no timer holds, reached the rule as nothing, and the connection goes on"
+  ask_support.stop(server)
+}
+
+fn timer_fired() -> Atom {
+  atom.create("timer_fired")
+}
+
 /// How many messages wait in this process's mailbox.
 fn queued() -> Int {
-  process_info(process.self(), atom.create("message_queue_len")).1
+  socket_watch.mailbox_length(process.self())
 }
 
 /// Waits until a message is in the mailbox; a timer of 0 ms fires within a
