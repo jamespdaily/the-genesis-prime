@@ -285,8 +285,8 @@ evidence = "opcode.0xdc"
 summary = "the result of a create-character request, with the new character's id"
 fields = [
   { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x14007fd50", named_by = "opcode.0xdc" },
-  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x14007fd50" },
-  { name = "result", kind = "unsigned", bits = 6, evidence = "0x14007fd50", named_by = "opcode.0xdc", values_type = "CreateResult", values = [ { value = 3, name = "create_ok", evidence = "opcode.0xdc" }, { value = 6, name = "name_unavailable", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 9, name = "account_full", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 10, name = "name_length", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 11, name = "opposing_faction", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 44, name = "characters_online", evidence = "lua.Character.OnCreateCharacterFailed" } ] },
+  { name = "field_2", kind = "unsigned", bits = 32, evidence = "0x14007fd50", safe_by = "opcode.0xdc.field_2" },
+  { name = "result", kind = "unsigned", bits = 6, evidence = "0x14007fd50", named_by = "opcode.0xdc", values_type = "CreateResult", values = [ { value = 3, name = "create_ok", evidence = "opcode.0xdc" }, { value = 4, name = "create_failed", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 6, name = "name_unavailable", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 9, name = "account_full", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 10, name = "name_length", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 11, name = "opposing_faction", evidence = "lua.Character.OnCreateCharacterFailed" }, { value = 44, name = "characters_online", evidence = "lua.Character.OnCreateCharacterFailed" } ] },
 ]
 
 [[message]]
@@ -306,7 +306,7 @@ direction = "server_to_client"
 evidence = "opcode.0x162"
 summary = "the answer that playing the chosen character failed"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 3, evidence = "0x14007fdc0" },
+  { name = "result", kind = "unsigned", bits = 3, evidence = "0x14007fdc0", named_by = "opcode.0x162", values_type = "PlayRefusal", values = [ { value = 1, name = "failed_rename", evidence = "opcode.0x162" }, { value = 2, name = "failed", evidence = "opcode.0x162" }, { value = 3, name = "failed_disabled", evidence = "opcode.0x162" }, { value = 4, name = "character_in_world", evidence = "opcode.0x162" } ] },
 ]
 
 [[message]]

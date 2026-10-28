@@ -34,6 +34,7 @@ import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
+import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
@@ -204,12 +205,13 @@ pub fn create_character_result_is_the_clients_102_bits_test() -> Nil {
 
 /// The results the client's creation Lua names, with the case each is named
 /// by: 3 CreateOk (opcode.0xdc), and, in lua.Character.OnCreateCharacterFailed,
-/// 6 CreateFailed_UniqueName, 9 CreateFailed_AccountFull, 10
+/// 4 CreateFailed, 6 CreateFailed_UniqueName, 9 CreateFailed_AccountFull, 10
 /// CreateFailed_InvalidName, 11 CreateFailed_Faction and 44
 /// CreateFailed_CharacterOnline.
 fn create_results() -> List(#(Int, create_result.CreateResult)) {
   [
     #(3, create_result.CreateOk),
+    #(4, create_result.CreateFailed),
     #(6, create_result.NameUnavailable),
     #(9, create_result.AccountFull),
     #(10, create_result.NameLength),
@@ -322,7 +324,7 @@ pub fn play_character_refused_is_one_3_bit_value_test() -> Nil {
   message_support.assert_vector(
     name: "vector.opcode.0x162.body",
     body: message_support.hex("05"),
-    value: PlayCharacterRefused(field_1: 5),
+    value: PlayCharacterRefused(result: play_refusal.Other(5)),
     encode: play_character_refused.encode,
     decode: play_character_refused.decode,
   )
