@@ -10,6 +10,8 @@
 //// ```
 //// 'W' n    watch n on Sessions            'T' n ms start timer n, which fires after ms
 //// 'X' n    cancel timer n                 'P' n    write the record 'p' n
+//// 'Z' n ms start timer n, which would fire after ms, and cancel it in the
+////          same step, so no machine's speed decides whether it fired first
 //// ```
 ////
 //// Each record the rule writes is nine bytes: a letter and a 64-bit signed
@@ -47,6 +49,8 @@ pub const timer_command = 0x54
 pub const cancel_command = 0x58
 
 pub const pong_command = 0x50
+
+pub const start_then_cancel_command = 0x5A
 
 /// The letters that start a record.
 pub const accepted = 0x63
@@ -124,8 +128,26 @@ fn run(
 ) -> #(State, ConnectionStep(Nil)) {
   case state.pending {
     <<letter, n, milliseconds:16, rest:bytes>> ->
-      run(State(pending: rest), [command(letter:, n:, milliseconds:), ..effects])
+      run(
+        State(pending: rest),
+        list.append(list.reverse(commands(letter:, n:, milliseconds:)), effects),
+      )
     _ -> #(state, Effects(list.reverse(effects)))
+  }
+}
+
+/// The effects of one command, in the order they are carried out.
+fn commands(
+  letter letter: Int,
+  n n: Int,
+  milliseconds milliseconds: Int,
+) -> List(Effect(ConnectionEffect)) {
+  case letter {
+    _ if letter == start_then_cancel_command -> [
+      command(letter: timer_command, n:, milliseconds:),
+      command(letter: cancel_command, n:, milliseconds: 0),
+    ]
+    _ -> [command(letter:, n:, milliseconds:)]
   }
 }
 

@@ -30,17 +30,40 @@ pub fn recordings_of(module module: String) -> List(String) {
   |> list.sort(string.compare)
 }
 
+/// Replays every recording of the rule `module` in the folder, however many
+/// runs of it the live session held, and fails unless there is at least one.
+/// Each replay fails unless every recorded step is the step the rule gives
+/// again and the replay folds as many inputs as the recording's `End` counts,
+/// and unless the recording was made under the rule's types as the code stands
+/// (`rule_types.digest`) and, for a rule that reads the game tables
+/// (`reads_tables`), on the table files loaded now: the replay loads the
+/// client's tables under the server's key, where the recorded settings name
+/// them, and a digest that differs from the header's fails the replay with
+/// `RecordAgain`. A rule that reads no table replays without the tables,
+/// whatever digest its header holds. No count of inputs or recordings is
+/// asked, so a session recorded again replays with no change here.
+pub fn every_recording_replays(
+  module module: String,
+  reads_tables reads_tables: Bool,
+  new new: fn(settings) -> state,
+  step step: fn(state, Input(own_input)) -> #(state, Step(request, own_effect)),
+) -> Nil {
+  let files = recordings_of(module:)
+  assert files != []
+    as {
+      "the live session recorded no run of " <> module <> ": nothing replays"
+    }
+  list.each(files, fn(file) {
+    let #(inputs, count) = replayed(file:, module:, reads_tables:, new:, step:)
+    assert inputs == count
+      as { file <> ": the replay folds every input the End counts" }
+  })
+}
+
 /// Replays the recording `file` of the folder through the rule `module`,
 /// whose settings are the ones its header holds, and gives the inputs replayed
-/// and the inputs `End` counts. The replay fails unless every recorded step is
-/// the step the rule gives again, and unless the recording was made under the
-/// rule's types as the code stands (`rule_types.digest`) and, for a rule that
-/// reads the game tables (`reads_tables`), on the table files loaded now: the
-/// replay loads the client's tables under the server's key, where the recorded
-/// settings name them, and a digest that differs from the header's fails the
-/// replay with `RecordAgain`. A rule that reads no table replays without the
-/// tables, whatever digest its header holds.
-pub fn replayed(
+/// and the inputs `End` counts.
+fn replayed(
   file file: String,
   module module: String,
   reads_tables reads_tables: Bool,

@@ -2,7 +2,7 @@
 //// with no process. Expected values come from these places.
 //// - The recording (`test/rule_recording/2026-11-01-full-session`): the real
 ////   client's claim, the end of its connection's watch and the server's
-////   stop, closed with `End`, which counts 4 inputs.
+////   stop, closed with `End`, which counts the inputs the replay must fold.
 //// - Sessions reads no game table, so the replay needs no tables, whatever
 ////   digest the header holds.
 //// - The rule's types as the code stands (`rule_types.digest`): a recording
@@ -16,9 +16,12 @@ import rule_replay_support
 
 pub fn the_live_sessions_sessions_recording_replays_to_the_same_steps_test() -> Nil {
   use <- owned_test.run(60_000)
-  let #(inputs, count) = replayed()
-  assert inputs == count as "the replay folds every input the End counts"
-  assert count == 4 as "Sessions took 4 inputs in the live session"
+  rule_replay_support.every_recording_replays(
+    module: sessions.rule_name,
+    reads_tables: False,
+    new: sessions.new,
+    step: sessions.step,
+  )
 }
 
 const sessions_replay = #(
@@ -32,14 +35,4 @@ const sessions_replay = #(
 pub fn the_sessions_recording_replays_in_a_fresh_node_test() -> Nil {
   use <- owned_test.run(60_000)
   rule_replay_support.replays_in_a_fresh_node(sessions_replay)
-}
-
-fn replayed() -> #(Int, Int) {
-  rule_replay_support.replayed(
-    file: "genesis_prime.sessions-2.recording",
-    module: sessions.rule_name,
-    reads_tables: False,
-    new: sessions.new,
-    step: sessions.step,
-  )
 }

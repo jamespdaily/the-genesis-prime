@@ -36,9 +36,11 @@ pub fn a_body_that_runs_past_its_deadline_fails_with_the_deadline_message_test()
 pub fn a_body_that_runs_past_its_deadline_is_stopped_and_the_run_goes_on_test() -> Nil {
   use <- owned_test.run(5000)
   let reported = process.new_subject()
+  // The body hangs for ever, so the deadline is reached whatever it is; it is
+  // long enough that a slow machine starts the body, which reports first.
   let reason =
     exit_reason_of(fn() {
-      owned_test.run(50, fn() {
+      owned_test.run(1000, fn() {
         process.send(reported, process.self())
         process.sleep_forever()
       })
