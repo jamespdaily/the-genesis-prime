@@ -15,7 +15,8 @@ import genesis_prime/rule_recording.{type Record, End, Taken}
 import genesis_prime/rule_recording/file
 import genesis_prime/service
 import genesis_prime/step.{
-  Answered, AnsweredLate, EffectsThenAsk, Input, NoAnswerInTime,
+  type SocketEffect, type SocketEvent, Answered, EffectsThenAsk, Input,
+  NoAnswerInTime,
 }
 import gleam/erlang/process
 import gleam/list
@@ -160,7 +161,7 @@ pub fn a_target_that_ends_before_answering_gives_ended_before_answer_test() -> N
   ask_support.stop(server)
 }
 
-pub fn an_answer_after_the_deadline_comes_as_answered_late_and_is_never_taken_for_a_newer_asks_answer_test() -> Nil {
+pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_for_a_newer_asks_answer_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
   let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
@@ -184,9 +185,11 @@ pub fn an_answer_after_the_deadline_comes_as_answered_late_and_is_never_taken_fo
     && second.code == asking_rule.code_echoed
     && second.extra == 1
     as "ask 2 got the gate's answer to ask 2, not the late answer to ask 1"
-  let late = ask_support.read_record(client)
-  assert late.letter == asking_rule.late && late.ask == 1
-    as "the answer to ask 1 comes as AnsweredLate of ask 1"
+  // The late answer to ask 1 reached the shell before ask 2's, so it was
+  // dropped before this ping was read: the next record is the pong.
+  ask_support.command(client, asking_rule.ping_command, 9, wait_ms: 0)
+  assert ask_support.read_pong(client) == <<0x70, 9>>
+    as "the answer to ask 1 gave the rule no input, so no record comes before the pong"
   ask_support.stop(server)
 }
 
@@ -218,10 +221,6 @@ pub fn a_stop_during_an_ask_ends_the_wait_at_once_and_stopping_counts_from_the_s
   assert stopping.milliseconds >= before_stop + shutdown_ms - 300
     && stopping.milliseconds <= after_stopping + shutdown_ms - 300
     as "the deadline is the stop's arrival plus the shutdown time less the send deadline"
-  let _waiting = ask_support.open_key(gate, 1)
-  let late = ask_support.read_record(client)
-  assert late.letter == asking_rule.late && late.ask == 1
-    as "the answer after the stop comes as AnsweredLate"
   assert ask_support.ended(stopped) == ask_support.shutdown()
     as "the tree stopped when the rule had stopped"
 }
@@ -259,7 +258,6 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_steps_with_no_other_proc
   )
   let _asked = ask_support.read_record(client)
   let _opened = ask_support.read_record(client)
-  let _late = ask_support.read_record(client)
   ask_support.command(client, asking_rule.ping_command, 3, wait_ms: 0)
   let _pong = ask_support.read_pong(client)
   let assert [connection] = ask_support.connections(server)
@@ -275,8 +273,8 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_steps_with_no_other_proc
     as "the recording reads"
   assert list.count(records, is_ask) == 3
     as "the session made three asks, each ending its step"
-  assert list.any(records, is_timed_out) && list.any(records, is_late)
-    as "the session holds an ask that timed out and its late answer"
+  assert list.any(records, is_timed_out)
+    as "the session holds an ask that timed out, whose late answer gave the rule no input"
   let assert Ok(count) =
     rule_recording.replay(
       bytes,
@@ -334,7 +332,14 @@ fn start_with(
 }
 
 fn is_ask(
-  record: Record(Nil, asking_rule.Answer, Nil, asking_rule.Request),
+  record: Record(
+    Nil,
+    asking_rule.Answer,
+    Nil,
+    asking_rule.Request,
+    SocketEvent,
+    SocketEffect,
+  ),
 ) -> Bool {
   case record {
     Taken(step: EffectsThenAsk(..), ..) -> True
@@ -343,20 +348,18 @@ fn is_ask(
 }
 
 fn is_timed_out(
-  record: Record(Nil, asking_rule.Answer, Nil, asking_rule.Request),
+  record: Record(
+    Nil,
+    asking_rule.Answer,
+    Nil,
+    asking_rule.Request,
+    SocketEvent,
+    SocketEffect,
+  ),
 ) -> Bool {
   case record {
     Taken(input: Input(event: Answered(outcome: NoAnswerInTime, ..), ..), ..) ->
       True
-    Taken(..) | End(..) -> False
-  }
-}
-
-fn is_late(
-  record: Record(Nil, asking_rule.Answer, Nil, asking_rule.Request),
-) -> Bool {
-  case record {
-    Taken(input: Input(event: AnsweredLate(..), ..), ..) -> True
     Taken(..) | End(..) -> False
   }
 }

@@ -7,9 +7,9 @@
 ////
 //// Each rule keeps a `Link`: who the connection is for their log lines, the
 //// seed's random source and the number of their last ask. Each sorts an input
-//// with `hear`, which decides what the client closing, a failed socket, a late
-//// answer and an input a connection is never given do, and ends the
-//// connection when the server stops after the effects the rule gives it.
+//// with `hear`, which decides what the client closing, a failed socket and an
+//// input a connection is never given do, and ends the connection when the
+//// server stops after the effects the rule gives it.
 //// Each takes a request or frame at a time, through a `Flow` that `drive`
 //// runs, and says what it decided with `Handled`, which `settle` carries out.
 //// The rules that take the client's wrapper (the auth rule and the game rule)
@@ -23,11 +23,11 @@ import genesis_prime/hand_off
 import genesis_prime/random.{type Random}
 import genesis_prime/sessions
 import genesis_prime/step.{
-  type About, type ConnectionId, type Effect, type Event, type Now, type Outcome,
-  type Peer, type Step, About, Accepted, Answered, AnsweredLate, AskId, Asked,
-  Effects, EffectsThenAsk, Log, LogError, LogLine, LogWarning, PeerClosed,
-  ReadFailed, Socket, Started, Stop, Stopping, TimerFired, Woken, Write,
-  WriteFailed,
+  type About, type ConnectionEffect, type ConnectionId, type ConnectionStep,
+  type Event, type Now, type Outcome, type Peer, type SocketEvent, About,
+  Accepted, Answered, AskId, Effects, EffectsThenAsk, Log, LogError, LogLine,
+  LogWarning, OwnEffect, OwnEvent, PeerClosed, ReadFailed, Started, Stop,
+  Stopping, TimerFired, Woken, Write, WriteFailed,
 }
 import genesis_prime/store
 import genesis_prime/world_map/map
@@ -118,7 +118,7 @@ pub fn log(
   about about: About,
   level level: step.LogLevel,
   text text: String,
-) -> Effect(Nil) {
+) -> ConnectionEffect(Nil) {
   Log(LogLine(level:, text:, about:))
 }
 
@@ -154,7 +154,7 @@ pub fn end_for(
 /// The step of a rule that took bytes or an answer before the connection was
 /// accepted: an error log line and the end of the connection. `rule` names
 /// whose rule it is, as the line says ("auth", "game", "STS").
-pub fn before_accepted(rule rule: String) -> Step(Nil, Request) {
+pub fn before_accepted(rule rule: String) -> ConnectionStep(Nil, Request) {
   Effects([
     Log(LogLine(
       level: LogError,
@@ -172,7 +172,7 @@ pub fn before_accepted(rule rule: String) -> Step(Nil, Request) {
 pub fn accepted_again(
   about about: About,
   rule rule: String,
-) -> Step(Nil, Request) {
+) -> ConnectionStep(Nil, Request) {
   Effects([
     log(
       about:,
@@ -198,11 +198,11 @@ pub type Heard {
   Outcome(outcome: Outcome(Answer))
   /// An input every rule takes the same way, or none a connection is given:
   /// the step to take, with the state unchanged.
-  Otherwise(step: Step(Nil, Request))
+  Otherwise(step: ConnectionStep(Nil, Request))
 }
 
-/// Sorts an input: what the client closing, a failed socket and a late answer
-/// do is the same in every rule, so it is decided here; `about` says who a log
+/// Sorts an input: what the client closing and a failed socket do is the same
+/// in every rule, so it is decided here; `about` says who a log
 /// line is about. The server stopping ends the connection after the effects
 /// `stopping` gives, which the rule writes first: none for a connection with
 /// no one to tell, a notice for one whose client waits for the server's next
@@ -211,27 +211,26 @@ pub type Heard {
 /// before it calls `hear`; to every rule before it watches or starts a timer,
 /// and to the login's rules, they are inputs a connection is never given.
 pub fn hear(
-  event event: Event(message, Answer),
+  event event: Event(message, Answer, SocketEvent),
   about about: About,
-  stopping stopping: fn() -> List(Effect(Nil)),
+  stopping stopping: fn() -> List(ConnectionEffect(Nil)),
 ) -> Heard {
   let ends = fn(level, text) {
     Otherwise(Effects([Log(LogLine(level:, text:, about:)), Stop]))
   }
   case event {
-    Socket(Accepted(connection:, peer:, seed:)) ->
+    OwnEvent(Accepted(connection:, peer:, seed:)) ->
       Connect(connection:, peer:, seed:)
-    Socket(step.Read(bytes:)) -> Bytes(bytes:)
+    OwnEvent(step.Read(bytes:)) -> Bytes(bytes:)
     Answered(outcome:, ..) -> Outcome(outcome:)
-    Socket(PeerClosed) -> Otherwise(Effects([Stop]))
+    OwnEvent(PeerClosed) -> Otherwise(Effects([Stop]))
     Stopping(..) -> Otherwise(Effects(list.append(stopping(), [Stop])))
-    Socket(ReadFailed(failure:)) | Socket(WriteFailed(failure:)) ->
+    OwnEvent(ReadFailed(failure:)) | OwnEvent(WriteFailed(failure:)) ->
       ends(
         LogWarning,
         "the socket failed (" <> step.describe_socket_failure(failure) <> ")",
       )
-    AnsweredLate(..) -> Otherwise(Effects([]))
-    Started | Woken(..) | Asked(..) | step.WatchEnded(..) | TimerFired(..) ->
+    Started | Woken(..) | step.WatchEnded(..) | TimerFired(..) ->
       ends(
         LogError,
         "a connection rule took an input a connection is never given",
@@ -242,13 +241,17 @@ pub fn hear(
 /// What taking one request or frame, or one answer, decided.
 pub type Handled(session) {
   /// Go on to the next request or frame in the bytes.
-  Continue(session: session, effects: List(Effect(Nil)))
+  Continue(session: session, effects: List(ConnectionEffect(Nil)))
   /// Carry out the effects, then ask; what follows in the bytes waits.
-  Asking(session: session, effects: List(Effect(Nil)), ask: step.Ask(Request))
+  Asking(
+    session: session,
+    effects: List(ConnectionEffect(Nil)),
+    ask: step.Ask(Request),
+  )
   /// Carry out the effects, then take no frame until another input. The
   /// effects of a rule that ends the connection hold `Stop`; one that waits for
   /// a timer or a process holds none.
-  Done(session: session, effects: List(Effect(Nil)))
+  Done(session: session, effects: List(ConnectionEffect(Nil)))
 }
 
 /// How a rule takes what the client sent: the callbacks `drive` and `settle`
@@ -279,8 +282,8 @@ pub type Flow(session, item, error, state) {
 pub fn drive(
   session session: session,
   flow flow: Flow(session, item, error, state),
-  carried carried: List(Effect(Nil)),
-) -> #(state, Step(Nil, Request)) {
+  carried carried: List(ConnectionEffect(Nil)),
+) -> #(state, ConnectionStep(Nil, Request)) {
   case flow.take(flow.pending(session)) {
     Error(error) ->
       settle(handled: flow.refused(session, error), flow:, carried:)
@@ -297,8 +300,8 @@ pub fn drive(
 pub fn settle(
   handled handled: Handled(session),
   flow flow: Flow(session, item, error, state),
-  carried carried: List(Effect(Nil)),
-) -> #(state, Step(Nil, Request)) {
+  carried carried: List(ConnectionEffect(Nil)),
+) -> #(state, ConnectionStep(Nil, Request)) {
   case handled {
     Continue(session:, effects:) ->
       drive(session:, flow:, carried: list.fold(effects, carried, list.prepend))
@@ -314,9 +317,9 @@ pub fn settle(
 }
 
 fn in_order(
-  carried carried: List(Effect(Nil)),
-  then effects: List(Effect(Nil)),
-) -> List(Effect(Nil)) {
+  carried carried: List(ConnectionEffect(Nil)),
+  then effects: List(ConnectionEffect(Nil)),
+) -> List(ConnectionEffect(Nil)) {
   list.append(list.reverse(carried), effects)
 }
 
@@ -386,7 +389,8 @@ pub fn open(
     Settled(unhandled(session:, about:, server:, message_id:, level: LogWarning))
   }
   case network_message.handle(frame: whole) {
-    network_message.Answer(bytes:) -> Settled(Continue(session, [Write(bytes)]))
+    network_message.Answer(bytes:) ->
+      Settled(Continue(session, [OwnEffect(Write(bytes))]))
     network_message.Accepted -> Settled(Continue(session, []))
     network_message.Malformed(message_id:, ..) ->
       ends(

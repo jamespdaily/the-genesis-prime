@@ -19,24 +19,22 @@
 //// ```
 //// 'a' ask 0 0 deadline    an ask is made, written with the step's effects
 //// 'r' ask code n now      the ask's outcome came back
-//// 'l' ask 0 0 now         the ask's answer came late
 //// 's' 0 0 0 deadline      the server is stopping
 //// ```
 ////
-//// The rule stops when the client closes, and when the server stops once no
-//// answer is still due.
+//// The rule stops when the client closes and when the server stops.
 
 import gate_rule
 import genesis_prime/step.{
-  type Effect, type Input, type Outcome, type Rule, type Step, Accepted,
-  Answered, AnsweredLate, Ask, AskId, Effects, EffectsThenAsk, EndedBeforeAnswer,
-  Input, Log, LogLine, LogWarning, NoAnswerInTime, NotRunning, PeerClosed, Read,
-  ReadFailed, Rule, Socket, Stop, StoppedWaiting, Stopping, Write, WriteFailed,
+  type ConnectionEffect, type ConnectionInput, type ConnectionRule,
+  type ConnectionStep, type Outcome, Accepted, Answered, Ask, AskId, Effects,
+  EffectsThenAsk, EndedBeforeAnswer, Input, Log, LogLine, LogWarning,
+  NoAnswerInTime, NotRunning, OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed,
+  Rule, Stop, StoppedWaiting, Stopping, Write, WriteFailed,
 }
 import genesis_prime/store
 import gleam/int
 import gleam/list
-import gleam/set.{type Set}
 
 /// What the rule asks, each naming the process it asks.
 pub type Request {
@@ -50,10 +48,9 @@ pub type Answer {
   FromStore(store.Answer)
 }
 
-/// The commands not yet run, the next ask's number, the asks whose answer may
-/// still come late, and whether the server is stopping.
+/// The commands not yet run and the next ask's number.
 pub type State {
-  State(pending: BitArray, next_ask: Int, late: Set(Int), stopping: Bool)
+  State(pending: BitArray, next_ask: Int)
 }
 
 /// The letters of the commands.
@@ -78,8 +75,6 @@ pub const asked = 0x61
 
 pub const outcome = 0x72
 
-pub const late = 0x6C
-
 pub const stopping = 0x73
 
 /// The code of a record whose outcome is each of these.
@@ -102,86 +97,64 @@ pub const code_no_such_account = 8
 pub const code_unavailable = 9
 
 /// The rule as its shell runs it.
-pub fn rule() -> Rule(Nil, State, Nil, Answer, Nil, Request) {
+pub fn rule() -> ConnectionRule(Nil, State, Nil, Answer, Nil, Request) {
   Rule(name: "asking_rule", settings: Nil, new:, step:)
 }
 
 /// The rule's first state.
 pub fn new(_settings: Nil) -> State {
-  State(pending: <<>>, next_ask: 1, late: set.new(), stopping: False)
+  State(pending: <<>>, next_ask: 1)
 }
 
 /// One input in, the new state and what the shell must do out.
 pub fn step(
   state state: State,
-  input input: Input(Nil, Answer),
-) -> #(State, Step(Nil, Request)) {
+  input input: ConnectionInput(Nil, Answer),
+) -> #(State, ConnectionStep(Nil, Request)) {
   let Input(now:, event:) = input
   case event {
-    Socket(Accepted(..)) -> #(state, Effects([]))
-    Socket(Read(bytes:)) ->
+    OwnEvent(Accepted(..)) -> #(state, Effects([]))
+    OwnEvent(Read(bytes:)) ->
       run(
         state: State(..state, pending: <<state.pending:bits, bytes:bits>>),
         now:,
         written: [],
       )
-    Socket(PeerClosed) -> #(state, Effects([Stop]))
-    Socket(ReadFailed(..)) | Socket(WriteFailed(..)) -> #(
+    OwnEvent(PeerClosed) -> #(state, Effects([Stop]))
+    OwnEvent(ReadFailed(..)) | OwnEvent(WriteFailed(..)) -> #(
       state,
       Effects([warn("the socket failed"), Stop]),
     )
     Answered(ask: AskId(number), outcome: result) -> {
       let #(code, extra) = coded(result)
-      let state = case result {
-        NoAnswerInTime | StoppedWaiting ->
-          State(..state, late: set.insert(state.late, number))
-        step.Answer(..) | NotRunning | EndedBeforeAnswer -> state
-      }
       run(state:, now:, written: [
-        Write(record(
-          letter: outcome,
-          number:,
-          code:,
-          extra:,
-          milliseconds: now.monotonic_ms,
-        )),
+        OwnEffect(
+          Write(record(
+            letter: outcome,
+            number:,
+            code:,
+            extra:,
+            milliseconds: now.monotonic_ms,
+          )),
+        ),
       ])
     }
-    AnsweredLate(ask: AskId(number)) -> {
-      let state = State(..state, late: set.delete(state.late, number))
-      let written =
-        Write(record(
-          letter: late,
-          number:,
-          code: 0,
-          extra: 0,
-          milliseconds: now.monotonic_ms,
-        ))
-      case state.stopping && set.is_empty(state.late) {
-        True -> #(state, Effects([written, Stop]))
-        False -> #(state, Effects([written]))
-      }
-    }
-    Stopping(deadline_ms:) -> {
-      let state = State(..state, stopping: True)
-      let written =
-        Write(record(
-          letter: stopping,
-          number: 0,
-          code: 0,
-          extra: 0,
-          milliseconds: deadline_ms,
-        ))
-      case set.is_empty(state.late) {
-        True -> #(state, Effects([written, Stop]))
-        False -> #(state, Effects([written]))
-      }
-    }
-    step.Started
-    | step.Woken(..)
-    | step.Asked(..)
-    | step.WatchEnded(..)
-    | step.TimerFired(..) -> #(
+    Stopping(deadline_ms:) -> #(
+      state,
+      Effects([
+        OwnEffect(
+          Write(record(
+            letter: stopping,
+            number: 0,
+            code: 0,
+            extra: 0,
+            milliseconds: deadline_ms,
+          )),
+        ),
+        Stop,
+      ]),
+    )
+    step.Started | step.Woken(..) | step.WatchEnded(..) | step.TimerFired(..) -> #(
       state,
       Effects([warn("an input a connection does not take"), Stop]),
     )
@@ -193,19 +166,21 @@ pub fn step(
 fn run(
   state state: State,
   now now: step.Now,
-  written written: List(Effect(Nil)),
-) -> #(State, Step(Nil, Request)) {
+  written written: List(ConnectionEffect(Nil)),
+) -> #(State, ConnectionStep(Nil, Request)) {
   case state.pending {
     <<letter, n, wait:16, rest:bytes>> ->
       case letter {
         _ if letter == ping_command ->
           run(state: State(..state, pending: rest), now:, written: [
-            Write(<<0x70, n>>),
+            OwnEffect(Write(<<0x70, n>>)),
             ..written
           ])
         _ if letter == stop_then_write_command -> #(
           State(..state, pending: rest),
-          Effects(list.reverse([Write(<<0x71, n>>), Stop, ..written])),
+          Effects(
+            list.reverse([OwnEffect(Write(<<0x71, n>>)), Stop, ..written]),
+          ),
         )
         _ ->
           case request_for(letter, n) {
@@ -239,24 +214,26 @@ fn request_for(letter: Int, n: Int) -> Result(Request, Nil) {
 fn ask(
   state state: State,
   now now: step.Now,
-  written written: List(Effect(Nil)),
+  written written: List(ConnectionEffect(Nil)),
   rest rest: BitArray,
   request request: Request,
   wait wait: Int,
-) -> #(State, Step(Nil, Request)) {
+) -> #(State, ConnectionStep(Nil, Request)) {
   let number = state.next_ask
   let deadline = now.monotonic_ms + wait
   #(
-    State(..state, pending: rest, next_ask: number + 1),
+    State(pending: rest, next_ask: number + 1),
     EffectsThenAsk(
       effects: list.reverse([
-        Write(record(
-          letter: asked,
-          number:,
-          code: 0,
-          extra: 0,
-          milliseconds: deadline,
-        )),
+        OwnEffect(
+          Write(record(
+            letter: asked,
+            number:,
+            code: 0,
+            extra: 0,
+            milliseconds: deadline,
+          )),
+        ),
         ..written
       ]),
       ask: Ask(ask: AskId(number), request:, deadline_ms: deadline),
@@ -298,6 +275,6 @@ fn record(
   <<letter, number, code, extra, milliseconds:64>>
 }
 
-fn warn(text: String) -> Effect(Nil) {
+fn warn(text: String) -> ConnectionEffect(Nil) {
   Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }

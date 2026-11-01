@@ -11,8 +11,8 @@
 import connection_rule_support as support
 import genesis_prime/sessions.{type State, Claim, Claimed, TakenOver}
 import genesis_prime/step.{
-  Asked, CallerId, Connection, ConnectionId, Effects, Reply, Send, Stopping,
-  Watch, WatchEnded, WatchId,
+  Asked, CallerId, Connection, ConnectionId, Effects, OwnEffect, OwnEvent, Reply,
+  Send, Stopping, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{AccountId}
 import owned_test
@@ -29,14 +29,17 @@ fn ask(
   state state: State,
   caller caller: Int,
   message message: sessions.Message,
-) -> #(State, step.Step(sessions.Outgoing, Nil)) {
-  sessions.step(state, support.input(Asked(caller: CallerId(caller), message:)))
+) -> #(State, step.ServiceStep(sessions.Outgoing)) {
+  sessions.step(
+    state,
+    support.input(OwnEvent(Asked(caller: CallerId(caller), message:))),
+  )
 }
 
 fn ended(
   state state: State,
   watch watch: Int,
-) -> #(State, step.Step(sessions.Outgoing, Nil)) {
+) -> #(State, step.ServiceStep(sessions.Outgoing)) {
   sessions.step(state, support.input(WatchEnded(watch: WatchId(watch))))
 }
 
@@ -51,7 +54,7 @@ pub fn a_first_claim_takes_the_slot_answers_claimed_and_watches_the_claimer_test
   assert taken
     == Effects([
       Watch(watch: WatchId(1), target: Connection(first)),
-      Reply(CallerId(1), Claimed),
+      OwnEffect(Reply(CallerId(1), Claimed)),
     ])
     as "the claimer is watched under a new watch and answered; nobody is sent anything"
 }
@@ -70,7 +73,7 @@ pub fn a_second_claim_for_the_same_account_answers_claimed_sends_taken_over_to_t
     == Effects([
       Watch(watch: WatchId(2), target: Connection(second)),
       Send(to: Connection(first), message: TakenOver),
-      Reply(CallerId(2), Claimed),
+      OwnEffect(Reply(CallerId(2), Claimed)),
     ])
     as "the new holder is watched, the old one is told, and the claimer is answered, in the order of the sequence in the rule's doc comment"
 }
@@ -85,7 +88,7 @@ pub fn a_claim_by_the_holder_answers_claimed_and_changes_nothing_test() -> Nil {
     )
   let #(state, taken) =
     ask(state:, caller: 2, message: Claim(account:, connection: first))
-  assert taken == Effects([Reply(CallerId(2), Claimed)])
+  assert taken == Effects([OwnEffect(Reply(CallerId(2), Claimed))])
     as "no new watch and nobody told"
   // The slot is still the first connection's: a claim by another takes it from
   // the first, under the second watch the rule has opened.
@@ -95,7 +98,7 @@ pub fn a_claim_by_the_holder_answers_claimed_and_changes_nothing_test() -> Nil {
     == Effects([
       Watch(watch: WatchId(2), target: Connection(second)),
       Send(to: Connection(first), message: TakenOver),
-      Reply(CallerId(3), Claimed),
+      OwnEffect(Reply(CallerId(3), Claimed)),
     ])
 }
 
@@ -116,7 +119,7 @@ pub fn claims_for_different_accounts_do_not_touch_each_other_test() -> Nil {
   assert taken
     == Effects([
       Watch(watch: WatchId(2), target: Connection(second)),
-      Reply(CallerId(2), Claimed),
+      OwnEffect(Reply(CallerId(2), Claimed)),
     ])
     as "another account's slot is free"
 }
@@ -136,7 +139,7 @@ pub fn a_holders_end_frees_its_slot_test() -> Nil {
   assert taken
     == Effects([
       Watch(watch: WatchId(2), target: Connection(second)),
-      Reply(CallerId(2), Claimed),
+      OwnEffect(Reply(CallerId(2), Claimed)),
     ])
     as "the slot is free, so no one is sent TakenOver"
 }
@@ -160,7 +163,7 @@ pub fn an_old_holders_end_after_a_takeover_frees_nothing_test() -> Nil {
     == Effects([
       Watch(watch: WatchId(3), target: Connection(third)),
       Send(to: Connection(second), message: TakenOver),
-      Reply(CallerId(3), Claimed),
+      OwnEffect(Reply(CallerId(3), Claimed)),
     ])
     as "the slot still names the second connection, which is the one told"
 }
@@ -184,12 +187,12 @@ pub fn a_restarted_sessions_rebuilds_its_slots_from_the_claims_that_arrive_test(
   assert first_claim
     == Effects([
       Watch(watch: WatchId(1), target: Connection(first)),
-      Reply(CallerId(1), Claimed),
+      OwnEffect(Reply(CallerId(1), Claimed)),
     ])
   assert second_claim
     == Effects([
       Watch(watch: WatchId(2), target: Connection(second)),
-      Reply(CallerId(2), Claimed),
+      OwnEffect(Reply(CallerId(2), Claimed)),
     ])
     as "no one is told TakenOver: the slots are of different accounts"
   // The slots now match the living connections: a third login to the first
@@ -200,7 +203,7 @@ pub fn a_restarted_sessions_rebuilds_its_slots_from_the_claims_that_arrive_test(
     == Effects([
       Watch(watch: WatchId(3), target: Connection(third)),
       Send(to: Connection(first), message: TakenOver),
-      Reply(CallerId(3), Claimed),
+      OwnEffect(Reply(CallerId(3), Claimed)),
     ])
 }
 
@@ -213,8 +216,8 @@ fn older_and_newer_claim(
   older_first older_first: Bool,
 ) -> #(
   State,
-  step.Step(sessions.Outgoing, Nil),
-  step.Step(sessions.Outgoing, Nil),
+  step.ServiceStep(sessions.Outgoing),
+  step.ServiceStep(sessions.Outgoing),
 ) {
   let older = Claim(account:, connection: first)
   let newer = Claim(account:, connection: second)
@@ -234,14 +237,14 @@ pub fn after_a_restart_the_newer_login_keeps_the_slot_when_the_older_claims_firs
   assert older
     == Effects([
       Watch(watch: WatchId(1), target: Connection(first)),
-      Reply(CallerId(1), Claimed),
+      OwnEffect(Reply(CallerId(1), Claimed)),
     ])
     as "the older connection takes the empty slot"
   assert newer
     == Effects([
       Watch(watch: WatchId(2), target: Connection(second)),
       Send(to: Connection(first), message: TakenOver),
-      Reply(CallerId(2), Claimed),
+      OwnEffect(Reply(CallerId(2), Claimed)),
     ])
     as "the newer login's higher id takes the slot and the older holder is told"
   let #(_, taken) =
@@ -250,7 +253,7 @@ pub fn after_a_restart_the_newer_login_keeps_the_slot_when_the_older_claims_firs
     == Effects([
       Watch(watch: WatchId(3), target: Connection(third)),
       Send(to: Connection(second), message: TakenOver),
-      Reply(CallerId(3), Claimed),
+      OwnEffect(Reply(CallerId(3), Claimed)),
     ])
     as "the slot names the second connection"
 }
@@ -262,9 +265,9 @@ pub fn after_a_restart_the_newer_login_keeps_the_slot_when_it_claims_first_test(
   assert newer
     == Effects([
       Watch(watch: WatchId(1), target: Connection(second)),
-      Reply(CallerId(1), Claimed),
+      OwnEffect(Reply(CallerId(1), Claimed)),
     ])
-  assert older == Effects([Reply(CallerId(2), TakenOver)])
+  assert older == Effects([OwnEffect(Reply(CallerId(2), TakenOver))])
     as "the older connection is answered TakenOver; no watch, and the holder is told nothing"
   let #(_, taken) =
     ask(state:, caller: 3, message: Claim(account:, connection: third))
@@ -272,7 +275,7 @@ pub fn after_a_restart_the_newer_login_keeps_the_slot_when_it_claims_first_test(
     == Effects([
       Watch(watch: WatchId(2), target: Connection(third)),
       Send(to: Connection(second), message: TakenOver),
-      Reply(CallerId(3), Claimed),
+      OwnEffect(Reply(CallerId(3), Claimed)),
     ])
     as "the slot is still the second connection's, and the refused claim opened no watch, so the next is 2"
 }
@@ -290,7 +293,7 @@ pub fn after_two_restarts_the_newer_login_keeps_the_slot_when_the_older_claims_f
   assert taken
     == Effects([
       Watch(watch: WatchId(1), target: Connection(second)),
-      Reply(CallerId(1), Claimed),
+      OwnEffect(Reply(CallerId(1), Claimed)),
     ])
     as "the second Sessions gave the newer login the slot"
   let #(_, older, newer) =
@@ -298,14 +301,14 @@ pub fn after_two_restarts_the_newer_login_keeps_the_slot_when_the_older_claims_f
   assert older
     == Effects([
       Watch(watch: WatchId(1), target: Connection(first)),
-      Reply(CallerId(1), Claimed),
+      OwnEffect(Reply(CallerId(1), Claimed)),
     ])
     as "the third Sessions knows nothing of the second's slot"
   assert newer
     == Effects([
       Watch(watch: WatchId(2), target: Connection(second)),
       Send(to: Connection(first), message: TakenOver),
-      Reply(CallerId(2), Claimed),
+      OwnEffect(Reply(CallerId(2), Claimed)),
     ])
     as "the older connection's claim came first and the newer login still ends up holding the slot"
 }
@@ -318,9 +321,9 @@ pub fn after_two_restarts_the_newer_login_keeps_the_slot_when_it_claims_first_te
   assert newer
     == Effects([
       Watch(watch: WatchId(1), target: Connection(second)),
-      Reply(CallerId(1), Claimed),
+      OwnEffect(Reply(CallerId(1), Claimed)),
     ])
-  assert older == Effects([Reply(CallerId(2), TakenOver)])
+  assert older == Effects([OwnEffect(Reply(CallerId(2), TakenOver))])
     as "the older connection, which waited through both restarts, is refused"
 }
 
@@ -338,7 +341,7 @@ pub fn a_claim_after_the_holder_ended_takes_the_freed_slot_test() -> Nil {
   assert taken
     == Effects([
       Watch(watch: WatchId(2), target: Connection(first)),
-      Reply(CallerId(2), Claimed),
+      OwnEffect(Reply(CallerId(2), Claimed)),
     ])
     as "the holder's end freed the slot, so even a lower id takes it and no one is told"
 }

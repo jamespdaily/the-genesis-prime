@@ -13,7 +13,7 @@ import genesis_prime/connection/shell
 import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
-import genesis_prime/step.{type Rule, Rule}
+import genesis_prime/step.{type ConnectionRule, type ServiceRule, Rule}
 import genesis_prime/store/worker.{type Job}
 import gleam/erlang/atom
 import gleam/erlang/process.{type Name, type Pid}
@@ -45,7 +45,7 @@ pub type Record {
 /// what `with` adds to the same supervisor. A test with a recorder passes it in
 /// `recorder`.
 pub fn start(
-  rule rule: Rule(settings, state, Nil, answer, Nil, request),
+  rule rule: ConnectionRule(settings, state, Nil, answer, Nil, request),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
     Result(service.Sent, Nil),
   shutdown_ms shutdown_ms: Int,
@@ -66,7 +66,7 @@ pub fn start(
 /// Starts a listener as `start` does, whose connections also join `registry`
 /// when there is one, and find what their rule watches with `locate`.
 pub fn start_joined(
-  rule rule: Rule(settings, state, message, answer, Nil, request),
+  rule rule: ConnectionRule(settings, state, message, answer, Nil, request),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
     Result(service.Sent, Nil),
   shutdown_ms shutdown_ms: Int,
@@ -303,13 +303,11 @@ pub fn reaching(
 }
 
 /// The gate's rule as its shell runs it.
-fn gate_as_rule() -> Rule(
+fn gate_as_rule() -> ServiceRule(
   Nil,
   gate_rule.State,
   gate_rule.Message,
-  Nil,
   gate_rule.Answer,
-  Nil,
 ) {
   Rule(
     name: "gate_rule",

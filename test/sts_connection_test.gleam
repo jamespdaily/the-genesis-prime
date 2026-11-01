@@ -36,8 +36,9 @@ import genesis_prime/login/srp
 import genesis_prime/login/sts_connection
 import genesis_prime/login/sts_xml
 import genesis_prime/step.{
-  type Event, type Outcome, type Step, ConnectionId, Effects, EndedBeforeAnswer,
-  LogError, LogWarning, NoAnswerInTime, NotRunning, StoppedWaiting,
+  type ConnectionStep, type Event, type Outcome, type SocketEvent, ConnectionId,
+  Effects, EndedBeforeAnswer, LogError, LogWarning, NoAnswerInTime, NotRunning,
+  StoppedWaiting,
 }
 import genesis_prime/store.{
   AccountFound, AccountId, FindAccount, ForLogin, Login, NoSuchAccount,
@@ -68,8 +69,8 @@ type Session {
 
 fn feed(
   session: Session,
-  event: Event(Nil, Answer),
-) -> #(Session, Step(Nil, Request)) {
+  event: Event(Nil, Answer, SocketEvent),
+) -> #(Session, ConnectionStep(Nil, Request)) {
   let #(state, taken) = sts_connection.step(session.state, support.input(event))
   #(Session(..session, state:), taken)
 }
@@ -85,7 +86,7 @@ fn accepted(seed seed: BitArray) -> Session {
         receiving: None,
         sequence: 1,
       ),
-      step.Socket(step.Accepted(ConnectionId(1), support.peer, seed)),
+      step.OwnEvent(step.Accepted(ConnectionId(1), support.peer, seed)),
     )
   assert support.writes(taken) == [] as "the STS server waits for the client"
   session
@@ -95,10 +96,10 @@ fn accepted(seed seed: BitArray) -> Session {
 fn send_bytes(
   session: Session,
   plain: BitArray,
-) -> #(Session, Step(Nil, Request)) {
+) -> #(Session, ConnectionStep(Nil, Request)) {
   let #(sending, wire) =
     login_client.crypt_when_on(stream: session.sending, bytes: plain)
-  feed(Session(..session, sending:), step.Socket(step.Read(wire)))
+  feed(Session(..session, sending:), step.OwnEvent(step.Read(wire)))
 }
 
 /// A request with the next sequence number.
@@ -107,7 +108,7 @@ fn request(
   protocol protocol: String,
   command command: String,
   body body: sts_xml.Node,
-) -> #(Session, Step(Nil, Request)) {
+) -> #(Session, ConnectionStep(Nil, Request)) {
   send_bytes(
     Session(..session, sequence: session.sequence + 1),
     scripted_client.request(
@@ -125,7 +126,7 @@ fn one_way(
   command command: String,
   body body: String,
   protocol protocol: String,
-) -> #(Session, Step(Nil, Request)) {
+) -> #(Session, ConnectionStep(Nil, Request)) {
   send_bytes(
     session,
     scripted_client.request(sequence: None, protocol:, command:, body:),
@@ -148,7 +149,7 @@ fn connected(seed seed: BitArray) -> Session {
   session
 }
 
-fn login_start(session: Session) -> #(Session, Step(Nil, Request)) {
+fn login_start(session: Session) -> #(Session, ConnectionStep(Nil, Request)) {
   request(
     session:,
     protocol: "Auth",
@@ -162,16 +163,19 @@ fn login_start(session: Session) -> #(Session, Step(Nil, Request)) {
 
 fn answer(
   session session: Session,
-  taken taken: Step(Nil, Request),
+  taken taken: ConnectionStep(Nil, Request),
   outcome outcome: Outcome(Answer),
-) -> #(Session, Step(Nil, Request)) {
+) -> #(Session, ConnectionStep(Nil, Request)) {
   let assert Some(ask) = support.asked(taken) as "the taken ends in an ask"
   feed(session, step.Answered(ask: ask.ask, outcome:))
 }
 
 /// The bytes the taken writes, which must be one write, deciphered with the
 /// client's receiving stream when it is on.
-fn hear(session: Session, taken: Step(Nil, Request)) -> #(Session, BitArray) {
+fn hear(
+  session: Session,
+  taken: ConnectionStep(Nil, Request),
+) -> #(Session, BitArray) {
   let assert [written] = support.writes(taken)
     as "the taken writes exactly one reply"
   let #(receiving, plain) =
@@ -242,7 +246,7 @@ fn key_data_exchange(
 fn key_data_request(
   session: Session,
   exchange: Exchange,
-) -> #(Session, Step(Nil, Request)) {
+) -> #(Session, ConnectionStep(Nil, Request)) {
   request(
     session:,
     protocol: "Auth",
@@ -264,7 +268,7 @@ fn proven(seed seed: BitArray) -> #(Session, Exchange) {
 /// the server writes in plain text, before RC4 is on.
 fn proven_with_m2(
   seed seed: BitArray,
-) -> #(Session, Exchange, Step(Nil, Request), BitArray) {
+) -> #(Session, Exchange, ConnectionStep(Nil, Request), BitArray) {
   let #(session, exchange) =
     key_data_exchange(connected(seed:), password: vector.password)
   let #(session, taken) = key_data_request(session, exchange)
@@ -278,7 +282,7 @@ fn proven_with_m2(
   )
 }
 
-fn login_finish(session: Session) -> #(Session, Step(Nil, Request)) {
+fn login_finish(session: Session) -> #(Session, ConnectionStep(Nil, Request)) {
   request(
     session:,
     protocol: "Auth",
@@ -288,7 +292,7 @@ fn login_finish(session: Session) -> #(Session, Step(Nil, Request)) {
 }
 
 /// The game token the rule asks the hand-off to keep at LoginFinish.
-fn token_asked(taken: Step(Nil, Request)) -> guid.Guid {
+fn token_asked(taken: ConnectionStep(Nil, Request)) -> guid.Guid {
   let assert Some(ask) = support.asked(taken) as "LoginFinish asks the hand-off"
   let assert AskHandOff(Put(key: GameToken(token:), ..)) = ask.request
     as "the ask keeps a game token"
@@ -307,7 +311,9 @@ fn finished(seed seed: BitArray) -> #(Session, guid.Guid, Reply) {
   #(session, token, reply_of(bytes))
 }
 
-fn list_my_accounts(session: Session) -> #(Session, Step(Nil, Request)) {
+fn list_my_accounts(
+  session: Session,
+) -> #(Session, ConnectionStep(Nil, Request)) {
   request(
     session:,
     protocol: "GameAccount",
@@ -319,7 +325,9 @@ fn list_my_accounts(session: Session) -> #(Session, Step(Nil, Request)) {
   )
 }
 
-fn request_game_token(session: Session) -> #(Session, Step(Nil, Request)) {
+fn request_game_token(
+  session: Session,
+) -> #(Session, ConnectionStep(Nil, Request)) {
   request(
     session:,
     protocol: "Auth",

@@ -12,7 +12,14 @@
 ////   (`Send(to, message)`), not in the message;
 //// - `request`: what it asks another process, each value naming the process
 ////   it asks;
-//// - `answer`: what comes back from its asks.
+//// - `answer`: what comes back from its asks;
+//// - `own_input` and `own_effect`: the inputs and effects only its kind of
+////   process has. The inputs and effects every kind has are constructors of
+////   `Event` and `Effect`; the kind's own come in through `OwnEvent` and
+////   `OwnEffect`, so a shell of one kind is handed only the type it carries
+////   out, and a rule of another kind does not compile against it:
+////   - a connection: `SocketEvent` in, `SocketEffect` out;
+////   - a service: `ServiceEvent(message)` in, `ServiceEffect(outgoing)` out.
 ////
 //// No value here holds a function, a process id, a monitor or a subject:
 //// other processes are named by `Address`, watches, timers and asks by ids
@@ -26,14 +33,75 @@ import gleam/option.{type Option, None}
 /// module path and `settings` are made once at start; a recording's header
 /// holds both. This is the shell's view of a rule, so it holds functions; no
 /// type a rule takes or returns does.
-pub type Rule(settings, state, message, answer, outgoing, request) {
+pub type Rule(
+  settings,
+  state,
+  message,
+  answer,
+  outgoing,
+  request,
+  own_input,
+  own_effect,
+) {
   Rule(
     name: String,
     settings: settings,
     new: fn(settings) -> state,
-    step: fn(state, Input(message, answer)) -> #(state, Step(outgoing, request)),
+    step: fn(state, Input(message, answer, own_input)) ->
+      #(state, Step(outgoing, request, own_effect)),
   )
 }
+
+/// A connection's rule: the one kind with a socket, so its own inputs are
+/// `SocketEvent` and its own effects `SocketEffect`. The connection shell
+/// (genesis_prime/connection/shell) runs only this kind.
+pub type ConnectionRule(settings, state, message, answer, outgoing, request) =
+  Rule(
+    settings,
+    state,
+    message,
+    answer,
+    outgoing,
+    request,
+    SocketEvent,
+    SocketEffect,
+  )
+
+/// An input to a connection's rule.
+pub type ConnectionInput(message, answer) =
+  Input(message, answer, SocketEvent)
+
+/// What a connection's rule returns.
+pub type ConnectionStep(outgoing, request) =
+  Step(outgoing, request, SocketEffect)
+
+/// An effect in a connection's rule's step.
+pub type ConnectionEffect(outgoing) =
+  Effect(outgoing, SocketEffect)
+
+/// A service's rule: the one kind other processes ask, so its own inputs are
+/// `ServiceEvent` and its own effects `ServiceEffect`. It makes no asks and
+/// takes no answers. The service shell (genesis_prime/service/shell) runs only
+/// this kind.
+pub type ServiceRule(settings, state, message, outgoing) =
+  Rule(
+    settings,
+    state,
+    message,
+    Nil,
+    outgoing,
+    Nil,
+    ServiceEvent(message),
+    ServiceEffect(outgoing),
+  )
+
+/// An input to a service's rule.
+pub type ServiceInput(message) =
+  Input(message, Nil, ServiceEvent(message))
+
+/// What a service's rule returns.
+pub type ServiceStep(outgoing) =
+  Step(outgoing, Nil, ServiceEffect(outgoing))
 
 /// The time an input reached the shell, read once as the shell takes it, so
 /// every part of one step reads the same time.
@@ -50,22 +118,22 @@ pub type Now {
 }
 
 /// One input to a rule: what happened, and when.
-pub type Input(message, answer) {
-  Input(now: Now, event: Event(message, answer))
+pub type Input(message, answer, own) {
+  Input(now: Now, event: Event(message, answer, own))
 }
 
-/// What happened to the process.
-pub type Event(message, answer) {
+/// What happened to the process: an input every kind of process takes, or,
+/// in `OwnEvent`, one only its kind takes (`own` is `SocketEvent` for a
+/// connection and `ServiceEvent` for a service).
+pub type Event(message, answer, own) {
   /// A process with no socket started. It is the first input of such a
   /// process.
   Started
-  /// The connection's socket. `Accepted` is the first input of a connection.
-  Socket(event: SocketEvent)
+  /// What only this kind of process takes. For a connection, `Accepted` is
+  /// the first input.
+  OwnEvent(event: own)
   /// Another process sent the process a message.
   Woken(message: message)
-  /// Another process asked the process something; the rule answers it once,
-  /// with `Reply`.
-  Asked(caller: CallerId, message: message)
   /// A process the rule watched ended, or was not running when the watch
   /// began.
   WatchEnded(watch: WatchId)
@@ -73,14 +141,19 @@ pub type Event(message, answer) {
   TimerFired(timer: TimerId)
   /// The outcome of the ask that ended the rule's last step.
   Answered(ask: AskId, outcome: Outcome(answer))
-  /// An answer to an ask whose outcome was already `NoAnswerInTime`.
-  AnsweredLate(ask: AskId)
   /// The server is stopping. The process has until `deadline_ms` on the
   /// monotonic clock to finish, and is then stopped whatever its state.
   Stopping(deadline_ms: Int)
 }
 
-/// What happened to a connection's socket.
+/// What only a service takes.
+pub type ServiceEvent(message) {
+  /// Another process asked the process something; the rule answers it once,
+  /// with `Reply`.
+  Asked(caller: CallerId, message: message)
+}
+
+/// What only a connection takes: what happened to its socket.
 pub type SocketEvent {
   /// The connection's socket is the process's own. `seed` is 32 bytes from
   /// the operating system's strong random source, drawn once for the
@@ -127,28 +200,26 @@ pub type Peer {
 }
 
 /// What the shell does after the rule's step.
-pub type Step(outgoing, request) {
+pub type Step(outgoing, request, own) {
   /// Carry out the effects in order, then take the next input.
-  Effects(effects: List(Effect(outgoing)))
+  Effects(effects: List(Effect(outgoing, own)))
   /// Carry out the effects in order, then make the ask, and take no other
   /// input until its outcome comes back as `Answered`. Work the rule had not
   /// finished, such as the rest of a read's frames, stays in its state.
-  EffectsThenAsk(effects: List(Effect(outgoing)), ask: Ask(request))
+  EffectsThenAsk(effects: List(Effect(outgoing, own)), ask: Ask(request))
 }
 
-/// One thing the shell carries out.
-pub type Effect(outgoing) {
-  /// Write bytes to the connection's socket. A failed write stops the step's
-  /// remaining effects and comes back as `WriteFailed`.
-  Write(bytes: BitArray)
+/// One thing the shell carries out: an effect every kind of process has, or,
+/// in `OwnEffect`, one only its kind has (`own` is `SocketEffect` for a
+/// connection and `ServiceEffect` for a service).
+pub type Effect(outgoing, own) {
+  /// What only this kind of process carries out.
+  OwnEffect(effect: own)
   /// Send the process at `to` a message without waiting. The shell finds the
   /// process from the address (a connection through OTP's `pg`, by its id);
   /// a receiver that is not running drops the message, and a rule that must
   /// know watches the receiver.
   Send(to: Address, message: outgoing)
-  /// Answer an ask. An answer to a caller that has ended or stopped waiting
-  /// is dropped.
-  Reply(caller: CallerId, answer: outgoing)
   /// Start watching a process. Its end comes back as `WatchEnded`, once.
   Watch(watch: WatchId, target: Address)
   /// Stop watching. A `WatchEnded` for it already waiting is dropped.
@@ -162,6 +233,20 @@ pub type Effect(outgoing) {
   /// End the process normally once the step's other effects are carried
   /// out; a connection closes its socket first.
   Stop
+}
+
+/// What only a connection carries out.
+pub type SocketEffect {
+  /// Write bytes to the connection's socket. A failed write stops the step's
+  /// remaining effects and comes back as `WriteFailed`.
+  Write(bytes: BitArray)
+}
+
+/// What only a service carries out.
+pub type ServiceEffect(outgoing) {
+  /// Answer an ask. An answer to a caller that has ended or stopped waiting
+  /// is dropped.
+  Reply(caller: CallerId, answer: outgoing)
 }
 
 /// An ask of another process, answered once.
@@ -182,13 +267,13 @@ pub type Outcome(answer) {
   /// No process was running at the asked address; nothing was sent.
   NotRunning
   /// No answer came before the deadline. Nothing is known about whether
-  /// the asked process acted; an answer after it comes as `AnsweredLate`.
+  /// the asked process acted; an answer after it gives the rule no input.
   NoAnswerInTime
   /// The asked process ended before it answered.
   EndedBeforeAnswer
   /// The server began stopping, so the shell stopped waiting; `Stopping`
   /// follows once a step ends without an ask. Nothing is known about whether
-  /// the asked process acted; an answer after it comes as `AnsweredLate`.
+  /// the asked process acted; an answer after it gives the rule no input.
   StoppedWaiting
 }
 

@@ -40,7 +40,7 @@ import genesis_prime/message/client_message.{
   type ClientMessage, type ClientMessageError,
 }
 import genesis_prime/rule_recording.{type ReplayFailure, Taken}
-import genesis_prime/step.{Input, Socket}
+import genesis_prime/step.{type SocketEffect, type SocketEvent, Input, OwnEvent}
 import gleam/bit_array
 import gleam/bool
 import gleam/list
@@ -92,7 +92,10 @@ pub type Carried {
 /// Why a recording's client bytes did not read.
 pub type Failure {
   /// The file is not a rule recording.
-  NotARecording(recording: String, failure: ReplayFailure(Nil, Nil))
+  NotARecording(
+    recording: String,
+    failure: ReplayFailure(Nil, Nil, SocketEffect),
+  )
   /// The recording's client bytes did not read: `input` is the number of the
   /// input (from 0, the connection's first input being 0) whose bytes were
   /// being read.
@@ -166,7 +169,7 @@ pub fn read_recording(
   let inputs =
     list.index_fold(records, [], fn(found, record, input) {
       case record {
-        Taken(input: Input(event: Socket(step.Read(bytes:)), ..), ..) -> [
+        Taken(input: Input(event: OwnEvent(step.Read(bytes:)), ..), ..) -> [
           #(input, bytes),
           ..found
         ]
@@ -196,7 +199,14 @@ pub fn read_recording(
 /// them as a replay does, and its state holds the key made from the proof.
 fn receiving_after(
   records records: List(
-    rule_recording.Record(Nil, client_connection.Answer, Nil, Nil),
+    rule_recording.Record(
+      Nil,
+      client_connection.Answer,
+      Nil,
+      Nil,
+      SocketEvent,
+      SocketEffect,
+    ),
   ),
   settings settings: sts_connection.Settings,
   input input: Int,

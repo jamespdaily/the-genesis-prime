@@ -8,8 +8,8 @@ import genesis_prime/connection/network_message.{
 }
 import genesis_prime/message/server_hello.{type ServerHello}
 import genesis_prime/step.{
-  type Effect, type Input, type Step, Effects, Input, Log, LogLine, LogWarning,
-  Socket, Stop, Write,
+  type ConnectionEffect, type ConnectionInput, type ConnectionStep, Effects,
+  Input, Log, LogLine, LogWarning, OwnEffect, OwnEvent, Stop, Write,
 }
 import gleam/list
 
@@ -32,36 +32,41 @@ pub fn new(settings: Settings) -> State {
 /// One input in, the new state and what the shell must do out.
 pub fn step(
   state state: State,
-  input input: Input(Nil, Nil),
-) -> #(State, Step(Nil, Nil)) {
+  input input: ConnectionInput(Nil, Nil),
+) -> #(State, ConnectionStep(Nil, Nil)) {
   let Input(event:, ..) = input
   case event {
-    Socket(step.Accepted(..)) -> #(state, Effects([Write(hello_frame(state))]))
-    Socket(step.Read(bytes:)) -> read(state, <<state.pending:bits, bytes:bits>>)
-    Socket(step.PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
-    Socket(step.ReadFailed(..)) | Socket(step.WriteFailed(..)) -> #(
+    OwnEvent(step.Accepted(..)) -> #(
+      state,
+      Effects([OwnEffect(Write(hello_frame(state)))]),
+    )
+    OwnEvent(step.Read(bytes:)) ->
+      read(state, <<state.pending:bits, bytes:bits>>)
+    OwnEvent(step.PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
+    OwnEvent(step.ReadFailed(..)) | OwnEvent(step.WriteFailed(..)) -> #(
       state,
       Effects([warn("the socket failed"), Stop]),
     )
     step.Started
     | step.Woken(..)
-    | step.Asked(..)
     | step.WatchEnded(..)
     | step.TimerFired(..)
-    | step.Answered(..)
-    | step.AnsweredLate(..) -> #(
+    | step.Answered(..) -> #(
       state,
       Effects([warn("an input a connection does not take"), Stop]),
     )
   }
 }
 
-fn read(state: State, received: BitArray) -> #(State, Step(Nil, Nil)) {
+fn read(
+  state: State,
+  received: BitArray,
+) -> #(State, ConnectionStep(Nil, Nil)) {
   let #(frames, rest) = frame.split(received:)
   let answers =
     list.map(frames, fn(found) {
       case network_message.handle(frame: found) {
-        Answer(bytes:) -> [Write(bytes)]
+        Answer(bytes:) -> [OwnEffect(Write(bytes))]
         Accepted -> []
         NotNetwork -> [warn("a message the hello rule does not answer")]
         Malformed(..) -> [warn("a malformed network message"), Stop]
@@ -95,6 +100,6 @@ fn hello_frame(state: State) -> BitArray {
   bytes
 }
 
-fn warn(text: String) -> Effect(Nil) {
+fn warn(text: String) -> ConnectionEffect(Nil) {
   Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }

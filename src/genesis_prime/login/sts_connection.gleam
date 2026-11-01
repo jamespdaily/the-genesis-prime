@@ -68,8 +68,9 @@ import genesis_prime/login/sts_message.{
 }
 import genesis_prime/login/sts_wire
 import genesis_prime/step.{
-  type Effect, type Input, type Now, type Outcome, type Rule, type Step, Effects,
-  LogError, LogInfo, LogWarning, Rule, Stop, Write,
+  type ConnectionEffect, type ConnectionInput, type ConnectionRule,
+  type ConnectionStep, type Event, type Now, type Outcome, type SocketEvent,
+  Effects, LogError, LogInfo, LogWarning, OwnEffect, Rule, Stop, Write,
 }
 import genesis_prime/store.{
   type Account, AccountFound, FindAccount, ForLogin, ForSelect, ForWorld, Login,
@@ -168,7 +169,7 @@ const service_timeout = 42
 /// The rule as its connection shell runs it.
 pub fn rule(
   settings: Settings,
-) -> Rule(Settings, State, Nil, Answer, Nil, Request) {
+) -> ConnectionRule(Settings, State, Nil, Answer, Nil, Request) {
   Rule(name: rule_name, settings:, new:, step:)
 }
 
@@ -180,8 +181,8 @@ pub fn new(settings: Settings) -> State {
 /// One input in, the new state and what the shell must do out.
 pub fn step(
   state state: State,
-  input input: Input(Nil, Answer),
-) -> #(State, Step(Nil, Request)) {
+  input input: ConnectionInput(Nil, Answer),
+) -> #(State, ConnectionStep(Nil, Request)) {
   case state {
     NotAccepted(settings:) -> {
       case
@@ -213,8 +214,8 @@ pub fn step(
 fn connected(
   session session: Session,
   now now: Now,
-  event event: step.Event(Nil, Answer),
-) -> #(State, Step(Nil, Request)) {
+  event event: Event(Nil, Answer, SocketEvent),
+) -> #(State, ConnectionStep(Nil, Request)) {
   case
     client_connection.hear(event, about: about_of(session), stopping: fn() {
       []
@@ -241,7 +242,7 @@ fn read(
   session session: Session,
   now now: Now,
   bytes bytes: BitArray,
-) -> #(State, Step(Nil, Request)) {
+) -> #(State, ConnectionStep(Nil, Request)) {
   let #(status, plain) = receive(session.status, bytes)
   let session =
     Session(..session, status:, pending: <<session.pending:bits, plain:bits>>)
@@ -381,7 +382,7 @@ fn transact(
             ]),
           ),
         )
-      Continue(Session(..session, status:), [Write(written)])
+      Continue(Session(..session, status:), [OwnEffect(Write(written))])
     }
     Proven(account:, ciphers:, stage: AwaitingTokenRequest(token:)),
       RequestGameToken(..)
@@ -397,7 +398,7 @@ fn transact(
           )),
         )
       Continue(Session(..session, status:), [
-        Write(written),
+        OwnEffect(Write(written)),
         log(
           session:,
           level: LogInfo,
@@ -520,11 +521,13 @@ fn prove(
               ),
             ),
             [
-              Write(
-                sts_message.encode(sts_message.KeyDataAnswer(
-                  sequence:,
-                  key_data: server_key_data,
-                )),
+              OwnEffect(
+                Write(
+                  sts_message.encode(sts_message.KeyDataAnswer(
+                    sequence:,
+                    key_data: server_key_data,
+                  )),
+                ),
               ),
             ],
           )
@@ -537,7 +540,7 @@ fn prove(
       }
     Error(srp.ProofRefused) ->
       Continue(Session(..session, status: AwaitingLoginStart), [
-        Write(refusal(sequence, invalid_credentials)),
+        OwnEffect(Write(refusal(sequence, invalid_credentials))),
       ])
     Error(srp.KeyDataMalformed) ->
       end_for(session, "the client's KeyData is not a length, A, 32 and M1")
@@ -600,15 +603,17 @@ fn found(
       Continue(
         Session(..session, link:, status: AwaitingProof(account:, challenge:)),
         [
-          Write(
-            sts_message.encode(sts_message.KeyDataAnswer(sequence:, key_data:)),
+          OwnEffect(
+            Write(
+              sts_message.encode(sts_message.KeyDataAnswer(sequence:, key_data:)),
+            ),
           ),
         ],
       )
     }
     step.Answer(FromStore(ForLogin(NoSuchAccount))) ->
       Continue(Session(..session, status: AwaitingLoginStart), [
-        Write(refusal(sequence, invalid_credentials)),
+        OwnEffect(Write(refusal(sequence, invalid_credentials))),
       ])
     step.Answer(FromStore(Unavailable)) ->
       timed_out(session:, sequence:, what: "the store was unavailable")
@@ -656,7 +661,7 @@ fn timed_out(
         <> ": "
         <> what,
     ),
-    Write(refusal(sequence, service_timeout)),
+    OwnEffect(Write(refusal(sequence, service_timeout))),
   ])
 }
 
@@ -688,7 +693,7 @@ fn kept(
           <> ": "
           <> what,
       ),
-      Write(written),
+      OwnEffect(Write(written)),
     ])
   }
   case outcome {
@@ -704,7 +709,7 @@ fn kept(
             user_name: account.login_name,
           )),
         )
-      Continue(Session(..session, status:), [Write(written)])
+      Continue(Session(..session, status:), [OwnEffect(Write(written))])
     }
     step.Answer(FromHandOff(hand_off.AlreadyHeld)) ->
       timed_out("the hand-off already held the game token")
@@ -760,7 +765,7 @@ fn log(
   session session: Session,
   level level: step.LogLevel,
   text text: String,
-) -> Effect(Nil) {
+) -> ConnectionEffect(Nil) {
   client_connection.log(about: about_of(session), level:, text:)
 }
 

@@ -40,9 +40,9 @@
 ////
 //// - **CallerId.** The shell numbers the calls it takes from 1, in the order
 ////   they arrive, so a recording names each caller with no process id.
-//// - **A reply nobody waits for.** An answer after the asker's deadline
-////   reaches it as `AnsweredLate`; one to an asker that has ended is lost.
-////   The service never knows either way.
+////   reaches the asker's shell, which drops it with no input to the asker's
+////   rule (genesis_prime/connection/shell); one to an asker that has ended is
+////   lost. The service never knows either way.
 //// - **A crash.** The rule's crash ends the process; the supervisor restarts
 ////   it from the rule's `new`, so the service's state is lost. An asker
 ////   waiting on it gets `EndedBeforeAnswer`; one asking while it restarts gets
@@ -79,15 +79,19 @@
 ////   service has no watches, and a rule that needs one opens it again from
 ////   what it learns of its processes (Sessions has none to open: the
 ////   connections claim again).
-//// - **Effects not carried out.** A service writes to no socket and makes no
-////   ask. `Write`, `StartTimer`, `CancelTimer` and a step that ends in an ask
-////   end the process with an error log naming them.
+//// - **Effects not carried out.** A service starts no timer and makes no ask.
+////   `StartTimer`, `CancelTimer` and a step that ends in an ask end the
+////   process with an error log naming them. A service has no `Write`: its own
+////   effect type is `ServiceEffect`, so a rule that writes to a socket does not
+////   compile against this shell.
 
+/// - **A reply nobody waits for.** An answer after the asker's deadline
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/service.{type Call, type Reach, Call}
 import genesis_prime/step.{
-  type Event, type Rule, type WatchId, Asked, CallerId, Effects, EffectsThenAsk,
-  Started, Stopping, WatchEnded,
+  type Effect, type Event, type ServiceEffect, type ServiceEvent,
+  type ServiceRule, type WatchId, Asked, CallerId, Effects, EffectsThenAsk,
+  OwnEffect, OwnEvent, Reply, Started, Stopping, WatchEnded,
 }
 import genesis_prime/step/runtime.{Shutdown}
 import genesis_prime/step/watch.{type Watches}
@@ -103,7 +107,7 @@ pub type Settings(settings, state, message, outgoing) {
   Settings(
     /// The rule. A service takes no answers and makes no asks, so those
     /// types are `Nil`; `outgoing` is what it answers with.
-    rule: Rule(settings, state, message, Nil, outgoing, Nil),
+    rule: ServiceRule(settings, state, message, outgoing),
     /// How it finds the processes its rule watches and sends to.
     reach: Reach(outgoing),
     /// How long it has to stop once the supervisor stops it; the child's
@@ -257,7 +261,7 @@ fn handle(
       actor.continue(take(
         running:,
         now: runtime.now(),
-        event: Asked(caller: CallerId(number), message:),
+        event: OwnEvent(Asked(caller: CallerId(number), message:)),
       ))
     }
     Ended(down:) -> actor.continue(watch_ended(running:, down:))
@@ -285,7 +289,7 @@ fn handle(
 fn take(
   running running: Running(settings, state, message, outgoing),
   now now: step.Now,
-  event event: Event(message, Nil),
+  event event: Event(message, Nil, ServiceEvent(message)),
 ) -> Running(settings, state, message, outgoing) {
   let #(state, step, writer) = case
     file.fold(
@@ -319,7 +323,7 @@ fn take(
 /// step: the effects after it are carried out, then the process ends.
 fn carry(
   running running: Running(settings, state, message, outgoing),
-  effects effects: List(step.Effect(outgoing)),
+  effects effects: List(Effect(outgoing, ServiceEffect(outgoing))),
   ending ending: Bool,
 ) -> Running(settings, state, message, outgoing) {
   case effects {
@@ -330,7 +334,7 @@ fn carry(
       }
     [effect, ..later] ->
       case effect {
-        step.Reply(caller: CallerId(number), answer:) ->
+        OwnEffect(Reply(caller: CallerId(number), answer:)) ->
           case dict.get(running.callers, number) {
             Ok(reply) -> {
               reply(answer)
@@ -351,7 +355,6 @@ fn carry(
           carry(running:, effects: later, ending:)
         }
         step.Stop -> carry(running:, effects: later, ending: True)
-        step.Write(..) -> refused("Write")
         step.Send(to:, message:) ->
           carry(
             running: deliver(running:, to:, message:),

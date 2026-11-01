@@ -96,7 +96,7 @@ import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/service.{type Call, type Locate, type Reach, type Sent}
 import genesis_prime/service/shell as service_shell
 import genesis_prime/sessions
-import genesis_prime/step.{type Rule}
+import genesis_prime/step.{type ConnectionRule}
 import genesis_prime/store/worker.{type Job}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id
@@ -443,7 +443,7 @@ fn serve(
   settings settings: Settings,
   served served: Served(rule_settings),
   rule rule: fn(rule_settings) ->
-    Rule(rule_settings, state, message, Answer, Nil, Request),
+    ConnectionRule(rule_settings, state, message, Answer, Nil, Request),
   directory directory: Directory,
   registry registry: Option(Registry),
 ) -> supervisor.Builder {

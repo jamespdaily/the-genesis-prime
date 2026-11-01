@@ -38,7 +38,7 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/client_message
 import genesis_prime/message/ping.{Ping}
 import genesis_prime/rule_recording.{End, Header, Taken}
-import genesis_prime/step.{Effects, Input, Now, Socket}
+import genesis_prime/step.{type SocketEvent, Effects, Input, Now, OwnEvent}
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -587,12 +587,26 @@ fn recording_with_a_changed_byte(
 
 /// The record with the byte at `offset` of its socket read inverted.
 fn with_a_changed_byte(
-  record record: rule_recording.Record(message, answer, outgoing, request),
+  record record: rule_recording.Record(
+    message,
+    answer,
+    outgoing,
+    request,
+    SocketEvent,
+    own_effect,
+  ),
   offset offset: Int,
-) -> rule_recording.Record(message, answer, outgoing, request) {
+) -> rule_recording.Record(
+  message,
+  answer,
+  outgoing,
+  request,
+  SocketEvent,
+  own_effect,
+) {
   case record {
     Taken(
-      input: Input(now:, event: Socket(step.Read(bytes: read))),
+      input: Input(now:, event: OwnEvent(step.Read(bytes: read))),
       step: recorded,
     ) -> {
       let assert Ok(before) = bit_array.slice(read, 0, offset)
@@ -609,7 +623,7 @@ fn with_a_changed_byte(
       Taken(
         input: Input(
           now:,
-          event: Socket(
+          event: OwnEvent(
             step.Read(bytes: <<
               before:bits,
               int.bitwise_exclusive_or(byte, 0xFF),
@@ -653,7 +667,7 @@ fn plant(
       rule_recording.encode(Taken(
         input: Input(
           now: Now(monotonic_ms: 0, filetime: 0),
-          event: Socket(step.Read(bytes:)),
+          event: OwnEvent(step.Read(bytes:)),
         ),
         step: Effects([]),
       ))

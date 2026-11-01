@@ -26,8 +26,9 @@ import genesis_prime/rule_recording/file
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{
-  type Address, type Event, Asked, CallerId, Connection, ConnectionId, Effects,
-  Input, Reply, Sessions, Started, Stop, Stopping, WatchEnded, WatchId,
+  type Address, type Event, type ServiceEffect, type ServiceEvent, Asked,
+  CallerId, Connection, ConnectionId, Effects, Input, OwnEffect, OwnEvent, Reply,
+  Sessions, Started, Stop, Stopping, WatchEnded, WatchId,
 }
 import genesis_prime/store.{AccountId}
 import gleam/erlang/process
@@ -107,14 +108,20 @@ pub fn an_ask_reaches_the_rule_as_asked_and_its_reply_reaches_the_asker_test() -
     Recorded(..),
     Recorded(
       input: Input(
-        event: Asked(caller: CallerId(1), message: Put(lifetime_ms: 60_000, ..)),
+        event: OwnEvent(Asked(
+          caller: CallerId(1),
+          message: Put(lifetime_ms: 60_000, ..),
+        )),
         ..,
       ),
-      step: Effects([Reply(CallerId(1), Kept)]),
+      step: Effects([OwnEffect(Reply(CallerId(1), Kept))]),
     ),
     Recorded(
-      input: Input(event: Asked(caller: CallerId(2), message: Take(..)), ..),
-      step: Effects([Reply(CallerId(2), Taken(..))]),
+      input: Input(
+        event: OwnEvent(Asked(caller: CallerId(2), message: Take(..))),
+        ..,
+      ),
+      step: Effects([OwnEffect(Reply(CallerId(2), Taken(..)))]),
     ),
     ..
   ] = recorded(folder)
@@ -363,9 +370,12 @@ pub fn a_watch_of_a_target_no_process_holds_ends_as_the_next_input_before_a_mess
     )
     == [
       Started,
-      Asked(caller: CallerId(1), message: gate_rule.WatchAddress(1, Sessions)),
+      OwnEvent(Asked(
+        caller: CallerId(1),
+        message: gate_rule.WatchAddress(1, Sessions),
+      )),
       WatchEnded(watch: WatchId(1)),
-      Asked(caller: CallerId(2), message: gate_rule.Echo(2)),
+      OwnEvent(Asked(caller: CallerId(2), message: gate_rule.Echo(2))),
     ]
     as "the rule's inputs are X, then the end of X's watch, then Y: the end is the next input after the step, before the mailbox is read"
 }
@@ -378,10 +388,13 @@ pub fn two_watches_of_targets_no_process_holds_end_in_the_order_opened_before_th
     )
     == [
       Started,
-      Asked(caller: CallerId(1), message: gate_rule.WatchEach([1, 2], Sessions)),
+      OwnEvent(Asked(
+        caller: CallerId(1),
+        message: gate_rule.WatchEach([1, 2], Sessions),
+      )),
       WatchEnded(watch: WatchId(1)),
       WatchEnded(watch: WatchId(2)),
-      Asked(caller: CallerId(2), message: gate_rule.Echo(3)),
+      OwnEvent(Asked(caller: CallerId(2), message: gate_rule.Echo(3))),
     ]
     as "one step's two watches end in the order opened, both before Y"
 }
@@ -417,7 +430,7 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
 fn inputs_when_queued(
   first first: gate_rule.Message,
   then second: gate_rule.Message,
-) -> List(Event(gate_rule.Message, Nil)) {
+) -> List(Event(gate_rule.Message, Nil, ServiceEvent(gate_rule.Message))) {
   use folder <- recording_support.in_folder
   let gate = process.new_name("gate")
   let tree =
@@ -512,7 +525,18 @@ fn a_guid() -> guid.Guid {
 }
 
 /// The records of the one recording in the folder, after the header.
-fn recorded(folder: String) -> List(Record(message, Nil, answer, Nil)) {
+fn recorded(
+  folder: String,
+) -> List(
+  Record(
+    message,
+    Nil,
+    answer,
+    Nil,
+    ServiceEvent(message),
+    ServiceEffect(answer),
+  ),
+) {
   let assert Ok(#(_, records)) =
     rule_recording.read(recording_support.recording_in(folder))
     as "the recording reads"

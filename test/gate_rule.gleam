@@ -7,9 +7,10 @@
 //// shell refuses.
 
 import genesis_prime/step.{
-  type Address, type CallerId, type Effect, type Input, type Step, Ask, AskId,
-  Asked, Effects, EffectsThenAsk, Input, Reply, Send, StartTimer, Started, Stop,
-  Stopping, TimerId, Watch, WatchEnded, WatchId,
+  type Address, type CallerId, type Effect, type ServiceEffect,
+  type ServiceInput, type ServiceStep, Ask, AskId, Asked, Effects,
+  EffectsThenAsk, Input, OwnEffect, OwnEvent, Reply, Send, StartTimer, Started,
+  Stop, Stopping, TimerId, Watch, WatchEnded, WatchId,
 }
 import gleam/dict.{type Dict}
 import gleam/list
@@ -64,19 +65,15 @@ pub fn new(_settings: Nil) -> State {
 /// One input in, the new state and what the shell must do out.
 pub fn step(
   state state: State,
-  input input: Input(Message, Nil),
-) -> #(State, Step(Answer, Nil)) {
+  input input: ServiceInput(Message),
+) -> #(State, ServiceStep(Answer)) {
   let Input(event:, ..) = input
   case event {
     Started -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
-    Asked(caller:, message:) -> asked(state:, caller:, message:)
+    OwnEvent(Asked(caller:, message:)) -> asked(state:, caller:, message:)
     WatchEnded(watch: WatchId(key)) -> opened(state:, key:)
-    step.Socket(..)
-    | step.Woken(..)
-    | step.TimerFired(..)
-    | step.Answered(..)
-    | step.AnsweredLate(..) ->
+    step.Woken(..) | step.TimerFired(..) | step.Answered(..) ->
       panic as "a service takes Started, Asked, WatchEnded and Stopping only"
   }
 }
@@ -85,12 +82,12 @@ fn asked(
   state state: State,
   caller caller: CallerId,
   message message: Message,
-) -> #(State, Step(Answer, Nil)) {
+) -> #(State, ServiceStep(Answer)) {
   case message {
-    Echo(n) -> #(state, Effects([Reply(caller, Echoed(n))]))
+    Echo(n) -> #(state, Effects([OwnEffect(Reply(caller, Echoed(n)))]))
     Await(key:) ->
       case set.contains(state.opened, key) {
-        True -> #(state, Effects([Reply(caller, Opened(key))]))
+        True -> #(state, Effects([OwnEffect(Reply(caller, Opened(key)))]))
         False -> #(
           State(
             ..state,
@@ -108,28 +105,34 @@ fn asked(
         state,
         Effects(
           list.append(replies, [
-            Reply(caller, Echoed(list.length(replies))),
+            OwnEffect(Reply(caller, Echoed(list.length(replies)))),
           ]),
         ),
       )
     }
     Ignore -> #(state, Effects([]))
-    StopThenReply -> #(state, Effects([Stop, Reply(caller, Echoed(9))]))
+    StopThenReply -> #(
+      state,
+      Effects([Stop, OwnEffect(Reply(caller, Echoed(9)))]),
+    )
     Crash -> panic as "the planted crash"
     SendTo(to:, n:) -> #(
       state,
-      Effects([Send(to, Echoed(n)), Reply(caller, Echoed(n))]),
+      Effects([Send(to, Echoed(n)), OwnEffect(Reply(caller, Echoed(n)))]),
     )
     WatchAddress(watch:, target:) -> #(
       state,
-      Effects([Watch(WatchId(watch), target), Reply(caller, Echoed(watch))]),
+      Effects([
+        Watch(WatchId(watch), target),
+        OwnEffect(Reply(caller, Echoed(watch))),
+      ]),
     )
     WatchEach(watches:, target:) -> #(
       state,
       Effects(
         list.append(
           list.map(watches, fn(watch) { Watch(WatchId(watch), target) }),
-          [Reply(caller, Echoed(list.length(watches)))],
+          [OwnEffect(Reply(caller, Echoed(list.length(watches))))],
         ),
       ),
     )
@@ -145,21 +148,24 @@ fn asked(
 }
 
 /// A watch's end: the key of its number is opened, with no caller to answer.
-fn opened(state state: State, key key: Int) -> #(State, Step(Answer, Nil)) {
+fn opened(state state: State, key key: Int) -> #(State, ServiceStep(Answer)) {
   let #(state, replies) = open(state:, key:)
   #(state, Effects(replies))
 }
 
 /// Opens `key`: the replies to the callers waiting for it, in the order they
 /// asked.
-fn open(state state: State, key key: Int) -> #(State, List(Effect(Answer))) {
+fn open(
+  state state: State,
+  key key: Int,
+) -> #(State, List(Effect(Answer, ServiceEffect(Answer)))) {
   let waiters = list.reverse(waiting_for(state, key))
   #(
     State(
       waiting: dict.delete(state.waiting, key),
       opened: set.insert(state.opened, key),
     ),
-    list.map(waiters, fn(waiter) { Reply(waiter, Opened(key)) }),
+    list.map(waiters, fn(waiter) { OwnEffect(Reply(waiter, Opened(key))) }),
   )
 }
 

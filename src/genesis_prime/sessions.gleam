@@ -29,7 +29,7 @@
 ////   Claim(account, c1) ─▶ Asked ─▶ no slot for the account
 ////                                  slot = (c1, watch w1)
 ////                                  Watch(w1, Connection(c1))   ─▶ monitors c1
-////   ◀─ Claimed          ◀─ Reply(caller, Claimed)
+////   ◀─ Claimed          ◀─ OwnEffect(Reply(caller, Claimed))
 //// ```
 ////
 //// Takeover, a newer connection claims the account c1 holds (c2 > c1):
@@ -40,7 +40,7 @@
 ////                                  slot = (c2, watch w2)
 ////                                  Watch(w2, Connection(c2))
 ////                                  Send(Connection(c1), TakenOver) ─▶ Woken(TakenOver)
-////   ◀─ Claimed          ◀─ Reply(caller, Claimed)               c1 writes 0x036A
+////   ◀─ Claimed          ◀─ OwnEffect(Reply(caller, Claimed))               c1 writes 0x036A
 ////                                                                  reason 19 and stops
 //// ```
 ////
@@ -51,7 +51,7 @@
 //// connection c1 (older)      Sessions                              c2
 ////   Claim(account, c1) ─▶ Asked ─▶ slot names c2
 ////                                  nothing changes
-////   ◀─ TakenOver        ◀─ Reply(caller, TakenOver)
+////   ◀─ TakenOver        ◀─ OwnEffect(Reply(caller, TakenOver))
 //// c1 writes 0x036A reason 19 and stops
 //// ```
 ////
@@ -85,10 +85,10 @@
 //// back, so a watch is never taken for an older one.
 
 import genesis_prime/step.{
-  type CallerId, type ConnectionId, type Input, type Rule, type Step,
-  type WatchId, Answered, AnsweredLate, Asked, Connection, ConnectionId, Effects,
-  Reply, Rule, Send, Socket, Started, Stop, Stopping, TimerFired, Watch,
-  WatchEnded, WatchId, Woken,
+  type CallerId, type ConnectionId, type ServiceInput, type ServiceRule,
+  type ServiceStep, type WatchId, Answered, Asked, Connection, ConnectionId,
+  Effects, OwnEffect, OwnEvent, Reply, Rule, Send, Started, Stop, Stopping,
+  TimerFired, Watch, WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
@@ -135,7 +135,7 @@ pub opaque type State {
 }
 
 /// The rule as its service shell runs it.
-pub fn rule() -> Rule(Nil, State, Message, Nil, Outgoing, Nil) {
+pub fn rule() -> ServiceRule(Nil, State, Message, Outgoing) {
   Rule(name: rule_name, settings: Nil, new:, step:)
 }
 
@@ -151,16 +151,16 @@ pub fn new(_settings: Nil) -> State {
 /// a watch this rule never opened, is a bug, and crashes the process.
 pub fn step(
   state state: State,
-  input input: Input(Message, Nil),
-) -> #(State, Step(Outgoing, Nil)) {
+  input input: ServiceInput(Message),
+) -> #(State, ServiceStep(Outgoing)) {
   case input.event {
     Started -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
-    Asked(caller:, message: Claim(account:, connection:)) ->
+    OwnEvent(Asked(caller:, message: Claim(account:, connection:))) ->
       claimed(state:, caller:, account:, connection:)
     WatchEnded(watch:) -> ended(state:, watch:)
-    Socket(..) | Woken(..) | TimerFired(..) | Answered(..) | AnsweredLate(..) ->
-      panic as "Sessions takes Started, Asked, WatchEnded and Stopping only; its shell gives no Socket, Woken, TimerFired, Answered or AnsweredLate"
+    Woken(..) | TimerFired(..) | Answered(..) ->
+      panic as "Sessions takes Started, Asked, WatchEnded and Stopping only; its shell gives no Woken, TimerFired or Answered"
   }
 }
 
@@ -173,17 +173,17 @@ fn claimed(
   caller caller: CallerId,
   account account: AccountId,
   connection connection: ConnectionId,
-) -> #(State, Step(Outgoing, Nil)) {
+) -> #(State, ServiceStep(Outgoing)) {
   let held = dict.get(state.slots, account)
   let ConnectionId(claimer) = connection
   case held {
     Ok(Slot(connection: holder, ..)) if holder == connection -> #(
       state,
-      Effects([Reply(caller, Claimed)]),
+      Effects([OwnEffect(Reply(caller, Claimed))]),
     )
     Ok(Slot(connection: ConnectionId(holder), ..)) if holder > claimer -> #(
       state,
-      Effects([Reply(caller, TakenOver)]),
+      Effects([OwnEffect(Reply(caller, TakenOver))]),
     )
     Ok(Slot(..)) | Error(Nil) -> {
       let told = case held {
@@ -203,7 +203,7 @@ fn claimed(
           list.flatten([
             [Watch(watch:, target: Connection(connection))],
             told,
-            [Reply(caller, Claimed)],
+            [OwnEffect(Reply(caller, Claimed))],
           ]),
         ),
       )
@@ -214,7 +214,7 @@ fn claimed(
 fn ended(
   state state: State,
   watch watch: WatchId,
-) -> #(State, Step(Outgoing, Nil)) {
+) -> #(State, ServiceStep(Outgoing)) {
   let assert Ok(account) = dict.get(state.watches, watch)
     as "a watch ends only if Sessions opened it and has not seen it end"
   let watches = dict.delete(state.watches, watch)
