@@ -18,6 +18,7 @@ import genesis_prime/step.{
   type ConnectionEffect, type ConnectionEvent, Answered, EffectsThenAsk, Input,
   NoAnswerInTime, OwnEvent,
 }
+import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -198,8 +199,13 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   ask_support.command(client, asking_rule.ping_command, 9, wait_ms: 0)
   assert ask_support.read_pong(client) == <<0x70, 9>>
     as "the answer to ask 1 gave the rule no input, so no record comes before the pong"
-  assert mailbox_support.queued(connection) == 0
-    as "the late answer was taken: nothing waits in the shell's mailbox"
+  // Not the mailbox's length: the shell's own write of the pong leaves the
+  // port's reply to it in the mailbox until the shell next runs.
+  assert mailbox_support.tagged(connection, atom.create("ask_answer")) == 0
+    as {
+      "the late answer was taken: no answer waits in the shell's mailbox; waiting: "
+      <> mailbox_support.waiting(connection)
+    }
   assert !list.contains(mailbox_support.monitored(connection), gate_pid)
     as "and dropped: the shell holds no monitor of the gate for it"
   ask_support.stop(server)
