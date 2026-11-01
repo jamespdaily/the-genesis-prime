@@ -5,9 +5,9 @@
 //// - The recordings in `test/rule_recording/2026-11-01-full-session`: a live
 ////   login of the real client through the STS, auth and game servers. Their
 ////   socket reads, as the inputs of each connection's rule: the STS
-////   connection's reads 1, 2 and 4 are the clear requests Connect, LoginStart
-////   and KeyData, and its reads 5, 7, 8, 9, 10 and 11 (90, 195, 227, 208, 31 and 208 bytes) are
-////   ciphered; the auth connection's read 1 is one login request in its
+////   connection's first requests are Connect, LoginStart and KeyData in the
+////   clear, and the rest are ciphered; how the network cuts them into reads
+////   differs from run to run. The auth connection's read 1 is one login request in its
 ////   wrapper; the game connection's read 1 holds 0x058F, 0x07E0 and a 0x038C,
 ////   all under the session key after the first.
 //// - The log lines the game rule wrote while it took those reads, kept in the
@@ -38,7 +38,7 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/client_message
 import genesis_prime/message/ping.{Ping}
 import genesis_prime/rule_recording.{End, Header, Taken}
-import genesis_prime/step.{Effects, Input, Now, Socket}
+import genesis_prime/step.{type ConnectionEvent, Effects, Input, Now, OwnEvent}
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -113,24 +113,28 @@ pub fn the_login_session_holds_the_platform_logins_clear_requests_and_its_deciph
   use <- owned_test.run(30_000)
   let assert StsRead(requests:) = read(sts_file)
     as "the STS connection reads as requests"
+  // A read's number depends on how the network cut the client's bytes (one
+  // run's Connect and LoginStart arrived in one read), so the requests are
+  // checked in order, not by read.
   let assert [
-    #(1, Decoded(sts_message.ConnectionOpened(..))),
-    #(2, Decoded(sts_message.Transaction(sequence: 1, request: login_start))),
-    #(
-      4,
-      Decoded(sts_message.Transaction(
-        sequence: 2,
-        request: sts_message.KeyData(..),
-      )),
-    ),
-    #(5, Decoded(sts_message.Transaction(sequence: 3, request: finish))),
-    #(7, Decoded(sts_message.Transaction(sequence: 4, request: accounts))),
-    #(8, Decoded(sts_message.Transaction(sequence: 5, request: token))),
-    #(9, NoDecoder(protocol: "Auth", command: "PageVerifiedIps")),
-    #(10, Decoded(sts_message.Ping)),
-    #(11, NoDecoder(protocol: "Auth", command: "PageVerifiedIps")),
-  ] = requests
-    as "Connect, LoginStart and KeyData in the clear in reads 1, 2 and 4, then the six ciphered reads 5, 7, 8, 9, 10 and 11 deciphered: LoginFinish, ListMyAccounts, RequestGameToken, a PageVerifiedIps (which the client asks every 30 s while it plays, and the rule logs as unhandled), a Ping and another PageVerifiedIps"
+    Decoded(sts_message.ConnectionOpened(..)),
+    Decoded(sts_message.Transaction(sequence: 1, request: login_start)),
+    Decoded(sts_message.Transaction(
+      sequence: 2,
+      request: sts_message.KeyData(..),
+    )),
+    Decoded(sts_message.Transaction(sequence: 3, request: finish)),
+    Decoded(sts_message.Transaction(sequence: 4, request: accounts)),
+    Decoded(sts_message.Transaction(sequence: 5, request: token)),
+    ..playing
+  ] = list.map(requests, fn(read) { read.1 })
+    as "Connect, LoginStart and KeyData in the clear, then deciphered LoginFinish, ListMyAccounts and RequestGameToken, in that order"
+  assert playing != []
+    && list.all(playing, fn(request) {
+      request == NoDecoder(protocol: "Auth", command: "PageVerifiedIps")
+      || request == Decoded(sts_message.Ping)
+    })
+    as "while the client plays it sends only PageVerifiedIps (every 30 s; the rule logs it as unhandled) and Pings"
   assert finish == sts_message.LoginFinish
     as "the request after the proof is LoginFinish"
   let assert sts_message.LoginStart(login_name:, ..) = login_start
@@ -515,6 +519,31 @@ pub fn a_recording_of_a_rule_that_is_no_connection_but_took_socket_bytes_fails_t
     as "a recording of another rule with socket bytes is reported, never passed unread"
 }
 
+pub fn a_recording_made_under_other_types_fails_with_record_again_and_is_never_read_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let path =
+    plant_under(
+      folder:,
+      number: 1,
+      rule: auth_connection.rule_name,
+      reads: [connection_rule_support.ping(1)],
+      types_digest: "another digest",
+    )
+  assert recorded_client_message.read_recording(path)
+    == Error(NotARecording(
+      recording: path,
+      failure: rule_recording.RecordAgain(reason: "the rule's types"),
+    ))
+    as "a recording whose header digest is not the rule's digest is refused, not read as a recording with no client bytes"
+  let current =
+    plant(folder:, number: 2, rule: auth_connection.rule_name, reads: [
+      connection_rule_support.ping(1),
+    ])
+  assert result.is_ok(recorded_client_message.read_recording(current))
+    as "the same bytes under the rule's own digest read"
+}
+
 pub fn a_file_that_is_no_recording_fails_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
@@ -587,12 +616,20 @@ fn recording_with_a_changed_byte(
 
 /// The record with the byte at `offset` of its socket read inverted.
 fn with_a_changed_byte(
-  record record: rule_recording.Record(message, answer, outgoing, request),
+  record record: rule_recording.Record(
+    request,
+    ConnectionEvent(message, answer),
+    own_effect,
+  ),
   offset offset: Int,
-) -> rule_recording.Record(message, answer, outgoing, request) {
+) -> rule_recording.Record(
+  request,
+  ConnectionEvent(message, answer),
+  own_effect,
+) {
   case record {
     Taken(
-      input: Input(now:, event: Socket(step.Read(bytes: read))),
+      input: Input(now:, event: OwnEvent(step.Read(bytes: read))),
       step: recorded,
     ) -> {
       let assert Ok(before) = bit_array.slice(read, 0, offset)
@@ -609,7 +646,7 @@ fn with_a_changed_byte(
       Taken(
         input: Input(
           now:,
-          event: Socket(
+          event: OwnEvent(
             step.Read(bytes: <<
               before:bits,
               int.bitwise_exclusive_or(byte, 0xFF),
@@ -625,12 +662,30 @@ fn with_a_changed_byte(
 }
 
 /// Writes a recording of `rule` in `folder`, whose inputs are the socket
-/// reads `reads`, and returns its path.
+/// reads `reads`, made under the rule's types as they stand, and returns its
+/// path.
 fn plant(
   folder folder: String,
   number number: Int,
   rule rule: String,
   reads reads: List(BitArray),
+) -> String {
+  plant_under(
+    folder:,
+    number:,
+    rule:,
+    reads:,
+    types_digest: recording_support.types_digest(rule),
+  )
+}
+
+/// As `plant`, with the types digest the header holds.
+fn plant_under(
+  folder folder: String,
+  number number: Int,
+  rule rule: String,
+  reads reads: List(BitArray),
+  types_digest types_digest: String,
 ) -> String {
   let path =
     folder
@@ -646,14 +701,14 @@ fn plant(
       client_build: 16_042,
       tables_digest: None,
       settings: Nil,
-      types_digest: "planted",
+      types_digest:,
     )
   let taken =
     list.map(reads, fn(bytes) {
       rule_recording.encode(Taken(
         input: Input(
           now: Now(monotonic_ms: 0, filetime: 0),
-          event: Socket(step.Read(bytes:)),
+          event: OwnEvent(step.Read(bytes:)),
         ),
         step: Effects([]),
       ))

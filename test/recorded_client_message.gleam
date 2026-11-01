@@ -40,7 +40,10 @@ import genesis_prime/message/client_message.{
   type ClientMessage, type ClientMessageError,
 }
 import genesis_prime/rule_recording.{type ReplayFailure, Taken}
-import genesis_prime/step.{Input, Socket}
+import genesis_prime/rule_types
+import genesis_prime/step.{
+  type ConnectionEffect, type ConnectionEvent, Input, OwnEvent,
+}
 import gleam/bit_array
 import gleam/bool
 import gleam/list
@@ -92,7 +95,10 @@ pub type Carried {
 /// Why a recording's client bytes did not read.
 pub type Failure {
   /// The file is not a rule recording.
-  NotARecording(recording: String, failure: ReplayFailure(Nil, Nil))
+  NotARecording(
+    recording: String,
+    failure: ReplayFailure(Nil, ConnectionEffect),
+  )
   /// The recording's client bytes did not read: `input` is the number of the
   /// input (from 0, the connection's first input being 0) whose bytes were
   /// being read.
@@ -163,10 +169,15 @@ pub fn read_recording(
     rule_recording.read(bytes)
     |> result.map_error(NotARecording(recording:, failure: _)),
   )
+  use Nil <- result.try(types_current(
+    recording:,
+    rule: header.rule,
+    types_digest: header.types_digest,
+  ))
   let inputs =
     list.index_fold(records, [], fn(found, record, input) {
       case record {
-        Taken(input: Input(event: Socket(step.Read(bytes:)), ..), ..) -> [
+        Taken(input: Input(event: OwnEvent(step.Read(bytes:)), ..), ..) -> [
           #(input, bytes),
           ..found
         ]
@@ -191,12 +202,37 @@ pub fn read_recording(
   })
 }
 
+/// Whether the recording was made under the rule's types as the code stands,
+/// as a replay asks first: with other types its terms are not the rule's
+/// inputs, so nothing of it is read and it must be recorded again.
+fn types_current(
+  recording recording: String,
+  rule rule: String,
+  types_digest types_digest: String,
+) -> Result(Nil, Failure) {
+  let assert Ok(digest) =
+    rule_types.digest(rule_module: rule, source_roots: ["src", "test"])
+    as "the rule's types read"
+  case digest == types_digest {
+    True -> Ok(Nil)
+    False ->
+      Error(NotARecording(
+        recording:,
+        failure: rule_recording.RecordAgain(reason: "the rule's types"),
+      ))
+  }
+}
+
 /// The RC4 stream the STS rule deciphers the client's bytes with after it took
 /// the recording's inputs up to and including `input`: the rule is folded over
 /// them as a replay does, and its state holds the key made from the proof.
 fn receiving_after(
   records records: List(
-    rule_recording.Record(Nil, client_connection.Answer, Nil, Nil),
+    rule_recording.Record(
+      Nil,
+      ConnectionEvent(Nil, client_connection.Answer),
+      ConnectionEffect,
+    ),
   ),
   settings settings: sts_connection.Settings,
   input input: Int,

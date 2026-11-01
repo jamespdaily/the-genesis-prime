@@ -73,9 +73,10 @@ read_once(Socket) ->
 %% failure, the parent's stop, a message another process delivered
 %% ({woken, Message}, which registry.deliver sends), a timer's firing or the end
 %% of a monitored process. Kept maps the tag of each ask whose outcome was
-%% NoAnswerInTime or StoppedWaiting to {kept, Ask, Monitor}: its late answer
-%% comes as {late_answer, Tag} and its target's end as {kept_ended, Tag}. A DOWN
-%% that is no kept ask's is a watch's: the shell finds the watch by the monitor.
+%% NoAnswerInTime or StoppedWaiting to {kept, Monitor}: its late answer
+%% comes as {late_answer, Tag}, which the shell drops, and its target's end as
+%% {kept_ended, Tag}. A DOWN that is no kept ask's is a watch's: the shell
+%% finds the watch by the monitor.
 %% The answer of a tag that is not kept, and another process's exit, are not
 %% the shell's and are dropped, so the mailbox never fills with them.
 next_event(Socket, Parent, Kept) ->
@@ -99,7 +100,7 @@ next_event(Socket, Parent, Kept) ->
     end.
 
 kept_with_monitor(Monitor, Kept) ->
-    case [Tag || {Tag, {kept, _Ask, Kept_monitor}} <- maps:to_list(Kept),
+    case [Tag || {Tag, {kept, Kept_monitor}} <- maps:to_list(Kept),
                  Kept_monitor =:= Monitor] of
         [Tag] -> {ok, Tag};
         [] -> error

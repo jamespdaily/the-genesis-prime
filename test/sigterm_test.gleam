@@ -21,6 +21,7 @@
 import database_support
 import genesis_prime/rule_recording.{type Record, End}
 import genesis_prime/sessions
+import genesis_prime/step.{type NoAsk, type ServiceEffect, type ServiceEvent}
 import gleam/list
 import gleam/string
 import owned_test
@@ -66,8 +67,13 @@ fn ends_with_end(folder: String) -> Bool {
   let assert Ok(#(_, records)) =
     rule_recording.read(recording_support.recording_in(folder))
     as "the recording reads"
-  let records: List(Record(sessions.Message, Nil, sessions.Outgoing, Nil)) =
-    records
+  let records: List(
+    Record(
+      NoAsk,
+      ServiceEvent(sessions.Message),
+      ServiceEffect(sessions.Outgoing),
+    ),
+  ) = records
   case list.last(records) {
     Ok(End(count:)) -> count == list.length(records) - 1
     Ok(_) | Error(Nil) -> False

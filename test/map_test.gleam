@@ -12,8 +12,9 @@
 
 import connection_rule_support as support
 import genesis_prime/step.{
-  type Event, type Step, Asked, CallerId, Connection, ConnectionId, Effects,
-  LogError, Reply, Started, Stop, Stopping, Watch, WatchEnded, WatchId,
+  type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, Connection,
+  ConnectionId, Effects, LogError, OwnEffect, OwnEvent, Reply, Started, Stop,
+  Stopping, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/world_map/map.{type State, Join, Joined}
 import genesis_prime/world_map/map_id.{MapId}
@@ -30,8 +31,8 @@ fn started() -> State {
 
 fn feed(
   state: State,
-  event: Event(map.Message, Nil),
-) -> #(State, Step(map.Outgoing, Nil)) {
+  event: Event(ServiceEvent(map.Message)),
+) -> #(State, ServiceStep(map.Outgoing)) {
   map.step(state, support.input(event))
 }
 
@@ -40,21 +41,21 @@ fn join(
   state state: State,
   connection connection: Int,
   caller caller: Int,
-) -> #(State, Step(map.Outgoing, Nil)) {
+) -> #(State, ServiceStep(map.Outgoing)) {
   feed(
     state,
-    Asked(
+    OwnEvent(Asked(
       caller: CallerId(caller),
       message: Join(
         connection: ConnectionId(connection),
         character_id: 100 + connection,
       ),
-    ),
+    )),
   )
 }
 
 /// The unit id a join was answered with.
-fn unit_of(taken: Step(map.Outgoing, Nil), caller: Int) -> Int {
+fn unit_of(taken: ServiceStep(map.Outgoing), caller: Int) -> Int {
   let assert [#(CallerId(number), Joined(unit_id:, incarnation: given))] =
     support.replies(taken)
     as "one reply answers the join"
@@ -70,14 +71,14 @@ pub fn the_first_join_is_unit_1_with_a_watch_on_the_connection_and_the_maps_inca
   assert support.effects_of(taken)
     == [
       Watch(WatchId(1), Connection(ConnectionId(7))),
-      Reply(CallerId(1), Joined(unit_id: 1, incarnation:)),
+      OwnEffect(Reply(CallerId(1), Joined(unit_id: 1, incarnation:))),
     ]
     as "the player's connection is watched, then the join is answered: unit ids start at 1"
 }
 
 pub fn started_does_nothing_and_stopping_stops_the_rule_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(state, taken) = feed(started(), Started)
+  let #(state, taken) = feed(started(), OwnEvent(Started))
   assert taken == Effects([]) as "a map starts empty"
   let #(_, taken) = feed(state, Stopping(deadline_ms: 9000))
   assert taken == Effects([Stop]) as "Stopping stops the rule at once"
@@ -92,7 +93,7 @@ pub fn each_join_gets_the_next_unit_id_and_its_own_watch_test() -> Nil {
   assert support.effects_of(second)
     == [
       Watch(WatchId(2), Connection(ConnectionId(8))),
-      Reply(CallerId(2), Joined(unit_id: 2, incarnation:)),
+      OwnEffect(Reply(CallerId(2), Joined(unit_id: 2, incarnation:))),
     ]
     as "the watch ids go up too, so a watch is never taken for an older one"
 }

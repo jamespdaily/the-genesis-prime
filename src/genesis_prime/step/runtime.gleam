@@ -3,8 +3,7 @@
 //// place a shell's rule inputs get their time and its log lines their
 //// metadata, so the connection shell and the service shell take them alike.
 //// It also holds what the two shells do alike when a recording cannot be
-//// written or ended and when a rule returns an effect the shell does not carry
-//// out, and the reason they give a process they end.
+//// written or ended, and the reason they give a process they end.
 
 import genesis_prime/rule_recording/file.{type FileError, type Writer}
 import genesis_prime/step.{type About, type LogLevel, type Now, LogError, Now}
@@ -66,21 +65,6 @@ pub fn finish_recording(writer: Option(Writer)) -> Nil {
         step.no_one,
       )
   }
-}
-
-/// Logs that a rule returned something the named shell does not carry out and
-/// ends the process.
-pub fn unsupported(shell shell: String, what what: String) -> a {
-  log(
-    LogError,
-    "a rule returned "
-      <> what
-      <> ", which the "
-      <> shell
-      <> " does not carry out",
-    step.no_one,
-  )
-  panic as "a rule returned an effect the shell does not carry out"
 }
 
 /// Sets the logger's primary level to info, so the info lines the shells

@@ -57,7 +57,7 @@ pub fn labelled(recorder recorder: Recorder, label label: String) -> Recorder {
 /// already there is never overwritten.
 pub fn open_if(
   recorder recorder: Option(Recorder),
-  rule rule: Rule(settings, state, message, answer, outgoing, request),
+  rule rule: Rule(settings, state, request, own_input, own_effect),
   connection connection: Int,
 ) -> Result(Option(Writer), FileError) {
   case recorder {
@@ -99,12 +99,12 @@ pub fn open_if(
 /// `Taken` record before anything of the step is carried out. A record that
 /// cannot be written is an error, and the new state is not returned.
 pub fn fold(
-  rule rule: Rule(settings, state, message, answer, outgoing, request),
+  rule rule: Rule(settings, state, request, own_input, own_effect),
   state state: state,
   writer writer: Option(Writer),
   now now: Now,
-  event event: Event(message, answer),
-) -> Result(#(state, Step(outgoing, request), Option(Writer)), FileError) {
+  event event: Event(own_input),
+) -> Result(#(state, Step(request, own_effect), Option(Writer)), FileError) {
   let input = Input(now:, event:)
   let #(state, step) = rule.step(state, input)
   use writer <- result.map(case writer {
@@ -127,7 +127,7 @@ pub fn finish_if(writer writer: Option(Writer)) -> Result(Nil, FileError) {
   case writer {
     None -> Ok(Nil)
     Some(writer) -> {
-      let end: Record(Nil, Nil, Nil, Nil) = End(count: writer.count)
+      let end: Record(Nil, Nil, Nil) = End(count: writer.count)
       simplifile.append_bits(writer.path, rule_recording.encode(end))
       |> result.map_error(failed(writer.path))
     }

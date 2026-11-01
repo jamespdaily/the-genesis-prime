@@ -28,14 +28,14 @@ import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 
 /// What one listener is started with.
-pub type Listener(settings, state, message, answer, outgoing, request) {
+pub type Listener(settings, state, message, answer, request) {
   Listener(
     /// The listener's name in Ranch, unique on the node: made once, with
     /// `process.new_name`.
     name: Name(Nil),
     /// The TCP port, or 0 for one the system picks.
     port: Int,
-    connection: Settings(settings, state, message, answer, outgoing, request),
+    connection: Settings(settings, state, message, answer, request),
   )
 }
 
@@ -46,7 +46,7 @@ type StartFailure {
 
 /// The listener as a child of a supervisor.
 pub fn supervised(
-  listener: Listener(settings, state, message, answer, outgoing, request),
+  listener: Listener(settings, state, message, answer, request),
 ) -> ChildSpecification(Nil) {
   supervision.supervisor(fn() {
     case
@@ -78,5 +78,5 @@ fn start_listener(
   name: Name(Nil),
   port: Int,
   shutdown_ms: Int,
-  settings: Settings(settings, state, message, answer, outgoing, request),
+  settings: Settings(settings, state, message, answer, request),
 ) -> Result(Pid, StartFailure)

@@ -1,5 +1,22 @@
 -module(mailbox_support_ffi).
--export([queued/1]).
+-export([queued/1, monitored/1, waiting/1, tagged/2]).
+
+%% How many waiting messages are tuples whose first element is the atom Tag.
+%% The length of a mailbox is no measure of what a shell has taken: a process
+%% that writes to a socket has the port's reply to its own write, a tuple
+%% {inet_reply, Port, ok, Ref}, in its mailbox from the moment the bytes are
+%% sent until it next runs, which may be after the peer has read them.
+tagged(Pid, Tag) ->
+    {messages, Messages} = process_info(Pid, messages),
+    length([Message || Message <- Messages,
+                       is_tuple(Message), tuple_size(Message) > 0,
+                       element(1, Message) =:= Tag]).
+
+%% What waits in a process's mailbox, as Erlang prints it, for a failure
+%% message.
+waiting(Pid) ->
+    {messages, Messages} = process_info(Pid, messages),
+    unicode:characters_to_binary(io_lib:format("~0p", [Messages])).
 
 %% How many messages wait in a process's mailbox: a supervisor that is stopping
 %% its children takes none, so a call made to it stays here until it ends, and
@@ -7,3 +24,9 @@
 queued(Pid) ->
     {message_queue_len, Length} = process_info(Pid, message_queue_len),
     Length.
+
+%% The processes a process holds a monitor on, one entry for each monitor.
+%% Monitors of ports and of names are left out.
+monitored(Pid) ->
+    {monitors, Monitors} = process_info(Pid, monitors),
+    [Monitored || {process, Monitored} <- Monitors, is_pid(Monitored)].

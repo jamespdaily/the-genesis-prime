@@ -14,7 +14,6 @@
 ////   library (`build/packages/gleam_stdlib`) by path, so no package is
 ////   fetched.
 
-import filepath
 import genesis_prime/message_generator.{type GeneratedFile, GeneratedFile}
 import genesis_prime/message_schema
 import gleam/list
@@ -22,7 +21,7 @@ import gleam/result
 import gleam/string
 import owned_test
 import recording_support
-import shellout
+import scratch_project
 import simplifile
 
 const bit_stream_path = "src/genesis_prime/message/bit_stream.gleam"
@@ -86,38 +85,27 @@ fn build_and_run(
   folder folder: String,
   files files: List(GeneratedFile),
 ) -> Result(String, #(Int, String)) {
-  let assert Ok(root) = simplifile.current_directory()
-    as "the working directory is known"
-  let project = root <> "/" <> folder
+  let project =
+    scratch_project.create(folder:, name: "planted_codec", packages: [
+      "gleam_stdlib",
+    ])
   let assert Ok(driver) = simplifile.read("test/planted_codec/driver.gleam.txt")
     as "the driver reads"
   let assert Ok(bit_stream) = simplifile.read(bit_stream_path)
     as "the bit stream module reads"
   list.each(
     [
-      GeneratedFile(
-        path: "gleam.toml",
-        text: "name = \"planted_codec\"\nversion = \"0.1.0\"\n\n[dependencies]\ngleam_stdlib = { path = \""
-          <> root
-          <> "/build/packages/gleam_stdlib\" }\n",
-      ),
       GeneratedFile(path: "src/planted_driver.gleam", text: driver),
       GeneratedFile(path: bit_stream_path, text: bit_stream),
       ..files
     ],
     fn(file) {
-      let path = project <> "/" <> file.path
-      let assert Ok(Nil) =
-        simplifile.create_directory_all(filepath.directory_name(path))
-        as "the project's folder was made"
-      let assert Ok(Nil) = simplifile.write(path, file.text)
-        as "the project's file was written"
+      scratch_project.write_file(project:, path: file.path, text: file.text)
     },
   )
-  shellout.command(
-    run: "gleam",
-    with: ["run", "--module", "planted_driver"],
-    in: project,
-    opt: [],
-  )
+  scratch_project.gleam(project:, arguments: [
+    "run",
+    "--module",
+    "planted_driver",
+  ])
 }

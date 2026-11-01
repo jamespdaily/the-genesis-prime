@@ -21,9 +21,10 @@ import genesis_prime/rule_recording.{
 }
 import genesis_prime/rule_recording/file
 import genesis_prime/step.{
-  type Input, type Rule, type Step, Accepted, ConnectionId, Effects, Input, Log,
-  Now, Peer, PeerClosed, Read, ReadFailed, Rule, Socket, Stop, Stopping, Write,
-  WriteFailed,
+  type ConnectionEffect, type ConnectionEvent, type ConnectionInput,
+  type ConnectionRule, type ConnectionStep, type Rule, Accepted, ConnectionId,
+  Effects, Input, Log, Now, OwnEffect, OwnEvent, Peer, PeerClosed, Read,
+  ReadFailed, Rule, Stop, Stopping, Write, WriteFailed,
 }
 import gleam/bit_array
 import gleam/erlang/process
@@ -43,17 +44,17 @@ import simplifile
 pub fn on_accept_the_rule_writes_the_server_hello_frame_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, step) = accept()
-  assert step == Effects([Write(hello_frame())])
+  assert step == Effects([OwnEffect(Write(hello_frame()))])
     as "vector.opcode.0x3.body in its 53-byte frame"
 }
 
 pub fn a_ping_split_across_two_reads_gets_one_pong_with_its_number_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) = accept()
-  let #(state, first) = take(state, Socket(Read(<<7, 0, 0, 0, 0, 0>>)))
+  let #(state, first) = take(state, OwnEvent(Read(<<7, 0, 0, 0, 0, 0>>)))
   assert first == Effects([]) as "half a ping is not answered yet"
-  let #(_, second) = take(state, Socket(Read(<<13>>)))
-  assert second == Effects([Write(<<7, 0, 0, 0, 1, 0, 13>>)])
+  let #(_, second) = take(state, OwnEvent(Read(<<13>>)))
+  assert second == Effects([OwnEffect(Write(<<7, 0, 0, 0, 1, 0, 13>>))])
     as "opcode.0x1: the pong carries the ping's number"
 }
 
@@ -61,11 +62,11 @@ pub fn two_pings_in_one_read_get_two_pongs_in_order_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) = accept()
   let #(_, step) =
-    take(state, Socket(Read(<<7, 0, 0, 0, 0, 0, 1, 7, 0, 0, 0, 0, 0, 2>>)))
+    take(state, OwnEvent(Read(<<7, 0, 0, 0, 0, 0, 1, 7, 0, 0, 0, 0, 0, 2>>)))
   assert step
     == Effects([
-      Write(<<7, 0, 0, 0, 1, 0, 1>>),
-      Write(<<7, 0, 0, 0, 1, 0, 2>>),
+      OwnEffect(Write(<<7, 0, 0, 0, 1, 0, 1>>)),
+      OwnEffect(Write(<<7, 0, 0, 0, 1, 0, 2>>)),
     ])
     as "one pong for each ping, in the order they came"
 }
@@ -73,10 +74,10 @@ pub fn two_pings_in_one_read_get_two_pongs_in_order_test() -> Nil {
 pub fn a_peer_close_stops_and_a_read_failure_logs_and_stops_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) = accept()
-  assert take(state, Socket(PeerClosed)).1 == Effects([Stop])
+  assert take(state, OwnEvent(PeerClosed)).1 == Effects([Stop])
     as "the client closed, so the rule stops"
   let assert Effects([Log(_), Stop]) =
-    take(state, Socket(ReadFailed(step.Reset))).1
+    take(state, OwnEvent(ReadFailed(step.Reset))).1
     as "a read failure is logged, then the rule stops"
   Nil
 }
@@ -86,7 +87,7 @@ pub fn a_frame_over_the_size_limit_logs_and_stops_test() -> Nil {
   let #(state, _) = accept()
   // 131,071 is one byte over the limit, little-endian: ff ff 01 00.
   let assert Effects([Log(_), Stop]) =
-    take(state, Socket(Read(<<0xFF, 0xFF, 0x01, 0x00, 0, 0>>))).1
+    take(state, OwnEvent(Read(<<0xFF, 0xFF, 0x01, 0x00, 0, 0>>))).1
     as "0x140335ec0: no frame is over 131,070 bytes"
   Nil
 }
@@ -141,8 +142,8 @@ pub fn a_failed_write_reaches_the_rule_and_the_steps_later_effects_are_not_carri
     rule_recording.read(recording_support.recording_in(folder))
     as "the recording reads"
   let assert [
-    Taken(input: Input(event: Socket(Accepted(..)), ..), ..),
-    Taken(input: Input(event: Socket(WriteFailed(step.SendTimedOut)), ..), ..),
+    Taken(input: Input(event: OwnEvent(Accepted(..)), ..), ..),
+    Taken(input: Input(event: OwnEvent(WriteFailed(step.SendTimedOut)), ..), ..),
     End(count: 2),
   ] = records
     as "the failed write came back as the next input, before anything else"
@@ -221,18 +222,15 @@ pub fn every_input_carries_one_time_reading_taken_as_the_shell_takes_it_test() -
   assert inputs != [] as "the session recorded its inputs"
   list.each(inputs, fn(input) {
     let window = case input.event {
-      Socket(Accepted(..)) -> #(before_accept, after_accept)
-      Socket(Read(..)) -> #(before_ping, after_ping)
-      Socket(PeerClosed) -> #(before_close, after_close)
-      Socket(ReadFailed(..)) | Socket(WriteFailed(..)) ->
+      OwnEvent(Accepted(..)) -> #(before_accept, after_accept)
+      OwnEvent(Read(..)) -> #(before_ping, after_ping)
+      OwnEvent(PeerClosed) -> #(before_close, after_close)
+      OwnEvent(ReadFailed(..)) | OwnEvent(WriteFailed(..)) ->
         panic as "this session has no socket failure"
-      step.Started
-      | step.Woken(..)
-      | step.Asked(..)
+      OwnEvent(step.Woken(..))
       | step.WatchEnded(..)
-      | step.TimerFired(..)
-      | step.Answered(..)
-      | step.AnsweredLate(..)
+      | OwnEvent(step.TimerFired(..))
+      | OwnEvent(step.Answered(..))
       | Stopping(..) -> panic as "this session causes no other input"
     }
     assert within(input.now, window)
@@ -253,9 +251,9 @@ pub fn a_recorded_session_holds_the_header_one_record_per_input_and_end_test() -
   assert header == recorded_header(rule)
     as "the header names the format, the rule, its settings and its types"
   let events = list.map(taken(records), fn(input) { input.event })
-  let assert [Socket(Accepted(..)), ..reads_and_close] = events
+  let assert [OwnEvent(Accepted(..)), ..reads_and_close] = events
     as "the accept comes first"
-  let assert [Socket(PeerClosed), ..reads] = list.reverse(reads_and_close)
+  let assert [OwnEvent(PeerClosed), ..reads] = list.reverse(reads_and_close)
     as "the close comes last"
   assert joined_reads(list.reverse(reads)) == <<7, 0, 0, 0, 0, 0, 5>>
     as "between them, the ping's bytes in the reads the socket gave"
@@ -299,12 +297,12 @@ pub fn a_changed_byte_in_a_recorded_read_fails_replay_at_that_record_test() -> N
       case at == index {
         True -> {
           let assert Taken(
-            input: Input(event: Socket(Read(bytes:)), ..) as input,
+            input: Input(event: OwnEvent(Read(bytes:)), ..) as input,
             step:,
           ) = record
             as "the record at the index is the read"
           Taken(
-            input: Input(..input, event: Socket(Read(last_byte_6(bytes)))),
+            input: Input(..input, event: OwnEvent(Read(last_byte_6(bytes)))),
             step:,
           )
         }
@@ -545,7 +543,7 @@ fn hello_frame() -> BitArray {
 
 /// The hello rule as its shell runs it.
 type HelloRule =
-  Rule(hello_rule.Settings, hello_rule.State, Nil, Nil, Nil, Nil)
+  ConnectionRule(hello_rule.Settings, hello_rule.State, Nil, Nil, Nil)
 
 fn hello_rule_as_rule() -> HelloRule {
   Rule(
@@ -558,65 +556,58 @@ fn hello_rule_as_rule() -> HelloRule {
 
 /// The hello rule, except that a read starting with 0xEE crashes it.
 fn crash_on_0xee_rule() -> HelloRule {
-  Rule(..hello_rule_as_rule(), step: fn(state, input: Input(Nil, Nil)) {
-    case input.event {
-      Socket(Read(<<0xEE, _:bits>>)) -> panic as "the planted crash"
-      Socket(..)
-      | Stopping(..)
-      | step.Started
-      | step.Woken(..)
-      | step.Asked(..)
-      | step.WatchEnded(..)
-      | step.TimerFired(..)
-      | step.Answered(..)
-      | step.AnsweredLate(..) -> hello_rule.step(state, input)
-    }
-  })
+  Rule(
+    ..hello_rule_as_rule(),
+    step: fn(state, input: ConnectionInput(Nil, Nil)) {
+      case input.event {
+        OwnEvent(Read(<<0xEE, _:bits>>)) -> panic as "the planted crash"
+        OwnEvent(..) | Stopping(..) | step.WatchEnded(..) ->
+          hello_rule.step(state, input)
+      }
+    },
+  )
 }
 
 /// The hello rule, except that it takes `Stopping` and does not stop.
 fn ignore_stopping_rule() -> HelloRule {
-  Rule(..hello_rule_as_rule(), step: fn(state, input: Input(Nil, Nil)) {
-    case input.event {
-      Stopping(..) -> #(state, Effects([]))
-      Socket(..) -> hello_rule.step(state, input)
-      step.Started
-      | step.Woken(..)
-      | step.Asked(..)
-      | step.WatchEnded(..)
-      | step.TimerFired(..)
-      | step.Answered(..)
-      | step.AnsweredLate(..) -> hello_rule.step(state, input)
-    }
-  })
+  Rule(
+    ..hello_rule_as_rule(),
+    step: fn(state, input: ConnectionInput(Nil, Nil)) {
+      case input.event {
+        Stopping(..) -> #(state, Effects([]))
+        OwnEvent(..) -> hello_rule.step(state, input)
+        step.WatchEnded(..) -> hello_rule.step(state, input)
+      }
+    },
+  )
 }
 
 /// On accept, writes 64 MiB, then 1 KiB, then stops; on a failed write, stops.
 fn big_write_rule() -> HelloRule {
-  Rule(..hello_rule_as_rule(), step: fn(state, input: Input(Nil, Nil)) {
-    case input.event {
-      Socket(Accepted(..)) -> #(
-        state,
-        Effects([Write(<<0:size(536_870_912)>>), Write(<<0:size(8192)>>), Stop]),
-      )
-      Socket(WriteFailed(..)) -> #(state, Effects([Stop]))
-      Socket(..)
-      | Stopping(..)
-      | step.Started
-      | step.Woken(..)
-      | step.Asked(..)
-      | step.WatchEnded(..)
-      | step.TimerFired(..)
-      | step.Answered(..)
-      | step.AnsweredLate(..) -> hello_rule.step(state, input)
-    }
-  })
+  Rule(
+    ..hello_rule_as_rule(),
+    step: fn(state, input: ConnectionInput(Nil, Nil)) {
+      case input.event {
+        OwnEvent(Accepted(..)) -> #(
+          state,
+          Effects([
+            OwnEffect(Write(<<0:size(536_870_912)>>)),
+            OwnEffect(Write(<<0:size(8192)>>)),
+            Stop,
+          ]),
+        )
+        OwnEvent(WriteFailed(..)) -> #(state, Effects([Stop]))
+        OwnEvent(..) | Stopping(..) | step.WatchEnded(..) ->
+          hello_rule.step(state, input)
+      }
+    },
+  )
 }
 
-fn accept() -> #(hello_rule.State, Step(Nil, Nil)) {
+fn accept() -> #(hello_rule.State, ConnectionStep(Nil)) {
   take(
     hello_rule.new(hello_rule.Settings(hello: hello())),
-    Socket(
+    OwnEvent(
       Accepted(ConnectionId(1), Peer(address: "127.0.0.1", port: 1), <<
         0:size(256),
       >>),
@@ -626,13 +617,13 @@ fn accept() -> #(hello_rule.State, Step(Nil, Nil)) {
 
 fn take(
   state: hello_rule.State,
-  event: step.Event(Nil, Nil),
-) -> #(hello_rule.State, Step(Nil, Nil)) {
+  event: step.Event(ConnectionEvent(Nil, Nil)),
+) -> #(hello_rule.State, ConnectionStep(Nil)) {
   hello_rule.step(state, Input(now: Now(monotonic_ms: 0, filetime: 0), event:))
 }
 
 fn recorded_header(
-  rule: Rule(hello_rule.Settings, a, b, c, d, e),
+  rule: Rule(hello_rule.Settings, a, b, c, d),
 ) -> rule_recording.Header(hello_rule.Settings) {
   Header(
     format: rule_recording.format,
@@ -644,7 +635,9 @@ fn recorded_header(
   )
 }
 
-fn end_record(count: Int) -> Record(Nil, Nil, Nil, Nil) {
+fn end_record(
+  count: Int,
+) -> Record(Nil, ConnectionEvent(Nil, Nil), ConnectionEffect) {
   End(count:)
 }
 
@@ -683,7 +676,7 @@ fn record_one_ping_of(
 
 /// Starts a listener whose connections run `rule` and ask no one.
 fn start(
-  rule rule: Rule(settings, state, Nil, Nil, Nil, Nil),
+  rule rule: ConnectionRule(settings, state, Nil, Nil, Nil),
   recorder recorder: option.Option(file.Recorder),
   shutdown_ms shutdown_ms: Int,
 ) -> ask_support.Server {
@@ -697,7 +690,7 @@ fn start(
 }
 
 fn serving(
-  rule: Rule(settings, state, Nil, Nil, Nil, Nil),
+  rule: ConnectionRule(settings, state, Nil, Nil, Nil),
   recorder: option.Option(file.Recorder),
   shutdown_ms: Int,
   body: fn(ask_support.Server) -> a,
@@ -734,14 +727,16 @@ fn within(now: step.Now, window: #(#(Int, Int), #(Int, Int))) -> Bool {
 }
 
 /// The inputs of the one recording in the folder, in order.
-fn taken_inputs(folder: String) -> List(Input(Nil, Nil)) {
+fn taken_inputs(folder: String) -> List(ConnectionInput(Nil, Nil)) {
   let assert Ok(#(_, records)) =
     rule_recording.read(recording_support.recording_in(folder))
     as "the recording reads"
   taken(records)
 }
 
-fn taken(records: List(Record(Nil, Nil, Nil, Nil))) -> List(Input(Nil, Nil)) {
+fn taken(
+  records: List(Record(Nil, ConnectionEvent(Nil, Nil), ConnectionEffect)),
+) -> List(ConnectionInput(Nil, Nil)) {
   list.filter_map(records, fn(record) {
     case record {
       Taken(input:, ..) -> Ok(input)
@@ -750,28 +745,27 @@ fn taken(records: List(Record(Nil, Nil, Nil, Nil))) -> List(Input(Nil, Nil)) {
   })
 }
 
-fn is_read(input: Input(Nil, Nil)) -> Bool {
+fn is_read(input: ConnectionInput(Nil, Nil)) -> Bool {
   case input.event {
-    Socket(Read(..)) -> True
-    Socket(Accepted(..))
-    | Socket(PeerClosed)
-    | Socket(ReadFailed(..))
-    | Socket(WriteFailed(..))
-    | step.Started
-    | step.Woken(..)
-    | step.Asked(..)
+    OwnEvent(Read(..)) -> True
+    OwnEvent(Accepted(..))
+    | OwnEvent(PeerClosed)
+    | OwnEvent(ReadFailed(..))
+    | OwnEvent(WriteFailed(..))
+    | OwnEvent(step.Woken(..))
     | step.WatchEnded(..)
-    | step.TimerFired(..)
-    | step.Answered(..)
-    | step.AnsweredLate(..)
+    | OwnEvent(step.TimerFired(..))
+    | OwnEvent(step.Answered(..))
     | Stopping(..) -> False
   }
 }
 
 /// The bytes of the reads, one after another.
-fn joined_reads(events: List(step.Event(Nil, Nil))) -> BitArray {
+fn joined_reads(
+  events: List(step.Event(ConnectionEvent(Nil, Nil))),
+) -> BitArray {
   list.fold(events, <<>>, fn(joined, event) {
-    let assert Socket(Read(bytes:)) = event as "only reads lie between"
+    let assert OwnEvent(Read(bytes:)) = event as "only reads lie between"
     <<joined:bits, bytes:bits>>
   })
 }

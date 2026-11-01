@@ -15,7 +15,7 @@
 ////   Join(c1, character) ─▶ Asked ─▶ unit id u = next unit id; next + 1
 ////                                   player = (c1, u, character, watch w1)
 ////                                   Watch(w1, Connection(c1))      ─▶ monitors c1
-////   ◀─ Joined(u)          ◀─ Reply(caller, Joined(u))
+////   ◀─ Joined(u)          ◀─ OwnEffect(Reply(caller, Joined(u)))
 //// ```
 ////
 //// - **The incarnation** is in every `Joined`, so the joiner watches the run
@@ -39,10 +39,10 @@
 //// - **Started** does nothing: a map starts empty.
 
 import genesis_prime/step.{
-  type CallerId, type ConnectionId, type Input, type Rule, type Step,
-  type WatchId, Answered, AnsweredLate, Asked, Connection, Effects, Log,
-  LogError, LogLine, Reply, Socket, Started, Stop, Stopping, TimerFired, Watch,
-  WatchEnded, WatchId, Woken,
+  type CallerId, type ConnectionId, type Effect, type ServiceEffect,
+  type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
+  Connection, Effects, Log, LogError, LogLine, OwnEffect, OwnEvent, Reply,
+  Started, Stop, Stopping, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/dict.{type Dict}
@@ -93,7 +93,7 @@ type Player {
 pub fn rule(
   map map: MapId,
   incarnation incarnation: Int,
-) -> Rule(Settings, State, Message, Nil, Outgoing, Nil) {
+) -> ServiceRule(Settings, State, Message, Outgoing) {
   step.Rule(
     name: rule_name,
     settings: Settings(map:, incarnation:),
@@ -118,16 +118,14 @@ pub fn new(settings: Settings) -> State {
 /// crashes the process.
 pub fn step(
   state state: State,
-  input input: Input(Message, Nil),
-) -> #(State, Step(Outgoing, Nil)) {
+  input input: ServiceInput(Message),
+) -> #(State, ServiceStep(Outgoing)) {
   case input.event {
-    Started -> #(state, Effects([]))
+    OwnEvent(Started) -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
-    Asked(caller:, message: Join(connection:, character_id:)) ->
+    OwnEvent(Asked(caller:, message: Join(connection:, character_id:))) ->
       joined(state:, caller:, connection:, character_id:)
     WatchEnded(watch:) -> ended(state:, watch:)
-    Socket(..) | Woken(..) | TimerFired(..) | Answered(..) | AnsweredLate(..) ->
-      panic as "a map takes Started, Asked, WatchEnded and Stopping only; its shell gives no Socket, Woken, TimerFired, Answered or AnsweredLate"
   }
 }
 
@@ -139,7 +137,7 @@ fn joined(
   caller caller: CallerId,
   connection connection: ConnectionId,
   character_id character_id: Int,
-) -> #(State, Step(Outgoing, Nil)) {
+) -> #(State, ServiceStep(Outgoing)) {
   let incarnation = state.settings.incarnation
   case dict.get(state.players, connection) {
     Ok(player) -> #(
@@ -159,7 +157,7 @@ fn joined(
             <> " of character "
             <> int.to_string(player.character_id),
         ),
-        Reply(caller, Joined(unit_id: player.unit_id, incarnation:)),
+        OwnEffect(Reply(caller, Joined(unit_id: player.unit_id, incarnation:))),
       ]),
     )
     Error(Nil) -> {
@@ -179,7 +177,7 @@ fn joined(
         ),
         Effects([
           Watch(watch:, target: Connection(connection)),
-          Reply(caller, Joined(unit_id:, incarnation:)),
+          OwnEffect(Reply(caller, Joined(unit_id:, incarnation:))),
         ]),
       )
     }
@@ -191,7 +189,7 @@ fn joined(
 fn ended(
   state state: State,
   watch watch: WatchId,
-) -> #(State, Step(Outgoing, Nil)) {
+) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.watches, watch) {
     Ok(connection) -> #(
       State(
@@ -219,7 +217,7 @@ fn log_error(
   state state: State,
   about about: step.About,
   text text: String,
-) -> step.Effect(Outgoing) {
+) -> Effect(ServiceEffect(Outgoing)) {
   Log(LogLine(
     level: LogError,
     text:,

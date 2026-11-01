@@ -15,8 +15,8 @@
 
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
-  type Input, type Rule, type Step, Answered, AnsweredLate, Asked, Effects,
-  Reply, Rule, Socket, Started, Stop, Stopping, TimerFired, WatchEnded, Woken,
+  type ServiceInput, type ServiceRule, type ServiceStep, Asked, Effects,
+  OwnEffect, OwnEvent, Reply, Rule, Started, Stop, Stopping, WatchEnded,
 }
 import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
@@ -74,7 +74,7 @@ pub opaque type State {
 }
 
 /// The rule as its service shell runs it.
-pub fn rule() -> Rule(Nil, State, Message, Nil, Answer, Nil) {
+pub fn rule() -> ServiceRule(Nil, State, Message, Answer) {
   Rule(name: rule_name, settings: Nil, new:, step:)
 }
 
@@ -88,24 +88,19 @@ pub fn new(_settings: Nil) -> State {
 /// a service's shell never gives is a bug, and crashes the process.
 pub fn step(
   state state: State,
-  input input: Input(Message, Nil),
-) -> #(State, Step(Answer, Nil)) {
+  input input: ServiceInput(Message),
+) -> #(State, ServiceStep(Answer)) {
   let now = input.now.monotonic_ms
   let state = drop_expired(state, now)
   case input.event {
-    Started -> #(state, Effects([]))
+    OwnEvent(Started) -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
-    Asked(caller:, message:) -> {
+    OwnEvent(Asked(caller:, message:)) -> {
       let #(state, answer) = answer(state:, now:, message:)
-      #(state, Effects([Reply(caller, answer)]))
+      #(state, Effects([OwnEffect(Reply(caller, answer))]))
     }
-    Socket(..)
-    | Woken(..)
-    | WatchEnded(..)
-    | TimerFired(..)
-    | Answered(..)
-    | AnsweredLate(..) ->
-      panic as "the hand-off takes Started, Asked and Stopping only; its shell gives no Socket, Woken, WatchEnded, TimerFired, Answered or AnsweredLate"
+    WatchEnded(..) ->
+      panic as "the hand-off takes Started, Asked and Stopping only; it watches no process"
   }
 }
 
