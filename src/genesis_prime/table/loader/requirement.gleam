@@ -1,6 +1,7 @@
 //// The rows the server requires of the client's tables: columns whose ids
 //// must all have a row in another table, checked at load.
 
+import genesis_prime/game/level
 import genesis_prime/game/start_place
 import genesis_prime/table/loader/store
 
@@ -8,6 +9,8 @@ import genesis_prime/table/loader/store
 /// evidence that the client reads it.
 /// - The start places of the starts of each race and faction, each a row of
 ///   WorldLocation2 (genesis_prime/game/start_place).
+/// - GameFormula row 145 and the XpPerLevel records to the highest level
+///   (genesis_prime/game/level).
 pub fn all() -> List(store.Requirement) {
-  [start_place.requirement()]
+  [start_place.requirement(), ..level.requirements()]
 }

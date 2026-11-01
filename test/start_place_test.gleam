@@ -1,11 +1,14 @@
 //// Where a new character starts (`genesis_prime/game/start_place`). Expected
 //// values come from these places.
-//// - Jim's world database (wildstar-knowledge, world-data/start_location.tsv):
-////   the WorldLocation2 row of each
+//// - Jim's world database, converted from another server project and used
+////   under Jim's one-time exception (decision D18 on #2; wildstar-knowledge,
+////   world-data/start_location.tsv): the WorldLocation2 row of each
 ////   start of each race and faction. Novice (characterCreationStartEnum 4):
 ////   row 51596 for every race and faction. Veteran (3): Exile Human and
 ////   Granok 1594, Aurin and Mordesh 37015; Dominion Cassian and Mechari
-////   18987, Draken and Chua 8223. Level 50 (5): Exile 53050, Dominion 53051.
+////   18987, Draken and Chua 8223. Its Level 50 rows (53050 and 53051) are not
+////   kept: every Level 50 CharacterCreation row costs account currency, which
+////   a create refuses first (decision D7 on #2).
 //// - The client's own WorldLocation2 rows: the world, zone and position of
 ////   each, as `character_tables` plants them (`character_tables_test` compares
 ////   them with the real file) and as the real table holds them.
@@ -65,8 +68,6 @@ fn starts() -> List(#(Start, Int, Int, Int)) {
       #(Veteran, dominion, 5, 8223),
       #(Veteran, dominion, 13, 8223),
     ],
-    list.map([1, 3, 4, 16], fn(race) { #(Level50, exile, race, 53_050) }),
-    list.map([1, 5, 12, 13], fn(race) { #(Level50, dominion, race, 53_051) }),
   ])
 }
 
@@ -119,8 +120,12 @@ pub fn a_start_race_or_faction_with_no_row_has_no_place_test() -> Nil {
     as "a faction that is neither Dominion nor Exile"
   assert none(exile, 5, Veteran) == Error(Nil)
     as "Draken is a Dominion race: no Exile Draken has a start"
-  assert none(dominion, 3, Level50) == Error(Nil)
+  assert none(dominion, 3, Veteran) == Error(Nil)
     as "Granok is an Exile race: no Dominion Granok has a start"
+  assert none(exile, 1, Level50) == Error(Nil)
+    as "no Level 50 start has a place: every Level 50 row costs account currency, which a create refuses first"
+  assert none(dominion, 1, Level50) == Error(Nil)
+    as "no Level 50 start has a place, of either faction"
   assert none(exile, 9, Novice) == Error(Nil) as "race 9 is no player race"
 }
 
@@ -159,7 +164,7 @@ pub fn every_enabled_character_creation_row_of_a_start_has_a_start_place_in_the_
       row.enabled
       && !row.costume_only
       && list.contains(
-        [Novice, Veteran, Level50],
+        [Novice, Veteran],
         start_place.start(enum_value: row.character_creation_start_enum),
       )
     })
@@ -189,7 +194,7 @@ pub fn a_create_of_each_start_of_each_race_and_faction_saves_the_place_of_its_wo
       row.enabled
       && !row.costume_only
       && list.contains(
-        [Novice, Veteran, Level50],
+        [Novice, Veteran],
         start_place.start(enum_value: row.character_creation_start_enum),
       )
     })
@@ -326,5 +331,25 @@ pub fn the_client_has_every_start_places_row_so_the_servers_table_load_holds_tes
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   assert start_place.requirement().missing(tables) == []
-    as "the client's WorldLocation2 holds rows 1594, 8223, 18987, 37015, 51596, 53050 and 53051; the shared tables loaded with this requirement among the server's"
+    as "the client's WorldLocation2 holds rows 1594, 8223, 18987, 37015 and 51596; the shared tables loaded with this requirement among the server's"
+}
+
+pub fn every_level_50_row_of_the_clients_table_costs_account_currency_so_a_create_refuses_it_before_its_start_place_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let rows =
+    list.filter(creation_table.all(tables), fn(row) {
+      start_place.start(enum_value: row.character_creation_start_enum)
+      == Level50
+    })
+  assert rows != [] as "the client's table has Level 50 rows"
+  list.each(rows, fn(row) {
+    assert row.account_currency_amount_cost != 0
+      as {
+        "fact CharacterCreation.xp: Level50 rows cost account currency 13, amount 1; CharacterCreation row "
+        <> int.to_string(row.id)
+        <> " is one"
+      }
+  })
 }

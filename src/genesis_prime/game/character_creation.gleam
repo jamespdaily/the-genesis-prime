@@ -9,7 +9,8 @@
 ////
 //// A request that passes gives the character to make: its gender, race, class
 //// and faction are the row's, and its place is its start's
-//// (genesis_prime/game/start_place). Each refusal maps to one result the client
+//// (genesis_prime/game/start_place) and its level is the one its xp gives
+//// (genesis_prime/game/level). Each refusal maps to one result the client
 //// shows, in one place (`result_of`): a name that fails the rule is 10, "name
 //// length", and every other refusal is 4, "due to an error"
 //// (lua.Character.OnCreateCharacterFailed). A request the real client would not
@@ -17,6 +18,7 @@
 
 import genesis_prime/game/appearance
 import genesis_prime/game/character_name
+import genesis_prime/game/level
 import genesis_prime/game/start_place
 import genesis_prime/message/create_character.{type CreateCharacter}
 import genesis_prime/message/create_result.{type CreateResult}
@@ -28,10 +30,6 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-
-/// The characterCreationStartEnum of the Arkship start, whose 64 rows are all
-/// disabled in the table (CharacterCreation.accountCurrencyTypeIdCost).
-const arkship_start = 0
 
 /// The most labels a request carries: the label table's size (opcode.0x25b.counts).
 const most_labels = 27
@@ -47,8 +45,6 @@ pub type Refusal {
   NoSuchRow(creation_id: Int)
   /// The row's enabled column is off.
   RowDisabled(creation_id: Int)
-  /// The row is of the Arkship start.
-  ArkshipRow(creation_id: Int)
   /// The row is for the create screen's model and makes no character.
   CostumeOnlyRow(creation_id: Int)
   /// The row needs an entitlement, which no account holds yet.
@@ -68,6 +64,9 @@ pub type Refusal {
   /// The row's start, race and faction have no start place
   /// (genesis_prime/game/start_place).
   NoStartPlace(creation_id: Int, start: Int, faction_id: Int, race_id: Int)
+  /// The row's xp is no level of the client's XpPerLevel table
+  /// (genesis_prime/game/level).
+  NoLevelForExperience(creation_id: Int, experience: Int)
 }
 
 /// Checks a request against the client's tables: the name, then the row it
@@ -101,10 +100,6 @@ pub fn check_row(
   let creation_id = row.id
   let labels = list.length(request.customisation_labels)
   use <- bool.guard(!row.enabled, Error(RowDisabled(creation_id:)))
-  use <- bool.guard(
-    row.character_creation_start_enum == arkship_start,
-    Error(ArkshipRow(creation_id:)),
-  )
   use <- bool.guard(row.costume_only, Error(CostumeOnlyRow(creation_id:)))
   use <- bool.guard(
     row.entitlement_id_required != 0,
@@ -154,24 +149,30 @@ pub fn check_row(
         race_id: race_id.value,
       ))
     Ok(place) ->
-      Ok(NewCharacter(
-        name: request.name,
-        gender: row.sex,
-        race_id:,
-        class_id: character_creation.class_id(row),
-        faction_id: row.faction_id,
-        path: request.path,
-        world_id: place.world_id,
-        world_zone_id: place.world_zone_id,
-        position_x: place.x,
-        position_y: place.y,
-        position_z: place.z,
-        look: store.look(
-          labels: request.customisation_labels,
-          values: request.customisation_values,
-        ),
-        bones: request.bone_values,
-      ))
+      case level.for_experience(tables:, experience: row.xp) {
+        Error(Nil) ->
+          Error(NoLevelForExperience(creation_id:, experience: row.xp))
+        Ok(level) ->
+          Ok(NewCharacter(
+            name: request.name,
+            gender: row.sex,
+            race_id:,
+            class_id: character_creation.class_id(row),
+            faction_id: row.faction_id,
+            level:,
+            path: request.path,
+            world_id: place.world_id,
+            world_zone_id: place.world_zone_id,
+            position_x: place.x,
+            position_y: place.y,
+            position_z: place.z,
+            look: store.look(
+              labels: request.customisation_labels,
+              values: request.customisation_values,
+            ),
+            bones: request.bone_values,
+          ))
+      }
   }
 }
 
@@ -190,7 +191,6 @@ pub fn result_of(refusal: Refusal) -> CreateResult {
     NameBreaksRule -> create_result.NameLength
     NoSuchRow(..)
     | RowDisabled(..)
-    | ArkshipRow(..)
     | CostumeOnlyRow(..)
     | NeedsEntitlement(..)
     | CostsCurrency(..)
@@ -198,7 +198,8 @@ pub fn result_of(refusal: Refusal) -> CreateResult {
     | TooManyLabels(..)
     | WrongBoneCount(..)
     | BoneNotFinite(..)
-    | NoStartPlace(..) -> create_result.CreateFailed
+    | NoStartPlace(..)
+    | NoLevelForExperience(..) -> create_result.CreateFailed
   }
 }
 
@@ -210,7 +211,6 @@ pub fn warning(refusal: Refusal) -> Option(String) {
     NameBreaksRule -> None
     NoSuchRow(..)
     | RowDisabled(..)
-    | ArkshipRow(..)
     | CostumeOnlyRow(..)
     | NeedsEntitlement(..)
     | CostsCurrency(..)
@@ -218,7 +218,8 @@ pub fn warning(refusal: Refusal) -> Option(String) {
     | TooManyLabels(..)
     | WrongBoneCount(..)
     | BoneNotFinite(..)
-    | NoStartPlace(..) -> Some(describe(refusal))
+    | NoStartPlace(..)
+    | NoLevelForExperience(..) -> Some(describe(refusal))
   }
 }
 
@@ -229,7 +230,6 @@ pub fn describe(refusal: Refusal) -> String {
     NameBreaksRule -> "the name fails the client's text rule 0"
     NoSuchRow(creation_id:) -> row_text(creation_id) <> " does not exist"
     RowDisabled(creation_id:) -> row_text(creation_id) <> " is disabled"
-    ArkshipRow(creation_id:) -> row_text(creation_id) <> " is an Arkship row"
     CostumeOnlyRow(creation_id:) -> row_text(creation_id) <> " is costume only"
     NeedsEntitlement(creation_id:) ->
       row_text(creation_id) <> " needs an entitlement the account does not hold"
@@ -260,6 +260,11 @@ pub fn describe(refusal: Refusal) -> String {
       <> int.to_string(faction_id)
       <> ", race "
       <> int.to_string(race_id)
+    NoLevelForExperience(creation_id:, experience:) ->
+      row_text(creation_id)
+      <> " has experience "
+      <> int.to_string(experience)
+      <> ", which is no level of the client's XpPerLevel table"
   }
 }
 

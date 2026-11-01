@@ -6,7 +6,8 @@
 ////   `priv/migrations/0002_character_list_columns.sql` and
 ////   `priv/migrations/0003_character_look.sql`.
 //// - The create: a new character has the values of its CharacterCreation row
-////   at level 1, with its path, look and bones as the client sent them
+////   at the level the create gave (3, the level of a Veteran row's xp 1710 by
+////   GetLevelForExperience 0x140029820), with its path, look and bones as the client sent them
 ////   (opcode.0x25b); a name is unique ignoring case and an account holds at
 ////   most its slots (lua.CharacterSelection.OnLoadFromCharacter), each held by
 ////   Postgres, so a create that is refused stores nothing.
@@ -691,8 +692,8 @@ pub fn a_rename_of_an_unmarked_or_another_accounts_character_or_of_none_is_not_r
 // ---- create ----
 
 /// A new character with the values of CharacterCreation row 466 (class 1,
-/// race 1, sex 1, faction 167), the path 2, the start place of
-/// WorldLocation2 row 51596 and a look and bones.
+/// race 1, sex 1, faction 167), the level 3 of a Veteran row's xp 1710, the
+/// path 2, the start place of WorldLocation2 row 51596 and a look and bones.
 fn a_new_character(name: String) -> store.NewCharacter {
   NewCharacter(
     name:,
@@ -700,6 +701,7 @@ fn a_new_character(name: String) -> store.NewCharacter {
     race_id: RaceId(1),
     class_id: ClassId(1),
     faction_id: 167,
+    level: 3,
     path: 2,
     world_id: 3460,
     world_zone_id: 6009,
@@ -734,7 +736,7 @@ fn create(
   answer
 }
 
-pub fn a_create_stores_the_character_at_level_1_with_the_values_it_was_given_and_the_list_returns_it_test() -> Nil {
+pub fn a_create_stores_the_character_at_the_level_it_was_given_with_the_values_it_was_given_and_the_list_returns_it_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
   let account = insert_account(store, "login-1")
@@ -751,7 +753,7 @@ pub fn a_create_stores_the_character_at_level_1_with_the_values_it_was_given_and
           race_id: RaceId(1),
           class_id: ClassId(1),
           faction_id: 167,
-          level: 1,
+          level: 3,
           path: 2,
           world_id: 3460,
           world_zone_id: 6009,
@@ -770,7 +772,7 @@ pub fn a_create_stores_the_character_at_level_1_with_the_values_it_was_given_and
         ),
       ]),
     )
-    as "the create's result: race, sex, class and faction from the creation row, level 1, the start place the create gave (World 3460, zone 6009 and the position of WorldLocation2 row 51596, as 32-bit floats), the look and the bones as the client sent them (32-bit values come back as they went in)"
+    as "the create's result: race, sex, class and faction from the creation row, the level the create gave (3, not 1), the start place the create gave (World 3460, zone 6009 and the position of WorldLocation2 row 51596, as 32-bit floats), the look and the bones as the client sent them (32-bit values come back as they went in)"
   stop(store)
 }
 

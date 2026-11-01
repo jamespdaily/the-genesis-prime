@@ -3,16 +3,21 @@
 //// WorldLocation2 row, but no client table links a start to its row
 //// (CharacterCreation.characterCreationStartEnum, WorldLocation2.50230). The
 //// links are Jim's world database's (wildstar-knowledge,
-//// world-data/start_location.tsv, its 24 rows): each of its places is a
-//// WorldLocation2 row's to the unit, except Draken and Chua Veteran, 3.4 units
-//// from row 8223, which is used. The place itself, world, zone and position,
-//// is always the client's row.
+//// world-data/start_location.tsv, its 24 rows), which was converted from
+//// another server project and is used under Jim's one-time exception (decision
+//// D18 on #2): each of its places is a WorldLocation2 row's to the unit, except
+//// Draken and Chua Veteran, 3.4 units from row 8223, which is used. The place
+//// itself, world, zone and position, is always the client's row.
 ////
 //// - Novice (characterCreationStartEnum 4, PreTutorial), every race and
 ////   faction: row 51596, World 3460 (Map\NewPlayerExperience).
 //// - Veteran (3, Nexus): Exile Human and Granok 1594, Aurin and Mordesh 37015;
 ////   Dominion Cassian and Mechari 18987, Draken and Chua 8223.
-//// - Level 50 (5): Exile 53050, Dominion 53051.
+////
+//// Level 50 (5) has no place: every Level 50 CharacterCreation row costs
+//// account currency, which a create refuses first (`CostsCurrency`), so its
+//// two rows of the database, Exile 53050 and Dominion 53051, are not kept
+//// (decision D7 on #2).
 ////
 //// A start, race or faction that no row above names has no place, so a
 //// create for it is refused (genesis_prime/game/character_creation). The
@@ -114,18 +119,6 @@ const starts = [
     faction_id: dominion,
     race_ids: [RaceId(5), RaceId(13)],
     location_id: 8223,
-  ),
-  StartGroup(
-    start: Level50,
-    faction_id: exile,
-    race_ids: exile_races,
-    location_id: 53_050,
-  ),
-  StartGroup(
-    start: Level50,
-    faction_id: dominion,
-    race_ids: dominion_races,
-    location_id: 53_051,
   ),
 ]
 

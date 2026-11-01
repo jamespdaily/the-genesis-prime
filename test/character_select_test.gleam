@@ -261,6 +261,7 @@ pub fn a_valid_request_asks_the_store_to_make_the_character_with_the_slot_count_
           race_id: RaceId(1),
           class_id: ClassId(1),
           faction_id: 167,
+          level: 1,
           path: 1,
           world_id: 3460,
           world_zone_id: 6009,
