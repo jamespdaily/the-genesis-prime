@@ -345,6 +345,17 @@ pub fn wrapped(
   bytes
 }
 
+/// The ids of the messages every connection that takes the client's wrapper
+/// handles in `open`: the network layer's ping, pong and close notice
+/// (genesis_prime/connection/network_message) and the client's wrapper 0x0244
+/// that holds every other message. The coverage measure counts them as handled.
+pub fn shared_message_ids() -> List(Int) {
+  [
+    encrypted_frame.message_id(ClientWrapper),
+    ..network_message.taken_message_ids()
+  ]
+}
+
 /// What a whole frame from the client is to a rule that takes the client's
 /// wrapper.
 pub type Opened(session) {

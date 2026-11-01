@@ -2,7 +2,10 @@
 //// client's data names the types it handles, and the types it handles. The
 //// coverage measure reads these declarations.
 
+import genesis_prime/client_connection
 import genesis_prime/coverage/sent_message
+import genesis_prime/game/connection as game_connection
+import genesis_prime/login/auth_connection
 import genesis_prime/table/creature2
 import genesis_prime/table/loader/store
 import genesis_prime/table/prerequisite
@@ -134,6 +137,13 @@ fn unit_types() -> EngineDeclaration {
 /// path's ids and its number of send sites, not the sites of each id, so the
 /// ids weigh the same; an id listed once for each of its sites would weigh by
 /// sites. The messages the client only receives are not this engine's.
+///
+/// An id is handled when a rule names it: the auth rule
+/// (genesis_prime/login/auth_connection), the game rule
+/// (genesis_prime/game/connection), or the shared connection code, for the
+/// network layer's ids and the wrapper 0x244 (genesis_prime/client_connection).
+/// Each names its ids in the one table its dispatch reads. The STS rule names
+/// no id: its requests are text paths (genesis_prime/login/sts_connection).
 fn messages() -> EngineDeclaration {
   EngineDeclaration(
     name: "Client message routing",
@@ -142,7 +152,12 @@ fn messages() -> EngineDeclaration {
       evidence: "the messages the client sends, from the facts of its send paths: SendWorldMessage 0x1403f4900 (245 ids), 0x1403f4740 (58), 0x140016010 (7), 0x1400161d0 (23), the 14 ids serialised directly (0x140332920), 0x244, 0x38c and the network layer's ids 0, 1 and 2 (0x140332580): 352 ids (RegisterMessage 0x1403309a0). Each id is one row: the facts give each path's ids and send sites, not the sites of each id",
       ids: sent_message.all(),
     ),
-    handled: [],
+    handled: [
+      client_connection.shared_message_ids(),
+      auth_connection.taken_message_ids(),
+      game_connection.taken_message_ids(),
+    ]
+      |> list.flatten,
   )
 }
 

@@ -25,6 +25,7 @@ import genesis_prime/coverage/engine.{type EngineDeclaration, EngineDeclaration}
 import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, Measured, TypeLine, Unmeasured,
 }
+import genesis_prime/coverage/sent_message
 import genesis_prime/table/creature2
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file.{type Schema}
@@ -425,4 +426,21 @@ pub fn the_message_checklist_says_each_id_the_client_sends_is_one_row_test() -> 
     "- [ ] type 0: 1 row (25.0%)\n- [x] type 1: 1 row (25.0%)\n- [ ] type 2: 1 row (25.0%)\n- [ ] type 580: 1 row (25.0%)",
   )
     as "equal rows: the lower id first, and 1 is declared handled so it is checked; 580 is 0x244; a quarter each; id 0 is an id like any other, the network layer's own (fact 0x140332580)"
+}
+
+pub fn the_routing_engine_handles_the_ids_the_rules_and_the_shared_connection_code_take_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let routing = engine_named("Client message routing")
+  assert list.sort(routing.handled, int.compare)
+    == [
+      0x0000, 0x0001, 0x0002, 0x0244, 0x025B, 0x025C, 0x0352, 0x038C, 0x058F,
+      0x0592, 0x0786, 0x07DD, 0x07E0,
+    ]
+    as "the network layer's ids 0, 1 and 2 and the wrapper 0x0244 (fact 0x140332580, fact 0x140332920), the auth rule's 0x0592, and the game rule's 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786 and 0x038C"
+  let assert Measured(types:, breaches:, ..) =
+    measurement.from_values(engine: routing, values: sent_message.all())
+    as "the routing engine is measured over the ids the client sends"
+  assert breaches == [] as "every handled id is one the client sends"
+  assert list.length(list.filter(types, fn(line) { line.handled })) == 13
+    as "the 13 ids above are marked handled among the 352"
 }
