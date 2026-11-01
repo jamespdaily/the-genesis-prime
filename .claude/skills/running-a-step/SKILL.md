@@ -21,7 +21,7 @@ One fresh implementer per step, in its own worktree (the Agent tool's worktree i
 - **Reuse starting points:** the existing functions, test support and packages a gatherer found for each planned function, by name and file. Never an existing module as a template.
 - **Failure table,** for a step with processes, locks, timers or remote steps: each step of the flow, and what happens if it is killed there, run twice at once, or times out. Each row becomes a test, and Codex reviews the table with the shape before the build.
 - **Escalation:** what comes back to Jim instead of being chosen.
-- **Checks:** `./check fast`, `./check` and `GENESIS_NO_CLIENT=1 GENESIS_TABLE_DIR=/nonexistent ./check`, with their whole output kept.
+- **Checks:** `./check fast`, `./check` and `GENESIS_NO_CLIENT=1 GENESIS_TABLE_DIR=/nonexistent ./check`, with their whole output kept. A fresh worktree runs `gleam build` first: the fast check's budget can kill a cold build half way.
 
 ## The hand-back
 
