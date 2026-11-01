@@ -1,0 +1,21 @@
+import genesis_prime/connection/shell
+import genesis_prime/step.{Effects, OwnEffect, Rule, Write}
+import gleam/option.{None}
+
+/// A connection rule that writes, handed to the connection shell.
+pub fn settings() {
+  shell.Settings(
+    rule: Rule(
+      name: "planted",
+      settings: Nil,
+      new: fn(_settings) { Nil },
+      step: fn(state, _input) { #(state, Effects([OwnEffect(Write(<<1>>))])) },
+    ),
+    send_deadline_ms: 100,
+    shutdown_ms: 100,
+    recorder: None,
+    directory: fn(_request, _deadline, _reply) { Error(Nil) },
+    registry: None,
+    locate: fn(_address) { Error(Nil) },
+  )
+}

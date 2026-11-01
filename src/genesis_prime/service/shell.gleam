@@ -40,6 +40,7 @@
 ////
 //// - **CallerId.** The shell numbers the calls it takes from 1, in the order
 ////   they arrive, so a recording names each caller with no process id.
+//// - **A reply nobody waits for.** An answer after the asker's deadline
 ////   reaches the asker's shell, which drops it with no input to the asker's
 ////   rule (genesis_prime/connection/shell); one to an asker that has ended is
 ////   lost. The service never knows either way.
@@ -88,7 +89,6 @@
 ////   has no values, so no rule can build a step that ends in one; the shell's
 ////   case for such a step is unreachable.
 
-/// - **A reply nobody waits for.** An answer after the asker's deadline
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/service.{type Call, type Reach, Call}
 import genesis_prime/step.{
@@ -108,8 +108,8 @@ import gleam/result
 /// What a service is started with.
 pub type Settings(settings, state, message, outgoing) {
   Settings(
-    /// The rule. A service takes no answers and makes no asks, so those
-    /// types are `Nil`; `outgoing` is what it answers with.
+    /// The rule. A service makes no ask, so its request type is `NoAsk`, and
+    /// it takes no answers; `outgoing` is what it answers and sends with.
     rule: ServiceRule(settings, state, message, outgoing),
     /// How it finds the processes its rule watches and sends to.
     reach: Reach(outgoing),

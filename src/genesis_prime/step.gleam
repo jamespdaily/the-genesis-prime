@@ -53,7 +53,7 @@ pub type Rule(settings, state, request, own_input, own_effect) {
 
 /// A connection's rule: the one kind with a socket. The connection shell runs
 /// only this kind.
-pub type ConnectionRule(settings, state, message, answer, request) =
+pub type ConnectionRule(settings, state, request, message, answer) =
   Rule(
     settings,
     state,

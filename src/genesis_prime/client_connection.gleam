@@ -8,7 +8,7 @@
 //// Each rule keeps a `Link`: who the connection is for their log lines, the
 //// seed's random source and the number of their last ask. Each sorts an input
 //// with `hear`, which decides what the client closing, a failed socket and an
-//// input a connection is never given do, and ends the connection when the
+//// input it never asked for do, and ends the connection when the
 //// server stops after the effects the rule gives it.
 //// Each takes a request or frame at a time, through a `Flow` that `drive`
 //// runs, and says what it decided with `Handled`, which `settle` carries out.
@@ -207,9 +207,9 @@ pub type Heard {
 /// `stopping` gives, which the rule writes first: none for a connection with
 /// no one to tell, a notice for one whose client waits for the server's next
 /// message. `stopping` is called only when the server stops. `Woken`,
-/// `WatchEnded` and `TimerFired` reach only the game rule, which takes them
-/// before it calls `hear`; to every rule before it watches or starts a timer,
-/// and to the login's rules, they are inputs a connection is never given.
+/// `WatchEnded` and `TimerFired` come only for a watch or timer the rule
+/// started, and only the game rule starts either; it takes them before it calls
+/// `hear`. To every other rule they are inputs it never asked for.
 pub fn hear(
   event event: Event(ConnectionEvent(message, Answer)),
   about about: About,
@@ -231,10 +231,7 @@ pub fn hear(
         "the socket failed (" <> step.describe_socket_failure(failure) <> ")",
       )
     OwnEvent(Woken(..)) | step.WatchEnded(..) | OwnEvent(TimerFired(..)) ->
-      ends(
-        LogError,
-        "a connection rule took an input a connection is never given",
-      )
+      ends(LogError, "a connection rule took an input it never asked for")
   }
 }
 

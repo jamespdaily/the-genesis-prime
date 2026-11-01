@@ -41,8 +41,9 @@
 ////   reaches the process then.
 //// - **The server stopping.** The shell traps its parent's exit, so the
 ////   tree's stop arrives as `Stopping`, with a deadline of the listener's
-////   shutdown time less the send deadline, never later than Ranch's kill. A rule that has not stopped by then is killed, and
-////   its recording has no `End`.
+////   shutdown time less the send deadline, never later than Ranch's kill. A
+////   rule that has not stopped by then is killed, and its recording has no
+////   `End`.
 //// - **A crash.** When the rule's step crashes, the process ends with that
 ////   reason; Ranch starts connection processes as temporary children, so
 ////   nothing restarts it and the listener goes on accepting. The socket closes
@@ -81,7 +82,8 @@
 ////   every ask has one `Answered`; `Stopping` is the next input after a step
 ////   that ends without an ask. A worker answers late only when its answer left
 ////   before the shell's exit reached it. A late answer gives the rule no input,
-////   whether it comes after `NoAnswerInTime` or after `StoppedWaiting`. The `Now` of `Answered` is read when the outcome is known.
+////   whether it comes after `NoAnswerInTime` or after `StoppedWaiting`. The
+////   `Now` of `Answered` is read when the outcome is known.
 ////   Bytes the client sent during the ask are read only after it, since the
 ////   socket is active once and is not re-armed while the shell waits.
 //// - **The directory's own wait.** `directory` runs before the wait begins,
@@ -94,9 +96,9 @@
 ////   past the deadline, the outcome is `NoAnswerInTime` at once.
 //// - **A message delivered.** Another process sends the connection's pid
 ////   `{woken, message}` (`registry.deliver`); the shell takes it between steps
-////   as `OwnEvent(Woken(message))`, in the order it arrived among the socket's reads. One
-////   that arrives during an ask waits until the ask's outcome and the step it
-////   starts are done, like a read. A message for a connection that has ended is
+////   as `OwnEvent(Woken(message))`, in the order it arrived among the socket's
+////   reads. One that arrives during an ask waits until the ask's outcome and
+////   the step it starts are done, like a read. A message for a connection that has ended is
 ////   dropped by the VM, and one that arrives after the shell began to stop is
 ////   dropped with the process. A connection with no registry in its settings is
 ////   joined to no group, so no process can send it anything.
@@ -109,15 +111,16 @@
 ////   outcome of an ask the step ends in, since no other input is taken
 ////   meanwhile; before the mailbox is read and before a stop that arrived
 ////   during an ask, with the ends of the step's other such watches in the
-////   order opened. A step that stops the connection takes none. `Unwatch(id)` drops the monitor and the DOWN already
-////   waiting, or an id held for a target no process holds. A watch's DOWN that
-////   arrives during an ask waits like a delivered message. An id already open,
-////   monitored or held, ends the connection with an error log.
+////   order opened. A step that stops the connection takes none. `Unwatch(id)`
+////   drops the monitor and the DOWN already waiting, or an id held for a target
+////   no process holds. A watch's DOWN that arrives during an ask waits like a
+////   delivered message. An id already open, monitored or held, ends the
+////   connection with an error log.
 //// - **A timer.** `StartTimer(id, ms)` starts an `erlang:send_after` that sends
 ////   the shell `{timer_fired, id, reference}`, kept under `id` with its own
-////   reference. It is taken between steps as `OwnEvent(TimerFired(id))`, once, and the
-////   shell forgets the timer; one that fires during an ask waits like a
-////   delivered message. `CancelTimer(id)` cancels it and flushes its message if
+////   reference. It is taken between steps as `OwnEvent(TimerFired(id))`, once,
+////   and the shell forgets the timer; one that fires during an ask waits like
+////   a delivered message. `CancelTimer(id)` cancels it and flushes its message if
 ////   it had fired, so no `TimerFired` follows; a message already in flight
 ////   when it is cancelled is discarded on arrival, as is any message whose
 ////   reference is not the current timer's of that id, so a cancelled timer's
@@ -157,7 +160,7 @@ import gleam/option.{type Option, None, Some}
 /// What every connection of one listener is started with.
 pub type Settings(settings, state, message, answer, request) {
   Settings(
-    rule: ConnectionRule(settings, state, message, answer, request),
+    rule: ConnectionRule(settings, state, request, message, answer),
     /// How long a write may wait for the socket before it fails as
     /// `SendTimedOut`.
     send_deadline_ms: Int,

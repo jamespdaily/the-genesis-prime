@@ -60,7 +60,7 @@ pub const timer_fired = 0x74
 pub const pong = 0x70
 
 /// The rule as its shell runs it; a delivered message is an `Int`.
-pub fn rule() -> ConnectionRule(Nil, State, Int, Nil, Nil) {
+pub fn rule() -> ConnectionRule(Nil, State, Nil, Int, Nil) {
   Rule(name: "signalling_rule", settings: Nil, new:, step:)
 }
 

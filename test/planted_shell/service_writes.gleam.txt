@@ -1,0 +1,19 @@
+import genesis_prime/service
+import genesis_prime/service/shell
+import genesis_prime/step.{Effects, OwnEffect, Rule, Write}
+import gleam/option.{None}
+
+/// A service rule that writes to a socket, handed to the service shell.
+pub fn settings() {
+  shell.Settings(
+    rule: Rule(
+      name: "planted",
+      settings: Nil,
+      new: fn(_settings) { Nil },
+      step: fn(state, _input) { #(state, Effects([OwnEffect(Write(<<1>>))])) },
+    ),
+    reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
+    shutdown_ms: 100,
+    recorder: None,
+  )
+}

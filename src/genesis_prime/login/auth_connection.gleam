@@ -140,7 +140,7 @@ const reason_version_mismatch = 19
 /// The rule as its connection shell runs it.
 pub fn rule(
   settings: Settings,
-) -> ConnectionRule(Settings, State, Nil, Answer, Request) {
+) -> ConnectionRule(Settings, State, Request, Nil, Answer) {
   Rule(name: rule_name, settings:, new:, step:)
 }
 

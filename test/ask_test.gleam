@@ -25,6 +25,7 @@ import gleam/otp/static_supervisor as supervisor
 import mug
 import owned_test
 import recording_support
+import socket_watch
 
 /// How long an ask whose deadline is meant to pass waits, in milliseconds.
 const short = 300
@@ -192,6 +193,10 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   ask_support.command(client, asking_rule.ping_command, 9, wait_ms: 0)
   assert ask_support.read_pong(client) == <<0x70, 9>>
     as "the answer to ask 1 gave the rule no input, so no record comes before the pong"
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  assert socket_watch.mailbox_length(connection) == 0
+    as "the late answer was taken and dropped: nothing waits in the shell's mailbox"
   ask_support.stop(server)
 }
 

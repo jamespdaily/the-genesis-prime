@@ -97,7 +97,7 @@ pub const code_no_such_account = 8
 pub const code_unavailable = 9
 
 /// The rule as its shell runs it.
-pub fn rule() -> ConnectionRule(Nil, State, Nil, Answer, Request) {
+pub fn rule() -> ConnectionRule(Nil, State, Request, Nil, Answer) {
   Rule(name: "asking_rule", settings: Nil, new:, step:)
 }
 

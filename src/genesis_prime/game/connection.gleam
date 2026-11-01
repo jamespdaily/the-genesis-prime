@@ -297,7 +297,7 @@ const claim_timer = TimerId(1)
 /// The rule as its connection shell runs it.
 pub fn rule(
   settings: Settings,
-) -> ConnectionRule(Settings, State, Message, Answer, Request) {
+) -> ConnectionRule(Settings, State, Request, Message, Answer) {
   step.Rule(name: rule_name, settings:, new:, step:)
 }
 
