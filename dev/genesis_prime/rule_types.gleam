@@ -10,9 +10,9 @@
 //// digest; a prelude type (`Int`, `List` and the like) is named, since the
 //// compiler fixes it.
 
+import genesis_prime/digest
 import glance
 import gleam/bit_array
-import gleam/crypto
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -71,9 +71,7 @@ pub fn digest(
   |> list.append(list.sort(definitions, string.compare))
   |> string.join("\n")
   |> bit_array.from_string
-  |> crypto.hash(crypto.Sha256, _)
-  |> bit_array.base16_encode
-  |> string.lowercase
+  |> digest.sha256
 }
 
 /// A public function's name, then its parameter types and its return type.

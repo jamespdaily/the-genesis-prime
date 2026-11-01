@@ -7,15 +7,18 @@
 //// priv/migrations (genesis_prime/migration), it prints the ready line, and it
 //// keeps the node alive until SIGTERM, which OTP turns into the tree's ordered
 //// stop and then the node's. A database that lacks a migration, ran a
-//// migration this build has no file for, ran an edited one, or has no record
-//// of its migrations makes `main` stop with the reason and the node end with
-//// status 1, with no ready line.
+//// migration this build has no file for, ran an edited one, has no record of
+//// its migrations or cannot be read makes `main` stop with the reason and the
+//// node end with status 1, with no ready line, however late the database
+//// answers: one that is down at start is logged as unreachable and asked again
+//// until it answers.
 //// It serves the client's STS and auth logins (`login`) and the game server
 //// (`game`).
 
 import envoy
 import genesis_prime/application
 import genesis_prime/connection/registry
+import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
@@ -82,8 +85,8 @@ pub fn load_migrations() -> List(migration.Migration) {
     let assert Ok(bytes) = simplifile.read_bits(folder <> "/" <> file)
       as { "the migration file " <> file <> " could not be read" }
     migration.Migration(
-      name: string.drop_end(file, string.length(".sql")),
-      sha256: migration.sha256(bytes),
+      name: string.remove_suffix(file, ".sql"),
+      sha256: digest.sha256(bytes),
     )
   })
 }
@@ -108,17 +111,21 @@ pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
   )
 }
 
-/// Asks the database one read through `probe`, says through `say` what the
-/// server can do, and keeps the node alive until the tree ends. The ready line
-/// is said only when the read returned, the migrations the database recorded
+/// Asks the database through `probe` until it answers, says through `say` what
+/// the server can do, and keeps the node alive until the tree ends. The ready
+/// line is said only when the database answered, the migrations it recorded
 /// are `migrations`, and the server still serves: its tree is running and the
 /// node is not stopping. A stop can begin between that check and the line
 /// being said. A database that does not answer within the ask's time is logged
-/// as a warning and the server runs on; a database whose migrations differ
-/// from `migrations` stops `main` with the difference (`migration.describe`),
-/// which ends the node with status 1; a tree that ends is taken as
-/// `application.end_of` takes it. `start` calls it with the server's own ask,
-/// the files it read and `io.println`; the tests call it with their own.
+/// once as a warning, and the server keeps running and keeps asking, with the
+/// same attempts and pauses, until the database answers or the node is
+/// stopping, so a database that comes up late is checked too, and the ready
+/// line is said then. A database whose migrations differ from `migrations`,
+/// whenever it answers, stops `main` with the difference
+/// (`migration.describe`), which ends the node with status 1; a tree that ends
+/// is taken as `application.end_of` takes it. `start` calls it with the
+/// server's own ask, the files it read and `io.println`; the tests call it with
+/// their own.
 pub fn serve(
   tree tree: application.Tree,
   settings settings: server.Settings,
@@ -128,14 +135,37 @@ pub fn serve(
   migrations migrations: List(migration.Migration),
   say say: fn(String) -> Nil,
 ) -> Nil {
-  case
+  let outcome =
     readiness.await(
       probe:,
       tree: tree.monitor,
       settings: ready,
       files: migrations,
     )
-  {
+  case outcome {
+    readiness.DatabaseUnreachable ->
+      runtime.log(step.LogWarning, "the database is unreachable", step.no_one)
+    readiness.Ready
+    | readiness.MigrationsRefused(..)
+    | readiness.TreeEnded(..) -> Nil
+  }
+  settle(outcome:, tree:, settings:, tables:, ready:, probe:, migrations:, say:)
+}
+
+/// Acts on what the readiness ask found: says the ready line, stops `main` for
+/// a refusal, takes the tree's end, or, when the database has not answered,
+/// asks again unless the node is stopping.
+fn settle(
+  outcome outcome: readiness.Outcome,
+  tree tree: application.Tree,
+  settings settings: server.Settings,
+  tables tables: Int,
+  ready ready: readiness.Settings,
+  probe probe: readiness.Probe,
+  migrations migrations: List(migration.Migration),
+  say say: fn(String) -> Nil,
+) -> Nil {
+  case outcome {
     readiness.Ready -> {
       case application.serving(tree) {
         True -> say(ready_line(settings:, tables:))
@@ -144,10 +174,26 @@ pub fn serve(
       application.await_tree_end(tree)
     }
     readiness.MigrationsRefused(refusal:) -> panic as migration.describe(refusal)
-    readiness.DatabaseUnreachable -> {
-      runtime.log(step.LogWarning, "the database is unreachable", step.no_one)
-      application.await_tree_end(tree)
-    }
+    readiness.DatabaseUnreachable ->
+      case application.node_stopping() {
+        True -> application.await_tree_end(tree)
+        False ->
+          settle(
+            outcome: readiness.await(
+              probe:,
+              tree: tree.monitor,
+              settings: ready,
+              files: migrations,
+            ),
+            tree:,
+            settings:,
+            tables:,
+            ready:,
+            probe:,
+            migrations:,
+            say:,
+          )
+      }
     readiness.TreeEnded(reason:) -> application.end_of(reason)
   }
 }
@@ -157,7 +203,8 @@ pub fn serve(
 /// does has time to accept connections; each attempt waits 2 s, the length of a
 /// write's send deadline, before its worker is ended; a failed attempt is asked
 /// again after 250 ms, so a pool that opens its connections in a few hundred
-/// milliseconds is found at once.
+/// milliseconds is found at once. A database that has not answered in that time
+/// is asked again in windows of the same length.
 fn ready_ask() -> readiness.Settings {
   readiness.Settings(within_ms: 30_000, attempt_ms: 2000, pause_ms: 250)
 }

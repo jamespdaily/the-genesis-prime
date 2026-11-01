@@ -40,14 +40,7 @@ case "$(uname -s)" in
     ;;
 esac
 
-# sha256 FILE: the file's SHA-256, from whichever tool this machine has.
-sha256() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | cut -d' ' -f1
-  else
-    shasum -a 256 "$1" | cut -d' ' -f1
-  fi
-}
+. "$repository/setup_check/sha256.sh"
 
 # marker_lines DIRECTORY: one line per DIRECTORY/*.patch, "NAME SHA-256".
 marker_lines() {

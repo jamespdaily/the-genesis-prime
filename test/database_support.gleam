@@ -75,19 +75,31 @@ pub fn config(
   pool_name pool_name: Name(pog.Message),
   pool_size pool_size: Int,
 ) -> pog.Config {
+  pog.default_config(pool_name)
+  |> connect_to(settings, database:)
+  |> pog.pool_size(pool_size)
+  |> pog.queue_target(5000)
+  |> pog.queue_interval(10_000)
+}
+
+/// The pool configuration with its connection part set to the Postgres server
+/// `settings` describe and the database: host, port, database, user, password
+/// and internet protocol. The pool's sizes are the configuration's own.
+pub fn connect_to(
+  config config: pog.Config,
+  settings settings: Settings,
+  database database: String,
+) -> pog.Config {
   let ip_version = case string.contains(settings.tcp_host, ":") {
     True -> pog.Ipv6
     False -> pog.Ipv4
   }
-  pog.default_config(pool_name)
+  config
   |> pog.host(settings.tcp_host)
   |> pog.port(settings.port)
   |> pog.database(database)
   |> pog.user(settings.user)
   |> pog.password(settings.password)
-  |> pog.pool_size(pool_size)
-  |> pog.queue_target(5000)
-  |> pog.queue_interval(10_000)
   |> pog.ip_version(ip_version)
 }
 
@@ -111,24 +123,17 @@ pub fn execute(
 /// A database of its own for one test: a copy of the migrated template, with
 /// a name no other test has. The run's watcher drops it when the VM ends.
 pub fn new_database(on shared: Shared) -> String {
-  let name = shared.run <> "_" <> int.to_string(runtime.unique_id())
-  let assert Ok(Nil) =
-    execute(
-      on: shared,
-      sql: "create database \""
-        <> name
-        <> "\" template \""
-        <> shared.template
-        <> "\"",
-    )
-    as "a database was not made from the template"
-  name
+  new_empty_database(
+    on: shared,
+    options: "template \"" <> shared.template <> "\"",
+  )
 }
 
-/// A migrated database of its own for one test, made with `template0` and the
-/// given LC_COLLATE and LC_CTYPE (as `createdb --locale` sets both), so a test
-/// can show what the schema does on a locale other than the server's. The
-/// run's watcher drops it when the VM ends.
+/// A migrated database of its own for one test, made with `template0`, the
+/// libc locale provider and the given LC_COLLATE and LC_CTYPE (as
+/// `createdb --locale` sets both), so a test can show what the schema does on
+/// a locale other than the server's. The run's watcher drops it when the VM
+/// ends.
 pub fn new_database_with_locale(
   on shared: Shared,
   locale locale: String,
@@ -136,7 +141,7 @@ pub fn new_database_with_locale(
   let name =
     new_empty_database(
       on: shared,
-      options: "template template0 encoding 'UTF8' lc_collate '"
+      options: "template template0 encoding 'UTF8' locale_provider libc lc_collate '"
         <> locale
         <> "' lc_ctype '"
         <> locale
@@ -148,18 +153,35 @@ pub fn new_database_with_locale(
   name
 }
 
-/// A database of its own with nothing in it, made with `options` after its
-/// name in `create database` (the default template, `template template0` and
-/// so on). The run's watcher drops it when the VM ends.
+/// A database of its own made with `options` after its name in `create
+/// database` (a template, a locale, or nothing for the server's default
+/// template). The run's watcher drops it when the VM ends.
 pub fn new_empty_database(
   on shared: Shared,
   options options: String,
 ) -> String {
-  let name = shared.run <> "_" <> int.to_string(runtime.unique_id())
+  let name = unused_name(on: shared)
+  create_database(on: shared, name:, options:)
+  name
+}
+
+/// A database name no other test has, for a database the test makes later with
+/// `create_database`.
+pub fn unused_name(on shared: Shared) -> String {
+  shared.run <> "_" <> int.to_string(runtime.unique_id())
+}
+
+/// Makes the database `name`, which `unused_name` gave, with `options` after
+/// its name in `create database`. The run's watcher drops it when the VM ends.
+pub fn create_database(
+  on shared: Shared,
+  name name: String,
+  options options: String,
+) -> Nil {
   let assert Ok(Nil) =
     execute(on: shared, sql: "create database \"" <> name <> "\" " <> options)
     as "a database was not made"
-  name
+  Nil
 }
 
 /// Runs `dev/apply_migrations.sh` on the database, with `arguments` before the

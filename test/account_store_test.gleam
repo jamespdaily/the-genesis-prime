@@ -840,7 +840,7 @@ pub fn a_name_taken_in_any_case_is_name_taken_and_nothing_is_stored_test() -> Ni
   let assert CharacterCreated(_) =
     create(store:, account: account, name: "Ab Cd", slots: 2)
   assert create(store:, account: other, name: "aB cD", slots: 2) == NameTaken
-    as "lua.Character.OnCreateCharacterFailed: 6; a name is unique ignoring case, across accounts, held by a unique index on lower(name)"
+    as "lua.Character.OnCreateCharacterFailed: 6; a name is unique ignoring case, across accounts, held by a unique index on the lower-cased name"
   assert create(store:, account: account, name: "AB CD", slots: 2) == NameTaken
     as "the same account too"
   assert ask(store, Select(ListCharacters(other))) == ForSelect(Listed([]))
@@ -866,13 +866,13 @@ pub fn a_name_taken_in_any_case_is_refused_on_a_database_made_with_the_c_locale_
       ),
       pool_size: 2,
     )
-  let assert Ok(pog.Returned(rows: ["C"], ..)) =
+  let assert Ok(pog.Returned(rows: ["C c"], ..)) =
     pog.query(
-      "select datcollate from pg_database where datname = current_database()",
+      "select datcollate || ' ' || datlocprovider::text from pg_database where datname = current_database()",
     )
     |> pog.returning(decode.at([0], decode.string))
     |> pog.execute(store.pool)
-    as "the database says what locale it was made with"
+    as "the database says it was made with the C locale and the libc provider, not the ICU one the index folds under"
   let account = insert_account(store, "login-1")
   let other = insert_account(store, "login-2")
   let assert CharacterCreated(_) =

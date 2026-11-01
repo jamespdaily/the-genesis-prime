@@ -10,11 +10,10 @@
 //// database lacks, a row with no file is a migration this build does not
 //// know, and a row whose hash differs from its file's is a migration edited
 //// after it ran. A database with no `schema_migration` table was made before
-//// the record existed. Each is a reason to refuse to start, reported by the
+//// the record existed, and one that cannot be read is no database to trust.
+//// Each is a reason to refuse to start, reported by the
 //// first name in byte order, so one run names one migration.
 
-import gleam/bit_array
-import gleam/crypto
 import gleam/dict
 import gleam/list
 import gleam/string
@@ -31,6 +30,9 @@ pub type Recorded {
   Recorded(migrations: List(Migration))
   /// It has no `schema_migration` table.
   NoRecord
+  /// The database answered, and reading its `schema_migration` failed with
+  /// this error (a permission refused, a table of another shape).
+  Unreadable(reason: String)
 }
 
 /// Why a database is not the one the files describe.
@@ -40,18 +42,12 @@ pub type Refusal {
   DatabasePredatesRecords
   /// A file the database never ran.
   NotApplied(name: String)
+  /// The database's `schema_migration` could not be read, for the reason given.
+  RecordUnreadable(reason: String)
   /// A migration whose file's hash differs from the one recorded when it ran.
   Edited(name: String)
   /// A recorded migration with no file in the folder.
   NoFile(name: String)
-}
-
-/// The SHA-256 of a file's bytes as lower-case hex, the form a file and a row
-/// both hold.
-pub fn sha256(bytes: BitArray) -> String {
-  crypto.hash(crypto.Sha256, bytes)
-  |> bit_array.base16_encode
-  |> string.lowercase
 }
 
 /// Compares the files with what the database recorded: `Ok` when they name the
@@ -63,6 +59,7 @@ pub fn check(
 ) -> Result(Nil, Refusal) {
   case recorded {
     NoRecord -> Error(DatabasePredatesRecords)
+    Unreadable(reason:) -> Error(RecordUnreadable(reason:))
     Recorded(migrations: applied) -> {
       let in_files = hashes(files)
       let in_database = hashes(applied)
@@ -100,6 +97,8 @@ pub fn describe(refusal: Refusal) -> String {
   case refusal {
     DatabasePredatesRecords ->
       "the database predates migration records: it has no schema_migration table; run dev/apply_migrations.sh --adopt on it once if it already ran the first four migrations"
+    RecordUnreadable(reason:) ->
+      "the database's schema_migration could not be read: " <> reason
     NotApplied(name:) ->
       "the database has not run the migration "
       <> name

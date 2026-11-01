@@ -15,7 +15,6 @@ import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/int
 import gleam/list
-import gleam/string
 import owned_test
 import pog
 
@@ -34,18 +33,9 @@ pub fn a_pool_made_with_other_settings_has_them_and_keeps_that_many_connections_
   let sizes = PoolSettings(pool_size: 3, queue_target: 77, queue_interval: 2222)
   let shared = database_support.shared()
   let database = database_support.new_database(on: shared)
-  let settings = shared.settings
   let config =
     genesis_prime.pool_with(sizes:)
-    |> pog.host(settings.tcp_host)
-    |> pog.port(settings.port)
-    |> pog.database(database)
-    |> pog.user(settings.user)
-    |> pog.password(settings.password)
-    |> pog.ip_version(case string.contains(settings.tcp_host, ":") {
-      True -> pog.Ipv6
-      False -> pog.Ipv4
-    })
+    |> database_support.connect_to(shared.settings, database:)
   assert config.pool_size == 3
   assert config.queue_target == 77
   assert config.queue_interval == 2222

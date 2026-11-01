@@ -3,8 +3,13 @@
 //// - The card's test: a database missing the newest migration makes the
 ////   server refuse to start, exit non-zero and name it, and the same database
 ////   fully migrated starts; the same for an applied migration whose file was
-////   edited, a recorded migration with no file, and a database with no record
-////   of its migrations.
+////   edited, a recorded migration with no file, a database with no record of
+////   its migrations, and a record the server cannot read (a table of another
+////   shape).
+//// - A database that is down when the server starts is logged as unreachable
+////   and asked again; once it answers, it is checked as at start: all present
+////   prints the ready line then, and a missing migration ends the node with
+////   status 1 naming it (Jim's decision on the readiness card).
 //// - A node that ends because `main` stopped ends with status 1
 ////   (`genesis_prime/application`, `sigterm_test`), and prints its ready line
 ////   only when the server can serve (`genesis_prime/readiness`).
@@ -14,12 +19,12 @@
 //// own.
 
 import database_support
+import genesis_prime
 import gleam/list
 import gleam/string
 import owned_test
 import recording_support
-import serving_node.{Serving}
-import simplifile
+import serving_node.{LateDatabase, Serving}
 
 /// What the node prints when the server can serve: the start of its ready
 /// line.
@@ -30,32 +35,32 @@ const node_wait_ms = 60_000
 
 /// The name of the last migration file, which is the newest.
 fn newest_migration() -> String {
-  let assert Ok(names) = simplifile.read_directory("priv/migrations")
-    as "the migration folder reads"
-  let assert Ok(newest) =
-    names
-    |> list.filter(string.ends_with(_, ".sql"))
-    |> list.sort(string.compare)
-    |> list.last
+  let assert Ok(newest) = list.last(genesis_prime.load_migrations())
     as "the folder holds migrations"
-  string.drop_end(newest, string.length(".sql"))
+  newest.name
+}
+
+/// Runs `change` on the database, as the administrator of the test's server.
+fn change(database: String, change: String) -> Nil {
+  let assert Ok(_) =
+    database_support.psql(
+      with: database_support.shared().settings,
+      database:,
+      arguments: ["-c", change],
+    )
+    as "the change to the database ran"
+  Nil
 }
 
 /// Starts a node on a fully migrated database of its own after `change` has
 /// run on it, and hands the node to `body`.
 fn with_node_after(
-  change change: String,
+  change sql: String,
   body body: fn(serving_node.Node) -> a,
 ) -> a {
   use folder <- recording_support.in_folder
-  let shared = database_support.shared()
-  let database = database_support.new_database(on: shared)
-  let assert Ok(_) =
-    database_support.psql(with: shared.settings, database:, arguments: [
-      "-c",
-      change,
-    ])
-    as "the change to the database ran"
+  let database = database_support.new_database(on: database_support.shared())
+  change(database, sql)
   body(serving_node.start(mode: Serving, folder:, database:))
 }
 
@@ -113,4 +118,74 @@ pub fn a_database_with_no_record_of_its_migrations_refuses_the_server_test() -> 
   use <- owned_test.run(120_000)
   use node <- with_node_after(change: "drop table schema_migration")
   assert_refused(node, reason: "predates migration records")
+}
+
+pub fn a_record_the_server_cannot_read_refuses_the_server_naming_the_error_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // The table has a column of another name, so the read fails in Postgres with
+  // undefined_column (42703), not undefined_table.
+  use node <- with_node_after(
+    change: "alter table schema_migration rename column sha256 to hash",
+  )
+  assert_refused(
+    node,
+    reason: "schema_migration could not be read: undefined_column",
+  )
+}
+
+/// Starts a node on a database that does not exist yet, waits for it to log
+/// the database as unreachable, makes the database as a copy of the migrated
+/// template after `change` (run on it once made), and hands the node to
+/// `body`.
+fn with_late_node(
+  change sql: String,
+  body body: fn(serving_node.Node) -> a,
+) -> a {
+  use folder <- recording_support.in_folder
+  let shared = database_support.shared()
+  let database = database_support.unused_name(on: shared)
+  let node = serving_node.start(mode: LateDatabase, folder:, database:)
+  assert serving_node.await_output(
+    node,
+    "the database is unreachable",
+    node_wait_ms,
+  )
+    as "the node gave up its first ask and logged the database as unreachable"
+  assert !string.contains(serving_node.output(node), ready_line)
+    as "no ready line while the database is down"
+  // The change is made under another name and the database is renamed after,
+  // so the node never finds the database before the change.
+  let made = database_support.unused_name(on: shared)
+  database_support.create_database(
+    on: shared,
+    name: made,
+    options: "template \"" <> shared.template <> "\"",
+  )
+  change(made, sql)
+  let assert Ok(Nil) =
+    database_support.execute(
+      on: shared,
+      sql: "alter database \"" <> made <> "\" rename to \"" <> database <> "\"",
+    )
+    as "the database was renamed to the name the node asks for"
+  body(node)
+}
+
+pub fn a_database_down_at_start_that_comes_up_migrated_gets_the_ready_line_late_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use node <- with_late_node(change: "select 1")
+  assert serving_node.await_output(node, ready_line, node_wait_ms)
+    as "the node kept asking, and printed its ready line once the migrated database answered"
+  serving_node.terminate(node)
+  assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
+    as "SIGTERM ends the node with status 0"
+}
+
+pub fn a_database_down_at_start_that_comes_up_missing_a_migration_ends_the_node_naming_it_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let newest = newest_migration()
+  use node <- with_late_node(
+    change: "delete from schema_migration where name = '" <> newest <> "'",
+  )
+  assert_refused(node, reason: "has not run the migration " <> newest)
 }

@@ -389,7 +389,7 @@ pub fn a_name_taken_in_another_case_is_name_unavailable_and_nothing_more_is_stor
   let game = in_select(started:, port:, account:)
   game_client.send_create(game:, body: create_request("zED qU"))
   assert created_result(game).result == create_result.NameUnavailable
-    as "lua.Character.OnCreateCharacterFailed: 6; the unique index on lower(name) refuses the second"
+    as "lua.Character.OnCreateCharacterFailed: 6; the unique index on the lower-cased name refuses the second"
   assert names_of(pool) == ["Zed Qu"] as "nothing more is stored"
   game_client.close(game:)
   login_support.stop(started)
@@ -537,7 +537,7 @@ pub fn a_rename_to_a_name_taken_in_any_case_is_0x014b_16_and_changes_nothing_tes
   send_rename(game:, character_id: zed, name: "aBE cD")
   assert character_support.rename_result_in(game_client.read(game:, count: 1)).result
     == rename_result.NameUnavailable
-    as "lua.CharacterSelection.OnCharacterRenameResult: 16; the unique index on lower(name) refuses it"
+    as "lua.CharacterSelection.OnCharacterRenameResult: 16; the unique index on the lower-cased name refuses it"
   assert names_of(pool) == ["Zed", "Abe Cd"] as "nothing changes"
   let assert [still_marked, _] = listed_entries(game)
   assert still_marked.requires_rename == 1

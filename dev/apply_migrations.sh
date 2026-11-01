@@ -16,6 +16,16 @@
 # (genesis_prime/readiness). It refuses a database that has tables and no
 # schema_migration table, and says to adopt it.
 #
+# The files are the *.sql files directly in priv/migrations, the set the server
+# reads at start (genesis_prime.load_migrations). Before any file runs, the
+# script refuses the whole folder when a file's name is not letters, digits and
+# underscores, or when a file holds a statement that would break the one
+# transaction: BEGIN, COMMIT, ROLLBACK or START TRANSACTION alone in a
+# statement, or CONCURRENTLY (CREATE INDEX CONCURRENTLY cannot run in a
+# transaction). It reads a file's lines, not its SQL, so a BEGIN, COMMIT or
+# ROLLBACK that is the whole of a line, ended by a semicolon, is refused even
+# in a function body.
+#
 # The second form is for a database made before the record existed (the play
 # database): it applies and records 0000_schema_migration.sql, and records the
 # four migrations that database already ran (0001 to 0004) by name and hash
@@ -26,6 +36,8 @@
 set -u
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
+
+. setup_check/sha256.sh
 
 folder=priv/migrations
 first=0000_schema_migration
@@ -46,34 +58,38 @@ sql() {
   psql -X -q -At -v ON_ERROR_STOP=1 -d "$database" "$@"
 }
 
-sha256_of() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1"
-  else
-    shasum -a 256 "$1"
-  fi | cut -d' ' -f1
-}
-
 # insert_of NAME: the statement that records the file of that name.
 insert_of() {
-  echo "insert into schema_migration (name, sha256) values ('$1', '$(sha256_of "$folder/$1.sql")')"
+  echo "insert into schema_migration (name, sha256) values ('$1', '$(sha256 "$folder/$1.sql")')"
 }
 
-# The names of the files, in the byte order of the name, as the server sorts them.
-names() {
-  local file
-  for file in $(find "$folder" -name '*.sql' | LC_ALL=C sort); do
-    basename "$file" .sql
-  done
-}
+# The names of the files, in the byte order of the name, as the server sorts
+# them: the *.sql files one level deep, read NUL-separated so no name is split
+# or expanded.
+names=()
+while IFS= read -r -d '' file; do
+  names+=("$(basename "$file" .sql)")
+done < <(find "$folder" -maxdepth 1 -type f -name '*.sql' -print0 | LC_ALL=C sort -z)
 
-for name in $(names); do
+# A shell that expands an empty array under set -u fails (bash 3.2, macOS), so
+# each loop over the names guards its expansion with the same form.
+for name in ${names[@]+"${names[@]}"}; do
   case "$name" in
     *[!0-9A-Za-z_]*)
-      echo "apply_migrations: $name is not a name of letters, digits and underscores" >&2
+      echo "apply_migrations: $name.sql is not a name of letters, digits and underscores" >&2
       exit 1
       ;;
   esac
+  # Comment lines are dropped first, so a word in a comment is no statement.
+  body=$(grep -v '^[[:space:]]*--' "$folder/$name.sql")
+  if printf '%s\n' "$body" | grep -Eiq '^[[:space:]]*(begin|commit|rollback|start[[:space:]]+transaction)([[:space:]]+(work|transaction))?[[:space:]]*;'; then
+    echo "apply_migrations: $name.sql holds BEGIN, COMMIT, ROLLBACK or START TRANSACTION; the script runs each file and its record in one transaction, which that would end" >&2
+    exit 1
+  fi
+  if printf '%s\n' "$body" | grep -Eiq '(^|[^[:alnum:]_])concurrently([^[:alnum:]_]|$)'; then
+    echo "apply_migrations: $name.sql uses CONCURRENTLY, which cannot run inside the one transaction the script runs each file and its record in" >&2
+    exit 1
+  fi
 done
 
 has_record=$(sql -c "select to_regclass('schema_migration') is not null") || exit 1
@@ -105,7 +121,7 @@ if [ "$has_record" != t ]; then
   fi
 fi
 
-for name in $(names); do
+for name in ${names[@]+"${names[@]}"}; do
   recorded=f
   if [ "$has_record" = t ]; then
     recorded=$(sql -c "select exists (select from schema_migration where name = '$name')") || exit 1

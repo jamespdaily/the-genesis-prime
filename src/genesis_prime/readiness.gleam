@@ -25,11 +25,13 @@
 ////   the tree is running and the node is not stopping).
 ////   `MigrationsRefused` stops `main` with the refusal's sentence, so the node
 ////   ends with status 1 and prints no ready line; the database answered, so
-////   asking again would not change it. `DatabaseUnreachable`
-////   logs a warning, prints no ready line, and the server keeps running,
-////   answering `Unavailable` to a login until the pool connects. A database
-////   that returns after the deadline is served from then on, and the ready line
-////   is never printed late. `TreeEnded` is taken as the end of the tree
+////   asking again would not change it. `DatabaseUnreachable` logs a warning
+////   once, prints no ready line, and `main` asks again, with the same settings,
+////   until the database answers or the node is stopping; the server runs
+////   meanwhile, answering `Unavailable` to a login until the pool connects. A
+////   database that answers late is checked as one that answers at start is:
+////   the ready line is printed then, or the node ends with status 1 on a
+////   refusal. `TreeEnded` is taken as the end of the tree
 ////   (`application.end_of`).
 //// - **The window that remains.** A stop can begin between the check that the
 ////   server still serves and the print of the ready line; the line is then
@@ -44,7 +46,8 @@
 ////   worker, is left running, and an answer it sends later stays; the
 ////   server's probe is a worker.
 //// - **The deadline is the monotonic clock's.** `within_ms` counts from the
-////   call, and an attempt never runs past it.
+////   call, and an attempt never runs past it; each ask `main` makes after the
+////   first has a deadline of its own.
 //// - **The values are the server's choice**, not the client's: see `Settings`.
 //// - **A failed start is noisy.** When the tree fails to start (a port taken),
 ////   its supervisor stops the pool while it is still opening connections, and

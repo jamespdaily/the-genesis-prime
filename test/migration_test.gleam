@@ -2,14 +2,13 @@
 //// (`genesis_prime/migration`). Expected values come from these places.
 //// - The card's cases: a file the database never ran, a recorded file whose
 ////   hash differs from its file's (an applied migration edited after it ran),
-////   a recorded name with no file, and a database with no record, each a
+////   a recorded name with no file, a database with no record and one whose
+////   record cannot be read, each a
 ////   reason to refuse to start, named by the migration.
-//// - SHA-256 of "abc": FIPS 180-2, appendix B.1,
-////   ba7816bf 8f01cfea 414140de 5dae2223 b00361a3 96177a9c b410ff61 f20015ad.
 
 import genesis_prime/migration.{
   type Migration, DatabasePredatesRecords, Edited, Migration, NoFile, NoRecord,
-  NotApplied, Recorded,
+  NotApplied, RecordUnreadable, Recorded, Unreadable,
 }
 import gleam/list
 import gleam/string
@@ -17,12 +16,6 @@ import owned_test
 
 fn file(name: String, digit: String) -> Migration {
   Migration(name:, sha256: string.repeat(digit, 64))
-}
-
-pub fn the_sha256_of_a_files_bytes_is_lower_case_hex_test() -> Nil {
-  use <- owned_test.run(5000)
-  assert migration.sha256(<<"abc":utf8>>)
-    == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 }
 
 pub fn files_and_a_record_that_name_the_same_migrations_with_the_same_hashes_agree_test() -> Nil {
@@ -70,6 +63,15 @@ pub fn a_database_with_no_record_predates_migration_records_test() -> Nil {
     == Error(DatabasePredatesRecords)
 }
 
+pub fn a_record_that_cannot_be_read_is_refused_with_the_reason_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert migration.check(
+      files: [file("0000_a", "a")],
+      recorded: Unreadable("permission denied"),
+    )
+    == Error(RecordUnreadable("permission denied"))
+}
+
 pub fn several_differences_name_the_first_by_name_whatever_the_order_given_test() -> Nil {
   use <- owned_test.run(5000)
   let files = [file("0002_c", "c"), file("0001_b", "b"), file("0004_e", "e")]
@@ -90,6 +92,7 @@ pub fn each_refusal_is_described_with_the_migration_it_names_test() -> Nil {
       #(Edited("0001_b"), "0001_b was edited after it ran"),
       #(NoFile("0001_b"), "ran the migration 0001_b, which has no file"),
       #(DatabasePredatesRecords, "predates migration records"),
+      #(RecordUnreadable("boom"), "could not be read: boom"),
     ],
     fn(row) {
       assert string.contains(migration.describe(row.0), row.1)
