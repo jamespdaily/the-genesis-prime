@@ -5,9 +5,10 @@
 //// database as the server does, by the readiness ask
 //// (`genesis_prime/readiness`).
 ////
-//// A Gleam file breaches by importing a module whose name starts with `pgo`, or
-//// by an `@external(erlang, ...)` whose module does; an Erlang helper breaches
-//// by qualifying a call or a type by such a module.
+//// A test reaches pgo's processes by naming them, in a call (`pgo_pool:...`),
+//// a process name (`pgo_pool_sup`) or a module in an external, so any atom of
+//// an Erlang helper, and any import, external module or string of a Gleam
+//// file, that is `pgo` or starts with `pgo_` is a breach.
 
 import code_rule/erlang_calls
 import code_rule/source.{type Breach, type SourceFile, Breach}
@@ -18,10 +19,11 @@ import gleam/string
 
 const rule_name = "a test that reads pgo's internals"
 
-/// The prefix of the modules of the pool library.
-const prefix = "pgo"
+/// The name of the pool library and the start of its modules' and processes'.
+const name = "pgo"
 
-/// Each import of a pgo module and each external to one in a Gleam file.
+/// Each import of a pgo module, each external to one and each string that
+/// names one in a Gleam file.
 pub fn breaches(file file: SourceFile) -> List(Breach) {
   let module = syntax.parse(file)
   let imports =
@@ -35,7 +37,10 @@ pub fn breaches(file file: SourceFile) -> List(Breach) {
       |> list.any(fn(external) { is_pgo(external.0) })
     })
     |> list.map(fn(definition) { definition.definition.location.start })
-  list.append(imports, externals)
+  let strings =
+    list.filter(syntax.strings(module), fn(literal) { is_pgo(literal.1) })
+    |> list.map(fn(literal) { literal.0 })
+  list.flatten([imports, externals, strings])
   |> list.map(fn(offset) {
     Breach(
       path: file.path,
@@ -46,14 +51,15 @@ pub fn breaches(file file: SourceFile) -> List(Breach) {
   |> list.sort(fn(first, second) { int.compare(first.line, second.line) })
 }
 
-/// Each line of an Erlang helper that qualifies a name by a pgo module.
+/// Each line of an Erlang helper that writes an atom that names a pgo module
+/// or process.
 pub fn erlang_breaches(file file: SourceFile) -> List(Breach) {
-  erlang_calls.qualifier_lines(file.text, prefix)
+  erlang_calls.atom_lines(file.text, name)
   |> list.map(fn(line) { Breach(path: file.path, line:, rule: rule_name) })
 }
 
-/// Whether a module's name is `pgo` or starts with `pgo_`; `pog`, the Gleam
-/// package, is not.
-fn is_pgo(module: String) -> Bool {
-  module == prefix || string.starts_with(module, prefix <> "_")
+/// Whether a name is `pgo` or starts with `pgo_`; `pog`, the Gleam package, and
+/// a name that merely starts with the letters are not.
+fn is_pgo(candidate: String) -> Bool {
+  candidate == name || string.starts_with(candidate, name <> "_")
 }

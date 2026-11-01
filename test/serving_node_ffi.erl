@@ -12,14 +12,12 @@
 %% and value pairs added to the test VM's own. A guardian ends the node when the
 %% process that started it ends, however it ends.
 start(Module, Environment) ->
-    Root = code:root_dir(),
-    Erl = filename:join([Root, "bin", "erl"]),
-    Paths = [Path || Path <- code:get_path(), not lists:prefix(Root, Path)],
+    Erl = filename:join([code:root_dir(), "bin", "erl"]),
+    Paths = fresh_node_ffi:project_paths(),
     Eval = "genesis_prime@@main:run(" ++ binary_to_list(Module) ++ ")",
     Port = open_port({spawn_executable, Erl},
                      [{args, ["-noshell", "-pa" | Paths] ++ ["-eval", Eval]},
-                      {env, [{binary_to_list(Name), binary_to_list(Value)}
-                             || {Name, Value} <- Environment]},
+                      {env, database_support_ffi:environment(Environment)},
                       exit_status, stderr_to_stdout, binary]),
     {os_pid, OsPid} = erlang:port_info(Port, os_pid),
     Owner = self(),

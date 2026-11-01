@@ -111,6 +111,15 @@ type Guarded {
 /// The tree is unlinked from the caller, since the caller does not trap the
 /// exit its stop gives; a guardian of its own watches both.
 pub fn guard(tree: Pid) -> Nil {
+  guard_with(tree, fn() {
+    let _reason = stop_tree(tree)
+    Nil
+  })
+}
+
+/// As `guard`, for a tree that is not the caller's child, which `stop` ends in
+/// the way its parent does.
+pub fn guard_with(tree: Pid, stop: fn() -> Nil) -> Nil {
   let owner = process.self()
   let _guardian =
     process.spawn_unlinked(fn() {
@@ -123,10 +132,7 @@ pub fn guard(tree: Pid) -> Nil {
           TreeEnded
         })
       case process.selector_receive_forever(selector) {
-        OwnerEnded -> {
-          let _reason = stop_tree(tree)
-          Nil
-        }
+        OwnerEnded -> stop()
         TreeEnded -> Nil
       }
     })
@@ -164,8 +170,9 @@ pub fn while_suspended(process process: Pid, body body: fn() -> a) -> a {
   result
 }
 
+/// Stops the process from running until it is resumed.
 @external(erlang, "erlang", "suspend_process")
-fn suspend_process(process: Pid) -> Bool
+pub fn suspend_process(process: Pid) -> Bool
 
 @external(erlang, "erlang", "resume_process")
 fn resume_process(process: Pid) -> Bool

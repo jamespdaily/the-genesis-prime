@@ -165,8 +165,11 @@ pub fn serving(tree: Tree) -> Bool {
 /// How the end of the tree is taken, by the node's state: orderly while the
 /// node is stopping, and fatal otherwise, whatever the reason (a tree past its
 /// restart intensity ends with `shutdown` too).
-pub fn ending(reason: process.ExitReason) -> Ending {
-  use <- bool.guard(when: node_stopping(), return: Orderly)
+pub fn ending(
+  reason reason: process.ExitReason,
+  node_stopping node_stopping: Bool,
+) -> Ending {
+  use <- bool.guard(when: node_stopping, return: Orderly)
   Fatal(reason:)
 }
 
@@ -174,7 +177,7 @@ pub fn ending(reason: process.ExitReason) -> Ending {
 /// message when it is fatal, so `gleam@@main` ends the node with status 1 and
 /// the host starts it again.
 pub fn end_of(reason: process.ExitReason) -> Nil {
-  case ending(reason) {
+  case ending(reason:, node_stopping: node_stopping()) {
     Orderly -> Nil
     Fatal(reason:) ->
       panic as {
@@ -191,10 +194,7 @@ pub fn await_tree_end(tree: Tree) -> Nil {
     process.new_selector()
     |> process.select_specific_monitor(tree.monitor, fn(down) { down })
     |> process.selector_receive_forever
-  end_of(case down {
-    process.ProcessDown(reason:, ..) -> reason
-    process.PortDown(reason:, ..) -> reason
-  })
+  end_of(runtime.down_reason(down))
 }
 
 fn describe(error: actor.StartError) -> String {

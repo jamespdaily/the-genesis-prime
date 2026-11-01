@@ -30,6 +30,12 @@
 //// - **The tree's monitor is the one `main` made** as the tree started
 ////   (genesis_prime/application), so the reason of an end that happens during
 ////   the ask is not lost.
+//// - **Nothing of an attempt is left in `main`'s mailbox.** Each attempt has a
+////   subject of its own. When it ends, its worker is ended and waited for, so
+////   no answer of it is still on the way, and the subject is emptied of the
+////   answers that came after the one taken. A probe that is a service, not a
+////   worker, is left running, and an answer it sends later stays; the
+////   server's probe is a worker.
 //// - **The deadline is the monotonic clock's.** `within_ms` counts from the
 ////   call, and an attempt never runs past it.
 //// - **The values are the server's choice**, not the client's: see `Settings`.
@@ -41,7 +47,7 @@
 import genesis_prime/service.{type Sent, ToService, ToWorker}
 import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Probed, Reached, Unreached}
-import gleam/erlang/process.{type Monitor, type Pid}
+import gleam/erlang/process.{type Monitor, type Subject}
 import gleam/int
 import gleam/result
 
@@ -106,8 +112,7 @@ fn attempt(
   case probe(fn(probed) { process.send(answers, probed) }) {
     Error(Nil) -> retry(probe:, tree:, settings:, deadline_ms:)
     Ok(sent) -> {
-      let worker = pid_of(sent)
-      let watched = process.monitor(worker)
+      let watched = process.monitor(sent.pid)
       let wait_ms =
         int.min(settings.attempt_ms, remaining_ms(deadline_ms))
         |> int.max(0)
@@ -115,24 +120,55 @@ fn attempt(
         process.new_selector()
         |> process.select_map(answers, Answered)
         |> process.select_specific_monitor(tree, fn(down) {
-          TreeDown(reason_of(down))
+          TreeDown(runtime.down_reason(down))
         })
         |> process.select_specific_monitor(watched, fn(_down) { WorkerEnded })
         |> process.selector_receive(within: wait_ms)
         |> result.unwrap(NoAnswerInTime)
-      process.demonitor_process(watched)
+      end_attempt(sent:, watched:, answers:, event:)
       case event {
         Answered(Reached) -> Ready
         TreeDown(reason) -> TreeEnded(reason:)
-        Answered(Unreached) | WorkerEnded -> {
+        Answered(Unreached) | WorkerEnded | NoAnswerInTime ->
           retry(probe:, tree:, settings:, deadline_ms:)
-        }
-        NoAnswerInTime -> {
-          end_worker(sent, worker)
-          retry(probe:, tree:, settings:, deadline_ms:)
-        }
       }
     }
+  }
+}
+
+/// Ends an attempt so nothing of it is left behind: a worker still running is
+/// ended and waited for, so none of its answers is still on the way, and the
+/// attempt's subject, one for each attempt, is emptied of what arrived. A
+/// service is left running, so an answer it sends later stays in the
+/// mailbox; the server's probe is a worker.
+fn end_attempt(
+  sent sent: Sent,
+  watched watched: Monitor,
+  answers answers: Subject(Probed),
+  event event: Event,
+) -> Nil {
+  case event {
+    WorkerEnded -> Nil
+    Answered(_) | TreeDown(_) | NoAnswerInTime -> {
+      service.end_worker(sent)
+      case sent {
+        ToWorker(..) ->
+          process.new_selector()
+          |> process.select_specific_monitor(watched, fn(_down) { Nil })
+          |> process.selector_receive(within: 1000)
+          |> result.unwrap(Nil)
+        ToService(..) -> Nil
+      }
+    }
+  }
+  process.demonitor_process(watched)
+  empty(answers)
+}
+
+fn empty(answers: Subject(Probed)) -> Nil {
+  case process.receive(answers, within: 0) {
+    Ok(_) -> empty(answers)
+    Error(Nil) -> Nil
   }
 }
 
@@ -148,7 +184,7 @@ fn retry(
   let paused =
     process.new_selector()
     |> process.select_specific_monitor(tree, fn(down) {
-      TreeDown(reason_of(down))
+      TreeDown(runtime.down_reason(down))
     })
     |> process.selector_receive(within: int.max(pause_ms, 0))
   case paused {
@@ -163,26 +199,4 @@ fn retry(
 
 fn remaining_ms(deadline_ms: Int) -> Int {
   deadline_ms - runtime.now().monotonic_ms
-}
-
-fn pid_of(sent: Sent) -> Pid {
-  case sent {
-    ToService(pid:) | ToWorker(pid:) -> pid
-  }
-}
-
-/// Ends a worker whose attempt ran out of time, so no query goes on for an
-/// attempt that gave up and no answer comes late; a service is left running.
-fn end_worker(sent: Sent, worker: Pid) -> Nil {
-  case sent {
-    ToWorker(..) -> process.send_abnormal_exit(worker, runtime.Shutdown)
-    ToService(..) -> Nil
-  }
-}
-
-fn reason_of(down: process.Down) -> process.ExitReason {
-  case down {
-    process.ProcessDown(reason:, ..) -> reason
-    process.PortDown(reason:, ..) -> reason
-  }
 }

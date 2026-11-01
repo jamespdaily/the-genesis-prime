@@ -35,12 +35,15 @@ pub type Ports {
 /// milliseconds.
 const connect_ms = 5000
 
+/// How the client connects to a listener on this machine.
+fn to_listener(port: Int) -> mug.ConnectionOptions {
+  mug.new("127.0.0.1", port:)
+  |> mug.ip_version_preference(mug.Ipv4Only)
+  |> mug.timeout(connect_ms)
+}
+
 pub fn connect(port: Int) -> mug.Socket {
-  let assert Ok(client) =
-    mug.new("127.0.0.1", port:)
-    |> mug.ip_version_preference(mug.Ipv4Only)
-    |> mug.timeout(connect_ms)
-    |> mug.connect
+  let assert Ok(client) = mug.connect(to_listener(port))
     as "the client could not connect to the listener"
   client
 }
@@ -51,12 +54,7 @@ pub fn connect(port: Int) -> mug.Socket {
 /// connect that succeeds is closed again and is not refused; any other failure
 /// is no answer to the question and fails the test.
 pub fn refused(port: Int) -> Bool {
-  case
-    mug.new("127.0.0.1", port:)
-    |> mug.ip_version_preference(mug.Ipv4Only)
-    |> mug.timeout(connect_ms)
-    |> mug.connect
-  {
+  case mug.connect(to_listener(port)) {
     Ok(client) -> {
       let _closed = mug.shutdown(client)
       False

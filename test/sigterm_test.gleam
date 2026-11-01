@@ -45,6 +45,21 @@ fn with_node(
   body(serving_node.start(mode:, folder:, database:), folder)
 }
 
+/// Fails the test when the node printed that its tree ended while it ran or
+/// that its program crashed: a stop that went in order prints neither, and the
+/// status alone cannot tell, since a node already stopping keeps the status 0
+/// its first stop set.
+fn assert_no_crash(node: serving_node.Node) -> Nil {
+  let printed = serving_node.output(node)
+  assert !string.contains(
+    printed,
+    "the supervision tree ended while the node runs",
+  )
+    as "the node took the end of its tree as orderly, not as a failure"
+  assert !string.contains(printed, "runtime error")
+    as "the node's program did not crash"
+}
+
 /// Whether Sessions' recording in the folder ends with `End` that counts the
 /// records before it.
 fn ends_with_end(folder: String) -> Bool {
@@ -67,6 +82,7 @@ pub fn sigterm_stops_the_server_through_otp_and_its_recording_ends_with_end_test
   serving_node.terminate(node)
   assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
     as "SIGTERM ends the node with status 0"
+  assert_no_crash(node)
   assert ends_with_end(folder)
     as "the recording Sessions kept ends with End: the stop reached its process"
   let printed = serving_node.output(node)
@@ -84,6 +100,7 @@ pub fn sigterm_before_the_ready_line_ends_the_node_with_status_0_and_no_ready_li
   serving_node.terminate(node)
   assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
     as "SIGTERM while the readiness ask waits ends the node with status 0"
+  assert_no_crash(node)
   assert ends_with_end(folder) as "no recording is left without End"
   assert !string.contains(serving_node.output(node), ready_line)
     as "no ready line is printed for a server that was stopped"
@@ -97,6 +114,7 @@ pub fn sigterm_while_the_probe_is_slow_prints_no_ready_line_test() -> Nil {
   serving_node.terminate(node)
   assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
     as "SIGTERM ends the node with status 0"
+  assert_no_crash(node)
   assert !string.contains(serving_node.output(node), ready_line)
     as "the probe answered after the stop had begun and the tree was still ending: no ready line"
 }

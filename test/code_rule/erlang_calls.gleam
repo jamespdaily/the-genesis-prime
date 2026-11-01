@@ -15,8 +15,8 @@ pub type Target {
 @external(erlang, "erlang_calls_ffi", "lines")
 pub fn lines(text: String, targets: List(Target)) -> List(Int)
 
-/// The line of each place the text writes a name qualified by a module whose
-/// name starts with `prefix` (`prefix_x:name`), in order; text that does not
-/// scan gives the line where it stops.
-@external(erlang, "erlang_calls_ffi", "qualifier_lines")
-pub fn qualifier_lines(text: String, prefix: String) -> List(Int)
+/// The line of each atom the text writes that is `name` or starts with `name`
+/// and an underscore, in order, so `pgo` and `pgo_pool_sup` are the atoms of
+/// `pgo`; text that does not scan gives the line where it stops.
+@external(erlang, "erlang_calls_ffi", "atom_lines")
+pub fn atom_lines(text: String, name: String) -> List(Int)

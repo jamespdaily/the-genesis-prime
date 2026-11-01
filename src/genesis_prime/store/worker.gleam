@@ -21,8 +21,10 @@
 ////   no timeout, waits only for the starts queued before it.
 //// - **The store not running.** `start_child` on a name no process holds
 ////   exits the caller with `{noproc, {gen_server, call, _}}` rather than
-////   returning an error; `ask` (through `service.start_child`) catches that
-////   exit, and only that one, as `Error(Nil)`.
+////   returning an error, and one made while the supervisor stops, which ends
+////   with `shutdown` before it takes the call, exits it with `{shutdown,
+////   {gen_server, call, _}}`; `ask` (through `service.start_child`) catches
+////   those two exits, and only those, as `Error(Nil)`.
 //// - **Failures.** One private `attempt` holds them for every request, so each
 ////   request maps only its rows. pog's `ConnectionUnavailable` and
 ////   `QueryTimeout` answer `Unavailable`, and so does the pool not running:

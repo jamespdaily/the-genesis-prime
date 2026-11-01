@@ -6,28 +6,22 @@
 %% (followed by `/`). Gives the line of each, or the line where the text stops
 %% scanning.
 -module(erlang_calls_ffi).
--export([lines/2, qualifier_lines/2]).
+-export([lines/2, atom_lines/2]).
 
-%% The line of each place the text qualifies a name by a module whose name
-%% starts with Prefix (`Prefix...:`), read with the same scanner; text that does
-%% not scan gives the line where it stops.
-qualifier_lines(Text, Prefix) ->
-    Wanted = binary_to_list(Prefix),
+%% The line of each atom the text writes that is Name or starts with Name and
+%% an underscore (`pgo` and `pgo_pool_sup` for Name `pgo`), read with the same
+%% scanner, so a comment or a string is not one; text that does not scan gives
+%% the line where it stops.
+atom_lines(Text, Name) ->
+    Whole = binary_to_atom(Name),
+    Prefix = binary_to_list(Name) ++ "_",
     case erl_scan:string(unicode:characters_to_list(Text)) of
-        {ok, Tokens, _End} -> qualifiers(Tokens, Wanted, []);
+        {ok, Tokens, _End} ->
+            [erl_anno:line(Anno) || {atom, Anno, Atom} <- Tokens,
+                                    Atom =:= Whole orelse
+                                        lists:prefix(Prefix, atom_to_list(Atom))];
         {error, {Anno, _Module, _Reason}, _} -> [erl_anno:line(Anno)]
     end.
-
-qualifiers([], _, Found) ->
-    lists:reverse(Found);
-qualifiers([{atom, Anno, Name}, {':', _} | Rest], Wanted, Found) ->
-    Next = case lists:prefix(Wanted, atom_to_list(Name)) of
-               true -> [erl_anno:line(Anno) | Found];
-               false -> Found
-           end,
-    qualifiers(Rest, Wanted, Next);
-qualifiers([_ | Rest], Wanted, Found) ->
-    qualifiers(Rest, Wanted, Found).
 
 lines(Text, Targets) ->
     Wanted = [{binary_to_atom(M), binary_to_atom(F)} || {target, M, F} <- Targets],

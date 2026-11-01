@@ -132,7 +132,7 @@
 
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
-import genesis_prime/service.{type Locate, type Sent, ToService, ToWorker}
+import genesis_prime/service.{type Locate, type Sent}
 import genesis_prime/step.{
   type Ask, type AskId, type ConnectionId, type Effect, type Event, type Peer,
   type Rule, type SocketFailure, type TimerId, Accepted, Answer, Answered,
@@ -140,7 +140,7 @@ import genesis_prime/step.{
   LogError, LogWarning, NoAnswerInTime, NotRunning, PeerClosed, ReadFailed,
   Socket, StoppedWaiting, Stopping, WriteFailed,
 }
-import genesis_prime/step/runtime.{Shutdown}
+import genesis_prime/step/runtime
 import genesis_prime/step/watch.{type Watches}
 import gleam/crypto
 import gleam/dict.{type Dict}
@@ -604,14 +604,14 @@ fn wait_for_answer(
   tag tag: Reference,
   sent sent: Sent,
 ) -> Nil {
-  let monitor = process.monitor(target(sent))
+  let monitor = process.monitor(sent.pid)
   let waited = await_answer(tag, monitor, running.parent, ask.deadline_ms)
   let known = runtime.now()
   let #(running, outcome) = case waited {
     Replied(answer:) -> #(running, Answer(answer:))
     TargetEnded -> #(running, EndedBeforeAnswer)
     DeadlinePassed -> {
-      end_worker(sent)
+      service.end_worker(sent)
       #(keep(running:, tag:, ask: ask.ask, monitor:), NoAnswerInTime)
     }
     ParentExited -> #(
@@ -623,25 +623,6 @@ fn wait_for_answer(
     )
   }
   take(running:, now: known, event: Answered(ask: ask.ask, outcome:))
-}
-
-/// The process an ask went to.
-fn target(sent: Sent) -> Pid {
-  case sent {
-    ToService(pid:) -> pid
-    ToWorker(pid:) -> pid
-  }
-}
-
-/// Ends the worker an ask went to, so no work goes on for an asker that gave
-/// up; a service is left running.
-fn end_worker(sent: Sent) -> Nil {
-  case sent {
-    ToWorker(pid:) -> {
-      process.send_abnormal_exit(pid, Shutdown)
-    }
-    ToService(..) -> Nil
-  }
 }
 
 /// Keeps an ask's tag and monitor until its target answers or ends.

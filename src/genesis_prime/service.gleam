@@ -13,6 +13,7 @@
 //// rule holds a process id.
 
 import genesis_prime/step.{type Address}
+import genesis_prime/step/runtime
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/otp/actor
@@ -37,6 +38,15 @@ pub type Sent {
   /// it, so no work goes on for an asker that gave up, and no answer comes
   /// late.
   ToWorker(pid: Pid)
+}
+
+/// Ends the worker an ask went to, so no work goes on for an asker that gave
+/// up; a service is left running.
+pub fn end_worker(sent: Sent) -> Nil {
+  case sent {
+    ToWorker(pid:) -> process.send_abnormal_exit(pid, runtime.Shutdown)
+    ToService(..) -> Nil
+  }
 }
 
 /// How a shell finds the process an address names, to watch it: its pid, or
@@ -126,7 +136,8 @@ pub fn start_child(
 @external(erlang, "erlang", "send")
 fn send_to(pid: Pid, message: #(Name(message), message)) -> Dynamic
 
-/// Runs a function and turns the one exit that says no process holds a
-/// supervisor's name into an error; any other exit passes.
+/// Runs a function and turns the exits that say no supervisor is running into
+/// an error: no process holds its name, or it ended with `shutdown` while the
+/// call waited. Any other exit passes.
 @external(erlang, "service_ffi", "unless_supervisor_not_running")
 fn unless_supervisor_not_running(run: fn() -> a) -> Result(a, Nil)

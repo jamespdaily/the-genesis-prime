@@ -1,5 +1,5 @@
 -module(database_support_ffi).
--export([once/2, run_identifier/0, run_command/3, open_watcher/3]).
+-export([once/2, run_identifier/0, run_command/3, open_watcher/3, environment/1]).
 
 %% Runs Create once in this VM, whichever test asks first, and gives every
 %% later caller the same value. The value lives in a persistent term, written
@@ -78,5 +78,7 @@ open_watcher(Script, Arguments, Environment) ->
     ),
     nil.
 
+%% A program's environment as Erlang's port option wants it: name and value
+%% pairs of strings.
 environment(Environment) ->
     [{binary_to_list(Name), binary_to_list(Value)} || {Name, Value} <- Environment].

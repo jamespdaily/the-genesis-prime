@@ -20,12 +20,15 @@ import genesis_prime/application
 import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/service.{type Sent, ToWorker}
+import genesis_prime/step/runtime
 import genesis_prime/store.{FindAccount, Login, Unavailable}
-import genesis_prime/store/worker.{type Probed, Reached}
+import genesis_prime/store/worker.{type Probed, Reached, Unreached}
 import gleam/erlang/process.{type Pid, type Subject}
+import gleam/list
 import gleam/string
 import log_capture
 import login_support
+import mailbox_support
 import owned_test
 import pog
 import readiness_support
@@ -100,9 +103,10 @@ pub fn the_ask_ends_with_the_trees_end_when_the_tree_ends_while_it_waits_test() 
         outcomes,
         readiness.await(
           probe: fn(_reply) {
-            process.send(asked, Nil)
             // A worker that never answers.
-            Ok(ToWorker(pid: process.spawn(process.sleep_forever)))
+            let worker = process.spawn_unlinked(process.sleep_forever)
+            process.send(asked, worker)
+            Ok(ToWorker(pid: worker))
           },
           tree: process.monitor(tree),
           settings: readiness.Settings(
@@ -113,13 +117,87 @@ pub fn the_ask_ends_with_the_trees_end_when_the_tree_ends_while_it_waits_test() 
         ),
       )
     })
-  let assert Ok(Nil) = process.receive(asked, ask_support.event_wait_ms)
+  let assert Ok(worker) = process.receive(asked, ask_support.event_wait_ms)
     as "the ask made its probe"
+  let worker_ended = process.monitor(worker)
   process.kill(tree)
   let assert Ok(readiness.TreeEnded(reason: process.Killed)) =
     process.receive(outcomes, ask_support.event_wait_ms)
     as "the tree's end, with its reason, ends the ask at once"
+  let _reason = ask_support.ended(worker_ended)
   Nil
+}
+
+pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let asked = process.new_subject()
+  let outcomes = process.new_subject()
+  let tree = process.spawn_unlinked(process.sleep_forever)
+  let started_ms = runtime.now().monotonic_ms
+  let _asker =
+    process.spawn_unlinked(fn() {
+      process.send(
+        outcomes,
+        readiness.await(
+          probe: fn(reply) {
+            process.send(asked, Nil)
+            Ok(answering(reply:, probed: Unreached, times: 1))
+          },
+          tree: process.monitor(tree),
+          settings: short(),
+        ),
+      )
+    })
+  assert process.receive(outcomes, ask_support.event_wait_ms)
+    == Ok(readiness.DatabaseUnreachable)
+    as "no attempt reached the database, so the ask gives up"
+  assert runtime.now().monotonic_ms - started_ms >= short().within_ms
+    as "and only when its time has run out"
+  assert count(asked) >= 5
+    as "having asked again after each failure: a pause of 20 ms in 250 ms allows many more attempts than one"
+}
+
+/// How many messages wait in the subject.
+fn count(subject: Subject(Nil)) -> Int {
+  case process.receive(subject, 0) {
+    Ok(Nil) -> 1 + count(subject)
+    Error(Nil) -> 0
+  }
+}
+
+/// A probe worker that answers `probed` `times` times at once and ends.
+fn answering(
+  reply reply: fn(Probed) -> Nil,
+  probed probed: Probed,
+  times times: Int,
+) -> Sent {
+  let worker =
+    process.spawn_unlinked(fn() {
+      list.repeat(Nil, times)
+      |> list.each(fn(_) { reply(probed) })
+    })
+  ToWorker(pid: worker)
+}
+
+pub fn an_ask_leaves_no_answer_behind_in_its_mailbox_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let outcomes = process.new_subject()
+  let tree = process.spawn_unlinked(process.sleep_forever)
+  let _asker =
+    process.spawn_unlinked(fn() {
+      let outcome =
+        readiness.await(
+          probe: fn(reply) {
+            Ok(answering(reply:, probed: Unreached, times: 3))
+          },
+          tree: process.monitor(tree),
+          settings: short(),
+        )
+      process.send(outcomes, #(outcome, mailbox_support.queued(process.self())))
+    })
+  assert process.receive(outcomes, ask_support.event_wait_ms)
+    == Ok(#(readiness.DatabaseUnreachable, 0))
+    as "the answers of each attempt beyond the one the ask took are dropped, so none stays in the mailbox of the process that asked"
 }
 
 /// A server on a database that does not exist as a server: its pool's port has

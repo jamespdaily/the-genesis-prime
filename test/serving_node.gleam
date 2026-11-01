@@ -28,7 +28,7 @@ import genesis_prime/sessions
 import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Probed, Reached}
 import gleam/bool
-import gleam/erlang/process.{type Pid}
+import gleam/erlang/process
 import gleam/io
 import gleam/option.{Some}
 import login_support
@@ -148,7 +148,8 @@ pub fn main() -> Nil {
     SlowStop -> {
       let assert Ok(sessions) = process.named(settings.sessions)
         as "Sessions runs"
-      let assert True = suspend_process(sessions) as "Sessions was suspended"
+      let assert True = ask_support.suspend_process(sessions)
+        as "Sessions was suspended"
       genesis_prime.serve(
         tree:,
         settings:,
@@ -203,7 +204,9 @@ fn kill_hand_off(settings: server.Settings, times: Int) -> Nil {
 fn probe_after_stop(reply: fn(Probed) -> Nil) -> Result(Sent, Nil) {
   io.println("probing")
   let pid =
-    process.spawn(fn() {
+    // Not linked to main: the readiness ask ends this worker when it gives up
+    // on the attempt, and that exit must not reach main.
+    process.spawn_unlinked(fn() {
       await_stop()
       reply(Reached)
     })
@@ -215,6 +218,3 @@ fn await_stop() -> Nil {
   process.sleep(1)
   await_stop()
 }
-
-@external(erlang, "erlang", "suspend_process")
-fn suspend_process(pid: Pid) -> Bool
