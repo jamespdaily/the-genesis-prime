@@ -43,6 +43,13 @@ pub fn unique_id() -> Int
 @external(erlang, "step_runtime_ffi", "log")
 pub fn log(level: LogLevel, text: String, about: About) -> Nil
 
+/// Sets the logger metadata of the calling process from the fields of `about`
+/// that are known, so every line the process logs carries them, those of
+/// OTP and gleam_otp (a crash report, a dropped stray message) as well as the
+/// shell's own; a line's own `about` is added over them.
+@external(erlang, "step_runtime_ffi", "set_about")
+pub fn set_about(about: About) -> Nil
+
 /// Logs that a step's input could not be recorded, which ends the process
 /// before the step's effects, so no input is carried out without its record.
 pub fn log_recording_failure(error: FileError) -> Nil {

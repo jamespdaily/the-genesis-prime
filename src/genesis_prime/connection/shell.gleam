@@ -1,5 +1,5 @@
 //// The shell of a connection: the process that owns one client socket and
-//// runs one rule over it. It turns everything that reaches the process into
+//// runs one rule over it, a gleam_otp actor that Ranch starts. It turns everything that reaches the process into
 //// the rule's inputs, carries out the rule's effects in order and decides
 //// nothing, so a recording of its inputs replays every decision with no socket
 //// (genesis_prime/rule_recording).
@@ -7,16 +7,21 @@
 //// One connection, from accept to end:
 ////
 //// ```
-//// Ranch accepts ─▶ connection_shell_ffi:start_link ─▶ ranch:handshake ─▶ run
+//// Ranch accepts ─▶ connection_shell_ffi:start_link ─▶ start: the actor
+////   initialiser: waiting messages off the heap, exits trapped, Begin sent to
+////     itself, returns at once; Ranch then sends the handshake
+////   Begin ─▶ ranch:handshake, the socket's options, the logger metadata of
+////     the process (connection, peer)
 ////   the recorder, when on, opens the file and writes the header
 ////   the registry, when the settings hold one: the shell joins the group of
 ////     Connection(id), so other processes find it (genesis_prime/connection/registry)
 ////   OwnEvent(Accepted(connection id, peer, seed)) ─▶ step ─▶ effects
 ////   after each step's effects, before the mailbox is read or a stop is taken:
 ////     a watch of a target no process holds ─▶ WatchEnded(id) ─▶ step ─▶ effects
-////   loop, the socket active once:
+////   loop, the socket active once, each message taken by the actor's selector:
 ////     {tcp, bytes}        ─▶ OwnEvent(Read(bytes))  ─▶ step ─▶ effects
 ////     {woken, message}    ─▶ OwnEvent(Woken(message)) ─▶ step ─▶ effects
+////     a timer's message   ─▶ OwnEvent(TimerFired(id)) ─▶ step ─▶ effects
 ////     a watched process's DOWN ─▶ WatchEnded(id)   ─▶ step ─▶ effects
 ////     {tcp_closed}        ─▶ OwnEvent(PeerClosed)   ─▶ step ─▶ effects
 ////     {tcp_error, reason} ─▶ OwnEvent(ReadFailed(_)) ─▶ step ─▶ effects
@@ -24,6 +29,11 @@
 ////   each step: the recorder writes Taken(input, step) before its effects
 //// ```
 ////
+//// - **A handshake that fails.** A client gone before the handshake, or a
+////   socket that cannot be set up, ends the connection normally with a debug
+////   line and no warning or error: no recording was opened and no step ran.
+//// - **A message the selector does not take.** gleam_otp drops it and logs a
+////   warning, which carries the connection's metadata.
 //// - **Time.** Each input carries one `Now`, read as the shell takes the
 ////   input: the monotonic clock in milliseconds and the system time as a
 ////   FILETIME.
@@ -44,7 +54,7 @@
 ////   shutdown time less the send deadline, never later than Ranch's kill. A
 ////   rule that has not stopped by then is killed, and its recording has no
 ////   `End`.
-//// - **A crash.** When the rule's step crashes, the process ends with that
+//// - **A crash.** When the rule's step crashes, the actor ends with that
 ////   reason; Ranch starts connection processes as temporary children, so
 ////   nothing restarts it and the listener goes on accepting. The socket closes
 ////   with the process, and its recording has no `End`, so it never replays.
@@ -76,6 +86,11 @@
 ////   the DOWN of a kept tag             ─▶ tag dropped, no input
 ////   an answer or DOWN of no kept tag   ─▶ dropped
 //// ```
+////
+////   The wait is a selective receive inside the handler, and the answers
+////   arrive on one subject the connection keeps, each tagged with its ask's
+////   reference. While it waits, a system message (`sys:get_state`) waits too,
+////   up to the ask's deadline.
 ////
 ////   A step that follows `StoppedWaiting` and ends in another ask gets
 ////   `Answered(_, StoppedWaiting)` at once, with no call to the directory, so
@@ -116,15 +131,16 @@
 ////   no process holds. A watch's DOWN that arrives during an ask waits like a
 ////   delivered message. An id already open, monitored or held, ends the
 ////   connection with an error log.
-//// - **A timer.** `StartTimer(id, ms)` starts an `erlang:send_after` that sends
-////   the shell `{timer_fired, id, reference}`, kept under `id` with its own
-////   reference. It is taken between steps as `OwnEvent(TimerFired(id))`, once,
-////   and the shell forgets the timer; one that fires during an ask waits like
-////   a delivered message. `CancelTimer(id)` cancels it and flushes its message if
-////   it had fired, so no `TimerFired` follows; a message already in flight
-////   when it is cancelled is discarded on arrival, as is any message whose
-////   reference is not the current timer's of that id, so a cancelled timer's
-////   message never fires a restarted timer of the same id. An id with no
+//// - **A timer.** `StartTimer(id, ms)` starts a `process.send_after` that sends
+////   the shell's own subject `TimerElapsed(id, reference)`, kept under `id`
+////   with its own reference. It is taken between steps as
+////   `OwnEvent(TimerFired(id))`, once, and the shell forgets the timer; one
+////   that fires during an ask waits like a delivered message. `CancelTimer(id)`
+////   cancels it and forgets it, so no `TimerFired` follows: a message that
+////   had fired or is in flight when it is cancelled is discarded on arrival,
+////   as is any message whose reference is not the current timer's of that id,
+////   so a cancelled timer's message never fires a restarted timer of the same
+////   id. An id with no
 ////   running timer is cancelled to nothing. An id already running ends the
 ////   connection with an error log.
 //// - **The registry's scope ending.** The connection stays joined only as long
@@ -142,20 +158,24 @@ import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/service.{type Locate, type Sent}
 import genesis_prime/step.{
   type Ask, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
-  type ConnectionRule, type Effect, type Event, type Peer, type SocketFailure,
-  type TimerId, Accepted, Answer, Answered, CancelTimer, ConnectionId, Effects,
-  EffectsThenAsk, EndedBeforeAnswer, LogError, LogWarning, NoAnswerInTime,
-  NotRunning, OwnEffect, OwnEvent, PeerClosed, ReadFailed, StartTimer,
-  StoppedWaiting, Stopping, Write, WriteFailed,
+  type ConnectionRule, type Effect, type Event, type SocketFailure, type TimerId,
+  Accepted, Answer, Answered, ConnectionId, Effects, EffectsThenAsk,
+  EndedBeforeAnswer, LogDebug, NoAnswerInTime, NotRunning, OwnEvent,
+  StoppedWaiting, Stopping,
 }
 import genesis_prime/step/runtime
 import genesis_prime/step/watch.{type Watches}
 import gleam/crypto
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
-import gleam/erlang/process.{type Monitor, type Pid}
+import gleam/erlang/process.{
+  type Monitor, type Pid, type Selector, type Subject, type Timer,
+}
 import gleam/erlang/reference.{type Reference}
+import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/otp/actor
+import gleam/result
 
 /// What every connection of one listener is started with.
 pub type Settings(settings, state, message, answer, request) {
@@ -184,42 +204,56 @@ pub type Settings(settings, state, message, answer, request) {
   )
 }
 
+/// The listener's reference, which `ranch:handshake` takes the socket by.
+pub type RanchRef
+
 /// A client socket, owned by its connection's process.
 type ClientSocket
 
-/// What reaches the process between steps, as `connection_shell_ffi` sees it.
-type Arrived(message) {
+/// What the socket sent the process, decoded from its Erlang message by
+/// `connection_shell_ffi:socket_message`.
+type SocketMessage {
   Read(bytes: BitArray)
   ClosedByPeer
   FailedToRead(failure: SocketFailure)
-  StopRequested
-  /// The answer of a kept ask, by its tag.
-  LateAnswer(tag: Reference)
-  /// The end of a kept ask's target, by the ask's tag.
-  KeptEnded(tag: Reference)
-  /// Another process sent the connection a message.
+}
+
+/// Everything that reaches the actor, each as a typed value by its selector
+/// (`selector`). A message the selector does not take is dropped and logged
+/// by gleam_otp.
+type Mail(message, answer) {
+  /// The first message: the actor sends it to itself as it starts, so the
+  /// handshake runs after `start` has returned to Ranch.
+  Begin
+  FromSocket(message: SocketMessage)
+  /// The exit of the parent, Ranch's connection supervisor: the server is
+  /// stopping.
+  ParentExited
+  /// The exit of any other linked process, which the shell ignores.
+  OtherExited
+  /// Another process sent the connection a message (`registry.deliver`).
   Delivered(message: message)
-  /// The end of a monitored process that is no kept ask's, by its monitor.
-  WatchedEnded(monitor: Monitor)
   /// A timer fired: its message names the timer's id and the reference of the
   /// start it came from.
   TimerElapsed(timer: TimerId, reference: Reference)
+  /// A monitored process ended: a watch's target or a kept ask's.
+  Ended(down: process.Down)
+  /// An ask's answer, tagged with the ask's reference, whether the shell
+  /// still waits for it or not.
+  AnswerArrived(tag: Reference, answer: answer)
 }
 
-/// A timer the shell started: what `erlang:send_after` returned.
-type Timer
-
-/// A running timer and the reference its message carries, which tells its
-/// timeout from a stale one of an earlier timer of the same id.
+/// A timer the shell started and the reference its message carries, which
+/// tells its timeout from a stale one of an earlier timer of the same id.
 type Started {
   Started(timer: Timer, reference: Reference)
 }
 
-/// How an ask's wait ended, as `connection_shell_ffi` sees it.
+/// How an ask's wait ended.
 type Waited(answer) {
   Replied(answer: answer)
   TargetEnded
-  ParentExited
+  ParentStopping
   DeadlinePassed
 }
 
@@ -229,15 +263,13 @@ type Kept {
   Kept(monitor: Monitor)
 }
 
-/// A running connection: its socket, its parent, its settings, the rule's
-/// state, the recording file when there is one, the asks kept by their tags,
-/// the monitor of each watch the rule has open, each timer it has running and
-/// the stop deadline of a stop that arrived during an ask.
-type Running(settings, state, message, answer, request) {
+/// A connection that has taken its socket: the socket, the rule's state, the
+/// recording file when there is one, the asks kept by their tags, the monitor
+/// of each watch the rule has open, each timer it has running and the stop
+/// deadline of a stop that arrived during an ask.
+type Running(state) {
   Running(
     socket: ClientSocket,
-    parent: Pid,
-    settings: Settings(settings, state, message, answer, request),
     state: state,
     writer: Option(file.Writer),
     kept: Dict(Reference, Kept),
@@ -247,57 +279,262 @@ type Running(settings, state, message, answer, request) {
   )
 }
 
-/// Runs one connection to its end, in the process Ranch started for it.
-/// `ranch_ref` is the listener's reference for `ranch:handshake` and `parent`
-/// Ranch's connection supervisor. Called only by
-/// `connection_shell_ffi:start_link`.
-pub fn run(
-  ranch_ref ranch_ref: Dynamic,
-  parent parent: Pid,
-  settings settings: Settings(settings, state, message, answer, request),
-) -> Nil {
-  let socket = handshake(ranch_ref, settings.send_deadline_ms)
-  let connection = runtime.unique_id()
-  let writer = case
-    file.open_if(settings.recorder, settings.rule, connection:)
-  {
-    Ok(writer) -> writer
-    Error(error) -> recording_failed(socket, error)
-  }
-  let rule = settings.rule
-  let running =
-    Running(
-      socket:,
-      parent:,
-      settings:,
-      state: rule.new(rule.settings),
-      writer:,
-      kept: dict.new(),
-      watches: watch.new(),
-      timers: dict.new(),
-      stopping: None,
-    )
-  join_registry(settings.registry, ConnectionId(connection))
-  take(
-    running:,
-    now: runtime.now(),
-    event: OwnEvent(Accepted(
-      connection: ConnectionId(connection),
-      peer: peer(socket),
-      seed: crypto.strong_random_bytes(32),
-    )),
+/// Where the connection is: waiting to take its socket from Ranch, or open.
+type Status(state) {
+  /// Started by Ranch and holding its reference; `Begin` takes the socket.
+  AwaitingHandshake(ranch_ref: RanchRef)
+  Open(running: Running(state))
+}
+
+/// The actor's state: what it is started with and keeps for its life (the
+/// settings, the parent, its own subject for the timers it starts, the subject
+/// its asks are answered on) and its status.
+type Connection(settings, state, message, answer, request) {
+  Connection(
+    settings: Settings(settings, state, message, answer, request),
+    parent: Pid,
+    subject: Subject(Mail(message, answer)),
+    answers: Subject(#(Reference, answer)),
+    status: Status(state),
   )
+}
+
+/// How long `start` waits for the actor's initialiser, which returns at once.
+const start_timeout_ms = 5000
+
+/// Starts the connection's actor, linked to the calling process, which is
+/// Ranch's connection supervisor and the shell's parent. Called only by
+/// `connection_shell_ffi:start_link`, and returns at once: the handshake runs
+/// in the actor's first message, since Ranch sends it only after `start_link`
+/// has returned.
+pub fn start(
+  ranch_ref ranch_ref: RanchRef,
+  settings settings: Settings(settings, state, message, answer, request),
+) -> Result(Pid, actor.StartError) {
+  let parent = process.self()
+  actor.new_with_initialiser(start_timeout_ms, fn(subject) {
+    Ok(initialise(subject:, ranch_ref:, settings:, parent:))
+  })
+  |> actor.on_message(handle)
+  |> actor.start
+  |> result.map(fn(started) { started.pid })
+}
+
+/// Keeps the actor's waiting messages off its heap, traps exits so the
+/// parent's stop arrives as a message, queues `Begin` for itself and returns,
+/// so Ranch's connection supervisor is never kept waiting.
+fn initialise(
+  subject subject: Subject(Mail(message, answer)),
+  ranch_ref ranch_ref: RanchRef,
+  settings settings: Settings(settings, state, message, answer, request),
+  parent parent: Pid,
+) -> actor.Initialised(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+  Nil,
+) {
+  let _previous = process_flag(MessageQueueData, OffHeap)
+  process.trap_exits(True)
+  let answers = process.new_subject()
+  process.send(subject, Begin)
+  actor.initialised(Connection(
+    settings:,
+    parent:,
+    subject:,
+    answers:,
+    status: AwaitingHandshake(ranch_ref:),
+  ))
+  |> actor.selecting(selector(subject:, answers:, parent:))
+  |> actor.returning(Nil)
+}
+
+/// Every message a connection takes, as `Mail`: its own subject (`Begin` and
+/// the timers), the ask answers, what the socket sends, the exits of the
+/// parent and of other processes, the messages other processes deliver, and
+/// the end of every monitored process.
+fn selector(
+  subject subject: Subject(Mail(message, answer)),
+  answers answers: Subject(#(Reference, answer)),
+  parent parent: Pid,
+) -> Selector(Mail(message, answer)) {
+  process.new_selector()
+  |> process.select(subject)
+  |> process.select_map(answers, fn(reply) {
+    AnswerArrived(tag: reply.0, answer: reply.1)
+  })
+  |> process.select_record(tag: Tcp, fields: 2, mapping: from_socket)
+  |> process.select_record(tag: TcpClosed, fields: 1, mapping: from_socket)
+  |> process.select_record(tag: TcpError, fields: 2, mapping: from_socket)
+  |> process.select_trapped_exits(fn(exit) {
+    case exit.pid == parent {
+      True -> ParentExited
+      False -> OtherExited
+    }
+  })
+  |> registry.select_delivered(Delivered)
+  |> process.select_monitors(Ended)
+}
+
+/// The first elements of the socket's messages, as the atoms `tcp`,
+/// `tcp_closed` and `tcp_error`.
+type SocketTag {
+  Tcp
+  TcpClosed
+  TcpError
+}
+
+fn from_socket(sent: Dynamic) -> Mail(message, answer) {
+  FromSocket(socket_message(sent))
+}
+
+/// Takes one message by the connection's status. `Begin` takes the socket
+/// (`begin`); once open, a read, the peer's close, a read failure, the
+/// parent's exit, a delivered message, a timer's firing or a watch's end is
+/// the rule's next input (`take`), and the end or the answer of a kept ask,
+/// a stale timer and another process's exit are dropped.
+fn handle(
+  connection: Connection(settings, state, message, answer, request),
+  mail: Mail(message, answer),
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  case connection.status {
+    AwaitingHandshake(ranch_ref:) ->
+      case mail {
+        Begin -> begin(connection:, ranch_ref:)
+        FromSocket(..)
+        | ParentExited
+        | OtherExited
+        | Delivered(..)
+        | TimerElapsed(..)
+        | Ended(..)
+        | AnswerArrived(..) ->
+          panic as "a connection takes Begin first: its initialiser queued it before Ranch could send anything"
+      }
+    Open(running:) -> {
+      let now = runtime.now()
+      case mail {
+        Begin -> panic as "a connection takes Begin once"
+        FromSocket(Read(bytes:)) ->
+          take(connection:, running:, now:, event: OwnEvent(step.Read(bytes:)))
+        FromSocket(ClosedByPeer) ->
+          take(connection:, running:, now:, event: OwnEvent(step.PeerClosed))
+        FromSocket(FailedToRead(failure:)) ->
+          take(
+            connection:,
+            running:,
+            now:,
+            event: OwnEvent(step.ReadFailed(failure:)),
+          )
+        ParentExited ->
+          take(
+            connection:,
+            running:,
+            now:,
+            event: Stopping(deadline_ms: stop_deadline(now, connection.settings)),
+          )
+        OtherExited -> keep_open(connection:, running:)
+        Delivered(message:) ->
+          take(
+            connection:,
+            running:,
+            now:,
+            event: OwnEvent(step.Woken(message:)),
+          )
+        TimerElapsed(timer:, reference:) ->
+          timer_elapsed(connection:, running:, now:, timer:, reference:)
+        Ended(down:) -> ended(connection:, running:, now:, down:)
+        AnswerArrived(tag:, ..) -> late_answer(connection:, running:, tag:)
+      }
+    }
+  }
+}
+
+/// Takes the socket from Ranch, sets the logger metadata of the process
+/// (connection and peer), opens the recording, joins the registry and takes
+/// `Accepted` as the rule's first input. A client gone before the handshake
+/// ends the connection quietly with `actor.stop`, with nothing to close or to
+/// record.
+fn begin(
+  connection connection: Connection(settings, state, message, answer, request),
+  ranch_ref ranch_ref: RanchRef,
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  let settings = connection.settings
+  case handshake(ranch_ref, settings.send_deadline_ms) {
+    Error(failure) -> {
+      runtime.log(
+        LogDebug,
+        "the client left before the handshake finished: "
+          <> step.describe_socket_failure(failure),
+        step.no_one,
+      )
+      actor.stop()
+    }
+    Ok(socket) -> {
+      let id = runtime.unique_id()
+      let accepted = peer(socket)
+      runtime.set_about(
+        step.About(
+          ..step.no_one,
+          connection: Some(ConnectionId(id)),
+          peer: Some(accepted),
+        ),
+      )
+      let writer = case
+        file.open_if(settings.recorder, settings.rule, connection: id)
+      {
+        Ok(writer) -> writer
+        Error(error) -> recording_failed(socket, error)
+      }
+      join_registry(settings.registry, ConnectionId(id))
+      let rule = settings.rule
+      take(
+        connection:,
+        running: Running(
+          socket:,
+          state: rule.new(rule.settings),
+          writer:,
+          kept: dict.new(),
+          watches: watch.new(),
+          timers: dict.new(),
+          stopping: None,
+        ),
+        now: runtime.now(),
+        event: OwnEvent(Accepted(
+          connection: ConnectionId(id),
+          peer: accepted,
+          seed: crypto.strong_random_bytes(32),
+        )),
+      )
+    }
+  }
+}
+
+/// Joins the connection's group in the registry, when the settings hold one.
+fn join_registry(registry: Option(Registry), connection: ConnectionId) -> Nil {
+  case registry {
+    Some(registry) -> registry.join(registry:, connection:)
+    None -> Nil
+  }
 }
 
 /// Folds one input through the rule, records it, then carries out the step.
 fn take(
-  running running: Running(settings, state, message, answer, request),
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
   now now: step.Now,
   event event: Event(ConnectionEvent(message, answer)),
-) -> Nil {
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
   let #(state, step, writer) = case
     file.fold(
-      rule: running.settings.rule,
+      rule: connection.settings.rule,
       state: running.state,
       writer: running.writer,
       now:,
@@ -309,9 +546,10 @@ fn take(
   }
   let running = Running(..running, state:, writer:)
   case step {
-    Effects(effects:) -> carry(running:, effects:, then: WaitForInput)
+    Effects(effects:) ->
+      carry(connection:, running:, effects:, then: WaitForInput)
     EffectsThenAsk(effects:, ask:) ->
-      carry(running:, effects:, then: MakeAsk(ask))
+      carry(connection:, running:, effects:, then: MakeAsk(ask))
   }
 }
 
@@ -327,263 +565,103 @@ type Then(request) {
 
 /// Carries out the effects in order, then does what `then` says. A `Stop`
 /// among the effects does not end the step: the effects after it are carried
-/// out, then the process ends. A failed write after a `Stop` closes the socket
-/// and ends the process, without a `WriteFailed` input, since the rule asked
-/// to end. When a stop arrived during an earlier ask, a step that ends in an
-/// ask gets `Answered(_, StoppedWaiting)` at once without the directory being
-/// called, and the stop is the next input after a step that ends without an
-/// ask. Before the next input is read from the mailbox, or the stop taken, the
-/// end of each watch of a target no process holds is taken, in the order
-/// opened.
+/// out, then the process ends, and a failed write after it ends the process
+/// with no `WriteFailed` input.
 fn carry(
-  running running: Running(settings, state, message, answer, request),
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
   effects effects: List(Effect(ConnectionEffect)),
   then then: Then(request),
-) -> Nil {
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
   case effects {
-    [] ->
-      case then, running.stopping {
-        EndProcess, _ -> stop(running)
-        MakeAsk(ask:), None -> make_ask(running, ask)
-        MakeAsk(ask:), Some(_) ->
-          take(
-            running:,
-            now: runtime.now(),
-            event: OwnEvent(Answered(ask: ask.ask, outcome: StoppedWaiting)),
-          )
-        WaitForInput, stopping ->
-          case watch.next_unheld_end(running.watches), stopping {
-            Ok(#(watch, watches)), _ ->
-              take(
-                running: Running(..running, watches:),
-                now: runtime.now(),
-                event: step.WatchEnded(watch:),
-              )
-            Error(Nil), None -> wait(running)
-            Error(Nil), Some(deadline_ms) ->
-              take(
-                running: Running(..running, stopping: None),
-                now: runtime.now(),
-                event: Stopping(deadline_ms:),
-              )
-          }
-      }
+    [] -> finish(connection:, running:, then:)
     [effect, ..later] ->
-      case effect {
-        OwnEffect(Write(bytes:)) ->
-          case send(running.socket, bytes), then {
-            Ok(Nil), _ -> carry(running:, effects: later, then:)
-            Error(failure), EndProcess -> {
-              runtime.log(
-                LogWarning,
-                "a write after the rule's Stop failed ("
-                  <> step.describe_socket_failure(failure)
-                  <> "), so the connection ends",
-                step.no_one,
-              )
-              stop(running)
-            }
-            Error(failure), MakeAsk(..) | Error(failure), WaitForInput ->
-              take(
-                running:,
-                now: runtime.now(),
-                event: OwnEvent(WriteFailed(failure:)),
-              )
-          }
-        step.Log(line:) -> {
-          runtime.log(line.level, line.text, line.about)
-          carry(running:, effects: later, then:)
-        }
-        step.Stop -> carry(running:, effects: later, then: EndProcess)
-        step.Watch(watch:, target:) ->
-          carry(
-            running: open_watch(running:, watch:, target:),
-            effects: later,
-            then:,
-          )
-        step.Unwatch(watch:) ->
-          carry(running: close_watch(running:, watch:), effects: later, then:)
-        OwnEffect(StartTimer(timer:, after_ms:)) ->
-          carry(
-            running: start_timer_for(running:, timer:, after_ms:),
-            effects: later,
-            then:,
-          )
-        OwnEffect(CancelTimer(timer:)) ->
-          carry(
-            running: cancel_timer_of(running:, timer:),
-            effects: later,
-            then:,
-          )
-      }
+      carry_effect(connection:, running:, effect:, later:, then:)
   }
 }
 
-/// Waits for what reaches the process next and takes it as an input.
-fn wait(running: Running(settings, state, message, answer, request)) -> Nil {
-  case read_once(running.socket) {
-    Error(failure) ->
-      take(running:, now: runtime.now(), event: OwnEvent(ReadFailed(failure:)))
-    Ok(Nil) -> next(running)
-  }
+/// Carries out one effect, then the later ones with `carry`: a write (a
+/// failed one is the next input, `WriteFailed`), a log line, a `Stop`, a
+/// watch or unwatch, a timer started with `process.send_after` on the
+/// connection's own subject, or cancelled with `process.cancel_timer`.
+fn carry_effect(
+  connection _connection: Connection(settings, state, message, answer, request),
+  running _running: Running(state),
+  effect _effect: Effect(ConnectionEffect),
+  later _later: List(Effect(ConnectionEffect)),
+  then _then: Then(request),
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  panic as "built in the next commit"
 }
 
-/// Takes what reaches the process next as an input. The end of a kept ask's
-/// target is no input; it only drops the tag.
-fn next(running: Running(settings, state, message, answer, request)) -> Nil {
-  let arrived = next_event(running.socket, running.parent, running.kept)
-  let now = runtime.now()
-  case arrived {
-    Read(bytes:) -> take(running:, now:, event: OwnEvent(step.Read(bytes:)))
-    ClosedByPeer -> take(running:, now:, event: OwnEvent(PeerClosed))
-    FailedToRead(failure:) ->
-      take(running:, now:, event: OwnEvent(ReadFailed(failure:)))
-    StopRequested ->
+/// What the shell does after a step's effects. A step that ends in an ask
+/// when a stop arrived during an earlier ask gets `Answered(_, StoppedWaiting)`
+/// at once, with no call to the directory.
+fn finish(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
+  then then: Then(request),
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  case then, running.stopping {
+    EndProcess, _ -> stop(running)
+    MakeAsk(ask:), None -> make_ask(connection:, running:, ask:)
+    MakeAsk(ask:), Some(_) ->
       take(
+        connection:,
         running:,
-        now:,
-        event: Stopping(deadline_ms: stop_deadline(now, running.settings)),
+        now: runtime.now(),
+        event: OwnEvent(Answered(ask: ask.ask, outcome: StoppedWaiting)),
       )
-    LateAnswer(tag:) -> {
-      let assert Ok(Kept(monitor:)) = dict.get(running.kept, tag)
-        as "an answer is taken as late only for a tag the shell kept"
-      process.demonitor_process(monitor)
-      next(Running(..running, kept: dict.delete(running.kept, tag)))
-    }
-    KeptEnded(tag:) ->
-      next(Running(..running, kept: dict.delete(running.kept, tag)))
-    Delivered(message:) ->
-      take(running:, now:, event: OwnEvent(step.Woken(message:)))
-    WatchedEnded(monitor:) -> watch_ended(running:, now:, monitor:)
-    TimerElapsed(timer:, reference:) ->
-      case dict.get(running.timers, timer) {
-        Ok(Started(reference: current, ..)) if current == reference ->
-          take(
-            running: Running(
-              ..running,
-              timers: dict.delete(running.timers, timer),
-            ),
-            now:,
-            event: OwnEvent(step.TimerFired(timer:)),
-          )
-        Ok(Started(..)) | Error(Nil) -> next(running)
-      }
+    WaitForInput, _ -> wait_for_input(connection:, running:)
   }
 }
 
-/// Joins the connection's group in the registry, when the settings hold one.
-fn join_registry(registry: Option(Registry), connection: ConnectionId) -> Nil {
-  case registry {
-    Some(registry) -> registry.join(registry:, connection:)
-    None -> Nil
-  }
+/// Before the next message is taken: the end of each watch of a target no
+/// process holds, in the order opened, as `WatchEnded`; then a stop that
+/// arrived during an ask, as `Stopping`; otherwise the socket's next read is
+/// asked for and the actor takes its next message.
+fn wait_for_input(
+  connection _connection: Connection(settings, state, message, answer, request),
+  running _running: Running(state),
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  panic as "built in the next commit"
 }
 
-/// Monitors the process the address names under the watch's id.
-fn open_watch(
-  running running: Running(settings, state, message, answer, request),
-  watch watch: step.WatchId,
-  target target: step.Address,
-) -> Running(settings, state, message, answer, request) {
-  Running(
-    ..running,
-    watches: watch.open(
-      watches: running.watches,
-      watch:,
-      target: running.settings.locate(target),
-      shell: "connection shell",
-    ),
-  )
-}
-
-/// Drops the watch's monitor, and the DOWN already waiting for it.
-fn close_watch(
-  running running: Running(settings, state, message, answer, request),
-  watch watch: step.WatchId,
-) -> Running(settings, state, message, answer, request) {
-  Running(..running, watches: watch.close(watches: running.watches, watch:))
-}
-
-/// Takes the end of a watched process as `WatchEnded` with the id of its
-/// watch; the DOWN of a monitor the shell holds under no watch is dropped.
-fn watch_ended(
-  running running: Running(settings, state, message, answer, request),
-  now now: step.Now,
-  monitor monitor: Monitor,
-) -> Nil {
-  case watch.ended(watches: running.watches, monitor:) {
-    Ok(#(watch, watches)) ->
-      take(
-        running: Running(..running, watches:),
-        now:,
-        event: step.WatchEnded(watch:),
-      )
-    Error(Nil) -> next(running)
-  }
-}
-
-/// Starts the timer the rule named; an id already running ends the connection.
-fn start_timer_for(
-  running running: Running(settings, state, message, answer, request),
-  timer timer: TimerId,
-  after_ms after_ms: Int,
-) -> Running(settings, state, message, answer, request) {
-  case dict.has_key(running.timers, timer) {
-    True -> {
-      runtime.log(
-        LogError,
-        "a rule started a timer whose id is already running, which the connection shell does not carry out",
-        step.no_one,
-      )
-      close(running.socket)
-      panic as "a rule started a timer whose id is already running"
-    }
-    False -> {
-      let #(started, reference) = start_timer(timer, after_ms)
-      Running(
-        ..running,
-        timers: dict.insert(
-          running.timers,
-          timer,
-          Started(timer: started, reference:),
-        ),
-      )
-    }
-  }
-}
-
-/// Cancels the timer the rule named, and drops its message if it had fired. A
-/// message already in flight is discarded when it arrives, by its reference.
-fn cancel_timer_of(
-  running running: Running(settings, state, message, answer, request),
-  timer timer: TimerId,
-) -> Running(settings, state, message, answer, request) {
-  case dict.get(running.timers, timer) {
-    Ok(Started(timer: started, reference:)) -> {
-      cancel_timer(timer, started, reference)
-      Running(..running, timers: dict.delete(running.timers, timer))
-    }
-    Error(Nil) -> running
-  }
-}
-
-/// Makes an ask through the settings' directory and waits for its outcome,
-/// taking no other input.
+/// Makes an ask through the settings' directory, whose reply sends the answer
+/// to the connection's answers subject tagged with the ask's reference, and
+/// waits for its outcome.
 fn make_ask(
-  running: Running(settings, state, message, answer, request),
-  ask: Ask(request),
-) -> Nil {
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
+  ask ask: Ask(request),
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
   let tag = reference.new()
-  let shell = process.self()
-  let reply = fn(answer) { send_answer(shell, tag, answer) }
-  case running.settings.directory(ask.request, ask.deadline_ms, reply) {
+  let answers = connection.answers
+  let reply = fn(answer) { process.send(answers, #(tag, answer)) }
+  case connection.settings.directory(ask.request, ask.deadline_ms, reply) {
     Error(Nil) ->
       take(
+        connection:,
         running:,
         now: runtime.now(),
         event: OwnEvent(Answered(ask: ask.ask, outcome: NotRunning)),
       )
-    Ok(sent) -> wait_for_answer(running:, ask:, tag:, sent:)
+    Ok(sent) -> wait_for_answer(connection:, running:, ask:, tag:, sent:)
   }
 }
 
@@ -591,14 +669,27 @@ fn make_ask(
 /// ask that ends without an answer, by its deadline or the server's stop, is
 /// kept by its tag until the target answers or ends.
 fn wait_for_answer(
-  running running: Running(settings, state, message, answer, request),
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
   ask ask: Ask(request),
   tag tag: Reference,
   sent sent: Sent,
-) -> Nil {
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
   let monitor = process.monitor(sent.pid)
-  let waited = await_answer(tag, monitor, running.parent, ask.deadline_ms)
+  let #(waited, kept) =
+    await_answer(
+      answers: connection.answers,
+      tag:,
+      monitor:,
+      parent: connection.parent,
+      kept: running.kept,
+      deadline_ms: ask.deadline_ms,
+    )
   let known = runtime.now()
+  let running = Running(..running, kept:)
   let #(running, outcome) = case waited {
     Replied(answer:) -> #(running, Answer(answer:))
     TargetEnded -> #(running, EndedBeforeAnswer)
@@ -606,24 +697,177 @@ fn wait_for_answer(
       service.end_worker(sent)
       #(keep(running:, tag:, monitor:), NoAnswerInTime)
     }
-    ParentExited -> #(
+    ParentStopping -> #(
       Running(
         ..keep(running:, tag:, monitor:),
-        stopping: Some(stop_deadline(known, running.settings)),
+        stopping: Some(stop_deadline(known, connection.settings)),
       ),
       StoppedWaiting,
     )
   }
-  take(running:, now: known, event: OwnEvent(Answered(ask: ask.ask, outcome:)))
+  take(
+    connection:,
+    running:,
+    now: known,
+    event: OwnEvent(Answered(ask: ask.ask, outcome:)),
+  )
+}
+
+/// Waits for the outcome of the ask tagged `tag` by a selective receive that
+/// takes only that tag's answer on the answers subject, the target's monitor
+/// and the exits (the parent's ends the wait, another process's is dropped),
+/// until the deadline, an absolute time on the monotonic clock; a deadline
+/// already passed ends the wait at once. Every other message stays in the
+/// mailbox, so the rule's next inputs come in the order they arrived. The
+/// answer of a kept ask (an earlier ask's, past its deadline) is taken from
+/// the subject here too, since a subject cannot be received by tag: its
+/// monitor is dropped and the kept ask with it, and the kept asks that remain
+/// come back with the outcome. The answer of no kept ask is dropped.
+fn await_answer(
+  answers _answers: Subject(#(Reference, answer)),
+  tag _tag: Reference,
+  monitor _monitor: Monitor,
+  parent _parent: Pid,
+  kept _kept: Dict(Reference, Kept),
+  deadline_ms _deadline_ms: Int,
+) -> #(Waited(answer), Dict(Reference, Kept)) {
+  panic as "built in the next commit"
 }
 
 /// Keeps an ask's tag and monitor until its target answers or ends.
 fn keep(
-  running running: Running(settings, state, message, answer, request),
+  running running: Running(state),
   tag tag: Reference,
   monitor monitor: Monitor,
-) -> Running(settings, state, message, answer, request) {
+) -> Running(state) {
   Running(..running, kept: dict.insert(running.kept, tag, Kept(monitor:)))
+}
+
+/// The one end of a connection that was open: closes the socket, ends the
+/// recording with `End` and lets the actor stop normally. Every stop of an
+/// open connection goes through it: the rule's `Stop`, also after a write
+/// that failed. A crash does not: the process ends with its reason, the socket
+/// closes with it, and the recording has no `End`, so it never replays.
+fn stop(
+  running: Running(state),
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  close(running.socket)
+  runtime.finish_recording(running.writer)
+  actor.stop()
+}
+
+/// Ends the connection before the step's effects, since its input could not
+/// be recorded.
+fn recording_failed(socket: ClientSocket, error: FileError) -> a {
+  runtime.log_recording_failure(error)
+  close(socket)
+  panic as "a connection's recording could not be written"
+}
+
+/// Continues with the connection open.
+fn keep_open(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  actor.continue(Connection(..connection, status: Open(running:)))
+}
+
+/// Takes a timer's firing as `TimerFired` when its reference is the current
+/// start's of that id, and forgets the timer; a stale one is dropped.
+fn timer_elapsed(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
+  now now: step.Now,
+  timer timer: TimerId,
+  reference reference: Reference,
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  case dict.get(running.timers, timer) {
+    Ok(Started(reference: current, ..)) if current == reference ->
+      take(
+        connection:,
+        running: Running(..running, timers: dict.delete(running.timers, timer)),
+        now:,
+        event: OwnEvent(step.TimerFired(timer:)),
+      )
+    Ok(Started(..)) | Error(Nil) -> keep_open(connection:, running:)
+  }
+}
+
+/// Takes the end of a monitored process: a kept ask's target only drops the
+/// ask's tag, a watch's target is the rule's `WatchEnded`, and the DOWN of a
+/// monitor the shell holds under neither is dropped.
+fn ended(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
+  now now: step.Now,
+  down down: process.Down,
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  let monitor = case down {
+    process.ProcessDown(monitor:, ..) | process.PortDown(monitor:, ..) ->
+      monitor
+  }
+  case kept_with_monitor(running.kept, monitor) {
+    Ok(tag) ->
+      keep_open(
+        connection:,
+        running: Running(..running, kept: dict.delete(running.kept, tag)),
+      )
+    Error(Nil) ->
+      case watch.ended(watches: running.watches, monitor:) {
+        Ok(#(watch, watches)) ->
+          take(
+            connection:,
+            running: Running(..running, watches:),
+            now:,
+            event: step.WatchEnded(watch:),
+          )
+        Error(Nil) -> keep_open(connection:, running:)
+      }
+  }
+}
+
+/// The tag of the kept ask whose target `monitor` watches.
+fn kept_with_monitor(
+  kept: Dict(Reference, Kept),
+  monitor: Monitor,
+) -> Result(Reference, Nil) {
+  dict.to_list(kept)
+  |> list.find(fn(entry) { { entry.1 }.monitor == monitor })
+  |> result.map(fn(entry) { entry.0 })
+}
+
+/// Drops the answer of a kept ask, which gives the rule no input, with the
+/// ask's monitor; the answer of no kept ask is dropped as it is.
+fn late_answer(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
+  tag tag: Reference,
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  case dict.get(running.kept, tag) {
+    Ok(Kept(monitor:)) -> {
+      process.demonitor_process(monitor)
+      keep_open(
+        connection:,
+        running: Running(..running, kept: dict.delete(running.kept, tag)),
+      )
+    }
+    Error(Nil) -> keep_open(connection:, running:)
+  }
 }
 
 /// The deadline a stopping rule is given: the shutdown time from now, less
@@ -638,55 +882,39 @@ fn stop_deadline(
   now.monotonic_ms + settings.shutdown_ms - settings.send_deadline_ms
 }
 
-/// Closes the socket, ends the recording and lets the process end normally.
-fn stop(running: Running(settings, state, message, answer, request)) -> Nil {
-  close(running.socket)
-  runtime.finish_recording(running.writer)
+/// What `erlang:process_flag` sets: where a process keeps its waiting
+/// messages.
+type ProcessFlag {
+  MessageQueueData
 }
 
-/// Ends the connection before the step's effects, since its input could not
-/// be recorded.
-fn recording_failed(socket: ClientSocket, error: FileError) -> a {
-  runtime.log_recording_failure(error)
-  close(socket)
-  panic as "a connection's recording could not be written"
+/// Where a process keeps its waiting messages: outside its heap, which the
+/// garbage collector then does not scan each time a message waits.
+type QueueLocation {
+  OffHeap
 }
+
+/// The flag's value before it was set, which the shell does not read.
+type PreviousQueueLocation
+
+/// Sets the flag and gives its old value.
+@external(erlang, "erlang", "process_flag")
+fn process_flag(
+  flag: ProcessFlag,
+  location: QueueLocation,
+) -> PreviousQueueLocation
 
 @external(erlang, "connection_shell_ffi", "handshake")
-fn handshake(ranch_ref: Dynamic, send_deadline_ms: Int) -> ClientSocket
+fn handshake(
+  ranch_ref: RanchRef,
+  send_deadline_ms: Int,
+) -> Result(ClientSocket, SocketFailure)
 
-@external(erlang, "connection_shell_ffi", "read_once")
-fn read_once(socket: ClientSocket) -> Result(Nil, SocketFailure)
+@external(erlang, "connection_shell_ffi", "peer")
+fn peer(socket: ClientSocket) -> step.Peer
 
-@external(erlang, "connection_shell_ffi", "next_event")
-fn next_event(
-  socket: ClientSocket,
-  parent: Pid,
-  kept: Dict(Reference, Kept),
-) -> Arrived(message)
-
-@external(erlang, "connection_shell_ffi", "start_timer")
-fn start_timer(timer: TimerId, after_ms: Int) -> #(Timer, Reference)
-
-@external(erlang, "connection_shell_ffi", "cancel_timer")
-fn cancel_timer(timer: TimerId, started: Timer, of: Reference) -> Nil
-
-@external(erlang, "connection_shell_ffi", "send_answer")
-fn send_answer(shell: Pid, tag: Reference, answer: answer) -> Nil
-
-@external(erlang, "connection_shell_ffi", "await_answer")
-fn await_answer(
-  tag: Reference,
-  monitor: Monitor,
-  parent: Pid,
-  deadline_ms: Int,
-) -> Waited(answer)
-
-@external(erlang, "connection_shell_ffi", "send")
-fn send(socket: ClientSocket, bytes: BitArray) -> Result(Nil, SocketFailure)
+@external(erlang, "connection_shell_ffi", "socket_message")
+fn socket_message(sent: Dynamic) -> SocketMessage
 
 @external(erlang, "connection_shell_ffi", "close")
 fn close(socket: ClientSocket) -> Nil
-
-@external(erlang, "connection_shell_ffi", "peer")
-fn peer(socket: ClientSocket) -> Peer

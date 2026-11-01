@@ -3,7 +3,8 @@
 %% caller declares.
 -module(step_runtime_ffi).
 
--export([unique_id/0, monotonic_ms/0, filetime/0, log/3, show_info_lines/0]).
+-export([unique_id/0, monotonic_ms/0, filetime/0, log/3, set_about/1,
+         show_info_lines/0]).
 
 %% FILETIME counts 100-nanosecond intervals from 1601-01-01; the Unix epoch is
 %% this many of them after it.
@@ -31,12 +32,20 @@ filetime() ->
 
 %% Writes a log line through the logger, each known field of its who and where
 %% as a metadata key of its own.
-log(Level, Text, {about, Connection, Peer, Account, Character, Map, Message}) ->
+log(Level, Text, About) ->
+    logger:log(level(Level), "~ts", [Text], metadata(About)),
+    nil.
+
+%% Sets the calling process's logger metadata, which every line it logs
+%% carries, from the fields of About that are known.
+set_about(About) ->
+    logger:update_process_metadata(metadata(About)),
+    nil.
+
+metadata({about, Connection, Peer, Account, Character, Map, Message}) ->
     Fields = [{connection, Connection}, {peer, Peer}, {account_id, Account},
               {character_id, Character}, {map, Map}, {message, Message}],
-    Metadata = maps:from_list([{Key, Value} || {Key, {some, Value}} <- Fields]),
-    logger:log(level(Level), "~ts", [Text], Metadata),
-    nil.
+    maps:from_list([{Key, Value} || {Key, {some, Value}} <- Fields]).
 
 level(log_error) -> error;
 level(log_warning) -> warning;

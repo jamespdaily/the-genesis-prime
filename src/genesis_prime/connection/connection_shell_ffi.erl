@@ -1,24 +1,22 @@
-%% Ranch's protocol callback for a connection shell, and the socket and ask
+%% Ranch's protocol callback for a connection shell, and the Ranch and socket
 %% calls the shell makes. Ranch calls start_link/3, an Erlang behaviour callback
-%% Gleam cannot declare; the process it starts hands over to
-%% genesis_prime@connection@shell:run/3. Each function returns the Gleam shape
+%% Gleam cannot declare; it starts the shell's gleam_otp actor
+%% (genesis_prime@connection@shell:start/2). Every other function here is a call
+%% Gleam has no library for (Ranch, gen_tcp and inet) or the decoder of the
+%% socket's messages into a Gleam value. Each function returns the Gleam shape
 %% its caller declares.
 -module(connection_shell_ffi).
 -behaviour(ranch_protocol).
 
 -export([start_link/3, start_listener/4, listener_port/1, suspend_listener/1,
-         handshake/2,
-         read_once/1, next_event/3, send/2, close/1, peer/1,
-         send_answer/3, await_answer/4, start_timer/2, cancel_timer/3]).
+         handshake/2, read_once/1, socket_message/1, send/2, close/1, peer/1]).
 
 %% Starts the connection's process, linked to Ranch's connection supervisor,
-%% which is the calling process and the shell's parent.
+%% which is the calling process and the shell's parent. The process is the
+%% gleam_otp actor of genesis_prime@connection@shell:start/2, which returns
+%% {ok, Pid} or {error, StartError} as Ranch expects.
 start_link(Ref, _Transport, Settings) ->
-    Parent = self(),
-    Pid = proc_lib:spawn_link(fun() ->
-        'genesis_prime@connection@shell':run(Ref, Parent, Settings)
-    end),
-    {ok, Pid}.
+    'genesis_prime@connection@shell':start(Ref, Settings).
 
 %% Starts a listener as a child of the calling supervisor: Ranch's embedded
 %% supervisor, with one connection supervisor, so connections are its
@@ -48,19 +46,25 @@ suspend_listener(Ref) ->
     catch _:_ -> {error, nil}
     end.
 
-%% Takes the socket from Ranch, gives its writes the send deadline, closing it
-%% when one passes, and traps the parent's exit so a stop arrives as a message.
-%% A close gives bytes still queued the send deadline, in whole seconds, to go
-%% out, then drops them: without a linger, a close to a client that has stopped
-%% reading waits for the queue up to 180 s (prim_inet's close_pend_loop).
+%% Takes the socket from Ranch and gives its writes the send deadline, closing
+%% it when one passes. A close gives bytes still queued the send deadline, in
+%% whole seconds, to go out, then drops them: without a linger, a close to a
+%% client that has stopped reading waits for the queue up to 180 s
+%% (prim_inet's close_pend_loop). A client gone before the handshake, or a
+%% socket that cannot be set up, is an error value and no crash: the shell ends
+%% the connection quietly.
 handshake(Ref, SendDeadlineMs) ->
-    {ok, Socket} = ranch:handshake(Ref),
-    LingerSeconds = max(1, (SendDeadlineMs + 999) div 1000),
-    ok = inet:setopts(Socket, [{send_timeout, SendDeadlineMs},
-                               {send_timeout_close, true},
-                               {linger, {true, LingerSeconds}}]),
-    process_flag(trap_exit, true),
-    Socket.
+    try ranch:handshake(Ref) of
+        {ok, Socket} ->
+            LingerSeconds = max(1, (SendDeadlineMs + 999) div 1000),
+            case inet:setopts(Socket, [{send_timeout, SendDeadlineMs},
+                                       {send_timeout_close, true},
+                                       {linger, {true, LingerSeconds}}]) of
+                ok -> {ok, Socket};
+                {error, Reason} -> gen_tcp:close(Socket), {error, failure(Reason)}
+            end
+    catch exit:{shutdown, Reason} -> {error, failure(Reason)}
+    end.
 
 %% Asks the socket for its next read.
 read_once(Socket) ->
@@ -69,83 +73,11 @@ read_once(Socket) ->
         {error, Reason} -> {error, failure(Reason)}
     end.
 
-%% Waits for what reaches the process next: a read, the peer's close, a read
-%% failure, the parent's stop, a message another process delivered
-%% ({woken, Message}, which registry.deliver sends), a timer's firing or the end
-%% of a monitored process. Kept maps the tag of each ask whose outcome was
-%% NoAnswerInTime or StoppedWaiting to {kept, Monitor}: its late answer
-%% comes as {late_answer, Tag}, which the shell drops, and its target's end as
-%% {kept_ended, Tag}. A DOWN that is no kept ask's is a watch's: the shell
-%% finds the watch by the monitor.
-%% The answer of a tag that is not kept, and another process's exit, are not
-%% the shell's and are dropped, so the mailbox never fills with them.
-next_event(Socket, Parent, Kept) ->
-    receive
-        {tcp, Socket, Bytes} -> {read, Bytes};
-        {tcp_closed, Socket} -> closed_by_peer;
-        {tcp_error, Socket, Reason} -> {failed_to_read, failure(Reason)};
-        {'EXIT', Parent, _Reason} -> stop_requested;
-        {'EXIT', _Other, _Reason} -> next_event(Socket, Parent, Kept);
-        {ask_answer, Tag, _Answer} when is_map_key(Tag, Kept) ->
-            {late_answer, Tag};
-        {ask_answer, _Tag, _Answer} -> next_event(Socket, Parent, Kept);
-        {woken, Message} -> {delivered, Message};
-        {timer_fired, TimerId, Reference} ->
-            {timer_elapsed, TimerId, Reference};
-        {'DOWN', Monitor, process, _Pid, _Reason} ->
-            case kept_with_monitor(Monitor, Kept) of
-                {ok, Tag} -> {kept_ended, Tag};
-                error -> {watched_ended, Monitor}
-            end
-    end.
-
-kept_with_monitor(Monitor, Kept) ->
-    case [Tag || {Tag, {kept, Kept_monitor}} <- maps:to_list(Kept),
-                 Kept_monitor =:= Monitor] of
-        [Tag] -> {ok, Tag};
-        [] -> error
-    end.
-
-%% What an ask's target calls to answer it; it never fails, and an answer to a
-%% shell that has ended is dropped.
-send_answer(Shell, Tag, Answer) ->
-    Shell ! {ask_answer, Tag, Answer},
-    nil.
-
-%% Waits for the outcome of an ask: the answer, the target's end, the parent's
-%% exit, or the deadline, on the monotonic clock. A deadline already passed ends
-%% the wait at once, whatever has arrived. Only this ask's tag and monitor and
-%% the parent's exit are taken from the mailbox.
-await_answer(Tag, Monitor, Parent, DeadlineMs) ->
-    Remaining = DeadlineMs - erlang:monotonic_time(millisecond),
-    case Remaining =< 0 of
-        true -> deadline_passed;
-        false ->
-            receive
-                {ask_answer, Tag, Answer} ->
-                    erlang:demonitor(Monitor, [flush]),
-                    {replied, Answer};
-                {'DOWN', Monitor, process, _Pid, _Reason} -> target_ended;
-                {'EXIT', Parent, _Reason} -> parent_exited
-            after Remaining -> deadline_passed
-            end
-    end.
-
-%% Starts a timer that sends this process {timer_fired, TimerId, Reference}
-%% after AfterMs, and gives the timer with its reference, which the shell keeps
-%% as the timer's own: a message of another reference is a stale one.
-start_timer(TimerId, AfterMs) ->
-    Reference = make_ref(),
-    Timer = erlang:send_after(AfterMs, self(), {timer_fired, TimerId, Reference}),
-    {Timer, Reference}.
-
-%% Cancels a timer and flushes its message from the mailbox when it fired
-%% before the cancel. A message still in flight when the cancel is made is not
-%% recalled; the shell discards it by its reference.
-cancel_timer(TimerId, Timer, Reference) ->
-    _ = erlang:cancel_timer(Timer),
-    receive {timer_fired, TimerId, Reference} -> ok after 0 -> ok end,
-    nil.
+%% A message the socket sent, as the shell's selector takes it: {tcp, Socket,
+%% Bytes}, {tcp_closed, Socket} or {tcp_error, Socket, Reason}.
+socket_message({tcp, _Socket, Bytes}) -> {read, Bytes};
+socket_message({tcp_closed, _Socket}) -> closed_by_peer;
+socket_message({tcp_error, _Socket, Reason}) -> {failed_to_read, failure(Reason)}.
 
 %% Writes the bytes; a write that waits past the socket's send deadline fails
 %% as send_timed_out and closes the socket.

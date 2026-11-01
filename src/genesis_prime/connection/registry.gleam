@@ -30,7 +30,8 @@
 ////   `process.new_name`, so each tree has its own scope and none is shared.
 
 import genesis_prime/step.{type ConnectionId, Connection}
-import gleam/erlang/process.{type Name, type Pid}
+import gleam/dynamic.{type Dynamic}
+import gleam/erlang/process.{type Name, type Pid, type Selector}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 
@@ -104,6 +105,24 @@ pub fn deliver(
   }
 }
 
+/// Adds to a selector the messages `deliver` sends to the process, each
+/// taken as `mapping(message)`, in the order it arrived among the others the
+/// selector takes. The connection's rule fixes the message's type.
+pub fn select_delivered(
+  selector selector: Selector(payload),
+  mapping mapping: fn(message) -> payload,
+) -> Selector(payload) {
+  process.select_record(selector, tag: Woken, fields: 1, mapping: fn(sent) {
+    mapping(woken_message(sent))
+  })
+}
+
+/// The first element of what `deliver` sends: the atom `woken`, which
+/// `connection_registry_ffi:send_woken` writes the same way.
+type DeliveryTag {
+  Woken
+}
+
 @external(erlang, "connection_registry_ffi", "start_scope")
 fn start_scope(scope: Name(Nil)) -> Result(Pid, StartFailure)
 
@@ -115,3 +134,6 @@ fn members(scope: Name(Nil), group: step.Address) -> List(Pid)
 
 @external(erlang, "connection_registry_ffi", "send_woken")
 fn send_woken(pid: Pid, message: message) -> Nil
+
+@external(erlang, "connection_registry_ffi", "woken_message")
+fn woken_message(sent: Dynamic) -> message
