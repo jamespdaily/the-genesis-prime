@@ -5,7 +5,9 @@
 ////   a connection joins the registry as it is accepted; a message delivered to
 ////   it reaches the rule as `Woken`; a watch's end comes back once as
 ////   `WatchEnded` with the watch's id (the watches themselves are tested in
-////   `watch_test`); a timer fires once as `TimerFired`, a cancelled one never
+////   `watch_test`); a target no process holds ends as the next input once the
+////   step is done, before the mailbox is read, the step's watches in the order
+////   opened; a timer fires once as `TimerFired`, a cancelled one never
 ////   does, and a timeout whose reference is not the timer's own is discarded.
 //// - OTP's `erlang:send_after` and `erlang:cancel_timer`: a message already sent
 ////   when the timer is cancelled stays in the mailbox, which is the reason the
@@ -46,7 +48,7 @@ fn send_timeout(to: Pid, message: #(Atom, step.TimerId, Reference)) -> Dynamic
 
 fn start(
   registry registry: option.Option(registry.Registry),
-  sessions sessions: Pid,
+  sessions sessions: Result(Pid, Nil),
 ) -> ask_support.Server {
   ask_support.start_joined(
     rule: signalling_rule.rule(),
@@ -56,7 +58,7 @@ fn start(
     registry:,
     locate: fn(address: Address) {
       case address {
-        Sessions -> Ok(sessions)
+        Sessions -> sessions
         step.HandOff
         | step.Store
         | step.Maps
@@ -100,7 +102,7 @@ fn accepted_id(client: mug.Socket) -> Int {
 pub fn a_connection_joins_the_registry_as_it_is_accepted_and_a_delivered_message_reaches_the_rule_as_woken_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = registry.new()
-  let server = start(registry: Some(scope), sessions: a_sessions())
+  let server = start(registry: Some(scope), sessions: Ok(a_sessions()))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -121,7 +123,7 @@ pub fn a_connection_joins_the_registry_as_it_is_accepted_and_a_delivered_message
 pub fn a_connection_that_ended_leaves_its_group_and_a_message_to_it_is_dropped_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = registry.new()
-  let server = start(registry: Some(scope), sessions: a_sessions())
+  let server = start(registry: Some(scope), sessions: Ok(a_sessions()))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
@@ -158,7 +160,7 @@ fn left(
 pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watchs_id_test() -> Nil {
   use <- owned_test.run(30_000)
   let sessions = a_sessions()
-  let server = start(registry: None, sessions:)
+  let server = start(registry: None, sessions: Ok(sessions))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   ask_support.command(
@@ -191,9 +193,58 @@ pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watch
   ask_support.stop(server)
 }
 
+pub fn a_watch_of_a_target_no_process_holds_ends_as_the_next_input_before_a_message_already_queued_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let scope = registry.new()
+  let server = start(registry: Some(scope), sessions: Error(Nil))
+  let client = ask_support.connect(server)
+  let id = accepted_id(client)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  // The shell is suspended, so both messages are queued before it takes
+  // either. The message -1 makes the rule watch Sessions, which `locate`
+  // finds no process for.
+  ask_support.while_suspended(connection, fn() {
+    assert registry.deliver(scope, ConnectionId(id), -1) == Ok(Nil)
+    assert registry.deliver(scope, ConnectionId(id), 7) == Ok(Nil)
+  })
+  assert read_record(client) == Record(signalling_rule.woken, -1)
+    as "X, whose step watches the target, is the first input"
+  assert read_record(client) == Record(signalling_rule.watch_ended, 1)
+    as "the end of X's watch is the next input, before the message queued behind X"
+  assert read_record(client) == Record(signalling_rule.woken, 7)
+    as "Y is taken after it"
+  ask_support.stop(server)
+}
+
+pub fn two_watches_of_targets_no_process_holds_end_in_the_order_opened_before_the_next_mailbox_input_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let scope = registry.new()
+  let server = start(registry: Some(scope), sessions: Error(Nil))
+  let client = ask_support.connect(server)
+  let id = accepted_id(client)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  // The shell is suspended, so both messages are queued before it takes
+  // either. The message -2 makes the rule watch 1 and 2 on Sessions, which
+  // `locate` finds no process for.
+  ask_support.while_suspended(connection, fn() {
+    assert registry.deliver(scope, ConnectionId(id), -2) == Ok(Nil)
+    assert registry.deliver(scope, ConnectionId(id), 7) == Ok(Nil)
+  })
+  assert read_record(client) == Record(signalling_rule.woken, -2)
+    as "X, whose step opens both watches, is the first input"
+  assert read_record(client) == Record(signalling_rule.watch_ended, 1)
+    as "the first watch opened ends first"
+  assert read_record(client) == Record(signalling_rule.watch_ended, 2)
+    as "the second next, and both before the message queued behind X"
+  assert read_record(client) == Record(signalling_rule.woken, 7)
+  ask_support.stop(server)
+}
+
 pub fn a_timer_fires_once_as_timer_fired_with_its_id_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: a_sessions())
+  let server = start(registry: None, sessions: Ok(a_sessions()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   ask_support.command(
@@ -217,7 +268,7 @@ pub fn a_timer_fires_once_as_timer_fired_with_its_id_test() -> Nil {
 
 pub fn a_cancelled_timer_never_fires_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: a_sessions())
+  let server = start(registry: None, sessions: Ok(a_sessions()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   // Timer 1 would fire first; timer 2 is the witness that time passed.
@@ -256,7 +307,7 @@ pub fn cancelling_a_timer_that_already_fired_flushes_its_message_from_the_mailbo
 
 pub fn a_timeout_of_a_cancelled_or_replaced_timer_is_discarded_by_its_reference_test() -> Nil {
   use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: a_sessions())
+  let server = start(registry: None, sessions: Ok(a_sessions()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)

@@ -154,6 +154,22 @@ pub fn await_new_pid(
   }
 }
 
+/// Runs `body` with the process suspended, so what `body` sends it queues in
+/// the order it is sent and nothing is taken until `body` returns, when the
+/// process is resumed.
+pub fn while_suspended(process process: Pid, body body: fn() -> a) -> a {
+  let assert True = suspend_process(process) as "the process was suspended"
+  let result = body()
+  let assert True = resume_process(process) as "the process was resumed"
+  result
+}
+
+@external(erlang, "erlang", "suspend_process")
+fn suspend_process(process: Pid) -> Bool
+
+@external(erlang, "erlang", "resume_process")
+fn resume_process(process: Pid) -> Bool
+
 /// Sends the tree the exit the server's own stop sends, and watches it.
 pub fn begin_stop_tree(tree: Pid) -> process.Monitor {
   let watched = process.monitor(tree)

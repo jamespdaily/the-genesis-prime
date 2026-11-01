@@ -36,16 +36,22 @@ import simplifile
 /// with, a registry the maps find their players' connections in, and, when the
 /// test records, the folder of the maps' recordings.
 type World {
-  World(tree: Pid, maps: Name(maps.Message), registry: Registry)
+  World(
+    tree: Pid,
+    maps: Name(maps.Message),
+    map_supervisor: Name(maps.MapSupervisor),
+    registry: Registry,
+  )
 }
 
 fn start_world(recording_folder: Option(String)) -> World {
   let maps_name = process.new_name("maps")
+  let map_supervisor_name = process.new_name("map_supervisor")
   let scope = registry.new()
   let world =
     server.World(
       maps: maps_name,
-      map_supervisor: process.new_name("map_supervisor"),
+      map_supervisor: map_supervisor_name,
       maps_call_ms: 1000,
       map_shutdown_ms: 1000,
       map_recordings: option.map(recording_folder, recording_support.recorder(
@@ -63,7 +69,12 @@ fn start_world(recording_folder: Option(String)) -> World {
     as "the world tree started"
   process.unlink(started.pid)
   ask_support.guard(started.pid)
-  World(tree: started.pid, maps: maps_name, registry: scope)
+  World(
+    tree: started.pid,
+    maps: maps_name,
+    map_supervisor: map_supervisor_name,
+    registry: scope,
+  )
 }
 
 fn locate(scope: Registry, address: Address) -> Result(Pid, Nil) {
@@ -294,11 +305,30 @@ pub fn a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_
   let world = start_world(None)
   let first = started(world, ship)
   let assert Ok(maps_pid) = process.named(world.maps) as "Maps is registered"
+  let assert Ok(supervisor_pid) = process.named(world.map_supervisor)
+    as "the map supervisor is registered"
   let ended = process.monitor(first.pid)
   process.kill(maps_pid)
   let _reason = ask_support.ended(ended)
-  let new_maps = ask_support.await_new_pid(world.maps, maps_pid, 5000)
+  let new_maps =
+    ask_support.await_new_pid(
+      name: world.maps,
+      not: maps_pid,
+      within_ms: ask_support.event_wait_ms,
+    )
   assert new_maps != maps_pid as "the supervisor restarted Maps"
+  // Under rest_for_one the map supervisor restarts after Maps, so a request
+  // that reaches the new Maps before the new map supervisor is answered
+  // `Error(Nil)`, since the start fails: a handled gap, so the test asks only
+  // once the map supervisor runs again.
+  let new_supervisor =
+    ask_support.await_new_pid(
+      name: world.map_supervisor,
+      not: supervisor_pid,
+      within_ms: ask_support.event_wait_ms,
+    )
+  assert new_supervisor != supervisor_pid
+    as "the supervisor restarted the map supervisor"
   let again = started(world, ship)
   assert again.pid != first.pid && again.incarnation != first.incarnation
     as "rest_for_one: the map supervisor restarted with Maps, so every map ended, and a registry that lost its list never starts a second copy of a running map"
@@ -310,7 +340,7 @@ pub fn the_recording_of_a_map_run_is_named_by_its_world_instance_and_incarnation
   let world = start_world(Some(folder))
   let found = started(world, ship)
   // Both joiners are connection ids no process holds, so each watch ends as
-  // the map's next input, in its own mailbox order. A live connection killed
+  // the map's next input, before the tree's stop is read. A live connection killed
   // here would race the tree's stop: its end comes from another sender than
   // the stop, so the map may stop before it takes it.
   let _joined = joined(found, 2)

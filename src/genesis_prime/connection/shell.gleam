@@ -12,6 +12,8 @@
 ////   the registry, when the settings hold one: the shell joins the group of
 ////     Connection(id), so other processes find it (genesis_prime/connection/registry)
 ////   Socket(Accepted(connection id, peer, seed))  ─▶ step ─▶ effects
+////   after each step's effects, before the mailbox is read or a stop is taken:
+////     a watch of a target no process holds ─▶ WatchEnded(id) ─▶ step ─▶ effects
 ////   loop, the socket active once:
 ////     {tcp, bytes}        ─▶ Socket(Read(bytes))   ─▶ step ─▶ effects
 ////     {woken, message}    ─▶ Woken(message)        ─▶ step ─▶ effects
@@ -101,12 +103,15 @@
 ////   `locate`, monitors it and keeps the monitor under `id`
 ////   (genesis_prime/step/watch). Its DOWN is taken between steps as
 ////   `WatchEnded(id)`, once, and the shell forgets the watch. A target no
-////   process holds comes back as `WatchEnded(id)` as the next input once the
-////   step is done, and after the outcome of an ask the step ends in, since
-////   no other input is taken meanwhile. `Unwatch(id)` drops the monitor and the
-////   DOWN already waiting. A watch's DOWN that arrives during an ask waits like
-////   a delivered message. An id already open ends the connection with an error
-////   log.
+////   process holds is monitored by nothing: the shell holds the id and takes
+////   `WatchEnded(id)` as the next input once the step is done, and after the
+////   outcome of an ask the step ends in, since no other input is taken
+////   meanwhile; before the mailbox is read and before a stop that arrived
+////   during an ask, with the ends of the step's other such watches in the
+////   order opened. A step that stops the connection takes none. `Unwatch(id)` drops the monitor and the DOWN already
+////   waiting, or an id held for a target no process holds. A watch's DOWN that
+////   arrives during an ask waits like a delivered message. An id already open,
+////   monitored or held, ends the connection with an error log.
 //// - **A timer.** `StartTimer(id, ms)` starts an `erlang:send_after` that sends
 ////   the shell `{timer_fired, id, reference}`, kept under `id` with its own
 ////   reference. It is taken between steps as `TimerFired(id)`, once, and the
@@ -326,7 +331,9 @@ type Then(request) {
 /// to end. When a stop arrived during an earlier ask, a step that ends in an
 /// ask gets `Answered(_, StoppedWaiting)` at once without the directory being
 /// called, and the stop is the next input after a step that ends without an
-/// ask.
+/// ask. Before the next input is read from the mailbox, or the stop taken, the
+/// end of each watch of a target no process holds is taken, in the order
+/// opened.
 fn carry(
   running running: Running(settings, state, message, answer, outgoing, request),
   effects effects: List(Effect(outgoing)),
@@ -343,13 +350,22 @@ fn carry(
             now: runtime.now(),
             event: Answered(ask: ask.ask, outcome: StoppedWaiting),
           )
-        WaitForInput, None -> wait(running)
-        WaitForInput, Some(deadline_ms) ->
-          take(
-            running: Running(..running, stopping: None),
-            now: runtime.now(),
-            event: Stopping(deadline_ms:),
-          )
+        WaitForInput, stopping ->
+          case watch.next_unheld_end(running.watches), stopping {
+            Ok(#(watch, watches)), _ ->
+              take(
+                running: Running(..running, watches:),
+                now: runtime.now(),
+                event: step.WatchEnded(watch:),
+              )
+            Error(Nil), None -> wait(running)
+            Error(Nil), Some(deadline_ms) ->
+              take(
+                running: Running(..running, stopping: None),
+                now: runtime.now(),
+                event: Stopping(deadline_ms:),
+              )
+          }
       }
     [effect, ..later] ->
       case effect {

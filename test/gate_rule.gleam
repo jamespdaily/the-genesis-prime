@@ -36,6 +36,9 @@ pub type Message {
   /// Watch the process at the address as watch `watch`, then answer with
   /// `Echoed(watch)`. The watch's end opens the key `watch`.
   WatchAddress(watch: Int, target: Address)
+  /// Watch the process at the address as each of the watches, in this order,
+  /// in one step, then answer with `Echoed` and the count of watches.
+  WatchEach(watches: List(Int), target: Address)
   /// The rule returns `StartTimer`, which a service shell refuses.
   TryTimer
   /// The rule ends its step in an ask, which a service shell refuses.
@@ -120,6 +123,15 @@ fn asked(
     WatchAddress(watch:, target:) -> #(
       state,
       Effects([Watch(WatchId(watch), target), Reply(caller, Echoed(watch))]),
+    )
+    WatchEach(watches:, target:) -> #(
+      state,
+      Effects(
+        list.append(
+          list.map(watches, fn(watch) { Watch(WatchId(watch), target) }),
+          [Reply(caller, Echoed(list.length(watches)))],
+        ),
+      ),
     )
     TryTimer -> #(state, Effects([StartTimer(TimerId(1), 10)]))
     TryAsk -> #(
