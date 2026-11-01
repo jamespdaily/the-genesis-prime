@@ -33,7 +33,7 @@ Jim approves a step's outcome once: its design and test list. It then runs to me
 
 1. **Design and test list.** Read the client's evidence, these rules, then the code the step touches. For a change the client sees, trace the client's code from the step's messages to the visible goal: each check on that path becomes a test, and a field with no known meaning needs the client's code to show its value is safe. Weigh at least two options, asking first what most projects use; measure when costs differ, else take the simplest.
 2. **Build.** One fresh implementer in its own worktree, from a brief with each value's source and the existing code to reuse; it writes the tests, then the code, and hands back once.
-3. **Check.** Codex's bug review, a card check, and a Claude reuse reviewer on a large diff, all on the pushed commit; the full check passes in under 2 minutes. One fix round. A live session runs when the client sees or sends something new.
+3. **Check.** Codex's bug review, a card check, and a Claude reuse reviewer on a large diff, all on the pushed commit; the full check passes within its budget, which `check` holds. One fix round. A live session runs when the client sees or sends something new.
 4. **Merge** on green, then the closing summary.
 
 A step that changes processes or supervision adds a shape commit between 1 and 2, reviewed by Codex: the types, signatures and supervision, and a sequence of each message and what happens when a deadline passes or a process dies. When two rules or shells share a flow, the shape names the module that holds the shared part. A design-only step is part 1 alone; a step that only deletes or moves code skips Codex. At most two agents run tests on one machine at once.
