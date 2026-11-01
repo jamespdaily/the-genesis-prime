@@ -12,6 +12,22 @@ pub type Capture
 @external(erlang, "log_capture_ffi", "start")
 pub fn start(from from: Pid, into into: Subject(#(String, String))) -> Capture
 
+/// Sends each log line the process `from` writes to `into`, as its level in
+/// lower case, its text and its metadata as key and value texts.
+@external(erlang, "log_capture_ffi", "start_with_metadata")
+pub fn start_with_metadata(
+  from from: Pid,
+  into into: Subject(#(String, String, List(#(String, String)))),
+) -> Capture
+
+/// Sends each log line any process of the node writes to `into`, as its level
+/// in lower case, its text and its metadata as key and value texts. Lines of
+/// other tests running at the same time are in it too, so a test filters.
+@external(erlang, "log_capture_ffi", "start_all")
+pub fn start_all(
+  into into: Subject(#(String, String, List(#(String, String)))),
+) -> Capture
+
 /// Stops the capture.
 @external(erlang, "log_capture_ffi", "stop")
 pub fn stop(capture: Capture) -> Nil

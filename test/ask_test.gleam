@@ -18,11 +18,11 @@ import genesis_prime/step.{
   type ConnectionEffect, type ConnectionEvent, Answered, EffectsThenAsk, Input,
   NoAnswerInTime, OwnEvent,
 }
-import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
+import log_capture
 import mailbox_support
 import mug
 import owned_test
@@ -180,6 +180,8 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   let assert Ok(gate_pid) = process.named(gate) as "the gate runs"
   assert list.contains(mailbox_support.monitored(connection), gate_pid)
     as "the shell keeps its monitor of the gate until the late answer or the gate's end"
+  let lines = process.new_subject()
+  let capture = log_capture.start(from: connection, into: lines)
   // Opening key 1 makes the gate answer ask 1, which is already over, and then
   // answer this ask, 2, in that order: the older answer is in the mailbox first.
   ask_support.command(
@@ -201,13 +203,42 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
     as "the answer to ask 1 gave the rule no input, so no record comes before the pong"
   // Not the mailbox's length: the shell's own write of the pong leaves the
   // port's reply to it in the mailbox until the shell next runs.
-  assert mailbox_support.tagged(connection, atom.create("ask_answer")) == 0
+  assert mailbox_support.tagged_by_reference(connection) == 0
     as {
       "the late answer was taken: no answer waits in the shell's mailbox; waiting: "
       <> mailbox_support.waiting(connection)
     }
   assert !list.contains(mailbox_support.monitored(connection), gate_pid)
     as "and dropped: the shell holds no monitor of the gate for it"
+  log_capture.stop(capture)
+  assert process.receive(lines, 0) == Error(Nil)
+    as "the late answer logged nothing"
+  ask_support.stop(server)
+}
+
+pub fn a_replied_ask_leaves_no_monitor_on_the_target_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let gate = process.new_name("gate")
+  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
+  let client = ask_support.connect(server)
+  ask_support.command(
+    client,
+    asking_rule.await_command,
+    1,
+    wait_ms: ask_support.patient,
+  )
+  let _asked = ask_support.read_record(client)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let assert Ok(gate_pid) = process.named(gate) as "the gate runs"
+  assert list.contains(mailbox_support.monitored(connection), gate_pid)
+    as "while the shell waits it monitors the gate"
+  let _waiting = ask_support.open_key(gate, 1)
+  let outcome = ask_support.read_record(client)
+  assert outcome.code == asking_rule.code_opened
+    as "the gate's answer came back"
+  assert !list.contains(mailbox_support.monitored(connection), gate_pid)
+    as "and the answered ask left no monitor on the gate, which it would keep for as long as the gate runs"
   ask_support.stop(server)
 }
 

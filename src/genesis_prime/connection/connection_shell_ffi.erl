@@ -61,9 +61,13 @@ handshake(Ref, SendDeadlineMs) ->
                                        {send_timeout_close, true},
                                        {linger, {true, LingerSeconds}}]) of
                 ok -> {ok, Socket};
-                {error, Reason} -> gen_tcp:close(Socket), {error, failure(Reason)}
+                {error, Reason} ->
+                    gen_tcp:close(Socket),
+                    {error, {socket_options_failed, failure(Reason)}}
             end
-    catch exit:{shutdown, Reason} -> {error, failure(Reason)}
+    catch
+        exit:{shutdown, {Reason, _Peer}} -> {error, {client_gone, failure(Reason)}};
+        exit:{shutdown, Reason} -> {error, {client_gone, failure(Reason)}}
     end.
 
 %% Asks the socket for its next read.

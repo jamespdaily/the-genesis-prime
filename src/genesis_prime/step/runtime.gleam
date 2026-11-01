@@ -7,6 +7,7 @@
 
 import genesis_prime/rule_recording/file.{type FileError, type Writer}
 import genesis_prime/step.{type About, type LogLevel, type Now, LogError, Now}
+import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process
 import gleam/option.{type Option}
 
@@ -49,6 +50,12 @@ pub fn log(level: LogLevel, text: String, about: About) -> Nil
 /// shell's own; a line's own `about` is added over them.
 @external(erlang, "step_runtime_ffi", "set_about")
 pub fn set_about(about: About) -> Nil
+
+/// Logs at warning that the shell named `shell` dropped a message it does not
+/// take. The line names the message's kind, its tag or its shape, and never
+/// its contents, which could hold a secret.
+@external(erlang, "step_runtime_ffi", "log_stray")
+pub fn log_stray(message message: Dynamic, shell shell: String) -> Nil
 
 /// Logs that a step's input could not be recorded, which ends the process
 /// before the step's effects, so no input is carried out without its record.

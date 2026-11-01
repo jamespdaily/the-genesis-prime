@@ -4,7 +4,7 @@
 -module(step_runtime_ffi).
 
 -export([unique_id/0, monotonic_ms/0, filetime/0, log/3, set_about/1,
-         show_info_lines/0]).
+         log_stray/2, show_info_lines/0]).
 
 %% FILETIME counts 100-nanosecond intervals from 1601-01-01; the Unix epoch is
 %% this many of them after it.
@@ -41,6 +41,34 @@ log(Level, Text, About) ->
 set_about(About) ->
     logger:update_process_metadata(metadata(About)),
     nil.
+
+%% Writes a warning that Shell dropped a message it does not take, naming the
+%% message's kind and never its contents: a message can hold a session key.
+log_stray(Message, Shell) ->
+    logger:log(warning, "~ts dropped a message it does not take: ~ts",
+               [Shell, kind(Message)]),
+    nil.
+
+kind(Message) when is_tuple(Message), tuple_size(Message) > 0,
+                   is_atom(element(1, Message)) ->
+    io_lib:format("a tuple of ~b elements tagged ~ts",
+                  [tuple_size(Message), atom_to_binary(element(1, Message))]);
+kind(Message) when is_tuple(Message) ->
+    io_lib:format("a tuple of ~b elements", [tuple_size(Message)]);
+kind(Message) when is_atom(Message) ->
+    io_lib:format("the atom ~ts", [atom_to_binary(Message)]);
+kind(Message) when is_binary(Message) ->
+    io_lib:format("a binary of ~b bytes", [byte_size(Message)]);
+kind(Message) when is_map(Message) ->
+    io_lib:format("a map of ~b keys", [map_size(Message)]);
+kind(Message) when is_list(Message) -> "a list";
+kind(Message) when is_integer(Message) -> "an integer";
+kind(Message) when is_float(Message) -> "a float";
+kind(Message) when is_pid(Message) -> "a process id";
+kind(Message) when is_reference(Message) -> "a reference";
+kind(Message) when is_function(Message) -> "a function";
+kind(Message) when is_port(Message) -> "a port";
+kind(_Message) -> "a term of another kind".
 
 metadata({about, Connection, Peer, Account, Character, Map, Message}) ->
     Fields = [{connection, Connection}, {peer, Peer}, {account_id, Account},

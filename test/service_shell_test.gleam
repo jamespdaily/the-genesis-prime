@@ -31,11 +31,15 @@ import genesis_prime/step.{
   Reply, Sessions, Started, Stop, Stopping, WatchEnded, WatchId,
 }
 import genesis_prime/store.{AccountId}
+import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
+import gleam/string
+import log_capture
+import mailbox_support
 import mug
 import owned_test
 import recording_support
@@ -383,6 +387,43 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
   let _reason = ask_support.stop_tree(tree)
   Nil
 }
+
+pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_and_the_service_goes_on_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let gate = process.new_name("gate")
+  let tree =
+    start_tree(ask_support.gate(name: gate, shutdown_ms: 1000, recorder: None))
+  let assert Ok(pid) = process.named(gate) as "the gate runs"
+  let lines = process.new_subject()
+  let capture = log_capture.start(from: pid, into: lines)
+  let _sent =
+    send_raw(
+      pid,
+      #(atom.create("stray_message"), <<"a-fake-session-key":utf8>>),
+    )
+  let assert Ok(#(level, text)) =
+    process.receive(lines, ask_support.event_wait_ms)
+    as "the stray message was logged"
+  log_capture.stop(capture)
+  assert level == "warning" as "a message nobody takes is a warning"
+  assert string.contains(text, "stray_message")
+    as "the line names the message's kind, its tag"
+  assert !string.contains(text, "a-fake-session-key")
+    as "and never its contents, which could hold a secret"
+  assert mailbox_support.tagged(pid, atom.create("stray_message")) == 0
+    as "the message was taken from the mailbox"
+  assert ask_support.call_gate(gate:, message: gate_rule.Echo(3))
+    == gate_rule.Echoed(3)
+    as "and the service goes on"
+  let _reason = ask_support.stop_tree(tree)
+  Nil
+}
+
+@external(erlang, "erlang", "send")
+fn send_raw(
+  to: process.Pid,
+  message: #(atom.Atom, BitArray),
+) -> #(atom.Atom, BitArray)
 
 // ---- helpers ----
 

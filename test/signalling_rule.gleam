@@ -12,6 +12,9 @@
 //// 'X' n    cancel timer n                 'P' n    write the record 'p' n
 //// 'Z' n ms start timer n, which would fire after ms, and cancel it in the
 ////          same step, so no machine's speed decides whether it fired first
+//// 'A' n ms ask the directory with ask n, which has ms before its deadline;
+////          the commands before it in the read run first, and the bytes after
+////          it wait for the ask's outcome
 //// ```
 ////
 //// Each record the rule writes is nine bytes: a letter and a 64-bit signed
@@ -22,16 +25,17 @@
 //// 'w' n    the message n was delivered    'e' n    watch n ended
 ////          (a message -n also watches 1 to n on Sessions)
 //// 't' n    timer n fired                  'p' n    the answer to 'P' n
+//// 'r' n    ask n came back, with any outcome, and the step cancels timer n
 //// ```
 ////
 //// The rule stops when the client closes or its socket fails.
 
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionInput, type ConnectionRule,
-  type ConnectionStep, type Effect, Accepted, CancelTimer, Effects, Input, Log,
-  LogLine, LogWarning, OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed, Rule,
-  Sessions, StartTimer, Stop, TimerFired, TimerId, Watch, WatchEnded, WatchId,
-  Woken, Write, WriteFailed,
+  type ConnectionStep, type Effect, Accepted, Ask, AskId, CancelTimer, Effects,
+  EffectsThenAsk, Input, Log, LogLine, LogWarning, OwnEffect, OwnEvent,
+  PeerClosed, Read, ReadFailed, Rule, Sessions, StartTimer, Stop, TimerFired,
+  TimerId, Watch, WatchEnded, WatchId, Woken, Write, WriteFailed,
 }
 import gleam/int
 import gleam/list
@@ -52,6 +56,8 @@ pub const pong_command = 0x50
 
 pub const start_then_cancel_command = 0x5A
 
+pub const ask_command = 0x41
+
 /// The letters that start a record.
 pub const accepted = 0x63
 
@@ -63,7 +69,10 @@ pub const timer_fired = 0x74
 
 pub const pong = 0x70
 
-/// The rule as its shell runs it; a delivered message is an `Int`.
+pub const answered = 0x72
+
+/// The rule as its shell runs it; a delivered message is an `Int`, and an ask
+/// is a `Nil` request the directory takes.
 pub fn rule() -> ConnectionRule(Nil, State, Nil, Int, Nil) {
   Rule(name: "signalling_rule", settings: Nil, new:, step:)
 }
@@ -78,14 +87,18 @@ pub fn step(
   state state: State,
   input input: ConnectionInput(Int, Nil),
 ) -> #(State, ConnectionStep(Nil)) {
-  let Input(event:, ..) = input
+  let Input(event:, now:) = input
   case event {
     OwnEvent(Accepted(connection: step.ConnectionId(id), ..)) -> #(
       state,
       Effects([record(accepted, id)]),
     )
     OwnEvent(Read(bytes:)) ->
-      run(State(pending: <<state.pending:bits, bytes:bits>>), [])
+      run(
+        state: State(pending: <<state.pending:bits, bytes:bits>>),
+        effects: [],
+        now_ms: now.monotonic_ms,
+      )
     OwnEvent(Woken(message:)) -> #(state, Effects(woken_effects(message)))
     WatchEnded(watch: WatchId(n)) -> #(state, Effects([record(watch_ended, n)]))
     OwnEvent(TimerFired(timer: TimerId(n))) -> #(
@@ -97,9 +110,9 @@ pub fn step(
       state,
       Effects([warn("the socket failed"), Stop]),
     )
-    OwnEvent(step.Answered(..)) -> #(
+    OwnEvent(step.Answered(ask: AskId(n), ..)) -> #(
       state,
-      Effects([warn("an input a connection does not take"), Stop]),
+      Effects([record(answered, n), OwnEffect(CancelTimer(TimerId(n)))]),
     )
   }
 }
@@ -123,14 +136,26 @@ fn woken_effects(message: Int) -> List(Effect(ConnectionEffect)) {
 /// Runs the commands the client has sent, in order; `effects` are the effects
 /// so far, the last first.
 fn run(
-  state: State,
-  effects: List(Effect(ConnectionEffect)),
+  state state: State,
+  effects effects: List(Effect(ConnectionEffect)),
+  now_ms now_ms: Int,
 ) -> #(State, ConnectionStep(Nil)) {
   case state.pending {
+    <<letter, n, milliseconds:16, rest:bytes>> if letter == ask_command -> #(
+      State(pending: rest),
+      EffectsThenAsk(
+        list.reverse(effects),
+        Ask(ask: AskId(n), request: Nil, deadline_ms: now_ms + milliseconds),
+      ),
+    )
     <<letter, n, milliseconds:16, rest:bytes>> ->
       run(
-        State(pending: rest),
-        list.append(list.reverse(commands(letter:, n:, milliseconds:)), effects),
+        state: State(pending: rest),
+        effects: list.append(
+          list.reverse(commands(letter:, n:, milliseconds:)),
+          effects,
+        ),
+        now_ms:,
       )
     _ -> #(state, Effects(list.reverse(effects)))
   }

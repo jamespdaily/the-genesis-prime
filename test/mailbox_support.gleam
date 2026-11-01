@@ -18,6 +18,11 @@ pub fn queued(pid: Pid) -> Int
 @external(erlang, "mailbox_support_ffi", "tagged")
 pub fn tagged(pid: Pid, tag: Atom) -> Int
 
+/// How many messages waiting in the process's mailbox reached it by a subject:
+/// tuples whose first element is a reference, the subject's own tag.
+@external(erlang, "mailbox_support_ffi", "tagged_by_reference")
+pub fn tagged_by_reference(pid: Pid) -> Int
+
 /// The messages waiting in the process's mailbox, as Erlang prints them.
 @external(erlang, "mailbox_support_ffi", "waiting")
 pub fn waiting(pid: Pid) -> String
