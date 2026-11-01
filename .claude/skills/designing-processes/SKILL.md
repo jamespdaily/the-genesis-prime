@@ -10,7 +10,9 @@ The server is designed for the BEAM from the first line. Processes, messages, su
 ## Structure
 
 - Draw the supervision tree before the code: which processes exist, what each owns, how each restarts, and what players see when each dies. Isolated parts of the game get isolated processes.
-- A process exists only for state, concurrency or failure isolation. Pure code stays in plain functions.
+- A process exists only for state, concurrency or failure isolation. Pure code stays in plain functions: decoding, ciphers and game calculations are calls, not processes.
+- A short-lived job (one query, one task) runs as a supervised worker, such as a factory supervisor's temporary child; gleam_otp has no task module.
+- Data one process writes and many read while the server runs goes in ETS owned by that process, read directly by the others: a spatial grid, a counter. Data nobody changes while running goes in a persistent term (below).
 - Every process starts under a supervisor.
 - One process owns each piece of state; others ask it by message. Peers never call each other synchronously; a timed call up the tree, to a registry or a worker, is normal.
 - The server runs one scheduler per core, the BEAM's default. A lower count needs a load run that weighs the CPU it saves, in absolute terms, against the headroom it loses (issue #29).
@@ -27,7 +29,7 @@ The server is designed for the BEAM from the first line. Processes, messages, su
 
 ## Shells and rules
 
-A process with state is a shell plus one rule. A recorded session replays through the rule alone, so every decision must be in it.
+A process that decides anything the client or the game can observe is a shell plus one rule. OTP plumbing (supervisors, registries, worker factories) is not, and makes no such decision. A recorded session replays through the rule alone, so every decision must be in it.
 
 - A change to a rule's types makes its recordings refuse to replay ("record again"): record the session again live, and never re-stamp a recording.
 
