@@ -6,7 +6,8 @@
 -module(connection_shell_ffi).
 -behaviour(ranch_protocol).
 
--export([start_link/3, start_listener/4, listener_port/1, handshake/2,
+-export([start_link/3, start_listener/4, listener_port/1, suspend_listener/1,
+         handshake/2,
          read_once/1, next_event/3, send/2, close/1, peer/1,
          send_answer/3, await_answer/4, start_timer/2, cancel_timer/3]).
 
@@ -35,6 +36,15 @@ start_listener(Ref, Port, ShutdownMs, Settings) ->
 
 listener_port(Ref) ->
     try {ok, ranch:get_port(Ref)}
+    catch _:_ -> {error, nil}
+    end.
+
+%% Closes the listener's listening socket, so no new socket is taken, and leaves
+%% its connections running: Ranch stops the listener's acceptors and keeps its
+%% connection supervisor. A listener already closed gives ok; one that is not
+%% running gives an error.
+suspend_listener(Ref) ->
+    try ok = ranch:suspend_listener(Ref), {ok, nil}
     catch _:_ -> {error, nil}
     end.
 

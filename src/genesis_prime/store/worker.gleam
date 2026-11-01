@@ -42,6 +42,11 @@
 ////   id, so another account's character is never touched; a rename also
 ////   clears the character's mark in the same update, and its name's
 ////   uniqueness is the same index as a create's.
+//// - **The probe.** One more kind of job, `select 1`, which `main` asks to know
+////   the database answers (genesis_prime/readiness). It is no `Request`, so no
+////   rule's types or recordings hold it; its answer is `Reached` or
+////   `Unreached`, and `Unreached` is every failure a request answers
+////   `Unavailable` for.
 //// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
 ////   an asker waiting on one gets `EndedBeforeAnswer`.
 
@@ -70,9 +75,21 @@ import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import pog
 
-/// What one worker is started with: the ask, and how to answer it.
+/// What one worker is started with: a rule's ask and how to answer it, or the
+/// probe `main` makes to know the database answers.
 pub type Job {
   Job(request: Request, reply: fn(Answer) -> Nil)
+  Probe(reply: fn(Probed) -> Nil)
+}
+
+/// What the probe's one read found. The probe is no rule's request, so it has
+/// no `Answer` of its own and no recorded rule can hold it.
+pub type Probed {
+  /// `select 1` returned its row.
+  Reached
+  /// The pool could not run it: no connection yet, a connection lost, a query
+  /// that timed out, or no pool running.
+  Unreached
 }
 
 /// The store's factory supervisor as a permanent child of the server's
@@ -104,6 +121,20 @@ pub fn ask(
   |> result.map(fn(started) { ToWorker(pid: started.pid) })
 }
 
+/// Starts a worker for the probe, for the readiness ask
+/// (genesis_prime/readiness): `Error(Nil)` when the store's supervisor is not
+/// running or will not start the worker, else `ToWorker` with the worker the
+/// asker monitors and ends at its deadline. The worker runs `select 1` on the
+/// pool and answers `Reached` or `Unreached`; any other database error is a
+/// bug and ends the worker, as it does for a request.
+pub fn probe(
+  store store: Name(factory_supervisor.Message(Job, Nil)),
+  reply reply: fn(Probed) -> Nil,
+) -> Result(Sent, Nil) {
+  service.start_child(supervisor: store, argument: Probe(reply:))
+  |> result.map(fn(started) { ToWorker(pid: started.pid) })
+}
+
 /// Spawns the worker and returns at once, so the supervisor's start call
 /// waits for no work; the worker runs its query after.
 fn start_worker(job: Job, pool: pog.Connection) -> actor.StartResult(Nil) {
@@ -111,10 +142,24 @@ fn start_worker(job: Job, pool: pog.Connection) -> actor.StartResult(Nil) {
   Ok(actor.Started(pid:, data: Nil))
 }
 
-/// Runs the ask's query on the pool, answers the asker and ends. `Error(Nil)`
-/// is the database being away, the failure every request shares.
+/// Runs the job on the pool, answers the asker and ends.
 fn run(job: Job, pool: pog.Connection) -> Nil {
-  let answer = case job.request {
+  case job {
+    Job(request:, reply:) -> reply(run_request(request, pool))
+    Probe(reply:) -> reply(select_one(pool))
+  }
+}
+
+/// Runs `select 1`, the probe's one query, through the same `attempt` the
+/// requests use, so the pool being away is `Unreached`.
+fn select_one(_pool: pog.Connection) -> Probed {
+  panic as "built in the next commit"
+}
+
+/// Runs the ask's query on the pool. `Error(Nil)` is the database being away,
+/// the failure every request shares, which the asker is told as `Unavailable`.
+fn run_request(request: Request, pool: pog.Connection) -> Answer {
+  let answer = case request {
     Login(request: FindAccount(login_name:)) ->
       find_account(pool, login_name)
       |> result.map(ForLogin)
@@ -125,7 +170,7 @@ fn run(job: Job, pool: pog.Connection) -> Nil {
       world(pool, request)
       |> result.map(ForWorld)
   }
-  job.reply(result.unwrap(answer, Unavailable))
+  result.unwrap(answer, Unavailable)
 }
 
 /// Runs one of character select's requests.

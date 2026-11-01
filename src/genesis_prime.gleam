@@ -1,18 +1,23 @@
 //// Starts the server: it loads the client's game tables from the folder named
 //// by GENESIS_TABLE_DIR, stopping at once with the reason when one does not
-//// load, then starts the supervision tree, with the database named by PGHOST,
-//// PGPORT, PGUSER, PGPASSWORD and PGDATABASE, and keeps the node alive until
-//// SIGTERM, which stops the tree in order and then the node. It
-//// serves the client's STS and auth logins (`login`) and the game server
+//// load, then starts the supervision tree under the application's root
+//// (genesis_prime/application), with the database named by PGHOST, PGPORT,
+//// PGUSER, PGPASSWORD and PGDATABASE. Once one read of the database has
+//// returned it prints the ready line, and it keeps the node alive until
+//// SIGTERM, which OTP turns into the tree's ordered stop and then the node's.
+//// It serves the client's STS and auth logins (`login`) and the game server
 //// (`game`).
 
 import envoy
+import genesis_prime/application
 import genesis_prime/connection/registry
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
+import genesis_prime/readiness
 import genesis_prime/server
+import genesis_prime/step
 import genesis_prime/step/runtime
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
@@ -51,23 +56,55 @@ pub fn load_tables() -> #(store.Tables, Int) {
   }
 }
 
-/// Starts the supervision tree with these settings and keeps the node alive.
+/// Starts the supervision tree with these settings under the application's
+/// root (genesis_prime/application), says whether the server can serve, and
+/// keeps the node alive until the tree ends, which the host's SIGTERM makes
+/// through OTP.
 pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
   runtime.show_info_lines()
-  let assert Ok(started) = server.start(settings:)
+  let assert Ok(tree) = application.start_server(settings:)
     as "the supervision tree did not start"
-  server.stop_on_sigterm(tree: started.pid)
-  io.println(
-    "the server loaded "
-    <> int.to_string(tables)
-    <> " game tables and serves the STS login on port "
-    <> int.to_string(settings.login.sts.port)
-    <> ", the auth login on port "
-    <> int.to_string(settings.login.auth.port)
-    <> " and the game server on port "
-    <> int.to_string(settings.game.port),
+  announce(
+    outcome: readiness.await(store: settings.store, settings: ready_ask()),
+    settings:,
+    tables:,
   )
-  process.sleep_forever()
+  application.await_tree_end(tree)
+}
+
+/// How the readiness ask runs: 30 s in all, so a database that is still
+/// starting when the server does has time to accept connections; each attempt
+/// waits 2 s, the send deadline's length, before its worker is ended, and a
+/// failed one is asked again after 250 ms. These are the server's choice, not
+/// the client's.
+fn ready_ask() -> readiness.Settings {
+  readiness.Settings(within_ms: 30_000, attempt_ms: 2000, pause_ms: 250)
+}
+
+/// Says what the readiness ask found. `Ready` prints the ready line, the one
+/// the live-play scripts wait for. `DatabaseUnreachable` logs a warning and
+/// prints no ready line; the server keeps running and answers `Unavailable`
+/// until its pool connects.
+fn announce(
+  outcome outcome: readiness.Outcome,
+  settings settings: server.Settings,
+  tables tables: Int,
+) -> Nil {
+  case outcome {
+    readiness.Ready ->
+      io.println(
+        "the server loaded "
+        <> int.to_string(tables)
+        <> " game tables and serves the STS login on port "
+        <> int.to_string(settings.login.sts.port)
+        <> ", the auth login on port "
+        <> int.to_string(settings.login.auth.port)
+        <> " and the game server on port "
+        <> int.to_string(settings.game.port),
+      )
+    readiness.DatabaseUnreachable ->
+      runtime.log(step.LogWarning, "the database is unreachable", step.no_one)
+  }
 }
 
 /// The tree's settings: the database from the environment, with Postgres's
