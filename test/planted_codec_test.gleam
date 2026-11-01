@@ -14,13 +14,15 @@
 ////   library (`build/packages/gleam_stdlib`) by path, so no package is
 ////   fetched.
 
-import command.{type Ran, Ran}
+import filepath
 import genesis_prime/message_generator.{type GeneratedFile, GeneratedFile}
 import genesis_prime/message_schema
 import gleam/list
+import gleam/result
 import gleam/string
 import owned_test
 import recording_support
+import shellout
 import simplifile
 
 const bit_stream_path = "src/genesis_prime/message/bit_stream.gleam"
@@ -29,7 +31,7 @@ pub fn the_codec_generated_for_a_schema_with_a_field_of_every_kind_round_trips_t
   use <- owned_test.run(180_000)
   use folder <- recording_support.in_folder
   let ran = build_and_run(folder:, files: planted_files())
-  let assert Ok(Ran(exit_status: 0, output:)) = ran
+  let assert Ok(output) = ran
     as "the scratch project builds and the driver passes"
   list.each(
     [
@@ -65,10 +67,8 @@ pub fn a_generated_codec_whose_decoder_reads_another_width_fails_the_round_trip_
     })
   assert files != planted_files()
     as "the planted edit changes the width the decoder reads"
-  let assert Ok(Ran(exit_status:, ..)) = build_and_run(folder:, files:)
-    as "the scratch project runs to its end"
-  assert exit_status != 0
-    as "a decoder that reads a 4-bit field where the encoder writes 3 does not read the message back"
+  assert result.is_error(build_and_run(folder:, files:))
+    as "a decoder that reads a 4-bit field where the encoder writes 3 does not read the message back, so the driver exits with an error"
 }
 
 /// The files the planted schema generates.
@@ -85,7 +85,7 @@ fn planted_files() -> List(GeneratedFile) {
 fn build_and_run(
   folder folder: String,
   files files: List(GeneratedFile),
-) -> Result(Ran, command.NotRun) {
+) -> Result(String, #(Int, String)) {
   let assert Ok(root) = simplifile.current_directory()
     as "the working directory is known"
   let project = root <> "/" <> folder
@@ -107,21 +107,17 @@ fn build_and_run(
     ],
     fn(file) {
       let path = project <> "/" <> file.path
-      let assert Ok(Nil) = simplifile.create_directory_all(parent(path))
+      let assert Ok(Nil) =
+        simplifile.create_directory_all(filepath.directory_name(path))
         as "the project's folder was made"
       let assert Ok(Nil) = simplifile.write(path, file.text)
         as "the project's file was written"
     },
   )
-  command.run(
-    executable: "gleam",
-    arguments: ["run", "--module", "planted_driver"],
-    directory: project,
-    timeout_ms: 150_000,
+  shellout.command(
+    run: "gleam",
+    with: ["run", "--module", "planted_driver"],
+    in: project,
+    opt: [],
   )
-}
-
-fn parent(path: String) -> String {
-  let parts = string.split(path, "/")
-  string.join(list.take(parts, list.length(parts) - 1), "/")
 }

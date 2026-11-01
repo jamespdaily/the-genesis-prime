@@ -30,8 +30,10 @@ import genesis_prime/connection/encrypted_frame
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
+import genesis_prime/login/guid
 import genesis_prime/login/sts_connection
 import genesis_prime/login/sts_message
+import genesis_prime/login/sts_wire
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_message
 import genesis_prime/message/ping.{Ping}
@@ -46,8 +48,9 @@ import gleam/string
 import owned_test
 import recorded_client_message.{
   type ClientBytes, type Received, type Unread, Bare, ClearRequestAfterKeyData,
-  CutShort, FramesRead, Inside, NotARecording, NotDecoded, NotRead, RuleNotKnown,
-  StsMessageRefused, StsRead, Unread, Wrapped,
+  CutShort, Decoded, FramesRead, Inside, NoDecoder, NotARecording, NotDecoded,
+  NotRead, RuleNotKnown, StsMessageRefused, StsRead, StsWireRefused, Unread,
+  Wrapped,
 }
 import recording_support
 import rule_replay_support
@@ -106,26 +109,53 @@ pub fn every_decoded_message_encodes_back_to_the_body_the_client_sent_test() -> 
   })
 }
 
-pub fn the_login_session_holds_the_platform_logins_three_clear_requests_and_its_ciphered_rest_test() -> Nil {
+pub fn the_login_session_holds_the_platform_logins_clear_requests_and_its_deciphered_rest_test() -> Nil {
   use <- owned_test.run(30_000)
-  let assert StsRead(requests:, ciphered_bytes:) = read(sts_file)
+  let assert StsRead(requests:) = read(sts_file)
     as "the STS connection reads as requests"
   let assert [
-    #(1, sts_message.ConnectionOpened(..)),
-    #(2, sts_message.Transaction(sequence: 1, request: login_start)),
-    #(4, sts_message.Transaction(sequence: 2, request: sts_message.KeyData(..))),
+    #(1, Decoded(sts_message.ConnectionOpened(..))),
+    #(2, Decoded(sts_message.Transaction(sequence: 1, request: login_start))),
+    #(
+      4,
+      Decoded(sts_message.Transaction(
+        sequence: 2,
+        request: sts_message.KeyData(..),
+      )),
+    ),
+    #(5, Decoded(sts_message.Transaction(sequence: 3, request: finish))),
+    #(7, Decoded(sts_message.Transaction(sequence: 4, request: accounts))),
+    #(8, Decoded(sts_message.Transaction(sequence: 5, request: token))),
+    #(9, NoDecoder(protocol: "Auth", command: "PageVerifiedIps")),
+    #(10, Decoded(sts_message.Ping)),
+    #(11, NoDecoder(protocol: "Auth", command: "PageVerifiedIps")),
   ] = requests
-    as "Connect, LoginStart and KeyData, in reads 1, 2 and 4"
+    as "Connect, LoginStart and KeyData in the clear in reads 1, 2 and 4, then the six ciphered reads 5, 7, 8, 9, 10 and 11 deciphered: LoginFinish, ListMyAccounts, RequestGameToken, a PageVerifiedIps (which the client asks every 30 s while it plays, and the rule logs as unhandled), a Ping and another PageVerifiedIps"
+  assert finish == sts_message.LoginFinish
+    as "the request after the proof is LoginFinish"
   let assert sts_message.LoginStart(login_name:, ..) = login_start
     as "the second request is LoginStart"
-  let assert [#(_, game_hello), ..] = frames(auth_file).0 |> as_pairs
+  let assert [#(_, login), ..] = frames(auth_file).0 |> as_pairs
     as "the auth connection holds a message"
-  let assert client_message.LoginRequest(message: request) = game_hello
+  let assert client_message.LoginRequest(message: request) = login
     as "the auth connection's message is the login request"
   assert login_name == string.lowercase(request.account_name)
     as "LoginStart names the account in lower case (StsConnLib64.MT.dll!0x180006fb0), the login request names it as typed"
-  assert ciphered_bytes == 90 + 195 + 227 + 208 + 31 + 208
-    as "the six reads after the KeyData request are ciphered"
+  let assert Ok(user_id) = guid.from_wire(request.user_id)
+    as "the login request's UserId is 16 bytes"
+  assert accounts
+    == sts_message.ListMyAccounts(
+      user_id: guid.to_text(user_id),
+      game_code: "wildstar",
+    )
+    as "ListMyAccounts carries the UserId the login request shows (the rule's doc: the client only sends the UserId back), and the game code the recording holds"
+  assert token
+    == sts_message.RequestGameToken(
+      user_id: guid.to_text(user_id),
+      game_code: "wildstar",
+      account_alias: login_name,
+    )
+    as "RequestGameToken names the same UserId and the account's alias, which is the login name (StsConnLib64.MT.dll!0x180004950)"
 }
 
 fn as_pairs(
@@ -342,10 +372,9 @@ pub fn the_frames_after_0x058f_are_read_under_the_session_key_test() -> Nil {
     as "the game connection holds 0x058F first"
   let assert client_message.GameHelloReply(message: reply) = hello.message
     as "the first message is 0x058F"
-  let assert Ok(folded) =
-    cipher.session_key(bytes: reply.session_key, base_key: cipher.base_key)
-    as "the session key is 16 bytes"
-  let assert Ok(session) = cipher.new(folded) as "the folded key is not 0"
+  let assert Ok(session) =
+    game_connection.rekeyed(session_key: reply.session_key)
+    as "the session key makes a cipher"
   let hello_frame = wrapped(id: 0x058F, body: hello.body, key: cipher.base_key)
   let select = fn(cipher) {
     let assert Ok(bytes) =
@@ -424,7 +453,7 @@ pub fn a_clear_request_after_key_data_in_the_same_read_fails_the_read_test() -> 
     as "the Ping after KeyData is reported"
 }
 
-pub fn an_unknown_platform_login_command_fails_test() -> Nil {
+pub fn an_unknown_platform_login_command_is_listed_and_the_read_goes_on_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let path =
@@ -432,15 +461,44 @@ pub fn an_unknown_platform_login_command_fails_test() -> Nil {
       <<"POST /Sts/Unknown STS/1.0\r\nl:0\r\n\r\n":utf8>>,
     ])
   assert recorded_client_message.read_recording(path)
+    == Ok(
+      Some(
+        StsRead(requests: [
+          #(0, NoDecoder(protocol: "Sts", command: "Unknown")),
+        ]),
+      ),
+    )
+    as "the login has no command Unknown, which the rule logs as unhandled and goes on from"
+}
+
+pub fn a_connect_whose_body_is_no_connect_fails_the_read_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let path =
+    plant(folder:, number: 1, rule: sts_connection.rule_name, reads: [
+      <<"POST /Sts/Connect STS/1.0\r\nl:5\r\n\r\nxxxxx":utf8>>,
+    ])
+  let assert Error(NotRead(recording:, input: 0, problem: StsMessageRefused(_))) =
+    recorded_client_message.read_recording(path)
+    as "a Connect with no XML body is refused by the STS message decoder"
+  assert recording == path as "the failure names the file"
+}
+
+pub fn a_ciphered_read_with_one_byte_changed_fails_naming_the_recording_and_the_input_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  // Read 7 is the ListMyAccounts request. RC4 is a stream cipher, so changing
+  // its first ciphered byte changes only the first byte of the request,
+  // which must be the `P` of `POST` (StsConnLib64.MT.dll!0x180022cb0).
+  let path =
+    recording_with_a_changed_byte(folder:, file: sts_file, input: 7, offset: 0)
+  assert recorded_client_message.read_recording(path)
     == Error(NotRead(
       recording: path,
-      input: 0,
-      problem: StsMessageRefused(sts_message.UnknownCommand(
-        protocol: "Sts",
-        command: "Unknown",
-      )),
+      input: 7,
+      problem: StsWireRefused(sts_wire.BadRequestLine),
     ))
-    as "the login has no command Unknown"
+    as "the request deciphered from the changed byte no longer starts a request"
 }
 
 pub fn a_recording_of_a_rule_that_is_no_connection_but_took_socket_bytes_fails_test() -> Nil {
@@ -490,6 +548,80 @@ fn wrapped(id id: Int, body body: BitArray, key key: Int) -> BitArray {
     )
     as "the frame is within the size limit"
   bytes
+}
+
+/// Writes a copy of the saved recording `file` in `folder`, with the
+/// byte at `offset` of the socket read that is input `input` changed, and
+/// returns its path. The copy is of the recording's records: the same header,
+/// every record again, one read's bytes changed.
+fn recording_with_a_changed_byte(
+  folder folder: String,
+  file file: String,
+  input input: Int,
+  offset offset: Int,
+) -> String {
+  let assert Ok(bytes) =
+    simplifile.read_bits(rule_replay_support.folder <> file)
+    as "the recording reads"
+  let assert Ok(#(header, records)) = rule_recording.read(bytes)
+    as "the recording is a recording"
+  let changed =
+    list.index_map(records, fn(record, index) {
+      case index == input {
+        True -> with_a_changed_byte(record:, offset:)
+        False -> record
+      }
+    })
+  let path = folder <> "/" <> file
+  let assert Ok(Nil) =
+    simplifile.write_bits(
+      path,
+      bit_array.concat([
+        rule_recording.encode(header),
+        ..list.map(changed, rule_recording.encode)
+      ]),
+    )
+    as "the changed copy was written"
+  path
+}
+
+/// The record with the byte at `offset` of its socket read inverted.
+fn with_a_changed_byte(
+  record record: rule_recording.Record(message, answer, outgoing, request),
+  offset offset: Int,
+) -> rule_recording.Record(message, answer, outgoing, request) {
+  case record {
+    Taken(
+      input: Input(now:, event: Socket(step.Read(bytes: read))),
+      step: recorded,
+    ) -> {
+      let assert Ok(before) = bit_array.slice(read, 0, offset)
+        as "the offset is inside the read"
+      let assert Ok(<<byte>>) = bit_array.slice(read, offset, 1)
+        as "the offset is inside the read"
+      let assert Ok(after) =
+        bit_array.slice(
+          read,
+          offset + 1,
+          bit_array.byte_size(read) - offset - 1,
+        )
+        as "the offset is inside the read"
+      Taken(
+        input: Input(
+          now:,
+          event: Socket(
+            step.Read(bytes: <<
+              before:bits,
+              int.bitwise_exclusive_or(byte, 0xFF),
+              after:bits,
+            >>),
+          ),
+        ),
+        step: recorded,
+      )
+    }
+    Taken(..) | End(..) -> record
+  }
 }
 
 /// Writes a recording of `rule` in `folder`, whose inputs are the socket

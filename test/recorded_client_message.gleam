@@ -8,9 +8,11 @@
 ////   request. The SRP exchange finishes with the reply to that request, and
 ////   the library then ciphers every later byte of the connection with RC4
 ////   under a key made from the server's secret value
-////   (StsConnLib64.MT.dll!0x18000a350), which the rule keeps in its state and
-////   the recording holds only as the seed it was drawn from; the bytes after
-////   the KeyData request are counted and not read.
+////   (StsConnLib64.MT.dll!0x18000a350). The rule is deterministic and its
+////   inputs, the random seed among them, are recorded, so folding the rule
+////   over the recorded inputs reaches the state that holds the key, and the
+////   bytes after the KeyData request are deciphered with it and read as
+////   requests.
 //// - The auth connection: each frame is cut by the frame reader. The client
 ////   sends the network layer's messages bare and every other message inside
 ////   0x0244 (opcode.0x244), ciphered with the base key
@@ -24,11 +26,13 @@
 //// A message whose number has no decoder in `client_message` is listed, not
 //// refused: the rule logs it as unhandled and the connection goes on.
 
+import genesis_prime/client_connection
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{type WrapError}
 import genesis_prime/connection/frame.{type Frame, type FrameError}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
+import genesis_prime/login/rc4
 import genesis_prime/login/sts_connection
 import genesis_prime/login/sts_message.{type Incoming, type MessageError}
 import genesis_prime/login/sts_wire.{type WireError}
@@ -47,13 +51,21 @@ import simplifile
 
 /// What a recording's client bytes hold, read.
 pub type ClientBytes {
-  /// The platform login: each request in the clear with the number of the
-  /// input it ended in, and how many bytes came after the KeyData request,
-  /// ciphered.
-  StsRead(requests: List(#(Int, Incoming)), ciphered_bytes: Int)
+  /// The platform login: each request with the number of the input it ended
+  /// in, those after the KeyData request deciphered.
+  StsRead(requests: List(#(Int, Requested)))
   /// The auth or game connection: each message the client sent, in order, and
   /// each message whose number has no decoder.
   FramesRead(messages: List(Received), without_decoder: List(Unread))
+}
+
+/// One request the client sent on the platform login.
+pub type Requested {
+  /// A request the STS message decoder read.
+  Decoded(request: Incoming)
+  /// A request of a command the STS message decoder does not know, which the
+  /// rule logs as unhandled and goes on from.
+  NoDecoder(protocol: String, command: String)
 }
 
 /// One message the client sent on the auth or a game connection.
@@ -99,6 +111,9 @@ pub type Problem {
   /// The platform login sent a request in the clear after its KeyData
   /// request, where every byte is ciphered.
   ClearRequestAfterKeyData
+  /// The rule's state after the KeyData request holds no receiving RC4
+  /// stream, so the bytes after it cannot be deciphered.
+  NoReceivingStream
   /// The frame reader refused the bytes.
   FrameRefused(error: FrameError)
   /// A 0x0244 did not unwrap.
@@ -164,13 +179,36 @@ pub fn read_recording(
     [#(input, _), ..], Error(Nil) ->
       Error(#(input, RuleNotKnown(rule: header.rule)))
     _, Ok(Sts) ->
-      read_sts(inputs:, pending: <<>>, requests: []) |> result.map(Some)
+      read_sts(inputs:, pending: <<>>, requests: [], receiving_after: fn(input) {
+        receiving_after(records:, settings: header.settings, input:)
+      })
+      |> result.map(Some)
     _, Ok(Auth) -> read_frames(inputs:, game: False) |> result.map(Some)
     _, Ok(Game) -> read_frames(inputs:, game: True) |> result.map(Some)
   }
   result.map_error(read, fn(stopped) {
     NotRead(recording:, input: stopped.0, problem: stopped.1)
   })
+}
+
+/// The RC4 stream the STS rule deciphers the client's bytes with after it took
+/// the recording's inputs up to and including `input`: the rule is folded over
+/// them as a replay does, and its state holds the key made from the proof.
+fn receiving_after(
+  records records: List(
+    rule_recording.Record(Nil, client_connection.Answer, Nil, Nil),
+  ),
+  settings settings: sts_connection.Settings,
+  input input: Int,
+) -> Option(rc4.Stream) {
+  list.take(records, input + 1)
+  |> list.fold(sts_connection.new(settings), fn(state, record) {
+    case record {
+      Taken(input:, ..) -> sts_connection.step(state, input).0
+      rule_recording.End(..) -> state
+    }
+  })
+  |> sts_connection.receiving
 }
 
 fn connection_of(rule: String) -> Result(Connection, Nil) {
@@ -188,19 +226,21 @@ fn connection_of(rule: String) -> Result(Connection, Nil) {
 type Stopped =
   #(Int, Problem)
 
-/// Reads requests input by input until the KeyData request, and counts every
-/// byte after it as ciphered. An input is read whole, so one that holds more
-/// after the KeyData request fails the read: a clear request there is
-/// reported, and ciphered bytes fail the wire reader.
+/// Reads requests input by input until the KeyData request, in the clear. An
+/// input is read whole, so one that holds more after the KeyData request fails
+/// the read: a clear request there is reported. Every byte after the KeyData
+/// request is ciphered with RC4, and is deciphered with the stream the rule
+/// holds after the KeyData input (`receiving_after`) and read as requests.
 fn read_sts(
   inputs inputs: List(#(Int, BitArray)),
   pending pending: BitArray,
-  requests requests: List(#(Int, Incoming)),
+  requests requests: List(#(Int, Requested)),
+  receiving_after receiving_after: fn(Int) -> Option(rc4.Stream),
 ) -> Result(ClientBytes, Stopped) {
   case inputs {
     [] ->
       case bit_array.byte_size(pending) {
-        0 -> Ok(StsRead(requests: list.reverse(requests), ciphered_bytes: 0))
+        0 -> Ok(StsRead(requests: list.reverse(requests)))
         bytes -> Error(#(last_input(requests), CutShort(bytes:)))
       }
     [#(input, bytes), ..later] -> {
@@ -208,49 +248,103 @@ fn read_sts(
         sts_wire.decode(received: <<pending:bits, bytes:bits>>)
         |> result.map_error(fn(error) { #(input, StsWireRefused(error)) }),
       )
-      use decoded <- result.try(
-        list.try_map(whole, fn(request) {
-          sts_message.decode(request:)
-          |> result.map_error(fn(error) { #(input, StsMessageRefused(error)) })
-        }),
-      )
+      use decoded <- result.try(decode_requests(input:, whole:))
       let requests =
         list.fold(decoded, requests, fn(requests, request) {
           [#(input, request), ..requests]
         })
       case list.drop_while(decoded, fn(request) { !is_key_data(request) }) {
-        [] -> read_sts(inputs: later, pending: rest, requests:)
+        [] ->
+          read_sts(inputs: later, pending: rest, requests:, receiving_after:)
         [_key_data] ->
-          Ok(StsRead(
-            requests: list.reverse(requests),
-            ciphered_bytes: byte_count([
-              rest,
-              ..list.map(later, fn(input) { input.1 })
-            ]),
-          ))
+          read_after_key_data(
+            ciphered: case bit_array.byte_size(rest) {
+              0 -> later
+              _ -> [#(input, rest), ..later]
+            },
+            requests:,
+            stream: receiving_after(input),
+          )
         [_key_data, ..] -> Error(#(input, ClearRequestAfterKeyData))
       }
     }
   }
 }
 
-fn last_input(requests: List(#(Int, Incoming))) -> Int {
+/// Reads what follows the KeyData request: the inputs `ciphered`, deciphered
+/// with the stream the rule holds then, when there are any.
+fn read_after_key_data(
+  ciphered ciphered: List(#(Int, BitArray)),
+  requests requests: List(#(Int, Requested)),
+  stream stream: Option(rc4.Stream),
+) -> Result(ClientBytes, Stopped) {
+  case ciphered, stream {
+    [], _ -> Ok(StsRead(requests: list.reverse(requests)))
+    [#(next, _), ..], None -> Error(#(next, NoReceivingStream))
+    _, Some(stream) ->
+      read_ciphered(inputs: ciphered, stream:, pending: <<>>, requests:)
+  }
+}
+
+/// Deciphers each input with the receiving stream, in order, and reads the
+/// requests whole in the bytes so far.
+fn read_ciphered(
+  inputs inputs: List(#(Int, BitArray)),
+  stream stream: rc4.Stream,
+  pending pending: BitArray,
+  requests requests: List(#(Int, Requested)),
+) -> Result(ClientBytes, Stopped) {
+  case inputs {
+    [] ->
+      case bit_array.byte_size(pending) {
+        0 -> Ok(StsRead(requests: list.reverse(requests)))
+        bytes -> Error(#(last_input(requests), CutShort(bytes:)))
+      }
+    [#(input, bytes), ..later] -> {
+      let #(stream, plain) = rc4.crypt(stream, bytes)
+      use #(whole, rest) <- result.try(
+        sts_wire.decode(received: <<pending:bits, plain:bits>>)
+        |> result.map_error(fn(error) { #(input, StsWireRefused(error)) }),
+      )
+      use decoded <- result.try(decode_requests(input:, whole:))
+      let requests =
+        list.fold(decoded, requests, fn(requests, request) {
+          [#(input, request), ..requests]
+        })
+      read_ciphered(inputs: later, stream:, pending: rest, requests:)
+    }
+  }
+}
+
+fn decode_requests(
+  input input: Int,
+  whole whole: List(sts_wire.Request),
+) -> Result(List(Requested), Stopped) {
+  list.try_map(whole, fn(request) {
+    case sts_message.decode(request:) {
+      Ok(decoded) -> Ok(Decoded(request: decoded))
+      Error(sts_message.UnknownCommand(protocol:, command:)) ->
+        Ok(NoDecoder(protocol:, command:))
+      Error(error) -> Error(#(input, StsMessageRefused(error)))
+    }
+  })
+}
+
+fn last_input(requests: List(#(Int, Requested))) -> Int {
   case requests {
     [#(input, _), ..] -> input
     [] -> 0
   }
 }
 
-fn byte_count(chunks: List(BitArray)) -> Int {
-  list.fold(chunks, 0, fn(total, chunk) { total + bit_array.byte_size(chunk) })
-}
-
-fn is_key_data(incoming: Incoming) -> Bool {
-  case incoming {
-    sts_message.Transaction(request: sts_message.KeyData(..), ..) -> True
-    sts_message.Transaction(..)
-    | sts_message.ConnectionOpened(..)
-    | sts_message.Ping -> False
+fn is_key_data(requested: Requested) -> Bool {
+  case requested {
+    Decoded(sts_message.Transaction(request: sts_message.KeyData(..), ..)) ->
+      True
+    Decoded(sts_message.Transaction(..))
+    | Decoded(sts_message.ConnectionOpened(..))
+    | Decoded(sts_message.Ping)
+    | NoDecoder(..) -> False
   }
 }
 

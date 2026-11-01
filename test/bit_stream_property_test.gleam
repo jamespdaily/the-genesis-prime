@@ -22,6 +22,7 @@ import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/result
+import gleam/string
 import owned_test
 import qcheck.{type Generator}
 
@@ -225,7 +226,7 @@ pub fn a_constant_field_refuses_any_other_value_when_read_test() -> Nil {
 pub fn a_counted_text_of_exactly_its_limit_is_written_and_one_unit_more_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
   use max_units <- qcheck.given(qcheck.bounded_int(from: 1, to: 250))
-  let at_limit = string_of("x", max_units)
+  let at_limit = string.repeat("x", max_units)
   let assert Ok(body) =
     written(bit_stream.write_counted_wide_text(_, "text", at_limit, max_units))
     as "a text of max_units units is within its limit"
@@ -236,7 +237,7 @@ pub fn a_counted_text_of_exactly_its_limit_is_written_and_one_unit_more_is_refus
   assert written(bit_stream.write_counted_wide_text(
       _,
       "text",
-      string_of("x", max_units + 1),
+      string.repeat("x", max_units + 1),
       max_units,
     ))
     == Error(bit_stream.TextTooLong(
@@ -573,9 +574,4 @@ fn records_field() -> Generator(Field) {
   }
   use #(count_bits, items) <- qcheck.map(counted(item))
   Records(count_bits:, items:)
-}
-
-fn string_of(character: String, count: Int) -> String {
-  list.repeat(character, count)
-  |> list.fold("", fn(built, next) { built <> next })
 }

@@ -54,7 +54,8 @@ pub fn gives(
 /// in whole bytes, in groups split by spaces, as the vector records write them
 /// ("0c 00 00 00 44 02", or "aa3e0000 44332211"), the groups being a run of
 /// the statement's words. A word is read after the punctuation that ends a
-/// phrase is taken off. An empty body is given by the words "its body is
+/// phrase is taken off, and a run stops at a word that ended a phrase, so the
+/// bytes of two phrases ("00, 13") are never one run. An empty body is given by the words "its body is
 /// empty" or "no bytes".
 fn gives_bytes(statement statement: String, bytes bytes: BitArray) -> Bool {
   case bit_array.byte_size(bytes) {
@@ -72,12 +73,19 @@ fn gives_bytes(statement statement: String, bytes bytes: BitArray) -> Bool {
   }
 }
 
-/// A word of the statement in lowercase, without the opening bracket or the
-/// punctuation after it.
-fn word_of(word: String) -> String {
-  string.lowercase(word)
-  |> string.remove_prefix("(")
-  |> drop_end_punctuation
+/// A word of the statement: its text in lowercase, without the opening bracket
+/// or the punctuation after it, and whether punctuation ended a phrase after
+/// it.
+type Word {
+  Word(text: String, ends_phrase: Bool)
+}
+
+fn word_of(word: String) -> Word {
+  let text =
+    string.lowercase(word)
+    |> string.remove_prefix("(")
+  let stripped = drop_end_punctuation(text)
+  Word(text: stripped, ends_phrase: stripped != text)
 }
 
 fn drop_end_punctuation(word: String) -> String {
@@ -93,7 +101,7 @@ fn drop_end_punctuation(word: String) -> String {
 
 /// Whether some run of the words, each a whole number of hexadecimal bytes,
 /// is `target` when joined.
-fn starts_a_run(words words: List(String), target target: String) -> Bool {
+fn starts_a_run(words words: List(Word), target target: String) -> Bool {
   case words {
     [] -> False
     [_, ..later] ->
@@ -103,20 +111,24 @@ fn starts_a_run(words words: List(String), target target: String) -> Bool {
 }
 
 fn run_from(
-  words words: List(String),
+  words words: List(Word),
   joined joined: String,
   target target: String,
 ) -> Bool {
   case joined == target, words {
     True, _ -> True
     False, [] -> False
-    False, [word, ..later] ->
-      case is_whole_hexadecimal_bytes(word) {
+    False, [Word(text:, ends_phrase:), ..later] ->
+      case is_whole_hexadecimal_bytes(text) {
         False -> False
         True -> {
-          let longer = joined <> word
-          string.starts_with(target, longer)
-          && run_from(words: later, joined: longer, target:)
+          let longer = joined <> text
+          case ends_phrase {
+            True -> longer == target
+            False ->
+              string.starts_with(target, longer)
+              && run_from(words: later, joined: longer, target:)
+          }
         }
       }
   }

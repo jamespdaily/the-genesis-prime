@@ -59,6 +59,11 @@ pub fn bytes_that_differ_from_the_statements_are_refused_test() -> Nil {
     )
     != Ok(Nil)
     as "two groups that are not next to each other in the statement"
+  assert fact_file.gives(record: "vector.opcode.0x1.body", bytes: <<0, 19, 20>>)
+    == Error(
+      BytesNotGiven(name: "vector.opcode.0x1.body", bytes: <<0, 19, 20>>),
+    )
+    as "the statement gives the single bytes 00, 13, 14 and ff, each in a phrase of its own, so 00 13 14 is not a run of it"
 }
 
 pub fn an_empty_body_is_given_only_by_a_statement_that_says_it_is_empty_test() -> Nil {
