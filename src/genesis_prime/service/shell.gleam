@@ -89,7 +89,7 @@ import genesis_prime/step.{
   type Event, type Rule, type WatchId, Asked, CallerId, Effects, EffectsThenAsk,
   Started, Stopping, WatchEnded,
 }
-import genesis_prime/step/runtime.{type ExitReason, Shutdown}
+import genesis_prime/step/runtime.{Shutdown}
 import genesis_prime/step/watch.{type Watches}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Name, type Pid, type Subject}
@@ -433,7 +433,7 @@ fn watch_ended(
 /// Ends the recording and exits with the reason `shutdown`.
 fn stop(running: Running(settings, state, message, outgoing)) -> a {
   runtime.finish_recording(running.writer)
-  exit_now(Shutdown)
+  runtime.exit_now(Shutdown)
 }
 
 /// Ends the process over an effect, or an ask, that a service does not carry
@@ -454,8 +454,3 @@ fn explain(failure: StartFailure) -> String {
       "the recording could not be opened: " <> file.describe(error)
   }
 }
-
-/// Raises the exit that ends this process with `reason`; a process that traps
-/// exits is not ended by an exit signal it sends itself.
-@external(erlang, "erlang", "exit")
-fn exit_now(reason: ExitReason) -> a

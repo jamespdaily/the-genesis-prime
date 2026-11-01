@@ -16,15 +16,19 @@
 ////  ├─ login supervisor (one-for-one, 3 restarts in 10 s)  permanent
 ////  │    ├─ STS listener (6600): a connection shell per client
 ////  │    └─ auth listener (23115): a connection shell per client
-////  └─ game supervisor (rest_for_one, 3 restarts in 10 s)  permanent
-////       ├─ registry: OTP's pg scope, named                permanent
-////       └─ game listener (24000): a connection shell per client, each
-////            joined to the registry under its ConnectionId
+////  ├─ game supervisor (rest_for_one, 3 restarts in 10 s)  permanent
+////  │    ├─ registry: OTP's pg scope, named               permanent
+////  │    └─ game listener (24000): a connection shell per client, each
+////  │         joined to the registry under its ConnectionId
+////  └─ closer: closes every listener to new sockets      permanent
 //// ```
 ////
-//// The tree stops the game subtree, then the login subtree, then the world
-//// subtree, before Sessions, the hand-off, the store and the pool they ask,
-//// so no connection is left asking a process that has stopped. A map's ask
+//// The tree stops the closer first, which closes every listener to new
+//// sockets (genesis_prime/connection/closer), then the game subtree, the login
+//// subtree and the world subtree, before Sessions, the hand-off, the store and
+//// the pool they ask, so no connection is left asking a process that has
+//// stopped. The tree runs under the application's root
+//// (genesis_prime/application), so the host's SIGTERM stops it this way. A map's ask
 //// goes through Maps (genesis_prime/world_map/maps), which finds the map or
 //// starts it; a map's address is found the same way, never started, for a
 //// watch. One directory, made once in `start` from
@@ -80,6 +84,7 @@ import genesis_prime/client_connection.{
   type Answer, type Request, AskHandOff, AskMap, AskSessions, AskStore,
   FromHandOff, FromMap, FromSessions, FromStore, SentBySessions,
 }
+import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/connection/shell as connection_shell
@@ -96,7 +101,7 @@ import genesis_prime/store/worker.{type Job}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id
 import genesis_prime/world_map/maps
-import gleam/erlang/process.{type Name, type Pid}
+import gleam/erlang/process.{type Name}
 import gleam/int
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
@@ -230,6 +235,13 @@ pub fn start(
   |> supervisor.add(world(settings))
   |> supervisor.add(login(settings, directory))
   |> supervisor.add(game(settings, directory))
+  |> supervisor.add(
+    closer.supervised([
+      settings.login.sts.listener,
+      settings.login.auth.listener,
+      settings.game.listener,
+    ]),
+  )
   |> supervisor.start
 }
 
@@ -452,14 +464,3 @@ fn serve(
     )),
   )
 }
-
-/// Stops the tree, then the VM, when the host sends SIGTERM. The tree is
-/// started outside an application, which the VM's own stop does not shut down,
-/// so without this its processes get no `Stopping` and no recording gets its
-/// `End`. Other signals are handled as the VM does.
-pub fn stop_on_sigterm(tree tree: Pid) -> Nil {
-  stop_tree_on_sigterm(tree)
-}
-
-@external(erlang, "server_shutdown_ffi", "stop_tree_on_sigterm")
-fn stop_tree_on_sigterm(tree: Pid) -> Nil

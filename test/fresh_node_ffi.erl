@@ -2,12 +2,17 @@
 %% path over standard_io, so it needs no distribution, and stopped after.
 %% Nothing in the peer is loaded but what the call itself loads.
 -module(fresh_node_ffi).
--export([run/3]).
+-export([run/3, project_paths/0]).
+
+%% The code path of the project and its packages, without OTP's own: what a
+%% node of its own is given so it loads the same code.
+project_paths() ->
+    Root = code:root_dir(),
+    [Path || Path <- code:get_path(), not lists:prefix(Root, Path)].
 
 run(Module, Function, TimeoutMs) ->
     %% The peer's own erl holds OTP's paths; it is given the project's.
-    Root = code:root_dir(),
-    Paths = [Path || Path <- code:get_path(), not lists:prefix(Root, Path)],
+    Paths = project_paths(),
     Peer = case peer:start_link(#{connection => standard_io, args => ["-pa" | Paths]}) of
                {ok, Started} -> Started;
                {ok, Started, _Node} -> Started

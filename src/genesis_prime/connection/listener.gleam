@@ -15,6 +15,12 @@
 //// its connections; a restart cannot rebuild a connection, so each client
 //// connects again. When the tree stops, each connection gets `Stopping` and
 //// the connection settings' `shutdown_ms` to end before it is killed.
+////
+//// A listener's own stop closes its listening socket before it stops its
+//// connections (Ranch lists the connection supervisor first, so it stops last),
+//// but the tree stops one listener after another. `stop_accepting` closes a
+//// listener's socket alone, so the closer (genesis_prime/connection/closer)
+//// can close every listener before any connection is stopped.
 
 import genesis_prime/connection/shell.{type Settings}
 import gleam/erlang/process.{type Name, type Pid}
@@ -60,6 +66,12 @@ pub fn supervised(
 /// The port a running listener listens on, as Ranch reports it.
 @external(erlang, "connection_shell_ffi", "listener_port")
 pub fn port(name: Name(Nil)) -> Result(Int, Nil)
+
+/// Closes the listener's listening socket, so a new connect is refused, and
+/// leaves the connections it already holds running. `Ok` also for a listener
+/// already closed; `Error(Nil)` when no listener runs under the name.
+@external(erlang, "connection_shell_ffi", "suspend_listener")
+pub fn stop_accepting(name: Name(Nil)) -> Result(Nil, Nil)
 
 @external(erlang, "connection_shell_ffi", "start_listener")
 fn start_listener(

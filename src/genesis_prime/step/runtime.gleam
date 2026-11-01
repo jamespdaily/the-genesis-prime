@@ -8,11 +8,24 @@
 
 import genesis_prime/rule_recording/file.{type FileError, type Writer}
 import genesis_prime/step.{type About, type LogLevel, type Now, LogError, Now}
+import gleam/erlang/process
 import gleam/option.{type Option}
 
 /// Why a process is asked to exit; the atom `shutdown`.
 pub type ExitReason {
   Shutdown
+}
+
+/// Raises the exit that ends this process with `reason`; a process that traps
+/// exits is not ended by an exit signal it sends itself.
+@external(erlang, "erlang", "exit")
+pub fn exit_now(reason: ExitReason) -> a
+
+/// Why a monitored process or port ended.
+pub fn down_reason(down: process.Down) -> process.ExitReason {
+  case down {
+    process.ProcessDown(reason:, ..) | process.PortDown(reason:, ..) -> reason
+  }
 }
 
 /// The time as one input carries it: the monotonic clock in milliseconds and

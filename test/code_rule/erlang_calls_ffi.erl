@@ -6,7 +6,22 @@
 %% (followed by `/`). Gives the line of each, or the line where the text stops
 %% scanning.
 -module(erlang_calls_ffi).
--export([lines/2]).
+-export([lines/2, atom_lines/2]).
+
+%% The line of each atom the text writes that is Name or starts with Name and
+%% an underscore (`pgo` and `pgo_pool_sup` for Name `pgo`), read with the same
+%% scanner, so a comment or a string is not one; text that does not scan gives
+%% the line where it stops.
+atom_lines(Text, Name) ->
+    Whole = binary_to_atom(Name),
+    Prefix = binary_to_list(Name) ++ "_",
+    case erl_scan:string(unicode:characters_to_list(Text)) of
+        {ok, Tokens, _End} ->
+            [erl_anno:line(Anno) || {atom, Anno, Atom} <- Tokens,
+                                    Atom =:= Whole orelse
+                                        lists:prefix(Prefix, atom_to_list(Atom))];
+        {error, {Anno, _Module, _Reason}, _} -> [erl_anno:line(Anno)]
+    end.
 
 lines(Text, Targets) ->
     Wanted = [{binary_to_atom(M), binary_to_atom(F)} || {target, M, F} <- Targets],

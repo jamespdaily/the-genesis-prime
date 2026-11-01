@@ -1,19 +1,25 @@
 //// Starts the server: it loads the client's game tables from the folder named
 //// by GENESIS_TABLE_DIR, stopping at once with the reason when one does not
-//// load, then starts the supervision tree, with the database named by PGHOST,
-//// PGPORT, PGUSER, PGPASSWORD and PGDATABASE, and keeps the node alive until
-//// SIGTERM, which stops the tree in order and then the node. It
-//// serves the client's STS and auth logins (`login`) and the game server
+//// load, then starts the supervision tree under the application's root
+//// (genesis_prime/application), with the database named by PGHOST, PGPORT,
+//// PGUSER, PGPASSWORD and PGDATABASE. Once one read of the database has
+//// returned it prints the ready line, and it keeps the node alive until
+//// SIGTERM, which OTP turns into the tree's ordered stop and then the node's.
+//// It serves the client's STS and auth logins (`login`) and the game server
 //// (`game`).
 
 import envoy
+import genesis_prime/application
 import genesis_prime/connection/registry
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
+import genesis_prime/readiness
 import genesis_prime/server
+import genesis_prime/step
 import genesis_prime/step/runtime
+import genesis_prime/store/worker
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import gleam/erlang/atom.{type Atom}
@@ -51,23 +57,79 @@ pub fn load_tables() -> #(store.Tables, Int) {
   }
 }
 
-/// Starts the supervision tree with these settings and keeps the node alive.
+/// Starts the supervision tree with these settings under the application's
+/// root (genesis_prime/application), says whether the server can serve, and
+/// keeps the node alive until the tree ends, which the host's SIGTERM makes
+/// through OTP.
 pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
   runtime.show_info_lines()
-  let assert Ok(started) = server.start(settings:)
+  let assert Ok(tree) = application.start_server(settings:)
     as "the supervision tree did not start"
-  server.stop_on_sigterm(tree: started.pid)
-  io.println(
-    "the server loaded "
-    <> int.to_string(tables)
-    <> " game tables and serves the STS login on port "
-    <> int.to_string(settings.login.sts.port)
-    <> ", the auth login on port "
-    <> int.to_string(settings.login.auth.port)
-    <> " and the game server on port "
-    <> int.to_string(settings.game.port),
+  serve(
+    tree:,
+    settings:,
+    tables:,
+    ready: ready_ask(),
+    probe: fn(reply) { worker.probe(store: settings.store, reply:) },
+    say: io.println,
   )
-  process.sleep_forever()
+}
+
+/// Asks the database one read through `probe`, says through `say` what the
+/// server can do, and keeps the node alive until the tree ends. The ready line
+/// is said only when the read returned and the server still serves: its tree
+/// is running and the node is not stopping. A stop can begin between that
+/// check and the line being said. A database that does not answer within the
+/// ask's time is logged as a warning and the server runs on; a tree that ends
+/// is taken as `application.end_of` takes it. `start` calls it with the
+/// server's own ask and `io.println`; the tests call it with their own.
+pub fn serve(
+  tree tree: application.Tree,
+  settings settings: server.Settings,
+  tables tables: Int,
+  ready ready: readiness.Settings,
+  probe probe: readiness.Probe,
+  say say: fn(String) -> Nil,
+) -> Nil {
+  case readiness.await(probe:, tree: tree.monitor, settings: ready) {
+    readiness.Ready -> {
+      case application.serving(tree) {
+        True -> say(ready_line(settings:, tables:))
+        False -> Nil
+      }
+      application.await_tree_end(tree)
+    }
+    readiness.DatabaseUnreachable -> {
+      runtime.log(step.LogWarning, "the database is unreachable", step.no_one)
+      application.await_tree_end(tree)
+    }
+    readiness.TreeEnded(reason:) -> application.end_of(reason)
+  }
+}
+
+/// How the readiness ask runs. These are the server's choice, not the
+/// client's: 30 s in all, so a database that is still starting when the server
+/// does has time to accept connections; each attempt waits 2 s, the length of a
+/// write's send deadline, before its worker is ended; a failed attempt is asked
+/// again after 250 ms, so a pool that opens its connections in a few hundred
+/// milliseconds is found at once.
+fn ready_ask() -> readiness.Settings {
+  readiness.Settings(within_ms: 30_000, attempt_ms: 2000, pause_ms: 250)
+}
+
+/// The ready line, the one the live-play scripts wait for.
+fn ready_line(
+  settings settings: server.Settings,
+  tables tables: Int,
+) -> String {
+  "the server loaded "
+  <> int.to_string(tables)
+  <> " game tables and serves the STS login on port "
+  <> int.to_string(settings.login.sts.port)
+  <> ", the auth login on port "
+  <> int.to_string(settings.login.auth.port)
+  <> " and the game server on port "
+  <> int.to_string(settings.game.port)
 }
 
 /// The tree's settings: the database from the environment, with Postgres's

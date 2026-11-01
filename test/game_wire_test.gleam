@@ -53,9 +53,11 @@ import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/maps
+import gleam/bool
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/list
+import login_client
 import login_support
 import owned_test
 import pog
@@ -157,6 +159,44 @@ pub fn a_client_whose_session_key_the_hand_off_does_not_hold_gets_0x036a_reason_
     as "0x1400168a0: 19 is 'This account has been disconnected', for a key the hand-off never held"
   assert game_client.closed(game:) as "the server closes the connection"
   login_support.stop(started)
+}
+
+pub fn a_stop_closes_every_listener_to_new_connects_before_an_open_game_connection_drains_and_it_still_gets_0x036a_reason_8_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, ports, account_id) = login_support.start_with_jim()
+  let account = AccountId(account_id)
+  let game = in_select(started:, port: ports.game_port, account:)
+  let assert [connection] =
+    ask_support.connections_of(started.settings.game.listener)
+    as "the game listener holds the one connection"
+  // The connection is held back, so the game listener's stop waits for it
+  // while the connects below are tried.
+  let stopping =
+    ask_support.while_suspended(process: connection, body: fn() {
+      let stopping = ask_support.begin_stop_tree(started.tree)
+      await_refused(ports.game_port)
+      assert login_client.refused(ports.sts_port)
+        as "the STS listener no longer takes a socket by the time the game listener's is closed: the stop closes the listeners before it drains any connection"
+      assert login_client.refused(ports.auth_port)
+        as "nor does the auth listener"
+      stopping
+    })
+  let assert [notice] = game_client.read(game:, count: 1)
+  assert notice.message_id == 0x036A as "opcode.0x36a"
+  assert disconnect_notice.decode(notice.body)
+    == Ok(DisconnectNotice(reason: LostUserServer))
+    as "0x1400168a0: 8 is the server's own end, which the open connection is told when the stop reaches it"
+  assert game_client.closed(game:) as "and the server closes it"
+  let _reason = ask_support.ended(stopping)
+  Nil
+}
+
+/// Waits until a connect to the port is refused: a wait for the listener to
+/// close, ended by the test's own deadline.
+fn await_refused(port: Int) -> Nil {
+  use <- bool.guard(when: login_client.refused(port), return: Nil)
+  process.sleep(1)
+  await_refused(port)
 }
 
 /// A create request for CharacterCreation row 466 with a path of 1 and the

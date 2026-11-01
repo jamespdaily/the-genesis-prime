@@ -22,7 +22,7 @@ import gleam/option.{None}
 import login_client.{type Ports, Ports}
 import login_vectors as vector
 import pog
-import pool_started
+import readiness_support
 
 /// The realm the auth rule hands clients to.
 pub fn realm() -> auth_connection.Realm {
@@ -101,36 +101,41 @@ pub type Started {
   Started(tree: Pid, settings: server.Settings)
 }
 
+/// The server's settings for a test: the pool given, names made now, the
+/// listeners on ports the system picks, nothing recorded.
+pub fn settings(pool pool: pog.Config) -> server.Settings {
+  server.Settings(
+    pool:,
+    store: process.new_name("store"),
+    hand_off: process.new_name("hand_off"),
+    hand_off_shutdown_ms: 1500,
+    sessions: process.new_name("sessions"),
+    sessions_shutdown_ms: 1500,
+    sessions_recorder: None,
+    registry: registry.new(),
+    world: world(),
+    send_deadline_ms: 300,
+    connection_shutdown_ms: 1000,
+    login: login(),
+    game: game(),
+  )
+}
+
 /// Starts the server's tree on a database of its own and waits for its pool.
 pub fn start() -> Started {
   let shared = database_support.shared()
   let database = database_support.new_database(on: shared)
   let settings =
-    server.Settings(
-      pool: database_support.config(
-        for: shared.settings,
-        database:,
-        pool_name: process.new_name("pool"),
-        pool_size: 2,
-      ),
-      store: process.new_name("store"),
-      hand_off: process.new_name("hand_off"),
-      hand_off_shutdown_ms: 1500,
-      sessions: process.new_name("sessions"),
-      sessions_shutdown_ms: 1500,
-      sessions_recorder: None,
-      registry: registry.new(),
-      world: world(),
-      send_deadline_ms: 300,
-      connection_shutdown_ms: 1000,
-      login: login(),
-      game: game(),
-    )
+    settings(pool: database_support.config(
+      for: shared.settings,
+      database:,
+      pool_name: process.new_name("pool"),
+      pool_size: 2,
+    ))
   let assert Ok(started) = server.start(settings) as "the tree started"
   process.unlink(started.pid)
   ask_support.guard(started.pid)
-  assert pool_started.await(settings.pool.pool_name, within_ms: 30_000)
-    as "the pool opened its connections"
+  readiness_support.await(tree: started.pid, store: settings.store)
   Started(tree: started.pid, settings:)
 }
 

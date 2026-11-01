@@ -109,6 +109,36 @@ pub fn references(module: glance.Module) -> List(Reference) {
   })
 }
 
+/// Every string literal in the module's functions, each with the byte offset
+/// where it starts, in the order the expressions are found.
+pub fn strings(module: glance.Module) -> List(#(Int, String)) {
+  list.flat_map(expressions(module), fn(expression) {
+    case expression {
+      glance.String(location:, value:) -> [#(location.start, value)]
+      glance.Variable(..)
+      | glance.FieldAccess(..)
+      | glance.Int(..)
+      | glance.Float(..)
+      | glance.NegateInt(..)
+      | glance.NegateBool(..)
+      | glance.Block(..)
+      | glance.Panic(..)
+      | glance.Todo(..)
+      | glance.Tuple(..)
+      | glance.List(..)
+      | glance.Fn(..)
+      | glance.RecordUpdate(..)
+      | glance.Call(..)
+      | glance.TupleIndex(..)
+      | glance.FnCapture(..)
+      | glance.BitString(..)
+      | glance.Case(..)
+      | glance.BinaryOperator(..)
+      | glance.Echo(..) -> []
+    }
+  })
+}
+
 /// The line, counted from 1, that holds the byte at the offset.
 pub fn line_of(text text: String, byte_offset byte_offset: Int) -> Int {
   let assert Ok(before) = bit_array.slice(<<text:utf8>>, 0, byte_offset)
