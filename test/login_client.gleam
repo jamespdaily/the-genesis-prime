@@ -18,9 +18,9 @@ import gleam/bit_array
 import gleam/int
 import gleam/option.{type Option, None, Some}
 import gleam/string
+import mug
 import scripted_client.{type Reply}
 import seeded
-import tcp_client.{type Client}
 
 /// How long a test waits for the server to write the bytes it must, in
 /// milliseconds.
@@ -31,14 +31,22 @@ pub type Ports {
   Ports(sts_port: Int, auth_port: Int, game_port: Int)
 }
 
-pub fn connect(port: Int) -> Client {
-  let assert Ok(client) = tcp_client.connect(port)
+/// How long the client waits to connect to a listener on this machine, in
+/// milliseconds.
+const connect_ms = 5000
+
+pub fn connect(port: Int) -> mug.Socket {
+  let assert Ok(client) =
+    mug.new("127.0.0.1", port:)
+    |> mug.ip_version_preference(mug.Ipv4Only)
+    |> mug.timeout(connect_ms)
+    |> mug.connect
     as "the client could not connect to the listener"
   client
 }
 
-pub fn send(client client: Client, bytes bytes: BitArray) -> Nil {
-  let assert Ok(Nil) = tcp_client.send(client, bytes)
+pub fn send(client client: mug.Socket, bytes bytes: BitArray) -> Nil {
+  let assert Ok(Nil) = mug.send(client, bytes)
     as "the server closed the connection before the client finished sending"
   Nil
 }
@@ -47,7 +55,7 @@ pub fn send(client client: Client, bytes bytes: BitArray) -> Nil {
 /// the exchange is done, and the next sequence number.
 pub type StsClient {
   StsClient(
-    socket: Client,
+    socket: mug.Socket,
     sending: Option(rc4.Stream),
     receiving: Option(rc4.Stream),
     next_sequence: Int,
@@ -110,7 +118,8 @@ fn read_reply(
   client: StsClient,
   have: BitArray,
 ) -> #(Option(rc4.Stream), Reply) {
-  let assert Ok(bytes) = tcp_client.receive_some(client.socket, wait_ms)
+  let assert Ok(bytes) =
+    mug.receive(client.socket, timeout_milliseconds: wait_ms)
     as "the server did not answer the request"
   let #(receiving, plain) = crypt_when_on(stream: client.receiving, bytes:)
   let all = <<have:bits, plain:bits>>
@@ -259,13 +268,13 @@ pub fn sts_login(
 
 /// Reads frames from the auth connection until there are `count` of them.
 pub fn read_frames(
-  client client: Client,
+  client client: mug.Socket,
   have have: BitArray,
   count count: Int,
 ) -> List(Frame) {
   let assert Ok(frames) =
     frame_reader.read(have:, count:, next: fn() {
-      tcp_client.receive_some(client, wait_ms)
+      mug.receive(client, timeout_milliseconds: wait_ms)
     })
     as "the auth server did not write the frames"
   frames
@@ -292,7 +301,7 @@ pub fn auth_login(
   ports ports: Ports,
   login login: scripted_client.StsLogin,
   build build: Int,
-) -> Client {
+) -> mug.Socket {
   let socket = connect(ports.auth_port)
   let assert [hello] = read_frames(client: socket, have: <<>>, count: 1)
     as "the auth server did not greet the client"

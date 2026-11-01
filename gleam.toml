@@ -86,25 +86,6 @@ effectful_modules = [
   { module = "genesis_prime/store/sql", reason = "the queries squirrel generates, run on pog's pool" },
   { module = "genesis_prime/world_map/maps", reason = "the registry actor that finds a map by its id and starts it under the map supervisor, monitoring each" },
 ]
-# The game domains: each top-level folder or module under src/genesis_prime/.
-domains = [
-  { module = "genesis_prime/client_archive", reason = "reads the client's archive files, the only source of game data" },
-  { module = "genesis_prime/connection", reason = "frames and the cipher of a player's connection" },
-  { module = "genesis_prime/message", reason = "the generated codec for every packet layout" },
-  { module = "genesis_prime/login", reason = "the login's protocol: SRP, the STS wire and its messages" },
-  { module = "genesis_prime/game", reason = "the game server's connection and the features it serves, starting with character select" },
-  { module = "genesis_prime/client_connection", reason = "what every client connection's rule shares: its asks, its link, how it hears an input" },
-  { module = "genesis_prime/table", reason = "the client's game tables, loaded once at start" },
-  { module = "genesis_prime/server", reason = "the supervision tree every process starts under" },
-  { module = "genesis_prime/step", reason = "the contract between each process's rule and its shell" },
-  { module = "genesis_prime/rule_recording", reason = "the file a rule's inputs and steps are recorded in, for replay" },
-  { module = "genesis_prime/world_map", reason = "the maps players share: their keys, rules and processes" },
-  { module = "genesis_prime/service", reason = "the shell of a named process with no socket that others ask" },
-  { module = "genesis_prime/store", reason = "the asks a rule makes of the database, and the workers that run them" },
-  { module = "genesis_prime/hand_off", reason = "the one-time keys a client carries from one server to the next" },
-  { module = "genesis_prime/sessions", reason = "who is logged in to the game server, one slot per account" },
-  { module = "genesis_prime/random", reason = "the random values a rule draws from its connection's seed" },
-]
 # Erlang functions a rule module's externals may call.
 pure_erlang = [
   "tbl_file_ffi:utf16_text",

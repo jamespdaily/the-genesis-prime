@@ -405,7 +405,7 @@ class CoverageProblemsTest(unittest.TestCase):
 
 
 LEAF_FUNCTION = 0x1408296A0  # a leaf function: no .pdata entry (formulas_by_hand.py)
-PDATA_START = 0x140003FB0  # a .pdata start (test_jump_tables.py)
+PDATA_START = 0x140003FB0  # a .pdata start
 INSIDE_PDATA_FUNCTION = 0x140003FE8  # the switch jump inside it
 RDATA_CONSTANT = 0x140B79D14  # a constant in .rdata (formulas_by_hand.py)
 

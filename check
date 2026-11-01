@@ -12,7 +12,7 @@
 # and each part still running is reported as failed. A part that ends without
 # writing its status fails the check by name.
 #
-# The client query process's integration tests take about 450 seconds, so they
+# The client scripts' integration tests take about 240 seconds, so they
 # run only when the branch changes a file under the client scripts folder since
 # its merge base with origin/main (or main), and then the budget is raised to
 # GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS and the output says so.
@@ -48,12 +48,12 @@
 #                  priv/migrations/*.sql applied in name order, each with
 #                  psql -v ON_ERROR_STOP=1 --single-transaction
 #   squirrel       gleam run -m squirrel check, against that database
-#   client-suite   the client query process's fast unit tests (run with
+#   client-suite   the client scripts' tests that need no Ghidra (run with
 #                  GENESIS_INTEGRATION=0, whatever the caller exported)
-#   client-integration  the client query process's integration tests
-#                  (GENESIS_INTEGRATION=1; skipped where GENESIS_NO_CLIENT=1
-#                  and where the branch leaves the client scripts unchanged)
-#   setup-suite    the setup check's own tests
+#   client-integration  the client scripts' tests that run the client's code on
+#                  Ghidra's emulator (GENESIS_INTEGRATION=1; skipped where
+#                  GENESIS_NO_CLIENT=1 and where the branch leaves the client
+#                  scripts unchanged)
 #   fact-checker   check_facts.py over the fact file
 #
 # The database is on the Postgres named by PGHOST, PGPORT and PGUSER (defaults
@@ -93,9 +93,9 @@ if [ "$mode" = fast ]; then
 fi
 
 # The budget of a run that includes the integration tests: the slowest of 3
-# solo runs on the development Mac (2026-10-26, issue 109) was 466 s, times
-# 1.25, rounded up.
-integration_budget=${GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS:-583}
+# runs of them alone on the development Mac (2026-11-01) was 259 s
+# (233, 225 and 259), times 1.25, rounded up.
+integration_budget=${GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS:-324}
 
 client_scripts=.claude/skills/decoding-the-client/scripts
 
@@ -119,7 +119,7 @@ export PGHOST PGPORT PGUSER
 work=$(mktemp -d)
 database="genesis_check_$$_${started}"
 case "$mode" in
-  full) parts="format gleam-build glinter generated-tables gleam-test message-codec migrations squirrel client-suite client-integration setup-suite fact-checker" ;;
+  full) parts="format gleam-build glinter generated-tables gleam-test message-codec migrations squirrel client-suite client-integration fact-checker" ;;
   fast) parts="format gleam-build glinter code-rules" ;;
 esac
 
@@ -338,8 +338,8 @@ gleam_test() {
   return $status
 }
 
-# The client query process's integration tests: the client scripts' own tests
-# with GENESIS_INTEGRATION=1, which opens the gate of check_support.integration_only.
+# The client scripts' integration tests: their own tests with
+# GENESIS_INTEGRATION=1, which opens the gate of check_support.integration_only.
 client_integration() {
   GENESIS_INTEGRATION=1 python3.13 -I -m unittest discover -s "$client_scripts" -p 'test_*.py'
 }
@@ -406,7 +406,6 @@ case "$mode" in
     if [ "$integration_run" = yes ]; then
       in_background step client-integration client_integration
     fi
-    in_background step setup-suite python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
     in_background step fact-checker facts_with_the_client_named
     ;;
   fast)

@@ -13,14 +13,6 @@ import tom
 @external(erlang, "repository_ffi", "tracked_files")
 fn tracked_files() -> String
 
-@external(erlang, "repository_ffi", "note_tree_read")
-fn note_tree_read() -> Nil
-
-/// How many times the source tree has been read from disk in this VM, so a
-/// test can show that every rule shares one read.
-@external(erlang, "repository_ffi", "tree_reads")
-pub fn tree_reads() -> Int
-
 /// The directories whose Gleam source the rules read.
 const tree_directories = ["src", "test", "dev"]
 
@@ -31,7 +23,6 @@ const tree_directories = ["src", "test", "dev"]
 pub fn sources(under directories: List(String)) -> List(SourceFile) {
   let tree =
     database_support.once("source_tree", fn() {
-      note_tree_read()
       list.flat_map(tree_directories, source.files)
     })
   let files =
