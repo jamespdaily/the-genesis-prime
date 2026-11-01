@@ -22,10 +22,10 @@ import gleam/erlang/process
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
+import mailbox_support
 import mug
 import owned_test
 import recording_support
-import socket_watch
 
 /// How long an ask whose deadline is meant to pass waits, in milliseconds.
 const short = 300
@@ -174,6 +174,11 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   let first = ask_support.read_record(client)
   assert first.ask == 1 && first.code == asking_rule.code_no_answer_in_time
     as "ask 1 timed out"
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let assert Ok(gate_pid) = process.named(gate) as "the gate runs"
+  assert list.contains(mailbox_support.monitored(connection), gate_pid)
+    as "the shell keeps its monitor of the gate until the late answer or the gate's end"
   // Opening key 1 makes the gate answer ask 1, which is already over, and then
   // answer this ask, 2, in that order: the older answer is in the mailbox first.
   ask_support.command(
@@ -193,10 +198,10 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   ask_support.command(client, asking_rule.ping_command, 9, wait_ms: 0)
   assert ask_support.read_pong(client) == <<0x70, 9>>
     as "the answer to ask 1 gave the rule no input, so no record comes before the pong"
-  let assert [connection] = ask_support.connections(server)
-    as "one connection process"
-  assert socket_watch.mailbox_length(connection) == 0
-    as "the late answer was taken and dropped: nothing waits in the shell's mailbox"
+  assert mailbox_support.queued(connection) == 0
+    as "the late answer was taken: nothing waits in the shell's mailbox"
+  assert !list.contains(mailbox_support.monitored(connection), gate_pid)
+    as "and dropped: the shell holds no monitor of the gate for it"
   ask_support.stop(server)
 }
 

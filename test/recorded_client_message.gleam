@@ -40,6 +40,7 @@ import genesis_prime/message/client_message.{
   type ClientMessage, type ClientMessageError,
 }
 import genesis_prime/rule_recording.{type ReplayFailure, Taken}
+import genesis_prime/rule_types
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionEvent, Input, OwnEvent,
 }
@@ -168,6 +169,11 @@ pub fn read_recording(
     rule_recording.read(bytes)
     |> result.map_error(NotARecording(recording:, failure: _)),
   )
+  use Nil <- result.try(types_current(
+    recording:,
+    rule: header.rule,
+    types_digest: header.types_digest,
+  ))
   let inputs =
     list.index_fold(records, [], fn(found, record, input) {
       case record {
@@ -194,6 +200,27 @@ pub fn read_recording(
   result.map_error(read, fn(stopped) {
     NotRead(recording:, input: stopped.0, problem: stopped.1)
   })
+}
+
+/// Whether the recording was made under the rule's types as the code stands,
+/// as a replay asks first: with other types its terms are not the rule's
+/// inputs, so nothing of it is read and it must be recorded again.
+fn types_current(
+  recording recording: String,
+  rule rule: String,
+  types_digest types_digest: String,
+) -> Result(Nil, Failure) {
+  let assert Ok(digest) =
+    rule_types.digest(rule_module: rule, source_roots: ["src", "test"])
+    as "the rule's types read"
+  case digest == types_digest {
+    True -> Ok(Nil)
+    False ->
+      Error(NotARecording(
+        recording:,
+        failure: rule_recording.RecordAgain(reason: "the rule's types"),
+      ))
+  }
 }
 
 /// The RC4 stream the STS rule deciphers the client's bytes with after it took

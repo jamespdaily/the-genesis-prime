@@ -515,6 +515,31 @@ pub fn a_recording_of_a_rule_that_is_no_connection_but_took_socket_bytes_fails_t
     as "a recording of another rule with socket bytes is reported, never passed unread"
 }
 
+pub fn a_recording_made_under_other_types_fails_with_record_again_and_is_never_read_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let path =
+    plant_under(
+      folder:,
+      number: 1,
+      rule: auth_connection.rule_name,
+      reads: [connection_rule_support.ping(1)],
+      types_digest: "another digest",
+    )
+  assert recorded_client_message.read_recording(path)
+    == Error(NotARecording(
+      recording: path,
+      failure: rule_recording.RecordAgain(reason: "the rule's types"),
+    ))
+    as "a recording whose header digest is not the rule's digest is refused, not read as a recording with no client bytes"
+  let current =
+    plant(folder:, number: 2, rule: auth_connection.rule_name, reads: [
+      connection_rule_support.ping(1),
+    ])
+  assert result.is_ok(recorded_client_message.read_recording(current))
+    as "the same bytes under the rule's own digest read"
+}
+
 pub fn a_file_that_is_no_recording_fails_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
@@ -633,12 +658,30 @@ fn with_a_changed_byte(
 }
 
 /// Writes a recording of `rule` in `folder`, whose inputs are the socket
-/// reads `reads`, and returns its path.
+/// reads `reads`, made under the rule's types as they stand, and returns its
+/// path.
 fn plant(
   folder folder: String,
   number number: Int,
   rule rule: String,
   reads reads: List(BitArray),
+) -> String {
+  plant_under(
+    folder:,
+    number:,
+    rule:,
+    reads:,
+    types_digest: recording_support.types_digest(rule),
+  )
+}
+
+/// As `plant`, with the types digest the header holds.
+fn plant_under(
+  folder folder: String,
+  number number: Int,
+  rule rule: String,
+  reads reads: List(BitArray),
+  types_digest types_digest: String,
 ) -> String {
   let path =
     folder
@@ -654,7 +697,7 @@ fn plant(
       client_build: 16_042,
       tables_digest: None,
       settings: Nil,
-      types_digest: "planted",
+      types_digest:,
     )
   let taken =
     list.map(reads, fn(bytes) {

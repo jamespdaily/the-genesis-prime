@@ -351,7 +351,13 @@ fn connected(
     WatchEnded(watch:) -> settled(handled: watch_ended(session:, watch:), now:)
     OwnEvent(TimerFired(timer:)) ->
       settled(handled: claim_wait_over(session:, now:, timer:), now:)
-    OwnEvent(..) | Stopping(..) -> heard(session:, now:, event:)
+    OwnEvent(step.Accepted(..))
+    | OwnEvent(step.Read(..))
+    | OwnEvent(step.PeerClosed)
+    | OwnEvent(step.ReadFailed(..))
+    | OwnEvent(step.WriteFailed(..))
+    | OwnEvent(step.Answered(..))
+    | Stopping(..) -> heard(session:, now:, event:)
   }
 }
 
