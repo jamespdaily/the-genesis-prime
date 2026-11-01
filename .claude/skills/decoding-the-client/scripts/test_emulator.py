@@ -1,8 +1,8 @@
 """Client code run on Ghidra's emulator, through the query process's `emulate` kind.
 
-Integration tests: they run only when GENESIS_INTEGRATION=1 (see
-test_query_process.py for the environment). They open the project built by
-check_support.seeded_project().
+Integration tests: they run only when GENESIS_INTEGRATION=1, with the Ghidra
+install, the JDK and PyGhidra that check_support names. They open the project
+built by check_support.seeded_project().
 
 The request and reply, as ghidra_query.py documents them:
   {"kind": "emulate", "function": "0x140882470", "args": [x, ...]}

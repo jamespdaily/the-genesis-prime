@@ -822,6 +822,7 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
           race_id: RaceId(1),
           class_id: ClassId(1),
           faction_id: 167,
+          level: 1,
           path: 2,
           world_id: 3460,
           world_zone_id: 6009,
@@ -1007,6 +1008,7 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
           race_id: RaceId(1),
           class_id: ClassId(1),
           faction_id: 167,
+          level: 1,
           path: 2,
           world_id: 3460,
           world_zone_id: 6009,
@@ -1795,11 +1797,12 @@ pub fn after_the_hand_off_the_account_is_claimed_with_a_watch_on_sessions_before
     as "the claim comes before the list: the frame that waited is taken once Sessions answers"
 }
 
-pub fn a_connection_given_taken_over_writes_0x036a_reason_19_under_its_cipher_and_ends_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let #(_, taken) = feed(in_select_with_a_list(), taken_over())
+/// A step that ended the connection as a takeover does: 0x036A reason 19 under
+/// the connection's cipher (0x1400168a0: 19 is 'This account has been
+/// disconnected', the account-level text), one info line naming the connection
+/// and the account, no ask, and no warning or error.
+fn assert_taken_over(taken: Step(Nil, Request)) -> Nil {
   assert disconnect(taken, keyed()) == AccountDisconnected
-    as "0x1400168a0: 19 is 'This account has been disconnected', the account-level text, for the connection a newer login took over"
   let assert [line] = support.logs_of(step: taken, level: LogInfo)
     as "the takeover is logged at info, once"
   assert line.about.connection == Some(ConnectionId(1))
@@ -1807,6 +1810,32 @@ pub fn a_connection_given_taken_over_writes_0x036a_reason_19_under_its_cipher_an
     as "the line names the connection and the account"
   assert support.asked(taken) == None
   assert support.logs_of(step: taken, level: LogWarning) == []
+  assert support.logs_of(step: taken, level: LogError) == []
+}
+
+pub fn a_connection_given_taken_over_writes_0x036a_reason_19_under_its_cipher_and_ends_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = feed(in_select_with_a_list(), taken_over())
+  assert_taken_over(taken)
+}
+
+pub fn a_claim_answered_taken_over_ends_the_connection_as_a_takeover_does_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A newer login holds the slot: Sessions answers the claim `TakenOver`, for
+  // a first claim and for a claim made again after Sessions ended, in
+  // character select or in the world.
+  let #(state, taken) = claiming()
+  let #(_, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromSessions(TakenOver)))
+  assert_taken_over(taken)
+  list.each([in_select_with_a_list(), in_world()], fn(held) {
+    let #(state, _) = feed(held, WatchEnded(WatchId(1)))
+    let #(state, taken) = feed(state, TimerFired(TimerId(1)))
+    assert ask_request(taken) == claim_ask()
+    let #(_, taken) =
+      answer(state:, taken:, outcome: step.Answer(FromSessions(TakenOver)))
+    assert_taken_over(taken)
+  })
 }
 
 pub fn a_takeover_while_the_connection_waits_to_claim_again_ends_it_with_reason_19_test() -> Nil {
@@ -1942,7 +1971,6 @@ pub fn an_answer_to_the_claim_that_is_none_a_claim_gets_is_a_bug_with_reason_8_a
   use <- owned_test.run(10_000)
   list.each(
     [
-      step.Answer(FromSessions(TakenOver)),
       step.Answer(FromStore(Unavailable)),
       step.Answer(FromHandOff(Kept)),
     ],

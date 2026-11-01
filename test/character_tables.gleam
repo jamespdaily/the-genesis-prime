@@ -4,10 +4,13 @@
 //// columns the server reads (`character_tables_test` compares each with the
 //// real row where the client is present); every other column is 0.
 ////
-//// - CharacterCreation rows 21, 338, 339, 466, 530, 536 and 539.
+//// - CharacterCreation rows 21, 338, 339, 466, 530, 536 and 539, with their xp.
+//// - GameFormula row 145 (its dataint0, the highest level) and XpPerLevel
+////   records 1 to 51 with their minXpForLevel, which GetLevelForExperience
+////   0x140029820 reads.
 //// - CharacterCustomization rows 2, 9 and 10 and the labels they use, 2, 21
 ////   and 22 (CharacterCustomizationLabel).
-//// - WorldLocation2 rows 51596, 1594, 37015, 18987, 8223, 53050 and 53051,
+//// - WorldLocation2 rows 51596, 1594, 37015, 18987 and 8223,
 ////   the start places (genesis_prime/game/start_place), with the world, zone
 ////   and position of the client's row.
 //// - Bone counts: opcode.0x25b.counts gives 46 bone values for race 1, sex 1
@@ -23,9 +26,10 @@ import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
+import genesis_prime/table/game_formula
 import genesis_prime/table/loader/store
-import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/world_location2
+import genesis_prime/table/xp_per_level
 import gleam/erlang/reference
 import gleam/list
 import planted_table.{type Cell, Boolean, Float, Integer}
@@ -38,12 +42,20 @@ pub fn shared() -> store.Tables {
 
 fn load() -> store.Tables {
   use folder <- planted_table.in_folder([
-    file(character_creation.schema, creation_rows()),
-    file(character_customization.schema, customization_rows()),
-    file(character_customization_label.schema, label_rows()),
-    file(customization_parameter.schema, parameter_rows()),
-    file(customization_parameter_map.schema, map_rows()),
-    file(world_location2.schema, start_location_rows()),
+    planted_table.file(character_creation.schema, creation_rows()),
+    planted_table.file(character_customization.schema, customization_rows()),
+    planted_table.file(character_customization_label.schema, label_rows()),
+    planted_table.file(customization_parameter.schema, parameter_rows()),
+    planted_table.file(customization_parameter_map.schema, map_rows()),
+    planted_table.file(world_location2.schema, start_location_rows()),
+    planted_table.file(
+      game_formula.schema,
+      game_formula_rows(ids: [highest_level_formula], highest: 50),
+    ),
+    planted_table.file(
+      xp_per_level.schema,
+      xp_per_level_rows(min_xp_for_level()),
+    ),
   ])
   let assert Ok(tables) =
     store.load(
@@ -56,18 +68,13 @@ fn load() -> store.Tables {
         customization_parameter.entry(),
         customization_parameter_map.entry(),
         world_location2.entry(),
+        game_formula.entry(),
+        xp_per_level.entry(),
       ],
       requirements: [],
     )
     as "the planted character tables load"
   tables
-}
-
-fn file(
-  schema: tbl_file.Schema,
-  rows: List(List(Cell)),
-) -> #(String, BitArray) {
-  #(schema.file, planted_table.bytes(planted_table.table(schema, rows)))
 }
 
 /// A CharacterCreation row with the columns the server reads.
@@ -80,6 +87,7 @@ fn creation(
   costume_only costume_only: Bool,
   enabled enabled: Bool,
   start start: Int,
+  xp xp: Int,
   currency_type currency_type: Int,
   currency_amount currency_amount: Int,
   entitlement entitlement: Int,
@@ -93,6 +101,7 @@ fn creation(
     #("costumeOnly", Boolean(costume_only)),
     #("enabled", Boolean(enabled)),
     #("characterCreationStartEnum", Integer(start)),
+    #("xp", Integer(xp)),
     #("accountCurrencyTypeIdCost", Integer(currency_type)),
     #("accountCurrencyAmountCost", Integer(currency_amount)),
     #("entitlementIdRequired", Integer(entitlement)),
@@ -111,6 +120,7 @@ fn creation_rows() -> List(List(Cell)) {
       costume_only: False,
       enabled: False,
       start: 0,
+      xp: 0,
       currency_type: 0,
       currency_amount: 0,
       entitlement: 0,
@@ -125,6 +135,7 @@ fn creation_rows() -> List(List(Cell)) {
       costume_only: False,
       enabled: True,
       start: 3,
+      xp: 1710,
       currency_type: 0,
       currency_amount: 0,
       entitlement: 0,
@@ -138,6 +149,7 @@ fn creation_rows() -> List(List(Cell)) {
       costume_only: False,
       enabled: True,
       start: 3,
+      xp: 1710,
       currency_type: 0,
       currency_amount: 0,
       entitlement: 0,
@@ -152,6 +164,7 @@ fn creation_rows() -> List(List(Cell)) {
       costume_only: False,
       enabled: True,
       start: 4,
+      xp: 0,
       currency_type: 0,
       currency_amount: 0,
       entitlement: 0,
@@ -166,6 +179,7 @@ fn creation_rows() -> List(List(Cell)) {
       costume_only: True,
       enabled: True,
       start: 99,
+      xp: 0,
       currency_type: 0,
       currency_amount: 0,
       entitlement: 0,
@@ -180,6 +194,7 @@ fn creation_rows() -> List(List(Cell)) {
       costume_only: False,
       enabled: True,
       start: 3,
+      xp: 1710,
       currency_type: 0,
       currency_amount: 0,
       entitlement: 61,
@@ -194,6 +209,7 @@ fn creation_rows() -> List(List(Cell)) {
       costume_only: False,
       enabled: True,
       start: 5,
+      xp: 26_360_090,
       currency_type: 13,
       currency_amount: 1,
       entitlement: 0,
@@ -344,26 +360,6 @@ pub fn start_locations() -> List(#(Int, Place)) {
         z: -560.18798828125,
       ),
     ),
-    #(
-      53_050,
-      Place(
-        world_id: 51,
-        world_zone_id: 4959,
-        x: 4074.340087890625,
-        y: -797.8367919921875,
-        z: -2399.3701171875,
-      ),
-    ),
-    #(
-      53_051,
-      Place(
-        world_id: 22,
-        world_zone_id: 4957,
-        x: -3343.580078125,
-        y: -887.464599609375,
-        z: -536.030029296875,
-      ),
-    ),
   ]
 }
 
@@ -376,5 +372,45 @@ fn start_location_rows() -> List(List(Cell)) {
       place.y,
       place.z,
     ))
+  })
+}
+
+/// The GameFormula row of the highest level: row 145, whose dataint0 is 50.
+pub const highest_level_formula = 145
+
+/// The XpPerLevel minXpForLevel of records 1 to 51 (the client's records 0 to
+/// 50: the levels 1 to 50 and the record at the highest level).
+pub fn min_xp_for_level() -> List(Int) {
+  [
+    0, 655, 1710, 2860, 4320, 6280, 8920, 12_510, 17_330, 23_860, 32_470, 43_830,
+    58_570, 77_520, 101_530, 131_820, 169_380, 215_750, 272_350, 340_950,
+    423_300, 521_770, 638_250, 775_580, 936_310, 1_123_510, 1_340_160, 1_590_200,
+    1_876_730, 2_204_290, 2_576_890, 2_999_270, 3_475_990, 4_012_950, 4_614_770,
+    5_288_090, 6_038_720, 6_873_450, 7_798_740, 8_822_880, 9_952_300, 11_196_140,
+    12_562_350, 14_060_140, 15_698_220, 17_487_670, 19_437_010, 21_558_320,
+    23_862_010, 26_360_090, 2_147_483_647,
+  ]
+}
+
+/// GameFormula rows of these ids, each with `highest` as its dataint0.
+pub fn game_formula_rows(
+  ids ids: List(Int),
+  highest highest: Int,
+) -> List(List(Cell)) {
+  list.map(ids, fn(id) {
+    planted_table.row(game_formula.schema, [
+      #("ID", Integer(id)),
+      #("dataint0", Integer(highest)),
+    ])
+  })
+}
+
+/// XpPerLevel rows holding these minXpForLevel values as records 1 up.
+pub fn xp_per_level_rows(minimums: List(Int)) -> List(List(Cell)) {
+  list.index_map(minimums, fn(minimum, position) {
+    planted_table.row(xp_per_level.schema, [
+      #("ID", Integer(position + 1)),
+      #("minXpForLevel", Integer(minimum)),
+    ])
   })
 }

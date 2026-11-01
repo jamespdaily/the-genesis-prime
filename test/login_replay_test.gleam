@@ -2,7 +2,7 @@
 //// with no socket, process or database. Expected values come from these
 //// places.
 //// - The recordings: a live login of the real client through both servers
-////   to the game port (`test/rule_recording/2026-10-28-full-session`), each
+////   to the game port (`test/rule_recording/2026-11-01-full-session`), each
 ////   closed with `End`, which counts 11 inputs for the STS connection (the
 ////   client asks /Auth/PageVerifiedIps every 30 s while it plays) and 5 for
 ////   the auth connection.

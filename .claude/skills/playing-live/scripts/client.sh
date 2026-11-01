@@ -25,6 +25,12 @@
 # hidden scheduled task (GenesisClient, GenesisInput), by pc.sh; the task and the files it copied
 # are always deleted. start refuses, in the script and before it launches anything, when any
 # WildStar64 process runs, and saves the client's pid and start time in client.pid beside env.sh.
+# start also takes the live lock (live_lock.sh) before it touches the PC, so no run and no second
+# start can use the PC's client meanwhile: it refuses, naming the owner, while another holder has it.
+# Inside a run (session.sh passes the lock's token to the client.sh it runs) the run's lock stands.
+# Outside one, the lock is the start's own and stays until client.sh stop releases it, since the
+# client it started runs on; a start that fails without recording a client gives it back.
+# session.sh --recover stops such a client and releases the lock.
 # type, key, click and stop act only on the process with that pid, that name and that start time, so
 # a reused pid never reaches another client; with no client recorded, type, key and click refuse.
 # click runs genesis-click.ps1 (task GenesisClick) and is the one command that moves focus: the
@@ -77,12 +83,28 @@ esac
 
 tool=client
 . "$(dirname "$0")/pc.sh"
+. "$(dirname "$0")/live_lock.sh"
+client_before=
+# A start that took the lock and recorded no client gives it back, as pc.sh ends the script.
+before_finish() {
+  if [ -n "$lock_token" ] && [ "$1" -ne 0 ] && [ "$(cat "$state" 2> /dev/null || true)" = "$client_before" ]; then
+    lock_release "$lock_token"
+  fi
+}
+case "$command" in
+  type|key|click|stop) lock_allows_client_use || exit 1 ;;
+esac
 if [ "$command" = start ]; then
   : "${GENESIS_PLAY_ADDRESS:?set GENESIS_PLAY_ADDRESS (the server host the client is pointed at, an address on the PC network) in ~/.genesis-prime/env.sh}"
   : "${GENESIS_PLAY_CLIENT_DIR:?set GENESIS_PLAY_CLIENT_DIR (the client install folder, for example C:\\WildStar-HD) in ~/.genesis-prime/env.sh}"
   if [ $# -eq 1 ]; then
     : "${GENESIS_PLAY_ACCOUNT:?set GENESIS_PLAY_ACCOUNT (the account to log in) in ~/.genesis-prime/env.sh}"
     : "${GENESIS_PLAY_PASSWORD:?set GENESIS_PLAY_PASSWORD (the account password) in ~/.genesis-prime/env.sh}"
+  fi
+  lock_for_client_start || exit 1
+  if [ -n "$lock_token" ]; then
+    client_before=$(cat "$state" 2> /dev/null || true)
+    lock_set client_before "$client_before" client_touched 1
   fi
 fi
 
@@ -151,8 +173,8 @@ else {
   'closed'
 }")
     case "$out" in
-      closed) rm -f "$state"; echo "client $pid is closed" ;;
-      gone) rm -f "$state"; echo "client $pid was not running; nothing was changed" ;;
+      closed) rm -f "$state"; lock_release_client; echo "client $pid is closed" ;;
+      gone) rm -f "$state"; lock_release_client; echo "client $pid was not running; nothing was changed" ;;
       *) echo "client: the PC answered $out; WildStar64 $pid was not confirmed closed" >&2; exit 1 ;;
     esac ;;
 esac

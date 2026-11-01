@@ -434,10 +434,8 @@ fn load_planted_localized_text(
   schema: tbl_file.Schema,
   rows: List(List(planted_table.Cell)),
 ) -> Result(store.Tables, store.LoadError) {
-  load_file(
-    "LocalizedText",
-    planted_table.bytes(planted_table.table(schema, rows)),
-  )
+  let #(name, bytes) = planted_table.file(schema, rows)
+  load_file(name, bytes)
 }
 
 fn localized_text_row_for(schema: tbl_file.Schema) -> List(planted_table.Cell) {

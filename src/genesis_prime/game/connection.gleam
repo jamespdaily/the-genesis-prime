@@ -51,10 +51,12 @@
 ////   (genesis_prime/sessions). It follows the hand-off's answer, since the
 ////   account is known only then, and comes before the list, so a client that
 ////   reaches character select holds the slot. The rule opens its one watch
-////   on Sessions (watch 1) with each claim. Sessions answers `Claimed` to every claim, sending the previous
-////   holder `TakenOver` first.
+////   on Sessions (watch 1) with each claim. Sessions answers `Claimed` to the
+////   newest login's claim, sending the previous holder `TakenOver` first, and
+////   answers `TakenOver` to a claim older than the holder's.
 //// - **Taken over.** `Woken(TakenOver)`, when the connection holds the slot or
-////   is claiming it again, writes 0x036A reason 19 (AccountDisconnected) under
+////   is claiming it again, or Sessions' answer `TakenOver` to a claim, writes
+////   0x036A reason 19 (AccountDisconnected) under
 ////   the cipher the connection holds, logs the takeover at info and ends the
 ////   connection. The client drops to its error screen and shows "This account
 ////   has been disconnected" (0x1400168a0, which only picks the text by the
@@ -68,7 +70,9 @@
 ////   connection waits `claim_wait_ms` on a timer, since a restarted Sessions
 ////   is not yet there, then claims again (`TimerFired`), with its character
 ////   select state kept and the frames it holds waiting for the answer; the
-////   client sees nothing. A claim that finds Sessions not running (the
+////   client sees nothing. When a newer login of the account claimed first,
+////   Sessions answers the claim `TakenOver` and the connection ends as a
+////   takeover does. A claim that finds Sessions not running (the
 ////   outcome `NotRunning`) drops its watch and waits again, up to
 ////   `claim_retries` times, before the client is told the server failed. A
 ////   claim Sessions does not answer, or that ends before its answer, is that
@@ -995,10 +999,11 @@ fn claim(
 }
 
 /// Sessions' answer to the claim: `Claimed` puts the client where it was, in
-/// character select or in the world, and the frames held are taken. Sessions
-/// not running is waited out up to `claim_retries` times, with the watch
-/// dropped; any other failure of the ask tells the client the server failed,
-/// as the store's do.
+/// character select or in the world, and the frames held are taken. `TakenOver`
+/// means a newer login of the account holds the slot: the connection ends as a
+/// takeover does. Sessions not running is waited out up to `claim_retries`
+/// times, with the watch dropped; any other failure of the ask tells the client
+/// the server failed, as the store's do.
 fn claim_answered(
   session session: Session,
   holder holder: Holder,
@@ -1015,8 +1020,8 @@ fn claim_answered(
         }),
         [],
       )
-    step.Answer(FromSessions(sessions.TakenOver))
-    | step.Answer(FromStore(..))
+    step.Answer(FromSessions(sessions.TakenOver)) -> taken_over(session)
+    step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromMap(..)) ->
       told(
@@ -1047,6 +1052,17 @@ fn claim_answered(
   }
 }
 
+/// A newer login of the account holds the session: the client is told its
+/// account was disconnected (0x036A reason 19) and the connection ends.
+fn taken_over(session: Session) -> client_connection.Handled(Session) {
+  told(
+    session:,
+    reason: AccountDisconnected,
+    level: LogInfo,
+    text: "a newer login of the account holds the session",
+  )
+}
+
 /// What Sessions sent the connection: `TakenOver` tells the client its account
 /// was disconnected (0x036A reason 19) and ends the connection. `Claimed` is
 /// an answer, never sent, and is a bug, as is a takeover before the connection
@@ -1060,13 +1076,7 @@ fn sessions_sent(
     | sessions.TakenOver, ClaimingSession(..)
     | sessions.TakenOver, EnteringWorld(..)
     | sessions.TakenOver, InWorld(..)
-    ->
-      told(
-        session:,
-        reason: AccountDisconnected,
-        level: LogInfo,
-        text: "a newer login of the account took the session over",
-      )
+    -> taken_over(session)
     sessions.TakenOver, AwaitingHelloReply
     | sessions.TakenOver, TakingSessionKey
     -> end_for(session, "Sessions sent a takeover before the claim")
