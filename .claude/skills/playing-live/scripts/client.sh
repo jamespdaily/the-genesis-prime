@@ -25,6 +25,8 @@
 # hidden scheduled task (GenesisClient, GenesisInput), by pc.sh; the task and the files it copied
 # are always deleted. start refuses, in the script and before it launches anything, when any
 # WildStar64 process runs, and saves the client's pid and start time in client.pid beside env.sh.
+# start also refuses, before it touches the PC, while a run holds the live lock (live_lock.sh) and the
+# caller is not that run: session.sh passes the lock's token to the client.sh it runs.
 # type, key, click and stop act only on the process with that pid, that name and that start time, so
 # a reused pid never reaches another client; with no client recorded, type, key and click refuse.
 # click runs genesis-click.ps1 (task GenesisClick) and is the one command that moves focus: the
@@ -77,7 +79,9 @@ esac
 
 tool=client
 . "$(dirname "$0")/pc.sh"
+. "$(dirname "$0")/live_lock.sh"
 if [ "$command" = start ]; then
+  lock_allows_client_start || exit 1
   : "${GENESIS_PLAY_ADDRESS:?set GENESIS_PLAY_ADDRESS (the server host the client is pointed at, an address on the PC network) in ~/.genesis-prime/env.sh}"
   : "${GENESIS_PLAY_CLIENT_DIR:?set GENESIS_PLAY_CLIENT_DIR (the client install folder, for example C:\\WildStar-HD) in ~/.genesis-prime/env.sh}"
   if [ $# -eq 1 ]; then
