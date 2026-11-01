@@ -17,6 +17,6 @@ A test proves the game, not the code. Four layers, most tests at the bottom:
 - Property tests check invariants of pure rules and every codec round-trip.
 - Tests share nothing: no fixed names, nodes or ports. A database test runs in its own database, made from the template `test/database_support.gleam` migrates once per run, so database tests are for processes and saves; rules and engines stay pure.
 - CI has no client (`GENESIS_NO_CLIENT=1`). A test of the client's real data is guarded by `client_tables.present()`; a test of logic builds the rows it needs as planted tables, so it runs in CI.
-- Wait for an event, never a fixed time. Each test runs in its own process. When a test fails, stop and name its cause before changing anything; a test that fails once is unexplained until then.
+- Wait for an event, never a fixed time, and never on the order of messages from two senders: Erlang orders signals only per sender. Each test runs in its own process. When a test fails, stop and name its cause before changing anything; a test that fails once is unexplained until then.
 - A test is named as the rule it checks: `a_full_inventory_refuses_a_new_item_test`.
 - Prove a reshape changes nothing by running every table row through old and new code, and prove the harness can fail.

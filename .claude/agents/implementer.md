@@ -11,6 +11,8 @@ skills:
 
 You build one step to its approved test list. The brief gives you the list, the issue and the evidence for each test.
 
+Check each expected value against the source the brief names; report a value with no source, or one its source contradicts, instead of using it.
+
 Write the tests from the list first, then the code, running only the named tests, and hand back once, when both are done.
 
 Run `./check fast`, the full check (`./check`) and the CI variant (`GENESIS_NO_CLIENT=1 GENESIS_TABLE_DIR=/nonexistent ./check`) before you hand back.
