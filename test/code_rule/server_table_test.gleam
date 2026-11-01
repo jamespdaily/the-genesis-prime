@@ -2,11 +2,12 @@
 //// loads only the tables its rules read, so a module outside the table folder
 //// that reads a table the server's list lacks is a breach (a new engine adds
 //// its table to the list), and so is a listed table nothing reads. A table
-//// module is a module the generated registry imports, outside the loader's
-//// folder, so the typed ids and the loader are not tables. The registry, the
-//// folder's own modules and the list itself do not count as readers. Every
-//// breach is planted in made-up files; the last test runs the rule over the
-//// repository.
+//// is listed when the list calls its module's `entry()`, and read when a
+//// module imports it. A table module is a module the generated registry
+//// imports, outside the loader's folder, so the typed ids and the loader are
+//// not tables. The registry, the folder's own modules and the list itself do
+//// not count as readers. Every breach is planted in made-up files; the last
+//// test runs the rule over the repository.
 
 import code_rule/planted
 import code_rule/repository
@@ -26,11 +27,25 @@ fn registry() -> SourceFile {
   ])
 }
 
+/// A list that imports each table and calls its `entry()`.
 fn listing(tables: List(String)) -> SourceFile {
+  listing_of(imports: tables, entries: tables)
+}
+
+/// A list that imports some tables and calls the `entry()` of some.
+fn listing_of(
+  imports imports: List(String),
+  entries entries: List(String),
+) -> SourceFile {
   planted.file(path: server_table.list_path, lines: [
     "//// A planted list.",
     "import genesis_prime/table/loader/store",
-    ..list.map(tables, fn(table) { "import genesis_prime/table/" <> table })
+    ..list.flatten([
+      list.map(imports, fn(table) { "import genesis_prime/table/" <> table }),
+      ["pub fn entries() {", "  ["],
+      list.map(entries, fn(table) { "    " <> table <> ".entry()," }),
+      ["  ]", "}"],
+    ])
   ])
 }
 
@@ -75,6 +90,45 @@ pub fn a_listed_table_that_no_module_reads_is_a_breach_test() -> Nil {
   assert list.map(breaches, fn(breach) { #(breach.path, breach.line) })
     == [#(server_table.list_path, 1)]
     as "World is listed and nothing outside the table folder reads it"
+}
+
+pub fn a_table_the_list_imports_without_calling_its_entry_is_not_listed_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let breaches =
+    server_table.breaches([
+      registry(),
+      listing_of(imports: ["creature2", "spell4"], entries: ["creature2"]),
+      reader("src/genesis_prime/game/creature.gleam", [
+        "genesis_prime/table/creature2",
+      ]),
+      reader("src/genesis_prime/game/spell.gleam", [
+        "genesis_prime/table/spell4",
+      ]),
+    ])
+  assert list.map(breaches, fn(breach) { #(breach.path, breach.line) })
+    == [#("src/genesis_prime/game/spell.gleam", 2)]
+    as "the list imports Spell4 and never calls its entry(), so the server does not load it and the module that reads it breaches"
+}
+
+pub fn a_listed_entry_called_through_an_alias_is_listed_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let aliased =
+    planted.file(path: server_table.list_path, lines: [
+      "//// A planted list.",
+      "import genesis_prime/table/creature2 as creature",
+      "pub fn entries() { [creature.entry()] }",
+    ])
+  assert server_table.breaches([
+      registry(),
+      aliased,
+      reader("src/genesis_prime/game/creature.gleam", [
+        "genesis_prime/table/creature2",
+      ]),
+    ])
+    == []
+    as "an alias names the module the call goes to"
 }
 
 pub fn a_list_that_is_the_tables_read_has_no_breach_test() -> Nil {

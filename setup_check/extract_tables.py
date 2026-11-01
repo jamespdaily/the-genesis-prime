@@ -120,9 +120,27 @@ def _block_table(header: bytes, read: Callable[[int, int], bytes], name: str) ->
     return [struct.unpack_from("<QQ", table, 16 * i) for i in range(count)]
 
 
-def read_index(index: bytes) -> list[IndexedFile]:
-    """Every file in the index's directory tree."""
+@dataclass(frozen=True)
+class IndexHeader:
+    """What the header of an archive index gives: the build, the block that
+    holds the root directory, and a reader of a block by its number."""
+
+    build: int
+    directory_block: int
+    block: Callable[[int], bytes]
+
+
+def read_header(index: bytes) -> IndexHeader:
+    """The header of an archive index, read as the fact file's
+    "archive_index.header" describes: the PACK header of 0x230 bytes (signature
+    0x5041434B, version 1, block table offset at 0x218, block count at 0x220,
+    root block index at 0x228), and the root block, which holds the AIDX header
+    (signature 0x41494458, version 1, build at offset 8, root directory block at
+    offset 12). Block 0 is never readable, as the client's reader refuses it
+    (0x1401b8600). Raises Corrupt for anything else."""
     name = "ClientData.index"
+    if len(index) < 0x230:
+        raise Corrupt(name, "shorter than the 0x230-byte PACK header")
     blocks = _block_table(index, lambda offset, size: index[offset : offset + size], name)
 
     def block(number: int) -> bytes:
@@ -135,9 +153,30 @@ def read_index(index: bytes) -> list[IndexedFile]:
         return data
 
     (root,) = _unpack("<I", index, 0x228, name)
-    signature, version, _build, directory_block = _unpack("<IIII", block(root), 0, name)
+    root_block = block(root)
+    if len(root_block) < 16:
+        raise Corrupt(name, "the root block is shorter than the 16-byte AIDX header")
+    signature, version, build, directory_block = _unpack("<IIII", root_block, 0, name)
     if signature != AIDX_SIGNATURE or version != 1:
         raise Corrupt(name, "the root block is not an AIDX header")
+    return IndexHeader(build, directory_block, block)
+
+
+def build_of_index(index: bytes) -> tuple[int | None, str]:
+    """The build an archive index carries, or (None, why it is not an archive
+    index), for a caller that reports instead of raising."""
+    try:
+        return read_header(index).build, ""
+    except Corrupt as corrupt:
+        return None, corrupt.reason
+
+
+def read_index(index: bytes) -> list[IndexedFile]:
+    """Every file in the index's directory tree."""
+    name = "ClientData.index"
+    header = read_header(index)
+    block = header.block
+    directory_block = header.directory_block
     files: list[IndexedFile] = []
     pending = [(directory_block, "")]
     while pending:
@@ -160,36 +199,10 @@ def read_index(index: bytes) -> list[IndexedFile]:
     return files
 
 
-def build_of_index(data: bytes) -> tuple[int | None, str]:
-    """The build in the AIDX header of an archive index, or (None, why not),
-    read as the fact file's "archive_index.header" describes: PACK header
-    0x230 bytes (signature 0x5041434B, version 1, block table offset at 0x218,
-    block count at 0x220, root block index at 0x228), the root block holding
-    the AIDX header (signature 0x41494458, version 1, build at offset 8)."""
-    u32 = lambda at: int.from_bytes(data[at : at + 4], "little")  # noqa: E731
-    u64 = lambda at: int.from_bytes(data[at : at + 8], "little")  # noqa: E731
-    if len(data) < 0x230:
-        return None, "shorter than the 0x230-byte PACK header"
-    if u32(0) != PACK_SIGNATURE or u32(4) != 1:
-        return None, "no PACK signature and version 1"
-    count, root = u32(0x220), u32(0x228)
-    if root >= count:
-        return None, "root block %d is not below the block count %d" % (root, count)
-    entry = u64(0x218) + 16 * root
-    offset, size = u64(entry), u64(entry + 8)
-    if size < 16 or offset + 16 > len(data) or entry + 16 > len(data):
-        return None, "the root block lies outside the file"
-    if u32(offset) != AIDX_SIGNATURE or u32(offset + 4) != 1:
-        return None, "no AIDX signature and version 1"
-    return u32(offset + 8), ""
-
-
 def require_target_build(index: bytes) -> None:
     """Raises Corrupt naming the build the index carries unless it is
     TARGET_BUILD."""
-    build, why = build_of_index(index)
-    if build is None:
-        raise Corrupt("ClientData.index", "is not an archive index: %s" % why)
+    build = read_header(index).build
     if build != TARGET_BUILD:
         raise Corrupt("ClientData.index", "is build %d, and the server is written for build %d" % (build, TARGET_BUILD))
 
@@ -275,11 +288,8 @@ def stage_tables(patch_folder: Path, staging: Path) -> list[IndexedFile]:
     """Writes every DB/*.tbl of patch_folder's ClientData into the empty folder
     staging, each checked against the index's SHA-1 before it is written, and
     returns the tables the index lists. Raises Corrupt naming the file whose
-    block does not match, or the index when it is not of TARGET_BUILD. Touches
-    nothing but staging."""
-    index = (patch_folder / "ClientData.index").read_bytes()
-    require_target_build(index)
-    tables = tables_of(read_index(index))
+    block does not match. Touches nothing but staging."""
+    tables = tables_of(read_index((patch_folder / "ClientData.index").read_bytes()))
     with open(patch_folder / "ClientData.archive", "rb") as archive:
         blocks, entries = _archive_entries(archive, "ClientData.archive")
         for file in tables:
@@ -368,9 +378,12 @@ def extract(patch_folder: Path, destination: Path, expected_count: int | None = 
     Raises Corrupt naming the file whose block does not match, or the index
     when it is of another build than TARGET_BUILD or lists a number of tables
     other than expected_count; the
-    destination is then left as it was. The whole set replaces destination at
-    once: a crash-cut swap is recovered, the set is built and verified in a
-    staging folder beside destination, then swapped in whole."""
+    destination is then left as it was. An index of another build is refused
+    before anything beside destination is touched, so a leftover staging or old
+    folder stays for the next run that is accepted. The whole set replaces
+    destination at once: a crash-cut swap is recovered, the set is built and
+    verified in a staging folder beside destination, then swapped in whole."""
+    require_target_build((patch_folder / "ClientData.index").read_bytes())
     destination.parent.mkdir(parents=True, exist_ok=True)
     recover(destination)
     staging = staging_of(destination)

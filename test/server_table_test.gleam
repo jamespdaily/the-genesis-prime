@@ -47,13 +47,7 @@ pub fn the_servers_tables_are_the_eight_its_rules_read_test() -> Nil {
 
 /// Runs a function of this module in a fresh node, which must return.
 fn in_a_fresh_node(function: String) -> Nil {
-  assert fresh_node.run(
-      module: "server_table_test",
-      function:,
-      timeout_ms: 30_000,
-    )
-    == Ok(Nil)
-    as { "the function " <> function <> " did not return in a fresh node" }
+  fresh_node.must_return(module: "server_table_test", function:)
 }
 
 /// Loads a folder holding only the planted files of the server's tables, with

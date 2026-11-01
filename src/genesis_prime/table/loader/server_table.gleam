@@ -16,6 +16,7 @@ import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/world_location2
 import genesis_prime/table/xp_per_level
+import gleam/erlang/reference.{type Reference}
 
 /// The entry of each table the server loads, in file-name order.
 /// - CharacterCreation: the row a create request names
@@ -46,6 +47,22 @@ pub fn entries() -> List(store.Entry) {
 /// recording.
 pub fn load(from folder: String) -> Result(store.Tables, store.LoadError) {
   store.load_for_server(
+    from: folder,
+    entries: entries(),
+    requirements: requirement.all(),
+    derivations: derivation.all(),
+  )
+}
+
+/// `load` under a key made for the load, for a test that loads the server's
+/// tables from planted files without taking the server's key from the others
+/// that hold it.
+pub fn load_under(
+  under key: Reference,
+  from folder: String,
+) -> Result(store.Tables, store.LoadError) {
+  store.load(
+    under: key,
     from: folder,
     entries: entries(),
     requirements: requirement.all(),

@@ -27,8 +27,6 @@ import genesis_prime/table/character_customization_label
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
-import genesis_prime/table/loader/derivation
-import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/world_location2
@@ -69,25 +67,14 @@ pub fn files() -> List(#(String, BitArray)) {
 /// sex 0, that names this CustomizationParameter id.
 pub fn map_file_naming(parameter_id parameter_id: Int) -> #(String, BitArray) {
   planted_table.file(customization_parameter_map.schema, [
-    planted_table.row(customization_parameter_map.schema, [
-      #("ID", Integer(1)),
-      #("raceId", Integer(1)),
-      #("genderEnum", Integer(0)),
-      #("customizationParameterId", Integer(parameter_id)),
-    ]),
+    map(id: 1, sex: 0, parameter_id:),
   ])
 }
 
 fn load() -> store.Tables {
   use folder <- planted_table.in_folder(files())
   let assert Ok(tables) =
-    store.load(
-      under: reference.new(),
-      from: folder,
-      entries: server_table.entries(),
-      requirements: requirement.all(),
-      derivations: derivation.all(),
-    )
+    server_table.load_under(under: reference.new(), from: folder)
     as "the planted character tables load as the server's tables do"
   tables
 }
@@ -290,18 +277,25 @@ fn parameter_rows() -> List(List(Cell)) {
 
 /// 46 maps for race 1, sex 1 and 48 for race 1, sex 0, each of parameter 1.
 fn map_rows() -> List(List(Cell)) {
-  let map = fn(id, sex) {
-    planted_table.row(customization_parameter_map.schema, [
-      #("ID", Integer(id)),
-      #("raceId", Integer(1)),
-      #("genderEnum", Integer(sex)),
-      #("customizationParameterId", Integer(1)),
-    ])
-  }
   list.append(
-    list.map(character_support.numbers(46), map(_, 1)),
-    list.map(character_support.numbers(48), fn(index) { map(index + 46, 0) }),
+    list.map(character_support.numbers(46), fn(id) {
+      map(id:, sex: 1, parameter_id: 1)
+    }),
+    list.map(character_support.numbers(48), fn(index) {
+      map(id: index + 46, sex: 0, parameter_id: 1)
+    }),
   )
+}
+
+/// A CustomizationParameterMap row of race 1 and this sex that names this
+/// CustomizationParameter id.
+fn map(id id: Int, sex sex: Int, parameter_id parameter_id: Int) -> List(Cell) {
+  planted_table.row(customization_parameter_map.schema, [
+    #("ID", Integer(id)),
+    #("raceId", Integer(1)),
+    #("genderEnum", Integer(sex)),
+    #("customizationParameterId", Integer(parameter_id)),
+  ])
 }
 
 /// A WorldLocation2 row with the columns the server reads.

@@ -141,7 +141,7 @@ pub fn derivation(
   build build: fn(Tables) -> value,
 ) -> Derivation {
   Derivation(name:, put: fn(tables) {
-    put_derived(#(tables.key, name), build(tables))
+    put_term(#(tables.key, name), build(tables))
   })
 }
 
@@ -149,7 +149,7 @@ pub fn derivation(
 /// value is the caller's to name, as for a table's rows; a name no derivation
 /// of the load had stops the caller.
 pub fn derived(tables tables: Tables, name name: String) -> value {
-  get_derived(#(tables.key, name))
+  get_term(#(tables.key, name))
 }
 
 /// The digest of the files the tables were read from, as upper-case hex.
@@ -215,35 +215,54 @@ fn load_under(
     )
   {
     Error(#(error, written)) -> {
-      unload(Tables(key:, tables: written, digest: ""))
+      unload(with_derived_names(
+        Tables(key:, tables: written, digest: ""),
+        derivations,
+      ))
       Error(error)
     }
-    Ok(#(written, digest)) -> {
-      let tables = Tables(key:, tables: written, digest:)
-      case first_missing_row(tables, requirements) {
-        Ok(Nil) -> Ok(build_derived(tables, derivations))
-        Error(error) -> {
-          unload(tables)
-          Error(error)
-        }
-      }
+    Ok(#(written, digest)) ->
+      check_and_derive(
+        tables: with_derived_names(
+          Tables(key:, tables: written, digest:),
+          derivations,
+        ),
+        requirements:,
+        derivations:,
+      )
+  }
+}
+
+/// Checks the requirements of the written tables and then builds each
+/// derivation, or erases everything the load wrote.
+fn check_and_derive(
+  tables tables: Tables,
+  requirements requirements: List(Requirement),
+  derivations derivations: List(Derivation),
+) -> Result(Tables, LoadError) {
+  case first_missing_row(tables, requirements) {
+    Ok(Nil) -> {
+      list.each(derivations, fn(derivation) { derivation.put(tables) })
+      Ok(tables)
+    }
+    Error(error) -> {
+      unload(tables)
+      Error(error)
     }
   }
 }
 
-/// Builds each derivation from the loaded tables and writes its term, giving
-/// the tables with the derivations' names among those to erase.
-fn build_derived(tables: Tables, derivations: List(Derivation)) -> Tables {
-  let tables =
-    Tables(
-      ..tables,
-      tables: list.append(
-        list.map(derivations, fn(derivation) { derivation.name }),
-        tables.tables,
-      ),
-    )
-  list.each(derivations, fn(derivation) { derivation.put(tables) })
-  tables
+/// The tables with the derivations' names among the terms to erase, so a load
+/// that fails also erases a derived value an earlier load under the same key
+/// left, whose tables it has just replaced or erased.
+fn with_derived_names(tables: Tables, derivations: List(Derivation)) -> Tables {
+  Tables(
+    ..tables,
+    tables: list.append(
+      list.map(derivations, fn(derivation) { derivation.name }),
+      tables.tables,
+    ),
+  )
 }
 
 /// Reads and writes each entry in turn, giving the tables written and the
@@ -331,21 +350,13 @@ pub fn rows(tables tables: Tables, table table: String) -> List(row) {
   tbl_file.rows(get_term(#(tables.key, table)))
 }
 
-/// Writes a table's term.
+/// Writes a term: a table, or a derived value.
 @external(erlang, "store_ffi", "put")
-fn put_term(key: #(Key, String), table: tbl_file.Table(row)) -> Nil
+fn put_term(key: #(Key, String), value: value) -> Nil
 
-/// A table's term. The type of its rows is the caller's to name.
+/// A term: a table or a derived value. Its type is the caller's to name.
 @external(erlang, "persistent_term", "get")
-fn get_term(key: #(Key, String)) -> tbl_file.Table(row)
-
-/// Writes a derived value's term.
-@external(erlang, "store_ffi", "put")
-fn put_derived(key: #(Key, String), value: value) -> Nil
-
-/// A derived value's term. The type of the value is the caller's to name.
-@external(erlang, "persistent_term", "get")
-fn get_derived(key: #(Key, String)) -> value
+fn get_term(key: #(Key, String)) -> value
 
 /// Erases a table's term.
 @external(erlang, "store_ffi", "erase")

@@ -1,11 +1,15 @@
 //// The server's table list: the tables the server loads are the tables its
-//// rules read. The list is the generated table modules that
-//// `genesis_prime/table/loader/server_table` imports; a table is read by a
-//// module of `src/` outside `genesis_prime/table/` that imports its module.
+//// rules read. The list is the generated table modules whose `entry()`
+//// `genesis_prime/table/loader/server_table` calls; a table is read by a
+//// module of `src/` outside `genesis_prime/table/` that imports its module,
+//// and a type-only import counts as a read, so it only loads an extra table.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
+import glance
 import gleam/list
+import gleam/option
+import gleam/result
 import gleam/set
 import gleam/string
 
@@ -27,7 +31,7 @@ pub fn breaches(files files: List(SourceFile)) -> List(Breach) {
   case find(files, registry_path), find(files, list_path) {
     Ok(registry), Ok(listing) -> {
       let tables = set.from_list(table_modules(registry))
-      let listed = set.from_list(table_modules(listing))
+      let listed = set.from_list(called_entries(listing))
       let reads = reads(files:, tables:)
       let unlisted =
         list.filter_map(reads, fn(read) {
@@ -76,9 +80,36 @@ fn not_found(path: String) -> Breach {
 /// The table modules a file imports, as written in its imports: everything
 /// under `genesis_prime/table/` outside the loader's folder.
 fn table_modules(file: SourceFile) -> List(String) {
-  list.filter(syntax.imported_modules(file), fn(module) {
-    string.starts_with(module, table_folder)
-    && !string.starts_with(module, table_folder <> "loader/")
+  list.filter(syntax.imported_modules(file), is_table_module)
+}
+
+fn is_table_module(module: String) -> Bool {
+  string.starts_with(module, table_folder)
+  && !string.starts_with(module, table_folder <> "loader/")
+}
+
+/// The table modules whose `entry()` the file calls, each through the name its
+/// import gives the module (the last segment of its path, or its alias).
+fn called_entries(file: SourceFile) -> List(String) {
+  let parsed = syntax.parse(file)
+  let called =
+    list.filter_map(syntax.references(parsed), fn(reference) {
+      case reference {
+        syntax.Qualified(qualifier:, name: "entry", ..) -> Ok(qualifier)
+        syntax.Qualified(..) | syntax.Unqualified(..) -> Error(Nil)
+      }
+    })
+  list.filter_map(parsed.imports, fn(definition) {
+    let import_ = definition.definition
+    let name = case import_.alias {
+      option.Some(glance.Named(alias)) -> alias
+      option.Some(glance.Discarded(_)) | option.None ->
+        import_.module |> string.split("/") |> list.last |> result.unwrap("")
+    }
+    case is_table_module(import_.module) && list.contains(called, name) {
+      True -> Ok(import_.module)
+      False -> Error(Nil)
+    }
   })
 }
 

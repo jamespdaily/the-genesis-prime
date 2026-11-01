@@ -41,6 +41,7 @@ import genesis_prime/table/id
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/localized_text
+import genesis_prime/table/world
 import gleam/bit_array
 import gleam/crypto
 import gleam/erlang/process
@@ -242,13 +243,10 @@ pub fn load_planted_tables_for_the_server_twice() -> Nil {
 
 pub fn the_servers_tables_are_the_same_value_on_every_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert fresh_node.run(
-      module: "table_load_test",
-      function: "load_planted_tables_for_the_server_twice",
-      timeout_ms: 30_000,
-    )
-    == Ok(Nil)
-    as "two loads for the server hold equal tables in a node where nothing else holds its key"
+  fresh_node.must_return(
+    module: "table_load_test",
+    function: "load_planted_tables_for_the_server_twice",
+  )
 }
 
 pub fn a_failed_load_leaves_no_persistent_term_behind_test() -> Nil {
@@ -676,4 +674,37 @@ pub fn a_derived_value_is_not_built_when_a_required_row_is_missing_test() -> Nil
     as "a derivation reads tables the requirements have vouched for, so it is not built when one fails"
   assert planted_table.persistent_terms_under(key) == 0
     as "the failed load leaves no term, derived or not"
+}
+
+pub fn a_failed_load_under_a_key_erases_the_derived_value_an_earlier_load_left_test() -> Nil {
+  use <- owned_test.run(5000)
+  use folder <- planted_table.in_folder([
+    #("Creature2", creature2_file(14_610, [])),
+    #("LocalizedText", localized_text_file([localized_text_row(1, 7)])),
+  ])
+  let key = reference.new()
+  let built = process.new_subject()
+  let load = fn(entries, requirements) {
+    store.load(under: key, from: folder, entries:, requirements:, derivations: [
+      ids_derivation(built),
+    ])
+  }
+  let assert Ok(_) = load([localized_text.entry()], [])
+    as "the first load under the key holds"
+  assert planted_table.persistent_terms_under(key) == 2
+    as "the table's term and the derived value's"
+  assert result.is_error(
+    load([localized_text.entry(), creature2.entry()], [
+      creature2_names_a_localized_text(),
+    ]),
+  )
+    as "a load under the same key that fails on a missing row"
+  assert planted_table.persistent_terms_under(key) == 0
+    as "the failed load erased the tables it wrote and the derived value, which its tables' erasure would otherwise leave with no table"
+  let assert Ok(_) = load([localized_text.entry()], [])
+    as "a load under the key holds again"
+  assert result.is_error(load([localized_text.entry(), world.entry()], []))
+    as "a load under the same key that fails on a file that is not there"
+  assert planted_table.persistent_terms_under(key) == 0
+    as "the failed load erased the derived value too"
 }

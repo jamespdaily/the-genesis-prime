@@ -7,6 +7,13 @@ pub type NotReturned {
   NotReturned(raised: String)
 }
 
+/// Runs `module.function()` in a fresh node and stops the test unless it
+/// returns there, within 50 seconds.
+pub fn must_return(module module: String, function function: String) -> Nil {
+  assert run(module:, function:, timeout_ms: 50_000) == Ok(Nil)
+    as { function <> " returns in a fresh node, with nothing loaded before it" }
+}
+
 /// Runs `module.function()` in a fresh node: `Ok(Nil)` when it returns.
 @external(erlang, "fresh_node_ffi", "run")
 pub fn run(
