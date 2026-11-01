@@ -18,6 +18,7 @@
 //// ```
 //// 'c' id   the connection was accepted as connection id
 //// 'w' n    the message n was delivered    'e' n    watch n ended
+////          (a message -n also watches n on Sessions)
 //// 't' n    timer n fired                  'p' n    the answer to 'P' n
 //// ```
 ////
@@ -79,7 +80,7 @@ pub fn step(
     )
     Socket(Read(bytes:)) ->
       run(State(pending: <<state.pending:bits, bytes:bits>>), [])
-    Woken(message:) -> #(state, Effects([record(woken, message)]))
+    Woken(message:) -> #(state, Effects(woken_effects(message)))
     WatchEnded(watch: WatchId(n)) -> #(state, Effects([record(watch_ended, n)]))
     TimerFired(timer: TimerId(n)) -> #(state, Effects([record(timer_fired, n)]))
     Socket(PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
@@ -91,6 +92,16 @@ pub fn step(
       state,
       Effects([warn("an input a connection does not take"), Stop]),
     )
+  }
+}
+
+/// What a delivered message does: the record of it, and, for a negative
+/// message `-n`, the watch of `n` on Sessions after the record, so a test can
+/// start a watch from a message that waits in the mailbox.
+fn woken_effects(message: Int) -> List(Effect(Nil)) {
+  case message < 0 {
+    True -> [record(woken, message), Watch(WatchId(-message), Sessions)]
+    False -> [record(woken, message)]
   }
 }
 

@@ -1,14 +1,17 @@
 //// The watches a shell keeps for its rule (`genesis_prime/step/watch`).
 //// Expected values come from the module's doc comment, as approved on the one
-//// login per account card: a watched process's end gives the id of its watch
-//// once, an address no process holds ends the watch at once, a closed watch
-//// gives nothing, and an id already open ends the process with an error log.
-//// The test process is the shell: its monitors' DOWNs arrive in its mailbox.
+//// login per account card and on the watch order card: a watched process's end
+//// gives the id of its watch once, an address no process holds is held to end
+//// as the shell's next input, in the order the watches were opened, a closed
+//// watch gives nothing, and an id already open, monitored or held, ends the
+//// process with an error log. The test process is the shell: its monitors'
+//// DOWNs arrive in its mailbox.
 
 import ask_support
 import genesis_prime/step.{WatchId}
 import genesis_prime/step/watch
 import gleam/erlang/process.{type Monitor, type Pid}
+import gleam/list
 import gleam/string
 import log_capture
 import owned_test
@@ -46,7 +49,7 @@ pub fn a_watched_process_that_ends_gives_its_watchs_id_once_test() -> Nil {
     as "the watch is forgotten, so it ends once"
 }
 
-pub fn a_watch_on_no_process_ends_at_once_test() -> Nil {
+pub fn a_watch_on_no_process_is_held_to_end_once_as_the_shells_next_input_test() -> Nil {
   use <- owned_test.run(30_000)
   let watches =
     watch.open(
@@ -55,10 +58,38 @@ pub fn a_watch_on_no_process_ends_at_once_test() -> Nil {
       target: Error(Nil),
       shell: "test shell",
     )
-  let monitor = next_down()
-  let assert Ok(#(WatchId(2), _)) = watch.ended(watches:, monitor:)
+  let assert Ok(#(WatchId(2), watches)) = watch.next_unheld_end(watches)
     as "an address no process holds comes back as the watch's end"
-  Nil
+  assert watch.next_unheld_end(watches) == Error(Nil) as "the end comes once"
+}
+
+pub fn a_watch_on_no_process_that_is_closed_gives_no_end_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let watches =
+    watch.open(
+      watches: watch.new(),
+      watch: WatchId(5),
+      target: Error(Nil),
+      shell: "test shell",
+    )
+  let watches = watch.close(watches:, watch: WatchId(5))
+  assert watch.next_unheld_end(watches) == Error(Nil)
+    as "a watch closed before its end was taken gives none"
+  assert watches == watch.new() as "and the id is free again"
+}
+
+pub fn watches_on_no_process_end_in_the_order_opened_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let watches =
+    [WatchId(7), WatchId(3), WatchId(9)]
+    |> list.fold(watch.new(), fn(watches, id) {
+      watch.open(watches:, watch: id, target: Error(Nil), shell: "test shell")
+    })
+  let assert Ok(#(WatchId(7), watches)) = watch.next_unheld_end(watches)
+    as "the first opened ends first, whatever its number"
+  let assert Ok(#(WatchId(3), watches)) = watch.next_unheld_end(watches)
+  let assert Ok(#(WatchId(9), watches)) = watch.next_unheld_end(watches)
+  assert watch.next_unheld_end(watches) == Error(Nil)
 }
 
 pub fn a_closed_watch_gives_no_end_and_a_monitor_held_under_no_watch_gives_none_test() -> Nil {
@@ -87,6 +118,22 @@ pub fn a_closed_watch_gives_no_end_and_a_monitor_held_under_no_watch_gives_none_
 pub fn a_watch_id_already_open_ends_the_process_with_an_error_log_test() -> Nil {
   use <- owned_test.run(30_000)
   let target = a_process()
+  opening_twice_ends_the_process(first: Ok(target), again: Ok(target))
+  process.kill(target)
+}
+
+pub fn a_watch_id_held_to_end_is_open_and_opening_it_again_ends_the_process_test() -> Nil {
+  use <- owned_test.run(30_000)
+  opening_twice_ends_the_process(first: Error(Nil), again: Error(Nil))
+}
+
+/// Opens watch 4 on `first`, then again on `again`, in a process of its own,
+/// and checks that the process ended with an error log naming the open id and
+/// the shell.
+fn opening_twice_ends_the_process(
+  first first: Result(Pid, Nil),
+  again again: Result(Pid, Nil),
+) -> Nil {
   let ready = process.new_subject()
   let opener =
     process.spawn_unlinked(fn() {
@@ -97,14 +144,14 @@ pub fn a_watch_id_already_open_ends_the_process_with_an_error_log_test() -> Nil 
         watch.open(
           watches: watch.new(),
           watch: WatchId(4),
-          target: Ok(target),
+          target: first,
           shell: "test shell",
         )
       let _again =
         watch.open(
           watches:,
           watch: WatchId(4),
-          target: Ok(target),
+          target: again,
           shell: "test shell",
         )
       Nil
@@ -124,5 +171,4 @@ pub fn a_watch_id_already_open_ends_the_process_with_an_error_log_test() -> Nil 
     && string.contains(text, "test shell")
     as "it names the open id and the shell that does not carry it out"
   log_capture.stop(capture)
-  process.kill(target)
 }

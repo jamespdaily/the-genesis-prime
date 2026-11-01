@@ -6,9 +6,11 @@
 //// - The hand-off's answers in the doc comment of `genesis_prime/hand_off`.
 //// - Send and Watch in the same doc comment: the address is looked up with the
 ////   settings' `reach`, and a watch's end comes back once as `WatchEnded` with
-////   the watch's id (the watches themselves are tested in `watch_test`). The
-////   gate answers `Opened(n)` to a caller waiting for key `n` when watch `n`
-////   ends.
+////   the watch's id (the watches themselves are tested in `watch_test`); a
+////   target no process holds ends as the next input, after the step's effects
+////   and before the mailbox is read, the step's watches in the order opened.
+////   The gate answers `Opened(n)` to a caller waiting for key `n` when watch
+////   `n` ends.
 //// - OTP's supervisor: a permanent child is restarted when it crashes, and
 ////   `supervisor:which_children` answers after the supervisor has handled the
 ////   exit it already received.
@@ -24,8 +26,8 @@ import genesis_prime/rule_recording/file
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{
-  type Address, Asked, CallerId, Connection, ConnectionId, Effects, Input, Reply,
-  Sessions, Started, Stop, Stopping,
+  type Address, type Event, Asked, CallerId, Connection, ConnectionId, Effects,
+  Input, Reply, Sessions, Started, Stop, Stopping, WatchEnded, WatchId,
 }
 import genesis_prime/store.{AccountId}
 import gleam/erlang/process
@@ -353,6 +355,37 @@ pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watch
   Nil
 }
 
+pub fn a_watch_of_a_target_no_process_holds_ends_as_the_next_input_before_a_message_already_queued_test() -> Nil {
+  use <- owned_test.run(30_000)
+  assert inputs_when_queued(
+      first: gate_rule.WatchAddress(1, Sessions),
+      then: gate_rule.Echo(2),
+    )
+    == [
+      Started,
+      Asked(caller: CallerId(1), message: gate_rule.WatchAddress(1, Sessions)),
+      WatchEnded(watch: WatchId(1)),
+      Asked(caller: CallerId(2), message: gate_rule.Echo(2)),
+    ]
+    as "the rule's inputs are X, then the end of X's watch, then Y: the end is the next input after the step, before the mailbox is read"
+}
+
+pub fn two_watches_of_targets_no_process_holds_end_in_the_order_opened_before_the_next_mailbox_input_test() -> Nil {
+  use <- owned_test.run(30_000)
+  assert inputs_when_queued(
+      first: gate_rule.WatchEach([1, 2], Sessions),
+      then: gate_rule.Echo(3),
+    )
+    == [
+      Started,
+      Asked(caller: CallerId(1), message: gate_rule.WatchEach([1, 2], Sessions)),
+      WatchEnded(watch: WatchId(1)),
+      WatchEnded(watch: WatchId(2)),
+      Asked(caller: CallerId(2), message: gate_rule.Echo(3)),
+    ]
+    as "one step's two watches end in the order opened, both before Y"
+}
+
 pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_process_ends_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
@@ -376,6 +409,49 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
 }
 
 // ---- helpers ----
+
+/// The inputs a gate takes when `first` and then `second` are queued behind
+/// its suspended shell and it is resumed. The gate finds no process at any
+/// address, so a watch of one is a watch of an address no process holds. They
+/// are read from the gate's recording, without the stop that ends it.
+fn inputs_when_queued(
+  first first: gate_rule.Message,
+  then second: gate_rule.Message,
+) -> List(Event(gate_rule.Message, Nil)) {
+  use folder <- recording_support.in_folder
+  let gate = process.new_name("gate")
+  let tree =
+    start_tree(ask_support.gate(
+      name: gate,
+      shutdown_ms: 1000,
+      recorder: Some(recording_support.recorder(
+        folder,
+        rule_module: "gate_rule",
+      )),
+    ))
+  let assert Ok(pid) = process.named(gate) as "the gate runs"
+  let replies = process.new_subject()
+  ask_support.while_suspended(pid, fn() {
+    let assert Ok(service.ToService(_)) =
+      service.call(gate, first, fn(_answer) { Nil })
+      as "the gate took the first message"
+    let assert Ok(service.ToService(_)) =
+      service.call(gate, second, fn(answer) { process.send(replies, answer) })
+      as "the gate took the second message"
+    Nil
+  })
+  let assert Ok(_answer) =
+    process.receive(replies, within: ask_support.event_wait_ms)
+    as "the second message was answered"
+  let _reason = ask_support.stop_tree(tree)
+  list.filter_map(recorded(folder), fn(record) {
+    case record {
+      Recorded(input: Input(event: Stopping(..), ..), ..) | End(..) ->
+        Error(Nil)
+      Recorded(input: Input(event:, ..), ..) -> Ok(event)
+    }
+  })
+}
 
 /// The gate as a child whose `locate` finds `target` at `locating` and no
 /// process at any other address.
@@ -436,9 +512,7 @@ fn a_guid() -> guid.Guid {
 }
 
 /// The records of the one recording in the folder, after the header.
-fn recorded(
-  folder: String,
-) -> List(Record(hand_off.Message, Nil, hand_off.Answer, Nil)) {
+fn recorded(folder: String) -> List(Record(message, Nil, answer, Nil)) {
   let assert Ok(#(_, records)) =
     rule_recording.read(recording_support.recording_in(folder))
     as "the recording reads"

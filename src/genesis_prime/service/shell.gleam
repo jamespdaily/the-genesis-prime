@@ -15,6 +15,8 @@
 //// supervisor starts it ─▶ the actor registers its name, traps exits
 ////   the recorder, when on, opens the file and writes the header
 ////   Started                                         ─▶ step ─▶ effects
+////   after each step's effects, before the mailbox is read:
+////     a watch of a target no process holds ─▶ WatchEnded(id) ─▶ step ─▶ effects
 ////   loop:
 ////     Call(message, reply)  ─▶ Asked(CallerId(n), message) ─▶ step ─▶ effects
 ////     a watched process's DOWN ─▶ WatchEnded(id)           ─▶ step ─▶ effects
@@ -52,7 +54,8 @@
 ////   process exits with the reason `shutdown`, never `normal`:
 ////   a supervisor reports a permanent child that exits `normal` while it
 ////   shuts down as a failure, and restarts one that exits `shutdown` at any
-////   other time.
+////   other time. A watch's end held by a step that stops the process is
+////   not taken, since the process has ended.
 //// - **Send.** `Send(to, message)` looks `to` up with the settings' `reach` and
 ////   hands the message to the process found, in the form its shell takes (a
 ////   connection takes it as `Woken`). An address with no process running
@@ -61,14 +64,17 @@
 //// - **Watch.** `Watch(id, target)` finds `target` with the settings' `locate`
 ////   and monitors it, keeping the monitor under `id` in the shell. The target's
 ////   end comes back once as `WatchEnded(id)` and the shell forgets the watch. A
-////   target no process holds when the watch begins comes back as
-////   `WatchEnded(id)` as the next input, after the step's effects are carried
-////   out; one that ends between the lookup and the monitor fires the monitor at
-////   once. A rule's id that is already open ends the process with an error
-////   log: an id is unique among the open watches.
+////   target no process holds when the watch begins is monitored by nothing:
+////   the shell holds the id, and takes `WatchEnded(id)` as its next input
+////   once the step's effects are carried out, before it reads its mailbox,
+////   with the ends of the step's other such watches in the order opened (a
+////   rule's step that those inputs start takes its own the same way); one
+////   that ends between the lookup and the monitor fires the monitor at once. A
+////   rule's id that is already open, monitored or held, ends the process with
+////   an error log: an id is unique among the open watches (genesis_prime/step/watch).
 //// - **Unwatch.** `Unwatch(id)` drops the monitor of `id` and flushes its DOWN
-////   from the mailbox, so no `WatchEnded` follows; an id with no open watch
-////   does nothing.
+////   from the mailbox, or drops an id held for a target no process holds, so
+////   no `WatchEnded` follows; an id with no open watch does nothing.
 //// - **A watch's end and a restart.** A watch lives in the process: a restarted
 ////   service has no watches, and a rule that needs one opens it again from
 ////   what it learns of its processes (Sessions has none to open: the
@@ -273,6 +279,9 @@ fn handle(
 }
 
 /// Folds one input through the rule, records it, then carries out the step.
+/// The end of each watch of a target no process holds that the step opened is
+/// then taken as the next input, in the order opened, before the mailbox is
+/// read.
 fn take(
   running running: Running(settings, state, message, outgoing),
   now now: step.Now,
@@ -291,9 +300,18 @@ fn take(
     Error(error) -> recording_failed(error)
   }
   let running = Running(..running, state:, writer:)
-  case step {
+  let running = case step {
     Effects(effects:) -> carry(running:, effects:, ending: False)
     EffectsThenAsk(..) -> refused("an ask")
+  }
+  case watch.next_unheld_end(running.watches) {
+    Ok(#(watch, watches)) ->
+      take(
+        running: Running(..running, watches:),
+        now: runtime.now(),
+        event: WatchEnded(watch:),
+      )
+    Error(Nil) -> running
   }
 }
 
