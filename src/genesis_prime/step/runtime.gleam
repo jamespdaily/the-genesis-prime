@@ -15,6 +15,11 @@ pub type ExitReason {
   Shutdown
 }
 
+/// Raises the exit that ends this process with `reason`; a process that traps
+/// exits is not ended by an exit signal it sends itself.
+@external(erlang, "erlang", "exit")
+pub fn exit_now(reason: ExitReason) -> a
+
 /// The time as one input carries it: the monotonic clock in milliseconds and
 /// the system time as a FILETIME, both read now.
 pub fn now() -> Now {

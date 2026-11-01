@@ -19,6 +19,7 @@ import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/step
 import genesis_prime/step/runtime
+import genesis_prime/store/worker
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import gleam/erlang/atom.{type Atom}
@@ -64,47 +65,71 @@ pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
   runtime.show_info_lines()
   let assert Ok(tree) = application.start_server(settings:)
     as "the supervision tree did not start"
-  announce(
-    outcome: readiness.await(store: settings.store, settings: ready_ask()),
+  serve(
+    tree:,
     settings:,
     tables:,
+    ready: ready_ask(),
+    probe: fn(reply) { worker.probe(store: settings.store, reply:) },
+    say: io.println,
   )
-  application.await_tree_end(tree)
 }
 
-/// How the readiness ask runs: 30 s in all, so a database that is still
-/// starting when the server does has time to accept connections; each attempt
-/// waits 2 s, the send deadline's length, before its worker is ended, and a
-/// failed one is asked again after 250 ms. These are the server's choice, not
-/// the client's.
+/// Asks the database one read through `probe`, says through `say` what the
+/// server can do, and keeps the node alive until the tree ends. The ready line
+/// is said only when the read returned and the server still serves: its tree
+/// is running and the node is not stopping. A stop can begin between that
+/// check and the line being said. A database that does not answer within the
+/// ask's time is logged as a warning and the server runs on; a tree that ends
+/// is taken as `application.end_of` takes it. `start` calls it with the
+/// server's own ask and `io.println`; the tests call it with their own.
+pub fn serve(
+  tree tree: application.Tree,
+  settings settings: server.Settings,
+  tables tables: Int,
+  ready ready: readiness.Settings,
+  probe probe: readiness.Probe,
+  say say: fn(String) -> Nil,
+) -> Nil {
+  case readiness.await(probe:, tree: tree.monitor, settings: ready) {
+    readiness.Ready -> {
+      case application.serving(tree) {
+        True -> say(ready_line(settings:, tables:))
+        False -> Nil
+      }
+      application.await_tree_end(tree)
+    }
+    readiness.DatabaseUnreachable -> {
+      runtime.log(step.LogWarning, "the database is unreachable", step.no_one)
+      application.await_tree_end(tree)
+    }
+    readiness.TreeEnded(reason:) -> application.end_of(reason)
+  }
+}
+
+/// How the readiness ask runs. These are the server's choice, not the
+/// client's: 30 s in all, so a database that is still starting when the server
+/// does has time to accept connections; each attempt waits 2 s, the length of a
+/// write's send deadline, before its worker is ended; a failed attempt is asked
+/// again after 250 ms, so a pool that opens its connections in a few hundred
+/// milliseconds is found at once.
 fn ready_ask() -> readiness.Settings {
   readiness.Settings(within_ms: 30_000, attempt_ms: 2000, pause_ms: 250)
 }
 
-/// Says what the readiness ask found. `Ready` prints the ready line, the one
-/// the live-play scripts wait for. `DatabaseUnreachable` logs a warning and
-/// prints no ready line; the server keeps running and answers `Unavailable`
-/// until its pool connects.
-fn announce(
-  outcome outcome: readiness.Outcome,
+/// The ready line, the one the live-play scripts wait for.
+fn ready_line(
   settings settings: server.Settings,
   tables tables: Int,
-) -> Nil {
-  case outcome {
-    readiness.Ready ->
-      io.println(
-        "the server loaded "
-        <> int.to_string(tables)
-        <> " game tables and serves the STS login on port "
-        <> int.to_string(settings.login.sts.port)
-        <> ", the auth login on port "
-        <> int.to_string(settings.login.auth.port)
-        <> " and the game server on port "
-        <> int.to_string(settings.game.port),
-      )
-    readiness.DatabaseUnreachable ->
-      runtime.log(step.LogWarning, "the database is unreachable", step.no_one)
-  }
+) -> String {
+  "the server loaded "
+  <> int.to_string(tables)
+  <> " game tables and serves the STS login on port "
+  <> int.to_string(settings.login.sts.port)
+  <> ", the auth login on port "
+  <> int.to_string(settings.login.auth.port)
+  <> " and the game server on port "
+  <> int.to_string(settings.game.port)
 }
 
 /// The tree's settings: the database from the environment, with Postgres's

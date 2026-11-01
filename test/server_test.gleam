@@ -9,6 +9,9 @@
 //// - The login's two listeners, the STS listener and then the auth listener,
 ////   each a permanent child that is a supervisor (Ranch's), as the doc comment
 ////   of `genesis_prime/server` draws them.
+//// - The closer after the game subtree: OTP stops a supervisor's children in the
+////   reverse of the order they started, so the last child stops first, which
+////   the closer needs to close every listener before any connection drains.
 //// - OTP's supervisor: a child that is a supervisor has no shutdown limit, and
 ////   a worker's limit is the milliseconds its spec states.
 //// - The supervision-setting code rule (`test/code_rule/supervision_setting.
@@ -26,7 +29,7 @@ import owned_test
 import supervisor_children.{ChildSettings}
 import supervisor_flags.{Flags}
 
-pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_and_the_two_subtrees_in_that_order_each_with_its_settings_stated_test() -> Nil {
+pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_two_subtrees_and_the_closer_last_in_that_order_each_with_its_settings_stated_test() -> Nil {
   use <- owned_test.run(60_000)
   let started = login_support.start()
   let settings = started.settings
@@ -41,8 +44,8 @@ pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_and_th
   let children = supervisor_children.in_start_order(started.tree)
   assert list.take(children, 4) == [pool, store, hand_off, sessions]
     as "the pool starts first, then the store, the hand-off and Sessions"
-  assert list.length(children) == 7
-    as "the world subtree, the login subtree and the game subtree follow Sessions"
+  assert list.length(children) == 8
+    as "the world subtree, the login subtree, the game subtree and the closer follow Sessions"
   assert supervisor_flags.read(started.tree)
     == Flags(static_supervisor.OneForOne, 3, 10)
     as "one-for-one, 3 restarts in 10 seconds"
@@ -55,9 +58,10 @@ pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_and_th
       ChildSettings(restart: Permanent, shutdown_ms: None),
       ChildSettings(restart: Permanent, shutdown_ms: None),
       ChildSettings(restart: Permanent, shutdown_ms: None),
+      ChildSettings(restart: Permanent, shutdown_ms: Some(5000)),
     ]
-    as "each child is permanent; the pool, the store and the three subtrees are supervisors, the hand-off and Sessions stop within their own times"
-  let assert [_, _, _, _, world, _, game] = children
+    as "each child is permanent; the pool, the store and the three subtrees are supervisors, the hand-off, Sessions and the closer stop within their own times"
+  let assert [_, _, _, _, world, _, game, _closer] = children
   let world_children = supervisor_children.in_start_order(world)
   let assert Ok(maps) = process.named(settings.world.maps)
     as "Maps is registered"

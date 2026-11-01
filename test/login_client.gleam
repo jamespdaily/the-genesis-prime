@@ -45,6 +45,33 @@ pub fn connect(port: Int) -> mug.Socket {
   client
 }
 
+/// Whether a connect to the port is refused, as for a port nothing listens on.
+/// A connect that succeeds is closed again and is not refused; any other
+/// failure is no answer to the question and fails the test.
+pub fn refused(port: Int) -> Bool {
+  case
+    mug.new("127.0.0.1", port:)
+    |> mug.ip_version_preference(mug.Ipv4Only)
+    |> mug.timeout(connect_ms)
+    |> mug.connect
+  {
+    Ok(client) -> {
+      let _closed = mug.shutdown(client)
+      False
+    }
+    Error(mug.ConnectFailedIpv4(mug.Econnrefused)) -> True
+    Error(error) ->
+      panic as {
+        "the connect to the listener ended with "
+        <> mug.describe_error(case error {
+          mug.ConnectFailedIpv4(ipv4:) -> ipv4
+          mug.ConnectFailedIpv6(ipv6:) -> ipv6
+          mug.ConnectFailedBoth(ipv4:, ..) -> ipv4
+        })
+      }
+  }
+}
+
 pub fn send(client client: mug.Socket, bytes bytes: BitArray) -> Nil {
   let assert Ok(Nil) = mug.send(client, bytes)
     as "the server closed the connection before the client finished sending"

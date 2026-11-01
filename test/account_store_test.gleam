@@ -50,7 +50,7 @@ import gleam/string
 import login_support
 import owned_test
 import pog
-import pool_started
+import readiness_support
 import relay
 
 pub fn a_stored_login_name_gives_its_account_id_salt_verifier_and_game_account_id_test() -> Nil {
@@ -1000,8 +1000,7 @@ fn start_store(pool_size pool_size: Int) -> Store {
       pool_size:,
     )
   let store = start_store_on(config)
-  assert pool_started.await(config.pool_name, within_ms: 30_000)
-    as "the pool opened its connections"
+  readiness_support.await(tree: store.tree, store: store.name)
   store
 }
 

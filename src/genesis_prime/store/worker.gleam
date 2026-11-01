@@ -152,8 +152,12 @@ fn run(job: Job, pool: pog.Connection) -> Nil {
 
 /// Runs `select 1`, the probe's one query, through the same `attempt` the
 /// requests use, so the pool being away is `Unreached`.
-fn select_one(_pool: pog.Connection) -> Probed {
-  panic as "built in the next commit"
+fn select_one(pool: pog.Connection) -> Probed {
+  case attempt(fn() { sql.select_one(pool) }) {
+    Ok(_) -> Reached
+    Error(Unreachable) -> Unreached
+    Error(Refused(error:, ..)) -> exit_with(error)
+  }
 }
 
 /// Runs the ask's query on the pool. `Error(Nil)` is the database being away,

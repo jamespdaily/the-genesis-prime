@@ -23,7 +23,7 @@
 ////
 //// ```
 //// host                   VM                  root          tree          main
-////  SIGTERM ───────────▶ init:stop
+////  SIGTERM ───────────▶ init:stop (status: stopping)
 ////                         stops the applications in the reverse of the order
 ////                         they started: genesis_prime, then ranch, pgo, ...
 ////                         exit `shutdown` ───▶ root
@@ -38,6 +38,13 @@
 ////                         stop/1 logs the stop                          main returns
 ////                         halts with status 0
 //// ```
+////
+//// **How `main` tells an orderly end from a fatal one.** A tree that exceeds
+//// its restart intensity also ends with `shutdown`, so the reason says nothing.
+//// The node's own state does: `init:stop` sets the status to `stopping` before
+//// it stops any application, so a tree that ends while the node is stopping
+//// ended in order, and a tree that ends while it is not, whatever the reason,
+//// is fatal (`ending`).
 ////
 //// What a deadline or a death does, in that order:
 //// - **The tree's children** each have their own shutdown time, and one that
@@ -56,26 +63,38 @@
 ////   status 0: the first `init:stop` sets the status.
 //// - **SIGTERM while the tree starts.** The root handles the stop after its
 ////   start call returns, then stops the tree it started, in order.
-//// - **SIGTERM before the ready line.** The tree stops as above, `main` is
-////   still in `readiness.await` and is ended with the VM, no ready line is
-////   printed, the status is 0, and every recording a process had open ends with
-////   `End`.
+//// - **SIGTERM before the ready line.** The tree stops as above, the readiness
+////   ask sees its end, no ready line is printed, the status is 0, and every
+////   recording a process had open ends with `End`.
 //// - **The tree failing to start** (a port taken, a table missing) returns
 ////   `TreeNotStarted`; `main` crashes with it and the status is 1.
-//// - **The tree ending while the node runs.** `await_tree_end` sees its monitor
-////   fire with a reason other than `shutdown` and crashes `main`: the node
+//// - **The tree ending while the node runs** crashes `main` (`end_of`): the node
 ////   stops, in order, from the application's stop, with status 1.
+////
+//// The monitor on the tree is made as `start_server` returns it, and the same
+//// monitor goes to the readiness ask and to the final wait, so the tree's exit
+//// reason reaches whichever sees the end first, and a monitor made after the
+//// tree had ended would give `noproc` instead.
 
 import genesis_prime/server
 import genesis_prime/step
 import genesis_prime/step/runtime
+import gleam/bool
 import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode
 import gleam/erlang/application.{type StartType}
-import gleam/erlang/process.{type Pid}
+import gleam/erlang/atom
+import gleam/erlang/process.{type Monitor, type Pid}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision
 import gleam/result
+
+/// The server's tree, started under the application's root, and the monitor
+/// `main` holds on it.
+pub type Tree {
+  Tree(pid: Pid, monitor: Monitor)
+}
 
 /// Why `start_server` did not give a running tree.
 pub type StartFailure {
@@ -85,6 +104,15 @@ pub type StartFailure {
   /// The root is running and the tree did not start, as the tree's start
   /// reported it.
   TreeNotStarted(reason: actor.StartError)
+}
+
+/// How the end of the server's tree is to be taken.
+pub type Ending {
+  /// The node is stopping, so the tree ended in order.
+  Orderly
+  /// The node is not stopping, so the tree ended on its own, whatever the
+  /// reason: it gave up, or it was killed.
+  Fatal(reason: process.ExitReason)
 }
 
 /// OTP's start callback: starts the root supervisor, which has no child, and
@@ -108,26 +136,65 @@ pub fn stop(_state: Dynamic) -> Nil {
   runtime.log(step.LogInfo, "the server stopped", step.no_one)
 }
 
-/// Starts the server's tree under the application's root with these settings
-/// and gives the tree's pid. The root is found with `application:get_supervisor/1`
-/// and the tree started with `supervisor:start_child/2`; no gleam_erlang or
-/// gleam_otp function does either (the factory supervisor's handle cannot be
-/// made from a pid, and only a name finds it, which `process.new_name` makes
-/// fresh), so two Erlang functions in an Erlang module of this application
-/// do, each with a typed result: `top_supervisor() -> Result(Pid, Nil)` and
-/// `start_tree(Pid, Settings) -> Result(Pid, StartError)`.
+/// Starts the server's tree under the application's root with these settings,
+/// and monitors it. Each fails with the reason it did not run.
 pub fn start_server(
-  settings _settings: server.Settings,
-) -> Result(Pid, StartFailure) {
-  panic as "built in the next commit"
+  settings settings: server.Settings,
+) -> Result(Tree, StartFailure) {
+  start_tree(settings)
+  |> result.map(fn(pid) { Tree(pid:, monitor: process.monitor(pid)) })
 }
 
-/// Returns when the server's tree has ended with `shutdown`, the reason the
-/// root gives it when the node stops, or `normal`; crashes with a message for
-/// any other reason, so `gleam@@main` ends the node with status 1 and the host
-/// starts it again. Takes the place of the sleep that kept the node alive.
-pub fn await_tree_end(_tree: Pid) -> Nil {
-  panic as "built in the next commit"
+/// Finds the root with `application:get_supervisor/1` and starts the tree
+/// under it with `supervisor:start_child/2`; no gleam_erlang or gleam_otp
+/// function does either (application_ffi says why).
+@external(erlang, "application_ffi", "start_tree")
+fn start_tree(settings: server.Settings) -> Result(Pid, StartFailure)
+
+/// Whether the node has begun to stop: `init:get_status/0` says `stopping`.
+@external(erlang, "application_ffi", "node_stopping")
+pub fn node_stopping() -> Bool
+
+/// Whether the server can be said to serve: its tree is running and the node is
+/// not stopping. A stop can begin right after the answer, between the check and
+/// whatever the caller does with it.
+pub fn serving(tree: Tree) -> Bool {
+  process.is_alive(tree.pid) && !node_stopping()
+}
+
+/// How the end of the tree is taken, by the node's state: orderly while the
+/// node is stopping, and fatal otherwise, whatever the reason (a tree past its
+/// restart intensity ends with `shutdown` too).
+pub fn ending(reason: process.ExitReason) -> Ending {
+  use <- bool.guard(when: node_stopping(), return: Orderly)
+  Fatal(reason:)
+}
+
+/// Takes the end of the tree: returns when it is orderly, and crashes with a
+/// message when it is fatal, so `gleam@@main` ends the node with status 1 and
+/// the host starts it again.
+pub fn end_of(reason: process.ExitReason) -> Nil {
+  case ending(reason) {
+    Orderly -> Nil
+    Fatal(reason:) ->
+      panic as {
+        "the supervision tree ended while the node runs: "
+        <> describe_exit(reason)
+      }
+  }
+}
+
+/// Waits for the tree to end, on the monitor made when it started, and takes
+/// its end (`end_of`). Keeps the node alive in the place of a sleep.
+pub fn await_tree_end(tree: Tree) -> Nil {
+  let down =
+    process.new_selector()
+    |> process.select_specific_monitor(tree.monitor, fn(down) { down })
+    |> process.selector_receive_forever
+  end_of(case down {
+    process.ProcessDown(reason:, ..) -> reason
+    process.PortDown(reason:, ..) -> reason
+  })
 }
 
 fn describe(error: actor.StartError) -> String {
@@ -135,5 +202,15 @@ fn describe(error: actor.StartError) -> String {
     actor.InitTimeout -> "the root supervisor did not start in time"
     actor.InitFailed(reason) -> reason
     actor.InitExited(_) -> "the root supervisor exited while it started"
+  }
+}
+
+fn describe_exit(reason: process.ExitReason) -> String {
+  case reason {
+    process.Normal -> "normal"
+    process.Killed -> "killed"
+    process.Abnormal(reason:) ->
+      decode.run(reason, decode.map(atom.decoder(), atom.to_string))
+      |> result.lazy_unwrap(fn() { dynamic.classify(reason) })
   }
 }

@@ -497,3 +497,36 @@ returning name;
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
+
+/// A row you get from running the `select_one` query
+/// defined in `./src/genesis_prime/store/sql/select_one.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type SelectOneRow {
+  SelectOneRow(one: Int)
+}
+
+/// The readiness probe: a read that needs no table, so it succeeds exactly when
+/// the pool can run a query on a connection.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn select_one(
+  db: pog.Connection,
+) -> Result(pog.Returned(SelectOneRow), pog.QueryError) {
+  let decoder = {
+    use one <- decode.field(0, decode.int)
+    decode.success(SelectOneRow(one:))
+  }
+
+  "-- The readiness probe: a read that needs no table, so it succeeds exactly when
+-- the pool can run a query on a connection.
+select 1 as one;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}

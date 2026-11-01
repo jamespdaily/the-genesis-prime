@@ -14,3 +14,9 @@ pub type Target {
 /// line where it stops, so it is never passed unread.
 @external(erlang, "erlang_calls_ffi", "lines")
 pub fn lines(text: String, targets: List(Target)) -> List(Int)
+
+/// The line of each place the text writes a name qualified by a module whose
+/// name starts with `prefix` (`prefix_x:name`), in order; text that does not
+/// scan gives the line where it stops.
+@external(erlang, "erlang_calls_ffi", "qualifier_lines")
+pub fn qualifier_lines(text: String, prefix: String) -> List(Int)

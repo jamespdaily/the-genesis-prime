@@ -250,7 +250,12 @@ pub fn read_pong(client: mug.Socket) -> BitArray {
 
 /// The server's connection processes, as Ranch lists them.
 pub fn connections(server: Server) -> List(Pid) {
-  procs(server.name, atom.create("connections"))
+  connections_of(server.name)
+}
+
+/// The connection processes of the listener Ranch knows by `listener`.
+pub fn connections_of(listener: Name(Nil)) -> List(Pid) {
+  procs(listener, atom.create("connections"))
 }
 
 /// The gate as a child of a supervisor, registered as `name`, that reaches
