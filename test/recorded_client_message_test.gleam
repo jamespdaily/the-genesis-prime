@@ -6,7 +6,7 @@
 ////   login of the real client through the STS, auth and game servers. Their
 ////   socket reads, as the inputs of each connection's rule: the STS
 ////   connection's reads 1, 2 and 4 are the clear requests Connect, LoginStart
-////   and KeyData, and its reads 5, 7, 8 and 9 (90, 195, 227 and 208 bytes) are
+////   and KeyData, and its reads 5, 7, 8, 9, 10 and 11 (90, 195, 227, 208, 31 and 208 bytes) are
 ////   ciphered; the auth connection's read 1 is one login request in its
 ////   wrapper; the game connection's read 1 holds 0x058F, 0x07E0 and a 0x038C,
 ////   all under the session key after the first.
@@ -124,8 +124,8 @@ pub fn the_login_session_holds_the_platform_logins_three_clear_requests_and_its_
     as "the auth connection's message is the login request"
   assert login_name == string.lowercase(request.account_name)
     as "LoginStart names the account in lower case (StsConnLib64.MT.dll!0x180006fb0), the login request names it as typed"
-  assert ciphered_bytes == 90 + 195 + 227 + 208
-    as "the four reads after the KeyData request are ciphered"
+  assert ciphered_bytes == 90 + 195 + 227 + 208 + 31 + 208
+    as "the six reads after the KeyData request are ciphered"
 }
 
 fn as_pairs(
