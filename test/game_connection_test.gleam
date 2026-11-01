@@ -84,7 +84,7 @@ import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
-import genesis_prime/sessions.{Claim, Claimed, TakenOver}
+import genesis_prime/sessions.{Claim, Claimed, Reclaim, TakenOver}
 import genesis_prime/step.{
   type Event, type Outcome, type Step, ConnectionId, EndedBeforeAnswer, LogError,
   LogInfo, LogWarning, Map, NoAnswerInTime, NotRunning, OtherSocketFailure,
@@ -228,6 +228,12 @@ fn claiming() -> #(game_connection.State, Step(Nil, Request)) {
 /// The claim the connection asks Sessions: its account and its id.
 fn claim_ask() -> Request {
   AskSessions(Claim(account: AccountId(7), connection: ConnectionId(1)))
+}
+
+/// The claim the connection asks Sessions after Sessions ended: the same
+/// account and id, as a reclaim, which never takes a slot a newer login holds.
+fn reclaim_ask() -> Request {
+  AskSessions(Reclaim(account: AccountId(7), connection: ConnectionId(1)))
 }
 
 /// Sessions' answer to the claim in `taken`.
@@ -1477,7 +1483,8 @@ pub fn the_end_of_sessions_in_the_world_claims_again_and_the_claim_puts_the_play
   assert support.writes(taken) == [] as "the client sees nothing"
   let #(state, taken) = feed(state, TimerFired(TimerId(1)))
   assert support.effects_of(taken) == [Watch(WatchId(1), Sessions)]
-  assert ask_request(taken) == claim_ask()
+  assert ask_request(taken) == reclaim_ask()
+    as "after Sessions ended the connection reclaims, which never evicts a newer login"
   let #(state, taken) = claimed(state:, taken:)
   assert support.writes(taken) == []
   // Back in the world: the movement the client sends is read as in the world,
@@ -1819,6 +1826,37 @@ pub fn a_takeover_while_the_connection_waits_to_claim_again_ends_it_with_reason_
     as "a takeover Sessions sent before it ended still disconnects the old connection"
 }
 
+pub fn a_reclaim_answered_taken_over_ends_the_connection_with_reason_19_and_an_info_line_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each([in_select_with_a_list(), in_world()], fn(held) {
+    let #(state, _) = feed(held, WatchEnded(WatchId(1)))
+    let #(state, taken) = feed(state, TimerFired(TimerId(1)))
+    assert ask_request(taken) == reclaim_ask()
+    let #(_, taken) =
+      answer(state:, taken:, outcome: step.Answer(FromSessions(TakenOver)))
+    assert disconnect(taken, keyed()) == AccountDisconnected
+      as "a newer login holds the slot, so the reclaiming connection is disconnected as a takeover does"
+    let assert [line] = support.logs_of(step: taken, level: LogInfo)
+      as "the takeover is logged at info, once"
+    assert line.about.connection == Some(ConnectionId(1))
+      && line.about.account_id == Some(7)
+    assert support.logs_of(step: taken, level: LogError) == []
+      as "TakenOver is an answer a reclaim gets, not a bug"
+  })
+}
+
+pub fn a_reclaim_that_sessions_does_not_answer_gets_reason_8_and_a_warning_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each([NoAnswerInTime, EndedBeforeAnswer], fn(outcome) {
+    let #(state, _) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
+    let #(state, taken) = feed(state, TimerFired(TimerId(1)))
+    let #(_, taken) = answer(state:, taken:, outcome:)
+    assert disconnect(taken, keyed()) == LostUserServer
+      as "a Sessions that restarts again before it answers is the failure of any claim: 0x1400168a0, reason 8"
+    assert list.length(support.logs_of(step: taken, level: LogWarning)) == 1
+  })
+}
+
 pub fn a_message_sessions_never_sends_or_one_before_the_claim_is_a_bug_with_an_error_and_the_end_test() -> Nil {
   use <- owned_test.run(10_000)
   let answer_as_a_message = Woken(message: SentBySessions(message: Claimed))
@@ -1849,7 +1887,8 @@ pub fn the_end_of_the_watch_on_sessions_starts_a_timer_and_its_firing_claims_aga
   let #(state, taken) = feed(state, TimerFired(TimerId(1)))
   assert support.effects_of(taken) == [Watch(WatchId(1), Sessions)]
     as "the ended watch is forgotten, so the one watch is opened again under its id"
-  assert ask_request(taken) == claim_ask()
+  assert ask_request(taken) == reclaim_ask()
+    as "a claim after Sessions ended is a reclaim"
   assert support.writes(taken) == [] as "the client sees nothing"
   let #(_, taken) = claimed(state:, taken:)
   assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
@@ -1865,6 +1904,8 @@ pub fn a_second_end_of_sessions_claims_again_under_the_same_watch_id_test() -> N
   assert support.effects_of(taken) == [StartTimer(TimerId(1), claim_wait_ms)]
   let #(_, taken) = feed(state, TimerFired(TimerId(1)))
   assert support.effects_of(taken) == [Watch(WatchId(1), Sessions)]
+  assert ask_request(taken) == reclaim_ask()
+    as "the second end of Sessions is reclaimed as the first was"
 }
 
 pub fn a_watch_or_timer_the_rule_did_not_open_is_a_bug_with_an_error_and_the_end_test() -> Nil {
@@ -1919,7 +1960,8 @@ pub fn a_claim_that_finds_sessions_not_running_after_its_end_is_made_again_with_
   assert support.effects_of(taken)
     == [Unwatch(WatchId(1)), StartTimer(TimerId(1), claim_wait_ms)]
   let #(_, taken) = feed(state, TimerFired(TimerId(1)))
-  assert ask_request(taken) == claim_ask()
+  assert ask_request(taken) == reclaim_ask()
+    as "a reclaim that found no Sessions is made again as a reclaim, not as a claim"
 }
 
 pub fn a_claim_sessions_does_not_answer_gets_0x036a_reason_8_a_warning_and_the_connection_ends_test() -> Nil {

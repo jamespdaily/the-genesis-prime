@@ -3,11 +3,14 @@
 //// login per account card: one slot per account, the newest login keeps it,
 //// the connection it replaced is sent `TakenOver`, and Sessions watches each
 //// holder, so a holder's end frees the slot and the end of a replaced
-//// connection frees nothing. A connection is named by its `ConnectionId`
-//// and a watch by its `WatchId`; the effects name both.
+//// connection frees nothing. A reclaim, which a connection makes after
+//// Sessions restarted, takes only an empty slot: when another connection
+//// holds it, the reclaimer is answered `TakenOver` and nothing else changes.
+//// A connection is named by its `ConnectionId` and a watch by its `WatchId`;
+//// the effects name both.
 
 import connection_rule_support as support
-import genesis_prime/sessions.{type State, Claim, Claimed, TakenOver}
+import genesis_prime/sessions.{type State, Claim, Claimed, Reclaim, TakenOver}
 import genesis_prime/step.{
   Asked, CallerId, Connection, ConnectionId, Effects, Reply, Send, Stopping,
   Watch, WatchEnded, WatchId,
@@ -34,6 +37,21 @@ fn claim(
     support.input(Asked(
       caller: CallerId(caller),
       message: Claim(account:, connection:),
+    )),
+  )
+}
+
+fn reclaim(
+  state state: State,
+  caller caller: Int,
+  account account: store.AccountId,
+  connection connection: step.ConnectionId,
+) -> #(State, step.Step(sessions.Outgoing, Nil)) {
+  sessions.step(
+    state,
+    support.input(Asked(
+      caller: CallerId(caller),
+      message: Reclaim(account:, connection:),
     )),
   )
 }
@@ -164,6 +182,90 @@ pub fn a_restarted_sessions_rebuilds_its_slots_from_the_claims_that_arrive_test(
       Send(to: Connection(first), message: TakenOver),
       Reply(CallerId(3), Claimed),
     ])
+}
+
+pub fn a_reclaim_after_a_new_logins_claim_in_a_restarted_sessions_is_answered_taken_over_and_the_new_login_keeps_the_slot_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Sessions restarted: a fresh state. The new login claims first, the old
+  // connection's reclaim arrives after it.
+  let #(state, _) =
+    claim(state: sessions.new(Nil), caller: 1, account:, connection: second)
+  let #(state, taken) = reclaim(state:, caller: 2, account:, connection: first)
+  assert taken == Effects([Reply(CallerId(2), TakenOver)])
+    as "the reclaimer is answered TakenOver; no watch, and the holder is told nothing"
+  let #(_, taken) = claim(state:, caller: 3, account:, connection: third)
+  assert taken
+    == Effects([
+      Watch(watch: WatchId(2), target: Connection(third)),
+      Send(to: Connection(second), message: TakenOver),
+      Reply(CallerId(3), Claimed),
+    ])
+    as "the slot is still the second connection's, and the refused reclaim opened no watch, so the next is 2"
+}
+
+pub fn a_reclaim_before_a_new_logins_claim_holds_the_slot_until_the_claim_takes_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, taken) =
+    reclaim(state: sessions.new(Nil), caller: 1, account:, connection: first)
+  assert taken
+    == Effects([
+      Watch(watch: WatchId(1), target: Connection(first)),
+      Reply(CallerId(1), Claimed),
+    ])
+    as "a reclaim of an empty slot takes it, as a claim does"
+  let #(_, taken) = claim(state:, caller: 2, account:, connection: second)
+  assert taken
+    == Effects([
+      Watch(watch: WatchId(2), target: Connection(second)),
+      Send(to: Connection(first), message: TakenOver),
+      Reply(CallerId(2), Claimed),
+    ])
+    as "the new login's claim takes the slot from the reclaimer: the newest login stays"
+}
+
+pub fn a_reclaim_by_the_holder_answers_claimed_and_changes_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    claim(state: sessions.new(Nil), caller: 1, account:, connection: first)
+  let #(state, taken) = reclaim(state:, caller: 2, account:, connection: first)
+  assert taken == Effects([Reply(CallerId(2), Claimed)])
+    as "no new watch and nobody told"
+  let #(_, taken) = claim(state:, caller: 3, account:, connection: second)
+  assert taken
+    == Effects([
+      Watch(watch: WatchId(2), target: Connection(second)),
+      Send(to: Connection(first), message: TakenOver),
+      Reply(CallerId(3), Claimed),
+    ])
+    as "the slot is still the first connection's, under its watch 1"
+}
+
+pub fn a_reclaim_after_the_holder_ended_takes_the_freed_slot_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    claim(state: sessions.new(Nil), caller: 1, account:, connection: first)
+  let #(state, _) = ended(state:, watch: 1)
+  let #(_, taken) = reclaim(state:, caller: 2, account:, connection: second)
+  assert taken
+    == Effects([
+      Watch(watch: WatchId(2), target: Connection(second)),
+      Reply(CallerId(2), Claimed),
+    ])
+    as "the holder's end freed the slot, so the reclaim takes it and no one is told"
+}
+
+pub fn reclaims_for_different_accounts_do_not_touch_each_other_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    claim(state: sessions.new(Nil), caller: 1, account:, connection: first)
+  let #(_, taken) =
+    reclaim(state:, caller: 2, account: AccountId(8), connection: second)
+  assert taken
+    == Effects([
+      Watch(watch: WatchId(2), target: Connection(second)),
+      Reply(CallerId(2), Claimed),
+    ])
+    as "another account's slot is empty"
 }
 
 pub fn a_stopping_sessions_stops_test() -> Nil {

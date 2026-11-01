@@ -42,14 +42,15 @@
 ////   key the hand-off no longer holds is refused and disconnected, and logs in
 ////   again.
 //// - **Sessions** starts with no slots. Each game connection watches it, so
-////   each takes the end of its watch, waits a moment and claims again, and the
-////   slots match the connections alive; a claim that finds Sessions not yet
-////   running is made again a few times, and one it does not answer ends that
-////   connection with 0x036A reason 8, as does the last of the retries, and its
-////   client logs in again (genesis_prime/game/connection). A client that logs in to an account during the gap,
-////   before the account's old connection claims again, is not caught: that
-////   old connection's claim then takes the slot from it
-////   (genesis_prime/sessions).
+////   each takes the end of its watch, waits a moment and reclaims its
+////   account, and the slots match the connections alive; a claim that finds
+////   Sessions not yet running is made again a few times, and one it does not
+////   answer ends that connection with 0x036A reason 8, as does the last of the
+////   retries, and its client logs in again (genesis_prime/game/connection). A
+////   client that logs in to an account during the gap claims first and keeps
+////   the slot: the account's old connection's reclaim takes a slot only when
+////   it is empty, is answered `TakenOver` otherwise, and that connection ends
+////   with 0x036A reason 19 (genesis_prime/sessions).
 //// - **Maps and the maps** (genesis_prime/world_map/maps): a map that ends is
 ////   started again, empty, by the next ask for it; Maps' restart ends every
 ////   map. Each in-world connection watches its map, so its end ends the

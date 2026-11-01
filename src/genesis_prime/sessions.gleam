@@ -8,7 +8,8 @@
 //// This is the rule of the sessions service (genesis_prime/service/shell),
 //// started under the server's supervisor and found by its name. Its slots live
 //// only in the process: a restart loses them, and the game connections
-//// rebuild them (below).
+//// rebuild them with `Reclaim`, which never takes a slot another connection
+//// holds (below).
 ////
 //// Each sequence, from Sessions' side. `Watch`, `Send` and `Reply` are effects
 //// its service shell carries out; a connection is named by its `ConnectionId`,
@@ -36,8 +37,25 @@
 ////                                                                  reason 19 and stops
 //// ```
 ////
+//// Reclaim, a connection claims its account again after Sessions restarted,
+//// and a newer login of the account claimed first:
+////
+//// ```
+//// connection c1 (old)        Sessions                              c2 (new)
+////   Reclaim(account, c1) ─▶ Asked ─▶ slot names c2
+////                                  nothing changes
+////   ◀─ TakenOver        ◀─ Reply(caller, TakenOver)
+//// c1 writes 0x036A reason 19 and stops
+//// ```
+////
 //// - **A claim by the holder** answers `Claimed` and changes nothing: the
 ////   slot, its watch and the connections stay as they are.
+//// - **A reclaim with the slot empty** takes it as a first claim does, and
+////   answers `Claimed`. **A reclaim by the holder** is a claim by the holder.
+////   **A reclaim when another connection holds the slot** answers the
+////   reclaimer `TakenOver` and changes nothing: no slot, no watch, and the
+////   holder is told nothing. A reclaim that comes first is not protected
+////   from a later `Claim`, which takes the slot from it as from any holder.
 //// - **The holder ends.** The watch on it comes back as `WatchEnded(w)`; the
 ////   slot that names `w` is freed.
 //// - **The old holder ends after a takeover.** Its watch `w1` comes back as
@@ -45,11 +63,11 @@
 ////   forgotten.
 //// - **Sessions restarts.** The new process has no slots and no watches. Each
 ////   game connection watches Sessions, so each takes `WatchEnded` and, after a
-////   short wait, claims again (genesis_prime/game/connection); the claims run in the order they
-////   arrive, so the slots match the connections alive. A client that logs in
-////   to the account during the gap, before the old connection claims again,
-////   is not caught: when the old connection's claim then comes, it takes the
-////   slot from the newer one.
+////   short wait, reclaims its account (genesis_prime/game/connection); the
+////   reclaims run in the order they arrive, so the slots match the connections
+////   alive. A client that logs in to the account during the gap claims first
+////   and keeps the slot: the old connection's reclaim is answered
+////   `TakenOver`, and it is disconnected as a takeover is.
 //// - **A claim with no answer.** The claimer gives up at its deadline and
 ////   ends, which frees its slot when Sessions did act on the claim; a holder
 ////   told `TakenOver` for a claim whose claimer gave up is disconnected all
@@ -78,18 +96,24 @@ pub const rule_name = "genesis_prime/sessions"
 
 /// What another process asks Sessions.
 pub type Message {
-  /// Make `connection` the holder of `account`'s slot. The answer is
-  /// `Claimed`, after the previous holder, if there is another, is sent
-  /// `TakenOver`.
+  /// Make `connection` the holder of `account`'s slot: a new login's first
+  /// claim. The answer is `Claimed`, after the previous holder, if there is
+  /// another, is sent `TakenOver`.
   Claim(account: AccountId, connection: ConnectionId)
+  /// A connection that held `account`'s slot before Sessions restarted claims
+  /// it again. It takes the slot only when no other connection holds it, and
+  /// the answer is `Claimed`; when another does, a login newer than the
+  /// reclaimer's, the answer is `TakenOver` and nothing else changes.
+  Reclaim(account: AccountId, connection: ConnectionId)
 }
 
 /// What Sessions answers and what it sends.
 pub type Outgoing {
-  /// The answer to a `Claim`: the connection holds the slot.
+  /// The answer to a `Claim` or a `Reclaim`: the connection holds the slot.
   Claimed
-  /// Sent to the connection that held a slot another connection has claimed:
-  /// its client is told the account was disconnected, and it ends.
+  /// Sent to the connection that held a slot another connection has claimed,
+  /// and the answer to a `Reclaim` of a slot another connection holds: the
+  /// connection's client is told the account was disconnected, and it ends.
   TakenOver
 }
 
@@ -120,8 +144,8 @@ pub fn new(_settings: Nil) -> State {
 }
 
 /// One input in, the new state and what the shell must do out. `Asked` with a
-/// `Claim` is answered with `Reply`, after the effects the sequences above
-/// give; `WatchEnded` frees or forgets as above; `Stopping` stops; `Started`
+/// `Claim` or a `Reclaim` is answered with `Reply`, after the effects the sequences above
+/// give, and `Reclaim` likewise; `WatchEnded` frees or forgets as above; `Stopping` stops; `Started`
 /// does nothing. An input a service's shell never gives, or a `WatchEnded` for
 /// a watch this rule never opened, is a bug, and crashes the process.
 pub fn step(
@@ -131,7 +155,10 @@ pub fn step(
   case input.event {
     Started -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
-    Asked(caller:, message:) -> claimed(state:, caller:, message:)
+    Asked(caller:, message: Claim(account:, connection:)) ->
+      claimed(state:, caller:, account:, connection:)
+    Asked(caller:, message: Reclaim(account:, connection:)) ->
+      reclaimed(state:, caller:, account:, connection:)
     WatchEnded(watch:) -> ended(state:, watch:)
     Socket(..) | Woken(..) | TimerFired(..) | Answered(..) | AnsweredLate(..) ->
       panic as "Sessions takes Started, Asked, WatchEnded and Stopping only; its shell gives no Socket, Woken, TimerFired, Answered or AnsweredLate"
@@ -141,9 +168,9 @@ pub fn step(
 fn claimed(
   state state: State,
   caller caller: CallerId,
-  message message: Message,
+  account account: AccountId,
+  connection connection: ConnectionId,
 ) -> #(State, Step(Outgoing, Nil)) {
-  let Claim(account:, connection:) = message
   let held = dict.get(state.slots, account)
   case held {
     Ok(Slot(connection: holder, ..)) if holder == connection -> #(
@@ -173,6 +200,24 @@ fn claimed(
         ),
       )
     }
+  }
+}
+
+/// A reclaim takes the slot as a claim does when the slot is empty or the
+/// reclaimer holds it; when another connection holds it, the reclaimer is
+/// answered `TakenOver` and the state stays.
+fn reclaimed(
+  state state: State,
+  caller caller: CallerId,
+  account account: AccountId,
+  connection connection: ConnectionId,
+) -> #(State, Step(Outgoing, Nil)) {
+  case dict.get(state.slots, account) {
+    Ok(Slot(connection: holder, ..)) if holder != connection -> #(
+      state,
+      Effects([Reply(caller, TakenOver)]),
+    )
+    Ok(Slot(..)) | Error(Nil) -> claimed(state:, caller:, account:, connection:)
   }
 }
 

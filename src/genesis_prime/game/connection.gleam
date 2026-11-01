@@ -51,10 +51,11 @@
 ////   (genesis_prime/sessions). It follows the hand-off's answer, since the
 ////   account is known only then, and comes before the list, so a client that
 ////   reaches character select holds the slot. The rule opens its one watch
-////   on Sessions (watch 1) with each claim. Sessions answers `Claimed` to every claim, sending the previous
-////   holder `TakenOver` first.
+////   on Sessions (watch 1) with each claim. Sessions answers `Claimed` to a
+////   `Claim`, sending the previous holder `TakenOver` first.
 //// - **Taken over.** `Woken(TakenOver)`, when the connection holds the slot or
-////   is claiming it again, writes 0x036A reason 19 (AccountDisconnected) under
+////   is claiming it again, or Sessions' answer `TakenOver` to a reclaim
+////   (below), writes 0x036A reason 19 (AccountDisconnected) under
 ////   the cipher the connection holds, logs the takeover at info and ends the
 ////   connection. The client drops to its error screen and shows "This account
 ////   has been disconnected" (0x1400168a0, which only picks the text by the
@@ -66,13 +67,17 @@
 ////   shell decide by a message's content.
 //// - **Sessions ending.** When the watch on Sessions ends (`WatchEnded`) the
 ////   connection waits `claim_wait_ms` on a timer, since a restarted Sessions
-////   is not yet there, then claims again (`TimerFired`), with its character
-////   select state kept and the frames it holds waiting for the answer; the
-////   client sees nothing. A claim that finds Sessions not running (the
-////   outcome `NotRunning`) drops its watch and waits again, up to
-////   `claim_retries` times, before the client is told the server failed. A
-////   claim Sessions does not answer, or that ends before its answer, is that
-////   failure at once.
+////   is not yet there, then reclaims its account (`TimerFired`,
+////   `sessions.Reclaim`), with its character select state kept and the frames
+////   it holds waiting for the answer; the client sees nothing. A reclaim takes
+////   the slot only when no one holds it, so a client that logged in during
+////   the gap keeps it: Sessions answers the reclaim `TakenOver`, and the
+////   connection writes 0x036A reason 19 and ends, as a takeover does. A claim
+////   that finds Sessions not running (the outcome `NotRunning`) drops its
+////   watch and waits again, up to `claim_retries` times, before the client is
+////   told the server failed; a retried first claim stays a `Claim`, a retried
+////   reclaim stays a `Reclaim`. A claim or reclaim Sessions does not answer,
+////   or that ends before its answer, is that failure at once.
 //// - **The character list and creating a character** are character select's
 ////   own feature (genesis_prime/game/character_select): it makes its own store
 ////   asks and takes the store's answers, and the rule turns its effects into
@@ -119,7 +124,7 @@
 ////   reason 8, since the player is gone from the world. The map watches the
 ////   connection, so a connection that ends leaves its map. A takeover ends
 ////   it with reason 19, as in character select.
-//// - **Sessions ending in the world.** The claim again keeps where the
+//// - **Sessions ending in the world.** The reclaim keeps where the
 ////   client is: character select's state, or the player in the world.
 //// - **0x038C** carries a 5-bit kind in its first byte, then exactly one whole
 ////   frame (0x14007e180, opcode.0x38c); the inner message is logged as
@@ -239,11 +244,10 @@ type Status {
   /// The hand-off is asked to take the session key.
   TakingSessionKey
   /// Sessions is asked to make the connection the account's session, or the
-  /// connection waits on the claim timer before it asks. `resume` is where the
-  /// client is after the answer: a new character select for the first claim;
-  /// the select it was in, or its player in the world, for a later one. `retries` is
-  /// how many times Sessions was not running for this claim.
-  ClaimingSession(holder: Holder, resume: Resume, retries: Int)
+  /// connection waits on the claim timer before it asks. `kind` is which ask
+  /// it is and where the client is after the answer. `retries` is how many
+  /// times Sessions was not running for this claim.
+  ClaimingSession(holder: Holder, kind: ClaimKind, retries: Int)
   /// The session key was held for `holder` and Sessions holds the account's
   /// slot for this connection; the client is in character select, which holds
   /// its own state, asks the store itself and says when its answer is awaited.
@@ -260,7 +264,17 @@ type Status {
   InWorld(holder: Holder, entered: world_entry.Entered)
 }
 
-/// Where a claim made again after Sessions ended puts the client back.
+/// The ask a claiming connection makes of Sessions, and where the client is
+/// after the answer. The first claim, after the hand-off, is a `sessions.Claim`
+/// and puts the client in a new character select. After Sessions ended the
+/// connection asks `sessions.Reclaim`, which never takes a slot a newer login
+/// holds, and the answer puts the client back where it was.
+type ClaimKind {
+  FirstClaim
+  Reclaim(resume: Resume)
+}
+
+/// Where a reclaim made after Sessions ended puts the client back.
 type Resume {
   ResumeSelect(select: character_select.State)
   ResumeWorld(entered: world_entry.Entered)
@@ -914,8 +928,8 @@ fn answered(
 ) -> client_connection.Handled(Session) {
   case session.status {
     TakingSessionKey -> key_taken(session:, now:, outcome:)
-    ClaimingSession(holder:, resume:, retries:) ->
-      claim_answered(session:, holder:, resume:, retries:, outcome:)
+    ClaimingSession(holder:, kind:, retries:) ->
+      claim_answered(session:, holder:, kind:, retries:, outcome:)
     InCharacterSelect(holder:, select:) ->
       select_answered(session:, now:, holder:, select:, outcome:)
     EnteringWorld(holder:, select:, entry:) ->
@@ -934,13 +948,7 @@ fn key_taken(
 ) -> client_connection.Handled(Session) {
   case outcome {
     step.Answer(FromHandOff(hand_off.Taken(holder:))) ->
-      claim(
-        session:,
-        now:,
-        holder:,
-        resume: ResumeSelect(select: character_select.new()),
-        retries: 0,
-      )
+      claim(session:, now:, holder:, kind: FirstClaim, retries: 0)
     step.Answer(FromHandOff(hand_off.NoHolder)) ->
       told(
         session:,
@@ -971,52 +979,77 @@ fn key_taken(
 }
 
 /// Opens a watch on Sessions and asks it to make this connection the account's
-/// session; `resume` is where the client is once it answers. The watch is
+/// session, with a `Claim` for the first claim and a `Reclaim` after Sessions
+/// ended; `kind` also says where the client is once it answers. The watch is
 /// opened with every claim, so a restarted Sessions is watched again.
 fn claim(
   session session: Session,
   now now: Now,
   holder holder: Holder,
-  resume resume: Resume,
+  kind kind: ClaimKind,
   retries retries: Int,
 ) -> client_connection.Handled(Session) {
+  let account = holder.account_id
+  let connection = session.link.connection
   ask(
     session: Session(
       ..session,
-      status: ClaimingSession(holder:, resume:, retries:),
+      status: ClaimingSession(holder:, kind:, retries:),
     ),
     now:,
-    request: AskSessions(sessions.Claim(
-      account: holder.account_id,
-      connection: session.link.connection,
-    )),
+    request: AskSessions(case kind {
+      FirstClaim -> sessions.Claim(account:, connection:)
+      Reclaim(..) -> sessions.Reclaim(account:, connection:)
+    }),
     before: [Watch(watch: sessions_watch, target: Sessions)],
   )
 }
 
-/// Sessions' answer to the claim: `Claimed` puts the client where it was, in
-/// character select or in the world, and the frames held are taken. Sessions
-/// not running is waited out up to `claim_retries` times, with the watch
-/// dropped; any other failure of the ask tells the client the server failed,
-/// as the store's do.
+/// Sessions' answer to the claim: `Claimed` puts the client in a new character
+/// select for a first claim, and where it was, in character select or in the
+/// world, for a reclaim; the frames held are taken. `TakenOver` is the answer
+/// to a reclaim of a slot a newer login holds: the client is told its account
+/// was disconnected (0x036A reason 19) and the connection ends; a first claim
+/// is never answered it. Sessions not running is waited out up to
+/// `claim_retries` times, with the watch dropped; any other failure of the ask
+/// tells the client the server failed, as the store's do.
 fn claim_answered(
   session session: Session,
   holder holder: Holder,
-  resume resume: Resume,
+  kind kind: ClaimKind,
   retries retries: Int,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case outcome {
     step.Answer(FromSessions(sessions.Claimed)) ->
       Continue(
-        Session(..session, status: case resume {
-          ResumeSelect(select:) -> InCharacterSelect(holder:, select:)
-          ResumeWorld(entered:) -> InWorld(holder:, entered:)
+        Session(..session, status: case kind {
+          FirstClaim ->
+            InCharacterSelect(holder:, select: character_select.new())
+          Reclaim(resume: ResumeSelect(select:)) ->
+            InCharacterSelect(holder:, select:)
+          Reclaim(resume: ResumeWorld(entered:)) -> InWorld(holder:, entered:)
         }),
         [],
       )
-    step.Answer(FromSessions(sessions.TakenOver))
-    | step.Answer(FromStore(..))
+    step.Answer(FromSessions(sessions.TakenOver)) ->
+      case kind {
+        Reclaim(..) ->
+          told(
+            session:,
+            reason: AccountDisconnected,
+            level: LogInfo,
+            text: "a newer login of the account holds the session; this connection's reclaim is refused",
+          )
+        FirstClaim ->
+          told(
+            session:,
+            reason: LostUserServer,
+            level: step.LogError,
+            text: "Sessions' answer is none a claim gets",
+          )
+      }
+    step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromMap(..)) ->
       told(
@@ -1029,7 +1062,7 @@ fn claim_answered(
       Done(
         Session(
           ..session,
-          status: ClaimingSession(holder:, resume:, retries: retries + 1),
+          status: ClaimingSession(holder:, kind:, retries: retries + 1),
         ),
         [
           Unwatch(watch: sessions_watch),
@@ -1087,11 +1120,11 @@ fn watch_ended(
 ) -> client_connection.Handled(Session) {
   case session.status, watch {
     InCharacterSelect(holder:, select:), id if id == sessions_watch ->
-      waiting_to_claim(session:, holder:, resume: ResumeSelect(select:))
+      waiting_to_reclaim(session:, holder:, resume: ResumeSelect(select:))
     InWorld(holder:, entered:), id if id == sessions_watch ->
-      waiting_to_claim(session:, holder:, resume: ResumeWorld(entered:))
+      waiting_to_reclaim(session:, holder:, resume: ResumeWorld(entered:))
     InWorld(..), id
-    | ClaimingSession(resume: ResumeWorld(..), ..), id
+    | ClaimingSession(kind: Reclaim(resume: ResumeWorld(..)), ..), id
       if id == map_watch
     ->
       told(
@@ -1110,30 +1143,33 @@ fn watch_ended(
   }
 }
 
-/// The connection waits on the claim timer before it claims its account
-/// again, with the place of the client kept.
-fn waiting_to_claim(
+/// The connection waits on the claim timer before it reclaims its account,
+/// with the place of the client kept.
+fn waiting_to_reclaim(
   session session: Session,
   holder holder: Holder,
   resume resume: Resume,
 ) -> client_connection.Handled(Session) {
   Done(
-    Session(..session, status: ClaimingSession(holder:, resume:, retries: 0)),
+    Session(
+      ..session,
+      status: ClaimingSession(holder:, kind: Reclaim(resume:), retries: 0),
+    ),
     [StartTimer(timer: claim_timer, after_ms: claim_wait_ms)],
   )
 }
 
-/// The claim timer fired: the connection claims again. A timer the rule did
-/// not start, or one that fires when the connection is not waiting on it, is
-/// a bug.
+/// The claim timer fired: the connection asks Sessions again, as its status
+/// says (a retried first claim, or a reclaim). A timer the rule did not start,
+/// or one that fires when the connection is not waiting on it, is a bug.
 fn claim_wait_over(
   session session: Session,
   now now: Now,
   timer timer: TimerId,
 ) -> client_connection.Handled(Session) {
   case session.status {
-    ClaimingSession(holder:, resume:, retries:) if timer == claim_timer ->
-      claim(session:, now:, holder:, resume:, retries:)
+    ClaimingSession(holder:, kind:, retries:) if timer == claim_timer ->
+      claim(session:, now:, holder:, kind:, retries:)
     ClaimingSession(..)
     | InCharacterSelect(..)
     | EnteringWorld(..)
@@ -1414,8 +1450,10 @@ fn about_of(session: Session) -> About {
 fn entered_of(status: Status) -> Option(world_entry.Entered) {
   case status {
     InWorld(entered:, ..)
-    | ClaimingSession(resume: ResumeWorld(entered:), ..) -> Some(entered)
-    ClaimingSession(resume: ResumeSelect(..), ..)
+    | ClaimingSession(kind: Reclaim(resume: ResumeWorld(entered:)), ..) ->
+      Some(entered)
+    ClaimingSession(kind: Reclaim(resume: ResumeSelect(..)), ..)
+    | ClaimingSession(kind: FirstClaim, ..)
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | AwaitingHelloReply
