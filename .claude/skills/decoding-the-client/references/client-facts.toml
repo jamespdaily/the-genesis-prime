@@ -2339,7 +2339,7 @@ name = "DisconnectReasonText"
 
 ["opcode.0x36"]
 statement = "Message 0x36 (54), game server to client during character select: one 32-bit value, the highest character level the account has reached; the client keeps it (GetMaxCharacterLevelAchieved), rebuilds the creation choices with it (BuildCharacterCreationChoices offers a row that costs nothing only up to this level) and raises MaxCharacterLevelAchieved."
-proof = "Registered at 0x1400782c1 lea edx, [r9+0x36]; 0x1400782ca lea r8d, [r9+0x4]; 0x1400782b2 lea rcx, [0x14007ab50] (ReadMessage0591Body, one 32-bit value) stored at 0x1400782c5. HandleCharacterSelectMessage 0x140020f17 sub r8d, 0x36 -> 0x140020ffd mov dword ptr [rbx+0x16c], eax; 0x140021003 call 0x140021d40 (BuildCharacterCreationChoices); 0x140021021 call 0x1400ea3e0 with 'MaxCharacterLevelAchieved'; GetMaxCharacterLevelAchieved 0x1400266c0 returns the kept word (0x1400266cb movd xmm0, dword ptr [rax+0x16c])."
+proof = "Registered at 0x1400782c1 lea edx, [r9+0x36]; 0x1400782ca lea r8d, [r9+0x4]; 0x1400782b2 lea rcx, [0x14007ab50] (ReadMessage0591Body, one 32-bit value) stored at 0x1400782c5. HandleCharacterSelectMessage 0x140020f17 sub r8d, 0x36 -> 0x140020ffd mov dword ptr [rbx+0x16c], eax; 0x140021003 call 0x140021d40 (BuildCharacterCreationChoices); 0x140021021 call 0x1400ea3e0 with 'MaxCharacterLevelAchieved'; GetMaxCharacterLevelAchieved 0x1400266c0 returns the kept word (0x1400266cb movd xmm0, dword ptr [rax+0x16c]). Emulator: vector.opcode.0x36.body."
 grade = "sure"
 
 ["opcode.0x7df"]
@@ -3387,7 +3387,7 @@ name = "BuildBoneSliderTable"
 
 ["opcode.0x63d"]
 statement = "Message 0x63d (1597), auth server to client: the login is refused. Body: the reason (32 bits), a value (32 bits) and a float. The client ends the login and shows the reason's text, the value filling '$1c' where a text has it: 0 'NpLogin Error 0', 1 'NpLogin Success', 2 'Game Account Data Error', 3 to 9 'NpLogin Error 3' to 'NpLogin Error 9' (8 with the value), 10 'Invalid Authentication Method', 11 'NCSoft login service start timeout', 12 'NCSoft login service finish timeout', 13 'No valid WildStar game account found', 16 'Invalid Login Token', 17 'No data center permissions', 18 'No realms are available at this time', 19 'Client version does not match the game server version', 20 'This account is currently suspended. Please contact Customer Support for assistance.', 22 'A server error occurred while retrieving subscription information. Please try again in a few minutes.', 23 'Disconnected. Client/Server Login Data Mismatch.', 24 'Two-Step Verification is required for play. Please enable in Account Management to continue.', 25 'You must set up a subscription or add game time to your account before you can play.', 26 'You can't access this account from your current IP address.', 27 'Disconnected. Client/Server Region Mismatch.', any other 'An unknown error was encountered.'; 21 shows 'Your WildStar account is temporarily suspended for $1n hours.' with the float scaled to hours. No reason means the account is already logged in. The client has no writer for it."
-proof = "Registered at 0x140078586 mov edx, 0x63d; 0x14007857f lea r8d, [r9+0xc]; 0x140078568 lea rcx, [0x140081b60] stored at 0x14007857a; 0x14007858b mov qword ptr [rsp+0x20], 0x0 (no writer). Reader 0x140081b60: 0x140081b85 mov r8d, 0x20 / 0x140081b8e call 0x14006c090; 0x140081b9b mov r8d, 0x20 / 0x140081ba4 call 0x14006c090; 0x140081bb4 call 0x14006c1c0 (ReadFloat). HandleLoginMessage 0x1400370d0 sends it to HandleMessage063D 0x140037db0: 0x140037dd3 cmp ecx, 0x15; 0x140037dd8 call 0x1400a7750 (LoginRefusalText); 0x140037ddd mov r8d, dword ptr [rdi+0x4]; 0x140037de6 call 0x1400383a0; reason 21: 0x140037df5 mov edx, 0x95d19. Texts from en-US.bin by the ids LoginRefusalText returns."
+proof = "Registered at 0x140078586 mov edx, 0x63d; 0x14007857f lea r8d, [r9+0xc]; 0x140078568 lea rcx, [0x140081b60] stored at 0x14007857a; 0x14007858b mov qword ptr [rsp+0x20], 0x0 (no writer). Reader 0x140081b60: 0x140081b85 mov r8d, 0x20 / 0x140081b8e call 0x14006c090; 0x140081b9b mov r8d, 0x20 / 0x140081ba4 call 0x14006c090; 0x140081bb4 call 0x14006c1c0 (ReadFloat). Emulator: vector.opcode.0x63d.body. HandleLoginMessage 0x1400370d0 sends it to HandleMessage063D 0x140037db0: 0x140037dd3 cmp ecx, 0x15; 0x140037dd8 call 0x1400a7750 (LoginRefusalText); 0x140037ddd mov r8d, dword ptr [rdi+0x4]; 0x140037de6 call 0x1400383a0; reason 21: 0x140037df5 mov edx, 0x95d19. Texts from en-US.bin by the ids LoginRefusalText returns."
 grade = "fairly sure"
 gap = "The reader's widths and the handler's anchors are read; LoginRefusalText's jump table is read from Ghidra's decompile; the hours scale (0x140b7a064) is not read."
 
@@ -3697,6 +3697,21 @@ grade = "sure"
 ["vector.opcode.0x635.body"]
 statement = "Message 0x635's body as the client writes it, echoing a 0x636 value of 0: the 32 bits (4 bytes) 00000000."
 proof = "Ghidra's p-code emulator (scratch script outside the repository, as for vector.opcode.0x7df.body): the writer 0x14007d010, registered for 0x635 at 0x1400a86c4 mov edx, 0x635, on the record 00000000; result 0, 32 bits written, bytes 00000000. Rerun on the fixed emulator (the query process's emulate request, 2026-10-27), each function run whole on planted streams, records and record space outside the stack with calls followed: the same bytes, values, bit counts and failures."
+grade = "sure"
+
+["vector.opcode.0x36.body"]
+statement = "Message 0x36's body read by the client: the highest character level 3 is the 32 bits 03000000 (4 bytes), read back to 3 with or without bytes after them; the first 3 bytes alone fail with 0x80070026 after 24 bits."
+proof = "The query process's emulate request (2026-11-01): ReadMessage0591Body 0x14007ab50, the reader 0x36 is registered with (0x1400782b2 lea rcx, [0x14007ab50]), run whole with rcx = a planted received stream (chunk pointer at 0x10, read pointer at 0x18, bit offset at 0x20, no chain at 0x28; the chunk's end at its 0x20) over the bytes plus 16 bytes of slack, and over the bytes alone, rdx = a planted record space and r8 = a zeroed 4-byte record, calls followed: result 0, record 03000000, read position 32 bits and the stream's byte count 4 in both; over 030000 alone, 0x80070026 at 24 bits."
+grade = "sure"
+
+["vector.opcode.0x6bc.body"]
+statement = "Message 0x6bc's body read by the client: path 2 (Scientist, 3 bits), experience 1, 2, 3 and 4 (Soldier first, 16 bytes), unlocked paths 4 (only path 2's bit, 4 bits) and the last path change -1.0 days (a float) are the 167 bits 0a000000 10000000 18000000 20000000 200000c0 5f (21 bytes), read back to those values with or without bytes after them; the first 20 bytes alone fail with 0x80070026 after 160 bits."
+proof = "The query process's emulate request (2026-11-01): ReadMessage06BCBody 0x14008d480 run as in vector.opcode.0x36.body with r8 = a zeroed 0x1c-byte record: result 0, record 02000000 01000000 02000000 03000000 04000000 04000000 000080bf (path at 0, the 16 bytes at 4, the 4-bit value in the byte at 0x14, the float -1.0 at 0x18), read position 167 bits, with 16 bytes of slack and with none; over the first 20 bytes, 0x80070026 at 160 bits with only the float's low 25 bits read (0x01800000 at 0x18). The bytes are the ones worked out by hand from the reader's field order for the server's test, unchanged."
+grade = "sure"
+
+["vector.opcode.0x63d.body"]
+statement = "Message 0x63d's body read by the client: reason 16 (Invalid Login Token), value 0 and the float 0.0, the refusal the server sends for a bad login token, are the 96 bits 10000000 00000000 00000000 (12 bytes), read back to those values with or without bytes after them; the first 11 bytes alone fail with 0x80070026 after 88 bits."
+proof = "The query process's emulate request (2026-11-01): the reader 0x140081b60 run as in vector.opcode.0x36.body with r8 = a zeroed 0xc-byte record: result 0, record 100000000000000000000000 (reason at 0, value at 4, float at 8), read position 96 bits, with 16 bytes of slack and with none; over the first 11 bytes, 0x80070026 at 88 bits. The values are those auth_connection.gleam's refuse sends for reason_invalid_login_token (value 0, field_3 0)."
 grade = "sure"
 
 ["0x1404585c0"]
@@ -4318,7 +4333,7 @@ gap = "The layout and the handler's gate are read from the instructions; the Lua
 
 ["0x14008d480"]
 statement = "Reads message 0x6bc's body: the path (3 bits), 16 bytes of the four paths' experience, the unlocked paths (4 bits) and a float."
-proof = "0x14008d4a5 mov r8d, 0x3 / 0x14008d4ae call ReadBits32 into record 0x0; 0x14008d4b7 lea rdx, [rbx+0x4] / 0x14008d4bb mov r8d, 0x10 / 0x14008d4c4 call ReadBytesAsBits (16 bytes, in order); 0x14008d4cd lea rdx, [rbx+0x14] / 0x14008d4d1 mov r8d, 0x4 / 0x14008d4da call ReadBits8; 0x14008d4e3 lea rdx, [rbx+0x18] / 0x14008d4ea call ReadFloat. Registered with 0x6bc at 0x140071cba."
+proof = "0x14008d4a5 mov r8d, 0x3 / 0x14008d4ae call ReadBits32 into record 0x0; 0x14008d4b7 lea rdx, [rbx+0x4] / 0x14008d4bb mov r8d, 0x10 / 0x14008d4c4 call ReadBytesAsBits (16 bytes, in order); 0x14008d4cd lea rdx, [rbx+0x14] / 0x14008d4d1 mov r8d, 0x4 / 0x14008d4da call ReadBits8; 0x14008d4e3 lea rdx, [rbx+0x18] / 0x14008d4ea call ReadFloat. Registered with 0x6bc at 0x140071cba. Emulator: vector.opcode.0x6bc.body."
 grade = "sure"
 name = "ReadMessage06BCBody"
 
