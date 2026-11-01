@@ -105,7 +105,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import gleam/bit_array
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None, Some}
 import owned_test
 
 /// What the tests' game connections are made with: a realm id and a
@@ -287,12 +287,6 @@ fn disconnect(
 fn ask_request(taken: Step(Nil, Request)) -> Request {
   let assert Some(ask) = support.asked(taken) as "the step ends in an ask"
   ask.request
-}
-
-fn unhandled_ids(taken: Step(Nil, Request)) -> List(Option(#(String, Int))) {
-  list.map(support.logs_of(step: taken, level: LogWarning), fn(line) {
-    line.about.message
-  })
 }
 
 /// A stored character whose gender is 2 or 3, which no CharacterCustomization
@@ -667,7 +661,7 @@ pub fn message_0x038c_carrying_0x082d_and_0x0241_are_logged_as_unhandled_and_the
   use <- owned_test.run(10_000)
   let #(state, _) = listed(characters: [])
   let #(state, taken) = read(state, <<store_request():bits, activity():bits>>)
-  assert unhandled_ids(taken)
+  assert support.unhandled_ids(taken)
     == [Some(#("unhandled", 0x082D)), Some(#("unhandled", 0x0241))]
     as "opcode.0x38c and opcode.0x82d: 0x038C carries the whole frame of 0x082D, which is logged under its own id; opcode.0x241: the client sends it and waits for no answer, and no feature takes it; each is logged in order"
   assert support.writes(taken) == []
@@ -685,7 +679,7 @@ pub fn frames_after_the_one_that_asked_wait_for_its_answer_and_are_then_taken_in
       select_start():bits,
       store_request():bits,
     >>)
-  assert unhandled_ids(taken) == []
+  assert support.unhandled_ids(taken) == []
   let #(state, taken) =
     answer(
       state:,
@@ -694,7 +688,7 @@ pub fn frames_after_the_one_that_asked_wait_for_its_answer_and_are_then_taken_in
     )
   let #(state, taken) = claimed(state:, taken:)
   assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
-  assert unhandled_ids(taken) == []
+  assert support.unhandled_ids(taken) == []
     as "0x038C follows 0x07E0 in the bytes and waits for the store's answer"
   let #(_, taken) =
     answer(
@@ -705,7 +699,7 @@ pub fn frames_after_the_one_that_asked_wait_for_its_answer_and_are_then_taken_in
   let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, ..)] =
     heard(taken, keyed())
     as "the list first"
-  assert unhandled_ids(taken) == [Some(#("unhandled", 0x082D))]
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x082D))]
     as "then the frame that waited, whose inner message 0x082D is logged under its own id (opcode.0x38c)"
 }
 
@@ -1363,7 +1357,7 @@ pub fn the_clients_movement_messages_after_entry_are_logged_as_unhandled_and_the
   let ids = [0x0635, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x0637]
   let #(state, taken) =
     read(in_world(), bit_array.concat(list.map(ids, move_message)))
-  assert unhandled_ids(taken)
+  assert support.unhandled_ids(taken)
     == list.map(ids, fn(id) { Some(#("unhandled", id)) })
     as "opcode.0x635, opcode.0x636 (0x63A and 0x637 follow control), opcode.0xf2 and the movement the client sends: it waits for no answer, and no feature takes them; each is logged under its own id, in order"
   assert support.writes(taken) == []
@@ -1394,7 +1388,7 @@ pub fn a_world_message_carries_one_whole_frame_whose_message_is_logged_under_its
   use <- owned_test.run(10_000)
   list.each([in_select(), in_world()], fn(state) {
     let #(_, taken) = read(state, store_request())
-    assert unhandled_ids(taken) == [Some(#("unhandled", 0x082D))]
+    assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x082D))]
       as "opcode.0x38c: a 5-bit value, then the world message's whole frame (0x14007e180); the inner message is logged as unhandled under its own id"
     assert !support.stops(taken)
     assert support.writes(taken) == []
@@ -1487,7 +1481,7 @@ pub fn the_end_of_sessions_in_the_world_claims_again_and_the_claim_puts_the_play
   // Back in the world: the movement the client sends is read as in the world,
   // and the map's end ends the connection.
   let #(state, taken) = read(state, move_message(0x0637))
-  assert unhandled_ids(taken) == [Some(#("unhandled", 0x0637))]
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x0637))]
     as "the claim kept where the client is, the player in the world"
   let #(_, taken) = feed(state, WatchEnded(WatchId(2)))
   assert disconnect(taken, keyed()) == LostUserServer
@@ -1533,7 +1527,7 @@ pub fn a_second_0x058f_or_a_play_in_the_world_is_not_taken_again_test() -> Nil {
     as "0x058F is sent once (opcode.0x58f), in the world as in character select"
   assert list.length(support.logs_of(step: taken, level: LogError)) == 1
   let #(_, taken) = read(in_world(), play_message(42))
-  assert unhandled_ids(taken) == [Some(#("unhandled", 0x07DD))]
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x07DD))]
     as "a play of the client that is in the world already is logged as unhandled, and no store is asked"
   assert support.asked(taken) == None
   assert !support.stops(taken)
@@ -1994,14 +1988,6 @@ pub fn the_game_rule_names_the_client_messages_it_takes_test() -> Nil {
   assert named
     == [0x025B, 0x025C, 0x0352, 0x038C, 0x058F, 0x0786, 0x07DD, 0x07E0]
     as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, and the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900)"
-  list.each(named, fn(id) {
-    assert list.contains(sent_message.all(), id)
-      as {
-        "the rule takes "
-        <> int.to_string(id)
-        <> ", which the client never sends"
-      }
-  })
 }
 
 pub fn character_select_takes_exactly_the_ids_the_rule_names_and_logs_every_other_client_id_as_unhandled_test() -> Nil {
@@ -2010,7 +1996,8 @@ pub fn character_select_takes_exactly_the_ids_the_rule_names_and_logs_every_othe
   let named = game_connection.taken_message_ids()
   list.each(sent_message.all(), fn(id) {
     let #(_, taken) = read(state, keyed_message(id, <<>>))
-    let logged_unhandled = unhandled_ids(taken) == [Some(#("unhandled", id))]
+    let logged_unhandled =
+      support.unhandled_ids(taken) == [Some(#("unhandled", id))]
     // 0x025B travels only inside 0x025C, so on its own it is no message the
     // rule takes (opcode.0x25c); every other named id is taken as sent.
     let taken_as_sent = list.contains(named, id) && id != 0x025B

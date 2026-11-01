@@ -157,8 +157,7 @@ fn messages() -> EngineDeclaration {
       auth_connection.taken_message_ids(),
       game_connection.taken_message_ids(),
     ]
-      |> list.flatten
-      |> list.unique,
+      |> list.flatten,
   )
 }
 

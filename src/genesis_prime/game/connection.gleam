@@ -148,7 +148,6 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
-import genesis_prime/connection/taken_message
 import genesis_prime/game/character_select
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder, SessionKey, Take}
@@ -180,6 +179,7 @@ import genesis_prime/world_map/map_id.{type MapId}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/pair
 import gleam/result
 import gleam/set.{type Set}
 
@@ -704,7 +704,7 @@ const taken_messages = [
 /// The message a message id is to the rule, by the table of the messages it
 /// takes.
 fn message_taken(message_id: Int) -> TakenMessage {
-  taken_message.of(taken_messages, message_id, otherwise: NotTaken)
+  list.key_find(taken_messages, message_id) |> result.unwrap(NotTaken)
 }
 
 /// The ids of the client's messages the rule takes: each in its table, and
@@ -712,7 +712,7 @@ fn message_taken(message_id: Int) -> TakenMessage {
 /// before the hello reply only 0x058F, in the world only 0x038C. The coverage
 /// measure counts all of them as handled.
 pub fn taken_message_ids() -> List(Int) {
-  [create_character.message_id, ..taken_message.ids(taken_messages)]
+  [create_character.message_id, ..list.map(taken_messages, pair.first)]
 }
 
 /// The client's 0x025C: the whole frame of a 0x025B create request, which

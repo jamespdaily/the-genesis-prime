@@ -11,11 +11,13 @@
 //// close notice says the client is closing; neither gets an answer.
 
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/connection/taken_message
 import genesis_prime/message/bit_stream.{type DecodeError}
 import genesis_prime/message/close_notice
 import genesis_prime/message/ping
 import genesis_prime/message/pong.{Pong}
+import gleam/list
+import gleam/pair
+import gleam/result
 
 /// What a frame is to the network layer.
 pub type Handled {
@@ -51,13 +53,13 @@ const taken_messages = [
 /// the close notice, which the coverage measure counts as handled by every
 /// connection.
 pub fn taken_message_ids() -> List(Int) {
-  taken_message.ids(taken_messages)
+  list.map(taken_messages, pair.first)
 }
 
 /// What the network layer does with a frame.
 pub fn handle(frame frame: Frame) -> Handled {
   let id = frame.message_id
-  case taken_message.of(taken_messages, id, otherwise: NotTaken) {
+  case list.key_find(taken_messages, id) |> result.unwrap(NotTaken) {
     PingMessage ->
       case ping.decode(frame.body) {
         Ok(received) -> Answer(pong_of(received))

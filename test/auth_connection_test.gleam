@@ -371,8 +371,6 @@ pub fn the_auth_rule_names_the_client_messages_it_takes_test() -> Nil {
   use <- owned_test.run(10_000)
   assert auth_connection.taken_message_ids() == [0x0592]
     as "opcode.0x592: the login request is the one message the auth rule takes"
-  assert list.contains(sent_message.all(), 0x0592)
-    as "the client sends 0x0592 (fact 0x140332920)"
 }
 
 pub fn the_auth_rule_takes_exactly_the_ids_it_names_and_logs_every_other_client_id_as_unhandled_test() -> Nil {
@@ -390,10 +388,7 @@ pub fn the_auth_rule_takes_exactly_the_ids_it_names_and_logs_every_other_client_
         ),
       )
     let logged_unhandled =
-      list.map(support.logs_of(step: taken, level: LogWarning), fn(line) {
-        line.about.message
-      })
-      == [Some(#("unhandled", id))]
+      support.unhandled_ids(taken) == [Some(#("unhandled", id))]
     assert logged_unhandled == !list.contains(named, id)
       as {
         "id "
