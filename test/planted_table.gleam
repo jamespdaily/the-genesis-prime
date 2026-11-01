@@ -5,8 +5,6 @@
 //// planted by giving the lookup or a string offset directly.
 
 import envoy
-import genesis_prime/table
-import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file.{type Column, type Schema}
 import gleam/bit_array
 import gleam/bool
@@ -304,50 +302,3 @@ fn with_folder(base: String, body: fn(String) -> a) -> a
 /// How many persistent terms are stored under a load's key.
 @external(erlang, "planted_table_ffi", "persistent_terms_under")
 pub fn persistent_terms_under(key: Reference) -> Int
-
-/// A folder with a file of no rows for every table of the client, each laid out
-/// by the table's own schema, so the server's whole load reads it: a start of
-/// the server that must load the tables needs no client files. The rows the
-/// server requires are planted, the WorldLocation2 row of the starting place,
-/// the World row it names and the Hybrid system's CharacterSlots row. The folder is removed afterwards.
-pub fn in_empty_tables_folder(body: fn(String) -> a) -> a {
-  in_folder(
-    list.map(table.entries(), fn(entry) {
-      #(store.file(entry), bytes(required_rows_only(entry)))
-    }),
-    body,
-  )
-}
-
-/// The WorldLocation2 row of the server's starting place (WorldLocation2.50230:
-/// world 1537, zone 4813, at 4605.650, -7.571, 494.996),
-/// the World row 1537 and the Hybrid system's CharacterSlots row (117, 2 slots),
-/// which every other table lacks.
-fn required_rows_only(entry: store.Entry) -> Planted {
-  let schema = store.schema(entry)
-  case schema.table {
-    "WorldLocation2" ->
-      table(schema:, rows: [
-        row(schema:, with: [
-          #("ID", Integer(50_230)),
-          #("worldId", Integer(1537)),
-          #("worldZoneId", Integer(4813)),
-          #("position0", Float(4605.65)),
-          #("position1", Float(-7.571)),
-          #("position2", Float(494.996)),
-        ]),
-      ])
-    "World" ->
-      table(schema:, rows: [row(schema:, with: [#("ID", Integer(1537))])])
-    "RewardPropertyPremiumModifier" ->
-      table(schema:, rows: [
-        row(schema:, with: [
-          #("ID", Integer(117)),
-          #("premiumSystemEnum", Integer(1)),
-          #("rewardPropertyId", Integer(29)),
-          #("modifierValueInt", Integer(2)),
-        ]),
-      ])
-    _ -> table(schema:, rows: [])
-  }
-}

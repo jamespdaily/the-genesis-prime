@@ -38,6 +38,7 @@ fn load(entry: store.Entry) -> store.Tables {
       from: client_tables.folder(),
       entries: [entry],
       requirements: [],
+      derivations: [],
     )
     as "the table did not load from the client's files"
   tables

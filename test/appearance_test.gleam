@@ -13,6 +13,7 @@
 //// a planted table lists its rows in that order, the order of the table's
 //// records.
 
+import character_tables
 import client_tables
 import genesis_prime/game/appearance
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
@@ -23,12 +24,17 @@ import genesis_prime/table/character_customization.{
 import genesis_prime/table/character_customization_label.{
   type CharacterCustomizationLabel, CharacterCustomizationLabel,
 }
+import genesis_prime/table/customization_parameter
+import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/id.{
   CharacterCustomizationId, CharacterCustomizationLabelId, RaceId,
 }
+import genesis_prime/table/loader/store as table_store
+import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import owned_test
+import planted_table.{Integer}
 import unitest
 
 /// A face (slot 25) row of race 1, sex 0 that the index holds (flags 2), with
@@ -259,15 +265,13 @@ pub fn a_label_of_the_other_faction_is_ignored_and_its_rows_are_not_candidates_t
 
 // ---- the real rows ----
 
-pub fn a_human_males_face_from_the_real_rows_follows_the_looks_labels_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
+/// The four looks of a human male's face, checked against the index the
+/// tables' load built. CharacterCustomization rows 2, 9 and 10 (race 1, sex 0,
+/// slot 25): row 2 labels 22 = 1 and 2 = 1, display 135; row 9 labels 22 = 2
+/// and 2 = 1, display 136; row 10 labels 21 = 2 and 2 = 1, display 137.
+/// CharacterCustomizationLabel: 21 is faction 166's, 22 faction 167's.
+fn assert_the_faces_follow_the_looks_labels(tables: table_store.Tables) -> Nil {
   let index = appearance.index(tables:)
-  // CharacterCustomization rows 2, 9 and 10 (race 1, sex 0, slot 25):
-  // row 2 labels 22 = 1 and 2 = 1, display 135; row 9 labels 22 = 2 and 2 = 1,
-  // display 136; row 10 labels 21 = 2 and 2 = 1, display 137. CharacterCustomizationLabel:
-  // 21 is faction 166's, 22 faction 167's.
   let face_of = fn(faction, pairs) {
     let visuals =
       appearance.body_visuals(
@@ -294,6 +298,17 @@ pub fn a_human_males_face_from_the_real_rows_follows_the_looks_labels_test() -> 
     as "row 10 exists"
   assert row_10.item_display_id == 137 && row_10.item_slot_id == 25
     as "the real row the expected 137 comes from"
+}
+
+pub fn a_human_males_face_from_the_real_rows_follows_the_looks_labels_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  assert_the_faces_follow_the_looks_labels(client_tables.shared())
+}
+
+pub fn the_index_a_load_builds_gives_a_human_males_face_from_planted_rows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert_the_faces_follow_the_looks_labels(character_tables.shared())
 }
 
 pub fn every_slot_of_a_real_look_is_listed_once_in_slot_order_test() -> Nil {
@@ -347,4 +362,155 @@ pub fn a_race_and_sex_have_the_bone_count_the_clients_create_request_carries_tes
         as "opcode.0x25b.counts: the bone values a create request carries for this race and sex"
     },
   )
+}
+
+// ---- the rows the load requires ----
+
+/// Loads a CustomizationParameterMap with one map naming parameter id 7 and a
+/// CustomizationParameter table with the rows of these ids, with the
+/// appearance's requirements.
+fn load_a_map_naming_parameter_7(
+  parameters parameters: List(Int),
+) -> Result(table_store.Tables, table_store.LoadError) {
+  load_appearance_tables(replacing: [
+    character_tables.map_file_naming(parameter_id: 7),
+    planted_table.file(
+      customization_parameter.schema,
+      list.map(parameters, fn(id) {
+        planted_table.row(customization_parameter.schema, [
+          #("ID", Integer(id)),
+        ])
+      }),
+    ),
+  ])
+}
+
+pub fn the_load_fails_when_a_map_names_a_customization_parameter_row_that_is_missing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert load_a_map_naming_parameter_7(parameters: [1, 8])
+    == Error(table_store.RowMissing(
+      from_table: "CustomizationParameterMap",
+      column: "customizationParameterId",
+      to_table: "CustomizationParameter",
+      id: 7,
+    ))
+    as "a create request's bone count reads the CustomizationParameter row each map of the race and sex names (opcode.0x25b.counts), so a load without that row fails, naming it"
+  let assert Ok(tables) = load_a_map_naming_parameter_7(parameters: [1, 7, 8])
+    as "the row the map names is there, so the load holds"
+  table_store.unload(tables)
+}
+
+/// Loads a CharacterCustomization table with one row of these flags and
+/// labels, and a label table with a row of each of these ids, with the
+/// appearance's requirements.
+fn load_a_row_naming_labels(
+  flags flags: Int,
+  labels labels: #(Int, Int),
+  label_rows label_rows: List(Int),
+) -> Result(table_store.Tables, table_store.LoadError) {
+  load_appearance_tables(replacing: [
+    planted_table.file(character_customization.schema, [
+      planted_table.row(character_customization.schema, [
+        #("ID", Integer(1)),
+        #("flags", Integer(flags)),
+        #("characterCustomizationLabelId00", Integer(labels.0)),
+        #("characterCustomizationLabelId01", Integer(labels.1)),
+      ]),
+    ]),
+    planted_table.file(
+      character_customization_label.schema,
+      list.map(label_rows, fn(id) {
+        planted_table.row(character_customization_label.schema, [
+          #("ID", Integer(id)),
+        ])
+      }),
+    ),
+  ])
+}
+
+/// Loads the four tables the appearance's requirements read, each of no rows
+/// but for the planted files that replace it, with those requirements.
+fn load_appearance_tables(
+  replacing replacing: List(#(String, BitArray)),
+) -> Result(table_store.Tables, table_store.LoadError) {
+  let files =
+    list.fold(
+      replacing,
+      [
+        planted_table.file(character_customization.schema, []),
+        planted_table.file(character_customization_label.schema, []),
+        planted_table.file(customization_parameter_map.schema, []),
+        planted_table.file(customization_parameter.schema, []),
+      ],
+      fn(files, file) { list.key_set(files, file.0, file.1) },
+    )
+  use folder <- planted_table.in_folder(files)
+  table_store.load(
+    under: reference.new(),
+    from: folder,
+    entries: [
+      character_customization.entry(),
+      character_customization_label.entry(),
+      customization_parameter_map.entry(),
+      customization_parameter.entry(),
+    ],
+    requirements: appearance.requirements(),
+    derivations: [],
+  )
+}
+
+pub fn the_load_fails_when_an_indexed_rows_label_has_no_label_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert load_a_row_naming_labels(flags: 2, labels: #(77, 0), label_rows: [2])
+    == Error(table_store.RowMissing(
+      from_table: "CharacterCustomization",
+      column: "characterCustomizationLabelId00",
+      to_table: "CharacterCustomizationLabel",
+      id: 77,
+    ))
+    as "BuildCustomizationIndex 0x14001d450 files a row with flags bit 2 set, so its first label is followed into CharacterCustomizationLabel"
+  assert load_a_row_naming_labels(flags: 2, labels: #(2, 78), label_rows: [2])
+    == Error(table_store.RowMissing(
+      from_table: "CharacterCustomization",
+      column: "characterCustomizationLabelId01",
+      to_table: "CharacterCustomizationLabel",
+      id: 78,
+    ))
+    as "the row's second label is followed too"
+  let assert Ok(tables) =
+    load_a_row_naming_labels(flags: 2, labels: #(2, 0), label_rows: [2])
+    as "label 0 is none, and label 2 has its row"
+  table_store.unload(tables)
+}
+
+pub fn a_row_the_index_does_not_hold_may_name_a_label_with_no_row_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each([1, 3, 4, 6], fn(flags) {
+    let assert Ok(tables) =
+      load_a_row_naming_labels(flags:, labels: #(77, 0), label_rows: [2])
+      as {
+        "BuildCustomizationIndex 0x14001d450 files a row only with flags bit 2 set and bits 1 and 4 clear, so a row of flags "
+        <> int.to_string(flags)
+        <> " is never read through its label"
+      }
+    table_store.unload(tables)
+  })
+}
+
+pub fn the_client_has_every_row_the_appearance_requirements_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  list.each(appearance.requirements(), fn(requirement) {
+    assert requirement.missing(tables) == []
+      as {
+        "the client's "
+        <> requirement.from_table
+        <> " "
+        <> requirement.column
+        <> " names a row of "
+        <> requirement.to_table
+        <> " in every row, so the server's table load holds"
+      }
+  })
 }

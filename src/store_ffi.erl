@@ -2,7 +2,7 @@
 -export([put/2, erase/1]).
 
 %% Writes a persistent term, the Gleam way: nil for done.
--spec put({term(), binary()}, tuple()) -> nil.
+-spec put({term(), binary()}, term()) -> nil.
 put(Key, Table) ->
     persistent_term:put(Key, Table),
     nil.

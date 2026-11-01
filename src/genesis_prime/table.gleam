@@ -151,6 +151,7 @@ import genesis_prime/table/level_up_unlock
 import genesis_prime/table/level_up_unlock_type
 import genesis_prime/table/live_event
 import genesis_prime/table/live_event_display_item
+import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/loading_screen_tip
@@ -782,7 +783,9 @@ pub fn entries() -> List(store.Entry) {
 
 /// Loads every table from the folder that holds the client's extracted `.tbl`
 /// files under `key`, checking each against its generated schema and the rows
-/// the server requires.
+/// the server requires, and builds the values the server derives from them.
+/// The server itself loads only the tables its rules read
+/// (`genesis_prime/table/loader/server_table`).
 pub fn load(
   under key: Reference,
   from folder: String,
@@ -792,17 +795,6 @@ pub fn load(
     from: folder,
     entries: entries(),
     requirements: requirement.all(),
-  )
-}
-
-/// `load` under the server's own key, which is the same in every run: the load
-/// of the server's start and of a test that replays a recording.
-pub fn load_for_server(
-  from folder: String,
-) -> Result(store.Tables, store.LoadError) {
-  store.load_for_server(
-    from: folder,
-    entries: entries(),
-    requirements: requirement.all(),
+    derivations: derivation.all(),
   )
 }

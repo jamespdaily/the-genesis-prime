@@ -10,8 +10,9 @@ whose Patch folder sits beside Client64 and holds ClientData.index and
 ClientData.archive; GENESIS_TABLE_DIR names the folder to fill (default
 $GENESIS_HOME/tables, set by setup_check/environment.sh).
 
-Every file is checked against the SHA-1 the index holds for it before it is
-written, and a file that fails is refused by name. The set is built in
+A ClientData.index of any build but 16042 (TARGET_BUILD) is refused, naming the
+build it carries. Every file is checked against the SHA-1 the index holds for it
+before it is written, and a file that fails is refused by name. The set is built in
 GENESIS_TABLE_DIR's name plus ".staging", checked again as a whole (the index's
 files and sizes, and the fact file's 384), and swapped in as one folder: the
 old folder moves to ".old", the staged one is renamed in, the old one is
@@ -71,6 +72,10 @@ ARCHIVE_ENTRY = 32
 FLAG_STORED = 1
 FLAG_LZMA = 5
 EXPECTED_TABLES = 384  # fact file, game_tables.ClientData
+# The client build the server is written for, client_archive.target_build:
+# GetVersionInfo at 0x1406f8360 returns nBuildNumber 16042 (0x3eaa). An index of
+# another build is refused, as the tables of another build are not the server's.
+TARGET_BUILD = 16042
 
 
 class Corrupt(Exception):
@@ -115,9 +120,27 @@ def _block_table(header: bytes, read: Callable[[int, int], bytes], name: str) ->
     return [struct.unpack_from("<QQ", table, 16 * i) for i in range(count)]
 
 
-def read_index(index: bytes) -> list[IndexedFile]:
-    """Every file in the index's directory tree."""
+@dataclass(frozen=True)
+class IndexHeader:
+    """What the header of an archive index gives: the build, the block that
+    holds the root directory, and a reader of a block by its number."""
+
+    build: int
+    directory_block: int
+    block: Callable[[int], bytes]
+
+
+def read_header(index: bytes) -> IndexHeader:
+    """The header of an archive index, read as the fact file's
+    "archive_index.header" describes: the PACK header of 0x230 bytes (signature
+    0x5041434B, version 1, block table offset at 0x218, block count at 0x220,
+    root block index at 0x228), and the root block, which holds the AIDX header
+    (signature 0x41494458, version 1, build at offset 8, root directory block at
+    offset 12). Block 0 is never readable, as the client's reader refuses it
+    (0x1401b8600). Raises Corrupt for anything else."""
     name = "ClientData.index"
+    if len(index) < 0x230:
+        raise Corrupt(name, "shorter than the 0x230-byte PACK header")
     blocks = _block_table(index, lambda offset, size: index[offset : offset + size], name)
 
     def block(number: int) -> bytes:
@@ -130,9 +153,30 @@ def read_index(index: bytes) -> list[IndexedFile]:
         return data
 
     (root,) = _unpack("<I", index, 0x228, name)
-    signature, version, _build, directory_block = _unpack("<IIII", block(root), 0, name)
+    root_block = block(root)
+    if len(root_block) < 16:
+        raise Corrupt(name, "the root block is shorter than the 16-byte AIDX header")
+    signature, version, build, directory_block = _unpack("<IIII", root_block, 0, name)
     if signature != AIDX_SIGNATURE or version != 1:
         raise Corrupt(name, "the root block is not an AIDX header")
+    return IndexHeader(build, directory_block, block)
+
+
+def build_of_index(index: bytes) -> tuple[int | None, str]:
+    """The build an archive index carries, or (None, why it is not an archive
+    index), for a caller that reports instead of raising."""
+    try:
+        return read_header(index).build, ""
+    except Corrupt as corrupt:
+        return None, corrupt.reason
+
+
+def read_index(index: bytes) -> list[IndexedFile]:
+    """Every file in the index's directory tree."""
+    name = "ClientData.index"
+    header = read_header(index)
+    block = header.block
+    directory_block = header.directory_block
     files: list[IndexedFile] = []
     pending = [(directory_block, "")]
     while pending:
@@ -153,6 +197,14 @@ def read_index(index: bytes) -> list[IndexedFile]:
             text_offset, flags, _written, size, stored_size = _unpack("<IIQQQ", node, at, name)
             files.append(IndexedFile(prefix + text(text_offset), flags, size, stored_size, node[at + 32 : at + 52]))
     return files
+
+
+def require_target_build(index: bytes) -> None:
+    """Raises Corrupt naming the build the index carries unless it is
+    TARGET_BUILD."""
+    build = read_header(index).build
+    if build != TARGET_BUILD:
+        raise Corrupt("ClientData.index", "is build %d, and the server is written for build %d" % (build, TARGET_BUILD))
 
 
 def tables_of(files: list[IndexedFile]) -> list[IndexedFile]:
@@ -324,10 +376,14 @@ def extract(patch_folder: Path, destination: Path, expected_count: int | None = 
     """Writes every DB/*.tbl of patch_folder's ClientData into destination,
     each checked against the index's SHA-1, and returns their file names.
     Raises Corrupt naming the file whose block does not match, or the index
-    when it lists a number of tables other than expected_count; the
-    destination is then left as it was. The whole set replaces destination at
-    once: a crash-cut swap is recovered, the set is built and verified in a
-    staging folder beside destination, then swapped in whole."""
+    when it is of another build than TARGET_BUILD or lists a number of tables
+    other than expected_count; the
+    destination is then left as it was. An index of another build is refused
+    before anything beside destination is touched, so a leftover staging or old
+    folder stays for the next run that is accepted. The whole set replaces
+    destination at once: a crash-cut swap is recovered, the set is built and
+    verified in a staging folder beside destination, then swapped in whole."""
+    require_target_build((patch_folder / "ClientData.index").read_bytes())
     destination.parent.mkdir(parents=True, exist_ok=True)
     recover(destination)
     staging = staging_of(destination)
