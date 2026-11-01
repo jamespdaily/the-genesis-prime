@@ -10,6 +10,7 @@
 //// The real indexes are the four in the client's Patch folder, read only
 //// where the client is installed.
 
+import archive_index
 import envoy
 import genesis_prime/client_archive
 import gleam/bit_array
@@ -105,10 +106,10 @@ fn cut(bytes: BitArray, at length: Int) -> BitArray {
 
 pub fn a_well_formed_index_gives_its_build_test() -> Nil {
   use <- owned_test.run(5000)
-  assert client_archive.build_of_index(index_bytes(well_formed())) == Ok(16_042)
+  assert archive_index.build_of_index(index_bytes(well_formed())) == Ok(16_042)
     as "the build at AIDX offset 8 (0x1401bf830) of a 16042 index"
   let other = PlantedIndex(..well_formed(), build: 17_000)
-  assert client_archive.build_of_index(index_bytes(other)) == Ok(17_000)
+  assert archive_index.build_of_index(index_bytes(other)) == Ok(17_000)
     as "the build at AIDX offset 8 (0x1401bf830) of a 17000 index"
 }
 
@@ -121,85 +122,85 @@ pub fn the_target_build_is_the_clients_own_build_test() -> Nil {
 pub fn a_wrong_pack_signature_is_not_an_index_test() -> Nil {
   use <- owned_test.run(5000)
   let planted = PlantedIndex(..well_formed(), pack_signature: 0x41434B50)
-  assert client_archive.build_of_index(index_bytes(planted))
-    == Error(client_archive.NotAnIndex)
+  assert archive_index.build_of_index(index_bytes(planted))
+    == Error(archive_index.NotAnIndex)
     as "0x1401ba550 compares the signature with 0x5041434b"
 }
 
 pub fn a_pack_version_other_than_1_is_not_an_index_test() -> Nil {
   use <- owned_test.run(5000)
   let planted = PlantedIndex(..well_formed(), pack_version: 2)
-  assert client_archive.build_of_index(index_bytes(planted))
-    == Error(client_archive.NotAnIndex)
+  assert archive_index.build_of_index(index_bytes(planted))
+    == Error(archive_index.NotAnIndex)
     as "0x1401ba559 compares the version with 1"
 }
 
 pub fn a_root_block_index_of_0_has_no_build_block_test() -> Nil {
   use <- owned_test.run(5000)
   let planted = PlantedIndex(..well_formed(), root_index: 0)
-  assert client_archive.build_of_index(index_bytes(planted))
-    == Error(client_archive.NoBuildBlock)
+  assert archive_index.build_of_index(index_bytes(planted))
+    == Error(archive_index.NoBuildBlock)
     as "0x1401b8600 refuses block index 0, even when its entry is valid"
 }
 
 pub fn a_root_block_index_equal_to_the_count_has_no_build_block_test() -> Nil {
   use <- owned_test.run(5000)
   let planted = PlantedIndex(..well_formed(), root_index: block_count)
-  assert client_archive.build_of_index(index_bytes(planted))
-    == Error(client_archive.NoBuildBlock)
+  assert archive_index.build_of_index(index_bytes(planted))
+    == Error(archive_index.NoBuildBlock)
     as "0x1401ba5c5 needs the root index below the count; 0x1401b8600 refuses an index at or past it"
 }
 
 pub fn a_root_block_of_size_0_has_no_build_block_test() -> Nil {
   use <- owned_test.run(5000)
   let planted = PlantedIndex(..well_formed(), root_size: 0)
-  assert client_archive.build_of_index(index_bytes(planted))
-    == Error(client_archive.NoBuildBlock)
+  assert archive_index.build_of_index(index_bytes(planted))
+    == Error(archive_index.NoBuildBlock)
     as "0x1401b8600 refuses a block of size 0"
 }
 
 pub fn a_root_block_of_size_8_has_no_build_block_test() -> Nil {
   use <- owned_test.run(5000)
   let planted = PlantedIndex(..well_formed(), root_size: 8)
-  assert client_archive.build_of_index(index_bytes(planted))
-    == Error(client_archive.NoBuildBlock)
+  assert archive_index.build_of_index(index_bytes(planted))
+    == Error(archive_index.NoBuildBlock)
     as "the AIDX header is 16 bytes (read of length 0x10 at 0x1401bf64c, in the reader 0x1401bf610), more than the block holds"
 }
 
 pub fn a_wrong_aidx_signature_has_no_build_block_test() -> Nil {
   use <- owned_test.run(5000)
   let planted = PlantedIndex(..well_formed(), aidx_signature: 0x58444941)
-  assert client_archive.build_of_index(index_bytes(planted))
-    == Error(client_archive.NoBuildBlock)
+  assert archive_index.build_of_index(index_bytes(planted))
+    == Error(archive_index.NoBuildBlock)
     as "0x1401bf65c compares the AIDX signature with 0x41494458"
 }
 
 pub fn an_aidx_version_other_than_1_has_no_build_block_test() -> Nil {
   use <- owned_test.run(5000)
   let planted = PlantedIndex(..well_formed(), aidx_version: 2)
-  assert client_archive.build_of_index(index_bytes(planted))
-    == Error(client_archive.NoBuildBlock)
+  assert archive_index.build_of_index(index_bytes(planted))
+    == Error(archive_index.NoBuildBlock)
     as "0x1401bf665 compares the AIDX version with 1"
 }
 
 pub fn bytes_that_end_inside_the_pack_header_are_truncated_test() -> Nil {
   use <- owned_test.run(5000)
   let bytes = cut(index_bytes(well_formed()), at: 0x100)
-  assert client_archive.build_of_index(bytes) == Error(client_archive.Truncated)
+  assert archive_index.build_of_index(bytes) == Error(archive_index.Truncated)
     as "the PACK header is 0x230 bytes read at 0x1401b7caa"
 }
 
 pub fn bytes_that_end_inside_the_block_table_are_truncated_test() -> Nil {
   use <- owned_test.run(5000)
   let bytes = cut(index_bytes(well_formed()), at: table_offset + 40)
-  assert client_archive.build_of_index(bytes) == Error(client_archive.Truncated)
+  assert archive_index.build_of_index(bytes) == Error(archive_index.Truncated)
     as "the table is block-count entries of 16 bytes, read at 0x1401b7d16; this one ends inside its third entry"
 }
 
 pub fn bytes_that_end_inside_the_aidx_block_are_truncated_test() -> Nil {
   use <- owned_test.run(5000)
   let bytes = cut(index_bytes(well_formed()), at: block_offset + 8)
-  assert client_archive.build_of_index(bytes) == Error(client_archive.Truncated)
+  assert archive_index.build_of_index(bytes) == Error(archive_index.Truncated)
     as "the AIDX header is 16 bytes (0x1401bf64c); this one ends before its build and directory block"
 }
 
@@ -215,7 +216,7 @@ pub fn each_real_index_in_the_client_gives_the_target_build_test() -> Nil {
     let path = patch_folder <> name <> ".index"
     let assert Ok(bytes) = simplifile.read_bits(path)
       as { "the client's index is missing or unreadable: " <> path }
-    assert client_archive.build_of_index(bytes)
+    assert archive_index.build_of_index(bytes)
       == Ok(client_archive.target_build)
       as {
         name

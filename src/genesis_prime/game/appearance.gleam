@@ -24,13 +24,17 @@
 ////   record (PickCustomizationDisplays 0x140031c90, vector.0x140031c90). The
 ////   client's output has a display of 0 for a slot whose rows were all taken
 ////   out; a slot with no row at all is left out here.
-//// - **Once for each list.** `index` reads the tables once into an `Index`: the
-////   faction of each label and the indexed rows of each race and sex, each
-////   with the faction it is filed under. The character list builds it once and
-////   every character's body is taken from it.
+//// - **Once for each load.** The tables' load builds the `Index` once
+////   (`derivation`): the faction of each label and the indexed rows of each
+////   race and sex, each with the faction it is filed under. Every character
+////   list and every world entry takes the bodies from it with `index`.
 //// - **The bones.** A create request carries one 32-bit float for each part
 ////   the race and sex's CustomizationParameterMap rows set in their
 ////   CustomizationParameter row (opcode.0x25b.counts).
+//// - **The rows the load requires** (`requirements`): every
+////   CustomizationParameterMap row's parameter, and the labels of every
+////   CharacterCustomization row the index files, each have their row, so a
+////   lookup of one never finds none.
 
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/store.{type LookEntry}
@@ -67,12 +71,23 @@ type Filed {
   Filed(faction: Faction2Id, row: CharacterCustomization)
 }
 
-/// The index of the client's tables.
+/// The index of the client's tables, which their load built
+/// (`derivation`). Stops the caller for tables loaded without it.
 pub fn index(tables tables: table_store.Tables) -> Index {
-  index_from_rows(
-    rows: character_customization.all(tables),
-    labels: character_customization_label.all(tables),
-  )
+  table_store.derived(tables:, name: index_name)
+}
+
+const index_name = "AppearanceIndex"
+
+/// The index as a value the tables' load builds once, under the tables' key,
+/// from the rows of CharacterCustomization and CharacterCustomizationLabel.
+pub fn derivation() -> table_store.Derivation {
+  table_store.derivation(name: index_name, build: fn(tables) {
+    index_from_rows(
+      rows: character_customization.all(tables),
+      labels: character_customization_label.all(tables),
+    )
+  })
 }
 
 /// The index of the given rows of CharacterCustomization, in record order,
@@ -185,7 +200,8 @@ fn slot_order(first: ItemSlotId, second: ItemSlotId) -> order.Order {
 /// The number of bone values a create request carries for the race and sex:
 /// for each CustomizationParameterMap row of the race and sex, the parts its
 /// CustomizationParameter row sets (scale, rotation and position on each of
-/// three axes, each 0 or 1 in the table).
+/// three axes, each 0 or 1 in the table). The load requires each of those
+/// rows (`requirements`).
 pub fn bone_count(
   tables tables: table_store.Tables,
   race_id race_id: RaceId,
@@ -196,14 +212,68 @@ pub fn bone_count(
     customization_parameter_map.race_id(map) == race_id
     && map.gender_enum == sex
   })
-  |> list.filter_map(fn(map) {
-    customization_parameter.get(
-      tables:,
-      id: customization_parameter_map.customization_parameter_id(map),
-    )
+  |> list.map(fn(map) {
+    let assert Ok(parameter) =
+      customization_parameter.get(
+        tables:,
+        id: customization_parameter_map.customization_parameter_id(map),
+      )
+      as "the load requires the CustomizationParameter row of every CustomizationParameterMap row"
+    parts_set(parameter)
   })
-  |> list.map(parts_set)
   |> int.sum
+}
+
+/// The load's checks that the rows the appearance follows exist, so a client
+/// without them fails the server's start: the CustomizationParameter row of
+/// every CustomizationParameterMap row, and the CharacterCustomizationLabel
+/// row of each label (first and second) of every CharacterCustomization row
+/// the index files, where a label of 0 is none.
+pub fn requirements() -> List(table_store.Requirement) {
+  [
+    table_store.Requirement(
+      from_table: "CustomizationParameterMap",
+      column: "customizationParameterId",
+      to_table: "CustomizationParameter",
+      missing: fn(tables) {
+        customization_parameter_map.all(tables)
+        |> list.map(customization_parameter_map.customization_parameter_id)
+        |> list.filter(fn(parameter_id) {
+          result.is_error(customization_parameter.get(tables:, id: parameter_id))
+        })
+        |> list.map(fn(parameter_id) { parameter_id.value })
+      },
+    ),
+    label_requirement(
+      column: "characterCustomizationLabelId00",
+      label_of: character_customization.character_customization_label_id00,
+    ),
+    label_requirement(
+      column: "characterCustomizationLabelId01",
+      label_of: character_customization.character_customization_label_id01,
+    ),
+  ]
+}
+
+fn label_requirement(
+  column column: String,
+  label_of label_of: fn(CharacterCustomization) -> CharacterCustomizationLabelId,
+) -> table_store.Requirement {
+  table_store.Requirement(
+    from_table: "CharacterCustomization",
+    column:,
+    to_table: "CharacterCustomizationLabel",
+    missing: fn(tables) {
+      character_customization.all(tables)
+      |> list.filter(is_indexed)
+      |> list.map(label_of)
+      |> list.filter(fn(label) { label != CharacterCustomizationLabelId(0) })
+      |> list.filter(fn(label) {
+        result.is_error(character_customization_label.get(tables:, id: label))
+      })
+      |> list.map(fn(label) { label.value })
+    },
+  )
 }
 
 fn parts_set(parameter: customization_parameter.CustomizationParameter) -> Int {

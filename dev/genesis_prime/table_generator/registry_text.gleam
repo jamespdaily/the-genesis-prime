@@ -1,5 +1,6 @@
 //// The text of the generated `genesis_prime/table` module: one entry per
-//// generated table module, in file-name order, and the load of all of them.
+//// generated table module, in file-name order, and the load of all of them
+//// (the coverage tool's and the tests'; the server loads its own list).
 
 import genesis_prime/table_generator/difference
 import gleam/list
@@ -12,6 +13,7 @@ pub fn render(modules modules: List(String)) -> String {
     modules
     |> list.map(fn(module) { "import genesis_prime/table/" <> module })
     |> list.append([
+      "import genesis_prime/table/loader/derivation",
       "import genesis_prime/table/loader/requirement",
       "import genesis_prime/table/loader/store",
       "import gleam/erlang/reference.{type Reference}",
@@ -36,7 +38,9 @@ pub fn render(modules modules: List(String)) -> String {
       "",
       "/// Loads every table from the folder that holds the client's extracted `.tbl`",
       "/// files under `key`, checking each against its generated schema and the rows",
-      "/// the server requires.",
+      "/// the server requires, and builds the values the server derives from them.",
+      "/// The server itself loads only the tables its rules read",
+      "/// (`genesis_prime/table/loader/server_table`).",
       "pub fn load(",
       "  under key: Reference,",
       "  from folder: String,",
@@ -46,18 +50,7 @@ pub fn render(modules modules: List(String)) -> String {
       "    from: folder,",
       "    entries: entries(),",
       "    requirements: requirement.all(),",
-      "  )",
-      "}",
-      "",
-      "/// `load` under the server's own key, which is the same in every run: the load",
-      "/// of the server's start and of a test that replays a recording.",
-      "pub fn load_for_server(",
-      "  from folder: String,",
-      ") -> Result(store.Tables, store.LoadError) {",
-      "  store.load_for_server(",
-      "    from: folder,",
-      "    entries: entries(),",
-      "    requirements: requirement.all(),",
+      "    derivations: derivation.all(),",
       "  )",
       "}",
       "",

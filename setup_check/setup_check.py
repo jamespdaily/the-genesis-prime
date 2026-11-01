@@ -34,9 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import extract_tables  # noqa: E402
 import ghidra_env  # noqa: E402
 
-# The client's own build, client_archive.target_build: GetVersionInfo at
-# 0x1406f8360 returns nBuildNumber 16042 (0x3eaa).
-TARGET_BUILD = 16042
+TARGET_BUILD = extract_tables.TARGET_BUILD
 POSTGRES_MAJOR = 18  # Jim's choice on issue #13
 CLOCK_TOLERANCE_SECONDS = 1.0
 MARKER = "GENESIS_PATCHES"
@@ -231,7 +229,7 @@ def _indexes(patch_dir: Path) -> list[Missing]:
                         "restore the client's Patch folder, next to Client64")]
     missing = []
     for index in indexes:
-        build, why = _build_of_index(index.read_bytes())
+        build, why = extract_tables.build_of_index(index.read_bytes())
         if build == TARGET_BUILD:
             continue
         if build is None:
@@ -241,30 +239,6 @@ def _indexes(patch_dir: Path) -> list[Missing]:
             missing.append(Missing("Patch/%s on build %d" % (index.name, TARGET_BUILD), "build %d" % build,
                                    "update the client to build %d, so every Patch/*.index carries it" % TARGET_BUILD))
     return missing
-
-
-def _build_of_index(data: bytes) -> tuple[int | None, str]:
-    """The build in the AIDX header of an archive index, or (None, why not),
-    read as the fact file's "archive_index.header" describes: PACK header
-    0x230 bytes (signature 0x5041434B, version 1, block table offset at 0x218,
-    block count at 0x220, root block index at 0x228), the root block holding
-    the AIDX header (signature 0x41494458, version 1, build at offset 8)."""
-    u32 = lambda at: int.from_bytes(data[at : at + 4], "little")  # noqa: E731
-    u64 = lambda at: int.from_bytes(data[at : at + 8], "little")  # noqa: E731
-    if len(data) < 0x230:
-        return None, "shorter than the 0x230-byte PACK header"
-    if u32(0) != 0x5041434B or u32(4) != 1:
-        return None, "no PACK signature and version 1"
-    count, root = u32(0x220), u32(0x228)
-    if root >= count:
-        return None, "root block %d is not below the block count %d" % (root, count)
-    entry = u64(0x218) + 16 * root
-    offset, size = u64(entry), u64(entry + 8)
-    if size < 16 or offset + 16 > len(data) or entry + 16 > len(data):
-        return None, "the root block lies outside the file"
-    if u32(offset) != 0x41494458 or u32(offset + 4) != 1:
-        return None, "no AIDX signature and version 1"
-    return u32(offset + 8), ""
 
 
 QUERY_PROCESS_VARIABLES = {

@@ -104,6 +104,7 @@ fn load(
     from: folder,
     entries: [game_formula.entry(), xp_per_level.entry()],
     requirements: level.requirements(),
+    derivations: [],
   )
 }
 

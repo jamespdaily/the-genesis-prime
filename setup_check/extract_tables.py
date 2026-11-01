@@ -10,8 +10,9 @@ whose Patch folder sits beside Client64 and holds ClientData.index and
 ClientData.archive; GENESIS_TABLE_DIR names the folder to fill (default
 $GENESIS_HOME/tables, set by setup_check/environment.sh).
 
-Every file is checked against the SHA-1 the index holds for it before it is
-written, and a file that fails is refused by name. The set is built in
+A ClientData.index of any build but 16042 (TARGET_BUILD) is refused, naming the
+build it carries. Every file is checked against the SHA-1 the index holds for it
+before it is written, and a file that fails is refused by name. The set is built in
 GENESIS_TABLE_DIR's name plus ".staging", checked again as a whole (the index's
 files and sizes, and the fact file's 384), and swapped in as one folder: the
 old folder moves to ".old", the staged one is renamed in, the old one is
@@ -71,6 +72,10 @@ ARCHIVE_ENTRY = 32
 FLAG_STORED = 1
 FLAG_LZMA = 5
 EXPECTED_TABLES = 384  # fact file, game_tables.ClientData
+# The client build the server is written for, client_archive.target_build:
+# GetVersionInfo at 0x1406f8360 returns nBuildNumber 16042 (0x3eaa). An index of
+# another build is refused, as the tables of another build are not the server's.
+TARGET_BUILD = 16042
 
 
 class Corrupt(Exception):
@@ -155,6 +160,40 @@ def read_index(index: bytes) -> list[IndexedFile]:
     return files
 
 
+def build_of_index(data: bytes) -> tuple[int | None, str]:
+    """The build in the AIDX header of an archive index, or (None, why not),
+    read as the fact file's "archive_index.header" describes: PACK header
+    0x230 bytes (signature 0x5041434B, version 1, block table offset at 0x218,
+    block count at 0x220, root block index at 0x228), the root block holding
+    the AIDX header (signature 0x41494458, version 1, build at offset 8)."""
+    u32 = lambda at: int.from_bytes(data[at : at + 4], "little")  # noqa: E731
+    u64 = lambda at: int.from_bytes(data[at : at + 8], "little")  # noqa: E731
+    if len(data) < 0x230:
+        return None, "shorter than the 0x230-byte PACK header"
+    if u32(0) != PACK_SIGNATURE or u32(4) != 1:
+        return None, "no PACK signature and version 1"
+    count, root = u32(0x220), u32(0x228)
+    if root >= count:
+        return None, "root block %d is not below the block count %d" % (root, count)
+    entry = u64(0x218) + 16 * root
+    offset, size = u64(entry), u64(entry + 8)
+    if size < 16 or offset + 16 > len(data) or entry + 16 > len(data):
+        return None, "the root block lies outside the file"
+    if u32(offset) != AIDX_SIGNATURE or u32(offset + 4) != 1:
+        return None, "no AIDX signature and version 1"
+    return u32(offset + 8), ""
+
+
+def require_target_build(index: bytes) -> None:
+    """Raises Corrupt naming the build the index carries unless it is
+    TARGET_BUILD."""
+    build, why = build_of_index(index)
+    if build is None:
+        raise Corrupt("ClientData.index", "is not an archive index: %s" % why)
+    if build != TARGET_BUILD:
+        raise Corrupt("ClientData.index", "is build %d, and the server is written for build %d" % (build, TARGET_BUILD))
+
+
 def tables_of(files: list[IndexedFile]) -> list[IndexedFile]:
     """The files directly in the DB directory, ending in .tbl."""
     return sorted(
@@ -236,8 +275,11 @@ def stage_tables(patch_folder: Path, staging: Path) -> list[IndexedFile]:
     """Writes every DB/*.tbl of patch_folder's ClientData into the empty folder
     staging, each checked against the index's SHA-1 before it is written, and
     returns the tables the index lists. Raises Corrupt naming the file whose
-    block does not match. Touches nothing but staging."""
-    tables = tables_of(read_index((patch_folder / "ClientData.index").read_bytes()))
+    block does not match, or the index when it is not of TARGET_BUILD. Touches
+    nothing but staging."""
+    index = (patch_folder / "ClientData.index").read_bytes()
+    require_target_build(index)
+    tables = tables_of(read_index(index))
     with open(patch_folder / "ClientData.archive", "rb") as archive:
         blocks, entries = _archive_entries(archive, "ClientData.archive")
         for file in tables:
@@ -324,7 +366,8 @@ def extract(patch_folder: Path, destination: Path, expected_count: int | None = 
     """Writes every DB/*.tbl of patch_folder's ClientData into destination,
     each checked against the index's SHA-1, and returns their file names.
     Raises Corrupt naming the file whose block does not match, or the index
-    when it lists a number of tables other than expected_count; the
+    when it is of another build than TARGET_BUILD or lists a number of tables
+    other than expected_count; the
     destination is then left as it was. The whole set replaces destination at
     once: a crash-cut swap is recovered, the set is built and verified in a
     staging folder beside destination, then swapped in whole."""

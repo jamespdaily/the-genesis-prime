@@ -27,6 +27,9 @@ import genesis_prime/table/character_customization_label
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
+import genesis_prime/table/loader/derivation
+import genesis_prime/table/loader/requirement
+import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/world_location2
 import genesis_prime/table/xp_per_level
@@ -40,8 +43,11 @@ pub fn shared() -> store.Tables {
   database_support.once("character_tables", load)
 }
 
-fn load() -> store.Tables {
-  use folder <- planted_table.in_folder([
+/// The planted files of the server's tables, each by its file name: one file
+/// for every entry of `server_table.entries`, so a load of the server's list
+/// from a folder of them reads every file and meets every requirement.
+pub fn files() -> List(#(String, BitArray)) {
+  [
     planted_table.file(character_creation.schema, creation_rows()),
     planted_table.file(character_customization.schema, customization_rows()),
     planted_table.file(character_customization_label.schema, label_rows()),
@@ -56,24 +62,33 @@ fn load() -> store.Tables {
       xp_per_level.schema,
       xp_per_level_rows(min_xp_for_level()),
     ),
+  ]
+}
+
+/// The planted file of CustomizationParameterMap with one map, of race 1 and
+/// sex 0, that names this CustomizationParameter id.
+pub fn map_file_naming(parameter_id parameter_id: Int) -> #(String, BitArray) {
+  planted_table.file(customization_parameter_map.schema, [
+    planted_table.row(customization_parameter_map.schema, [
+      #("ID", Integer(1)),
+      #("raceId", Integer(1)),
+      #("genderEnum", Integer(0)),
+      #("customizationParameterId", Integer(parameter_id)),
+    ]),
   ])
+}
+
+fn load() -> store.Tables {
+  use folder <- planted_table.in_folder(files())
   let assert Ok(tables) =
     store.load(
       under: reference.new(),
       from: folder,
-      entries: [
-        character_creation.entry(),
-        character_customization.entry(),
-        character_customization_label.entry(),
-        customization_parameter.entry(),
-        customization_parameter_map.entry(),
-        world_location2.entry(),
-        game_formula.entry(),
-        xp_per_level.entry(),
-      ],
-      requirements: [],
+      entries: server_table.entries(),
+      requirements: requirement.all(),
+      derivations: derivation.all(),
     )
-    as "the planted character tables load"
+    as "the planted character tables load as the server's tables do"
   tables
 }
 

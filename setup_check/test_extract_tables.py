@@ -107,9 +107,10 @@ def lzma_block(content: bytes) -> bytes:
 
 class Planted:
     """A planted client: an index and an archive in a Patch folder, with the
-    files given as (path, content, flags)."""
+    files given as (path, content, flags), and the build the index's AIDX
+    header carries (the client's own, 16042, unless given)."""
 
-    def __init__(self, root: Path, files: list[tuple[str, bytes, int]]):
+    def __init__(self, root: Path, files: list[tuple[str, bytes, int]], build: int = 16042):
         self.patch = root / "Patch"
         self.patch.mkdir()
         self.stored: dict[str, bytes] = {}
@@ -125,7 +126,7 @@ class Planted:
         folders = sorted(entries)
         nodes = [directory([(folder, 3 + i) for i, folder in enumerate(folders)], [])]
         nodes += [directory([], entries[folder]) for folder in folders]
-        aidx = struct.pack("<IIII", AIDX_SIGNATURE, 1, 16042, 1)
+        aidx = struct.pack("<IIII", AIDX_SIGNATURE, 1, build, 1)
         (self.patch / "ClientData.index").write_bytes(pack([nodes[0], aidx] + nodes[1:], root=2))
         aarc = struct.pack("<IIII", AARC_SIGNATURE, 2, len(archive_blocks), 2)
         listing = b"".join(
@@ -359,6 +360,37 @@ class AllOrNothingTest(WorkInFolderCase):
         self.assertIn("384", str(refused.exception))
         self.assertEqual(snapshot(self.destination), OLD_FILES)
         self.assert_nothing_beside_the_folder()
+
+    def test_an_index_of_another_build_is_refused_naming_the_build_and_publishes_nothing(self):
+        # The server is written for build 16042 (client_archive.target_build,
+        # GetVersionInfo 0x1406f8360); the tables of another build are not its tables.
+        write_folder(self.destination, OLD_FILES)
+        planted = Planted(self.root, [("DB/Alpha.tbl", table_content("alpha"), 5)], build=17000)
+        with self.assertRaises(extract_tables.Corrupt) as refused:
+            extract_tables.extract(planted.patch, self.destination)
+        self.assertEqual(refused.exception.name, "ClientData.index")
+        self.assertIn("17000", str(refused.exception))
+        self.assertIn("16042", str(refused.exception))
+        self.assertEqual(snapshot(self.destination), OLD_FILES)
+        self.assert_nothing_beside_the_folder()
+
+    def test_an_index_of_build_16042_is_extracted(self):
+        planted = Planted(self.root, [("DB/Alpha.tbl", table_content("alpha"), 5)], build=16042)
+        self.assertEqual(extract_tables.extract(planted.patch, self.destination), ["Alpha.tbl"])
+
+    def test_main_refuses_an_index_of_another_build_naming_it(self):
+        write_folder(self.destination, OLD_FILES)
+        planted = Planted(self.root, [("DB/Alpha.tbl", table_content("alpha"), 5)], build=17000)
+        exe = self.root / "Client64" / "WildStar64.exe"
+        exe.parent.mkdir()
+        exe.write_bytes(b"planted")
+        settings = {"WILDSTAR_CLIENT_EXE": str(exe), "GENESIS_TABLE_DIR": str(self.destination)}
+        with mock.patch.dict(os.environ, settings), contextlib.redirect_stdout(io.StringIO()) as printed:
+            status = extract_tables.main()
+        self.assertEqual(status, 1, printed.getvalue())
+        self.assertIn("17000", printed.getvalue())
+        self.assertEqual(snapshot(self.destination), OLD_FILES)
+        self.assertTrue(planted.patch.exists())
 
     def test_a_set_of_the_expected_size_is_published(self):
         planted = self.planted_three()
