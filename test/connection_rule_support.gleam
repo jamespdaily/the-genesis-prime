@@ -8,10 +8,10 @@
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
-  type Address, type Ask, type CallerId, type Effect, type Event, type Input,
-  type LogLevel, type LogLine, type Step, type WatchId, CancelTimer, Effects,
-  EffectsThenAsk, Input, Log, Now, Peer, Reply, Send, StartTimer, Stop, Unwatch,
-  Watch, Write,
+  type Address, type Ask, type CallerId, type ConnectionStep, type Effect,
+  type Event, type Input, type LogLevel, type LogLine, type ServiceStep,
+  type Step, type WatchId, CancelTimer, Effects, EffectsThenAsk, Input, Log, Now,
+  OwnEffect, Peer, Reply, Send, StartTimer, Stop, Unwatch, Watch, Write,
 }
 import genesis_prime/store.{type Account, Account, AccountId}
 import gleam/bit_array
@@ -69,15 +69,12 @@ fn counting(
 }
 
 /// An input at `now_ms` with the system time 0.
-pub fn input(event: Event(message, answer)) -> Input(message, answer) {
+pub fn input(event: Event(own)) -> Input(own) {
   input_at(filetime: 0, event:)
 }
 
 /// An input at `now_ms` with this system time, as a Windows FILETIME.
-pub fn input_at(
-  filetime filetime: Int,
-  event event: Event(message, answer),
-) -> Input(message, answer) {
+pub fn input_at(filetime filetime: Int, event event: Event(own)) -> Input(own) {
   Input(now: Now(monotonic_ms: now_ms, filetime:), event:)
 }
 
@@ -102,7 +99,7 @@ pub fn sixteen(seed seed: BitArray, counter counter: Int) -> BitArray {
 }
 
 /// The effects of a step.
-pub fn effects_of(step: Step(outgoing, request)) -> List(Effect(outgoing)) {
+pub fn effects_of(step: Step(request, own)) -> List(Effect(own)) {
   case step {
     Effects(effects:) -> effects
     EffectsThenAsk(effects:, ..) -> effects
@@ -110,16 +107,14 @@ pub fn effects_of(step: Step(outgoing, request)) -> List(Effect(outgoing)) {
 }
 
 /// The bytes the step writes, in order.
-pub fn writes(step: Step(outgoing, request)) -> List(BitArray) {
+pub fn writes(step: ConnectionStep(request)) -> List(BitArray) {
   list.filter_map(effects_of(step), fn(effect) {
     case effect {
-      Write(bytes:) -> Ok(bytes)
-      Send(..)
-      | Reply(..)
+      OwnEffect(Write(bytes:)) -> Ok(bytes)
+      OwnEffect(StartTimer(..))
+      | OwnEffect(CancelTimer(..))
       | Watch(..)
       | Unwatch(..)
-      | StartTimer(..)
-      | CancelTimer(..)
       | Log(..)
       | Stop -> Error(Nil)
     }
@@ -127,7 +122,7 @@ pub fn writes(step: Step(outgoing, request)) -> List(BitArray) {
 }
 
 /// Every frame the step writes, as the server wrote it.
-pub fn written_frames(step: Step(outgoing, request)) -> List(Frame) {
+pub fn written_frames(step: ConnectionStep(request)) -> List(Frame) {
   list.flat_map(writes(step), fn(bytes) {
     let assert Ok(#(frames, <<>>)) = frame.decode(bytes)
       as "the server writes whole frames"
@@ -137,59 +132,39 @@ pub fn written_frames(step: Step(outgoing, request)) -> List(Frame) {
 
 /// The answers the step gives its callers, each with the caller it is for, in
 /// order.
-pub fn replies(step: Step(outgoing, request)) -> List(#(CallerId, outgoing)) {
+pub fn replies(step: ServiceStep(outgoing)) -> List(#(CallerId, outgoing)) {
   list.filter_map(effects_of(step), fn(effect) {
     case effect {
-      Reply(caller:, answer:) -> Ok(#(caller, answer))
-      Send(..)
-      | Watch(..)
-      | Unwatch(..)
-      | StartTimer(..)
-      | CancelTimer(..)
-      | Log(..)
-      | Write(..)
-      | Stop -> Error(Nil)
+      OwnEffect(Reply(caller:, answer:)) -> Ok(#(caller, answer))
+      OwnEffect(Send(..)) | Watch(..) | Unwatch(..) | Log(..) | Stop ->
+        Error(Nil)
     }
   })
 }
 
 /// The watches the step opens, each with the process it is on, in order.
-pub fn watches(step: Step(outgoing, request)) -> List(#(WatchId, Address)) {
+pub fn watches(step: Step(request, own)) -> List(#(WatchId, Address)) {
   list.filter_map(effects_of(step), fn(effect) {
     case effect {
       Watch(watch:, target:) -> Ok(#(watch, target))
-      Send(..)
-      | Reply(..)
-      | Unwatch(..)
-      | StartTimer(..)
-      | CancelTimer(..)
-      | Log(..)
-      | Write(..)
-      | Stop -> Error(Nil)
+      OwnEffect(..) | Unwatch(..) | Log(..) | Stop -> Error(Nil)
     }
   })
 }
 
 /// The log lines the step writes, in order.
-pub fn logs(step: Step(outgoing, request)) -> List(LogLine) {
+pub fn logs(step: Step(request, own)) -> List(LogLine) {
   list.filter_map(effects_of(step), fn(effect) {
     case effect {
       Log(line:) -> Ok(line)
-      Send(..)
-      | Reply(..)
-      | Watch(..)
-      | Unwatch(..)
-      | StartTimer(..)
-      | CancelTimer(..)
-      | Write(..)
-      | Stop -> Error(Nil)
+      OwnEffect(..) | Watch(..) | Unwatch(..) | Stop -> Error(Nil)
     }
   })
 }
 
 /// The log lines of one level.
 pub fn logs_of(
-  step step: Step(outgoing, request),
+  step step: Step(request, own),
   level level: LogLevel,
 ) -> List(LogLine) {
   list.filter(logs(step), fn(line) { line.level == level })
@@ -197,21 +172,19 @@ pub fn logs_of(
 
 /// The message each warning of the step is about, in order: what a rule's
 /// unhandled-message lines name.
-pub fn unhandled_ids(
-  step: Step(outgoing, request),
-) -> List(Option(#(String, Int))) {
+pub fn unhandled_ids(step: Step(request, own)) -> List(Option(#(String, Int))) {
   list.map(logs_of(step:, level: step.LogWarning), fn(line) {
     line.about.message
   })
 }
 
 /// Whether the step ends the connection.
-pub fn stops(step: Step(outgoing, request)) -> Bool {
+pub fn stops(step: Step(request, own)) -> Bool {
   list.contains(effects_of(step), Stop)
 }
 
 /// The ask the step ends with, when it ends with one.
-pub fn asked(step: Step(outgoing, request)) -> Option(Ask(request)) {
+pub fn asked(step: Step(request, own)) -> Option(Ask(request)) {
   case step {
     Effects(..) -> None
     EffectsThenAsk(ask:, ..) -> Some(ask)

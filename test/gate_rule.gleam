@@ -3,13 +3,12 @@
 //// ask, so a test's answer never depends on which message reached the service
 //// first. It also holds the messages that make a service send and
 //// watch, whose watches end as the opening of the key of the same number, and
-//// the messages that make it misbehave: a crash, and each effect a service
-//// shell refuses.
+//// the message that makes it misbehave: a crash.
 
 import genesis_prime/step.{
-  type Address, type CallerId, type Effect, type Input, type Step, Ask, AskId,
-  Asked, Effects, EffectsThenAsk, Input, Reply, Send, StartTimer, Started, Stop,
-  Stopping, TimerId, Watch, WatchEnded, WatchId,
+  type Address, type CallerId, type Effect, type ServiceEffect,
+  type ServiceInput, type ServiceStep, Asked, Effects, Input, OwnEffect,
+  OwnEvent, Reply, Send, Started, Stop, Stopping, Watch, WatchEnded, WatchId,
 }
 import gleam/dict.{type Dict}
 import gleam/list
@@ -39,10 +38,6 @@ pub type Message {
   /// Watch the process at the address as each of the watches, in this order,
   /// in one step, then answer with `Echoed` and the count of watches.
   WatchEach(watches: List(Int), target: Address)
-  /// The rule returns `StartTimer`, which a service shell refuses.
-  TryTimer
-  /// The rule ends its step in an ask, which a service shell refuses.
-  TryAsk
 }
 
 /// What the gate answers with.
@@ -64,20 +59,14 @@ pub fn new(_settings: Nil) -> State {
 /// One input in, the new state and what the shell must do out.
 pub fn step(
   state state: State,
-  input input: Input(Message, Nil),
-) -> #(State, Step(Answer, Nil)) {
+  input input: ServiceInput(Message),
+) -> #(State, ServiceStep(Answer)) {
   let Input(event:, ..) = input
   case event {
-    Started -> #(state, Effects([]))
+    OwnEvent(Started) -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
-    Asked(caller:, message:) -> asked(state:, caller:, message:)
+    OwnEvent(Asked(caller:, message:)) -> asked(state:, caller:, message:)
     WatchEnded(watch: WatchId(key)) -> opened(state:, key:)
-    step.Socket(..)
-    | step.Woken(..)
-    | step.TimerFired(..)
-    | step.Answered(..)
-    | step.AnsweredLate(..) ->
-      panic as "a service takes Started, Asked, WatchEnded and Stopping only"
   }
 }
 
@@ -85,12 +74,12 @@ fn asked(
   state state: State,
   caller caller: CallerId,
   message message: Message,
-) -> #(State, Step(Answer, Nil)) {
+) -> #(State, ServiceStep(Answer)) {
   case message {
-    Echo(n) -> #(state, Effects([Reply(caller, Echoed(n))]))
+    Echo(n) -> #(state, Effects([OwnEffect(Reply(caller, Echoed(n)))]))
     Await(key:) ->
       case set.contains(state.opened, key) {
-        True -> #(state, Effects([Reply(caller, Opened(key))]))
+        True -> #(state, Effects([OwnEffect(Reply(caller, Opened(key)))]))
         False -> #(
           State(
             ..state,
@@ -108,58 +97,62 @@ fn asked(
         state,
         Effects(
           list.append(replies, [
-            Reply(caller, Echoed(list.length(replies))),
+            OwnEffect(Reply(caller, Echoed(list.length(replies)))),
           ]),
         ),
       )
     }
     Ignore -> #(state, Effects([]))
-    StopThenReply -> #(state, Effects([Stop, Reply(caller, Echoed(9))]))
+    StopThenReply -> #(
+      state,
+      Effects([Stop, OwnEffect(Reply(caller, Echoed(9)))]),
+    )
     Crash -> panic as "the planted crash"
     SendTo(to:, n:) -> #(
       state,
-      Effects([Send(to, Echoed(n)), Reply(caller, Echoed(n))]),
+      Effects([
+        OwnEffect(Send(to, Echoed(n))),
+        OwnEffect(Reply(caller, Echoed(n))),
+      ]),
     )
     WatchAddress(watch:, target:) -> #(
       state,
-      Effects([Watch(WatchId(watch), target), Reply(caller, Echoed(watch))]),
+      Effects([
+        Watch(WatchId(watch), target),
+        OwnEffect(Reply(caller, Echoed(watch))),
+      ]),
     )
     WatchEach(watches:, target:) -> #(
       state,
       Effects(
         list.append(
           list.map(watches, fn(watch) { Watch(WatchId(watch), target) }),
-          [Reply(caller, Echoed(list.length(watches)))],
+          [OwnEffect(Reply(caller, Echoed(list.length(watches))))],
         ),
-      ),
-    )
-    TryTimer -> #(state, Effects([StartTimer(TimerId(1), 10)]))
-    TryAsk -> #(
-      state,
-      EffectsThenAsk(
-        effects: [],
-        ask: Ask(ask: AskId(1), request: Nil, deadline_ms: 0),
       ),
     )
   }
 }
 
 /// A watch's end: the key of its number is opened, with no caller to answer.
-fn opened(state state: State, key key: Int) -> #(State, Step(Answer, Nil)) {
+fn opened(state state: State, key key: Int) -> #(State, ServiceStep(Answer)) {
   let #(state, replies) = open(state:, key:)
   #(state, Effects(replies))
 }
 
 /// Opens `key`: the replies to the callers waiting for it, in the order they
 /// asked.
-fn open(state state: State, key key: Int) -> #(State, List(Effect(Answer))) {
+fn open(
+  state state: State,
+  key key: Int,
+) -> #(State, List(Effect(ServiceEffect(Answer)))) {
   let waiters = list.reverse(waiting_for(state, key))
   #(
     State(
       waiting: dict.delete(state.waiting, key),
       opened: set.insert(state.opened, key),
     ),
-    list.map(waiters, fn(waiter) { Reply(waiter, Opened(key)) }),
+    list.map(waiters, fn(waiter) { OwnEffect(Reply(waiter, Opened(key))) }),
   )
 }
 

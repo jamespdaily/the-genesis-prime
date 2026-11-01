@@ -25,9 +25,10 @@
 //// The rule stops when the client closes or its socket fails.
 
 import genesis_prime/step.{
-  type Effect, type Input, type Rule, type Step, Accepted, CancelTimer, Effects,
-  Input, Log, LogLine, LogWarning, PeerClosed, Read, ReadFailed, Rule, Sessions,
-  Socket, StartTimer, Stop, TimerFired, TimerId, Watch, WatchEnded, WatchId,
+  type ConnectionEffect, type ConnectionInput, type ConnectionRule,
+  type ConnectionStep, type Effect, Accepted, CancelTimer, Effects, Input, Log,
+  LogLine, LogWarning, OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed, Rule,
+  Sessions, StartTimer, Stop, TimerFired, TimerId, Watch, WatchEnded, WatchId,
   Woken, Write, WriteFailed,
 }
 import gleam/int
@@ -59,7 +60,7 @@ pub const timer_fired = 0x74
 pub const pong = 0x70
 
 /// The rule as its shell runs it; a delivered message is an `Int`.
-pub fn rule() -> Rule(Nil, State, Int, Nil, Nil, Nil) {
+pub fn rule() -> ConnectionRule(Nil, State, Nil, Int, Nil) {
   Rule(name: "signalling_rule", settings: Nil, new:, step:)
 }
 
@@ -71,25 +72,28 @@ pub fn new(_settings: Nil) -> State {
 /// One input in, the new state and what the shell must do out.
 pub fn step(
   state state: State,
-  input input: Input(Int, Nil),
-) -> #(State, Step(Nil, Nil)) {
+  input input: ConnectionInput(Int, Nil),
+) -> #(State, ConnectionStep(Nil)) {
   let Input(event:, ..) = input
   case event {
-    Socket(Accepted(connection: step.ConnectionId(id), ..)) -> #(
+    OwnEvent(Accepted(connection: step.ConnectionId(id), ..)) -> #(
       state,
       Effects([record(accepted, id)]),
     )
-    Socket(Read(bytes:)) ->
+    OwnEvent(Read(bytes:)) ->
       run(State(pending: <<state.pending:bits, bytes:bits>>), [])
-    Woken(message:) -> #(state, Effects(woken_effects(message)))
+    OwnEvent(Woken(message:)) -> #(state, Effects(woken_effects(message)))
     WatchEnded(watch: WatchId(n)) -> #(state, Effects([record(watch_ended, n)]))
-    TimerFired(timer: TimerId(n)) -> #(state, Effects([record(timer_fired, n)]))
-    Socket(PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
-    Socket(ReadFailed(..)) | Socket(WriteFailed(..)) -> #(
+    OwnEvent(TimerFired(timer: TimerId(n))) -> #(
+      state,
+      Effects([record(timer_fired, n)]),
+    )
+    OwnEvent(PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
+    OwnEvent(ReadFailed(..)) | OwnEvent(WriteFailed(..)) -> #(
       state,
       Effects([warn("the socket failed"), Stop]),
     )
-    step.Started | step.Asked(..) | step.Answered(..) | step.AnsweredLate(..) -> #(
+    OwnEvent(step.Answered(..)) -> #(
       state,
       Effects([warn("an input a connection does not take"), Stop]),
     )
@@ -100,7 +104,7 @@ pub fn step(
 /// message `-n`, the watches 1 to `n` on Sessions in that order after the
 /// record, so a test can start watches from a message that waits in the
 /// mailbox.
-fn woken_effects(message: Int) -> List(Effect(Nil)) {
+fn woken_effects(message: Int) -> List(Effect(ConnectionEffect)) {
   let watches = case message < 0 {
     True ->
       list.repeat(Nil, int.negate(message))
@@ -114,7 +118,10 @@ fn woken_effects(message: Int) -> List(Effect(Nil)) {
 
 /// Runs the commands the client has sent, in order; `effects` are the effects
 /// so far, the last first.
-fn run(state: State, effects: List(Effect(Nil))) -> #(State, Step(Nil, Nil)) {
+fn run(
+  state: State,
+  effects: List(Effect(ConnectionEffect)),
+) -> #(State, ConnectionStep(Nil)) {
   case state.pending {
     <<letter, n, milliseconds:16, rest:bytes>> ->
       run(State(pending: rest), [command(letter:, n:, milliseconds:), ..effects])
@@ -126,20 +133,21 @@ fn command(
   letter letter: Int,
   n n: Int,
   milliseconds milliseconds: Int,
-) -> Effect(Nil) {
+) -> Effect(ConnectionEffect) {
   case letter {
     _ if letter == watch_command -> Watch(WatchId(n), Sessions)
-    _ if letter == timer_command -> StartTimer(TimerId(n), milliseconds)
-    _ if letter == cancel_command -> CancelTimer(TimerId(n))
+    _ if letter == timer_command ->
+      OwnEffect(StartTimer(TimerId(n), milliseconds))
+    _ if letter == cancel_command -> OwnEffect(CancelTimer(TimerId(n)))
     _ if letter == pong_command -> record(pong, n)
     _ -> panic as "the test sent a letter the signalling rule has no command for"
   }
 }
 
-fn record(letter: Int, number: Int) -> Effect(Nil) {
-  Write(<<letter, number:64>>)
+fn record(letter: Int, number: Int) -> Effect(ConnectionEffect) {
+  OwnEffect(Write(<<letter, number:64>>))
 }
 
-fn warn(text: String) -> Effect(Nil) {
+fn warn(text: String) -> Effect(ConnectionEffect) {
   Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }

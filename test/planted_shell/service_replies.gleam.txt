@@ -1,0 +1,21 @@
+import genesis_prime/service
+import genesis_prime/service/shell
+import genesis_prime/step.{CallerId, Effects, OwnEffect, Reply, Rule}
+import gleam/option.{None}
+
+/// A service rule that answers a caller, handed to the service shell.
+pub fn settings() {
+  shell.Settings(
+    rule: Rule(
+      name: "planted",
+      settings: Nil,
+      new: fn(_settings) { Nil },
+      step: fn(state, _input) {
+        #(state, Effects([OwnEffect(Reply(CallerId(1), Nil))]))
+      },
+    ),
+    reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
+    shutdown_ms: 100,
+    recorder: None,
+  )
+}

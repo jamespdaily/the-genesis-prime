@@ -11,15 +11,15 @@
 ////   the recorder, when on, opens the file and writes the header
 ////   the registry, when the settings hold one: the shell joins the group of
 ////     Connection(id), so other processes find it (genesis_prime/connection/registry)
-////   Socket(Accepted(connection id, peer, seed))  ─▶ step ─▶ effects
+////   OwnEvent(Accepted(connection id, peer, seed)) ─▶ step ─▶ effects
 ////   after each step's effects, before the mailbox is read or a stop is taken:
 ////     a watch of a target no process holds ─▶ WatchEnded(id) ─▶ step ─▶ effects
 ////   loop, the socket active once:
-////     {tcp, bytes}        ─▶ Socket(Read(bytes))   ─▶ step ─▶ effects
-////     {woken, message}    ─▶ Woken(message)        ─▶ step ─▶ effects
+////     {tcp, bytes}        ─▶ OwnEvent(Read(bytes))  ─▶ step ─▶ effects
+////     {woken, message}    ─▶ OwnEvent(Woken(message)) ─▶ step ─▶ effects
 ////     a watched process's DOWN ─▶ WatchEnded(id)   ─▶ step ─▶ effects
-////     {tcp_closed}        ─▶ Socket(PeerClosed)    ─▶ step ─▶ effects
-////     {tcp_error, reason} ─▶ Socket(ReadFailed(_)) ─▶ step ─▶ effects
+////     {tcp_closed}        ─▶ OwnEvent(PeerClosed)   ─▶ step ─▶ effects
+////     {tcp_error, reason} ─▶ OwnEvent(ReadFailed(_)) ─▶ step ─▶ effects
 ////     the parent's exit   ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
 ////   each step: the recorder writes Taken(input, step) before its effects
 //// ```
@@ -28,7 +28,7 @@
 ////   input: the monotonic clock in milliseconds and the system time as a
 ////   FILETIME.
 //// - **A failed write.** The step's later effects are not carried out; the
-////   next input is `Socket(WriteFailed(_))`. A write that does not finish
+////   next input is `OwnEvent(WriteFailed(_))`. A write that does not finish
 ////   within the send deadline fails as `SendTimedOut` and closes the socket.
 //// - **Stop.** The shell carries out the rest of the step's effects in order,
 ////   closes the socket, the recorder writes `End` with the count of inputs,
@@ -41,8 +41,9 @@
 ////   reaches the process then.
 //// - **The server stopping.** The shell traps its parent's exit, so the
 ////   tree's stop arrives as `Stopping`, with a deadline of the listener's
-////   shutdown time less the send deadline, never later than Ranch's kill. A rule that has not stopped by then is killed, and
-////   its recording has no `End`.
+////   shutdown time less the send deadline, never later than Ranch's kill. A
+////   rule that has not stopped by then is killed, and its recording has no
+////   `End`.
 //// - **A crash.** When the rule's step crashes, the process ends with that
 ////   reason; Ranch starts connection processes as temporary children, so
 ////   nothing restarts it and the listener goes on accepting. The socket closes
@@ -71,7 +72,7 @@
 ////                                         - send_deadline_ms)
 //// after NoAnswerInTime or StoppedWaiting, the tag and the monitor are kept
 ////   until the target's answer or DOWN; between steps:
-////   {ask answer, tag, _} of a kept tag ─▶ AnsweredLate(ask), tag dropped
+////   {ask answer, tag, _} of a kept tag ─▶ tag dropped, no input
 ////   the DOWN of a kept tag             ─▶ tag dropped, no input
 ////   an answer or DOWN of no kept tag   ─▶ dropped
 //// ```
@@ -80,7 +81,9 @@
 ////   `Answered(_, StoppedWaiting)` at once, with no call to the directory, so
 ////   every ask has one `Answered`; `Stopping` is the next input after a step
 ////   that ends without an ask. A worker answers late only when its answer left
-////   before the shell's exit reached it. The `Now` of `Answered` is read when the outcome is known.
+////   before the shell's exit reached it. A late answer gives the rule no input,
+////   whether it comes after `NoAnswerInTime` or after `StoppedWaiting`. The
+////   `Now` of `Answered` is read when the outcome is known.
 ////   Bytes the client sent during the ask are read only after it, since the
 ////   socket is active once and is not re-armed while the shell waits.
 //// - **The directory's own wait.** `directory` runs before the wait begins,
@@ -93,9 +96,9 @@
 ////   past the deadline, the outcome is `NoAnswerInTime` at once.
 //// - **A message delivered.** Another process sends the connection's pid
 ////   `{woken, message}` (`registry.deliver`); the shell takes it between steps
-////   as `Woken(message)`, in the order it arrived among the socket's reads. One
-////   that arrives during an ask waits until the ask's outcome and the step it
-////   starts are done, like a read. A message for a connection that has ended is
+////   as `OwnEvent(Woken(message))`, in the order it arrived among the socket's
+////   reads. One that arrives during an ask waits until the ask's outcome and
+////   the step it starts are done, like a read. A message for a connection that has ended is
 ////   dropped by the VM, and one that arrives after the shell began to stop is
 ////   dropped with the process. A connection with no registry in its settings is
 ////   joined to no group, so no process can send it anything.
@@ -108,15 +111,16 @@
 ////   outcome of an ask the step ends in, since no other input is taken
 ////   meanwhile; before the mailbox is read and before a stop that arrived
 ////   during an ask, with the ends of the step's other such watches in the
-////   order opened. A step that stops the connection takes none. `Unwatch(id)` drops the monitor and the DOWN already
-////   waiting, or an id held for a target no process holds. A watch's DOWN that
-////   arrives during an ask waits like a delivered message. An id already open,
-////   monitored or held, ends the connection with an error log.
+////   order opened. A step that stops the connection takes none. `Unwatch(id)`
+////   drops the monitor and the DOWN already waiting, or an id held for a target
+////   no process holds. A watch's DOWN that arrives during an ask waits like a
+////   delivered message. An id already open, monitored or held, ends the
+////   connection with an error log.
 //// - **A timer.** `StartTimer(id, ms)` starts an `erlang:send_after` that sends
 ////   the shell `{timer_fired, id, reference}`, kept under `id` with its own
-////   reference. It is taken between steps as `TimerFired(id)`, once, and the
-////   shell forgets the timer; one that fires during an ask waits like a
-////   delivered message. `CancelTimer(id)` cancels it and flushes its message if
+////   reference. It is taken between steps as `OwnEvent(TimerFired(id))`, once,
+////   and the shell forgets the timer; one that fires during an ask waits like
+////   a delivered message. `CancelTimer(id)` cancels it and flushes its message if
 ////   it had fired, so no `TimerFired` follows; a message already in flight
 ////   when it is cancelled is discarded on arrival, as is any message whose
 ////   reference is not the current timer's of that id, so a cancelled timer's
@@ -126,19 +130,23 @@
 //// - **The registry's scope ending.** The connection stays joined only as long
 ////   as the scope lives; the tree restarts the game listener with the scope, so
 ////   no connection outlives it (genesis_prime/connection/registry).
-//// - **Effects a connection does not carry out.** `Reply` (a connection is
-////   never asked) and `Send` (no connection rule sends): the shell logs an
-////   error naming the effect and ends the connection.
+//// - **Effects and inputs of the other kind.** A connection's own effects are
+////   `Write`, `StartTimer` and `CancelTimer`, and its own inputs are the
+////   socket's, `Woken`, `TimerFired` and `Answered` (`ConnectionEffect` and
+////   `ConnectionEvent`). It has no `Reply`, `Send` or `Started`, so a rule that
+////   answers a caller, sends, or takes a service's input does not compile
+////   against this shell.
 
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/service.{type Locate, type Sent}
 import genesis_prime/step.{
-  type Ask, type AskId, type ConnectionId, type Effect, type Event, type Peer,
-  type Rule, type SocketFailure, type TimerId, Accepted, Answer, Answered,
-  AnsweredLate, ConnectionId, Effects, EffectsThenAsk, EndedBeforeAnswer,
-  LogError, LogWarning, NoAnswerInTime, NotRunning, PeerClosed, ReadFailed,
-  Socket, StoppedWaiting, Stopping, WriteFailed,
+  type Ask, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
+  type ConnectionRule, type Effect, type Event, type Peer, type SocketFailure,
+  type TimerId, Accepted, Answer, Answered, CancelTimer, ConnectionId, Effects,
+  EffectsThenAsk, EndedBeforeAnswer, LogError, LogWarning, NoAnswerInTime,
+  NotRunning, OwnEffect, OwnEvent, PeerClosed, ReadFailed, StartTimer,
+  StoppedWaiting, Stopping, Write, WriteFailed,
 }
 import genesis_prime/step/runtime
 import genesis_prime/step/watch.{type Watches}
@@ -150,9 +158,9 @@ import gleam/erlang/reference.{type Reference}
 import gleam/option.{type Option, None, Some}
 
 /// What every connection of one listener is started with.
-pub type Settings(settings, state, message, answer, outgoing, request) {
+pub type Settings(settings, state, message, answer, request) {
   Settings(
-    rule: Rule(settings, state, message, answer, outgoing, request),
+    rule: ConnectionRule(settings, state, request, message, answer),
     /// How long a write may wait for the socket before it fails as
     /// `SendTimedOut`.
     send_deadline_ms: Int,
@@ -218,18 +226,18 @@ type Waited(answer) {
 /// An ask whose outcome came without an answer: its tag and its monitor are
 /// kept until the target answers or ends.
 type Kept {
-  Kept(ask: AskId, monitor: Monitor)
+  Kept(monitor: Monitor)
 }
 
 /// A running connection: its socket, its parent, its settings, the rule's
 /// state, the recording file when there is one, the asks kept by their tags,
 /// the monitor of each watch the rule has open, each timer it has running and
 /// the stop deadline of a stop that arrived during an ask.
-type Running(settings, state, message, answer, outgoing, request) {
+type Running(settings, state, message, answer, request) {
   Running(
     socket: ClientSocket,
     parent: Pid,
-    settings: Settings(settings, state, message, answer, outgoing, request),
+    settings: Settings(settings, state, message, answer, request),
     state: state,
     writer: Option(file.Writer),
     kept: Dict(Reference, Kept),
@@ -246,14 +254,7 @@ type Running(settings, state, message, answer, outgoing, request) {
 pub fn run(
   ranch_ref ranch_ref: Dynamic,
   parent parent: Pid,
-  settings settings: Settings(
-    settings,
-    state,
-    message,
-    answer,
-    outgoing,
-    request,
-  ),
+  settings settings: Settings(settings, state, message, answer, request),
 ) -> Nil {
   let socket = handshake(ranch_ref, settings.send_deadline_ms)
   let connection = runtime.unique_id()
@@ -280,7 +281,7 @@ pub fn run(
   take(
     running:,
     now: runtime.now(),
-    event: Socket(Accepted(
+    event: OwnEvent(Accepted(
       connection: ConnectionId(connection),
       peer: peer(socket),
       seed: crypto.strong_random_bytes(32),
@@ -290,9 +291,9 @@ pub fn run(
 
 /// Folds one input through the rule, records it, then carries out the step.
 fn take(
-  running running: Running(settings, state, message, answer, outgoing, request),
+  running running: Running(settings, state, message, answer, request),
   now now: step.Now,
-  event event: Event(message, answer),
+  event event: Event(ConnectionEvent(message, answer)),
 ) -> Nil {
   let #(state, step, writer) = case
     file.fold(
@@ -335,8 +336,8 @@ type Then(request) {
 /// end of each watch of a target no process holds is taken, in the order
 /// opened.
 fn carry(
-  running running: Running(settings, state, message, answer, outgoing, request),
-  effects effects: List(Effect(outgoing)),
+  running running: Running(settings, state, message, answer, request),
+  effects effects: List(Effect(ConnectionEffect)),
   then then: Then(request),
 ) -> Nil {
   case effects {
@@ -348,7 +349,7 @@ fn carry(
           take(
             running:,
             now: runtime.now(),
-            event: Answered(ask: ask.ask, outcome: StoppedWaiting),
+            event: OwnEvent(Answered(ask: ask.ask, outcome: StoppedWaiting)),
           )
         WaitForInput, stopping ->
           case watch.next_unheld_end(running.watches), stopping {
@@ -369,7 +370,7 @@ fn carry(
       }
     [effect, ..later] ->
       case effect {
-        step.Write(bytes:) ->
+        OwnEffect(Write(bytes:)) ->
           case send(running.socket, bytes), then {
             Ok(Nil), _ -> carry(running:, effects: later, then:)
             Error(failure), EndProcess -> {
@@ -386,7 +387,7 @@ fn carry(
               take(
                 running:,
                 now: runtime.now(),
-                event: Socket(WriteFailed(failure:)),
+                event: OwnEvent(WriteFailed(failure:)),
               )
           }
         step.Log(line:) -> {
@@ -394,8 +395,6 @@ fn carry(
           carry(running:, effects: later, then:)
         }
         step.Stop -> carry(running:, effects: later, then: EndProcess)
-        step.Send(..) -> not_built(running.socket, "Send")
-        step.Reply(..) -> not_built(running.socket, "Reply")
         step.Watch(watch:, target:) ->
           carry(
             running: open_watch(running:, watch:, target:),
@@ -404,13 +403,13 @@ fn carry(
           )
         step.Unwatch(watch:) ->
           carry(running: close_watch(running:, watch:), effects: later, then:)
-        step.StartTimer(timer:, after_ms:) ->
+        OwnEffect(StartTimer(timer:, after_ms:)) ->
           carry(
             running: start_timer_for(running:, timer:, after_ms:),
             effects: later,
             then:,
           )
-        step.CancelTimer(timer:) ->
+        OwnEffect(CancelTimer(timer:)) ->
           carry(
             running: cancel_timer_of(running:, timer:),
             effects: later,
@@ -421,28 +420,24 @@ fn carry(
 }
 
 /// Waits for what reaches the process next and takes it as an input.
-fn wait(
-  running: Running(settings, state, message, answer, outgoing, request),
-) -> Nil {
+fn wait(running: Running(settings, state, message, answer, request)) -> Nil {
   case read_once(running.socket) {
     Error(failure) ->
-      take(running:, now: runtime.now(), event: Socket(ReadFailed(failure:)))
+      take(running:, now: runtime.now(), event: OwnEvent(ReadFailed(failure:)))
     Ok(Nil) -> next(running)
   }
 }
 
 /// Takes what reaches the process next as an input. The end of a kept ask's
 /// target is no input; it only drops the tag.
-fn next(
-  running: Running(settings, state, message, answer, outgoing, request),
-) -> Nil {
+fn next(running: Running(settings, state, message, answer, request)) -> Nil {
   let arrived = next_event(running.socket, running.parent, running.kept)
   let now = runtime.now()
   case arrived {
-    Read(bytes:) -> take(running:, now:, event: Socket(step.Read(bytes:)))
-    ClosedByPeer -> take(running:, now:, event: Socket(PeerClosed))
+    Read(bytes:) -> take(running:, now:, event: OwnEvent(step.Read(bytes:)))
+    ClosedByPeer -> take(running:, now:, event: OwnEvent(PeerClosed))
     FailedToRead(failure:) ->
-      take(running:, now:, event: Socket(ReadFailed(failure:)))
+      take(running:, now:, event: OwnEvent(ReadFailed(failure:)))
     StopRequested ->
       take(
         running:,
@@ -450,18 +445,15 @@ fn next(
         event: Stopping(deadline_ms: stop_deadline(now, running.settings)),
       )
     LateAnswer(tag:) -> {
-      let assert Ok(Kept(ask:, monitor:)) = dict.get(running.kept, tag)
+      let assert Ok(Kept(monitor:)) = dict.get(running.kept, tag)
         as "an answer is taken as late only for a tag the shell kept"
       process.demonitor_process(monitor)
-      take(
-        running: Running(..running, kept: dict.delete(running.kept, tag)),
-        now:,
-        event: AnsweredLate(ask:),
-      )
+      next(Running(..running, kept: dict.delete(running.kept, tag)))
     }
     KeptEnded(tag:) ->
       next(Running(..running, kept: dict.delete(running.kept, tag)))
-    Delivered(message:) -> take(running:, now:, event: step.Woken(message:))
+    Delivered(message:) ->
+      take(running:, now:, event: OwnEvent(step.Woken(message:)))
     WatchedEnded(monitor:) -> watch_ended(running:, now:, monitor:)
     TimerElapsed(timer:, reference:) ->
       case dict.get(running.timers, timer) {
@@ -472,7 +464,7 @@ fn next(
               timers: dict.delete(running.timers, timer),
             ),
             now:,
-            event: step.TimerFired(timer:),
+            event: OwnEvent(step.TimerFired(timer:)),
           )
         Ok(Started(..)) | Error(Nil) -> next(running)
       }
@@ -489,10 +481,10 @@ fn join_registry(registry: Option(Registry), connection: ConnectionId) -> Nil {
 
 /// Monitors the process the address names under the watch's id.
 fn open_watch(
-  running running: Running(settings, state, message, answer, outgoing, request),
+  running running: Running(settings, state, message, answer, request),
   watch watch: step.WatchId,
   target target: step.Address,
-) -> Running(settings, state, message, answer, outgoing, request) {
+) -> Running(settings, state, message, answer, request) {
   Running(
     ..running,
     watches: watch.open(
@@ -506,16 +498,16 @@ fn open_watch(
 
 /// Drops the watch's monitor, and the DOWN already waiting for it.
 fn close_watch(
-  running running: Running(settings, state, message, answer, outgoing, request),
+  running running: Running(settings, state, message, answer, request),
   watch watch: step.WatchId,
-) -> Running(settings, state, message, answer, outgoing, request) {
+) -> Running(settings, state, message, answer, request) {
   Running(..running, watches: watch.close(watches: running.watches, watch:))
 }
 
 /// Takes the end of a watched process as `WatchEnded` with the id of its
 /// watch; the DOWN of a monitor the shell holds under no watch is dropped.
 fn watch_ended(
-  running running: Running(settings, state, message, answer, outgoing, request),
+  running running: Running(settings, state, message, answer, request),
   now now: step.Now,
   monitor monitor: Monitor,
 ) -> Nil {
@@ -532,10 +524,10 @@ fn watch_ended(
 
 /// Starts the timer the rule named; an id already running ends the connection.
 fn start_timer_for(
-  running running: Running(settings, state, message, answer, outgoing, request),
+  running running: Running(settings, state, message, answer, request),
   timer timer: TimerId,
   after_ms after_ms: Int,
-) -> Running(settings, state, message, answer, outgoing, request) {
+) -> Running(settings, state, message, answer, request) {
   case dict.has_key(running.timers, timer) {
     True -> {
       runtime.log(
@@ -563,9 +555,9 @@ fn start_timer_for(
 /// Cancels the timer the rule named, and drops its message if it had fired. A
 /// message already in flight is discarded when it arrives, by its reference.
 fn cancel_timer_of(
-  running running: Running(settings, state, message, answer, outgoing, request),
+  running running: Running(settings, state, message, answer, request),
   timer timer: TimerId,
-) -> Running(settings, state, message, answer, outgoing, request) {
+) -> Running(settings, state, message, answer, request) {
   case dict.get(running.timers, timer) {
     Ok(Started(timer: started, reference:)) -> {
       cancel_timer(timer, started, reference)
@@ -578,7 +570,7 @@ fn cancel_timer_of(
 /// Makes an ask through the settings' directory and waits for its outcome,
 /// taking no other input.
 fn make_ask(
-  running: Running(settings, state, message, answer, outgoing, request),
+  running: Running(settings, state, message, answer, request),
   ask: Ask(request),
 ) -> Nil {
   let tag = reference.new()
@@ -589,7 +581,7 @@ fn make_ask(
       take(
         running:,
         now: runtime.now(),
-        event: Answered(ask: ask.ask, outcome: NotRunning),
+        event: OwnEvent(Answered(ask: ask.ask, outcome: NotRunning)),
       )
     Ok(sent) -> wait_for_answer(running:, ask:, tag:, sent:)
   }
@@ -599,7 +591,7 @@ fn make_ask(
 /// ask that ends without an answer, by its deadline or the server's stop, is
 /// kept by its tag until the target answers or ends.
 fn wait_for_answer(
-  running running: Running(settings, state, message, answer, outgoing, request),
+  running running: Running(settings, state, message, answer, request),
   ask ask: Ask(request),
   tag tag: Reference,
   sent sent: Sent,
@@ -612,27 +604,26 @@ fn wait_for_answer(
     TargetEnded -> #(running, EndedBeforeAnswer)
     DeadlinePassed -> {
       service.end_worker(sent)
-      #(keep(running:, tag:, ask: ask.ask, monitor:), NoAnswerInTime)
+      #(keep(running:, tag:, monitor:), NoAnswerInTime)
     }
     ParentExited -> #(
       Running(
-        ..keep(running:, tag:, ask: ask.ask, monitor:),
+        ..keep(running:, tag:, monitor:),
         stopping: Some(stop_deadline(known, running.settings)),
       ),
       StoppedWaiting,
     )
   }
-  take(running:, now: known, event: Answered(ask: ask.ask, outcome:))
+  take(running:, now: known, event: OwnEvent(Answered(ask: ask.ask, outcome:)))
 }
 
 /// Keeps an ask's tag and monitor until its target answers or ends.
 fn keep(
-  running running: Running(settings, state, message, answer, outgoing, request),
+  running running: Running(settings, state, message, answer, request),
   tag tag: Reference,
-  ask ask: AskId,
   monitor monitor: Monitor,
-) -> Running(settings, state, message, answer, outgoing, request) {
-  Running(..running, kept: dict.insert(running.kept, tag, Kept(ask:, monitor:)))
+) -> Running(settings, state, message, answer, request) {
+  Running(..running, kept: dict.insert(running.kept, tag, Kept(monitor:)))
 }
 
 /// The deadline a stopping rule is given: the shutdown time from now, less
@@ -642,15 +633,13 @@ fn keep(
 /// the moment Ranch kills the process.
 fn stop_deadline(
   now: step.Now,
-  settings: Settings(settings, state, message, answer, outgoing, request),
+  settings: Settings(settings, state, message, answer, request),
 ) -> Int {
   now.monotonic_ms + settings.shutdown_ms - settings.send_deadline_ms
 }
 
 /// Closes the socket, ends the recording and lets the process end normally.
-fn stop(
-  running: Running(settings, state, message, answer, outgoing, request),
-) -> Nil {
+fn stop(running: Running(settings, state, message, answer, request)) -> Nil {
   close(running.socket)
   runtime.finish_recording(running.writer)
 }
@@ -661,12 +650,6 @@ fn recording_failed(socket: ClientSocket, error: FileError) -> a {
   runtime.log_recording_failure(error)
   close(socket)
   panic as "a connection's recording could not be written"
-}
-
-/// Ends the connection over an effect the shell does not carry out yet.
-fn not_built(socket: ClientSocket, effect: String) -> a {
-  close(socket)
-  runtime.unsupported(shell: "connection shell", what: effect)
 }
 
 @external(erlang, "connection_shell_ffi", "handshake")

@@ -9,7 +9,9 @@ import genesis_prime/hand_off.{
   NoHolder, Put, SessionKey, Take, Taken,
 }
 import genesis_prime/login/guid
-import genesis_prime/step.{Asked, CallerId, Effects, Input, Now, Reply}
+import genesis_prime/step.{
+  Asked, CallerId, Effects, Input, Now, OwnEffect, OwnEvent, Reply,
+}
 import genesis_prime/store.{AccountId}
 import owned_test
 
@@ -84,10 +86,10 @@ fn ask(
       state,
       Input(
         now: Now(monotonic_ms: at, filetime: 0),
-        event: Asked(caller:, message:),
+        event: OwnEvent(Asked(caller:, message:)),
       ),
     )
-  let assert Effects([Reply(caller: CallerId(1), answer:)]) = step
+  let assert Effects([OwnEffect(Reply(caller: CallerId(1), answer:))]) = step
     as "an ask is answered once, to its caller"
   #(state, answer)
 }
