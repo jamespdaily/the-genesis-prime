@@ -15,6 +15,9 @@ import genesis_prime/message/bit_stream.{type DecodeError}
 import genesis_prime/message/close_notice
 import genesis_prime/message/ping
 import genesis_prime/message/pong.{Pong}
+import gleam/list
+import gleam/pair
+import gleam/result
 
 /// What a frame is to the network layer.
 pub type Handled {
@@ -29,25 +32,50 @@ pub type Handled {
   Malformed(message_id: Int, error: DecodeError)
 }
 
+/// The network layer's messages, each named by the message it is.
+type NetworkMessage {
+  PingMessage
+  PongMessage
+  CloseNoticeMessage
+  /// Any other message.
+  NotTaken
+}
+
+/// The one table of the messages the network layer takes: `handle` looks a
+/// frame's id up here, and `taken_message_ids` lists these ids.
+const taken_messages = [
+  #(ping.message_id, PingMessage),
+  #(pong.message_id, PongMessage),
+  #(close_notice.message_id, CloseNoticeMessage),
+]
+
+/// The ids of the messages the network layer takes: the ping, the pong and
+/// the close notice, which the coverage measure counts as handled by every
+/// connection.
+pub fn taken_message_ids() -> List(Int) {
+  list.map(taken_messages, pair.first)
+}
+
 /// What the network layer does with a frame.
 pub fn handle(frame frame: Frame) -> Handled {
-  case frame.message_id {
-    id if id == ping.message_id ->
+  let id = frame.message_id
+  case list.key_find(taken_messages, id) |> result.unwrap(NotTaken) {
+    PingMessage ->
       case ping.decode(frame.body) {
         Ok(received) -> Answer(pong_of(received))
         Error(error) -> Malformed(message_id: id, error:)
       }
-    id if id == pong.message_id ->
+    PongMessage ->
       case pong.decode(frame.body) {
         Ok(_) -> Accepted
         Error(error) -> Malformed(message_id: id, error:)
       }
-    id if id == close_notice.message_id ->
+    CloseNoticeMessage ->
       case close_notice.decode(frame.body) {
         Ok(_) -> Accepted
         Error(error) -> Malformed(message_id: id, error:)
       }
-    _ -> NotNetwork
+    NotTaken -> NotNetwork
   }
 }
 

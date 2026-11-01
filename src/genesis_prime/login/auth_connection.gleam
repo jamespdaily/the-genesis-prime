@@ -59,6 +59,8 @@ import genesis_prime/step.{
 import genesis_prime/store
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/pair
+import gleam/result
 
 /// The rule's name in a recording's header and in the server's tree.
 pub const rule_name = "genesis_prime/login/auth_connection"
@@ -266,8 +268,11 @@ fn handle(
   {
     client_connection.Settled(handled:) -> handled
     client_connection.Inside(inner:) ->
-      case inner.message_id == login_request.message_id {
-        True ->
+      case
+        list.key_find(taken_messages, inner.message_id)
+        |> result.unwrap(NotTaken)
+      {
+        LoginRequest ->
           case login_request.decode(inner.body) {
             Ok(request) -> login_requested(session:, now:, request:)
             Error(error) ->
@@ -277,9 +282,27 @@ fn handle(
                   <> bit_stream.describe_decode(error:),
               )
           }
-        False -> unhandled(session, inner.message_id)
+        NotTaken -> unhandled(session, inner.message_id)
       }
   }
+}
+
+/// Which of the client's messages in its wrapper the rule takes a message is.
+type TakenMessage {
+  /// 0x0592, the login request.
+  LoginRequest
+  /// Any other message.
+  NotTaken
+}
+
+/// The one table of the messages in the client's wrapper the rule takes:
+/// `handle` looks an id up here and `taken_message_ids` lists these ids.
+const taken_messages = [#(login_request.message_id, LoginRequest)]
+
+/// The ids of the client's messages the rule takes: the login request. The
+/// coverage measure counts them as handled.
+pub fn taken_message_ids() -> List(Int) {
+  list.map(taken_messages, pair.first)
 }
 
 /// A whole frame of a message the rule does not take: logged, and the

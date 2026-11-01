@@ -195,6 +195,16 @@ pub fn logs_of(
   list.filter(logs(step), fn(line) { line.level == level })
 }
 
+/// The message each warning of the step is about, in order: what a rule's
+/// unhandled-message lines name.
+pub fn unhandled_ids(
+  step: Step(outgoing, request),
+) -> List(Option(#(String, Int))) {
+  list.map(logs_of(step:, level: step.LogWarning), fn(line) {
+    line.about.message
+  })
+}
+
 /// Whether the step ends the connection.
 pub fn stops(step: Step(outgoing, request)) -> Bool {
   list.contains(effects_of(step), Stop)
