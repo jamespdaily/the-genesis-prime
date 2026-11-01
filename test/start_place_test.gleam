@@ -18,15 +18,12 @@
 //// - The load's requirement (`genesis_prime/table/loader/store`): a row missing
 ////   from WorldLocation2 fails the table load.
 
+import character_support
 import character_tables
 import client_tables
-import genesis_prime/game/appearance
-import genesis_prime/game/character_creation
 import genesis_prime/game/start_place.{
   type Place, type Start, Level50, Novice, OtherStart, Place, Veteran,
 }
-import genesis_prime/message/create_character.{CreateCharacter}
-import genesis_prime/store.{NewCharacter}
 import genesis_prime/table/character_creation as creation_table
 import genesis_prime/table/id.{RaceId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
@@ -159,15 +156,7 @@ pub fn every_enabled_character_creation_row_of_a_start_has_a_start_place_in_the_
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let rows =
-    list.filter(creation_table.all(tables), fn(row) {
-      row.enabled
-      && !row.costume_only
-      && list.contains(
-        [Novice, Veteran],
-        start_place.start(enum_value: row.character_creation_start_enum),
-      )
-    })
+  let rows = character_support.novice_and_veteran_rows(tables)
   assert rows != [] as "the client's table has enabled rows of these starts"
   list.each(rows, fn(row) {
     assert start_place.of(
@@ -189,15 +178,7 @@ pub fn a_create_of_each_start_of_each_race_and_faction_saves_the_place_of_its_wo
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let rows =
-    list.filter(creation_table.all(tables), fn(row) {
-      row.enabled
-      && !row.costume_only
-      && list.contains(
-        [Novice, Veteran],
-        start_place.start(enum_value: row.character_creation_start_enum),
-      )
-    })
+  let rows = character_support.novice_and_veteran_rows(tables)
   list.each(rows, fn(row) {
     let assert Ok(#(_, _, _, row_id)) =
       list.find(starts(), fn(start) {
@@ -211,50 +192,14 @@ pub fn a_create_of_each_start_of_each_race_and_faction_saves_the_place_of_its_wo
         <> int.to_string(row.id)
         <> " is a start of a race and faction Jim's world database lists"
       }
-    // The row's entitlement and cost gate the create, which this test is not
-    // about: the place is what it reads.
-    let open =
-      creation_table.CharacterCreation(
-        ..row,
-        entitlement_id_required: 0,
-        account_currency_amount_cost: 0,
-      )
-    let request =
-      CreateCharacter(
-        creation_id: row.id,
-        name: "Ab Cd",
-        path: 0,
-        customisation_labels: [],
-        customisation_values: [],
-        bone_values: list.repeat(
-          0,
-          appearance.bone_count(
-            tables:,
-            race_id: creation_table.race_id(row),
-            sex: row.sex,
-          ),
-        ),
-      )
     let expected = place_of_row(row_id)
-    let assert Ok(NewCharacter(
-      world_id:,
-      world_zone_id:,
-      position_x:,
-      position_y:,
-      position_z:,
-      ..,
-    )) = character_creation.check_row(tables, open, request)
-      as {
-        "a create of CharacterCreation row "
-        <> int.to_string(row.id)
-        <> " passes the checks"
-      }
+    let character = character_support.new_character_of_row(tables:, row:)
     assert Place(
-        world_id:,
-        world_zone_id:,
-        x: position_x,
-        y: position_y,
-        z: position_z,
+        world_id: character.world_id,
+        world_zone_id: character.world_zone_id,
+        x: character.position_x,
+        y: character.position_y,
+        z: character.position_z,
       )
       == expected
       as {
@@ -284,10 +229,7 @@ fn world_location2_file(ids: List(Int)) -> #(String, BitArray) {
         #("worldZoneId", Integer(1)),
       ])
     })
-  #(
-    world_location2.schema.file,
-    planted_table.bytes(planted_table.table(world_location2.schema, rows)),
-  )
+  planted_table.file(world_location2.schema, rows)
 }
 
 /// Loads the planted WorldLocation2 rows of `ids` with the start places'

@@ -22,7 +22,7 @@ import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import owned_test
-import planted_table.{type Cell, Integer}
+import planted_table
 import unitest
 
 /// The amounts of experience and the levels the client's data gives them
@@ -81,37 +81,6 @@ pub fn an_amount_outside_the_first_and_the_highest_record_is_no_level_test() -> 
     as "0x140029875 jg: an amount above the record at the highest level's minXpForLevel (2147483647) gives -3"
 }
 
-/// A GameFormula file holding the rows of these ids, each with the highest
-/// level `highest`.
-fn game_formula_file(ids: List(Int), highest: Int) -> #(String, BitArray) {
-  let rows =
-    list.map(ids, fn(id) {
-      planted_table.row(game_formula.schema, [
-        #("ID", Integer(id)),
-        #("dataint0", Integer(highest)),
-      ])
-    })
-  #(
-    game_formula.schema.file,
-    planted_table.bytes(planted_table.table(game_formula.schema, rows)),
-  )
-}
-
-/// An XpPerLevel file holding these minXpForLevel values as records 1 up.
-fn xp_per_level_file(minimums: List(Int)) -> #(String, BitArray) {
-  let rows: List(List(Cell)) =
-    list.index_map(minimums, fn(minimum, position) {
-      planted_table.row(xp_per_level.schema, [
-        #("ID", Integer(position + 1)),
-        #("minXpForLevel", Integer(minimum)),
-      ])
-    })
-  #(
-    xp_per_level.schema.file,
-    planted_table.bytes(planted_table.table(xp_per_level.schema, rows)),
-  )
-}
-
 /// Loads a GameFormula table of the rows with these ids, whose dataint0 is
 /// `highest`, and an XpPerLevel table of these minimums, with the level's
 /// requirements.
@@ -121,8 +90,14 @@ fn load(
   minimums minimums: List(Int),
 ) -> Result(table_store.Tables, table_store.LoadError) {
   use folder <- planted_table.in_folder([
-    game_formula_file(formula_ids, highest),
-    xp_per_level_file(minimums),
+    planted_table.file(
+      game_formula.schema,
+      character_tables.game_formula_rows(ids: formula_ids, highest:),
+    ),
+    planted_table.file(
+      xp_per_level.schema,
+      character_tables.xp_per_level_rows(minimums),
+    ),
   ])
   table_store.load(
     under: reference.new(),

@@ -28,7 +28,6 @@ import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
 import genesis_prime/table/loader/store
-import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/world_location2
 import genesis_prime/table/xp_per_level
 import gleam/erlang/reference
@@ -43,14 +42,20 @@ pub fn shared() -> store.Tables {
 
 fn load() -> store.Tables {
   use folder <- planted_table.in_folder([
-    file(character_creation.schema, creation_rows()),
-    file(character_customization.schema, customization_rows()),
-    file(character_customization_label.schema, label_rows()),
-    file(customization_parameter.schema, parameter_rows()),
-    file(customization_parameter_map.schema, map_rows()),
-    file(world_location2.schema, start_location_rows()),
-    file(game_formula.schema, game_formula_rows()),
-    file(xp_per_level.schema, xp_per_level_rows()),
+    planted_table.file(character_creation.schema, creation_rows()),
+    planted_table.file(character_customization.schema, customization_rows()),
+    planted_table.file(character_customization_label.schema, label_rows()),
+    planted_table.file(customization_parameter.schema, parameter_rows()),
+    planted_table.file(customization_parameter_map.schema, map_rows()),
+    planted_table.file(world_location2.schema, start_location_rows()),
+    planted_table.file(
+      game_formula.schema,
+      game_formula_rows(ids: [highest_level_formula], highest: 50),
+    ),
+    planted_table.file(
+      xp_per_level.schema,
+      xp_per_level_rows(min_xp_for_level()),
+    ),
   ])
   let assert Ok(tables) =
     store.load(
@@ -70,13 +75,6 @@ fn load() -> store.Tables {
     )
     as "the planted character tables load"
   tables
-}
-
-fn file(
-  schema: tbl_file.Schema,
-  rows: List(List(Cell)),
-) -> #(String, BitArray) {
-  #(schema.file, planted_table.bytes(planted_table.table(schema, rows)))
 }
 
 /// A CharacterCreation row with the columns the server reads.
@@ -394,17 +392,22 @@ pub fn min_xp_for_level() -> List(Int) {
   ]
 }
 
-fn game_formula_rows() -> List(List(Cell)) {
-  [
+/// GameFormula rows of these ids, each with `highest` as its dataint0.
+pub fn game_formula_rows(
+  ids ids: List(Int),
+  highest highest: Int,
+) -> List(List(Cell)) {
+  list.map(ids, fn(id) {
     planted_table.row(game_formula.schema, [
-      #("ID", Integer(highest_level_formula)),
-      #("dataint0", Integer(50)),
-    ]),
-  ]
+      #("ID", Integer(id)),
+      #("dataint0", Integer(highest)),
+    ])
+  })
 }
 
-fn xp_per_level_rows() -> List(List(Cell)) {
-  list.index_map(min_xp_for_level(), fn(minimum, position) {
+/// XpPerLevel rows holding these minXpForLevel values as records 1 up.
+pub fn xp_per_level_rows(minimums: List(Int)) -> List(List(Cell)) {
+  list.index_map(minimums, fn(minimum, position) {
     planted_table.row(xp_per_level.schema, [
       #("ID", Integer(position + 1)),
       #("minXpForLevel", Integer(minimum)),

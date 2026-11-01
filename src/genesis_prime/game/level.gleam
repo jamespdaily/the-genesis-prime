@@ -5,9 +5,10 @@
 //// function's answer for that amount.
 
 import genesis_prime/table/game_formula
-import genesis_prime/table/id.{GameFormulaId}
+import genesis_prime/table/id.{GameFormulaId, XpPerLevelId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
+import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/result
@@ -29,20 +30,11 @@ pub fn for_experience(
 ) -> Result(Int, Nil) {
   use highest <- result.try(highest_level(tables))
   let records = list.take(xp_per_level.all(tables), highest + 1)
-  use first <- result.try(list.first(records))
   use last <- result.try(list.last(records))
-  case
-    list.length(records) == highest + 1
-    && experience >= first.min_xp_for_level
-    && experience <= last.min_xp_for_level
-  {
-    False -> Error(Nil)
-    True ->
-      list.take(records, highest)
-      |> list.filter(fn(record) { record.min_xp_for_level <= experience })
-      |> list.last
-      |> result.map(fn(record) { record.id })
-  }
+  use <- bool.guard(experience > last.min_xp_for_level, Error(Nil))
+  list.take_while(records, fn(record) { record.min_xp_for_level <= experience })
+  |> list.last
+  |> result.map(fn(record) { int.min(record.id, highest) })
 }
 
 /// The highest level, from GameFormula row 145's dataint0.
@@ -75,20 +67,14 @@ pub fn requirements() -> List(table_store.Requirement) {
       missing: fn(tables) {
         case highest_level(tables) {
           Error(Nil) -> []
-          Ok(highest) -> {
-            let present = list.length(xp_per_level.all(tables))
-            case present < highest + 1 {
-              True ->
-                int.range(
-                  from: present + 1,
-                  to: highest + 2,
-                  with: [],
-                  run: list.prepend,
-                )
-                |> list.reverse
-              False -> []
-            }
-          }
+          Ok(highest) ->
+            int.range(from: 1, to: highest + 2, with: [], run: fn(missing, id) {
+              case xp_per_level.get(tables:, id: XpPerLevelId(id)) {
+                Ok(_) -> missing
+                Error(Nil) -> [id, ..missing]
+              }
+            })
+            |> list.reverse
         }
       },
     ),

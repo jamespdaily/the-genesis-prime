@@ -21,12 +21,12 @@
 import character_support
 import character_tables
 import client_tables
-import genesis_prime/game/appearance
 import genesis_prime/game/character_creation.{
   BoneNotFinite, CostsCurrency, CostumeOnlyRow, NameBreaksRule, NeedsEntitlement,
   NoLevelForExperience, NoStartPlace, NoSuchRow, PathAbove3, RowDisabled,
   TooManyLabels, WrongBoneCount,
 }
+import genesis_prime/game/start_place.{Level50, Novice, OtherStart, Veteran}
 import genesis_prime/message/create_character.{
   type CreateCharacter, CreateCharacter,
 }
@@ -336,40 +336,25 @@ pub fn every_enabled_novice_and_veteran_row_of_the_clients_table_makes_the_level
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  let rows =
-    list.filter(creation_table.all(tables), fn(row) {
-      row.enabled
-      && !row.costume_only
-      && list.contains([3, 4], row.character_creation_start_enum)
-    })
+  let rows = character_support.novice_and_veteran_rows(tables)
   assert rows != [] as "the client's table has enabled Novice and Veteran rows"
   list.each(rows, fn(row) {
-    // The row's entitlement gates the create, which this test is not about:
-    // the level is what it reads.
-    let open =
-      creation_table.CharacterCreation(..row, entitlement_id_required: 0)
-    let asked =
-      CreateCharacter(
-        ..request(row.id, "Ab Cd"),
-        bone_values: list.repeat(
-          0,
-          appearance.bone_count(
-            tables:,
-            race_id: creation_table.race_id(row),
-            sex: row.sex,
-          ),
-        ),
+    let #(expected, why) = case
+      start_place.start(enum_value: row.character_creation_start_enum)
+    {
+      Veteran -> #(
+        3,
+        "Veteran (Nexus) rows have xp 1710 (fact CharacterCreation.xp), level 3",
       )
-    let assert Ok(character) = character_creation.check_row(tables, open, asked)
-      as "the row passes the checks"
-    let #(expected, why) = case row.character_creation_start_enum {
-      3 -> #(3, "Nexus rows have xp 1710 (fact CharacterCreation.xp), level 3")
-      _ -> #(
+      Novice -> #(
         1,
-        "PreTutorial rows have xp 0 (fact CharacterCreation.xp), level 1",
+        "Novice (PreTutorial) rows have xp 0 (fact CharacterCreation.xp), level 1",
       )
+      Level50 | OtherStart(..) ->
+        panic as "novice_and_veteran_rows holds only these two starts"
     }
-    assert character.level == expected
+    assert character_support.new_character_of_row(tables:, row:).level
+      == expected
       as { "CharacterCreation row " <> int.to_string(row.id) <> ": " <> why }
   })
 }
