@@ -91,6 +91,9 @@ before_finish() {
     lock_release "$lock_token"
   fi
 }
+case "$command" in
+  type|key|click|stop) lock_allows_client_use || exit 1 ;;
+esac
 if [ "$command" = start ]; then
   : "${GENESIS_PLAY_ADDRESS:?set GENESIS_PLAY_ADDRESS (the server host the client is pointed at, an address on the PC network) in ~/.genesis-prime/env.sh}"
   : "${GENESIS_PLAY_CLIENT_DIR:?set GENESIS_PLAY_CLIENT_DIR (the client install folder, for example C:\\WildStar-HD) in ~/.genesis-prime/env.sh}"

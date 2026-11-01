@@ -113,6 +113,21 @@ lock_for_client_start() {
   lock_take client ""
 }
 
+# Whether this caller may type into, click on or stop the PC's client: yes with no lock, with the
+# lock's own token, or under a standalone client start's lock (it holds the lock for that client);
+# no while a session or a recovery holds it, so no agent touches another run's client.
+lock_allows_client_use() {
+  [ -d "$lock_dir" ] || return 0
+  if [ -n "${GENESIS_LIVE_LOCK_TOKEN:-}" ] && [ "$(lock_get token)" = "$GENESIS_LIVE_LOCK_TOKEN" ]; then return 0; fi
+  if [ -e "$lock_claim" ]; then
+    echo "${tool:-live}: a session.sh --recover holds the lock; the client is left to it" >&2
+    return 1
+  fi
+  [ "$(lock_get kind)" != client ] || return 0
+  lock_refuse
+  return 1
+}
+
 lock_release_client() {
   [ "$(lock_get kind)" = client ] || return 0
   [ ! -e "$lock_claim" ] || return 0
