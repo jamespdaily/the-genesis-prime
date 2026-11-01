@@ -8,7 +8,7 @@
 ////   connection's first requests are Connect, LoginStart and KeyData in the
 ////   clear, and the rest are ciphered; how the network cuts them into reads
 ////   differs from run to run, so no check names a read's number. The auth
-////   connection's first message is the login request in its wrapper; the game
+////   connection's one message is the login request in its wrapper; the game
 ////   connection's first messages are 0x058F, 0x07E0 and a 0x038C, all under
 ////   the session key after the first.
 //// - The log lines the game rule wrote while it took those reads, kept in the
@@ -202,10 +202,10 @@ fn as_pairs(
 
 pub fn the_auth_connection_holds_the_login_request_in_its_wrapper_test() -> Nil {
   use <- owned_test.run(30_000)
-  let assert #([login, ..], []) = frames(auth_file())
-    as "the auth connection holds a message and none without a decoder"
+  let assert #([login], []) = frames(auth_file())
+    as "the auth connection holds one message and none without a decoder"
   assert login.carried == Wrapped
-    as "the first message is the login request, in 0x0244"
+    as "the message is the login request, in 0x0244"
   let assert client_message.LoginRequest(message: request) = login.message
     as "the message is the login request"
   assert request.build == 16_042
@@ -603,8 +603,8 @@ pub fn a_file_that_is_no_recording_fails_test() -> Nil {
 
 /// The body of the login request in the saved login session.
 fn recorded_login_request_body() -> BitArray {
-  let assert #([login, ..], _) = frames(auth_file())
-    as "the saved login session's auth connection holds the login request first"
+  let assert #([login], _) = frames(auth_file())
+    as "the saved login session's auth connection holds one message"
   login.body
 }
 

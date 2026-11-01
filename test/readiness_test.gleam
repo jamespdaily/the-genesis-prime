@@ -76,8 +76,10 @@ pub fn a_probe_that_reached_a_database_missing_a_migration_ends_the_ask_with_a_r
   let tree = process.spawn_unlinked(process.sleep_forever)
   let first = Migration(name: "0000_first", sha256: string.repeat("a", 64))
   let second = Migration(name: "0001_second", sha256: string.repeat("b", 64))
+  let asked = process.new_subject()
   assert readiness.await(
       probe: fn(reply) {
+        process.send(asked, Nil)
         Ok(answering(
           reply:,
           probed: Reached(recorded: Recorded([first])),
@@ -89,7 +91,8 @@ pub fn a_probe_that_reached_a_database_missing_a_migration_ends_the_ask_with_a_r
       files: [first, second],
     )
     == readiness.MigrationsRefused(NotApplied("0001_second"))
-    as "the database answered but lacks the second file's migration: the ask ends with the refusal, and does not ask again"
+    as "the database answered but lacks the second file's migration: the ask ends with the refusal"
+  assert count(asked) == 1 as "and does not ask again"
 }
 
 /// The ask's times when the answer is what the test checks, not the wait: the
@@ -155,6 +158,10 @@ pub fn the_ask_ends_with_the_trees_end_when_the_tree_ends_while_it_waits_test() 
 
 pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_test() -> Nil {
   use <- owned_test.run(30_000)
+  // The pause is far longer than an attempt, so an ask that paused for an
+  // attempt's time would come much sooner than a pause after the one before.
+  let settings =
+    readiness.Settings(within_ms: 500, attempt_ms: 20, pause_ms: 100)
   let asked = process.new_subject()
   let outcomes = process.new_subject()
   let tree = process.spawn_unlinked(process.sleep_forever)
@@ -165,11 +172,11 @@ pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_te
         outcomes,
         readiness.await(
           probe: fn(reply) {
-            process.send(asked, Nil)
+            process.send(asked, runtime.now().monotonic_ms)
             Ok(answering(reply:, probed: Unreached, times: 1))
           },
           tree: process.monitor(tree),
-          settings: short(),
+          settings: settings,
           files: [],
         ),
       )
@@ -177,9 +184,15 @@ pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_te
   assert process.receive(outcomes, ask_support.event_wait_ms)
     == Ok(readiness.DatabaseUnreachable)
     as "no attempt reached the database, so the ask gives up"
-  assert runtime.now().monotonic_ms - started_ms >= short().within_ms
+  assert runtime.now().monotonic_ms - started_ms >= settings.within_ms
     as "and only when its time has run out"
-  assert count(asked) >= 2 as "having asked again after a failure, not once"
+  let times = times_of(asked)
+  assert list.length(times) >= 2
+    as "having asked again after a failure, not once"
+  assert list.all(list.window_by_2(times), fn(pair) {
+    pair.1 - pair.0 >= settings.pause_ms
+  })
+    as "each ask came a whole pause after the one before, not after the attempt's own time"
 }
 
 /// How many messages wait in the subject.
@@ -187,6 +200,14 @@ fn count(subject: Subject(Nil)) -> Int {
   case process.receive(subject, 0) {
     Ok(Nil) -> 1 + count(subject)
     Error(Nil) -> 0
+  }
+}
+
+/// The monotonic times the subject holds, in the order sent.
+fn times_of(subject: Subject(Int)) -> List(Int) {
+  case process.receive(subject, 0) {
+    Ok(time) -> [time, ..times_of(subject)]
+    Error(Nil) -> []
   }
 }
 

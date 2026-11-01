@@ -271,21 +271,22 @@ pub fn a_cancelled_timer_never_fires_test() -> Nil {
   let server = start(registry: None, sessions: Ok(a_sessions()))
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
-  // Timer 1 is started and cancelled in one step, so whether its 0 ms timeout
-  // was sent before the cancel does not depend on how fast the machine is:
-  // the cancel stops it or flushes it. Timer 2, started after, is the witness
-  // that time passed.
+  // Timer 2 runs first: it is the witness that time passed, and a cancel that
+  // ignores its timer's id would take it down with timer 1. Timer 1 is started
+  // and cancelled in one step, so whether its 0 ms timeout was sent before the
+  // cancel does not depend on how fast the machine is: the cancel stops it or
+  // flushes it.
+  ask_support.command(
+    client:,
+    letter: signalling_rule.timer_command,
+    n: 2,
+    wait_ms: 100,
+  )
   ask_support.command(
     client:,
     letter: signalling_rule.start_then_cancel_command,
     n: 1,
     wait_ms: 0,
-  )
-  ask_support.command(
-    client:,
-    letter: signalling_rule.timer_command,
-    n: 2,
-    wait_ms: 20,
   )
   assert read_record(client) == Record(signalling_rule.timer_fired, 2)
     as "timer 2 fired and timer 1, due earlier, never reached the rule"
