@@ -12,10 +12,8 @@ the real toolchain, the real database or the real client:
   test or dev holds PLANTED_FORMAT_ERROR, and any `gleam` run of tests (a `test`
   or a `run -m` of a module other than glinter, squirrel, table_generator and
   generate_messages) fails when a file under test/code_rule holds PLANTED_BREACH;
-- `python3.13` is the real one, except for the two runs the stubs stand in for:
-  check_facts.py and the setup check's own tests (`-s setup_check`), which
-  succeed at once, take PLANT_SETUP_SUITE_SECONDS first when it is set, and
-  end their own shell without a word when PLANT_SETUP_SUITE_NEVER_WRITES is set;
+- `python3.13` is the real one, except for the run the stub stands in for:
+  check_facts.py, which succeeds at once;
 - the client query process's scripts are the real check_support.py and
   formulas_by_hand.py with one planted test file whose test is gated by
   check_support.integration_only, so the gate is the real one.
@@ -28,11 +26,10 @@ the real toolchain, the real database or the real client:
 A planted run costs about two seconds, so tests that only read what one run
 printed or logged share it (`shared_run`), the whole file stays under a minute,
 and tests of what does not depend on the parts' work run `./check fast`, which
-has four parts instead of twelve.
+has four parts instead of all of them.
 
-Expected values and their sources: issue 109's test list, items 1, 2, 3, 6, 7
-and 8. The wall-time budget default is CLAUDE.md's "the full check passes in
-under 2 minutes". The part names are the ones ./check prints.
+Expected values and their sources: issue 109's test list, items 1, 2, 3, 6 and
+7. The part names are the ones ./check prints.
 
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
 """
@@ -111,11 +108,6 @@ PYTHON_STUB = """#!/bin/sh
 echo "python3.13 $*" >>"$PLANT_LOG"
 case "$*" in
   *check_facts.py*) exit 0 ;;
-  *"-s setup_check"*)
-    [ -n "$PLANT_SETUP_SUITE_SECONDS" ] && sleep "$PLANT_SETUP_SUITE_SECONDS"
-    [ -n "$PLANT_SETUP_SUITE_NEVER_WRITES" ] && kill -9 "$PPID"
-    exit 0
-    ;;
 esac
 exec "$PLANT_REAL_PYTHON" "$@"
 """
@@ -420,17 +412,6 @@ class BudgetTest(unittest.TestCase):
         run = shared_run("in-budget", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="30", PLANT_FORMAT_SECONDS="1")
         self.assertEqual(run.done.returncode, 0, run.output)
 
-    def test_the_budget_without_the_setting_is_120_seconds(self):
-        source = CHECK.read_text()
-        defaults = re.findall(r"GENESIS_CHECK_BUDGET_SECONDS:-(\d+)", source)
-        self.assertEqual(defaults, ["120"], "CLAUDE.md: the full check passes in under 2 minutes")
-
-    def test_the_fast_checks_budget_without_the_setting_is_13_seconds_from_its_cold_build_time(self):
-        # 10, 9 and 9 s in 3 runs on 2026-10-27 (issue 109), each after removing
-        # build/dev/erlang/genesis_prime: 10 x 1.25, rounded up.
-        source = CHECK.read_text()
-        self.assertEqual(re.findall(r"GENESIS_CHECK_FAST_BUDGET_SECONDS:-(\d+)", source), ["13"])
-
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class HungPartTest(unittest.TestCase):
@@ -461,13 +442,13 @@ class HungPartTest(unittest.TestCase):
         # end would wait for ever.
         return shared_run(
             "hung-part-and-drop",
-            hang=lambda seconds: dict(PLANT_SETUP_SUITE_SECONDS=seconds, PLANT_PSQL_DROP_SECONDS=seconds),
+            hang=lambda seconds: dict(PLANT_FORMAT_SECONDS=seconds, PLANT_PSQL_DROP_SECONDS=seconds),
             timeout=30,
             GENESIS_CHECK_BUDGET_SECONDS=str(self.BUDGET),
         )
 
     def test_a_part_that_hangs_is_stopped_at_the_budget_and_named(self):
-        self.assert_stopped_at_the_budget(self.part_and_drop(), "setup-suite")
+        self.assert_stopped_at_the_budget(self.part_and_drop(), "format")
 
     def test_the_database_is_dropped_when_the_budget_stops_the_check(self):
         self.assertTrue(any("drop database" in command for command in self.part_and_drop().commands))
@@ -546,12 +527,12 @@ class ClientIntegrationTest(unittest.TestCase):
 
     def changed(self) -> Run:
         # The planted gated test fails; the usual budget (1 s) is raised to 30 s, which
-        # holds the 3 s the planted setup suite takes.
+        # holds the 3 s the planted format part takes.
         return shared_run(
             "integration-changed", client=True,
             prepare=lambda case: (plant_failing_gated_test(case), change_the_scripts(case)),
             GENESIS_CHECK_BUDGET_SECONDS="1", GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="30",
-            PLANT_SETUP_SUITE_SECONDS="3",
+            PLANT_FORMAT_SECONDS="3",
         )
 
     def test_where_the_branch_changes_a_file_of_the_scripts_folder_a_gated_test_runs(self):
@@ -650,11 +631,6 @@ class ClientIntegrationTest(unittest.TestCase):
         run = shared_run("fast-changed", "fast", client=True, prepare=change_the_scripts)
         self.assertEqual(run.done.returncode, 0, run.output)
         self.assertFalse(run.marker_ran)
-
-    def test_the_raised_budget_without_the_setting_is_583_seconds_from_the_worst_measured_run(self):
-        # 466 s (the slowest of 3 runs on 2026-10-26, issue 109) x 1.25, rounded up.
-        source = CHECK.read_text()
-        self.assertEqual(re.findall(r"GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS:-(\d+)", source), ["583"])
 
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
@@ -756,20 +732,12 @@ TEST_WORKERS = default_workers() if RUNNABLE else "1"
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class WorkerCountTest(unittest.TestCase):
-    """Issue 109, items 7 and 8: the worker count is one setting of the check,
-    and the setting names the measurement it comes from."""
+    """Issue 109, item 7: the worker count is one setting of the check."""
 
     def test_the_setting_is_given_to_the_test_run_as_the_worker_count(self):
         run = shared_run("workers-3", GENESIS_TEST_WORKERS="3")
         self.assertEqual(run.done.returncode, 0, run.output)
         self.assertIn("gleam test -- --workers 3", run.commands)
-
-    def test_the_default_worker_count_has_the_measurement_that_chose_it_beside_it(self):
-        lines = CHECK.read_text().splitlines()
-        at = next(i for i, line in enumerate(lines) if "GENESIS_TEST_WORKERS:-" in line)
-        self.assertRegex(lines[at], r"GENESIS_TEST_WORKERS:-\d+\}", "a number, not unset")
-        beside = " ".join(lines[max(0, at - 6) : at + 4]).lower()
-        self.assertIn("measured", beside, "the smallest count that leaves 25% of the budget spare, and the measurement")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
-//// Every module in `dev/` is used by a check, a test or a CI job, or an
-//// allow-list names it with an open issue.
+//// Every module in `dev/` is used by a check, a test, a CI job or a skill's
+//// script, or an allow-list names it with an open issue.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import gleam/list
@@ -8,8 +8,8 @@ import gleam/string
 /// Each module of `dev` that is not used and not in `allowed`, and each
 /// allow-list entry that names no module of `dev`.
 ///
-/// A module is used when a test imports it, when `runners` (the `check` script
-/// and the CI workflow files) run it with `-m`, or when a used module of `dev`
+/// A module is used when a test imports it, when `runners` (the files
+/// `is_runner` accepts) run it with `-m`, or when a used module of `dev`
 /// imports it. Comment lines of the runners do not count. `allowed` pairs a
 /// module with the number of the open issue that decides its fate.
 pub fn breaches(
@@ -54,6 +54,19 @@ pub fn breaches(
       )
     }),
   )
+}
+
+/// Whether the file at `path` is one that runs modules of `dev/`: the `check`
+/// script, a CI workflow file, or a shell or Python script in the `scripts`
+/// folder of a skill.
+pub fn is_runner(path: String) -> Bool {
+  path == "check"
+  || string.starts_with(path, ".github/workflows/")
+  || {
+    string.starts_with(path, ".claude/skills/")
+    && string.contains(path, "/scripts/")
+    && { string.ends_with(path, ".sh") || string.ends_with(path, ".py") }
+  }
 }
 
 /// The modules `used` plus every module of `dev` that a used one imports.

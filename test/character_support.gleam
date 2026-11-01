@@ -6,6 +6,9 @@
 //// create, a delete or a rename answers with, decoded.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/appearance
+import genesis_prime/game/character_creation
+import genesis_prime/game/start_place.{Novice, Veteran}
 import genesis_prime/mark_rename/sql as mark_rename_sql
 import genesis_prime/message/create_character.{
   type CreateCharacter, CreateCharacter,
@@ -13,8 +16,11 @@ import genesis_prime/message/create_character.{
 import genesis_prime/message/create_character_result.{type CreateCharacterResult}
 import genesis_prime/message/delete_character_result.{type DeleteCharacterResult}
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
-import genesis_prime/store.{type AccountId, AccountId}
+import genesis_prime/store.{type AccountId, type NewCharacter, AccountId}
+import genesis_prime/table/character_creation as creation_table
+import genesis_prime/table/loader/store as table_store
 import gleam/dynamic/decode
+import gleam/int
 import gleam/list
 import gleam/result
 import pog
@@ -111,6 +117,56 @@ pub fn create_request(name: String) -> CreateCharacter {
     customisation_values: [],
     bone_values: bones(46),
   )
+}
+
+/// The client's enabled CharacterCreation rows of the Novice and Veteran
+/// starts, the ones a player can pick: none is costume-only.
+pub fn novice_and_veteran_rows(
+  tables: table_store.Tables,
+) -> List(creation_table.CharacterCreation) {
+  list.filter(creation_table.all(tables), fn(row) {
+    row.enabled
+    && !row.costume_only
+    && list.contains(
+      [Novice, Veteran],
+      start_place.start(enum_value: row.character_creation_start_enum),
+    )
+  })
+}
+
+/// The character a create of the row makes, from a request with no look and
+/// the row's own bone count. The row's entitlement and cost are cleared, since
+/// they gate a create and the callers read what the row makes.
+pub fn new_character_of_row(
+  tables tables: table_store.Tables,
+  row row: creation_table.CharacterCreation,
+) -> NewCharacter {
+  let open =
+    creation_table.CharacterCreation(
+      ..row,
+      entitlement_id_required: 0,
+      account_currency_amount_cost: 0,
+    )
+  let request =
+    CreateCharacter(
+      ..create_request("Ab Cd"),
+      creation_id: row.id,
+      bone_values: list.repeat(
+        0,
+        appearance.bone_count(
+          tables:,
+          race_id: creation_table.race_id(row),
+          sex: row.sex,
+        ),
+      ),
+    )
+  let assert Ok(character) = character_creation.check_row(tables, open, request)
+    as {
+      "a create of CharacterCreation row "
+      <> int.to_string(row.id)
+      <> " passes the checks"
+    }
+  character
 }
 
 /// The one 0x00DC among the frames a create was answered with, decoded.

@@ -292,6 +292,7 @@ fn create_character(
         character.position_x,
         character.position_y,
         character.position_z,
+        character.level,
       )
     })
     |> result.map_error(fn(error) {

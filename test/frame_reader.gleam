@@ -7,22 +7,22 @@ import gleam/list
 
 /// Reads until `count` frames have arrived, whole and in order, however the
 /// reads cut them. `have` is what was read before; `next` reads more, and its
-/// error ends the wait.
+/// error ends the wait and is the error given.
 pub fn read(
   have have: BitArray,
   count count: Int,
-  next next: fn() -> Result(BitArray, Nil),
-) -> Result(List(Frame), Nil) {
+  next next: fn() -> Result(BitArray, error),
+) -> Result(List(Frame), error) {
   read_until(have:, done: fn(found) { list.length(found) >= count }, next:)
 }
 
 /// Reads until `done` says the frames found so far, whole and in order, are
-/// the ones wanted; `next` reads more, and its error ends the wait.
+/// the ones wanted; `next` reads more, and its error ends the wait and is the error given.
 pub fn read_until(
   have have: BitArray,
   done done: fn(List(Frame)) -> Bool,
-  next next: fn() -> Result(BitArray, Nil),
-) -> Result(List(Frame), Nil) {
+  next next: fn() -> Result(BitArray, error),
+) -> Result(List(Frame), error) {
   collect(have:, found: [], done:, next:)
 }
 
@@ -30,8 +30,8 @@ fn collect(
   have have: BitArray,
   found found: List(Frame),
   done done: fn(List(Frame)) -> Bool,
-  next next: fn() -> Result(BitArray, Nil),
-) -> Result(List(Frame), Nil) {
+  next next: fn() -> Result(BitArray, error),
+) -> Result(List(Frame), error) {
   let assert Ok(#(frames, leftover)) = frame.decode(have)
     as "the server wrote bytes that are frames"
   let found = list.append(found, frames)
@@ -41,7 +41,7 @@ fn collect(
       case next() {
         Ok(bytes) ->
           collect(have: <<leftover:bits, bytes:bits>>, found:, done:, next:)
-        Error(Nil) -> Error(Nil)
+        Error(error) -> Error(error)
       }
   }
 }

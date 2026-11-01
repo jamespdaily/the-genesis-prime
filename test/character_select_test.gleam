@@ -214,6 +214,18 @@ pub fn a_list_built_from_0x07e0_selects_no_character_by_its_logout_test() -> Nil
     as "lua.CharacterSelection.OnLoadFromCharacter.preselect: a character sent with 0 has no last logout, so the client selects the first in the list"
 }
 
+pub fn an_entry_carries_the_level_the_character_is_stored_with_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(asking, _) = character_select.started(AccountId(7))
+  let assert Ok(#(_, effects)) =
+    listed(asking, [
+      stored(id: 1, name: "Ab Cd", level: 12),
+      stored(id: 2, name: "Ij Kl", level: 3),
+    ])
+  assert list.map(entries(effects), fn(entry) { entry.level }) == [12, 3]
+    as "opcode.0x117: each entry's level is the level its character is stored with (a character made from a Veteran row is stored at level 3)"
+}
+
 // ---- the entry's appearance ----
 
 pub fn an_entry_carries_the_body_visuals_of_its_look_and_its_bones_test() -> Nil {
@@ -261,6 +273,7 @@ pub fn a_valid_request_asks_the_store_to_make_the_character_with_the_slot_count_
           race_id: RaceId(1),
           class_id: ClassId(1),
           faction_id: 167,
+          level: 1,
           path: 1,
           world_id: 3460,
           world_zone_id: 6009,

@@ -7,8 +7,7 @@
 ////   dead (0x140457bc5). No client table or retail record gives a player's
 ////   health by class and level (0x1404585c0), so health and property 7 (Base
 ////   Health) are `stand_in_health`, 136, the client's level-1 creature Base
-////   Health (CreatureLevel row 1). A player's health is missing in the
-////   coverage measure.
+////   Health (CreatureLevel row 1), until a marked retail record gives a player's.
 //// - **Level:** stat 10 is the character's level (0x140458140).
 //// - **Place:** one kind 2 movement command at the saved position; after 0xAD
 ////   the client never drops the player to the ground, so it must be on the

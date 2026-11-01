@@ -9,11 +9,13 @@ import client_tables
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
+import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   CharacterCreationId, CharacterCustomizationId, CharacterCustomizationLabelId,
-  WorldLocation2Id,
+  GameFormulaId, WorldLocation2Id,
 }
 import genesis_prime/table/world_location2
+import genesis_prime/table/xp_per_level
 import gleam/list
 import gleam/pair
 import owned_test
@@ -41,6 +43,7 @@ pub fn the_planted_character_creation_rows_are_the_clients_rows_test() -> Nil {
         row.costume_only,
         row.enabled,
         row.character_creation_start_enum,
+        row.xp,
         row.account_currency_type_id_cost,
         row.account_currency_amount_cost,
         row.entitlement_id_required,
@@ -105,4 +108,29 @@ pub fn the_planted_start_places_are_the_clients_world_location2_rows_test() -> N
     assert get(planted) == get(real)
       as "WorldLocation2: the planted row has the real row's id, position, world and zone"
   })
+}
+
+pub fn the_planted_level_rows_are_the_clients_game_formula_and_xp_per_level_rows_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  let real = client_tables.shared()
+  let planted = character_tables.shared()
+  let formula = fn(tables) {
+    game_formula.get(
+      tables:,
+      id: GameFormulaId(character_tables.highest_level_formula),
+    )
+  }
+  assert formula(planted) == formula(real)
+    as "GameFormula row 145: the planted row is the real row (dataint0 50)"
+  let minimums = fn(tables) {
+    xp_per_level.all(tables)
+    |> list.take(list.length(character_tables.min_xp_for_level()))
+    |> list.map(fn(row) { #(row.id, row.min_xp_for_level) })
+  }
+  assert minimums(planted) == minimums(real)
+    as "XpPerLevel: the planted records are the real records 1 to 51, with the real minXpForLevel"
+  assert list.length(xp_per_level.all(planted))
+    == list.length(character_tables.min_xp_for_level())
+    as "the planted table holds exactly the records the level rule reads"
 }

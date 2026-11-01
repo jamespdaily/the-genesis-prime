@@ -95,8 +95,9 @@ pub type Character {
 }
 
 /// A character to make, from a create request and the CharacterCreation row it
-/// names: the row gives the gender (its sex), race, class and faction, and its
-/// start the place (genesis_prime/game/start_place). Level 1 is the store's.
+/// names: the row gives the gender (its sex), race, class and faction, its
+/// start the place (genesis_prime/game/start_place) and its experience the
+/// level (genesis_prime/game/level).
 pub type NewCharacter {
   NewCharacter(
     name: String,
@@ -104,6 +105,7 @@ pub type NewCharacter {
     race_id: RaceId,
     class_id: ClassId,
     faction_id: Int,
+    level: Int,
     path: Int,
     world_id: Int,
     world_zone_id: Int,
