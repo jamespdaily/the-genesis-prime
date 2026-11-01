@@ -93,9 +93,9 @@ if [ "$mode" = fast ]; then
 fi
 
 # The budget of a run that includes the integration tests: the slowest of 3
-# runs of them alone on the development Mac (2026-11-01) was 259 s
-# (233, 225 and 259), times 1.25, rounded up.
-integration_budget=${GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS:-324}
+# solo runs on the development Mac (2026-10-26, issue 109) was 466 s, times
+# 1.25, rounded up.
+integration_budget=${GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS:-583}
 
 client_scripts=.claude/skills/decoding-the-client/scripts
 
