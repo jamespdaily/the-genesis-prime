@@ -323,11 +323,13 @@ database_url() {
   echo "postgres://$login@$host:$PGPORT/$database"
 }
 
+# wait_for_status NAME: waits until the part NAME has written its status, and
+# succeeds when it is 0. It has no limit of its own: the hang limit stops the
+# whole check, so a part that needs it is skipped only when it really failed.
 wait_for_status() {
-  local name=$1 waited=0
-  while [ ! -f "$work/$name.status" ] && [ "$waited" -lt 600 ]; do
+  local name=$1
+  while [ ! -f "$work/$name.status" ]; do
     sleep 0.2
-    waited=$((waited + 1))
   done
   [ "$(cat "$work/$name.status" 2>/dev/null)" = 0 ]
 }

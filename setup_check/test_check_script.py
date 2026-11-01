@@ -7,7 +7,8 @@ the real toolchain, the real database or the real client:
 - ./setup-check is a stub that succeeds (after PLANT_SETUP_SECONDS, when set);
 - `gleam` and `psql` are stubs that write their command line to PLANT_LOG and
   succeed (the `psql` that drops the database takes PLANT_PSQL_DROP_SECONDS
-  first, when set; `gleam format` takes PLANT_FORMAT_SECONDS, or ends its own
+  first, when set, and the one that creates it takes PLANT_PSQL_CREATE_SECONDS
+  first, when set, and fails when PLANT_PSQL_CREATE_FAILS is set; `gleam format` takes PLANT_FORMAT_SECONDS, or ends its own
   shell without a word when PLANT_FORMAT_KILLS_PARENT is set), except that `gleam format --check` fails when a file under src,
   test or dev holds PLANTED_FORMAT_ERROR, and any `gleam` run of tests (a `test`
   or a `run -m` of a module other than glinter, squirrel, table_generator and
@@ -99,6 +100,10 @@ echo "psql $*" >>"$PLANT_LOG"
 case "$*" in
   *"drop database"*)
     [ -n "$PLANT_PSQL_DROP_SECONDS" ] && sleep "$PLANT_PSQL_DROP_SECONDS"
+    ;;
+  *"create database"*)
+    [ -n "$PLANT_PSQL_CREATE_SECONDS" ] && sleep "$PLANT_PSQL_CREATE_SECONDS"
+    [ -n "$PLANT_PSQL_CREATE_FAILS" ] && exit 1
     ;;
 esac
 exit 0
@@ -383,10 +388,13 @@ class BudgetTest(unittest.TestCase):
     """The budget is a target: a run that ends over its budget but within three
     times it passes, with a warning line that names its wall time and its budget.
 
-    The tests set the budget to 2 seconds (GENESIS_CHECK_FAST_BUDGET_SECONDS for
+    The tests set the budget to 3 seconds (GENESIS_CHECK_FAST_BUDGET_SECONDS for
     `./check fast`, GENESIS_CHECK_BUDGET_SECONDS for the full check, which share
-    the code) and plant 3 seconds of delay, which lands between 2 and 6; the real
-    budget is 2 minutes (CLAUDE.md: "the full check passes in under 2 minutes")."""
+    the code) and plant 4 seconds of delay. A planted sleep never ends early, so the
+    run is over its budget by construction; the rest of the run (a few instant stubs)
+    adds well under the 5 seconds between the delay and the hang limit at 9, which
+    is the margin a loaded machine needs. The real budget is 2 minutes (CLAUDE.md:
+    "the full check passes in under 2 minutes")."""
 
     def assert_passed_with_the_warning(self, run: Run, budget: int) -> None:
         output = run.output
@@ -402,27 +410,53 @@ class BudgetTest(unittest.TestCase):
         self.assertNotIn("hung", output)
 
     def test_a_slow_part_takes_the_check_over_its_budget_and_it_passes_with_a_warning(self):
-        run = shared_run("slow-part", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="2", PLANT_FORMAT_SECONDS="3")
-        self.assert_passed_with_the_warning(run, budget=2)
+        run = shared_run("slow-part", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="3", PLANT_FORMAT_SECONDS="4")
+        self.assert_passed_with_the_warning(run, budget=3)
 
     def test_the_full_check_over_its_budget_passes_with_a_warning(self):
-        run = shared_run("slow-part-full", GENESIS_CHECK_BUDGET_SECONDS="2", PLANT_FORMAT_SECONDS="3")
-        self.assert_passed_with_the_warning(run, budget=2)
+        run = shared_run("slow-part-full", GENESIS_CHECK_BUDGET_SECONDS="3", PLANT_FORMAT_SECONDS="4")
+        self.assert_passed_with_the_warning(run, budget=3)
 
     def test_the_time_of_the_setup_check_counts_towards_the_budget(self):
         # Every part is instant; only ./setup-check is slow.
-        run = shared_run("slow-setup", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="2", PLANT_SETUP_SECONDS="3")
-        self.assert_passed_with_the_warning(run, budget=2)
+        run = shared_run("slow-setup", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="3", PLANT_SETUP_SECONDS="4")
+        self.assert_passed_with_the_warning(run, budget=3)
 
     def test_the_warning_names_the_raised_budget_when_the_integration_tests_run(self):
-        # The usual budget is 1 s, the raised one 2 s: the 3 s of delay is over the raised
-        # one and under three times it.
+        # The usual budget is 1 s, the raised one 3 s: the 4 s of delay is over the raised
+        # one and 5 s under three times it (9 s).
         run = shared_run(
             "slow-raised", client=True, prepare=lambda case: case.commit_change(SCRIPTS_FILE),
-            GENESIS_CHECK_BUDGET_SECONDS="1", GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="2",
-            PLANT_FORMAT_SECONDS="3",
+            GENESIS_CHECK_BUDGET_SECONDS="1", GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="3",
+            PLANT_FORMAT_SECONDS="4",
         )
-        self.assert_passed_with_the_warning(run, budget=2)
+        self.assert_passed_with_the_warning(run, budget=3)
+
+    @staticmethod
+    def quick_polls(case: PlantedCheckCase) -> None:
+        """Plants a `sleep` that returns at once for the 0.2 second poll of a part's
+        status, so a cap on the number of polls, which the check once had, would run
+        out in a few seconds. Any other sleep is the real one."""
+        executable(case.root / "tools" / "sleep", '#!/bin/sh\ncase "$1" in 0.2) exit 0 ;; esac\nexec /bin/sleep "$@"\n')
+
+    def test_squirrel_waits_for_a_slow_migrations_part_and_still_runs(self):
+        # The migrations part takes 8 s, 7 s under the hang limit of 15 (3 times the budget
+        # of 5), and the polls are quick: squirrel runs when the part ends, however many
+        # polls that took.
+        run = shared_run(
+            "slow-migrations", prepare=self.quick_polls, timeout=40,
+            GENESIS_CHECK_BUDGET_SECONDS="5", PLANT_PSQL_CREATE_SECONDS="8",
+        )
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertIn("gleam run -m squirrel check", run.commands)
+        self.assertRegex(run.output, r"(?m)^  squirrel +ok\b")
+
+    def test_squirrel_is_skipped_when_the_migrations_part_fails(self):
+        run = shared_run("failing-migrations", prepare=self.quick_polls, PLANT_PSQL_CREATE_FAILS="1")
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"\bmigrations\b")
+        self.assertNotIn("gleam run -m squirrel check", run.commands)
+        self.assertRegex(run.output, r"(?m)^  squirrel +skipped \(a part it needs failed: migrations\)")
 
     def test_a_check_inside_its_budget_passes_without_a_warning(self):
         run = shared_run("in-budget", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="30", PLANT_FORMAT_SECONDS="1")
