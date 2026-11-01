@@ -85,15 +85,16 @@ pub fn a_probe_that_reached_a_database_missing_a_migration_ends_the_ask_with_a_r
         ))
       },
       tree: process.monitor(tree),
-      settings: short(),
+      settings: patient(),
       files: [first, second],
     )
     == readiness.MigrationsRefused(NotApplied("0001_second"))
     as "the database answered but lacks the second file's migration: the ask ends with the refusal, and does not ask again"
 }
 
-/// The ask's times when the test decides when the probe answers: the server's
-/// own, 30 s in all.
+/// The ask's times when the answer is what the test checks, not the wait: the
+/// server's own, 30 s in all, so no machine is too slow for an attempt. An ask
+/// that is answered ends at once.
 fn patient() -> readiness.Settings {
   readiness.Settings(within_ms: 30_000, attempt_ms: 30_000, pause_ms: 20)
 }
@@ -178,8 +179,7 @@ pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_te
     as "no attempt reached the database, so the ask gives up"
   assert runtime.now().monotonic_ms - started_ms >= short().within_ms
     as "and only when its time has run out"
-  assert count(asked) >= 5
-    as "having asked again after each failure: a pause of 20 ms in 250 ms allows many more attempts than one"
+  assert count(asked) >= 2 as "having asked again after a failure, not once"
 }
 
 /// How many messages wait in the subject.

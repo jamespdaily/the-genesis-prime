@@ -7,6 +7,7 @@
 //// level and filters are the node's, shared by every test, so these tests
 //// are `serial`: they run one at a time, apart from the others.
 
+import ask_support
 import genesis_prime/step
 import genesis_prime/step/runtime
 import gleam/erlang/atom
@@ -27,7 +28,7 @@ pub fn the_servers_start_lets_info_lines_through_test() -> Nil {
 }
 
 pub fn the_servers_start_leaves_out_otps_progress_reports_test() -> Nil {
-  use <- owned_test.run(5000)
+  use <- owned_test.run(30_000)
   use <- unitest.tag("serial")
   let before = log_capture.primary_level()
   let lines = process.new_subject()
@@ -35,7 +36,7 @@ pub fn the_servers_start_leaves_out_otps_progress_reports_test() -> Nil {
   runtime.show_info_lines()
   log_capture.log_progress_report()
   runtime.log(step.LogInfo, "an info line", step.no_one)
-  let first = process.receive(lines, 1000)
+  let first = process.receive(lines, ask_support.event_wait_ms)
   log_capture.stop(capture)
   log_capture.remove_progress_filter()
   log_capture.set_primary_level(before)

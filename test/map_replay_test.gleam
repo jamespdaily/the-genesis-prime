@@ -2,7 +2,8 @@
 //// process. Expected values come from these places.
 //// - The recordings (the folder of `rule_replay_support`): one file for each
 ////   run of a map the live session held, named by its world, instance and
-////   incarnation, each closed with `End`, which counts its inputs.
+////   incarnation, each closed with `End`, which counts the inputs the replay
+////   must fold.
 //// - The map reads no game table, so a replay needs no tables, whatever digest
 ////   the header holds.
 //// - The rule's types as the code stands (`rule_types.digest`): a recording
@@ -11,25 +12,12 @@
 ////   every recorded step must be the step the rule gives again.
 
 import genesis_prime/world_map/map
-import gleam/list
 import owned_test
 import rule_replay_support
 
 pub fn every_map_run_the_live_session_recorded_replays_to_the_same_steps_test() -> Nil {
   use <- owned_test.run(60_000)
-  let files = rule_replay_support.recordings_of(module: map.rule_name)
-  assert list.length(files) == 1
-    as "the live session held one map run: the Veteran start's world 426"
-  list.each(files, fn(file) {
-    let #(inputs, count) = replayed(file:)
-    assert inputs == count
-      as { file <> ": the replay folds every input the End counts" }
-  })
-}
-
-fn replayed(file file: String) -> #(Int, Int) {
-  rule_replay_support.replayed(
-    file:,
+  rule_replay_support.every_recording_replays(
     module: map.rule_name,
     reads_tables: False,
     new: map.new,
