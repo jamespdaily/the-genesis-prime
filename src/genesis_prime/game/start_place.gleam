@@ -4,8 +4,8 @@
 //// (CharacterCreation.characterCreationStartEnum, WorldLocation2.50230). The
 //// links are Jim's world database's (wildstar-knowledge,
 //// world-data/start_location.tsv, its 24 rows), which was converted from
-//// another server project and is used under Jim's one-time exception (decision
-//// D18 on #2): each of its places is a WorldLocation2 row's to the unit, except
+//// another server project and is used under Jim's one-time exception: each of
+//// its places is a WorldLocation2 row's to the unit, except
 //// Draken and Chua Veteran, 3.4 units from row 8223, which is used. The place
 //// itself, world, zone and position, is always the client's row.
 ////
@@ -16,8 +16,7 @@
 ////
 //// Level 50 (5) has no place: every Level 50 CharacterCreation row costs
 //// account currency, which a create refuses first (`CostsCurrency`), so its
-//// two rows of the database, Exile 53050 and Dominion 53051, are not kept
-//// (decision D7 on #2).
+//// two rows of the database, Exile 53050 and Dominion 53051, are not kept.
 ////
 //// A start, race or faction that no row above names has no place, so a
 //// create for it is refused (genesis_prime/game/character_creation). The
