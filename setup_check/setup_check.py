@@ -176,29 +176,39 @@ def check_manifest(machine: Machine) -> list[Missing]:
 
 def check_postgres(machine: Machine) -> list[Missing]:
     """Reachable at PGHOST, PGPORT and PGUSER; major version 18; its clock
-    within 1 second of this machine's."""
+    within 1 second of this machine's; built with ICU, whose collation
+    "und-x-icu" the character name index folds case with."""
     host = machine.env.get("PGHOST") or "/tmp"
     port = machine.env.get("PGPORT") or "5433"
     user = machine.env.get("PGUSER") or "postgres"
     part = "Postgres %d" % POSTGRES_MAJOR
-    query = "select current_setting('server_version_num'), extract(epoch from clock_timestamp())"
+    query = (
+        "select current_setting('server_version_num'), extract(epoch from clock_timestamp()), "
+        "exists (select from pg_collation where collname = 'und-x-icu')"
+    )
     before = time.time()
     code, output = machine.run(["psql", "-X", "-At", "-h", host, "-p", port, "-U", user, "-d", "postgres", "-c", query])
     after = time.time()
     if code != 0:
         fix = "start Postgres %d at %s:%s as %s, or set PGHOST, PGPORT and PGUSER in env.sh" % (POSTGRES_MAJOR, host, port, user)
         return [Missing(part, "nothing reachable at %s:%s as %s (%s)" % (host, port, user, _first_line(output)), fix)]
-    number, _, epoch = output.strip().partition("|")
+    number, _, rest = output.strip().partition("|")
+    epoch, _, icu = rest.partition("|")
     major = int(number) // 10000
     if major != POSTGRES_MAJOR:
         fix = "run Postgres %d at %s:%s (found major version %d)" % (POSTGRES_MAJOR, host, port, major)
         return [Missing(part, "major version %d" % major, fix)]
+    missing = []
     offset = float(epoch) - (before + after) / 2
     if abs(offset) > CLOCK_TOLERANCE_SECONDS:
         fix = "set this machine's clock, or the server's, from the network time (sudo sntp -sS time.apple.com)"
-        return [Missing("%s clock within %g second of this machine's" % (part, CLOCK_TOLERANCE_SECONDS),
-                        "its clock is %+.1f seconds from this machine's" % offset, fix)]
-    return []
+        missing.append(Missing("%s clock within %g second of this machine's" % (part, CLOCK_TOLERANCE_SECONDS),
+                               "its clock is %+.1f seconds from this machine's" % offset, fix))
+    if icu.strip() != "t":
+        fix = "run a Postgres built with ICU (the Homebrew, Debian and apt.postgresql.org builds are; a source build needs --with-icu)"
+        missing.append(Missing("%s built with ICU (collation und-x-icu)" % part,
+                               "no collation und-x-icu: Postgres was built without ICU", fix))
+    return missing
 
 
 def check_client(machine: Machine) -> list[Missing]:

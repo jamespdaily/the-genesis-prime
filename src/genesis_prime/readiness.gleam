@@ -1,14 +1,18 @@
-//// Whether the server can serve: the database answers one read. `main` asks
-//// after the tree has started, because the tree starting says only that every
-//// process is running, and the pool may still be opening its connections.
+//// Whether the server can serve: the database answers one read and has run
+//// exactly the migrations the server was built with. `main` asks after the
+//// tree has started, because the tree starting says only that every process is
+//// running, and the pool may still be opening its connections.
 ////
 //// ```
 //// main                          store (factory supervisor)        worker
-////   probe(reply) ─ start_child ─────────────────────────────────▶ select 1 on the pool
+////   probe(reply) ─ start_child ─────────────────────────────────▶ select 1 on the pool,
+////                                                                 then reads schema_migration
 ////   waits up to attempt_ms for the first of
 ////     the answer, the tree's end, the worker's end
-////   ◀── Reached ◀──────────────────────────────────────────────── reply, ends
-////     ─▶ Ready
+////   ◀── Reached(recorded) ◀────────────────────────────────────── reply, ends
+////     ─▶ compares the recorded migrations with the files
+////          (genesis_prime/migration): the same ─▶ Ready
+////          a difference ─▶ MigrationsRefused(refusal)
 ////   ◀── Unreached, the worker ended before it answered, or no answer in
 ////       time (the worker is then ended), or the store is not running
 ////     ─▶ waits pause_ms for the tree's end, asks again
@@ -18,7 +22,10 @@
 ////
 //// - **What `main` does with each outcome** is in genesis_prime. `Ready` prints
 ////   the ready line when the server still serves (genesis_prime/application:
-////   the tree is running and the node is not stopping). `DatabaseUnreachable`
+////   the tree is running and the node is not stopping).
+////   `MigrationsRefused` stops `main` with the refusal's sentence, so the node
+////   ends with status 1 and prints no ready line; the database answered, so
+////   asking again would not change it. `DatabaseUnreachable`
 ////   logs a warning, prints no ready line, and the server keeps running,
 ////   answering `Unavailable` to a login until the pool connects. A database
 ////   that returns after the deadline is served from then on, and the ready line
@@ -44,6 +51,7 @@
 ////   pgo logs `nxdomain` for each; the readiness ask is never reached, so it
 ////   neither covers nor causes that noise.
 
+import genesis_prime/migration.{type Migration, type Refusal}
 import genesis_prime/service.{type Sent, ToService, ToWorker}
 import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Probed, Reached, Unreached}
@@ -67,8 +75,13 @@ pub type Settings {
 
 /// What `await` found.
 pub type Outcome {
-  /// One `select 1` returned its row: the database answers.
+  /// One `select 1` returned its row, and the database has run exactly the
+  /// migration files the server has: it answers and is the one the server was
+  /// built for.
   Ready
+  /// The database answered, and it has not run exactly the migration files the
+  /// server has, for the reason given.
+  MigrationsRefused(refusal: Refusal)
   /// No attempt reached the database within `within_ms`.
   DatabaseUnreachable
   /// The server's tree ended while `await` waited, for the reason given.
@@ -89,28 +102,32 @@ type Event {
   NoAnswerInTime
 }
 
-/// Asks `probe` for `select 1` until one attempt reaches the database or
-/// `settings.within_ms` has passed, watching the server's tree through
-/// `tree`, the monitor `main` made when it started the tree. Called by `main`
-/// once, after the tree has started.
+/// Asks `probe` for `select 1` and the recorded migrations until one attempt
+/// reaches the database or `settings.within_ms` has passed, watching the
+/// server's tree through `tree`, the monitor `main` made when it started the
+/// tree, and compares what the database recorded with `files`, the migration
+/// files the server read when it started. Called by `main` once, after the
+/// tree has started.
 pub fn await(
   probe probe: Probe,
   tree tree: Monitor,
   settings settings: Settings,
+  files files: List(Migration),
 ) -> Outcome {
   let deadline_ms = runtime.now().monotonic_ms + settings.within_ms
-  attempt(probe:, tree:, settings:, deadline_ms:)
+  attempt(probe:, tree:, settings:, files:, deadline_ms:)
 }
 
 fn attempt(
   probe probe: Probe,
   tree tree: Monitor,
   settings settings: Settings,
+  files files: List(Migration),
   deadline_ms deadline_ms: Int,
 ) -> Outcome {
   let answers = process.new_subject()
   case probe(fn(probed) { process.send(answers, probed) }) {
-    Error(Nil) -> retry(probe:, tree:, settings:, deadline_ms:)
+    Error(Nil) -> retry(probe:, tree:, settings:, files:, deadline_ms:)
     Ok(sent) -> {
       let watched = process.monitor(sent.pid)
       let wait_ms =
@@ -127,10 +144,14 @@ fn attempt(
         |> result.unwrap(NoAnswerInTime)
       end_attempt(sent:, watched:, answers:, event:)
       case event {
-        Answered(Reached) -> Ready
+        Answered(Reached(recorded:)) ->
+          case migration.check(files:, recorded:) {
+            Ok(Nil) -> Ready
+            Error(refusal) -> MigrationsRefused(refusal:)
+          }
         TreeDown(reason) -> TreeEnded(reason:)
         Answered(Unreached) | WorkerEnded | NoAnswerInTime ->
-          retry(probe:, tree:, settings:, deadline_ms:)
+          retry(probe:, tree:, settings:, files:, deadline_ms:)
       }
     }
   }
@@ -178,6 +199,7 @@ fn retry(
   probe probe: Probe,
   tree tree: Monitor,
   settings settings: Settings,
+  files files: List(Migration),
   deadline_ms deadline_ms: Int,
 ) -> Outcome {
   let pause_ms = int.min(settings.pause_ms, remaining_ms(deadline_ms))
@@ -191,7 +213,7 @@ fn retry(
     Ok(TreeDown(reason)) -> TreeEnded(reason:)
     Ok(_) | Error(Nil) ->
       case remaining_ms(deadline_ms) > 0 {
-        True -> attempt(probe:, tree:, settings:, deadline_ms:)
+        True -> attempt(probe:, tree:, settings:, files:, deadline_ms:)
         False -> DatabaseUnreachable
       }
   }

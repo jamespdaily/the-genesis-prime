@@ -29,6 +29,10 @@ Expected values and their sources:
   repository, so the check passes where there is none.
 - Postgres 18: Jim's choice on issue #13 ("with Postgres 18 as the version
   checked"); the clock tolerance is 1 second, from the issue's test list.
+- ICU: the character name index folds case under the collation "und-x-icu"
+  (priv/migrations/0005_character_name_unique_in_icu.sql), which exists only in
+  a Postgres built with ICU; the setup check refuses one without it (Jim's
+  approved design for the name index).
 
 What a planted command answers (the contract the checks run against):
 - a missing tool answers (127, "command not found: NAME");
@@ -36,9 +40,10 @@ What a planted command answers (the contract the checks run against):
   alone ("29.1.2"); `rebar3 ...` answers "rebar 3.28.0 on Erlang/OTP 29 Erts 17.1.1";
 - `git ... ls-files ...` answers the file's name when it is tracked; when it is
   not, `--error-unmatch` fails with exit 1 and without it the output is empty;
-- `psql ...` answers each of the words server_version_num, server_version and
-  epoch found in the query, in the order they appear, joined by "|"
-  (the clock as epoch seconds, plus or minus the planted offset); an
+- `psql ...` answers each of the words server_version_num, server_version,
+  epoch and und-x-icu found in the query, in the order they appear, joined by
+  "|" (the clock as epoch seconds, plus or minus the planted offset; und-x-icu
+  as "t" for a Postgres built with ICU and "f" for one without); an
   unreachable server answers exit 2; `pg_isready` answers by the same state;
 - the command `$GENESIS_PYGHIDRA_PYTHON -I -c SNIPPET` (the interpreter the
   query process uses; the snippet imports ghidra_env from the skill's scripts
@@ -163,6 +168,7 @@ class Plan:
     manifest_tracked: bool = True
     postgres_reachable: bool = True
     postgres_version: str = "18.6"
+    postgres_icu: bool = True
     postgres_clock_offset: float = 0.0  # seconds the server's clock is ahead
     with_client: bool = True  # False: nothing of the client, the query process or the patched OTP
     otp_without_client: bool = False  # with_client False, and still GENESIS_OTP_DIR and the build there (CI)
@@ -410,9 +416,10 @@ class PlantedTestCase(unittest.TestCase):
             "server_version_num": _version_number(plan.postgres_version),
             "server_version": plan.postgres_version,
             "epoch": "%.3f" % (time.time() + plan.postgres_clock_offset),
+            "und-x-icu": "t" if plan.postgres_icu else "f",
         }
         found = []
-        for match in re.finditer(r"server_version_num|server_version|epoch", query):
+        for match in re.finditer(r"server_version_num|server_version|epoch|und-x-icu", query):
             found.append((match.start(), words[match.group()]))
         if not found:
             raise AssertionError("the planted psql has no answer for %r" % (argv,))
@@ -817,6 +824,12 @@ class PostgresTest(PlantedTestCase):
                 self.assertNotEqual(missing.found, "nothing")
                 self.assertTrue(missing.found.strip())
                 self.assert_fix(missing, "clock", "time", "ntp", "sntp")
+
+    def test_a_postgres_built_without_icu_is_named_with_what_to_run_instead(self):
+        missing = self.only(setup_check.check_postgres(self.plant(postgres_icu=False)))
+        self.assert_part(missing, "icu")
+        self.assert_found(missing, "und-x-icu")
+        self.assert_fix(missing, "ICU")
 
     def test_a_postgres_of_major_version_18_with_the_right_time_is_not_missing(self):
         self.assertEqual(setup_check.check_postgres(self.plant()), [])

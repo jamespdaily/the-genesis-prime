@@ -3,8 +3,13 @@
 //// load, then starts the supervision tree under the application's root
 //// (genesis_prime/application), with the database named by PGHOST, PGPORT,
 //// PGUSER, PGPASSWORD and PGDATABASE. Once one read of the database has
-//// returned it prints the ready line, and it keeps the node alive until
-//// SIGTERM, which OTP turns into the tree's ordered stop and then the node's.
+//// returned, and the migrations the database recorded are the files in
+//// priv/migrations (genesis_prime/migration), it prints the ready line, and it
+//// keeps the node alive until SIGTERM, which OTP turns into the tree's ordered
+//// stop and then the node's. A database that lacks a migration, ran a
+//// migration this build has no file for, ran an edited one, or has no record
+//// of its migrations makes `main` stop with the reason and the node end with
+//// status 1, with no ready line.
 //// It serves the client's STS and auth logins (`login`) and the game server
 //// (`game`).
 
@@ -15,6 +20,7 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
+import genesis_prime/migration
 import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/step
@@ -22,6 +28,7 @@ import genesis_prime/step/runtime
 import genesis_prime/store/worker
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
+import gleam/erlang/application as erlang_application
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/charlist.{type Charlist}
 import gleam/erlang/process
@@ -32,6 +39,7 @@ import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import pog
+import simplifile
 
 pub fn main() -> Nil {
   let #(tables, count) = load_tables()
@@ -57,12 +65,36 @@ pub fn load_tables() -> #(store.Tables, Int) {
   }
 }
 
+/// Reads the migration files of the application's priv/migrations once, each
+/// as its name without `.sql` and the SHA-256 of its bytes, in name order,
+/// which the readiness ask compares with what the database recorded. A folder
+/// or a file that cannot be read stops the program with the reason.
+pub fn load_migrations() -> List(migration.Migration) {
+  let assert Ok(priv) = erlang_application.priv_directory("genesis_prime")
+    as "the application's priv folder was not found"
+  let folder = priv <> "/migrations"
+  let assert Ok(names) = simplifile.read_directory(folder)
+    as { "the migration folder " <> folder <> " could not be read" }
+  names
+  |> list.filter(string.ends_with(_, ".sql"))
+  |> list.sort(string.compare)
+  |> list.map(fn(file) {
+    let assert Ok(bytes) = simplifile.read_bits(folder <> "/" <> file)
+      as { "the migration file " <> file <> " could not be read" }
+    migration.Migration(
+      name: string.drop_end(file, string.length(".sql")),
+      sha256: migration.sha256(bytes),
+    )
+  })
+}
+
 /// Starts the supervision tree with these settings under the application's
 /// root (genesis_prime/application), says whether the server can serve, and
 /// keeps the node alive until the tree ends, which the host's SIGTERM makes
-/// through OTP.
+/// through OTP. It reads the migration files once, before the tree starts.
 pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
   runtime.show_info_lines()
+  let migrations = load_migrations()
   let assert Ok(tree) = application.start_server(settings:)
     as "the supervision tree did not start"
   serve(
@@ -71,27 +103,39 @@ pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
     tables:,
     ready: ready_ask(),
     probe: fn(reply) { worker.probe(store: settings.store, reply:) },
+    migrations:,
     say: io.println,
   )
 }
 
 /// Asks the database one read through `probe`, says through `say` what the
 /// server can do, and keeps the node alive until the tree ends. The ready line
-/// is said only when the read returned and the server still serves: its tree
-/// is running and the node is not stopping. A stop can begin between that
-/// check and the line being said. A database that does not answer within the
-/// ask's time is logged as a warning and the server runs on; a tree that ends
-/// is taken as `application.end_of` takes it. `start` calls it with the
-/// server's own ask and `io.println`; the tests call it with their own.
+/// is said only when the read returned, the migrations the database recorded
+/// are `migrations`, and the server still serves: its tree is running and the
+/// node is not stopping. A stop can begin between that check and the line
+/// being said. A database that does not answer within the ask's time is logged
+/// as a warning and the server runs on; a database whose migrations differ
+/// from `migrations` stops `main` with the difference (`migration.describe`),
+/// which ends the node with status 1; a tree that ends is taken as
+/// `application.end_of` takes it. `start` calls it with the server's own ask,
+/// the files it read and `io.println`; the tests call it with their own.
 pub fn serve(
   tree tree: application.Tree,
   settings settings: server.Settings,
   tables tables: Int,
   ready ready: readiness.Settings,
   probe probe: readiness.Probe,
+  migrations migrations: List(migration.Migration),
   say say: fn(String) -> Nil,
 ) -> Nil {
-  case readiness.await(probe:, tree: tree.monitor, settings: ready) {
+  case
+    readiness.await(
+      probe:,
+      tree: tree.monitor,
+      settings: ready,
+      files: migrations,
+    )
+  {
     readiness.Ready -> {
       case application.serving(tree) {
         True -> say(ready_line(settings:, tables:))
@@ -99,6 +143,7 @@ pub fn serve(
       }
       application.await_tree_end(tree)
     }
+    readiness.MigrationsRefused(refusal:) -> panic as migration.describe(refusal)
     readiness.DatabaseUnreachable -> {
       runtime.log(step.LogWarning, "the database is unreachable", step.no_one)
       application.await_tree_end(tree)
@@ -166,11 +211,44 @@ fn world() -> server.World {
   )
 }
 
-/// The database pool's configuration: PGHOST (an IPv6 address when it holds a
-/// colon), PGPORT, PGUSER, PGPASSWORD and PGDATABASE, with Postgres's own
-/// defaults for what is not set.
+/// The database pool's three sizes. The values are the server's choice, not
+/// the client's, and are pog's own defaults until a load run measures better
+/// ones.
+pub type PoolSettings {
+  PoolSettings(
+    /// How many connections the pool keeps open: pog's default, 10. Set by the
+    /// load run.
+    pool_size: Int,
+    /// How long, in milliseconds, a checkout may wait in the queue before the
+    /// queue counts as slow: pog's default, 50. Set by the load run.
+    queue_target: Int,
+    /// How long, in milliseconds, checkouts must stay slower than
+    /// `queue_target` before the pool doubles it and starts dropping checkouts
+    /// past it: pog's default, 1000. Set by the load run.
+    queue_interval: Int,
+  )
+}
+
+/// The server's pool sizes.
+pub const pool_settings =
+  PoolSettings(pool_size: 10, queue_target: 50, queue_interval: 1000)
+
+/// The database pool's configuration with the server's pool sizes
+/// (`pool_settings`): PGHOST (an IPv6 address when it holds a colon), PGPORT,
+/// PGUSER, PGPASSWORD and PGDATABASE, with Postgres's own defaults for what is
+/// not set.
 pub fn pool() -> pog.Config {
-  let pool = pog.default_config(process.new_name("database_pool"))
+  pool_with(sizes: pool_settings)
+}
+
+/// The database pool's configuration with these pool sizes, and the
+/// connection's settings from the environment as `pool` reads them.
+pub fn pool_with(sizes sizes: PoolSettings) -> pog.Config {
+  let pool =
+    pog.default_config(process.new_name("database_pool"))
+    |> pog.pool_size(sizes.pool_size)
+    |> pog.queue_target(sizes.queue_target)
+    |> pog.queue_interval(sizes.queue_interval)
   let pool =
     from_environment(pool, "PGHOST", fn(pool, host) {
       pool

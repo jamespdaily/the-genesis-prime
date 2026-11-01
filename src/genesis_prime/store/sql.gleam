@@ -300,6 +300,48 @@ order by character_id;
   |> pog.execute(db)
 }
 
+/// A row you get from running the `list_migrations` query
+/// defined in `./src/genesis_prime/store/sql/list_migrations.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type ListMigrationsRow {
+  ListMigrationsRow(name: String, sha256: String)
+}
+
+/// The migration files the database has run, with the SHA-256 each file had
+/// (lower-case hex) when it ran, which the server compares with the files in
+/// priv/migrations at start (genesis_prime/migration). Fails with an undefined
+/// table on a database that has no schema_migration, which the store answers as
+/// a database with no record.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn list_migrations(
+  db: pog.Connection,
+) -> Result(pog.Returned(ListMigrationsRow), pog.QueryError) {
+  let decoder = {
+    use name <- decode.field(0, decode.string)
+    use sha256 <- decode.field(1, decode.string)
+    decode.success(ListMigrationsRow(name:, sha256:))
+  }
+
+  "-- The migration files the database has run, with the SHA-256 each file had
+-- (lower-case hex) when it ran, which the server compares with the files in
+-- priv/migrations at start (genesis_prime/migration). Fails with an undefined
+-- table on a database that has no schema_migration, which the store answers as
+-- a database with no record.
+select name, sha256
+from schema_migration
+order by name;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `load_character` query
 /// defined in `./src/genesis_prime/store/sql/load_character.sql`.
 ///

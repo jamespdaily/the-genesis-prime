@@ -50,8 +50,9 @@
 #                  the committed message codec equals what the schema
 #                  generates                            (after gleam-build)
 #   migrations     a fresh database with a unique name, every
-#                  priv/migrations/*.sql applied in name order, each with
-#                  psql -v ON_ERROR_STOP=1 --single-transaction
+#                  priv/migrations/*.sql applied in name order and recorded in
+#                  schema_migration by dev/apply_migrations.sh, each file and
+#                  its record in one psql --single-transaction
 #   squirrel       gleam run -m squirrel check, against that database
 #   client-suite   the client scripts' tests that need no Ghidra (run with
 #                  GENESIS_INTEGRATION=0, whatever the caller exported)
@@ -301,11 +302,7 @@ in_background() {
 prepare_database() {
   psql -X -q -v ON_ERROR_STOP=1 -d postgres -c "create database \"$database\"" || return 1
   touch "$work/database_created"
-  local migration
-  while IFS= read -r migration; do
-    echo "applying $migration"
-    psql -X -q -v ON_ERROR_STOP=1 --single-transaction -d "$database" -f "$migration" || return 1
-  done < <(find priv/migrations -name '*.sql' | LC_ALL=C sort)
+  dev/apply_migrations.sh "$database"
 }
 
 database_url() {

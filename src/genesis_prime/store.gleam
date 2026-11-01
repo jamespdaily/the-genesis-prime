@@ -168,10 +168,13 @@ pub type SelectRequest {
 /// the group of the request asked, so a rule that asks one group takes only
 /// that group's answers and names the other group once.
 pub type Answer {
-  /// The database could not be reached, or did not answer within the
-  /// query's own timeout. A read changed nothing, so asking again is safe; a
-  /// create ran in one transaction, which committed or did not, and the
-  /// account's list on its next login shows which.
+  /// The database could not be reached, or a read waited longer than its
+  /// query's timeout for a connection (pog's query timeout bounds that wait,
+  /// not the query's run). A read changed nothing, so asking again is safe. A
+  /// create's statements run on the one connection its transaction holds and
+  /// have no query timeout: the asker's deadline bounds them. A create ran in
+  /// one transaction, which committed or did not, and the account's list on its
+  /// next login shows which.
   Unavailable
   ForLogin(answer: FindAccountAnswer)
   ForSelect(answer: SelectAnswer)

@@ -21,6 +21,7 @@ import database_support
 import envoy
 import genesis_prime
 import genesis_prime/application
+import genesis_prime/migration.{Recorded}
 import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/service.{type Sent, ToWorker}
@@ -143,6 +144,7 @@ pub fn main() -> Nil {
         tables: 0,
         ready:,
         probe:,
+        migrations: genesis_prime.load_migrations(),
         say: io.println,
       )
     SlowStop -> {
@@ -156,6 +158,7 @@ pub fn main() -> Nil {
         tables: 0,
         ready:,
         probe: probe_after_stop,
+        migrations: [],
         say: io.println,
       )
     }
@@ -167,6 +170,7 @@ pub fn main() -> Nil {
         tables: 0,
         ready:,
         probe:,
+        migrations: genesis_prime.load_migrations(),
         say: io.println,
       )
     }
@@ -199,8 +203,9 @@ fn kill_hand_off(settings: server.Settings, times: Int) -> Nil {
   }
 }
 
-/// A probe that answers `Reached` once the node is stopping, so the answer
-/// comes after the stop has begun.
+/// A probe that answers `Reached`, with no migrations recorded (the node's
+/// `serve` holds none), once the node is stopping, so the answer comes after
+/// the stop has begun.
 fn probe_after_stop(reply: fn(Probed) -> Nil) -> Result(Sent, Nil) {
   io.println("probing")
   let pid =
@@ -208,7 +213,7 @@ fn probe_after_stop(reply: fn(Probed) -> Nil) -> Result(Sent, Nil) {
     // on the attempt, and that exit must not reach main.
     process.spawn_unlinked(fn() {
       await_stop()
-      reply(Reached)
+      reply(Reached(recorded: Recorded([])))
     })
   Ok(ToWorker(pid:))
 }
