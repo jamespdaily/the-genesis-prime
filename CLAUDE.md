@@ -13,7 +13,7 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 ## Authority
 - The client and its data files are the only authority on what the server must do; every protocol or game-rule fact in code points to its evidence.
 - The client's tables set the scope; each run of the coverage measure is posted on its issue.
-- Never read or copy another WildStar server's code, text or structure; it is never evidence.
+- Never copy another WildStar server's code, text or structure; none of it is evidence. Jim's earlier server, the-eldan-experiment, may be read to find questions, client addresses and sources, and to compare designs. A fact it points to is accepted only once the client's own code or data confirms it. A design it shows is chosen only on this project's own evidence. NexusForever is never read.
 - Retail records (Jabbithole, Dulfy, wikis) count only for data the client lacks, such as spawns, vendor stock and loot, and each such value is marked.
 - Read a problem's rows and evidence before calling it a bug, a decision or a fix; a search that found nothing settles nothing.
 
