@@ -148,6 +148,7 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
+import genesis_prime/connection/taken_message
 import genesis_prime/game/character_select
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder, SessionKey, Take}
@@ -468,24 +469,30 @@ fn handle(
     )
   {
     Settled(handled:) -> handled
-    Inside(inner:) -> taken_message(session:, now:, inner:)
+    Inside(inner:) -> inner_message(session:, now:, inner:)
   }
 }
 
 /// What the message in the client's wrapper does, by where the connection is:
 /// the first must be 0x058F and only one is taken, 0x07E0 starts character
 /// select, and any other whole message is logged as unhandled.
-fn taken_message(
+fn inner_message(
   session session: Session,
   now now: Now,
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
-  let is_hello_reply = inner.message_id == game_hello_reply.message_id
+  let taken = message_taken(inner.message_id)
   case session.status {
     AwaitingHelloReply ->
-      case is_hello_reply {
-        True -> hello_replied(session:, now:, inner:)
-        False ->
+      case taken {
+        HelloReplyAgain -> hello_replied(session:, now:, inner:)
+        SelectStart
+        | CreateRequest
+        | PlayRequest
+        | DeleteRequest
+        | RenameRequest
+        | WorldCarrier
+        | NotTaken ->
           end_for(
             session,
             "the first message of a game connection is 0x058F, not "
@@ -493,7 +500,7 @@ fn taken_message(
           )
       }
     InCharacterSelect(holder:, select:) ->
-      case select_message(inner.message_id) {
+      case taken {
         HelloReplyAgain -> end_for(session, "0x058F was sent a second time")
         SelectStart ->
           decoded_step(
@@ -549,11 +556,15 @@ fn taken_message(
         NotTaken -> unhandled(session:, message_id: inner.message_id)
       }
     InWorld(..) ->
-      case inner.message_id {
-        id if id == game_hello_reply.message_id ->
-          end_for(session, "0x058F was sent a second time")
-        id if id == world_message.message_id -> world_carried(session:, inner:)
-        id -> unhandled(session:, message_id: id)
+      case taken {
+        HelloReplyAgain -> end_for(session, "0x058F was sent a second time")
+        WorldCarrier -> world_carried(session:, inner:)
+        SelectStart
+        | CreateRequest
+        | PlayRequest
+        | DeleteRequest
+        | RenameRequest
+        | NotTaken -> unhandled(session:, message_id: inner.message_id)
       }
     TakingSessionKey | ClaimingSession(..) | EnteringWorld(..) ->
       end_for(session, "a frame was taken while an ask was out")
@@ -658,8 +669,8 @@ fn describe_key_error(error: cipher.KeyError) -> String {
   }
 }
 
-/// Which of the client's messages character select takes a message is.
-type SelectMessage {
+/// Which of the client's messages in its wrapper the rule takes a message is.
+type TakenMessage {
   /// A second 0x058F.
   HelloReplyAgain
   /// 0x07E0.
@@ -678,17 +689,30 @@ type SelectMessage {
   NotTaken
 }
 
-fn select_message(message_id: Int) -> SelectMessage {
-  case message_id {
-    id if id == game_hello_reply.message_id -> HelloReplyAgain
-    id if id == character_select_start.message_id -> SelectStart
-    id if id == create_character_carrier.message_id -> CreateRequest
-    id if id == play_character.message_id -> PlayRequest
-    id if id == delete_character.message_id -> DeleteRequest
-    id if id == rename_character.message_id -> RenameRequest
-    id if id == world_message.message_id -> WorldCarrier
-    _ -> NotTaken
-  }
+/// The one table of the messages in the client's wrapper the rule takes:
+/// `message_taken` looks an id up here and `taken_message_ids` lists these ids.
+const taken_messages = [
+  #(game_hello_reply.message_id, HelloReplyAgain),
+  #(character_select_start.message_id, SelectStart),
+  #(create_character_carrier.message_id, CreateRequest),
+  #(play_character.message_id, PlayRequest),
+  #(delete_character.message_id, DeleteRequest),
+  #(rename_character.message_id, RenameRequest),
+  #(world_message.message_id, WorldCarrier),
+]
+
+/// The message a message id is to the rule, by the table of the messages it
+/// takes.
+fn message_taken(message_id: Int) -> TakenMessage {
+  taken_message.of(taken_messages, message_id, otherwise: NotTaken)
+}
+
+/// The ids of the client's messages the rule takes: each in its table, and
+/// 0x025B, the create request that 0x025C carries. A state takes some of them:
+/// before the hello reply only 0x058F, in the world only 0x038C. The coverage
+/// measure counts all of them as handled.
+pub fn taken_message_ids() -> List(Int) {
+  [create_character.message_id, ..taken_message.ids(taken_messages)]
 }
 
 /// The client's 0x025C: the whole frame of a 0x025B create request, which

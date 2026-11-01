@@ -9,7 +9,10 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/connection/network_message.{
   Accepted, Answer, Malformed, NotNetwork,
 }
+import genesis_prime/coverage/sent_message
 import genesis_prime/message/bit_stream
+import gleam/int
+import gleam/list
 import owned_test
 
 pub fn a_ping_is_answered_with_a_bare_pong_that_carries_its_number_test() -> Nil {
@@ -59,4 +62,21 @@ pub fn any_other_message_is_not_the_network_layers_test() -> Nil {
     as "opcode.0x244: the wrapper is for the session to open"
   assert network_message.handle(Frame(message_id: 3, body: <<>>)) == NotNetwork
     as "the registrations in 0x14006c290 hold no id below 3, so message 3 is the first of the game's"
+}
+
+pub fn the_network_layer_takes_exactly_the_ids_it_names_among_those_the_client_sends_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert list.sort(network_message.taken_message_ids(), int.compare)
+    == [0, 1, 2]
+    as "fact 0x140332580: the network layer's own ids 0, 1 and 2, sent bare and never registered"
+  list.each(sent_message.all(), fn(id) {
+    let is_network =
+      network_message.handle(Frame(message_id: id, body: <<>>)) != NotNetwork
+    assert is_network == list.contains([0, 1, 2], id)
+      as {
+        "id "
+        <> int.to_string(id)
+        <> ": the network layer's own exactly when named"
+      }
+  })
 }

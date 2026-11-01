@@ -20,10 +20,13 @@
 //// - The rule's doc comment, as approved on the login card.
 
 import connection_rule_support as support
+import game_client
 import genesis_prime/client_connection.{
   type Answer, type Request, AskHandOff, FromHandOff,
 }
+import genesis_prime/connection/cipher
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/coverage/sent_message
 import genesis_prime/hand_off.{
   AlreadyHeld, GameToken, Holder, Kept, NoHolder, Put, SessionKey, Take, Taken,
 }
@@ -39,6 +42,7 @@ import genesis_prime/step.{
   LogWarning, NoAnswerInTime, NotRunning, StoppedWaiting,
 }
 import genesis_prime/store.{AccountId}
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import login_client
@@ -361,4 +365,40 @@ pub fn the_session_key_comes_from_the_connections_seed_only_test() -> Nil {
     as "the same seed gives the same session key"
   assert first != session_key_for(support.seed(first: 40))
     as "two seeds give different session keys"
+}
+
+pub fn the_auth_rule_names_the_client_messages_it_takes_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert auth_connection.taken_message_ids() == [0x0592]
+    as "opcode.0x592: the login request is the one message the auth rule takes"
+  assert list.contains(sent_message.all(), 0x0592)
+    as "the client sends 0x0592 (fact 0x140332920)"
+}
+
+pub fn the_auth_rule_takes_exactly_the_ids_it_names_and_logs_every_other_client_id_as_unhandled_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let state = connected(seed: support.seed(first: 1))
+  let named = auth_connection.taken_message_ids()
+  list.each(sent_message.all(), fn(id) {
+    let #(_, taken) =
+      read(
+        state,
+        game_client.client_bytes(
+          message_id: id,
+          body: <<>>,
+          cipher: cipher.base(),
+        ),
+      )
+    let logged_unhandled =
+      list.map(support.logs_of(step: taken, level: LogWarning), fn(line) {
+        line.about.message
+      })
+      == [Some(#("unhandled", id))]
+    assert logged_unhandled == !list.contains(named, id)
+      as {
+        "id "
+        <> int.to_string(id)
+        <> ": logged as unhandled exactly when the rule's list does not name it"
+      }
+  })
 }

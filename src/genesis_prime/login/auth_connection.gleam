@@ -45,6 +45,7 @@ import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{AuthWrapper}
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
+import genesis_prime/connection/taken_message
 import genesis_prime/hand_off.{type Holder, GameToken, Put, SessionKey, Take}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/message/bit_stream.{type Endpoint}
@@ -266,8 +267,8 @@ fn handle(
   {
     client_connection.Settled(handled:) -> handled
     client_connection.Inside(inner:) ->
-      case inner.message_id == login_request.message_id {
-        True ->
+      case taken_message.of(taken_messages, inner.message_id, NotTaken) {
+        LoginRequest ->
           case login_request.decode(inner.body) {
             Ok(request) -> login_requested(session:, now:, request:)
             Error(error) ->
@@ -277,9 +278,27 @@ fn handle(
                   <> bit_stream.describe_decode(error:),
               )
           }
-        False -> unhandled(session, inner.message_id)
+        NotTaken -> unhandled(session, inner.message_id)
       }
   }
+}
+
+/// Which of the client's messages in its wrapper the rule takes a message is.
+type TakenMessage {
+  /// 0x0592, the login request.
+  LoginRequest
+  /// Any other message.
+  NotTaken
+}
+
+/// The one table of the messages in the client's wrapper the rule takes:
+/// `handle` looks an id up here and `taken_message_ids` lists these ids.
+const taken_messages = [#(login_request.message_id, LoginRequest)]
+
+/// The ids of the client's messages the rule takes: the login request. The
+/// coverage measure counts them as handled.
+pub fn taken_message_ids() -> List(Int) {
+  taken_message.ids(taken_messages)
 }
 
 /// A whole frame of a message the rule does not take: logged, and the

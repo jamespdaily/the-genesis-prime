@@ -45,6 +45,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/coverage/sent_message
 import genesis_prime/game/connection.{Settings} as game_connection
 import genesis_prime/hand_off.{
   AlreadyHeld, Holder, Kept, NoHolder, SessionKey, Take, Taken,
@@ -1985,4 +1986,57 @@ pub fn a_takeover_queued_behind_a_failing_store_ask_ends_with_reason_8_not_reaso
   let #(_, taken) = answer(state:, taken:, outcome: NoAnswerInTime)
   assert disconnect(taken, keyed()) == LostUserServer
     as "a failing ask ends with reason 8 though a takeover waits behind it"
+}
+
+pub fn the_game_rule_names_the_client_messages_it_takes_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let named = list.sort(game_connection.taken_message_ids(), int.compare)
+  assert named
+    == [0x025B, 0x025C, 0x0352, 0x038C, 0x058F, 0x0786, 0x07DD, 0x07E0]
+    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, and the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900)"
+  list.each(named, fn(id) {
+    assert list.contains(sent_message.all(), id)
+      as {
+        "the rule takes "
+        <> int.to_string(id)
+        <> ", which the client never sends"
+      }
+  })
+}
+
+pub fn character_select_takes_exactly_the_ids_the_rule_names_and_logs_every_other_client_id_as_unhandled_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) = listed(characters: [])
+  let named = game_connection.taken_message_ids()
+  list.each(sent_message.all(), fn(id) {
+    let #(_, taken) = read(state, keyed_message(id, <<>>))
+    let logged_unhandled = unhandled_ids(taken) == [Some(#("unhandled", id))]
+    // 0x025B travels only inside 0x025C, so on its own it is no message the
+    // rule takes (opcode.0x25c); every other named id is taken as sent.
+    let taken_as_sent = list.contains(named, id) && id != 0x025B
+    assert logged_unhandled == !taken_as_sent
+      as {
+        "id "
+        <> int.to_string(id)
+        <> ": logged as unhandled exactly when the rule's list does not name it"
+      }
+  })
+}
+
+pub fn the_create_carrier_takes_only_the_message_the_rule_names_as_carried_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(state, _) = listed(characters: [])
+  list.each(sent_message.all(), fn(id) {
+    let assert Ok(carried) = frame.encode(id, <<>>)
+      as "the carried frame encodes"
+    let #(_, taken) = read(state, keyed_message(0x025C, carried))
+    let refused_as_not_0x025b =
+      list.any(support.logs(taken), support.says(_, words: "not 0x025B"))
+    assert refused_as_not_0x025b == { id != 0x025B }
+      as {
+        "id "
+        <> int.to_string(id)
+        <> " inside 0x025C: opcode.0x25c, 0x025C carries a 0x025B and no other message"
+      }
+  })
 }
