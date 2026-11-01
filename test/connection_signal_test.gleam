@@ -223,28 +223,21 @@ pub fn two_watches_of_targets_no_process_holds_end_in_the_order_opened_before_th
   let server = start(registry: Some(scope), sessions: Error(Nil))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
-  // One read holds three commands, so one step watches 1, watches 2 and
-  // writes the pong.
-  let assert Ok(Nil) =
-    mug.send(client, <<
-      signalling_rule.watch_command,
-      1,
-      0:16,
-      signalling_rule.watch_command,
-      2,
-      0:16,
-      signalling_rule.pong_command,
-      5,
-      0:16,
-    >>)
-    as "the commands were sent"
-  assert read_record(client) == Record(signalling_rule.pong, 5)
-    as "the step's own effects are carried out first"
-  assert registry.deliver(scope, ConnectionId(id), 7) == Ok(Nil)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  // The shell is suspended, so both messages are queued before it takes
+  // either. The message -2 makes the rule watch 1 and 2 on Sessions, which
+  // `locate` finds no process for.
+  ask_support.while_suspended(connection, fn() {
+    assert registry.deliver(scope, ConnectionId(id), -2) == Ok(Nil)
+    assert registry.deliver(scope, ConnectionId(id), 7) == Ok(Nil)
+  })
+  assert read_record(client) == Record(signalling_rule.woken, -2)
+    as "X, whose step opens both watches, is the first input"
   assert read_record(client) == Record(signalling_rule.watch_ended, 1)
     as "the first watch opened ends first"
   assert read_record(client) == Record(signalling_rule.watch_ended, 2)
-    as "the second next, and both before the message waiting in the mailbox"
+    as "the second next, and both before the message queued behind X"
   assert read_record(client) == Record(signalling_rule.woken, 7)
   ask_support.stop(server)
 }

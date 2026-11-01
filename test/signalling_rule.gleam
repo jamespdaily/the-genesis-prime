@@ -18,7 +18,7 @@
 //// ```
 //// 'c' id   the connection was accepted as connection id
 //// 'w' n    the message n was delivered    'e' n    watch n ended
-////          (a message -n also watches n on Sessions)
+////          (a message -n also watches 1 to n on Sessions)
 //// 't' n    timer n fired                  'p' n    the answer to 'P' n
 //// ```
 ////
@@ -30,6 +30,7 @@ import genesis_prime/step.{
   Socket, StartTimer, Stop, TimerFired, TimerId, Watch, WatchEnded, WatchId,
   Woken, Write, WriteFailed,
 }
+import gleam/int
 import gleam/list
 
 /// The commands not yet run.
@@ -96,13 +97,19 @@ pub fn step(
 }
 
 /// What a delivered message does: the record of it, and, for a negative
-/// message `-n`, the watch of `n` on Sessions after the record, so a test can
-/// start a watch from a message that waits in the mailbox.
+/// message `-n`, the watches 1 to `n` on Sessions in that order after the
+/// record, so a test can start watches from a message that waits in the
+/// mailbox.
 fn woken_effects(message: Int) -> List(Effect(Nil)) {
-  case message < 0 {
-    True -> [record(woken, message), Watch(WatchId(-message), Sessions)]
-    False -> [record(woken, message)]
+  let watches = case message < 0 {
+    True ->
+      list.repeat(Nil, int.negate(message))
+      |> list.index_map(fn(_, index) {
+        command(letter: watch_command, n: index + 1, milliseconds: 0)
+      })
+    False -> []
   }
+  [record(woken, message), ..watches]
 }
 
 /// Runs the commands the client has sent, in order; `effects` are the effects
