@@ -39,7 +39,7 @@
 ////   Claim(account, c2) ─▶ Asked ─▶ slot names c1
 ////                                  slot = (c2, watch w2)
 ////                                  Watch(w2, Connection(c2))
-////                                  Send(Connection(c1), TakenOver) ─▶ Woken(TakenOver)
+////                                  OwnEffect(Send(Connection(c1), TakenOver)) ─▶ Woken(TakenOver)
 ////   ◀─ Claimed          ◀─ OwnEffect(Reply(caller, Claimed))               c1 writes 0x036A
 ////                                                                  reason 19 and stops
 //// ```
@@ -86,9 +86,9 @@
 
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type ServiceInput, type ServiceRule,
-  type ServiceStep, type WatchId, Answered, Asked, Connection, ConnectionId,
-  Effects, OwnEffect, OwnEvent, Reply, Rule, Send, Started, Stop, Stopping,
-  TimerFired, Watch, WatchEnded, WatchId, Woken,
+  type ServiceStep, type WatchId, Asked, Connection, ConnectionId, Effects,
+  OwnEffect, OwnEvent, Reply, Rule, Send, Started, Stop, Stopping, Watch,
+  WatchEnded, WatchId,
 }
 import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
@@ -154,13 +154,11 @@ pub fn step(
   input input: ServiceInput(Message),
 ) -> #(State, ServiceStep(Outgoing)) {
   case input.event {
-    Started -> #(state, Effects([]))
+    OwnEvent(Started) -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(caller:, message: Claim(account:, connection:))) ->
       claimed(state:, caller:, account:, connection:)
     WatchEnded(watch:) -> ended(state:, watch:)
-    Woken(..) | TimerFired(..) | Answered(..) ->
-      panic as "Sessions takes Started, Asked, WatchEnded and Stopping only; its shell gives no Woken, TimerFired or Answered"
   }
 }
 
@@ -188,7 +186,7 @@ fn claimed(
     Ok(Slot(..)) | Error(Nil) -> {
       let told = case held {
         Ok(Slot(connection: previous, ..)) -> [
-          Send(to: Connection(previous), message: TakenOver),
+          OwnEffect(Send(to: Connection(previous), message: TakenOver)),
         ]
         Error(Nil) -> []
       }

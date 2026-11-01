@@ -443,7 +443,7 @@ fn serve(
   settings settings: Settings,
   served served: Served(rule_settings),
   rule rule: fn(rule_settings) ->
-    ConnectionRule(rule_settings, state, message, Answer, Nil, Request),
+    ConnectionRule(rule_settings, state, message, Answer, Request),
   directory directory: Directory,
   registry registry: Option(Registry),
 ) -> supervisor.Builder {

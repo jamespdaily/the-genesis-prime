@@ -8,8 +8,8 @@ import genesis_prime/connection/network_message.{
 }
 import genesis_prime/message/server_hello.{type ServerHello}
 import genesis_prime/step.{
-  type ConnectionEffect, type ConnectionInput, type ConnectionStep, Effects,
-  Input, Log, LogLine, LogWarning, OwnEffect, OwnEvent, Stop, Write,
+  type ConnectionEffect, type ConnectionInput, type ConnectionStep, type Effect,
+  Effects, Input, Log, LogLine, LogWarning, OwnEffect, OwnEvent, Stop, Write,
 }
 import gleam/list
 
@@ -33,7 +33,7 @@ pub fn new(settings: Settings) -> State {
 pub fn step(
   state state: State,
   input input: ConnectionInput(Nil, Nil),
-) -> #(State, ConnectionStep(Nil, Nil)) {
+) -> #(State, ConnectionStep(Nil)) {
   let Input(event:, ..) = input
   case event {
     OwnEvent(step.Accepted(..)) -> #(
@@ -47,21 +47,17 @@ pub fn step(
       state,
       Effects([warn("the socket failed"), Stop]),
     )
-    step.Started
-    | step.Woken(..)
+    OwnEvent(step.Woken(..))
     | step.WatchEnded(..)
-    | step.TimerFired(..)
-    | step.Answered(..) -> #(
+    | OwnEvent(step.TimerFired(..))
+    | OwnEvent(step.Answered(..)) -> #(
       state,
       Effects([warn("an input a connection does not take"), Stop]),
     )
   }
 }
 
-fn read(
-  state: State,
-  received: BitArray,
-) -> #(State, ConnectionStep(Nil, Nil)) {
+fn read(state: State, received: BitArray) -> #(State, ConnectionStep(Nil)) {
   let #(frames, rest) = frame.split(received:)
   let answers =
     list.map(frames, fn(found) {
@@ -100,6 +96,6 @@ fn hello_frame(state: State) -> BitArray {
   bytes
 }
 
-fn warn(text: String) -> ConnectionEffect(Nil) {
+fn warn(text: String) -> Effect(ConnectionEffect) {
   Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }

@@ -15,8 +15,8 @@ import genesis_prime/rule_recording.{type Record, End, Taken}
 import genesis_prime/rule_recording/file
 import genesis_prime/service
 import genesis_prime/step.{
-  type SocketEffect, type SocketEvent, Answered, EffectsThenAsk, Input,
-  NoAnswerInTime,
+  type ConnectionEffect, type ConnectionEvent, Answered, EffectsThenAsk, Input,
+  NoAnswerInTime, OwnEvent,
 }
 import gleam/erlang/process
 import gleam/list
@@ -163,6 +163,8 @@ pub fn a_target_that_ends_before_answering_gives_ended_before_answer_test() -> N
 
 pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_for_a_newer_asks_answer_test() -> Nil {
   use <- owned_test.run(30_000)
+  // Connection shell only: the service shell makes no ask (its request type
+  // has no values), so no answer can come late to it.
   let gate = process.new_name("gate")
   let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
   let client = ask_support.connect(server)
@@ -333,12 +335,9 @@ fn start_with(
 
 fn is_ask(
   record: Record(
-    Nil,
-    asking_rule.Answer,
-    Nil,
     asking_rule.Request,
-    SocketEvent,
-    SocketEffect,
+    ConnectionEvent(Nil, asking_rule.Answer),
+    ConnectionEffect,
   ),
 ) -> Bool {
   case record {
@@ -349,17 +348,16 @@ fn is_ask(
 
 fn is_timed_out(
   record: Record(
-    Nil,
-    asking_rule.Answer,
-    Nil,
     asking_rule.Request,
-    SocketEvent,
-    SocketEffect,
+    ConnectionEvent(Nil, asking_rule.Answer),
+    ConnectionEffect,
   ),
 ) -> Bool {
   case record {
-    Taken(input: Input(event: Answered(outcome: NoAnswerInTime, ..), ..), ..) ->
-      True
+    Taken(
+      input: Input(event: OwnEvent(Answered(outcome: NoAnswerInTime, ..)), ..),
+      ..,
+    ) -> True
     Taken(..) | End(..) -> False
   }
 }

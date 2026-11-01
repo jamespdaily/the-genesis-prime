@@ -14,11 +14,11 @@
 //// ```
 //// supervisor starts it ─▶ the actor registers its name, traps exits
 ////   the recorder, when on, opens the file and writes the header
-////   Started                                         ─▶ step ─▶ effects
+////   OwnEvent(Started)                               ─▶ step ─▶ effects
 ////   after each step's effects, before the mailbox is read:
 ////     a watch of a target no process holds ─▶ WatchEnded(id) ─▶ step ─▶ effects
 ////   loop:
-////     Call(message, reply)  ─▶ Asked(CallerId(n), message) ─▶ step ─▶ effects
+////     Call(message, reply)  ─▶ OwnEvent(Asked(CallerId(n), message)) ─▶ step ─▶ effects
 ////     a watched process's DOWN ─▶ WatchEnded(id)           ─▶ step ─▶ effects
 ////     the parent's exit     ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
 ////   Reply(CallerId(n), answer): the shell calls that call's reply with the
@@ -79,11 +79,14 @@
 ////   service has no watches, and a rule that needs one opens it again from
 ////   what it learns of its processes (Sessions has none to open: the
 ////   connections claim again).
-//// - **Effects not carried out.** A service starts no timer and makes no ask.
-////   `StartTimer`, `CancelTimer` and a step that ends in an ask end the
-////   process with an error log naming them. A service has no `Write`: its own
-////   effect type is `ServiceEffect`, so a rule that writes to a socket does not
-////   compile against this shell.
+//// - **Effects and inputs of the other kind.** A service's own effects are
+////   `Reply` and `Send`, and its own inputs are `Started` and `Asked`
+////   (`ServiceEffect` and `ServiceEvent`). It has no `Write`, `StartTimer` or
+////   `CancelTimer`, and takes no `Woken`, `TimerFired` or `Answered`, so a rule
+////   that writes to a socket, starts a timer or takes those inputs does not
+////   compile against this shell. It makes no ask: its request type, `NoAsk`,
+////   has no values, so no rule can build a step that ends in one; the shell's
+////   case for such a step is unreachable.
 
 /// - **A reply nobody waits for.** An answer after the asker's deadline
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
@@ -91,7 +94,7 @@ import genesis_prime/service.{type Call, type Reach, Call}
 import genesis_prime/step.{
   type Effect, type Event, type ServiceEffect, type ServiceEvent,
   type ServiceRule, type WatchId, Asked, CallerId, Effects, EffectsThenAsk,
-  OwnEffect, OwnEvent, Reply, Started, Stopping, WatchEnded,
+  OwnEffect, OwnEvent, Reply, Send, Started, Stopping, WatchEnded,
 }
 import genesis_prime/step/runtime.{Shutdown}
 import genesis_prime/step/watch.{type Watches}
@@ -228,7 +231,7 @@ fn initialise(
         watches: watch.new(),
       ),
       now: runtime.now(),
-      event: Started,
+      event: OwnEvent(Started),
     )
   let selector =
     process.new_selector()
@@ -289,7 +292,7 @@ fn handle(
 fn take(
   running running: Running(settings, state, message, outgoing),
   now now: step.Now,
-  event event: Event(message, Nil, ServiceEvent(message)),
+  event event: Event(ServiceEvent(message)),
 ) -> Running(settings, state, message, outgoing) {
   let #(state, step, writer) = case
     file.fold(
@@ -306,7 +309,8 @@ fn take(
   let running = Running(..running, state:, writer:)
   let running = case step {
     Effects(effects:) -> carry(running:, effects:, ending: False)
-    EffectsThenAsk(..) -> refused("an ask")
+    EffectsThenAsk(..) ->
+      panic as "a service step ended in an ask, which its request type has no value for"
   }
   case watch.next_unheld_end(running.watches) {
     Ok(#(watch, watches)) ->
@@ -323,7 +327,7 @@ fn take(
 /// step: the effects after it are carried out, then the process ends.
 fn carry(
   running running: Running(settings, state, message, outgoing),
-  effects effects: List(Effect(outgoing, ServiceEffect(outgoing))),
+  effects effects: List(Effect(ServiceEffect(outgoing))),
   ending ending: Bool,
 ) -> Running(settings, state, message, outgoing) {
   case effects {
@@ -355,7 +359,7 @@ fn carry(
           carry(running:, effects: later, ending:)
         }
         step.Stop -> carry(running:, effects: later, ending: True)
-        step.Send(to:, message:) ->
+        OwnEffect(Send(to:, message:)) ->
           carry(
             running: deliver(running:, to:, message:),
             effects: later,
@@ -369,8 +373,6 @@ fn carry(
           )
         step.Unwatch(watch:) ->
           carry(running: close_watch(running:, watch:), effects: later, ending:)
-        step.StartTimer(..) -> refused("StartTimer")
-        step.CancelTimer(..) -> refused("CancelTimer")
       }
   }
 }
@@ -437,12 +439,6 @@ fn watch_ended(
 fn stop(running: Running(settings, state, message, outgoing)) -> a {
   runtime.finish_recording(running.writer)
   runtime.exit_now(Shutdown)
-}
-
-/// Ends the process over an effect, or an ask, that a service does not carry
-/// out.
-fn refused(what: String) -> a {
-  runtime.unsupported(shell: "service shell", what:)
 }
 
 fn recording_failed(error: FileError) -> a {

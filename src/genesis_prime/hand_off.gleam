@@ -15,9 +15,8 @@
 
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
-  type ServiceInput, type ServiceRule, type ServiceStep, Answered, Asked,
-  Effects, OwnEffect, OwnEvent, Reply, Rule, Started, Stop, Stopping, TimerFired,
-  WatchEnded, Woken,
+  type ServiceInput, type ServiceRule, type ServiceStep, Asked, Effects,
+  OwnEffect, OwnEvent, Reply, Rule, Started, Stop, Stopping, WatchEnded,
 }
 import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
@@ -94,14 +93,14 @@ pub fn step(
   let now = input.now.monotonic_ms
   let state = drop_expired(state, now)
   case input.event {
-    Started -> #(state, Effects([]))
+    OwnEvent(Started) -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(caller:, message:)) -> {
       let #(state, answer) = answer(state:, now:, message:)
       #(state, Effects([OwnEffect(Reply(caller, answer))]))
     }
-    Woken(..) | WatchEnded(..) | TimerFired(..) | Answered(..) ->
-      panic as "the hand-off takes Started, Asked and Stopping only; its shell gives no Woken, WatchEnded, TimerFired or Answered"
+    WatchEnded(..) ->
+      panic as "the hand-off takes Started, Asked and Stopping only; it watches no process"
   }
 }
 

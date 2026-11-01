@@ -69,17 +69,12 @@ fn counting(
 }
 
 /// An input at `now_ms` with the system time 0.
-pub fn input(
-  event: Event(message, answer, own),
-) -> Input(message, answer, own) {
+pub fn input(event: Event(own)) -> Input(own) {
   input_at(filetime: 0, event:)
 }
 
 /// An input at `now_ms` with this system time, as a Windows FILETIME.
-pub fn input_at(
-  filetime filetime: Int,
-  event event: Event(message, answer, own),
-) -> Input(message, answer, own) {
+pub fn input_at(filetime filetime: Int, event event: Event(own)) -> Input(own) {
   Input(now: Now(monotonic_ms: now_ms, filetime:), event:)
 }
 
@@ -104,9 +99,7 @@ pub fn sixteen(seed seed: BitArray, counter counter: Int) -> BitArray {
 }
 
 /// The effects of a step.
-pub fn effects_of(
-  step: Step(outgoing, request, own),
-) -> List(Effect(outgoing, own)) {
+pub fn effects_of(step: Step(request, own)) -> List(Effect(own)) {
   case step {
     Effects(effects:) -> effects
     EffectsThenAsk(effects:, ..) -> effects
@@ -114,15 +107,14 @@ pub fn effects_of(
 }
 
 /// The bytes the step writes, in order.
-pub fn writes(step: ConnectionStep(outgoing, request)) -> List(BitArray) {
+pub fn writes(step: ConnectionStep(request)) -> List(BitArray) {
   list.filter_map(effects_of(step), fn(effect) {
     case effect {
       OwnEffect(Write(bytes:)) -> Ok(bytes)
-      Send(..)
+      OwnEffect(StartTimer(..))
+      | OwnEffect(CancelTimer(..))
       | Watch(..)
       | Unwatch(..)
-      | StartTimer(..)
-      | CancelTimer(..)
       | Log(..)
       | Stop -> Error(Nil)
     }
@@ -130,7 +122,7 @@ pub fn writes(step: ConnectionStep(outgoing, request)) -> List(BitArray) {
 }
 
 /// Every frame the step writes, as the server wrote it.
-pub fn written_frames(step: ConnectionStep(outgoing, request)) -> List(Frame) {
+pub fn written_frames(step: ConnectionStep(request)) -> List(Frame) {
   list.flat_map(writes(step), fn(bytes) {
     let assert Ok(#(frames, <<>>)) = frame.decode(bytes)
       as "the server writes whole frames"
@@ -144,54 +136,35 @@ pub fn replies(step: ServiceStep(outgoing)) -> List(#(CallerId, outgoing)) {
   list.filter_map(effects_of(step), fn(effect) {
     case effect {
       OwnEffect(Reply(caller:, answer:)) -> Ok(#(caller, answer))
-      Send(..)
-      | Watch(..)
-      | Unwatch(..)
-      | StartTimer(..)
-      | CancelTimer(..)
-      | Log(..)
-      | Stop -> Error(Nil)
+      OwnEffect(Send(..)) | Watch(..) | Unwatch(..) | Log(..) | Stop ->
+        Error(Nil)
     }
   })
 }
 
 /// The watches the step opens, each with the process it is on, in order.
-pub fn watches(
-  step: Step(outgoing, request, own),
-) -> List(#(WatchId, Address)) {
+pub fn watches(step: Step(request, own)) -> List(#(WatchId, Address)) {
   list.filter_map(effects_of(step), fn(effect) {
     case effect {
       Watch(watch:, target:) -> Ok(#(watch, target))
-      Send(..)
-      | OwnEffect(..)
-      | Unwatch(..)
-      | StartTimer(..)
-      | CancelTimer(..)
-      | Log(..)
-      | Stop -> Error(Nil)
+      OwnEffect(..) | Unwatch(..) | Log(..) | Stop -> Error(Nil)
     }
   })
 }
 
 /// The log lines the step writes, in order.
-pub fn logs(step: Step(outgoing, request, own)) -> List(LogLine) {
+pub fn logs(step: Step(request, own)) -> List(LogLine) {
   list.filter_map(effects_of(step), fn(effect) {
     case effect {
       Log(line:) -> Ok(line)
-      Send(..)
-      | OwnEffect(..)
-      | Watch(..)
-      | Unwatch(..)
-      | StartTimer(..)
-      | CancelTimer(..)
-      | Stop -> Error(Nil)
+      OwnEffect(..) | Watch(..) | Unwatch(..) | Stop -> Error(Nil)
     }
   })
 }
 
 /// The log lines of one level.
 pub fn logs_of(
-  step step: Step(outgoing, request, own),
+  step step: Step(request, own),
   level level: LogLevel,
 ) -> List(LogLine) {
   list.filter(logs(step), fn(line) { line.level == level })
@@ -199,21 +172,19 @@ pub fn logs_of(
 
 /// The message each warning of the step is about, in order: what a rule's
 /// unhandled-message lines name.
-pub fn unhandled_ids(
-  step: Step(outgoing, request, own),
-) -> List(Option(#(String, Int))) {
+pub fn unhandled_ids(step: Step(request, own)) -> List(Option(#(String, Int))) {
   list.map(logs_of(step:, level: step.LogWarning), fn(line) {
     line.about.message
   })
 }
 
 /// Whether the step ends the connection.
-pub fn stops(step: Step(outgoing, request, own)) -> Bool {
+pub fn stops(step: Step(request, own)) -> Bool {
   list.contains(effects_of(step), Stop)
 }
 
 /// The ask the step ends with, when it ends with one.
-pub fn asked(step: Step(outgoing, request, own)) -> Option(Ask(request)) {
+pub fn asked(step: Step(request, own)) -> Option(Ask(request)) {
   case step {
     Effects(..) -> None
     EffectsThenAsk(ask:, ..) -> Some(ask)

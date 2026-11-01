@@ -38,7 +38,7 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/client_message
 import genesis_prime/message/ping.{Ping}
 import genesis_prime/rule_recording.{End, Header, Taken}
-import genesis_prime/step.{type SocketEvent, Effects, Input, Now, OwnEvent}
+import genesis_prime/step.{type ConnectionEvent, Effects, Input, Now, OwnEvent}
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -588,20 +588,14 @@ fn recording_with_a_changed_byte(
 /// The record with the byte at `offset` of its socket read inverted.
 fn with_a_changed_byte(
   record record: rule_recording.Record(
-    message,
-    answer,
-    outgoing,
     request,
-    SocketEvent,
+    ConnectionEvent(message, answer),
     own_effect,
   ),
   offset offset: Int,
 ) -> rule_recording.Record(
-  message,
-  answer,
-  outgoing,
   request,
-  SocketEvent,
+  ConnectionEvent(message, answer),
   own_effect,
 ) {
   case record {

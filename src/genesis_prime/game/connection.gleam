@@ -171,10 +171,10 @@ import genesis_prime/message/rename_character
 import genesis_prime/message/world_message
 import genesis_prime/sessions
 import genesis_prime/step.{
-  type About, type ConnectionEffect, type ConnectionInput, type ConnectionRule,
-  type ConnectionStep, type Event, type Now, type Outcome, type SocketEvent,
-  type TimerId, type WatchId, About, Answered, Effects, LogDebug, LogInfo,
-  LogWarning, OwnEffect, OwnEvent, Sessions, StartTimer, Started, Stop, Stopping,
+  type About, type ConnectionEffect, type ConnectionEvent, type ConnectionInput,
+  type ConnectionRule, type ConnectionStep, type Effect, type Event, type Now,
+  type Outcome, type TimerId, type WatchId, About, Effects, LogDebug, LogInfo,
+  LogWarning, OwnEffect, OwnEvent, Sessions, StartTimer, Stop, Stopping,
   TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken, Write,
 }
 import genesis_prime/store
@@ -297,7 +297,7 @@ const claim_timer = TimerId(1)
 /// The rule as its connection shell runs it.
 pub fn rule(
   settings: Settings,
-) -> ConnectionRule(Settings, State, Message, Answer, Nil, Request) {
+) -> ConnectionRule(Settings, State, Message, Answer, Request) {
   step.Rule(name: rule_name, settings:, new:, step:)
 }
 
@@ -310,7 +310,7 @@ pub fn new(settings: Settings) -> State {
 pub fn step(
   state state: State,
   input input: ConnectionInput(Message, Answer),
-) -> #(State, ConnectionStep(Nil, Request)) {
+) -> #(State, ConnectionStep(Request)) {
   case state {
     NotAccepted(settings:) ->
       case
@@ -343,16 +343,15 @@ pub fn step(
 fn connected(
   session session: Session,
   now now: Now,
-  event event: Event(Message, Answer, SocketEvent),
-) -> #(State, ConnectionStep(Nil, Request)) {
+  event event: Event(ConnectionEvent(Message, Answer)),
+) -> #(State, ConnectionStep(Request)) {
   case event {
-    Woken(message: SentBySessions(message:)) ->
+    OwnEvent(Woken(message: SentBySessions(message:))) ->
       settled(handled: sessions_sent(session:, message:), now:)
     WatchEnded(watch:) -> settled(handled: watch_ended(session:, watch:), now:)
-    TimerFired(timer:) ->
+    OwnEvent(TimerFired(timer:)) ->
       settled(handled: claim_wait_over(session:, now:, timer:), now:)
-    Started | OwnEvent(..) | Answered(..) | Stopping(..) ->
-      heard(session:, now:, event:)
+    OwnEvent(..) | Stopping(..) -> heard(session:, now:, event:)
   }
 }
 
@@ -361,8 +360,8 @@ fn connected(
 fn heard(
   session session: Session,
   now now: Now,
-  event event: Event(Message, Answer, SocketEvent),
-) -> #(State, ConnectionStep(Nil, Request)) {
+  event event: Event(ConnectionEvent(Message, Answer)),
+) -> #(State, ConnectionStep(Request)) {
   case
     client_connection.hear(event, about: about_of(session), stopping: fn() {
       server_stopping(session)
@@ -392,7 +391,7 @@ fn heard(
 fn settled(
   handled handled: client_connection.Handled(Session),
   now now: Now,
-) -> #(State, ConnectionStep(Nil, Request)) {
+) -> #(State, ConnectionStep(Request)) {
   client_connection.settle(handled:, flow: flow(now), carried: [])
 }
 
@@ -430,7 +429,7 @@ fn hello_bytes(settings: Settings) -> BitArray {
 }
 
 /// A message in the game wrapper under the cipher the connection holds.
-fn to_client(session: Session, inner: Frame) -> ConnectionEffect(Nil) {
+fn to_client(session: Session, inner: Frame) -> Effect(ConnectionEffect) {
   OwnEffect(
     Write(client_connection.wrapped(GameWrapper, inner, session.cipher)),
   )
@@ -441,7 +440,7 @@ fn to_client(session: Session, inner: Frame) -> ConnectionEffect(Nil) {
 fn notice(
   session session: Session,
   reason reason: DisconnectReason,
-) -> ConnectionEffect(Nil) {
+) -> Effect(ConnectionEffect) {
   let assert Ok(body) = disconnect_notice.encode(DisconnectNotice(reason:))
     as "a reason is within 5 bits"
   to_client(session, Frame(disconnect_notice.message_id, body))
@@ -450,7 +449,7 @@ fn notice(
 /// What a connection writes before it ends when the server stops: the notice
 /// that the server failed, so the client leaves its prompt. A stop is no
 /// failure, so no log line comes with it.
-fn server_stopping(session: Session) -> List(ConnectionEffect(Nil)) {
+fn server_stopping(session: Session) -> List(Effect(ConnectionEffect)) {
   [notice(session:, reason: LostUserServer)]
 }
 
@@ -875,7 +874,7 @@ fn carry_out(
   session session: Session,
   now now: Now,
   effects effects: List(Decided),
-  written written: List(ConnectionEffect(Nil)),
+  written written: List(Effect(ConnectionEffect)),
 ) -> client_connection.Handled(Session) {
   case effects {
     [] -> Continue(session, list.reverse(written))
@@ -904,7 +903,7 @@ fn ask(
   session session: Session,
   now now: Now,
   request request: Request,
-  before before: List(ConnectionEffect(Nil)),
+  before before: List(Effect(ConnectionEffect)),
 ) -> client_connection.Handled(Session) {
   let #(link, made) =
     client_connection.ask(
@@ -1044,7 +1043,7 @@ fn claim_answered(
         ),
         [
           Unwatch(watch: sessions_watch),
-          StartTimer(timer: claim_timer, after_ms: claim_wait_ms),
+          OwnEffect(StartTimer(timer: claim_timer, after_ms: claim_wait_ms)),
         ],
       )
     step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
@@ -1135,7 +1134,7 @@ fn waiting_to_claim(
 ) -> client_connection.Handled(Session) {
   Done(
     Session(..session, status: ClaimingSession(holder:, resume:, retries: 0)),
-    [StartTimer(timer: claim_timer, after_ms: claim_wait_ms)],
+    [OwnEffect(StartTimer(timer: claim_timer, after_ms: claim_wait_ms))],
   )
 }
 
@@ -1406,7 +1405,7 @@ fn log(
   session session: Session,
   level level: step.LogLevel,
   text text: String,
-) -> ConnectionEffect(Nil) {
+) -> Effect(ConnectionEffect) {
   client_connection.log(about: about_of(session), level:, text:)
 }
 

@@ -40,7 +40,9 @@ import genesis_prime/message/client_message.{
   type ClientMessage, type ClientMessageError,
 }
 import genesis_prime/rule_recording.{type ReplayFailure, Taken}
-import genesis_prime/step.{type SocketEffect, type SocketEvent, Input, OwnEvent}
+import genesis_prime/step.{
+  type ConnectionEffect, type ConnectionEvent, Input, OwnEvent,
+}
 import gleam/bit_array
 import gleam/bool
 import gleam/list
@@ -94,7 +96,7 @@ pub type Failure {
   /// The file is not a rule recording.
   NotARecording(
     recording: String,
-    failure: ReplayFailure(Nil, Nil, SocketEffect),
+    failure: ReplayFailure(Nil, ConnectionEffect),
   )
   /// The recording's client bytes did not read: `input` is the number of the
   /// input (from 0, the connection's first input being 0) whose bytes were
@@ -201,11 +203,8 @@ fn receiving_after(
   records records: List(
     rule_recording.Record(
       Nil,
-      client_connection.Answer,
-      Nil,
-      Nil,
-      SocketEvent,
-      SocketEffect,
+      ConnectionEvent(Nil, client_connection.Answer),
+      ConnectionEffect,
     ),
   ),
   settings settings: sts_connection.Settings,

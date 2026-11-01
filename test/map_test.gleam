@@ -31,7 +31,7 @@ fn started() -> State {
 
 fn feed(
   state: State,
-  event: Event(map.Message, Nil, ServiceEvent(map.Message)),
+  event: Event(ServiceEvent(map.Message)),
 ) -> #(State, ServiceStep(map.Outgoing)) {
   map.step(state, support.input(event))
 }
@@ -78,7 +78,7 @@ pub fn the_first_join_is_unit_1_with_a_watch_on_the_connection_and_the_maps_inca
 
 pub fn started_does_nothing_and_stopping_stops_the_rule_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(state, taken) = feed(started(), Started)
+  let #(state, taken) = feed(started(), OwnEvent(Started))
   assert taken == Effects([]) as "a map starts empty"
   let #(_, taken) = feed(state, Stopping(deadline_ms: 9000))
   assert taken == Effects([Stop]) as "Stopping stops the rule at once"

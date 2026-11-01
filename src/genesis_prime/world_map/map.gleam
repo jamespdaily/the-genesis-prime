@@ -40,9 +40,9 @@
 
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type ServiceEffect,
-  type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Answered,
-  Asked, Connection, Effects, Log, LogError, LogLine, OwnEffect, OwnEvent, Reply,
-  Started, Stop, Stopping, TimerFired, Watch, WatchEnded, WatchId, Woken,
+  type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
+  Connection, Effects, Log, LogError, LogLine, OwnEffect, OwnEvent, Reply,
+  Started, Stop, Stopping, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/dict.{type Dict}
@@ -121,13 +121,11 @@ pub fn step(
   input input: ServiceInput(Message),
 ) -> #(State, ServiceStep(Outgoing)) {
   case input.event {
-    Started -> #(state, Effects([]))
+    OwnEvent(Started) -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(caller:, message: Join(connection:, character_id:))) ->
       joined(state:, caller:, connection:, character_id:)
     WatchEnded(watch:) -> ended(state:, watch:)
-    Woken(..) | TimerFired(..) | Answered(..) ->
-      panic as "a map takes Started, Asked, WatchEnded and Stopping only; its shell gives no Woken, TimerFired or Answered"
   }
 }
 
@@ -219,7 +217,7 @@ fn log_error(
   state state: State,
   about about: step.About,
   text text: String,
-) -> Effect(Outgoing, ServiceEffect(Outgoing)) {
+) -> Effect(ServiceEffect(Outgoing)) {
   Log(LogLine(
     level: LogError,
     text:,

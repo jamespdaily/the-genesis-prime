@@ -2,7 +2,7 @@
 //// values come from these places.
 //// - The shell's contract in the doc comment of `genesis_prime/service/shell`,
 ////   as approved on the login processes card: its first input, how callers are
-////   numbered, what a stop gives and which effects it refuses.
+////   numbered and what a stop gives.
 //// - The hand-off's answers in the doc comment of `genesis_prime/hand_off`.
 //// - Send and Watch in the same doc comment: the address is looked up with the
 ////   settings' `reach`, and a watch's end comes back once as `WatchEnded` with
@@ -26,9 +26,9 @@ import genesis_prime/rule_recording/file
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{
-  type Address, type Event, type ServiceEffect, type ServiceEvent, Asked,
-  CallerId, Connection, ConnectionId, Effects, Input, OwnEffect, OwnEvent, Reply,
-  Sessions, Started, Stop, Stopping, WatchEnded, WatchId,
+  type Address, type Event, type NoAsk, type ServiceEffect, type ServiceEvent,
+  Asked, CallerId, Connection, ConnectionId, Effects, Input, OwnEffect, OwnEvent,
+  Reply, Sessions, Started, Stop, Stopping, WatchEnded, WatchId,
 }
 import genesis_prime/store.{AccountId}
 import gleam/erlang/process
@@ -36,8 +36,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
-import gleam/string
-import log_capture
 import mug
 import owned_test
 import recording_support
@@ -59,8 +57,10 @@ pub fn a_service_starts_under_its_supervisor_by_its_name_and_its_first_input_is_
   let assert Ok(pid) = process.named(name) as "the name is registered"
   assert supervisor_children.in_start_order(tree) == [pid]
     as "the process holding the name is the supervisor's child"
-  let assert [Recorded(input: Input(event: Started, ..), step: first), ..] =
-    recorded(folder)
+  let assert [
+    Recorded(input: Input(event: OwnEvent(Started), ..), step: first),
+    ..
+  ] = recorded(folder)
     as "the recording begins with an input"
   assert first == Effects([]) as "Started is the first input, and does nothing"
   let _reason = ask_support.stop_tree(tree)
@@ -259,43 +259,6 @@ pub fn a_crash_in_the_rule_restarts_it_empty_and_an_ask_made_meanwhile_gets_ende
   ask_support.stop(server)
 }
 
-pub fn a_refused_effect_ends_the_process_with_an_error_log_test() -> Nil {
-  use <- owned_test.run(60_000)
-  list.each(
-    [
-      #(gate_rule.TryTimer, "StartTimer"),
-      #(gate_rule.TryAsk, "ask"),
-    ],
-    fn(refused) {
-      let #(message, named_in_log) = refused
-      let gate = process.new_name("gate")
-      let tree =
-        start_tree(ask_support.gate(
-          name: gate,
-          shutdown_ms: 1000,
-          recorder: None,
-        ))
-      let assert Ok(pid) = process.named(gate) as "the gate runs"
-      let logged = process.new_subject()
-      let capture = log_capture.start(from: pid, into: logged)
-      let service = process.monitor(pid)
-      let assert Ok(service.ToService(_)) =
-        service.call(gate, message, fn(_answer) { Nil })
-        as "the gate took the ask"
-      let assert process.Abnormal(_) = ask_support.ended(service)
-        as "the service shell ended the process abnormally"
-      let assert Ok(#("error", text)) =
-        process.receive(logged, within: ask_support.event_wait_ms)
-        as "the first thing logged is an error"
-      assert string.contains(text, named_in_log)
-        as "the error names the refused effect"
-      log_capture.stop(capture)
-      let _reason = ask_support.stop_tree(tree)
-      Nil
-    },
-  )
-}
-
 pub fn a_send_is_handed_to_the_receivers_address_and_one_to_a_receiver_not_running_is_dropped_test() -> Nil {
   use <- owned_test.run(30_000)
   let sent = process.new_subject()
@@ -369,7 +332,7 @@ pub fn a_watch_of_a_target_no_process_holds_ends_as_the_next_input_before_a_mess
       then: gate_rule.Echo(2),
     )
     == [
-      Started,
+      OwnEvent(Started),
       OwnEvent(Asked(
         caller: CallerId(1),
         message: gate_rule.WatchAddress(1, Sessions),
@@ -387,7 +350,7 @@ pub fn two_watches_of_targets_no_process_holds_end_in_the_order_opened_before_th
       then: gate_rule.Echo(3),
     )
     == [
-      Started,
+      OwnEvent(Started),
       OwnEvent(Asked(
         caller: CallerId(1),
         message: gate_rule.WatchEach([1, 2], Sessions),
@@ -430,7 +393,7 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
 fn inputs_when_queued(
   first first: gate_rule.Message,
   then second: gate_rule.Message,
-) -> List(Event(gate_rule.Message, Nil, ServiceEvent(gate_rule.Message))) {
+) -> List(Event(ServiceEvent(gate_rule.Message))) {
   use folder <- recording_support.in_folder
   let gate = process.new_name("gate")
   let tree =
@@ -527,16 +490,7 @@ fn a_guid() -> guid.Guid {
 /// The records of the one recording in the folder, after the header.
 fn recorded(
   folder: String,
-) -> List(
-  Record(
-    message,
-    Nil,
-    answer,
-    Nil,
-    ServiceEvent(message),
-    ServiceEffect(answer),
-  ),
-) {
+) -> List(Record(NoAsk, ServiceEvent(message), ServiceEffect(answer))) {
   let assert Ok(#(_, records)) =
     rule_recording.read(recording_support.recording_in(folder))
     as "the recording reads"

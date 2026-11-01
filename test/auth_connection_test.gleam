@@ -38,8 +38,9 @@ import genesis_prime/message/login_accepted.{LoginAccepted}
 import genesis_prime/message/login_refused
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/step.{
-  type ConnectionStep, type Event, type Outcome, type SocketEvent, ConnectionId,
-  EndedBeforeAnswer, LogWarning, NoAnswerInTime, NotRunning, StoppedWaiting,
+  type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
+  ConnectionId, EndedBeforeAnswer, LogWarning, NoAnswerInTime, NotRunning,
+  StoppedWaiting,
 }
 import genesis_prime/store.{AccountId}
 import gleam/int
@@ -68,8 +69,8 @@ fn token() -> guid.Guid {
 
 fn feed(
   state: auth_connection.State,
-  event: Event(Nil, Answer, SocketEvent),
-) -> #(auth_connection.State, ConnectionStep(Nil, Request)) {
+  event: Event(ConnectionEvent(Nil, Answer)),
+) -> #(auth_connection.State, ConnectionStep(Request)) {
   auth_connection.step(state, support.input(event))
 }
 
@@ -78,7 +79,7 @@ fn feed(
 fn accepted(
   seed seed: BitArray,
   planted planted: Option(Frame),
-) -> #(auth_connection.State, ConnectionStep(Nil, Request)) {
+) -> #(auth_connection.State, ConnectionStep(Request)) {
   feed(
     auth_connection.new(settings(planted:)),
     step.OwnEvent(step.Accepted(ConnectionId(1), support.peer, seed)),
@@ -109,27 +110,27 @@ fn login_request(user_id user_id: guid.Guid, build build: Int) -> BitArray {
 fn read(
   state: auth_connection.State,
   bytes: BitArray,
-) -> #(auth_connection.State, ConnectionStep(Nil, Request)) {
+) -> #(auth_connection.State, ConnectionStep(Request)) {
   feed(state, step.OwnEvent(step.Read(bytes)))
 }
 
 fn answer(
   state state: auth_connection.State,
-  taken taken: ConnectionStep(Nil, Request),
+  taken taken: ConnectionStep(Request),
   outcome outcome: Outcome(Answer),
-) -> #(auth_connection.State, ConnectionStep(Nil, Request)) {
+) -> #(auth_connection.State, ConnectionStep(Request)) {
   let assert Some(ask) = support.asked(taken) as "the step ends in an ask"
-  feed(state, step.Answered(ask: ask.ask, outcome:))
+  feed(state, step.OwnEvent(step.Answered(ask: ask.ask, outcome:)))
 }
 
 /// Every frame the step writes, as the client reads it: each must be in a
 /// 0x76 wrapper, which is opened under the base key.
-fn heard(taken: ConnectionStep(Nil, Request)) -> List(Frame) {
+fn heard(taken: ConnectionStep(Request)) -> List(Frame) {
   list.map(support.written_frames(taken), login_client.in_the_auth_wrapper)
 }
 
 /// The one refusal the step writes, whole, with the connection ended.
-fn refusal(taken: ConnectionStep(Nil, Request)) -> login_refused.LoginRefused {
+fn refusal(taken: ConnectionStep(Request)) -> login_refused.LoginRefused {
   let assert [Frame(message_id: 0x063D, body:)] = heard(taken)
     as "one 0x63d in its wrapper"
   let assert Ok(refused) = login_refused.decode(body) as "0x63d decodes"
@@ -143,7 +144,7 @@ fn asking_as(
   seed seed: BitArray,
   user_id user_id: guid.Guid,
   build build: Int,
-) -> #(auth_connection.State, ConnectionStep(Nil, Request)) {
+) -> #(auth_connection.State, ConnectionStep(Request)) {
   read(connected(seed:), login_request(user_id:, build:))
 }
 
@@ -151,7 +152,7 @@ fn asking_as(
 /// build the client is, with its Take ask.
 fn asking(
   seed seed: BitArray,
-) -> #(auth_connection.State, ConnectionStep(Nil, Request)) {
+) -> #(auth_connection.State, ConnectionStep(Request)) {
   asking_as(seed:, user_id: holder().game_account_id, build: 16_042)
 }
 
@@ -159,7 +160,7 @@ fn asking(
 /// ask to keep the session key.
 fn token_taken(
   seed seed: BitArray,
-) -> #(auth_connection.State, ConnectionStep(Nil, Request)) {
+) -> #(auth_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = asking(seed:)
   answer(
     state:,

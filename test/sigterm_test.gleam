@@ -21,7 +21,7 @@
 import database_support
 import genesis_prime/rule_recording.{type Record, End}
 import genesis_prime/sessions
-import genesis_prime/step.{type ServiceEffect, type ServiceEvent}
+import genesis_prime/step.{type NoAsk, type ServiceEffect, type ServiceEvent}
 import gleam/list
 import gleam/string
 import owned_test
@@ -69,10 +69,7 @@ fn ends_with_end(folder: String) -> Bool {
     as "the recording reads"
   let records: List(
     Record(
-      sessions.Message,
-      Nil,
-      sessions.Outgoing,
-      Nil,
+      NoAsk,
       ServiceEvent(sessions.Message),
       ServiceEffect(sessions.Outgoing),
     ),

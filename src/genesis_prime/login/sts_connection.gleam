@@ -68,9 +68,10 @@ import genesis_prime/login/sts_message.{
 }
 import genesis_prime/login/sts_wire
 import genesis_prime/step.{
-  type ConnectionEffect, type ConnectionInput, type ConnectionRule,
-  type ConnectionStep, type Event, type Now, type Outcome, type SocketEvent,
-  Effects, LogError, LogInfo, LogWarning, OwnEffect, Rule, Stop, Write,
+  type ConnectionEffect, type ConnectionEvent, type ConnectionInput,
+  type ConnectionRule, type ConnectionStep, type Effect, type Event, type Now,
+  type Outcome, Effects, LogError, LogInfo, LogWarning, OwnEffect, Rule, Stop,
+  Write,
 }
 import genesis_prime/store.{
   type Account, AccountFound, FindAccount, ForLogin, ForSelect, ForWorld, Login,
@@ -169,7 +170,7 @@ const service_timeout = 42
 /// The rule as its connection shell runs it.
 pub fn rule(
   settings: Settings,
-) -> ConnectionRule(Settings, State, Nil, Answer, Nil, Request) {
+) -> ConnectionRule(Settings, State, Nil, Answer, Request) {
   Rule(name: rule_name, settings:, new:, step:)
 }
 
@@ -182,7 +183,7 @@ pub fn new(settings: Settings) -> State {
 pub fn step(
   state state: State,
   input input: ConnectionInput(Nil, Answer),
-) -> #(State, ConnectionStep(Nil, Request)) {
+) -> #(State, ConnectionStep(Request)) {
   case state {
     NotAccepted(settings:) -> {
       case
@@ -214,8 +215,8 @@ pub fn step(
 fn connected(
   session session: Session,
   now now: Now,
-  event event: Event(Nil, Answer, SocketEvent),
-) -> #(State, ConnectionStep(Nil, Request)) {
+  event event: Event(ConnectionEvent(Nil, Answer)),
+) -> #(State, ConnectionStep(Request)) {
   case
     client_connection.hear(event, about: about_of(session), stopping: fn() {
       []
@@ -242,7 +243,7 @@ fn read(
   session session: Session,
   now now: Now,
   bytes bytes: BitArray,
-) -> #(State, ConnectionStep(Nil, Request)) {
+) -> #(State, ConnectionStep(Request)) {
   let #(status, plain) = receive(session.status, bytes)
   let session =
     Session(..session, status:, pending: <<session.pending:bits, plain:bits>>)
@@ -765,7 +766,7 @@ fn log(
   session session: Session,
   level level: step.LogLevel,
   text text: String,
-) -> ConnectionEffect(Nil) {
+) -> Effect(ConnectionEffect) {
   client_connection.log(about: about_of(session), level:, text:)
 }
 

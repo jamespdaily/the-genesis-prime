@@ -27,8 +27,8 @@
 import gate_rule
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionInput, type ConnectionRule,
-  type ConnectionStep, type Outcome, Accepted, Answered, Ask, AskId, Effects,
-  EffectsThenAsk, EndedBeforeAnswer, Input, Log, LogLine, LogWarning,
+  type ConnectionStep, type Effect, type Outcome, Accepted, Answered, Ask, AskId,
+  Effects, EffectsThenAsk, EndedBeforeAnswer, Input, Log, LogLine, LogWarning,
   NoAnswerInTime, NotRunning, OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed,
   Rule, Stop, StoppedWaiting, Stopping, Write, WriteFailed,
 }
@@ -97,7 +97,7 @@ pub const code_no_such_account = 8
 pub const code_unavailable = 9
 
 /// The rule as its shell runs it.
-pub fn rule() -> ConnectionRule(Nil, State, Nil, Answer, Nil, Request) {
+pub fn rule() -> ConnectionRule(Nil, State, Nil, Answer, Request) {
   Rule(name: "asking_rule", settings: Nil, new:, step:)
 }
 
@@ -110,7 +110,7 @@ pub fn new(_settings: Nil) -> State {
 pub fn step(
   state state: State,
   input input: ConnectionInput(Nil, Answer),
-) -> #(State, ConnectionStep(Nil, Request)) {
+) -> #(State, ConnectionStep(Request)) {
   let Input(now:, event:) = input
   case event {
     OwnEvent(Accepted(..)) -> #(state, Effects([]))
@@ -125,7 +125,7 @@ pub fn step(
       state,
       Effects([warn("the socket failed"), Stop]),
     )
-    Answered(ask: AskId(number), outcome: result) -> {
+    OwnEvent(Answered(ask: AskId(number), outcome: result)) -> {
       let #(code, extra) = coded(result)
       run(state:, now:, written: [
         OwnEffect(
@@ -154,7 +154,9 @@ pub fn step(
         Stop,
       ]),
     )
-    step.Started | step.Woken(..) | step.WatchEnded(..) | step.TimerFired(..) -> #(
+    OwnEvent(step.Woken(..))
+    | step.WatchEnded(..)
+    | OwnEvent(step.TimerFired(..)) -> #(
       state,
       Effects([warn("an input a connection does not take"), Stop]),
     )
@@ -166,8 +168,8 @@ pub fn step(
 fn run(
   state state: State,
   now now: step.Now,
-  written written: List(ConnectionEffect(Nil)),
-) -> #(State, ConnectionStep(Nil, Request)) {
+  written written: List(Effect(ConnectionEffect)),
+) -> #(State, ConnectionStep(Request)) {
   case state.pending {
     <<letter, n, wait:16, rest:bytes>> ->
       case letter {
@@ -214,11 +216,11 @@ fn request_for(letter: Int, n: Int) -> Result(Request, Nil) {
 fn ask(
   state state: State,
   now now: step.Now,
-  written written: List(ConnectionEffect(Nil)),
+  written written: List(Effect(ConnectionEffect)),
   rest rest: BitArray,
   request request: Request,
   wait wait: Int,
-) -> #(State, ConnectionStep(Nil, Request)) {
+) -> #(State, ConnectionStep(Request)) {
   let number = state.next_ask
   let deadline = now.monotonic_ms + wait
   #(
@@ -275,6 +277,6 @@ fn record(
   <<letter, number, code, extra, milliseconds:64>>
 }
 
-fn warn(text: String) -> ConnectionEffect(Nil) {
+fn warn(text: String) -> Effect(ConnectionEffect) {
   Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }

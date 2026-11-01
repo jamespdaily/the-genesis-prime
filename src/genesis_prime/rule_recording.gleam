@@ -37,18 +37,15 @@ pub type Header(settings) {
 }
 
 /// One record after the header.
-pub type Record(message, answer, outgoing, request, own_input, own_effect) {
+pub type Record(request, own_input, own_effect) {
   /// An input and the step the rule returned for it.
-  Taken(
-    input: Input(message, answer, own_input),
-    step: Step(outgoing, request, own_effect),
-  )
+  Taken(input: Input(own_input), step: Step(request, own_effect))
   /// The last record: how many `Taken` records came before it.
   End(count: Int)
 }
 
 /// Why a recording does not replay.
-pub type ReplayFailure(outgoing, request, own_effect) {
+pub type ReplayFailure(request, own_effect) {
   /// The bytes end inside a record, or before `End`: the process crashed or
   /// the file was cut. `records` counts the whole records read.
   Incomplete(records: Int)
@@ -65,8 +62,8 @@ pub type ReplayFailure(outgoing, request, own_effect) {
   /// recorded.
   StepDiffers(
     index: Int,
-    recorded: Step(outgoing, request, own_effect),
-    replayed: Step(outgoing, request, own_effect),
+    recorded: Step(request, own_effect),
+    replayed: Step(request, own_effect),
   )
 }
 
@@ -85,19 +82,10 @@ pub fn encode(record: a) -> BitArray {
 /// digest are checked before any input is read as the rule's types.
 pub fn replay(
   bytes bytes: BitArray,
-  rule rule: Rule(
-    settings,
-    state,
-    message,
-    answer,
-    outgoing,
-    request,
-    own_input,
-    own_effect,
-  ),
+  rule rule: Rule(settings, state, request, own_input, own_effect),
   types_digest types_digest: String,
   tables_digest tables_digest: Option(String),
-) -> Result(Int, ReplayFailure(outgoing, request, own_effect)) {
+) -> Result(Int, ReplayFailure(request, own_effect)) {
   use #(header, rest) <- result.try(split_header(bytes))
   use Nil <- result.try(check_header(
     header:,
@@ -113,11 +101,8 @@ pub fn replay(
 pub fn read(
   bytes: BitArray,
 ) -> Result(
-  #(
-    Header(settings),
-    List(Record(message, answer, outgoing, request, own_input, own_effect)),
-  ),
-  ReplayFailure(outgoing, request, own_effect),
+  #(Header(settings), List(Record(request, own_input, own_effect))),
+  ReplayFailure(request, own_effect),
 ) {
   use #(header, rest) <- result.try(split_header(bytes))
   use decoded <- result.map(
@@ -135,7 +120,7 @@ fn split_header(
   bytes: BitArray,
 ) -> Result(
   #(Header(settings), List(BitArray)),
-  ReplayFailure(outgoing, request, own_effect),
+  ReplayFailure(request, own_effect),
 ) {
   use records <- result.try(split(bytes, []))
   case records {
@@ -154,7 +139,7 @@ fn split_header(
 fn split(
   bytes: BitArray,
   records: List(BitArray),
-) -> Result(List(BitArray), ReplayFailure(outgoing, request, own_effect)) {
+) -> Result(List(BitArray), ReplayFailure(request, own_effect)) {
   case bytes {
     <<>> -> Ok(list.reverse(records))
     <<length:size(32), record:bytes-size(length), rest:bytes>> ->
@@ -165,19 +150,10 @@ fn split(
 
 fn check_header(
   header header: Header(settings),
-  rule rule: Rule(
-    settings,
-    state,
-    message,
-    answer,
-    outgoing,
-    request,
-    own_input,
-    own_effect,
-  ),
+  rule rule: Rule(settings, state, request, own_input, own_effect),
   types_digest types_digest: String,
   tables_digest tables_digest: Option(String),
-) -> Result(Nil, ReplayFailure(outgoing, request, own_effect)) {
+) -> Result(Nil, ReplayFailure(request, own_effect)) {
   case header {
     Header(format: version, ..) if version != format ->
       Error(RecordAgain(reason: "the file format"))
@@ -195,19 +171,10 @@ fn check_header(
 
 fn fold(
   records records: List(BitArray),
-  rule rule: Rule(
-    settings,
-    state,
-    message,
-    answer,
-    outgoing,
-    request,
-    own_input,
-    own_effect,
-  ),
+  rule rule: Rule(settings, state, request, own_input, own_effect),
   state state: state,
   index index: Int,
-) -> Result(Int, ReplayFailure(outgoing, request, own_effect)) {
+) -> Result(Int, ReplayFailure(request, own_effect)) {
   case records {
     [] -> Error(Incomplete(records: index + 1))
     [bytes, ..rest] ->
@@ -241,7 +208,4 @@ fn decode_header(bytes: BitArray) -> Result(Header(settings), Nil)
 @external(erlang, "rule_recording_ffi", "decode_record")
 fn decode_record(
   bytes: BitArray,
-) -> Result(
-  Record(message, answer, outgoing, request, own_input, own_effect),
-  Nil,
-)
+) -> Result(Record(request, own_input, own_effect), Nil)
