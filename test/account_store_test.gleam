@@ -40,6 +40,7 @@ import genesis_prime/store.{
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
@@ -409,7 +410,7 @@ pub fn the_table_refuses_a_class_outside_1_to_20_a_path_outside_0_to_3_and_a_nam
     as "the client shows PathIcon_<path + 1> up to 4, so path 4 has no icon"
   assert refused("Eve", 1, -1) == "character_path_shown_by_the_client"
   // The edges the client does show are taken, each with a name of its own: a
-  // name is unique ignoring case (migration 0003).
+  // name is unique ignoring case (migrations 0003 and 0005).
   assert refused("Eve", 1, 0) == "accepted"
   assert refused("Eva", 20, 3) == "accepted"
   // 0x1400201f0: the client copies at most 32 characters of a name (0x21 wide
@@ -637,7 +638,7 @@ pub fn a_rename_to_a_name_taken_in_any_case_is_new_name_taken_and_changes_nothin
   character_support.mark_for_rename(pool: store.pool, name: "Zed")
   assert renamed(store:, account: account, character_id: zed, name: "aBE")
     == NewNameTaken
-    as "lua.CharacterSelection.OnCharacterRenameResult: 16; a name is unique ignoring case, across accounts, held by the unique index on lower(name) (migration 0003)"
+    as "lua.CharacterSelection.OnCharacterRenameResult: 16; a name is unique ignoring case, across accounts, held by the unique index on the lower-cased name (migrations 0003 and 0005)"
   assert names_listed(store, account) == ["Zed"]
   assert naming_of(store, account) == [NeedsRename]
     as "the refused rename left the mark, so the player can pick another name"
@@ -839,7 +840,7 @@ pub fn a_name_taken_in_any_case_is_name_taken_and_nothing_is_stored_test() -> Ni
   let assert CharacterCreated(_) =
     create(store:, account: account, name: "Ab Cd", slots: 2)
   assert create(store:, account: other, name: "aB cD", slots: 2) == NameTaken
-    as "lua.Character.OnCreateCharacterFailed: 6; a name is unique ignoring case, across accounts, held by a unique index on lower(name)"
+    as "lua.Character.OnCreateCharacterFailed: 6; a name is unique ignoring case, across accounts, held by a unique index on the lower-cased name"
   assert create(store:, account: account, name: "AB CD", slots: 2) == NameTaken
     as "the same account too"
   assert ask(store, Select(ListCharacters(other))) == ForSelect(Listed([]))
@@ -851,6 +852,35 @@ pub fn a_name_taken_in_any_case_is_name_taken_and_nothing_is_stored_test() -> Ni
     create(store:, account: other, name: "Éb Cd", slots: 2)
   assert create(store:, account: account, name: "éB cD", slots: 2) == NameTaken
     as "the Latin-1 letters the client lists fold too (IsTextRuleLetter 0x1403e09d0), so 'É' and 'é' are one letter"
+  stop(store)
+}
+
+pub fn a_name_taken_in_any_case_is_refused_on_a_database_made_with_the_c_locale_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let shared = database_support.shared()
+  let store =
+    start_store_in(
+      database: database_support.new_database_with_locale(
+        on: shared,
+        locale: "C",
+      ),
+      pool_size: 2,
+    )
+  let assert Ok(pog.Returned(rows: ["C c"], ..)) =
+    pog.query(
+      "select datcollate || ' ' || datlocprovider::text from pg_database where datname = current_database()",
+    )
+    |> pog.returning(decode.at([0], decode.string))
+    |> pog.execute(store.pool)
+    as "the database says it was made with the C locale and the libc provider, not the ICU one the index folds under"
+  let account = insert_account(store, "login-1")
+  let other = insert_account(store, "login-2")
+  let assert CharacterCreated(_) =
+    create(store:, account: account, name: "Éb Cd", slots: 2)
+  assert create(store:, account: other, name: "éB cD", slots: 2) == NameTaken
+    as "lua.Character.OnCreateCharacterFailed: 6; a name is unique ignoring case on any database locale, and the Latin-1 letters the client lists fold too (IsTextRuleLetter 0x1403e09d0), so 'É' and 'é' are one letter, though the C locale's own lower() leaves 'É' alone"
+  assert ask(store, Select(ListCharacters(other))) == ForSelect(Listed([]))
+    as "nothing was stored for the refused create"
   stop(store)
 }
 
@@ -991,10 +1021,21 @@ type Store {
 /// store on it, started once the pool has its connections.
 fn start_store(pool_size pool_size: Int) -> Store {
   let shared = database_support.shared()
-  let database = database_support.new_database(on: shared)
+  start_store_in(
+    database: database_support.new_database(on: shared),
+    pool_size:,
+  )
+}
+
+/// A pool of `pool_size` connections to `database`, a migrated database, and
+/// the store on it, started once the pool has its connections.
+fn start_store_in(
+  database database: String,
+  pool_size pool_size: Int,
+) -> Store {
   let config =
     database_support.config(
-      for: shared.settings,
+      for: database_support.shared().settings,
       database:,
       pool_name: process.new_name("account_pool"),
       pool_size:,

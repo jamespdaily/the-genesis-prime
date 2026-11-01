@@ -1,5 +1,7 @@
 //// What the database test helper shares across a test run: where the Postgres
-//// server is, one template database migrated from `priv/migrations`, one
+//// server is, one template database migrated from `priv/migrations` by
+//// `dev/apply_migrations.sh` (the script `./check` and the play database use
+//// too, so a database a test makes is migrated and recorded the one way), one
 //// administration pool, and a watcher that drops what the run made when the
 //// VM ends however it ends.
 
@@ -12,7 +14,6 @@ import gleam/option.{type Option}
 import gleam/result
 import gleam/string
 import pog
-import simplifile
 
 /// Where the Postgres server is. Read from PGHOST, PGPORT, PGUSER and
 /// PGPASSWORD with the defaults `./check` uses: the socket directory /tmp,
@@ -74,30 +75,45 @@ pub fn config(
   pool_name pool_name: Name(pog.Message),
   pool_size pool_size: Int,
 ) -> pog.Config {
+  pog.default_config(pool_name)
+  |> connect_to(settings, database:)
+  |> pog.pool_size(pool_size)
+  |> pog.queue_target(5000)
+  |> pog.queue_interval(10_000)
+}
+
+/// The pool configuration with its connection part set to the Postgres server
+/// `settings` describe and the database: host, port, database, user, password
+/// and internet protocol. The pool's sizes are the configuration's own.
+pub fn connect_to(
+  config config: pog.Config,
+  settings settings: Settings,
+  database database: String,
+) -> pog.Config {
   let ip_version = case string.contains(settings.tcp_host, ":") {
     True -> pog.Ipv6
     False -> pog.Ipv4
   }
-  pog.default_config(pool_name)
+  config
   |> pog.host(settings.tcp_host)
   |> pog.port(settings.port)
   |> pog.database(database)
   |> pog.user(settings.user)
   |> pog.password(settings.password)
-  |> pog.pool_size(pool_size)
-  |> pog.queue_target(5000)
-  |> pog.queue_interval(10_000)
   |> pog.ip_version(ip_version)
 }
 
 /// The run's shared state, made by the first caller and the same for every
-/// later one. The template is built from `priv/migrations/*.sql` in name order.
+/// later one. The template is built from `priv/migrations/*.sql` in name order, recorded.
 pub fn shared() -> Shared {
   once("shared", fn() { start_for_the_run(create_shared) })
 }
 
 /// Runs one statement as the administrator, on the `postgres` database.
-fn execute(on shared: Shared, sql sql: String) -> Result(Nil, pog.QueryError) {
+pub fn execute(
+  on shared: Shared,
+  sql sql: String,
+) -> Result(Nil, pog.QueryError) {
   pog.query(sql)
   |> pog.timeout(60_000)
   |> pog.execute(on: shared.admin)
@@ -107,18 +123,79 @@ fn execute(on shared: Shared, sql sql: String) -> Result(Nil, pog.QueryError) {
 /// A database of its own for one test: a copy of the migrated template, with
 /// a name no other test has. The run's watcher drops it when the VM ends.
 pub fn new_database(on shared: Shared) -> String {
-  let name = shared.run <> "_" <> int.to_string(runtime.unique_id())
-  let assert Ok(Nil) =
-    execute(
+  new_empty_database(
+    on: shared,
+    options: "template \"" <> shared.template <> "\"",
+  )
+}
+
+/// A migrated database of its own for one test, made with `template0`, the
+/// libc locale provider and the given LC_COLLATE and LC_CTYPE (as
+/// `createdb --locale` sets both), so a test can show what the schema does on
+/// a locale other than the server's. The run's watcher drops it when the VM
+/// ends.
+pub fn new_database_with_locale(
+  on shared: Shared,
+  locale locale: String,
+) -> String {
+  let name =
+    new_empty_database(
       on: shared,
-      sql: "create database \""
-        <> name
-        <> "\" template \""
-        <> shared.template
-        <> "\"",
+      options: "template template0 encoding 'UTF8' locale_provider libc lc_collate '"
+        <> locale
+        <> "' lc_ctype '"
+        <> locale
+        <> "'",
     )
-    as "a database was not made from the template"
+  let assert Ok(_) =
+    migrate(with: shared.settings, database: name, arguments: [])
+    as "the migrations did not apply to the database"
   name
+}
+
+/// A database of its own made with `options` after its name in `create
+/// database` (a template, a locale, or nothing for the server's default
+/// template). The run's watcher drops it when the VM ends.
+pub fn new_empty_database(
+  on shared: Shared,
+  options options: String,
+) -> String {
+  let name = unused_name(on: shared)
+  create_database(on: shared, name:, options:)
+  name
+}
+
+/// A database name no other test has, for a database the test makes later with
+/// `create_database`.
+pub fn unused_name(on shared: Shared) -> String {
+  shared.run <> "_" <> int.to_string(runtime.unique_id())
+}
+
+/// Makes the database `name`, which `unused_name` gave, with `options` after
+/// its name in `create database`. The run's watcher drops it when the VM ends.
+pub fn create_database(
+  on shared: Shared,
+  name name: String,
+  options options: String,
+) -> Nil {
+  let assert Ok(Nil) =
+    execute(on: shared, sql: "create database \"" <> name <> "\" " <> options)
+    as "a database was not made"
+  Nil
+}
+
+/// Runs `dev/apply_migrations.sh` on the database, with `arguments` before the
+/// database's name, as the script is run from a shell.
+pub fn migrate(
+  with settings: Settings,
+  database database: String,
+  arguments arguments: List(String),
+) -> Result(String, CommandFailed) {
+  run_command(
+    "bash",
+    ["dev/apply_migrations.sh", ..list.append(arguments, [database])],
+    psql_environment(settings),
+  )
 }
 
 /// Runs `work` in a process that lives as long as the VM and is linked to
@@ -178,30 +255,15 @@ done",
   let assert Ok(Nil) =
     execute(on: shared, sql: "create database \"" <> shared.template <> "\"")
     as "the template database was not created"
-  let assert Ok(migrations) = migration_files()
-    as "priv/migrations could not be read"
-  list.each(migrations, fn(file) {
-    let assert Ok(_) =
-      psql(with: settings, database: shared.template, arguments: [
-        "--single-transaction",
-        "-f",
-        file,
-      ])
-      as "a migration did not apply to the template"
-    Nil
-  })
+  let assert Ok(_) =
+    migrate(with: settings, database: shared.template, arguments: [])
+    as "the migrations did not apply to the template"
   shared
 }
 
-fn migration_files() -> Result(List(String), simplifile.FileError) {
-  use names <- result.map(simplifile.read_directory("priv/migrations"))
-  names
-  |> list.filter(string.ends_with(_, ".sql"))
-  |> list.sort(string.compare)
-  |> list.map(fn(name) { "priv/migrations/" <> name })
-}
-
-fn psql(
+/// Runs `psql` on the database, stopping at the first error, with `arguments`
+/// after its own, and gives what it printed.
+pub fn psql(
   with settings: Settings,
   database database: String,
   arguments arguments: List(String),
@@ -216,7 +278,8 @@ fn psql(
   )
 }
 
-fn psql_environment(settings: Settings) -> List(#(String, String)) {
+/// The environment that points a program at the Postgres server, as `psql` reads it.
+pub fn psql_environment(settings: Settings) -> List(#(String, String)) {
   let base = [
     #("PGHOST", settings.host),
     #("PGPORT", int.to_string(settings.port)),
@@ -231,8 +294,10 @@ fn psql_environment(settings: Settings) -> List(#(String, String)) {
 @external(erlang, "database_support_ffi", "run_identifier")
 fn run_identifier() -> String
 
+/// Runs a program to its end with these arguments and environment, and gives
+/// what it printed, or what it printed when it failed or was not found.
 @external(erlang, "database_support_ffi", "run_command")
-fn run_command(
+pub fn run_command(
   program: String,
   arguments: List(String),
   environment: List(#(String, String)),

@@ -105,6 +105,8 @@ case "$*" in
     [ -n "$PLANT_PSQL_CREATE_SECONDS" ] && sleep "$PLANT_PSQL_CREATE_SECONDS"
     [ -n "$PLANT_PSQL_CREATE_FAILS" ] && exit 1
     ;;
+  *"to_regclass"*) echo f ;;
+  *"count(*)"*) echo 0 ;;
 esac
 exit 0
 """
@@ -165,11 +167,14 @@ class PlantedCheckCase(unittest.TestCase):
         (repository / "check").chmod(0o755)
         (repository / "setup_check").mkdir()
         shutil.copyfile(HERE / "environment.sh", repository / "setup_check" / "environment.sh")
+        shutil.copyfile(HERE / "sha256.sh", repository / "setup_check" / "sha256.sh")
         shutil.copyfile(REPOSITORY / ".tool-versions", repository / ".tool-versions")
         executable(repository / "setup-check", SETUP_CHECK_STUB)
         (repository / "priv" / "migrations").mkdir(parents=True)
         for folder in ("src", "dev", "test/code_rule"):
             (repository / folder).mkdir(parents=True)
+        # The real script, which the migrations part runs; the planted psql answers its questions.
+        executable(repository / "dev" / "apply_migrations.sh", (REPOSITORY / "dev" / "apply_migrations.sh").read_text())
         (repository / "test" / "code_rule" / "planted_test.gleam").write_text("// a code-rule test\n")
         scripts = repository / SCRIPTS
         scripts.mkdir(parents=True)

@@ -2,8 +2,8 @@
 -- the start place the create gave (a world, a zone and a position), and the
 -- values the create request gave. It makes none, and gives no row, when the
 -- account already has as many characters as its slots. A name that another
--- character holds in any case breaks the unique index on lower(name), which
--- the caller reports as its own error.
+-- character holds in any case breaks the unique index on
+-- lower(name collate "und-x-icu"), which the caller reports as its own error.
 insert into character (
   account_id, name, gender, race_id, class_id, faction_id, level, path,
   world_id, world_zone_id, position_x, position_y, position_z,

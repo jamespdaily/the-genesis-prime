@@ -15,7 +15,7 @@ The server listens on 6600 (STS), 23115 (auth) and 24000 (game); a recording rel
 
 ## The server
 
-From the main checkout, with every new `priv/migrations/*.sql` applied to the `genesis_play` database first:
+From the main checkout, with every new `priv/migrations/*.sql` applied and recorded in the `genesis_play` database first, by the same script `./check` uses: `PGHOST=::1 PGPORT=5433 PGUSER=postgres dev/apply_migrations.sh genesis_play`. A new play database is made empty (`createdb`) and takes that command, which applies and records every file. The server refuses to start on a database that lacks a migration, ran an edited one or has no migration record. A play database made before the record existed gets `dev/apply_migrations.sh --adopt genesis_play` once, which records its first four migrations without running them, and then the command above for the newer files. `scripts/session.sh` copies `genesis_play` as its template, so its run database starts migrated and recorded.
 
 ```
 . setup_check/environment.sh

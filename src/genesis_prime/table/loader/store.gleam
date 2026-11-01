@@ -24,6 +24,7 @@
 import genesis_prime/table/loader/tbl_file
 import gleam/bit_array
 import gleam/crypto
+import gleam/erlang/atom.{type Atom}
 import gleam/erlang/reference.{type Reference}
 import gleam/int
 import gleam/list
@@ -351,13 +352,25 @@ pub fn rows(tables tables: Tables, table table: String) -> List(row) {
 }
 
 /// Writes a term: a table, or a derived value.
-@external(erlang, "store_ffi", "put")
-fn put_term(key: #(Key, String), value: value) -> Nil
+fn put_term(key: #(Key, String), value: value) -> Nil {
+  let _ok = persistent_term_put(key, value)
+  Nil
+}
+
+/// OTP's `persistent_term:put/2`, which returns the atom `ok`.
+@external(erlang, "persistent_term", "put")
+fn persistent_term_put(key: #(Key, String), value: value) -> Atom
 
 /// A term: a table or a derived value. Its type is the caller's to name.
 @external(erlang, "persistent_term", "get")
 fn get_term(key: #(Key, String)) -> value
 
-/// Erases a table's term.
-@external(erlang, "store_ffi", "erase")
-fn erase_term(key: #(Key, String)) -> Nil
+/// Erases a table's term, whether it was written or not.
+fn erase_term(key: #(Key, String)) -> Nil {
+  let _erased = persistent_term_erase(key)
+  Nil
+}
+
+/// OTP's `persistent_term:erase/1`, which returns whether a term was erased.
+@external(erlang, "persistent_term", "erase")
+fn persistent_term_erase(key: #(Key, String)) -> Bool

@@ -8,6 +8,9 @@
 //// - `Serving`: the database answers, so the node prints the ready line.
 //// - `UnreachableDatabase`: the pool's port has no database, so the readiness
 ////   ask keeps asking.
+//// - `LateDatabase`: the database the node is given does not exist yet and the
+////   readiness ask gives up after a second, so the node logs the database as
+////   unreachable and keeps asking until the test makes the database.
 //// - `SlowStop`: Sessions is suspended, so a stop takes its shutdown time, and
 ////   the probe answers as soon as the node is stopping, so the answer comes
 ////   while the tree is still ending.
@@ -21,6 +24,7 @@ import database_support
 import envoy
 import genesis_prime
 import genesis_prime/application
+import genesis_prime/migration.{Recorded}
 import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/service.{type Sent, ToWorker}
@@ -43,6 +47,7 @@ pub type Node
 pub type Mode {
   Serving
   UnreachableDatabase
+  LateDatabase
   SlowStop
   GivesUp
 }
@@ -85,6 +90,7 @@ fn mode_name(mode: Mode) -> String {
   case mode {
     Serving -> "serving"
     UnreachableDatabase -> "unreachable_database"
+    LateDatabase -> "late_database"
     SlowStop -> "slow_stop"
     GivesUp -> "gives_up"
   }
@@ -94,6 +100,7 @@ fn mode_of(name: String) -> Mode {
   case name {
     "serving" -> Serving
     "unreachable_database" -> UnreachableDatabase
+    "late_database" -> LateDatabase
     "slow_stop" -> SlowStop
     "gives_up" -> GivesUp
     _ -> panic as "SERVING_MODE names no mode"
@@ -117,7 +124,7 @@ pub fn main() -> Nil {
     )
   let pool = case mode {
     UnreachableDatabase -> pog.port(pool, 1)
-    Serving | SlowStop | GivesUp -> pool
+    Serving | LateDatabase | SlowStop | GivesUp -> pool
   }
   let settings =
     server.Settings(
@@ -133,16 +140,24 @@ pub fn main() -> Nil {
     as "the tree started under the application"
   io.println("the tree started")
   let ready =
-    readiness.Settings(within_ms: 60_000, attempt_ms: 2000, pause_ms: 100)
+    readiness.Settings(
+      within_ms: case mode {
+        LateDatabase -> 1000
+        Serving | UnreachableDatabase | SlowStop | GivesUp -> 60_000
+      },
+      attempt_ms: 2000,
+      pause_ms: 100,
+    )
   let probe = fn(reply) { worker.probe(store: settings.store, reply:) }
   case mode {
-    Serving | UnreachableDatabase ->
+    Serving | UnreachableDatabase | LateDatabase ->
       genesis_prime.serve(
         tree:,
         settings:,
         tables: 0,
         ready:,
         probe:,
+        migrations: genesis_prime.load_migrations(),
         say: io.println,
       )
     SlowStop -> {
@@ -156,6 +171,7 @@ pub fn main() -> Nil {
         tables: 0,
         ready:,
         probe: probe_after_stop,
+        migrations: [],
         say: io.println,
       )
     }
@@ -167,6 +183,7 @@ pub fn main() -> Nil {
         tables: 0,
         ready:,
         probe:,
+        migrations: genesis_prime.load_migrations(),
         say: io.println,
       )
     }
@@ -199,8 +216,9 @@ fn kill_hand_off(settings: server.Settings, times: Int) -> Nil {
   }
 }
 
-/// A probe that answers `Reached` once the node is stopping, so the answer
-/// comes after the stop has begun.
+/// A probe that answers `Reached`, with no migrations recorded (the node's
+/// `serve` holds none), once the node is stopping, so the answer comes after
+/// the stop has begun.
 fn probe_after_stop(reply: fn(Probed) -> Nil) -> Result(Sent, Nil) {
   io.println("probing")
   let pid =
@@ -208,7 +226,7 @@ fn probe_after_stop(reply: fn(Probed) -> Nil) -> Result(Sent, Nil) {
     // on the attempt, and that exit must not reach main.
     process.spawn_unlinked(fn() {
       await_stop()
-      reply(Reached)
+      reply(Reached(recorded: Recorded([])))
     })
   Ok(ToWorker(pid:))
 }

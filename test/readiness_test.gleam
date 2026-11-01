@@ -17,6 +17,7 @@ import ask_support
 import database_support
 import genesis_prime
 import genesis_prime/application
+import genesis_prime/migration.{Migration, NotApplied, Recorded}
 import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/service.{type Sent, ToWorker}
@@ -56,6 +57,7 @@ pub fn the_ask_gives_ready_only_after_the_probe_is_answered_test() -> Nil {
           probe: fn(reply) { Ok(held_probe(held:, reply:)) },
           tree: process.monitor(tree),
           settings: patient(),
+          files: [],
         ),
       )
     })
@@ -67,6 +69,27 @@ pub fn the_ask_gives_ready_only_after_the_probe_is_answered_test() -> Nil {
   assert process.receive(outcomes, ask_support.event_wait_ms)
     == Ok(readiness.Ready)
     as "the answer Reached gives Ready"
+}
+
+pub fn a_probe_that_reached_a_database_missing_a_migration_ends_the_ask_with_a_refusal_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let tree = process.spawn_unlinked(process.sleep_forever)
+  let first = Migration(name: "0000_first", sha256: string.repeat("a", 64))
+  let second = Migration(name: "0001_second", sha256: string.repeat("b", 64))
+  assert readiness.await(
+      probe: fn(reply) {
+        Ok(answering(
+          reply:,
+          probed: Reached(recorded: Recorded([first])),
+          times: 1,
+        ))
+      },
+      tree: process.monitor(tree),
+      settings: short(),
+      files: [first, second],
+    )
+    == readiness.MigrationsRefused(NotApplied("0001_second"))
+    as "the database answered but lacks the second file's migration: the ask ends with the refusal, and does not ask again"
 }
 
 /// The ask's times when the test decides when the probe answers: the server's
@@ -87,7 +110,7 @@ fn held_probe(
       process.send(held, release)
       let assert Ok(Release) = process.receive(release, 30_000)
         as "the test let the probe go"
-      reply(Reached)
+      reply(Reached(recorded: Recorded([])))
     })
   ToWorker(pid: worker)
 }
@@ -114,6 +137,7 @@ pub fn the_ask_ends_with_the_trees_end_when_the_tree_ends_while_it_waits_test() 
             attempt_ms: 30_000,
             pause_ms: 20,
           ),
+          files: [],
         ),
       )
     })
@@ -145,6 +169,7 @@ pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_te
           },
           tree: process.monitor(tree),
           settings: short(),
+          files: [],
         ),
       )
     })
@@ -192,6 +217,7 @@ pub fn an_ask_leaves_no_answer_behind_in_its_mailbox_test() -> Nil {
           },
           tree: process.monitor(tree),
           settings: short(),
+          files: [],
         )
       process.send(outcomes, #(outcome, mailbox_support.queued(process.self())))
     })
@@ -248,6 +274,7 @@ fn serve_in_a_process(
         tables: 7,
         ready:,
         probe: fn(reply) { worker.probe(store: settings.store, reply:) },
+        migrations: genesis_prime.load_migrations(),
         say: fn(line) { process.send(said, line) },
       )
     })

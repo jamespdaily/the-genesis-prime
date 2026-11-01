@@ -36,7 +36,7 @@
 //// - **A create is one transaction.** It takes the account's row lock, so one
 ////   account's creates run one after another, and then inserts the character
 ////   unless the account already has its slots, in one statement; the name's
-////   uniqueness is the index on `lower(name)`.
+////   uniqueness is the index on the ICU-folded `lower(name collate "und-x-icu")`.
 //// - **A load is one statement.** World entry's read of a character names the
 ////   account's id as well as the character's, so another account's character
 ////   is never read; no row is `NotTheAccounts`.
@@ -44,15 +44,21 @@
 ////   id, so another account's character is never touched; a rename also
 ////   clears the character's mark in the same update, and its name's
 ////   uniqueness is the same index as a create's.
-//// - **The probe.** One more kind of job, `select 1`, which `main` asks to know
-////   the database answers (genesis_prime/readiness). It is no `Request`, so no
-////   rule's types or recordings hold it; its answer is `Reached` or
-////   `Unreached`, and `Unreached` is every failure a request answers
-////   `Unavailable` for.
+//// - **The probe.** One more kind of job, which `main` asks to know the database
+////   answers and runs the migrations the server was built with
+////   (genesis_prime/readiness). It runs `select 1`, and once that returns it
+////   reads the `schema_migration` table, one more query on the same worker. It
+////   is no `Request`, so no rule's types or recordings hold it; its answer is
+////   `Reached`, with what the table held (`NoRecord` for a database without the
+////   table, `Unreadable` with the error for a table it cannot read), or
+////   `Unreached`, which is every failure a request answers `Unavailable` for.
 //// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
 ////   an asker waiting on one gets `EndedBeforeAnswer`.
 
 import genesis_prime/login/guid
+import genesis_prime/migration.{
+  type Recorded, Migration, NoRecord, Recorded, Unreadable,
+}
 import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type CharacterId,
@@ -84,11 +90,12 @@ pub type Job {
   Probe(reply: fn(Probed) -> Nil)
 }
 
-/// What the probe's one read found. The probe is no rule's request, so it has
-/// no `Answer` of its own and no recorded rule can hold it.
+/// What the probe's reads found. The probe is no rule's request, so it has no
+/// `Answer` of its own and no recorded rule can hold it.
 pub type Probed {
-  /// `select 1` returned its row.
-  Reached
+  /// `select 1` returned its row, and the migrations the database recorded
+  /// were read after it.
+  Reached(recorded: Recorded)
   /// The pool could not run it: no connection yet, a connection lost, a query
   /// that timed out, or no pool running.
   Unreached
@@ -127,8 +134,9 @@ pub fn ask(
 /// (genesis_prime/readiness): `Error(Nil)` when the store's supervisor is not
 /// running or will not start the worker, else `ToWorker` with the worker the
 /// asker monitors and ends at its deadline. The worker runs `select 1` on the
-/// pool and answers `Reached` or `Unreached`; any other database error is a
-/// bug and ends the worker, as it does for a request.
+/// pool, then reads the recorded migrations, and answers `Reached` or
+/// `Unreached`; any other database error is a bug and ends the worker, as it
+/// does for a request.
 pub fn probe(
   store store: Name(factory_supervisor.Message(Job, Nil)),
   reply reply: fn(Probed) -> Nil,
@@ -148,17 +156,58 @@ fn start_worker(job: Job, pool: pog.Connection) -> actor.StartResult(Nil) {
 fn run(job: Job, pool: pog.Connection) -> Nil {
   case job {
     Job(request:, reply:) -> reply(run_request(request, pool))
-    Probe(reply:) -> reply(select_one(pool))
+    Probe(reply:) -> reply(probed(pool))
   }
 }
 
-/// Runs `select 1`, the probe's one query, through the same `attempt` the
-/// requests use, so the pool being away is `Unreached`.
-fn select_one(pool: pog.Connection) -> Probed {
-  case attempt(fn() { sql.select_one(pool) }) {
-    Ok(_) -> Reached
-    Error(Unreachable) -> Unreached
-    Error(Refused(error:, ..)) -> exit_with(error)
+/// Runs the probe's two queries, so the pool being away is `Unreached`:
+/// `select 1`, through the same `query` the requests use, then the read of the
+/// recorded migrations.
+fn probed(pool: pog.Connection) -> Probed {
+  case query(fn() { sql.select_one(pool) }) {
+    Ok(_) ->
+      case recorded(pool) {
+        Ok(recorded) -> Reached(recorded:)
+        Error(Nil) -> Unreached
+      }
+    Error(Nil) -> Unreached
+  }
+}
+
+/// What the database recorded of the migrations it ran: its rows, `NoRecord`
+/// when it has no `schema_migration` table (Postgres's `undefined_table`,
+/// 42P01), or `Unreadable` with the error of any other failure of the read,
+/// since the database answered and what it holds cannot be told. `Error(Nil)`
+/// when the database is away.
+fn recorded(pool: pog.Connection) -> Result(Recorded, Nil) {
+  case attempt(fn() { sql.list_migrations(pool) }) {
+    Ok(rows) ->
+      Ok(
+        Recorded(
+          list.map(rows, fn(row) {
+            Migration(name: row.name, sha256: row.sha256)
+          }),
+        ),
+      )
+    Error(Unreachable) -> Error(Nil)
+    Error(Unexpected(error: pog.PostgresqlError(code: "42P01", ..))) ->
+      Ok(NoRecord)
+    Error(Unexpected(error:)) | Error(Refused(error:, ..)) ->
+      Ok(Unreadable(reason: describe(error)))
+  }
+}
+
+/// The error as a sentence for the log: what Postgres or pog said.
+fn describe(error: pog.QueryError) -> String {
+  case error {
+    pog.PostgresqlError(code:, name:, message:) ->
+      name <> " (" <> code <> "): " <> message
+    pog.ConstraintViolated(message:, ..) -> message
+    pog.UnexpectedArgumentCount(..)
+    | pog.UnexpectedArgumentType(..)
+    | pog.UnexpectedResultType(..) -> "the query and the table do not match"
+    pog.ConnectionUnavailable -> "no connection to the database"
+    pog.QueryTimeout -> "the query timed out"
   }
 }
 
@@ -359,7 +408,7 @@ fn create_character(
     Ok(_) -> panic as "one insert of one row makes at most one character"
     Error(Unreachable) -> Error(Nil)
     Error(Refused(constraint: "character_name_unique", ..)) -> Ok(NameTaken)
-    Error(Refused(error:, ..)) -> exit_with(error)
+    Error(Refused(error:, ..)) | Error(Unexpected(error:)) -> exit_with(error)
   }
 }
 
@@ -401,7 +450,7 @@ fn rename_character(
     Ok(_) -> panic as "a character id is unique, so a rename changes at most one"
     Error(Unreachable) -> Error(Nil)
     Error(Refused(constraint: "character_name_unique", ..)) -> Ok(NewNameTaken)
-    Error(Refused(error:, ..)) -> exit_with(error)
+    Error(Refused(error:, ..)) | Error(Unexpected(error:)) -> exit_with(error)
   }
 }
 
@@ -412,6 +461,11 @@ type Failure {
   /// The database refused a change for a constraint, whose name and error are
   /// here.
   Refused(constraint: String, error: pog.QueryError)
+  /// The database failed the query in a way no request expects, with its error:
+  /// a bug in the query or the schema, which `query` ends the worker for. Only
+  /// the probe's read of `schema_migration` reads it, to tell a database
+  /// without the table, or one it cannot read, from a database that is away.
+  Unexpected(error: pog.QueryError)
 }
 
 /// Runs one read on the pool and gives its rows, or `Error(Nil)` for the
@@ -423,15 +477,15 @@ fn query(
   case attempt(run) {
     Ok(rows) -> Ok(rows)
     Error(Unreachable) -> Error(Nil)
-    Error(Refused(error:, ..)) -> exit_with(error)
+    Error(Refused(error:, ..)) | Error(Unexpected(error:)) -> exit_with(error)
   }
 }
 
 /// Runs one unit of work on the pool and gives its rows, or why it gave none:
 /// the pool not running, as when it restarts, a connection that cannot be had
-/// and a query that timed out are `Unreachable`, and a constraint the database
-/// refused is `Refused`. Any other error is a bug in the query or the schema,
-/// and ends the worker.
+/// and a query that timed out are `Unreachable`, a constraint the database
+/// refused is `Refused`, and any other error is `Unexpected`, which every
+/// caller but the probe's read of the record ends the worker with.
 fn attempt(
   run: fn() -> Result(pog.Returned(row), pog.QueryError),
 ) -> Result(List(row), Failure) {
@@ -445,7 +499,8 @@ fn attempt(
     Ok(Error(pog.PostgresqlError(..) as error))
     | Ok(Error(pog.UnexpectedArgumentCount(..) as error))
     | Ok(Error(pog.UnexpectedArgumentType(..) as error))
-    | Ok(Error(pog.UnexpectedResultType(..) as error)) -> exit_with(error)
+    | Ok(Error(pog.UnexpectedResultType(..) as error)) ->
+      Error(Unexpected(error:))
   }
 }
 
