@@ -6,6 +6,7 @@
 //// vector.opcode.0x7e0.frame, and the ciphered bytes of the others are the
 //// vector.0x1400c2d10 outputs for the counting bytes 00 01 02 ...
 
+import body_generator
 import connection_vectors as vectors
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{
@@ -13,9 +14,8 @@ import genesis_prime/connection/encrypted_frame.{
 }
 import genesis_prime/connection/frame.{Frame}
 import gleam/bit_array
-import gleam/int
 import owned_test
-import seeded
+import qcheck
 
 fn base_cipher() -> cipher.Cipher {
   let assert Ok(built) = cipher.new(cipher.base_key)
@@ -106,26 +106,21 @@ pub fn the_auth_and_game_wrappers_carry_the_same_ciphered_inner_frame_test() -> 
 }
 
 pub fn unwrapping_what_was_wrapped_gives_the_inner_frame_back_test() -> Nil {
-  use <- owned_test.run(20_000)
-  let checked =
-    int.range(from: 1, to: 201, with: #(7, 0), run: fn(state, _case) {
-      let #(random, checked) = state
-      let #(id, random) = seeded.up_to(state: random, most: 0xFFFF)
-      let #(length, random) = seeded.up_to(state: random, most: 2000)
-      let #(body, random) = seeded.bytes(state: random, count: length)
-      let inner = Frame(id, body)
-      let assert Ok(wrapped) =
-        encrypted_frame.wrap(GameWrapper, inner, session_cipher())
-        as "a 2000-byte body is within the size limit"
-      let assert Ok(#([outer], <<>>)) = frame.decode(wrapped)
-        as "a wrapped frame is one frame"
-      assert outer.message_id == 0x03DC
-        as "opcode.0x3dc: the outer frame is message 0x3dc"
-      assert encrypted_frame.unwrap(outer, session_cipher()) == Ok(inner)
-        as "DecryptMessageBody 0x1400c2de0 undoes EncryptMessageBody 0x1400c2d10 over the inner frame after its length"
-      #(random, checked + 1)
-    })
-  assert checked.1 == 200 as "every generated frame was checked"
+  use <- owned_test.run(60_000)
+  use #(id, body) <- qcheck.given(qcheck.tuple2(
+    qcheck.bounded_int(from: 0, to: 0xFFFF),
+    body_generator.body(most: 2000),
+  ))
+  let inner = Frame(id, body)
+  let assert Ok(wrapped) =
+    encrypted_frame.wrap(GameWrapper, inner, session_cipher())
+    as "a 2000-byte body is within the size limit"
+  let assert Ok(#([outer], <<>>)) = frame.decode(wrapped)
+    as "a wrapped frame is one frame"
+  assert outer.message_id == 0x03DC
+    as "opcode.0x3dc: the outer frame is message 0x3dc"
+  assert encrypted_frame.unwrap(outer, session_cipher()) == Ok(inner)
+    as "DecryptMessageBody 0x1400c2de0 undoes EncryptMessageBody 0x1400c2d10 over the inner frame after its length"
 }
 
 pub fn a_frame_that_is_not_a_wrapper_is_not_unwrapped_test() -> Nil {

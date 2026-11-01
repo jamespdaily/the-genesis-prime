@@ -4,6 +4,7 @@
 //// The expected values are not computed at test time. Each test names the
 //// record or the client address its values come from.
 
+import body_generator
 import connection_vectors as vectors
 import genesis_prime/connection/cipher
 import gleam/bit_array
@@ -12,7 +13,7 @@ import gleam/int
 import gleam/list
 import gleam/string
 import owned_test
-import seeded
+import qcheck
 
 fn cipher_for(key: Int) -> cipher.Cipher {
   let assert Ok(built) = cipher.new(key) as "a key other than 0 builds a cipher"
@@ -192,19 +193,23 @@ pub fn a_session_key_of_another_size_is_not_folded_test() -> Nil {
 pub fn decrypting_what_was_encrypted_gives_the_body_back_for_random_keys_and_bodies_test() -> Nil {
   use <- owned_test.run(120_000)
   let largest_body = 131_064
-  let checked =
-    int.range(from: 1, to: 1001, with: #(20_261_026, 0), run: fn(state, _case) {
-      let #(random, checked) = state
-      let #(length, random) = seeded.up_to(state: random, most: largest_body)
-      let #(key_draw, random) =
-        seeded.up_to(state: random, most: 0xFFFF_FFFF_FFFF_FFFE)
-      let #(body, random) = seeded.bytes(state: random, count: length)
-      let built = cipher_for(key_draw + 1)
-      assert cipher.decrypt(built, cipher.encrypt(built, body)) == body
-        as "DecryptMessageBody 0x1400c2de0 undoes EncryptMessageBody 0x1400c2d10: the emulator run gave every input back; 131064 is the largest body of a frame within the size limit 131070 (0x140335ec0) less its 6 header bytes"
-      #(random, checked + 1)
-    })
-  assert checked.1 == 1000 as "every generated case was checked"
+  // A key is any 64-bit value but 0, which the client refuses. qcheck draws an
+  // integer from at most 32 bits, so a key is two draws.
+  let key = {
+    use high <- qcheck.bind(qcheck.bounded_int(from: 0, to: 0xFFFF_FFFF))
+    use low <- qcheck.map(qcheck.bounded_int(from: 0, to: 0xFFFF_FFFF))
+    case high * 0x1_0000_0000 + low {
+      0 -> 1
+      key -> key
+    }
+  }
+  use #(key, body) <- qcheck.given(qcheck.tuple2(
+    key,
+    body_generator.body(most: largest_body),
+  ))
+  let built = cipher_for(key)
+  assert cipher.decrypt(built, cipher.encrypt(built, body)) == body
+    as "DecryptMessageBody 0x1400c2de0 undoes EncryptMessageBody 0x1400c2d10: the emulator run gave every input back; 131064 is the largest body of a frame within the size limit 131070 (0x140335ec0) less its 6 header bytes"
 }
 
 pub fn a_cipher_with_one_key_byte_changed_fails_the_clients_vectors_test() -> Nil {

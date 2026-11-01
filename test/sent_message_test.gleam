@@ -2,26 +2,19 @@
 //// file's records of the client's send paths. The record's statement holds the
 //// ids as hex numbers after "ids in all (hex): ".
 
+import fact_file
 import genesis_prime/coverage/sent_message
 import gleam/int
 import gleam/list
 import gleam/result
 import gleam/string
 import owned_test
-import simplifile
-
-const facts_file =
-  ".claude/skills/decoding-the-client/references/client-facts.toml"
 
 /// The ids a record's statement lists in hex after "ids in all (hex): ", up to
 /// the full stop that ends the list.
 fn ids_of_record(address: String) -> List(Int) {
-  let assert Ok(text) = simplifile.read(facts_file)
-    as "the fact file could not be read"
-  let assert [_, after_key] = string.split(text, "[\"" <> address <> "\"]\n")
+  let assert Ok(statement) = fact_file.statement(record: address)
     as { "the fact file has not exactly one record " <> address }
-  let assert Ok(#(statement, _)) = string.split_once(after_key, "\n")
-    as "the record has no statement line"
   let assert Ok(#(_, listed)) =
     string.split_once(statement, "ids in all (hex): ")
     as { address <> " lists no ids" }

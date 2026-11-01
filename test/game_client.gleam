@@ -16,6 +16,7 @@ import frame_reader
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/connection as game_connection
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/server_hello
 import genesis_prime/message/world_message.{WorldMessage}
@@ -37,9 +38,8 @@ pub type Game {
 /// The cipher the client keys from the session key right after sending 0x58F
 /// (HandleLoginGameServerHello 0x140038120).
 pub fn session_cipher(session_key session_key: BitArray) -> Cipher {
-  let assert Ok(key) = cipher.session_key(session_key, cipher.base_key)
-    as "the session key is 16 bytes"
-  let assert Ok(session) = cipher.new(key) as "the session key makes a cipher"
+  let assert Ok(session) = game_connection.rekeyed(session_key:)
+    as "the session key makes a cipher"
   session
 }
 

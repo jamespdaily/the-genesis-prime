@@ -1,7 +1,9 @@
 //// The messages of character select and entering the world against the
 //// client's own bytes. A body vector is the fact file's `vector.opcode.<id>.body`
-//// record, from the client's reader or writer run on the p-code emulator, and
-//// the values are the ones the record gives. For each: the bytes decode to those
+//// record, from the client's reader or writer run on the p-code emulator;
+//// `assert_vector` reads the bytes from that record's statement (it fails when
+//// the record is missing or gives other bytes), and the values are the ones the
+//// record gives. For each: the bytes decode to those
 //// values, the values encode back to the same bytes, and every shorter run of
 //// the bytes (one that ends inside a field) is a decode error, as the client's
 //// reader fails with 0x80070026 (ReadBitsSlow 0x140336D60).
@@ -127,7 +129,7 @@ pub fn the_character_list_is_the_clients_1372_bits_test() -> Nil {
 pub fn a_character_list_with_no_characters_and_empty_lists_is_395_bits_test() -> Nil {
   use <- owned_test.run(10_000)
   message_support.assert_vector(
-    name: "vector.opcode.0x117.body (no characters, empty lists)",
+    name: "vector.opcode.0x117.body",
     body: message_support.hex(
       "0500000000000000000000000000000000000000990000000000000000000000000000000000000000000000000000000000",
     ),
@@ -174,7 +176,7 @@ pub fn create_character_is_the_clients_379_bits_test() -> Nil {
 pub fn create_character_with_no_customisation_or_bones_is_187_bits_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_vector(
-    name: "vector.opcode.0x25b.body (no customisation, no bones)",
+    name: "vector.opcode.0x25b.body",
     body: message_support.hex(
       "070000000a41006200200043006400000000000000000000",
     ),
@@ -266,7 +268,7 @@ pub fn play_character_is_one_64_bit_id_test() -> Nil {
 pub fn delete_character_is_written_as_play_character_is_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_vector(
-    name: "vector.opcode.0x7dd.body (messages 0x7dd and 0x352 share one writer)",
+    name: "vector.opcode.0x7dd.body",
     body: message_support.hex("0807060504030201"),
     value: DeleteCharacter(character_id: 0x0102030405060708),
     encode: delete_character.encode,
@@ -430,10 +432,10 @@ pub fn unit_is_player_is_two_32_bit_values_test() -> Nil {
   )
 }
 
-pub fn player_path_is_a_path_four_experiences_the_unlocked_paths_and_a_float_in_the_order_of_0x14008d480_test() -> Nil {
+pub fn player_path_is_a_path_four_experiences_the_unlocked_paths_and_a_float_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_vector(
-    name: "0x14008d480 (the path in bits 0 to 2, the experience of each path in bits 3 to 130, the unlocked paths in bits 131 to 134, the float in bits 135 to 166: 167 bits, 21 bytes)",
+    name: "vector.opcode.0x6bc.body",
     body: message_support.hex("0a000000 10000000 18000000 20000000 200000c0 5f"),
     value: PlayerPath(
       path: 2,
@@ -485,9 +487,9 @@ pub fn unit_destroyed_is_a_32_bit_unit_id_and_one_bit_test() -> Nil {
 pub fn max_character_level_is_one_32_bit_value_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_vector(
-    name: "vector.opcode.0x591.body (message 0x36 is read by the same reader, 0x14007ab50)",
-    body: message_support.hex("01000000"),
-    value: MaxCharacterLevel(highest_level: 1),
+    name: "vector.opcode.0x36.body",
+    body: message_support.hex("03000000"),
+    value: MaxCharacterLevel(highest_level: 3),
     encode: max_character_level.encode,
     decode: max_character_level.decode,
   )
@@ -595,7 +597,7 @@ fn minimal_player() -> UnitCreatePlayer {
 pub fn a_player_with_a_position_command_is_the_clients_801_bits_test() -> Nil {
   use <- owned_test.run(10_000)
   message_support.assert_vector(
-    name: "vector.opcode.0x262.position (kind 2 at 4338.69, -1086.72, -3854.53, bit 0; the floats are 0x45879585, 0xC487D70A and 0xC570E87B)",
+    name: "vector.opcode.0x262.position",
     body: message_support.hex(
       "01000000540000000000000040004010042006100200000000000000000000000000000000000000002088c2cac32285eb43e23d74b86200000000000000000000000000000000000000000000800000000000000000008000000000000000000000000000",
     ),
@@ -608,7 +610,7 @@ pub fn a_player_with_a_position_command_is_the_clients_801_bits_test() -> Nil {
 pub fn a_player_with_health_and_base_health_is_the_clients_912_bits_test() -> Nil {
   use <- owned_test.run(10_000)
   message_support.assert_vector(
-    name: "vector.opcode.0x262.health (stat 0 is 136; property 7 is 136.0 twice, 0x43080000)",
+    name: "vector.opcode.0x262.health",
     body: message_support.hex(
       "01000000540000000000000040004010042006100200000000000000000000000000000000018008000000000000104461e56191c2f521f11e3a5cb1800300008421000084210000000000000000000000000000000000000000004000000000000000000040000000000000000000000000",
     ),
@@ -627,7 +629,7 @@ pub fn a_player_with_health_and_base_health_is_the_clients_912_bits_test() -> Ni
 pub fn client_control_granted_is_a_value_a_bit_and_a_unit_id_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_vector(
-    name: "vector.opcode.0x636.body (the value in bits 0 to 31, the reset bit at 32, the unit id in bits 33 to 64)",
+    name: "vector.opcode.0x636.body",
     body: message_support.hex("000000000300000000"),
     value: ClientControlGranted(echo_value: 0, reset_movement: 1, unit_id: 1),
     encode: client_control_granted.encode,
@@ -638,7 +640,7 @@ pub fn client_control_granted_is_a_value_a_bit_and_a_unit_id_test() -> Nil {
 pub fn client_control_echoed_is_one_32_bit_value_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_vector(
-    name: "vector.opcode.0x635.body (the client's writer 0x14007d010 on the value 0)",
+    name: "vector.opcode.0x635.body",
     body: message_support.hex("00000000"),
     value: ClientControlEchoed(echo_value: 0),
     encode: client_control_echoed.encode,
@@ -825,7 +827,7 @@ pub fn disconnect_notice_is_the_clients_5_bits_test() -> Nil {
     ],
     fn(case_) {
       message_support.assert_vector(
-        name: "vector.opcode.0x36a.body, reason " <> case_.0,
+        name: "vector.opcode.0x36a.body",
         body: message_support.hex(case_.0),
         value: DisconnectNotice(reason: case_.1),
         encode: disconnect_notice.encode,

@@ -1,14 +1,17 @@
 //// Each Milestone 1 message against the client's own bytes. A body vector is
 //// the fact file's `vector.opcode.<id>.body` record, from the client's writer
-//// or reader run on the p-code emulator, and the values are the ones the record
-//// gives. For each: the bytes decode to those values, the values encode back to
-//// the same bytes, and every shorter run of the bytes (so one that ends inside a
-//// field) is a decode error, as the client's reader fails with 0x80070026
-//// (ReadBitsSlow 0x140336d60, vector.opcode.0xf1.body and
-//// vector.opcode.0x3db.body). The bodies of 0x244 and 0x38C have no emulator
-//// vector; theirs come from the records `opcode.0x244`, `opcode.0x38c`,
-//// `vector.opcode.0x7e0.frame` and the writer 0x14007e1c0.
+//// or reader run on the p-code emulator, and `assert_vector` reads the bytes
+//// from that record's statement (it fails when the record is missing or gives
+//// other bytes); the values are the ones the record gives. For each: the bytes
+//// decode to those values, the values encode back to the same bytes, and every
+//// shorter run of the bytes (so one that ends inside a field) is a decode
+//// error, as the client's reader fails with 0x80070026 (ReadBitsSlow
+//// 0x140336d60, vector.opcode.0xf1.body and vector.opcode.0x3db.body). The
+//// body of 0x244 is the inner frame of `vector.opcode.0x7e0.frame`; the body of
+//// 0x38C has no emulator vector, so its layout comes from `opcode.0x38c` and
+//// its inner frame from `opcode.0x7e0`.
 
+import fact_file
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/message/character_select_start.{CharacterSelectStart}
 import genesis_prime/message/client_wrapper.{ClientWrapper}
@@ -16,6 +19,7 @@ import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/game_server_handoff.{GameServerHandoff}
 import genesis_prime/message/login_accepted.{LoginAccepted}
+import genesis_prime/message/login_refused.{LoginRefused}
 import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/pong.{Pong}
@@ -26,7 +30,6 @@ import genesis_prime/message/realm_select_start.{RealmSelectStart}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/message/text_group.{TextGroup}
 import genesis_prime/message/world_message.{WorldMessage}
-import gleam/int
 import gleam/list
 import message_support
 import owned_test
@@ -137,6 +140,17 @@ pub fn login_accepted_is_one_32_bit_value_test() -> Nil {
     value: LoginAccepted(disconnected_for_lag: 1),
     encode: login_accepted.encode,
     decode: login_accepted.decode,
+  )
+}
+
+pub fn login_refused_is_the_clients_96_bits_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_vector(
+    name: "vector.opcode.0x63d.body",
+    body: message_support.hex("10000000 00000000 00000000"),
+    value: LoginRefused(reason: 16, value: 0, field_3: 0),
+    encode: login_refused.encode,
+    decode: login_refused.decode,
   )
 }
 
@@ -276,7 +290,7 @@ pub fn realm_list_is_the_clients_734_bits_test() -> Nil {
 pub fn a_realm_list_with_no_realms_and_no_groups_is_128_bits_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_vector(
-    name: "vector.opcode.0x761.body (no realms, no groups)",
+    name: "vector.opcode.0x761.body",
     body: message_support.hex("05000000 00000000 00000000 00000000"),
     value: RealmList(field_1: 5, realms: [], text_groups: []),
     encode: realm_list.encode,
@@ -287,7 +301,7 @@ pub fn a_realm_list_with_no_realms_and_no_groups_is_128_bits_test() -> Nil {
 pub fn character_select_start_has_an_empty_body_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_vector(
-    name: "vector.opcode.0x7e0.frame (the frame is only its 6 header bytes)",
+    name: "opcode.0x7e0",
     body: <<>>,
     value: CharacterSelectStart,
     encode: character_select_start.encode,
@@ -298,7 +312,7 @@ pub fn character_select_start_has_an_empty_body_test() -> Nil {
 pub fn realm_select_start_has_an_empty_body_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_vector(
-    name: "opcode.0x7a4 (the frame is only the header 06 00 00 00 a4 07)",
+    name: "opcode.0x7a4",
     body: <<>>,
     value: RealmSelectStart,
     encode: realm_select_start.encode,
@@ -309,7 +323,7 @@ pub fn realm_select_start_has_an_empty_body_test() -> Nil {
 pub fn the_client_wrapper_body_is_the_inner_frame_with_its_length_in_the_clear_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_vector(
-    name: "vector.opcode.0x7e0.frame: the inner frame of 0x244 is 06 00 00 00 03 89",
+    name: "vector.opcode.0x7e0.frame",
     body: message_support.hex("06 00 00 00 03 89"),
     value: ClientWrapper(inner_frame: message_support.hex("06 00 00 00 03 89")),
     encode: client_wrapper.encode,
@@ -319,13 +333,16 @@ pub fn the_client_wrapper_body_is_the_inner_frame_with_its_length_in_the_clear_t
 
 pub fn the_world_message_body_is_a_5_bit_value_then_the_inner_frame_test() -> Nil {
   use <- owned_test.run(5000)
-  message_support.assert_vector(
-    name: "opcode.0x38c: the value 3 in 5 bits, then the inner frame 06 00 00 00 e0 07 from the next byte",
-    body: message_support.hex("03 06 00 00 00 e0 07"),
-    value: WorldMessage(
-      field_1: 3,
-      inner_frame: message_support.hex("06 00 00 00 e0 07"),
-    ),
+  // The fact file has no vector for 0x38c: the record opcode.0x38c gives the
+  // layout, the value 3 in 5 bits then the whole frame from the next byte, and
+  // the record opcode.0x7e0 gives the frame of 0x7e0, which is the one inside.
+  let inner_frame = message_support.hex("06 00 00 00 e0 07")
+  assert fact_file.gives(record: "opcode.0x7e0", bytes: inner_frame) == Ok(Nil)
+    as "opcode.0x7e0: the frame of message 0x7e0 is 06 00 00 00 e0 07"
+  message_support.assert_codec(
+    name: "opcode.0x38c",
+    body: <<3, inner_frame:bits>>,
+    value: WorldMessage(field_1: 3, inner_frame:),
     encode: world_message.encode,
     decode: world_message.decode,
   )
@@ -350,7 +367,7 @@ pub fn pong_is_the_clients_8_bits_test() -> Nil {
   use <- owned_test.run(5000)
   list.each([#("00", 0), #("13", 19), #("14", 20), #("ff", 255)], fn(case_) {
     message_support.assert_vector(
-      name: "vector.opcode.0x1.body, number " <> int.to_string(case_.1),
+      name: "vector.opcode.0x1.body",
       body: message_support.hex(case_.0),
       value: Pong(sequence_number: case_.1),
       encode: pong.encode,

@@ -44,6 +44,7 @@ import genesis_prime/store.{
   Unavailable,
 }
 import gleam/bit_array
+import gleam/crypto
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -53,7 +54,6 @@ import login_support
 import login_vectors as vector
 import owned_test
 import scripted_client.{type Exchange, type Reply}
-import seeded
 
 /// The client's side of one connection beside the rule's state: its RC4
 /// streams once the proof has passed, and the next sequence number.
@@ -202,8 +202,10 @@ fn assert_error_reply(
   Nil
 }
 
+/// The client's secret value: 32 bytes, any, which the exchange proves a
+/// password with.
 fn client_secret() -> BitArray {
-  seeded.bytes(state: 99, count: 32).0
+  crypto.hash(crypto.Sha256, <<"the client's secret value":utf8>>)
 }
 
 /// The client's side of the exchange after LoginStart is answered with the

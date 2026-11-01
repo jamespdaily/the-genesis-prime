@@ -10,7 +10,6 @@
 ////   recording is written, made when it is missing; a map's file is named by
 ////   its world, instance and incarnation; by convention
 ////   `test/rule_recording/<date>-<flow>`.
-////   The relay's recordings, a different format, are in `test/recording`.
 //// - `planted message id`: a message id, such as `0x0914`, sent once with an
 ////   empty body in the auth wrapper after the hello. Left out, nothing is
 ////   planted.

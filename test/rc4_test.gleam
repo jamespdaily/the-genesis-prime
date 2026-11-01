@@ -15,7 +15,7 @@ import gleam/list
 import login_vectors as vector
 import message_support
 import owned_test
-import seeded
+import qcheck
 
 @external(erlang, "rc4_oracle_ffi", "encrypt")
 fn otp_rc4(key: BitArray, data: BitArray) -> BitArray
@@ -144,32 +144,26 @@ fn crypt_each(stream: rc4.Stream, messages: List(BitArray)) -> List(BitArray) {
   }
 }
 
-/// One round: a random key of 1 to 256 bytes and 1 to 6 random messages of 0
-/// to 600 bytes, ciphered one after another on one stream and then in one call
-/// by OTP.
-fn check_round(round: Int) -> Nil {
-  let state = 20_261_300 + round
-  let #(key_length, state) = seeded.up_to(state:, most: 255)
-  let #(key, state) = seeded.bytes(state:, count: key_length + 1)
-  let #(call_count, state) = seeded.up_to(state:, most: 5)
-  let #(messages, _state) =
-    list.fold(list.repeat(Nil, call_count + 1), #([], state), fn(drawn, _) {
-      let #(built, state) = drawn
-      let #(length, state) = seeded.up_to(state:, most: 600)
-      let #(bytes, state) = seeded.bytes(state:, count: length)
-      #([bytes, ..built], state)
-    })
-  let messages = list.reverse(messages)
+/// A random key of 1 to 256 bytes and 1 to 6 random messages of 0 to 600
+/// bytes, ciphered one after another on one stream and then in one call by
+/// OTP.
+pub fn random_keys_and_lengths_give_otps_bytes_across_several_calls_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let bytes = qcheck.bounded_int(from: 0, to: 255)
+  use #(key, messages) <- qcheck.given(qcheck.tuple2(
+    qcheck.generic_byte_aligned_bit_array(
+      values_from: bytes,
+      byte_size_from: qcheck.bounded_int(from: 1, to: 256),
+    ),
+    qcheck.generic_list(
+      qcheck.generic_byte_aligned_bit_array(
+        values_from: bytes,
+        byte_size_from: qcheck.bounded_int(from: 0, to: 600),
+      ),
+      qcheck.bounded_int(from: 1, to: 6),
+    ),
+  ))
   assert bit_array.concat(crypt_each(started_under(key), messages))
     == otp_rc4(key, bit_array.concat(messages))
     as "OTP's RC4 over the whole message equals the Gleam RC4 over its parts, in order"
-}
-
-pub fn random_keys_and_lengths_give_otps_bytes_across_several_calls_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let _rounds =
-    list.index_map(list.repeat(Nil, 200), fn(_, index) {
-      check_round(index + 1)
-    })
-  Nil
 }

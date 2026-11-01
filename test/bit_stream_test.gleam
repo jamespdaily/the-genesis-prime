@@ -6,8 +6,8 @@
 //// field), and the message vectors for the GUID and the endpoint. A value too
 //// wide for its field is refused when written, which the issue's test list
 //// asks for; the client's own writer masks it (vector.0x140336380.fields,
-//// `(0xFF, 4) -> 0f`). Every property test draws from `seeded` with a fixed
-//// seed.
+//// `(0xFF, 4) -> 0f`). The properties of each field kind are in
+//// `bit_stream_property_test`.
 
 import genesis_prime/message/bit_stream.{Endpoint}
 import gleam/bit_array
@@ -453,123 +453,6 @@ pub fn whole_bytes_left_after_the_last_field_are_a_decode_error_test() -> Nil {
     as "three bits read"
   assert bit_stream.finish_reading(reader) == Ok(Nil)
     as "the rest of the last byte is padding (WriteMessageFrame 0x1403355e0)"
-}
-
-pub fn random_runs_of_fields_read_back_as_written_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let checked =
-    int.range(from: 0, to: 1000, with: #(20_261_027, 0), run: fn(state, _case) {
-      let #(random, checked) = state
-      let #(count, random) = message_support.up_to(state: random, most: 12)
-      let #(fields, random) =
-        message_support.draw_list(state: random, count:, draw: draw_field)
-      let written =
-        list.fold(fields, bit_stream.new_writer(), write_field)
-        |> bit_stream.finish
-      let assert Ok(bytes) = written
-        as "every field is within its width, so the run is written"
-      let reader =
-        list.fold(fields, bit_stream.new_reader(bytes), assert_field_reads_back)
-      assert bit_stream.finish_reading(reader) == Ok(Nil)
-        as "the last field ends within the last byte, so nothing whole is left"
-      #(random, checked + 1)
-    })
-  assert checked.1 == 1000 as "every generated run was checked"
-}
-
-/// A field of a random run: what kind and what value, so fields of every width
-/// start at every bit offset.
-type Field {
-  UnsignedField(bits: Int, value: Int)
-  TextField(String)
-  RawField(BitArray)
-  GuidField(BitArray)
-  EndpointField(bit_stream.Endpoint)
-}
-
-fn draw_field(state: Int) -> #(Field, Int) {
-  let #(kind, state) = message_support.up_to(state:, most: 4)
-  case kind {
-    0 | 1 -> {
-      let #(bits, state) = message_support.up_to(state:, most: 63)
-      let #(value, state) = message_support.unsigned(state:, bits: bits + 1)
-      #(UnsignedField(bits + 1, value), state)
-    }
-    2 -> {
-      let #(text, state) = message_support.field_text(state:)
-      #(TextField(text), state)
-    }
-    3 -> {
-      let #(count, state) = message_support.up_to(state:, most: 20)
-      let #(bytes, state) = message_support.bytes(state:, count:)
-      #(RawField(bytes), state)
-    }
-    _ -> {
-      let #(guid, state) = message_support.guid(state:)
-      let #(endpoint, state) = message_support.endpoint(state:)
-      case state % 2 {
-        0 -> #(GuidField(guid), state)
-        _ -> #(EndpointField(endpoint), state)
-      }
-    }
-  }
-}
-
-fn write_field(writer: bit_stream.Writer, field: Field) -> bit_stream.Writer {
-  case field {
-    UnsignedField(bits:, value:) ->
-      bit_stream.write_unsigned(writer, "value", value, bits)
-    TextField(text) -> bit_stream.write_wide_text(writer, "text", text)
-    RawField(bytes) ->
-      bit_stream.write_raw_bytes(
-        writer,
-        "bytes",
-        bytes,
-        bit_array.byte_size(bytes),
-      )
-    GuidField(guid) -> bit_stream.write_guid(writer, "guid", guid)
-    EndpointField(endpoint) ->
-      bit_stream.write_endpoint(writer, "endpoint", endpoint)
-  }
-}
-
-fn assert_field_reads_back(
-  reader: bit_stream.Reader,
-  field: Field,
-) -> bit_stream.Reader {
-  case field {
-    UnsignedField(bits:, value:) -> {
-      let assert Ok(#(read, reader)) = bit_stream.read_unsigned(reader, bits)
-        as "the written bits are there"
-      assert read == value as "an unsigned value reads back as written"
-      reader
-    }
-    TextField(text) -> {
-      let assert Ok(#(read, reader)) = bit_stream.read_wide_text(reader)
-        as "the written text is there"
-      assert read == text as "a wide text reads back as written"
-      reader
-    }
-    RawField(bytes) -> {
-      let assert Ok(#(read, reader)) =
-        bit_stream.read_raw_bytes(reader, bit_array.byte_size(bytes))
-        as "the written bytes are there"
-      assert read == bytes as "raw bytes read back in order at any bit offset"
-      reader
-    }
-    GuidField(guid) -> {
-      let assert Ok(#(read, reader)) = bit_stream.read_guid(reader)
-        as "the written key is there"
-      assert read == guid as "a GUID reads back as written"
-      reader
-    }
-    EndpointField(endpoint) -> {
-      let assert Ok(#(read, reader)) = bit_stream.read_endpoint(reader)
-        as "the written endpoint is there"
-      assert read == endpoint as "an endpoint reads back as written"
-      reader
-    }
-  }
 }
 
 /// The four fields of message 0xF1 read from a body, as `ReadMessage00F1Body`

@@ -10,7 +10,7 @@ import genesis_prime/login/guid
 import gleam/string
 import message_support
 import owned_test
-import seeded
+import qcheck
 
 pub fn the_text_of_a_guid_is_its_wire_bytes_with_the_first_three_groups_reversed_test() -> Nil {
   use <- owned_test.run(5000)
@@ -65,16 +65,12 @@ pub fn a_text_that_is_not_8_4_4_4_12_hexadecimal_is_not_a_guid_test() -> Nil {
 
 pub fn every_random_guid_survives_a_trip_through_its_text_test() -> Nil {
   use <- owned_test.run(10_000)
-  repeat(500, 0x6A1D, fn(state) {
-    let #(bytes, state) = seeded.bytes(state:, count: 16)
-    let assert Ok(original) = guid.from_wire(bytes) as "16 bytes are a GUID"
-    let assert Ok(again) = guid.from_text(guid.to_text(original))
-      as "the text of a GUID parses"
-    assert again == original as "a GUID's text names the same 16 wire bytes"
-    assert string.length(guid.to_text(original)) == 36
-      as "the text is 8-4-4-4-12"
-    state
-  })
+  use bytes <- qcheck.given(qcheck.fixed_size_byte_aligned_bit_array(16))
+  let assert Ok(original) = guid.from_wire(bytes) as "16 bytes are a GUID"
+  let assert Ok(again) = guid.from_text(guid.to_text(original))
+    as "the text of a GUID parses"
+  assert again == original as "a GUID's text names the same 16 wire bytes"
+  assert string.length(guid.to_text(original)) == 36 as "the text is 8-4-4-4-12"
 }
 
 fn list_each(items: List(a), body: fn(a) -> Nil) -> Nil {
@@ -84,12 +80,5 @@ fn list_each(items: List(a), body: fn(a) -> Nil) -> Nil {
       body(first)
       list_each(rest, body)
     }
-  }
-}
-
-fn repeat(count: Int, state: Int, body: fn(Int) -> Int) -> Nil {
-  case count {
-    0 -> Nil
-    _ -> repeat(count - 1, body(state), body)
   }
 }

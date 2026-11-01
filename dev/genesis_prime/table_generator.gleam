@@ -11,6 +11,7 @@
 
 import argv
 import envoy
+import filepath
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table_folder
 import genesis_prime/table_generator/difference.{type Difference}
@@ -26,6 +27,7 @@ import gleam/io
 import gleam/list
 import gleam/result
 import gleam/string
+import shellout
 import simplifile
 
 /// Why the code could not be generated.
@@ -193,20 +195,22 @@ fn format_in(
 ) -> Result(Dict(String, String), GenerateError) {
   let paths = dict.keys(generated)
   use _ <- result.try(write_files(scratch, generated))
-  let #(status, output) =
-    run("gleam", [
-      "format",
-      ..list.map(paths, fn(path) { scratch <> "/" <> path })
-    ])
-  case status {
-    0 ->
+  case
+    shellout.command(
+      run: "gleam",
+      with: ["format", ..list.map(paths, fn(path) { scratch <> "/" <> path })],
+      in: ".",
+      opt: [],
+    )
+  {
+    Ok(_) ->
       list.try_map(paths, fn(path) {
         simplifile.read(scratch <> "/" <> path)
         |> result.map(fn(text) { #(path, text) })
         |> result.replace_error(Unwritable(path))
       })
       |> result.map(dict.from_list)
-    _ -> Error(FormatFailed(output))
+    Error(#(_status, output)) -> Error(FormatFailed(output))
   }
 }
 
@@ -216,22 +220,13 @@ fn write_files(
 ) -> Result(Nil, GenerateError) {
   list.try_each(dict.to_list(files), fn(file) {
     let path = root <> "/" <> file.0
-    let folder = parent(path)
+    let folder = filepath.directory_name(path)
     use _ <- result.try(
       simplifile.create_directory_all(folder)
       |> result.replace_error(Unwritable(file.0)),
     )
     simplifile.write(path, file.1) |> result.replace_error(Unwritable(file.0))
   })
-}
-
-/// The folder a path is in.
-fn parent(path: String) -> String {
-  string.split(path, "/")
-  |> list.reverse
-  |> list.drop(1)
-  |> list.reverse
-  |> string.join("/")
 }
 
 /// The Gleam files of the table folder and the registry under `source`, as
@@ -420,9 +415,6 @@ fn temporary_folder() -> String {
 
 @external(erlang, "table_generator_ffi", "scratch_folder")
 fn scratch_folder(base: String) -> String
-
-@external(erlang, "table_generator_ffi", "run")
-fn run(program: String, arguments: List(String)) -> #(Int, String)
 
 @external(erlang, "table_generator_ffi", "halt_with")
 fn halt_with(status: Int) -> Nil
