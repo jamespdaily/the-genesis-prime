@@ -61,26 +61,6 @@ pub fn modules(
   )
 }
 
-/// The `module` and `reason` of each `{ module, reason }` table in one list
-/// under `[tools.code_rules]`. A list that is absent is empty.
-pub fn listings(
-  project_file project_file: String,
-  key key: String,
-) -> List(#(String, String)) {
-  list.map(
-    entries(project_file:, path: ["tools", "code_rules", key]),
-    fn(entry) {
-      let assert Ok(table) = tom.as_table(entry)
-        as { "an entry of " <> key <> " is not a table" }
-      let assert Ok(module) = tom.get_string(table, ["module"])
-        as { "an entry of " <> key <> " has no module" }
-      let assert Ok(reason) = tom.get_string(table, ["reason"])
-        as { "an entry of " <> key <> " has no reason" }
-      #(module, reason)
-    },
-  )
-}
-
 /// The entries of the list at `path`; a list that is absent is empty.
 pub fn entries(
   project_file project_file: String,

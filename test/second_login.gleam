@@ -30,7 +30,7 @@ import gleam/io
 import gleam/list
 import gleam/string
 import login_client.{Ports}
-import tcp_client
+import mug
 
 /// How long to wait for the game server's next bytes, in milliseconds.
 const wait_ms = 5000
@@ -59,7 +59,7 @@ pub fn main() -> Nil {
     frame_reader.read_until(
       have: <<>>,
       done: ends_the_wait(_, game.cipher),
-      next: fn() { tcp_client.receive_some(game.socket, wait_ms) },
+      next: fn() { mug.receive(game.socket, timeout_milliseconds: wait_ms) },
     )
   {
     Ok(outers) ->
@@ -67,7 +67,12 @@ pub fn main() -> Nil {
         list.map(outers, game_client.in_the_game_wrapper(_, game.cipher)),
         describe,
       )
-    Error(Nil) -> io.println("second login: the game server wrote nothing more")
+    Error(error) ->
+      io.println(
+        "second login: the game server wrote nothing more ("
+        <> mug.describe_error(error)
+        <> ")",
+      )
   }
 }
 

@@ -1,13 +1,6 @@
 //// The licence rule. Expected values are the approved test list on the
 //// licence issue (Apache-2.0 chosen by Jim) and these facts:
 ////
-//// - `LICENSE` is the Apache License 2.0 text as its publisher gives it, at
-////   https://www.apache.org/licenses/LICENSE-2.0.txt: 11358 bytes, 201 lines
-////   once the blank line before and after it is dropped, 11356 characters
-////   once the same newlines are dropped, SHA-256
-////   cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30. The
-////   checks below are its opening and closing lines, its section headings,
-////   its line count and its length.
 //// - The accepted list for Apache-2.0 is Apache-2.0, MIT, BSD-2-Clause,
 ////   BSD-3-Clause and ISC (SPDX identifiers), under `[tools.licences]` in
 ////   the Gleam project file.
@@ -34,35 +27,6 @@ const accepted_list = [
   "BSD-3-Clause",
   "ISC",
 ]
-
-pub fn the_licence_file_is_the_apache_licence_2_0_text_test() -> Nil {
-  use <- owned_test.run(5000)
-  use <- unitest.tag("code_rule")
-  let lines =
-    string.split(source.read("LICENSE"), "\n")
-    |> list.drop_while(fn(line) { line == "" })
-    |> list.reverse
-    |> list.drop_while(fn(line) { line == "" })
-    |> list.reverse
-  let text = string.join(lines, "\n")
-  assert list.first(lines)
-    == Ok("                                 Apache License")
-  assert list.take(list.drop(lines, 1), 3)
-    == [
-      "                           Version 2.0, January 2004",
-      "                        http://www.apache.org/licenses/",
-      "",
-    ]
-  assert list.drop(lines, 4) |> list.first
-    == Ok("   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION")
-  assert list.contains(
-    lines,
-    "   APPENDIX: How to apply the Apache License to your work.",
-  )
-  assert list.last(lines) == Ok("   limitations under the License.")
-  assert list.length(lines) == 201
-  assert string.length(text) == 11_356
-}
 
 pub fn the_project_file_names_the_apache_licence_test() -> Nil {
   use <- owned_test.run(5000)

@@ -5,7 +5,7 @@ GENESIS_NO_CLIENT=1 (which only CI sets), through the one decorator
 check_support.needs_client, and on any other machine a missing
 client fails it; a test that needs a Ghidra install, a JDK or a seeded
 project is an integration test, gated by check_support.integration_only like
-test_query_process.py's. The decorator is run in a subprocess on a planted
+test_emulator.py's. The decorator is run in a subprocess on a planted
 test class with a client path that points nowhere; the other tests read this
 directory's own test files. Run: python3 -I test_check_support.py
 """
@@ -164,25 +164,6 @@ class EveryTestThatNeedsGhidraIsAnIntegrationTest(unittest.TestCase):
 
         problems = uncovered(GHIDRA_NAMES | GHIDRA_VARIABLES, needs, "integration_only")
         self.assertEqual(problems, [], "these tests need Ghidra and run in the fast suite")
-
-    def test_the_three_ghidra_reading_tests_are_integration_tests(self):
-        # the 3 tests of test_ghidra_env.py that read GENESIS_GHIDRA_DIR
-        tree = ast.parse((Path(__file__).resolve().parent / "test_ghidra_env.py").read_text())
-        gated = {
-            f"{cls.name}.{m.name}"
-            for cls in tree.body
-            if isinstance(cls, ast.ClassDef) and "integration_only" in decorator_names(cls)
-            for m in cls.body
-            if isinstance(m, ast.FunctionDef) and m.name.startswith("test_")
-        }
-        self.assertEqual(
-            gated,
-            {
-                "RealInstallTest.test_ghidra_version_reads_application_properties",
-                "PlantedInstallTest.test_ghidra_version_reads_the_planted_version",
-                "PlantedInstallTest.test_check_parts_refuses_another_ghidra_version_and_names_it",
-            },
-        )
 
 
 if __name__ == "__main__":

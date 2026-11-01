@@ -1,11 +1,13 @@
 //// The dev-module rule: every module in `dev/` is used by a check (`check`),
-//// a test or a CI job (`.github/workflows`), or the allow-list below names it
-//// with an open issue. Expected values are the cleanup issue's rule: a tool
+//// a test, a CI job (`.github/workflows`) or a skill's script
+//// (`.claude/skills/*/scripts`), or the allow-list below names it with an
+//// open issue. Expected values are the cleanup issue's rule: a tool
 //// nothing runs is deleted, so an unused module is a breach and an unused
 //// module that waits on a decision says which issue holds it.
 ////
 //// A module is used when a test imports it, a runner runs it with `-m`, or a
 //// used module of `dev/` imports it; a comment in a runner does not use it.
+//// The runners are the files `dev_module.is_runner` accepts.
 
 import code_rule/dev_module
 import code_rule/planted
@@ -21,12 +23,11 @@ import unitest
 /// issue that decides whether it gets one or is deleted.
 const allowed = [
   #("genesis_prime/coverage", 47),
-  #("genesis_prime/record", 119),
-  #("genesis_prime/dev_start", 146),
-  #("genesis_prime/add_account", 146),
-  #("genesis_prime/add_character", 147),
-  #("genesis_prime/mark_rename", 180),
-  #("genesis_prime/dev_database", 147),
+  #("genesis_prime/record", 217),
+  #("genesis_prime/add_account", 207),
+  #("genesis_prime/add_character", 207),
+  #("genesis_prime/mark_rename", 207),
+  #("genesis_prime/dev_database", 207),
 ]
 
 fn module_file(module: String, imports: List(String)) -> SourceFile {
@@ -84,6 +85,30 @@ pub fn a_module_a_test_imports_is_used_test() -> Nil {
       allowed: [],
     )
     == []
+}
+
+pub fn the_check_the_workflows_and_the_skills_scripts_are_runners_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  assert list.filter(
+      [
+        "check",
+        ".github/workflows/check.yml",
+        ".claude/skills/playing-live/scripts/session.sh",
+        ".claude/skills/decoding-the-client/scripts/check_facts.py",
+        ".claude/skills/playing-live/scripts/genesis-start.ps1",
+        ".claude/skills/playing-live/SKILL.md",
+        "dev/card.sh",
+        "setup-check",
+      ],
+      dev_module.is_runner,
+    )
+    == [
+      "check",
+      ".github/workflows/check.yml",
+      ".claude/skills/playing-live/scripts/session.sh",
+      ".claude/skills/decoding-the-client/scripts/check_facts.py",
+    ]
 }
 
 pub fn a_module_a_runner_runs_with_dash_m_is_used_test() -> Nil {
@@ -193,12 +218,14 @@ pub fn every_module_in_dev_is_used_or_allowed_with_an_issue_test() -> Nil {
   assert list.length(dev) >= 5 as "the dev modules were not found"
   let runners =
     repository.tracked_paths()
-    |> list.filter(fn(path) {
-      path == "check" || string.starts_with(path, ".github/workflows/")
-    })
+    |> list.filter(dev_module.is_runner)
     |> list.map(fn(path) { SourceFile(path:, text: source.read(path)) })
   assert list.length(runners) >= 2
     as "the check and the workflows were not found"
+  assert list.any(runners, fn(runner) {
+    string.starts_with(runner.path, ".claude/skills/")
+  })
+    as "the skills' scripts were not found"
   assert dev_module.breaches(
       dev:,
       tests: repository.sources(under: ["test"]),
