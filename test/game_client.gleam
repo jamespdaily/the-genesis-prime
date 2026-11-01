@@ -20,7 +20,9 @@ import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/server_hello
 import genesis_prime/message/world_message.{WorldMessage}
 import gleam/list
-import tcp_client.{type Client}
+import gleam/result
+import login_client
+import mug
 
 /// How long a test waits for the server to write the bytes it must, in
 /// milliseconds.
@@ -29,7 +31,7 @@ const wait_ms = 5000
 /// A connection that has sent 0x58F: the socket and the cipher the session
 /// key made.
 pub type Game {
-  Game(socket: Client, cipher: Cipher)
+  Game(socket: mug.Socket, cipher: Cipher)
 }
 
 /// The cipher the client keys from the session key right after sending 0x58F
@@ -96,12 +98,11 @@ pub fn in_the_game_wrapper(outer outer: Frame, cipher cipher: Cipher) -> Frame {
 /// Connects to the game listener and reads its hello: message 3 inside 0x3DC
 /// under the base key, with the build and the message table checksum the client
 /// checks (opcode.0x3).
-pub fn open(port: Int) -> Client {
-  let assert Ok(socket) = tcp_client.connect(port)
-    as "the client could not connect to the game listener"
+pub fn open(port: Int) -> mug.Socket {
+  let socket = login_client.connect(port)
   let assert Ok([outer, ..]) =
     frame_reader.read(have: <<>>, count: 1, next: fn() {
-      tcp_client.receive_some(socket, wait_ms)
+      mug.receive(socket, timeout_milliseconds: wait_ms)
     })
     as "the game server did not greet the client"
   assert outer.message_id == 0x03DC
@@ -119,12 +120,12 @@ pub fn open(port: Int) -> Client {
 /// Answers the hello with 0x58F inside 0x244 under the base key, then keys
 /// the cipher from the session key.
 pub fn answer_hello(
-  socket socket: Client,
+  socket socket: mug.Socket,
   session_key session_key: BitArray,
   account_name account_name: String,
 ) -> Game {
   let assert Ok(Nil) =
-    tcp_client.send(socket, hello_reply(session_key:, account_name:))
+    mug.send(socket, hello_reply(session_key:, account_name:))
     as "the server closed the connection before 0x58F"
   Game(socket:, cipher: session_cipher(session_key:))
 }
@@ -145,10 +146,7 @@ pub fn send(
   body body: BitArray,
 ) -> Nil {
   let assert Ok(Nil) =
-    tcp_client.send(
-      game.socket,
-      client_bytes(message_id:, body:, cipher: game.cipher),
-    )
+    mug.send(game.socket, client_bytes(message_id:, body:, cipher: game.cipher))
     as "the server closed the connection before the message"
   Nil
 }
@@ -195,7 +193,7 @@ pub fn world_body(
 pub fn read(game game: Game, count count: Int) -> List(Frame) {
   let assert Ok(outers) =
     frame_reader.read(have: <<>>, count:, next: fn() {
-      tcp_client.receive_some(game.socket, wait_ms)
+      mug.receive(game.socket, timeout_milliseconds: wait_ms)
     })
     as "the game server did not write the messages"
   assert list.length(outers) == count
@@ -203,12 +201,24 @@ pub fn read(game game: Game, count count: Int) -> List(Frame) {
   list.map(outers, in_the_game_wrapper(_, game.cipher))
 }
 
-/// Whether the server closes the connection within the wait.
+/// Whether the server closes the connection within the wait: what it sends
+/// meanwhile is read and dropped, and a reset counts as a close.
 pub fn closed(game game: Game) -> Bool {
-  tcp_client.await_close(game.socket, wait_ms)
+  case mug.receive(game.socket, timeout_milliseconds: wait_ms) {
+    Ok(_) -> closed(game:)
+    Error(mug.Timeout) -> False
+    Error(mug.Closed) | Error(mug.Econnreset) | Error(mug.Econnaborted) -> True
+    Error(error) ->
+      panic as {
+        "the wait for the server to close ended with "
+        <> mug.describe_error(error)
+      }
+  }
 }
 
-/// Closes the client's end of the connection, as a client that leaves does.
+/// Closes the client's end of the connection, as a client that leaves does. A
+/// connection the server closed first has nothing left to close, so a failed
+/// close is no failure of the test.
 pub fn close(game game: Game) -> Nil {
-  tcp_client.close(game.socket)
+  mug.shutdown(game.socket) |> result.unwrap(Nil)
 }
