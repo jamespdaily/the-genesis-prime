@@ -276,6 +276,15 @@ fn lookup_entries(planted: Planted) -> List(Int) {
   }
 }
 
+/// The file of a table with the right lookup and header, as `in_folder` takes
+/// it: the schema's file name and the bytes of its rows.
+pub fn file(
+  schema schema: Schema,
+  rows rows: List(List(Cell)),
+) -> #(String, BitArray) {
+  #(schema.file, bytes(table(schema:, rows:)))
+}
+
 /// Makes a folder of its own, writes each file into it as `<name>.tbl`, runs
 /// the body with the folder's path, and removes the folder afterwards.
 pub fn in_folder(files: List(#(String, BitArray)), body: fn(String) -> a) -> a {
