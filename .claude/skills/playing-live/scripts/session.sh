@@ -16,12 +16,16 @@
 # the copy, and it is dropped after the verdict, a failed one too: the recordings and the report keep
 # the evidence, and the verdict's lines name the values it compared. --verdict reads genesis_play.
 #
-# --recover refuses while the owner's session.sh still runs. Otherwise, from the owner record, and
-# each step safe to repeat with its outcome printed: it stops the run's client (only when client.pid
-# names a client the run started, by pid and start time), removes the report addon, stops the run's
-# server (by its VM's pid and start time), checks that no process holds the server's ports, drops
-# the run's database and releases the lock. A step that fails is named, the exit is non-zero and the
-# lock stays; recover again once it is dealt with.
+# --recover ends what a lock's owner started, a run or a client.sh start outside one. It refuses
+# while the owner's process still runs, and while the lock has no owner record and is under a minute
+# old (a taker is still writing it). It claims the lock first (live.lock/recovering), so one recovery
+# runs at a time, and holds the claim until the lock is released. From the owner record, each step
+# safe to repeat with its outcome printed: it stops the client (only when client.pid names a client
+# the owner started, by pid and start time), removes the report addon, stops the run's server (by
+# its VM's pid and start time), checks that no process holds the server's ports, drops the run's
+# database (after waiting for a CREATE DATABASE of it that is still running) and releases the lock.
+# A step that fails is named, the exit is non-zero and the lock stays, with the claim given up;
+# recover again once it is dealt with.
 #
 # In order: the server starts in record mode into <folder> (dev_start) and its ready line is awaited;
 # report.sh install, client-log.sh start, client.sh start (logged in from the command line); on the
@@ -32,13 +36,14 @@
 # the client was still running when the session ended. Any miss fails the run.
 #
 # A step that fails part-way still runs, best effort, client.sh stop, report.sh remove and the
-# server's stop, and names each that failed. The server is stopped by the VM's pid, recorded with its
-# start time once the ready line is seen and checked again before it is signalled; before the ready
-# line the launcher's whole process tree is stopped instead. A client.sh start that failed before it
-# recorded a client leaves any WildStar64 alone and is named as a cleanup failure that does not keep
-# the lock: it may be the person's own, and client.sh start refuses while any WildStar64 runs. A
-# failed verdict keeps <folder>/Logs and /Errors, which name the PC's machine: delete them before
-# the folder is committed.
+# server's stop, and names each that failed. The launcher waits for a go file until its pid and start
+# time are recorded, so a run cut off before the record has started no server. The server is stopped
+# by the VM's pid, recorded with its start time once the ready line is seen and checked again before
+# it is signalled; before the ready line the launcher's whole process tree is stopped instead. A
+# client.sh start that failed before it recorded a client leaves any WildStar64 alone and is named as
+# a cleanup failure that does not keep the lock: it may be the person's own, and client.sh start
+# refuses while any WildStar64 runs. A failed verdict keeps <folder>/Logs and /Errors, which name the
+# PC's machine: delete them before the folder is committed.
 #
 # <folder> keeps the recordings, client-start.txt (the client.sh start line), client-end.txt (what
 # client.sh stop found: closed or gone), failures.txt, report.json and verdict.txt. Needs what the
@@ -77,7 +82,7 @@ if [ "$mode" = verdict ]; then
   exit
 fi
 
-client_state=${GENESIS_HOME:-$HOME/.genesis-prime}/client.pid
+client_state=$home/client.pid
 work=
 server_log=
 folder_ready=0
@@ -86,14 +91,8 @@ hold_lock=0
 server_ok=1
 
 # What the run has started, which --recover reads back from the lock's owner record (load_record).
-client_before=
-run_database=
-launcher_pid=
-launcher_started=
-vm_pid=
-vm_started=
-client_touched=0
-addon_touched=0
+record_keys=(client_before run_database launcher_pid launcher_started vm_pid vm_started client_touched addon_touched)
+for key in "${record_keys[@]}"; do printf -v "$key" '%s' ''; done
 
 step() { echo "session: $*"; }
 
@@ -106,19 +105,24 @@ fail() {
   exit 1
 }
 
-# Sets the variable $1 to $2 and records it in the lock's owner record.
+# Sets each variable named in the arguments to the value after it, and records them all in the
+# lock's owner record in one write.
 mark() {
-  printf -v "$1" '%s' "$2"
-  lock_set "$1" "$2"
+  local pairs=("$@")
+  while [ $# -gt 0 ]; do
+    printf -v "$1" '%s' "$2"
+    shift 2
+  done
+  lock_set "${pairs[@]}"
 }
 
-# Reads what the run recorded from the lock's owner record.
+# Reads the lock's owner record: the run's folder and token, and what it recorded.
 load_record() {
   local key
-  for key in folder client_before run_database launcher_pid launcher_started vm_pid vm_started client_touched addon_touched; do
+  for key in folder token "${record_keys[@]}"; do
     printf -v "$key" '%s' "$(lock_get "$key")"
   done
-  lock_token=$(lock_get token)
+  lock_token=$token
 }
 
 launcher_alive() { is_process "$launcher_pid" "$launcher_started"; }
@@ -150,14 +154,14 @@ report_in() { "$scripts/report.sh" collect "$folder" > /dev/null; }
 
 # Records the server's VM, the one beam.smp child of the launcher, with its start time.
 record_vm() {
-  local child found=()
+  local child found=() started
   for child in $(pgrep -P "$launcher_pid" || true); do
     if [ "$(basename "$(ps -o comm= -p "$child" 2>/dev/null || true)")" = beam.smp ]; then found+=("$child"); fi
   done
   [ ${#found[@]} -eq 1 ] || fail "the server's ready line is out, but its process $launcher_pid has ${#found[@]} beam.smp children, not one VM"
-  mark vm_pid "${found[0]}"
-  mark vm_started "$(started_at "$vm_pid")"
-  [ -n "$vm_started" ] || fail "the server's VM $vm_pid ended as it was recorded"
+  started=$(started_at "${found[0]}")
+  [ -n "$started" ] || fail "the server's VM ${found[0]} ended as it was recorded"
+  mark vm_pid "${found[0]}" vm_started "$started"
 }
 
 # The pids below process $1, each with the start time it had when listed, children before their own
@@ -212,14 +216,14 @@ stop_tree() {
 # stops and every recording gets its End), and the launcher is left to end by itself; without one,
 # the launcher's whole process tree is stopped.
 stop_server() {
-  local deadline ended=was_not_running
+  local deadline ended="server: was not running"
   if [ -z "$launcher_pid" ] && [ -z "$vm_pid" ]; then
     step "server: none was started"
     return 0
   fi
   if [ -n "$vm_pid" ]; then
     if is_process "$vm_pid" "$vm_started"; then
-      ended=stopped
+      ended="server: stopped"
       kill -TERM "$vm_pid"
       deadline=$((SECONDS + 75))
       while is_process "$vm_pid" "$vm_started"; do
@@ -234,13 +238,10 @@ stop_server() {
     while launcher_alive && [ "$SECONDS" -lt "$deadline" ]; do sleep 0.5; done
   fi
   if launcher_alive; then
-    ended=stopped
+    ended="server: stopped"
     stop_tree || return 1
   fi
-  case $ended in
-    stopped) step "server: stopped" ;;
-    *) step "server: was not running" ;;
-  esac
+  step "$ended"
 }
 
 # The listeners on the server's ports, printed; fails when there are none.
@@ -290,7 +291,7 @@ stop_run() {
     echo "session: a process still holds one of the server's ports (above); stop it, then run --recover" >&2
     failed+=("a process holds the server's ports")
   fi
-  if [ "$mode" = session ] && [ "$folder_ready" = 1 ]; then rm -f "$folder/since.txt" "$folder"/GenesisReport_0_*.xml; fi
+  if [ "$folder_ready" = 1 ]; then rm -f "$folder/since.txt" "$folder"/GenesisReport_0_*.xml; fi
   if [ -n "$work" ]; then rm -rf "$work"; fi
   stop_status=0
   if [ ${#unconfirmed[@]} -gt 0 ]; then
@@ -325,26 +326,34 @@ make_run_database() {
   step "run database: $name made from $dev_database"
 }
 
-# Drops the run's database, waiting up to 15 s for the server's connections to close. It drops only
-# a name of the form the run makes, so a damaged record never reaches genesis_play.
+# Drops the run's database, forcing off the connections still open to it, once no CREATE DATABASE
+# of it is still running (a run cut off in the copy leaves its psql finishing it: the wait is up to
+# 60 s). It drops only a name of the form the run makes, so a damaged record never reaches
+# genesis_play.
 drop_database() {
   [ -n "$run_database" ] || { step "run database: none was made"; return 0; }
   if [[ ! $run_database =~ ^genesis_run_[0-9]+_[0-9]+$ ]]; then
     echo "session: run database: the recorded name '$run_database' is not one a run makes; left alone" >&2
     return 1
   fi
-  local deadline=$((SECONDS + 15)) found err
-  found=$(admin_psql -c "select 1 from pg_database where datname = '$run_database'") \
-    || { echo "session: run database: could not ask Postgres whether $run_database exists" >&2; return 1; }
-  [ -n "$found" ] || { step "run database: $run_database is not there"; return 0; }
-  until err=$(admin_psql -c "drop database $run_database" 2>&1); do
+  local deadline=$((SECONDS + 60)) creating=0 out
+  while :; do
+    out=$(admin_psql -c "select count(*) from pg_stat_activity where state = 'active' and pid <> pg_backend_pid() and strpos(query, 'CREATE DATABASE $run_database ') > 0") \
+      || { echo "session: run database: could not ask Postgres whether $run_database is being made" >&2; return 1; }
+    [ "$out" != 0 ] || break
     if [ "$SECONDS" -ge "$deadline" ]; then
-      echo "session: run database: could not drop $run_database: $err" >&2
+      echo "session: run database: a CREATE DATABASE of $run_database still runs after 60 s" >&2
       return 1
     fi
+    if [ "$creating" = 0 ]; then step "run database: waiting for the CREATE DATABASE of $run_database to end"; creating=1; fi
     sleep 1
   done
-  step "run database: $run_database dropped"
+  out=$(admin_psql -c "DROP DATABASE IF EXISTS $run_database WITH (FORCE)" 2>&1) \
+    || { echo "session: run database: could not drop $run_database: $out" >&2; return 1; }
+  case $out in
+    *"does not exist"*) step "run database: $run_database is not there" ;;
+    *) step "run database: $run_database dropped" ;;
+  esac
 }
 
 # Drops the run's database once the server has stopped, then releases the lock unless a step left
@@ -365,30 +374,54 @@ drop_run() {
   step "the lock is released"
 }
 
-# Finishes a run that was cut off, from the lock's owner record.
-recover() {
-  [ -d "$lock_dir" ] || { step "no lock at $lock_dir; nothing to recover"; return 0; }
-  if [ ! -s "$lock_owner" ]; then
-    rm -rf "$lock_dir"
-    step "the lock had no owner record, so no run had started anything; it is released"
-    return 0
-  fi
-  if lock_owner_alive; then
-    echo "session: the run in $(lock_get folder) still runs (session.sh process $(lock_get pid)); --recover ends only a run that was cut off" >&2
-    return 1
-  fi
-  load_record
-  step "ending the run in $folder (session.sh process $(lock_get pid), commit $(lock_get commit))"
+# Ends everything the run started, then releases the lock; returns 1 when any of it failed.
+end_run() {
   local status=0
   stop_run || status=1
   drop_run || status=1
   return "$status"
 }
 
+# Finishes what a lock's owner started, from the lock's owner record, holding the recovery claim
+# from before it reads the record until the lock is released (or, on a failure, until this script
+# ends).
+recover() {
+  [ -d "$lock_dir" ] || { step "no lock at $lock_dir; nothing to recover"; return 0; }
+  local seen
+  if [ -s "$lock_owner" ]; then
+    if lock_owner_alive; then lock_refuse; return 1; fi
+  elif ! lock_ownerless_for_a_minute; then
+    lock_refuse
+    return 1
+  fi
+  seen=$(lock_get token)
+  if ! mkdir "$lock_claim" 2> /dev/null; then
+    if [ -d "$lock_claim" ]; then
+      echo "session: another --recover holds $lock_claim; when none runs (one was cut off), remove it and recover again" >&2
+      return 1
+    fi
+    step "the lock was released meanwhile; nothing to recover"
+    return 0
+  fi
+  trap 'rmdir "$lock_claim" 2> /dev/null || true' EXIT
+  if [ "$(lock_get token)" != "$seen" ]; then
+    echo "session: the lock changed hands as it was claimed; run --recover again" >&2
+    return 1
+  fi
+  if [ -z "$seen" ]; then
+    rm -rf "$lock_dir"
+    step "the lock had no owner record and was over a minute old, so nothing had been started; it is released"
+    return 0
+  fi
+  load_record
+  export GENESIS_LIVE_LOCK_TOKEN=$lock_token
+  step "ending what the lock's owner started: $(lock_get kind) in '$folder', process $(lock_get pid), commit $(lock_get commit)"
+  end_run
+}
+
 if [ "$mode" = recover ]; then
-  status=0
-  recover || status=$?
-  exit "$status"
+  recover || exit 1
+  exit
 fi
 
 : "${GENESIS_PLAY_ADDRESS:?set GENESIS_PLAY_ADDRESS (this machine's address on the PC's network) in ~/.genesis-prime/env.sh}"
@@ -396,22 +429,19 @@ export GENESIS_GAME_ADDRESS=$GENESIS_PLAY_ADDRESS GENESIS_REALM_NAME=Genesis
 
 mkdir -p "$folder"
 folder=$(cd "$folder" && pwd)
-lock_take "$folder" || exit 2
+lock_take run "$folder" || exit 2
 export GENESIS_LIVE_LOCK_TOKEN=$lock_token
 work=$(mktemp -d)
 server_log=$work/server.log
 
 on_exit() {
   local status=$?
-  stop_run || { [ "$status" -ne 0 ] || status=1; }
-  drop_run || { [ "$status" -ne 0 ] || status=1; }
+  end_run || { [ "$status" -ne 0 ] || status=1; }
   exit "$status"
 }
 trap on_exit EXIT
 
-mark client_before "$(cat "$client_state" 2>/dev/null || true)"
-mark client_touched 0
-mark addon_touched 0
+mark client_before "$(cat "$client_state" 2>/dev/null || true)" client_touched 0 addon_touched 0
 if [ -n "$(ls -A "$folder")" ]; then
   echo "session: $folder holds files; a session needs an empty folder, so no old recording mixes in" >&2
   exit 2
@@ -427,9 +457,17 @@ make_run_database
 export PGDATABASE=$run_database
 
 step "starting the server in record mode into $folder"
-gleam run -m genesis_prime/dev_start -- "$folder" > "$server_log" 2>&1 &
-mark launcher_pid "$!"
-mark launcher_started "$(started_at "$launcher_pid")"
+# The launcher waits for the go file, so its pid and start time are recorded before the server runs
+# anything; it gives up when this script is gone.
+{
+  until [ -e "$work/go" ]; do
+    kill -0 "$$" 2> /dev/null || exit 1
+    sleep 0.1
+  done
+  exec gleam run -m genesis_prime/dev_start -- "$folder"
+} > "$server_log" 2>&1 &
+mark launcher_pid "$!" launcher_started "$(started_at "$!")"
+touch "$work/go"
 wait_until 0.5 180 "the server's ready line" server_said "serves the STS login on port"
 record_vm
 

@@ -23,8 +23,9 @@
 #   read_state                   reads the pid and start time (a file time in UTC) of the client that
 #                                client.sh start recorded in $state (client.pid beside env.sh) into
 #                                $pid and $started; ends the script when none is recorded
-# A trap on EXIT deletes only the tasks and files this run used, in one ssh, and fails when any is
-# still on the PC or the PC cannot be reached. A run that used none (stop) does not call the PC.
+# A trap on EXIT first calls the caller's before_finish <status> when it defines one (client.sh gives
+# back a lock it took for a start that failed), then deletes only the tasks and files this run used,
+# in one ssh, and fails when any is still on the PC or the PC cannot be reached. A run that used none (stop) does not call the PC.
 # PowerShell runs without -ExecutionPolicy Bypass: the PC's CurrentUser policy is RemoteSigned.
 
 home=${GENESIS_HOME:-$HOME/.genesis-prime}
@@ -135,6 +136,7 @@ EOF
 # Deletes this run's tasks and files, and checks they are gone: 255 means the PC cannot be reached.
 finish() {
   local status=$? cmd='' name task out query=0
+  if declare -F before_finish > /dev/null; then before_finish "$status"; fi
   rm -rf "$pc_tmp"
   if [ ${#pc_tasks[@]} -gt 0 ] || [ ${#pc_files[@]} -gt 0 ]; then
     if [ ${#pc_tasks[@]} -gt 0 ]; then
