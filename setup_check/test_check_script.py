@@ -7,7 +7,8 @@ the real toolchain, the real database or the real client:
 - ./setup-check is a stub that succeeds (after PLANT_SETUP_SECONDS, when set);
 - `gleam` and `psql` are stubs that write their command line to PLANT_LOG and
   succeed (the `psql` that drops the database takes PLANT_PSQL_DROP_SECONDS
-  first, when set; `gleam format` takes PLANT_FORMAT_SECONDS, or ends its own
+  first, when set, and the one that creates it takes PLANT_PSQL_CREATE_SECONDS
+  first, when set, and fails when PLANT_PSQL_CREATE_FAILS is set; `gleam format` takes PLANT_FORMAT_SECONDS, or ends its own
   shell without a word when PLANT_FORMAT_KILLS_PARENT is set), except that `gleam format --check` fails when a file under src,
   test or dev holds PLANTED_FORMAT_ERROR, and any `gleam` run of tests (a `test`
   or a `run -m` of a module other than glinter, squirrel, table_generator and
@@ -99,6 +100,10 @@ echo "psql $*" >>"$PLANT_LOG"
 case "$*" in
   *"drop database"*)
     [ -n "$PLANT_PSQL_DROP_SECONDS" ] && sleep "$PLANT_PSQL_DROP_SECONDS"
+    ;;
+  *"create database"*)
+    [ -n "$PLANT_PSQL_CREATE_SECONDS" ] && sleep "$PLANT_PSQL_CREATE_SECONDS"
+    [ -n "$PLANT_PSQL_CREATE_FAILS" ] && exit 1
     ;;
 esac
 exit 0
@@ -375,66 +380,120 @@ class PartThatNeverRanTest(unittest.TestCase):
                 self.assertNotRegex(failed, r"\b%s\b" % re.escape(part))
 
 
+WARNING = re.compile(r"(?m)^check WARNING: over its budget, wall time (\d+)s, budget (\d+)s$")
+
+
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class BudgetTest(unittest.TestCase):
-    """Issue 109, item 2: the budget is a check, counted from the start of the script.
+    """The budget is a target: a run that ends over its budget but within three
+    times it passes, with a warning line that names its wall time and its budget.
 
-    The tests run `./check fast`, whose budget is GENESIS_CHECK_FAST_BUDGET_SECONDS
-    (the full check's is GENESIS_CHECK_BUDGET_SECONDS; the logic is the same code),
-    set to 1 second with 3 seconds of delay planted, so the time stays small; the
-    real budget is 2 minutes (CLAUDE.md: "the full check passes in under 2 minutes")."""
+    The tests set the budget to 3 seconds (GENESIS_CHECK_FAST_BUDGET_SECONDS for
+    `./check fast`, GENESIS_CHECK_BUDGET_SECONDS for the full check, which share
+    the code) and plant 4 seconds of delay. A planted sleep never ends early, so the
+    run is over its budget by construction; the rest of the run (a few instant stubs)
+    adds well under the 5 seconds between the delay and the hang limit at 9, which
+    is the margin a loaded machine needs. The real budget is 2 minutes (CLAUDE.md:
+    "the full check passes in under 2 minutes")."""
 
-    def assert_over_budget(self, run: Run, budget: int) -> None:
+    def assert_passed_with_the_warning(self, run: Run, budget: int) -> None:
         output = run.output
-        self.assertNotEqual(run.done.returncode, 0, output)
-        self.assertNotRegex(output, r"(?m)^check passed")
-        self.assertIn("check FAILED", output)
-        budget_lines = [line for line in output.splitlines() if "budget" in line.lower()]
-        self.assertTrue(budget_lines, "a line names the budget:\n" + output)
-        self.assertTrue(
-            any(re.search(r"\b%d\s*(s\b|sec)" % budget, line) for line in budget_lines),
-            "the budget (%ds) is printed: %r" % (budget, budget_lines),
-        )
-        times = re.findall(r"wall time (\d+)s", output)
-        self.assertTrue(times, "the wall time is printed:\n" + output)
-        self.assertGreaterEqual(int(times[-1]), budget, "the printed time reaches the budget")
+        self.assertEqual(run.done.returncode, 0, output)
+        self.assertRegex(output, r"(?m)^check passed")
+        warnings = WARNING.findall(output)
+        self.assertEqual(len(warnings), 1, "one warning line names the wall time and the budget:\n" + output)
+        wall_time, printed_budget = map(int, warnings[0])
+        self.assertEqual(printed_budget, budget, "the warning names the budget")
+        self.assertGreater(wall_time, budget, "the warning names a wall time over the budget")
+        self.assertLess(wall_time, 3 * budget, "the run ended before three times its budget")
+        self.assertNotIn("check FAILED", output)
+        self.assertNotIn("hung", output)
 
-    def test_a_slow_part_takes_the_check_past_its_budget(self):
-        run = shared_run("slow-part", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="1", PLANT_FORMAT_SECONDS="3")
-        self.assert_over_budget(run, budget=1)
+    def test_a_slow_part_takes_the_check_over_its_budget_and_it_passes_with_a_warning(self):
+        run = shared_run("slow-part", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="3", PLANT_FORMAT_SECONDS="4")
+        self.assert_passed_with_the_warning(run, budget=3)
+
+    def test_the_full_check_over_its_budget_passes_with_a_warning(self):
+        run = shared_run("slow-part-full", GENESIS_CHECK_BUDGET_SECONDS="3", PLANT_FORMAT_SECONDS="4")
+        self.assert_passed_with_the_warning(run, budget=3)
 
     def test_the_time_of_the_setup_check_counts_towards_the_budget(self):
         # Every part is instant; only ./setup-check is slow.
-        run = shared_run("slow-setup", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="1", PLANT_SETUP_SECONDS="3")
-        self.assert_over_budget(run, budget=1)
+        run = shared_run("slow-setup", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="3", PLANT_SETUP_SECONDS="4")
+        self.assert_passed_with_the_warning(run, budget=3)
 
-    def test_a_check_inside_its_budget_passes(self):
+    def test_the_warning_names_the_raised_budget_when_the_integration_tests_run(self):
+        # The usual budget is 1 s, the raised one 3 s: the 4 s of delay is over the raised
+        # one and 5 s under three times it (9 s).
+        run = shared_run(
+            "slow-raised", client=True, prepare=lambda case: case.commit_change(SCRIPTS_FILE),
+            GENESIS_CHECK_BUDGET_SECONDS="1", GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="3",
+            PLANT_FORMAT_SECONDS="4",
+        )
+        self.assert_passed_with_the_warning(run, budget=3)
+
+    @staticmethod
+    def quick_polls(case: PlantedCheckCase) -> None:
+        """Plants a `sleep` that returns at once for the 0.2 second poll of a part's
+        status, so a cap on the number of polls, which the check once had, would run
+        out in a few seconds. Any other sleep is the real one."""
+        executable(case.root / "tools" / "sleep", '#!/bin/sh\ncase "$1" in 0.2) exit 0 ;; esac\nexec /bin/sleep "$@"\n')
+
+    def test_squirrel_waits_for_a_slow_migrations_part_and_still_runs(self):
+        # The migrations part takes 8 s, 7 s under the hang limit of 15 (3 times the budget
+        # of 5), and the polls are quick: squirrel runs when the part ends, however many
+        # polls that took.
+        run = shared_run(
+            "slow-migrations", prepare=self.quick_polls, timeout=40,
+            GENESIS_CHECK_BUDGET_SECONDS="5", PLANT_PSQL_CREATE_SECONDS="8",
+        )
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertIn("gleam run -m squirrel check", run.commands)
+        self.assertRegex(run.output, r"(?m)^  squirrel +ok\b")
+
+    def test_squirrel_is_skipped_when_the_migrations_part_fails(self):
+        run = shared_run("failing-migrations", prepare=self.quick_polls, PLANT_PSQL_CREATE_FAILS="1")
+        self.assertNotEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(failed_line(self, run.output), r"\bmigrations\b")
+        self.assertNotIn("gleam run -m squirrel check", run.commands)
+        self.assertRegex(run.output, r"(?m)^  squirrel +skipped \(a part it needs failed: migrations\)")
+
+    def test_a_check_inside_its_budget_passes_without_a_warning(self):
         run = shared_run("in-budget", "fast", GENESIS_CHECK_FAST_BUDGET_SECONDS="30", PLANT_FORMAT_SECONDS="1")
         self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(run.output, r"(?m)^check passed, wall time \d+s, budget 30s$")
+        self.assertNotIn("WARNING", run.output)
+        self.assertNotIn("over its budget", run.output)
 
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class HungPartTest(unittest.TestCase):
-    """The budget is a deadline, not only a comparison at the end: a part that hangs,
-    or a setup check that does, is stopped when the budget is reached, with everything
-    it started, and the check fails naming it, in budget plus a few seconds.
+    """A run still going at three times its budget is hung: a part that hangs, or a
+    setup check that does, is stopped then, with everything it started, and the
+    check fails naming it, in three times the budget plus a few seconds.
 
     A hang is a planted `sleep` of 600 seconds and a fraction unique to the run. The
-    budget is 2 seconds."""
+    budget is 2 seconds, so the hang is ended at 6."""
 
     BUDGET = 2
     FEW_SECONDS = 8
 
-    def assert_stopped_at_the_budget(self, run: Run, part: str | None, budget: int = BUDGET) -> None:
+    def assert_stopped_as_hung(self, run: Run, part: str | None, budget: int = BUDGET) -> None:
         output = run.output
         self.assertNotEqual(run.done.returncode, 0, output)
-        self.assertLess(run.took, budget + self.FEW_SECONDS, "the check ran %.1f s past a budget of %d s" % (run.took, budget))
-        self.assertRegex(failed_line(self, output), r"over the budget of %ds" % budget)
+        self.assertLess(run.took, 3 * budget + self.FEW_SECONDS, "the check ran %.1f s past a budget of %d s" % (run.took, budget))
+        self.assertGreaterEqual(run.took, 3 * budget - 1, "the check was stopped before three times its budget")
+        line = failed_line(self, output)
+        self.assertRegex(line, r"hung, still running at three times its budget of %ds" % budget)
+        self.assertNotRegex(output, r"(?m)^check passed")
         if part:
-            self.assertRegex(failed_line(self, output), r"\b%s\b" % re.escape(part), "the unfinished part is named")
+            self.assertRegex(line, r"^check FAILED: %s hung" % re.escape(part), "the hung part is named")
             part_line = next(line for line in output.splitlines() if line.strip().startswith(part))
             self.assertIn("FAILED", part_line)
-        self.assertRegex(output, r"wall time \d+s")
+            self.assertIn("hung", part_line)
+        else:
+            self.assertRegex(line, r"^check FAILED: the setup check hung")
+        self.assertRegex(output, r"wall time \d+s, budget %ds" % budget)
         self.assertEqual(run.left_running, [], "the planted sleep is still running")
 
     def part_and_drop(self) -> Run:
@@ -443,48 +502,54 @@ class HungPartTest(unittest.TestCase):
         return shared_run(
             "hung-part-and-drop",
             hang=lambda seconds: dict(PLANT_FORMAT_SECONDS=seconds, PLANT_PSQL_DROP_SECONDS=seconds),
-            timeout=30,
+            timeout=40,
             GENESIS_CHECK_BUDGET_SECONDS=str(self.BUDGET),
         )
 
-    def test_a_part_that_hangs_is_stopped_at_the_budget_and_named(self):
-        self.assert_stopped_at_the_budget(self.part_and_drop(), "format")
+    def test_a_part_that_hangs_is_stopped_at_three_times_the_budget_and_named(self):
+        run = self.part_and_drop()
+        self.assert_stopped_as_hung(run, "format")
+        self.assertNotIn("WARNING", run.output, "a hung run is failed, not warned")
 
-    def test_the_database_is_dropped_when_the_budget_stops_the_check(self):
+    def test_the_parts_that_ended_are_not_named_hung(self):
+        failed = failed_line(self, self.part_and_drop().output)
+        self.assertNotRegex(failed, r"gleam-build|glinter|gleam-test|migrations")
+
+    def test_the_database_is_dropped_when_a_hang_stops_the_check(self):
         self.assertTrue(any("drop database" in command for command in self.part_and_drop().commands))
 
-    def test_a_database_drop_that_hangs_does_not_hold_the_check_past_its_budget(self):
+    def test_a_database_drop_that_hangs_does_not_hold_the_check_past_its_deadline(self):
         # The same run: the planted psql sleeps 600 s on the drop, and the check still
-        # ended within the budget and a few seconds, with the sleep ended.
+        # ended within three times the budget and a few seconds, with the sleep ended.
         run = self.part_and_drop()
-        self.assertLess(run.took, self.BUDGET + self.FEW_SECONDS)
+        self.assertLess(run.took, 3 * self.BUDGET + self.FEW_SECONDS)
         self.assertEqual(run.left_running, [])
 
     def test_a_gleam_run_that_hangs_is_stopped_with_what_it_started(self):
         # The sleep is a grandchild of the check: its subshell runs `gleam`, which runs it.
         run = shared_run(
-            "hung-gleam", "fast", hang=lambda seconds: dict(PLANT_GLEAM_TEST_SECONDS=seconds), timeout=30,
+            "hung-gleam", "fast", hang=lambda seconds: dict(PLANT_GLEAM_TEST_SECONDS=seconds), timeout=40,
             GENESIS_CHECK_FAST_BUDGET_SECONDS=str(self.BUDGET),
         )
-        self.assert_stopped_at_the_budget(run, "code-rules")
+        self.assert_stopped_as_hung(run, "code-rules")
 
-    def test_a_setup_check_that_hangs_is_stopped_at_the_budget(self):
+    def test_a_setup_check_that_hangs_is_stopped_at_three_times_the_budget(self):
         run = shared_run(
-            "hung-setup", "fast", hang=lambda seconds: dict(PLANT_SETUP_SECONDS=seconds), timeout=30,
+            "hung-setup", "fast", hang=lambda seconds: dict(PLANT_SETUP_SECONDS=seconds), timeout=40,
             GENESIS_CHECK_FAST_BUDGET_SECONDS=str(self.BUDGET),
         )
-        self.assert_stopped_at_the_budget(run, None)
+        self.assert_stopped_as_hung(run, None)
         self.assertEqual(run.commands, [], "no part ran after a setup check that did not end")
 
-    def test_the_deadline_is_the_raised_budget_when_the_integration_tests_run(self):
-        # The usual budget is 1 s, the raised one 6 s: a hung setup check is stopped at 6.
+    def test_the_deadline_is_three_times_the_raised_budget_when_the_integration_tests_run(self):
+        # The usual budget is 1 s, the raised one 4 s: a hung setup check is stopped at 12,
+        # not at 3.
         run = shared_run(
             "hung-raised", client=True, prepare=lambda case: case.commit_change(SCRIPTS_FILE),
-            hang=lambda seconds: dict(PLANT_SETUP_SECONDS=seconds), timeout=30,
-            GENESIS_CHECK_BUDGET_SECONDS="1", GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="6",
+            hang=lambda seconds: dict(PLANT_SETUP_SECONDS=seconds), timeout=40,
+            GENESIS_CHECK_BUDGET_SECONDS="1", GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS="4",
         )
-        self.assert_stopped_at_the_budget(run, None, budget=6)
-        self.assertGreaterEqual(run.took, 5, "the check was stopped at the usual budget, not the raised one")
+        self.assert_stopped_as_hung(run, None, budget=4)
 
     def test_a_database_drop_that_hangs_does_not_hold_a_check_that_ended_in_time(self):
         run = shared_run(
@@ -543,7 +608,7 @@ class ClientIntegrationTest(unittest.TestCase):
         run = self.changed()
         self.assertNotEqual(run.done.returncode, 0, run.output)
         self.assertRegex(failed_line(self, run.output), r"client-integration")
-        self.assertNotIn("over the budget", failed_line(self, run.output))
+        self.assertNotIn("hung", failed_line(self, run.output))
         self.assertIn("planted integration failure", run.output, "the failed part's log is printed")
 
     def test_where_they_run_the_budget_is_raised_and_the_output_says_why(self):

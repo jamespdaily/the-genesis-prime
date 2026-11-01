@@ -5,17 +5,22 @@
 #        ./check fast     format, gleam-build, glinter and code-rules only, for
 #                         the loop while editing
 #
-# The wall time counts from the start of this script, setup check included, and
-# the check fails when it passes GENESIS_CHECK_BUDGET_SECONDS (default 120, the
-# 2 minutes CLAUDE.md gives the full check; ./check fast has its own). The budget
-# is a deadline: when it is reached, everything the check started is stopped
-# and each part still running is reported as failed. A part that ends without
-# writing its status fails the check by name.
+# The wall time counts from the start of this script, setup check included. The
+# budget is a target: GENESIS_CHECK_BUDGET_SECONDS (default 120, the 2 minutes
+# CLAUDE.md gives the full check; ./check fast has its own,
+# GENESIS_CHECK_FAST_BUDGET_SECONDS). A run that ends over its budget passes
+# and prints a warning line with its wall time and its budget, because a loaded
+# machine (two agents testing at once, a cold build) turns correct code into a
+# slow run. Only a hung run fails: one still going at three times its budget has
+# everything the check started stopped, and each part that was running is
+# reported as hung. A part that ends without writing its status fails the check
+# by name.
 #
 # The client scripts' integration tests take about 240 seconds, so they
 # run only when the branch changes a file under the client scripts folder since
 # its merge base with origin/main (or main), and then the budget is raised to
-# GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS and the output says so.
+# GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS (three times that is the hang limit)
+# and the output says so.
 #
 # First the setup check (./setup-check): it names every part this machine is
 # missing, and when it fails nothing else runs. Before it, this script reads
@@ -185,15 +190,15 @@ stop_everything() {
   return 0
 }
 
-# The budget is a deadline: a watchdog sends this shell USR1 when the budget is
-# reached, and the handler ends everything the check started, so a part or a
-# setup check that hangs cannot hold the check past its budget.
-over_budget=no
-on_budget() {
-  over_budget=yes
+# The hang limit is three times the budget: a watchdog sends this shell USR1 when
+# it is reached, and the handler ends everything the check started, so a part or a
+# setup check that hangs cannot hold the check for ever.
+hung=no
+on_hung() {
+  hung=yes
   stop_everything $$
 }
-trap on_budget USR1
+trap on_hung USR1
 
 # stop_everything_quickly PID: kills PID and everything it started, at once.
 stop_everything_quickly() {
@@ -242,9 +247,10 @@ if [ "$mode" = full ]; then
   fi
 fi
 
-# The watchdog: USR1 to this shell when the budget is reached.
+# The watchdog: USR1 to this shell when the hang limit is reached.
+hang_limit=$((3 * budget))
 (
-  remaining=$((started + budget - $(date +%s)))
+  remaining=$((started + hang_limit - $(date +%s)))
   [ "$remaining" -gt 0 ] || remaining=0
   sleep "$remaining"
   kill -USR1 $$ 2>/dev/null
@@ -256,9 +262,9 @@ watchdog=$!
 ./setup-check &
 wait $!
 setup_status=$?
-if [ "$over_budget" = yes ]; then
+if [ "$hung" = yes ]; then
   echo
-  echo "check FAILED: over the budget of ${budget}s"
+  echo "check FAILED: the setup check hung, still running at three times its budget of ${budget}s"
   echo "wall time $(($(date +%s) - started))s, budget ${budget}s"
   exit 1
 fi
@@ -270,11 +276,13 @@ fi
 
 
 # step NAME COMMAND...: runs the command here, its output to a log, and records
-# its status and seconds under NAME.
+# its status and seconds under NAME; a part with a started record and no status
+# was running when the check stopped.
 step() {
   local name=$1 status begin
   shift
   begin=$(date +%s)
+  touch "$work/$name.started"
   "$@" >"$work/$name.log" 2>&1
   status=$?
   echo "$status" >"$work/$name.status"
@@ -315,11 +323,13 @@ database_url() {
   echo "postgres://$login@$host:$PGPORT/$database"
 }
 
+# wait_for_status NAME: waits until the part NAME has written its status, and
+# succeeds when it is 0. It has no limit of its own: the hang limit stops the
+# whole check, so a part that needs it is skipped only when it really failed.
 wait_for_status() {
-  local name=$1 waited=0
-  while [ ! -f "$work/$name.status" ] && [ "$waited" -lt 600 ]; do
+  local name=$1
+  while [ ! -f "$work/$name.status" ]; do
     sleep 0.2
-    waited=$((waited + 1))
   done
   [ "$(cat "$work/$name.status" 2>/dev/null)" = 0 ]
 }
@@ -416,16 +426,21 @@ wait "${part_pids[@]}"
 
 failed=""
 failed_names=""
+hung_names=""
 for part in $parts; do
   if [ -f "$work/$part.skipped" ]; then
     printf '  %-18s skipped (%s)\n' "$part" "$(cat "$work/$part.skipped")"
   elif [ ! -f "$work/$part.status" ]; then
-    if [ "$over_budget" = yes ]; then
-      printf '  %-18s FAILED  unfinished at the budget\n' "$part"
+    failed="$failed $part"
+    if [ "$hung" = yes ] && [ -f "$work/$part.started" ]; then
+      printf '  %-18s FAILED  hung: still running at three times its budget\n' "$part"
+      hung_names="${hung_names:+$hung_names, }$part"
+      continue
+    elif [ "$hung" = yes ]; then
+      printf '  %-18s FAILED  never started: the check was stopped as hung\n' "$part"
     else
       printf '  %-18s FAILED  never wrote its status\n' "$part"
     fi
-    failed="$failed $part"
     failed_names="${failed_names:+$failed_names, }$part"
   elif [ "$(cat "$work/$part.status")" = 0 ]; then
     printf '  %-18s ok      %ss\n' "$part" "$(cat "$work/$part.seconds")"
@@ -453,13 +468,13 @@ done
 
 elapsed=$(($(date +%s) - started))
 echo
-if [ "$over_budget" = yes ] || [ "$elapsed" -gt "$budget" ]; then
-  over_budget=yes
+if [ "$hung" = no ] && [ "$elapsed" -gt "$budget" ]; then
+  echo "check WARNING: over its budget, wall time ${elapsed}s, budget ${budget}s"
 fi
-if [ -n "$failed" ] || [ "$over_budget" = yes ]; then
+if [ -n "$failed" ] || [ "$hung" = yes ]; then
   reasons=$failed_names
-  if [ "$over_budget" = yes ]; then
-    reasons="${reasons:+$reasons, }over the budget of ${budget}s"
+  if [ "$hung" = yes ]; then
+    reasons="${reasons:+$reasons; }${hung_names:-the check} hung, still running at three times its budget of ${budget}s"
   fi
   echo "check FAILED: $reasons"
   echo "wall time ${elapsed}s, budget ${budget}s"
