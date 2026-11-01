@@ -5,9 +5,9 @@
 //// - The recordings in `test/rule_recording/2026-11-01-full-session`: a live
 ////   login of the real client through the STS, auth and game servers. Their
 ////   socket reads, as the inputs of each connection's rule: the STS
-////   connection's reads 1, 2 and 4 are the clear requests Connect, LoginStart
-////   and KeyData, and its reads 5, 7, 8, 9, 10 and 11 (90, 195, 227, 208, 31 and 208 bytes) are
-////   ciphered; the auth connection's read 1 is one login request in its
+////   connection's first requests are Connect, LoginStart and KeyData in the
+////   clear, and the rest are ciphered; how the network cuts them into reads
+////   differs from run to run. The auth connection's read 1 is one login request in its
 ////   wrapper; the game connection's read 1 holds 0x058F, 0x07E0 and a 0x038C,
 ////   all under the session key after the first.
 //// - The log lines the game rule wrote while it took those reads, kept in the
@@ -113,24 +113,28 @@ pub fn the_login_session_holds_the_platform_logins_clear_requests_and_its_deciph
   use <- owned_test.run(30_000)
   let assert StsRead(requests:) = read(sts_file)
     as "the STS connection reads as requests"
+  // A read's number depends on how the network cut the client's bytes (one
+  // run's Connect and LoginStart arrived in one read), so the requests are
+  // checked in order, not by read.
   let assert [
-    #(1, Decoded(sts_message.ConnectionOpened(..))),
-    #(2, Decoded(sts_message.Transaction(sequence: 1, request: login_start))),
-    #(
-      4,
-      Decoded(sts_message.Transaction(
-        sequence: 2,
-        request: sts_message.KeyData(..),
-      )),
-    ),
-    #(5, Decoded(sts_message.Transaction(sequence: 3, request: finish))),
-    #(7, Decoded(sts_message.Transaction(sequence: 4, request: accounts))),
-    #(8, Decoded(sts_message.Transaction(sequence: 5, request: token))),
-    #(9, NoDecoder(protocol: "Auth", command: "PageVerifiedIps")),
-    #(10, Decoded(sts_message.Ping)),
-    #(11, NoDecoder(protocol: "Auth", command: "PageVerifiedIps")),
-  ] = requests
-    as "Connect, LoginStart and KeyData in the clear in reads 1, 2 and 4, then the six ciphered reads 5, 7, 8, 9, 10 and 11 deciphered: LoginFinish, ListMyAccounts, RequestGameToken, a PageVerifiedIps (which the client asks every 30 s while it plays, and the rule logs as unhandled), a Ping and another PageVerifiedIps"
+    Decoded(sts_message.ConnectionOpened(..)),
+    Decoded(sts_message.Transaction(sequence: 1, request: login_start)),
+    Decoded(sts_message.Transaction(
+      sequence: 2,
+      request: sts_message.KeyData(..),
+    )),
+    Decoded(sts_message.Transaction(sequence: 3, request: finish)),
+    Decoded(sts_message.Transaction(sequence: 4, request: accounts)),
+    Decoded(sts_message.Transaction(sequence: 5, request: token)),
+    ..playing
+  ] = list.map(requests, fn(read) { read.1 })
+    as "Connect, LoginStart and KeyData in the clear, then deciphered LoginFinish, ListMyAccounts and RequestGameToken, in that order"
+  assert playing != []
+    && list.all(playing, fn(request) {
+      request == NoDecoder(protocol: "Auth", command: "PageVerifiedIps")
+      || request == Decoded(sts_message.Ping)
+    })
+    as "while the client plays it sends only PageVerifiedIps (every 30 s; the rule logs it as unhandled) and Pings"
   assert finish == sts_message.LoginFinish
     as "the request after the proof is LoginFinish"
   let assert sts_message.LoginStart(login_name:, ..) = login_start
