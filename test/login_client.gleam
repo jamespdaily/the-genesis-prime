@@ -15,12 +15,12 @@ import genesis_prime/login/rc4
 import genesis_prime/login/sts_xml
 import genesis_prime/message/server_hello
 import gleam/bit_array
+import gleam/crypto
 import gleam/int
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import mug
 import scripted_client.{type Reply}
-import seeded
 
 /// How long a test waits for the server to write the bytes it must, in
 /// milliseconds.
@@ -174,7 +174,7 @@ pub fn srp_exchange(
   let assert Ok(server_key_data) =
     bit_array.base64_decode(child(reply: started.reply, name: "KeyData"))
     as "KeyData is base64"
-  let #(secret, _) = seeded.bytes(state: seed, count: 32)
+  let secret = crypto.hash(crypto.Sha256, <<seed:size(64)>>)
   let assert Ok(exchange) =
     scripted_client.exchange(name:, password:, secret:, server_key_data:)
     as "the server's key data is the salt and B"

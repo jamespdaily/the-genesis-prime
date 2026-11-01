@@ -7,11 +7,12 @@
 //// `06 00 00 00 e0 07` (fact file, opcode.0x7e0) and for the 0x244 wrapper
 //// header `0c 00 00 00 44 02` (vector.opcode.0x7e0.frame).
 
+import body_generator
 import genesis_prime/connection/frame.{Frame}
 import gleam/bit_array
 import gleam/int
 import owned_test
-import seeded
+import qcheck
 
 fn encoded(message_id: Int, body: BitArray) -> BitArray {
   let assert Ok(bytes) = frame.encode(message_id:, body:)
@@ -47,19 +48,14 @@ pub fn a_frame_decodes_to_the_message_it_was_encoded_from_test() -> Nil {
 }
 
 pub fn encoding_then_decoding_gives_every_frame_back_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(60_000)
   let largest_body = frame.size_limit - frame.header_size
-  let checked =
-    int.range(from: 1, to: 201, with: #(1, 0), run: fn(state, _case) {
-      let #(random, checked) = state
-      let #(id, random) = seeded.up_to(state: random, most: 0xFFFF)
-      let #(length, random) = seeded.up_to(state: random, most: largest_body)
-      let #(body, random) = seeded.bytes(state: random, count: length)
-      assert frame.decode(encoded(id, body)) == Ok(#([Frame(id, body)], <<>>))
-        as "a frame of id and body round-trips (0x1403355e0 writes it, 0x140331990 reads it)"
-      #(random, checked + 1)
-    })
-  assert checked.1 == 200 as "every generated frame was checked"
+  use #(id, body) <- qcheck.given(qcheck.tuple2(
+    qcheck.bounded_int(from: 0, to: 0xFFFF),
+    body_generator.body(most: largest_body),
+  ))
+  assert frame.decode(encoded(id, body)) == Ok(#([Frame(id, body)], <<>>))
+    as "a frame of id and body round-trips (0x1403355e0 writes it, 0x140331990 reads it)"
 }
 
 pub fn one_read_holding_several_frames_gives_all_of_them_test() -> Nil {

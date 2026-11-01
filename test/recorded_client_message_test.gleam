@@ -1,338 +1,390 @@
-//// Every message the real client sent in a saved recording decodes with the
-//// server's decoders, and a changed message fails the read. Expected values
-//// come from these places.
-//// - The recordings under `test/recording`, read by hand: the login session of
-////   2026-10-26 holds two connections. Its platform login sends Connect,
-////   LoginStart and KeyData as text, then 6 chunks ciphered with RC4 of 85,
-////   190, 222, 31, 31 and 31 bytes; its auth connection sends one 0x0244 of
-////   392 bytes and one bare ping, `07 00 00 00 00 00 00`: length 7, id 0,
-////   number 0.
+//// Every message the real client sent in a saved rule recording decodes with
+//// the server's decoders, and a changed message fails the read, naming the
+//// recording, the input and the message. Expected values come from these
+//// places.
+//// - The recordings in `test/rule_recording/2026-11-01-full-session`: a live
+////   login of the real client through the STS, auth and game servers. Their
+////   socket reads, as the inputs of each connection's rule: the STS
+////   connection's reads 1, 2 and 4 are the clear requests Connect, LoginStart
+////   and KeyData, and its reads 5, 7, 8 and 9 (90, 195, 227 and 208 bytes) are
+////   ciphered; the auth connection's read 1 is one login request in its
+////   wrapper; the game connection's read 1 holds 0x058F, 0x07E0 and a 0x038C,
+////   all under the session key after the first.
+//// - The log lines the game rule wrote while it took those reads, kept in the
+////   recording: one "unhandled game message" line for each message the rule
+////   took and did not handle, which are the world messages inside 0x038C
+////   (opcode.0x38c: the inner message is logged under its own id).
+//// - Ping numbers are below 20 (opcode.0x0), and the client counts them up.
+//// - The build in the login request is the client's (fact
+////   archive_index.header).
 //// - The layout of the login request in the schema (opcode.0x592): a build of
 ////   32 bits first, its last field a whole number of bytes, and the bit
 ////   stream's rule that a body ends at its last field.
-//// - The schema's directions: every message that travels client to server or
-////   either way has a decoder in `client_message`, and no other does.
-//// - The ping's number is below 20 (opcode.0x0).
+//// - The cipher: the base key keys the auth connection and each new game
+////   connection, and the session key folded from the 16 bytes of 0x058F
+////   re-keys the game connection (vector.0x14003827c.session_fold).
 
+import connection_rule_support
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame
 import genesis_prime/connection/frame.{Frame}
+import genesis_prime/game/connection as game_connection
+import genesis_prime/login/auth_connection
+import genesis_prime/login/sts_connection
 import genesis_prime/login/sts_message
 import genesis_prime/message/bit_stream
-import genesis_prime/message/character_select_start.{CharacterSelectStart}
-import genesis_prime/message/choose_realm.{ChooseRealm}
-import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/client_message
-import genesis_prime/message/client_wrapper.{ClientWrapper}
-import genesis_prime/message/close_notice.{CloseNotice}
-import genesis_prime/message/create_character.{CreateCharacter}
-import genesis_prime/message/create_character_carrier.{CreateCharacterCarrier}
-import genesis_prime/message/delete_character.{DeleteCharacter}
-import genesis_prime/message/game_hello_reply.{GameHelloReply}
-import genesis_prime/message/login_request.{LoginRequest}
 import genesis_prime/message/ping.{Ping}
-import genesis_prime/message/play_character.{PlayCharacter}
-import genesis_prime/message/pong.{Pong}
-import genesis_prime/message/realm_select_start.{RealmSelectStart}
-import genesis_prime/message/rename_character.{RenameCharacter}
-import genesis_prime/message/terrain_loaded.{TerrainLoaded}
-import genesis_prime/message/world_message.{WorldMessage}
-import genesis_prime/message_schema
-import genesis_prime/recording.{
-  type Recording, Auth, Chunk, ClientToServer, Game, Header, Recording,
-  ServerToClient, Sts,
-}
+import genesis_prime/rule_recording.{End, Header, Taken}
+import genesis_prime/step.{Effects, Input, Now, Socket}
 import gleam/bit_array
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
 import owned_test
-import recorded_client.{
-  Bare, ClearRequestAfterKeyData, CutShort, FramesRead, GameConnectionNotRead,
-  NotDecoded, NotRead, Received, StsMessageRefused, StsRead, Wrapped,
+import recorded_client_message.{
+  type ClientBytes, type Received, type Unread, Bare, ClearRequestAfterKeyData,
+  CutShort, FramesRead, Inside, NotARecording, NotDecoded, NotRead, RuleNotKnown,
+  StsMessageRefused, StsRead, Unread, Wrapped,
 }
 import recording_support
+import rule_replay_support
 import simplifile
 
-const recording_folder = "test/recording"
+const sts_file = "genesis_prime.login.sts_connection-3.recording"
 
-const login_session = "test/recording/2026-10-26-login"
+const auth_file = "genesis_prime.login.auth_connection-4.recording"
 
-pub fn every_client_message_in_every_saved_recording_decodes_test() -> Nil {
+const game_file = "genesis_prime.game.connection-5.recording"
+
+fn read(file: String) -> ClientBytes {
+  let assert Ok(Some(read)) =
+    recorded_client_message.read_recording(rule_replay_support.folder <> file)
+    as { file <> " holds client bytes and they read" }
+  read
+}
+
+fn frames(file: String) -> #(List(Received), List(Unread)) {
+  let assert FramesRead(messages:, without_decoder:) = read(file)
+    as { file <> " is a connection of frames" }
+  #(messages, without_decoder)
+}
+
+pub fn every_client_message_in_every_saved_rule_recording_decodes_test() -> Nil {
   use <- owned_test.run(30_000)
-  let results = recorded_client.read_folder(recording_folder)
-  assert results != [] as "the saved recordings were found"
+  let results = recorded_client_message.read_folder(rule_replay_support.folder)
   list.each(results, fn(entry) {
     let #(path, read) = entry
     assert result.replace(read, Nil) == Ok(Nil)
       as { "every client message in " <> path <> " reads" }
   })
-}
-
-pub fn every_decoded_auth_message_encodes_back_to_its_recorded_bytes_test() -> Nil {
-  use <- owned_test.run(30_000)
-  let received =
-    recorded_client.read_folder(recording_folder)
-    |> list.flat_map(fn(entry) {
-      let assert Ok(read) = entry.1
-        as { "every client message in " <> entry.0 <> " reads" }
-      case read {
-        FramesRead(messages:) -> messages
-        StsRead(..) -> []
+  let held =
+    list.filter_map(results, fn(entry) {
+      case entry.1 {
+        Ok(Some(read)) -> Ok(read)
+        Ok(None) | Error(_) -> Error(Nil)
       }
     })
-  assert received != [] as "the saved recordings hold auth messages"
-  list.each(received, fn(message) {
+  assert list.length(held) == 3
+    as "the session holds one recording each of the STS, auth and game connections with client bytes; the Sessions and map recordings take none"
+}
+
+pub fn every_decoded_message_encodes_back_to_the_body_the_client_sent_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let messages =
+    list.flat_map([auth_file, game_file], fn(file) { frames(file).0 })
+  assert messages != [] as "the recordings hold messages"
+  list.each(messages, fn(message) {
     assert client_message.encode(message.message) == Ok(message.body)
-      as "a decoded message encodes to the body the client sent, so every bit of it was read"
+      as {
+        "input "
+        <> int.to_string(message.input)
+        <> ": a decoded message encodes to the body the client sent, so every bit of it was read"
+      }
   })
 }
 
 pub fn the_login_session_holds_the_platform_logins_three_clear_requests_and_its_ciphered_rest_test() -> Nil {
   use <- owned_test.run(30_000)
-  let assert Ok(key_data) =
-    bit_array.base64_decode(
-      "gAAAADRocZ2ZyJjY8Pmq2A5MYebcEkkaFX8kMQ7gETXXLfVMMfDO7FntrUONhVL9UU4KNlHs3me1tCQGvYVHskNhrB10Jg/fBioaw02Mq7O9d1PPLlc95GUonsavSe4TgSJTzCmS4QQY9aOn2ycysOhrEpk/056HxhFaM1xp7jT6W0fMIAAAAM2K1eulFYukZtkhM0/TfDE+voQaEw+w/gPZM7oo+8vj",
-    )
-    as "the KeyData request's text, copied from the recording, is base64"
-  assert recorded_client.read_file(login_session <> "/sts-001.recording")
-    == Ok(StsRead(
-      requests: [
-        sts_message.ConnectionOpened(sts_message.Connect(
-          connection_type: 400,
-          connection_product_type: 0,
-          connection_app_index: 0,
-          connection_deployment: 0,
-          connection_epoch: 0,
-          address: Some("10.2.0.2"),
-          product_type: 0,
-          app_index: 1,
-          deployment: 0,
-          epoch: 814_727_909,
-          program: 902,
-          build: 1001,
-          process: 1796,
-          notify_flags: 0,
-          version_flags: 0,
-        )),
-        sts_message.Transaction(
-          sequence: 1,
-          request: sts_message.LoginStart(
-            login_name: "jimtest",
-            net_address: "192.168.8.157",
-          ),
-        ),
-        sts_message.Transaction(
-          sequence: 2,
-          request: sts_message.KeyData(bytes: key_data),
-        ),
-      ],
-      // The read stops at the KeyData request: the library ciphers every
-      // later byte with RC4 under a key made from the server's secret value,
-      // which the recording does not hold.
-      ciphered_bytes: 85 + 190 + 222 + 31 + 31 + 31,
-    ))
-    as "Connect, LoginStart and KeyData as the recording's text holds them, then the six ciphered chunks"
+  let assert StsRead(requests:, ciphered_bytes:) = read(sts_file)
+    as "the STS connection reads as requests"
+  let assert [
+    #(1, sts_message.ConnectionOpened(..)),
+    #(2, sts_message.Transaction(sequence: 1, request: login_start)),
+    #(4, sts_message.Transaction(sequence: 2, request: sts_message.KeyData(..))),
+  ] = requests
+    as "Connect, LoginStart and KeyData, in reads 1, 2 and 4"
+  let assert sts_message.LoginStart(login_name:, ..) = login_start
+    as "the second request is LoginStart"
+  let assert [#(_, game_hello), ..] = frames(auth_file).0 |> as_pairs
+    as "the auth connection holds a message"
+  let assert client_message.LoginRequest(message: request) = game_hello
+    as "the auth connection's message is the login request"
+  assert login_name == string.lowercase(request.account_name)
+    as "LoginStart names the account in lower case (StsConnLib64.MT.dll!0x180006fb0), the login request names it as typed"
+  assert ciphered_bytes == 90 + 195 + 227 + 208
+    as "the four reads after the KeyData request are ciphered"
 }
 
-pub fn the_login_session_holds_the_login_request_in_its_wrapper_and_a_bare_ping_test() -> Nil {
+fn as_pairs(
+  messages: List(Received),
+) -> List(#(Int, client_message.ClientMessage)) {
+  list.map(messages, fn(message) { #(message.input, message.message) })
+}
+
+pub fn the_auth_connection_holds_the_login_request_in_its_wrapper_test() -> Nil {
   use <- owned_test.run(30_000)
-  let assert Ok(FramesRead(messages: [login, ping])) =
-    recorded_client.read_file(login_session <> "/auth-001.recording")
-    as "the auth connection holds two client messages"
-  let assert Received(
-    message: client_message.LoginRequest(message: request),
-    carried: Wrapped,
-    ..,
-  ) = login
-    as "the first is the login request, inside 0x0244"
+  let assert #([login], []) = frames(auth_file)
+    as "the auth connection holds one message and none without a decoder"
+  assert login.input == 1 && login.carried == Wrapped
+    as "read 1 holds the login request in 0x0244"
+  let assert client_message.LoginRequest(message: request) = login.message
+    as "the message is the login request"
   assert request.build == 16_042
     as "the client's build (fact archive_index.header)"
-  assert request.account_name == "jimtest" as "the test account"
-  assert ping
-    == Received(
-      message: client_message.Ping(message: Ping(sequence_number: 0)),
-      body: <<0>>,
-      carried: Bare,
-    )
-    as "the second is ping 0, bare"
 }
 
-pub fn a_game_connection_recording_fails_the_read_test() -> Nil {
+pub fn the_game_connection_holds_the_hello_reply_then_select_start_then_the_play_request_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let path =
-    plant(folder:, name: "game-001.recording", role: Game, bytes: ping_frame())
-  assert recorded_client.read_folder(folder)
-    == [
-      #(path, Error(NotRead(path:, role: Game, problem: GameConnectionNotRead))),
-    ]
-    as "a game recording is reported, never passed unread"
-}
-
-pub fn every_message_the_client_sends_reaches_its_own_decoder_test() -> Nil {
-  use <- owned_test.run(30_000)
-  let samples = client_samples()
-  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
-    as "the schema file could not be read"
-  let assert Ok(schema) = message_schema.parse(text)
-    as "the schema file is a schema"
-  let client_ids =
-    list.filter_map(schema.messages, fn(message) {
-      case message.direction {
-        message_schema.ClientToServer | message_schema.Both -> Ok(message.id)
-        message_schema.ServerToClient -> Error(Nil)
+  let #(messages, _) = frames(game_file)
+  let ids =
+    list.filter_map(messages, fn(message) {
+      case message.carried {
+        Wrapped -> Ok(client_message.message_id(message.message))
+        Bare | Inside(..) -> Error(Nil)
       }
     })
-  assert list.sort(list.map(samples, fn(sample) { sample.0 }), int.compare)
-    == list.sort(client_ids, int.compare)
-    as "there is one sample for each message the schema says the client sends"
-  list.each(samples, fn(sample) {
-    let #(id, message) = sample
-    let assert Ok(body) = client_message.encode(message)
-      as "every sample field is within its width"
-    assert client_message.decode(message_id: id, body:) == Ok(message)
-      as "the body decodes as the message its number names"
-    assert client_message.message_id(message) == id
-      as "the message names its own number"
+  let assert [0x058F, 0x07E0, 0x038C, ..] = ids
+    as "0x058F first, then 0x07E0 and a 0x038C, all in read 1"
+  assert list.count(ids, fn(id) { id == 0x07DD }) == 1
+    as "the Veteran character is played once"
+  let assert [first, ..] = messages as "the game connection holds messages"
+  assert first.input == 1 && first.carried == Wrapped
+    as "0x058F is in read 1 (Accepted is input 0)"
+}
+
+pub fn the_clients_pings_count_up_and_start_again_at_20_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let numbers =
+    frames(game_file).0
+    |> list.filter(fn(message) {
+      client_message.message_id(message.message) == ping.message_id
+    })
+    |> list.map(fn(message) {
+      let assert Ok(Ping(sequence_number:)) = ping.decode(message.body)
+        as "a ping's body decodes"
+      sequence_number
+    })
+  assert numbers != [] as "the game connection holds pings"
+  assert list.first(numbers) == Ok(0) as "the first ping is number 0"
+  list.window_by_2(numbers)
+  |> list.each(fn(pair) {
+    assert pair.1 == { pair.0 + 1 } % 20
+      as "each ping is one more than the one before, and 19 is followed by 0 (opcode.0x0: the number is below 20)"
   })
 }
 
-pub fn a_number_no_client_message_has_is_unknown_and_a_refused_body_is_malformed_test() -> Nil {
+pub fn the_messages_the_decoders_do_not_know_are_the_ones_the_rule_logged_as_unhandled_test() -> Nil {
   use <- owned_test.run(30_000)
-  assert client_message.decode(message_id: 0x0003, body: <<>>)
-    == Error(client_message.UnknownMessage(message_id: 0x0003))
-    as "0x0003 travels server to client only (opcode.0x3)"
-  assert client_message.decode(message_id: 0xFFFF, body: <<>>)
-    == Error(client_message.UnknownMessage(message_id: 0xFFFF))
-    as "no message has the number 0xFFFF"
-  assert client_message.decode(message_id: 0x0000, body: <<20>>)
-    == Error(client_message.Malformed(
-      message_id: 0x0000,
-      error: bit_stream.UnexpectedValue(field: "sequence_number", value: 20),
-    ))
-    as "a ping's number is below 20 (opcode.0x0)"
-  assert client_message.decode(message_id: 0x0592, body: <<>>)
-    == Error(client_message.Malformed(
-      message_id: 0x0592,
-      error: bit_stream.EndOfData,
-    ))
-    as "an empty body ends inside the login request's first field"
+  let #(messages, without_decoder) = frames(game_file)
+  let unhandled_ids =
+    list.append(
+      list.map(without_decoder, fn(unread) { unread.message_id }),
+      list.filter_map(messages, fn(message) {
+        case message.carried {
+          Inside(carrier: 0x038C) ->
+            Ok(client_message.message_id(message.message))
+          Inside(..) | Bare | Wrapped -> Error(Nil)
+        }
+      }),
+    )
+  let logged = logged_unhandled_ids(game_file)
+  assert logged != [] as "the game rule logged unhandled messages"
+  assert list.sort(unhandled_ids, int.compare) == logged
+    as "each message inside a 0x038C, the ones with a decoder and the ones without, is a message the game rule logged as unhandled, and no other message is"
+  assert list.map(without_decoder, fn(unread) { unread.message_id })
+    |> list.unique
+    |> list.sort(int.compare)
+    == [
+      0x00D5, 0x012B, 0x018F, 0x023C, 0x023D, 0x0269, 0x03EC, 0x03ED, 0x0570,
+      0x0637, 0x063A, 0x063B, 0x07CC, 0x07EA, 0x082D,
+    ]
+    as "the ids the recording's unhandled lines name, but 0x00F2 and 0x0635, which the schema has layouts for (opcode.0xf2, opcode.0x635)"
 }
 
-pub fn a_login_request_with_its_last_byte_cut_fails_naming_the_file_connection_message_and_error_test() -> Nil {
+/// The id of each message the game rule logged as unhandled while it took the
+/// recording's inputs, sorted.
+fn logged_unhandled_ids(file: String) -> List(Int) {
+  let assert Ok(bytes) =
+    simplifile.read_bits(rule_replay_support.folder <> file)
+    as "the recording reads"
+  let assert Ok(#(_, records)) = rule_recording.read(bytes)
+    as "the recording is a recording"
+  records
+  |> list.flat_map(fn(record) {
+    case record {
+      Taken(step: recorded, ..) -> connection_rule_support.logs(recorded)
+      End(..) -> []
+    }
+  })
+  |> list.filter_map(fn(line) {
+    case line.about.message {
+      Some(#("unhandled", id)) -> Ok(id)
+      Some(_) | None -> Error(Nil)
+    }
+  })
+  |> list.sort(int.compare)
+}
+
+// ---- a changed message fails the read ----
+
+pub fn a_login_request_with_its_last_byte_cut_fails_naming_the_recording_the_input_and_the_message_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let body = recorded_login_request_body()
-  let cut = bit_array.slice(body, 0, bit_array.byte_size(body) - 1)
-  let assert Ok(cut) = cut as "the body is longer than one byte"
+  let assert Ok(cut) = bit_array.slice(body, 0, bit_array.byte_size(body) - 1)
+    as "the body is longer than one byte"
   let path =
-    plant(
-      folder:,
-      name: "auth-001.recording",
-      role: Auth,
-      bytes: wrapped(id: 0x0592, body: cut, key: cipher.base_key),
-    )
-  assert recorded_client.read_folder(folder)
-    == [
-      #(
-        path,
-        Error(NotRead(
-          path:,
-          role: Auth,
-          problem: NotDecoded(client_message.Malformed(
-            message_id: 0x0592,
-            error: bit_stream.EndOfData,
-          )),
-        )),
+    plant(folder:, number: 1, rule: auth_connection.rule_name, reads: [
+      wrapped(id: 0x0592, body: cut, key: cipher.base_key),
+    ])
+  assert recorded_client_message.read_recording(path)
+    == Error(NotRead(
+      recording: path,
+      input: 0,
+      problem: NotDecoded(
+        message_id: 0x0592,
+        error: client_message.Malformed(
+          message_id: 0x0592,
+          error: bit_stream.EndOfData,
+        ),
       ),
-    ]
+    ))
     as "the last field is whole bytes, so the cut body ends inside it"
 }
 
 pub fn a_login_request_with_one_extra_byte_fails_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
-  let body = <<recorded_login_request_body():bits, 0>>
   let path =
-    plant(
-      folder:,
-      name: "auth-001.recording",
-      role: Auth,
-      bytes: wrapped(id: 0x0592, body:, key: cipher.base_key),
-    )
-  assert recorded_client.read_file(path)
+    plant(folder:, number: 1, rule: auth_connection.rule_name, reads: [
+      wrapped(
+        id: 0x0592,
+        body: <<recorded_login_request_body():bits, 0>>,
+        key: cipher.base_key,
+      ),
+    ])
+  assert recorded_client_message.read_recording(path)
     == Error(NotRead(
-      path:,
-      role: Auth,
-      problem: NotDecoded(client_message.Malformed(
+      recording: path,
+      input: 0,
+      problem: NotDecoded(
         message_id: 0x0592,
-        error: bit_stream.TrailingBytes(count: 1),
-      )),
+        error: client_message.Malformed(
+          message_id: 0x0592,
+          error: bit_stream.TrailingBytes(count: 1),
+        ),
+      ),
     ))
     as "a body ends at its last field"
 }
 
-pub fn a_wrapper_ciphered_under_another_key_fails_test() -> Nil {
+pub fn a_message_with_no_decoder_is_listed_and_the_read_goes_on_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let path =
-    plant(
-      folder:,
-      name: "auth-001.recording",
-      role: Auth,
-      bytes: wrapped(
+    plant(folder:, number: 1, rule: auth_connection.rule_name, reads: [
+      wrapped(id: 0x0637, body: <<1, 2, 3>>, key: cipher.base_key),
+      wrapped(
         id: 0x0592,
         body: recorded_login_request_body(),
-        key: cipher.base_key + 1,
+        key: cipher.base_key,
       ),
-    )
-  let assert Error(NotRead(path: failed, role: Auth, problem: NotDecoded(_))) =
-    recorded_client.read_file(path)
-    as "the inner frame deciphered under the base key is not the login request"
-  assert failed == path as "the failure names the file"
+    ])
+  let assert Ok(Some(FramesRead(messages:, without_decoder:))) =
+    recorded_client_message.read_recording(path)
+    as "a message the decoders do not know does not fail the read"
+  assert without_decoder == [Unread(input: 0, message_id: 0x0637)]
+    as "0x0637 is listed with its input"
+  assert list.map(messages, fn(message) { message.input }) == [1]
+    as "the login request after it is read"
 }
 
-pub fn a_clear_request_after_key_data_in_the_same_chunk_fails_the_read_test() -> Nil {
+pub fn a_wrapper_ciphered_under_another_key_does_not_read_as_the_message_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
-  // Every byte after the KeyData request is ciphered, so a request read in
-  // the clear after it is never counted as ciphered or passed as read.
-  let key_data = <<
-    "POST /Auth/KeyData STS/1.0\r\ns:2\r\nl:45\r\n\r\n<Request>\n<KeyData>AAAA</KeyData>\n</Request>\n":utf8,
-  >>
-  let ping = <<"POST /Sts/Ping STS/1.0\r\nl:0\r\n\r\n":utf8>>
-  let path =
-    plant(folder:, name: "sts-001.recording", role: Sts, bytes: <<
-      key_data:bits,
-      ping:bits,
-    >>)
-  assert recorded_client.read_file(path)
-    == Error(NotRead(path:, role: Sts, problem: ClearRequestAfterKeyData))
-    as "the Ping after KeyData is reported"
+  let body = recorded_login_request_body()
+  let right =
+    plant(folder:, number: 1, rule: auth_connection.rule_name, reads: [
+      wrapped(id: 0x0592, body:, key: cipher.base_key),
+    ])
+  let wrong =
+    plant(folder:, number: 2, rule: auth_connection.rule_name, reads: [
+      wrapped(id: 0x0592, body:, key: cipher.base_key + 1),
+    ])
+  let assert Ok(Some(FramesRead(messages: [login], ..))) =
+    recorded_client_message.read_recording(right)
+    as "the login request under the base key reads"
+  assert login.body == body as "it is the login request"
+  assert result.map(recorded_client_message.read_recording(wrong), fn(read) {
+      read == Some(FramesRead(messages: [login], without_decoder: []))
+    })
+    != Ok(True)
+    as "the deciphered frame under another key is not the login request"
 }
 
-pub fn an_unknown_platform_login_command_fails_test() -> Nil {
+pub fn the_frames_after_0x058f_are_read_under_the_session_key_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
-  let path =
-    plant(folder:, name: "sts-001.recording", role: Sts, bytes: <<
-      "POST /Sts/Unknown STS/1.0\r\nl:0\r\n\r\n":utf8,
-    >>)
-  assert recorded_client.read_file(path)
-    == Error(NotRead(
-      path:,
-      role: Sts,
-      problem: StsMessageRefused(sts_message.UnknownCommand(
-        protocol: "Sts",
-        command: "Unknown",
-      )),
-    ))
-    as "the login has no command Unknown"
+  let assert #([hello, ..], _) = frames(game_file)
+    as "the game connection holds 0x058F first"
+  let assert client_message.GameHelloReply(message: reply) = hello.message
+    as "the first message is 0x058F"
+  let assert Ok(folded) =
+    cipher.session_key(bytes: reply.session_key, base_key: cipher.base_key)
+    as "the session key is 16 bytes"
+  let assert Ok(session) = cipher.new(folded) as "the folded key is not 0"
+  let hello_frame = wrapped(id: 0x058F, body: hello.body, key: cipher.base_key)
+  let select = fn(cipher) {
+    let assert Ok(bytes) =
+      encrypted_frame.wrap(
+        encrypted_frame.ClientWrapper,
+        Frame(message_id: 0x07E0, body: <<>>),
+        cipher,
+      )
+      as "the frame is within the size limit"
+    bytes
+  }
+  let session_path =
+    plant(folder:, number: 1, rule: game_connection.rule_name, reads: [
+      <<hello_frame:bits, select(session):bits>>,
+    ])
+  let assert Ok(Some(FramesRead(messages:, ..))) =
+    recorded_client_message.read_recording(session_path)
+    as "the frames read under the session key"
+  assert list.map(messages, fn(message) {
+      client_message.message_id(message.message)
+    })
+    == [0x058F, 0x07E0]
+    as "0x058F, then 0x07E0 deciphered under the session key, in one read"
+  let assert Ok(base) = cipher.new(cipher.base_key) as "the base key is not 0"
+  let base_path =
+    plant(folder:, number: 2, rule: game_connection.rule_name, reads: [
+      <<hello_frame:bits, select(base):bits>>,
+    ])
+  let assert Ok(Some(FramesRead(messages: after_hello, ..))) =
+    recorded_client_message.read_recording(base_path)
+    as "the frames read"
+  assert list.map(after_hello, fn(message) {
+      client_message.message_id(message.message)
+    })
+    == [0x058F]
+    as "a frame under the base key after 0x058F is no 0x07E0 under the session key"
 }
 
-pub fn a_recording_that_ends_inside_a_message_fails_test() -> Nil {
+pub fn a_recording_that_ends_inside_a_frame_fails_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let whole =
@@ -343,148 +395,87 @@ pub fn a_recording_that_ends_inside_a_message_fails_test() -> Nil {
     )
   let assert Ok(cut) = bit_array.slice(whole, 0, 391)
     as "the recorded 0x0244 is 392 bytes"
-  let auth = plant(folder:, name: "auth-001.recording", role: Auth, bytes: cut)
-  assert recorded_client.read_file(auth)
-    == Error(NotRead(path: auth, role: Auth, problem: CutShort(bytes: 391)))
+  let auth =
+    plant(folder:, number: 1, rule: auth_connection.rule_name, reads: [cut])
+  assert recorded_client_message.read_recording(auth)
+    == Error(NotRead(recording: auth, input: 0, problem: CutShort(bytes: 391)))
     as "391 of the frame's 392 bytes are there"
-  let request = <<"POST /Sts/Connect STS/1.0\r\nl:218\r\n\r\n<Connect>\n":utf8>>
-  let sts = plant(folder:, name: "sts-001.recording", role: Sts, bytes: request)
-  assert recorded_client.read_file(sts)
-    == Error(NotRead(
-      path: sts,
-      role: Sts,
-      problem: CutShort(bytes: bit_array.byte_size(request)),
-    ))
-    as "the request's head says 218 bytes of body and 10 are there"
 }
 
-/// One message of each kind the client sends, with its number, each field
-/// within its width in the schema.
-fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
-  [
-    #(0x0000, client_message.Ping(message: Ping(sequence_number: 19))),
-    #(0x0001, client_message.Pong(message: Pong(sequence_number: 200))),
-    #(0x0002, client_message.CloseNotice(message: CloseNotice)),
-    #(
-      0x0592,
-      client_message.LoginRequest(message: LoginRequest(
-        build: 16_042,
-        files_digest: 0x0123_4567_89AB_CDEF,
-        account_name: "account",
-        user_id: <<1:size(128)>>,
-        game_token: <<2:size(128)>>,
-        field_6: 6,
-        field_7: 7,
-        field_8: 8,
-        field_9: 9,
-        processor_manufacturer: "maker",
-        processor_name: "processor",
-        processor_description: "description",
-        processor_family: 25,
-        processor_level: 26,
-        processor_revision: 27,
-        processor_clock_speed: 4200,
-        processor_core_count: 8,
-        memory_mebibytes: 32_768,
-        video_adapter_description: "adapter",
-        video_adapter_vendor_id: 0x10DE,
-        video_adapter_device_id: 0x2684,
-        video_adapter_subsystem_id: 3,
-        video_adapter_revision: 161,
-        video_adapter_memory_mebibytes: 4095,
-        processor_architecture: 9,
-        windows_version: 10,
-        service_pack: 0,
-        os_flags: 1,
-        realm_data_center_id: 9,
-      )),
-    ),
-    #(
-      0x058F,
-      client_message.GameHelloReply(message: GameHelloReply(
-        field_1: 1,
-        session_key: <<3:size(128)>>,
-        field_3: 3,
-        account_name: "account",
-        field_5: 5,
-      )),
-    ),
-    #(
-      0x07E0,
-      client_message.CharacterSelectStart(message: CharacterSelectStart),
-    ),
-    #(0x07A4, client_message.RealmSelectStart(message: RealmSelectStart)),
-    #(
-      0x0244,
-      client_message.ClientWrapper(
-        message: ClientWrapper(inner_frame: <<7:little-size(32), 0x92, 0x05, 9>>),
-      ),
-    ),
-    #(
-      0x038C,
-      client_message.WorldMessage(
-        message: WorldMessage(field_1: 3, inner_frame: <<
-          6:little-size(32),
-          0xF2,
-          0x00,
-        >>),
-      ),
-    ),
-    #(
-      0x025B,
-      client_message.CreateCharacter(
-        message: CreateCharacter(
-          creation_id: 4,
-          name: "Name",
-          path: 1,
-          customisation_labels: [1, 2],
-          customisation_values: [3, 4],
-          bone_values: [0, 1, 2],
-        ),
-      ),
-    ),
-    #(
-      0x025C,
-      client_message.CreateCharacterCarrier(
-        message: CreateCharacterCarrier(inner_frame: <<
-          6:little-size(32),
-          0x5B,
-          0x02,
-        >>),
-      ),
-    ),
-    #(
-      0x07DD,
-      client_message.PlayCharacter(message: PlayCharacter(character_id: 5)),
-    ),
-    #(
-      0x0352,
-      client_message.DeleteCharacter(message: DeleteCharacter(character_id: 6)),
-    ),
-    #(
-      0x0786,
-      client_message.RenameCharacter(message: RenameCharacter(
-        character_id: 7,
-        name: "Other",
-      )),
-    ),
-    #(0x07DF, client_message.ChooseRealm(message: ChooseRealm(realm_id: 1))),
-    #(
-      0x0635,
-      client_message.ClientControlEchoed(message: ClientControlEchoed(
-        echo_value: 8,
-      )),
-    ),
-    #(0x00F2, client_message.TerrainLoaded(message: TerrainLoaded(field_1: 2))),
-  ]
+pub fn a_clear_request_after_key_data_in_the_same_read_fails_the_read_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  // Every byte after the KeyData request is ciphered, so a request read in
+  // the clear after it is never counted as ciphered or passed as read.
+  let key_data = <<
+    "POST /Auth/KeyData STS/1.0\r\ns:2\r\nl:45\r\n\r\n<Request>\n<KeyData>AAAA</KeyData>\n</Request>\n":utf8,
+  >>
+  let ping = <<"POST /Sts/Ping STS/1.0\r\nl:0\r\n\r\n":utf8>>
+  let path =
+    plant(folder:, number: 1, rule: sts_connection.rule_name, reads: [
+      <<key_data:bits, ping:bits>>,
+    ])
+  assert recorded_client_message.read_recording(path)
+    == Error(NotRead(
+      recording: path,
+      input: 0,
+      problem: ClearRequestAfterKeyData,
+    ))
+    as "the Ping after KeyData is reported"
 }
+
+pub fn an_unknown_platform_login_command_fails_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let path =
+    plant(folder:, number: 1, rule: sts_connection.rule_name, reads: [
+      <<"POST /Sts/Unknown STS/1.0\r\nl:0\r\n\r\n":utf8>>,
+    ])
+  assert recorded_client_message.read_recording(path)
+    == Error(NotRead(
+      recording: path,
+      input: 0,
+      problem: StsMessageRefused(sts_message.UnknownCommand(
+        protocol: "Sts",
+        command: "Unknown",
+      )),
+    ))
+    as "the login has no command Unknown"
+}
+
+pub fn a_recording_of_a_rule_that_is_no_connection_but_took_socket_bytes_fails_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let path =
+    plant(folder:, number: 1, rule: "genesis_prime/sessions", reads: [<<1>>])
+  assert recorded_client_message.read_recording(path)
+    == Error(NotRead(
+      recording: path,
+      input: 0,
+      problem: RuleNotKnown(rule: "genesis_prime/sessions"),
+    ))
+    as "a recording of another rule with socket bytes is reported, never passed unread"
+}
+
+pub fn a_file_that_is_no_recording_fails_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use folder <- recording_support.in_folder
+  let path = folder <> "/genesis_prime.login.auth_connection-1.recording"
+  let assert Ok(Nil) = simplifile.write_bits(path, <<1, 2, 3>>)
+    as "the file was written"
+  let assert Error(NotARecording(recording:, ..)) =
+    recorded_client_message.read_recording(path)
+    as "three bytes are no recording"
+  assert recording == path as "the failure names the file"
+}
+
+// ---- helpers ----
 
 /// The body of the login request in the saved login session.
 fn recorded_login_request_body() -> BitArray {
-  let assert Ok(FramesRead(messages: [Received(body:, ..), ..])) =
-    recorded_client.read_file(login_session <> "/auth-001.recording")
-    as "the saved login session's auth connection reads"
-  body
+  let assert #([login], _) = frames(auth_file)
+    as "the saved login session's auth connection holds one message"
+  login.body
 }
 
 /// The bytes of 0x0244 around the frame of `id` and `body`, ciphered under
@@ -493,38 +484,55 @@ fn wrapped(id id: Int, body body: BitArray, key key: Int) -> BitArray {
   let assert Ok(chosen) = cipher.new(key:) as "the key is not 0"
   let assert Ok(bytes) =
     encrypted_frame.wrap(
-      wrapper: encrypted_frame.ClientWrapper,
-      inner: Frame(message_id: id, body:),
-      cipher: chosen,
+      encrypted_frame.ClientWrapper,
+      Frame(message_id: id, body:),
+      chosen,
     )
     as "the frame is within the size limit"
   bytes
 }
 
-/// The bytes of ping 0 in its own frame.
-fn ping_frame() -> BitArray {
-  let assert Ok(bytes) = frame.encode(message_id: 0x0000, body: <<0>>)
-    as "a ping is 7 bytes"
-  bytes
-}
-
-/// Writes a recording of `role` named `name` in `folder`, holding `bytes` sent
-/// by the client in one chunk after one chunk from the server, and returns its
-/// path.
+/// Writes a recording of `rule` in `folder`, whose inputs are the socket
+/// reads `reads`, and returns its path.
 fn plant(
   folder folder: String,
-  name name: String,
-  role role: recording.Role,
-  bytes bytes: BitArray,
+  number number: Int,
+  rule rule: String,
+  reads reads: List(BitArray),
 ) -> String {
-  let path = folder <> "/" <> name
-  let planted: Recording =
-    Recording(header: Header(..recording_support.header(), role:), chunks: [
-      Chunk(direction: ServerToClient, microseconds: 0, bytes: <<1, 2, 3>>),
-      Chunk(direction: ClientToServer, microseconds: 10, bytes:),
+  let path =
+    folder
+    <> "/"
+    <> string.replace(rule, "/", ".")
+    <> "-"
+    <> int.to_string(number)
+    <> ".recording"
+  let header =
+    Header(
+      format: rule_recording.format,
+      rule:,
+      client_build: 16_042,
+      tables_digest: None,
+      settings: Nil,
+      types_digest: "planted",
+    )
+  let taken =
+    list.map(reads, fn(bytes) {
+      rule_recording.encode(Taken(
+        input: Input(
+          now: Now(monotonic_ms: 0, filetime: 0),
+          event: Socket(step.Read(bytes:)),
+        ),
+        step: Effects([]),
+      ))
+    })
+  let encoded =
+    bit_array.concat([
+      rule_recording.encode(header),
+      ..list.append(taken, [
+        rule_recording.encode(End(count: list.length(reads))),
+      ])
     ])
-  let assert Ok(encoded) = recording.encode(planted)
-    as "the planted recording's fields are within their widths"
   let assert Ok(Nil) = simplifile.write_bits(path, encoded)
     as "the planted recording was written"
   path

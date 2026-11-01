@@ -1,0 +1,34 @@
+[[record]]
+name = "planted_record"
+evidence = "planted"
+summary = "a record inside a planted message"
+fields = [
+  { name = "number", kind = "unsigned", bits = 5 },
+  { name = "label", kind = "wide_text" },
+]
+
+[[message]]
+id = 0x7F01
+name = "planted_message"
+direction = "both"
+evidence = "planted"
+summary = "a planted message with a field of every kind a schema has"
+fields = [
+  { name = "unsigned", kind = "unsigned", bits = 3 },
+  { name = "wide_unsigned", kind = "unsigned", bits = 64 },
+  { name = "below", kind = "unsigned_below", bits = 5, limit = 20 },
+  { name = "float", kind = "float32" },
+  { name = "wide", kind = "wide_text" },
+  { name = "counted", kind = "counted_wide_text", max_units = 6 },
+  { name = "guid", kind = "guid" },
+  { name = "endpoint", kind = "endpoint" },
+  { name = "raw", kind = "raw_bytes", count = 3 },
+  { name = "texts", kind = "array", count_bits = 4, element = "wide_text" },
+  { name = "numbers", kind = "array", count_bits = 4, element = "unsigned", element_bits = 7 },
+  { name = "floats", kind = "array", count_bits = 4, element = "float32" },
+  { name = "records", kind = "array", count_bits = 4, element = "planted_record" },
+  { name = "counted_numbers", kind = "array", element = "unsigned", element_bits = 9, counted_by = "numbers" },
+  { name = "fixed", kind = "constant", bits = 2, value = 1 },
+  { name = "mode", kind = "unsigned", bits = 3, values_type = "PlantedMode", values = [ { value = 1, name = "first" }, { value = 5, name = "second" } ] },
+  { name = "frame", kind = "whole_frame" },
+]

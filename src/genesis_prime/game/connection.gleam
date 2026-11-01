@@ -644,10 +644,7 @@ fn hello_replied(
     Ok(reply) -> {
       let assert Ok(key) = guid.from_wire(reply.session_key)
         as "the reply's session key is 16 bytes"
-      case
-        cipher.session_key(bytes: reply.session_key, base_key: cipher.base_key)
-        |> result.try(cipher.new)
-      {
+      case rekeyed(session_key: reply.session_key) {
         Error(error) ->
           end_for(
             session,
@@ -663,6 +660,17 @@ fn hello_replied(
       }
     }
   }
+}
+
+/// The cipher a game connection is keyed to from the moment the client sends
+/// 0x058F: the base key folded with the 16 bytes of the session key the
+/// message carries (vector.0x14003827c.session_fold). Every frame after that
+/// one, each way, is under it.
+pub fn rekeyed(
+  session_key session_key: BitArray,
+) -> Result(Cipher, cipher.KeyError) {
+  cipher.session_key(bytes: session_key, base_key: cipher.base_key)
+  |> result.try(cipher.new)
 }
 
 fn describe_key_error(error: cipher.KeyError) -> String {

@@ -23,7 +23,6 @@ import unitest
 /// issue that decides whether it gets one or is deleted.
 const allowed = [
   #("genesis_prime/coverage", 47),
-  #("genesis_prime/record", 217),
   #("genesis_prime/add_account", 207),
   #("genesis_prime/add_character", 207),
   #("genesis_prime/mark_rename", 207),

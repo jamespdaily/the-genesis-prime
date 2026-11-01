@@ -1,0 +1,203 @@
+//// The messages the client sends reach their own decoders. Expected values come
+//// from these places.
+//// - The schema's directions: every message that travels client to server or
+////   either way has a decoder in `client_message`, and no other does.
+//// - The ping's number is below 20 (opcode.0x0).
+//// - An empty body ends inside the login request's first field, a build of 32
+////   bits (opcode.0x592).
+
+import genesis_prime/message/bit_stream
+import genesis_prime/message/character_select_start.{CharacterSelectStart}
+import genesis_prime/message/choose_realm.{ChooseRealm}
+import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
+import genesis_prime/message/client_message
+import genesis_prime/message/client_wrapper.{ClientWrapper}
+import genesis_prime/message/close_notice.{CloseNotice}
+import genesis_prime/message/create_character.{CreateCharacter}
+import genesis_prime/message/create_character_carrier.{CreateCharacterCarrier}
+import genesis_prime/message/delete_character.{DeleteCharacter}
+import genesis_prime/message/game_hello_reply.{GameHelloReply}
+import genesis_prime/message/login_request.{LoginRequest}
+import genesis_prime/message/ping.{Ping}
+import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/pong.{Pong}
+import genesis_prime/message/realm_select_start.{RealmSelectStart}
+import genesis_prime/message/rename_character.{RenameCharacter}
+import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/message/world_message.{WorldMessage}
+import genesis_prime/message_schema
+import gleam/int
+import gleam/list
+import owned_test
+import simplifile
+
+pub fn every_message_the_client_sends_reaches_its_own_decoder_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let samples = client_samples()
+  let assert Ok(text) = simplifile.read("src/genesis_prime/message/schema.toml")
+    as "the schema file could not be read"
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the schema file is a schema"
+  let client_ids =
+    list.filter_map(schema.messages, fn(message) {
+      case message.direction {
+        message_schema.ClientToServer | message_schema.Both -> Ok(message.id)
+        message_schema.ServerToClient -> Error(Nil)
+      }
+    })
+  assert list.sort(list.map(samples, fn(sample) { sample.0 }), int.compare)
+    == list.sort(client_ids, int.compare)
+    as "there is one sample for each message the schema says the client sends"
+  list.each(samples, fn(sample) {
+    let #(id, message) = sample
+    let assert Ok(body) = client_message.encode(message)
+      as "every sample field is within its width"
+    assert client_message.decode(message_id: id, body:) == Ok(message)
+      as "the body decodes as the message its number names"
+    assert client_message.message_id(message) == id
+      as "the message names its own number"
+  })
+}
+
+pub fn a_number_no_client_message_has_is_unknown_and_a_refused_body_is_malformed_test() -> Nil {
+  use <- owned_test.run(30_000)
+  assert client_message.decode(message_id: 0x0003, body: <<>>)
+    == Error(client_message.UnknownMessage(message_id: 0x0003))
+    as "0x0003 travels server to client only (opcode.0x3)"
+  assert client_message.decode(message_id: 0xFFFF, body: <<>>)
+    == Error(client_message.UnknownMessage(message_id: 0xFFFF))
+    as "no message has the number 0xFFFF"
+  assert client_message.decode(message_id: 0x0000, body: <<20>>)
+    == Error(client_message.Malformed(
+      message_id: 0x0000,
+      error: bit_stream.UnexpectedValue(field: "sequence_number", value: 20),
+    ))
+    as "a ping's number is below 20 (opcode.0x0)"
+  assert client_message.decode(message_id: 0x0592, body: <<>>)
+    == Error(client_message.Malformed(
+      message_id: 0x0592,
+      error: bit_stream.EndOfData,
+    ))
+    as "an empty body ends inside the login request's first field"
+}
+
+/// One message of each kind the client sends, with its number, each field
+/// within its width in the schema.
+fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
+  [
+    #(0x0000, client_message.Ping(message: Ping(sequence_number: 19))),
+    #(0x0001, client_message.Pong(message: Pong(sequence_number: 200))),
+    #(0x0002, client_message.CloseNotice(message: CloseNotice)),
+    #(
+      0x0592,
+      client_message.LoginRequest(message: LoginRequest(
+        build: 16_042,
+        files_digest: 0x0123_4567_89AB_CDEF,
+        account_name: "account",
+        user_id: <<1:size(128)>>,
+        game_token: <<2:size(128)>>,
+        field_6: 6,
+        field_7: 7,
+        field_8: 8,
+        field_9: 9,
+        processor_manufacturer: "maker",
+        processor_name: "processor",
+        processor_description: "description",
+        processor_family: 25,
+        processor_level: 26,
+        processor_revision: 27,
+        processor_clock_speed: 4200,
+        processor_core_count: 8,
+        memory_mebibytes: 32_768,
+        video_adapter_description: "adapter",
+        video_adapter_vendor_id: 0x10DE,
+        video_adapter_device_id: 0x2684,
+        video_adapter_subsystem_id: 3,
+        video_adapter_revision: 161,
+        video_adapter_memory_mebibytes: 4095,
+        processor_architecture: 9,
+        windows_version: 10,
+        service_pack: 0,
+        os_flags: 1,
+        realm_data_center_id: 9,
+      )),
+    ),
+    #(
+      0x058F,
+      client_message.GameHelloReply(message: GameHelloReply(
+        field_1: 1,
+        session_key: <<3:size(128)>>,
+        field_3: 3,
+        account_name: "account",
+        field_5: 5,
+      )),
+    ),
+    #(
+      0x07E0,
+      client_message.CharacterSelectStart(message: CharacterSelectStart),
+    ),
+    #(0x07A4, client_message.RealmSelectStart(message: RealmSelectStart)),
+    #(
+      0x0244,
+      client_message.ClientWrapper(
+        message: ClientWrapper(inner_frame: <<7:little-size(32), 0x92, 0x05, 9>>),
+      ),
+    ),
+    #(
+      0x038C,
+      client_message.WorldMessage(
+        message: WorldMessage(field_1: 3, inner_frame: <<
+          6:little-size(32),
+          0xF2,
+          0x00,
+        >>),
+      ),
+    ),
+    #(
+      0x025B,
+      client_message.CreateCharacter(
+        message: CreateCharacter(
+          creation_id: 4,
+          name: "Name",
+          path: 1,
+          customisation_labels: [1, 2],
+          customisation_values: [3, 4],
+          bone_values: [0, 1, 2],
+        ),
+      ),
+    ),
+    #(
+      0x025C,
+      client_message.CreateCharacterCarrier(
+        message: CreateCharacterCarrier(inner_frame: <<
+          6:little-size(32),
+          0x5B,
+          0x02,
+        >>),
+      ),
+    ),
+    #(
+      0x07DD,
+      client_message.PlayCharacter(message: PlayCharacter(character_id: 5)),
+    ),
+    #(
+      0x0352,
+      client_message.DeleteCharacter(message: DeleteCharacter(character_id: 6)),
+    ),
+    #(
+      0x0786,
+      client_message.RenameCharacter(message: RenameCharacter(
+        character_id: 7,
+        name: "Other",
+      )),
+    ),
+    #(0x07DF, client_message.ChooseRealm(message: ChooseRealm(realm_id: 1))),
+    #(
+      0x0635,
+      client_message.ClientControlEchoed(message: ClientControlEchoed(
+        echo_value: 8,
+      )),
+    ),
+    #(0x00F2, client_message.TerrainLoaded(message: TerrainLoaded(field_1: 2))),
+  ]
+}

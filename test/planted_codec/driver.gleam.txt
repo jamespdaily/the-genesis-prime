@@ -1,0 +1,182 @@
+//// Runs the codec generated for the planted schema (test/planted_codec/schema.toml):
+//// each message below is encoded, read back, encoded again and read by the
+//// client message module, and every refusal the schema's fields make is seen.
+//// The test that builds this project runs it and reads what it prints.
+
+import genesis_prime/message/bit_stream
+import genesis_prime/message/client_message
+import genesis_prime/message/planted_message.{type PlantedMessage, PlantedMessage}
+import genesis_prime/message/planted_mode.{First, Other}
+import genesis_prime/message/planted_record.{PlantedRecord}
+import gleam/bit_array
+import gleam/int
+import gleam/io
+import gleam/list
+import gleam/string
+
+pub fn main() -> Nil {
+  list.each(messages(), fn(entry) {
+    let #(name, message) = entry
+    let assert Ok(body) = planted_message.encode(message)
+      as { name <> ": every field is within its width, so the message encodes" }
+    assert planted_message.decode(body) == Ok(message)
+      as { name <> ": the bytes decode to the message encoded" }
+    assert planted_message.encode(message) == Ok(body)
+      as { name <> ": encoding is repeatable" }
+    assert client_message.decode(message_id: 0x7F01, body:)
+      == Ok(client_message.PlantedMessage(message))
+      as { name <> ": the client message module reads it by its number" }
+    assert client_message.encode(client_message.PlantedMessage(message))
+      == Ok(body)
+      as { name <> ": and writes it back" }
+    assert client_message.message_id(client_message.PlantedMessage(message))
+      == 0x7F01
+      as { name <> ": and names its number" }
+    let length = bit_array.byte_size(body)
+    list.each(upto(0, length - 1), fn(shorter) {
+      let assert Ok(prefix) = bit_array.slice(body, 0, shorter)
+        as "a prefix of the body exists"
+      assert planted_message.decode(prefix) |> is_end_of_data
+        as {
+          name
+          <> ": the first "
+          <> int.to_string(shorter)
+          <> " of "
+          <> int.to_string(length)
+          <> " bytes end inside a field"
+        }
+    })
+    io.println(name <> " round-trips")
+  })
+  refusals()
+  io.println("the refusals hold")
+}
+
+fn is_end_of_data(result: Result(a, bit_stream.DecodeError)) -> Bool {
+  case result {
+    Error(bit_stream.EndOfData) -> True
+    _ -> False
+  }
+}
+
+fn refusals() -> Nil {
+  let #(_, base) = full()
+  assert planted_message.encode(PlantedMessage(..base, below: 20))
+    == Error(bit_stream.ValueAtOrAboveLimit(field: "below", limit: 20, value: 20))
+    as "a value at the limit is refused"
+  assert planted_message.encode(PlantedMessage(..base, unsigned: 8))
+    == Error(bit_stream.ValueDoesNotFit(field: "unsigned", bits: 3, value: 8))
+    as "a value over its width is refused"
+  assert planted_message.encode(PlantedMessage(..base, counted: "abcdefg"))
+    == Error(bit_stream.TextTooLong(field: "counted", units: 7, limit: 6))
+    as "a counted text over its limit is refused"
+  assert planted_message.encode(PlantedMessage(..base, raw: <<1, 2>>))
+    == Error(bit_stream.WrongByteCount(field: "raw", expected: 3, actual: 2))
+    as "raw bytes of another count are refused"
+  assert planted_message.encode(PlantedMessage(..base, counted_numbers: [1]))
+    == Error(bit_stream.ItemCountDisagrees(
+      field: "counted_numbers",
+      expected: list.length(base.numbers),
+      actual: 1,
+    ))
+    as "values counted by another array are as many as it holds"
+  assert planted_message.encode(PlantedMessage(..base, frame: <<9, 0, 0, 0>>))
+    == Error(bit_stream.InnerFrameDisagrees(field: "frame"))
+    as "a whole frame whose length differs from its bytes is refused"
+  assert planted_mode_numbers() == [1, 5, 3]
+    as "a named mode writes the number it names and any other value is Other"
+  Nil
+}
+
+fn planted_mode_numbers() -> List(Int) {
+  [First, planted_mode.Second, Other(3)]
+  |> list.map(planted_mode.to_value)
+}
+
+fn messages() -> List(#(String, PlantedMessage)) {
+  [empty(), full(), mixed()]
+}
+
+fn empty() -> #(String, PlantedMessage) {
+  #(
+    "the empty message",
+    PlantedMessage(
+      unsigned: 0,
+      wide_unsigned: 0,
+      below: 0,
+      float: 0,
+      wide: "",
+      counted: "",
+      guid: <<0:size(128)>>,
+      endpoint: bit_stream.Endpoint(address: 0, port: 0),
+      raw: <<0, 0, 0>>,
+      texts: [],
+      numbers: [],
+      floats: [],
+      records: [],
+      counted_numbers: [],
+      mode: Other(0),
+      frame: <<4, 0, 0, 0>>,
+    ),
+  )
+}
+
+fn full() -> #(String, PlantedMessage) {
+  let numbers = upto(1, 15) |> list.map(fn(number) { number * 8 })
+  #(
+    "the full message",
+    PlantedMessage(
+      unsigned: 7,
+      wide_unsigned: 0xFFFF_FFFF_FFFF_FFFF,
+      below: 19,
+      float: 0xFFFF_FFFF,
+      wide: string.repeat("é\u{1F600}", 100),
+      counted: "abcdef",
+      guid: <<0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15>>,
+      endpoint: bit_stream.Endpoint(address: 0x7F000001, port: 24_000),
+      raw: <<1, 2, 3>>,
+      texts: ["", "a", string.repeat("x", 130)],
+      numbers:,
+      floats: [0x3F800000, 0xBF000000],
+      records: upto(0, 14)
+        |> list.map(fn(number) {
+          PlantedRecord(number: number * 2, label: string.repeat("l", number))
+        }),
+      counted_numbers: list.map(numbers, fn(number) { number * 4 }),
+      mode: First,
+      frame: <<8, 0, 0, 0, 1, 2, 3, 4>>,
+    ),
+  )
+}
+
+fn mixed() -> #(String, PlantedMessage) {
+  #(
+    "the mixed message",
+    PlantedMessage(
+      unsigned: 5,
+      wide_unsigned: 0x0123_4567_89AB_CDEF,
+      below: 10,
+      float: 0x7FC00001,
+      wide: "\u{1F600} é",
+      counted: "\u{1F600}ab",
+      guid: <<255:size(128)>>,
+      endpoint: bit_stream.Endpoint(address: 1, port: 65_535),
+      raw: <<255, 0, 255>>,
+      texts: ["é"],
+      numbers: [127],
+      floats: [],
+      records: [PlantedRecord(number: 31, label: "\u{1F600}")],
+      counted_numbers: [511],
+      mode: planted_mode.Second,
+      frame: <<5, 0, 0, 0, 7>>,
+    ),
+  )
+}
+
+/// The numbers from `first` to `last`.
+fn upto(first: Int, last: Int) -> List(Int) {
+  case first > last {
+    True -> []
+    False -> [first, ..upto(first + 1, last)]
+  }
+}
