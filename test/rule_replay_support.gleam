@@ -80,6 +80,5 @@ pub fn replayed(
 /// whose names the recording's terms hold, and fails unless it passes there.
 pub fn replays_in_a_fresh_node(replay_test: #(String, String)) -> Nil {
   let #(module, function) = replay_test
-  assert fresh_node.run(module:, function:, timeout_ms: 50_000) == Ok(Nil)
-    as { function <> " passes in a fresh node, with nothing loaded before it" }
+  fresh_node.must_return(module:, function:)
 }

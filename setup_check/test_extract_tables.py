@@ -107,9 +107,10 @@ def lzma_block(content: bytes) -> bytes:
 
 class Planted:
     """A planted client: an index and an archive in a Patch folder, with the
-    files given as (path, content, flags)."""
+    files given as (path, content, flags), and the build the index's AIDX
+    header carries (the client's own, 16042, unless given)."""
 
-    def __init__(self, root: Path, files: list[tuple[str, bytes, int]]):
+    def __init__(self, root: Path, files: list[tuple[str, bytes, int]], build: int = 16042):
         self.patch = root / "Patch"
         self.patch.mkdir()
         self.stored: dict[str, bytes] = {}
@@ -125,7 +126,7 @@ class Planted:
         folders = sorted(entries)
         nodes = [directory([(folder, 3 + i) for i, folder in enumerate(folders)], [])]
         nodes += [directory([], entries[folder]) for folder in folders]
-        aidx = struct.pack("<IIII", AIDX_SIGNATURE, 1, 16042, 1)
+        aidx = struct.pack("<IIII", AIDX_SIGNATURE, 1, build, 1)
         (self.patch / "ClientData.index").write_bytes(pack([nodes[0], aidx] + nodes[1:], root=2))
         aarc = struct.pack("<IIII", AARC_SIGNATURE, 2, len(archive_blocks), 2)
         listing = b"".join(
@@ -360,6 +361,50 @@ class AllOrNothingTest(WorkInFolderCase):
         self.assertEqual(snapshot(self.destination), OLD_FILES)
         self.assert_nothing_beside_the_folder()
 
+    def test_an_index_of_another_build_is_refused_naming_the_build_and_publishes_nothing(self):
+        # The server is written for build 16042 (client_archive.target_build,
+        # GetVersionInfo 0x1406f8360); the tables of another build are not its tables.
+        write_folder(self.destination, OLD_FILES)
+        planted = Planted(self.root, [("DB/Alpha.tbl", table_content("alpha"), 5)], build=17000)
+        with self.assertRaises(extract_tables.Corrupt) as refused:
+            extract_tables.extract(planted.patch, self.destination)
+        self.assertEqual(refused.exception.name, "ClientData.index")
+        self.assertIn("17000", str(refused.exception))
+        self.assertIn("16042", str(refused.exception))
+        self.assertEqual(snapshot(self.destination), OLD_FILES)
+        self.assert_nothing_beside_the_folder()
+
+    def test_an_index_of_another_build_is_refused_before_anything_beside_the_folder_is_touched(self):
+        # A crash-cut run left an old folder and a staging folder; a refused run
+        # must not recover them (recover would move the old folder back).
+        aside, staging = extract_tables.aside_of(self.destination), extract_tables.staging_of(self.destination)
+        write_folder(aside, OLD_FILES)
+        write_folder(staging, {"Half.tbl": b"LBTD half written"})
+        planted = Planted(self.root, [("DB/Alpha.tbl", table_content("alpha"), 5)], build=17000)
+        with self.assertRaises(extract_tables.Corrupt):
+            extract_tables.extract(planted.patch, self.destination)
+        self.assertEqual(snapshot(aside), OLD_FILES)
+        self.assertEqual(snapshot(staging), {"Half.tbl": b"LBTD half written"})
+        self.assertFalse(self.destination.exists())
+
+    def test_an_index_of_build_16042_is_extracted(self):
+        planted = Planted(self.root, [("DB/Alpha.tbl", table_content("alpha"), 5)], build=16042)
+        self.assertEqual(extract_tables.extract(planted.patch, self.destination), ["Alpha.tbl"])
+
+    def test_main_refuses_an_index_of_another_build_naming_it(self):
+        write_folder(self.destination, OLD_FILES)
+        planted = Planted(self.root, [("DB/Alpha.tbl", table_content("alpha"), 5)], build=17000)
+        exe = self.root / "Client64" / "WildStar64.exe"
+        exe.parent.mkdir()
+        exe.write_bytes(b"planted")
+        settings = {"WILDSTAR_CLIENT_EXE": str(exe), "GENESIS_TABLE_DIR": str(self.destination)}
+        with mock.patch.dict(os.environ, settings), contextlib.redirect_stdout(io.StringIO()) as printed:
+            status = extract_tables.main()
+        self.assertEqual(status, 1, printed.getvalue())
+        self.assertIn("17000", printed.getvalue())
+        self.assertEqual(snapshot(self.destination), OLD_FILES)
+        self.assertTrue(planted.patch.exists())
+
     def test_a_set_of_the_expected_size_is_published(self):
         planted = self.planted_three()
         names = extract_tables.extract(planted.patch, self.destination, expected_count=3)
@@ -509,6 +554,64 @@ class RecoveryTest(WorkInFolderCase):
         self.assertEqual(sorted(path.name for path in self.root.iterdir()), ["Patch", "tables"])
 
 
+def aidx_index(
+    build: int = 16042,
+    root: int = 2,
+    root_block: bytes | None = None,
+    aidx_signature: int = AIDX_SIGNATURE,
+    aidx_version: int = 1,
+    pack_signature: int = PACK_SIGNATURE,
+    pack_version: int = 1,
+) -> bytes:
+    """An archive index of a header only: 3 blocks (0, 1 and 2) where block 2 is
+    the AIDX block (unless root_block replaces it), the root block index `root`,
+    laid out as the fact file's "archive_index.header" says. The block table is
+    at 0x240 and the AIDX block at 0x270."""
+    block = root_block if root_block is not None else struct.pack("<IIII", aidx_signature, aidx_version, build, 1)
+    data = bytearray(pack([b"", block], root=root))
+    struct.pack_into("<II", data, 0, pack_signature, pack_version)
+    return bytes(data)
+
+
+class IndexHeaderTest(unittest.TestCase):
+    """The one reader of an archive index's header, `read_header`, with the cases
+    the client's own reader decides (fact file, archive_index.header)."""
+
+    def test_a_well_formed_index_gives_its_build(self):
+        self.assertEqual(extract_tables.read_header(aidx_index()).build, 16042)
+        self.assertEqual(extract_tables.read_header(aidx_index(build=17000)).build, 17000)
+        self.assertEqual(extract_tables.build_of_index(aidx_index(build=17000)), (17000, ""))
+
+    def test_the_target_build_is_the_servers_own_build(self):
+        # client_archive.target_build is the build the server logs in with.
+        source = (Path(__file__).resolve().parent.parent / "src" / "genesis_prime" / "client_archive.gleam").read_text()
+        self.assertIn("pub const target_build = %s" % "{:_}".format(extract_tables.TARGET_BUILD), source)
+        self.assertEqual(extract_tables.TARGET_BUILD, 16042)  # GetVersionInfo 0x1406f8360 returns 0x3eaa
+
+    def test_what_the_client_refuses_is_not_an_index(self):
+        well_formed = aidx_index()
+        cases = {
+            "a PACK signature other than 0x5041434B (0x1401ba550)": aidx_index(pack_signature=0x41434B50),
+            "a PACK version other than 1 (0x1401ba559)": aidx_index(pack_version=2),
+            "root block index 0, which the block reader refuses even with a valid entry (0x1401b8600)": aidx_index(root=0),
+            "a root block index equal to the block count (0x1401ba5c5, 0x1401b8600)": aidx_index(root=3),
+            "a root block of size 0 (0x1401b8600)": aidx_index(root_block=b""),
+            "a root block of 8 bytes, under the 16-byte AIDX header (0x1401bf64c)": aidx_index(root_block=bytes(8)),
+            "an AIDX signature other than 0x41494458 (0x1401bf65c)": aidx_index(aidx_signature=0x58444941),
+            "an AIDX version other than 1 (0x1401bf665)": aidx_index(aidx_version=2),
+            "bytes that end inside the 0x230-byte PACK header (0x1401b7caa)": well_formed[:0x100],
+            "bytes that end inside the block table (0x1401b7d16)": well_formed[: 0x240 + 40],
+            "bytes that end inside the AIDX block": well_formed[: 0x270 + 8],
+        }
+        for why, data in cases.items():
+            with self.subTest(why):
+                with self.assertRaises(extract_tables.Corrupt):
+                    extract_tables.read_header(data)
+                build, reason = extract_tables.build_of_index(data)
+                self.assertIsNone(build)
+                self.assertTrue(reason)
+
+
 class SettingsTest(unittest.TestCase):
     def test_genesis_table_dir_names_the_folder(self):
         self.assertEqual(extract_tables.table_folder({"GENESIS_TABLE_DIR": "/x/tables", "GENESIS_HOME": "/h"}), Path("/x/tables"))
@@ -533,6 +636,12 @@ class RealClientTest(WorkInFolderCase):
     def real_patch(self) -> Path:
         self.assertTrue("WILDSTAR_CLIENT_EXE" in os.environ, "WILDSTAR_CLIENT_EXE is set by env.sh, which ./check reads")
         return extract_tables.patch_folder(os.environ)
+
+    def test_each_real_index_gives_the_target_build(self):
+        for name in ("Patch", "ClientData", "ClientDataEN", "Client64"):
+            with self.subTest(name):
+                data = (self.real_patch() / (name + ".index")).read_bytes()
+                self.assertEqual(extract_tables.build_of_index(data), (16042, ""), "build 16042 at AIDX offset 8")
 
     def test_all_384_tables_are_extracted_each_matching_the_index(self):
         patch = self.real_patch()

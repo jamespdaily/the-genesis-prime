@@ -26,6 +26,9 @@
 //// - a load's digest is SHA-256 over each file's name, a zero byte and the
 ////   file's bytes, in the order of the entries, as upper-case hex
 ////   (genesis_prime/table/loader/store).
+//// - a derived value is built once when the tables load, after the
+////   requirements hold, and stored under the load's key, so a reader takes it
+////   without building it (genesis_prime/table/loader/store).
 //// - the server's tables are stored under one fixed key, so the tables a
 ////   rule's settings hold are the same value in every run
 ////   (genesis_prime/table/loader/store).
@@ -38,8 +41,10 @@ import genesis_prime/table/id
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/localized_text
+import genesis_prime/table/world
 import gleam/bit_array
 import gleam/crypto
+import gleam/erlang/process
 import gleam/erlang/reference
 import gleam/int
 import gleam/list
@@ -96,7 +101,7 @@ pub fn every_client_table_loads_and_holds_the_rows_its_header_and_lookup_name_te
     as "game_tables.ClientData: 384 game tables in ClientData"
   assert list.map(entries, store.file) == the_clients_table_files()
     as "one entry per table file, in file-name order"
-  let tables = client_tables.shared()
+  let tables = client_tables.every_table()
   let counted =
     list.map(entries, fn(entry) {
       let #(record_count, lookup_ids) = counted_by_the_file(store.file(entry))
@@ -122,6 +127,7 @@ pub fn a_table_file_that_is_missing_fails_the_load_naming_the_file_test() -> Nil
       from: folder,
       entries: [localized_text.entry()],
       requirements: [],
+      derivations: [],
     )
     == Error(store.TableFileUnreadable("LocalizedText", simplifile.Enoent))
     as "LocalizedText.tbl is not in the folder, so reading it fails with enoent"
@@ -150,6 +156,7 @@ pub fn a_planted_table_loads_and_gives_each_row_by_id_and_nothing_for_a_gap_test
       from: folder,
       entries: [localized_text.entry()],
       requirements: [],
+      derivations: [],
     )
     as "a planted table with two rows loads"
   let assert Ok(one) = localized_text.get(tables, id.LocalizedTextId(1))
@@ -184,6 +191,7 @@ pub fn a_loads_digest_covers_each_files_name_and_bytes_and_changes_with_either_t
         from: folder,
         entries: [localized_text.entry()],
         requirements: [],
+        derivations: [],
       )
       as "a planted table loads"
     store.digest(tables)
@@ -211,6 +219,7 @@ pub fn load_planted_tables_for_the_server_twice() -> Nil {
       from: folder,
       entries: [localized_text.entry()],
       requirements: [],
+      derivations: [],
     )
   }
   let load_under_a_key = fn() {
@@ -219,6 +228,7 @@ pub fn load_planted_tables_for_the_server_twice() -> Nil {
       from: folder,
       entries: [localized_text.entry()],
       requirements: [],
+      derivations: [],
     )
   }
   let assert Ok(first) = load_for_server() as "the first load for the server"
@@ -233,13 +243,10 @@ pub fn load_planted_tables_for_the_server_twice() -> Nil {
 
 pub fn the_servers_tables_are_the_same_value_on_every_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert fresh_node.run(
-      module: "table_load_test",
-      function: "load_planted_tables_for_the_server_twice",
-      timeout_ms: 30_000,
-    )
-    == Ok(Nil)
-    as "two loads for the server hold equal tables in a node where nothing else holds its key"
+  fresh_node.must_return(
+    module: "table_load_test",
+    function: "load_planted_tables_for_the_server_twice",
+  )
 }
 
 pub fn a_failed_load_leaves_no_persistent_term_behind_test() -> Nil {
@@ -253,6 +260,7 @@ pub fn a_failed_load_leaves_no_persistent_term_behind_test() -> Nil {
       from: folder,
       entries: [localized_text.entry(), creature2.entry()],
       requirements: [],
+      derivations: [],
     )
   assert result.is_error(loaded)
     as "Creature2.tbl is not in the folder, so the load fails"
@@ -305,6 +313,7 @@ pub fn a_row_another_table_requires_that_is_missing_fails_the_load_naming_both_t
       from: folder,
       entries: [creature2.entry(), localized_text.entry()],
       requirements: [creature2_names_a_localized_text()],
+      derivations: [],
     )
     == Error(store.RowMissing(
       from_table: "Creature2",
@@ -335,6 +344,7 @@ pub fn a_row_another_table_requires_that_is_present_loads_test() -> Nil {
       from: folder,
       entries: [creature2.entry(), localized_text.entry()],
       requirements: [creature2_names_a_localized_text()],
+      derivations: [],
     )
     as "the required LocalizedText row 14610 is present, so the load succeeds"
   store.unload(tables)
@@ -452,6 +462,7 @@ fn load_file(
     from: folder,
     entries: [localized_text.entry()],
     requirements: [],
+    derivations: [],
   )
 }
 
@@ -527,6 +538,7 @@ fn creature2_with(
     from: folder,
     entries: [creature2.entry()],
     requirements: [],
+    derivations: [],
   )
 }
 
@@ -598,4 +610,101 @@ pub fn a_file_that_ends_inside_its_lookup_fails_the_load_test() -> Nil {
       tbl_file.OutsideFile(tbl_file.Lookup),
     ))
     as "0x1407c1f9a..0x1407c1fc6: the lookup (header 0x50 offset, 0x48 count of 4-byte entries) must lie inside the file; this one loses its last entry"
+}
+
+/// A derivation of the ids of the planted LocalizedText rows, which tells the
+/// subject each time it is built.
+fn ids_derivation(built: process.Subject(Nil)) -> store.Derivation {
+  store.derivation(name: "LocalizedTextIds", build: fn(tables) {
+    process.send(built, Nil)
+    store.ids(localized_text.entry(), tables)
+  })
+}
+
+pub fn a_derived_value_is_built_once_from_the_loaded_tables_and_every_read_gives_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let file =
+    localized_text_file([localized_text_row(1, 7), localized_text_row(3, 9)])
+  use folder <- planted_table.in_folder([#("LocalizedText", file)])
+  let key = reference.new()
+  let built = process.new_subject()
+  let assert Ok(tables) =
+    store.load(
+      under: key,
+      from: folder,
+      entries: [localized_text.entry()],
+      requirements: [],
+      derivations: [ids_derivation(built)],
+    )
+    as "a planted table loads with a derivation"
+  assert process.receive(built, 0) == Ok(Nil)
+    as "the load built the derived value once"
+  let first: List(Int) = store.derived(tables:, name: "LocalizedTextIds")
+  let second: List(Int) = store.derived(tables:, name: "LocalizedTextIds")
+  assert first == [1, 3] as "the ids of the two planted rows, read by the build"
+  assert second == first as "every read gives the value the load built"
+  assert process.receive(built, 0) == Error(Nil)
+    as "reading the value does not build it again"
+  assert planted_table.persistent_terms_under(key) == 2
+    as "one persistent term for the table and one for the derived value, under the load's key"
+  store.unload(tables)
+  assert planted_table.persistent_terms_under(key) == 0
+    as "unload erases the derived value's term with the table's"
+}
+
+pub fn a_derived_value_is_not_built_when_a_required_row_is_missing_test() -> Nil {
+  use <- owned_test.run(5000)
+  use folder <- planted_table.in_folder([
+    #("Creature2", creature2_file(14_610, [])),
+    #("LocalizedText", localized_text_file([localized_text_row(1, 7)])),
+  ])
+  let key = reference.new()
+  let built = process.new_subject()
+  assert result.is_error(
+    store.load(
+      under: key,
+      from: folder,
+      entries: [creature2.entry(), localized_text.entry()],
+      requirements: [creature2_names_a_localized_text()],
+      derivations: [ids_derivation(built)],
+    ),
+  )
+    as "Creature2 row 1 names a LocalizedText row the planted table lacks, so the load fails"
+  assert process.receive(built, 0) == Error(Nil)
+    as "a derivation reads tables the requirements have vouched for, so it is not built when one fails"
+  assert planted_table.persistent_terms_under(key) == 0
+    as "the failed load leaves no term, derived or not"
+}
+
+pub fn a_failed_load_under_a_key_erases_the_derived_value_an_earlier_load_left_test() -> Nil {
+  use <- owned_test.run(5000)
+  use folder <- planted_table.in_folder([
+    #("Creature2", creature2_file(14_610, [])),
+    #("LocalizedText", localized_text_file([localized_text_row(1, 7)])),
+  ])
+  let key = reference.new()
+  let built = process.new_subject()
+  let load = fn(entries, requirements) {
+    store.load(under: key, from: folder, entries:, requirements:, derivations: [
+      ids_derivation(built),
+    ])
+  }
+  let assert Ok(_) = load([localized_text.entry()], [])
+    as "the first load under the key holds"
+  assert planted_table.persistent_terms_under(key) == 2
+    as "the table's term and the derived value's"
+  assert result.is_error(
+    load([localized_text.entry(), creature2.entry()], [
+      creature2_names_a_localized_text(),
+    ]),
+  )
+    as "a load under the same key that fails on a missing row"
+  assert planted_table.persistent_terms_under(key) == 0
+    as "the failed load erased the tables it wrote and the derived value, which its tables' erasure would otherwise leave with no table"
+  let assert Ok(_) = load([localized_text.entry()], [])
+    as "a load under the key holds again"
+  assert result.is_error(load([localized_text.entry(), world.entry()], []))
+    as "a load under the same key that fails on a file that is not there"
+  assert planted_table.persistent_terms_under(key) == 0
+    as "the failed load erased the derived value too"
 }

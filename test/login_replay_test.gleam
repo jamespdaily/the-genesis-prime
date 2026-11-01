@@ -3,7 +3,7 @@
 //// places.
 //// - The recordings: a live login of the real client through both servers
 ////   to the game port (`test/rule_recording/2026-11-01-full-session`), each
-////   closed with `End`, which counts 11 inputs for the STS connection (the
+////   closed with `End`, which counts 13 inputs for the STS connection (the
 ////   client asks /Auth/PageVerifiedIps every 30 s while it plays) and 5 for
 ////   the auth connection.
 //// - The login rules read no game table, so these replays need no tables,
@@ -29,7 +29,7 @@ pub fn the_live_sessions_sts_recording_replays_to_the_same_steps_test() -> Nil {
       step: sts_connection.step,
     )
   assert inputs == count as "the replay folds every input the End counts"
-  assert count == 11 as "the live session's STS connection took 11 inputs"
+  assert count == 13 as "the live session's STS connection took 13 inputs"
 }
 
 pub fn the_live_sessions_auth_recording_replays_to_the_same_steps_test() -> Nil {

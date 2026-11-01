@@ -1,18 +1,12 @@
-//// The shared load of the client's tables: every test in a run that needs the
+//// The shared loads of the client's tables: every test in a run that needs the
 //// real tables gets the one load, so parallel tests never hold several copies
-//// of the 384 tables in persistent terms at once.
+//// of them in persistent terms at once. `shared` is the server's own tables,
+//// as its start loads them, and `every_table` all 384 of the client's.
 
 import client_tables
 import genesis_prime/table
-import genesis_prime/table/character_creation
-import genesis_prime/table/character_customization_label
-import genesis_prime/table/customization_parameter
-import genesis_prime/table/customization_parameter_map
-import genesis_prime/table/game_formula
+import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
-import genesis_prime/table/reward_property_premium_modifier
-import genesis_prime/table/world
-import genesis_prime/table/xp_per_level
 import gleam/erlang/process
 import gleam/list
 import owned_test
@@ -40,13 +34,13 @@ pub fn callers_in_different_processes_at_once_get_the_same_load_test() -> Nil {
     as "a caller after the others gets the same load too"
 }
 
-pub fn the_shared_load_holds_every_one_of_the_clients_384_tables_test() -> Nil {
+pub fn the_every_table_load_holds_every_one_of_the_clients_384_tables_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let entries = table.entries()
   assert list.length(entries) == 384
     as "game_tables.ClientData: 384 game tables in ClientData"
-  let tables = client_tables.shared()
+  let tables = client_tables.every_table()
   // Reading a table's ids crashes when its term was never stored.
   list.each(entries, fn(entry) {
     let _ids = store.ids(entry, tables)
@@ -54,22 +48,11 @@ pub fn the_shared_load_holds_every_one_of_the_clients_384_tables_test() -> Nil {
   })
 }
 
-pub fn the_shared_load_holds_rows_of_the_tables_the_tests_that_moved_to_it_read_test() -> Nil {
+pub fn the_shared_load_holds_rows_of_every_table_the_servers_list_names_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
-  // The tables the game server and the character tests read (test/game_server.gleam).
-  let read = [
-    character_creation.entry(),
-    character_customization_label.entry(),
-    customization_parameter.entry(),
-    customization_parameter_map.entry(),
-    game_formula.entry(),
-    reward_property_premium_modifier.entry(),
-    world.entry(),
-    xp_per_level.entry(),
-  ]
-  list.each(read, fn(entry) {
+  list.each(server_table.entries(), fn(entry) {
     assert store.ids(entry, tables) != []
       as { store.file(entry) <> ".tbl: the client's table has rows" }
   })

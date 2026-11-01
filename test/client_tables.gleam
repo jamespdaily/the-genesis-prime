@@ -5,7 +5,9 @@
 import database_support
 import envoy
 import genesis_prime/table
+import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
+import gleam/erlang/reference
 import gleam/list
 import gleam/string
 import simplifile
@@ -60,16 +62,33 @@ pub fn files() -> List(String) {
   |> list.sort(string.compare)
 }
 
-/// Every one of the client's 384 tables, loaded once per test run under the
-/// server's own key: the first caller loads them, every later caller in any
-/// test process gets the same `Tables`, and a recording of the game rule
-/// replays on them, as its settings hold the tables under that key. A failed
-/// load stops the caller, naming the table. Never unload them, and never load
-/// the tables again for a test that reads the real files; a test of the load
-/// itself loads its own under a key of its own and unloads it.
+/// The server's own tables (`server_table.entries`), loaded once per test run
+/// under the server's own key exactly as the server's start loads them: the
+/// first caller loads them, every later caller in any test process gets the
+/// same `Tables`, and a recording of the game rule replays on them, as its
+/// settings hold the tables under that key. A failed load stops the caller,
+/// naming the table. Never unload them, and never load the tables again for a
+/// test that reads the real files; a test of the load itself loads its own
+/// under a key of its own and unloads it.
 pub fn shared() -> store.Tables {
   database_support.once("client_tables", fn() {
-    case table.load_for_server(from: folder()) {
+    case server_table.load(from: folder()) {
+      Ok(tables) -> tables
+      Error(error) ->
+        panic as {
+          "the server's tables did not load from the client's files: "
+          <> store.describe(error)
+        }
+    }
+  })
+}
+
+/// Every one of the client's 384 tables, loaded once per test run under a key
+/// of their own, for the tests that read a table no rule of the server reads,
+/// such as the measure of the client's tables. Never unload them.
+pub fn every_table() -> store.Tables {
+  database_support.once("client_every_table", fn() {
+    case table.load(under: reference.new(), from: folder()) {
       Ok(tables) -> tables
       Error(error) ->
         panic as {

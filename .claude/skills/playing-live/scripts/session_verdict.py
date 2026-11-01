@@ -130,7 +130,8 @@ def check_report(report, row):
     if len(axes) == 3 and all(is_number(axis) for axis in axes):
         distance = math.dist(axes, (x, y, z))
         checks.append(("the position is the saved place", distance <= POSITION_TOLERANCE,
-                       f"{distance:.3f} units from the saved place (at most {POSITION_TOLERANCE})"))
+                       f"{distance:.3f} units from the saved place (at most {POSITION_TOLERANCE}); "
+                       f"saved at ({x}, {y}, {z})"))
     else:
         checks.append(("the position is the saved place", False, f"tPos = {position!r}"))
 

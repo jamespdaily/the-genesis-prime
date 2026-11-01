@@ -243,6 +243,7 @@ fn load_with_rows(
     from: folder,
     entries: [world_location2.entry()],
     requirements: [start_place.requirement()],
+    derivations: [],
   )
 }
 

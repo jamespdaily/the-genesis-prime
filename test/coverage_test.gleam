@@ -63,6 +63,7 @@ fn measured_over_planted_objectives(
       from: folder,
       entries: [quest_objective.entry()],
       requirements: [],
+      derivations: [],
     )
     as "a planted QuestObjective table loads"
   let measured = measurement.measure(engine, tables)
@@ -127,6 +128,7 @@ pub fn a_prerequisite_counts_the_values_of_its_three_type_columns_test() -> Nil 
       from: folder,
       entries: [prerequisite.entry()],
       requirements: [],
+      derivations: [],
     )
     as "a planted Prerequisite table loads"
   let measured = measurement.measure(engine_named("Prerequisites"), tables)
@@ -290,7 +292,7 @@ fn heaviest_first(types: List(TypeLine)) -> Bool {
 pub fn every_engine_of_the_clients_tables_gets_a_list_adding_up_to_its_non_zero_rows_test() -> Nil {
   use <- owned_test.run(600_000)
   use <- unitest.guard(client_tables.present())
-  let tables = client_tables.shared()
+  let tables = client_tables.every_table()
   list.each(engine.all(), fn(declared) {
     let measured = measurement.measure(declared, tables)
     case declared.source {

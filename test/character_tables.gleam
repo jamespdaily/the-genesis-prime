@@ -27,6 +27,7 @@ import genesis_prime/table/character_customization_label
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
+import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/world_location2
 import genesis_prime/table/xp_per_level
@@ -40,8 +41,11 @@ pub fn shared() -> store.Tables {
   database_support.once("character_tables", load)
 }
 
-fn load() -> store.Tables {
-  use folder <- planted_table.in_folder([
+/// The planted files of the server's tables, each by its file name: one file
+/// for every entry of `server_table.entries`, so a load of the server's list
+/// from a folder of them reads every file and meets every requirement.
+pub fn files() -> List(#(String, BitArray)) {
+  [
     planted_table.file(character_creation.schema, creation_rows()),
     planted_table.file(character_customization.schema, customization_rows()),
     planted_table.file(character_customization_label.schema, label_rows()),
@@ -56,24 +60,22 @@ fn load() -> store.Tables {
       xp_per_level.schema,
       xp_per_level_rows(min_xp_for_level()),
     ),
+  ]
+}
+
+/// The planted file of CustomizationParameterMap with one map, of race 1 and
+/// sex 0, that names this CustomizationParameter id.
+pub fn map_file_naming(parameter_id parameter_id: Int) -> #(String, BitArray) {
+  planted_table.file(customization_parameter_map.schema, [
+    map(id: 1, sex: 0, parameter_id:),
   ])
+}
+
+fn load() -> store.Tables {
+  use folder <- planted_table.in_folder(files())
   let assert Ok(tables) =
-    store.load(
-      under: reference.new(),
-      from: folder,
-      entries: [
-        character_creation.entry(),
-        character_customization.entry(),
-        character_customization_label.entry(),
-        customization_parameter.entry(),
-        customization_parameter_map.entry(),
-        world_location2.entry(),
-        game_formula.entry(),
-        xp_per_level.entry(),
-      ],
-      requirements: [],
-    )
-    as "the planted character tables load"
+    server_table.load_under(under: reference.new(), from: folder)
+    as "the planted character tables load as the server's tables do"
   tables
 }
 
@@ -275,18 +277,25 @@ fn parameter_rows() -> List(List(Cell)) {
 
 /// 46 maps for race 1, sex 1 and 48 for race 1, sex 0, each of parameter 1.
 fn map_rows() -> List(List(Cell)) {
-  let map = fn(id, sex) {
-    planted_table.row(customization_parameter_map.schema, [
-      #("ID", Integer(id)),
-      #("raceId", Integer(1)),
-      #("genderEnum", Integer(sex)),
-      #("customizationParameterId", Integer(1)),
-    ])
-  }
   list.append(
-    list.map(character_support.numbers(46), map(_, 1)),
-    list.map(character_support.numbers(48), fn(index) { map(index + 46, 0) }),
+    list.map(character_support.numbers(46), fn(id) {
+      map(id:, sex: 1, parameter_id: 1)
+    }),
+    list.map(character_support.numbers(48), fn(index) {
+      map(id: index + 46, sex: 0, parameter_id: 1)
+    }),
   )
+}
+
+/// A CustomizationParameterMap row of race 1 and this sex that names this
+/// CustomizationParameter id.
+fn map(id id: Int, sex sex: Int, parameter_id parameter_id: Int) -> List(Cell) {
+  planted_table.row(customization_parameter_map.schema, [
+    #("ID", Integer(id)),
+    #("raceId", Integer(1)),
+    #("genderEnum", Integer(sex)),
+    #("customizationParameterId", Integer(parameter_id)),
+  ])
 }
 
 /// A WorldLocation2 row with the columns the server reads.
