@@ -1,14 +1,22 @@
 //// The sessions: who is logged in to the game server, one slot per account. A
 //// game connection claims its account's slot once the hand-off has named the
-//// account; when another connection already holds the slot, that connection is
-//// told it was taken over, and the client of the old connection is
+//// account; when an older connection already holds the slot, that connection
+//// is told it was taken over, and the client of the old connection is
 //// disconnected (opcode.0x036A reason 19, which the old connection's rule
 //// writes). The newest login stays connected.
 ////
+//// The newest login is the one with the highest `ConnectionId`. A connection's
+//// id is `erlang:unique_integer([positive, monotonic])`, taken as the
+//// connection starts (src/step_runtime_ffi.erl `unique_id`), which is unique
+//// and strictly increasing on the node for as long as it runs, so a login made
+//// later has a higher id, whichever order claims reach Sessions in. A node
+//// restart drops every connection, so the counter starting again never
+//// matters.
+////
 //// This is the rule of the sessions service (genesis_prime/service/shell),
 //// started under the server's supervisor and found by its name. Its slots live
-//// only in the process: a restart loses them, and the game connections
-//// rebuild them (below).
+//// only in the process: a restart loses them, and the game connections claim
+//// again, in any order, and the ids settle which login keeps each slot.
 ////
 //// Each sequence, from Sessions' side. `Watch`, `Send` and `Reply` are effects
 //// its service shell carries out; a connection is named by its `ConnectionId`,
@@ -24,7 +32,7 @@
 ////   ◀─ Claimed          ◀─ Reply(caller, Claimed)
 //// ```
 ////
-//// Takeover, a second connection claims the account c1 holds:
+//// Takeover, a newer connection claims the account c1 holds (c2 > c1):
 ////
 //// ```
 //// connection c2              Sessions                              c1
@@ -36,8 +44,22 @@
 ////                                                                  reason 19 and stops
 //// ```
 ////
+//// An older connection claims the account c2 holds (c1 < c2), as after a
+//// restart in which c2 claimed first:
+////
+//// ```
+//// connection c1 (older)      Sessions                              c2
+////   Claim(account, c1) ─▶ Asked ─▶ slot names c2
+////                                  nothing changes
+////   ◀─ TakenOver        ◀─ Reply(caller, TakenOver)
+//// c1 writes 0x036A reason 19 and stops
+//// ```
+////
 //// - **A claim by the holder** answers `Claimed` and changes nothing: the
 ////   slot, its watch and the connections stay as they are.
+//// - **A claim with a higher id than the holder's** is the takeover above.
+//// - **A claim with a lower id than the holder's** is answered `TakenOver`
+////   and changes nothing: no slot, no watch, and the holder is told nothing.
 //// - **The holder ends.** The watch on it comes back as `WatchEnded(w)`; the
 ////   slot that names `w` is freed.
 //// - **The old holder ends after a takeover.** Its watch `w1` comes back as
@@ -45,11 +67,10 @@
 ////   forgotten.
 //// - **Sessions restarts.** The new process has no slots and no watches. Each
 ////   game connection watches Sessions, so each takes `WatchEnded` and, after a
-////   short wait, claims again (genesis_prime/game/connection); the claims run in the order they
-////   arrive, so the slots match the connections alive. A client that logs in
-////   to the account during the gap, before the old connection claims again,
-////   is not caught: when the old connection's claim then comes, it takes the
-////   slot from the newer one.
+////   short wait, claims its account again (genesis_prime/game/connection).
+////   Whatever order the claims arrive in, and however many restarts the
+////   connections lived through, the highest id of an account's connections
+////   holds its slot at the end and each lower one ends with reason 19.
 //// - **A claim with no answer.** The claimer gives up at its deadline and
 ////   ends, which frees its slot when Sessions did act on the claim; a holder
 ////   told `TakenOver` for a claim whose claimer gave up is disconnected all
@@ -65,9 +86,9 @@
 
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type Input, type Rule, type Step,
-  type WatchId, Answered, AnsweredLate, Asked, Connection, Effects, Reply, Rule,
-  Send, Socket, Started, Stop, Stopping, TimerFired, Watch, WatchEnded, WatchId,
-  Woken,
+  type WatchId, Answered, AnsweredLate, Asked, Connection, ConnectionId, Effects,
+  Reply, Rule, Send, Socket, Started, Stop, Stopping, TimerFired, Watch,
+  WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
@@ -78,9 +99,12 @@ pub const rule_name = "genesis_prime/sessions"
 
 /// What another process asks Sessions.
 pub type Message {
-  /// Make `connection` the holder of `account`'s slot. The answer is
-  /// `Claimed`, after the previous holder, if there is another, is sent
-  /// `TakenOver`.
+  /// Make `connection` the holder of `account`'s slot: a new login's first
+  /// claim, or a connection's claim again after Sessions restarted. The slot
+  /// goes to the higher id: a claim on an empty slot, or with a higher id than
+  /// the holder's, takes it and the answer is `Claimed`, after the previous
+  /// holder, if there is another, is sent `TakenOver`; a claim with a lower id
+  /// than the holder's is answered `TakenOver` and nothing else changes.
   Claim(account: AccountId, connection: ConnectionId)
 }
 
@@ -88,8 +112,9 @@ pub type Message {
 pub type Outgoing {
   /// The answer to a `Claim`: the connection holds the slot.
   Claimed
-  /// Sent to the connection that held a slot another connection has claimed:
-  /// its client is told the account was disconnected, and it ends.
+  /// Sent to the connection that held a slot a newer connection has claimed,
+  /// and the answer to a `Claim` of a slot a newer connection holds: the
+  /// connection's client is told the account was disconnected, and it ends.
   TakenOver
 }
 
@@ -131,24 +156,34 @@ pub fn step(
   case input.event {
     Started -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
-    Asked(caller:, message:) -> claimed(state:, caller:, message:)
+    Asked(caller:, message: Claim(account:, connection:)) ->
+      claimed(state:, caller:, account:, connection:)
     WatchEnded(watch:) -> ended(state:, watch:)
     Socket(..) | Woken(..) | TimerFired(..) | Answered(..) | AnsweredLate(..) ->
       panic as "Sessions takes Started, Asked, WatchEnded and Stopping only; its shell gives no Socket, Woken, TimerFired, Answered or AnsweredLate"
   }
 }
 
+/// A claim takes the slot when it is empty or the claimer's id is higher than
+/// the holder's; the holder, if another, is told `TakenOver`. A claim by the
+/// holder changes nothing, and a claim with a lower id than the holder's is
+/// answered `TakenOver` and changes nothing.
 fn claimed(
   state state: State,
   caller caller: CallerId,
-  message message: Message,
+  account account: AccountId,
+  connection connection: ConnectionId,
 ) -> #(State, Step(Outgoing, Nil)) {
-  let Claim(account:, connection:) = message
   let held = dict.get(state.slots, account)
+  let ConnectionId(claimer) = connection
   case held {
     Ok(Slot(connection: holder, ..)) if holder == connection -> #(
       state,
       Effects([Reply(caller, Claimed)]),
+    )
+    Ok(Slot(connection: ConnectionId(holder), ..)) if holder > claimer -> #(
+      state,
+      Effects([Reply(caller, TakenOver)]),
     )
     Ok(Slot(..)) | Error(Nil) -> {
       let told = case held {
