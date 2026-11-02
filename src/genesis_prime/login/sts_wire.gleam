@@ -97,7 +97,7 @@ pub fn take(
     when: !could_start_a_request(received),
     return: Error(BadRequestLine),
   )
-  case split_head(received, <<>>) {
+  case split_head(received) {
     None ->
       case bit_array.byte_size(received) >= head_limit {
         True -> Error(HeadTooLong)
@@ -137,25 +137,24 @@ fn prefix_of_post(size: Int) -> BitArray {
 }
 
 /// The head, the bytes before the first blank line, and the bytes after that
-/// line, found in one scan; `None` when the whole blank line is not within
-/// `head_limit` bytes of the start. `head` is what the scan has passed.
-fn split_head(
-  bytes: BitArray,
-  head: BitArray,
-) -> Option(#(BitArray, BitArray)) {
-  use <- bool.guard(
-    when: bit_array.byte_size(head) + blank_line_size > head_limit,
-    return: None,
-  )
-  case bytes {
-    <<"\r\n\r\n":utf8, after:bytes>> -> Some(#(head, after))
-    <<byte, rest:bytes>> -> split_head(rest, <<head:bits, byte>>)
-    _ -> None
+/// line; `None` when the whole blank line is not within `head_limit` bytes of
+/// the start.
+fn split_head(bytes: BitArray) -> Option(#(BitArray, BitArray)) {
+  case find(bytes, <<"\r\n\r\n":utf8>>, head_limit) {
+    Ok(start) ->
+      case bytes {
+        <<head:bytes-size(start), _blank_line:bytes-size(4), after:bytes>> ->
+          Some(#(head, after))
+        _ -> None
+      }
+    Error(Nil) -> None
   }
 }
 
-/// The bytes of the blank line that ends a head: two line ends.
-const blank_line_size = 4
+/// Where the first `pattern` starts in the first `within` bytes of `bytes`
+/// (OTP's `binary:match/3` with a scope; no Gleam library searches a bit array).
+@external(erlang, "genesis_prime_sts_wire_ffi", "find")
+fn find(bytes: BitArray, pattern: BitArray, within: Int) -> Result(Int, Nil)
 
 /// A head's request, without its body, and the length its `l` header names.
 fn read_head(head: BitArray) -> Result(#(Request, Int), WireError) {
