@@ -66,7 +66,7 @@ pub fn the_planted_customization_rows_and_labels_are_the_clients_test() -> Nil {
     assert get(planted) == get(real)
       as "CharacterCustomization: the planted row is the real row"
   })
-  list.each([2, 21, 22], fn(id) {
+  list.each([2, 21, 22, 26, 27], fn(id) {
     let get = fn(tables) {
       let assert Ok(label) =
         character_customization_label.get(
@@ -79,6 +79,12 @@ pub fn the_planted_customization_rows_and_labels_are_the_clients_test() -> Nil {
     assert get(planted) == get(real)
       as "CharacterCustomizationLabel: the planted label has the real id and faction"
   })
+  assert character_customization_label.get(
+      tables: real,
+      id: CharacterCustomizationLabelId(28),
+    )
+    == Error(Nil)
+    as "the client's CharacterCustomizationLabel has no row 28, which the planted tests use as a label with no row"
   assert list.all(character_customization.all(real), fn(row) { row.gender < 2 })
     as "the client's CharacterCustomization table has rows for genders 0 and 1 only"
 }

@@ -9,8 +9,8 @@
 ////   records 1 to 51 with their minXpForLevel, which GetLevelForExperience
 ////   0x140029820 reads.
 //// - CharacterCustomization rows 2, 9 and 10 (race 1, sex 0) and 603 and 604
-////   (race 1, sex 1) and the labels they use, 2, 21 and 22
-////   (CharacterCustomizationLabel).
+////   (race 1, sex 1) and the labels they use, 2, 21 and 22, with labels 26 and
+////   27 (CharacterCustomizationLabel), which no row holds.
 //// - WorldLocation2 rows 51596, 1594, 37015, 18987 and 8223,
 ////   the start places (genesis_prime/game/start_place), with the world, zone
 ////   and position of the client's row.
@@ -306,11 +306,14 @@ fn label(id id: Int, faction faction: Int) -> List(Cell) {
 }
 
 fn label_rows() -> List(List(Cell)) {
-  // Label 2 is for every faction, 21 for faction 166 and 22 for faction 167.
+  // Label 2 is for every faction, 21 for faction 166 and 22 for faction 167;
+  // 26 and 27 set the race, for factions 166 and 167, and no look holds them.
   [
     label(id: 2, faction: 0),
     label(id: 21, faction: 166),
     label(id: 22, faction: 167),
+    label(id: 26, faction: 166),
+    label(id: 27, faction: 167),
   ]
 }
 

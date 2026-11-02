@@ -244,9 +244,39 @@ pub fn a_label_of_another_faction_is_refused_and_says_which_test() -> Nil {
   assert character_creation.check(tables, looking([#(2, 1), #(21, 2)]))
     == Error(LabelNotAllowed(creation_id: 466, label: 21))
     as "CharacterCustomizationLabel row 21 is faction 166's, and row 466 is faction 167 (SetLookLabel 0x1400310b0)"
-  assert character_creation.check(tables, looking([#(26, 1)]))
+  assert character_creation.check(tables, looking([#(28, 1)]))
+    == Error(LabelNotAllowed(creation_id: 466, label: 28))
+    as "the client's CharacterCustomizationLabel has no row 28, and a label with no row can be set for no faction (SetLookLabel 0x1400310b0)"
+}
+
+pub fn the_race_labels_are_allowed_for_their_faction_only_and_no_look_holds_them_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let assert Ok(row) = creation_table.get(tables:, id: CharacterCreationId(466))
+    as "CharacterCreation row 466 exists"
+  let of_faction = fn(faction_id, label) {
+    character_creation.check_row(
+      tables,
+      creation_table.CharacterCreation(..row, faction_id:),
+      CreateCharacter(
+        ..request(466, "Ab Cd"),
+        customisation_labels: [label],
+        customisation_values: [1],
+      ),
+    )
+  }
+  assert of_faction(166, 26)
+    == Error(LookValueNotHeld(creation_id: 466, label: 26, value: 1))
+    as "CharacterCustomizationLabel row 26 is faction 166's, so the label is allowed there; labels 26 and 27 set the race and never enter a look (opcode.0x25b.counts), so no CharacterCustomization row holds them"
+  assert of_faction(167, 26)
     == Error(LabelNotAllowed(creation_id: 466, label: 26))
-    as "a label with no CharacterCustomizationLabel row can be set for no faction (SetLookLabel 0x1400310b0)"
+    as "label 26 is faction 166's, so it is not allowed for faction 167 (SetLookLabel 0x1400310b0)"
+  assert of_faction(167, 27)
+    == Error(LookValueNotHeld(creation_id: 466, label: 27, value: 1))
+    as "CharacterCustomizationLabel row 27 is faction 167's, and no look holds it"
+  assert of_faction(166, 27)
+    == Error(LabelNotAllowed(creation_id: 466, label: 27))
+    as "label 27 is faction 167's, so it is not allowed for faction 166"
 }
 
 pub fn a_value_the_index_does_not_hold_is_refused_and_says_which_test() -> Nil {
