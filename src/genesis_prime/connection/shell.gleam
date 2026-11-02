@@ -330,10 +330,11 @@ type Kept {
 /// A connection that has taken its socket: the socket, its script, the rule's
 /// state, the recording files when there are any, the `Now` of the input whose
 /// step is being carried out and the node's own monotonic time when the shell
-/// took it (the two an ask's wait counts its deadline from), the side that
-/// ended the connection once it has ended, the asks kept by their tags, the
-/// monitor of each watch the rule has open, each timer it has running and the
-/// stop deadline of a stop that arrived during an ask.
+/// took it (the two an ask's wait counts its deadline from), whether it is
+/// taking what the socket delivers or putting one recorded read together, the
+/// asks kept by their tags, the monitor of each watch the rule has open, each
+/// timer it has running and the stop deadline of a stop that arrived during an
+/// ask.
 type Running(state) {
   Running(
     socket: ClientSocket,
@@ -343,13 +344,23 @@ type Running(state) {
     wire: Option(WireWriter),
     at: step.Now,
     taken_ms: Int,
-    closed_by: Side,
-    held: BitArray,
+    reading: Reading,
     kept: Dict(Reference, Kept),
     watches: Watches,
     timers: Dict(TimerId, Started),
     stopping: Option(Int),
   )
+}
+
+/// How the connection takes what its socket delivers.
+type Reading {
+  /// The bytes that arrive are the next `Read` input. A server's connection is
+  /// always here, since its script fixes no size for a read.
+  TakeWhatArrives
+  /// The script gave the byte count `wanted` of the next recorded read, which
+  /// is more than has arrived: the connection holds `held` and takes no input
+  /// until the rest has come, and then takes the one `Read`.
+  Reassembling(held: BitArray, wanted: Int)
 }
 
 /// Where the connection is: waiting to take its socket from Ranch, or open.
@@ -448,15 +459,7 @@ fn selector(
   |> process.select_map(answers, fn(reply) {
     AnswerArrived(tag: reply.0, answer: reply.1)
   })
-  |> process.select_record(tag: Tcp, fields: 2, mapping: from_socket)
-  |> process.select_record(tag: TcpClosed, fields: 1, mapping: from_socket)
-  |> process.select_record(tag: TcpError, fields: 2, mapping: from_socket)
-  |> process.select_trapped_exits(fn(exit) {
-    case exit.pid == parent {
-      True -> ParentExited
-      False -> OtherExited
-    }
-  })
+  |> process.merge_selector(socket_and_exits(parent))
   |> select_delivered(registry)
   |> process.select_monitors(Ended)
 }
@@ -517,11 +520,7 @@ fn handle(
         Begin -> panic as "a connection takes Begin once"
         FromSocket(Read(bytes:)) -> read_arrived(connection:, running:, bytes:)
         FromSocket(ClosedByPeer) ->
-          take_next(
-            connection:,
-            running: Running(..running, closed_by: wire_recording.Client),
-            event: OwnEvent(step.PeerClosed),
-          )
+          take_next(connection:, running:, event: OwnEvent(step.PeerClosed))
         FromSocket(FailedToRead(failure:)) ->
           take_next(
             connection:,
@@ -647,8 +646,7 @@ fn accepted(
       wire:,
       at: now,
       taken_ms: runtime.monotonic_ms(),
-      closed_by: wire_recording.Server,
-      held: <<>>,
+      reading: TakeWhatArrives,
       kept: dict.new(),
       watches: watch.new(),
       timers: dict.new(),
@@ -745,22 +743,27 @@ fn take(
       at: now,
       taken_ms: runtime.monotonic_ms(),
     )
+  let closing = case event {
+    OwnEvent(step.PeerClosed) -> wire_recording.Client
+    _ -> wire_recording.Server
+  }
   case step {
     Effects(effects:) ->
-      carry(connection:, running:, effects:, then: WaitForInput)
+      carry(connection:, running:, effects:, then: WaitForInput, closing:)
     EffectsThenAsk(effects:, ask:) ->
-      carry(connection:, running:, effects:, then: MakeAsk(ask))
+      carry(connection:, running:, effects:, then: MakeAsk(ask), closing:)
   }
 }
 
 /// Takes what the socket delivered as a `Read` input. The server's script fixes
-/// no size (`script.NextRead`), so the bytes that arrived, with any held, are the
-/// input. A replay's script gives the byte count of the next recorded read; the
-/// shell holds the bytes and arms the socket again, taking no input, until it
-/// holds that many, so a read the socket delivers in parts reaches the rule as
-/// the one recorded input, and no other input (an answer, for one) is taken
-/// between the parts. Bytes held beyond the count are part of the same input.
-/// A close or a failure of the socket takes the held bytes with it.
+/// no size (`script.NextRead`), so the bytes that arrived are the input. A
+/// replay's script gives the byte count of the next recorded read; when fewer
+/// bytes have arrived the connection is `Reassembling`: it holds them and arms
+/// the socket again, taking no input, until it holds that many, so a read the
+/// socket delivers in parts reaches the rule as the one recorded input, and no
+/// other input (an answer, for one) is taken between the parts. Bytes held
+/// beyond the count are part of the same input. A close or a failure of the
+/// socket takes the held bytes with it.
 fn read_arrived(
   connection connection: Connection(settings, state, message, answer, request),
   running running: Running(state),
@@ -769,26 +772,101 @@ fn read_arrived(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
-  let held = <<running.held:bits, bytes:bits>>
+  let #(held, wanted) = case running.reading {
+    Reassembling(held:, wanted:) -> #(<<held:bits, bytes:bits>>, Some(wanted))
+    TakeWhatArrives -> #(bytes, running.script.next_read())
+  }
   let held_count = bit_array.byte_size(held)
-  case running.script.next_read() {
+  case wanted {
     Some(wanted) if held_count < wanted ->
       case read_once(running.socket) {
-        Ok(Nil) -> keep_open(connection:, running: Running(..running, held:))
+        Ok(Nil) ->
+          wait_for_rest(
+            connection:,
+            running: Running(..running, reading: Reassembling(held:, wanted:)),
+          )
         Error(failure) ->
           take_next(
             connection:,
-            running: Running(..running, held: <<>>),
+            running: Running(..running, reading: TakeWhatArrives),
             event: OwnEvent(ReadFailed(failure:)),
           )
       }
     Some(_) | None ->
       take_next(
         connection:,
-        running: Running(..running, held: <<>>),
+        running: Running(..running, reading: TakeWhatArrives),
         event: OwnEvent(step.Read(bytes: held)),
       )
   }
+}
+
+/// How long the shell waits, in real milliseconds, for the rest of a read it
+/// holds part of: the bound that ends the wait when the rest never comes.
+const held_read_wait_ms = 5000
+
+/// Waits for the rest of a read the shell holds part of, with a selective
+/// receive that takes only the socket's messages and the exits (the parent's is
+/// the server's stop, another process's is dropped), until the bound. Everything
+/// else, a delivered message, a timer, a watch's end, a late answer, stays in
+/// the mailbox, so the read is taken before any of it and the rule gets the
+/// inputs in the order the recording holds. A message the wait takes is handled
+/// as the actor would handle it. When the bound passes, the shell stops waiting
+/// and the actor takes the next message of the mailbox, the bytes still held.
+fn wait_for_rest(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  wait_for_rest_until(
+    connection:,
+    running:,
+    deadline_ms: runtime.monotonic_ms() + held_read_wait_ms,
+  )
+}
+
+fn wait_for_rest_until(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
+  deadline_ms deadline_ms: Int,
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  let remaining = deadline_ms - runtime.monotonic_ms()
+  case remaining <= 0 {
+    True -> keep_open(connection:, running:)
+    False ->
+      case
+        process.selector_receive(
+          socket_and_exits(connection.parent),
+          within: remaining,
+        )
+      {
+        Ok(OtherExited) ->
+          wait_for_rest_until(connection:, running:, deadline_ms:)
+        Ok(mail) ->
+          handle(Connection(..connection, status: Open(running:)), mail)
+        Error(Nil) -> keep_open(connection:, running:)
+      }
+  }
+}
+
+/// The socket's messages and the exits, as `Mail`: what the shell takes while it
+/// waits for the rest of a read.
+fn socket_and_exits(parent: Pid) -> Selector(Mail(message, answer)) {
+  process.new_selector()
+  |> process.select_record(tag: Tcp, fields: 2, mapping: from_socket)
+  |> process.select_record(tag: TcpClosed, fields: 1, mapping: from_socket)
+  |> process.select_record(tag: TcpError, fields: 2, mapping: from_socket)
+  |> process.select_trapped_exits(fn(exit) {
+    case exit.pid == parent {
+      True -> ParentExited
+      False -> OtherExited
+    }
+  })
 }
 
 /// What the script's clock is told an input is.
@@ -854,8 +932,9 @@ type Then(request) {
   WaitForInput
   /// Make this ask and wait for its outcome.
   MakeAsk(ask: Ask(request))
-  /// End the process: the step held a `Stop`, which drops its ask.
-  EndProcess
+  /// End the process, the connection ended by `by`: the step held a `Stop`,
+  /// which drops its ask.
+  EndProcess(by: Side)
 }
 
 /// Carries out the effects in order, then does what `then` says. A `Stop`
@@ -867,6 +946,7 @@ fn carry(
   running running: Running(state),
   effects effects: List(Effect(ConnectionEffect)),
   then then: Then(request),
+  closing closing: Side,
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
@@ -874,7 +954,7 @@ fn carry(
   case effects {
     [] -> finish(connection:, running:, then:)
     [effect, ..later] ->
-      carry_effect(connection:, running:, effect:, later:, then:)
+      carry_effect(connection:, running:, effect:, later:, then:, closing:)
   }
 }
 
@@ -889,6 +969,7 @@ fn carry_effect(
   effect effect: Effect(ConnectionEffect),
   later later: List(Effect(ConnectionEffect)),
   then then: Then(request),
+  closing closing: Side,
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
@@ -899,10 +980,11 @@ fn carry_effect(
       case send(running.socket, bytes), then {
         Ok(Nil), _ ->
           case recorder.sent(writer: running.wire, sequence:, bytes:) {
-            Ok(Nil) -> carry(connection:, running:, effects: later, then:)
+            Ok(Nil) ->
+              carry(connection:, running:, effects: later, then:, closing:)
             Error(error) -> wire_recording_failed(running.socket, error)
           }
-        Error(failure), EndProcess -> {
+        Error(failure), EndProcess(..) -> {
           runtime.log(
             LogWarning,
             "a write after the rule's Stop failed ("
@@ -910,7 +992,7 @@ fn carry_effect(
               <> "), so the connection ends",
             step.no_one,
           )
-          stop(running)
+          stop(running, by: wire_recording.Server)
         }
         Error(failure), MakeAsk(..) | Error(failure), WaitForInput ->
           take_next(
@@ -922,15 +1004,23 @@ fn carry_effect(
     }
     step.Log(line:) -> {
       runtime.log(line.level, line.text, line.about)
-      carry(connection:, running:, effects: later, then:)
+      carry(connection:, running:, effects: later, then:, closing:)
     }
-    step.Stop -> carry(connection:, running:, effects: later, then: EndProcess)
+    step.Stop ->
+      carry(
+        connection:,
+        running:,
+        effects: later,
+        then: EndProcess(by: closing),
+        closing:,
+      )
     step.Watch(watch:, target:) ->
       carry(
         connection:,
         running: open_watch(connection:, running:, watch:, target:),
         effects: later,
         then:,
+        closing:,
       )
     step.Unwatch(watch:) ->
       carry(
@@ -941,6 +1031,7 @@ fn carry_effect(
         ),
         effects: later,
         then:,
+        closing:,
       )
     OwnEffect(StartTimer(timer:, after_ms:)) ->
       carry(
@@ -948,6 +1039,7 @@ fn carry_effect(
         running: start_timer(connection:, running:, timer:, after_ms:),
         effects: later,
         then:,
+        closing:,
       )
     OwnEffect(CancelTimer(timer:)) ->
       carry(
@@ -955,6 +1047,7 @@ fn carry_effect(
         running: cancel_timer(running:, timer:),
         effects: later,
         then:,
+        closing:,
       )
   }
 }
@@ -1034,7 +1127,7 @@ fn finish(
   Mail(message, answer),
 ) {
   case then, running.stopping {
-    EndProcess, _ -> stop(running)
+    EndProcess(by:), _ -> stop(running, by:)
     MakeAsk(ask:), None -> make_ask(connection:, running:, ask:)
     MakeAsk(ask:), Some(_) ->
       take_next(
@@ -1264,19 +1357,21 @@ fn keep(
 
 /// The one end of a connection that was open: closes the socket, ends the
 /// recordings (`End` of the rule recording, the closing line of the wire
-/// recording) and lets the actor stop normally. Every stop of an open
-/// connection goes through it: the rule's `Stop`, also after a write that
-/// failed. A crash does not: the process ends with its reason, the socket
+/// recording, which names `by`, the side that ended it: the client when the
+/// step that stopped took the socket's close, the server otherwise) and lets
+/// the actor stop normally. Every stop of an open connection goes through it:
+/// the rule's `Stop`, also after a write that failed. A crash does not: the process ends with its reason, the socket
 /// closes with it, and the recordings have no end, so they never replay.
 fn stop(
-  running: Running(state),
+  running running: Running(state),
+  by by: Side,
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
   close(running.socket)
   runtime.finish_recording(running.writer)
-  runtime.finish_wire_recording(writer: running.wire, by: running.closed_by)
+  runtime.finish_wire_recording(writer: running.wire, by:)
   actor.stop()
 }
 
