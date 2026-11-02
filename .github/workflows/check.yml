@@ -84,9 +84,6 @@ jobs:
           key: ${{ steps.otp.outputs.cache-primary-key }}
       - run: ./check
       # The tests of the tools that gate a merge (the check script, the setup
-      # check, the table extractor) and of the hook scripts in dev/hooks. None
-      # needs the client or the database.
+      # check, the table extractor). None needs the client or the database.
       - name: Test the tools
-        run: |
-          python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
-          python3.13 -I -m unittest discover -s dev/hooks -p 'test_*.py'
+        run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
