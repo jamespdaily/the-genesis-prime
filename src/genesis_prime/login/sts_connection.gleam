@@ -46,6 +46,13 @@
 ////   Created is sent empty, since the client never reads it.
 //// - **UserId.** The account's game account id as GUID text; the client only
 ////   sends it back, in ListMyAccounts, RequestGameToken and 0x592.
+//// - **Limits.** Each ends the connection with nothing written, since a
+////   client past one is no client: a head over 1,024 bytes or a body over
+////   4,096 (`sts_wire`), with an error log; more than
+////   `client_connection.held_limit` bytes not yet taken, which an ask lets pile
+////   up, with an error log; and more requests than the rate allows
+////   (`Settings.rate`, a bucket counted in whole requests when they are taken),
+////   with a warning.
 //// - **Out of order.** A request the client never sends at that point, such
 ////   as KeyData before LoginStart, ends the connection with an error log;
 ////   bytes that are no STS request end it too. A whole request of a command
@@ -54,9 +61,9 @@
 ////   in the state and are taken once the answer comes.
 
 import genesis_prime/client_connection.{
-  type Answer, type Link, type Request, AskHandOff, AskStore, Asking, Bytes,
-  Connect, Continue, Done, FromHandOff, FromMap, FromSessions, FromStore,
-  Otherwise,
+  type Answer, type Bucket, type Link, type Request, AskHandOff, AskStore,
+  Asking, Bytes, Connect, Continue, Done, FromHandOff, FromMap, FromSessions,
+  FromStore, Otherwise,
 }
 import genesis_prime/hand_off.{GameToken, Holder, Put}
 import genesis_prime/login/guid.{type Guid}
@@ -91,6 +98,9 @@ pub type Settings {
     /// How long a game token stays good in the hand-off: the client shows it
     /// to the auth server right after it gets it.
     game_token_lifetime_ms: Int,
+    /// How fast the client may send its requests
+    /// (`genesis_prime/client_connection.Bucket`).
+    rate: Bucket,
   )
 }
 
@@ -194,7 +204,13 @@ pub fn step(
         Connect(connection:, peer:, seed:) -> #(
           Connected(Session(
             settings:,
-            link: client_connection.link(connection:, peer:, seed:),
+            link: client_connection.link(
+              connection:,
+              peer:,
+              seed:,
+              bucket: settings.rate,
+              now: input.now,
+            ),
             pending: <<>>,
             status: AwaitingLoginStart,
           )),
@@ -245,21 +261,34 @@ fn read(
   bytes bytes: BitArray,
 ) -> #(State, ConnectionStep(Request)) {
   let #(status, plain) = receive(session.status, bytes)
-  let session =
-    Session(..session, status:, pending: <<session.pending:bits, plain:bits>>)
-  case session.status {
-    // A request is taken only once the answer to the ask in flight comes.
-    FindingAccount(..) | Proven(stage: KeepingToken(..), ..) -> #(
-      Connected(session),
-      Effects([]),
+  let session = Session(..session, status:)
+  case
+    client_connection.hold(
+      session:,
+      held: session.pending,
+      bytes: plain,
+      about: about_of(session),
     )
-    AwaitingLoginStart
-    | AwaitingProof(..)
-    | Proven(stage: AwaitingLoginFinish, ..)
-    | Proven(stage: AwaitingAccountList(..), ..)
-    | Proven(stage: AwaitingTokenRequest(..), ..)
-    | Proven(stage: TokenGiven, ..) ->
-      client_connection.drive(session:, flow: flow(now), carried: [])
+  {
+    Error(handled) ->
+      client_connection.settle(handled:, flow: flow(now), carried: [])
+    Ok(pending) -> {
+      let session = Session(..session, pending:)
+      case session.status {
+        // A request is taken only once the answer to the ask in flight comes.
+        FindingAccount(..) | Proven(stage: KeepingToken(..), ..) -> #(
+          Connected(session),
+          Effects([]),
+        )
+        AwaitingLoginStart
+        | AwaitingProof(..)
+        | Proven(stage: AwaitingLoginFinish, ..)
+        | Proven(stage: AwaitingAccountList(..), ..)
+        | Proven(stage: AwaitingTokenRequest(..), ..)
+        | Proven(stage: TokenGiven, ..) ->
+          client_connection.drive(session:, flow: flow(now), carried: [])
+      }
+    }
   }
 }
 
@@ -287,6 +316,15 @@ fn flow(
         ),
         Stop,
       ])
+    },
+    charged: fn(session) {
+      client_connection.charge(
+        session:,
+        link: session.link,
+        now:,
+        about: about_of(session),
+        relinked: fn(link) { Session(..session, link:) },
+      )
     },
     connected: Connected,
   )

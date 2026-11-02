@@ -24,6 +24,14 @@ import login_vectors as vector
 import pog
 import readiness_support
 
+/// The most connections each test listener holds, a different number for each
+/// so a listener given another's setting shows.
+pub const sts_max_connections = 50
+
+pub const auth_max_connections = 51
+
+pub const game_max_connections = 52
+
 /// The realm the auth rule hands clients to.
 pub fn realm() -> auth_connection.Realm {
   auth_connection.Realm(
@@ -35,7 +43,11 @@ pub fn realm() -> auth_connection.Realm {
 
 /// The settings of the STS rule.
 pub fn sts_settings() -> sts_connection.Settings {
-  sts_connection.Settings(ask_deadline_ms: 5000, game_token_lifetime_ms: 60_000)
+  sts_connection.Settings(
+    ask_deadline_ms: 5000,
+    game_token_lifetime_ms: 60_000,
+    rate: support.roomy,
+  )
 }
 
 /// The settings of the auth rule: nothing planted.
@@ -45,6 +57,7 @@ pub fn auth_settings() -> auth_connection.Settings {
     ask_deadline_ms: 5000,
     session_key_lifetime_ms: 60_000,
     planted: None,
+    rate: support.roomy,
   )
 }
 
@@ -55,12 +68,14 @@ pub fn login() -> server.Login {
     sts: server.Served(
       listener: process.new_name("test_sts_listener"),
       port: 0,
+      max_connections: sts_max_connections,
       settings: sts_settings(),
       recorder: None,
     ),
     auth: server.Served(
       listener: process.new_name("test_auth_listener"),
       port: 0,
+      max_connections: auth_max_connections,
       settings: auth_settings(),
       recorder: None,
     ),
@@ -85,12 +100,14 @@ pub fn game() -> server.Served(game_connection.Settings) {
   server.Served(
     listener: process.new_name("test_game_listener"),
     port: 0,
+    max_connections: game_max_connections,
     settings: game_connection.Settings(
       realm_id: 1,
       max_characters: 12,
       character_slots: 2,
       tables: character_tables.shared(),
       ask_deadline_ms: 5000,
+      rate: support.roomy,
     ),
     recorder: None,
   )

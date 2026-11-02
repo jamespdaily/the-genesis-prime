@@ -90,7 +90,12 @@ pub fn start_joined(
     supervisor.new(supervisor.OneForOne)
     |> with
     |> supervisor.add(
-      listener.supervised(Listener(name:, port: 0, connection:)),
+      listener.supervised(Listener(
+        name:,
+        port: 0,
+        max_connections: 1000,
+        connection:,
+      )),
     )
     |> supervisor.start
     as "the tree started"

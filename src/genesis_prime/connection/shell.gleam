@@ -32,6 +32,11 @@
 //// - **A handshake that fails.** A client gone before the handshake, or a
 ////   socket that cannot be set up, ends the connection normally with a debug
 ////   line and no warning or error: no recording was opened and no step ran.
+//// - **Reads.** The socket's buffer is `frame.read_limit`, so no read holds
+////   more bytes than that, and the socket is active once: the shell arms it
+////   again after each step's effects, including while an ask waits. What
+////   arrives meanwhile is the rule's to hold or refuse
+////   (`genesis_prime/client_connection.hold`).
 //// - **A message the selector does not take.** The shell drops it and logs a
 ////   warning that names the message's kind (its tag or its shape) and never its
 ////   contents, which could hold a secret; the line carries the connection's
@@ -164,6 +169,7 @@
 ////   answers a caller, sends, or takes a service's input does not compile
 ////   against this shell.
 
+import genesis_prime/connection/frame
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/service.{type Locate, type Sent}
@@ -492,7 +498,7 @@ fn begin(
   Mail(message, answer),
 ) {
   let settings = connection.settings
-  case handshake(ranch_ref, settings.send_deadline_ms) {
+  case handshake(ranch_ref, settings.send_deadline_ms, frame.read_limit) {
     Error(failure) -> {
       runtime.log(LogDebug, describe_handshake(failure), step.no_one)
       actor.stop()
@@ -1161,6 +1167,7 @@ fn process_flag(
 fn handshake(
   ranch_ref: RanchRef,
   send_deadline_ms: Int,
+  read_limit: Int,
 ) -> Result(ClientSocket, HandshakeFailure)
 
 @external(erlang, "connection_shell_ffi", "peer")

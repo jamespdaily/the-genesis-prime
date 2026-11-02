@@ -93,3 +93,22 @@ pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_tw
   let _reason = ask_support.stop_tree(started.tree)
   Nil
 }
+
+@external(erlang, "connection_actor_support_ffi", "listener_limits")
+fn listener_limits(listener: process.Name(Nil)) -> #(Int, Int)
+
+pub fn each_listener_holds_the_connections_its_setting_gives_with_one_acceptor_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started = login_support.start()
+  let settings = started.settings
+  assert listener_limits(settings.login.sts.listener)
+    == #(login_support.sts_max_connections, 1)
+    as "the STS listener: its own setting, and one acceptor, since Ranch lets one connection in past the limit for each extra acceptor"
+  assert listener_limits(settings.login.auth.listener)
+    == #(login_support.auth_max_connections, 1)
+    as "the auth listener: its own setting, not the STS listener's"
+  assert listener_limits(settings.game.listener)
+    == #(login_support.game_max_connections, 1)
+    as "the game listener: its own setting"
+  login_support.stop(started)
+}

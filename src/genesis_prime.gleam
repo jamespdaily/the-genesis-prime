@@ -17,6 +17,7 @@
 
 import envoy
 import genesis_prime/application
+import genesis_prime/client_connection.{Bucket}
 import genesis_prime/connection/registry
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
@@ -338,6 +339,24 @@ fn from_environment(
 /// server's hello and character list.
 const realm_id = 1
 
+/// How many connections each listener holds at once, and how fast a client may
+/// send on it, are the server's choice and placeholders, set by the load run
+/// below the most the server is measured to take. The rates stay above what the
+/// live session's recording shows a client sends: the game client's busiest
+/// second held 20 frames, 15 of them within 29 ms of entering the world, and
+/// the logins send a handful of requests in all.
+const sts_max_connections = 1000
+
+const auth_max_connections = 1000
+
+const game_max_connections = 1000
+
+const sts_rate = Bucket(burst: 16, per_second: 4)
+
+const auth_rate = Bucket(burst: 16, per_second: 4)
+
+const game_rate = Bucket(burst: 40, per_second: 20)
+
 /// The port the game server listens on and the auth server hands clients to:
 /// the client's default.
 const game_port = 24_000
@@ -367,15 +386,18 @@ fn login() -> server.Login {
     sts: server.Served(
       listener: process.new_name("sts_listener"),
       port: 6600,
+      max_connections: sts_max_connections,
       settings: sts_connection.Settings(
         ask_deadline_ms: 5000,
         game_token_lifetime_ms: 60_000,
+        rate: sts_rate,
       ),
       recorder: None,
     ),
     auth: server.Served(
       listener: process.new_name("auth_listener"),
       port: 23_115,
+      max_connections: auth_max_connections,
       settings: auth_connection.Settings(
         realm: auth_connection.Realm(
           id: realm_id,
@@ -385,6 +407,7 @@ fn login() -> server.Login {
         ask_deadline_ms: 5000,
         session_key_lifetime_ms: 60_000,
         planted: None,
+        rate: auth_rate,
       ),
       recorder: None,
     ),
@@ -402,12 +425,14 @@ fn game(tables: store.Tables) -> server.Served(game_connection.Settings) {
   server.Served(
     listener: process.new_name("game_listener"),
     port: game_port,
+    max_connections: game_max_connections,
     settings: game_connection.Settings(
       realm_id:,
       max_characters: 12,
       character_slots: 2,
       tables:,
       ask_deadline_ms: 5000,
+      rate: game_rate,
     ),
     recorder: None,
   )

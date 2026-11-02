@@ -12,6 +12,10 @@
 //// server stops after the effects the rule gives it.
 //// Each takes a request or frame at a time, through a `Flow` that `drive`
 //// runs, and says what it decided with `Handled`, which `settle` carries out.
+//// Each holds at most `held_limit` bytes it has not taken (`hold`) and counts
+//// each whole request or frame the client sends against a rate (`charge`),
+//// and ends the connection past either, in its rule, so a recording replays
+//// to the same end.
 //// The rules that take the client's wrapper (the auth rule and the game rule)
 //// open each whole frame with `open`, and write each message with `wrapped`.
 
@@ -32,6 +36,8 @@ import genesis_prime/step.{
 import genesis_prime/store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
+import gleam/bit_array
+import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -62,19 +68,135 @@ pub type Message {
 }
 
 /// What an accepted connection keeps beside its rule's own state: who
-/// it is for log lines, the seed's random source, and the number of the last
-/// ask it made, so each ask has an id of its own.
+/// it is for log lines, the seed's random source, the number of the last
+/// ask it made, so each ask has an id of its own, and what the client may
+/// still send before the rate refuses it.
 pub type Link {
-  Link(connection: ConnectionId, peer: Peer, random: Random, asks: Int)
+  Link(
+    connection: ConnectionId,
+    peer: Peer,
+    random: Random,
+    asks: Int,
+    allowance: Allowance,
+  )
 }
 
-/// The link of a connection just accepted, with the seed's random source.
+/// How fast a client may send, as a bucket of whole requests or frames. A
+/// client that has sent nothing for a while may send `burst` at once, and the
+/// bucket fills by `per_second` each second, so a client that sends at exactly
+/// `per_second` is never refused. Both are the server's choice, in each rule's
+/// settings so a recording's header holds them: `burst` is above the most the
+/// real client sends together and `per_second` above its busiest second, and
+/// both are below what the server can take from one connection.
+pub type Bucket {
+  Bucket(burst: Int, per_second: Int)
+}
+
+/// What the client may still send: its bucket, and what the bucket held at the
+/// monotonic time of the last whole request or frame, in thousandths of one,
+/// so a refill of `per_second` a second is whole thousandths each millisecond
+/// and no time is lost to rounding.
+pub type Allowance {
+  Allowance(bucket: Bucket, thousandths: Int, as_of_ms: Int)
+}
+
+/// The link of a connection just accepted at `now`, with the seed's random
+/// source and a full bucket.
 pub fn link(
   connection connection: ConnectionId,
   peer peer: Peer,
   seed seed: BitArray,
+  bucket bucket: Bucket,
+  now now: Now,
 ) -> Link {
-  Link(connection:, peer:, random: random.new(seed:), asks: 0)
+  Link(
+    connection:,
+    peer:,
+    random: random.new(seed:),
+    asks: 0,
+    allowance: Allowance(
+      bucket:,
+      thousandths: bucket.burst * 1000,
+      as_of_ms: now.monotonic_ms,
+    ),
+  )
+}
+
+/// Counts one whole request or frame the client sent, at the time of the
+/// input that takes it, against the connection's rate: the session with the
+/// link that has paid for it (`relinked`), or the end of the connection when
+/// the bucket holds less than one, with a warning and nothing written to a
+/// client that sends faster than any client does.
+pub fn charge(
+  session session: session,
+  link link: Link,
+  now now: Now,
+  about about: About,
+  relinked relinked: fn(Link) -> session,
+) -> Result(session, Handled(session)) {
+  let allowance = link.allowance
+  let capacity = allowance.bucket.burst * 1000
+  let refilled =
+    int.min(
+      capacity,
+      allowance.thousandths
+        + int.max(0, now.monotonic_ms - allowance.as_of_ms)
+        * allowance.bucket.per_second,
+    )
+  case refilled >= 1000 {
+    True ->
+      Ok(relinked(
+        Link(
+          ..link,
+          allowance: Allowance(
+            ..allowance,
+            thousandths: refilled - 1000,
+            as_of_ms: now.monotonic_ms,
+          ),
+        ),
+      ))
+    False ->
+      Error(
+        Done(session, [
+          log(
+            about:,
+            level: LogWarning,
+            text: "the client sent faster than the rate allows",
+          ),
+          Stop,
+        ]),
+      )
+  }
+}
+
+/// The most bytes a connection holds that its rule has not taken as requests
+/// or frames: one whole frame at the client's size limit, 131,070
+/// (MessageSizeLimit 0x140335ec0), and one read of the socket
+/// (`genesis_prime/connection/frame.read_limit`). A server choice. Bytes wait
+/// while an ask is out, and a client may send as many as the network carries
+/// in that time.
+fn held_limit() -> Int {
+  frame.size_limit + frame.read_limit
+}
+
+/// The bytes a rule holds after a read of `bytes` is added to the `held` it
+/// had, or the end of the connection when that is more than `held_limit`,
+/// with an error and nothing written to a client that is no client.
+pub fn hold(
+  session session: session,
+  held held: BitArray,
+  bytes bytes: BitArray,
+  about about: About,
+) -> Result(BitArray, Handled(session)) {
+  use <- bool.guard(
+    when: bit_array.byte_size(held) + bit_array.byte_size(bytes) > held_limit(),
+    return: Error(end_for(
+      session:,
+      about:,
+      text: "the client sent more bytes than the server holds for it",
+    )),
+  )
+  Ok(<<held:bits, bytes:bits>>)
 }
 
 /// The next `count` random bytes of the connection's seed.
@@ -267,6 +389,9 @@ pub type Flow(session, item, error, state) {
     taking: fn(session, item, BitArray) -> Handled(session),
     /// What bytes that are no item do: the rule ends the connection.
     refused: fn(session, error) -> Handled(session),
+    /// Counts one whole item against the session's rate: the session once it
+    /// has paid, or what the rule does when the rate is past (`charge`).
+    charged: fn(session) -> Result(session, Handled(session)),
     /// The rule's state for a session.
     connected: fn(session) -> state,
   )
@@ -286,7 +411,11 @@ pub fn drive(
       settle(handled: flow.refused(session, error), flow:, carried:)
     Ok(None) -> #(flow.connected(session), Effects(list.reverse(carried)))
     Ok(Some(#(first, rest))) ->
-      settle(handled: flow.taking(session, first, rest), flow:, carried:)
+      case flow.charged(session) {
+        Ok(session) ->
+          settle(handled: flow.taking(session, first, rest), flow:, carried:)
+        Error(handled) -> settle(handled:, flow:, carried:)
+      }
   }
 }
 

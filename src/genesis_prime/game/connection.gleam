@@ -137,6 +137,13 @@
 ////   client sends 0x0637 on every move, up to 8 a second (0x140c3a004).
 //// - **Log lines** carry the connection, the peer and the account once the
 ////   hand-off has named it, and in the world the map and the character.
+//// - **Limits.** Each ends the connection with nothing written, since a
+////   client past one is no client: a frame longer than 131,070 bytes
+////   (MessageSizeLimit 0x140335ec0), refused at its length field; more than
+////   `client_connection.held_limit` bytes not yet taken, which an ask or the
+////   claim's wait lets pile up, with an error log; and more frames than the
+////   rate allows (`Settings.rate`, a bucket counted in whole frames when they
+////   are taken), with a warning.
 //// - **Out of order.** A frame the client's reader would refuse ends the
 ////   connection, as does a 0x025C that holds no 0x025B or a 0x025B or 0x07DD
 ////   whose body is cut; a whole frame of a message the rule does not take,
@@ -144,9 +151,10 @@
 ////   unhandled and the connection goes on (opcode.0x241).
 
 import genesis_prime/client_connection.{
-  type Answer, type Link, type Message, type Request, AskHandOff, AskMap,
-  AskSessions, AskStore, Asking, Bytes, Connect, Continue, Done, FromHandOff,
-  FromMap, FromSessions, FromStore, Inside, Otherwise, SentBySessions, Settled,
+  type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
+  AskMap, AskSessions, AskStore, Asking, Bytes, Connect, Continue, Done,
+  FromHandOff, FromMap, FromSessions, FromStore, Inside, Otherwise,
+  SentBySessions, Settled,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -208,6 +216,9 @@ pub type Settings {
     tables: table_store.Tables,
     /// How long an ask to the hand-off, Sessions or the store may take.
     ask_deadline_ms: Int,
+    /// How fast the client may send its frames
+    /// (`genesis_prime/client_connection.Bucket`).
+    rate: Bucket,
   )
 }
 
@@ -321,7 +332,13 @@ pub fn step(
         Connect(connection:, peer:, seed:) -> #(
           Connected(Session(
             settings:,
-            link: client_connection.link(connection:, peer:, seed:),
+            link: client_connection.link(
+              connection:,
+              peer:,
+              seed:,
+              bucket: settings.rate,
+              now: input.now,
+            ),
             pending: <<>>,
             cipher: cipher.base(),
             unhandled_logged: set.new(),
@@ -373,15 +390,26 @@ fn heard(
       server_stopping(session)
     })
   {
-    Bytes(bytes:) -> {
-      let session =
-        Session(..session, pending: <<session.pending:bits, bytes:bits>>)
-      case asking(session.status) {
-        // A frame is taken only once the answer to the ask in flight comes.
-        True -> #(Connected(session), Effects([]))
-        False -> client_connection.drive(session:, flow: flow(now), carried: [])
+    Bytes(bytes:) ->
+      case
+        client_connection.hold(
+          session:,
+          held: session.pending,
+          bytes:,
+          about: about_of(session),
+        )
+      {
+        Error(handled) -> settled(handled:, now:)
+        Ok(pending) -> {
+          let session = Session(..session, pending:)
+          case asking(session.status) {
+            // A frame is taken only once the answer to the ask in flight comes.
+            True -> #(Connected(session), Effects([]))
+            False ->
+              client_connection.drive(session:, flow: flow(now), carried: [])
+          }
+        }
       }
-    }
     client_connection.Outcome(outcome:) ->
       settled(handled: answered(session:, now:, outcome:), now:)
     Connect(..) -> #(
@@ -420,6 +448,15 @@ fn flow(now: Now) -> client_connection.Flow(Session, Frame, FrameError, State) {
     },
     refused: fn(session, error) {
       end_for(session, "the bytes are no frame: " <> frame.describe(error))
+    },
+    charged: fn(session) {
+      client_connection.charge(
+        session:,
+        link: session.link,
+        now:,
+        about: about_of(session),
+        relinked: fn(link) { Session(..session, link:) },
+      )
     },
     connected: Connected,
   )

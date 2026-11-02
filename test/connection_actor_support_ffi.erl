@@ -5,7 +5,7 @@
 -module(connection_actor_support_ffi).
 
 -export([exports/1, message_queue_data/1, hang_up/2, hand_over_to_failing_transport/2,
-         hand_over_closed_socket/2, kept_asks/1]).
+         hand_over_closed_socket/2, kept_asks/1, socket_buffer/1, listener_limits/1]).
 
 %% The functions a module exports, as {Name, Arity}, without the module's own
 %% module_info.
@@ -27,6 +27,21 @@ kept_asks(Pid) ->
      {open, {running, _Socket, _State, _Writer, Kept, _Watches, _Timers, _Stopping}}}
         = sys:get_state(Pid),
     maps:size(Kept).
+
+%% The buffer, in bytes, of an open connection's socket, which bounds what one
+%% read of it holds, read from the actor's state as OTP's sys:get_state gives
+%% it: the Running record's socket.
+socket_buffer(Pid) ->
+    {connection, _Settings, _Parent, _Subject, _Answers,
+     {open, {running, Socket, _State, _Writer, _Kept, _Watches, _Timers, _Stopping}}}
+        = sys:get_state(Pid),
+    {ok, [{buffer, Buffer}]} = inet:getopts(Socket, [buffer]),
+    Buffer.
+
+%% The most connections a Ranch listener holds and how many acceptor processes
+%% it runs, as Ranch reports them.
+listener_limits(Ref) ->
+    {ranch:get_max_connections(Ref), length(ranch:procs(Ref, acceptors))}.
 
 %% Connects to the port and closes at once: with a FIN (plain) or, with a
 %% linger of 0, a reset. Gives the port the client connected from.
