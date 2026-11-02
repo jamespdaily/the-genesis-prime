@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_facts  # noqa: E402
 import check_support as cs  # noqa: E402
 import decompiled  # noqa: E402
+import query  # noqa: E402
 from query_client import QueryClient, QueryFailed, QueryProcessEnded, QueryTimeout, open_query_client  # noqa: E402
 PLANTED_CALLER = 0x140000100
 PLANTED_CALLEE = 0x140000200
@@ -559,6 +560,15 @@ class MainTest(TemporaryDirectoryTest):
         self.assertEqual(status, 1)
         self.assertIn("planted: the query process ended", err.getvalue())
         self.assertFalse((self.directory / "state.json").exists())
+
+    def test_a_holder_that_cannot_be_reached_makes_refresh_exit_1_and_say_why(self):
+        def unreachable():
+            raise query.HolderUnavailable("no query process is running")
+
+        out, err = io.StringIO(), io.StringIO()
+        env = {"GENESIS_DECOMPILED_DIR": str(self.directory)}
+        self.assertEqual(decompiled.main(["refresh"], env, unreachable, out, err), 1)
+        self.assertIn("no query process is running", err.getvalue())
 
     def run_main_with_errors(self, command: str, client: PlantedClient) -> tuple[int, str]:
         out, err = io.StringIO(), io.StringIO()

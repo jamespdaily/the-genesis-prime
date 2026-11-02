@@ -111,7 +111,7 @@ fn decode_record(
     <<
       c0:size(32)-little-signed,
       c1:size(32)-little-signed,
-      c2:size(32)-little-signed,
+      c2:size(32)-little,
       c3:size(32)-little-signed,
       c4:size(32)-little-signed,
       _:size(32),

@@ -18,6 +18,8 @@ from query_client import (  # noqa: E402
     QueryFailed,
     QueryProcessEnded,
     QueryTimeout,
+    answer_of,
+    check_reply_id,
     open_query_client,
     query_command,
 )
@@ -84,6 +86,31 @@ class QueryClientTest(unittest.TestCase):
     def test_a_reply_that_is_json_but_not_an_object_raises_process_ended(self):
         with self.assertRaisesRegex(QueryProcessEnded, "protocol"):
             self.client.answer("list", text="")
+
+
+class ReplyTest(unittest.TestCase):
+    def test_the_answer_of_an_ok_reply_is_its_answer(self):
+        self.assertEqual(answer_of({"id": 1, "ok": True, "answer": [1, 2]}), [1, 2])
+        self.assertIsNone(answer_of({"id": 1, "ok": True, "answer": None}))
+
+    def test_an_error_reply_raises_query_failed_with_its_error_text(self):
+        with self.assertRaisesRegex(QueryFailed, "planted refusal"):
+            answer_of({"id": 1, "ok": False, "error": "planted refusal"})
+
+    def test_a_reply_that_is_neither_ok_nor_has_error_text_raises_query_failed_showing_it(self):
+        with self.assertRaisesRegex(QueryFailed, "no error text in .*'surprise'"):
+            answer_of({"id": 1, "surprise": True})
+
+    def test_a_reply_with_the_requests_id_passes_and_one_with_another_id_raises_process_ended(self):
+        check_reply_id({"id": 4, "kind": "x"}, {"id": 4, "ok": True})
+        with self.assertRaisesRegex(QueryProcessEnded, "not for"):
+            check_reply_id({"id": 4, "kind": "x"}, {"id": 3, "ok": True})
+
+    def test_a_request_with_no_id_has_no_id_to_check(self):
+        check_reply_id({"kind": "x"}, {"id": None, "ok": False})
+
+    def test_a_request_that_is_not_an_object_has_no_id_to_check(self):
+        check_reply_id([1, 2], {"id": None, "ok": False})
 
 
 class CloseTest(unittest.TestCase):

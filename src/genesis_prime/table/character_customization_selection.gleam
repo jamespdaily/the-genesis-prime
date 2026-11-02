@@ -86,8 +86,8 @@ fn decode_record(
   case record {
     <<
       c0:size(32)-little-signed,
-      c1:size(32)-little-signed,
-      c2:size(32)-little-signed,
+      c1:size(32)-little,
+      c2:size(32)-little,
       _:size(32),
       c3:size(64)-little-signed,
       _:bits,

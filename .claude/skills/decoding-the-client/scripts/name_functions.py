@@ -5,7 +5,8 @@ function exists and what it is called now. With GHIDRA_WRITE=1 it creates a
 missing function, renames each one and saves the project. Either way it opens
 only the project that exists, and exits naming the folder when there is none:
 the first start of ghidra_query.py makes it. Run with the pinned Python and the
-environment ghidra_env reads, while no query process holds the project open.
+environment ghidra_env reads, while no query process holds the project open: it refuses to run
+while a holder runs (`python3 -I query.py stop` ends it).
 
 Usage: python3 -I name_functions.py
 """
@@ -21,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_facts  # noqa: E402
 import ghidra_env  # noqa: E402
 import ghidra_project  # noqa: E402
+import query  # noqa: E402
 
 _ADDRESS_KEY = re.compile(r"0x14[0-9a-f]{7}")
 
@@ -97,11 +99,17 @@ def name_and_save(settings: ghidra_env.Settings, pairs: list[tuple[int, str]], w
     return outcomes
 
 
-def main() -> int:
-    pairs = name_pairs(check_facts.load(check_facts.FACT_FILE))
-    write = os.environ.get("GHIDRA_WRITE") == "1"
+def main(env=os.environ) -> int:
     try:
-        outcomes = name_and_save(ghidra_env.settings_from_env(os.environ), pairs, write)
+        holder = query.live_holder(query.paths_for(env))
+    except (ghidra_env.WrongVersion, query.BadLock) as error:
+        sys.exit("name_functions: %s" % error)
+    if holder is not None:
+        sys.exit("name_functions: a query process holds the project: pid %d, log %s; run `python3 -I scripts/query.py stop` first" % (holder.pid, holder.log))
+    pairs = name_pairs(check_facts.load(check_facts.FACT_FILE))
+    write = env.get("GHIDRA_WRITE") == "1"
+    try:
+        outcomes = name_and_save(ghidra_env.settings_from_env(env), pairs, write)
     except (ghidra_env.WrongVersion, ghidra_project.ProjectMissing) as error:
         sys.exit("name_functions: %s" % error)
     failures = [o for o in outcomes if o.failed]
