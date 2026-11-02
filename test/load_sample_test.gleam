@@ -46,17 +46,7 @@ pub fn the_sampler_reports_each_listeners_connections_and_an_idle_stores_workers
   let started = login_support.start()
   let ports = login_support.ports(started)
   let login = started.settings.login
-  let watch =
-    load_sample.Watch(
-      listeners: [
-        login.sts.listener,
-        login.auth.listener,
-        started.settings.game.listener,
-      ],
-      store: started.settings.store,
-      pool_size: 2,
-    )
-  assert load_sample.take(watch).connections == [0, 0, 0]
+  assert load_sample.take(started.settings).connections == [0, 0, 0]
   let first = login_client.connect(ports.auth_port)
   let second = login_client.connect(ports.auth_port)
   let assert [_] = login_client.read_frames(client: first, have: <<>>, count: 1)
@@ -67,7 +57,7 @@ pub fn the_sampler_reports_each_listeners_connections_and_an_idle_stores_workers
   event_wait.until("both clients' connections are held", fn() {
     list.length(ask_support.connections_of(login.auth.listener)) == 2
   })
-  let sample = load_sample.take(watch)
+  let sample = load_sample.take(started.settings)
   assert sample.connections == [0, 2, 0]
   assert sample.store_waiting == 0 as "no ask is out, so no worker waits"
   login_support.stop(started)

@@ -22,16 +22,14 @@
 //// are idle.
 
 import game_client
-import genesis_prime/add_account/sql
+import genesis_prime/add_account
 import genesis_prime/load_sample
-import genesis_prime/login/guid
-import genesis_prime/login/srp
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
 import genesis_prime/message/game_server_handoff
 import genesis_prime/message/play_character.{PlayCharacter}
-import gleam/crypto
+import genesis_prime/step/runtime
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
@@ -103,34 +101,26 @@ pub fn describe(stage: Stage) -> String {
 /// The accounts numbered `first` up to `count` of them: each its own login
 /// name and character name, and a SRP secret of its own.
 pub fn accounts(first first: Int, count count: Int) -> List(Account) {
-  list.map(numbers(first:, count:), fn(index) {
+  int.range(from: first + count - 1, to: first - 1, with: [], run: list.prepend)
+  |> list.map(fn(index) {
     Account(
       login_name: "load-" <> int.to_string(index),
       password: "load-password",
       seed: index,
-      character_name: string.capitalise(letters(index)) <> " Load",
+      character_name: string.capitalise(letters(index, 5)) <> " Load",
     )
   })
 }
 
-/// `count` whole numbers from `first`.
-fn numbers(first first: Int, count count: Int) -> List(Int) {
-  list.index_map(list.repeat(Nil, count), fn(_, offset) { first + offset })
-}
-
 /// The index as five lower-case letters, so character names (letters and one
 /// space, lua rule 0) differ as the indexes do.
-fn letters(index: Int) -> String {
-  let assert Ok(digits) = int.to_base_string(index, 26)
-    as "26 is a base the standard library writes"
-  digits
-  |> string.pad_start(to: 5, with: "0")
-  |> string.to_graphemes
-  |> list.map(fn(digit) {
-    let assert Ok(value) = int.base_parse(digit, 26) as "a base 26 digit"
-    string.slice("abcdefghijklmnopqrstuvwxyz", value, 1)
-  })
-  |> string.join("")
+fn letters(index: Int, width: Int) -> String {
+  case width {
+    0 -> ""
+    _ ->
+      letters(index / 26, width - 1)
+      <> string.slice("abcdefghijklmnopqrstuvwxyz", index % 26, 1)
+  }
 }
 
 /// Inserts the accounts into the database of the pool, each with its SRP
@@ -141,23 +131,12 @@ pub fn seed(
   accounts accounts: List(Account),
 ) -> Nil {
   list.each(accounts, fn(account) {
-    let salt = crypto.strong_random_bytes(32)
-    let assert Ok(game_account_id) =
-      guid.from_wire(crypto.strong_random_bytes(16))
-      as "sixteen bytes are a GUID"
-    let assert Ok(_) =
-      sql.insert_account(
-        pool,
-        account.login_name,
-        salt,
-        srp.verifier(
-          name: account.login_name,
-          password: account.password,
-          salt:,
-        ),
-        guid.to_text(game_account_id),
+    let #(_game_account_id, query) =
+      add_account.new_account(
+        login_name: account.login_name,
+        password: account.password,
       )
-      as "the database took the account"
+    let assert Ok(_) = query(pool) as "the database took the account"
     Nil
   })
 }
@@ -188,7 +167,7 @@ pub fn play(
   until_ms until_ms: Int,
   report report: Subject(Report),
 ) -> Nil {
-  process.sleep(int.max(0, begin_at_ms - load_sample.milliseconds()))
+  process.sleep(int.max(0, begin_at_ms - runtime.now().monotonic_ms))
   let begun = load_sample.microseconds()
   process.send(report, Begun(player:, lag_ms: begun / 1000 - begin_at_ms))
   let reached = fn(stage, since) {
@@ -241,7 +220,7 @@ pub fn play(
   let assert [_, _, _, _, _, _, _] = game_client.read(game:, count: 7)
     as "the player enters the world with 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1 and 0x61"
   let mark = reached(EnterWorld, mark)
-  let sent_at_ms = load_sample.milliseconds()
+  let sent_at_ms = runtime.now().monotonic_ms
   let first = round_trip(game:, number: 0)
   let _mark = reached(FirstPong, mark)
   let trips =
@@ -261,12 +240,12 @@ fn keep_pinging(
   trips trips: List(Int),
 ) -> List(Int) {
   let ping =
-    next_ping(answered:, sent_at_ms:, now_ms: load_sample.milliseconds())
-  case load_sample.milliseconds() + ping.wait_ms >= until_ms {
+    next_ping(answered:, sent_at_ms:, now_ms: runtime.now().monotonic_ms)
+  case runtime.now().monotonic_ms + ping.wait_ms >= until_ms {
     True -> trips
     False -> {
       process.sleep(ping.wait_ms)
-      let sent_at_ms = load_sample.milliseconds()
+      let sent_at_ms = runtime.now().monotonic_ms
       let trip = round_trip(game:, number: ping.number)
       keep_pinging(game:, answered: ping.number, sent_at_ms:, until_ms:, trips: [
         trip,

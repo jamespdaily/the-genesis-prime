@@ -9,7 +9,8 @@
 //// PGUSER, PGPASSWORD and PGDATABASE name a migrated database that is empty of
 //// accounts (the run seeds `load-0`, `load-1`, ...), GENESIS_TABLE_DIR the
 //// client's tables, GENESIS_GAME_ADDRESS (127.0.0.1) and GENESIS_REALM_NAME. The
-//// server's ports are the client's defaults, so no server may be running.
+//// server's ports are the client's defaults, so no server may be running. Both
+//// ramps use the one database, so the accounts of the second follow the first's.
 ////
 //// ```
 ////  this node (the load clients, 4 schedulers)        peer node (the server, all cores)
@@ -22,8 +23,9 @@
 //// 50, 100, 200 ... up to 12,800 players. A step seeds a fresh account for each
 //// player, has the players arrive evenly over 10 s (or at 500 a second, when
 //// that is longer: this Mac's accept queue overflowed at 4,000 connects at
-//// once), hold for 30 s, pinging, and leave; the run then waits for the
-//// connections to close and the closed sockets to leave TIME_WAIT. A step is
+//// once), hold for 30 s, pinging, and leave. It is sampled until the server
+//// holds no connection, or for a minute, so what the leaving does is judged
+//// too; the run then waits for the closed sockets to leave TIME_WAIT. A step is
 //// judged by `genesis_prime/load_step`: kept, failed (on which lines), or
 //// limited by the clients. The first step that is not kept is followed by one
 //// step halfway back to the last that was, rounded to 50, and the ramp ends.
@@ -45,7 +47,7 @@ import genesis_prime/load_step.{
   type Observation, type Verdict, Kept, Observation,
 }
 import genesis_prime/readiness
-import genesis_prime/server
+import genesis_prime/server.{type Settings}
 import genesis_prime/step/runtime
 import genesis_prime/store/worker
 import gleam/dict.{type Dict}
@@ -97,14 +99,15 @@ type Collecting {
     server: List(Sample),
     clients: List(Sample),
     next_sample_ms: Int,
-    until_ms: Int,
-    sampling: Bool,
+    arrived_ms: Int,
+    held_ms: Int,
+    /// Whether every player has ended, and then when the wait for the server's
+    /// connections to close gives up.
+    ended: Bool,
+    drain_until_ms: Int,
     sample_server: fn() -> Sample,
   )
 }
-
-/// The ports the server listens on, the client's defaults.
-const ports = Ports(sts_port: 6600, auth_port: 23_115, game_port: 24_000)
 
 /// How many connections each listener may hold during the run: more than the
 /// run reaches.
@@ -123,10 +126,25 @@ const hold_ms = 30_000
 /// How often the nodes are sampled, in milliseconds.
 const sample_every_ms = 1000
 
+/// How long a step waits for the server's connections to close after its
+/// players ended, in milliseconds.
+const drain_ms = 60_000
+
+/// How long the run waits after a step for the closed sockets to leave
+/// TIME_WAIT, which holds each one's local port for twice this machine's maximum
+/// segment lifetime (`sysctl net.inet.tcp.msl`, 15 s), in milliseconds. Left
+/// held, they take the ports the next step's players connect from.
+const settle_ms = 35_000
+
+/// How many schedulers the clients' node has.
+const client_schedulers = 4
+
 /// Plays one step on the server at `ports`: a player for each account, arriving
 /// evenly over `arrival_ms`, pinging until `hold_ms` after the last arrives.
 /// `sample_server` reads the server once a second; the clients' own node is
-/// read here. Gives what the players and the samples showed.
+/// read here. The samples go on after the players leave, until the server holds
+/// no connection or a minute has passed. Gives what the players and the samples
+/// showed.
 pub fn run_step(
   ports ports: Ports,
   accounts accounts: List(Account),
@@ -136,8 +154,8 @@ pub fn run_step(
 ) -> Outcome {
   let report = process.new_subject()
   let count = list.length(accounts)
-  let started_ms = load_sample.milliseconds()
-  let until_ms = started_ms + arrival_ms + hold_ms
+  let started_ms = runtime.now().monotonic_ms
+  let held_ms = started_ms + arrival_ms + hold_ms
   let players =
     list.index_map(accounts, fn(account, player) {
       let pid =
@@ -147,56 +165,57 @@ pub fn run_step(
             account:,
             ports:,
             begin_at_ms: started_ms + player * arrival_ms / int.max(count, 1),
-            until_ms:,
+            until_ms: held_ms,
             report:,
           )
         })
       let _monitor = process.monitor(pid)
       #(pid, player)
     })
-  let collecting =
-    Collecting(
-      selector: process.new_selector()
-        |> process.select_map(report, Told)
-        |> process.select_monitors(Ended),
-      players: dict.from_list(players),
-      reached: dict.new(),
-      trips: [],
-      lag_ms: 0,
-      failures: [],
-      unconnected: 0,
-      pending: count,
-      server: [],
-      clients: [],
-      next_sample_ms: started_ms,
-      until_ms:,
-      sampling: True,
-      sample_server:,
-    )
-  collect(collecting) |> outcome
+  Collecting(
+    selector: process.new_selector()
+      |> process.select_map(report, Told)
+      |> process.select_monitors(Ended),
+    players: dict.from_list(players),
+    reached: dict.new(),
+    trips: [],
+    lag_ms: 0,
+    failures: [],
+    unconnected: 0,
+    pending: count,
+    server: [],
+    clients: [],
+    next_sample_ms: started_ms,
+    arrived_ms: started_ms + arrival_ms,
+    held_ms:,
+    ended: False,
+    drain_until_ms: 0,
+    sample_server:,
+  )
+  |> collect
+  |> outcome
 }
 
 /// Hears the players and samples the nodes until every player has ended and the
-/// last sample, at the end of the hold, is taken.
+/// server holds no connection, or the wait for that is over.
 fn collect(collecting: Collecting) -> Collecting {
-  let collecting = case
-    collecting.sampling
-    && {
-      collecting.pending == 0
-      || load_sample.milliseconds() >= collecting.next_sample_ms
-    }
-  {
-    True -> sample(collecting)
+  let now = runtime.now().monotonic_ms
+  let collecting = case collecting.pending == 0 && !collecting.ended {
+    True ->
+      sample(
+        Collecting(..collecting, ended: True, drain_until_ms: now + drain_ms),
+      )
+    False if now >= collecting.next_sample_ms -> sample(collecting)
     False -> collecting
   }
-  case collecting.pending == 0 && !collecting.sampling {
+  let drained =
+    list.first(collecting.server)
+    |> result.map(fn(last) { int.sum(last.connections) == 0 })
+    |> result.unwrap(True)
+  case collecting.ended && { drained || now >= collecting.drain_until_ms } {
     True -> collecting
     False -> {
-      let wait = case collecting.sampling {
-        True ->
-          int.max(1, collecting.next_sample_ms - load_sample.milliseconds())
-        False -> 1000
-      }
+      let wait = int.max(1, collecting.next_sample_ms - now)
       case process.selector_receive(from: collecting.selector, within: wait) {
         Ok(heard) -> collect(hear(collecting, heard))
         Error(Nil) -> collect(collecting)
@@ -205,20 +224,13 @@ fn collect(collecting: Collecting) -> Collecting {
   }
 }
 
-/// Reads both nodes. The sample at or after the end of the hold, or after the
-/// last player ended, is the last.
+/// Reads both nodes, the newest sample first.
 fn sample(collecting: Collecting) -> Collecting {
-  let now = load_sample.milliseconds()
-  let last = now >= collecting.until_ms || collecting.pending == 0
   Collecting(
     ..collecting,
     server: [collecting.sample_server(), ..collecting.server],
     clients: [load_sample.take_node(), ..collecting.clients],
-    next_sample_ms: int.min(
-      collecting.next_sample_ms + sample_every_ms,
-      collecting.until_ms,
-    ),
-    sampling: !last,
+    next_sample_ms: collecting.next_sample_ms + sample_every_ms,
   )
 }
 
@@ -235,48 +247,52 @@ fn hear(collecting: Collecting, heard: Heard) -> Collecting {
       )
     Told(load_player.Finished(round_trips_us:, ..)) ->
       Collecting(..collecting, trips: [round_trips_us, ..collecting.trips])
-    Ended(process.ProcessDown(pid:, reason: process.Normal, ..)) ->
-      Collecting(
-        ..collecting,
-        players: dict.delete(collecting.players, pid),
-        pending: collecting.pending - 1,
-      )
     Ended(process.ProcessDown(pid:, reason:, ..)) -> {
-      let assert Ok(player) = dict.get(collecting.players, pid)
-        as "a player that ended was one the step started"
-      let done = list.length(reached_of(collecting, player))
-      let reason = describe_exit(reason)
-      let collecting =
+      let ended =
         Collecting(
           ..collecting,
           players: dict.delete(collecting.players, pid),
           pending: collecting.pending - 1,
         )
-      case string.contains(reason, "eaddrnotavail") {
-        True ->
-          Collecting(..collecting, unconnected: collecting.unconnected + 1)
-        False ->
-          Collecting(..collecting, failures: [
-            Failure(
-              player:,
-              at: list.drop(load_player.stages(), done)
-                |> list.first
-                |> option.from_result,
-              reason:,
-            ),
-            ..collecting.failures
-          ])
+      case reason, dict.get(collecting.players, pid) {
+        process.Normal, _ -> ended
+        _, Ok(player) -> failed(collecting: ended, player:, reason:)
+        _, Error(Nil) -> panic as "a player that ended was one the step started"
       }
     }
     Ended(process.PortDown(..)) -> collecting
   }
 }
 
-fn reached_of(collecting: Collecting, player: Int) -> List(#(Stage, Int)) {
-  case dict.get(collecting.reached, player) {
-    Ok(stages) -> list.reverse(stages)
-    Error(Nil) -> []
+/// Counts a player's end as the machine's, when it found no local port to
+/// connect from, or else as a failure at the stage after the last it reported.
+fn failed(
+  collecting collecting: Collecting,
+  player player: Int,
+  reason reason: process.ExitReason,
+) -> Collecting {
+  case no_local_port(reason) {
+    True -> Collecting(..collecting, unconnected: collecting.unconnected + 1)
+    False -> {
+      let done = list.length(reached_of(collecting, player))
+      Collecting(..collecting, failures: [
+        Failure(
+          player:,
+          at: list.drop(load_player.stages(), done)
+            |> list.first
+            |> option.from_result,
+          reason: describe_exit(reason),
+        ),
+        ..collecting.failures
+      ])
+    }
   }
+}
+
+fn reached_of(collecting: Collecting, player: Int) -> List(#(Stage, Int)) {
+  dict.get(collecting.reached, player)
+  |> result.map(list.reverse)
+  |> result.unwrap([])
 }
 
 fn outcome(collecting: Collecting) -> Outcome {
@@ -299,6 +315,8 @@ fn outcome(collecting: Collecting) -> Outcome {
       clients: list.reverse(collecting.clients),
       unconnected: collecting.unconnected,
       start_lag_ms: collecting.lag_ms,
+      arrived_ms: collecting.arrived_ms,
+      held_ms: collecting.held_ms,
     ),
     failures: list.sort(collecting.failures, fn(first, second) {
       int.compare(first.player, second.player)
@@ -310,7 +328,7 @@ fn outcome(collecting: Collecting) -> Outcome {
 /// The ramp's next step, from the steps so far in order: the first doubles from
 /// 50 players to 12,800; the first that is not kept is followed by one halfway
 /// back to the last that was, rounded to 50, and then none.
-fn next_players(history: List(#(Int, Verdict))) -> Option(Int) {
+pub fn next_players(history: List(#(Int, Verdict))) -> Option(Int) {
   case list.reverse(history) {
     [] -> Some(first_players)
     [#(players, verdict), ..earlier] ->
@@ -329,7 +347,7 @@ fn next_players(history: List(#(Int, Verdict))) -> Option(Int) {
 }
 
 /// The most players of any step that was kept, 0 when none was.
-fn maximum(history: List(#(Int, Verdict))) -> Int {
+pub fn maximum(history: List(#(Int, Verdict))) -> Int {
   history
   |> list.filter(fn(step) { step.1 == Kept })
   |> list.fold(0, fn(most, step) { int.max(most, step.0) })
@@ -338,8 +356,8 @@ fn maximum(history: List(#(Int, Verdict))) -> Int {
 /// Runs in the server's node: starts the server's tree as `gleam run` does, on
 /// the database the environment names, with every listener's cap raised for the
 /// run, waits until the database answers and its migrations are the files', and
-/// gives what the sampler watches.
-fn start_server() -> load_sample.Watch {
+/// gives the settings it started with.
+fn start_server() -> Settings {
   log_to_null()
   runtime.show_info_lines()
   runtime.keep_mailboxes_out_of_crash_reports()
@@ -370,14 +388,15 @@ fn start_server() -> load_sample.Watch {
       files: genesis_prime.load_migrations(),
     )
     as "the database answered and holds the migrations the build has"
-  load_sample.Watch(
-    listeners: [
-      settings.login.sts.listener,
-      settings.login.auth.listener,
-      settings.game.listener,
-    ],
-    store: settings.store,
-    pool_size: genesis_prime.pool_settings.pool_size,
+  settings
+}
+
+/// The ports the settings' listeners listen on.
+fn ports_of(settings: Settings) -> Ports {
+  Ports(
+    sts_port: settings.login.sts.port,
+    auth_port: settings.login.auth.port,
+    game_port: settings.game.port,
   )
 }
 
@@ -390,42 +409,36 @@ fn start_peer() -> Peer
 @external(erlang, "load_run_ffi", "stop_peer")
 fn stop_peer(peer: Peer) -> Nil
 
-@external(erlang, "load_run_ffi", "start_server")
-fn start_server_in(
-  peer: Peer,
-  start: fn() -> load_sample.Watch,
-) -> load_sample.Watch
-
-@external(erlang, "load_run_ffi", "sample")
-fn sample_of(peer: Peer, watch: load_sample.Watch) -> Sample
+/// Runs the function in the peer and gives what it returns.
+@external(erlang, "load_run_ffi", "in_peer")
+fn in_peer(peer: Peer, run: fn() -> a) -> a
 
 @external(erlang, "load_run_ffi", "log_to_null")
 fn log_to_null() -> Nil
 
-@external(erlang, "load_run_ffi", "limit_schedulers")
-fn limit_schedulers(count: Int) -> Nil
-
 @external(erlang, "load_run_ffi", "silence_crash_reports")
 fn silence_crash_reports() -> Nil
 
+/// The atom `schedulers_online`, which `system_flag` takes to change how many
+/// schedulers run.
+type Flag {
+  SchedulersOnline
+}
+
+@external(erlang, "erlang", "system_flag")
+fn system_flag(flag: Flag, value: Int) -> Int
+
+/// An exit reason as a line: a failed assertion's message when it has one.
 @external(erlang, "load_run_ffi", "describe_exit")
 fn describe_exit(reason: process.ExitReason) -> String
 
-/// How many schedulers the clients' node has.
-const client_schedulers = 4
-
-/// How long the run waits after a step for the closed sockets to leave
-/// TIME_WAIT, which holds each one's local port for twice this machine's maximum
-/// segment lifetime (`sysctl net.inet.tcp.msl`, 15 s), in milliseconds. Left
-/// held, they take the ports the next step's players connect from.
-const settle_ms = 35_000
-
-/// How long the run waits for a step's connections to close before it goes on,
-/// in milliseconds.
-const drain_ms = 60_000
+/// Whether the exit reason holds `eaddrnotavail` anywhere: the machine had no
+/// local port for the player's connect.
+@external(erlang, "load_run_ffi", "no_local_port")
+pub fn no_local_port(reason: process.ExitReason) -> Bool
 
 pub fn main() -> Nil {
-  limit_schedulers(client_schedulers)
+  let _online = system_flag(SchedulersOnline, client_schedulers)
   silence_crash_reports()
   load_sample.start()
   io.println(
@@ -434,10 +447,13 @@ pub fn main() -> Nil {
     <> " schedulers; the server: all cores of this machine",
   )
   let maxima = list.map([1, 2], ramp)
+  let assert Ok(lowest) = list.reduce(maxima, int.min)
+    as "two ramps made two maxima"
   io.println(
     "maximum of each ramp: "
     <> string.join(list.map(maxima, int.to_string), ", ")
-    <> "; the run's maximum is the lower",
+    <> "; the run's maximum is the lower: "
+    <> int.to_string(lowest),
   )
 }
 
@@ -445,13 +461,13 @@ pub fn main() -> Nil {
 fn ramp(run: Int) -> Int {
   io.println("ramp " <> int.to_string(run))
   let peer = start_peer()
-  let watch = start_server_in(peer, start_server)
+  let settings = in_peer(peer, start_server)
   let assert Ok(started) = pog.start(genesis_prime.pool())
     as "the pool for the accounts started"
   let history =
     climb(
       peer:,
-      watch:,
+      settings:,
       pool: started.data,
       first_account: { run - 1 } * most_players * 4,
       history: [],
@@ -466,7 +482,7 @@ fn ramp(run: Int) -> Int {
 
 fn climb(
   peer peer: Peer,
-  watch watch: load_sample.Watch,
+  settings settings: Settings,
   pool pool: pog.Connection,
   first_account first_account: Int,
   history history: List(#(Int, Verdict)),
@@ -478,42 +494,26 @@ fn climb(
       load_player.seed(pool:, accounts:)
       let arrival_ms = int.max(10_000, players * 1000 / arrivals_per_second)
       let outcome =
-        run_step(ports:, accounts:, arrival_ms:, hold_ms:, sample_server: fn() {
-          sample_of(peer, watch)
-        })
+        run_step(
+          ports: ports_of(settings),
+          accounts:,
+          arrival_ms:,
+          hold_ms:,
+          sample_server: fn() {
+            in_peer(peer, fn() { load_sample.take(settings) })
+          },
+        )
       let verdict = load_step.judge(outcome.observation)
       io.println(describe(players:, arrival_ms:, outcome:, verdict:))
-      await_drain(peer, watch)
       process.sleep(settle_ms)
       climb(
         peer:,
-        watch:,
+        settings:,
         pool:,
         first_account: first_account + players,
         history: list.append(history, [#(players, verdict)]),
       )
     }
-  }
-}
-
-/// Waits until the server holds no connection, as the players' ending closes
-/// them, up to a minute.
-fn await_drain(peer: Peer, watch: load_sample.Watch) -> Nil {
-  drain(peer:, watch:, until_ms: load_sample.milliseconds() + drain_ms)
-}
-
-fn drain(
-  peer peer: Peer,
-  watch watch: load_sample.Watch,
-  until_ms until_ms: Int,
-) -> Nil {
-  let held = list.fold(sample_of(peer, watch).connections, 0, int.add)
-  case held > 0 && load_sample.milliseconds() < until_ms {
-    True -> {
-      process.sleep(500)
-      drain(peer:, watch:, until_ms:)
-    }
-    False -> Nil
   }
 }
 
@@ -528,7 +528,6 @@ fn describe(
 ) -> String {
   let observation = outcome.observation
   let server = observation.server
-  let clients = observation.clients
   let peak = fn(samples: List(Sample), value: fn(Sample) -> Int) {
     list.fold(samples, 0, fn(most, sample) { int.max(most, value(sample)) })
   }
@@ -538,11 +537,9 @@ fn describe(
     })
   }
   let cores = fn(samples: List(Sample)) {
-    case samples, list.last(samples) {
-      [first, ..], Ok(last) ->
-        float.round(100.0 *. load_sample.use_between(first:, last:))
-      _, _ -> 0
-    }
+    float.round(
+      100.0 *. load_sample.use_between(load_step.held(observation:, samples:)),
+    )
   }
   let logins = observation.login_to_world_ms
   let pings = observation.ping_round_trip_us
@@ -566,14 +563,15 @@ fn describe(
     #("store workers waiting", peak(server, fn(s) { s.store_waiting })),
     #("worker start us", peak(server, fn(s) { s.worker_start_us })),
     #("memory MB", peak(server, fn(s) { s.memory_bytes }) / 1_000_000),
-    #("log lines", log_lines(server)),
-    #("clients cores %", cores(clients)),
-    #("clients run queue", peak(clients, fn(s) { s.run_queue })),
+    #("log lines", load_sample.log_lines_between(server)),
+    #("connections left", int.sum(peak_last(server))),
+    #("clients cores %", cores(observation.clients)),
+    #("clients run queue", peak(observation.clients, fn(s) { s.run_queue })),
     #("start lag ms", observation.start_lag_ms),
     #("players with no local port", observation.unconnected),
   ]
   let stuck =
-    list.map(load_step.never_empty(server), fn(waiting) {
+    list.map(load_step.never_empty(observation), fn(waiting) {
       "\n  never empty: " <> waiting.described
     })
   let ended =
@@ -609,10 +607,7 @@ fn longest_mailbox(sample: Sample) -> Int {
   })
 }
 
-/// The warning and error lines the server logged during the step.
-fn log_lines(samples: List(Sample)) -> Int {
-  case samples, list.last(samples) {
-    [first, ..], Ok(last) -> last.log_lines - first.log_lines
-    _, _ -> 0
-  }
+/// The connections the last sample found open.
+fn peak_last(samples: List(Sample)) -> List(Int) {
+  list.last(samples) |> result.map(fn(s) { s.connections }) |> result.unwrap([])
 }

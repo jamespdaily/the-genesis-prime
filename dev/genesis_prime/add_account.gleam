@@ -18,6 +18,7 @@ import gleam/crypto
 import gleam/int
 import gleam/result
 import gleam/string
+import pog
 
 /// Why the account was not added.
 type Failure {
@@ -41,24 +42,40 @@ fn add() -> Result(String, Failure) {
   }
 }
 
-fn insert(
+/// The query that adds an account, and the text of its game account's GUID: a
+/// fresh 32-byte salt, the SRP verifier of the lower-case name and the password,
+/// and a fresh game account GUID. Other tools that add accounts run it on their
+/// own connection.
+pub fn new_account(
   login_name login_name: String,
   password password: String,
-) -> Result(String, Failure) {
+) -> #(
+  String,
+  fn(pog.Connection) ->
+    Result(pog.Returned(sql.InsertAccountRow), pog.QueryError),
+) {
   let salt = crypto.strong_random_bytes(32)
   let verifier = srp.verifier(name: login_name, password:, salt:)
   let assert Ok(game_account_id) =
     guid.from_wire(crypto.strong_random_bytes(16))
     as "sixteen bytes are a GUID"
   let game_account_id = guid.to_text(game_account_id)
+  #(game_account_id, sql.insert_account(
+    _,
+    login_name,
+    salt,
+    verifier,
+    game_account_id,
+  ))
+}
+
+fn insert(
+  login_name login_name: String,
+  password password: String,
+) -> Result(String, Failure) {
+  let #(game_account_id, query) = new_account(login_name:, password:)
   use rows <- result.try(
-    dev_database.run(sql.insert_account(
-      _,
-      login_name,
-      salt,
-      verifier,
-      game_account_id,
-    ))
+    dev_database.run(query)
     |> result.map_error(Database),
   )
   case rows {

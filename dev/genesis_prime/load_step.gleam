@@ -1,6 +1,8 @@
 //// Whether the server kept up with one step of the load run, judged on what
 //// the step measured, before the run (the numbers are the card's definition of
-//// "stops keeping up"). A step fails on any of six lines:
+//// "stops keeping up"). A step runs from its first sample, through the players'
+//// arrival, a hold and the players' leaving, to the sample that finds the
+//// server's connections closed. It fails on any of seven lines:
 //// - a player failure: a close, an unexpected message or a wait over 5 s,
 ////   any one;
 //// - login to world: more than 1 login in 100 over 1,000 ms (a fifth of the 5 s
@@ -8,10 +10,12 @@
 //// - ping round trip: more than 1 in 100 over 500 ms, the client's ping
 ////   interval (SendNetworkPings sends at most once every 500 ms and waits for
 ////   each answer);
-//// - a process with messages waiting in every sample of the last 10 s (one
-////   that keeps up empties its mailbox between arrivals);
-//// - store workers waiting in every sample of the last 10 s;
-//// - any server warning or error line during the step.
+//// - a process with messages waiting in every sample of the last 10 s of the
+////   hold (one that keeps up empties its mailbox between arrivals);
+//// - store workers waiting in every sample of the arrival, when every player
+////   logs in and asks the store (the hold only pings);
+//// - any server warning or error line during the step, the leaving included;
+//// - connections still held by the server when the wait for them to close ends.
 ////
 //// A step in which the load clients used over half their cores, began a player
 //// more than 500 ms after its time, or had a player that this machine had no
@@ -23,6 +27,7 @@ import genesis_prime/load_sample.{type Sample}
 import gleam/bool
 import gleam/int
 import gleam/list
+import gleam/result
 import gleam/string
 
 /// The line a step failed on.
@@ -33,10 +38,13 @@ pub type Line {
   MailboxBacklog
   StoreBacklog
   ServerLogLine
+  NotDrained
 }
 
 /// What one step measured. The servers' and the clients' samples are in
-/// time order, the first at the step's start and the last at its end.
+/// time order, the first at the step's start and the last after the players
+/// left; `arrived_ms` is when the last player was to begin and `held_ms` when
+/// the hold ends and the players leave, on the clock the samples use.
 pub type Observation {
   Observation(
     failures: Int,
@@ -46,6 +54,8 @@ pub type Observation {
     clients: List(Sample),
     unconnected: Int,
     start_lag_ms: Int,
+    arrived_ms: Int,
+    held_ms: Int,
   )
 }
 
@@ -63,7 +73,7 @@ const login_to_world_limit_ms = 1000
 
 const ping_limit_us = 500_000
 
-/// The window the two backlog lines look at, in milliseconds.
+/// The window the mailbox line looks at, in milliseconds.
 const backlog_window_ms = 10_000
 
 /// The share of their cores the clients may use before they are the limit.
@@ -98,6 +108,7 @@ pub fn describe(verdict: Verdict) -> String {
             MailboxBacklog -> "a mailbox that never emptied"
             StoreBacklog -> "store workers always waiting"
             ServerLogLine -> "a server warning or error line"
+            NotDrained -> "connections still held after the players left"
           }
         }),
         ", ",
@@ -108,18 +119,22 @@ pub fn describe(verdict: Verdict) -> String {
 fn clients_limited(observation: Observation) -> Bool {
   observation.unconnected > 0
   || observation.start_lag_ms > start_lag_limit_ms
-  || case observation.clients {
-    [first, ..] as samples ->
-      case list.last(samples) {
-        Ok(last) -> load_sample.use_between(first:, last:) >. clients_busy_limit
-        Error(Nil) -> False
-      }
-    [] -> False
-  }
+  || load_sample.use_between(held(observation:, samples: observation.clients))
+  >. clients_busy_limit
+}
+
+/// The samples of a node taken up to the end of the hold, which is when the
+/// clients work.
+pub fn held(
+  observation observation: Observation,
+  samples samples: List(Sample),
+) -> List(Sample) {
+  within(samples:, from: 0, to: observation.held_ms)
 }
 
 fn failed_lines(observation: Observation) -> List(Line) {
-  let window = last_seconds(observation.server)
+  let arrival =
+    within(samples: observation.server, from: 0, to: observation.arrived_ms)
   [
     #(PlayerFailed, observation.failures > 0),
     #(
@@ -132,12 +147,19 @@ fn failed_lines(observation: Observation) -> List(Line) {
       percentile(values: observation.ping_round_trip_us, percent: 99)
         > ping_limit_us,
     ),
-    #(MailboxBacklog, never_empty(observation.server) != []),
+    #(MailboxBacklog, never_empty(observation) != []),
     #(
       StoreBacklog,
-      window != [] && list.all(window, fn(sample) { sample.store_waiting > 0 }),
+      arrival != []
+        && list.all(arrival, fn(sample) { sample.store_waiting > 0 }),
     ),
-    #(ServerLogLine, logged_during(observation.server)),
+    #(ServerLogLine, load_sample.log_lines_between(observation.server) > 0),
+    #(
+      NotDrained,
+      list.last(observation.server)
+        |> result.map(fn(last) { int.sum(last.connections) > 0 })
+        |> result.unwrap(False),
+    ),
   ]
   |> list.filter(fn(line) { line.1 })
   |> list.map(fn(line) { line.0 })
@@ -154,20 +176,25 @@ pub fn percentile(values values: List(Int), percent percent: Int) -> Int {
   }
 }
 
-/// The samples taken within the last 10 s of the step.
-fn last_seconds(samples: List(Sample)) -> List(Sample) {
-  case list.last(samples) {
-    Ok(last) ->
-      list.filter(samples, fn(sample) {
-        sample.at_ms >= last.at_ms - backlog_window_ms
-      })
-    Error(Nil) -> []
-  }
+/// The samples taken from `from` to `to` milliseconds, both included.
+fn within(
+  samples samples: List(Sample),
+  from from: Int,
+  to to: Int,
+) -> List(Sample) {
+  list.filter(samples, fn(sample) { sample.at_ms >= from && sample.at_ms <= to })
 }
 
-/// The processes with messages waiting in every sample of the last 10 s.
-pub fn never_empty(samples: List(Sample)) -> List(load_sample.Waiting) {
-  case last_seconds(samples) {
+/// The processes with messages waiting in every sample of the last 10 s of the
+/// hold.
+pub fn never_empty(observation: Observation) -> List(load_sample.Waiting) {
+  let window =
+    within(
+      samples: observation.server,
+      from: observation.held_ms - backlog_window_ms,
+      to: observation.held_ms,
+    )
+  case window {
     [] -> []
     [first, ..rest] ->
       list.filter(first.waiting, fn(found) {
@@ -175,13 +202,5 @@ pub fn never_empty(samples: List(Sample)) -> List(load_sample.Waiting) {
           list.any(sample.waiting, fn(other) { other.pid == found.pid })
         })
       })
-  }
-}
-
-/// Whether the log count grew between the step's first sample and its last.
-fn logged_during(samples: List(Sample)) -> Bool {
-  case samples, list.last(samples) {
-    [first, ..], Ok(last) -> last.log_lines > first.log_lines
-    _, _ -> False
   }
 }

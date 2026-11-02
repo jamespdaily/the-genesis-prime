@@ -1,22 +1,25 @@
-//// The six lines on which a load step stops keeping up, and the mark of a step
-//// the load clients themselves limited (`genesis_prime/load_step`), each run on
-//// a planted observation. Expected values come from the card's definition of
+//// The lines on which a load step stops keeping up, and the mark of a step the
+//// load clients themselves limited (`genesis_prime/load_step`), each run on a
+//// planted observation. Expected values come from the card's definition of
 //// "stops keeping up".
 //// - A player failure: any one.
 //// - Login to world: 1 in 100 over 1,000 ms.
 //// - Ping round trip: 1 in 100 over 500 ms, the client's own ping interval
 ////   (SendNetworkPings, at most once every 500 ms).
-//// - A process's mailbox non-empty in every sample of the last 10 s.
-//// - The store's workers waiting in every sample of the last 10 s.
-//// - Any server error or warning line during the step.
-//// - A step in which the load clients used over half their cores, or began a
-////   player more than 500 ms late, is the clients' limit and not the server's.
+//// - A process's mailbox non-empty in every sample of the last 10 s of the hold.
+//// - The store's workers waiting in every sample of the arrival.
+//// - Any server error or warning line during the step, the players' leaving
+////   included.
+//// - Connections still held when the wait for them to close ends.
+//// - A step in which the load clients used over half their cores, began a
+////   player more than 500 ms late, or had a player the machine had no local
+////   port for is the clients' limit and not the server's.
 //// Each line is shown failing, and passing at the value just below it.
 
 import genesis_prime/load_sample.{type Sample, Sample, Waiting}
 import genesis_prime/load_step.{
   type Observation, ClientsLimited, Failed, Kept, LoginToWorldSlow,
-  MailboxBacklog, Observation, PingSlow, PlayerFailed, ServerLogLine,
+  MailboxBacklog, NotDrained, Observation, PingSlow, PlayerFailed, ServerLogLine,
   StoreBacklog,
 }
 import gleam/erlang/process
@@ -26,17 +29,15 @@ import owned_test
 
 /// The whole numbers from `first` to `last`.
 fn through(first: Int, last: Int) -> List(Int) {
-  list.index_map(list.repeat(Nil, last - first + 1), fn(_, offset) {
-    first + offset
-  })
+  int.range(from: last, to: first - 1, with: [], run: list.prepend)
 }
 
 /// A sample of a server that keeps up, taken `at_ms` into the step: nothing
-/// waiting, no log lines, and 1 s of 4 s of scheduler time busy.
+/// waiting, no log lines, no connection and 1 s of 4 s of scheduler time busy.
 fn calm(at_ms: Int) -> Sample {
   Sample(
     at_ms:,
-    connections: [10, 10, 10],
+    connections: [],
     waiting: [],
     largest_heap_words: 1000,
     memory_bytes: 1_000_000,
@@ -49,23 +50,48 @@ fn calm(at_ms: Int) -> Sample {
   )
 }
 
-/// Eleven samples one second apart, the first and the last 10 s apart.
-fn seconds() -> List(Sample) {
-  list.map(through(0, 10), fn(second) { calm(second * 1000) })
+/// Calm samples one second apart from 0 to `last` seconds.
+fn seconds(last: Int) -> List(Sample) {
+  list.map(through(0, last), fn(second) { calm(second * 1000) })
 }
 
 /// A step the server kept up with: no failure, a hundred logins and pings all
-/// well under their limits, calm samples on both nodes.
+/// well under their limits, calm samples on both nodes, the last player
+/// arriving at 5 s and the hold ending at 10 s.
 fn kept() -> Observation {
   Observation(
     failures: 0,
     login_to_world_ms: list.repeat(200, 100),
     ping_round_trip_us: list.repeat(300, 100),
-    server: seconds(),
-    clients: seconds(),
+    server: seconds(10),
+    clients: seconds(10),
     unconnected: 0,
     start_lag_ms: 0,
+    arrived_ms: 5000,
+    held_ms: 10_000,
   )
+}
+
+/// The samples `seconds` gives, each second in `changed` made by `change`.
+fn changing(
+  last last: Int,
+  changed changed: fn(Int) -> Bool,
+  change change: fn(Sample) -> Sample,
+) -> List(Sample) {
+  list.map(through(0, last), fn(second) {
+    case changed(second) {
+      True -> change(calm(second * 1000))
+      False -> calm(second * 1000)
+    }
+  })
+}
+
+fn waiting(pid: process.Pid, mailbox: Int) -> fn(Sample) -> Sample {
+  fn(sample) {
+    Sample(..sample, waiting: [
+      Waiting(pid:, mailbox:, heap_words: 1, described: ""),
+    ])
+  }
 }
 
 pub fn a_calm_step_is_kept_test() -> Nil {
@@ -110,89 +136,132 @@ pub fn two_pings_in_a_hundred_over_500_ms_fail_and_one_passes_test() -> Nil {
   assert load_step.judge(slow(1)) == Kept as "1 in 100 over is the limit"
 }
 
-pub fn a_process_waiting_in_every_sample_of_the_last_10_s_fails_and_one_missing_once_passes_test() -> Nil {
+pub fn a_process_waiting_in_every_sample_of_the_last_10_s_of_the_hold_fails_and_one_missing_once_passes_test() -> Nil {
   use <- owned_test.run(5000)
   let stuck = process.spawn_unlinked(process.sleep_forever)
   let other = process.spawn_unlinked(process.sleep_forever)
-  let waiting = fn(pid, at_ms) {
-    Sample(..calm(at_ms), waiting: [
-      Waiting(pid:, mailbox: 3, heap_words: 100, described: ""),
-    ])
-  }
-  let always = list.map(through(0, 10), fn(s) { waiting(stuck, s * 1000) })
+  let always =
+    changing(last: 10, changed: fn(_) { True }, change: waiting(stuck, 3))
   assert load_step.judge(Observation(..kept(), server: always))
     == Failed([MailboxBacklog])
   let missed_once =
-    list.map(through(0, 10), fn(second) {
-      case second == 4 {
-        True -> calm(second * 1000)
-        False -> waiting(stuck, second * 1000)
-      }
-    })
+    changing(
+      last: 10,
+      changed: fn(second) { second != 4 },
+      change: waiting(stuck, 3),
+    )
   assert load_step.judge(Observation(..kept(), server: missed_once)) == Kept
     as "a mailbox that emptied once is a process that keeps up"
-  let alternating =
-    list.map(through(0, 10), fn(second) {
-      waiting(
-        case int.is_even(second) {
-          True -> stuck
-          False -> other
-        },
-        second * 1000,
-      )
-    })
-  assert load_step.judge(Observation(..kept(), server: alternating)) == Kept
+  let alternating = fn(sample: Sample) {
+    waiting(
+      case int.is_even(sample.at_ms / 1000) {
+        True -> stuck
+        False -> other
+      },
+      3,
+    )(sample)
+  }
+  assert load_step.judge(
+      Observation(
+        ..kept(),
+        server: changing(last: 10, changed: fn(_) { True }, change: alternating),
+      ),
+    )
+    == Kept
     as "two processes, each waiting in half the samples, are not one that never empties"
   process.kill(stuck)
   process.kill(other)
 }
 
-pub fn a_backlog_older_than_the_last_10_s_does_not_fail_the_step_test() -> Nil {
+pub fn the_mailbox_window_includes_the_sample_10_s_before_the_hold_ends_and_no_older_one_test() -> Nil {
   use <- owned_test.run(5000)
   let stuck = process.spawn_unlinked(process.sleep_forever)
-  let early =
-    list.map(through(0, 20), fn(second) {
-      case second < 5 {
-        True ->
-          Sample(..calm(second * 1000), waiting: [
-            Waiting(pid: stuck, mailbox: 9, heap_words: 100, described: ""),
-          ])
-        False -> calm(second * 1000)
-      }
-    })
-  assert load_step.judge(Observation(..kept(), server: early)) == Kept
+  let long = Observation(..kept(), server: seconds(20), held_ms: 20_000)
+  let waiting_from = fn(first: Int) {
+    Observation(
+      ..long,
+      server: changing(
+        last: 20,
+        changed: fn(second) { second >= first },
+        change: waiting(stuck, 9),
+      ),
+    )
+  }
+  assert load_step.judge(waiting_from(11)) == Kept
+    as "the sample at 10 s, the window's edge, is calm, so the window holds one with no backlog"
+  assert load_step.judge(waiting_from(10)) == Failed([MailboxBacklog])
+    as "waiting from the sample at the edge on is waiting in the whole window"
+  assert load_step.judge(waiting_from(5)) == Failed([MailboxBacklog])
+  let before =
+    changing(
+      last: 20,
+      changed: fn(second) { second < 10 },
+      change: waiting(stuck, 9),
+    )
+  assert load_step.judge(Observation(..long, server: before)) == Kept
+    as "a backlog that ended before the last 10 s of the hold is not judged"
   process.kill(stuck)
 }
 
-pub fn store_workers_waiting_in_every_sample_of_the_last_10_s_fail_and_one_empty_sample_passes_test() -> Nil {
+pub fn store_workers_waiting_in_every_sample_of_the_arrival_fail_and_one_empty_sample_passes_test() -> Nil {
   use <- owned_test.run(5000)
-  let queued = fn(second) { Sample(..calm(second * 1000), store_waiting: 2) }
-  let always = list.map(through(0, 10), queued)
-  assert load_step.judge(Observation(..kept(), server: always))
-    == Failed([StoreBacklog])
-  let drained_once =
-    list.map(through(0, 10), fn(second) {
-      case second == 7 {
-        True -> calm(second * 1000)
-        False -> queued(second)
-      }
-    })
-  assert load_step.judge(Observation(..kept(), server: drained_once)) == Kept
+  let queued = fn(sample: Sample) { Sample(..sample, store_waiting: 2) }
+  let in_arrival = fn(missing: Int) {
+    Observation(
+      ..kept(),
+      server: changing(
+        last: 10,
+        changed: fn(second) { second <= 5 && second != missing },
+        change: queued,
+      ),
+    )
+  }
+  assert load_step.judge(in_arrival(-1)) == Failed([StoreBacklog])
+  assert load_step.judge(in_arrival(3)) == Kept
+    as "the store emptied once while the players arrived"
+  assert load_step.judge(in_arrival(5)) == Kept
+    as "the sample at 5 s, when the last player arrives, is in the arrival"
+  let after_arrival =
+    changing(last: 10, changed: fn(second) { second > 5 }, change: queued)
+  assert load_step.judge(Observation(..kept(), server: after_arrival)) == Kept
+    as "workers waiting only after the arrival, in the hold, are not judged"
 }
 
 pub fn one_error_or_warning_line_during_the_step_fails_it_and_none_passes_test() -> Nil {
   use <- owned_test.run(5000)
   let lines = fn(count) {
-    list.map(through(0, 10), fn(second) {
-      case second == 10 {
-        True -> Sample(..calm(second * 1000), log_lines: count)
-        False -> calm(second * 1000)
-      }
+    changing(last: 10, changed: fn(second) { second == 10 }, change: fn(sample) {
+      Sample(..sample, log_lines: count)
     })
   }
   assert load_step.judge(Observation(..kept(), server: lines(1)))
     == Failed([ServerLogLine])
   assert load_step.judge(Observation(..kept(), server: lines(0))) == Kept
+}
+
+pub fn a_warning_line_only_while_the_players_leave_fails_the_step_test() -> Nil {
+  use <- owned_test.run(5000)
+  let leaving = fn(count) {
+    list.append(seconds(10), [
+      calm(11_000),
+      Sample(..calm(12_000), log_lines: count),
+    ])
+  }
+  assert load_step.judge(Observation(..kept(), server: leaving(1)))
+    == Failed([ServerLogLine])
+    as "the hold ended at 10 s and the line came at 12 s, in the drain"
+  assert load_step.judge(Observation(..kept(), server: leaving(0))) == Kept
+}
+
+pub fn connections_still_held_when_the_wait_ends_fail_the_step_test() -> Nil {
+  use <- owned_test.run(5000)
+  let ending = fn(held: List(Int)) {
+    list.append(seconds(10), [Sample(..calm(11_000), connections: held)])
+  }
+  assert load_step.judge(Observation(..kept(), server: ending([0, 0, 2])))
+    == Failed([NotDrained])
+  assert load_step.judge(Observation(..kept(), server: ending([0, 0, 0])))
+    == Kept
 }
 
 pub fn a_step_whose_clients_used_over_half_their_cores_is_clients_limited_test() -> Nil {
