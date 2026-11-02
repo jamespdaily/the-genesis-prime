@@ -6,7 +6,7 @@
 //// by `genesis_prime/random`.
 
 import frame_reader
-import genesis_prime/client_connection.{Bucket}
+import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
@@ -30,10 +30,26 @@ pub const peer = Peer(address: "192.168.1.5", port: 50_000)
 /// The monotonic time every input of a rule test carries, in milliseconds.
 pub const now_ms = 1000
 
+/// The most bytes a connection holds that it has not taken as frames: the
+/// client's frame limit, 131,070 (MessageSizeLimit 0x140335ec0), which one
+/// whole frame may fill, and one read of 16,384, the server's choice for the
+/// socket's buffer.
+pub const held_limit = 147_454
+
+/// A bucket for a test of the rate, which no ask waits on.
+pub fn bucket(burst burst: Int, per_second per_second: Int) -> Bucket {
+  let assert Ok(bucket) =
+    client_connection.bucket(burst:, per_second:, longest_wait_ms: 0)
+    as "a test's bucket holds one and fills by one a second at least"
+  bucket
+}
+
 /// The rate of a rule test that is not about the rate: every input carries the
 /// same time, so the bucket never refills, and it holds more than any test
 /// sends.
-pub const roomy = Bucket(burst: 100_000, per_second: 100_000)
+pub fn roomy() -> Bucket {
+  bucket(burst: 100_000, per_second: 100_000)
+}
 
 /// The account of the library's vector: `jim`, password `secret`, salt 01 .. 10
 /// and the vector's verifier.

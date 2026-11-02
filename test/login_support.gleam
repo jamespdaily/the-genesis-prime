@@ -46,7 +46,7 @@ pub fn sts_settings() -> sts_connection.Settings {
   sts_connection.Settings(
     ask_deadline_ms: 5000,
     game_token_lifetime_ms: 60_000,
-    rate: support.roomy,
+    rate: support.roomy(),
   )
 }
 
@@ -57,7 +57,7 @@ pub fn auth_settings() -> auth_connection.Settings {
     ask_deadline_ms: 5000,
     session_key_lifetime_ms: 60_000,
     planted: None,
-    rate: support.roomy,
+    rate: support.roomy(),
   )
 }
 
@@ -107,7 +107,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       character_slots: 2,
       tables: character_tables.shared(),
       ask_deadline_ms: 5000,
-      rate: support.roomy,
+      rate: support.roomy(),
     ),
     recorder: None,
   )

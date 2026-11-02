@@ -177,6 +177,16 @@ const invalid_credentials = 3002
 /// "start timeout" and at LoginFinish "finish timeout".
 const service_timeout = 42
 
+/// The longest the rule can hold the client's requests untaken, given how
+/// long an ask may take: requests that arrive while an ask is out are counted
+/// against the rate only when the answer comes, and the login makes one ask at
+/// a time, with the requests taken between them. A rate's burst must hold what
+/// a client sends at its rate through that
+/// (`genesis_prime/client_connection.bucket`).
+pub fn longest_wait_ms(ask_deadline_ms ask_deadline_ms: Int) -> Int {
+  ask_deadline_ms
+}
+
 /// The rule as its connection shell runs it.
 pub fn rule(
   settings: Settings,

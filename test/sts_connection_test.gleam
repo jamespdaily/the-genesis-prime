@@ -27,8 +27,7 @@
 
 import connection_rule_support as support
 import genesis_prime/client_connection.{
-  type Answer, type Request, AskHandOff, AskStore, Bucket, FromHandOff,
-  FromStore,
+  type Answer, type Request, AskHandOff, AskStore, FromHandOff, FromStore,
 }
 import genesis_prime/hand_off.{AlreadyHeld, GameToken, Holder, Kept, Put}
 import genesis_prime/login/guid
@@ -76,13 +75,16 @@ fn feed(
   #(Session(..session, state:), taken)
 }
 
-/// A connection the server has accepted with this seed; the server writes
-/// nothing first.
-fn accepted(seed seed: BitArray) -> Session {
+/// A connection the server has accepted with this seed and these settings;
+/// the server writes nothing first.
+fn accepted(
+  seed seed: BitArray,
+  settings settings: sts_connection.Settings,
+) -> Session {
   let #(session, taken) =
     feed(
       Session(
-        state: sts_connection.new(login_support.sts_settings()),
+        state: sts_connection.new(settings),
         sending: None,
         receiving: None,
         sequence: 1,
@@ -138,7 +140,7 @@ fn one_way(
 fn connected(seed seed: BitArray) -> Session {
   let #(session, taken) =
     one_way(
-      session: accepted(seed:),
+      session: accepted(seed:, settings: login_support.sts_settings()),
       protocol: "Sts",
       command: "Connect",
       body: sts_xml.render(
@@ -610,29 +612,17 @@ fn ping_request() -> BitArray {
   )
 }
 
-/// A connection with this bucket, accepted at `support.now_ms`.
-fn accepted_with(rate rate: client_connection.Bucket) -> Session {
-  let #(state, _) =
-    sts_connection.step(
-      sts_connection.new(
-        sts_connection.Settings(..login_support.sts_settings(), rate:),
-      ),
-      support.input(
-        step.OwnEvent(step.Accepted(
-          ConnectionId(1),
-          support.peer,
-          support.seed(1),
-        )),
-      ),
-    )
-  Session(state:, sending: None, receiving: None, sequence: 1)
+/// The settings of the STS rule with this bucket.
+fn rated(rate rate: client_connection.Bucket) -> sts_connection.Settings {
+  sts_connection.Settings(..login_support.sts_settings(), rate:)
 }
 
 pub fn a_full_burst_of_requests_is_taken_and_one_more_in_the_same_millisecond_ends_the_connection_with_a_warning_test() -> Nil {
   use <- owned_test.run(10_000)
   let burst = <<ping_request():bits, ping_request():bits, ping_request():bits>>
-  let rate = Bucket(burst: 3, per_second: 1)
-  let #(session, taken) = send_bytes(accepted_with(rate:), burst)
+  let rate = support.bucket(burst: 3, per_second: 1)
+  let #(session, taken) =
+    send_bytes(accepted(seed: support.seed(1), settings: rated(rate:)), burst)
   assert taken == Effects([]) as "a full bucket of 3 requests, each taken"
   let #(_, taken) = send_bytes(session, ping_request())
   assert support.stops(taken)
@@ -643,13 +633,19 @@ pub fn a_full_burst_of_requests_is_taken_and_one_more_in_the_same_millisecond_en
 
 pub fn requests_sent_byte_by_byte_or_in_one_read_are_refused_at_the_same_request_test() -> Nil {
   use <- owned_test.run(10_000)
-  let rate = Bucket(burst: 3, per_second: 1)
+  let rate = support.bucket(burst: 3, per_second: 1)
   let ping = ping_request()
   let size = bit_array.byte_size(ping)
   let bytes = <<ping:bits, ping:bits, ping:bits, ping:bits, ping:bits>>
-  let #(_, whole) = send_bytes(accepted_with(rate:), bytes)
+  let #(_, whole) =
+    send_bytes(accepted(seed: support.seed(1), settings: rated(rate:)), bytes)
   assert support.stops(whole)
-  let fed = fed_byte_by_byte(session: accepted_with(rate:), bytes:, fed: 0)
+  let fed =
+    fed_byte_by_byte(
+      session: accepted(seed: support.seed(1), settings: rated(rate:)),
+      bytes:,
+      fed: 0,
+    )
   assert fed == 4 * size
     as "the 4th request ends the connection on its last byte, and no earlier"
 }
@@ -673,17 +669,12 @@ fn fed_byte_by_byte(
   }
 }
 
-/// The most bytes a connection holds that it has not taken as requests: the
-/// client's frame limit, 131,070 (MessageSizeLimit 0x140335ec0), which one
-/// whole frame may fill, and one read of 16,384, the server's choice for the
-/// socket's buffer.
-const held_limit = 147_454
-
 pub fn bytes_past_the_hold_limit_while_the_store_is_asked_end_the_connection_with_an_error_and_nothing_written_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(session, taken) = login_start(connected(seed: support.seed(first: 1)))
   assert option.is_some(support.asked(taken)) as "the store is asked"
-  let #(session, taken) = send_bytes(session, <<0:size(held_limit * 8)>>)
+  let #(session, taken) =
+    send_bytes(session, <<0:size(support.held_limit * 8)>>)
   assert !support.stops(taken)
     as "bytes up to the limit are kept for after the answer"
   let #(_, taken) = send_bytes(session, <<0>>)

@@ -305,6 +305,18 @@ const map_watch = WatchId(2)
 /// time.
 const claim_timer = TimerId(1)
 
+/// The longest the rule can hold the client's frames untaken, given how long
+/// an ask may take: frames that arrive while an ask is out or the claim waits
+/// are counted against the rate only when the answer comes. The longest run
+/// without a frame taken is two asks in a row (the hand-off's then the claim,
+/// or the store's then the map's) and the waits between the claims a Sessions
+/// that is not running gets, `claim_retries` of `claim_wait_ms`. A rate's burst
+/// must hold what a client sends at its rate through that
+/// (`genesis_prime/client_connection.bucket`).
+pub fn longest_wait_ms(ask_deadline_ms ask_deadline_ms: Int) -> Int {
+  2 * ask_deadline_ms + claim_wait_ms * claim_retries
+}
+
 /// The rule as its connection shell runs it.
 pub fn rule(
   settings: Settings,

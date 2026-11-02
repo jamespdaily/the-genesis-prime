@@ -85,11 +85,73 @@ pub type Link {
 /// client that has sent nothing for a while may send `burst` at once, and the
 /// bucket fills by `per_second` each second, so a client that sends at exactly
 /// `per_second` is never refused. Both are the server's choice, in each rule's
-/// settings so a recording's header holds them: `burst` is above the most the
-/// real client sends together and `per_second` above its busiest second, and
-/// both are below what the server can take from one connection.
-pub type Bucket {
+/// settings so a recording's header holds them, and `bucket` is the only way
+/// to make one, so none is a value that refuses every client or one that
+/// refuses a client for the server's own wait.
+pub opaque type Bucket {
   Bucket(burst: Int, per_second: Int)
+}
+
+/// Why a bucket was refused.
+pub type BucketRefused {
+  /// A bucket must hold at least one request or frame.
+  BurstBelowOne(burst: Int)
+  /// A bucket must fill by at least one a second.
+  PerSecondBelowOne(per_second: Int)
+  /// Frames that wait for an ask are counted only when the ask is answered, so
+  /// a client that sends at `per_second` through the longest wait the rule
+  /// has sends `needed`, and a `burst` below that closes a client that kept
+  /// to its rate.
+  BurstBelowWait(burst: Int, needed: Int)
+}
+
+/// A bucket of `burst` and `per_second` for a rule whose longest wait with the
+/// client's frames untaken is `longest_wait_ms`, or why it is refused. The wait
+/// is the rule's own (its asks' deadlines and timers, which its module states).
+pub fn bucket(
+  burst burst: Int,
+  per_second per_second: Int,
+  longest_wait_ms longest_wait_ms: Int,
+) -> Result(Bucket, BucketRefused) {
+  let needed = { per_second * longest_wait_ms + 999 } / 1000
+  use <- bool.guard(when: burst < 1, return: Error(BurstBelowOne(burst:)))
+  use <- bool.guard(
+    when: per_second < 1,
+    return: Error(PerSecondBelowOne(per_second:)),
+  )
+  use <- bool.guard(
+    when: burst < needed,
+    return: Error(BurstBelowWait(burst:, needed:)),
+  )
+  Ok(Bucket(burst:, per_second:))
+}
+
+/// A sentence that says why a bucket was refused, for the log.
+pub fn describe_refusal(refused refused: BucketRefused) -> String {
+  case refused {
+    BurstBelowOne(burst:) ->
+      "a rate bucket of " <> int.to_string(burst) <> " holds less than one"
+    PerSecondBelowOne(per_second:) ->
+      "a rate bucket that fills by "
+      <> int.to_string(per_second)
+      <> " a second never fills"
+    BurstBelowWait(burst:, needed:) ->
+      "a rate bucket of "
+      <> int.to_string(burst)
+      <> " holds less than the "
+      <> int.to_string(needed)
+      <> " frames a client sends at the rate while its frames wait for an ask"
+  }
+}
+
+/// The most the bucket holds.
+pub fn burst(bucket bucket: Bucket) -> Int {
+  bucket.burst
+}
+
+/// How many the bucket fills by each second.
+pub fn per_second(bucket bucket: Bucket) -> Int {
+  bucket.per_second
 }
 
 /// What the client may still send: its bucket, and what the bucket held at the
@@ -151,7 +213,7 @@ pub fn charge(
           allowance: Allowance(
             ..allowance,
             thousandths: refilled - 1000,
-            as_of_ms: now.monotonic_ms,
+            as_of_ms: int.max(allowance.as_of_ms, now.monotonic_ms),
           ),
         ),
       ))

@@ -27,10 +27,11 @@ import genesis_prime/rule_recording
 import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/step.{
   type ConnectionInput, type ConnectionRule, type ConnectionStep, Accepted,
-  Effects, Log, LogLine, LogWarning, OwnEffect, OwnEvent, PeerClosed, Read,
-  ReadFailed, Rule, Stop, Stopping, TimerFired, Woken, Write, WriteFailed,
+  Effects, Input, Log, LogLine, LogWarning, OwnEffect, OwnEvent, PeerClosed,
+  Read, ReadFailed, Rule, Stop, Stopping, TimerFired, Woken, Write, WriteFailed,
 }
 import genesis_prime/step/runtime
+import gleam/bit_array
 import gleam/erlang/atom
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/int
@@ -357,7 +358,41 @@ pub fn a_connection_keeps_its_waiting_messages_off_its_heap_test() -> Nil {
   ask_support.stop(server)
 }
 
-pub fn a_connections_socket_reads_at_most_16384_bytes_at_a_time_test() -> Nil {
+pub fn no_read_a_rule_takes_holds_more_than_16384_bytes_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use folder <- recording_support.in_folder
+  let server =
+    start(Some(recording_support.recorder(folder, rule_module: "hello_rule")))
+  let #(client, connection) = greeted(server)
+  let watched = process.monitor(connection)
+  let sent = 200_000
+  assert mug.send(client, <<0:size(sent * 8)>>) == Ok(Nil)
+    as "far more than one read holds, sent at once"
+  assert ask_support.read_bytes(client, sent) == <<0:size(sent * 8)>>
+    as "every byte reached the rule, which echoes what it reads"
+  assert mug.shutdown(client) == Ok(Nil) as "the client left"
+  assert ask_support.ended(watched) == process.Normal
+    as "the rule stopped when the client left"
+  let assert Ok(#(_, records)) =
+    rule_recording.read(recording_support.recording_in(folder))
+    as "the recording reads"
+  let reads =
+    list.filter_map(records, fn(record) {
+      case record {
+        rule_recording.Taken(
+          input: Input(event: OwnEvent(Read(bytes:)), ..),
+          ..,
+        ) -> Ok(bit_array.byte_size(bytes))
+        rule_recording.Taken(..) | rule_recording.End(..) -> Error(Nil)
+      }
+    })
+  assert list.all(reads, fn(size) { size <= 16_384 })
+    as "the hold limit counts a whole frame and one read of at most 16,384 bytes"
+  assert int.sum(reads) == sent as "the reads hold every byte sent"
+  ask_support.stop(server)
+}
+
+pub fn a_connections_socket_buffer_is_16384_bytes_test() -> Nil {
   use <- owned_test.run(30_000)
   let server = start(None)
   let #(_client, connection) = greeted(server)

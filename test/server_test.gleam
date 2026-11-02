@@ -94,8 +94,14 @@ pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_tw
   Nil
 }
 
-@external(erlang, "connection_actor_support_ffi", "listener_limits")
-fn listener_limits(listener: process.Name(Nil)) -> #(Int, Int)
+/// The most connections a listener holds and how many acceptors it runs, as
+/// Ranch reports them.
+fn listener_limits(listener: process.Name(Nil)) -> #(Int, Int) {
+  #(
+    ask_support.max_connections_of(listener),
+    list.length(ask_support.acceptors_of(listener)),
+  )
+}
 
 pub fn each_listener_holds_the_connections_its_setting_gives_with_one_acceptor_test() -> Nil {
   use <- owned_test.run(60_000)

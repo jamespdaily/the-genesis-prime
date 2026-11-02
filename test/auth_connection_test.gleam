@@ -23,7 +23,7 @@ import connection_rule_support as support
 import frame_reader
 import game_client
 import genesis_prime/client_connection.{
-  type Answer, type Request, AskHandOff, Bucket, FromHandOff,
+  type Answer, type Request, AskHandOff, FromHandOff,
 }
 import genesis_prime/connection/cipher
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -75,20 +75,20 @@ fn feed(
   auth_connection.step(state, support.input(event))
 }
 
-/// A connection the server has accepted with this seed; the step is the
-/// hello.
+/// A connection the server has accepted with this seed and these settings;
+/// the step is the hello.
 fn accepted(
   seed seed: BitArray,
-  planted planted: Option(Frame),
+  settings settings: auth_connection.Settings,
 ) -> #(auth_connection.State, ConnectionStep(Request)) {
   feed(
-    auth_connection.new(settings(planted:)),
+    auth_connection.new(settings),
     step.OwnEvent(step.Accepted(ConnectionId(1), support.peer, seed)),
   )
 }
 
 fn connected(seed seed: BitArray) -> auth_connection.State {
-  accepted(seed:, planted: None).0
+  accepted(seed:, settings: settings(planted: None)).0
 }
 
 /// The bytes of the client's login request for a UserId and a build, in its
@@ -174,7 +174,8 @@ fn token_taken(
 
 pub fn on_connect_the_server_sends_the_hello_with_build_16042_the_checksum_and_the_realm_id_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(_, taken) = accepted(seed: support.seed(first: 1), planted: None)
+  let #(_, taken) =
+    accepted(seed: support.seed(first: 1), settings: settings(planted: None))
   let assert [Frame(message_id: 0x0003, body:)] = support.written_frames(taken)
     as "one bare frame, message 3, and nothing else"
   let assert [written] = support.writes(taken)
@@ -199,7 +200,10 @@ pub fn on_connect_the_server_sends_the_hello_with_build_16042_the_checksum_and_t
   // A planted frame follows the hello in the wrapper, and only when set.
   let planted = Frame(message_id: 0x0914, body: <<>>)
   let #(_, taken) =
-    accepted(seed: support.seed(first: 1), planted: Some(planted))
+    accepted(
+      seed: support.seed(first: 1),
+      settings: settings(planted: Some(planted)),
+    )
   let assert [first, second] = support.written_frames(taken)
     as "the hello, then the planted frame"
   assert first.message_id == 0x0003
@@ -371,12 +375,6 @@ pub fn a_frame_one_byte_over_131070_ends_the_connection_with_an_error_and_writes
     as "a client whose frame the client's own reader would refuse is told nothing"
 }
 
-/// The most bytes a connection holds that it has not taken as frames: the
-/// client's frame limit, 131,070 (MessageSizeLimit 0x140335ec0), which one
-/// whole frame may fill, and one read of 16,384, the server's choice for the
-/// socket's buffer.
-const held_limit = 147_454
-
 pub fn bytes_past_the_hold_limit_while_the_hand_off_is_asked_end_the_connection_with_an_error_and_nothing_written_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) =
@@ -385,7 +383,7 @@ pub fn bytes_past_the_hold_limit_while_the_hand_off_is_asked_end_the_connection_
       login_request(user_id: holder().game_account_id, build: 16_042),
     )
   assert option.is_some(support.asked(taken)) as "the hand-off is asked"
-  let #(state, taken) = read(state, <<0:size(held_limit * 8)>>)
+  let #(state, taken) = read(state, <<0:size(support.held_limit * 8)>>)
   assert !support.stops(taken)
     as "bytes up to the limit are kept for after the answer"
   let #(_, taken) = read(state, <<0>>)
@@ -397,18 +395,13 @@ pub fn bytes_past_the_hold_limit_while_the_hand_off_is_asked_end_the_connection_
 
 pub fn a_full_burst_of_frames_is_taken_and_one_more_in_the_same_millisecond_ends_the_connection_with_a_warning_test() -> Nil {
   use <- owned_test.run(10_000)
-  let state =
-    auth_connection.new(
-      Settings(..settings(planted: None), rate: Bucket(burst: 3, per_second: 1)),
-    )
   let #(state, _) =
-    feed(
-      state,
-      step.OwnEvent(step.Accepted(
-        ConnectionId(1),
-        support.peer,
-        support.seed(1),
-      )),
+    accepted(
+      seed: support.seed(first: 1),
+      settings: Settings(
+        ..settings(planted: None),
+        rate: support.bucket(burst: 3, per_second: 1),
+      ),
     )
   let #(state, taken) = read(state, support.pings(count: 3))
   assert support.writes(taken)

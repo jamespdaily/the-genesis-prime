@@ -148,6 +148,16 @@ const reason_invalid_login_token = 16
 
 const reason_version_mismatch = 19
 
+/// The longest the rule can hold the client's frames untaken, given how long
+/// an ask may take: frames that arrive while an ask is out are counted against
+/// the rate only when the answer comes, and the login asks the hand-off twice
+/// in a row, to take the game token and then to keep the session key. A rate's
+/// burst must hold what a client sends at its rate through that
+/// (`genesis_prime/client_connection.bucket`).
+pub fn longest_wait_ms(ask_deadline_ms ask_deadline_ms: Int) -> Int {
+  2 * ask_deadline_ms
+}
+
 /// The rule as its connection shell runs it.
 pub fn rule(
   settings: Settings,

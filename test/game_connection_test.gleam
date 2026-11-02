@@ -41,8 +41,7 @@ import connection_rule_support as support
 import game_client
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskSessions,
-  AskStore, Bucket, FromHandOff, FromMap, FromSessions, FromStore,
-  SentBySessions,
+  AskStore, FromHandOff, FromMap, FromSessions, FromStore, SentBySessions,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -120,7 +119,7 @@ fn settings() -> game_connection.Settings {
     character_slots: 3,
     tables: character_tables.shared(),
     ask_deadline_ms: 4000,
-    rate: support.roomy,
+    rate: support.roomy(),
   )
 }
 
@@ -173,16 +172,19 @@ fn answer(
   feed(state, step.OwnEvent(step.Answered(ask: ask.ask, outcome:)))
 }
 
-/// A connection the server has accepted; the step is the hello.
-fn accepted() -> #(game_connection.State, ConnectionStep(Request)) {
+/// A connection the server has accepted, made with these settings; the step
+/// is the hello.
+fn accepted(
+  settings: game_connection.Settings,
+) -> #(game_connection.State, ConnectionStep(Request)) {
   feed(
-    game_connection.new(settings()),
+    game_connection.new(settings),
     step.OwnEvent(step.Accepted(ConnectionId(1), support.peer, support.seed(1))),
   )
 }
 
 fn connected() -> game_connection.State {
-  accepted().0
+  accepted(settings()).0
 }
 
 /// What the client sends first: 0x058F, under the base key.
@@ -320,7 +322,7 @@ fn character(id id: Int, name name: String, seed seed: Int) -> store.Character {
 
 pub fn on_connect_the_hello_is_the_first_thing_written_in_0x3dc_under_the_base_key_with_the_realm_id_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(_, taken) = accepted()
+  let #(_, taken) = accepted(settings())
   assert support.asked(taken) == None
   assert !support.stops(taken)
   let assert [Frame(message_id: 0x0003, body:)] = heard(taken, base())
@@ -1886,19 +1888,13 @@ pub fn the_end_of_the_watch_on_sessions_starts_a_timer_and_its_firing_claims_aga
     as "Claimed puts the connection back in character select with its state, and the 0x07E0 that waited is taken"
 }
 
-/// The most bytes a connection holds that it has not taken as frames: the
-/// client's frame limit, 131,070 (MessageSizeLimit 0x140335ec0), which one
-/// whole frame may fill, and one read of 16,384, the server's choice for the
-/// socket's buffer.
-const held_limit = 147_454
-
 pub fn bytes_past_the_hold_limit_while_the_claim_waits_end_the_connection_with_an_error_and_nothing_written_test() -> Nil {
   use <- owned_test.run(10_000)
   let waiting_on_the_timer =
     feed(in_select_with_a_list(), WatchEnded(WatchId(1))).0
   let claim_out = claiming().0
   list.each([waiting_on_the_timer, claim_out], fn(state) {
-    let #(state, taken) = read(state, <<0:size(held_limit * 8)>>)
+    let #(state, taken) = read(state, <<0:size(support.held_limit * 8)>>)
     assert !support.stops(taken)
       as "bytes up to the limit are kept for after the claim"
     let #(_, taken) = read(state, <<0>>)
@@ -1928,15 +1924,6 @@ pub fn a_frame_one_byte_over_131070_ends_the_connection_with_an_error_and_writes
     as "the length is refused as soon as its four bytes are here, before the frame's bytes are waited for"
 }
 
-/// The rule's state after the hello, with this bucket and the hello at
-/// `support.now_ms`.
-fn accepted_with(rate rate: client_connection.Bucket) -> game_connection.State {
-  feed(
-    game_connection.new(Settings(..settings(), rate:)),
-    step.OwnEvent(step.Accepted(ConnectionId(1), support.peer, support.seed(1))),
-  ).0
-}
-
 fn read_at(
   state state: game_connection.State,
   ms ms: Int,
@@ -1950,7 +1937,10 @@ fn read_at(
 
 pub fn a_full_burst_of_frames_is_taken_and_one_more_in_the_same_millisecond_ends_the_connection_with_a_warning_test() -> Nil {
   use <- owned_test.run(10_000)
-  let state = accepted_with(rate: Bucket(burst: 5, per_second: 2))
+  let state =
+    accepted(
+      Settings(..settings(), rate: support.bucket(burst: 5, per_second: 2)),
+    ).0
   let #(state, taken) = read(state, support.pings(count: 5))
   assert support.writes(taken)
     == [
@@ -1973,7 +1963,9 @@ pub fn a_full_burst_of_frames_is_taken_and_one_more_in_the_same_millisecond_ends
   // A client that waited a long time has the burst again and no more.
   let #(state, taken) =
     read_at(
-      state: accepted_with(rate: Bucket(burst: 5, per_second: 2)),
+      state: accepted(
+        Settings(..settings(), rate: support.bucket(burst: 5, per_second: 2)),
+      ).0,
       ms: support.now_ms + 3_600_000,
       bytes: support.pings(count: 5),
     )
@@ -1989,7 +1981,10 @@ pub fn the_bucket_refills_exactly_with_no_drift_over_10000_frames_sent_at_exactl
   // 3 frames a second: a frame is due every 333 1/3 ms, which no whole
   // millisecond holds, so a bucket that rounds each refill drifts. Frame k is
   // sent at the first whole millisecond by which k/3 of a second has passed.
-  let state = accepted_with(rate: Bucket(burst: 2, per_second: 3))
+  let state =
+    accepted(
+      Settings(..settings(), rate: support.bucket(burst: 2, per_second: 3)),
+    ).0
   let start = support.now_ms
   let #(state, taken) =
     read_at(state:, ms: start, bytes: support.pings(count: 2))
@@ -2010,11 +2005,34 @@ pub fn the_bucket_refills_exactly_with_no_drift_over_10000_frames_sent_at_exactl
     as "a frame one millisecond before it is due is refused: no frame is let through early either"
 }
 
+pub fn an_input_with_an_earlier_time_credits_no_time_twice_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 100 a second is one frame every 10 ms. The bucket holds 3, which it is
+  // full of at the hello, at `start`.
+  let start = support.now_ms
+  let state =
+    accepted(
+      Settings(..settings(), rate: support.bucket(burst: 3, per_second: 100)),
+    ).0
+  // Times 10 ms on, then 10 ms back, then 10 ms on again: the clock never goes
+  // back, but an input is given its time as the shell read it, and a rule that
+  // is given an earlier one must not count the same 10 ms twice.
+  let #(state, taken) = read_at(state:, ms: start + 10, bytes: support.ping(0))
+  assert support.writes(taken) == [support.pong(0)]
+  let #(state, taken) = read_at(state:, ms: start, bytes: support.ping(1))
+  assert support.writes(taken) == [support.pong(1)]
+  let #(state, taken) = read_at(state:, ms: start + 10, bytes: support.ping(2))
+  assert support.writes(taken) == [support.pong(2)]
+  let #(_, taken) = read_at(state:, ms: start + 10, bytes: support.ping(3))
+  assert support.stops(taken)
+    as "3 frames were sent and the bucket held 3; the 10 ms between the first and the last input is credited once, and the bucket was already full then"
+}
+
 pub fn frames_sent_byte_by_byte_or_in_one_read_are_refused_at_the_same_frame_test() -> Nil {
   use <- owned_test.run(10_000)
-  let rate = Bucket(burst: 4, per_second: 1)
+  let rate = support.bucket(burst: 4, per_second: 1)
   let bytes = support.pings(count: 7)
-  let #(_, whole) = read(accepted_with(rate:), bytes)
+  let #(_, whole) = read(accepted(Settings(..settings(), rate:)).0, bytes)
   let answered = [
     support.pong(0),
     support.pong(1),
@@ -2025,7 +2043,12 @@ pub fn frames_sent_byte_by_byte_or_in_one_read_are_refused_at_the_same_frame_tes
     as "the 4 frames of the burst are answered and the 5th ends the connection"
   assert support.stops(whole)
   let #(fed, written) =
-    fed_byte_by_byte(state: accepted_with(rate:), bytes:, fed: 0, written: [])
+    fed_byte_by_byte(
+      state: accepted(Settings(..settings(), rate:)).0,
+      bytes:,
+      fed: 0,
+      written: [],
+    )
   assert written == answered
     as "the same frames are answered however the bytes were split"
   assert fed == 5 * 7
