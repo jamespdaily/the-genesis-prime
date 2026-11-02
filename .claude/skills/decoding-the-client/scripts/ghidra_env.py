@@ -32,6 +32,14 @@ class WrongVersion(Exception):
     """A pinned part is missing or has another version; the message names what was found."""
 
 
+def genesis_home(env) -> Path:
+    """The folder for what the scripts keep outside the repository: GENESIS_HOME when set, else
+    .genesis-prime under the home folder."""
+    if env.get("GENESIS_HOME"):
+        return Path(env["GENESIS_HOME"])
+    return Path(env.get("HOME") or Path.home()) / ".genesis-prime"
+
+
 def settings_from_env(env) -> Settings:
     """Reads the four paths; a missing variable raises WrongVersion naming it."""
     values = {}

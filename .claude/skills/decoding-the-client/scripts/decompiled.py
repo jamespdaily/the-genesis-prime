@@ -22,7 +22,8 @@ The copy is the client's code: it lives outside the repository, in $GENESIS_DECO
 $GENESIS_HOME/decompiled (GENESIS_HOME defaults to ~/.genesis-prime), and a folder inside the
 repository or in any git working tree is refused.
 
-Usage, with ~/.genesis-prime/env.sh read and no other process holding the Ghidra project:
+Usage, with ~/.genesis-prime/env.sh read. It reaches the query process through query.py's holder, which
+it starts when none runs, and which stays up after it (`query.py stop` ends it):
     python3 -I decompiled.py check      exit 0 when current; 1 and the changes when stale or no copy
     python3 -I decompiled.py refresh    a whole client takes about 7 minutes; failures are listed, exit 0
 """
@@ -43,7 +44,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_facts  # noqa: E402
 import ghidra_env  # noqa: E402
-from query_client import NotConfigured, QueryFailed, QueryProcessEnded, QueryTimeout, open_query_client  # noqa: E402
+import query  # noqa: E402
+from query_client import NotConfigured, QueryFailed, QueryProcessEnded, QueryTimeout  # noqa: E402
 
 STATE_FILE = "state.json"
 PENDING_FILE = "pending.json"
@@ -98,8 +100,7 @@ def copy_directory(env) -> Path:
     if env.get("GENESIS_DECOMPILED_DIR"):
         directory = Path(env["GENESIS_DECOMPILED_DIR"])
     else:
-        home = Path(env["GENESIS_HOME"]) if env.get("GENESIS_HOME") else Path(env.get("HOME") or Path.home()) / ".genesis-prime"
-        directory = home / "decompiled"
+        directory = ghidra_env.genesis_home(env) / "decompiled"
     repository = check_facts.REPOSITORY.resolve()
     resolved = directory.resolve()
     if resolved == repository or repository in resolved.parents:
@@ -326,7 +327,7 @@ def main(argv: list[str], env, open_client, out=None, err=None) -> int:
         return 1
     try:
         client = open_client()
-    except (ghidra_env.WrongVersion, NotConfigured, OSError) as error:
+    except (ghidra_env.WrongVersion, NotConfigured, query.BadSetting, query.BadLock, query.HolderUnavailable, OSError) as error:
         print("decompiled: %s" % error, file=err)
         return 1
     try:
@@ -351,4 +352,4 @@ def main(argv: list[str], env, open_client, out=None, err=None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:], os.environ, lambda: open_query_client(os.environ)))
+    sys.exit(main(sys.argv[1:], os.environ, lambda: query.open_client(os.environ)))
