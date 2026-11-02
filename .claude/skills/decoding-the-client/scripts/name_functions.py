@@ -82,13 +82,10 @@ def apply_names(program, pairs: list[tuple[int, str]], write: bool) -> list[Outc
     return outcomes
 
 
-def main() -> int:
-    pairs = name_pairs(check_facts.load(check_facts.FACT_FILE))
-    write = os.environ.get("GHIDRA_WRITE") == "1"
-    try:
-        opened = ghidra_project.open_existing(ghidra_env.settings_from_env(os.environ))
-    except (ghidra_env.WrongVersion, ghidra_project.ProjectMissing) as error:
-        sys.exit("name_functions: %s" % error)
+def name_and_save(settings: ghidra_env.Settings, pairs: list[tuple[int, str]], write: bool) -> list[Outcome]:
+    """Opens the project that exists, names each pair (see apply_names), saves it when write is set,
+    and closes it. Raises ghidra_project.ProjectMissing when there is no project."""
+    opened = ghidra_project.open_existing(settings)
     try:
         outcomes = apply_names(opened.program, pairs, write)
         if write:
@@ -97,6 +94,16 @@ def main() -> int:
             opened.program.save("Names from the fact file", pyghidra.task_monitor())
     finally:
         opened.close()
+    return outcomes
+
+
+def main() -> int:
+    pairs = name_pairs(check_facts.load(check_facts.FACT_FILE))
+    write = os.environ.get("GHIDRA_WRITE") == "1"
+    try:
+        outcomes = name_and_save(ghidra_env.settings_from_env(os.environ), pairs, write)
+    except (ghidra_env.WrongVersion, ghidra_project.ProjectMissing) as error:
+        sys.exit("name_functions: %s" % error)
     failures = [o for o in outcomes if o.failed]
     in_place = sum(1 for o in outcomes if not o.failed and o.found == o.name)
     print(
