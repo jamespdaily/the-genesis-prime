@@ -195,14 +195,7 @@ pub fn a_create_of_each_start_of_each_race_and_faction_saves_the_place_of_its_wo
       }
     let expected = place_of_row(row_id)
     let character = character_support.new_character_of_row(tables:, row:)
-    assert Place(
-        world_id: character.world_id,
-        world_zone_id: character.world_zone_id,
-        x: character.position_x,
-        y: character.position_y,
-        z: character.position_z,
-      )
-      == expected
+    assert character.place == expected
       as {
         "CharacterCreation row "
         <> int.to_string(row.id)

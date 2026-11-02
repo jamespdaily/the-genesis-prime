@@ -13,6 +13,7 @@
 //// - The level: stat 10 of the unit's stats is its level, and a unit created
 ////   without it is level 1 (0x140458140, 0x1404543c1).
 
+import genesis_prime/game/start_place.{type Place, Place}
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_stat.{UnitStat}
@@ -20,8 +21,14 @@ import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, RaceId}
 import genesis_prime/world_map/player_unit
 import gleam/list
+import gleam/option.{Some}
 import message_support
 import owned_test
+
+/// Where the live character of the vector stands.
+fn roxo_place() -> Place {
+  Place(world_id: 3460, world_zone_id: 6009, x: 4605.65, y: -7.571, z: 494.996)
+}
 
 /// Roxo Stompstone as the live character of the vector.
 fn roxo() -> store.Character {
@@ -34,11 +41,7 @@ fn roxo() -> store.Character {
     faction_id: 167,
     level: 1,
     path: 0,
-    world_id: 3460,
-    world_zone_id: 6009,
-    position_x: 4605.65,
-    position_y: -7.571,
-    position_z: 494.996,
+    place: Some(roxo_place()),
     look: [],
     bones: [],
     naming: NameStands,
@@ -48,7 +51,13 @@ fn roxo() -> store.Character {
 pub fn the_unit_of_the_live_character_is_the_clients_1120_bits_test() -> Nil {
   use <- owned_test.run(10_000)
   let unit =
-    player_unit.create(character: roxo(), unit_id: 1, realm_id: 1, visuals: [])
+    player_unit.create(
+      character: roxo(),
+      place: roxo_place(),
+      unit_id: 1,
+      realm_id: 1,
+      visuals: [],
+    )
   let assert Ok(body) =
     unit_create_player.encode(
       UnitCreatePlayer(..unit, stats: [UnitStat(stat_id: 0, value: 136)]),
@@ -68,6 +77,7 @@ pub fn the_unit_carries_the_visuals_and_bones_it_is_given_and_the_path_never_rea
   let unit =
     player_unit.create(
       character: Character(..roxo(), path: 3, bones: [0x3F800001, 0x3F800002]),
+      place: roxo_place(),
       unit_id: 9,
       realm_id: 4,
       visuals: [visual],
@@ -92,6 +102,7 @@ pub fn the_unit_carries_its_characters_level_as_stat_10_test() -> Nil {
   let unit =
     player_unit.create(
       character: Character(..roxo(), level: 3),
+      place: roxo_place(),
       unit_id: 1,
       realm_id: 1,
       visuals: [],

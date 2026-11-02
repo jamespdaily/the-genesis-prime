@@ -21,6 +21,7 @@
 //// - Every other field 0 or empty, each by its record
 ////   (opcode.0x262.player_fields, opcode.0x262.unit_fields).
 
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/unit_create_player.{
@@ -47,10 +48,11 @@ const level_stat = 10
 /// (0x1404584b0).
 const base_health_property = 7
 
-/// Message 0x262 for the character as the unit `unit_id`, in the realm, with
-/// the body `visuals`.
+/// Message 0x262 for the character as the unit `unit_id`, in the realm, at
+/// `place` with the body `visuals`.
 pub fn create(
   character character: Character,
+  place place: Place,
   unit_id unit_id: Int,
   realm_id realm_id: Int,
   visuals visuals: List(ItemVisual),
@@ -82,9 +84,9 @@ pub fn create(
     server_time_estimate_start: 0,
     movement_commands: [
       UnitPositionCommand(
-        x: float32.to_bits(character.position_x),
-        y: float32.to_bits(character.position_y),
-        z: float32.to_bits(character.position_z),
+        x: float32.to_bits(place.x),
+        y: float32.to_bits(place.y),
+        z: float32.to_bits(place.z),
         blends: 0,
       ),
     ],

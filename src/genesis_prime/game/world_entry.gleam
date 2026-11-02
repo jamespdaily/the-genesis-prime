@@ -44,6 +44,7 @@
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/appearance
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/float32
@@ -62,6 +63,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/player_unit
 import gleam/int
+import gleam/option.{None, Some}
 
 /// What world entry asks or sends; the game connection's rule turns each into
 /// its own effect.
@@ -82,8 +84,8 @@ pub type Effect {
 pub opaque type State {
   /// The store is asked for the character.
   Loading(character_id: CharacterId)
-  /// The map is asked to take the character.
-  Joining(character: Character, map: MapId)
+  /// The map is asked to take the character at its saved place.
+  Joining(character: Character, place: Place, map: MapId)
 }
 
 /// What the store's read of the character leads to.
@@ -166,17 +168,18 @@ pub fn loaded(
               <> ", which the account does not have",
           )
         store.CharacterLoaded(character:) ->
-          case character.world_id {
-            0 ->
+          case character.place {
+            None ->
               Refused(
                 character_id:,
                 warning: "a play of character "
                   <> int.to_string(character_id)
                   <> ", which has no saved place",
               )
-            world_id -> {
-              let map = MapId(world_id:, instance: open_world_instance)
-              Join(state: Joining(character:, map:), effects: [
+            Some(place) -> {
+              let map =
+                MapId(world_id: place.world_id, instance: open_world_instance)
+              Join(state: Joining(character:, place:, map:), effects: [
                 AskMap(map:, message: map.Join(connection:, character_id:)),
               ])
             }
@@ -197,7 +200,7 @@ pub fn joined(
   tables tables: table_store.Tables,
 ) -> Result(#(Entered, List(Effect)), Nil) {
   case state {
-    Joining(character:, map:) -> {
+    Joining(character:, place:, map:) -> {
       let map.Joined(unit_id:, incarnation:) = answer
       Ok(
         #(
@@ -208,8 +211,8 @@ pub fn joined(
             unit_id:,
           ),
           [
-            enter_world(character:),
-            player_created(character:, unit_id:, realm_id:, tables:),
+            enter_world(place:),
+            player_created(character:, place:, unit_id:, realm_id:, tables:),
             unit_is_player(unit_id:),
             player_path(character:),
             control_granted(unit_id:),
@@ -225,13 +228,13 @@ pub fn joined(
 }
 
 /// 0xAD with the saved world and position, and 0.0 in the last two floats.
-fn enter_world(character character: Character) -> Effect {
+fn enter_world(place place: Place) -> Effect {
   let assert Ok(body) =
     enter_world.encode(EnterWorld(
-      world_id: character.world_id,
-      position_x: float32.to_bits(character.position_x),
-      position_y: float32.to_bits(character.position_y),
-      position_z: float32.to_bits(character.position_z),
+      world_id: place.world_id,
+      position_x: float32.to_bits(place.x),
+      position_y: float32.to_bits(place.y),
+      position_z: float32.to_bits(place.z),
       field_5: float32.to_bits(0.0),
       field_6: float32.to_bits(0.0),
     ))
@@ -242,6 +245,7 @@ fn enter_world(character character: Character) -> Effect {
 /// 0x262 for the player, with the body visuals of the character list.
 fn player_created(
   character character: Character,
+  place place: Place,
   unit_id unit_id: Int,
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
@@ -257,6 +261,7 @@ fn player_created(
   let assert Ok(body) =
     unit_create_player.encode(player_unit.create(
       character:,
+      place:,
       unit_id:,
       realm_id:,
       visuals:,
