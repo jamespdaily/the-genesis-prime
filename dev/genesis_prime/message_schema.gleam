@@ -240,9 +240,7 @@ fn parse_union(
   use variants <- result.try(
     list.try_map(variant_tables, parse_variant(_, tag_bits)),
   )
-  use Nil <- result.try(
-    check_variants_are_distinct(union: name, variants:, seen: []),
-  )
+  use Nil <- result.try(check_variants_are_distinct(union: name, variants:))
   use Nil <- result.try(
     list.try_each(variants, fn(variant) {
       check_variant_record(union: name, tag_bits:, records:, variant:)
@@ -267,28 +265,59 @@ fn parse_variant(
   Ok(Variant(tag:, name:, record:, named_by: optional_string(table, "named_by")))
 }
 
+/// Where two items of a list share what must be unique: the number of the
+/// later one, or its name when the numbers differ.
+type Clash {
+  SameNumber(number: Int)
+  SameName(name: String)
+}
+
+/// The first item that has the number or the name of an item before it, with
+/// the number checked first.
+fn find_clash(
+  items items: List(item),
+  number number: fn(item) -> Int,
+  name name: fn(item) -> String,
+) -> Result(Nil, Clash) {
+  find_clash_after(items:, number:, name:, seen: [])
+}
+
+fn find_clash_after(
+  items items: List(item),
+  number number: fn(item) -> Int,
+  name name: fn(item) -> String,
+  seen seen: List(item),
+) -> Result(Nil, Clash) {
+  case items {
+    [] -> Ok(Nil)
+    [item, ..rest] ->
+      case
+        list.any(seen, fn(earlier) { number(earlier) == number(item) }),
+        list.any(seen, fn(earlier) { name(earlier) == name(item) })
+      {
+        True, _ -> Error(SameNumber(number(item)))
+        False, True -> Error(SameName(name(item)))
+        False, False ->
+          find_clash_after(items: rest, number:, name:, seen: [item, ..seen])
+      }
+  }
+}
+
 fn check_variants_are_distinct(
   union union: String,
   variants variants: List(Variant),
-  seen seen: List(Variant),
 ) -> Result(Nil, SchemaError) {
-  case variants {
-    [] -> Ok(Nil)
-    [variant, ..rest] ->
-      case
-        list.find(seen, fn(earlier) { earlier.tag == variant.tag }),
-        list.find(seen, fn(earlier) { earlier.name == variant.name })
-      {
-        Ok(_), _ -> Error(DuplicateTag(union:, tag: variant.tag))
-        Error(Nil), Ok(_) ->
-          Error(DuplicateVariantName(union:, name: variant.name))
-        Error(Nil), Error(Nil) ->
-          check_variants_are_distinct(union:, variants: rest, seen: [
-            variant,
-            ..seen
-          ])
-      }
-  }
+  find_clash(
+    items: variants,
+    number: fn(variant) { variant.tag },
+    name: fn(variant) { variant.name },
+  )
+  |> result.map_error(fn(clash) {
+    case clash {
+      SameNumber(number:) -> DuplicateTag(union:, tag: number)
+      SameName(name:) -> DuplicateVariantName(union:, name:)
+    }
+  })
 }
 
 /// A variant's record is one of the schema's, and starts with the constant its
@@ -554,9 +583,7 @@ fn parse_named_values(
           False -> Ok(Nil)
         },
       )
-      use Nil <- result.try(
-        check_values_are_distinct(field:, values:, seen: []),
-      )
+      use Nil <- result.try(check_values_are_distinct(field:, values:))
       Ok(Some(NamedValues(type_name:, values:)))
     }
   }
@@ -597,21 +624,16 @@ fn parse_value(
 fn check_values_are_distinct(
   field field: String,
   values values: List(Value),
-  seen seen: List(Value),
 ) -> Result(Nil, SchemaError) {
-  case values {
-    [] -> Ok(Nil)
-    [value, ..rest] ->
-      case
-        list.find(seen, fn(earlier) { earlier.value == value.value }),
-        list.find(seen, fn(earlier) { earlier.name == value.name })
-      {
-        Ok(_), _ -> Error(DuplicateValue(field:, value: value.value))
-        Error(Nil), Ok(_) -> Error(DuplicateValueName(field:, name: value.name))
-        Error(Nil), Error(Nil) ->
-          check_values_are_distinct(field:, values: rest, seen: [value, ..seen])
-      }
-  }
+  find_clash(items: values, number: fn(value) { value.value }, name: fn(value) {
+    value.name
+  })
+  |> result.map_error(fn(clash) {
+    case clash {
+      SameNumber(number:) -> DuplicateValue(field:, value: number)
+      SameName(name:) -> DuplicateValueName(field:, name:)
+    }
+  })
 }
 
 fn parse_kind(
