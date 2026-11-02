@@ -50,7 +50,7 @@
 //// - **The tree's children** each have their own shutdown time, and one that
 ////   passes is killed: a connection that has not ended in `connection_shutdown_ms`,
 ////   a service in its `shutdown_ms`, the closer in its own. A killed process
-////   leaves no `End` in its recording. The subtrees and the root wait without a
+////   leaves no closing line in its recording. The subtrees and the root wait without a
 ////   limit, the children's limits being what bounds them. No timer of the VM's
 ////   ends the stop: the kernel's `shutdown_timeout`, which no file here sets,
 ////   is infinity.
@@ -65,7 +65,7 @@
 ////   start call returns, then stops the tree it started, in order.
 //// - **SIGTERM before the ready line.** The tree stops as above, the readiness
 ////   ask sees its end, no ready line is printed, the status is 0, and every
-////   recording a process had open ends with `End`.
+////   recording a connection had open ends with its closing line.
 //// - **The tree failing to start** (a port taken, a table missing) returns
 ////   `TreeNotStarted`; `main` crashes with it and the status is 1.
 //// - **The tree ending while the node runs** crashes `main` (`end_of`): the node

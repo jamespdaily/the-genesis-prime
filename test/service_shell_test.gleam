@@ -21,18 +21,16 @@ import asking_rule
 import gate_rule
 import genesis_prime/hand_off.{Holder, Kept, Put, SessionKey, Take, Taken}
 import genesis_prime/login/guid
-import genesis_prime/rule_recording.{type Record, End, Taken as Recorded}
-import genesis_prime/rule_recording/file
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{
   type Address, type Event, type NoAsk, type ServiceEffect, type ServiceEvent,
-  Asked, CallerId, Connection, ConnectionId, Effects, Input, OwnEffect, OwnEvent,
-  Reply, Sessions, Started, Stop, Stopping, WatchEnded, WatchId,
+  type Step, Asked, CallerId, Connection, ConnectionId, Effects, OwnEffect,
+  OwnEvent, Reply, Rule, Sessions, Started, Stop, Stopping, WatchEnded, WatchId,
 }
 import genesis_prime/store.{AccountId}
 import gleam/erlang/atom
-import gleam/erlang/process
+import gleam/erlang/process.{type Subject}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
@@ -42,47 +40,38 @@ import log_capture
 import mailbox_support
 import mug
 import owned_test
-import recording_support
 import supervisor_children
 
 pub fn a_service_starts_under_its_supervisor_by_its_name_and_its_first_input_is_started_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
   let name = process.new_name("hand_off")
+  let observed = process.new_subject()
   let tree =
     start_tree(hand_off_child(
       name:,
       shutdown_ms: 1000,
-      recorder: Some(recording_support.recorder(
-        folder,
-        rule_module: hand_off.rule_name,
-      )),
+      observed: Some(observed),
     ))
   let assert Ok(pid) = process.named(name) as "the name is registered"
   assert supervisor_children.in_start_order(tree) == [pid]
     as "the process holding the name is the supervisor's child"
-  let assert [
-    Recorded(input: Input(event: OwnEvent(Started), ..), step: first),
-    ..
-  ] = recorded(folder)
-    as "the recording begins with an input"
-  assert first == Effects([]) as "Started is the first input, and does nothing"
+  let assert Ok(#(OwnEvent(Started), first)) =
+    process.receive(observed, within: ask_support.event_wait_ms)
+    as "the first input the rule took is Started"
+  assert first == Effects([]) as "Started does nothing"
   let _reason = ask_support.stop_tree(tree)
   Nil
 }
 
 pub fn an_ask_reaches_the_rule_as_asked_and_its_reply_reaches_the_asker_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
   let name = process.new_name("hand_off")
+  let observed = process.new_subject()
   let tree =
     start_tree(hand_off_child(
       name:,
       shutdown_ms: 1000,
-      recorder: Some(recording_support.recorder(
-        folder,
-        rule_module: hand_off.rule_name,
-      )),
+      observed: Some(observed),
     ))
   let assert Ok(pid) = process.named(name) as "the name is registered"
   let key = SessionKey(a_guid())
@@ -109,26 +98,17 @@ pub fn an_ask_reaches_the_rule_as_asked_and_its_reply_reaches_the_asker_test() -
     as "the second ask is answered with the holder the first one put"
   let _reason = ask_support.stop_tree(tree)
   let assert [
-    Recorded(..),
-    Recorded(
-      input: Input(
-        event: OwnEvent(Asked(
-          caller: CallerId(1),
-          message: Put(lifetime_ms: 60_000, ..),
-        )),
-        ..,
-      ),
-      step: Effects([OwnEffect(Reply(CallerId(1), Kept))]),
+    #(OwnEvent(Started), _),
+    #(
+      OwnEvent(Asked(caller: CallerId(1), message: Put(lifetime_ms: 60_000, ..))),
+      Effects([OwnEffect(Reply(CallerId(1), Kept))]),
     ),
-    Recorded(
-      input: Input(
-        event: OwnEvent(Asked(caller: CallerId(2), message: Take(..))),
-        ..,
-      ),
-      step: Effects([OwnEffect(Reply(CallerId(2), Taken(..)))]),
+    #(
+      OwnEvent(Asked(caller: CallerId(2), message: Take(..))),
+      Effects([OwnEffect(Reply(CallerId(2), Taken(..)))]),
     ),
     ..
-  ] = recorded(folder)
+  ] = mailbox_support.drain(observed)
     as "the callers are numbered from 1 in the order the asks arrived"
   Nil
 }
@@ -145,12 +125,8 @@ pub fn a_reply_to_an_asker_that_stopped_waiting_is_dropped_and_the_process_goes_
         sent: ask_support.unreported,
       ),
       shutdown_ms: 1000,
-      recorder: None,
       with: fn(builder) {
-        supervisor.add(
-          builder,
-          ask_support.gate(name: gate, shutdown_ms: 1000, recorder: None),
-        )
+        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
       },
     )
   let assert Ok(pid) = process.named(gate) as "the gate runs"
@@ -175,18 +151,11 @@ pub fn a_reply_to_an_asker_that_stopped_waiting_is_dropped_and_the_process_goes_
 
 pub fn the_trees_stop_arrives_as_stopping_with_the_childs_shutdown_time_from_its_arrival_test() -> Nil {
   use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
   let name = process.new_name("hand_off")
   let shutdown_ms = 1500
+  let observed = process.new_subject()
   let tree =
-    start_tree(hand_off_child(
-      name:,
-      shutdown_ms: shutdown_ms,
-      recorder: Some(recording_support.recorder(
-        folder,
-        rule_module: hand_off.rule_name,
-      )),
-    ))
+    start_tree(hand_off_child(name:, shutdown_ms:, observed: Some(observed)))
   let assert Ok(pid) = process.named(name) as "the name is registered"
   let service = process.monitor(pid)
   let before_stop = ask_support.monotonic_ms()
@@ -195,11 +164,8 @@ pub fn the_trees_stop_arrives_as_stopping_with_the_childs_shutdown_time_from_its
     as "the service exits with the reason shutdown, never normal"
   let _reason = ask_support.ended(stopped)
   let after_stop = ask_support.monotonic_ms()
-  let assert [
-    Recorded(..),
-    Recorded(input: Input(event: Stopping(deadline_ms:), ..), step: stop),
-    End(count: 2),
-  ] = recorded(folder)
+  let assert [#(OwnEvent(Started), _), #(Stopping(deadline_ms:), stop)] =
+    mailbox_support.drain(observed)
     as "Stopping came as the second input and the rule stopped"
   assert stop == Effects([Stop])
   assert deadline_ms >= before_stop + shutdown_ms
@@ -219,12 +185,8 @@ pub fn a_crash_in_the_rule_restarts_it_empty_and_an_ask_made_meanwhile_gets_ende
         sent: ask_support.unreported,
       ),
       shutdown_ms: 1000,
-      recorder: None,
       with: fn(builder) {
-        supervisor.add(
-          builder,
-          ask_support.gate(name: gate, shutdown_ms: 1000, recorder: None),
-        )
+        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
       },
     )
   let assert Ok(first) = process.named(gate) as "the gate runs"
@@ -277,12 +239,7 @@ pub fn a_send_is_handed_to_the_receivers_address_and_one_to_a_receiver_not_runni
     })
   let gate = process.new_name("gate")
   let tree =
-    start_tree(ask_support.reaching(
-      name: gate,
-      shutdown_ms: 1000,
-      recorder: None,
-      reach:,
-    ))
+    start_tree(ask_support.reaching(name: gate, shutdown_ms: 1000, reach:))
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   assert ask_support.call_gate(gate, gate_rule.SendTo(running, 3))
     == gate_rule.Echoed(3)
@@ -369,8 +326,7 @@ pub fn two_watches_of_targets_no_process_holds_end_in_the_order_opened_before_th
 pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_process_ends_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let tree =
-    start_tree(ask_support.gate(name: gate, shutdown_ms: 1000, recorder: None))
+  let tree = start_tree(ask_support.gate(name: gate, shutdown_ms: 1000))
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let service = process.monitor(pid)
   let replies = process.new_subject()
@@ -391,8 +347,7 @@ pub fn a_service_step_of_stop_then_reply_still_answers_the_caller_before_the_pro
 pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_and_the_service_goes_on_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let tree =
-    start_tree(ask_support.gate(name: gate, shutdown_ms: 1000, recorder: None))
+  let tree = start_tree(ask_support.gate(name: gate, shutdown_ms: 1000))
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let lines = process.new_subject()
   let capture = log_capture.start(from: pid, into: lines)
@@ -425,21 +380,18 @@ pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_and_the_ser
 /// The inputs a gate takes when `first` and then `second` are queued behind
 /// its suspended shell and it is resumed. The gate finds no process at any
 /// address, so a watch of one is a watch of an address no process holds. They
-/// are read from the gate's recording, without the stop that ends it.
+/// are read as the gate's shell takes them, without the stop that ends it.
 fn inputs_when_queued(
   first first: gate_rule.Message,
   then second: gate_rule.Message,
 ) -> List(Event(ServiceEvent(gate_rule.Message))) {
-  use folder <- recording_support.in_folder
   let gate = process.new_name("gate")
+  let observed = process.new_subject()
   let tree =
-    start_tree(ask_support.gate(
+    start_tree(ask_support.observed_gate(
       name: gate,
       shutdown_ms: 1000,
-      recorder: Some(recording_support.recorder(
-        folder,
-        rule_module: "gate_rule",
-      )),
+      into: observed,
     ))
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let replies = process.new_subject()
@@ -456,11 +408,10 @@ fn inputs_when_queued(
     process.receive(replies, within: ask_support.event_wait_ms)
     as "the second message was answered"
   let _reason = ask_support.stop_tree(tree)
-  list.filter_map(recorded(folder), fn(record) {
-    case record {
-      Recorded(input: Input(event: Stopping(..), ..), ..) | End(..) ->
-        Error(Nil)
-      Recorded(input: Input(event:, ..), ..) -> Ok(event)
+  list.filter(mailbox_support.drain(observed), fn(event) {
+    case event {
+      Stopping(..) -> False
+      OwnEvent(..) | WatchEnded(..) -> True
     }
   })
 }
@@ -475,7 +426,6 @@ fn watching(
   ask_support.reaching(
     name: gate,
     shutdown_ms: 1000,
-    recorder: None,
     reach: service.Reach(
       locate: fn(address) {
         case address == locating {
@@ -503,15 +453,30 @@ fn start_tree(child: ChildSpecification(Nil)) -> process.Pid {
 fn hand_off_child(
   name name: process.Name(service.Call(hand_off.Message, hand_off.Answer)),
   shutdown_ms shutdown_ms: Int,
-  recorder recorder: Option(file.Recorder),
+  observed observed: Option(
+    Subject(
+      #(
+        Event(ServiceEvent(hand_off.Message)),
+        Step(NoAsk, ServiceEffect(hand_off.Answer)),
+      ),
+    ),
+  ),
 ) -> ChildSpecification(Nil) {
+  let rule = hand_off.rule()
   service_shell.supervised(
     name:,
     settings: service_shell.Settings(
-      rule: hand_off.rule(),
+      rule: case observed {
+        Some(observed) ->
+          Rule(..rule, step: fn(state, input) {
+            let #(state, taken) = rule.step(state, input)
+            process.send(observed, #(input.event, taken))
+            #(state, taken)
+          })
+        None -> rule
+      },
       reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
       shutdown_ms:,
-      recorder:,
     ),
   )
 }
@@ -521,16 +486,6 @@ fn a_guid() -> guid.Guid {
     guid.from_wire(<<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16>>)
     as "sixteen bytes are a GUID"
   guid
-}
-
-/// The records of the one recording in the folder, after the header.
-fn recorded(
-  folder: String,
-) -> List(Record(NoAsk, ServiceEvent(message), ServiceEffect(answer))) {
-  let assert Ok(#(_, records)) =
-    rule_recording.read(recording_support.recording_in(folder))
-    as "the recording reads"
-  records
 }
 
 // ---- a service with no name ----
@@ -546,7 +501,6 @@ fn unnamed_hand_off() -> service_shell.Settings(
     rule: hand_off.rule(),
     reach: service.watch_only(locate: fn(_address) { Error(Nil) }),
     shutdown_ms: 1000,
-    recorder: None,
   )
 }
 

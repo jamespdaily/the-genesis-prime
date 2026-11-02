@@ -28,9 +28,6 @@ const sources = [
   "genesis_prime/step/runtime.gleam",
   "genesis_prime/step/watch.gleam",
   "genesis_prime/world_map/map_id.gleam",
-  "genesis_prime/rule_recording.gleam",
-  "genesis_prime/rule_recording_ffi.erl",
-  "genesis_prime/rule_recording/file.gleam",
   "genesis_prime/wire_recording.gleam",
   "genesis_prime/wire_recording/recorder.gleam",
   "genesis_prime/service.gleam",
@@ -47,8 +44,8 @@ const sources = [
 
 /// The packages the shells import, found in `build/packages`.
 const packages = [
-  "gleam_stdlib", "gleam_erlang", "gleam_otp", "gleam_crypto", "simplifile",
-  "filepath",
+  "gleam_stdlib", "gleam_erlang", "gleam_otp", "gleam_crypto", "gleam_json",
+  "simplifile", "filepath",
 ]
 
 pub fn a_rule_that_answers_a_caller_does_not_compile_against_the_connection_shell_test() -> Nil {

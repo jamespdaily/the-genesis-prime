@@ -11,7 +11,7 @@
 ////   waiting messages are kept off the heap; every line the process logs and
 ////   its crash report carry the connection and the peer; an exit from a
 ////   process other than the parent is ignored; a normal stop ends the
-////   recording and a crash leaves it without `End`.
+////   recording with its closing line and a crash leaves it without one.
 //// - OTP: `process_flag(message_queue_data, off_heap)` is read back by
 ////   `process_info(Pid, message_queue_data)`; an exit signal from a process
 ////   other than the parent reaches a process that traps exits as a message.
@@ -24,14 +24,14 @@ import event_wait
 import genesis_prime/connection/frame
 import genesis_prime/connection/script
 import genesis_prime/connection/shell
-import genesis_prime/rule_recording
-import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/step.{
   type ConnectionInput, type ConnectionRule, type ConnectionStep, Accepted,
-  Effects, Input, Log, LogLine, LogWarning, OwnEffect, OwnEvent, PeerClosed,
-  Read, ReadFailed, Rule, Stop, Stopping, TimerFired, Woken, Write, WriteFailed,
+  Effects, Log, LogLine, LogWarning, OwnEffect, OwnEvent, PeerClosed, Read,
+  ReadFailed, Rule, Stop, Stopping, TimerFired, Woken, Write, WriteFailed,
 }
 import genesis_prime/step/runtime
+import genesis_prime/wire_recording.{Cut, Recording, Took}
+import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import gleam/bit_array
 import gleam/erlang/atom
 import gleam/erlang/process.{type Name, type Pid, type Subject}
@@ -126,14 +126,13 @@ fn step(
 }
 
 fn settings(
-  recorder: Option(Recorder),
+  wire_recorder: Option(WireRecorder),
 ) -> shell.Settings(Nil, Nil, Nil, Nil, Nil) {
   shell.Settings(
     rule: quiet_rule(),
     send_deadline_ms: 300,
     shutdown_ms: 1000,
-    recorder:,
-    wire_recorder: None,
+    wire_recorder:,
     scripts: script.operating_system,
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     registry: None,
@@ -141,12 +140,15 @@ fn settings(
   )
 }
 
-fn start(recorder: Option(Recorder)) -> ask_support.Server {
-  ask_support.start(
+fn start(wire_recorder: Option(WireRecorder)) -> ask_support.Server {
+  ask_support.start_scripted(
     rule: quiet_rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     shutdown_ms: 1000,
-    recorder:,
+    wire_recorder:,
+    scripts: script.operating_system,
+    registry: None,
+    locate: fn(_address) { Error(Nil) },
     with: fn(builder) { builder },
   )
 }
@@ -289,7 +291,7 @@ pub fn a_socket_whose_options_cannot_be_set_ends_the_connection_normally_with_no
 
 /// Starts a connection's process as Ranch's connection supervisor does, hands
 /// it the socket by `hand_over`, and says how it ended, what it logged at
-/// debug level and above, and what the recorder's folder holds.
+/// debug level and above, and what the wire recorder's folder holds.
 fn hand_over(
   hand_over: fn(Pid, shell.RanchRef) -> Nil,
 ) -> #(
@@ -301,12 +303,7 @@ fn hand_over(
   use <- log_capture.at_level(atom.create("debug"))
   let ref = new_ranch_ref()
   let assert Ok(connection) =
-    shell.start(
-      ref,
-      settings(
-        Some(recording_support.recorder(folder, rule_module: "hello_rule")),
-      ),
-    )
+    shell.start(ref, settings(Some(recording_support.wire_recorder(folder))))
     as "the connection started before any handover"
   process.unlink(connection)
   let watched = process.monitor(connection)
@@ -324,9 +321,7 @@ pub fn a_parent_that_stops_before_the_handshake_ends_the_connection_with_no_reco
   let assert Ok(connection) =
     shell.start(
       new_ranch_ref(),
-      settings(
-        Some(recording_support.recorder(folder, rule_module: "hello_rule")),
-      ),
+      settings(Some(recording_support.wire_recorder(folder))),
     )
     as "the connection started"
   process.unlink(connection)
@@ -356,8 +351,7 @@ pub fn a_connection_keeps_its_waiting_messages_off_its_heap_test() -> Nil {
 pub fn no_read_a_rule_takes_holds_more_than_16384_bytes_test() -> Nil {
   use <- owned_test.run(60_000)
   use folder <- recording_support.in_folder
-  let server =
-    start(Some(recording_support.recorder(folder, rule_module: "hello_rule")))
+  let server = start(Some(recording_support.wire_recorder(folder)))
   let #(client, connection) = greeted(server)
   let watched = process.monitor(connection)
   let sent = 200_000
@@ -368,17 +362,15 @@ pub fn no_read_a_rule_takes_holds_more_than_16384_bytes_test() -> Nil {
   assert mug.shutdown(client) == Ok(Nil) as "the client left"
   assert ask_support.ended(watched) == process.Normal
     as "the rule stopped when the client left"
-  let assert Ok(#(_, records)) =
-    rule_recording.read(recording_support.recording_in(folder))
-    as "the recording reads"
+  let assert Ok(Recording(lines:, ..)) =
+    wire_recording.read(recording_support.wire_text_in(folder))
+    as "the recording is whole"
   let reads =
-    list.filter_map(records, fn(record) {
-      case record {
-        rule_recording.Taken(
-          input: Input(event: OwnEvent(Read(bytes:)), ..),
-          ..,
-        ) -> Ok(bit_array.byte_size(bytes))
-        rule_recording.Taken(..) | rule_recording.End(..) -> Error(Nil)
+    list.filter_map(lines, fn(line) {
+      case line {
+        Took(input: wire_recording.Read(bytes:), ..) ->
+          Ok(bit_array.byte_size(bytes))
+        Took(..) | wire_recording.Wrote(..) -> Error(Nil)
       }
     })
   assert list.all(reads, fn(size) { size <= 16_384 })
@@ -503,25 +495,17 @@ fn first_error(lines: Subject(Line)) -> Line {
 
 // ---- stopping ----
 
-pub fn a_crash_leaves_the_recording_without_end_test() -> Nil {
+pub fn a_crash_leaves_the_recording_without_its_closing_line_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
-  let server =
-    start(Some(recording_support.recorder(folder, rule_module: "hello_rule")))
+  let server = start(Some(recording_support.wire_recorder(folder)))
   let #(client, connection) = greeted(server)
   let watched = process.monitor(connection)
   assert mug.send(client, <<0xEE>>) == Ok(Nil) as "the byte that crashes it"
   let assert process.Abnormal(_) = ask_support.ended(watched)
     as "the connection crashed"
-  let assert Ok(#(_, records)) =
-    rule_recording.read(recording_support.recording_in(folder))
-    as "the recording reads as far as it goes"
-  assert !list.any(records, fn(record) {
-    case record {
-      rule_recording.End(..) -> True
-      rule_recording.Taken(..) -> False
-    }
-  })
-    as "a crash leaves no End, so the recording never replays"
+  let assert Error(Cut(..)) =
+    wire_recording.read(recording_support.wire_text_in(folder))
+    as "a crash leaves no closing line, so the recording is cut and never replays"
   ask_support.stop(server)
 }

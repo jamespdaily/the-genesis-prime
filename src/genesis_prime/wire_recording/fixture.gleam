@@ -20,6 +20,7 @@
 
 import genesis_prime/wire_recording/fixture/sql
 import gleam/bit_array
+import gleam/bool
 import gleam/float
 import gleam/int
 import gleam/list
@@ -56,26 +57,35 @@ pub fn write(
   use Nil <- result.try(
     simplifile.create_file(path) |> result.map_error(file_failed(path)),
   )
-  simplifile.write(path, render(accounts.rows, characters.rows))
+  simplifile.write(
+    path,
+    render(accounts: accounts.rows, characters: characters.rows),
+  )
   |> result.map_error(file_failed(path))
 }
 
 /// The text of a fixture file for these rows: an insert for each account, an
 /// insert for each character, and the statement that moves each id sequence.
-pub fn render(
+fn render(
   accounts accounts: List(sql.AllAccountsRow),
   characters characters: List(sql.AllCharactersRow),
 ) -> String {
   string.concat(
     list.flatten([
       list.map(accounts, account_statement),
-      sequence_statement("account", "account_id", accounts, fn(row) {
-        row.account_id
-      }),
+      sequence_statement(
+        table: "account",
+        column: "account_id",
+        rows: accounts,
+        id: fn(row) { row.account_id },
+      ),
       list.map(characters, character_statement),
-      sequence_statement("character", "character_id", characters, fn(row) {
-        row.character_id
-      }),
+      sequence_statement(
+        table: "character",
+        column: "character_id",
+        rows: characters,
+        id: fn(row) { row.character_id },
+      ),
     ]),
   )
 }
@@ -201,10 +211,7 @@ fn integers(values: List(Int)) -> String {
 }
 
 fn bool(value: Bool) -> String {
-  case value {
-    True -> "true"
-    False -> "false"
-  }
+  string.lowercase(bool.to_string(value))
 }
 
 fn file_failed(path: String) -> fn(simplifile.FileError) -> FixtureError {

@@ -1,8 +1,8 @@
 //// The shell of a connection: the process that owns one client socket and
 //// runs one rule over it, a gleam_otp actor that Ranch starts. It turns
 //// everything that reaches the process into the rule's inputs, carries out the
-//// rule's effects in order and decides nothing, so a recording of its inputs
-//// replays every decision with no socket (genesis_prime/rule_recording).
+//// rule's effects in order and decides nothing, so what crosses its socket
+//// replays every decision (genesis_prime/wire_recording).
 ////
 //// One connection, from accept to end:
 ////
@@ -13,8 +13,8 @@
 ////   Begin ─▶ ranch:handshake, the socket's options, exits trapped, the logger
 ////     metadata of the process (connection, peer)
 ////   the settings' `scripts` hands the connection its script (seed, clock,
-////     scheduler) and its accept ordinal; the recorders, when on, open their
-////     files and write the headers
+////     scheduler) and its accept ordinal; the wire recorder, when on, opens its
+////     file and writes the header
 ////   the registry, when the settings hold one: the shell joins the group of
 ////     Connection(id), so other processes find it (genesis_prime/connection/registry)
 ////   OwnEvent(Accepted(connection id, peer, seed)) ─▶ step ─▶ effects
@@ -29,9 +29,8 @@
 ////     {tcp_error, reason} ─▶ OwnEvent(ReadFailed(_)) ─▶ step ─▶ effects
 ////     the parent's exit   ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
 ////   each input: the script's clock is called once, told its kind, for its `Now`; the wire
-////     recorder writes the input's line, then the rule recorder writes
-////     Taken(input, step) before the step's effects; the wire recorder writes
-////     each write after the socket took it, with a sequence number taken before
+////     recorder writes the input's line before the step's effects, and each
+////     write after the socket took it, with a sequence number taken before
 //// ```
 ////
 //// - **A handshake that fails.** A client gone before the handshake, or a
@@ -66,9 +65,9 @@
 ////   next input is `OwnEvent(WriteFailed(_))`. A write that does not finish
 ////   within the send deadline fails as `SendTimedOut` and closes the socket.
 //// - **Stop.** The shell carries out the rest of the step's effects in order,
-////   closes the socket, the recorder writes `End` with the count of inputs, the
-////   wire recorder writes the closing line (the client closed it when the
-////   shell took the socket's close, the server otherwise), and the process ends
+////   closes the socket, the wire recorder writes the closing line (the client
+////   closed it when the shell took the socket's close, the server otherwise),
+////   and the process ends
 ////   normally; a step with a `Stop` makes no ask, and a
 ////   failed write after the `Stop` is logged as a warning, closes the socket
 ////   and ends the process with no `WriteFailed` input. Bytes still queued
@@ -82,14 +81,15 @@
 ////   the exit and not from when it arrived: an exit that waits behind a step
 ////   is counted from when it is taken, while Ranch counts from when it sent
 ////   the stop. A rule that has not stopped by whichever deadline comes first
-////   is killed, and its recording has no `End`.
+////   is killed, and its recording has no closing line.
 //// - **A crash.** When the rule's step crashes, the actor ends with that
 ////   reason; Ranch starts connection processes as temporary children, so
 ////   nothing restarts it and the listener goes on accepting. The socket closes
-////   with the process, and its recording has no `End`, so it never replays.
+////   with the process, and its recording has no closing line, so it never
+////   replays.
 //// - **A recording that cannot be written.** The shell logs it, closes the
 ////   socket and ends the process before that step's effects, so no input is
-////   carried out without its record; the recording has no `End`.
+////   carried out without its record; the recording has no closing line.
 //// - **An ask.** A step that ends in `EffectsThenAsk` has its effects carried
 ////   out first; a failed write or a `Stop` among them means the ask is never
 ////   made. The shell then hands the request and a reply, tagged with a fresh
@@ -196,15 +196,14 @@ import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/connection/script.{
   type Cancel, type Elapsed, type Issued, type Script, type Scripts,
 }
-import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/service.{type Locate, type Sent}
 import genesis_prime/step.{
   type Ask, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
   type ConnectionRule, type Effect, type Event, type SocketFailure, type TimerId,
   Accepted, Answer, Answered, CancelTimer, ConnectionId, Effects, EffectsThenAsk,
-  EndedBeforeAnswer, LogDebug, LogError, LogWarning, NoAnswerInTime, NotRunning,
-  OwnEffect, OwnEvent, ReadFailed, StartTimer, StoppedWaiting, Stopping, Write,
-  WriteFailed,
+  EndedBeforeAnswer, Input, LogDebug, LogError, LogWarning, NoAnswerInTime,
+  NotRunning, OwnEffect, OwnEvent, ReadFailed, StartTimer, StoppedWaiting,
+  Stopping, Write, WriteFailed,
 }
 import genesis_prime/step/runtime
 import genesis_prime/step/watch.{type Watches}
@@ -231,9 +230,6 @@ pub type Settings(settings, state, message, answer, request) {
     send_deadline_ms: Int,
     /// How long a connection has to stop once the server stops.
     shutdown_ms: Int,
-    /// Where each connection's inputs are recorded; `None` unless the dev
-    /// start turns recording on.
-    recorder: Option(Recorder),
     /// Where the bytes of each connection's socket reads and writes are
     /// recorded, a line after each (genesis_prime/wire_recording); `None`
     /// unless the dev start turns recording on.
@@ -340,7 +336,6 @@ type Running(state) {
     socket: ClientSocket,
     script: Script,
     state: state,
-    writer: Option(file.Writer),
     wire: Option(WireWriter),
     at: step.Now,
     taken_ms: Int,
@@ -615,12 +610,6 @@ fn accepted(
       peer: Some(accepted),
     ),
   )
-  let writer = case
-    file.open_if(settings.recorder, settings.rule, connection: id)
-  {
-    Ok(writer) -> writer
-    Error(error) -> recording_failed(socket, error)
-  }
   let wire = case
     recorder.open_if(
       recorder: settings.wire_recorder,
@@ -642,7 +631,6 @@ fn accepted(
       socket:,
       script:,
       state: rule.new(rule.settings),
-      writer:,
       wire:,
       at: now,
       taken_ms: runtime.monotonic_ms(),
@@ -698,7 +686,7 @@ fn take_next(
 }
 
 /// The one way an input reaches the rule: the wire recorder writes its line,
-/// the rule recorder folds it, and the step's effects are carried out. `now` is
+/// the rule takes it, and the step's effects are carried out. `now` is
 /// the one call of the script's clock that was made for this input (`take_next`
 /// makes it; the three inputs whose `Now` an earlier decision needs make it
 /// themselves), so the clock is called once for each input taken and for
@@ -723,29 +711,21 @@ fn take(
     Ok(Nil) -> Nil
     Error(error) -> wire_recording_failed(running.socket, error)
   }
-  let #(state, step, writer) = case
-    file.fold(
-      rule: connection.settings.rule,
-      state: running.state,
-      writer: running.writer,
-      now:,
-      event:,
-    )
-  {
-    Ok(taken) -> taken
-    Error(error) -> recording_failed(running.socket, error)
-  }
+  let rule = connection.settings.rule
+  let #(state, step) = rule.step(running.state, Input(now:, event:))
   let running =
-    Running(
-      ..running,
-      state:,
-      writer:,
-      at: now,
-      taken_ms: runtime.monotonic_ms(),
-    )
+    Running(..running, state:, at: now, taken_ms: runtime.monotonic_ms())
   let closing = case event {
     OwnEvent(step.PeerClosed) -> wire_recording.Client
-    _ -> wire_recording.Server
+    OwnEvent(Accepted(..))
+    | OwnEvent(step.Read(..))
+    | OwnEvent(Answered(..))
+    | OwnEvent(step.TimerFired(..))
+    | OwnEvent(ReadFailed(..))
+    | OwnEvent(WriteFailed(..))
+    | OwnEvent(step.Woken(..))
+    | step.WatchEnded(..)
+    | Stopping(..) -> wire_recording.Server
   }
   case step {
     Effects(effects:) ->
@@ -992,7 +972,7 @@ fn carry_effect(
               <> "), so the connection ends",
             step.no_one,
           )
-          stop(running, by: wire_recording.Server)
+          stop(running:, by: wire_recording.Server)
         }
         Error(failure), MakeAsk(..) | Error(failure), WaitForInput ->
           take_next(
@@ -1127,7 +1107,7 @@ fn finish(
   Mail(message, answer),
 ) {
   case then, running.stopping {
-    EndProcess(by:), _ -> stop(running, by:)
+    EndProcess(by:), _ -> stop(running:, by:)
     MakeAsk(ask:), None -> make_ask(connection:, running:, ask:)
     MakeAsk(ask:), Some(_) ->
       take_next(
@@ -1356,12 +1336,12 @@ fn keep(
 }
 
 /// The one end of a connection that was open: closes the socket, ends the
-/// recordings (`End` of the rule recording, the closing line of the wire
-/// recording, which names `by`, the side that ended it: the client when the
-/// step that stopped took the socket's close, the server otherwise) and lets
-/// the actor stop normally. Every stop of an open connection goes through it:
-/// the rule's `Stop`, also after a write that failed. A crash does not: the process ends with its reason, the socket
-/// closes with it, and the recordings have no end, so they never replay.
+/// recording (the closing line, which names `by`, the side that ended it: the
+/// client when the step that stopped took the socket's close, the server
+/// otherwise) and lets the actor stop normally. Every stop of an open
+/// connection goes through it: the rule's `Stop`, also after a write that
+/// failed. A crash does not: the process ends with its reason, the socket
+/// closes with it, and the recording has no closing line, so it never replays.
 fn stop(
   running running: Running(state),
   by by: Side,
@@ -1370,17 +1350,8 @@ fn stop(
   Mail(message, answer),
 ) {
   close(running.socket)
-  runtime.finish_recording(running.writer)
   runtime.finish_wire_recording(writer: running.wire, by:)
   actor.stop()
-}
-
-/// Ends the connection before the step's effects, since its input could not
-/// be recorded.
-fn recording_failed(socket: ClientSocket, error: FileError) -> a {
-  runtime.log_recording_failure(error)
-  close(socket)
-  panic as "a connection's recording could not be written"
 }
 
 /// Ends the connection before its input is taken or the next effect carried

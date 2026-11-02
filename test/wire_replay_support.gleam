@@ -55,7 +55,7 @@ fn bit_array_concat(parts: List(BitArray)) -> BitArray {
 }
 
 /// The name of the file of connection `connection` of a session written by hand.
-pub fn file_of(planted: Planted, connection connection: Int) -> String {
+pub fn file_of(planted planted: Planted, connection connection: Int) -> String {
   string.replace(planted.rule, "/", ".")
   <> "-"
   <> int.to_string(connection)
@@ -102,7 +102,7 @@ pub fn write(
         }
       })
       |> list.flatten
-    let path = folder <> "/" <> file_of(planted, connection: index)
+    let path = folder <> "/" <> file_of(planted:, connection: index)
     let assert Ok(Nil) = simplifile.write(path, header <> string.concat(lines))
       as "a recording was written"
     Nil
@@ -131,22 +131,45 @@ pub fn start_replay(session: Session) -> wire_replay.Replay {
   wire_replay.replay(session, table)
 }
 
+/// Writes the empty fixture a recording made by a listener of a test lacks: a
+/// session whose rule reads no row needs none.
+pub fn empty_fixture(folder folder: String) -> Nil {
+  let assert Ok(Nil) = simplifile.write(folder <> "/" <> fixture.file_name, "")
+    as "the fixture was written"
+  Nil
+}
+
+/// Replays the session in `folder` as `run` does, and gives the log lines each
+/// connection wrote while it ran with the result.
+pub fn run_logged(
+  folder folder: String,
+  rule rule: step.ConnectionRule(settings, state, request, message, answer),
+) -> #(Result(Nil, Failure), List(wire_replay.Logged)) {
+  run_planned(
+    folder:,
+    rule:,
+    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+    with: fn(builder) { builder },
+    actions: wire_replay.plan,
+  )
+}
+
 /// Replays the session in `folder` against a listener whose connections run
 /// `rule`, with no ask to answer.
 pub fn run(
   folder folder: String,
-  rule rule: step.ConnectionRule(settings, state, Nil, message, answer),
+  rule rule: step.ConnectionRule(settings, state, request, message, answer),
 ) -> Result(Nil, Failure) {
-  run_actions(folder:, rule:, actions: wire_replay.plan)
+  run_actions(folder:, rule:, actions: wire_replay.plan).0
 }
 
 /// As `run`, with the steps of the replay client that `actions` makes of the
 /// session.
 pub fn run_actions(
   folder folder: String,
-  rule rule: step.ConnectionRule(settings, state, Nil, message, answer),
+  rule rule: step.ConnectionRule(settings, state, request, message, answer),
   actions actions: fn(Session) -> List(Action),
-) -> Result(Nil, Failure) {
+) -> #(Result(Nil, Failure), List(wire_replay.Logged)) {
   run_planned(
     folder:,
     rule:,
@@ -166,7 +189,7 @@ pub fn run_with(
     Result(service.Sent, Nil),
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Result(Nil, Failure) {
-  run_planned(folder:, rule:, directory:, with:, actions: wire_replay.plan)
+  run_planned(folder:, rule:, directory:, with:, actions: wire_replay.plan).0
 }
 
 fn run_planned(
@@ -176,7 +199,7 @@ fn run_planned(
     Result(service.Sent, Nil),
   with with: fn(supervisor.Builder) -> supervisor.Builder,
   actions actions: fn(Session) -> List(Action),
-) -> Result(Nil, Failure) {
+) -> #(Result(Nil, Failure), List(wire_replay.Logged)) {
   let session = load(folder)
   let replay = start_replay(session)
   let server =
@@ -184,7 +207,6 @@ fn run_planned(
       rule:,
       directory:,
       shutdown_ms: 1000,
-      recorder: None,
       wire_recorder: None,
       scripts: replay.scripts,
       registry: None,
@@ -199,8 +221,7 @@ fn run_planned(
       actions: actions(session),
     )
   ask_support.stop(server)
-  let _lines = wire_replay.finish(replay)
-  result
+  #(result, wire_replay.finish(replay))
 }
 
 /// The folder of the session recorded live on 2026-11-01: the real client's

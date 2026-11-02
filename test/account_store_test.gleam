@@ -43,7 +43,7 @@ import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{Some}
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
 import gleam/result
@@ -231,7 +231,6 @@ pub fn with_the_stores_supervisor_not_running_an_ask_to_the_store_gives_not_runn
         sent: ask_support.unreported,
       ),
       shutdown_ms: 1000,
-      recorder: None,
       with: fn(builder) { builder },
     )
   let client = ask_support.connect(server)
@@ -1079,7 +1078,6 @@ fn start_asker(
       sent:,
     ),
     shutdown_ms: 1000,
-    recorder: None,
     with: fn(builder) { builder },
   )
 }

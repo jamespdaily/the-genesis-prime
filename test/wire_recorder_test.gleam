@@ -199,7 +199,6 @@ fn start(
     rule: script_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     shutdown_ms:,
-    recorder: None,
     wire_recorder: Some(recording_support.wire_recorder(folder)),
     scripts:,
     registry: None,
@@ -336,7 +335,6 @@ pub fn a_rule_that_does_not_stop_in_time_is_killed_and_its_recording_is_cut_test
       rule: ignoring,
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
       shutdown_ms: 300,
-      recorder: None,
       wire_recorder: Some(recording_support.wire_recorder(folder)),
       scripts: scripted(1, given),
       registry: None,
@@ -376,7 +374,6 @@ pub fn an_input_taken_with_the_servers_script_carries_readings_between_the_tests
       rule: script_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
       shutdown_ms: 1000,
-      recorder: None,
       wire_recorder: Some(recording_support.wire_recorder(folder)),
       scripts: script.operating_system,
       registry: None,
@@ -424,6 +421,7 @@ pub fn an_input_taken_with_the_servers_script_carries_readings_between_the_tests
 }
 
 pub fn the_servers_own_code_never_turns_wire_recording_on_test() -> Nil {
+  use <- owned_test.run(30_000)
   let assert Ok(files) = simplifile.get_files("src")
     as "the source files are listed"
   let callers =

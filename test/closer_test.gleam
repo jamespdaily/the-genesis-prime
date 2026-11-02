@@ -10,7 +10,6 @@ import asking_rule
 import genesis_prime/connection/closer
 import gleam/erlang/process
 import gleam/list
-import gleam/option.{None}
 import gleam/otp/static_supervisor as supervisor
 import gleam/string
 import log_capture
@@ -31,7 +30,6 @@ pub fn a_listener_the_closer_cannot_close_is_logged_as_a_warning_with_the_reason
       rule: asking_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
       shutdown_ms: 1000,
-      recorder: None,
       with: fn(builder) { supervisor.add(builder, closer.supervised([nobody])) },
     )
   ask_support.stop(server)
@@ -69,7 +67,6 @@ pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_
       rule: asking_rule.rule(),
       directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
       shutdown_ms: 1000,
-      recorder: None,
       with: fn(builder) {
         supervisor.add(builder, closer.supervised([first.name, second.name]))
       },
@@ -111,7 +108,6 @@ fn started_listener() -> ask_support.Server {
     rule: asking_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     shutdown_ms: 1000,
-    recorder: None,
     with: fn(builder) { builder },
   )
 }

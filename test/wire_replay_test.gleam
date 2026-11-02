@@ -28,7 +28,7 @@ import genesis_prime/wire_recording.{
 }
 import genesis_prime/wire_replay.{
   AwaitEnd, AwaitTaken, CloseClientSocket, Connect, Difference, Differs,
-  EndedEarly, Expect, Message, NeverTaken, Send, Silent, StillOpen,
+  EndedEarly, Expect, Fire, Message, NeverTaken, Send, Silent, StillOpen,
   TimerNeverStarted, TookOutOfOrder, TookUnrecordedInput, Undecoded,
 }
 import gleam/dict
@@ -50,7 +50,11 @@ fn at(n: Int) -> Now {
   Now(monotonic_ms: n, filetime: n * 10)
 }
 
-fn command(letter: Int, n: Int, milliseconds: Int) -> BitArray {
+fn command(
+  letter letter: Int,
+  n n: Int,
+  milliseconds milliseconds: Int,
+) -> BitArray {
   <<letter, n, milliseconds:16>>
 }
 
@@ -71,7 +75,11 @@ fn file() -> String {
 fn echo_session() -> List(support.Step) {
   [
     support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(command(replay_rule.echo_command, 7, 0))),
+    support.In(
+      0,
+      at(2),
+      Read(command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)),
+    ),
     support.Out(0, record(replay_rule.echoed, 7)),
     support.In(0, at(3), PeerClosed),
     support.Closed(0, Client),
@@ -79,9 +87,9 @@ fn echo_session() -> List(support.Step) {
 }
 
 fn replayed(
-  folder: String,
-  connections: List(support.Planted),
-  steps: List(support.Step),
+  folder folder: String,
+  connections connections: List(support.Planted),
+  steps steps: List(support.Step),
 ) -> Result(Nil, wire_replay.Failure) {
   support.write(folder:, connections:, steps:)
   support.run(folder:, rule: replay_rule.rule())
@@ -92,7 +100,7 @@ fn replayed(
 pub fn a_session_whose_bytes_the_server_writes_again_replays_to_its_end_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
-  assert replayed(folder, one(), echo_session()) == Ok(Nil)
+  assert replayed(folder:, connections: one(), steps: echo_session()) == Ok(Nil)
     as "the replay client sent the echo and the server wrote its record"
 }
 
@@ -101,12 +109,16 @@ pub fn a_changed_byte_the_server_writes_fails_naming_the_connection_the_line_and
   use folder <- recording_support.in_folder
   let changed = [
     support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(command(replay_rule.echo_command, 7, 0))),
+    support.In(
+      0,
+      at(2),
+      Read(command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)),
+    ),
     support.Out(0, record(replay_rule.echoed, 8)),
     support.In(0, at(3), PeerClosed),
     support.Closed(0, Client),
   ]
-  assert replayed(folder, one(), changed)
+  assert replayed(folder:, connections: one(), steps: changed)
     == Error(Differs(
       connection: file(),
       line: 3,
@@ -126,13 +138,17 @@ pub fn a_client_byte_the_servers_reader_refuses_fails_the_replay_with_the_server
   // as if it had answered.
   let refused = [
     support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(command(replay_rule.refuse_command, 3, 0))),
+    support.In(
+      0,
+      at(2),
+      Read(command(letter: replay_rule.refuse_command, n: 3, milliseconds: 0)),
+    ),
     support.Out(0, record(replay_rule.echoed, 1)),
     support.In(0, at(3), PeerClosed),
     support.Closed(0, Client),
   ]
-  let assert Error(EndedEarly(connection:, line:, logged:)) =
-    replayed(folder, one(), refused)
+  let assert Error(EndedEarly(connection:, line:, logged:, ..)) =
+    replayed(folder:, connections: one(), steps: refused)
     as "the server ended the connection where the recording goes on"
   assert connection == file() && line == 3
   assert list.contains(logged, replay_rule.refusal(3))
@@ -143,8 +159,8 @@ pub fn a_recorded_read_in_two_lines_gives_the_same_bytes_as_in_one_test() -> Nil
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let both = <<
-    command(replay_rule.echo_command, 1, 0):bits,
-    command(replay_rule.echo_command, 2, 0):bits,
+    command(letter: replay_rule.echo_command, n: 1, milliseconds: 0):bits,
+    command(letter: replay_rule.echo_command, n: 2, milliseconds: 0):bits,
   >>
   let whole = [
     support.In(0, at(1), Accepted),
@@ -156,15 +172,25 @@ pub fn a_recorded_read_in_two_lines_gives_the_same_bytes_as_in_one_test() -> Nil
   ]
   let split = [
     support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(command(replay_rule.echo_command, 1, 0))),
+    support.In(
+      0,
+      at(2),
+      Read(command(letter: replay_rule.echo_command, n: 1, milliseconds: 0)),
+    ),
     support.Out(0, record(replay_rule.echoed, 1)),
-    support.In(0, at(3), Read(command(replay_rule.echo_command, 2, 0))),
+    support.In(
+      0,
+      at(3),
+      Read(command(letter: replay_rule.echo_command, n: 2, milliseconds: 0)),
+    ),
     support.Out(0, record(replay_rule.echoed, 2)),
     support.In(0, at(4), PeerClosed),
     support.Closed(0, Client),
   ]
-  assert replayed(folder <> "/whole", one(), whole) == Ok(Nil)
-  assert replayed(folder <> "/split", one(), split) == Ok(Nil)
+  assert replayed(folder: folder <> "/whole", connections: one(), steps: whole)
+    == Ok(Nil)
+  assert replayed(folder: folder <> "/split", connections: one(), steps: split)
+    == Ok(Nil)
     as "the rule buffers commands, so one read or two give the same records"
 }
 
@@ -172,8 +198,8 @@ pub fn a_read_the_client_sends_in_two_parts_is_reassembled_by_the_shell_test() -
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let both = <<
-    command(replay_rule.echo_command, 1, 0):bits,
-    command(replay_rule.echo_command, 2, 0):bits,
+    command(letter: replay_rule.echo_command, n: 1, milliseconds: 0):bits,
+    command(letter: replay_rule.echo_command, n: 2, milliseconds: 0):bits,
   >>
   support.write(folder:, connections: one(), steps: [
     support.In(0, at(1), Accepted),
@@ -190,18 +216,27 @@ pub fn a_read_the_client_sends_in_two_parts_is_reassembled_by_the_shell_test() -
   let halves =
     list.flat_map(wire_replay.plan(session), fn(action) {
       case action {
-        Send(connection:, line:, bytes: <<first:bytes-size(4), rest:bytes>>) -> [
-          Send(connection:, line:, bytes: first),
-          Send(connection:, line:, bytes: rest),
-        ]
-        other -> [other]
+        Send(connection:, line:, bytes:) ->
+          case bytes {
+            <<first:bytes-size(4), rest:bytes>> -> [
+              Send(connection:, line:, bytes: first),
+              Send(connection:, line:, bytes: rest),
+            ]
+            _ -> [action]
+          }
+        Connect(..)
+        | AwaitTaken(..)
+        | Fire(..)
+        | CloseClientSocket(..)
+        | Expect(..)
+        | AwaitEnd(..) -> [action]
       }
     })
   assert support.run_actions(
       folder:,
       rule: replay_rule.rule(),
       actions: fn(_session) { halves },
-    )
+    ).0
     == Ok(Nil)
     as "the shell took the two parts as the one recorded read"
 }
@@ -211,13 +246,17 @@ pub fn the_servers_writes_cut_differently_give_the_same_bytes_test() -> Nil {
   use folder <- recording_support.in_folder
   let cut = [
     support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(command(replay_rule.echo_command, 7, 0))),
+    support.In(
+      0,
+      at(2),
+      Read(command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)),
+    ),
     support.Out(0, <<replay_rule.echoed, 0, 0, 0>>),
     support.Out(0, <<0, 0, 0, 0, 7>>),
     support.In(0, at(3), PeerClosed),
     support.Closed(0, Client),
   ]
-  assert replayed(folder, one(), cut) == Ok(Nil)
+  assert replayed(folder:, connections: one(), steps: cut) == Ok(Nil)
     as "what is compared is the stream, so a record the recording holds in two writes is the one the server writes in one"
 }
 
@@ -229,15 +268,23 @@ pub fn an_input_taken_out_of_the_recorded_order_fails_the_replay_as_an_ordering_
   // holds it after another read.
   let reordered = [
     support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(command(replay_rule.watch_command, 1, 0))),
-    support.In(0, at(3), Read(command(replay_rule.echo_command, 7, 0))),
+    support.In(
+      0,
+      at(2),
+      Read(command(letter: replay_rule.watch_command, n: 1, milliseconds: 0)),
+    ),
+    support.In(
+      0,
+      at(3),
+      Read(command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)),
+    ),
     support.In(0, at(4), WatchEnded),
     support.Out(0, record(replay_rule.watch_ended, 1)),
     support.Out(0, record(replay_rule.echoed, 7)),
     support.In(0, at(5), PeerClosed),
     support.Closed(0, Client),
   ]
-  assert replayed(folder, one(), reordered)
+  assert replayed(folder:, connections: one(), steps: reordered)
     == Error(TookOutOfOrder(
       connection: file(),
       line: 3,
@@ -252,11 +299,15 @@ pub fn a_shell_that_takes_an_input_the_recording_does_not_hold_fails_naming_the_
   use folder <- recording_support.in_folder
   let unrecorded = [
     support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(command(replay_rule.watch_command, 1, 0))),
+    support.In(
+      0,
+      at(2),
+      Read(command(letter: replay_rule.watch_command, n: 1, milliseconds: 0)),
+    ),
     support.Closed(0, Server),
   ]
   let assert Error(TookUnrecordedInput(connection:, ..)) =
-    replayed(folder, one(), unrecorded)
+    replayed(folder:, connections: one(), steps: unrecorded)
     as "the watch's end is an input the recording holds no line for"
   assert connection == file()
 }
@@ -270,15 +321,23 @@ pub fn a_recorded_timer_fires_at_its_line_and_not_before_and_a_recorded_close_is
   // the echo is read, and the shell would take it out of the recorded order.
   let timed = [
     support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(command(replay_rule.timer_command, 1, 1))),
-    support.In(0, at(3), Read(command(replay_rule.echo_command, 7, 0))),
+    support.In(
+      0,
+      at(2),
+      Read(command(letter: replay_rule.timer_command, n: 1, milliseconds: 1)),
+    ),
+    support.In(
+      0,
+      at(3),
+      Read(command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)),
+    ),
     support.Out(0, record(replay_rule.echoed, 7)),
     support.In(0, at(4), TimerFired(timer: 1)),
     support.Out(0, record(replay_rule.timer_fired, 1)),
     support.In(0, at(5), PeerClosed),
     support.Closed(0, Client),
   ]
-  assert replayed(folder, one(), timed) == Ok(Nil)
+  assert replayed(folder:, connections: one(), steps: timed) == Ok(Nil)
     as "the timer fired when the client reached its line, then the client closed and the shell took the close"
 }
 
@@ -290,9 +349,9 @@ pub fn a_timer_the_shell_never_started_fails_naming_it_after_5_s_test() -> Nil {
     support.In(0, at(2), TimerFired(timer: 9)),
   ]
   assert replayed(
-      folder,
-      one(),
-      list.append(never, [support.Closed(0, Client)]),
+      folder:,
+      connections: one(),
+      steps: list.append(never, [support.Closed(0, Client)]),
     )
     == Error(TimerNeverStarted(connection: file(), line: 2, timer: 9))
     as "no step of the rule started timer 9"
@@ -305,12 +364,16 @@ pub fn a_shell_that_never_takes_its_next_input_fails_within_5_s_naming_the_input
   use folder <- recording_support.in_folder
   let never = [
     support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(command(replay_rule.echo_command, 1, 0))),
+    support.In(
+      0,
+      at(2),
+      Read(command(letter: replay_rule.echo_command, n: 1, milliseconds: 0)),
+    ),
     support.Out(0, record(replay_rule.echoed, 1)),
     support.In(0, at(3), Woken),
     support.Closed(0, Client),
   ]
-  assert replayed(folder, one(), never)
+  assert replayed(folder:, connections: one(), steps: never)
     == Error(NeverTaken(connection: file(), line: 4, input: Woken, taken: 2))
     as "nothing delivers the message the recording holds, so the shell took 2 inputs and never the third"
 }
@@ -320,12 +383,16 @@ pub fn a_server_that_writes_nothing_fails_within_5_s_naming_the_message_it_waite
   use folder <- recording_support.in_folder
   let silent = [
     support.In(0, at(1), Accepted),
-    support.In(0, at(2), Read(command(replay_rule.echo_command, 1, 0))),
+    support.In(
+      0,
+      at(2),
+      Read(command(letter: replay_rule.echo_command, n: 1, milliseconds: 0)),
+    ),
     support.Out(0, record(replay_rule.echoed, 1)),
     support.Out(0, record(replay_rule.echoed, 9)),
     support.Closed(0, Client),
   ]
-  assert replayed(folder, one(), silent)
+  assert replayed(folder:, connections: one(), steps: silent)
     == Error(Silent(
       connection: file(),
       line: 4,
@@ -341,7 +408,7 @@ pub fn a_server_that_does_not_close_where_the_recording_says_it_did_fails_after_
     support.In(0, at(1), Accepted),
     support.Closed(0, Server),
   ]
-  assert replayed(folder, one(), open)
+  assert replayed(folder:, connections: one(), steps: open)
     == Error(StillOpen(connection: file(), line: 2))
     as "the rule never stops, and the recording says the server closed"
 }
@@ -349,20 +416,20 @@ pub fn a_server_that_does_not_close_where_the_recording_says_it_did_fails_after_
 // ---- the script of each connection ----
 
 fn script_rule_session() -> #(List(support.Planted), List(support.Step)) {
-  let a = support.seed(0xA1)
-  let b = support.seed(0xB2)
+  let first = support.seed(0xA1)
+  let second = support.seed(0xB2)
   // Connection 0 is accepted second: its ordinal is 2 whatever its file is
   // called.
   #(
     [
-      support.Planted(rule: "script_rule", seed: a, ordinal: 2),
-      support.Planted(rule: "script_rule", seed: b, ordinal: 1),
+      support.Planted(rule: "script_rule", seed: first, ordinal: 2),
+      support.Planted(rule: "script_rule", seed: second, ordinal: 1),
     ],
     [
       support.In(1, at(10), Accepted),
-      support.Out(1, accepted_record(b, at(10))),
+      support.Out(1, accepted_record(second, at(10))),
       support.In(0, at(20), Accepted),
-      support.Out(0, accepted_record(a, at(20))),
+      support.Out(0, accepted_record(first, at(20))),
       support.In(1, at(30), Read(<<1>>)),
       support.Out(1, read_record(at(30))),
       support.In(0, at(40), Read(<<2>>)),
@@ -416,7 +483,7 @@ pub fn a_seed_or_a_time_taken_from_another_recording_shows_in_the_bytes_test() -
     list.map(steps, fn(step) {
       case step {
         support.In(1, _, Accepted) -> support.In(1, at(11), Accepted)
-        other -> other
+        support.In(..) | support.Out(..) | support.Closed(..) -> step
       }
     })
   support.write(folder: folder <> "/time", connections:, steps: retimed)
@@ -444,7 +511,7 @@ pub fn the_scripts_are_handed_out_once_each_in_the_order_of_the_accept_ordinals_
     as "each with the seed of its own recording"
   assert replay.scripts() == Error(Nil)
     as "no script is handed out again, however often a listener asks"
-  let _ = wire_replay.finish(replay)
+  let _lines = wire_replay.finish(replay)
   Nil
 }
 
@@ -482,7 +549,7 @@ pub fn a_replays_clock_gives_the_recorded_time_of_each_kind_of_input_and_counts_
     as "an answer takes the time of the next recorded input of its kind, whatever its outcome"
   assert clock(script.PeerClosed) == at(5)
   assert wire_replay.taken(progress) == 5
-  let _ = wire_replay.finish(replay)
+  let _lines = wire_replay.finish(replay)
   Nil
 }
 
@@ -492,7 +559,7 @@ pub fn the_plan_of_a_session_connects_waits_sends_expects_and_closes_in_sequence
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   support.write(folder:, connections: one(), steps: echo_session())
-  let read = command(replay_rule.echo_command, 7, 0)
+  let read = command(letter: replay_rule.echo_command, n: 7, milliseconds: 0)
   assert wire_replay.plan(support.load(folder))
     == [
       Connect(file()),
@@ -541,6 +608,7 @@ pub fn a_connect_comes_before_its_accepted_line_and_connects_stay_in_accept_orde
 // ---- comparing and reading bytes ----
 
 pub fn two_streams_that_differ_say_where_and_what_each_holds_there_test() -> Nil {
+  use <- owned_test.run(30_000)
   let assert Ok(recorded) = frame.encode(0x0117, <<1, 2, 3>>)
   let assert Ok(written) = frame.encode(0x0117, <<1, 9, 3>>)
   assert wire_replay.compare(recorded, recorded) == Ok(Nil)
@@ -554,6 +622,7 @@ pub fn two_streams_that_differ_say_where_and_what_each_holds_there_test() -> Nil
 }
 
 pub fn a_stream_that_ends_before_the_other_has_no_message_where_it_stopped_test() -> Nil {
+  use <- owned_test.run(30_000)
   let assert Ok(recorded) = frame.encode(0x0117, <<1, 2, 3>>)
   let assert <<cut:bytes-size(8), _:bytes>> = recorded
   assert wire_replay.compare(recorded, cut)
@@ -566,6 +635,7 @@ pub fn a_stream_that_ends_before_the_other_has_no_message_where_it_stopped_test(
 }
 
 pub fn bytes_that_are_no_whole_frame_stay_bytes_test() -> Nil {
+  use <- owned_test.run(30_000)
   assert wire_replay.decode(<<1, 2, 3>>) == Undecoded(<<1, 2, 3>>)
     as "no whole frame, so no message is read"
 }
@@ -582,7 +652,11 @@ fn two_connections_with_a_gap(
     ],
     [
       support.In(0, at(1000), Accepted),
-      support.In(0, at(2000), Read(command(replay_rule.echo_command, 1, 0))),
+      support.In(
+        0,
+        at(2000),
+        Read(command(letter: replay_rule.echo_command, n: 1, milliseconds: 0)),
+      ),
       support.Out(0, record(replay_rule.echoed, 1)),
       support.In(1, at(2000 + gap_ms), Accepted),
       support.In(0, at(2001 + gap_ms), PeerClosed),
@@ -718,10 +792,7 @@ pub fn an_ask_nobody_answers_ends_at_its_own_deadline_and_the_replay_fails_where
         sent: ask_support.unreported,
       ),
       with: fn(builder) {
-        supervisor.add(
-          builder,
-          ask_support.gate(name: gate, shutdown_ms: 1000, recorder: None),
-        )
+        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
       },
     )
     as "the replay fails where the recording had an answer"
@@ -766,10 +837,7 @@ pub fn a_service_that_crashes_is_restarted_as_live_and_the_replay_fails_only_if_
         sent: ask_support.unreported,
       ),
       with: fn(builder) {
-        supervisor.add(
-          builder,
-          ask_support.gate(name: gate, shutdown_ms: 1000, recorder: None),
-        )
+        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
       },
     )
     == Ok(Nil)
@@ -787,14 +855,14 @@ pub fn two_replays_at_once_share_no_state_test() -> Nil {
   let #(connections, steps) = script_rule_session()
   support.write(folder: folder <> "/b", connections:, steps:)
   let results = process.new_subject()
-  let _ =
+  let _runner =
     process.spawn(fn() {
       process.send(results, #(
         "a",
         support.run(folder: folder <> "/a", rule: replay_rule.rule()),
       ))
     })
-  let _ =
+  let _runner =
     process.spawn(fn() {
       process.send(results, #(
         "b",

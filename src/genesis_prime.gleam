@@ -238,7 +238,6 @@ pub fn settings(tables tables: store.Tables) -> server.Settings {
     hand_off_shutdown_ms: 5000,
     sessions: process.new_name("sessions"),
     sessions_shutdown_ms: 5000,
-    sessions_recorder: None,
     registry: registry.new(),
     world: world(),
     send_deadline_ms: 2000,
@@ -257,7 +256,6 @@ fn world() -> server.World {
     map_supervisor: process.new_name("map_supervisor"),
     maps_call_ms: 5000,
     map_shutdown_ms: 5000,
-    map_recordings: None,
   )
 }
 
@@ -444,7 +442,6 @@ fn login() -> server.Login {
         game_token_lifetime_ms: 60_000,
         rate: sts_rate(),
       ),
-      recorder: None,
       wire_recorder: None,
       scripts: script.operating_system,
     ),
@@ -463,7 +460,6 @@ fn login() -> server.Login {
         planted: None,
         rate: auth_rate(),
       ),
-      recorder: None,
       wire_recorder: None,
       scripts: script.operating_system,
     ),
@@ -490,7 +486,6 @@ fn game(tables: store.Tables) -> server.Served(game_connection.Settings) {
       ask_deadline_ms:,
       rate: game_rate(),
     ),
-    recorder: None,
     wire_recorder: None,
     scripts: script.operating_system,
   )

@@ -23,7 +23,7 @@ import gleam/dict.{type Dict}
 import gleam/option.{type Option, None, Some}
 
 /// The rule's name in a recording's header and in the server's tree.
-pub const rule_name = "genesis_prime/hand_off"
+const rule_name = "genesis_prime/hand_off"
 
 /// A one-time key. The two kinds never match each other, so a game token is
 /// never taken as a session key.

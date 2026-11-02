@@ -11,22 +11,19 @@
 import ask_support
 import asking_rule
 import gate_rule
-import genesis_prime/rule_recording.{type Record, End, Taken}
-import genesis_prime/rule_recording/file
+import genesis_prime/connection/script
 import genesis_prime/service
-import genesis_prime/step.{
-  type ConnectionEffect, type ConnectionEvent, Answered, EffectsThenAsk, Input,
-  NoAnswerInTime, OwnEvent,
-}
+import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import gleam/erlang/process
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None, Some}
 import gleam/otp/static_supervisor as supervisor
 import log_capture
 import mailbox_support
 import mug
 import owned_test
 import recording_support
+import wire_replay_support
 
 /// How long an ask whose deadline is meant to pass waits, in milliseconds.
 const short = 300
@@ -53,12 +50,8 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
         reaching_the_gate(request, deadline_ms, reply)
       },
       shutdown_ms: 1000,
-      recorder: None,
       with: fn(builder) {
-        supervisor.add(
-          builder,
-          ask_support.gate(name: gate, shutdown_ms: 1000, recorder: None),
-        )
+        supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
       },
     )
   let client = ask_support.connect(server)
@@ -105,7 +98,6 @@ pub fn an_ask_to_an_address_with_no_running_process_gives_not_running_at_once_an
         process.send(sent, reached)
       }),
       shutdown_ms: 1000,
-      recorder: None,
       with: fn(builder) { builder },
     )
   let client = ask_support.connect(server)
@@ -130,7 +122,7 @@ pub fn an_ask_to_an_address_with_no_running_process_gives_not_running_at_once_an
 pub fn a_target_that_never_answers_gives_no_answer_in_time_and_not_before_the_deadline_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
+  let server = start_with(gate:, shutdown_ms: 1000)
   let client = ask_support.connect(server)
   ask_support.command(client, asking_rule.ignore_command, 0, wait_ms: short)
   let asked = ask_support.read_record(client)
@@ -146,7 +138,7 @@ pub fn a_target_that_never_answers_gives_no_answer_in_time_and_not_before_the_de
 pub fn a_target_that_ends_before_answering_gives_ended_before_answer_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
+  let server = start_with(gate:, shutdown_ms: 1000)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -168,7 +160,7 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
   // Connection shell only: the service shell makes no ask (its request type
   // has no values), so no answer can come late to it.
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
+  let server = start_with(gate:, shutdown_ms: 1000)
   let client = ask_support.connect(server)
   ask_support.command(client, asking_rule.await_command, 1, wait_ms: short)
   let _asked_first = ask_support.read_record(client)
@@ -219,7 +211,7 @@ pub fn an_answer_after_the_deadline_gives_the_rule_no_input_and_is_never_taken_f
 pub fn a_replied_ask_leaves_no_monitor_on_the_target_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
+  let server = start_with(gate:, shutdown_ms: 1000)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -246,7 +238,7 @@ pub fn a_stop_during_an_ask_ends_the_wait_at_once_and_stopping_counts_from_the_s
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
   let shutdown_ms = 2000
-  let server = start_with(gate:, shutdown_ms:, recorder: None)
+  let server = start_with(gate:, shutdown_ms:)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -274,18 +266,15 @@ pub fn a_stop_during_an_ask_ends_the_wait_at_once_and_stopping_counts_from_the_s
     as "the tree stopped when the rule had stopped"
 }
 
-pub fn a_recorded_session_with_asks_replays_to_the_same_steps_with_no_other_process_test() -> Nil {
+pub fn a_recorded_session_with_asks_replays_to_the_same_bytes_with_no_other_process_test() -> Nil {
   use <- owned_test.run(60_000)
   use folder <- recording_support.in_folder
   let gate = process.new_name("gate")
   let server =
-    start_with(
+    start_recorded(
       gate:,
       shutdown_ms: 1000,
-      recorder: Some(recording_support.recorder(
-        folder,
-        rule_module: "asking_rule",
-      )),
+      wire_recorder: recording_support.wire_recorder(folder),
     )
   let client = ask_support.connect(server)
   ask_support.command(
@@ -296,9 +285,6 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_steps_with_no_other_proc
   )
   let _asked = ask_support.read_record(client)
   let _echoed = ask_support.read_record(client)
-  ask_support.command(client, asking_rule.await_command, 1, wait_ms: short)
-  let _asked = ask_support.read_record(client)
-  let _timed_out = ask_support.read_record(client)
   ask_support.command(
     client,
     asking_rule.open_command,
@@ -317,29 +303,32 @@ pub fn a_recorded_session_with_asks_replays_to_the_same_steps_with_no_other_proc
   ask_support.stop(server)
   assert process.named(gate) == Error(Nil)
     as "no other process runs: the gate and the listener are gone"
-  let bytes = recording_support.recording_in(folder)
-  let assert Ok(#(_, records)) = rule_recording.read(bytes)
-    as "the recording reads"
-  assert list.count(records, is_ask) == 3
-    as "the session made three asks, each ending its step"
-  assert list.any(records, is_timed_out)
-    as "the session holds an ask that timed out, whose late answer gave the rule no input"
-  let assert Ok(count) =
-    rule_recording.replay(
-      bytes,
-      asking_rule.rule(),
-      recording_support.types_digest("asking_rule"),
-      None,
+  // The replay runs a gate of its own, on the answers it gives again.
+  let replayed_gate = process.new_name("replayed_gate")
+  wire_replay_support.empty_fixture(folder)
+  assert wire_replay_support.run_with(
+      folder:,
+      rule: asking_rule.rule(),
+      directory: ask_support.directory(
+        gate: replayed_gate,
+        store: None,
+        sent: ask_support.unreported,
+      ),
+      with: fn(builder) {
+        supervisor.add(
+          builder,
+          ask_support.gate(name: replayed_gate, shutdown_ms: 1000),
+        )
+      },
     )
-    as "every recorded step is the step the rule gives again"
-  assert list.last(records) == Ok(End(count:))
-    as "End counts the inputs the replay folded"
+    == Ok(Nil)
+    as "the session the shell recorded, two asks and a ping, writes the same bytes again"
 }
 
 pub fn a_connection_step_of_stop_then_write_still_writes_the_bytes_before_the_socket_closes_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
+  let server = start_with(gate:, shutdown_ms: 1000)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -358,7 +347,7 @@ pub fn a_connection_step_of_stop_then_write_still_writes_the_bytes_before_the_so
 pub fn the_writes_of_a_step_before_its_stop_leave_in_the_order_the_rule_gave_and_then_the_socket_closes_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
+  let server = start_with(gate:, shutdown_ms: 1000)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -378,7 +367,7 @@ pub fn the_writes_of_a_step_before_its_stop_leave_in_the_order_the_rule_gave_and
 pub fn the_write_of_a_step_before_its_ask_leaves_before_the_ask_is_made_test() -> Nil {
   use <- owned_test.run(30_000)
   let gate = process.new_name("gate")
-  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
+  let server = start_with(gate:, shutdown_ms: 1000)
   let client = ask_support.connect(server)
   ask_support.command(
     client,
@@ -399,7 +388,6 @@ pub fn the_write_of_a_step_before_its_ask_leaves_before_the_ask_is_made_test() -
 fn start_with(
   gate gate: process.Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   shutdown_ms shutdown_ms: Int,
-  recorder recorder: Option(file.Recorder),
 ) -> ask_support.Server {
   ask_support.start(
     rule: asking_rule.rule(),
@@ -409,41 +397,32 @@ fn start_with(
       sent: ask_support.unreported,
     ),
     shutdown_ms:,
-    recorder:,
     with: fn(builder) {
-      supervisor.add(
-        builder,
-        ask_support.gate(name: gate, shutdown_ms: 1000, recorder: None),
-      )
+      supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
     },
   )
 }
 
-fn is_ask(
-  record: Record(
-    asking_rule.Request,
-    ConnectionEvent(Nil, asking_rule.Answer),
-    ConnectionEffect,
-  ),
-) -> Bool {
-  case record {
-    Taken(step: EffectsThenAsk(..), ..) -> True
-    Taken(..) | End(..) -> False
-  }
-}
-
-fn is_timed_out(
-  record: Record(
-    asking_rule.Request,
-    ConnectionEvent(Nil, asking_rule.Answer),
-    ConnectionEffect,
-  ),
-) -> Bool {
-  case record {
-    Taken(
-      input: Input(event: OwnEvent(Answered(outcome: NoAnswerInTime, ..)), ..),
-      ..,
-    ) -> True
-    Taken(..) | End(..) -> False
-  }
+/// As `start_with`, with the connections recorded on the wire.
+fn start_recorded(
+  gate gate: process.Name(service.Call(gate_rule.Message, gate_rule.Answer)),
+  shutdown_ms shutdown_ms: Int,
+  wire_recorder wire_recorder: WireRecorder,
+) -> ask_support.Server {
+  ask_support.start_scripted(
+    rule: asking_rule.rule(),
+    directory: ask_support.directory(
+      gate:,
+      store: None,
+      sent: ask_support.unreported,
+    ),
+    shutdown_ms:,
+    wire_recorder: Some(wire_recorder),
+    scripts: script.operating_system,
+    registry: None,
+    locate: fn(_address) { Error(Nil) },
+    with: fn(builder) {
+      supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
+    },
+  )
 }

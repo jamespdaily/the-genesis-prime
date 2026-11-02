@@ -69,6 +69,7 @@ import genesis_prime/wire_recording.{
 import genesis_prime/wire_recording/fixture.{type FixtureError}
 import genesis_prime/wire_replay/table.{type Recorded, Recorded} as replay_table
 import gleam/bit_array
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/charlist.{type Charlist}
 import gleam/erlang/process.{type Name, type Pid, type Subject}
@@ -85,7 +86,7 @@ import simplifile
 
 /// How long every wait of the replay client, and every ask's wait in the
 /// shell, lasts in real milliseconds. A replay that waits this long fails.
-pub const wait_ms = 5000
+const wait_ms = 5000
 
 /// One recorded connection: the name of its file and what it holds.
 pub type Connection {
@@ -185,9 +186,15 @@ pub type Failure {
   /// message, an answer or a timer that came earlier or later than recorded.
   /// `line` is the recorded line the replay was at.
   TookOutOfOrder(connection: String, line: Int, expected: Taking, taken: Taking)
-  /// The server ended the connection where the recording goes on, with the
-  /// log lines the connection wrote (its refusal of a client byte among them).
-  EndedEarly(connection: String, line: Int, logged: List(String))
+  /// The server ended the connection where the recording goes on: `reason` is what the
+  /// socket said, and `logged` the log lines the connection wrote (its refusal of a
+  /// client byte among them).
+  EndedEarly(
+    connection: String,
+    line: Int,
+    reason: String,
+    logged: List(String),
+  )
   /// The recording's last line says the server closed the connection, and it
   /// had not within `wait_ms`.
   StillOpen(connection: String, line: Int)
@@ -278,40 +285,43 @@ const recording_suffix = ".jsonl"
 /// orders the connections by the accept ordinal of their headers.
 pub fn load(folder folder: String) -> Result(Session, Refusal) {
   let fixture_path = folder <> "/" <> fixture.file_name
-  case simplifile.is_file(fixture_path) {
-    Ok(True) -> {
-      let names = case simplifile.read_directory(folder) {
-        Ok(names) ->
-          list.filter(names, string.ends_with(_, recording_suffix))
-          |> list.sort(string.compare)
-        Error(_) -> []
-      }
-      use connections <- result.map(
-        list.try_map(names, fn(name) { read_connection(folder:, name:) }),
+  use names <- result.try(
+    simplifile.read_directory(folder)
+    |> result.replace_error(NoFixture(path: fixture_path)),
+  )
+  use <- bool.guard(
+    when: !list.contains(names, fixture.file_name),
+    return: Error(NoFixture(path: fixture_path)),
+  )
+  let recordings =
+    list.filter(names, string.ends_with(_, recording_suffix))
+    |> list.sort(string.compare)
+  use connections <- result.map(
+    list.try_map(recordings, fn(name) { read_connection(folder:, name:) }),
+  )
+  Session(
+    folder:,
+    connections: list.sort(connections, fn(first, second) {
+      int.compare(
+        first.recording.header.accept_ordinal,
+        second.recording.header.accept_ordinal,
       )
-      Session(
-        folder:,
-        connections: list.sort(connections, fn(a, b) {
-          int.compare(
-            a.recording.header.accept_ordinal,
-            b.recording.header.accept_ordinal,
-          )
-        }),
-        fixture: fixture_path,
-      )
-    }
-    Ok(False) | Error(_) -> Error(NoFixture(path: fixture_path))
-  }
+    }),
+    fixture: fixture_path,
+  )
 }
 
 fn read_connection(
   folder folder: String,
   name name: String,
 ) -> Result(Connection, Refusal) {
-  let text = case simplifile.read(folder <> "/" <> name) {
-    Ok(text) -> text
-    Error(_) -> ""
-  }
+  use text <- result.try(
+    simplifile.read(folder <> "/" <> name)
+    |> result.replace_error(Unreadable(
+      connection: name,
+      failure: wire_recording.Cut(lines: 0),
+    )),
+  )
   wire_recording.read(text)
   |> result.map(fn(recording) { Connection(name:, recording:) })
   |> result.map_error(fn(failure) { Unreadable(connection: name, failure:) })
@@ -443,8 +453,8 @@ pub fn prepare(
 pub fn replay(session session: Session, table table: Table) -> Replay {
   let subject = process.named_subject(table.name)
   replay_table.load(
-    subject,
-    list.map(session.connections, fn(connection) {
+    table: subject,
+    connections: list.map(session.connections, fn(connection) {
       replay_table.Prepared(
         name: connection.name,
         ordinal: connection.recording.header.accept_ordinal,
@@ -498,8 +508,11 @@ fn clock(table: Subject(replay_table.Command), connection: String) -> Clock {
   fn(taking) {
     case replay_table.take(table:, connection:, taking:) {
       Ok(now) -> now
-      Error(_mismatch) ->
-        panic as "the replay has no recorded time for the input the shell took"
+      Error(mismatch) ->
+        panic as {
+          "the replay has no recorded time for the input the shell took: "
+          <> replay_table.describe(mismatch)
+        }
     }
   }
 }
@@ -531,7 +544,7 @@ fn scheduler(
 
 /// The log lines the replay's shells wrote, each with the connection it came
 /// from, since the last call; the capture goes on.
-pub fn logged(replay replay: Replay) -> List(Logged) {
+fn logged(replay replay: Replay) -> List(Logged) {
   let subject = process.named_subject(replay.table.name)
   let shells =
     list.filter_map(dict.keys(replay.progress), fn(connection) {
@@ -568,7 +581,7 @@ fn pid_to_list(pid: Pid) -> Charlist
 
 /// Ends the capture of log lines, and gives those not yet given by `logged`.
 pub fn finish(replay replay: Replay) -> List(Logged) {
-  let lines = logged(replay)
+  let lines = logged(replay:)
   log_capture.stop(replay.capture)
   lines
 }
@@ -578,12 +591,7 @@ pub fn serve_from(
   served served: server.Served(settings),
   replay replay: Replay,
 ) -> server.Served(settings) {
-  server.Served(
-    ..served,
-    recorder: None,
-    wire_recorder: None,
-    scripts: replay.scripts,
-  )
+  server.Served(..served, wire_recorder: None, scripts: replay.scripts)
 }
 
 /// How many inputs the shell of a connection has taken.
@@ -758,7 +766,7 @@ pub fn play(
   replay replay: Replay,
   ports ports: Dict(String, Int),
 ) -> Result(Nil, Failure) {
-  play_actions(session:, replay:, ports:, actions: plan(session))
+  play_actions(session:, replay:, ports:, actions: plan(session:))
 }
 
 /// What the replay client holds while it plays: a socket for each connection it
@@ -862,11 +870,21 @@ fn act(
     Send(connection:, line:, bytes:) ->
       case dict.get(client.buffers, connection) {
         Ok(unexpected) if unexpected != <<>> ->
-          Error(Unexpected(connection:, line:, written: decode(unexpected)))
+          Error(Unexpected(
+            connection:,
+            line:,
+            written: decode(bytes: unexpected),
+          ))
         Ok(_) | Error(Nil) ->
           case mug.send(socket_of(client, connection), bytes) {
             Ok(Nil) -> Ok(client)
-            Error(_) -> Error(ended(replay:, connection:, line:))
+            Error(error) ->
+              Error(ended(
+                replay:,
+                connection:,
+                line:,
+                reason: mug.describe_error(error),
+              ))
           }
       }
     Fire(connection:, line:, timer:) ->
@@ -1025,9 +1043,19 @@ fn expect(
             client:,
             connection:,
             line:,
-            otherwise: Silent(connection:, line:, expected: decode(expected)),
+            otherwise: Silent(
+              connection:,
+              line:,
+              expected: decode(bytes: expected),
+            ),
           ))
-        Error(_) -> Error(ended(replay:, connection:, line:))
+        Error(error) ->
+          Error(ended(
+            replay:,
+            connection:,
+            line:,
+            reason: mug.describe_error(error),
+          ))
       }
   }
 }
@@ -1052,7 +1080,7 @@ fn await_end(
   let leftover = result.unwrap(dict.get(client.buffers, connection), <<>>)
   use Nil <- result.try(case leftover {
     <<>> -> Ok(Nil)
-    _ -> Error(Unexpected(connection:, line:, written: decode(leftover)))
+    _ -> Error(Unexpected(connection:, line:, written: decode(bytes: leftover)))
   })
   case by {
     wire_recording.Client -> {
@@ -1085,13 +1113,23 @@ fn await_end(
         )
       {
         Ok(written) ->
-          Error(Unexpected(connection:, line:, written: decode(written)))
+          Error(Unexpected(connection:, line:, written: decode(bytes: written)))
         Error(mug.Timeout) -> Error(StillOpen(connection:, line:))
-        Error(_) ->
+        Error(mug.Closed)
+        | Error(mug.Econnreset)
+        | Error(mug.Econnaborted)
+        | Error(mug.Epipe) ->
           case replay_table.failure_of(table:, connection:) {
             Some(mismatch) -> Error(mismatch_failure(connection, mismatch))
             None -> Ok(client)
           }
+        Error(error) ->
+          Error(ended(
+            replay:,
+            connection:,
+            line:,
+            reason: mug.describe_error(error),
+          ))
       }
   }
 }
@@ -1114,6 +1152,7 @@ fn ended(
   replay replay: Replay,
   connection connection: String,
   line line: Int,
+  reason reason: String,
 ) -> Failure {
   let table = process.named_subject(replay.table.name)
   case replay_table.failure_of(table:, connection:) {
@@ -1122,7 +1161,8 @@ fn ended(
       EndedEarly(
         connection:,
         line:,
-        logged: list.filter_map(logged(replay), fn(entry) {
+        reason:,
+        logged: list.filter_map(logged(replay:), fn(entry) {
           case entry.connection == connection, entry.level {
             True, "warning" | True, "error" -> Ok(entry.text)
             _, _ -> Error(Nil)
@@ -1147,7 +1187,8 @@ fn ended_or(
     None ->
       case mug.receive(socket_of(client, connection), timeout_milliseconds: 0) {
         Ok(_) | Error(mug.Timeout) -> otherwise
-        Error(_) -> ended(replay:, connection:, line:)
+        Error(error) ->
+          ended(replay:, connection:, line:, reason: mug.describe_error(error))
       }
   }
 }
@@ -1158,12 +1199,12 @@ pub fn compare(
   recorded recorded: BitArray,
   written written: BitArray,
 ) -> Result(Nil, Difference) {
-  case first_difference(recorded, written, 0) {
+  case first_difference(recorded:, written:, offset: 0) {
     Some(offset) ->
       Error(Difference(
         offset:,
-        recorded: decode_at(recorded, offset),
-        written: decode_at(written, offset),
+        recorded: decode_at(stream: recorded, offset:),
+        written: decode_at(stream: written, offset:),
       ))
     None -> Ok(Nil)
   }
@@ -1172,25 +1213,32 @@ pub fn compare(
 /// The offset of the first byte at which the streams differ, or at which the
 /// shorter ends before the longer.
 fn first_difference(
-  recorded: BitArray,
-  written: BitArray,
-  offset: Int,
+  recorded recorded: BitArray,
+  written written: BitArray,
+  offset offset: Int,
 ) -> Option(Int) {
   case recorded, written {
     <<>>, <<>> -> None
-    <<a, rest_recorded:bytes>>, <<b, rest_written:bytes>> if a == b ->
-      first_difference(rest_recorded, rest_written, offset + 1)
+    <<byte_recorded, rest_recorded:bytes>>, <<byte_written, rest_written:bytes>>
+      if byte_recorded == byte_written
+    ->
+      first_difference(
+        recorded: rest_recorded,
+        written: rest_written,
+        offset: offset + 1,
+      )
     _, _ -> Some(offset)
   }
 }
 
 /// What a stream holds at `offset`: nothing when it ended there, else its first
 /// message.
-fn decode_at(stream: BitArray, offset: Int) -> Decoded {
-  case bit_array.byte_size(stream) <= offset {
-    True -> Undecoded(<<>>)
-    False -> decode(stream)
-  }
+fn decode_at(stream stream: BitArray, offset offset: Int) -> Decoded {
+  use <- bool.guard(
+    when: bit_array.byte_size(stream) <= offset,
+    return: Undecoded(<<>>),
+  )
+  decode(bytes: stream)
 }
 
 /// Reads the first message of `bytes` with the current codec: a whole frame
@@ -1206,6 +1254,11 @@ pub fn decode(bytes bytes: BitArray) -> Decoded {
         name: client_connection.message_text(message_id: found.message_id),
         text: string.lowercase(bit_array.base16_encode(found.body)),
       )
-    Ok(None) | Error(_) -> Undecoded(bytes)
+    Ok(None)
+    | Error(frame.LengthOverLimit(..))
+    | Error(frame.LengthBelowHeader(..))
+    | Error(frame.ShorterThanHeader(..))
+    | Error(frame.LengthDisagrees(..))
+    | Error(frame.MessageIdOutOfRange(..)) -> Undecoded(bytes)
   }
 }

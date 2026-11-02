@@ -69,6 +69,19 @@ pub type Mismatch {
   OutOfOrder(line: Int, expected: Taking, taken: Taking)
 }
 
+/// A sentence that says why an input matches no recorded one, for the log of the
+/// shell that ends because of it.
+pub fn describe(mismatch mismatch: Mismatch) -> String {
+  case mismatch {
+    Unrecorded(line:) ->
+      "no input is recorded after the last one, before line "
+      <> int.to_string(line)
+    OutOfOrder(line:, ..) ->
+      "the next recorded input is another kind: it is on line "
+      <> int.to_string(line)
+  }
+}
+
 /// A timer a shell started: where its firing is sent, and the reference of the
 /// start, which tells it from a stale firing.
 pub type Started {
@@ -150,7 +163,10 @@ pub fn supervised(name name: Name(Command)) -> ChildSpecification(Nil) {
 
 /// Loads the recorded connections, which the table then hands out in the order
 /// of their ordinals.
-pub fn load(table: Subject(Command), connections: List(Prepared)) -> Nil {
+pub fn load(
+  table table: Subject(Command),
+  connections connections: List(Prepared),
+) -> Nil {
   actor.call(table, waiting: call_ms, sending: fn(reply) {
     Load(connections:, reply:)
   })
@@ -328,26 +344,7 @@ fn handle(state: State, command: Command) -> actor.Next(State, Command) {
         }
       }
     Take(connection:, taking:, shell:, reply:) ->
-      with_entry(state, connection, fn(entry) {
-        let entry = Entry(..entry, shell: Some(shell))
-        case entry.failure {
-          Some(mismatch) -> {
-            process.send(reply, Error(mismatch))
-            entry
-          }
-          None ->
-            case take_input(entry, taking) {
-              Ok(#(entry, now)) -> {
-                process.send(reply, Ok(now))
-                notify_taken(entry)
-              }
-              Error(mismatch) -> {
-                process.send(reply, Error(mismatch))
-                notify_failed(Entry(..entry, failure: Some(mismatch)), mismatch)
-              }
-            }
-        }
-      })
+      with_entry(state, connection, answer_take(_, taking:, shell:, reply:))
     NextRead(connection:, reply:) ->
       with_entry(state, connection, fn(entry) {
         process.send(reply, next_read_of(entry.pending))
@@ -457,6 +454,34 @@ fn with_entry(
       connections: dict.insert(state.connections, connection, change(entry)),
     ),
   )
+}
+
+/// Gives the shell the `Now` of the input it took, or the mismatch that ended
+/// its inputs, and answers the waiters the change reaches.
+fn answer_take(
+  entry entry: Entry,
+  taking taking: Taking,
+  shell shell: Pid,
+  reply reply: Subject(Result(Now, Mismatch)),
+) -> Entry {
+  let entry = Entry(..entry, shell: Some(shell))
+  case entry.failure {
+    Some(mismatch) -> {
+      process.send(reply, Error(mismatch))
+      entry
+    }
+    None ->
+      case take_input(entry, taking) {
+        Ok(#(entry, now)) -> {
+          process.send(reply, Ok(now))
+          notify_taken(entry)
+        }
+        Error(mismatch) -> {
+          process.send(reply, Error(mismatch))
+          notify_failed(Entry(..entry, failure: Some(mismatch)), mismatch)
+        }
+      }
+  }
 }
 
 fn entry_of(prepared: Prepared) -> Entry {

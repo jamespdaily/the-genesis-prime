@@ -93,7 +93,6 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/hand_off
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
-import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/service.{type Call, type Locate, type Reach, type Sent}
 import genesis_prime/service/shell as service_shell
 import genesis_prime/sessions
@@ -101,10 +100,8 @@ import genesis_prime/step.{type ConnectionRule}
 import genesis_prime/store/worker.{type Job}
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map
-import genesis_prime/world_map/map_id
 import genesis_prime/world_map/maps
 import gleam/erlang/process.{type Name}
-import gleam/int
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
@@ -129,9 +126,6 @@ pub type Settings {
     sessions: Name(Call(sessions.Message, sessions.Outgoing)),
     /// How long Sessions has to stop.
     sessions_shutdown_ms: Int,
-    /// Where Sessions' inputs are recorded; `None` unless the dev start turns
-    /// recording on.
-    sessions_recorder: Option(Recorder),
     /// Where the game connections are found, made once with
     /// `registry.new`.
     registry: Registry(Message),
@@ -161,10 +155,6 @@ pub type World {
     maps_call_ms: Int,
     /// How long a map has to stop.
     map_shutdown_ms: Int,
-    /// Where each map's inputs are recorded, one file per run of a map, named
-    /// by its world, instance and incarnation; `None` unless the dev start
-    /// turns recording on.
-    map_recordings: Option(Recorder),
   )
 }
 
@@ -182,10 +172,9 @@ pub type Login {
 /// One listener: its name in Ranch, unique on the node and made once with
 /// `process.new_name`, the port it listens on (0 for one the system picks),
 /// the most connections it holds at once (`genesis_prime/connection/listener`),
-/// the settings its rule is made with, where each connection's inputs are
-/// recorded (`recorder`) and where the bytes of its socket are
-/// (`wire_recorder`), `None` for both unless the dev start turns recording on,
-/// and where each accepted connection gets its script, its seed, the time of
+/// the settings its rule is made with, where the bytes of each connection's
+/// socket are recorded (`wire_recorder`), `None` unless the dev start turns
+/// recording on, and where each accepted connection gets its script, its seed, the time of
 /// each input and its timers (`scripts`): the server's own in the server
 /// (`script.operating_system`), each connection's recorded one in a replay.
 pub type Served(settings) {
@@ -194,7 +183,6 @@ pub type Served(settings) {
     port: Int,
     max_connections: Int,
     settings: settings,
-    recorder: Option(Recorder),
     wire_recorder: Option(WireRecorder),
     scripts: Scripts,
   )
@@ -230,7 +218,6 @@ pub fn start(
       rule: hand_off.rule(),
       reach: service.watch_only(locate: locate(settings)),
       shutdown_ms: settings.hand_off_shutdown_ms,
-      recorder: None,
     ),
   ))
   |> supervisor.add(service_shell.supervised(
@@ -239,7 +226,6 @@ pub fn start(
       rule: sessions.rule(),
       reach: sessions_reach(settings),
       shutdown_ms: settings.sessions_shutdown_ms,
-      recorder: settings.sessions_recorder,
     ),
   ))
   |> supervisor.add(world(settings))
@@ -364,25 +350,10 @@ pub fn add_world(
           rule: map.rule(map: start.map, incarnation: start.incarnation),
           reach: service.watch_only(locate:),
           shutdown_ms: world.map_shutdown_ms,
-          recorder: option.map(world.map_recordings, file.labelled(
-            _,
-            map_label(start),
-          )),
         ))
       },
     ),
   )
-}
-
-/// What names a map's recording: its world, instance and incarnation.
-fn map_label(start: maps.MapStart) -> String {
-  let map_id.MapId(world_id:, instance:) = start.map
-  "world-"
-  <> int.to_string(world_id)
-  <> "-instance-"
-  <> int.to_string(instance)
-  <> "-incarnation-"
-  <> int.to_string(start.incarnation)
 }
 
 /// The login subtree: the STS listener, then the auth listener, under a
@@ -467,7 +438,6 @@ fn serve(
         rule: rule(served.settings),
         send_deadline_ms: settings.send_deadline_ms,
         shutdown_ms: settings.connection_shutdown_ms,
-        recorder: served.recorder,
         wire_recorder: served.wire_recorder,
         scripts: served.scripts,
         directory:,

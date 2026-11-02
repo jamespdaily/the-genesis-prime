@@ -418,19 +418,49 @@ fn check_growing(
   }
 }
 
+/// Why the keys of a line are no line of the format.
+type Problem {
+  NoTime
+  MixedKinds
+  NoSuchSide(name: String)
+  NoSuchInput(name: String)
+  NoBytes
+  NoOutcome
+  NoSuchOutcome(name: String)
+  NoTimer
+}
+
+fn describe_problem(problem: Problem) -> String {
+  case problem {
+    NoTime -> "an input line holds no monotonic_ms and filetime"
+    MixedKinds -> "a line is one of an input, a write and the closing line"
+    NoSuchSide(name:) -> "no side closes as \"" <> name <> "\""
+    NoSuchInput(name:) -> "no input is called \"" <> name <> "\""
+    NoBytes -> "a read line holds no bytes"
+    NoOutcome -> "an answered line holds no outcome"
+    NoSuchOutcome(name:) -> "no ask ends as \"" <> name <> "\""
+    NoTimer -> "a timer line holds no timer"
+  }
+}
+
 /// The line the keys make: `Ok` a line before the end, `Error` the closing
 /// line.
 fn line_of_raw(
   raw raw: Raw,
   number number: Int,
 ) -> Result(Result(Line, Closing), ReadFailure) {
-  let not_a_line = fn(reason) { Error(NotALine(line: number, reason:)) }
+  line_of_keys(raw)
+  |> result.map_error(fn(problem) {
+    NotALine(line: number, reason: describe_problem(problem))
+  })
+}
+
+fn line_of_keys(raw: Raw) -> Result(Result(Line, Closing), Problem) {
   case raw.kind, raw.out, raw.closed {
     Some(kind), None, None ->
       case raw.monotonic_ms, raw.filetime {
         Some(monotonic_ms), Some(filetime) ->
           input_of(kind:, raw:)
-          |> result.map_error(fn(reason) { NotALine(line: number, reason:) })
           |> result.map(fn(input) {
             Ok(Took(
               sequence: raw.sequence,
@@ -438,48 +468,46 @@ fn line_of_raw(
               input:,
             ))
           })
-        _, _ -> not_a_line("an input line holds no monotonic_ms and filetime")
+        _, _ -> Error(NoTime)
       }
     None, Some(bytes), None -> Ok(Ok(Wrote(sequence: raw.sequence, bytes:)))
     None, None, Some("client") ->
       Ok(Error(Closing(sequence: raw.sequence, by: Client)))
     None, None, Some("server") ->
       Ok(Error(Closing(sequence: raw.sequence, by: Server)))
-    None, None, Some(other) ->
-      not_a_line("no side closes as " <> string.inspect(other))
-    _, _, _ ->
-      not_a_line("a line is one of an input, a write and the closing line")
+    None, None, Some(other) -> Error(NoSuchSide(name: other))
+    _, _, _ -> Error(MixedKinds)
   }
 }
 
-fn input_of(kind kind: String, raw raw: Raw) -> Result(Input, String) {
+fn input_of(kind kind: String, raw raw: Raw) -> Result(Input, Problem) {
   case kind, raw.bytes, raw.outcome, raw.timer {
     "accepted", _, _, _ -> Ok(Accepted)
     "read", Some(bytes), _, _ -> Ok(Read(bytes:))
-    "read", None, _, _ -> Error("a read line holds no bytes")
+    "read", None, _, _ -> Error(NoBytes)
     "answered", _, Some(outcome), _ ->
       outcome_of(outcome) |> result.map(fn(outcome) { Answered(outcome:) })
-    "answered", _, None, _ -> Error("an answered line holds no outcome")
+    "answered", _, None, _ -> Error(NoOutcome)
     "timer_fired", _, _, Some(timer) -> Ok(TimerFired(timer:))
-    "timer_fired", _, _, None -> Error("a timer line holds no timer")
+    "timer_fired", _, _, None -> Error(NoTimer)
     "peer_closed", _, _, _ -> Ok(PeerClosed)
     "read_failed", _, _, _ -> Ok(ReadFailed)
     "write_failed", _, _, _ -> Ok(WriteFailed)
     "woken", _, _, _ -> Ok(Woken)
     "watch_ended", _, _, _ -> Ok(WatchEnded)
     "stopping", _, _, _ -> Ok(Stopping)
-    other, _, _, _ -> Error("no input is called " <> string.inspect(other))
+    other, _, _, _ -> Error(NoSuchInput(name: other))
   }
 }
 
-fn outcome_of(name: String) -> Result(Outcome, String) {
+fn outcome_of(name: String) -> Result(Outcome, Problem) {
   case name {
     "answer" -> Ok(Answer)
     "not_running" -> Ok(NotRunning)
     "ended_before_answer" -> Ok(EndedBeforeAnswer)
     "no_answer_in_time" -> Ok(NoAnswerInTime)
     "stopped_waiting" -> Ok(StoppedWaiting)
-    other -> Error("no ask ends as " <> string.inspect(other))
+    other -> Error(NoSuchOutcome(name: other))
   }
 }
 

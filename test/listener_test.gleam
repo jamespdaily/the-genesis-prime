@@ -15,7 +15,6 @@ import genesis_prime/connection/listener.{
   ListenerNotListening, ListenerNotRunning,
 }
 import gleam/erlang/process
-import gleam/option.{None}
 import mug
 import owned_test
 
@@ -25,7 +24,6 @@ fn started() -> ask_support.Server {
     rule: asking_rule.rule(),
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     shutdown_ms: 1000,
-    recorder: None,
     with: fn(builder) { builder },
   )
 }

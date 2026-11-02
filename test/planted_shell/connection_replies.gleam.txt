@@ -16,7 +16,6 @@ pub fn settings() {
     ),
     send_deadline_ms: 100,
     shutdown_ms: 100,
-    recorder: None,
     wire_recorder: None,
     scripts: script.operating_system,
     directory: fn(_request, _deadline, _reply) { Error(Nil) },
