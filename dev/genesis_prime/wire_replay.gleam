@@ -61,10 +61,12 @@ import genesis_prime/wire_recording.{
   type Input, type ReadFailure, type Recording, type Side,
 }
 import genesis_prime/wire_recording/fixture.{type FixtureError}
+import genesis_prime/wire_replay/table
 import gleam/dict.{type Dict}
-import gleam/erlang/process.{type Name}
+import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{type Option}
 import gleam/otp/supervision.{type ChildSpecification}
+import log_capture.{type Capture}
 import pog
 
 /// How long every wait of the replay client, and every ask's wait in the
@@ -206,17 +208,18 @@ pub type Action {
 /// its script's clock has given a `Now`, a read line counting once its last
 /// byte has been taken. The replay client reads it to know how far the shell is,
 /// and the shell never writes it any other way.
-pub type Progress
-
-/// The scheduler's table of the timers the replay's shells have started, kept
-/// by one process so the shells that start a timer, the client that fires it
-/// and the client that waits for it to be started share nothing else.
-pub type Timers {
-  Timers(name: Name(TimerCommand))
+pub opaque type Progress {
+  Progress(table: Subject(table.Command), connection: String)
 }
 
-/// What the timer table is told.
-pub type TimerCommand
+/// The replay's table, kept by one process: the recorded inputs each
+/// connection's script has still to give a `Now` to, how many it has taken, the
+/// timers the replay's shells have started, and the process of each shell. The
+/// shells that ask it for a `Now` or start a timer, and the client that waits
+/// for a shell, fires a timer or reads a shell's log lines, share nothing else.
+pub type Table {
+  Table(name: Name(table.Command))
+}
 
 /// What a replay gives the server and keeps for the replay client.
 pub type Replay {
@@ -227,15 +230,27 @@ pub type Replay {
     scripts: Scripts,
     /// How far each connection's shell is, by the name of its file.
     progress: Dict(String, Progress),
-    timers: Timers,
+    table: Table,
+    /// The log lines of every process of the node since the replay was made,
+    /// which `logged` and `finish` sort by connection.
+    logs: Subject(#(String, String, List(#(String, String)))),
+    capture: Capture,
   )
 }
 
-/// The timer table as a child of the replay's own supervisor, started before
-/// the server tree and stopped after it.
-pub fn timers_supervised(
-  name _name: Name(TimerCommand),
-) -> ChildSpecification(Nil) {
+/// One log line a connection's shell wrote.
+pub type Logged {
+  Logged(connection: String, level: String, text: String)
+}
+
+/// A table of a name of its own, made now.
+pub fn new_table() -> Table {
+  panic as "built in the next commit"
+}
+
+/// The table as a child of the replay's own supervisor, started before the
+/// server tree and stopped after it.
+pub fn table_supervised(table _table: Table) -> ChildSpecification(Nil) {
   panic as "built in the next commit"
 }
 
@@ -280,7 +295,18 @@ pub fn prepare(
 /// the recorded read lines' byte offsets, any other input by kind against the
 /// next recorded input) and gives that line's `Now`, and a scheduler that starts
 /// its timers in `timers` and fires them when the replay client asks.
-pub fn replay(session _session: Session, timers _timers: Timers) -> Replay {
+pub fn replay(session _session: Session, table _table: Table) -> Replay {
+  panic as "built in the next commit"
+}
+
+/// The log lines the replay's shells wrote, each with the connection it came
+/// from, since the last call; the capture goes on.
+pub fn logged(replay _replay: Replay) -> List(Logged) {
+  panic as "built in the next commit"
+}
+
+/// Ends the capture of log lines, and gives those not yet given by `logged`.
+pub fn finish(replay _replay: Replay) -> List(Logged) {
   panic as "built in the next commit"
 }
 
@@ -320,9 +346,20 @@ pub fn plan(session _session: Session) -> List(Action) {
 /// and ends at the first failure. It returns when the plan has been carried
 /// out.
 pub fn play(
+  session session: Session,
+  replay replay: Replay,
+  ports ports: Dict(String, Int),
+) -> Result(Nil, Failure) {
+  play_actions(session:, replay:, ports:, actions: plan(session))
+}
+
+/// The replay client as `play` runs it, given the steps to take: the plan, or
+/// the plan a test has changed.
+pub fn play_actions(
   session _session: Session,
   replay _replay: Replay,
   ports _ports: Dict(String, Int),
+  actions _actions: List(Action),
 ) -> Result(Nil, Failure) {
   panic as "built in the next commit"
 }
