@@ -72,6 +72,20 @@ fn replayed(
 ) -> #(Int, Int) {
   let assert Ok(bytes) = simplifile.read_bits(folder <> file)
     as "the recording reads"
+  replayed_bytes(bytes:, module:, reads_tables:, new:, step:)
+}
+
+/// Replays a recording given as its `bytes`, under the same checks as
+/// `every_recording_replays` makes of each recording of the folder, and gives
+/// the inputs replayed and the inputs `End` counts. For a recording a test
+/// made itself.
+pub fn replayed_bytes(
+  bytes bytes: BitArray,
+  module module: String,
+  reads_tables reads_tables: Bool,
+  new new: fn(settings) -> state,
+  step step: fn(state, Input(own_input)) -> #(state, Step(request, own_effect)),
+) -> #(Int, Int) {
   let assert Ok(#(Header(settings:, tables_digest:, ..), records)) =
     rule_recording.read(bytes)
     as "the recording is a recording"
@@ -82,7 +96,7 @@ fn replayed(
   let records: List(rule_recording.Record(request, own_input, own_effect)) =
     records
   let assert Ok(End(count:)) = list.last(records)
-    as "the live session ended each connection, so each recording closes with End"
+    as "the connection ended, so the recording closes with End"
   let assert Ok(digest) =
     rule_types.digest(rule_module: module, source_roots: ["src", "test"])
     as "the rule's types read"

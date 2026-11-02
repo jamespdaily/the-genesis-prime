@@ -243,10 +243,7 @@ pub fn load_planted_tables_for_the_server_twice() -> Nil {
 
 pub fn the_servers_tables_are_the_same_value_on_every_load_test() -> Nil {
   use <- owned_test.run(60_000)
-  fresh_node.must_return(
-    module: "table_load_test",
-    function: "load_planted_tables_for_the_server_twice",
-  )
+  fresh_node.must_return_function(load_planted_tables_for_the_server_twice)
 }
 
 pub fn a_failed_load_leaves_no_persistent_term_behind_test() -> Nil {

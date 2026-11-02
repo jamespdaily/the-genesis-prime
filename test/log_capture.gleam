@@ -59,6 +59,16 @@ fn start_metadata(
 @external(erlang, "log_capture_ffi", "stop")
 pub fn stop(capture: Capture) -> Nil
 
+/// Every line waiting in the subject a capture sends to, in the order they
+/// came, taken out of it. A line the capture's process logged before a signal
+/// it sent afterwards, such as its end, is waiting once that signal has come.
+pub fn drain(lines lines: Subject(line)) -> List(line) {
+  case process.receive(lines, 0) {
+    Ok(line) -> [line, ..drain(lines:)]
+    Error(Nil) -> []
+  }
+}
+
 /// The logger's primary level: the lowest level it lets through.
 @external(erlang, "log_capture_ffi", "primary_level")
 pub fn primary_level() -> Atom
