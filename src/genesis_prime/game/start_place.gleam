@@ -26,6 +26,7 @@
 import genesis_prime/table/id.{type RaceId, RaceId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/world_location2
+import gleam/float
 import gleam/list
 import gleam/result
 
@@ -101,6 +102,21 @@ pub fn z(place: Place) -> Float {
 /// The way the place faces.
 pub fn facing(place: Place) -> Facing {
   place.facing
+}
+
+/// The place with its position inside the box the client bounds a unit's
+/// position to: x and z from -32768 to 32768, y from -2048 to 2048
+/// (WorldPositionBounds, 0x1405b5070). It is the position the server writes to
+/// the client for a place, which the client's world load keeps as sent
+/// (opcode.0xad.position); the place itself, as the character is saved, is
+/// never bounded. The choice to bound what is sent is the server's.
+pub fn within_the_worlds_box(place place: Place) -> Place {
+  Place(
+    ..place,
+    x: float.clamp(place.x, min: -32_768.0, max: 32_768.0),
+    y: float.clamp(place.y, min: -2048.0, max: 2048.0),
+    z: float.clamp(place.z, min: -32_768.0, max: 32_768.0),
+  )
 }
 
 /// The place's world and zone, standing at the position `x`, `y`, `z`.

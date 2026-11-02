@@ -18,7 +18,11 @@
 ////   and 0x6BC's case 0x1403ecc9b, which does nothing until 0x19B has set the
 ////   player). 0xF1 sets the flag loading's last stage waits on (0x1403b67e0).
 //// - **0xAD** carries the saved world and position, and 0.0 in its last two
-////   floats, which neither entry path reads (opcode.0xad.last_floats).
+////   floats, which neither entry path reads (opcode.0xad.last_floats). The
+////   position, here and in 0x262, is bounded to the box the client bounds a
+////   unit's position to (`start_place.within_the_worlds_box`), because the
+////   client's world load keeps 0xAD's as sent (opcode.0xad.position); the
+////   place the character is saved at is not bounded.
 //// - **0x6BC** carries the character's stored path, experience 0 on each of the
 ////   four paths (path level 1), only the character's own path unlocked and
 ////   -1.0 days since the last path change, which leaves no change cooldown
@@ -223,6 +227,7 @@ pub fn joined(
   case state {
     Joining(character:, place:, session_epoch:, map:) -> {
       let map.Joined(unit_id:, incarnation:) = answer
+      let sent = start_place.within_the_worlds_box(place)
       Ok(
         #(
           Entered(
@@ -233,8 +238,14 @@ pub fn joined(
             movement: movement.entered(place:, session_epoch:),
           ),
           [
-            enter_world(place:),
-            player_created(character:, place:, unit_id:, realm_id:, tables:),
+            enter_world(place: sent),
+            player_created(
+              character:,
+              place: sent,
+              unit_id:,
+              realm_id:,
+              tables:,
+            ),
             unit_is_player(unit_id:),
             player_path(character:),
             control_granted(unit_id:),

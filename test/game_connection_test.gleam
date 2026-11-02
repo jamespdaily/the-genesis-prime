@@ -2020,6 +2020,31 @@ pub fn the_login_places_the_player_at_the_saved_place_and_turns_it_the_saved_way
     as "0x1404586e0, 0x140715350: kind 2 at the saved position with its bit clear, which places the unit at once, then kind 14 with the saved yaw, pitch and roll (1.5 is 0x3FC00000, -0.25 is 0xBE800000, 0.5 is 0x3F000000)"
 }
 
+pub fn a_saved_position_beyond_the_worlds_box_is_written_as_the_boxs_edge_in_0xad_and_0x262_and_saved_as_it_was_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let far = standing_at(x: 1.0e9, y: 5000.0, z: -1.0e9)
+  let #(state, taken) =
+    entered_as(Character(..world_character(), place: Some(far)))
+  let assert [Frame(message_id: 0x00AD, body:), ..] = heard(taken, keyed())
+  let assert Ok(entering) = enter_world.decode(body)
+  assert #(entering.position_x, entering.position_y, entering.position_z)
+    == #(0x47000000, 0x45000000, 0xC7000000)
+    as "opcode.0xad.position: LoadWorld keeps the position as sent, so the server writes the box the client bounds a unit's position to (0x1405b5070, bounds 32768.0 = 0x47000000 and 2048.0 = 0x45000000): x and z within 32768, y within 2048"
+  assert list.first(player_in(taken).movement_commands)
+    == Ok(
+      start_movement.Position(UnitPositionCommand(
+        x: 0x47000000,
+        y: 0x45000000,
+        z: 0xC7000000,
+        blends: 0,
+      )),
+    )
+    as "0x1405b5070: the client draws the unit within the box, so the position written into 0x262 is the box's edge"
+  let #(_, taken) = feed(state, step.OwnEvent(step.PeerClosed))
+  assert ask_request(taken) == save_asked(1, far)
+    as "the place the character is saved at stays as the database held it; only what the client is sent is bounded"
+}
+
 pub fn a_character_never_saved_still_gets_a_position_at_its_start_place_and_faces_0_0_0_test() -> Nil {
   use <- owned_test.run(10_000)
   assert player_in(entered().1).movement_commands
