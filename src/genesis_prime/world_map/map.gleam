@@ -41,13 +41,14 @@
 //// - **A caller that ended before its answer** is dropped by the shell; the
 ////   player stays until its connection's watch ends, which the joining
 ////   connection's end then gives.
-//// - **The server stopping.** `Stopping` stops the rule at once; its players
-////   and units are not saved, since the server reads no position.
+//// - **The server stopping.** `Stopping` stops the rule at once. The map saves
+////   nothing: the connection owns its player's place and saves it
+////   (genesis_prime/game/connection); a unit in the map holds the place it
+////   joined at, not a position that moves.
 //// - **Started** does nothing: a map starts empty.
 
 import genesis_prime/game/appearance
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type ServiceEffect,
@@ -195,7 +196,10 @@ fn joined(
           character:,
           place:,
           unit_id:,
-          visuals: body_visuals(state:, character:),
+          visuals: appearance.character_body_visuals(
+            index: appearance.index(tables: state.settings.tables),
+            character:,
+          ),
         )
       #(
         State(
@@ -220,21 +224,6 @@ fn answer(state state: State, unit unit: PlayerUnit) -> Outgoing {
   Joined(
     unit: player_unit.create(unit:, realm_id: state.settings.realm_id),
     incarnation: state.settings.incarnation,
-  )
-}
-
-/// The body visuals of the character's look, as the character list shows
-/// them, from the map's game tables.
-fn body_visuals(
-  state state: State,
-  character character: Character,
-) -> List(ItemVisual) {
-  appearance.body_visuals(
-    index: appearance.index(tables: state.settings.tables),
-    race_id: character.race_id,
-    sex: character.gender,
-    faction_id: character.faction_id,
-    look: character.look,
   )
 }
 
