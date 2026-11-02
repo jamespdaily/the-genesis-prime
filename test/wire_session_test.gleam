@@ -133,8 +133,8 @@ pub fn the_committed_session_replays_to_its_recorded_bytes_with_the_recorded_see
     list.map(session.connections, fn(connection) {
       connection.recording.header.accept_ordinal
     })
-  assert ordinals == list.sort(ordinals, int.compare)
-    as "the accept ordinals grow with the order the server accepted the connections in; the live server's own numbers are not 1, 2 and 3, since the node counts other things with them"
+  assert ordinals == [1, 17, 26]
+    as "the accept ordinals the live session's recordings hold (their headers): the live server's own numbers are not 1, 2 and 3, since the node counts other things with them, and they grow with the order it accepted the connections in"
   let assert Ok(fixture) = simplifile.read(session.fixture)
     as "the fixture reads"
   assert string.contains(fixture, "'genesis'")
@@ -190,12 +190,9 @@ pub fn the_replay_logs_the_unhandled_messages_the_live_session_logged_and_nothin
   use <- unitest.guard(client_tables.present())
   let #(result, logged) = support.replay_tree(folder: support.committed_session)
   assert result == Ok(Nil)
-  let sts = lines_of(logged, "sts_connection")
-  assert sts != []
-    && list.all(sts, fn(line) {
-      line == "unhandled STS request /Auth/PageVerifiedIps"
-    })
-    as "the STS request the rule has no handler for, as often as the client asked for it in the session"
+  assert lines_of(logged, "sts_connection")
+    == ["unhandled STS request /Auth/PageVerifiedIps"]
+    as "the STS request the rule has no handler for, once: the live session's STS connection holds one such request"
   assert lines_of(logged, "auth_connection") == []
     as "the auth connection logged no warning and no error"
   assert lines_of(logged, "game.connection")
