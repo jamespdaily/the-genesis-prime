@@ -667,6 +667,57 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
   login_support.stop(started)
 }
 
+pub fn a_stop_with_a_player_in_the_world_saves_the_place_it_last_stood_at_before_the_tree_ends_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let character =
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let game = in_select(started:, port:, account:)
+  send_play(game:, character_id: character)
+  let _burst = game_client.read(game:, count: 7)
+  send_move(game:, position: #(100.5, -20.25, 300.125), rotation: #(
+    1.5,
+    -0.25,
+    0.5,
+  ))
+  game_client.send_ping(game:, number: 1)
+  assert game_client.read_pong(game:) == 1
+    as "the connection answers after it took the move, which came first on its one socket"
+  login_support.stop(started)
+  let assert [notice] = game_client.read(game:, count: 1)
+  assert disconnect_notice.decode(notice.body)
+    == Ok(DisconnectNotice(reason: LostUserServer))
+    as "0x1400168a0: 8 is the server's own end, which the player in the world is told once its place is saved"
+  let assert Ok(after) =
+    pog.start(
+      pog.Config(
+        ..started.settings.pool,
+        pool_name: process.new_name("after_the_stop"),
+      ),
+    )
+    as "a pool of its own reads the database the stopped tree had"
+  process.unlink(after.pid)
+  assert character_support.place_row(pool: after.data, character_id: character)
+    == character_support.PlaceRow(
+      world_id: 1387,
+      world_zone_id: 1100,
+      position: #(100.5, -20.25, 300.125),
+      rotation: #(1.5, -0.25, 0.5),
+      session_epoch: 1,
+      save_sequence: 1,
+    )
+    as "the stop saved the place the client last sent, as the login's first save, before the tree ended"
+  process.kill(after.pid)
+  game_client.close(game:)
+}
+
 pub fn a_connection_that_crashes_saves_nothing_is_not_restarted_and_the_place_saved_before_stands_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(started, port, account) = start()

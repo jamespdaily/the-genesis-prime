@@ -215,6 +215,24 @@ pub fn a_position_that_is_not_finite_is_refused_in_each_axis_test() -> Nil {
   })
 }
 
+pub fn a_position_or_rotation_that_is_not_finite_is_refused_under_a_platform_too_test() -> Nil {
+  use <- owned_test.run(5000)
+  let bad = raw(0x7FC00000)
+  let good = single(1.0)
+  assert moved(state: entered(), commands: [
+      footing(7),
+      Position(x: bad, y: good, z: good),
+    ])
+    == Error(NotFinite(kind: 2))
+    as "IEEE 754 binary32: not-a-number is no position in any frame, and the client's own movement never sends one, so the platform's frame does not excuse it"
+  assert moved(state: entered(), commands: [
+      footing(7),
+      Rotation(yaw: good, pitch: bad, roll: good),
+    ])
+    == Error(NotFinite(kind: 14))
+    as "IEEE 754 binary32: not-a-number is no rotation in any frame, a platform's included"
+}
+
 pub fn a_height_below_minus_2048_is_refused_and_minus_2048_and_above_are_kept_test() -> Nil {
   use <- owned_test.run(5000)
   assert moved(state: entered(), commands: [
