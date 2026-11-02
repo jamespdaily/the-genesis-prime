@@ -2162,6 +2162,23 @@ pub fn a_watch_or_timer_the_rule_did_not_open_is_a_bug_with_an_error_and_the_end
   )
 }
 
+pub fn a_claim_timer_that_fires_while_the_claims_ask_is_out_is_a_bug_with_an_error_and_the_end_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(claim_after_the_hand_off, _) = claiming()
+  let #(state, _) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
+  let #(claim_after_the_watch_ended, taken) =
+    feed(state, OwnEvent(TimerFired(TimerId(1))))
+  assert ask_request(taken) == claim_ask()
+    as "the timer's firing made the claim, so its ask is out"
+  list.each([claim_after_the_hand_off, claim_after_the_watch_ended], fn(state) {
+    let #(_, taken) = feed(state, OwnEvent(TimerFired(TimerId(1))))
+    assert support.stops(taken)
+      as "the timer is waited on only before the claim is asked; a second claim would put two asks out"
+    assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    assert support.asked(taken) == None
+  })
+}
+
 pub fn a_claim_that_finds_sessions_not_running_is_made_again_after_a_wait_up_to_the_retries_then_reason_8_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = claiming()

@@ -76,7 +76,9 @@
 ////   outcome `NotRunning`) drops its watch and waits again, up to
 ////   `claim_retries` times, before the client is told the server failed. A
 ////   claim Sessions does not answer, or that ends before its answer, is that
-////   failure at once.
+////   failure at once. The wait is its own status (`WaitingToClaim`), so the
+////   timer's firing is taken only there, and an answer only while the claim's
+////   ask is out (`ClaimingSession`); either in the other is a bug.
 //// - **The character list and creating a character** are character select's
 ////   own feature (genesis_prime/game/character_select): it makes its own store
 ////   asks and takes the store's answers, and the rule turns its effects into
@@ -253,12 +255,16 @@ type Status {
   AwaitingHelloReply
   /// The hand-off is asked to take the session key.
   TakingSessionKey
-  /// Sessions is asked to make the connection the account's session, or the
-  /// connection waits on the claim timer before it asks. `resume` is where the
-  /// client is after the answer: a new character select for the first claim;
-  /// the select it was in, or its player in the world, for a later one. `retries` is
-  /// how many times Sessions was not running for this claim.
+  /// Sessions is asked to make the connection the account's session, and its
+  /// answer is awaited. `resume` is where the client is after the answer: a
+  /// new character select for the first claim; the select it was in, or its
+  /// player in the world, for a later one. `retries` is how many times
+  /// Sessions was not running for this claim.
   ClaimingSession(holder: Holder, resume: Resume, retries: Int)
+  /// The connection waits on the claim timer before it asks Sessions again,
+  /// with `resume` and `retries` as `ClaimingSession` holds them. No ask is
+  /// out, so no answer is taken here.
+  WaitingToClaim(holder: Holder, resume: Resume, retries: Int)
   /// The session key was held for `holder` and Sessions holds the account's
   /// slot for this connection; the client is in character select, which holds
   /// its own state, asks the store itself and says when its answer is awaited.
@@ -444,7 +450,10 @@ fn settled(
 /// Whether an ask is in flight, so the frames after the one that asked wait.
 fn asking(status: Status) -> Bool {
   case status {
-    TakingSessionKey | ClaimingSession(..) | EnteringWorld(..) -> True
+    TakingSessionKey
+    | ClaimingSession(..)
+    | WaitingToClaim(..)
+    | EnteringWorld(..) -> True
     InCharacterSelect(select:, ..) -> character_select.waiting(select)
     AwaitingHelloReply | InWorld(..) -> False
   }
@@ -622,7 +631,10 @@ fn inner_message(
         | RenameRequest
         | NotTaken -> unhandled(session:, message_id: inner.message_id)
       }
-    TakingSessionKey | ClaimingSession(..) | EnteringWorld(..) ->
+    TakingSessionKey
+    | ClaimingSession(..)
+    | WaitingToClaim(..)
+    | EnteringWorld(..) ->
       end_for(session, "a frame was taken while an ask was out")
   }
 }
@@ -984,7 +996,7 @@ fn answered(
       select_answered(session:, now:, holder:, select:, outcome:)
     EnteringWorld(holder:, select:, entry:) ->
       entry_answered(session:, now:, holder:, select:, entry:, outcome:)
-    AwaitingHelloReply | InWorld(..) ->
+    AwaitingHelloReply | WaitingToClaim(..) | InWorld(..) ->
       end_for(session, "an answer came when no ask was out")
   }
 }
@@ -1094,7 +1106,7 @@ fn claim_answered(
       Done(
         Session(
           ..session,
-          status: ClaimingSession(holder:, resume:, retries: retries + 1),
+          status: WaitingToClaim(holder:, resume:, retries: retries + 1),
         ),
         [
           Unwatch(watch: sessions_watch),
@@ -1134,6 +1146,7 @@ fn sessions_sent(
   case message, session.status {
     account_session.TakenOver, InCharacterSelect(..)
     | account_session.TakenOver, ClaimingSession(..)
+    | account_session.TakenOver, WaitingToClaim(..)
     | account_session.TakenOver, EnteringWorld(..)
     | account_session.TakenOver, InWorld(..)
     -> taken_over(session)
@@ -1162,6 +1175,7 @@ fn watch_ended(
       waiting_to_claim(session:, holder:, resume: ResumeWorld(entered:))
     InWorld(..), id
     | ClaimingSession(resume: ResumeWorld(..), ..), id
+    | WaitingToClaim(resume: ResumeWorld(..), ..), id
       if id == map_watch
     ->
       told(
@@ -1173,6 +1187,7 @@ fn watch_ended(
     InCharacterSelect(..), _
     | InWorld(..), _
     | ClaimingSession(..), _
+    | WaitingToClaim(..), _
     | EnteringWorld(..), _
     | AwaitingHelloReply, _
     | TakingSessionKey, _
@@ -1188,7 +1203,7 @@ fn waiting_to_claim(
   resume resume: Resume,
 ) -> client_connection.Handled(Session) {
   Done(
-    Session(..session, status: ClaimingSession(holder:, resume:, retries: 0)),
+    Session(..session, status: WaitingToClaim(holder:, resume:, retries: 0)),
     [OwnEffect(StartTimer(timer: claim_timer, after_ms: claim_wait_ms))],
   )
 }
@@ -1202,9 +1217,10 @@ fn claim_wait_over(
   timer timer: TimerId,
 ) -> client_connection.Handled(Session) {
   case session.status {
-    ClaimingSession(holder:, resume:, retries:) if timer == claim_timer ->
+    WaitingToClaim(holder:, resume:, retries:) if timer == claim_timer ->
       claim(session:, now:, holder:, resume:, retries:)
-    ClaimingSession(..)
+    WaitingToClaim(..)
+    | ClaimingSession(..)
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | InWorld(..)
@@ -1484,8 +1500,10 @@ fn about_of(session: Session) -> About {
 fn entered_of(status: Status) -> Option(world_entry.Entered) {
   case status {
     InWorld(entered:, ..)
-    | ClaimingSession(resume: ResumeWorld(entered:), ..) -> Some(entered)
+    | ClaimingSession(resume: ResumeWorld(entered:), ..)
+    | WaitingToClaim(resume: ResumeWorld(entered:), ..) -> Some(entered)
     ClaimingSession(resume: ResumeSelect(..), ..)
+    | WaitingToClaim(resume: ResumeSelect(..), ..)
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | AwaitingHelloReply
@@ -1507,6 +1525,10 @@ fn account_id_of(status: Status) -> Option(Int) {
       )
     | InWorld(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
     | ClaimingSession(
+        holder: hand_off.Holder(account_id: store.AccountId(id), ..),
+        ..,
+      )
+    | WaitingToClaim(
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),
         ..,
       ) -> Some(id)
