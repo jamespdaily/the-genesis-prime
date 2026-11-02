@@ -31,7 +31,7 @@ The builder hands back once, with: each function it added, the closest existing 
 
 On the fixed commit the builder pushed, side by side:
 - **Codex's bug review** (`dev/codex_review.sh code BASE HEAD "..."`): correctness, evidence, failure paths, restarts, concurrency, and OTP fit when the diff touches processes; bug reviewers are also asked whether any new test depends on timing, a session's length, read boundaries or a mailbox's length.
-- **One Claude reuse reviewer,** when the diff is over about 300 lines, not counting generated code, recordings or deletions: code that repeats an existing function, the standard library or a package, each finding naming its replacement and whether its errors and edge cases match.
+- **One Claude reuse reviewer:** code that repeats an existing function, the standard library or a package, each finding naming its replacement and whether its errors and edge cases match.
 - **A card check:** each test the step's list promised is present, and each done-when item is met, with the evidence for each.
 - **The main session's own read** against the skills the step used.
 

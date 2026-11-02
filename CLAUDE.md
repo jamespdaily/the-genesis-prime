@@ -29,11 +29,11 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 - A lesson becomes a test, a shared function or a permission first; a written rule only for a recurring judgement. A new rule replaces an old one or shows what it saved. A change to this file, a skill or an agent lands in its own pull request once Jim approves it; an approved change that waits for a step is written on that step's card.
 
 ## A step
-Jim approves a step's outcome once: its design and test list. It then runs to merge (the `running-a-step` skill holds how). Agents go on without Jim to add tests, remove duplication, swap in a library call, or fix a failure within the approved behaviour. Jim decides when expected game behaviour changes, an acceptance condition weakens, the evidence cannot settle a question, or authority widens. State the estimate in rounds first; past twice it, ask Jim to cut or continue.
+Jim approves a step's outcome once: its design and test list. It then runs to merge (the `running-a-step` skill holds how). Agents go on without Jim to add tests, remove duplication, swap in a library call, or fix a failure within the approved behaviour. Jim decides when expected game behaviour changes, an acceptance condition weakens, the evidence cannot settle a question, or authority widens.
 
 1. **Design and test list.** Read the client's evidence, these rules, then the code the step touches. For a change the client sees, trace the client's code from the step's messages to the visible goal: each check on that path becomes a test, and a field with no known meaning needs the client's code to show its value is safe. Weigh at least two options, asking first what most projects use; measure when costs differ, else take the simplest.
 2. **Build.** One fresh implementer, from a brief (the `running-a-step` skill).
-3. **Check.** The reviews, the fix round and the live session (the `running-a-step` skill); the full check passes within its budget, which `check` holds.
+3. **Check.** The reviews, the fix round and the live session (the `running-a-step` skill); the full check passes.
 4. **Merge** on green, then the closing summary (the `running-a-step` skill).
 
 A step that changes processes or supervision adds a shape commit between 1 and 2, reviewed by Codex: the types, signatures and supervision, and a sequence of each message and what happens when a deadline passes or a process dies. When two rules or shells share a flow, the shape names the module that holds the shared part. A design-only step is part 1 alone; a step that only deletes or moves code skips Codex. At most two agents run tests on one machine at once.
