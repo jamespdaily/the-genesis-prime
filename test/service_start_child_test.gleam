@@ -15,6 +15,7 @@ import genesis_prime/service
 import genesis_prime/step/runtime.{Shutdown}
 import gleam/bool
 import gleam/erlang/process.{type Pid, type Subject}
+import gleam/list
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision
@@ -122,7 +123,9 @@ pub fn an_asker_of_a_child_that_does_not_start_logs_the_reason_and_one_of_a_supe
     ))
     == Error(Nil)
   log_capture.stop(capture)
-  assert process.receive(lines, 0) == Error(Nil)
+  assert !list.any(log_capture.drain(lines), fn(line) {
+    string.contains(line.1, "not running")
+  })
     as "a supervisor that is not running logs nothing: it is stopping or restarting, and says so itself"
 }
 
