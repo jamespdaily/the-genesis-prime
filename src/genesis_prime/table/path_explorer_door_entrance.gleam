@@ -59,8 +59,8 @@ pub const schema =
   )
 
 /// The key of the PathExplorerDoorEntrance table's rows in the store.
-const key: store.Key(PathExplorerDoorEntrance) =
-  store.Key("PathExplorerDoorEntrance")
+const key: store.TermKey(PathExplorerDoorEntrance) =
+  store.TermKey("PathExplorerDoorEntrance")
 
 /// The entry that loads the PathExplorerDoorEntrance table.
 pub fn entry() -> store.Entry {

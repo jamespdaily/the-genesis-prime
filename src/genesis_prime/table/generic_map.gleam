@@ -29,7 +29,7 @@ pub const schema =
   )
 
 /// The key of the GenericMap table's rows in the store.
-const key: store.Key(GenericMap) = store.Key("GenericMap")
+const key: store.TermKey(GenericMap) = store.TermKey("GenericMap")
 
 /// The entry that loads the GenericMap table.
 pub fn entry() -> store.Entry {

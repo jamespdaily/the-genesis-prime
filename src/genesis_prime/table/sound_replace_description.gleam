@@ -28,8 +28,8 @@ pub const schema =
   )
 
 /// The key of the SoundReplaceDescription table's rows in the store.
-const key: store.Key(SoundReplaceDescription) =
-  store.Key("SoundReplaceDescription")
+const key: store.TermKey(SoundReplaceDescription) =
+  store.TermKey("SoundReplaceDescription")
 
 /// The entry that loads the SoundReplaceDescription table.
 pub fn entry() -> store.Entry {

@@ -157,7 +157,7 @@ pub const schema =
   )
 
 /// The key of the PathSettlerMayor table's rows in the store.
-const key: store.Key(PathSettlerMayor) = store.Key("PathSettlerMayor")
+const key: store.TermKey(PathSettlerMayor) = store.TermKey("PathSettlerMayor")
 
 /// The entry that loads the PathSettlerMayor table.
 pub fn entry() -> store.Entry {

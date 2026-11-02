@@ -528,7 +528,7 @@ pub const schema =
   )
 
 /// The key of the CreatureLevel table's rows in the store.
-const key: store.Key(CreatureLevel) = store.Key("CreatureLevel")
+const key: store.TermKey(CreatureLevel) = store.TermKey("CreatureLevel")
 
 /// The entry that loads the CreatureLevel table.
 pub fn entry() -> store.Entry {

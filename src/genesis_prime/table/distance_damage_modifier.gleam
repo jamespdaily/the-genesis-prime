@@ -50,8 +50,8 @@ pub const schema =
   )
 
 /// The key of the DistanceDamageModifier table's rows in the store.
-const key: store.Key(DistanceDamageModifier) =
-  store.Key("DistanceDamageModifier")
+const key: store.TermKey(DistanceDamageModifier) =
+  store.TermKey("DistanceDamageModifier")
 
 /// The entry that loads the DistanceDamageModifier table.
 pub fn entry() -> store.Entry {

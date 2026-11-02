@@ -39,7 +39,7 @@ pub const schema =
   )
 
 /// The key of the CurrencyType table's rows in the store.
-const key: store.Key(CurrencyType) = store.Key("CurrencyType")
+const key: store.TermKey(CurrencyType) = store.TermKey("CurrencyType")
 
 /// The entry that loads the CurrencyType table.
 pub fn entry() -> store.Entry {

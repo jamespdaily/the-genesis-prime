@@ -36,7 +36,8 @@ pub const schema =
   )
 
 /// The key of the PositionalRequirement table's rows in the store.
-const key: store.Key(PositionalRequirement) = store.Key("PositionalRequirement")
+const key: store.TermKey(PositionalRequirement) =
+  store.TermKey("PositionalRequirement")
 
 /// The entry that loads the PositionalRequirement table.
 pub fn entry() -> store.Entry {

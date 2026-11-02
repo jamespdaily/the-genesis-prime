@@ -31,7 +31,8 @@ pub const schema =
   )
 
 /// The key of the AchievementSubGroup table's rows in the store.
-const key: store.Key(AchievementSubGroup) = store.Key("AchievementSubGroup")
+const key: store.TermKey(AchievementSubGroup) =
+  store.TermKey("AchievementSubGroup")
 
 /// The entry that loads the AchievementSubGroup table.
 pub fn entry() -> store.Entry {

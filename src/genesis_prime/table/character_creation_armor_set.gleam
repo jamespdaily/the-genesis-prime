@@ -62,8 +62,8 @@ pub const schema =
   )
 
 /// The key of the CharacterCreationArmorSet table's rows in the store.
-const key: store.Key(CharacterCreationArmorSet) =
-  store.Key("CharacterCreationArmorSet")
+const key: store.TermKey(CharacterCreationArmorSet) =
+  store.TermKey("CharacterCreationArmorSet")
 
 /// The entry that loads the CharacterCreationArmorSet table.
 pub fn entry() -> store.Entry {

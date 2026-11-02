@@ -65,7 +65,7 @@ pub const schema =
   )
 
 /// The key of the MapZone table's rows in the store.
-const key: store.Key(MapZone) = store.Key("MapZone")
+const key: store.TermKey(MapZone) = store.TermKey("MapZone")
 
 /// The entry that loads the MapZone table.
 pub fn entry() -> store.Entry {

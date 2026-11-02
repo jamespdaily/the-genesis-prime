@@ -106,7 +106,7 @@ pub const schema =
   )
 
 /// The key of the HousingBuild table's rows in the store.
-const key: store.Key(HousingBuild) = store.Key("HousingBuild")
+const key: store.TermKey(HousingBuild) = store.TermKey("HousingBuild")
 
 /// The entry that loads the HousingBuild table.
 pub fn entry() -> store.Entry {

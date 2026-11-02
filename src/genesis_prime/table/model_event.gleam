@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the ModelEvent table's rows in the store.
-const key: store.Key(ModelEvent) = store.Key("ModelEvent")
+const key: store.TermKey(ModelEvent) = store.TermKey("ModelEvent")
 
 /// The entry that loads the ModelEvent table.
 pub fn entry() -> store.Entry {

@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the Spline2 table's rows in the store.
-const key: store.Key(Spline2) = store.Key("Spline2")
+const key: store.TermKey(Spline2) = store.TermKey("Spline2")
 
 /// The entry that loads the Spline2 table.
 pub fn entry() -> store.Entry {

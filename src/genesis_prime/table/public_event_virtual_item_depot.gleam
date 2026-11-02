@@ -45,8 +45,8 @@ pub const schema =
   )
 
 /// The key of the PublicEventVirtualItemDepot table's rows in the store.
-const key: store.Key(PublicEventVirtualItemDepot) =
-  store.Key("PublicEventVirtualItemDepot")
+const key: store.TermKey(PublicEventVirtualItemDepot) =
+  store.TermKey("PublicEventVirtualItemDepot")
 
 /// The entry that loads the PublicEventVirtualItemDepot table.
 pub fn entry() -> store.Entry {

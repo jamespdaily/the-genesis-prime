@@ -61,7 +61,8 @@ pub const schema =
   )
 
 /// The key of the TradeskillTalentTier table's rows in the store.
-const key: store.Key(TradeskillTalentTier) = store.Key("TradeskillTalentTier")
+const key: store.TermKey(TradeskillTalentTier) =
+  store.TermKey("TradeskillTalentTier")
 
 /// The entry that loads the TradeskillTalentTier table.
 pub fn entry() -> store.Entry {

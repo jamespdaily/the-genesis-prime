@@ -230,8 +230,8 @@ pub const schema =
   )
 
 /// The key of the ReplaceableMaterialInfo table's rows in the store.
-const key: store.Key(ReplaceableMaterialInfo) =
-  store.Key("ReplaceableMaterialInfo")
+const key: store.TermKey(ReplaceableMaterialInfo) =
+  store.TermKey("ReplaceableMaterialInfo")
 
 /// The entry that loads the ReplaceableMaterialInfo table.
 pub fn entry() -> store.Entry {

@@ -55,7 +55,8 @@ pub const schema =
   )
 
 /// The key of the PeriodicQuestGroup table's rows in the store.
-const key: store.Key(PeriodicQuestGroup) = store.Key("PeriodicQuestGroup")
+const key: store.TermKey(PeriodicQuestGroup) =
+  store.TermKey("PeriodicQuestGroup")
 
 /// The entry that loads the PeriodicQuestGroup table.
 pub fn entry() -> store.Entry {

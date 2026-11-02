@@ -43,7 +43,7 @@ pub const schema =
   )
 
 /// The key of the SoundMusicSet table's rows in the store.
-const key: store.Key(SoundMusicSet) = store.Key("SoundMusicSet")
+const key: store.TermKey(SoundMusicSet) = store.TermKey("SoundMusicSet")
 
 /// The entry that loads the SoundMusicSet table.
 pub fn entry() -> store.Entry {

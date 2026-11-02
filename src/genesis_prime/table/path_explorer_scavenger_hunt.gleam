@@ -79,8 +79,8 @@ pub const schema =
   )
 
 /// The key of the PathExplorerScavengerHunt table's rows in the store.
-const key: store.Key(PathExplorerScavengerHunt) =
-  store.Key("PathExplorerScavengerHunt")
+const key: store.TermKey(PathExplorerScavengerHunt) =
+  store.TermKey("PathExplorerScavengerHunt")
 
 /// The entry that loads the PathExplorerScavengerHunt table.
 pub fn entry() -> store.Entry {

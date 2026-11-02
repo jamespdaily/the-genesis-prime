@@ -63,7 +63,7 @@ pub const schema =
   )
 
 /// The key of the UnitRace table's rows in the store.
-const key: store.Key(UnitRace) = store.Key("UnitRace")
+const key: store.TermKey(UnitRace) = store.TermKey("UnitRace")
 
 /// The entry that loads the UnitRace table.
 pub fn entry() -> store.Entry {

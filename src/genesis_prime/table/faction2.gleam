@@ -49,7 +49,7 @@ pub const schema =
   )
 
 /// The key of the Faction2 table's rows in the store.
-const key: store.Key(Faction2) = store.Key("Faction2")
+const key: store.TermKey(Faction2) = store.TermKey("Faction2")
 
 /// The entry that loads the Faction2 table.
 pub fn entry() -> store.Entry {

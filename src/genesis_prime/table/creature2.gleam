@@ -680,7 +680,7 @@ pub const schema =
   )
 
 /// The key of the Creature2 table's rows in the store.
-const key: store.Key(Creature2) = store.Key("Creature2")
+const key: store.TermKey(Creature2) = store.TermKey("Creature2")
 
 /// The entry that loads the Creature2 table.
 pub fn entry() -> store.Entry {

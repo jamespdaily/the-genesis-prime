@@ -44,7 +44,7 @@ pub const schema =
   )
 
 /// The key of the MapZoneLevelBand table's rows in the store.
-const key: store.Key(MapZoneLevelBand) = store.Key("MapZoneLevelBand")
+const key: store.TermKey(MapZoneLevelBand) = store.TermKey("MapZoneLevelBand")
 
 /// The entry that loads the MapZoneLevelBand table.
 pub fn entry() -> store.Entry {

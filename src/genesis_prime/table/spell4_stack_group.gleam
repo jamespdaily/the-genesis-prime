@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the Spell4StackGroup table's rows in the store.
-const key: store.Key(Spell4StackGroup) = store.Key("Spell4StackGroup")
+const key: store.TermKey(Spell4StackGroup) = store.TermKey("Spell4StackGroup")
 
 /// The entry that loads the Spell4StackGroup table.
 pub fn entry() -> store.Entry {

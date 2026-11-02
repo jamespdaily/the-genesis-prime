@@ -78,7 +78,7 @@ pub const schema =
   )
 
 /// The key of the GuildPerk table's rows in the store.
-const key: store.Key(GuildPerk) = store.Key("GuildPerk")
+const key: store.TermKey(GuildPerk) = store.TermKey("GuildPerk")
 
 /// The entry that loads the GuildPerk table.
 pub fn entry() -> store.Entry {

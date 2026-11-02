@@ -38,7 +38,7 @@ pub const schema =
   )
 
 /// The key of the SpellPhase table's rows in the store.
-const key: store.Key(SpellPhase) = store.Key("SpellPhase")
+const key: store.TermKey(SpellPhase) = store.TermKey("SpellPhase")
 
 /// The entry that loads the SpellPhase table.
 pub fn entry() -> store.Entry {

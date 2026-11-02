@@ -65,7 +65,7 @@ pub const schema =
   )
 
 /// The key of the Item2Category table's rows in the store.
-const key: store.Key(Item2Category) = store.Key("Item2Category")
+const key: store.TermKey(Item2Category) = store.TermKey("Item2Category")
 
 /// The entry that loads the Item2Category table.
 pub fn entry() -> store.Entry {

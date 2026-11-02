@@ -46,7 +46,8 @@ pub const schema =
   )
 
 /// The key of the ModelEventVisualJoin table's rows in the store.
-const key: store.Key(ModelEventVisualJoin) = store.Key("ModelEventVisualJoin")
+const key: store.TermKey(ModelEventVisualJoin) =
+  store.TermKey("ModelEventVisualJoin")
 
 /// The entry that loads the ModelEventVisualJoin table.
 pub fn entry() -> store.Entry {

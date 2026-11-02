@@ -51,7 +51,7 @@ pub const schema =
   )
 
 /// The key of the ClientEvent table's rows in the store.
-const key: store.Key(ClientEvent) = store.Key("ClientEvent")
+const key: store.TermKey(ClientEvent) = store.TermKey("ClientEvent")
 
 /// The entry that loads the ClientEvent table.
 pub fn entry() -> store.Entry {

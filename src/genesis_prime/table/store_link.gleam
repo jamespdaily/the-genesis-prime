@@ -39,7 +39,7 @@ pub const schema =
   )
 
 /// The key of the StoreLink table's rows in the store.
-const key: store.Key(StoreLink) = store.Key("StoreLink")
+const key: store.TermKey(StoreLink) = store.TermKey("StoreLink")
 
 /// The entry that loads the StoreLink table.
 pub fn entry() -> store.Entry {

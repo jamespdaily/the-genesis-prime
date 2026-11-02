@@ -44,7 +44,7 @@ pub const schema =
   )
 
 /// The key of the TrackingSlot table's rows in the store.
-const key: store.Key(TrackingSlot) = store.Key("TrackingSlot")
+const key: store.TermKey(TrackingSlot) = store.TermKey("TrackingSlot")
 
 /// The entry that loads the TrackingSlot table.
 pub fn entry() -> store.Entry {

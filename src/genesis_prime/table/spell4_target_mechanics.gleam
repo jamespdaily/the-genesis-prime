@@ -30,7 +30,8 @@ pub const schema =
   )
 
 /// The key of the Spell4TargetMechanics table's rows in the store.
-const key: store.Key(Spell4TargetMechanics) = store.Key("Spell4TargetMechanics")
+const key: store.TermKey(Spell4TargetMechanics) =
+  store.TermKey("Spell4TargetMechanics")
 
 /// The entry that loads the Spell4TargetMechanics table.
 pub fn entry() -> store.Entry {

@@ -56,7 +56,7 @@ pub const schema =
   )
 
 /// The key of the GenericMapNode table's rows in the store.
-const key: store.Key(GenericMapNode) = store.Key("GenericMapNode")
+const key: store.TermKey(GenericMapNode) = store.TermKey("GenericMapNode")
 
 /// The entry that loads the GenericMapNode table.
 pub fn entry() -> store.Entry {

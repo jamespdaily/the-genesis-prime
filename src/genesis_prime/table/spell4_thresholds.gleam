@@ -67,7 +67,7 @@ pub const schema =
   )
 
 /// The key of the Spell4Thresholds table's rows in the store.
-const key: store.Key(Spell4Thresholds) = store.Key("Spell4Thresholds")
+const key: store.TermKey(Spell4Thresholds) = store.TermKey("Spell4Thresholds")
 
 /// The entry that loads the Spell4Thresholds table.
 pub fn entry() -> store.Entry {

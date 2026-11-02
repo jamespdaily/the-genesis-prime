@@ -92,7 +92,7 @@ pub const schema =
   )
 
 /// The key of the Spell4GroupList table's rows in the store.
-const key: store.Key(Spell4GroupList) = store.Key("Spell4GroupList")
+const key: store.TermKey(Spell4GroupList) = store.TermKey("Spell4GroupList")
 
 /// The entry that loads the Spell4GroupList table.
 pub fn entry() -> store.Entry {

@@ -59,7 +59,7 @@ pub const schema =
   )
 
 /// The key of the PathReward table's rows in the store.
-const key: store.Key(PathReward) = store.Key("PathReward")
+const key: store.TermKey(PathReward) = store.TermKey("PathReward")
 
 /// The entry that loads the PathReward table.
 pub fn entry() -> store.Entry {

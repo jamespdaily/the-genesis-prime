@@ -43,7 +43,7 @@ pub const schema =
   )
 
 /// The key of the QuestCategory table's rows in the store.
-const key: store.Key(QuestCategory) = store.Key("QuestCategory")
+const key: store.TermKey(QuestCategory) = store.TermKey("QuestCategory")
 
 /// The entry that loads the QuestCategory table.
 pub fn entry() -> store.Entry {

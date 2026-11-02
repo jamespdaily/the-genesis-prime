@@ -38,7 +38,8 @@ pub const schema =
   )
 
 /// The key of the HousingMannequinPose table's rows in the store.
-const key: store.Key(HousingMannequinPose) = store.Key("HousingMannequinPose")
+const key: store.TermKey(HousingMannequinPose) =
+  store.TermKey("HousingMannequinPose")
 
 /// The entry that loads the HousingMannequinPose table.
 pub fn entry() -> store.Entry {

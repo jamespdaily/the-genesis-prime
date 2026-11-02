@@ -30,7 +30,8 @@ pub const schema =
   )
 
 /// The key of the PropAdditionalDetail table's rows in the store.
-const key: store.Key(PropAdditionalDetail) = store.Key("PropAdditionalDetail")
+const key: store.TermKey(PropAdditionalDetail) =
+  store.TermKey("PropAdditionalDetail")
 
 /// The entry that loads the PropAdditionalDetail table.
 pub fn entry() -> store.Entry {

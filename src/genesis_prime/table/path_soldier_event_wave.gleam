@@ -40,7 +40,8 @@ pub const schema =
   )
 
 /// The key of the PathSoldierEventWave table's rows in the store.
-const key: store.Key(PathSoldierEventWave) = store.Key("PathSoldierEventWave")
+const key: store.TermKey(PathSoldierEventWave) =
+  store.TermKey("PathSoldierEventWave")
 
 /// The entry that loads the PathSoldierEventWave table.
 pub fn entry() -> store.Entry {

@@ -124,7 +124,7 @@ pub const schema =
   )
 
 /// The key of the Challenge table's rows in the store.
-const key: store.Key(Challenge) = store.Key("Challenge")
+const key: store.TermKey(Challenge) = store.TermKey("Challenge")
 
 /// The entry that loads the Challenge table.
 pub fn entry() -> store.Entry {

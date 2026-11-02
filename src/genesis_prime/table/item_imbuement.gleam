@@ -136,7 +136,7 @@ pub const schema =
   )
 
 /// The key of the ItemImbuement table's rows in the store.
-const key: store.Key(ItemImbuement) = store.Key("ItemImbuement")
+const key: store.TermKey(ItemImbuement) = store.TermKey("ItemImbuement")
 
 /// The entry that loads the ItemImbuement table.
 pub fn entry() -> store.Entry {

@@ -40,7 +40,7 @@ pub const schema =
   )
 
 /// The key of the CinematicRace table's rows in the store.
-const key: store.Key(CinematicRace) = store.Key("CinematicRace")
+const key: store.TermKey(CinematicRace) = store.TermKey("CinematicRace")
 
 /// The entry that loads the CinematicRace table.
 pub fn entry() -> store.Entry {

@@ -216,7 +216,7 @@ pub const schema =
   )
 
 /// The key of the Spell4VisualGroup table's rows in the store.
-const key: store.Key(Spell4VisualGroup) = store.Key("Spell4VisualGroup")
+const key: store.TermKey(Spell4VisualGroup) = store.TermKey("Spell4VisualGroup")
 
 /// The entry that loads the Spell4VisualGroup table.
 pub fn entry() -> store.Entry {

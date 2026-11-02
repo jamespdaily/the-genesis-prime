@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the SoundBank table's rows in the store.
-const key: store.Key(SoundBank) = store.Key("SoundBank")
+const key: store.TermKey(SoundBank) = store.TermKey("SoundBank")
 
 /// The entry that loads the SoundBank table.
 pub fn entry() -> store.Entry {

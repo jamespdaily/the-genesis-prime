@@ -50,7 +50,7 @@ pub const schema =
   )
 
 /// The key of the WordFilter table's rows in the store.
-const key: store.Key(WordFilter) = store.Key("WordFilter")
+const key: store.TermKey(WordFilter) = store.TermKey("WordFilter")
 
 /// The entry that loads the WordFilter table.
 pub fn entry() -> store.Entry {

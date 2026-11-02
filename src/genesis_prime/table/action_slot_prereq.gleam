@@ -34,7 +34,7 @@ pub const schema =
   )
 
 /// The key of the ActionSlotPrereq table's rows in the store.
-const key: store.Key(ActionSlotPrereq) = store.Key("ActionSlotPrereq")
+const key: store.TermKey(ActionSlotPrereq) = store.TermKey("ActionSlotPrereq")
 
 /// The entry that loads the ActionSlotPrereq table.
 pub fn entry() -> store.Entry {

@@ -38,7 +38,7 @@ pub const schema =
   )
 
 /// The key of the ItemBudget table's rows in the store.
-const key: store.Key(ItemBudget) = store.Key("ItemBudget")
+const key: store.TermKey(ItemBudget) = store.TermKey("ItemBudget")
 
 /// The entry that loads the ItemBudget table.
 pub fn entry() -> store.Entry {

@@ -39,8 +39,8 @@ pub const schema =
   )
 
 /// The key of the EmoteSequenceTransition table's rows in the store.
-const key: store.Key(EmoteSequenceTransition) =
-  store.Key("EmoteSequenceTransition")
+const key: store.TermKey(EmoteSequenceTransition) =
+  store.TermKey("EmoteSequenceTransition")
 
 /// The entry that loads the EmoteSequenceTransition table.
 pub fn entry() -> store.Entry {

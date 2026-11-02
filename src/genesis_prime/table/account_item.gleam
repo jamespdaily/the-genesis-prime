@@ -93,7 +93,7 @@ pub const schema =
   )
 
 /// The key of the AccountItem table's rows in the store.
-const key: store.Key(AccountItem) = store.Key("AccountItem")
+const key: store.TermKey(AccountItem) = store.TermKey("AccountItem")
 
 /// The entry that loads the AccountItem table.
 pub fn entry() -> store.Entry {

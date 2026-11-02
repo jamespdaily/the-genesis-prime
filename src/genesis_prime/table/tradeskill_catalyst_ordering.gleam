@@ -40,8 +40,8 @@ pub const schema =
   )
 
 /// The key of the TradeskillCatalystOrdering table's rows in the store.
-const key: store.Key(TradeskillCatalystOrdering) =
-  store.Key("TradeskillCatalystOrdering")
+const key: store.TermKey(TradeskillCatalystOrdering) =
+  store.TermKey("TradeskillCatalystOrdering")
 
 /// The entry that loads the TradeskillCatalystOrdering table.
 pub fn entry() -> store.Entry {

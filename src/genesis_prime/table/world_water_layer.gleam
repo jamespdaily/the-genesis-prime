@@ -60,7 +60,7 @@ pub const schema =
   )
 
 /// The key of the WorldWaterLayer table's rows in the store.
-const key: store.Key(WorldWaterLayer) = store.Key("WorldWaterLayer")
+const key: store.TermKey(WorldWaterLayer) = store.TermKey("WorldWaterLayer")
 
 /// The entry that loads the WorldWaterLayer table.
 pub fn entry() -> store.Entry {

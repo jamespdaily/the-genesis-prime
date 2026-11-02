@@ -30,7 +30,7 @@ pub const schema =
   )
 
 /// The key of the MaterialData table's rows in the store.
-const key: store.Key(MaterialData) = store.Key("MaterialData")
+const key: store.TermKey(MaterialData) = store.TermKey("MaterialData")
 
 /// The entry that loads the MaterialData table.
 pub fn entry() -> store.Entry {

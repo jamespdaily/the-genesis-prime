@@ -48,7 +48,7 @@ pub const schema =
   )
 
 /// The key of the InputAction table's rows in the store.
-const key: store.Key(InputAction) = store.Key("InputAction")
+const key: store.TermKey(InputAction) = store.TermKey("InputAction")
 
 /// The entry that loads the InputAction table.
 pub fn entry() -> store.Entry {

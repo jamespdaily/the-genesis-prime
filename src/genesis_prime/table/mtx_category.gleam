@@ -43,7 +43,7 @@ pub const schema =
   )
 
 /// The key of the MTXCategory table's rows in the store.
-const key: store.Key(MTXCategory) = store.Key("MTXCategory")
+const key: store.TermKey(MTXCategory) = store.TermKey("MTXCategory")
 
 /// The entry that loads the MTXCategory table.
 pub fn entry() -> store.Entry {

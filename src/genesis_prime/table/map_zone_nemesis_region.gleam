@@ -44,7 +44,8 @@ pub const schema =
   )
 
 /// The key of the MapZoneNemesisRegion table's rows in the store.
-const key: store.Key(MapZoneNemesisRegion) = store.Key("MapZoneNemesisRegion")
+const key: store.TermKey(MapZoneNemesisRegion) =
+  store.TermKey("MapZoneNemesisRegion")
 
 /// The entry that loads the MapZoneNemesisRegion table.
 pub fn entry() -> store.Entry {

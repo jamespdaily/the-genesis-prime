@@ -36,7 +36,7 @@ pub const schema =
   )
 
 /// The key of the ItemColorSet table's rows in the store.
-const key: store.Key(ItemColorSet) = store.Key("ItemColorSet")
+const key: store.TermKey(ItemColorSet) = store.TermKey("ItemColorSet")
 
 /// The entry that loads the ItemColorSet table.
 pub fn entry() -> store.Entry {

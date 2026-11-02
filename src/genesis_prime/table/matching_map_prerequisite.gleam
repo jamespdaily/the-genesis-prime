@@ -41,8 +41,8 @@ pub const schema =
   )
 
 /// The key of the MatchingMapPrerequisite table's rows in the store.
-const key: store.Key(MatchingMapPrerequisite) =
-  store.Key("MatchingMapPrerequisite")
+const key: store.TermKey(MatchingMapPrerequisite) =
+  store.TermKey("MatchingMapPrerequisite")
 
 /// The entry that loads the MatchingMapPrerequisite table.
 pub fn entry() -> store.Entry {

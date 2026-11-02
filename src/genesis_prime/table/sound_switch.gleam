@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the SoundSwitch table's rows in the store.
-const key: store.Key(SoundSwitch) = store.Key("SoundSwitch")
+const key: store.TermKey(SoundSwitch) = store.TermKey("SoundSwitch")
 
 /// The entry that loads the SoundSwitch table.
 pub fn entry() -> store.Entry {

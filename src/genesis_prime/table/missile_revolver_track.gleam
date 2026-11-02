@@ -44,7 +44,8 @@ pub const schema =
   )
 
 /// The key of the MissileRevolverTrack table's rows in the store.
-const key: store.Key(MissileRevolverTrack) = store.Key("MissileRevolverTrack")
+const key: store.TermKey(MissileRevolverTrack) =
+  store.TermKey("MissileRevolverTrack")
 
 /// The entry that loads the MissileRevolverTrack table.
 pub fn entry() -> store.Entry {

@@ -40,7 +40,7 @@ pub const schema =
   )
 
 /// The key of the ModelPose table's rows in the store.
-const key: store.Key(ModelPose) = store.Key("ModelPose")
+const key: store.TermKey(ModelPose) = store.TermKey("ModelPose")
 
 /// The entry that loads the ModelPose table.
 pub fn entry() -> store.Entry {

@@ -56,7 +56,7 @@ pub const schema =
   )
 
 /// The key of the GuildPermission table's rows in the store.
-const key: store.Key(GuildPermission) = store.Key("GuildPermission")
+const key: store.TermKey(GuildPermission) = store.TermKey("GuildPermission")
 
 /// The entry that loads the GuildPermission table.
 pub fn entry() -> store.Entry {

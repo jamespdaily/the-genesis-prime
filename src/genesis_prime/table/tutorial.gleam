@@ -49,7 +49,7 @@ pub const schema =
   )
 
 /// The key of the Tutorial table's rows in the store.
-const key: store.Key(Tutorial) = store.Key("Tutorial")
+const key: store.TermKey(Tutorial) = store.TermKey("Tutorial")
 
 /// The entry that loads the Tutorial table.
 pub fn entry() -> store.Entry {

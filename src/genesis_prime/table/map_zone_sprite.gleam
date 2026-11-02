@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the MapZoneSprite table's rows in the store.
-const key: store.Key(MapZoneSprite) = store.Key("MapZoneSprite")
+const key: store.TermKey(MapZoneSprite) = store.TermKey("MapZoneSprite")
 
 /// The entry that loads the MapZoneSprite table.
 pub fn entry() -> store.Entry {

@@ -87,7 +87,7 @@ pub const schema =
   )
 
 /// The key of the Datacube table's rows in the store.
-const key: store.Key(Datacube) = store.Key("Datacube")
+const key: store.TermKey(Datacube) = store.TermKey("Datacube")
 
 /// The entry that loads the Datacube table.
 pub fn entry() -> store.Entry {

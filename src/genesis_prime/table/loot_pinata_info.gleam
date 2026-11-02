@@ -55,7 +55,7 @@ pub const schema =
   )
 
 /// The key of the LootPinataInfo table's rows in the store.
-const key: store.Key(LootPinataInfo) = store.Key("LootPinataInfo")
+const key: store.TermKey(LootPinataInfo) = store.TermKey("LootPinataInfo")
 
 /// The entry that loads the LootPinataInfo table.
 pub fn entry() -> store.Entry {

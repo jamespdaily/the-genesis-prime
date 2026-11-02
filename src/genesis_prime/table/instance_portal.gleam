@@ -49,7 +49,7 @@ pub const schema =
   )
 
 /// The key of the InstancePortal table's rows in the store.
-const key: store.Key(InstancePortal) = store.Key("InstancePortal")
+const key: store.TermKey(InstancePortal) = store.TermKey("InstancePortal")
 
 /// The entry that loads the InstancePortal table.
 pub fn entry() -> store.Entry {

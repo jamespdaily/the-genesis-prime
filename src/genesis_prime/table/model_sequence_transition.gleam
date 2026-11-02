@@ -46,8 +46,8 @@ pub const schema =
   )
 
 /// The key of the ModelSequenceTransition table's rows in the store.
-const key: store.Key(ModelSequenceTransition) =
-  store.Key("ModelSequenceTransition")
+const key: store.TermKey(ModelSequenceTransition) =
+  store.TermKey("ModelSequenceTransition")
 
 /// The entry that loads the ModelSequenceTransition table.
 pub fn entry() -> store.Entry {

@@ -119,7 +119,7 @@ pub const schema =
   )
 
 /// The key of the WorldClutter table's rows in the store.
-const key: store.Key(WorldClutter) = store.Key("WorldClutter")
+const key: store.TermKey(WorldClutter) = store.TermKey("WorldClutter")
 
 /// The entry that loads the WorldClutter table.
 pub fn entry() -> store.Entry {

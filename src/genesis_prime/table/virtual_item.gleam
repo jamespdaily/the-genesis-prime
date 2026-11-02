@@ -48,7 +48,7 @@ pub const schema =
   )
 
 /// The key of the VirtualItem table's rows in the store.
-const key: store.Key(VirtualItem) = store.Key("VirtualItem")
+const key: store.TermKey(VirtualItem) = store.TermKey("VirtualItem")
 
 /// The entry that loads the VirtualItem table.
 pub fn entry() -> store.Entry {

@@ -30,7 +30,7 @@ pub const schema =
   )
 
 /// The key of the LoadingScreenTip table's rows in the store.
-const key: store.Key(LoadingScreenTip) = store.Key("LoadingScreenTip")
+const key: store.TermKey(LoadingScreenTip) = store.TermKey("LoadingScreenTip")
 
 /// The entry that loads the LoadingScreenTip table.
 pub fn entry() -> store.Entry {

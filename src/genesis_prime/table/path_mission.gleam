@@ -115,7 +115,7 @@ pub const schema =
   )
 
 /// The key of the PathMission table's rows in the store.
-const key: store.Key(PathMission) = store.Key("PathMission")
+const key: store.TermKey(PathMission) = store.TermKey("PathMission")
 
 /// The entry that loads the PathMission table.
 pub fn entry() -> store.Entry {

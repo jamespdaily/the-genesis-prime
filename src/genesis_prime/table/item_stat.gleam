@@ -63,7 +63,7 @@ pub const schema =
   )
 
 /// The key of the ItemStat table's rows in the store.
-const key: store.Key(ItemStat) = store.Key("ItemStat")
+const key: store.TermKey(ItemStat) = store.TermKey("ItemStat")
 
 /// The entry that loads the ItemStat table.
 pub fn entry() -> store.Entry {

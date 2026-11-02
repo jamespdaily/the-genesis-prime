@@ -213,7 +213,7 @@ pub const schema =
   )
 
 /// The key of the Spell4Base table's rows in the store.
-const key: store.Key(Spell4Base) = store.Key("Spell4Base")
+const key: store.TermKey(Spell4Base) = store.TermKey("Spell4Base")
 
 /// The entry that loads the Spell4Base table.
 pub fn entry() -> store.Entry {

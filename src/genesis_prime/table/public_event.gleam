@@ -75,7 +75,7 @@ pub const schema =
   )
 
 /// The key of the PublicEvent table's rows in the store.
-const key: store.Key(PublicEvent) = store.Key("PublicEvent")
+const key: store.TermKey(PublicEvent) = store.TermKey("PublicEvent")
 
 /// The entry that loads the PublicEvent table.
 pub fn entry() -> store.Entry {

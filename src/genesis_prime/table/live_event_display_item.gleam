@@ -37,7 +37,8 @@ pub const schema =
   )
 
 /// The key of the LiveEventDisplayItem table's rows in the store.
-const key: store.Key(LiveEventDisplayItem) = store.Key("LiveEventDisplayItem")
+const key: store.TermKey(LiveEventDisplayItem) =
+  store.TermKey("LiveEventDisplayItem")
 
 /// The entry that loads the LiveEventDisplayItem table.
 pub fn entry() -> store.Entry {

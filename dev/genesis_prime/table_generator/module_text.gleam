@@ -329,9 +329,9 @@ fn entry(type_name: String, table: String) -> String {
   string.join(
     [
       "/// The key of the " <> table <> " table's rows in the store.",
-      "const key: store.Key("
+      "const key: store.TermKey("
         <> type_name
-        <> ") = store.Key(\""
+        <> ") = store.TermKey(\""
         <> table
         <> "\")",
       "",

@@ -46,7 +46,8 @@ pub const schema =
   )
 
 /// The key of the AchievementChecklist table's rows in the store.
-const key: store.Key(AchievementChecklist) = store.Key("AchievementChecklist")
+const key: store.TermKey(AchievementChecklist) =
+  store.TermKey("AchievementChecklist")
 
 /// The entry that loads the AchievementChecklist table.
 pub fn entry() -> store.Entry {

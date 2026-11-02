@@ -49,7 +49,7 @@ pub const schema =
   )
 
 /// The key of the StoryPanel table's rows in the store.
-const key: store.Key(StoryPanel) = store.Key("StoryPanel")
+const key: store.TermKey(StoryPanel) = store.TermKey("StoryPanel")
 
 /// The entry that loads the StoryPanel table.
 pub fn entry() -> store.Entry {

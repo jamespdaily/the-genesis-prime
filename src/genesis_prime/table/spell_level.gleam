@@ -41,7 +41,7 @@ pub const schema =
   )
 
 /// The key of the SpellLevel table's rows in the store.
-const key: store.Key(SpellLevel) = store.Key("SpellLevel")
+const key: store.TermKey(SpellLevel) = store.TermKey("SpellLevel")
 
 /// The entry that loads the SpellLevel table.
 pub fn entry() -> store.Entry {

@@ -58,7 +58,7 @@ pub const schema =
   )
 
 /// The key of the WorldLocation2 table's rows in the store.
-const key: store.Key(WorldLocation2) = store.Key("WorldLocation2")
+const key: store.TermKey(WorldLocation2) = store.TermKey("WorldLocation2")
 
 /// The entry that loads the WorldLocation2 table.
 pub fn entry() -> store.Entry {

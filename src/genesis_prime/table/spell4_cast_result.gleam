@@ -46,7 +46,7 @@ pub const schema =
   )
 
 /// The key of the Spell4CastResult table's rows in the store.
-const key: store.Key(Spell4CastResult) = store.Key("Spell4CastResult")
+const key: store.TermKey(Spell4CastResult) = store.TermKey("Spell4CastResult")
 
 /// The entry that loads the Spell4CastResult table.
 pub fn entry() -> store.Entry {

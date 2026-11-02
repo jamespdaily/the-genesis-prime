@@ -29,8 +29,8 @@ pub const schema =
   )
 
 /// The key of the HousingDecorLimitCategory table's rows in the store.
-const key: store.Key(HousingDecorLimitCategory) =
-  store.Key("HousingDecorLimitCategory")
+const key: store.TermKey(HousingDecorLimitCategory) =
+  store.TermKey("HousingDecorLimitCategory")
 
 /// The entry that loads the HousingDecorLimitCategory table.
 pub fn entry() -> store.Entry {

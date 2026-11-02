@@ -43,8 +43,8 @@ pub const schema =
   )
 
 /// The key of the MatchTypeRewardRotationContent table's rows in the store.
-const key: store.Key(MatchTypeRewardRotationContent) =
-  store.Key("MatchTypeRewardRotationContent")
+const key: store.TermKey(MatchTypeRewardRotationContent) =
+  store.TermKey("MatchTypeRewardRotationContent")
 
 /// The entry that loads the MatchTypeRewardRotationContent table.
 pub fn entry() -> store.Entry {

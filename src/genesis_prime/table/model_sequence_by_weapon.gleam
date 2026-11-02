@@ -83,7 +83,8 @@ pub const schema =
   )
 
 /// The key of the ModelSequenceByWeapon table's rows in the store.
-const key: store.Key(ModelSequenceByWeapon) = store.Key("ModelSequenceByWeapon")
+const key: store.TermKey(ModelSequenceByWeapon) =
+  store.TermKey("ModelSequenceByWeapon")
 
 /// The entry that loads the ModelSequenceByWeapon table.
 pub fn entry() -> store.Entry {

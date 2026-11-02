@@ -36,7 +36,7 @@ pub const schema =
   )
 
 /// The key of the WindSpawn table's rows in the store.
-const key: store.Key(WindSpawn) = store.Key("WindSpawn")
+const key: store.TermKey(WindSpawn) = store.TermKey("WindSpawn")
 
 /// The entry that loads the WindSpawn table.
 pub fn entry() -> store.Entry {

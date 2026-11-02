@@ -103,7 +103,7 @@ pub const schema =
   )
 
 /// The key of the SkyTrackCloudSet table's rows in the store.
-const key: store.Key(SkyTrackCloudSet) = store.Key("SkyTrackCloudSet")
+const key: store.TermKey(SkyTrackCloudSet) = store.TermKey("SkyTrackCloudSet")
 
 /// The entry that loads the SkyTrackCloudSet table.
 pub fn entry() -> store.Entry {

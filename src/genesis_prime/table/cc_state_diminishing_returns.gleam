@@ -33,8 +33,8 @@ pub const schema =
   )
 
 /// The key of the CCStateDiminishingReturns table's rows in the store.
-const key: store.Key(CCStateDiminishingReturns) =
-  store.Key("CCStateDiminishingReturns")
+const key: store.TermKey(CCStateDiminishingReturns) =
+  store.TermKey("CCStateDiminishingReturns")
 
 /// The entry that loads the CCStateDiminishingReturns table.
 pub fn entry() -> store.Entry {

@@ -29,7 +29,7 @@ pub const schema =
   )
 
 /// The key of the LuaEvent table's rows in the store.
-const key: store.Key(LuaEvent) = store.Key("LuaEvent")
+const key: store.TermKey(LuaEvent) = store.TermKey("LuaEvent")
 
 /// The entry that loads the LuaEvent table.
 pub fn entry() -> store.Entry {

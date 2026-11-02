@@ -37,7 +37,8 @@ pub const schema =
   )
 
 /// The key of the PathExplorerActivate table's rows in the store.
-const key: store.Key(PathExplorerActivate) = store.Key("PathExplorerActivate")
+const key: store.TermKey(PathExplorerActivate) =
+  store.TermKey("PathExplorerActivate")
 
 /// The entry that loads the PathExplorerActivate table.
 pub fn entry() -> store.Entry {

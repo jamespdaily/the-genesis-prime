@@ -37,8 +37,8 @@ pub const schema =
   )
 
 /// The key of the CharacterCustomizationLabel table's rows in the store.
-const key: store.Key(CharacterCustomizationLabel) =
-  store.Key("CharacterCustomizationLabel")
+const key: store.TermKey(CharacterCustomizationLabel) =
+  store.TermKey("CharacterCustomizationLabel")
 
 /// The entry that loads the CharacterCustomizationLabel table.
 pub fn entry() -> store.Entry {

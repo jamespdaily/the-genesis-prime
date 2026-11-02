@@ -99,7 +99,7 @@ pub const schema =
   )
 
 /// The key of the CharacterCreation table's rows in the store.
-const key: store.Key(CharacterCreation) = store.Key("CharacterCreation")
+const key: store.TermKey(CharacterCreation) = store.TermKey("CharacterCreation")
 
 /// The entry that loads the CharacterCreation table.
 pub fn entry() -> store.Entry {

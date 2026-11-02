@@ -51,7 +51,7 @@ pub const schema =
   )
 
 /// The key of the LocalizedText table's rows in the store.
-const key: store.Key(LocalizedText) = store.Key("LocalizedText")
+const key: store.TermKey(LocalizedText) = store.TermKey("LocalizedText")
 
 /// The entry that loads the LocalizedText table.
 pub fn entry() -> store.Entry {

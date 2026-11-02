@@ -78,7 +78,8 @@ pub const schema =
   )
 
 /// The key of the ActionBarShortcutSet table's rows in the store.
-const key: store.Key(ActionBarShortcutSet) = store.Key("ActionBarShortcutSet")
+const key: store.TermKey(ActionBarShortcutSet) =
+  store.TermKey("ActionBarShortcutSet")
 
 /// The entry that loads the ActionBarShortcutSet table.
 pub fn entry() -> store.Entry {

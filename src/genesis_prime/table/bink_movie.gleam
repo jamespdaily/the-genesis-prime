@@ -32,7 +32,7 @@ pub const schema =
   )
 
 /// The key of the BinkMovie table's rows in the store.
-const key: store.Key(BinkMovie) = store.Key("BinkMovie")
+const key: store.TermKey(BinkMovie) = store.TermKey("BinkMovie")
 
 /// The entry that loads the BinkMovie table.
 pub fn entry() -> store.Entry {

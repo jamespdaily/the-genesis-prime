@@ -29,7 +29,7 @@ pub const schema =
   )
 
 /// The key of the QuestGroup table's rows in the store.
-const key: store.Key(QuestGroup) = store.Key("QuestGroup")
+const key: store.TermKey(QuestGroup) = store.TermKey("QuestGroup")
 
 /// The entry that loads the QuestGroup table.
 pub fn entry() -> store.Entry {

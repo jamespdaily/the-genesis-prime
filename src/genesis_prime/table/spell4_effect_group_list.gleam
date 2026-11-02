@@ -190,7 +190,8 @@ pub const schema =
   )
 
 /// The key of the Spell4EffectGroupList table's rows in the store.
-const key: store.Key(Spell4EffectGroupList) = store.Key("Spell4EffectGroupList")
+const key: store.TermKey(Spell4EffectGroupList) =
+  store.TermKey("Spell4EffectGroupList")
 
 /// The entry that loads the Spell4EffectGroupList table.
 pub fn entry() -> store.Entry {

@@ -153,7 +153,7 @@ pub const schema =
   )
 
 /// The key of the ItemDisplay table's rows in the store.
-const key: store.Key(ItemDisplay) = store.Key("ItemDisplay")
+const key: store.TermKey(ItemDisplay) = store.TermKey("ItemDisplay")
 
 /// The entry that loads the ItemDisplay table.
 pub fn entry() -> store.Entry {

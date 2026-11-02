@@ -37,8 +37,8 @@ pub const schema =
   )
 
 /// The key of the TradeskillHarvestingInfo table's rows in the store.
-const key: store.Key(TradeskillHarvestingInfo) =
-  store.Key("TradeskillHarvestingInfo")
+const key: store.TermKey(TradeskillHarvestingInfo) =
+  store.TermKey("TradeskillHarvestingInfo")
 
 /// The entry that loads the TradeskillHarvestingInfo table.
 pub fn entry() -> store.Entry {

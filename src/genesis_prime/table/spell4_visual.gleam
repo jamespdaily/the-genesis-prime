@@ -147,7 +147,7 @@ pub const schema =
   )
 
 /// The key of the Spell4Visual table's rows in the store.
-const key: store.Key(Spell4Visual) = store.Key("Spell4Visual")
+const key: store.TermKey(Spell4Visual) = store.TermKey("Spell4Visual")
 
 /// The entry that loads the Spell4Visual table.
 pub fn entry() -> store.Entry {

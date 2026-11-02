@@ -51,7 +51,7 @@ pub const schema =
   )
 
 /// The key of the TargetGroup table's rows in the store.
-const key: store.Key(TargetGroup) = store.Key("TargetGroup")
+const key: store.TermKey(TargetGroup) = store.TermKey("TargetGroup")
 
 /// The entry that loads the TargetGroup table.
 pub fn entry() -> store.Entry {

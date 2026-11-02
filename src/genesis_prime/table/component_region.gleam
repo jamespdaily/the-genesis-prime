@@ -29,7 +29,7 @@ pub const schema =
   )
 
 /// The key of the ComponentRegion table's rows in the store.
-const key: store.Key(ComponentRegion) = store.Key("ComponentRegion")
+const key: store.TermKey(ComponentRegion) = store.TermKey("ComponentRegion")
 
 /// The entry that loads the ComponentRegion table.
 pub fn entry() -> store.Entry {

@@ -81,7 +81,7 @@ pub const schema =
   )
 
 /// The key of the ItemRuneInstance table's rows in the store.
-const key: store.Key(ItemRuneInstance) = store.Key("ItemRuneInstance")
+const key: store.TermKey(ItemRuneInstance) = store.TermKey("ItemRuneInstance")
 
 /// The entry that loads the ItemRuneInstance table.
 pub fn entry() -> store.Entry {

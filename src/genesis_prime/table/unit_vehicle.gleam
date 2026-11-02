@@ -133,7 +133,7 @@ pub const schema =
   )
 
 /// The key of the UnitVehicle table's rows in the store.
-const key: store.Key(UnitVehicle) = store.Key("UnitVehicle")
+const key: store.TermKey(UnitVehicle) = store.TermKey("UnitVehicle")
 
 /// The entry that loads the UnitVehicle table.
 pub fn entry() -> store.Entry {

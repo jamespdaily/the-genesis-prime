@@ -144,7 +144,7 @@ pub const schema =
   )
 
 /// The key of the Race table's rows in the store.
-const key: store.Key(Race) = store.Key("Race")
+const key: store.TermKey(Race) = store.TermKey("Race")
 
 /// The entry that loads the Race table.
 pub fn entry() -> store.Entry {

@@ -27,7 +27,7 @@ pub const schema =
   )
 
 /// The key of the SpellCoolDown table's rows in the store.
-const key: store.Key(SpellCoolDown) = store.Key("SpellCoolDown")
+const key: store.TermKey(SpellCoolDown) = store.TermKey("SpellCoolDown")
 
 /// The entry that loads the SpellCoolDown table.
 pub fn entry() -> store.Entry {

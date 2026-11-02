@@ -35,8 +35,8 @@ pub const schema =
   )
 
 /// The key of the PublicEventObjectiveBombDeployment table's rows in the store.
-const key: store.Key(PublicEventObjectiveBombDeployment) =
-  store.Key("PublicEventObjectiveBombDeployment")
+const key: store.TermKey(PublicEventObjectiveBombDeployment) =
+  store.TermKey("PublicEventObjectiveBombDeployment")
 
 /// The entry that loads the PublicEventObjectiveBombDeployment table.
 pub fn entry() -> store.Entry {

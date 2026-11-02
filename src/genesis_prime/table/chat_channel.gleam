@@ -70,7 +70,7 @@ pub const schema =
   )
 
 /// The key of the ChatChannel table's rows in the store.
-const key: store.Key(ChatChannel) = store.Key("ChatChannel")
+const key: store.TermKey(ChatChannel) = store.TermKey("ChatChannel")
 
 /// The entry that loads the ChatChannel table.
 pub fn entry() -> store.Entry {

@@ -34,7 +34,7 @@ pub const schema =
   )
 
 /// The key of the QuestHub table's rows in the store.
-const key: store.Key(QuestHub) = store.Key("QuestHub")
+const key: store.TermKey(QuestHub) = store.TermKey("QuestHub")
 
 /// The entry that loads the QuestHub table.
 pub fn entry() -> store.Entry {

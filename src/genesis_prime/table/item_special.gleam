@@ -48,7 +48,7 @@ pub const schema =
   )
 
 /// The key of the ItemSpecial table's rows in the store.
-const key: store.Key(ItemSpecial) = store.Key("ItemSpecial")
+const key: store.TermKey(ItemSpecial) = store.TermKey("ItemSpecial")
 
 /// The entry that loads the ItemSpecial table.
 pub fn entry() -> store.Entry {

@@ -44,7 +44,7 @@ pub const schema =
   )
 
 /// The key of the Item2Family table's rows in the store.
-const key: store.Key(Item2Family) = store.Key("Item2Family")
+const key: store.TermKey(Item2Family) = store.TermKey("Item2Family")
 
 /// The entry that loads the Item2Family table.
 pub fn entry() -> store.Entry {

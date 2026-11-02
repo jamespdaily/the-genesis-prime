@@ -40,8 +40,8 @@ pub const schema =
   )
 
 /// The key of the CharacterCustomizationSelection table's rows in the store.
-const key: store.Key(CharacterCustomizationSelection) =
-  store.Key("CharacterCustomizationSelection")
+const key: store.TermKey(CharacterCustomizationSelection) =
+  store.TermKey("CharacterCustomizationSelection")
 
 /// The entry that loads the CharacterCustomizationSelection table.
 pub fn entry() -> store.Entry {

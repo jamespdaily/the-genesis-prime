@@ -74,7 +74,7 @@ pub const schema =
   )
 
 /// The key of the Hazard table's rows in the store.
-const key: store.Key(Hazard) = store.Key("Hazard")
+const key: store.TermKey(Hazard) = store.TermKey("Hazard")
 
 /// The entry that loads the Hazard table.
 pub fn entry() -> store.Entry {

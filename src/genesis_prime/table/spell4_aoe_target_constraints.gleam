@@ -40,8 +40,8 @@ pub const schema =
   )
 
 /// The key of the Spell4AoeTargetConstraints table's rows in the store.
-const key: store.Key(Spell4AoeTargetConstraints) =
-  store.Key("Spell4AoeTargetConstraints")
+const key: store.TermKey(Spell4AoeTargetConstraints) =
+  store.TermKey("Spell4AoeTargetConstraints")
 
 /// The entry that loads the Spell4AoeTargetConstraints table.
 pub fn entry() -> store.Entry {

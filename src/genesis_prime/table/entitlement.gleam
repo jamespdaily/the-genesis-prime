@@ -55,7 +55,7 @@ pub const schema =
   )
 
 /// The key of the Entitlement table's rows in the store.
-const key: store.Key(Entitlement) = store.Key("Entitlement")
+const key: store.TermKey(Entitlement) = store.TermKey("Entitlement")
 
 /// The entry that loads the Entitlement table.
 pub fn entry() -> store.Entry {

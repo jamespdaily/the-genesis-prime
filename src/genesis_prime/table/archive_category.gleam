@@ -30,7 +30,7 @@ pub const schema =
   )
 
 /// The key of the ArchiveCategory table's rows in the store.
-const key: store.Key(ArchiveCategory) = store.Key("ArchiveCategory")
+const key: store.TermKey(ArchiveCategory) = store.TermKey("ArchiveCategory")
 
 /// The entry that loads the ArchiveCategory table.
 pub fn entry() -> store.Entry {

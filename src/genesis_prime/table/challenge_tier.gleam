@@ -27,7 +27,7 @@ pub const schema =
   )
 
 /// The key of the ChallengeTier table's rows in the store.
-const key: store.Key(ChallengeTier) = store.Key("ChallengeTier")
+const key: store.TermKey(ChallengeTier) = store.TermKey("ChallengeTier")
 
 /// The entry that loads the ChallengeTier table.
 pub fn entry() -> store.Entry {

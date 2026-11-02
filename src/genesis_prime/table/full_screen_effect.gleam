@@ -58,7 +58,7 @@ pub const schema =
   )
 
 /// The key of the FullScreenEffect table's rows in the store.
-const key: store.Key(FullScreenEffect) = store.Key("FullScreenEffect")
+const key: store.TermKey(FullScreenEffect) = store.TermKey("FullScreenEffect")
 
 /// The entry that loads the FullScreenEffect table.
 pub fn entry() -> store.Entry {

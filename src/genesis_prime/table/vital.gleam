@@ -32,7 +32,7 @@ pub const schema =
   )
 
 /// The key of the Vital table's rows in the store.
-const key: store.Key(Vital) = store.Key("Vital")
+const key: store.TermKey(Vital) = store.TermKey("Vital")
 
 /// The entry that loads the Vital table.
 pub fn entry() -> store.Entry {

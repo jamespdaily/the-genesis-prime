@@ -35,7 +35,7 @@ pub const schema =
   )
 
 /// The key of the StoreKeyword table's rows in the store.
-const key: store.Key(StoreKeyword) = store.Key("StoreKeyword")
+const key: store.TermKey(StoreKeyword) = store.TermKey("StoreKeyword")
 
 /// The entry that loads the StoreKeyword table.
 pub fn entry() -> store.Entry {

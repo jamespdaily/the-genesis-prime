@@ -120,7 +120,7 @@ pub const schema =
   )
 
 /// The key of the TradeskillBonus table's rows in the store.
-const key: store.Key(TradeskillBonus) = store.Key("TradeskillBonus")
+const key: store.TermKey(TradeskillBonus) = store.TermKey("TradeskillBonus")
 
 /// The entry that loads the TradeskillBonus table.
 pub fn entry() -> store.Entry {

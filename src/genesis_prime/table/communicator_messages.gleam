@@ -105,7 +105,8 @@ pub const schema =
   )
 
 /// The key of the CommunicatorMessages table's rows in the store.
-const key: store.Key(CommunicatorMessages) = store.Key("CommunicatorMessages")
+const key: store.TermKey(CommunicatorMessages) =
+  store.TermKey("CommunicatorMessages")
 
 /// The entry that loads the CommunicatorMessages table.
 pub fn entry() -> store.Entry {

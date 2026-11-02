@@ -46,7 +46,7 @@ pub const schema =
   )
 
 /// The key of the GuildStandardPart table's rows in the store.
-const key: store.Key(GuildStandardPart) = store.Key("GuildStandardPart")
+const key: store.TermKey(GuildStandardPart) = store.TermKey("GuildStandardPart")
 
 /// The entry that loads the GuildStandardPart table.
 pub fn entry() -> store.Entry {

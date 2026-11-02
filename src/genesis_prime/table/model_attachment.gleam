@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the ModelAttachment table's rows in the store.
-const key: store.Key(ModelAttachment) = store.Key("ModelAttachment")
+const key: store.TermKey(ModelAttachment) = store.TermKey("ModelAttachment")
 
 /// The entry that loads the ModelAttachment table.
 pub fn entry() -> store.Entry {

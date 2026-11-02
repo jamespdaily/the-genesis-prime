@@ -39,7 +39,7 @@ pub const schema =
   )
 
 /// The key of the TutorialAnchor table's rows in the store.
-const key: store.Key(TutorialAnchor) = store.Key("TutorialAnchor")
+const key: store.TermKey(TutorialAnchor) = store.TermKey("TutorialAnchor")
 
 /// The entry that loads the TutorialAnchor table.
 pub fn entry() -> store.Entry {

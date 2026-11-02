@@ -41,7 +41,7 @@ pub const schema =
   )
 
 /// The key of the ItemSetBonus table's rows in the store.
-const key: store.Key(ItemSetBonus) = store.Key("ItemSetBonus")
+const key: store.TermKey(ItemSetBonus) = store.TermKey("ItemSetBonus")
 
 /// The entry that loads the ItemSetBonus table.
 pub fn entry() -> store.Entry {

@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the MiniMapMarker table's rows in the store.
-const key: store.Key(MiniMapMarker) = store.Key("MiniMapMarker")
+const key: store.TermKey(MiniMapMarker) = store.TermKey("MiniMapMarker")
 
 /// The entry that loads the MiniMapMarker table.
 pub fn entry() -> store.Entry {

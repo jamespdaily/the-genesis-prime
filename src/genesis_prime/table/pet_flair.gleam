@@ -51,7 +51,7 @@ pub const schema =
   )
 
 /// The key of the PetFlair table's rows in the store.
-const key: store.Key(PetFlair) = store.Key("PetFlair")
+const key: store.TermKey(PetFlair) = store.TermKey("PetFlair")
 
 /// The entry that loads the PetFlair table.
 pub fn entry() -> store.Entry {

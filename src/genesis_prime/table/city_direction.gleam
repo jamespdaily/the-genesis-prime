@@ -64,7 +64,7 @@ pub const schema =
   )
 
 /// The key of the CityDirection table's rows in the store.
-const key: store.Key(CityDirection) = store.Key("CityDirection")
+const key: store.TermKey(CityDirection) = store.TermKey("CityDirection")
 
 /// The entry that loads the CityDirection table.
 pub fn entry() -> store.Entry {

@@ -124,7 +124,7 @@ pub const schema =
   )
 
 /// The key of the Emotes table's rows in the store.
-const key: store.Key(Emotes) = store.Key("Emotes")
+const key: store.TermKey(Emotes) = store.TermKey("Emotes")
 
 /// The entry that loads the Emotes table.
 pub fn entry() -> store.Entry {
