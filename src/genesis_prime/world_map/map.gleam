@@ -45,6 +45,7 @@
 ////   and units are not saved, since the server reads no position.
 //// - **Started** does nothing: a map starts empty.
 
+import genesis_prime/game/appearance
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
@@ -54,11 +55,12 @@ import genesis_prime/step.{
   Connection, Effects, Log, LogError, LogLine, OwnEffect, OwnEvent, Reply,
   Started, Stop, Stopping, Watch, WatchEnded, WatchId,
 }
-import genesis_prime/store.{type Character}
+import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
 import gleam/dict.{type Dict}
+import gleam/int
 import gleam/option.{Some}
 
 /// The rule's name: its module path.
@@ -162,7 +164,29 @@ fn joined(
   place place: Place,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
-    Ok(_player) -> panic as "built in the next commit"
+    Ok(player) -> {
+      let CharacterId(second_character_id) = character.character_id
+      #(
+        state,
+        Effects([
+          log_error(
+            state:,
+            about: step.About(
+              ..step.no_one,
+              connection: Some(connection),
+              character_id: Some(second_character_id),
+            ),
+            text: "the connection joined the map a second time, as character "
+              <> int.to_string(second_character_id)
+              <> "; it is already unit "
+              <> int.to_string(player_unit.unit_id(player.unit))
+              <> " of character "
+              <> int.to_string(player_unit.character_id(player.unit)),
+          ),
+          OwnEffect(Reply(caller, answer(state:, unit: player.unit))),
+        ]),
+      )
+    }
     Error(Nil) -> {
       let unit_id = state.next_unit_id
       let watch = WatchId(state.next_watch)
@@ -183,25 +207,35 @@ fn joined(
         ),
         Effects([
           Watch(watch:, target: Connection(connection)),
-          OwnEffect(Reply(
-            caller,
-            Joined(
-              unit: player_unit.create(unit:, realm_id: state.settings.realm_id),
-              incarnation: state.settings.incarnation,
-            ),
-          )),
+          OwnEffect(Reply(caller, answer(state:, unit:))),
         ]),
       )
     }
   }
 }
 
-/// The body visuals of the character's look, from the map's game tables.
+/// The answer to a join: the unit as message 0x262's record in the map's
+/// realm, and the map's incarnation.
+fn answer(state state: State, unit unit: PlayerUnit) -> Outgoing {
+  Joined(
+    unit: player_unit.create(unit:, realm_id: state.settings.realm_id),
+    incarnation: state.settings.incarnation,
+  )
+}
+
+/// The body visuals of the character's look, as the character list shows
+/// them, from the map's game tables.
 fn body_visuals(
-  state _state: State,
-  character _character: Character,
+  state state: State,
+  character character: Character,
 ) -> List(ItemVisual) {
-  panic as "built in the next commit"
+  appearance.body_visuals(
+    index: appearance.index(tables: state.settings.tables),
+    race_id: character.race_id,
+    sex: character.gender,
+    faction_id: character.faction_id,
+    look: character.look,
+  )
 }
 
 /// The end of a player's connection: its player is removed. A watch that names

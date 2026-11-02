@@ -335,10 +335,9 @@ fn world(
 /// order: Maps' restart restarts the map supervisor, so every map ends with
 /// the registry that knew them. A map is started by the map supervisor with
 /// the rule of its id and incarnation, the realm and game tables its players'
-/// units are built from, no name, a reach that finds what it watches with
-/// `locate`, and, when `world` records, a recording of its own, named by its
-/// world, instance and incarnation. The server's tree and the
-/// tests start the world with this function.
+/// units are built from, no name, and a reach that finds what it watches with
+/// `locate`. The server's tree and the tests start the world with this
+/// function.
 pub fn add_world(
   tree tree: supervisor.Builder,
   world world: World,

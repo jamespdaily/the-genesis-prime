@@ -11,11 +11,14 @@
 ////   Health) are `stand_in_health`, 136, the client's level-1 creature Base
 ////   Health (CreatureLevel row 1), until a marked retail record gives a player's.
 //// - **Level:** stat 10 is the character's level (0x140458140).
-//// - **Place:** a kind 2 movement command at the saved position, with its bit
-////   clear, which places the unit at once, then a kind 14 with the saved yaw,
-////   pitch and roll, which turns it (0x1404586e0, 0x140715350); after 0xAD the
-////   client never drops the player to the ground, so it must be on the floor
-////   (0x1403e828a).
+//// - **Place:** the unit's own place, which the map is given with the join
+////   (the saved place, bounded to the box the client bounds a unit's position
+////   to): a kind 2 movement command at its position, with its bit clear, which
+////   places the unit at once, then a kind 14 with its yaw, pitch and roll,
+////   which turns it (0x1404586e0, 0x140715350); after 0xAD the client never
+////   drops the player to the ground, so it must be on the floor (0x1403e828a).
+////   The character's own `place` field is never read: a unit holds the
+////   character for its other values, and its place only as the unit's own.
 //// - **Body:** the item visuals the character list sends
 ////   (genesis_prime/game/appearance), and the stored bone values
 ////   (opcode.0x262.player_fields).

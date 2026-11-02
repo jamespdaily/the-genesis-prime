@@ -1,11 +1,18 @@
 //// The map's rule (`genesis_prime/world_map/map`), run as the pure function it
 //// is: inputs in, new state and effects out. Expected values come from these
 //// places.
-//// - The rule's doc comment: a join is
-////   answered with a unit id from 1, with the map's incarnation, and opens a
+//// - The rule's doc comment: a join is answered with the unit of the Join's
+////   character at the Join's place, with a unit id from 1, the map's realm and
+////   the body of the character's look, and the map's incarnation, and opens a
 ////   watch on the player's connection; a connection's end removes its player;
-////   a second join answers the unit id the connection has and logs an error; a
-////   watch that names no player is an error and changes nothing.
+////   a second join answers the unit the map keeps and logs an error; a watch
+////   that names no player is an error and changes nothing.
+//// - The body: CharacterCustomization row 10 of the planted tables (race 1,
+////   sex 0; labels 21 = 2 and 2 = 1) shows display 137 on slot 25
+////   (`character_tables`), and the tables hold no row of race 3, so a look of
+////   race 3 shows nothing.
+//// - The unit's record is `player_unit.create`, whose bytes
+////   `player_unit_test` checks against the client's own.
 //// - The client: it refuses a 0x262 whose unit id it has already seen
 ////   (opcode.0x262), so no unit id is given twice in a map's life, whoever
 ////   leaves.
@@ -13,15 +20,19 @@
 import character_tables
 import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, Connection,
   ConnectionId, Effects, LogError, OwnEffect, OwnEvent, Reply, Started, Stop,
   Stopping, Watch, WatchEnded, WatchId,
 }
-import genesis_prime/store.{type Character, Character, CharacterId, NameStands}
-import genesis_prime/table/id.{ClassId, RaceId}
+import genesis_prime/store.{
+  type Character, Character, CharacterId, LookEntry, NameStands,
+}
+import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import genesis_prime/world_map/map.{type State, Join, Joined}
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/player_unit
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -30,11 +41,13 @@ import place_support
 
 const incarnation = 31
 
+const realm_id = 1
+
 fn started() -> State {
   map.new(map.Settings(
     map: MapId(world_id: 3460, instance: 0),
     incarnation:,
-    realm_id: 1,
+    realm_id:,
     tables: character_tables.shared(),
   ))
 }
@@ -50,7 +63,8 @@ fn joined_place() -> Place {
   )
 }
 
-/// A character whose id is `number`.
+/// A Dominion human male whose id is `number`, with the look of
+/// CharacterCustomization row 10.
 fn character(number: Int) -> Character {
   Character(
     character_id: CharacterId(number),
@@ -61,10 +75,39 @@ fn character(number: Int) -> Character {
     faction_id: 166,
     level: 1,
     path: 0,
-    place: option.Some(joined_place()),
-    look: [],
+    place: Some(joined_place()),
+    look: [
+      LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
+      LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+    ],
     bones: [],
     naming: NameStands,
+  )
+}
+
+/// The body of that look: display 137 on slot 25.
+fn row_10_body() -> List(ItemVisual) {
+  [ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0)]
+}
+
+/// What the map answers a join of `character` as unit `unit_id`: the record of
+/// the unit at the Join's place, in the map's realm, with the body `visuals`.
+fn answer_of(
+  character character: Character,
+  unit_id unit_id: Int,
+  visuals visuals: List(ItemVisual),
+) -> map.Outgoing {
+  Joined(
+    unit: player_unit.create(
+      unit: player_unit.new(
+        character:,
+        place: joined_place(),
+        unit_id:,
+        visuals:,
+      ),
+      realm_id:,
+    ),
+    incarnation:,
   )
 }
 
@@ -75,11 +118,13 @@ fn feed(
   map.step(state, support.input(event))
 }
 
-/// A join of the connection as the map's caller number `caller`.
-fn join(
+/// A join of the connection as the map's caller number `caller`, as
+/// `character`.
+fn join_as(
   state state: State,
   connection connection: Int,
   caller caller: Int,
+  character character: Character,
 ) -> #(State, ServiceStep(map.Outgoing)) {
   feed(
     state,
@@ -87,11 +132,21 @@ fn join(
       caller: CallerId(caller),
       message: Join(
         connection: ConnectionId(connection),
-        character: character(100 + connection),
+        character:,
         place: joined_place(),
       ),
     )),
   )
+}
+
+/// A join of the connection as the map's caller number `caller`, as character
+/// 100 more than the connection.
+fn join(
+  state state: State,
+  connection connection: Int,
+  caller caller: Int,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  join_as(state:, connection:, caller:, character: character(100 + connection))
 }
 
 /// The unit id a join was answered with.
@@ -108,12 +163,15 @@ fn unit_of(taken: ServiceStep(map.Outgoing), caller: Int) -> Int {
 pub fn the_first_join_is_unit_1_with_a_watch_on_the_connection_and_the_maps_incarnation_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, taken) = join(state: started(), connection: 7, caller: 1)
-  let assert [
-    Watch(WatchId(1), Connection(ConnectionId(7))),
-    OwnEffect(Reply(CallerId(1), Joined(unit:, incarnation: given))),
-  ] = support.effects_of(taken)
-    as "the player's connection is watched, then the join is answered"
-  assert unit.unit_id == 1 && given == incarnation as "unit ids start at 1"
+  assert support.effects_of(taken)
+    == [
+      Watch(WatchId(1), Connection(ConnectionId(7))),
+      OwnEffect(Reply(
+        CallerId(1),
+        answer_of(character(107), unit_id: 1, visuals: row_10_body()),
+      )),
+    ]
+    as "the player's connection is watched, then the join is answered with the unit of the Join's character at the Join's place, in the map's realm, with the body of its look: unit ids start at 1"
 }
 
 pub fn started_does_nothing_and_stopping_stops_the_rule_test() -> Nil {
@@ -130,9 +188,14 @@ pub fn each_join_gets_the_next_unit_id_and_its_own_watch_test() -> Nil {
   let #(_, second) = join(state:, connection: 8, caller: 2)
   assert unit_of(first, 1) == 1
   assert unit_of(second, 2) == 2
-  let assert [Watch(watch, Connection(ConnectionId(8))), _] =
-    support.effects_of(second)
-  assert watch == WatchId(2)
+  assert support.effects_of(second)
+    == [
+      Watch(WatchId(2), Connection(ConnectionId(8))),
+      OwnEffect(Reply(
+        CallerId(2),
+        answer_of(character(108), unit_id: 2, visuals: row_10_body()),
+      )),
+    ]
     as "the watch ids go up too, so a watch is never taken for an older one"
 }
 
@@ -175,28 +238,53 @@ pub fn a_players_connection_ending_removes_the_player_so_its_next_join_is_a_new_
     as "no error: it is not a second join of a connection in the map"
 }
 
-pub fn a_second_join_from_a_connection_in_the_map_answers_its_unit_id_and_logs_an_error_test() -> Nil {
+pub fn a_second_join_from_a_connection_in_the_map_answers_the_unit_it_keeps_and_logs_an_error_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) = join(state: started(), connection: 7, caller: 1)
-  let #(state, second) = join(state:, connection: 7, caller: 2)
+  let #(state, second) =
+    join_as(state:, connection: 7, caller: 2, character: character(900))
   assert unit_of(second, 2) == unit_of(first, 1)
     as "the join is answered with the unit id the connection has"
+  assert support.replies(second)
+    == [
+      #(
+        CallerId(2),
+        answer_of(character(107), unit_id: 1, visuals: row_10_body()),
+      ),
+    ]
+    as "the answer is the record of the unit the map keeps, character 107, not one built from the second Join's character 900"
   let assert [line] = support.logs_of(step: second, level: LogError)
     as "the connection's rule joins once: a second is a bug, logged as an error"
   assert line.about
     == step.About(
       ..step.no_one,
       connection: Some(ConnectionId(7)),
-      character_id: Some(107),
+      character_id: Some(900),
       map: Some(MapId(world_id: 3460, instance: 0)),
     )
-    as "the line is about the connection, its character and the map, in its metadata, not in its text"
+    as "the line is about the connection, the character of the second Join and the map, in its metadata"
+  assert line.text
+    == "the connection joined the map a second time, as character 900; it is already unit 1 of character 107"
+    as "the text names the second Join's character and the unit and character the map keeps"
   assert support.watches(second) == [] as "no second watch is opened"
   assert list.length(support.effects_of(second)) == 2
     as "the error and the answer are all the step holds: nothing else changes"
   let #(_, third) = join(state:, connection: 8, caller: 3)
   assert unit_of(third, 3) == 2
     as "the next unit id is not spent by the second join"
+}
+
+pub fn a_character_whose_look_the_tables_lack_is_answered_with_fewer_visuals_test() -> Nil {
+  use <- owned_test.run(5000)
+  let unknown = Character(..character(107), race_id: RaceId(3))
+  let #(_, taken) =
+    join_as(state: started(), connection: 7, caller: 1, character: unknown)
+  assert support.replies(taken)
+    == [#(CallerId(1), answer_of(unknown, unit_id: 1, visuals: []))]
+    as "the tables hold no CharacterCustomization row of race 3, so the body is empty and the join is still answered with the unit, as for any character"
+  assert support.logs_of(step: taken, level: LogError) == []
+  assert list.length(support.watches(taken)) == 1
+    as "the player is in the map, and its connection watched"
 }
 
 pub fn a_watch_that_names_no_player_is_an_error_and_changes_nothing_test() -> Nil {

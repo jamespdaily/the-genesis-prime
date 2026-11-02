@@ -92,13 +92,10 @@ pub opaque type State {
   /// The store is asked for the character.
   Loading(character_id: CharacterId)
   /// The map is asked to take the character at its saved place, which this
-  /// login holds as the epoch `session_epoch`; `sent` is the place bounded to
-  /// the box the client bounds a unit's position to, which the map is given and
-  /// 0xAD carries.
+  /// login holds as the epoch `session_epoch`.
   Joining(
     character: Character,
     place: Place,
-    sent: Place,
     session_epoch: SessionEpoch,
     map: MapId,
   )
@@ -207,7 +204,7 @@ pub fn loaded(
                   instance: open_world_instance,
                 )
               Join(
-                state: Joining(character:, place:, sent:, session_epoch:, map:),
+                state: Joining(character:, place:, session_epoch:, map:),
                 effects: [
                   AskMap(
                     map:,
@@ -231,8 +228,9 @@ pub fn joined(
   answer answer: map.Outgoing,
 ) -> Result(#(Entered, List(Effect)), Nil) {
   case state {
-    Joining(character:, place:, sent:, session_epoch:, map:) -> {
+    Joining(character:, place:, session_epoch:, map:) -> {
       let map.Joined(unit:, incarnation:) = answer
+      let sent = start_place.within_the_worlds_box(place)
       let unit_id = unit.unit_id
       Ok(
         #(
