@@ -10,6 +10,7 @@
 import genesis_prime/coverage/checklist
 import genesis_prime/coverage/engine
 import genesis_prime/coverage/measurement.{type Measurement, Measured}
+import genesis_prime/dev_exit
 import genesis_prime/table
 import genesis_prime/table/loader/store
 import genesis_prime/table_folder
@@ -32,7 +33,7 @@ pub fn main() -> Nil {
         <> describe(error)
         <> "; run python3.13 -I setup_check/extract_tables.py",
       )
-      halt(1)
+      dev_exit.halt(1)
     }
     Ok(tables) -> {
       let measurements =
@@ -47,7 +48,7 @@ pub fn main() -> Nil {
         [] -> Nil
         found -> {
           list.each(found, io.println)
-          halt(1)
+          dev_exit.halt(1)
         }
       }
     }
@@ -86,6 +87,3 @@ fn describe(error: store.LoadError) -> String {
       <> ", which has no row"
   }
 }
-
-@external(erlang, "erlang", "halt")
-fn halt(status: Int) -> Nil

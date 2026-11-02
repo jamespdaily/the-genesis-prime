@@ -200,3 +200,63 @@ pub fn the_clients_creature2_file_is_described_by_its_header_test() -> Nil {
     ]
     as "Creature2.tbl column table: ID type 3, CreationTypeEnum type 3, description type 130 (0x82, 0x140a4ef70)"
 }
+
+pub fn a_table_has_an_id_column_when_its_first_column_is_a_32_bit_integer_named_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert tbl_file.has_id_column([
+    column("ID", tbl_file.Integer32),
+    column("name", tbl_file.Utf16Text),
+  ])
+    as "column 0 of 375 tables is the 32-bit integer ID (fact file, game_table.file)"
+  assert tbl_file.has_id_column([column("id", tbl_file.Integer32)])
+    as "and of 9 tables it is named id"
+  assert !tbl_file.has_id_column([column("ID", tbl_file.Float32)])
+    as "a float named ID is not an id"
+  assert !tbl_file.has_id_column([column("ID", tbl_file.Integer64)])
+    as "a 64-bit integer named ID is not an id"
+  assert !tbl_file.has_id_column([
+    column("level", tbl_file.Integer32),
+    column("ID", tbl_file.Integer32),
+  ])
+    as "the id is the first column"
+  assert !tbl_file.has_id_column([])
+    as "a table with no column has no id column"
+}
+
+pub fn a_file_is_placed_only_when_its_record_size_is_the_one_the_placement_rule_gives_test() -> Nil {
+  use <- owned_test.run(5000)
+  let columns = [
+    column("a", tbl_file.Integer32),
+    column("b", tbl_file.Utf16Text),
+    column("c", tbl_file.Integer32),
+  ]
+  let described = fn(record_size) {
+    Description(table: "Planted", record_size:, record_count: 0, columns:)
+  }
+  assert tbl_file.place(described(24))
+    == Ok([
+      Field(column("a", tbl_file.Integer32), offset: 0),
+      Field(column("b", tbl_file.Utf16Text), offset: 8),
+      Field(column("c", tbl_file.Integer32), offset: 16),
+    ])
+    as "game_table.schema: the string offset at 8, the last field at 16, the end 20 rounded up to 24"
+  assert tbl_file.place(described(32))
+    == Error(tbl_file.RecordSizeNotPlaced(placed: 24, header: 32))
+    as "a header that says 32 is not the 24 the rule gives"
+}
+
+pub fn a_column_type_has_the_clients_type_code_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert list.map(
+      [
+        tbl_file.Integer32,
+        tbl_file.Float32,
+        tbl_file.Boolean32,
+        tbl_file.Integer64,
+        tbl_file.Utf16Text,
+      ],
+      tbl_file.type_code,
+    )
+    == [3, 4, 11, 20, 130]
+    as "game_table.column_type: 3 a 32-bit integer, 4 a 32-bit float, 11 a boolean, 20 a 64-bit integer, 130 a string"
+}
