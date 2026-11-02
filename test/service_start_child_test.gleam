@@ -13,6 +13,8 @@
 import ask_support
 import genesis_prime/service
 import genesis_prime/step/runtime.{Shutdown}
+import gleam/dynamic
+import gleam/erlang/atom
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
@@ -123,6 +125,39 @@ pub fn an_asker_of_a_child_that_does_not_start_logs_the_reason_and_one_of_a_supe
   log_capture.stop(capture)
   assert process.receive(lines, 0) == Error(Nil)
     as "a supervisor that is not running logs nothing: it is stopping or restarting, and says so itself"
+}
+
+pub fn a_child_that_exits_while_it_starts_with_a_structured_reason_is_logged_with_the_reason_in_full_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let name = process.new_name("exiting_children")
+  let reason =
+    dynamic.array([atom.to_dynamic(atom.create("boom")), dynamic.int(7)])
+  let assert Ok(started) =
+    factory_supervisor.worker_child(fn(_argument: Nil) {
+      Error(actor.InitExited(process.Abnormal(reason)))
+    })
+    |> factory_supervisor.named(name)
+    |> factory_supervisor.restart_strategy(supervision.Temporary)
+    |> factory_supervisor.restart_tolerance(intensity: 1, period: 5)
+    |> factory_supervisor.start
+    as "the supervisor started"
+  process.unlink(started.pid)
+  ask_support.guard(started.pid)
+  let lines = process.new_subject()
+  let capture = log_capture.start(from: process.self(), into: lines)
+  assert service.sent_to_worker(service.start_child(
+      supervisor: name,
+      argument: Nil,
+    ))
+    == Error(Nil)
+    as "the asker's directory gives no process for a child that did not start"
+  let assert Ok(#(level, text)) =
+    process.receive(lines, ask_support.event_wait_ms)
+    as "the failed start was logged"
+  log_capture.stop(capture)
+  assert level == "warning" as "an outside failure the server went on from"
+  assert string.contains(text, "{boom,7}")
+    as "the exit reason is Erlang's own term {boom, 7}, so the line says what ended the child and not only that it was a tuple"
 }
 
 pub fn a_supervisor_that_ends_while_the_call_waits_is_a_supervisor_that_is_not_running_test() -> Nil {

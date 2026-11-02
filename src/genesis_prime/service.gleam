@@ -149,10 +149,10 @@ pub fn start_child(
 pub fn warn_unless_not_running(error: StartChildError) -> Nil {
   case error {
     SupervisorNotRunning -> Nil
-    ChildNotStarted(..) ->
+    ChildNotStarted(reason:) ->
       runtime.log(
         step.LogWarning,
-        describe_start_child_error(error),
+        "the child " <> runtime.describe_start_error(reason),
         step.no_one,
       )
   }
@@ -170,20 +170,6 @@ pub fn sent_to_worker(
       warn_unless_not_running(error)
       Error(Nil)
     }
-  }
-}
-
-/// A sentence for the log that says why a child did not start.
-fn describe_start_child_error(error: StartChildError) -> String {
-  case error {
-    SupervisorNotRunning -> "the supervisor is not running"
-    ChildNotStarted(reason:) ->
-      case reason {
-        actor.InitTimeout -> "the child did not start in time"
-        actor.InitFailed(why) -> "the child's start failed: " <> why
-        actor.InitExited(exit) ->
-          "the child exited while it started: " <> runtime.describe_exit(exit)
-      }
   }
 }
 

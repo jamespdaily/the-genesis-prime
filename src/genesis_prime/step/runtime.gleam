@@ -8,11 +8,9 @@
 import genesis_prime/rule_recording/file.{type FileError, type Writer}
 import genesis_prime/step.{type About, type LogLevel, type Now, LogError, Now}
 import gleam/dynamic.{type Dynamic}
-import gleam/dynamic/decode
-import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/option.{type Option}
-import gleam/result
+import gleam/otp/actor
 
 /// Why a process is asked to exit; the atom `shutdown`.
 pub type ExitReason {
@@ -39,17 +37,30 @@ pub fn down_monitor(down: process.Down) -> process.Monitor {
   }
 }
 
-/// A word for the log that says how a process ended: `normal`, `killed`, or the
-/// reason's atom (`shutdown`), and for a reason that is no atom its kind.
+/// A word for the log that says how a process ended: `normal`, `killed`, or
+/// the reason as Erlang writes it (`shutdown`, `{badmatch,7}`).
 pub fn describe_exit(reason: process.ExitReason) -> String {
   case reason {
     process.Normal -> "normal"
     process.Killed -> "killed"
-    process.Abnormal(reason:) ->
-      decode.run(reason, decode.map(atom.decoder(), atom.to_string))
-      |> result.lazy_unwrap(fn() { dynamic.classify(reason) })
+    process.Abnormal(reason:) -> term_text(reason)
   }
 }
+
+/// A phrase for the log that says why a process did not start, to follow the
+/// subject the caller names: "the child", "the root supervisor".
+pub fn describe_start_error(error: actor.StartError) -> String {
+  case error {
+    actor.InitTimeout -> "did not start in time"
+    actor.InitFailed(why) -> "failed to start: " <> why
+    actor.InitExited(exit) -> "exited while it started: " <> describe_exit(exit)
+  }
+}
+
+/// A term as Erlang writes it on one line (`io_lib:format("~0p")`), so an exit
+/// reason of any shape is in the log in full.
+@external(erlang, "step_runtime_ffi", "term_text")
+fn term_text(term: Dynamic) -> String
 
 /// The time as one input carries it: the monotonic clock in milliseconds and
 /// the system time as a FILETIME, both read now.
