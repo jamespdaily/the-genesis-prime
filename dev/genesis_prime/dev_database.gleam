@@ -4,6 +4,7 @@
 //// PGDATABASE (`genesis_prime.pool`), and one query run on it.
 
 import genesis_prime
+import genesis_prime/dev_exit
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/io
@@ -116,11 +117,7 @@ pub fn finish(
     Ok(done) -> io.println(done)
     Error(failure) -> {
       io.println_error(describe(failure))
-      halt(1)
+      dev_exit.halt(1)
     }
   }
 }
-
-/// Ends the program with a status.
-@external(erlang, "erlang", "halt")
-fn halt(status: Int) -> Nil

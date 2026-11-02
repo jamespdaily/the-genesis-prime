@@ -4,6 +4,7 @@
 //// from what the schema generates; the full check runs it that way.
 
 import argv
+import genesis_prime/dev_exit
 import genesis_prime/message_generator.{
   type GeneratedFile, type Mismatch, Edited, Missing, Stale,
 }
@@ -11,10 +12,6 @@ import gleam/int
 import gleam/io
 import gleam/list
 import simplifile
-
-/// Ends the program with a status.
-@external(erlang, "erlang", "halt")
-fn halt(status: Int) -> Nil
 
 /// Generates the codec, or checks the committed one.
 pub fn main() -> Nil {
@@ -25,7 +22,7 @@ pub fn main() -> Nil {
       io.println_error(
         "usage: gleam run -m genesis_prime/generate_messages [-- check]",
       )
-      halt(2)
+      dev_exit.halt(2)
     }
   }
 }
@@ -71,7 +68,7 @@ fn check() -> Nil {
       io.println_error(
         "run `gleam run -m genesis_prime/generate_messages` and commit the result",
       )
-      halt(1)
+      dev_exit.halt(1)
     }
   }
 }
@@ -112,6 +109,6 @@ fn write(path: String, text: String) -> Nil {
 /// has the type of whatever the caller needed.
 fn stop(problem: String) -> a {
   io.println_error(problem)
-  halt(1)
+  dev_exit.halt(1)
   panic as "the program ended with halt"
 }
