@@ -1167,10 +1167,7 @@ fn world_character() -> store.Character {
       y: -853.87158203125,
       z: -560.18798828125,
     )),
-    look: [
-      LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-      LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
-    ],
+    look: character_tables.row_10_look(),
     bones: character_support.bones(48),
     naming: NameStands,
   )

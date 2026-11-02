@@ -17,19 +17,17 @@
 ////   (opcode.0x262), so no unit id is given twice in a map's life, whoever
 ////   leaves.
 
+import character_support
 import character_tables
 import connection_rule_support as support
-import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, Connection,
   ConnectionId, Effects, LogError, OwnEffect, OwnEvent, Reply, Started, Stop,
   Stopping, Watch, WatchEnded, WatchId,
 }
-import genesis_prime/store.{
-  type Character, Character, CharacterId, LookEntry, NameStands,
-}
-import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import genesis_prime/store.{type Character, Character}
+import genesis_prime/table/id.{RaceId}
 import genesis_prime/world_map/map.{type State, Join, Joined}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/player_unit
@@ -41,7 +39,8 @@ import place_support
 
 const incarnation = 31
 
-const realm_id = 1
+/// The map's realm: not 1, so a unit built with a fixed realm fails.
+const realm_id = 7
 
 fn started() -> State {
   map.new(map.Settings(
@@ -52,36 +51,13 @@ fn started() -> State {
   ))
 }
 
-/// The place the client is told for every join of these tests.
-fn joined_place() -> Place {
-  place_support.at(
-    world_id: 3460,
-    world_zone_id: 6009,
-    x: 4605.65,
-    y: -7.571,
-    z: 494.996,
-  )
-}
-
 /// A Dominion human male whose id is `number`, with the look of
-/// CharacterCustomization row 10.
+/// CharacterCustomization row 10. Its saved place is not the place the Join
+/// carries, which is the place the unit is made at.
 fn character(number: Int) -> Character {
   Character(
-    character_id: CharacterId(number),
-    name: "Roxo Stompstone",
-    gender: 0,
-    race_id: RaceId(1),
-    class_id: ClassId(1),
-    faction_id: 166,
-    level: 1,
-    path: 0,
-    place: Some(joined_place()),
-    look: [
-      LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-      LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
-    ],
-    bones: [],
-    naming: NameStands,
+    ..character_support.character(number:),
+    look: character_tables.row_10_look(),
   )
 }
 
@@ -101,7 +77,7 @@ fn answer_of(
     unit: player_unit.create(
       unit: player_unit.new(
         character:,
-        place: joined_place(),
+        place: place_support.live_character_place(),
         unit_id:,
         visuals:,
       ),
@@ -133,7 +109,7 @@ fn join_as(
       message: Join(
         connection: ConnectionId(connection),
         character:,
-        place: joined_place(),
+        place: place_support.live_character_place(),
       ),
     )),
   )

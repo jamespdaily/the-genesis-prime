@@ -22,12 +22,14 @@
 import character_support
 import database_support
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/store.{type LookEntry, LookEntry} as _
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
+import genesis_prime/table/id.{CharacterCustomizationLabelId}
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/world_location2
@@ -37,6 +39,16 @@ import gleam/int
 import gleam/list
 import place_support
 import planted_table.{type Cell, Boolean, Float, Integer}
+
+/// The look of the planted CharacterCustomization row 10 (race 1, sex 0,
+/// faction 166): label 2 = 1 and label 21 = 2, which show display 137 on
+/// slot 25.
+pub fn row_10_look() -> List(LookEntry) {
+  [
+    LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
+    LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+  ]
+}
 
 /// The planted tables, loaded once per test run under a key of their own and
 /// never unloaded, as `client_tables.shared` does for the real ones.

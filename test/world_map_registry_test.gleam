@@ -15,21 +15,19 @@
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
+import character_support
 import character_tables
 import event_wait
 import genesis_prime/connection/registry.{type Registry}
-import genesis_prime/game/start_place.{type Place}
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
-import genesis_prime/store.{type Character, Character, CharacterId, NameStands}
-import genesis_prime/table/id.{ClassId, RaceId}
+import genesis_prime/store.{type Character}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
 import gleam/erlang/process.{type Name, type Pid}
 import gleam/list
-import gleam/option
 import gleam/otp/static_supervisor as supervisor
 import owned_test
 import place_support
@@ -119,51 +117,29 @@ fn deadline() -> Int {
   ask_support.monotonic_ms() + ask_support.event_wait_ms
 }
 
-/// The place the client is told for every join of these tests.
-fn joined_place() -> Place {
-  place_support.at(
-    world_id: 3460,
-    world_zone_id: 6009,
-    x: 4605.65,
-    y: -7.571,
-    z: 494.996,
-  )
-}
-
-/// A character whose id is `number`.
-fn character(number: Int) -> Character {
-  Character(
-    character_id: CharacterId(number),
-    name: "Roxo Stompstone",
-    gender: 0,
-    race_id: RaceId(1),
-    class_id: ClassId(1),
-    faction_id: 166,
-    level: 1,
-    path: 0,
-    place: option.Some(joined_place()),
-    look: [],
-    bones: [],
-    naming: NameStands,
-  )
-}
-
-/// The unit id and the incarnation a join of the connection to the running map
-/// was answered with.
-fn joined(found: MapProcess, id: Int) -> #(Int, Int) {
+/// What a join of the connection, as `character`, to the running map was
+/// answered with.
+fn joined_as(found: MapProcess, id: Int, character: Character) -> map.Outgoing {
   let #(_, answer) =
     ask_support.ask_and_wait(send: fn(reply) {
       service.call_subject(
         found.subject,
         map.Join(
           connection: ConnectionId(id),
-          character: character(100 + id),
-          place: joined_place(),
+          character:,
+          place: place_support.live_character_place(),
         ),
         reply,
       )
     })
-  let map.Joined(unit:, incarnation:) = answer
+  answer
+}
+
+/// The unit id and the incarnation a join of the connection, as the character
+/// 100 more than its id, to the running map was answered with.
+fn joined(found: MapProcess, id: Int) -> #(Int, Int) {
+  let map.Joined(unit:, incarnation:) =
+    joined_as(found, id, character_support.character(number: 100 + id))
   #(unit.unit_id, incarnation)
 }
 
@@ -260,6 +236,27 @@ pub fn a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_
       call_ms: 1000,
     )
     == Ok(again)
+}
+
+pub fn a_map_that_ended_keeps_no_player_so_the_same_connection_joins_the_new_run_as_unit_1_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let world = start_world()
+  let first = started(world, ship)
+  let _connection = connection(world, 1)
+  let map.Joined(unit: before, ..) =
+    joined_as(first, 1, character_support.character(number: 101))
+  assert before.unit_id == 1 && before.character_id == 101
+    as "the connection is unit 1 of the first run, as character 101"
+  let ended = process.monitor(first.pid)
+  process.kill(first.pid)
+  let _reason = ask_support.ended(ended)
+  await_not_found(world:, map: ship, incarnation: first.incarnation)
+  let again = started(world, ship)
+  let map.Joined(unit: after, incarnation:) =
+    joined_as(again, 1, character_support.character(number: 900))
+  assert after.unit_id == 1 && after.character_id == 900
+    as "the new run holds no player of the old one: the same connection joins it as a new player, unit 1, built from the new Join, where a kept player would answer the old unit of character 101"
+  assert incarnation == again.incarnation
 }
 
 /// Waits until Maps no longer finds the run with the incarnation, which it

@@ -18,11 +18,14 @@ import genesis_prime/message/delete_character_result.{type DeleteCharacterResult
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
 import genesis_prime/store.{type AccountId, type NewCharacter, AccountId}
 import genesis_prime/table/character_creation as creation_table
+import genesis_prime/table/id.{ClassId, RaceId}
 import genesis_prime/table/loader/store as table_store
 import gleam/dynamic/decode
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import gleam/result
+import place_support
 import pog
 
 /// The session epoch with this number, for a test whose number is 1 or more.
@@ -153,6 +156,34 @@ pub fn mark_for_rename(pool pool: pog.Connection, name name: String) -> Nil {
 /// 1 to `count`.
 pub fn numbers(count: Int) -> List(Int) {
   list.index_map(list.repeat(0, count), fn(_, index) { index + 1 })
+}
+
+/// A stored Dominion human male whose id is `number`, with no look and no
+/// bones, saved at the place of WorldLocation2 row 51596 (the Novice start),
+/// which is not the place of the live character
+/// (`place_support.live_character_place`), so a test that puts the character
+/// at that place sees the place it was given and not the saved one.
+pub fn character(number number: Int) -> store.Character {
+  store.Character(
+    character_id: store.CharacterId(number),
+    name: "Roxo Stompstone",
+    gender: 0,
+    race_id: RaceId(1),
+    class_id: ClassId(1),
+    faction_id: 166,
+    level: 1,
+    path: 0,
+    place: Some(place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 29.128599166870117,
+      y: -853.87158203125,
+      z: -560.18798828125,
+    )),
+    look: [],
+    bones: [],
+    naming: store.NameStands,
+  )
 }
 
 /// `count` bone values as float bits, each a finite float just above 1.0

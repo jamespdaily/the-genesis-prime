@@ -231,10 +231,7 @@ pub fn an_entry_carries_the_body_visuals_of_its_look_and_its_bones_test() -> Nil
   let character =
     Character(
       ..stored(id: 1, name: "Ab Cd", level: 1),
-      look: [
-        LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-        LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
-      ],
+      look: character_tables.row_10_look(),
       bones: [0x3F800000, 0x40000000],
       naming: NameStands,
     )
