@@ -249,10 +249,7 @@ pub fn read_record(client: mug.Socket) -> Record {
 
 /// Reads the pong the rule writes for a ping, two bytes.
 pub fn read_pong(client: mug.Socket) -> BitArray {
-  let assert Ok(pong) =
-    mug.receive_exact(client, byte_size: 2, timeout_milliseconds: event_wait_ms)
-    as "a pong arrived"
-  pong
+  read_bytes(client:, bytes: 2)
 }
 
 /// Reads exactly `bytes` bytes the server wrote.

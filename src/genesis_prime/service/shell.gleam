@@ -50,7 +50,9 @@
 ////   `NotRunning`.
 //// - **The server stopping.** The shell traps exits, so the supervisor's stop
 ////   arrives as `Stopping`, with a deadline of the child's shutdown time from
-////   when it arrived. A rule that has not stopped by then is killed.
+////   when the shell takes the exit, which is after it arrived when a step is
+////   running. A rule that has not stopped by whichever deadline comes first,
+////   this or the supervisor's own, is killed.
 //// - **A message no selector takes.** The shell drops it and logs a warning
 ////   that names the message's kind (its tag or its shape) and never its
 ////   contents, which could hold a secret.
@@ -432,10 +434,7 @@ fn watch_ended(
   running running: Running(settings, state, message, outgoing),
   down down: process.Down,
 ) -> Running(settings, state, message, outgoing) {
-  let monitor = case down {
-    process.ProcessDown(monitor:, ..) | process.PortDown(monitor:, ..) ->
-      monitor
-  }
+  let monitor = runtime.down_monitor(down)
   case watch.ended(watches: running.watches, monitor:) {
     Ok(#(watch, watches)) ->
       take(

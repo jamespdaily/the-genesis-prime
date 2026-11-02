@@ -57,9 +57,11 @@
 ////   reaches the process then.
 //// - **The server stopping.** The shell traps its parent's exit, so the
 ////   tree's stop arrives as `Stopping`, with a deadline of the listener's
-////   shutdown time less the send deadline, never later than Ranch's kill. A
-////   rule that has not stopped by then is killed, and its recording has no
-////   `End`.
+////   shutdown time less the send deadline, counted from when the shell takes
+////   the exit and not from when it arrived: an exit that waits behind a step
+////   is counted from when it is taken, while Ranch counts from when it sent
+////   the stop. A rule that has not stopped by whichever deadline comes first
+////   is killed, and its recording has no `End`.
 //// - **A crash.** When the rule's step crashes, the actor ends with that
 ////   reason; Ranch starts connection processes as temporary children, so
 ////   nothing restarts it and the listener goes on accepting. The socket closes
@@ -84,8 +86,8 @@
 ////   the deadline passes     ─▶ Answered(ask, NoAnswerInTime); a worker is
 ////                                ended (exit shutdown) first
 ////   the parent's exit       ─▶ Answered(ask, StoppedWaiting) at once, then
-////                                Stopping(arrival + shutdown_ms
-////                                         - send_deadline_ms)
+////                                Stopping(when the wait takes the exit
+////                                         + shutdown_ms - send_deadline_ms)
 //// after NoAnswerInTime or StoppedWaiting, the tag and the monitor are kept
 ////   until the target's answer or DOWN; between steps:
 ////   {ask answer, tag, _} of a kept tag ─▶ tag dropped, no input
@@ -1059,10 +1061,7 @@ fn ended(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
-  let monitor = case down {
-    process.ProcessDown(monitor:, ..) | process.PortDown(monitor:, ..) ->
-      monitor
-  }
+  let monitor = runtime.down_monitor(down)
   case kept_with_monitor(running.kept, monitor) {
     Ok(tag) ->
       keep_open(
@@ -1123,11 +1122,12 @@ fn drop_kept(
   }
 }
 
-/// The deadline a stopping rule is given: the shutdown time from now, less
-/// the send deadline, since Ranch's timer started when it sent the stop and
-/// the shell may then have been in a write, which waits at most the send
-/// deadline before its socket closes. So the deadline is never later than
-/// the moment Ranch kills the process.
+/// The deadline a stopping rule is given: the shutdown time from when the
+/// shell takes the exit, less the send deadline, which covers a write the shell
+/// was in when the exit arrived (a write waits at most the send deadline before
+/// its socket closes). An exit that waited behind a longer step is counted from
+/// when it is taken, so Ranch, which counts from when it sent the stop, may
+/// kill the process first.
 fn stop_deadline(
   now: step.Now,
   settings: Settings(settings, state, message, answer, request),

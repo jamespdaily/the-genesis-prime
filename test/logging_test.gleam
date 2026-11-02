@@ -8,6 +8,7 @@
 //// are `serial`: they run one at a time, apart from the others.
 
 import ask_support
+import event_wait
 import genesis_prime/step
 import genesis_prime/step/runtime
 import gleam/erlang/atom
@@ -25,6 +26,23 @@ pub fn the_servers_start_lets_info_lines_through_test() -> Nil {
   log_capture.set_primary_level(before)
   assert after == atom.create("info")
     as "the logger lets info lines through once the server starts"
+}
+
+pub fn a_level_set_for_a_test_is_put_back_when_the_test_fails_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use <- unitest.tag("serial")
+  let before = log_capture.primary_level()
+  let worker =
+    process.spawn_unlinked(fn() {
+      log_capture.at_level(atom.create("debug"), fn() {
+        panic as "the planted failure of a test"
+      })
+    })
+  let ended = process.monitor(worker)
+  let _reason = ask_support.ended(ended)
+  event_wait.until("the level the test found is back", fn() {
+    log_capture.primary_level() == before
+  })
 }
 
 pub fn the_servers_start_leaves_out_otps_progress_reports_test() -> Nil {

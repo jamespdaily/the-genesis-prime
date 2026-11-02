@@ -8,6 +8,7 @@
 
 import body_generator
 import connection_vectors as vectors
+import frame_reader
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{
   AuthWrapper, BadFrame, ClientWrapper, GameWrapper, NotAWrapper,
@@ -59,7 +60,7 @@ pub fn the_clients_0x7e0_in_a_0x244_wrapper_is_its_recorded_twelve_bytes_test() 
 pub fn the_servers_reading_of_that_frame_gives_message_0x7e0_back_test() -> Nil {
   use <- owned_test.run(5000)
   let assert Ok(#([outer], <<>>)) =
-    frame.decode(<<0x0C, 0, 0, 0, 0x44, 0x02, 0x06, 0, 0, 0, 0x03, 0x89>>)
+    frame_reader.decode(<<0x0C, 0, 0, 0, 0x44, 0x02, 0x06, 0, 0, 0, 0x03, 0x89>>)
     as "the recorded bytes are one frame"
   assert outer == Frame(0x0244, <<0x06, 0, 0, 0, 0x03, 0x89>>)
     as "vector.opcode.0x7e0.frame: the 0x244 frame's body is the inner frame"
@@ -115,7 +116,7 @@ pub fn unwrapping_what_was_wrapped_gives_the_inner_frame_back_test() -> Nil {
   let assert Ok(wrapped) =
     encrypted_frame.wrap(GameWrapper, inner, session_cipher())
     as "a 2000-byte body is within the size limit"
-  let assert Ok(#([outer], <<>>)) = frame.decode(wrapped)
+  let assert Ok(#([outer], <<>>)) = frame_reader.decode(wrapped)
     as "a wrapped frame is one frame"
   assert outer.message_id == 0x03DC
     as "opcode.0x3dc: the outer frame is message 0x3dc"
@@ -200,7 +201,7 @@ pub fn a_create_character_frame_inside_0x25c_is_not_ciphered_test() -> Nil {
     )
     == Ok(carried)
     as "opcode.0x25c: 0x244 carries the 0x25C frame ciphered once, over 0x25C's id and the plain 0x25B frame in one pass"
-  let assert Ok(#([outer], <<>>)) = frame.decode(carried)
+  let assert Ok(#([outer], <<>>)) = frame_reader.decode(carried)
     as "the bytes are one frame"
   let assert Ok(opened) = encrypted_frame.unwrap(outer, session_cipher())
     as "one decryption opens the 0x25C frame"

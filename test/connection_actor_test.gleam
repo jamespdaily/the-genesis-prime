@@ -29,6 +29,7 @@ import genesis_prime/step.{
   Effects, Log, LogLine, LogWarning, OwnEffect, OwnEvent, PeerClosed, Read,
   ReadFailed, Rule, Stop, Stopping, TimerFired, Woken, Write, WriteFailed,
 }
+import genesis_prime/step/runtime
 import gleam/erlang/atom
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/int
@@ -36,6 +37,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 import log_capture
+import mailbox_support
 import mug
 import owned_test
 import recording_support
@@ -73,14 +75,8 @@ fn hand_over_to_failing_transport(pid: Pid, ref: shell.RanchRef) -> Nil
 @external(erlang, "connection_actor_support_ffi", "hand_over_closed_socket")
 fn hand_over_closed_socket(pid: Pid, ref: shell.RanchRef) -> Nil
 
-@external(erlang, "connection_actor_support_ffi", "atom_text")
+@external(erlang, "erlang", "atom_to_binary")
 fn atom_text(name: Name(Nil)) -> String
-
-@external(erlang, "erlang", "send")
-fn send_raw(
-  to: Pid,
-  message: #(atom.Atom, atom.Atom),
-) -> #(atom.Atom, atom.Atom)
 
 @external(erlang, "erlang", "make_ref")
 fn new_ranch_ref() -> shell.RanchRef
@@ -222,8 +218,14 @@ pub fn fifty_clients_that_connect_at_once_each_get_their_first_reply_test() -> N
   ask_support.stop(server)
 }
 
+/// This test guards the quiet ending of a connection whose client closes or
+/// resets before its first read, not the handshake's own assertion, which the
+/// two hand-over tests catch. It reads the whole node's log and attributes a
+/// line to its clients by the port they connected from, which another test's
+/// connection could reuse, so it is `serial`: no other test logs while it runs.
 pub fn a_burst_of_plain_and_reset_hang_ups_logs_no_warning_or_error_test() -> Nil {
   use <- owned_test.run(60_000)
+  use <- unitest.tag("serial")
   let lines = process.new_subject()
   let capture = log_capture.start_all(into: lines)
   let server = start(None)
@@ -296,8 +298,7 @@ fn hand_over(
   Result(List(String), simplifile.FileError),
 ) {
   use folder <- recording_support.in_folder
-  let before = log_capture.primary_level()
-  log_capture.set_primary_level(atom.create("debug"))
+  use <- log_capture.at_level(atom.create("debug"))
   let ref = new_ranch_ref()
   let assert Ok(connection) =
     shell.start(
@@ -314,7 +315,6 @@ fn hand_over(
   hand_over(connection, ref)
   let reason = ask_support.ended(watched)
   log_capture.stop(capture)
-  log_capture.set_primary_level(before)
   #(reason, drain(lines), simplifile.read_directory(folder))
 }
 
@@ -365,11 +365,10 @@ pub fn an_exit_from_a_process_that_is_not_the_parent_gives_no_input_and_no_warni
   // A marker from the same sender, after the exit: Erlang orders signals per
   // sender, so the marker's own warning is the first line the connection
   // logs, if the exit gave it none.
-  let _marker =
-    send_raw(connection, #(
-      atom.create("marker_after_exit"),
-      atom.create("marker_after_exit"),
-    ))
+  mailbox_support.send_raw(connection, #(
+    atom.create("marker_after_exit"),
+    atom.create("marker_after_exit"),
+  ))
   let assert Ok(#(level, text, _)) =
     process.receive(lines, ask_support.event_wait_ms)
     as "the marker was logged"
@@ -411,6 +410,40 @@ pub fn a_crash_report_carries_the_connection_and_the_peer_address_test() -> Nil 
   log_capture.stop(capture)
   assert names_connection_and_peer(report)
     as "the crash report names the connection and the client's address"
+}
+
+pub fn a_crash_report_leaves_out_the_messages_waiting_in_the_mailbox_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use <- unitest.tag("serial")
+  // The primary filter is the node's, so this test is serial and puts back
+  // what it found.
+  runtime.keep_mailboxes_out_of_crash_reports()
+  let server = start(None)
+  let #(client, connection) = greeted(server)
+  let lines = process.new_subject()
+  let capture = log_capture.start_with_metadata(from: connection, into: lines)
+  // The connection is suspended, so the byte that crashes the rule is taken
+  // first and the message behind it, which holds a fake session key, is still
+  // waiting when the process crashes.
+  ask_support.while_suspended(connection, fn() {
+    assert mug.send(client, <<0xEE>>) == Ok(Nil) as "the byte that crashes it"
+    event_wait.until("the byte waits in the mailbox", fn() {
+      mailbox_support.tagged(connection, atom.create("tcp")) == 1
+    })
+    mailbox_support.send_raw(
+      connection,
+      #(atom.create("stray_message"), <<
+        "a-fake-session-key":utf8,
+      >>),
+    )
+  })
+  let report = first_error(lines)
+  log_capture.stop(capture)
+  log_capture.remove_crash_report_filter()
+  assert !string.contains(report.1, "a-fake-session-key")
+    as "the crash report printed the mailbox, with the secret in it"
+  assert names_connection_and_peer(report)
+    as "and it still names the connection and the client's address"
 }
 
 /// The first line at error level, or a failure when none comes in time.

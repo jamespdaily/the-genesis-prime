@@ -52,14 +52,6 @@ avoid_panic = "off"
 # `get` and `all`. Only the registry and the tests call them until an engine
 # does, which is no defect in generated code.
 "src/genesis_prime/table/*.gleam" = ["unused_exports"]
-# The frame cutter and the STS message's game code and description are kept
-# protocol pieces whose callers, the connection and the login, are rebuilt on
-# the shell and rule; until then nothing calls them.
-"src/genesis_prime/connection/frame.gleam" = ["unused_exports"]
-# The shell's run is called by Ranch through connection_shell_ffi:start_link, an
-# Erlang callback, which the lint does not see.
-"src/genesis_prime/connection/shell.gleam" = ["unused_exports"]
-"src/genesis_prime/login/sts_message.gleam" = ["unused_exports"]
 # OTP calls the application's `start` and `stop` by the names in the application
 # file, which the lint does not see.
 "src/genesis_prime/application.gleam" = ["unused_exports"]

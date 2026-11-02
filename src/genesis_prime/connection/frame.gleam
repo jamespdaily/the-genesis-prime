@@ -14,7 +14,6 @@
 
 import gleam/bit_array
 import gleam/bool
-import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 
@@ -65,40 +64,6 @@ pub fn encode(
     return: Error(LengthOverLimit(length)),
   )
   Ok(<<length:size(32)-little, message_id:size(16)-little, body:bits>>)
-}
-
-/// Splits the received bytes into their whole frames and the bytes left
-/// over: the start of a frame whose end has not arrived. A length below the
-/// header or over the size limit is an error as soon as its 4 bytes have
-/// arrived, so a huge claimed length is never waited for.
-pub fn decode(
-  received received: BitArray,
-) -> Result(#(List(Frame), BitArray), FrameError) {
-  case split(received:) {
-    #(frames, Ok(rest)) -> Ok(#(frames, rest))
-    #(_, Error(error)) -> Error(error)
-  }
-}
-
-/// Like `decode`, but a bad frame does not hide the whole frames before it:
-/// the frames that arrived whole in order, and then either the bytes left over
-/// or the error that stopped the cut. A connection hands on the frames that
-/// were the client's and then ends on the error.
-pub fn split(
-  received received: BitArray,
-) -> #(List(Frame), Result(BitArray, FrameError)) {
-  collect(received, [])
-}
-
-fn collect(
-  received: BitArray,
-  found: List(Frame),
-) -> #(List(Frame), Result(BitArray, FrameError)) {
-  case take(received:) {
-    Ok(Some(#(frame, rest))) -> collect(rest, [frame, ..found])
-    Ok(None) -> #(list.reverse(found), Ok(received))
-    Error(error) -> #(list.reverse(found), Error(error))
-  }
 }
 
 /// The first frame whole in the received bytes and the bytes after it, or

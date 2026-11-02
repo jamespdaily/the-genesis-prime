@@ -23,6 +23,16 @@ pub fn tagged(pid: Pid, tag: Atom) -> Int
 @external(erlang, "mailbox_support_ffi", "tagged_by_reference")
 pub fn tagged_by_reference(pid: Pid) -> Int
 
+/// Sends the process a message that came through no subject, as any process
+/// may send one to a pid it knows.
+pub fn send_raw(to pid: Pid, message message: message) -> Nil {
+  let _sent = send_term(pid, message)
+  Nil
+}
+
+@external(erlang, "erlang", "send")
+fn send_term(to: Pid, message: message) -> message
+
 /// The messages waiting in the process's mailbox, as Erlang prints them.
 @external(erlang, "mailbox_support_ffi", "waiting")
 pub fn waiting(pid: Pid) -> String

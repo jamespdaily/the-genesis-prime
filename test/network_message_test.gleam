@@ -5,6 +5,7 @@
 //// 0x140331990). The frame the live login recorded is the
 //// client's own first ping, 07 00 00 00 00 00 00.
 
+import frame_reader
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/connection/network_message.{
   Accepted, Answer, Malformed, NotNetwork,
@@ -17,7 +18,8 @@ import owned_test
 
 pub fn a_ping_is_answered_with_a_bare_pong_that_carries_its_number_test() -> Nil {
   use <- owned_test.run(5000)
-  let assert Ok(#([recorded], <<>>)) = frame.decode(<<7, 0, 0, 0, 0, 0, 0>>)
+  let assert Ok(#([recorded], <<>>)) =
+    frame_reader.decode(<<7, 0, 0, 0, 0, 0, 0>>)
     as "the client's first ping of the live login is one frame"
   assert network_message.handle(recorded) == Answer(<<7, 0, 0, 0, 1, 0, 0>>)
     as "opcode.0x1: the pong is 07 00 00 00 01 00 and the ping's number"

@@ -8,6 +8,7 @@
 //// derivation and the RC4 stream with the server, each tested against the
 //// library's own vectors.
 
+import frame_reader
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -265,6 +266,6 @@ pub fn login_request_frame(login login: StsLogin, build build: Int) -> Frame {
   let assert Ok(bytes) =
     encrypted_frame.wrap(ClientWrapper, Frame(0x0592, body), base)
     as "the frame wraps"
-  let assert Ok(#([outer], <<>>)) = frame.decode(bytes) as "one frame"
+  let assert Ok(#([outer], <<>>)) = frame_reader.decode(bytes) as "one frame"
   outer
 }

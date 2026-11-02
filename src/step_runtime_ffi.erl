@@ -4,7 +4,7 @@
 -module(step_runtime_ffi).
 
 -export([unique_id/0, monotonic_ms/0, filetime/0, log/3, set_about/1,
-         log_stray/2, show_info_lines/0]).
+         log_stray/2, show_info_lines/0, keep_mailboxes_out_of_crash_reports/0]).
 
 %% FILETIME counts 100-nanosecond intervals from 1601-01-01; the Unix epoch is
 %% this many of them after it.
@@ -19,6 +19,33 @@ show_info_lines() ->
         ok -> nil;
         {error, {already_exist, progress_reports}} -> nil
     end.
+
+%% OTP's crash report of a process lists the messages waiting in its mailbox,
+%% and those of the processes linked to it. A message can hold a session key or
+%% a password, so a primary filter empties each list before any handler sees
+%% the report.
+keep_mailboxes_out_of_crash_reports() ->
+    case logger:add_primary_filter(crash_report_mailboxes,
+                                   {fun without_mailboxes/2, no_extra}) of
+        ok -> nil;
+        {error, {already_exist, crash_report_mailboxes}} -> nil
+    end.
+
+without_mailboxes(#{msg := {report, #{label := {proc_lib, crash},
+                                      report := [Own | Neighbours]} = Report}} = Event,
+                  no_extra) ->
+    Event#{msg := {report, Report#{report := [empty_mailbox(Own)
+                                              | [empty_mailboxes(Group) || Group <- Neighbours]]}}};
+without_mailboxes(Event, no_extra) ->
+    Event.
+
+empty_mailboxes(Group) when is_list(Group) -> lists:map(fun empty_mailbox/1, Group);
+empty_mailboxes(Other) -> Other.
+
+empty_mailbox(Info) when is_list(Info) ->
+    lists:keystore(messages, 1, Info, {messages, []});
+empty_mailbox(Other) ->
+    Other.
 
 unique_id() ->
     erlang:unique_integer([positive, monotonic]).

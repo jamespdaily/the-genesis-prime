@@ -28,6 +28,14 @@ pub fn down_reason(down: process.Down) -> process.ExitReason {
   }
 }
 
+/// The monitor of a monitored process or port that ended.
+pub fn down_monitor(down: process.Down) -> process.Monitor {
+  case down {
+    process.ProcessDown(monitor:, ..) | process.PortDown(monitor:, ..) ->
+      monitor
+  }
+}
+
 /// The time as one input carries it: the monotonic clock in milliseconds and
 /// the system time as a FILETIME, both read now.
 pub fn now() -> Now {
@@ -87,6 +95,13 @@ pub fn finish_recording(writer: Option(Writer)) -> Nil {
 /// supervisor and child it starts, stay out.
 @external(erlang, "step_runtime_ffi", "show_info_lines")
 pub fn show_info_lines() -> Nil
+
+/// Keeps what waits in a process's mailbox out of the log: a primary logger
+/// filter takes the `messages` out of every crash report OTP writes for a
+/// process that ends abnormally, so a message that holds a secret and waits
+/// when the process crashes never reaches the log.
+@external(erlang, "step_runtime_ffi", "keep_mailboxes_out_of_crash_reports")
+pub fn keep_mailboxes_out_of_crash_reports() -> Nil
 
 @external(erlang, "step_runtime_ffi", "monotonic_ms")
 fn monotonic_ms() -> Int

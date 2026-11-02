@@ -25,7 +25,8 @@
 //// 'w' n    the message n was delivered    'e' n    watch n ended
 ////          (a message -n also watches 1 to n on Sessions)
 //// 't' n    timer n fired                  'p' n    the answer to 'P' n
-//// 'r' n    ask n came back, with any outcome, and the step cancels timer n
+//// 'r' n    ask n came back, with any outcome, and the step cancels timer n and,
+////          for ask 2, starts timer 2 again with a minute to run
 //// ```
 ////
 //// The rule stops when the client closes or its socket fails.
@@ -71,6 +72,9 @@ pub const pong = 0x70
 
 pub const answered = 0x72
 
+/// The ask whose outcome starts its timer again after cancelling it.
+pub const restarting_ask = 2
+
 /// The rule as its shell runs it; a delivered message is an `Int`, and an ask
 /// is a `Nil` request the directory takes.
 pub fn rule() -> ConnectionRule(Nil, State, Nil, Int, Nil) {
@@ -112,8 +116,21 @@ pub fn step(
     )
     OwnEvent(step.Answered(ask: AskId(n), ..)) -> #(
       state,
-      Effects([record(answered, n), OwnEffect(CancelTimer(TimerId(n)))]),
+      Effects([
+        record(answered, n),
+        OwnEffect(CancelTimer(TimerId(n))),
+        ..restart(n)
+      ]),
     )
+  }
+}
+
+/// The effects that start timer `n` again with a minute to run, for the
+/// restarting ask.
+fn restart(n: Int) -> List(Effect(ConnectionEffect)) {
+  case n == restarting_ask {
+    True -> [OwnEffect(StartTimer(TimerId(n), 60_000))]
+    False -> []
   }
 }
 

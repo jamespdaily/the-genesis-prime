@@ -396,11 +396,12 @@ pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_and_the_ser
   let assert Ok(pid) = process.named(gate) as "the gate runs"
   let lines = process.new_subject()
   let capture = log_capture.start(from: pid, into: lines)
-  let _sent =
-    send_raw(
-      pid,
-      #(atom.create("stray_message"), <<"a-fake-session-key":utf8>>),
-    )
+  mailbox_support.send_raw(
+    pid,
+    #(atom.create("stray_message"), <<
+      "a-fake-session-key":utf8,
+    >>),
+  )
   let assert Ok(#(level, text)) =
     process.receive(lines, ask_support.event_wait_ms)
     as "the stray message was logged"
@@ -418,12 +419,6 @@ pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_and_the_ser
   let _reason = ask_support.stop_tree(tree)
   Nil
 }
-
-@external(erlang, "erlang", "send")
-fn send_raw(
-  to: process.Pid,
-  message: #(atom.Atom, BitArray),
-) -> #(atom.Atom, BitArray)
 
 // ---- helpers ----
 
