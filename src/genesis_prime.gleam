@@ -261,19 +261,19 @@ fn world() -> server.World {
 }
 
 /// The database pool's three sizes. The values are the server's choice, not
-/// the client's, and are pog's own defaults until a load run measures better
-/// ones.
+/// the client's, and are pog's own defaults: the load run's two runs of
+/// 2026-11-01 (see `game_max_connections`) never had a store worker waiting
+/// for the pool, so no measurement asks for others.
 pub type PoolSettings {
   PoolSettings(
-    /// How many connections the pool keeps open: pog's default, 10. Set by the
-    /// load run.
+    /// How many connections the pool keeps open: pog's default, 10.
     pool_size: Int,
     /// How long, in milliseconds, a checkout may wait in the queue before the
-    /// queue counts as slow: pog's default, 50. Set by the load run.
+    /// queue counts as slow: pog's default, 50.
     queue_target: Int,
     /// How long, in milliseconds, checkouts must stay slower than
     /// `queue_target` before the pool doubles it and starts dropping checkouts
-    /// past it: pog's default, 1000. Set by the load run.
+    /// past it: pog's default, 1000.
     queue_interval: Int,
   )
 }
@@ -343,14 +343,23 @@ const realm_id = 1
 /// every rule.
 const ask_deadline_ms = 5000
 
-/// How many connections each listener holds at once, and how fast a client may
-/// send on it, are the server's choice and placeholders, set by the load run
-/// below the most the server is measured to take.
-const sts_max_connections = 1000
+/// How many connections each listener holds at once is the server's choice: half
+/// of 4,800, the most players a step of the load run (`genesis_prime/load_run`)
+/// kept up with, in two runs on 2026-11-01 on an Apple M2 Max (12 cores, 32 GB,
+/// macOS 26.7.1) that also ran the clients on four of its schedulers, with
+/// Postgres 18.6 and the pool below. Each player held one connection on each
+/// listener, so each listener's cap is a connection for each of 2,400 players.
+/// Nothing on the server failed a line up to 4,800 players (login to world 6 ms
+/// at the 99th percentile, ping 5 ms, at most 7% of the cores, no mailbox that
+/// never emptied, no store worker waiting); the run's next step, 6,400, was
+/// the clients' limit, since this machine ran out of local ports at about 5,400
+/// players, so 4,800 is a floor of what the server takes. The rate below
+/// stays at the client's own.
+const sts_max_connections = 2400
 
-const auth_max_connections = 1000
+const auth_max_connections = 2400
 
-const game_max_connections = 1000
+const game_max_connections = 2400
 
 /// A rule's rate placeholders. The recording of the live session's game
 /// connection (102 frames, counted by the read that completed each) holds 15
