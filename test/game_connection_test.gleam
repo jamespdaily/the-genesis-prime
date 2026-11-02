@@ -726,6 +726,52 @@ pub fn a_frame_the_clients_reader_would_refuse_ends_the_connection_after_the_who
   })
 }
 
+/// What each effect of a step is, in order: the bytes of a write are not
+/// compared here, only what kind of effect leaves and when.
+fn kinds(taken: ConnectionStep(Request)) -> List(String) {
+  list.map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Write(..)) -> "write"
+      step.Log(..) -> "log"
+      step.Stop -> "stop"
+      OwnEffect(..) | step.Watch(..) | step.Unwatch(..) -> "other"
+    }
+  })
+}
+
+pub fn the_effects_of_frames_before_a_frame_that_asks_leave_in_the_order_the_frames_came_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    read(in_select(), <<
+      support.ping(1):bits,
+      store_request():bits,
+      support.ping(2):bits,
+      create_message(a_create_request("Ab Cd")):bits,
+    >>)
+  assert support.writes(taken) == [support.pong(1), support.pong(2)]
+    as "opcode.0x0 and opcode.0x1: each ping is answered, the first ping's pong first"
+  assert kinds(taken) == ["write", "log", "write"]
+    as "a read's frames are taken in order: the pong, the unhandled 0x082D's log line, the pong; the create's ask ends the step after them"
+  assert support.asked(taken) != None
+    as "the create asks the store, after the earlier frames' effects"
+}
+
+pub fn the_effects_of_frames_before_a_frame_that_ends_the_connection_leave_in_the_order_the_frames_came_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let below_header = <<3, 0, 0, 0, 0, 0>>
+  let #(_, taken) =
+    read(in_select(), <<
+      support.ping(1):bits,
+      store_request():bits,
+      support.ping(2):bits,
+      below_header:bits,
+    >>)
+  assert support.writes(taken) == [support.pong(1), support.pong(2)]
+    as "opcode.0x0 and opcode.0x1: each ping before the bad frame is answered, the first ping's pong first"
+  assert kinds(taken) == ["write", "log", "write", "log", "stop"]
+    as "the whole frames before a frame the client's reader would refuse (ParseWrappedMessage 0x140331620) leave in order, then the refusal's log line and the end"
+}
+
 pub fn the_client_closing_a_socket_failure_and_a_late_answer_are_handled_as_in_the_login_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) = feed(connected(), step.OwnEvent(step.PeerClosed))
