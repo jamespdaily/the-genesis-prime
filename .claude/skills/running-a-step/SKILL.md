@@ -39,7 +39,7 @@ Check each finding against the code first. One fix round. After it, a P1 (a brea
 
 ## Live check and merge
 
-A live session runs when the client sees or sends something new (the `playing-live` skill): an agent drives what the client driver reaches, and Jim plays the rest. A change to a rule's types records the session again. Merge on green; the pull request body describes the change as it stands, rewritten, never appended to.
+A live session runs when the client sees or sends something new (the `playing-live` skill): an agent drives what the client driver reaches, and Jim plays the rest. Re-recording after a change to a rule's types: the `designing-processes` skill. Merge on green; Jim's global file holds how the pull request body is written.
 
 ## Bugs and the closing summary
 

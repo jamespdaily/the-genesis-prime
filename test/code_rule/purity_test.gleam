@@ -1,6 +1,6 @@
 //// The purity rule. Expected values are the rules in CLAUDE.md (a rule is a
 //// pure function; only modules listed under `[tools.code_rules]` have
-//// effects) and in the writing-gleam skill, Packages (an Erlang external
+//// effects) and in the choosing-packages skill (an Erlang external
 //// states an exact type). A module is named by its path under `src/`, so
 //// `src/planted/rule.gleam` is `planted/rule`. An entry of `pure_erlang` is
 //// written `module:function`, for example `erlang:abs`. Every breach is

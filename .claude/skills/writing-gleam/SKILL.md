@@ -36,4 +36,4 @@ Gleam code also follows the writing-code skill: reuse, module naming and splitti
 
 - Module names are singular.
 - Each feature module has its own effect type; a process's effect type wraps its features' effects. A process's state holds one field per feature.
-- A shell module sits beside its rule module: the rule decides, the shell carries out (the designing-processes skill).
+- A shell module sits beside its rule module (the designing-processes skill).

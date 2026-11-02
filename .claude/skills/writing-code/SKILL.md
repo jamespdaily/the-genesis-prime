@@ -28,7 +28,7 @@ A name says what the thing does in the game, and every client name is earned by 
 - Write names in full, with no abbreviations. Acronyms are written as one word.
 - An opcode is written as four hex digits (`0x037E`); a client code address in full.
 - An id is named after the client table it keys: `spell4_id`, `spell4_base_id`.
-- A game term is defined once, in the doc comment of its type. No glossary file.
+- A game term is defined once, in the doc comment of its type.
 - When the client has a formula, use the client's.
 
 ## Errors

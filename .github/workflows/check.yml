@@ -17,9 +17,10 @@ jobs:
   check:
     runs-on: ubuntu-latest
     # A cold run builds the patched OTP in 146 seconds on the runner and the
-    # whole cold job takes 3 minutes 11 seconds (run 40316762854), so 10
-    # minutes is more than 3 times the cold job.
-    timeout-minutes: 10
+    # whole cold job takes 3 minutes 11 seconds (run 40316762854); the tool
+    # tests take 2 minutes on the development Mac. 15 minutes is about 3 times
+    # the two together.
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:18
@@ -82,3 +83,10 @@ jobs:
           path: ${{ env.GENESIS_OTP_DIR }}
           key: ${{ steps.otp.outputs.cache-primary-key }}
       - run: ./check
+      # The tests of the tools that gate a merge (the check script, the setup
+      # check, the table extractor) and of the hook scripts in dev/hooks. None
+      # needs the client or the database.
+      - name: Test the tools
+        run: |
+          python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
+          python3.13 -I -m unittest discover -s dev/hooks -p 'test_*.py'
