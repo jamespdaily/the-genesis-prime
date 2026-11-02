@@ -7,6 +7,7 @@
 
 import genesis_prime/rule_recording/file.{type FileError, type Writer}
 import genesis_prime/step.{type About, type LogLevel, type Now, LogError, Now}
+import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process
 import gleam/option.{type Option}
 
@@ -27,6 +28,14 @@ pub fn down_reason(down: process.Down) -> process.ExitReason {
   }
 }
 
+/// The monitor of a monitored process or port that ended.
+pub fn down_monitor(down: process.Down) -> process.Monitor {
+  case down {
+    process.ProcessDown(monitor:, ..) | process.PortDown(monitor:, ..) ->
+      monitor
+  }
+}
+
 /// The time as one input carries it: the monotonic clock in milliseconds and
 /// the system time as a FILETIME, both read now.
 pub fn now() -> Now {
@@ -42,6 +51,19 @@ pub fn unique_id() -> Int
 /// where as a metadata key of its own.
 @external(erlang, "step_runtime_ffi", "log")
 pub fn log(level: LogLevel, text: String, about: About) -> Nil
+
+/// Sets the logger metadata of the calling process from the fields of `about`
+/// that are known, so every line the process logs carries them, those of
+/// OTP and gleam_otp (a crash report, a dropped stray message) as well as the
+/// shell's own; a line's own `about` is added over them.
+@external(erlang, "step_runtime_ffi", "set_about")
+pub fn set_about(about: About) -> Nil
+
+/// Logs at warning that the shell named `shell` dropped a message it does not
+/// take. The line names the message's kind, its tag or its shape, and never
+/// its contents, which could hold a secret.
+@external(erlang, "step_runtime_ffi", "log_stray")
+pub fn log_stray(message message: Dynamic, shell shell: String) -> Nil
 
 /// Logs that a step's input could not be recorded, which ends the process
 /// before the step's effects, so no input is carried out without its record.
@@ -73,6 +95,13 @@ pub fn finish_recording(writer: Option(Writer)) -> Nil {
 /// supervisor and child it starts, stay out.
 @external(erlang, "step_runtime_ffi", "show_info_lines")
 pub fn show_info_lines() -> Nil
+
+/// Keeps what waits in a process's mailbox out of the log: a primary logger
+/// filter takes the `messages` out of every crash report OTP writes for a
+/// process that ends abnormally, so a message that holds a secret and waits
+/// when the process crashes never reaches the log.
+@external(erlang, "step_runtime_ffi", "keep_mailboxes_out_of_crash_reports")
+pub fn keep_mailboxes_out_of_crash_reports() -> Nil
 
 @external(erlang, "step_runtime_ffi", "monotonic_ms")
 fn monotonic_ms() -> Int

@@ -249,10 +249,19 @@ pub fn read_record(client: mug.Socket) -> Record {
 
 /// Reads the pong the rule writes for a ping, two bytes.
 pub fn read_pong(client: mug.Socket) -> BitArray {
-  let assert Ok(pong) =
-    mug.receive_exact(client, byte_size: 2, timeout_milliseconds: event_wait_ms)
-    as "a pong arrived"
-  pong
+  read_bytes(client:, bytes: 2)
+}
+
+/// Reads exactly `bytes` bytes the server wrote.
+pub fn read_bytes(client client: mug.Socket, bytes bytes: Int) -> BitArray {
+  let assert Ok(received) =
+    mug.receive_exact(
+      client,
+      byte_size: bytes,
+      timeout_milliseconds: event_wait_ms,
+    )
+    as "the bytes arrived"
+  received
 }
 
 /// The server's connection processes, as Ranch lists them.

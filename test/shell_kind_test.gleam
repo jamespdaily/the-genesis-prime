@@ -6,7 +6,7 @@
 //// and `gleam build` builds it. Each shell is first given a rule of its own
 //// kind, which builds, so a failure of the other rule is the effect's and not
 //// the scratch project's. Expected values come from these places.
-//// - The shells' carry code (`genesis_prime/connection/shell` `carry`,
+//// - The shells' carry code (`genesis_prime/connection/shell` `carry_effect`,
 ////   `genesis_prime/service/shell` `carry`): the connection shell carries
 ////   `Write`, the service shell `Reply`, and neither the other's.
 //// - The compiler: a rule whose step returns an effect type other than the

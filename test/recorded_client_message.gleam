@@ -26,6 +26,7 @@
 //// A message whose number has no decoder in `client_message` is listed, not
 //// refused: the rule logs it as unhandled and the connection goes on.
 
+import frame_reader
 import genesis_prime/client_connection
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{type WrapError}
@@ -430,7 +431,7 @@ fn read_input(
   game game: Bool,
 ) -> Result(Frames, Stopped) {
   let #(whole, rest) =
-    frame.split(received: <<frames.pending:bits, bytes:bits>>)
+    frame_reader.split(received: <<frames.pending:bits, bytes:bits>>)
   use frames <- result.try(
     list.try_fold(whole, frames, fn(frames, outer) {
       take_frame(frames:, input:, outer:, game:)

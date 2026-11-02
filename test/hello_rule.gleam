@@ -2,6 +2,7 @@
 //// a client with the server hello and answers each ping with its pong, and
 //// nothing else. The login card's rules replace it in the server.
 
+import frame_reader
 import genesis_prime/connection/frame
 import genesis_prime/connection/network_message.{
   Accepted, Answer, Malformed, NotNetwork,
@@ -58,7 +59,7 @@ pub fn step(
 }
 
 fn read(state: State, received: BitArray) -> #(State, ConnectionStep(Nil)) {
-  let #(frames, rest) = frame.split(received:)
+  let #(frames, rest) = frame_reader.split(received:)
   let answers =
     list.map(frames, fn(found) {
       case network_message.handle(frame: found) {

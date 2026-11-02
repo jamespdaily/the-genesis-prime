@@ -5,7 +5,7 @@
 %% for a connection. Each function returns the Gleam shape its caller declares.
 -module(connection_registry_ffi).
 
--export([start_scope/1, join_group/2, members/2, send_woken/2]).
+-export([start_scope/1, join_group/2, members/2, send_woken/2, woken_message/1]).
 
 %% Starts the scope as the calling supervisor's child, registered under the
 %% atom the Gleam side made for it; pg links the scope to the supervisor.
@@ -25,11 +25,14 @@ join_group(Scope, Group) ->
 members(Scope, Group) ->
     pg:get_local_members(Scope, Group).
 
-%% The message as the connection shell takes it between steps, which turns it
-%% into a Woken input (connection_shell_ffi:next_event).
+%% The message as the connection shell's selector takes it, which turns it into
+%% a Woken input (genesis_prime/connection/registry select_delivered).
 send_woken(Pid, Message) ->
     Pid ! {woken, Message},
     nil.
+
+%% The message inside what send_woken sent.
+woken_message({woken, Message}) -> Message.
 
 format(Reason) ->
     unicode:characters_to_binary(io_lib:format("~0p", [Reason])).

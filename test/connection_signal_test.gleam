@@ -11,48 +11,57 @@
 ////   does, and a timeout whose reference is not the timer's own is discarded.
 //// - OTP's `erlang:send_after` and `erlang:cancel_timer`: a message already sent
 ////   when the timer is cancelled stays in the mailbox, which is the reason the
-////   shell flushes it.
+////   shell discards a timeout by its reference.
+//// - The shell's wait during an ask: a delivered message, a timer's timeout or
+////   a watch's end that arrives during it is taken after the ask's outcome,
+////   and two messages from one sender in the order they were sent (Erlang
+////   orders signals only per sender).
 //// Every wait is for bytes the server writes, with a deadline a passing test
 //// never reaches.
 
 import ask_support
+import event_wait
 import genesis_prime/connection/registry
-import genesis_prime/step.{type Address, ConnectionId, Sessions, TimerId}
-import gleam/dynamic.{type Dynamic}
-import gleam/erlang/atom.{type Atom}
+import genesis_prime/service
+import genesis_prime/step.{type Address, ConnectionId, Sessions}
+import gleam/erlang/atom
 import gleam/erlang/process.{type Pid}
-import gleam/erlang/reference.{type Reference}
+import gleam/int
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/static_supervisor as supervisor
+import gleam/string
+import log_capture
+import mailbox_support
 import mug
 import owned_test
 import signalling_rule
-import socket_watch
 
 /// One record the signalling rule wrote.
 type Record {
   Record(letter: Int, number: Int)
 }
 
-/// A timer the shell started: what `erlang:send_after` returned.
-type Timer
-
-@external(erlang, "connection_shell_ffi", "start_timer")
-fn start_timer(timer: step.TimerId, after_ms: Int) -> #(Timer, Reference)
-
-@external(erlang, "connection_shell_ffi", "cancel_timer")
-fn cancel_timer(timer: step.TimerId, started: Timer, of: Reference) -> Nil
-
-@external(erlang, "erlang", "send")
-fn send_timeout(to: Pid, message: #(Atom, step.TimerId, Reference)) -> Dynamic
-
 fn start(
   registry registry: option.Option(registry.Registry),
   sessions sessions: Result(Pid, Nil),
 ) -> ask_support.Server {
+  start_asking(
+    registry:,
+    sessions:,
+    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+  )
+}
+
+/// As `start`, with the directory the rule's asks go through.
+fn start_asking(
+  registry registry: option.Option(registry.Registry),
+  sessions sessions: Result(Pid, Nil),
+  directory directory: fn(Nil, Int, fn(Nil) -> Nil) -> Result(service.Sent, Nil),
+) -> ask_support.Server {
   ask_support.start_joined(
     rule: signalling_rule.rule(),
-    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+    directory:,
     shutdown_ms: 1000,
     recorder: None,
     registry:,
@@ -130,31 +139,13 @@ pub fn a_connection_that_ended_leaves_its_group_and_a_message_to_it_is_dropped_t
   let gone = process.monitor(connection)
   let assert Ok(Nil) = mug.shutdown(client) as "the client closed"
   let _reason = ask_support.ended(gone)
-  assert left(
-    scope:,
-    connection: ConnectionId(id),
-    within_ms: ask_support.event_wait_ms,
+  event_wait.until(
+    "the scope noticed the end by itself, so no process finds the id",
+    fn() { registry.find(scope, ConnectionId(id)) == Error(Nil) },
   )
-    as "the scope noticed the end by itself, so no process finds the id"
   assert registry.deliver(scope, ConnectionId(id), 1) == Error(Nil)
     as "nothing is sent to a connection that is gone"
   ask_support.stop(server)
-}
-
-/// Waits until the scope holds no process for the connection.
-fn left(
-  scope scope: registry.Registry,
-  connection connection: step.ConnectionId,
-  within_ms within_ms: Int,
-) -> Bool {
-  case registry.find(scope, connection), within_ms > 0 {
-    Error(Nil), _ -> True
-    Ok(_), True -> {
-      process.sleep(1)
-      left(scope:, connection:, within_ms: within_ms - 1)
-    }
-    Ok(_), False -> False
-  }
 }
 
 pub fn a_watched_process_that_ends_comes_back_once_as_watch_ended_with_the_watchs_id_test() -> Nil {
@@ -293,83 +284,304 @@ pub fn a_cancelled_timer_never_fires_test() -> Nil {
   ask_support.stop(server)
 }
 
-pub fn cancelling_a_timer_that_already_fired_flushes_its_message_from_the_mailbox_test() -> Nil {
+pub fn a_timer_that_fired_during_an_ask_and_is_started_again_by_its_outcome_is_not_fired_by_the_old_timeout_test() -> Nil {
   use <- owned_test.run(30_000)
-  let #(timer, reference) = start_timer(TimerId(1), 0)
-  wait_for_message()
-  assert queued() == 1 as "the timer fired, and its message waits"
-  cancel_timer(TimerId(1), timer, reference)
-  assert queued() == 0
-    as "the cancel found no timer to stop and flushed the message, so it never reaches the rule"
-}
-
-pub fn a_timeout_of_a_cancelled_or_replaced_timer_is_discarded_by_its_reference_test() -> Nil {
-  use <- owned_test.run(30_000)
-  let server = start(registry: None, sessions: Ok(a_sessions()))
+  let replies = process.new_subject()
+  let server =
+    start_asking(
+      registry: None,
+      sessions: Ok(a_sessions()),
+      directory: asked_through(replies, a_target()),
+    )
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
-  // Timer 1 is cancelled and started again, so its first timeout, which
-  // `erlang:cancel_timer` cannot recall once it is in flight, carries a
-  // reference that is no longer the timer's own.
-  ask_support.command(
-    client:,
-    letter: signalling_rule.timer_command,
-    n: 1,
-    wait_ms: 60_000,
-  )
-  ask_support.command(
-    client:,
-    letter: signalling_rule.cancel_command,
-    n: 1,
-    wait_ms: 0,
-  )
-  ask_support.command(
-    client:,
-    letter: signalling_rule.timer_command,
-    n: 1,
-    wait_ms: 60_000,
-  )
-  ask_support.command(
-    client:,
-    letter: signalling_rule.pong_command,
-    n: 4,
-    wait_ms: 0,
-  )
-  assert read_record(client) == Record(signalling_rule.pong, 4)
-    as "the timers are set"
-  let _sent =
-    send_timeout(connection, #(timer_fired(), TimerId(1), reference.new()))
-  let _sent =
-    send_timeout(connection, #(timer_fired(), TimerId(2), reference.new()))
+    as "one connection process"
+  // Timer 2 fires at once, during the ask's wait, so its timeout is in the
+  // mailbox when the outcome comes. The outcome's step cancels timer 2 and
+  // starts it again with a minute to run: the old timeout names a timer id
+  // that is running, with another reference, and must not fire it.
+  let assert Ok(Nil) =
+    mug.send(client, <<
+      signalling_rule.timer_command, 2, 0:16, signalling_rule.ask_command,
+      signalling_rule.restarting_ask, 20_000:16,
+    >>)
+    as "the step was sent"
+  let assert Ok(reply) = process.receive(replies, ask_support.event_wait_ms)
+    as "the shell made the ask"
+  event_wait.until("the timer's timeout waits in the mailbox", fn() {
+    mailbox_support.tagged_by_reference(connection) == 1
+  })
+  reply(Nil)
+  assert read_record(client)
+    == Record(signalling_rule.answered, signalling_rule.restarting_ask)
+    as "the ask's outcome is the first input after the step"
   ask_support.command(
     client:,
     letter: signalling_rule.pong_command,
-    n: 5,
+    n: 9,
     wait_ms: 0,
   )
-  assert read_record(client) == Record(signalling_rule.pong, 5)
-    as "the stale timeouts, of a running timer's id and of an id no timer holds, reached the rule as nothing, and the connection goes on"
+  assert read_record(client) == Record(signalling_rule.pong, 9)
+    as "the old timeout was dropped by its reference: no timer_fired record comes before the pong"
   ask_support.stop(server)
 }
 
-fn timer_fired() -> Atom {
-  atom.create("timer_fired")
+pub fn a_timer_that_fired_during_an_ask_and_is_cancelled_by_its_outcome_never_reaches_the_rule_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let replies = process.new_subject()
+  let server =
+    start_asking(
+      registry: None,
+      sessions: Ok(a_sessions()),
+      directory: asked_through(replies, a_target()),
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  // Timer 1 fires at once, during the ask's wait, so its timeout is in the
+  // mailbox when the outcome comes; the outcome's step cancels timer 1.
+  let assert Ok(Nil) =
+    mug.send(client, <<
+      signalling_rule.timer_command, 1, 0:16, signalling_rule.ask_command, 1,
+      20_000:16,
+    >>)
+    as "the step was sent"
+  let assert Ok(reply) = process.receive(replies, ask_support.event_wait_ms)
+    as "the shell made the ask"
+  event_wait.until("the timer's timeout waits in the mailbox", fn() {
+    mailbox_support.tagged_by_reference(connection) == 1
+  })
+  reply(Nil)
+  assert read_record(client) == Record(signalling_rule.answered, 1)
+    as "the ask's outcome is the first input after the step"
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 9,
+    wait_ms: 0,
+  )
+  assert read_record(client) == Record(signalling_rule.pong, 9)
+    as "the timeout of the cancelled timer was dropped: no timer_fired record comes before the pong"
+  ask_support.stop(server)
 }
 
-/// How many messages wait in this process's mailbox.
-fn queued() -> Int {
-  socket_watch.mailbox_length(process.self())
+pub fn a_message_a_timeout_and_a_watch_end_that_arrive_during_an_ask_are_taken_after_its_outcome_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let scope = registry.new()
+  let sessions = a_sessions()
+  let replies = process.new_subject()
+  let server =
+    start_asking(
+      registry: Some(scope),
+      sessions: Ok(sessions),
+      directory: asked_through(replies, a_target()),
+    )
+  let client = ask_support.connect(server)
+  let id = accepted_id(client)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  ask_support.command(
+    client:,
+    letter: signalling_rule.watch_command,
+    n: 1,
+    wait_ms: 0,
+  )
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 3,
+    wait_ms: 0,
+  )
+  assert read_record(client) == Record(signalling_rule.pong, 3)
+    as "the watch is open"
+  let assert Ok(Nil) =
+    mug.send(client, <<
+      signalling_rule.timer_command, 2, 0:16, signalling_rule.ask_command, 1,
+      20_000:16,
+    >>)
+    as "the step was sent"
+  let assert Ok(reply) = process.receive(replies, ask_support.event_wait_ms)
+    as "the shell made the ask"
+  assert registry.deliver(scope, ConnectionId(id), 7) == Ok(Nil)
+  assert registry.deliver(scope, ConnectionId(id), 8) == Ok(Nil)
+  process.kill(sessions)
+  event_wait.until(
+    "a message, a timeout and a watch's end all wait in the mailbox",
+    fn() {
+      mailbox_support.tagged(connection, atom.create("woken")) == 2
+      && mailbox_support.tagged(connection, atom.create("DOWN")) == 1
+      && mailbox_support.tagged_by_reference(connection) == 1
+    },
+  )
+  reply(Nil)
+  assert read_record(client) == Record(signalling_rule.answered, 1)
+    as "the ask's outcome came first: nothing was taken during the wait"
+  let after = list.map([1, 2, 3, 4], fn(_) { read_record(client) })
+  assert list.contains(after, Record(signalling_rule.timer_fired, 2))
+    as "the timeout was taken after the outcome"
+  assert list.contains(after, Record(signalling_rule.watch_ended, 1))
+    as "so was the watch's end"
+  assert list.filter(after, fn(record) {
+      record.letter == signalling_rule.woken
+    })
+    == [
+      Record(signalling_rule.woken, 7),
+      Record(signalling_rule.woken, 8),
+    ]
+    as "and the two messages, in the order the test sent them"
+  ask_support.stop(server)
 }
 
-/// Waits until a message is in the mailbox; a timer of 0 ms fires within a
-/// few milliseconds, and a test that never sees one runs past its deadline.
-fn wait_for_message() -> Nil {
-  case queued() {
-    0 -> {
-      process.sleep(1)
-      wait_for_message()
-    }
-    _ -> Nil
+/// A process the asks go to, which runs and never answers by itself.
+fn a_target() -> Pid {
+  process.spawn_unlinked(process.sleep_forever)
+}
+
+/// A directory that hands each ask's reply to `replies` and says it went to
+/// `target`.
+fn asked_through(
+  replies: process.Subject(fn(Nil) -> Nil),
+  target: Pid,
+) -> fn(Nil, Int, fn(Nil) -> Nil) -> Result(service.Sent, Nil) {
+  fn(_request, _deadline_ms, reply) {
+    process.send(replies, reply)
+    Ok(service.ToService(pid: target))
   }
+}
+
+pub fn a_message_no_selector_takes_is_dropped_and_logged_by_its_kind_with_the_connection_named_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let server = start(registry: None, sessions: Ok(a_sessions()))
+  let client = ask_support.connect(server)
+  let id = accepted_id(client)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let lines = process.new_subject()
+  let capture = log_capture.start_with_metadata(from: connection, into: lines)
+  mailbox_support.send_raw(
+    connection,
+    #(atom.create("stray_message"), <<
+      "a-fake-session-key":utf8,
+    >>),
+  )
+  let assert Ok(#(level, text, metadata)) =
+    process.receive(lines, ask_support.event_wait_ms)
+    as "the stray message was logged"
+  log_capture.stop(capture)
+  assert level == "warning" as "a message nobody takes is a warning"
+  assert string.contains(text, "stray_message")
+    as "the line names the message's kind, its tag"
+  assert !string.contains(text, "a-fake-session-key")
+    as "and never its contents, which could hold a secret"
+  assert list.key_find(metadata, "connection")
+    == Ok("{connection_id," <> int.to_string(id) <> "}")
+    as "the line names the connection by the id its rule was accepted with"
+  assert case list.key_find(metadata, "peer") {
+    Ok(peer) -> string.contains(peer, "127.0.0.1")
+    Error(Nil) -> False
+  }
+    as "and the client's address"
+  assert mailbox_support.tagged(connection, atom.create("stray_message")) == 0
+    as "the message was taken from the mailbox"
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 1,
+    wait_ms: 0,
+  )
+  assert read_record(client) == Record(signalling_rule.pong, 1)
+    as "and the connection goes on"
+  ask_support.stop(server)
+}
+
+@external(erlang, "connection_actor_support_ffi", "kept_asks")
+fn kept_asks(connection: Pid) -> Int
+
+pub fn a_late_answer_between_steps_gives_the_rule_no_input_and_drops_the_kept_ask_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let replies = process.new_subject()
+  let target = a_target()
+  let server =
+    start_asking(
+      registry: None,
+      sessions: Ok(a_sessions()),
+      directory: asked_through(replies, target),
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  // Ask 1 has 100 ms and nobody answers: its outcome is NoAnswerInTime, and
+  // the shell keeps its tag and its monitor of the target.
+  ask_support.command(
+    client:,
+    letter: signalling_rule.ask_command,
+    n: 1,
+    wait_ms: 100,
+  )
+  let assert Ok(reply) = process.receive(replies, ask_support.event_wait_ms)
+    as "the shell made the ask"
+  assert read_record(client) == Record(signalling_rule.answered, 1)
+    as "the ask came back as the rule's input"
+  assert kept_asks(connection) == 1 as "the shell keeps the ask"
+  assert list.contains(mailbox_support.monitored(connection), target)
+    as "and its monitor of the target"
+  // The answer comes between steps, with no ask waiting.
+  reply(Nil)
+  event_wait.until("the late answer was taken and its ask dropped", fn() {
+    kept_asks(connection) == 0
+  })
+  assert !list.contains(mailbox_support.monitored(connection), target)
+    as "the ask's monitor was dropped with it"
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 9,
+    wait_ms: 0,
+  )
+  assert read_record(client) == Record(signalling_rule.pong, 9)
+    as "the late answer gave the rule no input: the next record is the pong"
+  ask_support.stop(server)
+}
+
+pub fn the_end_of_a_kept_asks_target_gives_the_rule_no_input_and_drops_the_kept_ask_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let replies = process.new_subject()
+  let target = a_target()
+  let server =
+    start_asking(
+      registry: None,
+      sessions: Ok(a_sessions()),
+      directory: asked_through(replies, target),
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  ask_support.command(
+    client:,
+    letter: signalling_rule.ask_command,
+    n: 1,
+    wait_ms: 100,
+  )
+  let assert Ok(_reply) = process.receive(replies, ask_support.event_wait_ms)
+    as "the shell made the ask"
+  assert read_record(client) == Record(signalling_rule.answered, 1)
+    as "the ask came back as the rule's input"
+  assert kept_asks(connection) == 1 as "the shell keeps the ask"
+  process.kill(target)
+  event_wait.until("the target's end was taken and its ask dropped", fn() {
+    kept_asks(connection) == 0
+  })
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: 9,
+    wait_ms: 0,
+  )
+  assert read_record(client) == Record(signalling_rule.pong, 9)
+    as "the end gave the rule no input: the next record is the pong"
+  ask_support.stop(server)
 }

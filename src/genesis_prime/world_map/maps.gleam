@@ -279,10 +279,7 @@ fn start_map(
 
 /// Drops the map whose monitor fired, so the next find starts it again.
 fn forget(state state: State, down down: process.Down) -> State {
-  let monitor = case down {
-    process.ProcessDown(monitor:, ..) | process.PortDown(monitor:, ..) ->
-      monitor
-  }
+  let monitor = runtime.down_monitor(down)
   State(
     ..state,
     maps: dict.filter(state.maps, fn(_map, held) { held.1 != monitor }),

@@ -13,10 +13,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 
-/// The game code the client names in ListMyAccounts and RequestGameToken: the
-/// ncAppGroupCode of its RealmDataCenter row (GetNcAppGroupCode 0x140018aa0).
-pub const game_code = "wildstar"
-
 /// The values of the Connect message the library sends when its TCP
 /// connection is up. Each number the library leaves out when it is 0 is 0
 /// here (StsConnLib64.MT.dll!0x18002f410).

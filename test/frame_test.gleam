@@ -8,6 +8,7 @@
 //// header `0c 00 00 00 44 02` (vector.opcode.0x7e0.frame).
 
 import body_generator
+import frame_reader
 import genesis_prime/connection/frame.{Frame}
 import gleam/bit_array
 import gleam/int
@@ -39,10 +40,10 @@ pub fn a_frames_length_counts_its_whole_frame_and_the_id_is_little_endian_test()
 
 pub fn a_frame_decodes_to_the_message_it_was_encoded_from_test() -> Nil {
   use <- owned_test.run(5000)
-  assert frame.decode(encoded(0x07E0, <<>>))
+  assert frame_reader.decode(encoded(0x07E0, <<>>))
     == Ok(#([Frame(0x07E0, <<>>)], <<>>))
     as "0x140331990 reads the 32-bit length, then the 16-bit id, then the body"
-  assert frame.decode(<<0x0C, 0, 0, 0, 0x44, 0x02, 9, 8, 7, 6, 5, 4>>)
+  assert frame_reader.decode(<<0x0C, 0, 0, 0, 0x44, 0x02, 9, 8, 7, 6, 5, 4>>)
     == Ok(#([Frame(0x0244, <<9, 8, 7, 6, 5, 4>>)], <<>>))
     as "vector.opcode.0x7e0.frame: a length of 12 and id 0x244 hold 6 body bytes"
 }
@@ -54,7 +55,8 @@ pub fn encoding_then_decoding_gives_every_frame_back_test() -> Nil {
     qcheck.bounded_int(from: 0, to: 0xFFFF),
     body_generator.body(most: largest_body),
   ))
-  assert frame.decode(encoded(id, body)) == Ok(#([Frame(id, body)], <<>>))
+  assert frame_reader.decode(encoded(id, body))
+    == Ok(#([Frame(id, body)], <<>>))
     as "a frame of id and body round-trips (0x1403355e0 writes it, 0x140331990 reads it)"
 }
 
@@ -66,7 +68,7 @@ pub fn one_read_holding_several_frames_gives_all_of_them_test() -> Nil {
       encoded(0x07E0, <<>>),
       encoded(0x0244, <<9>>),
     ])
-  assert frame.decode(received)
+  assert frame_reader.decode(received)
     == Ok(
       #(
         [Frame(0x0003, <<1, 2, 3>>), Frame(0x07E0, <<>>), Frame(0x0244, <<9>>)],
@@ -85,9 +87,9 @@ pub fn a_frame_split_across_reads_waits_for_its_end_test() -> Nil {
       as "the cut is inside the frame"
     let assert Ok(second) = bit_array.slice(whole, cut, size - cut)
       as "the cut is inside the frame"
-    assert frame.decode(first) == Ok(#([], first))
+    assert frame_reader.decode(first) == Ok(#([], first))
       as "0x1403321a0 stops and waits while fewer bytes than the length have arrived"
-    assert frame.decode(bit_array.append(first, second))
+    assert frame_reader.decode(bit_array.append(first, second))
       == Ok(#([Frame(0x0244, <<1, 2, 3, 4, 5, 6, 7, 8, 9, 10>>)], <<>>))
       as "0x1403321a0 reads the frame once its last byte has arrived"
   })
@@ -98,27 +100,29 @@ pub fn a_whole_frame_then_the_start_of_the_next_gives_the_first_and_keeps_the_re
   let second = encoded(0x07E0, <<4, 5>>)
   let assert Ok(start) = bit_array.slice(second, 0, 5)
     as "the second frame is longer than 5 bytes"
-  assert frame.decode(bit_array.append(encoded(0x0003, <<1>>), start))
+  assert frame_reader.decode(bit_array.append(encoded(0x0003, <<1>>), start))
     == Ok(#([Frame(0x0003, <<1>>)], start))
     as "0x1403321a0 reads each frame whose bytes have all arrived and waits on the next"
-  assert frame.decode(<<>>) == Ok(#([], <<>>))
+  assert frame_reader.decode(<<>>) == Ok(#([], <<>>))
     as "0x1403321a0 reads nothing when nothing has arrived"
 }
 
 pub fn a_length_below_the_six_header_bytes_is_an_error_as_soon_as_it_arrives_test() -> Nil {
   use <- owned_test.run(5000)
-  assert frame.decode(<<5, 0, 0, 0, 0, 0>>) == Error(frame.LengthBelowHeader(5))
+  assert frame_reader.decode(<<5, 0, 0, 0, 0, 0>>)
+    == Error(frame.LengthBelowHeader(5))
     as "0x140331620: a frame length under 6 is refused (cmp *buffer, 6 -> error 5)"
-  assert frame.decode(<<0, 0, 0, 0>>) == Error(frame.LengthBelowHeader(0))
+  assert frame_reader.decode(<<0, 0, 0, 0>>)
+    == Error(frame.LengthBelowHeader(0))
     as "0x140331620: a length of 0 is under 6; its 4 bytes are enough to refuse it"
 }
 
 pub fn a_length_over_131070_is_an_error_without_waiting_for_its_bytes_test() -> Nil {
   use <- owned_test.run(5000)
-  assert frame.decode(<<0xFF, 0xFF, 0x01, 0x00>>)
+  assert frame_reader.decode(<<0xFF, 0xFF, 0x01, 0x00>>)
     == Error(frame.LengthOverLimit(131_071))
     as "MessageSizeLimit 0x140335ec0: 131070 (0x1FFFE) is the most, so 131071 is over"
-  assert frame.decode(<<0xFF, 0xFF, 0xFF, 0xFF, 0, 0>>)
+  assert frame_reader.decode(<<0xFF, 0xFF, 0xFF, 0xFF, 0, 0>>)
     == Error(frame.LengthOverLimit(0xFFFFFFFF))
     as "MessageSizeLimit 0x140335ec0: a claimed length of 4 GiB is over the limit"
 }
@@ -129,11 +133,11 @@ pub fn a_frame_of_exactly_131070_bytes_is_read_test() -> Nil {
   let whole = encoded(0x0244, body)
   assert bit_array.byte_size(whole) == 131_070
     as "WriteMessageFrame 0x1403355e0: the frame's length counts its header"
-  assert frame.decode(whole) == Ok(#([Frame(0x0244, body)], <<>>))
+  assert frame_reader.decode(whole) == Ok(#([Frame(0x0244, body)], <<>>))
     as "MessageSizeLimit 0x140335ec0: 131070 bytes are within the limit"
   let assert Ok(missing_last_byte) = bit_array.slice(whole, 0, 131_069)
     as "the frame is 131070 bytes"
-  assert frame.decode(missing_last_byte) == Ok(#([], missing_last_byte))
+  assert frame_reader.decode(missing_last_byte) == Ok(#([], missing_last_byte))
     as "0x1403321a0 waits while one byte of a frame within the limit is missing"
 }
 

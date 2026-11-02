@@ -1,5 +1,5 @@
 -module(mailbox_support_ffi).
--export([queued/1, monitored/1, waiting/1, tagged/2]).
+-export([queued/1, monitored/1, waiting/1, tagged/2, tagged_by_reference/1]).
 
 %% How many waiting messages are tuples whose first element is the atom Tag.
 %% The length of a mailbox is no measure of what a shell has taken: a process
@@ -11,6 +11,14 @@ tagged(Pid, Tag) ->
     length([Message || Message <- Messages,
                        is_tuple(Message), tuple_size(Message) > 0,
                        element(1, Message) =:= Tag]).
+
+%% How many waiting messages are tuples whose first element is a reference: what
+%% reaches a process by a subject, which is tagged with a reference of its own.
+tagged_by_reference(Pid) ->
+    {messages, Messages} = process_info(Pid, messages),
+    length([Message || Message <- Messages,
+                       is_tuple(Message), tuple_size(Message) > 0,
+                       is_reference(element(1, Message))]).
 
 %% What waits in a process's mailbox, as Erlang prints it, for a failure
 %% message.

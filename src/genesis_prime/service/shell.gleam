@@ -50,7 +50,12 @@
 ////   `NotRunning`.
 //// - **The server stopping.** The shell traps exits, so the supervisor's stop
 ////   arrives as `Stopping`, with a deadline of the child's shutdown time from
-////   when it arrived. A rule that has not stopped by then is killed.
+////   when the shell takes the exit, which is after it arrived when a step is
+////   running. A rule that has not stopped by whichever deadline comes first,
+////   this or the supervisor's own, is killed.
+//// - **A message no selector takes.** The shell drops it and logs a warning
+////   that names the message's kind (its tag or its shape) and never its
+////   contents, which could hold a secret.
 //// - **Stop.** The shell carries out the step's other effects, then the
 ////   process exits with the reason `shutdown`, never `normal`:
 ////   a supervisor reports a permanent child that exits `normal` while it
@@ -99,6 +104,7 @@ import genesis_prime/step.{
 import genesis_prime/step/runtime.{Shutdown}
 import genesis_prime/step/watch.{type Watches}
 import gleam/dict.{type Dict}
+import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
@@ -122,12 +128,15 @@ pub type Settings(settings, state, message, outgoing) {
   )
 }
 
-/// What reaches the actor: a call, or an exit signal it traps.
+/// What reaches the actor: a call, an exit signal it traps, the end of a
+/// process it watches, or a message it does not take.
 type Mail(message, outgoing) {
   Called(call: Call(message, outgoing))
   Exited(exit: process.ExitMessage)
   /// The end of a process the rule watches, by its monitor.
   Ended(down: process.Down)
+  /// A message no other selector takes.
+  Stray(message: Dynamic)
 }
 
 /// A running service: its settings, its parent, the rule's state, the
@@ -235,6 +244,7 @@ fn initialise(
     )
   let selector =
     process.new_selector()
+    |> process.select_other(Stray)
     |> process.select_map(calls, Called)
     |> process.select_trapped_exits(Exited)
     |> process.select_monitors(Ended)
@@ -268,6 +278,10 @@ fn handle(
       ))
     }
     Ended(down:) -> actor.continue(watch_ended(running:, down:))
+    Stray(message:) -> {
+      runtime.log_stray(message:, shell: "service shell")
+      actor.continue(running)
+    }
     Exited(exit:) ->
       case exit.pid == running.parent {
         True -> {
@@ -420,10 +434,7 @@ fn watch_ended(
   running running: Running(settings, state, message, outgoing),
   down down: process.Down,
 ) -> Running(settings, state, message, outgoing) {
-  let monitor = case down {
-    process.ProcessDown(monitor:, ..) | process.PortDown(monitor:, ..) ->
-      monitor
-  }
+  let monitor = runtime.down_monitor(down)
   case watch.ended(watches: running.watches, monitor:) {
     Ok(#(watch, watches)) ->
       take(

@@ -15,6 +15,7 @@
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
+import event_wait
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/rule_recording
 import genesis_prime/server
@@ -221,26 +222,9 @@ fn await_not_found(
   map map: MapId,
   incarnation incarnation: Int,
 ) -> Nil {
-  await_not_found_within(world:, map:, incarnation:, polls: 5000)
-}
-
-fn await_not_found_within(
-  world world: World,
-  map map: MapId,
-  incarnation incarnation: Int,
-  polls polls: Int,
-) -> Nil {
-  case maps.find(world.maps, map, incarnation:, call_ms: 1000) {
-    Error(Nil) -> Nil
-    Ok(_) ->
-      case polls > 0 {
-        True -> {
-          process.sleep(1)
-          await_not_found_within(world:, map:, incarnation:, polls: polls - 1)
-        }
-        False -> panic as "Maps still finds a map that ended"
-      }
-  }
+  event_wait.until("Maps stops finding a map that ended", fn() {
+    maps.find(world.maps, map, incarnation:, call_ms: 1000) == Error(Nil)
+  })
 }
 
 pub fn an_ask_is_given_up_at_the_askers_deadline_and_maps_not_running_is_an_error_test() -> Nil {

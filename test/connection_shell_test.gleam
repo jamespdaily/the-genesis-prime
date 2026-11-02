@@ -98,17 +98,19 @@ pub fn a_client_gets_the_hello_and_a_pong_for_its_ping_test() -> Nil {
   use <- owned_test.run(30_000)
   use server <- serving(hello_rule_as_rule(), None, 1000)
   let client = ask_support.connect(server)
-  assert receive(client, 53) == hello_frame() as "the hello comes first"
+  assert ask_support.read_bytes(client, 53) == hello_frame()
+    as "the hello comes first"
   assert mug.send(client, <<7, 0, 0, 0>>) == Ok(Nil) as "first half sent"
   assert mug.send(client, <<0, 0, 9>>) == Ok(Nil) as "second half sent"
-  assert receive(client, 7) == <<7, 0, 0, 0, 1, 0, 9>> as "the pong for 9"
+  assert ask_support.read_bytes(client, 7) == <<7, 0, 0, 0, 1, 0, 9>>
+    as "the pong for 9"
 }
 
 pub fn a_clients_close_ends_the_process_normally_test() -> Nil {
   use <- owned_test.run(30_000)
   use server <- serving(hello_rule_as_rule(), None, 1000)
   let client = ask_support.connect(server)
-  let _hello = receive(client, 53)
+  let _hello = ask_support.read_bytes(client, 53)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
   let watched = process.monitor(connection)
@@ -132,7 +134,7 @@ pub fn a_failed_write_reaches_the_rule_and_the_steps_later_effects_are_not_carri
   )
   let client = ask_support.connect(server)
   // The first byte shows the connection's process has started.
-  let _first_byte = receive(client, 1)
+  let _first_byte = ask_support.read_bytes(client, 1)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
   assert ask_support.ended(process.monitor(connection)) == process.Normal
@@ -154,7 +156,7 @@ pub fn a_rule_that_crashes_ends_only_its_connection_test() -> Nil {
   use <- owned_test.run(30_000)
   use server <- serving(crash_on_0xee_rule(), None, 1000)
   let first = ask_support.connect(server)
-  let _hello = receive(first, 53)
+  let _hello = ask_support.read_bytes(first, 53)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
   let watched = process.monitor(connection)
@@ -162,7 +164,7 @@ pub fn a_rule_that_crashes_ends_only_its_connection_test() -> Nil {
   let assert process.Abnormal(_) = ask_support.ended(watched)
     as "the connection crashed"
   let second = ask_support.connect(server)
-  assert receive(second, 53) == hello_frame()
+  assert ask_support.read_bytes(second, 53) == hello_frame()
     as "the listener still accepts and greets"
 }
 
@@ -170,11 +172,11 @@ pub fn a_connection_that_crashes_leaves_another_open_connection_running_unchange
   use <- owned_test.run(30_000)
   use server <- serving(crash_on_0xee_rule(), None, 1000)
   let crashing = ask_support.connect(server)
-  let _hello = receive(crashing, 53)
+  let _hello = ask_support.read_bytes(crashing, 53)
   let assert [crashing_process] = ask_support.connections(server)
     as "one connection process"
   let staying = ask_support.connect(server)
-  let _hello = receive(staying, 53)
+  let _hello = ask_support.read_bytes(staying, 53)
   let assert [staying_process] =
     list.filter(ask_support.connections(server), fn(connection) {
       connection != crashing_process
@@ -186,7 +188,7 @@ pub fn a_connection_that_crashes_leaves_another_open_connection_running_unchange
     as "the first connection crashed"
   assert mug.send(staying, <<7, 0, 0, 0, 0, 0, 9>>) == Ok(Nil)
     as "a ping on the connection that stayed"
-  assert receive(staying, 7) == <<7, 0, 0, 0, 1, 0, 9>>
+  assert ask_support.read_bytes(staying, 7) == <<7, 0, 0, 0, 1, 0, 9>>
     as "opcode.0x1: the connection that stayed answers its ping after the other crashed"
   assert ask_support.connections(server) == [staying_process]
     as "the BEAM isolates a crash to its process: the connection that stayed is the same process it was before"
@@ -205,11 +207,11 @@ pub fn every_input_carries_one_time_reading_taken_as_the_shell_takes_it_test() -
   // caused it, so a reading reused from an earlier input falls outside.
   let before_accept = reading()
   let client = ask_support.connect(server)
-  let _hello = receive(client, 53)
+  let _hello = ask_support.read_bytes(client, 53)
   let after_accept = reading()
   let before_ping = reading()
   assert mug.send(client, <<7, 0, 0, 0, 0, 0, 3>>) == Ok(Nil) as "a ping"
-  let _pong = receive(client, 7)
+  let _pong = ask_support.read_bytes(client, 7)
   let after_ping = reading()
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
@@ -453,7 +455,7 @@ pub fn when_the_server_stops_the_rule_gets_stopping_and_a_rule_that_stops_in_tim
       shutdown_ms: 2000,
     )
   let client = ask_support.connect(server)
-  let _hello = receive(client, 53)
+  let _hello = ask_support.read_bytes(client, 53)
   ask_support.stop(server)
   let assert Ok(#(_, records)) =
     rule_recording.read(recording_support.recording_in(folder))
@@ -481,7 +483,7 @@ pub fn a_rule_that_does_not_stop_in_time_is_killed_and_its_recording_is_incomple
       shutdown_ms: 300,
     )
   let client = ask_support.connect(server)
-  let _hello = receive(client, 53)
+  let _hello = ask_support.read_bytes(client, 53)
   ask_support.stop(server)
   let bytes = recording_support.recording_in(folder)
   let assert Error(Incomplete(records: 3)) =
@@ -663,9 +665,9 @@ fn record_one_ping_of(
 ) -> Nil {
   use server <- serving(rule, Some(recorder), 1000)
   let client = ask_support.connect(server)
-  let _hello = receive(client, 53)
+  let _hello = ask_support.read_bytes(client, 53)
   assert mug.send(client, <<7, 0, 0, 0, 0, 0, number>>) == Ok(Nil) as "a ping"
-  let _pong = receive(client, 7)
+  let _pong = ask_support.read_bytes(client, 7)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
   let watched = process.monitor(connection)
@@ -699,17 +701,6 @@ fn serving(
   let result = body(server)
   ask_support.stop(server)
   result
-}
-
-fn receive(client: mug.Socket, bytes: Int) -> BitArray {
-  let assert Ok(received) =
-    mug.receive_exact(
-      client,
-      byte_size: bytes,
-      timeout_milliseconds: ask_support.event_wait_ms,
-    )
-    as "the bytes arrived"
-  received
 }
 
 /// The test's own reading of both clocks.

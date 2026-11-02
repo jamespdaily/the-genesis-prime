@@ -1,7 +1,8 @@
 //// A player character's unit as message 0x262 creates it in the client: the
 //// character's own values, alive at its saved place, with the body the
-//// character list shows. It lives with the map, which owns the units the
-//// client sees, not with the connection.
+//// character list shows. The connection builds it when the character enters
+//// the world (genesis_prime/game/world_entry); the map, which owns the units
+//// the client sees, takes ownership of it after that.
 ////
 //// - **Alive:** stat 0 (health) above 0, or the client creates the player
 ////   dead (0x140457bc5). No client table or retail record gives a player's

@@ -20,6 +20,7 @@
 //// - The rule's doc comment, as approved on the login card.
 
 import connection_rule_support as support
+import frame_reader
 import game_client
 import genesis_prime/client_connection.{
   type Answer, type Request, AskHandOff, FromHandOff,
@@ -177,7 +178,7 @@ pub fn on_connect_the_server_sends_the_hello_with_build_16042_the_checksum_and_t
   let assert [Frame(message_id: 0x0003, body:)] = support.written_frames(taken)
     as "one bare frame, message 3, and nothing else"
   let assert [written] = support.writes(taken)
-  let assert Ok(#([bare], <<>>)) = frame.decode(written)
+  let assert Ok(#([bare], <<>>)) = frame_reader.decode(written)
   assert bare.message_id == 0x0003 as "the hello travels bare, not in 0x76"
   let assert Ok(hello) = server_hello.decode(body) as "opcode.0x3: the hello"
   assert hello
@@ -205,7 +206,7 @@ pub fn on_connect_the_server_sends_the_hello_with_build_16042_the_checksum_and_t
   assert login_client.in_the_auth_wrapper(second) == planted
     as "the planted frame arrives in the 0x76 wrapper, as the client reads it"
   let assert [_, wrapped] = support.writes(taken)
-  let assert Ok(#([outer], <<>>)) = frame.decode(wrapped)
+  let assert Ok(#([outer], <<>>)) = frame_reader.decode(wrapped)
   assert outer.message_id == 0x0076 as "it travels in 0x76"
 }
 

@@ -97,6 +97,7 @@ pub fn load_migrations() -> List(migration.Migration) {
 /// through OTP. It reads the migration files once, before the tree starts.
 pub fn start(settings settings: server.Settings, tables tables: Int) -> Nil {
   runtime.show_info_lines()
+  runtime.keep_mailboxes_out_of_crash_reports()
   let migrations = load_migrations()
   let assert Ok(tree) = application.start_server(settings:)
     as "the supervision tree did not start"
