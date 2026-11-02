@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_support as cs  # noqa: E402
 import seed  # noqa: E402
 from check_support import hx  # noqa: E402
-from jump_tables import read_function  # noqa: E402
+from jump_tables import disassemble, read_function  # noqa: E402
 
 
 @cs.integration_only
@@ -218,6 +218,31 @@ class QueriesTest(unittest.TestCase):
         seeded = {a for a, _k, _n in self.project.seed_lines} - {seed.PLANTED_UNMAPPED}
         self.assertLessEqual(seeded, functions)
         self.assertNotIn(seed.PLANTED_UNMAPPED, functions)
+
+    def test_decode_lists_a_switch_case_ghidra_never_disassembled_as_llvm_objdump_does(self):
+        # HandleWorldMessage's case for message 0x594 (fact file records 0x1403ec6a0 and opcode.0x594):
+        # Ghidra recovered none of that switch's cases, so its listing holds nothing there
+        start, stop = 0x1403EC81D, 0x1403EC82F
+        self.assertEqual(self.qp.ask("disassemble", start=hx(start), stop=hx(stop)).answer, [])
+        got = self.qp.ask("decode", start=hx(start), stop=hx(stop)).answer
+        want = disassemble(self.pe, start, stop)
+        self.assertEqual(len(want), 5)  # mov, mov, call, mov, jmp
+        self.assertEqual([int(i["address"], 16) for i in got], [i.address for i in want])
+        self.assertEqual([i["text"].split()[0].lower() for i in got], [i.mnemonic for i in want])
+        for instruction in got:
+            address, length = int(instruction["address"], 16), len(instruction["bytes"]) // 2
+            self.assertEqual(instruction["bytes"], self.pe.read(address, length).hex())
+        self.assertFalse(self.qp.ask("disassemble", start=hx(start), stop=hx(stop)).answer)  # the project is unchanged
+
+    def test_decode_of_bytes_that_are_no_instruction_gets_an_error_reply_naming_the_address(self):
+        # 0x1403b6cc8 starts the jump table of HandleMessage0594's reason switch (fact file record 0x1403b6a80);
+        # its first byte, 0xd6, is no instruction in 64-bit code
+        self.assertEqual(self.pe.read(0x1403B6CC8, 1), b"\xd6")
+        reply = self.qp.send_line(json.dumps({"id": 79, "kind": "decode", "start": "0x1403b6cc8", "stop": hx(0x1403B6CC8 + 4)}).encode())
+        self.assertIs(reply.body["ok"], False)
+        self.assertEqual(reply.body["id"], 79)
+        self.assertIn("0x1403b6cc8", reply.body["error"])
+        self.assertEqual(self.qp.ask("bytes", address="0x1404a4e30", length=16).answer, "48895c24084889742410574883ec4041")
 
     def test_bytes_returns_the_files_bytes_as_hex(self):
         # 16 bytes at 0x1404a4e30 (fact file record 0x1404a4e30)
