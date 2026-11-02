@@ -466,9 +466,9 @@ fn login() -> server.Login {
 }
 
 /// The game server's listener: the client's default port, the realm the auth
-/// server hands clients to, 12 characters in the list's field (the client's own
-/// base slot count, BaseCharacterSlots in opcode.0x968; the client reads no
-/// value of it), 2 character slots for an account (the count the client's
+/// server hands clients to, 12 characters in the list's field (a server
+/// choice: the client keeps it in a global no Lua reads, so any value is safe,
+/// opcode.0x117), 2 character slots for an account (the count the client's
 /// tables give an account with no entitlement,
 /// lua.CharacterSelection.OnLoadFromCharacter), the game tables and each ask
 /// given 5 s. Recording is off; the dev start changes it.
