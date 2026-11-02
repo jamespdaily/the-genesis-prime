@@ -47,7 +47,7 @@ pub const schema =
   )
 
 /// The key of the PathEpisode table's rows in the store.
-const key: store.TermKey(PathEpisode) = store.TermKey("PathEpisode")
+const key: store.TableKey(PathEpisode) = store.TableKey("PathEpisode")
 
 /// The entry that loads the PathEpisode table.
 pub fn entry() -> store.Entry {

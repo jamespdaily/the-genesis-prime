@@ -31,7 +31,7 @@ pub const schema =
   )
 
 /// The key of the TargetMarker table's rows in the store.
-const key: store.TermKey(TargetMarker) = store.TermKey("TargetMarker")
+const key: store.TableKey(TargetMarker) = store.TableKey("TargetMarker")
 
 /// The entry that loads the TargetMarker table.
 pub fn entry() -> store.Entry {

@@ -68,8 +68,8 @@ pub const schema =
   )
 
 /// The key of the ModelSequenceBySeatPosture table's rows in the store.
-const key: store.TermKey(ModelSequenceBySeatPosture) =
-  store.TermKey("ModelSequenceBySeatPosture")
+const key: store.TableKey(ModelSequenceBySeatPosture) =
+  store.TableKey("ModelSequenceBySeatPosture")
 
 /// The entry that loads the ModelSequenceBySeatPosture table.
 pub fn entry() -> store.Entry {

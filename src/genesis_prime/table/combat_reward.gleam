@@ -56,7 +56,7 @@ pub const schema =
   )
 
 /// The key of the CombatReward table's rows in the store.
-const key: store.TermKey(CombatReward) = store.TermKey("CombatReward")
+const key: store.TableKey(CombatReward) = store.TableKey("CombatReward")
 
 /// The entry that loads the CombatReward table.
 pub fn entry() -> store.Entry {

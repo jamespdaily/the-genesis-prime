@@ -32,7 +32,7 @@ pub const schema =
   )
 
 /// The key of the CostumeSpecies table's rows in the store.
-const key: store.TermKey(CostumeSpecies) = store.TermKey("CostumeSpecies")
+const key: store.TableKey(CostumeSpecies) = store.TableKey("CostumeSpecies")
 
 /// The entry that loads the CostumeSpecies table.
 pub fn entry() -> store.Entry {

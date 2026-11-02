@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the ModelBone table's rows in the store.
-const key: store.TermKey(ModelBone) = store.TermKey("ModelBone")
+const key: store.TableKey(ModelBone) = store.TableKey("ModelBone")
 
 /// The entry that loads the ModelBone table.
 pub fn entry() -> store.Entry {

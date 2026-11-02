@@ -30,7 +30,7 @@ pub const schema =
   )
 
 /// The key of the SalvageException table's rows in the store.
-const key: store.TermKey(SalvageException) = store.TermKey("SalvageException")
+const key: store.TableKey(SalvageException) = store.TableKey("SalvageException")
 
 /// The entry that loads the SalvageException table.
 pub fn entry() -> store.Entry {

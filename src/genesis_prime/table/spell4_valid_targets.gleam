@@ -27,8 +27,8 @@ pub const schema =
   )
 
 /// The key of the Spell4ValidTargets table's rows in the store.
-const key: store.TermKey(Spell4ValidTargets) =
-  store.TermKey("Spell4ValidTargets")
+const key: store.TableKey(Spell4ValidTargets) =
+  store.TableKey("Spell4ValidTargets")
 
 /// The entry that loads the Spell4ValidTargets table.
 pub fn entry() -> store.Entry {

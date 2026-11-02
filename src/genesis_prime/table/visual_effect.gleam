@@ -146,7 +146,7 @@ pub const schema =
   )
 
 /// The key of the VisualEffect table's rows in the store.
-const key: store.TermKey(VisualEffect) = store.TermKey("VisualEffect")
+const key: store.TableKey(VisualEffect) = store.TableKey("VisualEffect")
 
 /// The entry that loads the VisualEffect table.
 pub fn entry() -> store.Entry {

@@ -51,8 +51,8 @@ pub const schema =
   )
 
 /// The key of the CustomizationParameter table's rows in the store.
-const key: store.TermKey(CustomizationParameter) =
-  store.TermKey("CustomizationParameter")
+const key: store.TableKey(CustomizationParameter) =
+  store.TableKey("CustomizationParameter")
 
 /// The entry that loads the CustomizationParameter table.
 pub fn entry() -> store.Entry {

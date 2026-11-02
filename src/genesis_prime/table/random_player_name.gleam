@@ -47,7 +47,7 @@ pub const schema =
   )
 
 /// The key of the RandomPlayerName table's rows in the store.
-const key: store.TermKey(RandomPlayerName) = store.TermKey("RandomPlayerName")
+const key: store.TableKey(RandomPlayerName) = store.TableKey("RandomPlayerName")
 
 /// The entry that loads the RandomPlayerName table.
 pub fn entry() -> store.Entry {

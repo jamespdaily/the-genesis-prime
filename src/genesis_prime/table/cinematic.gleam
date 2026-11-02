@@ -26,7 +26,7 @@ pub const schema =
   )
 
 /// The key of the Cinematic table's rows in the store.
-const key: store.TermKey(Cinematic) = store.TermKey("Cinematic")
+const key: store.TableKey(Cinematic) = store.TableKey("Cinematic")
 
 /// The entry that loads the Cinematic table.
 pub fn entry() -> store.Entry {

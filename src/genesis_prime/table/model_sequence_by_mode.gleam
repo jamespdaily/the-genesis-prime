@@ -48,8 +48,8 @@ pub const schema =
   )
 
 /// The key of the ModelSequenceByMode table's rows in the store.
-const key: store.TermKey(ModelSequenceByMode) =
-  store.TermKey("ModelSequenceByMode")
+const key: store.TableKey(ModelSequenceByMode) =
+  store.TableKey("ModelSequenceByMode")
 
 /// The entry that loads the ModelSequenceByMode table.
 pub fn entry() -> store.Entry {

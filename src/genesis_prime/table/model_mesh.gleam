@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the ModelMesh table's rows in the store.
-const key: store.TermKey(ModelMesh) = store.TermKey("ModelMesh")
+const key: store.TableKey(ModelMesh) = store.TableKey("ModelMesh")
 
 /// The entry that loads the ModelMesh table.
 pub fn entry() -> store.Entry {

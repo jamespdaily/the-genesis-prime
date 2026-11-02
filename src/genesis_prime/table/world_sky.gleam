@@ -30,7 +30,7 @@ pub const schema =
   )
 
 /// The key of the WorldSky table's rows in the store.
-const key: store.TermKey(WorldSky) = store.TermKey("WorldSky")
+const key: store.TableKey(WorldSky) = store.TableKey("WorldSky")
 
 /// The entry that loads the WorldSky table.
 pub fn entry() -> store.Entry {

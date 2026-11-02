@@ -43,7 +43,7 @@ pub const schema =
   )
 
 /// The key of the MapZonePOI table's rows in the store.
-const key: store.TermKey(MapZonePOI) = store.TermKey("MapZonePOI")
+const key: store.TableKey(MapZonePOI) = store.TableKey("MapZonePOI")
 
 /// The entry that loads the MapZonePOI table.
 pub fn entry() -> store.Entry {

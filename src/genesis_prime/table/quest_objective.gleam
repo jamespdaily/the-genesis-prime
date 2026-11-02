@@ -79,7 +79,7 @@ pub const schema =
   )
 
 /// The key of the QuestObjective table's rows in the store.
-const key: store.TermKey(QuestObjective) = store.TermKey("QuestObjective")
+const key: store.TableKey(QuestObjective) = store.TableKey("QuestObjective")
 
 /// The entry that loads the QuestObjective table.
 pub fn entry() -> store.Entry {

@@ -28,8 +28,8 @@ pub const schema =
   )
 
 /// The key of the AccountItemCooldownGroup table's rows in the store.
-const key: store.TermKey(AccountItemCooldownGroup) =
-  store.TermKey("AccountItemCooldownGroup")
+const key: store.TableKey(AccountItemCooldownGroup) =
+  store.TableKey("AccountItemCooldownGroup")
 
 /// The entry that loads the AccountItemCooldownGroup table.
 pub fn entry() -> store.Entry {

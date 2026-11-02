@@ -256,7 +256,8 @@ pub const schema =
   )
 
 /// The key of the RandomTextLineSet table's rows in the store.
-const key: store.TermKey(RandomTextLineSet) = store.TermKey("RandomTextLineSet")
+const key: store.TableKey(RandomTextLineSet) =
+  store.TableKey("RandomTextLineSet")
 
 /// The entry that loads the RandomTextLineSet table.
 pub fn entry() -> store.Entry {

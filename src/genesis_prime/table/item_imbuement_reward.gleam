@@ -39,8 +39,8 @@ pub const schema =
   )
 
 /// The key of the ItemImbuementReward table's rows in the store.
-const key: store.TermKey(ItemImbuementReward) =
-  store.TermKey("ItemImbuementReward")
+const key: store.TableKey(ItemImbuementReward) =
+  store.TableKey("ItemImbuementReward")
 
 /// The entry that loads the ItemImbuementReward table.
 pub fn entry() -> store.Entry {

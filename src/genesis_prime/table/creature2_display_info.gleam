@@ -223,8 +223,8 @@ pub const schema =
   )
 
 /// The key of the Creature2DisplayInfo table's rows in the store.
-const key: store.TermKey(Creature2DisplayInfo) =
-  store.TermKey("Creature2DisplayInfo")
+const key: store.TableKey(Creature2DisplayInfo) =
+  store.TableKey("Creature2DisplayInfo")
 
 /// The entry that loads the Creature2DisplayInfo table.
 pub fn entry() -> store.Entry {

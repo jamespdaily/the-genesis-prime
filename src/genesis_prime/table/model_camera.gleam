@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the ModelCamera table's rows in the store.
-const key: store.TermKey(ModelCamera) = store.TermKey("ModelCamera")
+const key: store.TableKey(ModelCamera) = store.TableKey("ModelCamera")
 
 /// The entry that loads the ModelCamera table.
 pub fn entry() -> store.Entry {

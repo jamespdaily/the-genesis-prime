@@ -30,8 +30,8 @@ pub const schema =
   )
 
 /// The key of the InputActionCategory table's rows in the store.
-const key: store.TermKey(InputActionCategory) =
-  store.TermKey("InputActionCategory")
+const key: store.TableKey(InputActionCategory) =
+  store.TableKey("InputActionCategory")
 
 /// The entry that loads the InputActionCategory table.
 pub fn entry() -> store.Entry {

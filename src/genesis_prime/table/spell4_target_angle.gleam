@@ -27,7 +27,8 @@ pub const schema =
   )
 
 /// The key of the Spell4TargetAngle table's rows in the store.
-const key: store.TermKey(Spell4TargetAngle) = store.TermKey("Spell4TargetAngle")
+const key: store.TableKey(Spell4TargetAngle) =
+  store.TableKey("Spell4TargetAngle")
 
 /// The entry that loads the Spell4TargetAngle table.
 pub fn entry() -> store.Entry {

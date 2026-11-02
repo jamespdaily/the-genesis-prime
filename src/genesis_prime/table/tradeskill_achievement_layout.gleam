@@ -62,8 +62,8 @@ pub const schema =
   )
 
 /// The key of the TradeskillAchievementLayout table's rows in the store.
-const key: store.TermKey(TradeskillAchievementLayout) =
-  store.TermKey("TradeskillAchievementLayout")
+const key: store.TableKey(TradeskillAchievementLayout) =
+  store.TableKey("TradeskillAchievementLayout")
 
 /// The entry that loads the TradeskillAchievementLayout table.
 pub fn entry() -> store.Entry {

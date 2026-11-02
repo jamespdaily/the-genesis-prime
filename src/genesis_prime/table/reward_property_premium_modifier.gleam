@@ -57,8 +57,8 @@ pub const schema =
   )
 
 /// The key of the RewardPropertyPremiumModifier table's rows in the store.
-const key: store.TermKey(RewardPropertyPremiumModifier) =
-  store.TermKey("RewardPropertyPremiumModifier")
+const key: store.TableKey(RewardPropertyPremiumModifier) =
+  store.TableKey("RewardPropertyPremiumModifier")
 
 /// The entry that loads the RewardPropertyPremiumModifier table.
 pub fn entry() -> store.Entry {

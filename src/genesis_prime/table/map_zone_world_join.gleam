@@ -31,7 +31,7 @@ pub const schema =
   )
 
 /// The key of the MapZoneWorldJoin table's rows in the store.
-const key: store.TermKey(MapZoneWorldJoin) = store.TermKey("MapZoneWorldJoin")
+const key: store.TableKey(MapZoneWorldJoin) = store.TableKey("MapZoneWorldJoin")
 
 /// The entry that loads the MapZoneWorldJoin table.
 pub fn entry() -> store.Entry {

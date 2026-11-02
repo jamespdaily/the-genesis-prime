@@ -52,8 +52,8 @@ pub const schema =
   )
 
 /// The key of the ClassSecondaryStatBonus table's rows in the store.
-const key: store.TermKey(ClassSecondaryStatBonus) =
-  store.TermKey("ClassSecondaryStatBonus")
+const key: store.TableKey(ClassSecondaryStatBonus) =
+  store.TableKey("ClassSecondaryStatBonus")
 
 /// The entry that loads the ClassSecondaryStatBonus table.
 pub fn entry() -> store.Entry {

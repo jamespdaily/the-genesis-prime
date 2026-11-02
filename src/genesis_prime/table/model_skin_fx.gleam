@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the ModelSkinFX table's rows in the store.
-const key: store.TermKey(ModelSkinFX) = store.TermKey("ModelSkinFX")
+const key: store.TableKey(ModelSkinFX) = store.TableKey("ModelSkinFX")
 
 /// The entry that loads the ModelSkinFX table.
 pub fn entry() -> store.Entry {

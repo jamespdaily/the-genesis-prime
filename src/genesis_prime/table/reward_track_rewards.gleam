@@ -80,8 +80,8 @@ pub const schema =
   )
 
 /// The key of the RewardTrackRewards table's rows in the store.
-const key: store.TermKey(RewardTrackRewards) =
-  store.TermKey("RewardTrackRewards")
+const key: store.TableKey(RewardTrackRewards) =
+  store.TableKey("RewardTrackRewards")
 
 /// The entry that loads the RewardTrackRewards table.
 pub fn entry() -> store.Entry {

@@ -41,7 +41,7 @@ pub const schema =
   )
 
 /// The key of the Spell4Runner table's rows in the store.
-const key: store.TermKey(Spell4Runner) = store.TermKey("Spell4Runner")
+const key: store.TableKey(Spell4Runner) = store.TableKey("Spell4Runner")
 
 /// The entry that loads the Spell4Runner table.
 pub fn entry() -> store.Entry {

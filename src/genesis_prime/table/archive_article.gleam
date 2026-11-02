@@ -142,7 +142,7 @@ pub const schema =
   )
 
 /// The key of the ArchiveArticle table's rows in the store.
-const key: store.TermKey(ArchiveArticle) = store.TermKey("ArchiveArticle")
+const key: store.TableKey(ArchiveArticle) = store.TableKey("ArchiveArticle")
 
 /// The entry that loads the ArchiveArticle table.
 pub fn entry() -> store.Entry {

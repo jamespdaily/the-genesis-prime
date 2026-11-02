@@ -58,7 +58,7 @@ pub const schema =
   )
 
 /// The key of the ZoneCompletion table's rows in the store.
-const key: store.TermKey(ZoneCompletion) = store.TermKey("ZoneCompletion")
+const key: store.TableKey(ZoneCompletion) = store.TableKey("ZoneCompletion")
 
 /// The entry that loads the ZoneCompletion table.
 pub fn entry() -> store.Entry {

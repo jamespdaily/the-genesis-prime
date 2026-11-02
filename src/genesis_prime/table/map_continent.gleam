@@ -58,7 +58,7 @@ pub const schema =
   )
 
 /// The key of the MapContinent table's rows in the store.
-const key: store.TermKey(MapContinent) = store.TermKey("MapContinent")
+const key: store.TableKey(MapContinent) = store.TableKey("MapContinent")
 
 /// The entry that loads the MapContinent table.
 pub fn entry() -> store.Entry {

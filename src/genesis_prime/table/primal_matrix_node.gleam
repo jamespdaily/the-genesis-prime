@@ -85,7 +85,7 @@ pub const schema =
   )
 
 /// The key of the PrimalMatrixNode table's rows in the store.
-const key: store.TermKey(PrimalMatrixNode) = store.TermKey("PrimalMatrixNode")
+const key: store.TableKey(PrimalMatrixNode) = store.TableKey("PrimalMatrixNode")
 
 /// The entry that loads the PrimalMatrixNode table.
 pub fn entry() -> store.Entry {

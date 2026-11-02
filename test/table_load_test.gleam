@@ -629,7 +629,7 @@ pub fn a_file_that_ends_inside_its_lookup_fails_the_load_test() -> Nil {
 }
 
 /// The key of the derived ids of the planted LocalizedText rows.
-const ids_key: store.TermKey(List(Int)) = store.TermKey("LocalizedTextIds")
+const ids_key: store.DerivedKey(List(Int)) = store.DerivedKey("LocalizedTextIds")
 
 /// A derivation of the ids of the planted LocalizedText rows, which tells the
 /// subject each time it is built.

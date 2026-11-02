@@ -47,8 +47,8 @@ pub const schema =
   )
 
 /// The key of the ResourceConversion table's rows in the store.
-const key: store.TermKey(ResourceConversion) =
-  store.TermKey("ResourceConversion")
+const key: store.TableKey(ResourceConversion) =
+  store.TableKey("ResourceConversion")
 
 /// The entry that loads the ResourceConversion table.
 pub fn entry() -> store.Entry {

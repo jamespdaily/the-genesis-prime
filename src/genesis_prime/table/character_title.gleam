@@ -58,7 +58,7 @@ pub const schema =
   )
 
 /// The key of the CharacterTitle table's rows in the store.
-const key: store.TermKey(CharacterTitle) = store.TermKey("CharacterTitle")
+const key: store.TableKey(CharacterTitle) = store.TableKey("CharacterTitle")
 
 /// The entry that loads the CharacterTitle table.
 pub fn entry() -> store.Entry {

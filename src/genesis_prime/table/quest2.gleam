@@ -490,7 +490,7 @@ pub const schema =
   )
 
 /// The key of the Quest2 table's rows in the store.
-const key: store.TermKey(Quest2) = store.TermKey("Quest2")
+const key: store.TableKey(Quest2) = store.TableKey("Quest2")
 
 /// The entry that loads the Quest2 table.
 pub fn entry() -> store.Entry {

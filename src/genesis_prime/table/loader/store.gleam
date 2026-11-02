@@ -36,13 +36,21 @@ pub opaque type Key {
   LoadKey(Reference)
 }
 
-/// The name of one term of a load, a table's rows or a derived value, and the
-/// type of what it holds: the load writes the term from a decoder or a build
-/// function of that type (`entry`, `derivation`), and a read by the key gives
-/// that type back, so a reader cannot name another one. A generated table
-/// module and each derivation declare theirs once, as a constant.
-pub type TermKey(value) {
-  TermKey(name: String)
+/// The name of a table's term in a load, and the type of the table's rows:
+/// `entry` writes the term from a decoder of that type, and a read by the key
+/// gives that type back, so a reader cannot name another one. A generated
+/// table module declares its own once, as a constant, and `entry` is where the
+/// compiler holds the key's type to its decoder's.
+pub type TableKey(row) {
+  TableKey(name: String)
+}
+
+/// The name of a derived value's term in a load, and the type of the value:
+/// `derivation` writes the term from a build function of that type, and
+/// `derived` gives that type back. It is a type of its own, so a derived
+/// value's key cannot read a table, nor a table's key a derived value.
+pub type DerivedKey(value) {
+  DerivedKey(name: String)
 }
 
 /// The tables of one load. It holds the key their terms are stored under, so a
@@ -125,7 +133,7 @@ pub fn describe(error: LoadError) -> String {
 /// gives back to `row` and `rows`. The key's name is the table's
 /// (`schema.table`).
 pub fn entry(
-  key key: TermKey(row),
+  key key: TableKey(row),
   schema schema: tbl_file.Schema,
   decode decode: fn(BitArray, tbl_file.Strings) ->
     Result(row, tbl_file.RecordError),
@@ -147,7 +155,7 @@ pub fn entry(
 /// name of a table of the client. `build` reads the loaded tables once, when
 /// they load; `derived` then gives its result.
 pub fn derivation(
-  key key: TermKey(value),
+  key key: DerivedKey(value),
   build build: fn(Tables) -> value,
 ) -> Derivation {
   Derivation(name: key.name, put: fn(tables) {
@@ -157,7 +165,7 @@ pub fn derivation(
 
 /// The value a derivation built when these tables loaded; a key no derivation
 /// of the load had stops the caller.
-pub fn derived(tables tables: Tables, key key: TermKey(value)) -> value {
+pub fn derived(tables tables: Tables, key key: DerivedKey(value)) -> value {
   get_term(tables.key, key.name)
 }
 
@@ -348,20 +356,20 @@ pub fn unload(tables: Tables) -> Nil {
 /// none.
 pub fn row(
   tables tables: Tables,
-  key key: TermKey(row),
+  key key: TableKey(row),
   id id: Int,
 ) -> Result(row, Nil) {
   tbl_file.row(table_of(tables.key, key), id)
 }
 
 /// Every row of the table the key names, in id order.
-pub fn rows(tables tables: Tables, key key: TermKey(row)) -> List(row) {
+pub fn rows(tables tables: Tables, key key: TableKey(row)) -> List(row) {
   tbl_file.rows(table_of(tables.key, key))
 }
 
 /// The table a key names: the term `entry` wrote from `decode`, whose rows are
 /// the key's type.
-fn table_of(load: Key, key: TermKey(row)) -> tbl_file.Table(row) {
+fn table_of(load: Key, key: TableKey(row)) -> tbl_file.Table(row) {
   get_term(load, key.name)
 }
 

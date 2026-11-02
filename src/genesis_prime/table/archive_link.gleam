@@ -42,7 +42,7 @@ pub const schema =
   )
 
 /// The key of the ArchiveLink table's rows in the store.
-const key: store.TermKey(ArchiveLink) = store.TermKey("ArchiveLink")
+const key: store.TableKey(ArchiveLink) = store.TableKey("ArchiveLink")
 
 /// The entry that loads the ArchiveLink table.
 pub fn entry() -> store.Entry {

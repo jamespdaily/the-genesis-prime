@@ -29,7 +29,7 @@ pub const schema =
   )
 
 /// The key of the TutorialLayout table's rows in the store.
-const key: store.TermKey(TutorialLayout) = store.TermKey("TutorialLayout")
+const key: store.TableKey(TutorialLayout) = store.TableKey("TutorialLayout")
 
 /// The entry that loads the TutorialLayout table.
 pub fn entry() -> store.Entry {

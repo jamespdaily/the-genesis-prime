@@ -29,7 +29,7 @@ pub const schema =
   )
 
 /// The key of the PathLevel table's rows in the store.
-const key: store.TermKey(PathLevel) = store.TermKey("PathLevel")
+const key: store.TableKey(PathLevel) = store.TableKey("PathLevel")
 
 /// The entry that loads the PathLevel table.
 pub fn entry() -> store.Entry {

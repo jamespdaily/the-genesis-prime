@@ -80,8 +80,8 @@ pub const schema =
   )
 
 /// The key of the AttributeMilestoneGroup table's rows in the store.
-const key: store.TermKey(AttributeMilestoneGroup) =
-  store.TermKey("AttributeMilestoneGroup")
+const key: store.TableKey(AttributeMilestoneGroup) =
+  store.TableKey("AttributeMilestoneGroup")
 
 /// The entry that loads the AttributeMilestoneGroup table.
 pub fn entry() -> store.Entry {

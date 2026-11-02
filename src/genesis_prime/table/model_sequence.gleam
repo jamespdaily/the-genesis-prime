@@ -30,7 +30,7 @@ pub const schema =
   )
 
 /// The key of the ModelSequence table's rows in the store.
-const key: store.TermKey(ModelSequence) = store.TermKey("ModelSequence")
+const key: store.TableKey(ModelSequence) = store.TableKey("ModelSequence")
 
 /// The entry that loads the ModelSequence table.
 pub fn entry() -> store.Entry {

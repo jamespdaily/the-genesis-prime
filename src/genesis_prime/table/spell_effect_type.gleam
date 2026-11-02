@@ -50,7 +50,7 @@ pub const schema =
   )
 
 /// The key of the SpellEffectType table's rows in the store.
-const key: store.TermKey(SpellEffectType) = store.TermKey("SpellEffectType")
+const key: store.TableKey(SpellEffectType) = store.TableKey("SpellEffectType")
 
 /// The entry that loads the SpellEffectType table.
 pub fn entry() -> store.Entry {

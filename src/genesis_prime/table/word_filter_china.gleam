@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the WordFilterChina table's rows in the store.
-const key: store.TermKey(WordFilterChina) = store.TermKey("WordFilterChina")
+const key: store.TableKey(WordFilterChina) = store.TableKey("WordFilterChina")
 
 /// The entry that loads the WordFilterChina table.
 pub fn entry() -> store.Entry {

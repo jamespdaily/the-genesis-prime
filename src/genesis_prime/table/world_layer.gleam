@@ -72,7 +72,7 @@ pub const schema =
   )
 
 /// The key of the WorldLayer table's rows in the store.
-const key: store.TermKey(WorldLayer) = store.TermKey("WorldLayer")
+const key: store.TableKey(WorldLayer) = store.TableKey("WorldLayer")
 
 /// The entry that loads the WorldLayer table.
 pub fn entry() -> store.Entry {

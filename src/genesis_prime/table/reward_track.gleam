@@ -110,7 +110,7 @@ pub const schema =
   )
 
 /// The key of the RewardTrack table's rows in the store.
-const key: store.TermKey(RewardTrack) = store.TermKey("RewardTrack")
+const key: store.TableKey(RewardTrack) = store.TableKey("RewardTrack")
 
 /// The entry that loads the RewardTrack table.
 pub fn entry() -> store.Entry {
