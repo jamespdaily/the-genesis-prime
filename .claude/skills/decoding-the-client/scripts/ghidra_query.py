@@ -41,7 +41,7 @@ Kinds and their arguments (addresses are 0x-prefixed lower-case hex):
                                              recover). The project is not changed. text is Ghidra's
                                              syntax, with addresses as numbers. Bytes that decode to
                                              no instruction are an error reply naming the address.
-  emulate        function | start, stop, -> {"result": {"rax": int, "xmm0_low": int},
+  emulate         function | start, stop, -> {"result": {"rax": int, "xmm0_low": int},
                   args, registers, memory,    "registers": {name: int}, "read": [hex], "steps": n,
                   read, stand_ins,            "stopped_at": address}
                   follow_calls, max_steps
