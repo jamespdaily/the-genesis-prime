@@ -29,7 +29,7 @@ running(Pid) ->
 %% How many asks an open connection keeps for a late answer or the end of
 %% their target: the Running record's kept dictionary.
 kept_asks(Pid) ->
-    {running, _Socket, _Script, _State, _Writer, _Wire, _At, _TakenMs, _ClosedBy, Kept,
+    {running, _Socket, _Script, _State, _Writer, _Wire, _At, _TakenMs, _ClosedBy, _Held, Kept,
      _Watches, _Timers, _Stopping}
         = running(Pid),
     maps:size(Kept).
@@ -37,7 +37,7 @@ kept_asks(Pid) ->
 %% The buffer, in bytes, of an open connection's socket, which bounds what one
 %% read of it holds: the Running record's socket.
 socket_buffer(Pid) ->
-    {running, Socket, _Script, _State, _Writer, _Wire, _At, _TakenMs, _ClosedBy, _Kept,
+    {running, Socket, _Script, _State, _Writer, _Wire, _At, _TakenMs, _ClosedBy, _Held, _Kept,
      _Watches, _Timers, _Stopping}
         = running(Pid),
     {ok, [{buffer, Buffer}]} = inet:getopts(Socket, [buffer]),

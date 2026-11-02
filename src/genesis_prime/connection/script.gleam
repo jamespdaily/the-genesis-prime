@@ -19,11 +19,13 @@
 //// - **A replay's script** (genesis_prime/wire_replay): the seed is the
 ////   recording's, the clock gives the recording's `Now`s as it is told what each
 ////   call serves (`Taking`), and a timer fires when the replay client reaches
-////   its line. A read takes the `Now` of the recorded read line in which its
-////   last byte falls, so a socket that delivers one recorded read in two parts
-////   gives both parts that line's `Now`; any other input takes the next
-////   recorded input, and one of another kind than the recording's next is an
-////   ordering failure of the replay.
+////   its line. The shell takes each recorded read as one input: the script
+////   tells it how many bytes the next recorded read holds (`next_read`), and the
+////   shell keeps reading until it holds that many, so a socket that delivers
+////   one recorded read in two parts gives the rule one input. As a safety net,
+////   a read takes the `Now` of the recorded read line in which its last byte
+////   falls; any other input takes the next recorded input, and one of another
+////   kind than the recording's next is an ordering failure of the replay.
 //// - **A script is used once.** `Scripts` is called once for each accepted
 ////   connection. A listener that restarts keeps its `Scripts` (the value is
 ////   made before the tree, not by the listener), so a connection accepted after
@@ -39,6 +41,7 @@ import genesis_prime/step/runtime
 import gleam/crypto
 import gleam/erlang/process.{type Subject}
 import gleam/erlang/reference.{type Reference}
+import gleam/option.{type Option, None}
 
 /// What an input is, as far as the clock needs to know: its kind and, for a
 /// read, how many bytes it holds. The server's clock ignores it; a replay's
@@ -81,9 +84,17 @@ pub type Elapsed {
 pub type Scheduler =
   fn(Subject(Elapsed), TimerId, Reference, Int) -> Cancel
 
+/// How many bytes the next `Read` input holds, when the script fixes it: the
+/// server's script returns `None` and the shell takes what has arrived; a
+/// replay's returns the byte count of the next recorded read line not yet taken,
+/// and the shell reads on until it holds exactly that many bytes before it takes
+/// the input. It only looks: the clock's call for the read advances the script.
+pub type NextRead =
+  fn() -> Option(Int)
+
 /// What one connection takes from outside its socket.
 pub type Script {
-  Script(seed: BitArray, clock: Clock, schedule: Scheduler)
+  Script(seed: BitArray, clock: Clock, schedule: Scheduler, next_read: NextRead)
 }
 
 /// A connection's script with its accept ordinal: the place of the connection
@@ -109,6 +120,7 @@ pub fn operating_system() -> Result(Issued, Nil) {
       seed: crypto.strong_random_bytes(32),
       clock: fn(_taking) { runtime.now() },
       schedule: operating_system_timer,
+      next_read: fn() { None },
     ),
   ))
 }

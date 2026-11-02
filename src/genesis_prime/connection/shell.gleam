@@ -41,7 +41,10 @@
 ////   more bytes than that, and the socket is active once: the shell arms it
 ////   again after each step's effects, including while an ask waits. What
 ////   arrives meanwhile is the rule's to hold or refuse
-////   (`genesis_prime/client_connection.hold`).
+////   (`genesis_prime/client_connection.hold`). In a replay the script gives
+////   the byte count of the next recorded read, and the shell holds what arrives
+////   and arms the socket again until it holds that many, so the recorded read
+////   is one input (`read_arrived`).
 //// - **A message the selector does not take.** The shell drops it and logs a
 ////   warning that names the message's kind (its tag or its shape) and never its
 ////   contents, which could hold a secret; the line carries the connection's
@@ -341,6 +344,7 @@ type Running(state) {
     at: step.Now,
     taken_ms: Int,
     closed_by: Side,
+    held: BitArray,
     kept: Dict(Reference, Kept),
     watches: Watches,
     timers: Dict(TimerId, Started),
@@ -511,8 +515,7 @@ fn handle(
     Open(running:) ->
       case mail {
         Begin -> panic as "a connection takes Begin once"
-        FromSocket(Read(bytes:)) ->
-          take_next(connection:, running:, event: OwnEvent(step.Read(bytes:)))
+        FromSocket(Read(bytes:)) -> read_arrived(connection:, running:, bytes:)
         FromSocket(ClosedByPeer) ->
           take_next(
             connection:,
@@ -645,6 +648,7 @@ fn accepted(
       at: now,
       taken_ms: runtime.monotonic_ms(),
       closed_by: wire_recording.Server,
+      held: <<>>,
       kept: dict.new(),
       watches: watch.new(),
       timers: dict.new(),
@@ -746,6 +750,44 @@ fn take(
       carry(connection:, running:, effects:, then: WaitForInput)
     EffectsThenAsk(effects:, ask:) ->
       carry(connection:, running:, effects:, then: MakeAsk(ask))
+  }
+}
+
+/// Takes what the socket delivered as a `Read` input. The server's script fixes
+/// no size (`script.NextRead`), so the bytes that arrived, with any held, are the
+/// input. A replay's script gives the byte count of the next recorded read; the
+/// shell holds the bytes and arms the socket again, taking no input, until it
+/// holds that many, so a read the socket delivers in parts reaches the rule as
+/// the one recorded input, and no other input (an answer, for one) is taken
+/// between the parts. Bytes held beyond the count are part of the same input.
+/// A close or a failure of the socket takes the held bytes with it.
+fn read_arrived(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state),
+  bytes bytes: BitArray,
+) -> actor.Next(
+  Connection(settings, state, message, answer, request),
+  Mail(message, answer),
+) {
+  let held = <<running.held:bits, bytes:bits>>
+  let held_count = bit_array.byte_size(held)
+  case running.script.next_read() {
+    Some(wanted) if held_count < wanted ->
+      case read_once(running.socket) {
+        Ok(Nil) -> keep_open(connection:, running: Running(..running, held:))
+        Error(failure) ->
+          take_next(
+            connection:,
+            running: Running(..running, held: <<>>),
+            event: OwnEvent(ReadFailed(failure:)),
+          )
+      }
+    Some(_) | None ->
+      take_next(
+        connection:,
+        running: Running(..running, held: <<>>),
+        event: OwnEvent(step.Read(bytes: held)),
+      )
   }
 }
 

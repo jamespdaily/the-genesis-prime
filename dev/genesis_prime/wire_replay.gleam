@@ -7,13 +7,16 @@
 //// the server tree ── started on that database; each listener's `Served` has
 ////                    `scripts` from `serve_from`, which hands the connection
 ////                    accepted n-th the script of the recording with the n-th
-////                    accept ordinal: its seed, its `Now`s in a queue and a
+////                    accept ordinal: its seed, its `Now`s in a queue, the
+////                    byte count of each recorded read (`next_read`) and a
 ////                    scheduler whose timers wait for the replay client
 //// the replay client ─ `play` walks the plan (`plan`) of every connection's
 ////                    lines, sorted by sequence number:
-////                      connect: one connection after another, in accept
-////                        order, each only once the server has handed out
-////                        the script of its ordinal
+////                      connect: at its place in the order (at the connection's
+////                        accepted line), so a listener's connection limit
+////                        holds as it did in the session; connects stay in
+////                        accept order, and each waits only until the server
+////                        has handed out the script of its ordinal
 ////                      an input line the client causes (a read, a timer, the
 ////                        client's close): first waits until that connection's
 ////                        shell has taken every earlier recorded input
@@ -34,15 +37,17 @@
 //// cut it into writes, so a replay gives the same result when the server cuts
 //// its writes differently. The client's bytes are sent as the recording holds
 //// them, one send for each read line, each only after the shell has taken the
-//// input before it. The script's clock is told what each input is (`Taking`),
-//// so a read gets the `Now` of the recorded read line in which its last byte
-//// falls (the script keeps the byte offsets of the recorded read lines): a
-//// socket that delivers one recorded read in two parts gives both parts that
-//// line's `Now` and shifts no later input's, and the line counts as taken once
-//// its last byte has been. Any other input takes the next recorded input of
-//// its kind; one that is not the kind of the next recorded input is an
-//// ordering failure (`TookOutOfOrder`), so an input that arrives earlier or
-//// later than recorded is named and never shows up as a difference in bytes.
+//// input before it. Each recorded read reaches the rule as one input: the
+//// script gives the shell the byte count of the next recorded read, and the
+//// shell reads on until it holds that many bytes, so a socket that delivers one
+//// recorded read in two parts (a loopback split after a complete request, say)
+//// lets no answer or message be taken between the parts. The script's clock is
+//// told what each input is (`Taking`) as a second guard: a read gets the `Now`
+//// of the recorded read line in which its last byte falls, any other input takes
+//// the next recorded input of its kind, and one that is not the kind of the
+//// next recorded input is an ordering failure (`TookOutOfOrder`), so an input
+//// that arrives earlier or later than recorded is named and never shows up as a
+//// difference in bytes.
 ////
 //// Every wait of the replay client is bounded by `wait_ms` of real time, and
 //// so is the shell's wait for an ask (genesis_prime/connection/shell): a replay
@@ -175,7 +180,9 @@ pub type Failure {
 /// One step of the replay client, in the order it takes them.
 pub type Action {
   /// Connects to the listener of the connection's rule and waits until the
-  /// server has handed out the script of the connection's ordinal.
+  /// server has handed out the script of the connection's ordinal. It comes at
+  /// the connection's accepted line, or earlier when a connection of a later
+  /// ordinal would otherwise be connected first.
   Connect(connection: String)
   /// Waits until the connection's shell has taken `inputs` inputs. `input` is
   /// the kind of input of `line`, named when the wait ends in `NeverTaken`.
@@ -267,7 +274,8 @@ pub fn prepare(
 }
 
 /// What the session's connections are given: one script for each, with the
-/// recording's seed, a clock that matches each input the shell takes with a
+/// recording's seed, the byte count of each recorded read (`next_read`), a clock
+/// that matches each input the shell takes with a
 /// recorded line by the `Taking` it is told (a read by its byte count against
 /// the recorded read lines' byte offsets, any other input by kind against the
 /// next recorded input) and gives that line's `Now`, and a scheduler that starts
@@ -289,14 +297,17 @@ pub fn taken(progress _progress: Progress) -> Int {
   panic as "built in the next commit"
 }
 
-/// The replay client's steps for the session: a `Connect` for each connection
-/// in accept order, then the lines of every connection sorted by sequence
-/// number.
+/// The replay client's steps for the session: the lines of every connection
+/// sorted by sequence number, with a `Connect` for each connection placed before
+/// its accepted line, moved earlier only as far as keeps the connects in accept
+/// order (a connect comes before the accepted line of any connection of its
+/// ordinal or a later one).
+/// - the accepted line: `AwaitTaken` of the one input;
 /// - a read line: `AwaitTaken` of the inputs before it, then `Send`;
 /// - a timer line: `AwaitTaken` of the inputs before it, then `Fire`;
 /// - a client's close line: `AwaitTaken` of the inputs before it, then
 ///   `CloseClientSocket`;
-/// - any other input line (accepted, answered, woken, watch ended, a failure,
+/// - any other input line (answered, woken, watch ended, a failure,
 ///   stopping): `AwaitTaken` of the inputs up to and including it;
 /// - a write line: `Expect`;
 /// - the closing line: `AwaitEnd`.
