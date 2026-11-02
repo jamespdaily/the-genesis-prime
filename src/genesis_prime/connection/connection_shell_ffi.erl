@@ -51,16 +51,18 @@ listener_port(Ref) ->
 %% Closes the listener's listening socket, so no new socket is taken, and leaves
 %% its connections running: Ranch stops the listener's acceptors and keeps its
 %% connection supervisor. A listener already closed gives ok. A name Ranch has no
-%% listener under fails with `badarg` (its table has no entry), and one whose
-%% supervisor has ended with `noproc`; both are no listener running. Anything
-%% else Ranch says is the reason. Result(Nil, ListenerError).
+%% listener under fails with `badarg` (its table has no entry); one whose
+%% supervisor has ended fails with `noproc`, and one whose supervisor ends while
+%% the call waits fails with `{Reason, {gen_server, call, _}}` for the reason
+%% it ended with (`shutdown` from its parent, `killed`); all are no listener
+%% running. Anything else Ranch says is the reason. Result(Nil, ListenerError).
 suspend_listener(Ref) ->
     try ranch:suspend_listener(Ref) of
         ok -> {ok, nil};
         {error, Reason} -> {error, {ranch_failed, format(Reason)}}
     catch
         error:badarg -> {error, listener_not_running};
-        exit:{noproc, _} -> {error, listener_not_running}
+        exit:{_Reason, {gen_server, call, _}} -> {error, listener_not_running}
     end.
 
 %% Takes the socket from Ranch, gives its reads the buffer ReadLimit, so no read

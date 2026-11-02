@@ -13,7 +13,6 @@
 import ask_support
 import genesis_prime/service
 import genesis_prime/step/runtime.{Shutdown}
-import gleam/bool
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
@@ -145,18 +144,11 @@ pub fn a_supervisor_that_ends_while_the_call_waits_is_a_supervisor_that_is_not_r
         service.start_child(supervisor: name, argument: held),
       )
     })
-  await_queued(supervisor)
+  mailbox_support.await_queued(supervisor)
   process.send(release, Nil)
   let _reason = ask_support.ended(stopped)
   let assert Ok(result) = process.receive(results, ask_support.event_wait_ms)
     as "the call returned"
   assert result == Error(service.SupervisorNotRunning)
     as "a call that waited while the supervisor stopped, and ended with it, is answered not running"
-}
-
-/// Waits until the call is in the supervisor's mailbox.
-fn await_queued(supervisor: Pid) -> Nil {
-  use <- bool.guard(when: mailbox_support.queued(supervisor) > 0, return: Nil)
-  process.sleep(1)
-  await_queued(supervisor)
 }

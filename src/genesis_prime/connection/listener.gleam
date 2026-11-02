@@ -77,7 +77,8 @@ pub fn supervised(
 
 /// Why Ranch could not give or do something for a listener, as it reported it.
 pub type ListenerError {
-  /// No listener runs under the name, as when its supervisor is restarting it.
+  /// No listener runs under the name, as when its supervisor is restarting it
+  /// or ends while the call waits.
   ListenerNotRunning
   /// The listener's listening socket is closed (`stop_accepting`), so it has
   /// no port.

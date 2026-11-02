@@ -3,12 +3,22 @@
 //// is waiting in one, or that a process holds no monitor it should have
 //// dropped.
 
+import gleam/bool
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process.{type Pid}
 
 /// The number of messages waiting in the process's mailbox.
 @external(erlang, "mailbox_support_ffi", "queued")
 pub fn queued(pid: Pid) -> Int
+
+/// Waits until a message is in the process's mailbox: a call made to a process
+/// that takes none, because it is suspended or stopping its children, stays
+/// there.
+pub fn await_queued(pid: Pid) -> Nil {
+  use <- bool.guard(when: queued(pid) > 0, return: Nil)
+  process.sleep(1)
+  await_queued(pid)
+}
 
 /// How many messages waiting in the process's mailbox are tuples whose first
 /// element is the atom `tag`. A mailbox's length is no measure of what a
