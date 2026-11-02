@@ -781,19 +781,19 @@ pub fn a_create_stores_the_character_at_the_level_it_was_given_with_the_values_i
   stop(store)
 }
 
-pub fn a_stored_character_with_world_0_loads_as_no_place_whatever_its_zone_and_position_hold_test() -> Nil {
+pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
   let account = insert_account(store, "login-1")
   let AccountId(id) = account
   let assert Ok(pog.Returned(rows: [character_id], ..)) =
     pog.query(
-      "insert into character (account_id, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z) values ($1, 'Ab Cd', 1, 1, 1, 167, 1, 0, 0, 7, 1.5, 2.5, 3.5) returning character_id",
+      "insert into character (account_id, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z) values ($1, 'Ab Cd', 1, 1, 1, 167, 1, 0, 0, 0, 0, 0, 0) returning character_id",
     )
     |> pog.parameter(pog.int(id))
     |> pog.returning(decode.at([0], decode.int))
     |> pog.execute(store.pool)
-    as "the table allows world 0 with a zone and a position (priv/migrations/0002_character_list_columns.sql)"
+    as "the table allows world 0 with no zone and no position"
   let character =
     Character(
       character_id: CharacterId(character_id),
@@ -811,10 +811,48 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_whatever_its_zone_and_p
     )
   assert ask(store, Select(ListCharacters(account)))
     == ForSelect(Listed([character]))
-    as "world 0 is no World row, which 0xAD needs (opcode.0xad): the zone and position of a row with no world mean nothing, so the list reads no place"
+    as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
     == ForWorld(CharacterLoaded(character))
     as "the load reads the same row the same way"
+  stop(store)
+}
+
+pub fn the_table_refuses_a_character_with_no_world_that_has_a_zone_or_a_position_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let AccountId(id) = account
+  let insert = fn(name, world_id, world_zone_id, x, y, z) {
+    pog.query(
+      "insert into character (account_id, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z) values ($1, $2, 1, 1, 1, 167, 1, 0, $3, $4, $5, $6, $7)",
+    )
+    |> pog.parameter(pog.int(id))
+    |> pog.parameter(pog.text(name))
+    |> pog.parameter(pog.int(world_id))
+    |> pog.parameter(pog.int(world_zone_id))
+    |> pog.parameter(pog.float(x))
+    |> pog.parameter(pog.float(y))
+    |> pog.parameter(pog.float(z))
+    |> pog.execute(store.pool)
+    |> result.map_error(fn(error) {
+      let assert pog.ConstraintViolated(constraint:, ..) = error
+        as "the table refused with a constraint"
+      constraint
+    })
+    |> result.replace(Nil)
+  }
+  let refused = Error("character_no_world_has_no_zone_or_position")
+  assert insert("Zone", 0, 7, 0.0, 0.0, 0.0) == refused
+    as "world 0 is no World row (opcode.0xad), so a zone of it means nothing"
+  assert insert("Xx", 0, 0, 1.5, 0.0, 0.0) == refused
+  assert insert("Yy", 0, 0, 0.0, 2.5, 0.0) == refused
+  assert insert("Zz", 0, 0, 0.0, 0.0, 3.5) == refused
+    as "nor does any one coordinate"
+  assert insert("None", 0, 0, 0.0, 0.0, 0.0) == Ok(Nil)
+    as "a character with no place is world 0, zone 0 and position 0"
+  assert insert("Placed", 1387, 1100, 1.5, 2.5, 3.5) == Ok(Nil)
+    as "a character with a world keeps its zone and position"
   stop(store)
 }
 
