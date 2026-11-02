@@ -26,6 +26,12 @@ pub const header_size = 6
 /// 0x140335ec0).
 pub const size_limit = 131_070
 
+/// The most bytes one read of a socket holds: the buffer the connection shell
+/// gives each socket. A server choice, large enough that a whole frame takes a
+/// few reads and small enough that the bytes a rule holds past a whole frame
+/// (`genesis_prime/client_connection.held_limit`) stay small.
+pub const read_limit = 16_384
+
 /// One message: its id and the body bytes after the header.
 pub type Frame {
   Frame(message_id: Int, body: BitArray)

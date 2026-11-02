@@ -32,14 +32,22 @@
 //// - **Ciphers.** The hello and the ping's pong travel bare; every other
 ////   frame each way travels in the wrapper (0x244 from the client, 0x76 to it)
 ////   under the client's base key (genesis_prime/connection/encrypted_frame).
+//// - **Limits.** Each ends the connection with nothing written, since a
+////   client past one is no client: a frame longer than 131,070 bytes
+////   (MessageSizeLimit 0x140335ec0), refused at its length field; more than
+////   `client_connection.held_limit` bytes not yet taken, which the hand-off's
+////   asks let pile up, with an error log; and more frames than the rate
+////   allows (`Settings.rate`, a bucket counted in whole frames when they are
+////   taken), with a warning.
 //// - **Out of order.** A frame the client's reader would refuse ends the
 ////   connection; a whole frame of a message the rule does not take is logged
 ////   as unhandled and the connection goes on.
 
 import genesis_prime/client_archive
 import genesis_prime/client_connection.{
-  type Answer, type Link, type Request, AskHandOff, Asking, Bytes, Connect,
-  Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Otherwise,
+  type Answer, type Bucket, type Link, type Request, AskHandOff, Asking, Bytes,
+  Connect, Continue, Done, FromHandOff, FromMap, FromSessions, FromStore,
+  Otherwise,
 }
 import genesis_prime/connection/cipher
 import genesis_prime/connection/encrypted_frame.{AuthWrapper}
@@ -92,6 +100,9 @@ pub type Settings {
     /// client does not handle; only the dev start sets it, to prove the
     /// client's failure log brings back its id.
     planted: Option(Frame),
+    /// How fast the client may send its frames
+    /// (`genesis_prime/client_connection.Bucket`).
+    rate: Bucket,
   )
 }
 
@@ -137,6 +148,16 @@ const reason_invalid_login_token = 16
 
 const reason_version_mismatch = 19
 
+/// The longest the rule can hold the client's frames untaken, given how long
+/// an ask may take: frames that arrive while an ask is out are counted against
+/// the rate only when the answer comes, and the login asks the hand-off twice
+/// in a row, to take the game token and then to keep the session key. A rate's
+/// burst must hold what a client sends at its rate through that
+/// (`genesis_prime/client_connection.bucket`).
+pub fn longest_wait_ms(ask_deadline_ms ask_deadline_ms: Int) -> Int {
+  2 * ask_deadline_ms
+}
+
 /// The rule as its connection shell runs it.
 pub fn rule(
   settings: Settings,
@@ -169,7 +190,13 @@ pub fn step(
           #(
             Connected(Session(
               settings:,
-              link: client_connection.link(connection:, peer:, seed:),
+              link: client_connection.link(
+                connection:,
+                peer:,
+                seed:,
+                bucket: settings.rate,
+                now: input.now,
+              ),
               pending: <<>>,
               status: AwaitingLoginRequest,
             )),
@@ -197,19 +224,30 @@ fn connected(
       []
     })
   {
-    Bytes(bytes:) -> {
-      let session =
-        Session(..session, pending: <<session.pending:bits, bytes:bits>>)
-      case session.status {
-        // A frame is taken only once the answer to the ask in flight comes.
-        TakingToken(..) | KeepingSessionKey(..) -> #(
-          Connected(session),
-          Effects([]),
+    Bytes(bytes:) ->
+      case
+        client_connection.hold(
+          session:,
+          held: session.pending,
+          bytes:,
+          about: about_of(session),
         )
-        AwaitingLoginRequest | HandedOff(..) ->
-          client_connection.drive(session:, flow: flow(now), carried: [])
+      {
+        Error(handled) ->
+          client_connection.settle(handled:, flow: flow(now), carried: [])
+        Ok(pending) -> {
+          let session = Session(..session, pending:)
+          case session.status {
+            // A frame is taken only once the answer to the ask in flight comes.
+            TakingToken(..) | KeepingSessionKey(..) -> #(
+              Connected(session),
+              Effects([]),
+            )
+            AwaitingLoginRequest | HandedOff(..) ->
+              client_connection.drive(session:, flow: flow(now), carried: [])
+          }
+        }
       }
-    }
     client_connection.Outcome(outcome:) ->
       client_connection.settle(
         handled: answered(session:, now:, outcome:),
@@ -247,6 +285,15 @@ fn flow(now: Now) -> client_connection.Flow(Session, Frame, FrameError, State) {
     },
     refused: fn(session, error) {
       end_for(session, "the bytes are no frame: " <> frame.describe(error))
+    },
+    charged: fn(session) {
+      client_connection.charge(
+        session:,
+        link: session.link,
+        now:,
+        about: about_of(session),
+        relinked: fn(link) { Session(..session, link:) },
+      )
     },
     connected: Connected,
   )

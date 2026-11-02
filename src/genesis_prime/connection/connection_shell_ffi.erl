@@ -8,8 +8,8 @@
 -module(connection_shell_ffi).
 -behaviour(ranch_protocol).
 
--export([start_link/3, start_listener/4, listener_port/1, suspend_listener/1,
-         handshake/2, read_once/1, socket_message/1, send/2, close/1, peer/1]).
+-export([start_link/3, start_listener/5, listener_port/1, suspend_listener/1,
+         handshake/3, read_once/1, socket_message/1, send/2, close/1, peer/1]).
 
 %% Starts the connection's process, linked to Ranch's connection supervisor,
 %% which is the calling process and the shell's parent. The process is the
@@ -19,11 +19,15 @@ start_link(Ref, _Transport, Settings) ->
     'genesis_prime@connection@shell':start(Ref, Settings).
 
 %% Starts a listener as a child of the calling supervisor: Ranch's embedded
-%% supervisor, with one connection supervisor, so connections are its
-%% temporary children and stop within ShutdownMs.
-start_listener(Ref, Port, ShutdownMs, Settings) ->
+%% supervisor, with one acceptor, which takes exactly MaxConnections
+%% connections (with more acceptors Ranch can take one more for each) and one
+%% connection supervisor, so connections are its temporary children and stop
+%% within ShutdownMs.
+start_listener(Ref, Port, MaxConnections, ShutdownMs, Settings) ->
     {ok, _} = application:ensure_all_started(ranch),
     TransportOptions = #{socket_opts => [{port, Port}],
+                         num_acceptors => 1,
+                         max_connections => MaxConnections,
                          num_conns_sups => 1,
                          shutdown => ShutdownMs},
     case ranch_embedded_sup:start_link(Ref, ranch_tcp, TransportOptions,
@@ -46,18 +50,20 @@ suspend_listener(Ref) ->
     catch _:_ -> {error, nil}
     end.
 
-%% Takes the socket from Ranch and gives its writes the send deadline, closing
-%% it when one passes. A close gives bytes still queued the send deadline, in
-%% whole seconds, to go out, then drops them: without a linger, a close to a
-%% client that has stopped reading waits for the queue up to 180 s
-%% (prim_inet's close_pend_loop). A client gone before the handshake, or a
-%% socket that cannot be set up, is an error value and no crash: the shell ends
-%% the connection quietly.
-handshake(Ref, SendDeadlineMs) ->
+%% Takes the socket from Ranch, gives its reads the buffer ReadLimit, so no read
+%% holds more bytes than that (without it the size depends on the system), and
+%% gives its writes the send deadline, closing it when one passes. A close gives
+%% bytes still queued the send deadline, in whole seconds, to go out, then drops
+%% them: without a linger, a close to a client that has stopped reading waits
+%% for the queue up to 180 s (prim_inet's close_pend_loop). A client gone before
+%% the handshake, or a socket that cannot be set up, is an error value and no
+%% crash: the shell ends the connection quietly.
+handshake(Ref, SendDeadlineMs, ReadLimit) ->
     try ranch:handshake(Ref) of
         {ok, Socket} ->
             LingerSeconds = max(1, (SendDeadlineMs + 999) div 1000),
-            case inet:setopts(Socket, [{send_timeout, SendDeadlineMs},
+            case inet:setopts(Socket, [{buffer, ReadLimit},
+                                       {send_timeout, SendDeadlineMs},
                                        {send_timeout_close, true},
                                        {linger, {true, LingerSeconds}}]) of
                 ok -> {ok, Socket};

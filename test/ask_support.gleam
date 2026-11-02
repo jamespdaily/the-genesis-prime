@@ -90,7 +90,12 @@ pub fn start_joined(
     supervisor.new(supervisor.OneForOne)
     |> with
     |> supervisor.add(
-      listener.supervised(Listener(name:, port: 0, connection:)),
+      listener.supervised(Listener(
+        name:,
+        port: 0,
+        max_connections: 1000,
+        connection:,
+      )),
     )
     |> supervisor.start
     as "the tree started"
@@ -273,6 +278,15 @@ pub fn connections(server: Server) -> List(Pid) {
 pub fn connections_of(listener: Name(Nil)) -> List(Pid) {
   procs(listener, atom.create("connections"))
 }
+
+/// The acceptor processes of the listener Ranch knows by `listener`.
+pub fn acceptors_of(listener: Name(Nil)) -> List(Pid) {
+  procs(listener, atom.create("acceptors"))
+}
+
+/// The most connections the listener Ranch knows by `listener` holds.
+@external(erlang, "ranch", "get_max_connections")
+pub fn max_connections_of(listener: Name(Nil)) -> Int
 
 /// The gate as a child of a supervisor, registered as `name`, that reaches
 /// no process.

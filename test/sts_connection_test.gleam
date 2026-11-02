@@ -75,13 +75,16 @@ fn feed(
   #(Session(..session, state:), taken)
 }
 
-/// A connection the server has accepted with this seed; the server writes
-/// nothing first.
-fn accepted(seed seed: BitArray) -> Session {
+/// A connection the server has accepted with this seed and these settings;
+/// the server writes nothing first.
+fn accepted(
+  seed seed: BitArray,
+  settings settings: sts_connection.Settings,
+) -> Session {
   let #(session, taken) =
     feed(
       Session(
-        state: sts_connection.new(login_support.sts_settings()),
+        state: sts_connection.new(settings),
         sending: None,
         receiving: None,
         sequence: 1,
@@ -137,7 +140,7 @@ fn one_way(
 fn connected(seed seed: BitArray) -> Session {
   let #(session, taken) =
     one_way(
-      session: accepted(seed:),
+      session: accepted(seed:, settings: login_support.sts_settings()),
       protocol: "Sts",
       command: "Connect",
       body: sts_xml.render(
@@ -568,6 +571,117 @@ pub fn a_ping_gets_no_answer_and_the_connection_goes_on_test() -> Nil {
   let #(_, bytes) = hear(session, taken)
   assert reply_of(bytes).status == 200
     as "the ping's ciphered bytes were taken in order, so the next request still deciphers"
+}
+
+pub fn a_head_over_1024_bytes_or_a_body_over_4096_ends_the_connection_with_an_error_and_writes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The limits are the server's choice, far above the client's longest head,
+  // under 80 bytes, and longest body, 265 (`sts_wire`).
+  let waiting = fn(bytes) {
+    let #(_, taken) = send_bytes(connected(seed: support.seed(first: 1)), bytes)
+    assert !support.stops(taken)
+      as "bytes within the limits are waited on for the rest of the request"
+  }
+  let refused = fn(bytes) {
+    let #(_, taken) = send_bytes(connected(seed: support.seed(first: 1)), bytes)
+    assert support.stops(taken)
+    assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    assert support.writes(taken) == []
+      as "bytes that are no request the client writes are told nothing"
+  }
+  waiting(<<"POST ":utf8, string.repeat("a", 1018):utf8>>)
+  refused(<<"POST ":utf8, string.repeat("a", 1019):utf8>>)
+  let head = fn(body_length) {
+    <<
+      "POST /Auth/LoginStart STS/1.0\r\ns:1\r\nl:":utf8,
+      int.to_string(body_length):utf8,
+      "\r\n\r\n":utf8,
+    >>
+  }
+  waiting(head(4096))
+  refused(head(4097))
+}
+
+/// The bytes of one of the client's one-way pings.
+fn ping_request() -> BitArray {
+  scripted_client.request(
+    sequence: None,
+    protocol: "Sts",
+    command: "Ping",
+    body: "",
+  )
+}
+
+/// The settings of the STS rule with this bucket.
+fn rated(rate rate: client_connection.Bucket) -> sts_connection.Settings {
+  sts_connection.Settings(..login_support.sts_settings(), rate:)
+}
+
+pub fn a_full_burst_of_requests_is_taken_and_one_more_in_the_same_millisecond_ends_the_connection_with_a_warning_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let burst = <<ping_request():bits, ping_request():bits, ping_request():bits>>
+  let rate = support.bucket(burst: 3, per_second: 1)
+  let #(session, taken) =
+    send_bytes(accepted(seed: support.seed(1), settings: rated(rate:)), burst)
+  assert taken == Effects([]) as "a full bucket of 3 requests, each taken"
+  let #(_, taken) = send_bytes(session, ping_request())
+  assert support.stops(taken)
+  assert support.writes(taken) == []
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+  assert support.says(line:, words: "faster")
+}
+
+pub fn requests_sent_byte_by_byte_or_in_one_read_are_refused_at_the_same_request_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let rate = support.bucket(burst: 3, per_second: 1)
+  let ping = ping_request()
+  let size = bit_array.byte_size(ping)
+  let bytes = <<ping:bits, ping:bits, ping:bits, ping:bits, ping:bits>>
+  let #(_, whole) =
+    send_bytes(accepted(seed: support.seed(1), settings: rated(rate:)), bytes)
+  assert support.stops(whole)
+  let fed =
+    fed_byte_by_byte(
+      session: accepted(seed: support.seed(1), settings: rated(rate:)),
+      bytes:,
+      fed: 0,
+    )
+  assert fed == 4 * size
+    as "the 4th request ends the connection on its last byte, and no earlier"
+}
+
+/// Feeds the bytes one at a time until a step stops the connection: how many
+/// bytes were fed.
+fn fed_byte_by_byte(
+  session session: Session,
+  bytes bytes: BitArray,
+  fed fed: Int,
+) -> Int {
+  case bytes {
+    <<byte, rest:bytes>> -> {
+      let #(session, taken) = send_bytes(session, <<byte>>)
+      case support.stops(taken) {
+        True -> fed + 1
+        False -> fed_byte_by_byte(session:, bytes: rest, fed: fed + 1)
+      }
+    }
+    _ -> fed
+  }
+}
+
+pub fn bytes_past_the_hold_limit_while_the_store_is_asked_end_the_connection_with_an_error_and_nothing_written_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(session, taken) = login_start(connected(seed: support.seed(first: 1)))
+  assert option.is_some(support.asked(taken)) as "the store is asked"
+  let #(session, taken) =
+    send_bytes(session, <<0:size(support.held_limit * 8)>>)
+  assert !support.stops(taken)
+    as "bytes up to the limit are kept for after the answer"
+  let #(_, taken) = send_bytes(session, <<0>>)
+  assert support.stops(taken)
+    as "one byte past the limit is more than a whole request and a read can hold"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  assert support.writes(taken) == []
 }
 
 pub fn a_store_that_gives_no_answer_at_login_start_answers_error_42_and_logs_a_warning_test() -> Nil {

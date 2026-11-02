@@ -34,6 +34,7 @@ const sources = [
   "genesis_prime/service.gleam",
   "genesis_prime/service_ffi.erl",
   "genesis_prime/service/shell.gleam",
+  "genesis_prime/connection/frame.gleam",
   "genesis_prime/connection/shell.gleam",
   "genesis_prime/connection/connection_shell_ffi.erl",
   "genesis_prime/connection/registry.gleam",

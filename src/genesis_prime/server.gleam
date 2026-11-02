@@ -179,12 +179,14 @@ pub type Login {
 
 /// One listener: its name in Ranch, unique on the node and made once with
 /// `process.new_name`, the port it listens on (0 for one the system picks),
+/// the most connections it holds at once (`genesis_prime/connection/listener`),
 /// the settings its rule is made with, and where each connection's inputs are
 /// recorded, `None` unless the dev start turns recording on.
 pub type Served(settings) {
   Served(
     listener: Name(Nil),
     port: Int,
+    max_connections: Int,
     settings: settings,
     recorder: Option(Recorder),
   )
@@ -452,6 +454,7 @@ fn serve(
     listener.supervised(Listener(
       name: served.listener,
       port: served.port,
+      max_connections: served.max_connections,
       connection: connection_shell.Settings(
         rule: rule(served.settings),
         send_deadline_ms: settings.send_deadline_ms,

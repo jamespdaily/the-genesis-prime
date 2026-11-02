@@ -6,6 +6,7 @@
 //// by `genesis_prime/random`.
 
 import frame_reader
+import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
@@ -17,6 +18,7 @@ import genesis_prime/step.{
 import genesis_prime/store.{type Account, Account, AccountId}
 import gleam/bit_array
 import gleam/crypto
+import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
@@ -27,6 +29,27 @@ pub const peer = Peer(address: "192.168.1.5", port: 50_000)
 
 /// The monotonic time every input of a rule test carries, in milliseconds.
 pub const now_ms = 1000
+
+/// The most bytes a connection holds that it has not taken as frames: the
+/// client's frame limit, 131,070 (MessageSizeLimit 0x140335ec0), which one
+/// whole frame may fill, and one read of 16,384, the server's choice for the
+/// socket's buffer.
+pub const held_limit = 147_454
+
+/// A bucket for a test of the rate, which no ask waits on.
+pub fn bucket(burst burst: Int, per_second per_second: Int) -> Bucket {
+  let assert Ok(bucket) =
+    client_connection.bucket(burst:, per_second:, longest_wait_ms: 0)
+    as "a test's bucket holds one and fills by one a second at least"
+  bucket
+}
+
+/// The rate of a rule test that is not about the rate: every input carries the
+/// same time, so the bucket never refills, and it holds more than any test
+/// sends.
+pub fn roomy() -> Bucket {
+  bucket(burst: 100_000, per_second: 100_000)
+}
 
 /// The account of the library's vector: `jim`, password `secret`, salt 01 .. 10
 /// and the vector's verifier.
@@ -74,6 +97,11 @@ pub fn input(event: Event(own)) -> Input(own) {
   input_at(filetime: 0, event:)
 }
 
+/// An input at this monotonic time, in milliseconds, with the system time 0.
+pub fn input_at_ms(ms ms: Int, event event: Event(own)) -> Input(own) {
+  Input(now: Now(monotonic_ms: ms, filetime: 0), event:)
+}
+
 /// An input at `now_ms` with this system time, as a Windows FILETIME.
 pub fn input_at(filetime filetime: Int, event event: Event(own)) -> Input(own) {
   Input(now: Now(monotonic_ms: now_ms, filetime:), event:)
@@ -84,6 +112,20 @@ pub fn ping(number: Int) -> BitArray {
   let assert Ok(bytes) = frame.encode(0x0000, <<number>>)
     as "a ping number is one byte"
   bytes
+}
+
+/// The bytes of `count` of the client's bare pings, numbered from 0 and back to
+/// 0 after 19 (opcode.0x0: 0 to 19), and each ping's pong (opcode.0x1).
+pub fn pings(count count: Int) -> BitArray {
+  int.range(from: 0, to: count, with: <<>>, run: fn(bytes, number) {
+    <<bytes:bits, ping(number % 20):bits>>
+  })
+}
+
+/// The pong a ping with this number is answered with, bare (opcode.0x1: 07 00
+/// 00 00 01 00 and the number).
+pub fn pong(number: Int) -> BitArray {
+  <<7, 0, 0, 0, 1, 0, { number % 20 }>>
 }
 
 /// Block `counter` of the seed's random stream: HMAC-SHA256 with the seed as

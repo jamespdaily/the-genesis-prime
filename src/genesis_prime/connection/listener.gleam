@@ -10,6 +10,11 @@
 ////            └─ one shell process per connection     temporary
 //// ```
 ////
+//// A listener holds at most its `max_connections` (one acceptor, so exactly
+//// that many): a client past it waits in the system's accept queue, gets no
+//// hello, and is taken when a connection ends. Ranch refuses before any
+//// process exists, so no recording shows it.
+////
 //// A connection that crashes ends alone: Ranch never restarts a connection.
 //// A listener that crashes is restarted by the server supervisor, which drops
 //// its connections; a restart cannot rebuild a connection, so each client
@@ -35,6 +40,12 @@ pub type Listener(settings, state, message, answer, request) {
     name: Name(Nil),
     /// The TCP port, or 0 for one the system picks.
     port: Int,
+    /// The most connections the listener holds at once. Past it a new client
+    /// waits in the system's accept queue, gets no hello, and is taken when a
+    /// connection ends (Ranch's `max_connections`). The listener has one
+    /// acceptor, since Ranch can take one connection past the limit for each
+    /// extra acceptor.
+    max_connections: Int,
     connection: Settings(settings, state, message, answer, request),
   )
 }
@@ -53,6 +64,7 @@ pub fn supervised(
       start_listener(
         listener.name,
         listener.port,
+        listener.max_connections,
         listener.connection.shutdown_ms,
         listener.connection,
       )
@@ -77,6 +89,7 @@ pub fn stop_accepting(name: Name(Nil)) -> Result(Nil, Nil)
 fn start_listener(
   name: Name(Nil),
   port: Int,
+  max_connections: Int,
   shutdown_ms: Int,
   settings: Settings(settings, state, message, answer, request),
 ) -> Result(Pid, StartFailure)

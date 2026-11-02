@@ -93,3 +93,28 @@ pub fn the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_tw
   let _reason = ask_support.stop_tree(started.tree)
   Nil
 }
+
+/// The most connections a listener holds and how many acceptors it runs, as
+/// Ranch reports them.
+fn listener_limits(listener: process.Name(Nil)) -> #(Int, Int) {
+  #(
+    ask_support.max_connections_of(listener),
+    list.length(ask_support.acceptors_of(listener)),
+  )
+}
+
+pub fn each_listener_holds_the_connections_its_setting_gives_with_one_acceptor_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started = login_support.start()
+  let settings = started.settings
+  assert listener_limits(settings.login.sts.listener)
+    == #(login_support.sts_max_connections, 1)
+    as "the STS listener: its own setting, and one acceptor, since Ranch lets one connection in past the limit for each extra acceptor"
+  assert listener_limits(settings.login.auth.listener)
+    == #(login_support.auth_max_connections, 1)
+    as "the auth listener: its own setting, not the STS listener's"
+  assert listener_limits(settings.game.listener)
+    == #(login_support.game_max_connections, 1)
+    as "the game listener: its own setting"
+  login_support.stop(started)
+}

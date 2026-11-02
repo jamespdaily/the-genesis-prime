@@ -40,8 +40,8 @@ import genesis_prime/message/login_refused
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
-  ConnectionId, EndedBeforeAnswer, LogWarning, NoAnswerInTime, NotRunning,
-  StoppedWaiting,
+  ConnectionId, EndedBeforeAnswer, LogError, LogWarning, NoAnswerInTime,
+  NotRunning, StoppedWaiting,
 }
 import genesis_prime/store.{AccountId}
 import gleam/int
@@ -75,20 +75,20 @@ fn feed(
   auth_connection.step(state, support.input(event))
 }
 
-/// A connection the server has accepted with this seed; the step is the
-/// hello.
+/// A connection the server has accepted with this seed and these settings;
+/// the step is the hello.
 fn accepted(
   seed seed: BitArray,
-  planted planted: Option(Frame),
+  settings settings: auth_connection.Settings,
 ) -> #(auth_connection.State, ConnectionStep(Request)) {
   feed(
-    auth_connection.new(settings(planted:)),
+    auth_connection.new(settings),
     step.OwnEvent(step.Accepted(ConnectionId(1), support.peer, seed)),
   )
 }
 
 fn connected(seed seed: BitArray) -> auth_connection.State {
-  accepted(seed:, planted: None).0
+  accepted(seed:, settings: settings(planted: None)).0
 }
 
 /// The bytes of the client's login request for a UserId and a build, in its
@@ -174,7 +174,8 @@ fn token_taken(
 
 pub fn on_connect_the_server_sends_the_hello_with_build_16042_the_checksum_and_the_realm_id_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(_, taken) = accepted(seed: support.seed(first: 1), planted: None)
+  let #(_, taken) =
+    accepted(seed: support.seed(first: 1), settings: settings(planted: None))
   let assert [Frame(message_id: 0x0003, body:)] = support.written_frames(taken)
     as "one bare frame, message 3, and nothing else"
   let assert [written] = support.writes(taken)
@@ -199,7 +200,10 @@ pub fn on_connect_the_server_sends_the_hello_with_build_16042_the_checksum_and_t
   // A planted frame follows the hello in the wrapper, and only when set.
   let planted = Frame(message_id: 0x0914, body: <<>>)
   let #(_, taken) =
-    accepted(seed: support.seed(first: 1), planted: Some(planted))
+    accepted(
+      seed: support.seed(first: 1),
+      settings: settings(planted: Some(planted)),
+    )
   let assert [first, second] = support.written_frames(taken)
     as "the hello, then the planted frame"
   assert first.message_id == 0x0003
@@ -354,6 +358,61 @@ pub fn a_ping_gets_its_pong_test() -> Nil {
   let #(_, taken) = read(state, support.ping(3))
   assert support.writes(taken) == [<<7, 0, 0, 0, 1, 0, 3>>]
     as "the client's pings go on while it moves to the game server"
+}
+
+pub fn a_frame_one_byte_over_131070_ends_the_connection_with_an_error_and_writes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The length field counts the whole frame, little-endian: 131,070 is fe ff
+  // 01 00 and 131,071 ff ff 01 00 (MessageSizeLimit 0x140335ec0).
+  let state = connected(seed: support.seed(first: 1))
+  let #(_, taken) = read(state, <<0xFE, 0xFF, 0x01, 0x00, 0, 0>>)
+  assert !support.stops(taken)
+    as "a frame of 131,070 bytes is the biggest the client's reader takes, so the connection waits for the rest"
+  let #(_, taken) = read(state, <<0xFF, 0xFF, 0x01, 0x00, 0, 0>>)
+  assert support.stops(taken)
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  assert support.writes(taken) == []
+    as "a client whose frame the client's own reader would refuse is told nothing"
+}
+
+pub fn bytes_past_the_hold_limit_while_the_hand_off_is_asked_end_the_connection_with_an_error_and_nothing_written_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) =
+    read(
+      connected(seed: support.seed(first: 1)),
+      login_request(user_id: holder().game_account_id, build: 16_042),
+    )
+  assert option.is_some(support.asked(taken)) as "the hand-off is asked"
+  let #(state, taken) = read(state, <<0:size(support.held_limit * 8)>>)
+  assert !support.stops(taken)
+    as "bytes up to the limit are kept for after the answer"
+  let #(_, taken) = read(state, <<0>>)
+  assert support.stops(taken)
+    as "one byte past the limit is more than a whole frame and a read can hold"
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  assert support.writes(taken) == []
+}
+
+pub fn a_full_burst_of_frames_is_taken_and_one_more_in_the_same_millisecond_ends_the_connection_with_a_warning_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    accepted(
+      seed: support.seed(first: 1),
+      settings: Settings(
+        ..settings(planted: None),
+        rate: support.bucket(burst: 3, per_second: 1),
+      ),
+    )
+  let #(state, taken) = read(state, support.pings(count: 3))
+  assert support.writes(taken)
+    == [support.pong(0), support.pong(1), support.pong(2)]
+    as "a full bucket of 3 frames, each answered"
+  assert !support.stops(taken)
+  let #(_, taken) = read(state, support.ping(3))
+  assert support.stops(taken)
+  assert support.writes(taken) == []
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+  assert support.says(line:, words: "faster")
 }
 
 pub fn the_session_key_comes_from_the_connections_seed_only_test() -> Nil {
