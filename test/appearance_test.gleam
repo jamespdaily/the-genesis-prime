@@ -263,6 +263,100 @@ pub fn a_label_of_the_other_faction_is_ignored_and_its_rows_are_not_candidates_t
     as "an Exile look keeps its own faction's row"
 }
 
+// ---- a look checked against the index ----
+
+/// The fault, if any, in a look for the race, sex and faction, against the
+/// index of the rows and labels.
+fn look_fault(
+  rows rows: List(CharacterCustomization),
+  labels labels: List(CharacterCustomizationLabel),
+  race race: Int,
+  sex sex: Int,
+  faction faction: Int,
+  look pairs: List(#(Int, Int)),
+) -> Result(Nil, appearance.LookFault) {
+  appearance.check_look(
+    index: appearance.index_from_rows(rows:, labels:),
+    race_id: RaceId(race),
+    sex:,
+    faction_id: faction,
+    look: look(pairs),
+  )
+}
+
+pub fn a_look_is_held_by_the_index_of_its_race_and_sex_test() -> Nil {
+  use <- owned_test.run(5000)
+  // SetLookValue 0x14002ec40 and SetLookLabel 0x1400310b0 accept a (label,
+  // value) only when the index holds it for the race and sex; the index files
+  // each row under its race and sex (BuildCustomizationIndex 0x14001d450).
+  let rows = [
+    row(id: 1, display: 10, labels: [#(5, 1)]),
+    CharacterCustomization(
+      ..row(id: 2, display: 11, labels: [#(5, 2)]),
+      gender: 1,
+    ),
+    CharacterCustomization(
+      ..row(id: 3, display: 12, labels: [#(5, 3)]),
+      race_id: 2,
+    ),
+  ]
+  let labels = [label(5)]
+  let fault = fn(pairs, race, sex) {
+    look_fault(rows:, labels:, race:, sex:, faction: 167, look: pairs)
+  }
+  assert fault([#(5, 1)], 1, 0) == Ok(Nil)
+    as "row 1 holds label 5 at 1 for race 1, sex 0"
+  assert fault([#(5, 2)], 1, 0)
+    == Error(appearance.ValueNotHeld(
+      label: CharacterCustomizationLabelId(5),
+      value: 2,
+    ))
+    as "label 5 at 2 is held only for race 1, sex 1 (row 2)"
+  assert fault([#(5, 2)], 1, 1) == Ok(Nil)
+    as "row 2 holds label 5 at 2 for race 1, sex 1"
+  assert fault([#(5, 3)], 1, 1)
+    == Error(appearance.ValueNotHeld(
+      label: CharacterCustomizationLabelId(5),
+      value: 3,
+    ))
+    as "label 5 at 3 is held only for race 2 (row 3)"
+  assert fault([#(5, 3)], 2, 0) == Ok(Nil)
+    as "row 3 holds label 5 at 3 for race 2, sex 0"
+  assert fault([], 1, 0) == Ok(Nil) as "a look with no label has no fault"
+}
+
+pub fn a_look_label_of_another_faction_or_with_no_label_row_has_a_fault_test() -> Nil {
+  use <- owned_test.run(5000)
+  // CharacterCustomizationLabel: label 21 is faction 166's, label 22 faction
+  // 167's (faction2Id); SetLookLabel 0x1400310b0 refuses a label whose faction
+  // is neither 0 nor the look's, and a label with no row.
+  let rows = [
+    row(id: 1, display: 135, labels: [#(22, 1), #(2, 1)]),
+    row(id: 2, display: 137, labels: [#(21, 2), #(2, 1)]),
+  ]
+  let labels = [
+    label(2),
+    label_of(id: 21, faction: 166),
+    label_of(id: 22, faction: 167),
+  ]
+  let fault = fn(faction, pairs) {
+    look_fault(rows:, labels:, race: 1, sex: 0, faction:, look: pairs)
+  }
+  assert fault(167, [#(2, 1), #(22, 1)]) == Ok(Nil)
+    as "label 2 is every faction's and label 22 is Exile's"
+  assert fault(167, [#(21, 2)])
+    == Error(appearance.LabelNotAllowed(CharacterCustomizationLabelId(21)))
+    as "label 21 is Dominion's"
+  assert fault(166, [#(22, 1)])
+    == Error(appearance.LabelNotAllowed(CharacterCustomizationLabelId(22)))
+    as "label 22 is Exile's"
+  assert fault(166, [#(2, 1), #(21, 2)]) == Ok(Nil)
+    as "label 21 at 2 is Dominion's row 2"
+  assert fault(166, [#(9, 1)])
+    == Error(appearance.LabelNotAllowed(CharacterCustomizationLabelId(9)))
+    as "label 9 has no CharacterCustomizationLabel row"
+}
+
 // ---- the real rows ----
 
 /// The four looks of a human male's face, checked against the index the

@@ -143,19 +143,22 @@ pub const schema =
     ],
   )
 
+/// The key of the Race table's rows in the store.
+const key: store.TermKey(Race) = store.TermKey("Race")
+
 /// The entry that loads the Race table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the Race table with the id, or an error when it has none.
 pub fn get(tables tables: store.Tables, id id: RaceId) -> Result(Race, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the Race table, in id order.
 pub fn all(tables: store.Tables) -> List(Race) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

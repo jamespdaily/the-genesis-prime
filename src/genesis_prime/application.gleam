@@ -81,9 +81,7 @@ import genesis_prime/step
 import genesis_prime/step/runtime
 import gleam/bool
 import gleam/dynamic.{type Dynamic}
-import gleam/dynamic/decode
 import gleam/erlang/application.{type StartType}
-import gleam/erlang/atom
 import gleam/erlang/process.{type Monitor, type Pid}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
@@ -127,7 +125,11 @@ pub fn start(
   |> factory_supervisor.restart_tolerance(intensity: 1, period: 5)
   |> factory_supervisor.start
   |> result.map(fn(started) { started.pid })
-  |> result.map_error(fn(error) { dynamic.string(describe(error)) })
+  |> result.map_error(fn(error) {
+    dynamic.string(
+      "the root supervisor " <> runtime.describe_start_error(error),
+    )
+  })
 }
 
 /// OTP's stop callback, run after the root and the tree under it have stopped:
@@ -182,7 +184,7 @@ pub fn end_of(reason: process.ExitReason) -> Nil {
     Fatal(reason:) ->
       panic as {
         "the supervision tree ended while the node runs: "
-        <> describe_exit(reason)
+        <> runtime.describe_exit(reason)
       }
   }
 }
@@ -195,22 +197,4 @@ pub fn await_tree_end(tree: Tree) -> Nil {
     |> process.select_specific_monitor(tree.monitor, fn(down) { down })
     |> process.selector_receive_forever
   end_of(runtime.down_reason(down))
-}
-
-fn describe(error: actor.StartError) -> String {
-  case error {
-    actor.InitTimeout -> "the root supervisor did not start in time"
-    actor.InitFailed(reason) -> reason
-    actor.InitExited(_) -> "the root supervisor exited while it started"
-  }
-}
-
-fn describe_exit(reason: process.ExitReason) -> String {
-  case reason {
-    process.Normal -> "normal"
-    process.Killed -> "killed"
-    process.Abnormal(reason:) ->
-      decode.run(reason, decode.map(atom.decoder(), atom.to_string))
-      |> result.lazy_unwrap(fn() { dynamic.classify(reason) })
-  }
 }

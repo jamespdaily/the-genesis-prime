@@ -65,9 +65,13 @@ pub const schema =
     ],
   )
 
+/// The key of the EldanAugmentationCategory table's rows in the store.
+const key: store.TermKey(EldanAugmentationCategory) =
+  store.TermKey("EldanAugmentationCategory")
+
 /// The entry that loads the EldanAugmentationCategory table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the EldanAugmentationCategory table with the id, or an error when it has none.
@@ -75,12 +79,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: EldanAugmentationCategoryId,
 ) -> Result(EldanAugmentationCategory, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the EldanAugmentationCategory table, in id order.
 pub fn all(tables: store.Tables) -> List(EldanAugmentationCategory) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

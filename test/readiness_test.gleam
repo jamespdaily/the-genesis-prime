@@ -92,7 +92,8 @@ pub fn a_probe_that_reached_a_database_missing_a_migration_ends_the_ask_with_a_r
     )
     == readiness.MigrationsRefused(NotApplied("0001_second"))
     as "the database answered but lacks the second file's migration: the ask ends with the refusal"
-  assert count(asked) == 1 as "and does not ask again"
+  assert list.length(mailbox_support.drain(asked)) == 1
+    as "and does not ask again"
 }
 
 /// The ask's times when the answer is what the test checks, not the wait: the
@@ -186,29 +187,13 @@ pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_te
     as "no attempt reached the database, so the ask gives up"
   assert runtime.now().monotonic_ms - started_ms >= settings.within_ms
     as "and only when its time has run out"
-  let times = times_of(asked)
+  let times = mailbox_support.drain(asked)
   assert list.length(times) >= 2
     as "having asked again after a failure, not once"
   assert list.all(list.window_by_2(times), fn(pair) {
     pair.1 - pair.0 >= settings.pause_ms
   })
     as "each ask came a whole pause after the one before, not after the attempt's own time"
-}
-
-/// How many messages wait in the subject.
-fn count(subject: Subject(Nil)) -> Int {
-  case process.receive(subject, 0) {
-    Ok(Nil) -> 1 + count(subject)
-    Error(Nil) -> 0
-  }
-}
-
-/// The monotonic times the subject holds, in the order sent.
-fn times_of(subject: Subject(Int)) -> List(Int) {
-  case process.receive(subject, 0) {
-    Ok(time) -> [time, ..times_of(subject)]
-    Error(Nil) -> []
-  }
 }
 
 /// A probe worker that answers `probed` `times` times at once and ends.

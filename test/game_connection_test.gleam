@@ -726,6 +726,52 @@ pub fn a_frame_the_clients_reader_would_refuse_ends_the_connection_after_the_who
   })
 }
 
+/// What each effect of a step is, in order: the bytes of a write are not
+/// compared here, only what kind of effect leaves and when.
+fn kinds(taken: ConnectionStep(Request)) -> List(String) {
+  list.map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Write(..)) -> "write"
+      step.Log(..) -> "log"
+      step.Stop -> "stop"
+      OwnEffect(..) | step.Watch(..) | step.Unwatch(..) -> "other"
+    }
+  })
+}
+
+pub fn the_effects_of_frames_before_a_frame_that_asks_leave_in_the_order_the_frames_came_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    read(in_select(), <<
+      support.ping(1):bits,
+      store_request():bits,
+      support.ping(2):bits,
+      create_message(a_create_request("Ab Cd")):bits,
+    >>)
+  assert support.writes(taken) == [support.pong(1), support.pong(2)]
+    as "opcode.0x0 and opcode.0x1: each ping is answered, the first ping's pong first"
+  assert kinds(taken) == ["write", "log", "write"]
+    as "a read's frames are taken in order: the pong, the unhandled 0x082D's log line, the pong; the create's ask ends the step after them"
+  assert support.asked(taken) != None
+    as "the create asks the store, after the earlier frames' effects"
+}
+
+pub fn the_effects_of_frames_before_a_frame_that_ends_the_connection_leave_in_the_order_the_frames_came_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let below_header = <<3, 0, 0, 0, 0, 0>>
+  let #(_, taken) =
+    read(in_select(), <<
+      support.ping(1):bits,
+      store_request():bits,
+      support.ping(2):bits,
+      below_header:bits,
+    >>)
+  assert support.writes(taken) == [support.pong(1), support.pong(2)]
+    as "opcode.0x0 and opcode.0x1: each ping before the bad frame is answered, the first ping's pong first"
+  assert kinds(taken) == ["write", "log", "write", "log", "stop"]
+    as "the whole frames before a frame the client's reader would refuse (ParseWrappedMessage 0x140331620) leave in order, then the refusal's log line and the end"
+}
+
 pub fn the_client_closing_a_socket_failure_and_a_late_answer_are_handled_as_in_the_login_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) = feed(connected(), step.OwnEvent(step.PeerClosed))
@@ -769,12 +815,12 @@ pub fn a_second_0x07e0_asks_the_store_again_and_sends_a_new_list_test() -> Nil {
 // ---- create and the play that follows ----
 
 /// A create request for CharacterCreation row 466 with a path of 2 and the
-/// look of labels 2 and 21.
+/// look of labels 2 and 22 (the Exile face of CharacterCustomization row 604).
 fn a_create_request(name: String) -> create_character.CreateCharacter {
   CreateCharacter(
     ..character_support.create_request(name),
     path: 2,
-    customisation_labels: [2, 21],
+    customisation_labels: [2, 22],
     customisation_values: [1, 2],
   )
 }
@@ -830,7 +876,7 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
           position_z: -560.18798828125,
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-            LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+            LookEntry(label: CharacterCustomizationLabelId(22), value: 2),
           ],
           bones: character_support.bones(46),
         ),
@@ -1016,7 +1062,7 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
           position_z: -560.18798828125,
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-            LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+            LookEntry(label: CharacterCustomizationLabelId(22), value: 2),
           ],
           bones: character_support.bones(46),
         ),

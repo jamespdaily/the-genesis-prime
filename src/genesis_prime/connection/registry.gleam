@@ -39,8 +39,12 @@ import gleam/otp/supervision.{type ChildSpecification}
 const shutdown_ms = 1000
 
 /// The scope connections are found in: made once, with `new`, and given to the
-/// tree and to the shells that join it and look in it.
-pub opaque type Registry {
+/// tree and to the shells that join it and look in it. `message` is the type
+/// of what `deliver` sends to a connection and its shell's selector takes
+/// (`select_delivered`), the message type of the connections' rule, so a
+/// sender and a receiver of different types do not compile. It is a phantom
+/// type, as the message type of `process.Name`.
+pub opaque type Registry(message) {
   Registry(scope: Name(Nil))
 }
 
@@ -50,12 +54,12 @@ type StartFailure {
 }
 
 /// A new registry, with a scope name no other registry has.
-pub fn new() -> Registry {
+pub fn new() -> Registry(message) {
   Registry(scope: process.new_name("connections"))
 }
 
 /// The scope as a permanent child of a supervisor.
-pub fn supervised(registry: Registry) -> ChildSpecification(Nil) {
+pub fn supervised(registry: Registry(message)) -> ChildSpecification(Nil) {
   supervision.worker(fn() {
     case start_scope(registry.scope) {
       Ok(pid) -> Ok(actor.Started(pid:, data: Nil))
@@ -69,7 +73,7 @@ pub fn supervised(registry: Registry) -> ChildSpecification(Nil) {
 /// Makes the calling process the member of the connection's group; the
 /// connection shell calls it once, as it accepts the connection.
 pub fn join(
-  registry registry: Registry,
+  registry registry: Registry(message),
   connection connection: ConnectionId,
 ) -> Nil {
   join_group(registry.scope, Connection(connection:))
@@ -77,7 +81,7 @@ pub fn join(
 
 /// The process of a connection, or `Error(Nil)` when none is a member.
 pub fn find(
-  registry registry: Registry,
+  registry registry: Registry(message),
   connection connection: ConnectionId,
 ) -> Result(Pid, Nil) {
   case members(registry.scope, Connection(connection:)) {
@@ -90,9 +94,9 @@ pub fn find(
 
 /// Sends the connection's process `message`, which its shell takes as a
 /// `Woken` input; `Error(Nil)` when no process is a member, and nothing is
-/// sent. The connection's rule fixes the message's type.
+/// sent.
 pub fn deliver(
-  registry registry: Registry,
+  registry registry: Registry(message),
   connection connection: ConnectionId,
   message message: message,
 ) -> Result(Nil, Nil) {
@@ -105,10 +109,12 @@ pub fn deliver(
   }
 }
 
-/// Adds to a selector the messages `deliver` sends to the process, each
-/// taken as `mapping(message)`, in the order it arrived among the others the
-/// selector takes. The connection's rule fixes the message's type.
+/// Adds to a selector the messages `deliver` sends through the registry to the
+/// process, each taken as `mapping(message)`, in the order it arrived among the
+/// others the selector takes. The registry is not read: it fixes the message's
+/// type, which `deliver` sends.
 pub fn select_delivered(
+  registry _registry: Registry(message),
   selector selector: Selector(payload),
   mapping mapping: fn(message) -> payload,
 ) -> Selector(payload) {

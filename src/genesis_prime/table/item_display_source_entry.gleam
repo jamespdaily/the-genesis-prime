@@ -43,9 +43,13 @@ pub const schema =
     ],
   )
 
+/// The key of the ItemDisplaySourceEntry table's rows in the store.
+const key: store.TermKey(ItemDisplaySourceEntry) =
+  store.TermKey("ItemDisplaySourceEntry")
+
 /// The entry that loads the ItemDisplaySourceEntry table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the ItemDisplaySourceEntry table with the id, or an error when it has none.
@@ -53,12 +57,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: ItemDisplaySourceEntryId,
 ) -> Result(ItemDisplaySourceEntry, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the ItemDisplaySourceEntry table, in id order.
 pub fn all(tables: store.Tables) -> List(ItemDisplaySourceEntry) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

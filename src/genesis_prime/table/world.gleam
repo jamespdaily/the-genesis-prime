@@ -82,19 +82,22 @@ pub const schema =
     ],
   )
 
+/// The key of the World table's rows in the store.
+const key: store.TermKey(World) = store.TermKey("World")
+
 /// The entry that loads the World table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the World table with the id, or an error when it has none.
 pub fn get(tables tables: store.Tables, id id: WorldId) -> Result(World, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the World table, in id order.
 pub fn all(tables: store.Tables) -> List(World) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

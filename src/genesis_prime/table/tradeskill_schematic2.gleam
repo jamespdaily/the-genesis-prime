@@ -129,9 +129,13 @@ pub const schema =
     ],
   )
 
+/// The key of the TradeskillSchematic2 table's rows in the store.
+const key: store.TermKey(TradeskillSchematic2) =
+  store.TermKey("TradeskillSchematic2")
+
 /// The entry that loads the TradeskillSchematic2 table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the TradeskillSchematic2 table with the id, or an error when it has none.
@@ -139,12 +143,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: TradeskillSchematic2Id,
 ) -> Result(TradeskillSchematic2, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the TradeskillSchematic2 table, in id order.
 pub fn all(tables: store.Tables) -> List(TradeskillSchematic2) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

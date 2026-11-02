@@ -441,6 +441,33 @@ pub fn a_counted_wide_text_that_does_not_end_in_its_zero_is_a_decode_error_test(
     as "a count over the maximum plus one is not a text the client could have written"
 }
 
+pub fn a_counted_wide_text_one_unit_over_the_maximum_is_refused_though_it_is_well_formed_test() -> Nil {
+  use <- owned_test.run(5000)
+  // WriteCountedWideText 0x1400c2f70 writes the count of units plus one, then
+  // the units and a terminating zero, so a well-formed text of n units has the
+  // count n + 1 and ends in 0000.
+  let counted = fn(units: Int) {
+    <<
+      { units + 1 }:size(16)-little,
+      message_support.hex(string.repeat("78 00 ", units) <> "00 00"):bits,
+    >>
+  }
+  assert bit_stream.read_counted_wide_text(
+      bit_stream.new_reader(counted(250)),
+      250,
+    )
+    |> result_value
+    == Ok(string.repeat("x", 250))
+    as "250 units and the zero is a text of the maximum, which the client may write"
+  assert bit_stream.read_counted_wide_text(
+      bit_stream.new_reader(counted(251)),
+      250,
+    )
+    |> result_value
+    == Error(bit_stream.InvalidCountedText)
+    as "251 units and the zero (count 252, the maximum plus 2) is well formed but longer than the message allows, so no client wrote it"
+}
+
 pub fn whole_bytes_left_after_the_last_field_are_a_decode_error_test() -> Nil {
   use <- owned_test.run(5000)
   let assert Ok(#(_, reader)) =

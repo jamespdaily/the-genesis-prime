@@ -501,6 +501,25 @@ pub fn a_lookup_entry_past_the_record_count_fails_the_load_test() -> Nil {
     as "0x1407c1115 cmp edx, [r8 + 0x30]: a lookup entry at or past the record count (2) is no record"
 }
 
+pub fn a_lookup_entry_equal_to_the_record_count_fails_the_load_test() -> Nil {
+  use <- owned_test.run(5000)
+  let file =
+    planted_table.Planted(
+      ..planted_table.table(localized_text.schema, [
+        localized_text_row(1, 7),
+        localized_text_row(2, 9),
+      ]),
+      lookup: Some([0xFFFFFFFF, 2, 1]),
+    )
+    |> planted_table.bytes
+  assert load_file("LocalizedText", file)
+    == Error(store.TableFileInvalid(
+      "LocalizedText",
+      tbl_file.LookupPointsOutside(id: 1, row: 2),
+    ))
+    as "0x1407c1115 cmp edx, [r8 + 0x30]: a lookup entry at or past the record count (2) is no record, so entry 2 is the first one past the last record"
+}
+
 pub fn a_record_the_lookup_never_names_fails_the_load_test() -> Nil {
   use <- owned_test.run(5000)
   let file =
@@ -609,10 +628,13 @@ pub fn a_file_that_ends_inside_its_lookup_fails_the_load_test() -> Nil {
     as "0x1407c1f9a..0x1407c1fc6: the lookup (header 0x50 offset, 0x48 count of 4-byte entries) must lie inside the file; this one loses its last entry"
 }
 
+/// The key of the derived ids of the planted LocalizedText rows.
+const ids_key: store.TermKey(List(Int)) = store.TermKey("LocalizedTextIds")
+
 /// A derivation of the ids of the planted LocalizedText rows, which tells the
 /// subject each time it is built.
 fn ids_derivation(built: process.Subject(Nil)) -> store.Derivation {
-  store.derivation(name: "LocalizedTextIds", build: fn(tables) {
+  store.derivation(key: ids_key, build: fn(tables) {
     process.send(built, Nil)
     store.ids(localized_text.entry(), tables)
   })
@@ -636,8 +658,8 @@ pub fn a_derived_value_is_built_once_from_the_loaded_tables_and_every_read_gives
     as "a planted table loads with a derivation"
   assert process.receive(built, 0) == Ok(Nil)
     as "the load built the derived value once"
-  let first: List(Int) = store.derived(tables:, name: "LocalizedTextIds")
-  let second: List(Int) = store.derived(tables:, name: "LocalizedTextIds")
+  let first: List(Int) = store.derived(tables:, key: ids_key)
+  let second: List(Int) = store.derived(tables:, key: ids_key)
   assert first == [1, 3] as "the ids of the two planted rows, read by the build"
   assert second == first as "every read gives the value the load built"
   assert process.receive(built, 0) == Error(Nil)

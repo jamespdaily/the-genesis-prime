@@ -3,8 +3,10 @@
 //// - The client's create path: IsCharacterNameValid and rule 0 (0x1403e1170),
 ////   LuaCreateCharacter 0x140023e90 (the checks the real client makes before
 ////   it sends 0x25B: the row, its entitlement and cost, the path up to 3) and
-////   the request's counts (opcode.0x25b, opcode.0x25b.counts: at most 27
-////   labels, 41, 46 or 48 bones by race and sex).
+////   the request's counts and looks (opcode.0x25b, opcode.0x25b.counts: at
+////   most 25 labels, each once and in label-id order, only labels allowed for
+////   the faction and values the race and sex's index holds; 41, 46 or 48
+////   bones by race and sex).
 //// - The rows of the client's own CharacterCreation table, planted by
 ////   `character_tables` (which `character_tables_test` compares with the real
 ////   file): 466 is a PreTutorial row (class 1, race 1, sex 1, faction 167, no
@@ -22,7 +24,8 @@ import character_support
 import character_tables
 import client_tables
 import genesis_prime/game/character_creation.{
-  BoneNotFinite, CostsCurrency, CostumeOnlyRow, NameBreaksRule, NeedsEntitlement,
+  BoneNotFinite, CostsCurrency, CostumeOnlyRow, LabelNotAllowed,
+  LabelsNotIncreasing, LookValueNotHeld, NameBreaksRule, NeedsEntitlement,
   NoLevelForExperience, NoStartPlace, NoSuchRow, PathAbove3, RowDisabled,
   TooManyLabels, WrongBoneCount,
 }
@@ -38,6 +41,7 @@ import genesis_prime/table/id.{
 }
 import gleam/int
 import gleam/list
+import gleam/pair
 import gleam/result
 import gleam/string
 import owned_test
@@ -140,7 +144,7 @@ pub fn a_row_that_is_missing_disabled_arkship_costume_only_or_needs_what_the_acc
     as "CharacterCreation row 539: a Level50 row costing 1 of account currency 13, which no account holds yet (0x140023e90)"
 }
 
-pub fn a_path_above_3_too_many_labels_or_the_wrong_bone_count_is_refused_test() -> Nil {
+pub fn a_path_above_3_or_the_wrong_bone_count_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
   assert result.is_ok(character_creation.check(
@@ -154,18 +158,6 @@ pub fn a_path_above_3_too_many_labels_or_the_wrong_bone_count_is_refused_test() 
     )
     == Error(PathAbove3(creation_id: 466, path: 4))
     as "0x140023e90: a path above 3 is refused"
-  let many = fn(count) {
-    CreateCharacter(
-      ..request(466, "Ab Cd"),
-      customisation_labels: character_support.numbers(count),
-      customisation_values: list.repeat(1, count),
-    )
-  }
-  assert result.is_ok(character_creation.check(tables, many(27)))
-    as "opcode.0x25b.counts: the label table allows 27"
-  assert character_creation.check(tables, many(28))
-    == Error(TooManyLabels(creation_id: 466, count: 28))
-    as "opcode.0x25b.counts: at most 27 labels"
   assert character_creation.check(
       tables,
       CreateCharacter(
@@ -192,6 +184,109 @@ pub fn a_path_above_3_too_many_labels_or_the_wrong_bone_count_is_refused_test() 
     ),
   ))
     as "race 1, sex 0 with 48 bone values"
+}
+
+pub fn a_request_with_more_than_25_look_labels_is_refused_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared_with_labels(count: 27)
+  let with_labels = fn(count) {
+    CreateCharacter(
+      ..request(466, "Ab Cd"),
+      customisation_labels: character_support.numbers(count),
+      customisation_values: list.repeat(1, count),
+    )
+  }
+  assert result.is_ok(character_creation.check(tables, with_labels(25)))
+    as "opcode.0x25b.counts: a look holds at most 25 labels (labels 26 and 27 set the race and never enter a look), so 25 labels each held by the index are accepted"
+  assert character_creation.check(tables, with_labels(26))
+    == Error(TooManyLabels(creation_id: 466, count: 26))
+    as "opcode.0x25b.counts: at most 25 labels"
+  assert character_creation.check(tables, with_labels(27))
+    == Error(TooManyLabels(creation_id: 466, count: 27))
+    as "opcode.0x25b.counts: at most 25 labels, not the label table's 27"
+}
+
+/// A request for row 466 (race 1, sex 1, faction 167) with the look.
+fn looking(pairs: List(#(Int, Int))) -> CreateCharacter {
+  CreateCharacter(
+    ..request(466, "Ab Cd"),
+    customisation_labels: list.map(pairs, pair.first),
+    customisation_values: list.map(pairs, pair.second),
+  )
+}
+
+pub fn a_label_that_repeats_is_refused_and_says_which_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  assert character_creation.check(tables, looking([#(2, 1), #(2, 1)]))
+    == Error(LabelsNotIncreasing(creation_id: 466, previous: 2, label: 2))
+    as "opcode.0x25b.counts: each label at most once; CharacterCustomization rows 603 and 604 hold label 2 at 1, so only the repeat refuses it"
+  assert result.is_ok(character_creation.check(tables, looking([#(2, 1)])))
+    as "label 2 at value 1 is held by CharacterCustomization row 603 (race 1, sex 1)"
+}
+
+pub fn labels_out_of_label_id_order_are_refused_and_say_which_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  assert character_creation.check(tables, looking([#(22, 1), #(2, 1)]))
+    == Error(LabelsNotIncreasing(creation_id: 466, previous: 22, label: 2))
+    as "opcode.0x25b.counts: labels in label-id order; labels 2 and 22 at 1 are held by CharacterCustomization row 603 and allowed for faction 167, so only the order refuses it"
+  assert result.is_ok(character_creation.check(
+    tables,
+    looking([#(2, 1), #(22, 1)]),
+  ))
+    as "the same look in label-id order is accepted"
+}
+
+pub fn a_label_of_another_faction_is_refused_and_says_which_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  assert character_creation.check(tables, looking([#(2, 1), #(21, 2)]))
+    == Error(LabelNotAllowed(creation_id: 466, label: 21))
+    as "CharacterCustomizationLabel row 21 is faction 166's, and row 466 is faction 167 (SetLookLabel 0x1400310b0)"
+  assert character_creation.check(tables, looking([#(28, 1)]))
+    == Error(LabelNotAllowed(creation_id: 466, label: 28))
+    as "the client's CharacterCustomizationLabel has no row 28, and a label with no row can be set for no faction (SetLookLabel 0x1400310b0)"
+}
+
+pub fn the_race_labels_are_allowed_for_their_faction_only_and_no_look_holds_them_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  let assert Ok(row) = creation_table.get(tables:, id: CharacterCreationId(466))
+    as "CharacterCreation row 466 exists"
+  let of_faction = fn(faction_id, label) {
+    character_creation.check_row(
+      tables,
+      creation_table.CharacterCreation(..row, faction_id:),
+      CreateCharacter(
+        ..request(466, "Ab Cd"),
+        customisation_labels: [label],
+        customisation_values: [1],
+      ),
+    )
+  }
+  assert of_faction(166, 26)
+    == Error(LookValueNotHeld(creation_id: 466, label: 26, value: 1))
+    as "CharacterCustomizationLabel row 26 is faction 166's, so the label is allowed there; labels 26 and 27 set the race and never enter a look (opcode.0x25b.counts), so no CharacterCustomization row holds them"
+  assert of_faction(167, 26)
+    == Error(LabelNotAllowed(creation_id: 466, label: 26))
+    as "label 26 is faction 166's, so it is not allowed for faction 167 (SetLookLabel 0x1400310b0)"
+  assert of_faction(167, 27)
+    == Error(LookValueNotHeld(creation_id: 466, label: 27, value: 1))
+    as "CharacterCustomizationLabel row 27 is faction 167's, and no look holds it"
+  assert of_faction(166, 27)
+    == Error(LabelNotAllowed(creation_id: 466, label: 27))
+    as "label 27 is faction 167's, so it is not allowed for faction 166"
+}
+
+pub fn a_value_the_index_does_not_hold_is_refused_and_says_which_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared()
+  assert character_creation.check(tables, looking([#(2, 1), #(22, 3)]))
+    == Error(LookValueNotHeld(creation_id: 466, label: 22, value: 3))
+    as "CharacterCustomization rows 603 and 604 hold label 22 at 1 and 2 for race 1, sex 1, so 3 is no value of the index (SetLookValue 0x14002ec40)"
+  assert result.is_ok(character_creation.check(tables, looking([#(22, 2)])))
+    as "label 22 at 2 is held by CharacterCustomization row 604 (race 1, sex 1)"
 }
 
 pub fn a_start_race_or_faction_with_no_start_place_is_refused_and_says_which_test() -> Nil {
@@ -282,7 +377,10 @@ pub fn every_refusal_but_the_name_is_create_failed_and_says_the_row_test() -> Ni
       NeedsEntitlement(creation_id: 7),
       CostsCurrency(creation_id: 7),
       PathAbove3(creation_id: 7, path: 4),
-      TooManyLabels(creation_id: 7, count: 28),
+      TooManyLabels(creation_id: 7, count: 26),
+      LabelsNotIncreasing(creation_id: 7, previous: 22, label: 2),
+      LabelNotAllowed(creation_id: 7, label: 21),
+      LookValueNotHeld(creation_id: 7, label: 22, value: 3),
       WrongBoneCount(creation_id: 7, expected: 46, got: 45),
       BoneNotFinite(creation_id: 7),
       NoStartPlace(creation_id: 7, start: 7, faction_id: 167, race_id: 1),

@@ -46,9 +46,12 @@ pub const schema =
     ],
   )
 
+/// The key of the PathEpisode table's rows in the store.
+const key: store.TermKey(PathEpisode) = store.TermKey("PathEpisode")
+
 /// The entry that loads the PathEpisode table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the PathEpisode table with the id, or an error when it has none.
@@ -56,12 +59,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: PathEpisodeId,
 ) -> Result(PathEpisode, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the PathEpisode table, in id order.
 pub fn all(tables: store.Tables) -> List(PathEpisode) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

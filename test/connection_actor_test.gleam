@@ -247,7 +247,7 @@ pub fn a_burst_of_plain_and_reset_hang_ups_logs_no_warning_or_error_test() -> Ni
       Error(Nil) -> False
     }
   }
-  assert list.filter(log_capture.drain(lines), fn(line) {
+  assert list.filter(mailbox_support.drain(lines), fn(line) {
       is_warning_or_error(line) && ours(line)
     })
     == []
@@ -312,7 +312,7 @@ fn hand_over(
   hand_over(connection, ref)
   let reason = ask_support.ended(watched)
   log_capture.stop(capture)
-  #(reason, log_capture.drain(lines), simplifile.read_directory(folder))
+  #(reason, mailbox_support.drain(lines), simplifile.read_directory(folder))
 }
 
 pub fn a_parent_that_stops_before_the_handshake_ends_the_connection_with_no_recording_test() -> Nil {

@@ -29,9 +29,13 @@ pub const schema =
     ],
   )
 
+/// The key of the Spell4TargetMechanics table's rows in the store.
+const key: store.TermKey(Spell4TargetMechanics) =
+  store.TermKey("Spell4TargetMechanics")
+
 /// The entry that loads the Spell4TargetMechanics table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the Spell4TargetMechanics table with the id, or an error when it has none.
@@ -39,12 +43,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: Spell4TargetMechanicsId,
 ) -> Result(Spell4TargetMechanics, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the Spell4TargetMechanics table, in id order.
 pub fn all(tables: store.Tables) -> List(Spell4TargetMechanics) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

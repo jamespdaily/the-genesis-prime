@@ -57,9 +57,12 @@ pub const schema =
     ],
   )
 
+/// The key of the FullScreenEffect table's rows in the store.
+const key: store.TermKey(FullScreenEffect) = store.TermKey("FullScreenEffect")
+
 /// The entry that loads the FullScreenEffect table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the FullScreenEffect table with the id, or an error when it has none.
@@ -67,12 +70,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: FullScreenEffectId,
 ) -> Result(FullScreenEffect, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the FullScreenEffect table, in id order.
 pub fn all(tables: store.Tables) -> List(FullScreenEffect) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

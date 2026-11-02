@@ -29,9 +29,13 @@ pub const schema =
     ],
   )
 
+/// The key of the InputActionCategory table's rows in the store.
+const key: store.TermKey(InputActionCategory) =
+  store.TermKey("InputActionCategory")
+
 /// The entry that loads the InputActionCategory table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the InputActionCategory table with the id, or an error when it has none.
@@ -39,12 +43,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: InputActionCategoryId,
 ) -> Result(InputActionCategory, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the InputActionCategory table, in id order.
 pub fn all(tables: store.Tables) -> List(InputActionCategory) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.
