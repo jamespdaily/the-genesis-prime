@@ -308,6 +308,29 @@ pub fn read_frames(
   frames
 }
 
+/// Reads everything the server writes until it closes the connection, and
+/// gives those bytes. A reset counts as a close. A server that does not close
+/// within the wait fails the test.
+pub fn read_until_closed(client client: mug.Socket) -> BitArray {
+  collect_until_closed(client:, heard: <<>>)
+}
+
+fn collect_until_closed(
+  client client: mug.Socket,
+  heard heard: BitArray,
+) -> BitArray {
+  case mug.receive(client, timeout_milliseconds: wait_ms) {
+    Ok(bytes) ->
+      collect_until_closed(client:, heard: <<heard:bits, bytes:bits>>)
+    Error(mug.Closed) | Error(mug.Econnreset) | Error(mug.Econnaborted) -> heard
+    Error(error) ->
+      panic as {
+        "the wait for the server to close ended with "
+        <> mug.describe_error(error)
+      }
+  }
+}
+
 /// A frame the auth server sent in its 0x76 wrapper, as the client reads it:
 /// opened under the base key. Every auth frame but the hello and the pong
 /// travels so, so a frame that is not a 0x76 fails here.
