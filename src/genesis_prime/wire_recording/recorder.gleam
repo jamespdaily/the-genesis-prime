@@ -8,8 +8,14 @@
 //// and hands it in, since the runtime module calls this one.
 
 import genesis_prime/step.{type Now}
-import genesis_prime/wire_recording.{type Input, type Side}
+import genesis_prime/wire_recording.{
+  type Input, type Side, Closing, Header, Took, Wrote,
+}
+import gleam/int
 import gleam/option.{type Option, None, Some}
+import gleam/result
+import gleam/string
+import simplifile
 
 /// Where and how each connection of a listener is recorded: a folder, and what
 /// a recording's header holds besides the rule's name, the seed and the accept
@@ -19,7 +25,9 @@ pub opaque type WireRecorder {
 }
 
 /// One open recording: the path of its file.
-pub type WireWriter
+pub opaque type WireWriter {
+  WireWriter(path: String)
+}
 
 /// Why a recording file could not be made or written.
 pub type WriteError {
@@ -41,14 +49,43 @@ pub fn new(
 /// starts with the header, and a file already there is never overwritten.
 pub fn open_if(
   recorder recorder: Option(WireRecorder),
-  rule_name _rule_name: String,
-  connection _connection: Int,
-  accept_ordinal _accept_ordinal: Int,
-  seed _seed: BitArray,
+  rule_name rule_name: String,
+  connection connection: Int,
+  accept_ordinal accept_ordinal: Int,
+  seed seed: BitArray,
 ) -> Result(Option(WireWriter), WriteError) {
   case recorder {
     None -> Ok(None)
-    Some(_) -> panic as "built in the next commit"
+    Some(recorder) -> {
+      let path =
+        recorder.folder
+        <> "/"
+        <> string.replace(rule_name, "/", ".")
+        <> "-"
+        <> int.to_string(connection)
+        <> ".jsonl"
+      let header =
+        Header(
+          format: wire_recording.format,
+          rule: rule_name,
+          client_build: recorder.client_build,
+          tables_digest: recorder.tables_digest,
+          seed:,
+          accept_ordinal:,
+        )
+      use Nil <- result.try(
+        simplifile.create_directory_all(recorder.folder)
+        |> result.map_error(failed(path)),
+      )
+      use Nil <- result.try(
+        simplifile.create_file(path) |> result.map_error(failed(path)),
+      )
+      use Nil <- result.map(
+        simplifile.write(path, wire_recording.encode_header(header))
+        |> result.map_error(failed(path)),
+      )
+      Some(WireWriter(path:))
+    }
   }
 }
 
@@ -56,14 +93,13 @@ pub fn open_if(
 /// gave it. With no recording open it writes nothing.
 pub fn taken(
   writer writer: Option(WireWriter),
-  sequence _sequence: Int,
-  at _at: Now,
-  input _input: Input,
+  sequence sequence: Int,
+  at at: Now,
+  input input: Input,
 ) -> Result(Nil, WriteError) {
-  case writer {
-    None -> Ok(Nil)
-    Some(_) -> panic as "built in the next commit"
-  }
+  append(writer, fn() {
+    wire_recording.encode_line(Took(sequence:, at:, input:))
+  })
 }
 
 /// Appends the line of bytes the socket took from the shell, with the sequence
@@ -71,29 +107,40 @@ pub fn taken(
 /// nothing.
 pub fn sent(
   writer writer: Option(WireWriter),
-  sequence _sequence: Int,
-  bytes _bytes: BitArray,
+  sequence sequence: Int,
+  bytes bytes: BitArray,
 ) -> Result(Nil, WriteError) {
-  case writer {
-    None -> Ok(Nil)
-    Some(_) -> panic as "built in the next commit"
-  }
+  append(writer, fn() { wire_recording.encode_line(Wrote(sequence:, bytes:)) })
 }
 
 /// Ends the recording when one is open: appends the closing line, naming the
 /// side that ended the connection.
 pub fn close_if(
   writer writer: Option(WireWriter),
-  sequence _sequence: Int,
-  by _by: Side,
+  sequence sequence: Int,
+  by by: Side,
+) -> Result(Nil, WriteError) {
+  append(writer, fn() { wire_recording.encode_closing(Closing(sequence:, by:)) })
+}
+
+/// Appends the line `make` makes, which is made only when a recording is open:
+/// a connection with none never pays for the line of a large write.
+fn append(
+  writer: Option(WireWriter),
+  make: fn() -> String,
 ) -> Result(Nil, WriteError) {
   case writer {
     None -> Ok(Nil)
-    Some(_) -> panic as "built in the next commit"
+    Some(WireWriter(path:)) ->
+      simplifile.append(path, make()) |> result.map_error(failed(path))
   }
 }
 
 /// A sentence that says which file failed and why, for the log.
 pub fn describe(error error: WriteError) -> String {
   error.path <> ": " <> error.reason
+}
+
+fn failed(path: String) -> fn(simplifile.FileError) -> WriteError {
+  fn(error) { WriteError(path:, reason: simplifile.describe_error(error)) }
 }

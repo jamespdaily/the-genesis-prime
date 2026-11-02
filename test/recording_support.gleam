@@ -4,6 +4,7 @@
 
 import genesis_prime/rule_recording/file
 import genesis_prime/rule_types
+import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import gleam/bit_array
 import gleam/crypto
 import gleam/erlang/process
@@ -93,4 +94,20 @@ pub fn recorder_of_tables(
     tables_digest:,
     types_digest: types_digest(rule_module),
   )
+}
+
+/// The text of the one wire recording in the folder, whole or cut as the
+/// shell left it.
+pub fn wire_text_in(folder: String) -> String {
+  let assert Ok([name]) = simplifile.read_directory(folder)
+    as "one wire recording in the folder"
+  let assert Ok(text) = simplifile.read(folder <> "/" <> name)
+    as "the wire recording reads"
+  text
+}
+
+/// A wire recorder that writes into `folder`, on the client build the tests are
+/// made for and with no table digest.
+pub fn wire_recorder(folder folder: String) -> WireRecorder {
+  recorder.new(folder:, client_build: 16_042, tables_digest: None)
 }

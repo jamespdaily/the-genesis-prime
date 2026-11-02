@@ -1,15 +1,16 @@
 //// Starts the server for a live session, as `gleam run` does, with two
-//// changes only a developer makes: each STS, auth and game connection,
-//// Sessions and each map is recorded into a folder, for replay, and the auth
-//// server can plant one frame the client does not handle right after its
-//// hello, to prove the client's failure log brings back its id.
+//// changes only a developer makes: each STS, auth and game connection is
+//// recorded on the wire into a folder, for replay, and the auth server can
+//// plant one frame the client does not handle right after its hello, to prove
+//// the client's failure log brings back its id.
 ////
 //// `gleam run -m genesis_prime/dev_start -- <recording folder> [<planted message id>]`
 ////
-//// - `recording folder`: where each connection's, Sessions' and each map's
-////   recording is written, made when it is missing; a map's file is named by
-////   its world, instance and incarnation; by convention
-////   `test/rule_recording/<date>-<flow>`.
+//// - `recording folder`: where each connection's recording
+////   (genesis_prime/wire_recording) is written, made when it is missing, with
+////   the fixture of the rows the database holds when the session starts
+////   (genesis_prime/wire_recording/fixture); by convention
+////   `test/wire_recording/<date>-<flow>`.
 //// - `planted message id`: a message id, such as `0x0914`, sent once with an
 ////   empty body in the auth wrapper after the hello. Left out, nothing is
 ////   planted.
@@ -20,15 +21,12 @@ import argv
 import genesis_prime
 import genesis_prime/client_archive
 import genesis_prime/connection/frame.{Frame}
-import genesis_prime/game/connection as game_connection
+import genesis_prime/dev_database
 import genesis_prime/login/auth_connection
-import genesis_prime/login/sts_connection
-import genesis_prime/rule_recording/file
-import genesis_prime/rule_types
 import genesis_prime/server
-import genesis_prime/sessions
 import genesis_prime/table/loader/store
-import genesis_prime/world_map/map as world_map
+import genesis_prime/wire_recording/fixture
+import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import gleam/int
 import gleam/io
 import gleam/option.{type Option, None, Some}
@@ -41,7 +39,7 @@ type Failure {
   WrongArguments
   NotAMessageId(text: String)
   FolderNotMade(path: String, reason: String)
-  DigestFailed(module: String)
+  FixtureNotSaved(error: fixture.FixtureError)
 }
 
 pub fn main() -> Nil {
@@ -66,55 +64,24 @@ fn start() -> Result(Nil, Failure) {
       FolderNotMade(path: folder, reason: simplifile.describe_error(error))
     }),
   )
-  use sts_digest <- result.try(digest(sts_connection.rule_name))
-  use auth_digest <- result.try(digest(auth_connection.rule_name))
-  use game_digest <- result.try(digest(game_connection.rule_name))
-  use sessions_digest <- result.try(digest(sessions.rule_name))
-  use map_digest <- result.try(digest(world_map.rule_name))
   let #(tables, loaded) = genesis_prime.load_tables()
   let settings = genesis_prime.settings(tables:)
-  let login = settings.login
+  use Nil <- result.try(save_fixture(folder))
   let auth =
-    auth_connection.Settings(
-      ..login.auth.settings,
-      planted: option.map(planted, fn(message_id) {
-        Frame(message_id:, body: <<>>)
-      }),
-    )
-  let login =
-    server.Login(
-      sts: server.Served(
-        ..login.sts,
-        recorder: Some(recorder(folder:, tables:, types_digest: sts_digest)),
-      ),
-      auth: server.Served(
-        ..login.auth,
-        settings: auth,
-        recorder: Some(recorder(folder:, tables:, types_digest: auth_digest)),
-      ),
-    )
-  let game =
     server.Served(
-      ..settings.game,
-      recorder: Some(recorder(folder:, tables:, types_digest: game_digest)),
+      ..settings.login.auth,
+      settings: planted_after_hello(settings.login.auth.settings, planted),
     )
   genesis_prime.start(
-    settings: server.Settings(
-      ..settings,
-      login:,
-      game:,
-      sessions_recorder: Some(recorder(
+    settings: recorded(
+      settings: server.Settings(
+        ..settings,
+        login: server.Login(..settings.login, auth:),
+      ),
+      recorder: recorder.new(
         folder:,
-        tables:,
-        types_digest: sessions_digest,
-      )),
-      world: server.World(
-        ..settings.world,
-        map_recordings: Some(recorder(
-          folder:,
-          tables:,
-          types_digest: map_digest,
-        )),
+        client_build: client_archive.target_build,
+        tables_digest: Some(store.digest(tables)),
       ),
     ),
     tables: loaded,
@@ -122,20 +89,55 @@ fn start() -> Result(Nil, Failure) {
   Ok(Nil)
 }
 
-/// The recorder of one rule's connections: a file in the folder for each,
-/// with a header that names the client's build and the digest of the game
-/// tables the server loaded; the shell adds the rule's name and settings.
-fn recorder(
-  folder folder: String,
-  tables tables: store.Tables,
-  types_digest types_digest: String,
-) -> file.Recorder {
-  file.recorder(
-    folder:,
-    client_build: client_archive.target_build,
-    tables_digest: Some(store.digest(tables)),
-    types_digest:,
+/// The settings with `recorder` on the STS, auth and game listeners: each
+/// connection of them is recorded into its folder, the header naming the
+/// client's build and the digest of the game tables the server loaded. Nothing
+/// else changes.
+pub fn recorded(
+  settings settings: server.Settings,
+  recorder recorder: WireRecorder,
+) -> server.Settings {
+  let login = settings.login
+  server.Settings(
+    ..settings,
+    login: server.Login(
+      sts: server.Served(..login.sts, wire_recorder: Some(recorder)),
+      auth: server.Served(..login.auth, wire_recorder: Some(recorder)),
+    ),
+    game: server.Served(..settings.game, wire_recorder: Some(recorder)),
   )
+}
+
+/// The auth rule's settings with the frame to plant, when there is one.
+fn planted_after_hello(
+  settings: auth_connection.Settings,
+  planted: Option(Int),
+) -> auth_connection.Settings {
+  auth_connection.Settings(
+    ..settings,
+    planted: option.map(planted, fn(message_id) {
+      Frame(message_id:, body: <<>>)
+    }),
+  )
+}
+
+/// Saves the rows the database holds into the folder's fixture before the
+/// server accepts a connection, from a pool of its own on the database the
+/// server's settings name.
+fn save_fixture(folder: String) -> Result(Nil, Failure) {
+  use database <- result.try(
+    dev_database.connect()
+    |> result.map_error(fn(failure) {
+      FixtureNotSaved(
+        error: fixture.DatabaseFailed(reason: dev_database.describe(
+          failure:,
+          change: "read the rows",
+        )),
+      )
+    }),
+  )
+  fixture.write(database, folder <> "/" <> fixture.file_name)
+  |> result.map_error(fn(error) { FixtureNotSaved(error:) })
 }
 
 fn arguments() -> Result(#(String, Option(Int)), Failure) {
@@ -156,11 +158,6 @@ fn arguments() -> Result(#(String, Option(Int)), Failure) {
   }
 }
 
-fn digest(module: String) -> Result(String, Failure) {
-  rule_types.digest(rule_module: module, source_roots: ["src"])
-  |> result.replace_error(DigestFailed(module:))
-}
-
 fn describe(failure: Failure) -> String {
   case failure {
     WrongArguments ->
@@ -169,9 +166,15 @@ fn describe(failure: Failure) -> String {
       text <> " is not a message id: write it as 0x0914, 16 bits in hexadecimal"
     FolderNotMade(path:, reason:) ->
       "the recording folder " <> path <> " could not be made: " <> reason
-    DigestFailed(module:) ->
-      "the types of "
-      <> module
-      <> " could not be read for the recording's header"
+    FixtureNotSaved(error:) ->
+      "the fixture could not be saved: " <> describe_fixture(error)
+  }
+}
+
+fn describe_fixture(error: fixture.FixtureError) -> String {
+  case error {
+    fixture.FileFailed(path:, reason:) -> path <> ": " <> reason
+    fixture.StatementFailed(statement:, reason:) -> statement <> ": " <> reason
+    fixture.DatabaseFailed(reason:) -> reason
   }
 }

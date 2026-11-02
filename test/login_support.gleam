@@ -149,14 +149,17 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
   )
 }
 
-/// The rate bucket the server's own settings give the auth rule. The settings
-/// read two variables that a started server sets for real; this gives them
-/// values.
-pub fn servers_auth_rate() -> Bucket {
+/// The settings the server's own start makes. They read two variables that a
+/// started server sets for real; this gives them values.
+pub fn servers_settings() -> server.Settings {
   envoy.set("GENESIS_GAME_ADDRESS", "127.0.0.1")
   envoy.set("GENESIS_REALM_NAME", "Test")
-  let settings = genesis_prime.settings(tables: character_tables.shared())
-  settings.login.auth.settings.rate
+  genesis_prime.settings(tables: character_tables.shared())
+}
+
+/// The rate bucket the server's own settings give the auth rule.
+pub fn servers_auth_rate() -> Bucket {
+  servers_settings().login.auth.settings.rate
 }
 
 /// Starts the server's tree as `start` does, with the auth listener's rate as

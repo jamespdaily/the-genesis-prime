@@ -40,8 +40,15 @@
 ////   line holds only the kind of input and, for an answer, how the ask ended.
 ////   A replay gets the same messages and answers by running the real services.
 
-import genesis_prime/step.{type Now}
-import gleam/option.{type Option}
+import genesis_prime/step.{type Now, Now}
+import gleam/bit_array
+import gleam/dynamic/decode
+import gleam/int
+import gleam/json.{type Json}
+import gleam/list
+import gleam/option.{type Option, None, Some}
+import gleam/result
+import gleam/string
 
 /// The version of this file format; a reader refuses any other.
 pub const format = 1
@@ -136,23 +143,377 @@ pub type ReadFailure {
 }
 
 /// The header as one JSON line, ending in a line feed.
-pub fn encode_header(header _header: Header) -> String {
-  panic as "built in the next commit"
+pub fn encode_header(header header: Header) -> String {
+  line_of([
+    #("format", json.int(header.format)),
+    #("rule", json.string(header.rule)),
+    #("client_build", json.int(header.client_build)),
+    #("tables_digest", json.nullable(header.tables_digest, json.string)),
+    #("seed", json.string(hex(header.seed))),
+    #("accept_ordinal", json.int(header.accept_ordinal)),
+  ])
 }
 
 /// A line as one JSON line, ending in a line feed.
-pub fn encode_line(line _line: Line) -> String {
-  panic as "built in the next commit"
+pub fn encode_line(line line: Line) -> String {
+  case line {
+    Took(sequence:, at:, input:) ->
+      line_of(list.append(
+        [
+          #("sequence", json.int(sequence)),
+          #("monotonic_ms", json.int(at.monotonic_ms)),
+          #("filetime", json.int(at.filetime)),
+        ],
+        input_entries(input),
+      ))
+    Wrote(sequence:, bytes:) ->
+      line_of([
+        #("sequence", json.int(sequence)),
+        #("out", json.string(hex(bytes))),
+      ])
+  }
 }
 
 /// The closing line as one JSON line, ending in a line feed.
-pub fn encode_closing(closing _closing: Closing) -> String {
-  panic as "built in the next commit"
+pub fn encode_closing(closing closing: Closing) -> String {
+  line_of([
+    #("sequence", json.int(closing.sequence)),
+    #("closed", json.string(side_name(closing.by))),
+  ])
+}
+
+fn line_of(entries: List(#(String, Json))) -> String {
+  json.to_string(json.object(entries)) <> "\n"
+}
+
+/// The keys an input adds to its line after the time: its kind, and the bytes,
+/// the outcome or the timer's number where it has one.
+fn input_entries(input: Input) -> List(#(String, Json)) {
+  case input {
+    Accepted -> [kind("accepted")]
+    Read(bytes:) -> [kind("read"), #("bytes", json.string(hex(bytes)))]
+    Answered(outcome:) -> [
+      kind("answered"),
+      #("outcome", json.string(outcome_name(outcome))),
+    ]
+    TimerFired(timer:) -> [kind("timer_fired"), #("timer", json.int(timer))]
+    PeerClosed -> [kind("peer_closed")]
+    ReadFailed -> [kind("read_failed")]
+    WriteFailed -> [kind("write_failed")]
+    Woken -> [kind("woken")]
+    WatchEnded -> [kind("watch_ended")]
+    Stopping -> [kind("stopping")]
+  }
+}
+
+fn kind(name: String) -> #(String, Json) {
+  #("in", json.string(name))
+}
+
+fn outcome_name(outcome: Outcome) -> String {
+  case outcome {
+    Answer -> "answer"
+    NotRunning -> "not_running"
+    EndedBeforeAnswer -> "ended_before_answer"
+    NoAnswerInTime -> "no_answer_in_time"
+    StoppedWaiting -> "stopped_waiting"
+  }
+}
+
+fn side_name(side: Side) -> String {
+  case side {
+    Client -> "client"
+    Server -> "server"
+  }
+}
+
+fn hex(bytes: BitArray) -> String {
+  string.lowercase(bit_array.base16_encode(bytes))
 }
 
 /// The recording a file's text holds. A file whose last line is cut, or that
 /// has no closing line, is `Cut`; each line's sequence number must be larger
 /// than the one before.
-pub fn read(text _text: String) -> Result(Recording, ReadFailure) {
-  panic as "built in the next commit"
+pub fn read(text text: String) -> Result(Recording, ReadFailure) {
+  // Every line ends in a line feed, so what follows the last one is a line
+  // the writer did not finish, or nothing.
+  let pieces = string.split(text, "\n")
+  let whole = list.take(pieces, list.length(pieces) - 1)
+  let unfinished = list.last(pieces) |> result.unwrap("")
+  case whole {
+    [] -> Error(Cut(lines: 0))
+    [first, ..rest] -> {
+      use header <- result.try(read_header(first))
+      use #(lines, closing) <- result.try(
+        read_lines(lines: rest, number: 1, after: None, so_far: []),
+      )
+      case closing, unfinished {
+        Some(closing), "" -> Ok(Recording(header:, lines:, closing:))
+        Some(_), _ ->
+          Error(NotALine(
+            line: list.length(whole),
+            reason: "text follows the closing line",
+          ))
+        None, _ -> Error(Cut(lines: list.length(whole)))
+      }
+    }
+  }
+}
+
+/// The header of the first line: its format is read first, so a file of
+/// another format is refused as that and not as a line it cannot read.
+fn read_header(text: String) -> Result(Header, ReadFailure) {
+  let format_only = {
+    use found <- decode.field("format", decode.int)
+    decode.success(found)
+  }
+  use found <- result.try(parse(text:, line: 0, using: format_only))
+  case found == format {
+    False -> Error(OtherFormat(found:))
+    True -> parse(text:, line: 0, using: header_decoder())
+  }
+}
+
+fn header_decoder() -> decode.Decoder(Header) {
+  use format <- decode.field("format", decode.int)
+  use rule <- decode.field("rule", decode.string)
+  use client_build <- decode.field("client_build", decode.int)
+  use tables_digest <- decode.field(
+    "tables_digest",
+    decode.optional(decode.string),
+  )
+  use seed <- decode.field("seed", hex_decoder())
+  use accept_ordinal <- decode.field("accept_ordinal", decode.int)
+  decode.success(Header(
+    format:,
+    rule:,
+    client_build:,
+    tables_digest:,
+    seed:,
+    accept_ordinal:,
+  ))
+}
+
+fn hex_decoder() -> decode.Decoder(BitArray) {
+  decode.then(decode.string, fn(text) {
+    case bit_array.base16_decode(text) {
+      Ok(bytes) -> decode.success(bytes)
+      Error(Nil) -> decode.failure(<<>>, "bytes in hexadecimal")
+    }
+  })
+}
+
+/// One line after the header, as the keys it may hold: which of the three
+/// kinds of line it is is told by `in`, `out` and `closed`.
+type Raw {
+  Raw(
+    sequence: Int,
+    kind: Option(String),
+    out: Option(BitArray),
+    closed: Option(String),
+    monotonic_ms: Option(Int),
+    filetime: Option(Int),
+    bytes: Option(BitArray),
+    outcome: Option(String),
+    timer: Option(Int),
+  )
+}
+
+fn raw_decoder() -> decode.Decoder(Raw) {
+  use sequence <- decode.field("sequence", decode.int)
+  use kind <- decode.optional_field("in", None, decode.optional(decode.string))
+  use out <- decode.optional_field("out", None, decode.optional(hex_decoder()))
+  use closed <- decode.optional_field(
+    "closed",
+    None,
+    decode.optional(decode.string),
+  )
+  use monotonic_ms <- decode.optional_field(
+    "monotonic_ms",
+    None,
+    decode.optional(decode.int),
+  )
+  use filetime <- decode.optional_field(
+    "filetime",
+    None,
+    decode.optional(decode.int),
+  )
+  use bytes <- decode.optional_field(
+    "bytes",
+    None,
+    decode.optional(hex_decoder()),
+  )
+  use outcome <- decode.optional_field(
+    "outcome",
+    None,
+    decode.optional(decode.string),
+  )
+  use timer <- decode.optional_field("timer", None, decode.optional(decode.int))
+  decode.success(Raw(
+    sequence:,
+    kind:,
+    out:,
+    closed:,
+    monotonic_ms:,
+    filetime:,
+    bytes:,
+    outcome:,
+    timer:,
+  ))
+}
+
+/// Reads the whole lines after the header, `number` being the first one's
+/// place (the header is 0). Stops at the closing line, and refuses any line
+/// after it.
+fn read_lines(
+  lines lines: List(String),
+  number number: Int,
+  after previous: Option(Int),
+  so_far so_far: List(Line),
+) -> Result(#(List(Line), Option(Closing)), ReadFailure) {
+  case lines {
+    [] -> Ok(#(list.reverse(so_far), None))
+    [text, ..rest] -> {
+      use raw <- result.try(parse(text:, line: number, using: raw_decoder()))
+      use <- check_growing(raw:, number:, after: previous)
+      use line <- result.try(line_of_raw(raw:, number:))
+      case line {
+        Ok(line) ->
+          read_lines(
+            lines: rest,
+            number: number + 1,
+            after: Some(raw.sequence),
+            so_far: [line, ..so_far],
+          )
+        Error(closing) ->
+          case rest {
+            [] -> Ok(#(list.reverse(so_far), Some(closing)))
+            [_, ..] ->
+              Error(NotALine(
+                line: number + 1,
+                reason: "a line follows the closing line",
+              ))
+          }
+      }
+    }
+  }
+}
+
+fn check_growing(
+  raw raw: Raw,
+  number number: Int,
+  after previous: Option(Int),
+  next next: fn() -> Result(a, ReadFailure),
+) -> Result(a, ReadFailure) {
+  case previous {
+    Some(before) if raw.sequence <= before ->
+      Error(NotALine(
+        line: number,
+        reason: "its sequence number "
+          <> int.to_string(raw.sequence)
+          <> " is not above the one before it, "
+          <> int.to_string(before),
+      ))
+    Some(_) | None -> next()
+  }
+}
+
+/// The line the keys make: `Ok` a line before the end, `Error` the closing
+/// line.
+fn line_of_raw(
+  raw raw: Raw,
+  number number: Int,
+) -> Result(Result(Line, Closing), ReadFailure) {
+  let not_a_line = fn(reason) { Error(NotALine(line: number, reason:)) }
+  case raw.kind, raw.out, raw.closed {
+    Some(kind), None, None ->
+      case raw.monotonic_ms, raw.filetime {
+        Some(monotonic_ms), Some(filetime) ->
+          input_of(kind:, raw:)
+          |> result.map_error(fn(reason) { NotALine(line: number, reason:) })
+          |> result.map(fn(input) {
+            Ok(Took(
+              sequence: raw.sequence,
+              at: Now(monotonic_ms:, filetime:),
+              input:,
+            ))
+          })
+        _, _ -> not_a_line("an input line holds no monotonic_ms and filetime")
+      }
+    None, Some(bytes), None -> Ok(Ok(Wrote(sequence: raw.sequence, bytes:)))
+    None, None, Some("client") ->
+      Ok(Error(Closing(sequence: raw.sequence, by: Client)))
+    None, None, Some("server") ->
+      Ok(Error(Closing(sequence: raw.sequence, by: Server)))
+    None, None, Some(other) ->
+      not_a_line("no side closes as " <> string.inspect(other))
+    _, _, _ ->
+      not_a_line("a line is one of an input, a write and the closing line")
+  }
+}
+
+fn input_of(kind kind: String, raw raw: Raw) -> Result(Input, String) {
+  case kind, raw.bytes, raw.outcome, raw.timer {
+    "accepted", _, _, _ -> Ok(Accepted)
+    "read", Some(bytes), _, _ -> Ok(Read(bytes:))
+    "read", None, _, _ -> Error("a read line holds no bytes")
+    "answered", _, Some(outcome), _ ->
+      outcome_of(outcome) |> result.map(fn(outcome) { Answered(outcome:) })
+    "answered", _, None, _ -> Error("an answered line holds no outcome")
+    "timer_fired", _, _, Some(timer) -> Ok(TimerFired(timer:))
+    "timer_fired", _, _, None -> Error("a timer line holds no timer")
+    "peer_closed", _, _, _ -> Ok(PeerClosed)
+    "read_failed", _, _, _ -> Ok(ReadFailed)
+    "write_failed", _, _, _ -> Ok(WriteFailed)
+    "woken", _, _, _ -> Ok(Woken)
+    "watch_ended", _, _, _ -> Ok(WatchEnded)
+    "stopping", _, _, _ -> Ok(Stopping)
+    other, _, _, _ -> Error("no input is called " <> string.inspect(other))
+  }
+}
+
+fn outcome_of(name: String) -> Result(Outcome, String) {
+  case name {
+    "answer" -> Ok(Answer)
+    "not_running" -> Ok(NotRunning)
+    "ended_before_answer" -> Ok(EndedBeforeAnswer)
+    "no_answer_in_time" -> Ok(NoAnswerInTime)
+    "stopped_waiting" -> Ok(StoppedWaiting)
+    other -> Error("no ask ends as " <> string.inspect(other))
+  }
+}
+
+/// Reads one line of text with a decoder, naming the line when it is not JSON
+/// of the shape.
+fn parse(
+  text text: String,
+  line line: Int,
+  using decoder: decode.Decoder(a),
+) -> Result(a, ReadFailure) {
+  json.parse(from: text, using: decoder)
+  |> result.map_error(fn(error) {
+    NotALine(line:, reason: describe_json_error(error))
+  })
+}
+
+fn describe_json_error(error: json.DecodeError) -> String {
+  case error {
+    json.UnexpectedEndOfInput -> "the JSON ends before the line does"
+    json.UnexpectedByte(byte) -> "the JSON has an unexpected byte " <> byte
+    json.UnexpectedSequence(sequence) ->
+      "the JSON has an unexpected sequence " <> sequence
+    json.UnableToDecode(errors) ->
+      "the JSON does not hold what a line holds: "
+      <> string.join(
+        list.map(errors, fn(error) {
+          "expected "
+          <> error.expected
+          <> ", found "
+          <> error.found
+          <> " at "
+          <> string.join(error.path, "/")
+        }),
+        "; ",
+      )
+  }
 }

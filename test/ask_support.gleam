@@ -9,13 +9,14 @@ import asking_rule.{
 import gate_rule
 import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/registry.{type Registry}
-import genesis_prime/connection/script
+import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/connection/shell
 import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type ConnectionRule, type ServiceRule, Rule}
 import genesis_prime/store/worker.{type Job}
+import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import gleam/erlang/atom
 import gleam/erlang/process.{type Name, type Pid}
 import gleam/option.{type Option, None, Some}
@@ -76,6 +77,34 @@ pub fn start_joined(
   locate locate: service.Locate,
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
+  start_scripted(
+    rule:,
+    directory:,
+    shutdown_ms:,
+    recorder:,
+    wire_recorder: None,
+    scripts: script.operating_system,
+    registry:,
+    locate:,
+    with:,
+  )
+}
+
+/// Starts a listener as `start_joined` does, whose connections are recorded on
+/// the wire by `wire_recorder` and are given their scripts (seed, clock, timers)
+/// by `scripts`.
+pub fn start_scripted(
+  rule rule: ConnectionRule(settings, state, request, message, answer),
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  shutdown_ms shutdown_ms: Int,
+  recorder recorder: Option(Recorder),
+  wire_recorder wire_recorder: Option(WireRecorder),
+  scripts scripts: Scripts,
+  registry registry: Option(Registry(message)),
+  locate locate: service.Locate,
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+) -> Server {
   let name = process.new_name("test_listener")
   let connection =
     shell.Settings(
@@ -83,8 +112,8 @@ pub fn start_joined(
       send_deadline_ms: 300,
       shutdown_ms:,
       recorder:,
-      wire_recorder: None,
-      scripts: script.operating_system,
+      wire_recorder:,
+      scripts:,
       directory:,
       registry:,
       locate:,
