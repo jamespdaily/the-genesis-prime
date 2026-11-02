@@ -262,7 +262,7 @@ fn world() -> server.World {
 
 /// The database pool's three sizes. The values are the server's choice, not
 /// the client's, and are pog's own defaults: the load run's two runs of
-/// 2026-11-01 (see `game_max_connections`) never had a store worker waiting
+/// 2026-11-02 (see `game_max_connections`) never had a store worker waiting
 /// for the pool, so no measurement asks for others.
 pub type PoolSettings {
   PoolSettings(
@@ -345,12 +345,12 @@ const ask_deadline_ms = 5000
 
 /// How many connections each listener holds at once is the server's choice: half
 /// of 4,800, the most players a step of the load run (`genesis_prime/load_run`)
-/// kept up with, in two runs on 2026-11-01 on an Apple M2 Max (12 cores, 32 GB,
+/// kept up with, in two runs on 2026-11-02 on an Apple M2 Max (12 cores, 32 GB,
 /// macOS 26.7.1) that also ran the clients on four of its schedulers, with
 /// Postgres 18.6 and the pool below. Each player held one connection on each
 /// listener, so each listener's cap is a connection for each of 2,400 players.
-/// Nothing on the server failed a line up to 4,800 players (login to world 6 ms
-/// at the 99th percentile, ping 5 ms, at most 7% of the cores, no mailbox that
+/// Nothing on the server failed a line up to 4,800 players (login to world 5 ms
+/// at the 99th percentile, ping 7 ms, at most 7% of the cores, no mailbox that
 /// never emptied, no store worker waiting); the run's next step, 6,400, was
 /// the clients' limit, since this machine ran out of local ports at about 5,400
 /// players, so 4,800 is a floor of what the server takes. The rate below
