@@ -5,11 +5,22 @@
 
 import gleam/bool
 import gleam/erlang/atom.{type Atom}
-import gleam/erlang/process.{type Pid}
+import gleam/erlang/process.{type Pid, type Subject}
 
 /// The number of messages waiting in the process's mailbox.
 @external(erlang, "mailbox_support_ffi", "queued")
 pub fn queued(pid: Pid) -> Int
+
+/// Every message waiting in the subject, in the order they came, taken out of
+/// it. A message a process sent before a signal it sent afterwards, such as
+/// its end, is waiting once that signal has come: Erlang orders signals per
+/// sender.
+pub fn drain(messages: Subject(message)) -> List(message) {
+  case process.receive(messages, 0) {
+    Ok(message) -> [message, ..drain(messages)]
+    Error(Nil) -> []
+  }
+}
 
 /// Waits until a message is in the process's mailbox: a call made to a process
 /// that takes none, because it is suspended or stopping its children, stays

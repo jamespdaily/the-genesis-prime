@@ -37,7 +37,7 @@ pub fn a_listener_the_closer_cannot_close_is_logged_as_a_warning_with_the_reason
   ask_support.stop(server)
   log_capture.stop(capture)
   let closed =
-    log_capture.drain(lines)
+    mailbox_support.drain(lines)
     |> list.filter(fn(line) { string.contains(line.1, "listener") })
     |> list.map(fn(line) { #(line.0, line.1) })
   assert list.contains(closed, #(
@@ -94,7 +94,7 @@ pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_
   assert refused == Error(mug.ConnectFailedIpv4(mug.Econnrefused))
     as "the listener after the one that ended was closed to new connections"
   let closed =
-    log_capture.drain(lines)
+    mailbox_support.drain(lines)
     |> list.filter(fn(line) { string.contains(line.1, "listener") })
     |> list.map(fn(line) { #(line.0, line.1) })
   assert list.contains(closed, #(
