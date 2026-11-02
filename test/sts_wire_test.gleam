@@ -240,6 +240,36 @@ pub fn a_head_that_does_not_end_within_the_limit_is_refused_test() -> Nil {
     as "the server holds at most head_limit bytes of a head, far above the client's longest head, under 80 bytes (POST /Auth/RequestGameToken STS/1.0 with its two headers)"
 }
 
+pub fn a_head_whose_blank_line_ends_at_the_limit_is_read_and_one_byte_later_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A head of a request line and three headers, the last padded so the blank
+  // line's last byte is byte `size` of the bytes.
+  let head = fn(size) {
+    let before = "POST /Auth/KeyData STS/1.0\r\ns:2\r\nl:0\r\nz:"
+    before
+    <> string.repeat("a", size - bit_array.byte_size(<<before:utf8>>) - 4)
+    <> "\r\n\r\n"
+  }
+  assert decode_all(head(sts_wire.head_limit))
+    == Ok(
+      #(
+        [
+          Request(
+            sequence: Some(2),
+            protocol: "Auth",
+            command: "KeyData",
+            body: <<>>,
+          ),
+        ],
+        <<>>,
+      ),
+    )
+    as "the server holds at most head_limit bytes of a head: a blank line ending at byte head_limit is within it"
+  assert decode_all(head(sts_wire.head_limit + 1))
+    == Error(sts_wire.HeadTooLong)
+    as "a blank line ending one byte past head_limit is not within it"
+}
+
 pub fn a_body_longer_than_the_limit_is_refused_when_its_head_arrives_test() -> Nil {
   use <- owned_test.run(5000)
   assert decode_all("POST /Auth/KeyData STS/1.0\r\ns:2\r\nl:4097\r\n\r\n")

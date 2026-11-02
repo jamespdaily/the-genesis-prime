@@ -264,7 +264,10 @@ fn start_map(
       argument: MapStart(map:, incarnation:),
     )
   {
-    Error(Nil) -> #(state, Error(Nil))
+    Error(error) -> {
+      service.warn_unless_not_running(error)
+      #(state, Error(Nil))
+    }
     Ok(started) -> {
       let running =
         MapProcess(pid: started.pid, subject: started.data, incarnation:)

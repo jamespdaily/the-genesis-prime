@@ -36,18 +36,31 @@ start_listener(Ref, Port, MaxConnections, ShutdownMs, Settings) ->
         {error, Reason} -> {error, {could_not_listen, format(Reason)}}
     end.
 
+%% The listener's port: `ranch:get_port/1` gives `undefined` for a listener whose
+%% socket is closed or that listens on a local socket, and fails with `badarg`
+%% for a name Ranch has no listener under (`ets:lookup_element/3` on its table).
+%% Result(Int, ListenerError).
 listener_port(Ref) ->
-    try {ok, ranch:get_port(Ref)}
-    catch _:_ -> {error, nil}
+    try ranch:get_port(Ref) of
+        Port when is_integer(Port) -> {ok, Port};
+        undefined -> {error, listener_not_listening}
+    catch
+        error:badarg -> {error, listener_not_running}
     end.
 
 %% Closes the listener's listening socket, so no new socket is taken, and leaves
 %% its connections running: Ranch stops the listener's acceptors and keeps its
-%% connection supervisor. A listener already closed gives ok; one that is not
-%% running gives an error.
+%% connection supervisor. A listener already closed gives ok. A name Ranch has no
+%% listener under fails with `badarg` (its table has no entry), and one whose
+%% supervisor has ended with `noproc`; both are no listener running. Anything
+%% else Ranch says is the reason. Result(Nil, ListenerError).
 suspend_listener(Ref) ->
-    try ok = ranch:suspend_listener(Ref), {ok, nil}
-    catch _:_ -> {error, nil}
+    try ranch:suspend_listener(Ref) of
+        ok -> {ok, nil};
+        {error, Reason} -> {error, {ranch_failed, format(Reason)}}
+    catch
+        error:badarg -> {error, listener_not_running};
+        exit:{noproc, _} -> {error, listener_not_running}
     end.
 
 %% Takes the socket from Ranch, gives its reads the buffer ReadLimit, so no read

@@ -10,12 +10,18 @@
 //// The test VM is not stopping, so what a node that is stopping does is read
 //// through `ending`'s argument; the nodes of `sigterm_test` show the real stop.
 
+import application_support
 import ask_support
+import fresh_node
 import genesis_prime/application.{Fatal, Orderly, Tree}
+import genesis_prime/server
 import gleam/dynamic
 import gleam/erlang/atom
 import gleam/erlang/process
+import gleam/otp/actor
+import login_support
 import owned_test
+import pog
 
 fn shutdown() -> process.ExitReason {
   process.Abnormal(atom.to_dynamic(atom.create("shutdown")))
@@ -60,4 +66,48 @@ pub fn a_tree_serves_while_it_runs_and_the_node_is_not_stopping_test() -> Nil {
   process.kill(pid)
   let _reason = ask_support.ended(tree.monitor)
   assert !application.serving(tree) as "a tree that has ended does not serve"
+}
+
+/// The settings of a tree whose pool waits for no database: nothing here
+/// connects, and the listeners take ports the system picks.
+fn settings() -> server.Settings {
+  login_support.settings(pool: pog.default_config(process.new_name("pool")))
+}
+
+pub fn a_tree_started_under_the_root_gives_its_pid_and_a_monitor_on_it_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(tree) = application.start_server(settings: settings())
+    as "the application's root is running in the test node, and starts the tree"
+  application_support.guard(tree.pid)
+  assert process.is_alive(tree.pid)
+    as "supervisor:start_child gives the tree's own pid, which `Tree` holds"
+  application_support.stop(tree.pid)
+  let _reason = ask_support.ended(tree.monitor)
+  Nil
+}
+
+pub fn a_tree_that_does_not_start_gives_the_reason_its_start_reported_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let settings = settings()
+  let assert Ok(tree) = application.start_server(settings:)
+    as "the first tree starts"
+  application_support.guard(tree.pid)
+  assert application.start_server(settings:)
+    == Error(application.TreeNotStarted(actor.InitFailed("shutdown")))
+    as "a second tree on the same names fails in its first child; the supervisor ends with shutdown, which gleam_otp_external:convert_erlang_start_error gives as InitFailed(\"shutdown\"), and the root gives the start's error as it is"
+}
+
+pub fn without_the_applications_root_no_tree_starts_test() -> Nil {
+  use <- owned_test.run(60_000)
+  fresh_node.must_return(
+    module: "application_test",
+    function: "start_without_the_application",
+  )
+}
+
+/// Run in a fresh node, where the application is not started and has no root.
+pub fn start_without_the_application() -> Nil {
+  assert application.start_server(settings: settings())
+    == Error(application.ApplicationNotRunning)
+    as "application:get_supervisor finds no root for an application that is not running"
 }

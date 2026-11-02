@@ -5,7 +5,10 @@
 //// name, and with `{shutdown, {gen_server, call, _}}` when the supervisor
 //// ends, with the reason `shutdown`, while the call waits in its mailbox, as
 //// it does for a call made while the supervisor stops its children. Both mean
-//// the supervisor is not running, which `start_child` answers `Error(Nil)`.
+//// the supervisor is not running, which `start_child` answers
+//// `SupervisorNotRunning`. A supervisor that runs and whose child's start
+//// reports a failure gives that failure, as `factory_supervisor.start_child`
+//// returns it (`ChildNotStarted`).
 
 import ask_support
 import genesis_prime/service
@@ -15,6 +18,8 @@ import gleam/erlang/process.{type Pid, type Subject}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision
+import gleam/string
+import log_capture
 import mailbox_support
 import owned_test
 
@@ -60,7 +65,65 @@ pub fn a_name_no_process_holds_is_a_supervisor_that_is_not_running_test() -> Nil
   use <- owned_test.run(10_000)
   let name = process.new_name("nobody")
   assert service.start_child(supervisor: name, argument: process.new_subject())
+    == Error(service.SupervisorNotRunning)
+}
+
+pub fn a_child_whose_start_fails_gives_the_reason_its_start_reported_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let name = process.new_name("failing_children")
+  let assert Ok(started) =
+    factory_supervisor.worker_child(fn(_argument: Nil) {
+      Error(actor.InitFailed("no room"))
+    })
+    |> factory_supervisor.named(name)
+    |> factory_supervisor.restart_strategy(supervision.Temporary)
+    |> factory_supervisor.restart_tolerance(intensity: 1, period: 5)
+    |> factory_supervisor.start
+    as "the supervisor started"
+  process.unlink(started.pid)
+  ask_support.guard(started.pid)
+  assert service.start_child(supervisor: name, argument: Nil)
+    == Error(service.ChildNotStarted(actor.InitFailed("no room")))
+    as "the supervisor runs, and the child's start said InitFailed(\"no room\"), which factory_supervisor.start_child gives as it is"
+}
+
+pub fn an_asker_of_a_child_that_does_not_start_logs_the_reason_and_one_of_a_supervisor_not_running_logs_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let name = process.new_name("failing_children")
+  let assert Ok(started) =
+    factory_supervisor.worker_child(fn(_argument: Nil) {
+      Error(actor.InitFailed("no room"))
+    })
+    |> factory_supervisor.named(name)
+    |> factory_supervisor.restart_strategy(supervision.Temporary)
+    |> factory_supervisor.restart_tolerance(intensity: 1, period: 5)
+    |> factory_supervisor.start
+    as "the supervisor started"
+  process.unlink(started.pid)
+  ask_support.guard(started.pid)
+  let lines = process.new_subject()
+  let capture = log_capture.start(from: process.self(), into: lines)
+  assert service.sent_to_worker(service.start_child(
+      supervisor: name,
+      argument: Nil,
+    ))
     == Error(Nil)
+    as "the asker's directory gives no process for a child that did not start"
+  let assert Ok(#(level, text)) =
+    process.receive(lines, ask_support.event_wait_ms)
+    as "the failed start was logged"
+  assert level == "warning" as "an outside failure the server went on from"
+  assert string.contains(text, "no room")
+    as "the reason the child's start gave is in the line"
+  let nobody = process.new_name("nobody")
+  assert service.sent_to_worker(service.start_child(
+      supervisor: nobody,
+      argument: Nil,
+    ))
+    == Error(Nil)
+  log_capture.stop(capture)
+  assert process.receive(lines, 0) == Error(Nil)
+    as "a supervisor that is not running logs nothing: it is stopping or restarting, and says so itself"
 }
 
 pub fn a_supervisor_that_ends_while_the_call_waits_is_a_supervisor_that_is_not_running_test() -> Nil {
@@ -87,7 +150,7 @@ pub fn a_supervisor_that_ends_while_the_call_waits_is_a_supervisor_that_is_not_r
   let _reason = ask_support.ended(stopped)
   let assert Ok(result) = process.receive(results, ask_support.event_wait_ms)
     as "the call returned"
-  assert result == Error(Nil)
+  assert result == Error(service.SupervisorNotRunning)
     as "a call that waited while the supervisor stopped, and ended with it, is answered not running"
 }
 

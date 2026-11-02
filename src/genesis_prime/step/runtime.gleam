@@ -8,8 +8,11 @@
 import genesis_prime/rule_recording/file.{type FileError, type Writer}
 import genesis_prime/step.{type About, type LogLevel, type Now, LogError, Now}
 import gleam/dynamic.{type Dynamic}
+import gleam/dynamic/decode
+import gleam/erlang/atom
 import gleam/erlang/process
 import gleam/option.{type Option}
+import gleam/result
 
 /// Why a process is asked to exit; the atom `shutdown`.
 pub type ExitReason {
@@ -33,6 +36,18 @@ pub fn down_monitor(down: process.Down) -> process.Monitor {
   case down {
     process.ProcessDown(monitor:, ..) | process.PortDown(monitor:, ..) ->
       monitor
+  }
+}
+
+/// A word for the log that says how a process ended: `normal`, `killed`, or the
+/// reason's atom (`shutdown`), and for a reason that is no atom its kind.
+pub fn describe_exit(reason: process.ExitReason) -> String {
+  case reason {
+    process.Normal -> "normal"
+    process.Killed -> "killed"
+    process.Abnormal(reason:) ->
+      decode.run(reason, decode.map(atom.decoder(), atom.to_string))
+      |> result.lazy_unwrap(fn() { dynamic.classify(reason) })
   }
 }
 

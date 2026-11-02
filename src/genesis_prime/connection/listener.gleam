@@ -75,15 +75,35 @@ pub fn supervised(
   })
 }
 
+/// Why Ranch could not give or do something for a listener, as it reported it.
+pub type ListenerError {
+  /// No listener runs under the name, as when its supervisor is restarting it.
+  ListenerNotRunning
+  /// The listener's listening socket is closed (`stop_accepting`), so it has
+  /// no port.
+  ListenerNotListening
+  /// Ranch refused, with this reason.
+  RanchFailed(reason: String)
+}
+
+/// A sentence for the log that says why Ranch could not do it.
+pub fn describe(error: ListenerError) -> String {
+  case error {
+    ListenerNotRunning -> "no listener runs under the name"
+    ListenerNotListening -> "the listener's socket is closed"
+    RanchFailed(reason:) -> "Ranch failed: " <> reason
+  }
+}
+
 /// The port a running listener listens on, as Ranch reports it.
 @external(erlang, "connection_shell_ffi", "listener_port")
-pub fn port(name: Name(Nil)) -> Result(Int, Nil)
+pub fn port(name: Name(Nil)) -> Result(Int, ListenerError)
 
 /// Closes the listener's listening socket, so a new connect is refused, and
 /// leaves the connections it already holds running. `Ok` also for a listener
-/// already closed; `Error(Nil)` when no listener runs under the name.
+/// already closed.
 @external(erlang, "connection_shell_ffi", "suspend_listener")
-pub fn stop_accepting(name: Name(Nil)) -> Result(Nil, Nil)
+pub fn stop_accepting(name: Name(Nil)) -> Result(Nil, ListenerError)
 
 @external(erlang, "connection_shell_ffi", "start_listener")
 fn start_listener(
