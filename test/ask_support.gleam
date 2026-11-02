@@ -17,7 +17,6 @@ import genesis_prime/step.{type ConnectionRule, type ServiceRule, Rule}
 import genesis_prime/store/worker.{type Job}
 import gleam/erlang/atom
 import gleam/erlang/process.{type Name, type Pid}
-import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
@@ -236,20 +235,8 @@ pub fn command(
   n n: Int,
   wait_ms wait_ms: Int,
 ) -> Nil {
-  commands(client:, commands: [#(letter, n, wait_ms)])
-}
-
-/// Sends commands of the asking rule, each as `command` does, in one send.
-pub fn commands(
-  client client: mug.Socket,
-  commands commands: List(#(Int, Int, Int)),
-) -> Nil {
-  let bytes =
-    list.fold(commands, <<>>, fn(bytes, command) {
-      let #(letter, n, wait_ms) = command
-      <<bytes:bits, letter, n, wait_ms:16>>
-    })
-  let assert Ok(Nil) = mug.send(client, bytes) as "the commands were sent"
+  let assert Ok(Nil) = mug.send(client, <<letter, n, wait_ms:16>>)
+    as "the command was sent"
   Nil
 }
 
