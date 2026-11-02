@@ -19,13 +19,13 @@
 //// The rules that take the client's wrapper (the auth rule and the game rule)
 //// open each whole frame with `open`, and write each message with `wrapped`.
 
+import genesis_prime/account_session
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{type Wrapper, ClientWrapper}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
 import genesis_prime/hand_off
 import genesis_prime/random.{type Random}
-import genesis_prime/sessions
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
   type ConnectionStep, type Effect, type Event, type Now, type Outcome,
@@ -47,9 +47,9 @@ import gleam/string
 pub type Request {
   AskStore(request: store.Request)
   AskHandOff(message: hand_off.Message)
-  AskSessions(message: sessions.Message)
+  AskSessions(message: account_session.Message)
   /// Ask the map, which Maps starts when it is not running
-  /// (genesis_prime/world_map/maps).
+  /// (genesis_prime/world_map/registry).
   AskMap(map: MapId, message: map.Message)
 }
 
@@ -57,14 +57,14 @@ pub type Request {
 pub type Answer {
   FromStore(answer: store.Answer)
   FromHandOff(answer: hand_off.Answer)
-  FromSessions(answer: sessions.Outgoing)
+  FromSessions(answer: account_session.Outgoing)
   FromMap(answer: map.Outgoing)
 }
 
 /// What another process sends a connection rule, by the process that sent
 /// it. Only the game rule is sent anything; the login's rules take `Nil`.
 pub type Message {
-  SentBySessions(message: sessions.Outgoing)
+  SentBySessions(message: account_session.Outgoing)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who

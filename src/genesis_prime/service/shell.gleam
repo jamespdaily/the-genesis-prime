@@ -1,7 +1,7 @@
 //// The shell of a service: a process with no socket that other processes
 //// ask, running one rule. A singleton (the hand-off, Sessions) registers a
 //// name; a map is one of many and registers none: Maps holds the subject
-//// its start returns (genesis_prime/world_map/maps), since a name is an atom
+//// its start returns (genesis_prime/world_map/registry), since a name is an atom
 //// and maps come and go. Like a connection's shell
 //// (genesis_prime/connection/shell), it turns everything that reaches the
 //// process into the rule's inputs, carries out the rule's effects in order

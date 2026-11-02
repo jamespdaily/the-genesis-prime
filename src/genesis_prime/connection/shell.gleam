@@ -7,7 +7,7 @@
 //// One connection, from accept to end:
 ////
 //// ```
-//// Ranch accepts ─▶ connection_shell_ffi:start_link ─▶ start: the actor
+//// Ranch accepts ─▶ genesis_prime_connection_shell_ffi:start_link ─▶ start: the actor
 ////   initialiser: waiting messages off the heap, Begin sent to itself,
 ////     returns at once; Ranch then sends the handshake
 ////   Begin ─▶ ranch:handshake, the socket's options, exits trapped, the logger
@@ -270,7 +270,7 @@ type HandshakeFailure {
 }
 
 /// What the socket sent the process, decoded from its Erlang message by
-/// `connection_shell_ffi:socket_message`.
+/// `genesis_prime_connection_shell_ffi:socket_message`.
 type SocketMessage {
   Read(bytes: BitArray)
   ClosedByPeer
@@ -387,7 +387,7 @@ const start_timeout_ms = 5000
 
 /// Starts the connection's actor, linked to the calling process, which is
 /// Ranch's connection supervisor and the shell's parent. Called only by
-/// `connection_shell_ffi:start_link`, and returns at once: the handshake runs
+/// `genesis_prime_connection_shell_ffi:start_link`, and returns at once: the handshake runs
 /// in the actor's first message, since Ranch sends it only after `start_link`
 /// has returned.
 pub fn start(
@@ -1529,24 +1529,24 @@ fn process_flag(
   location: QueueLocation,
 ) -> PreviousQueueLocation
 
-@external(erlang, "connection_shell_ffi", "handshake")
+@external(erlang, "genesis_prime_connection_shell_ffi", "handshake")
 fn handshake(
   ranch_ref: RanchRef,
   send_deadline_ms: Int,
   read_limit: Int,
 ) -> Result(ClientSocket, HandshakeFailure)
 
-@external(erlang, "connection_shell_ffi", "peer")
+@external(erlang, "genesis_prime_connection_shell_ffi", "peer")
 fn peer(socket: ClientSocket) -> step.Peer
 
-@external(erlang, "connection_shell_ffi", "read_once")
+@external(erlang, "genesis_prime_connection_shell_ffi", "read_once")
 fn read_once(socket: ClientSocket) -> Result(Nil, SocketFailure)
 
-@external(erlang, "connection_shell_ffi", "send")
+@external(erlang, "genesis_prime_connection_shell_ffi", "send")
 fn send(socket: ClientSocket, bytes: BitArray) -> Result(Nil, SocketFailure)
 
-@external(erlang, "connection_shell_ffi", "socket_message")
+@external(erlang, "genesis_prime_connection_shell_ffi", "socket_message")
 fn socket_message(sent: Dynamic) -> SocketMessage
 
-@external(erlang, "connection_shell_ffi", "close")
+@external(erlang, "genesis_prime_connection_shell_ffi", "close")
 fn close(socket: ClientSocket) -> Nil

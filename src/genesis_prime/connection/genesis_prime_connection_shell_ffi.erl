@@ -5,7 +5,7 @@
 %% Gleam has no library for (Ranch, gen_tcp and inet) or the decoder of the
 %% socket's messages into a Gleam value. Each function returns the Gleam shape
 %% its caller declares.
--module(connection_shell_ffi).
+-module(genesis_prime_connection_shell_ffi).
 -behaviour(ranch_protocol).
 
 -export([start_link/3, start_listener/5, listener_port/1, suspend_listener/1,
@@ -31,9 +31,9 @@ start_listener(Ref, Port, MaxConnections, ShutdownMs, Settings) ->
                          num_conns_sups => 1,
                          shutdown => ShutdownMs},
     case ranch_embedded_sup:start_link(Ref, ranch_tcp, TransportOptions,
-                                       connection_shell_ffi, Settings) of
+                                       genesis_prime_connection_shell_ffi, Settings) of
         {ok, Pid} -> {ok, Pid};
-        {error, Reason} -> {error, {could_not_listen, step_runtime_ffi:term_text(Reason)}}
+        {error, Reason} -> {error, {could_not_listen, genesis_prime_step_runtime_ffi:term_text(Reason)}}
     end.
 
 %% The listener's port: `ranch:get_port/1` gives `undefined` for a listener whose
@@ -59,7 +59,7 @@ listener_port(Ref) ->
 suspend_listener(Ref) ->
     try ranch:suspend_listener(Ref) of
         ok -> {ok, nil};
-        {error, Reason} -> {error, {ranch_failed, step_runtime_ffi:term_text(Reason)}}
+        {error, Reason} -> {error, {ranch_failed, genesis_prime_step_runtime_ffi:term_text(Reason)}}
     catch
         error:badarg -> {error, listener_not_running};
         exit:{_Reason, {gen_server, call, _}} -> {error, listener_not_running}
@@ -126,4 +126,4 @@ peer(Socket) ->
 failure(closed) -> closed;
 failure(econnreset) -> reset;
 failure(timeout) -> send_timed_out;
-failure(Reason) -> {other_socket_failure, step_runtime_ffi:term_text(Reason)}.
+failure(Reason) -> {other_socket_failure, genesis_prime_step_runtime_ffi:term_text(Reason)}.

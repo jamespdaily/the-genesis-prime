@@ -97,16 +97,16 @@ pub fn describe(error: ListenerError) -> String {
 }
 
 /// The port a running listener listens on, as Ranch reports it.
-@external(erlang, "connection_shell_ffi", "listener_port")
+@external(erlang, "genesis_prime_connection_shell_ffi", "listener_port")
 pub fn port(name: Name(Nil)) -> Result(Int, ListenerError)
 
 /// Closes the listener's listening socket, so a new connect is refused, and
 /// leaves the connections it already holds running. `Ok` also for a listener
 /// already closed.
-@external(erlang, "connection_shell_ffi", "suspend_listener")
+@external(erlang, "genesis_prime_connection_shell_ffi", "suspend_listener")
 pub fn stop_accepting(name: Name(Nil)) -> Result(Nil, ListenerError)
 
-@external(erlang, "connection_shell_ffi", "start_listener")
+@external(erlang, "genesis_prime_connection_shell_ffi", "start_listener")
 fn start_listener(
   name: Name(Nil),
   port: Int,

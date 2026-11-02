@@ -504,7 +504,7 @@ fn attempt(
   }
 }
 
-@external(erlang, "store_worker_ffi", "unless_pool_not_running")
+@external(erlang, "genesis_prime_store_worker_ffi", "unless_pool_not_running")
 fn unless_pool_not_running(run: fn() -> a) -> Result(a, Nil)
 
 /// Ends the worker with the error as its exit reason. A query failing in the

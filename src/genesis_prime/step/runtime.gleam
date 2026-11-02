@@ -60,7 +60,7 @@ pub fn describe_start_error(error: actor.StartError) -> String {
 
 /// A term as Erlang writes it on one line (`io_lib:format("~0p")`), so an exit
 /// reason of any shape is in the log in full.
-@external(erlang, "step_runtime_ffi", "term_text")
+@external(erlang, "genesis_prime_step_runtime_ffi", "term_text")
 fn term_text(term: Dynamic) -> String
 
 /// The time as one input carries it: the monotonic clock in milliseconds and
@@ -73,25 +73,25 @@ pub fn now() -> Now {
 /// each call, for a connection's id, the name of its recording and the sequence
 /// number of each line of a wire recording, which orders the lines of every
 /// connection of the node.
-@external(erlang, "step_runtime_ffi", "unique_id")
+@external(erlang, "genesis_prime_step_runtime_ffi", "unique_id")
 pub fn unique_id() -> Int
 
 /// Writes a log line through Erlang's logger, each known field of its who and
 /// where as a metadata key of its own.
-@external(erlang, "step_runtime_ffi", "log")
+@external(erlang, "genesis_prime_step_runtime_ffi", "log")
 pub fn log(level: LogLevel, text: String, about: About) -> Nil
 
 /// Sets the logger metadata of the calling process from the fields of `about`
 /// that are known, so every line the process logs carries them, those of
 /// OTP and gleam_otp (a crash report, a dropped stray message) as well as the
 /// shell's own; a line's own `about` is added over them.
-@external(erlang, "step_runtime_ffi", "set_about")
+@external(erlang, "genesis_prime_step_runtime_ffi", "set_about")
 pub fn set_about(about: About) -> Nil
 
 /// Logs at warning that the shell named `shell` dropped a message it does not
 /// take. The line names the message's kind, its tag or its shape, and never
 /// its contents, which could hold a secret.
-@external(erlang, "step_runtime_ffi", "log_stray")
+@external(erlang, "genesis_prime_step_runtime_ffi", "log_stray")
 pub fn log_stray(message message: Dynamic, shell shell: String) -> Nil
 
 /// Logs that a read or a write of the socket could not be recorded, which ends
@@ -126,21 +126,21 @@ pub fn finish_wire_recording(
 /// write (start, stop, login, logout) are not dropped; OTP's own primary
 /// level is notice. OTP's progress reports, which it logs at info for every
 /// supervisor and child it starts, stay out.
-@external(erlang, "step_runtime_ffi", "show_info_lines")
+@external(erlang, "genesis_prime_step_runtime_ffi", "show_info_lines")
 pub fn show_info_lines() -> Nil
 
 /// Keeps what waits in a process's mailbox out of the log: a primary logger
 /// filter takes the `messages` out of every crash report OTP writes for a
 /// process that ends abnormally, so a message that holds a secret and waits
 /// when the process crashes never reaches the log.
-@external(erlang, "step_runtime_ffi", "keep_mailboxes_out_of_crash_reports")
+@external(erlang, "genesis_prime_step_runtime_ffi", "keep_mailboxes_out_of_crash_reports")
 pub fn keep_mailboxes_out_of_crash_reports() -> Nil
 
 /// The node's monotonic clock in milliseconds, read now. A wait on real time
 /// counts from it; the time an input carries comes from the connection's script
 /// (`now` in the server).
-@external(erlang, "step_runtime_ffi", "monotonic_ms")
+@external(erlang, "genesis_prime_step_runtime_ffi", "monotonic_ms")
 pub fn monotonic_ms() -> Int
 
-@external(erlang, "step_runtime_ffi", "filetime")
+@external(erlang, "genesis_prime_step_runtime_ffi", "filetime")
 fn filetime() -> Int

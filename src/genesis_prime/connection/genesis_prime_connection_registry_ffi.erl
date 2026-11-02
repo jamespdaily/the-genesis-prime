@@ -3,7 +3,7 @@
 %% of a group and the delivery of a message to a connection's shell. A group
 %% is the Gleam value of `step.Address`, `{connection, {connection_id, Id}}`
 %% for a connection. Each function returns the Gleam shape its caller declares.
--module(connection_registry_ffi).
+-module(genesis_prime_connection_registry_ffi).
 
 -export([start_scope/1, join_group/2, members/2, send_woken/2, woken_message/1]).
 
@@ -12,7 +12,7 @@
 start_scope(Scope) ->
     case pg:start_link(Scope) of
         {ok, Pid} -> {ok, Pid};
-        {error, Reason} -> {error, {could_not_start, step_runtime_ffi:term_text(Reason)}}
+        {error, Reason} -> {error, {could_not_start, genesis_prime_step_runtime_ffi:term_text(Reason)}}
     end.
 
 %% Makes the calling process a member of the group; the scope removes it when it

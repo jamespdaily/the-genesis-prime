@@ -7,7 +7,7 @@
 ////
 //// The newest login is the one with the highest `ConnectionId`. A connection's
 //// id is `erlang:unique_integer([positive, monotonic])`, taken as the
-//// connection starts (src/step_runtime_ffi.erl `unique_id`), which is unique
+//// connection starts (src/genesis_prime_step_runtime_ffi.erl `unique_id`), which is unique
 //// and strictly increasing on the node for as long as it runs, so a login made
 //// later has a higher id, whichever order claims reach Sessions in. A node
 //// restart drops every connection, so the counter starting again never
@@ -95,7 +95,7 @@ import gleam/dict.{type Dict}
 import gleam/list
 
 /// The rule's name: its module path.
-const rule_name = "genesis_prime/sessions"
+const rule_name = "genesis_prime/account_session"
 
 /// What another process asks Sessions.
 pub type Message {

@@ -29,7 +29,7 @@
 //// the pool they ask, so no connection is left asking a process that has
 //// stopped. The tree runs under the application's root
 //// (genesis_prime/application), so the host's SIGTERM stops it this way. A map's ask
-//// goes through Maps (genesis_prime/world_map/maps), which finds the map or
+//// goes through Maps (genesis_prime/world_map/registry), which finds the map or
 //// starts it; a map's address is found the same way, never started, for a
 //// watch. One directory, made once in `start` from
 //// the store's, the hand-off's and Sessions' names, sends the asks of every
@@ -53,8 +53,8 @@
 ////   client logs in again (genesis_prime/game/connection). When claims of one
 ////   account come from several connections, in any order and across several
 ////   restarts, the newest login keeps the slot and each older connection ends
-////   with 0x036A reason 19 (genesis_prime/sessions).
-//// - **Maps and the maps** (genesis_prime/world_map/maps): a map that ends is
+////   with 0x036A reason 19 (genesis_prime/account_session).
+//// - **Maps and the maps** (genesis_prime/world_map/registry): a map that ends is
 ////   started again, empty, by the next ask for it; Maps' restart ends every
 ////   map. Each in-world connection watches its map, so its end ends the
 ////   connection with 0x036A reason 8, and its client logs in again.
@@ -80,6 +80,7 @@
 ////   A subtree's shutdown time is infinity, since its children are listeners
 ////   that each give their connections `connection_shutdown_ms`.
 
+import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskSessions,
   AskStore, FromHandOff, FromMap, FromSessions, FromStore, SentBySessions,
@@ -95,12 +96,11 @@ import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/service.{type Call, type Locate, type Reach, type Sent}
 import genesis_prime/service/shell as service_shell
-import genesis_prime/sessions
 import genesis_prime/step.{type ConnectionRule}
 import genesis_prime/store/worker.{type Job}
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map
-import genesis_prime/world_map/maps
+import genesis_prime/world_map/registry as world_map_registry
 import gleam/erlang/process.{type Name}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
@@ -123,7 +123,7 @@ pub type Settings {
     /// How long the hand-off has to stop.
     hand_off_shutdown_ms: Int,
     /// The sessions service.
-    sessions: Name(Call(sessions.Message, sessions.Outgoing)),
+    sessions: Name(Call(account_session.Message, account_session.Outgoing)),
     /// How long Sessions has to stop.
     sessions_shutdown_ms: Int,
     /// Where the game connections are found, made once with
@@ -147,9 +147,9 @@ pub type Settings {
 pub type World {
   World(
     /// Maps, the registry that finds and starts maps.
-    maps: Name(maps.Message),
+    maps: Name(world_map_registry.Message),
     /// The map supervisor, whose children are the maps.
-    map_supervisor: Name(maps.MapSupervisor),
+    map_supervisor: Name(world_map_registry.MapSupervisor),
     /// How long a watch's call to Maps may take; an ask's call ends at the
     /// ask's own deadline.
     maps_call_ms: Int,
@@ -223,7 +223,7 @@ pub fn start(
   |> supervisor.add(service_shell.supervised(
     name: settings.sessions,
     settings: service_shell.Settings(
-      rule: sessions.rule(),
+      rule: account_session.rule(),
       reach: sessions_reach(settings),
       shutdown_ms: settings.sessions_shutdown_ms,
     ),
@@ -265,7 +265,7 @@ fn directory(settings: Settings) -> Directory {
           reply(FromSessions(answer))
         })
       AskMap(map:, message:) ->
-        maps.find_or_start(maps_name, map, deadline_ms)
+        world_map_registry.find_or_start(maps_name, map, deadline_ms)
         |> result.try(fn(found) {
           service.call_subject(found.subject, message, fn(answer) {
             reply(FromMap(answer))
@@ -293,7 +293,7 @@ fn locate(settings: Settings) -> Locate {
       step.Connection(connection:) -> registry.find(registry, connection)
       step.Maps -> process.named(maps_name)
       step.Map(map:, incarnation:) ->
-        maps.find(maps_name, map, incarnation, maps_call_ms)
+        world_map_registry.find(maps_name, map, incarnation, maps_call_ms)
         |> result.map(fn(found) { found.pid })
     }
   }
@@ -303,7 +303,7 @@ fn locate(settings: Settings) -> Locate {
 /// a send to a connection, which takes what Sessions sends as the message
 /// `SentBySessions`. Only a connection is sent to; any other address has no
 /// process that takes a message from Sessions.
-fn sessions_reach(settings: Settings) -> Reach(sessions.Outgoing) {
+fn sessions_reach(settings: Settings) -> Reach(account_session.Outgoing) {
   let registry = settings.registry
   service.Reach(locate: locate(settings), send: fn(to, outgoing) {
     case to {
@@ -337,15 +337,15 @@ pub fn add_world(
   locate locate: Locate,
 ) -> supervisor.Builder {
   tree
-  |> supervisor.add(maps.supervised(
+  |> supervisor.add(world_map_registry.supervised(
     name: world.maps,
     supervisor: world.map_supervisor,
   ))
   |> supervisor.add(
-    maps.map_supervisor(
+    world_map_registry.map_supervisor(
       name: world.map_supervisor,
       shutdown_ms: world.map_shutdown_ms,
-      start: fn(start: maps.MapStart) {
+      start: fn(start: world_map_registry.MapStart) {
         service_shell.start_unnamed(service_shell.Settings(
           rule: map.rule(map: start.map, incarnation: start.incarnation),
           reach: service.watch_only(locate:),

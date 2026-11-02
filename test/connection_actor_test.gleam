@@ -185,7 +185,7 @@ fn names_connection_and_peer(line: Line) -> Bool {
 pub fn the_connections_erlang_file_exports_only_ranch_and_socket_calls_test() -> Nil {
   use <- owned_test.run(5000)
   let exported =
-    exports(atom.create("connection_shell_ffi"))
+    exports(atom.create("genesis_prime_connection_shell_ffi"))
     |> list.sort(fn(a, b) { string.compare(a.0, b.0) })
   assert exported
     == [

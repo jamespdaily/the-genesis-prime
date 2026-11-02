@@ -25,7 +25,7 @@
 ////   connection could be found. The supervisor is `rest_for_one`, with the
 ////   scope first, so the game listener restarts with it and every game client
 ////   is dropped and logs in again; the sessions watch each connection, so each
-////   slot is freed (genesis_prime/sessions).
+////   slot is freed (genesis_prime/account_session).
 //// - **The name.** The scope is named by an atom made once at start with
 ////   `process.new_name`, so each tree has its own scope and none is shared.
 
@@ -124,22 +124,22 @@ pub fn select_delivered(
 }
 
 /// The first element of what `deliver` sends: the atom `woken`, which
-/// `connection_registry_ffi:send_woken` writes the same way.
+/// `genesis_prime_connection_registry_ffi:send_woken` writes the same way.
 type DeliveryTag {
   Woken
 }
 
-@external(erlang, "connection_registry_ffi", "start_scope")
+@external(erlang, "genesis_prime_connection_registry_ffi", "start_scope")
 fn start_scope(scope: Name(Nil)) -> Result(Pid, StartFailure)
 
-@external(erlang, "connection_registry_ffi", "join_group")
+@external(erlang, "genesis_prime_connection_registry_ffi", "join_group")
 fn join_group(scope: Name(Nil), group: step.Address) -> Nil
 
-@external(erlang, "connection_registry_ffi", "members")
+@external(erlang, "genesis_prime_connection_registry_ffi", "members")
 fn members(scope: Name(Nil), group: step.Address) -> List(Pid)
 
-@external(erlang, "connection_registry_ffi", "send_woken")
+@external(erlang, "genesis_prime_connection_registry_ffi", "send_woken")
 fn send_woken(pid: Pid, message: message) -> Nil
 
-@external(erlang, "connection_registry_ffi", "woken_message")
+@external(erlang, "genesis_prime_connection_registry_ffi", "woken_message")
 fn woken_message(sent: Dynamic) -> message

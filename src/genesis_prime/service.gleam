@@ -1,7 +1,7 @@
 //// How an asker reaches the process it asks. A rule's ask names a request;
 //// the server's directory (genesis_prime/server) sends it to the process that
 //// answers, a service (genesis_prime/service/shell) by its name or, for a
-//// map, by the subject its start returned (genesis_prime/world_map/maps), or
+//// map, by the subject its start returned (genesis_prime/world_map/registry), or
 //// a store worker (genesis_prime/store/worker), and says where it went with
 //// `Sent`, so the asker's shell knows what to watch and what to do at the
 //// deadline (genesis_prime/connection/shell). The `Call` is what reaches a
@@ -184,5 +184,5 @@ fn send_to(
 /// Runs a function and turns the exits that say no supervisor is running into
 /// an error: no process holds its name, or it ended with `shutdown` while the
 /// call waited. Any other exit passes.
-@external(erlang, "service_ffi", "unless_supervisor_not_running")
+@external(erlang, "genesis_prime_service_ffi", "unless_supervisor_not_running")
 fn unless_supervisor_not_running(run: fn() -> a) -> Result(a, Nil)

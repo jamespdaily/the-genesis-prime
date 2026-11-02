@@ -1,7 +1,7 @@
-//// Maps and the maps it starts (`genesis_prime/world_map/maps`), started under
+//// Maps and the maps it starts (`genesis_prime/world_map/registry`), started under
 //// a world supervisor as the server's tree starts them. Expected values come
 //// from these places.
-//// - The doc comment of `genesis_prime/world_map/maps`: the first find for
+//// - The doc comment of `genesis_prime/world_map/registry`: the first find for
 ////   a map starts it, the next finds the same run; each start has an
 ////   incarnation, unique in the node's life; `find` answers only the run with
 ////   the incarnation it is given and never starts a map; a map that ended is
@@ -22,7 +22,7 @@ import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
-import genesis_prime/world_map/maps.{type MapProcess}
+import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
 import gleam/erlang/process.{type Name, type Pid}
 import gleam/list
 import gleam/otp/static_supervisor as supervisor
@@ -34,8 +34,8 @@ import owned_test
 type World {
   World(
     tree: Pid,
-    maps: Name(maps.Message),
-    map_supervisor: Name(maps.MapSupervisor),
+    maps: Name(world_map_registry.Message),
+    map_supervisor: Name(world_map_registry.MapSupervisor),
     registry: Registry(Nil),
   )
 }
@@ -97,7 +97,7 @@ const ship = MapId(world_id: 3460, instance: 0)
 
 fn started(world: World, map: MapId) -> MapProcess {
   let assert Ok(found) =
-    maps.find_or_start(world.maps, map, deadline_ms: deadline())
+    world_map_registry.find_or_start(world.maps, map, deadline_ms: deadline())
     as "Maps started the map or found it running"
   found
 }
@@ -123,14 +123,19 @@ fn joined(found: MapProcess, id: Int) -> map.Outgoing {
 pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test() -> Nil {
   use <- owned_test.run(30_000)
   let world = start_world()
-  assert maps.find(world.maps, ship, incarnation: 1, call_ms: 1000)
+  assert world_map_registry.find(
+      world.maps,
+      ship,
+      incarnation: 1,
+      call_ms: 1000,
+    )
     == Error(Nil)
     as "find never starts a map: no map is running"
   let first = started(world, ship)
   let second = started(world, ship)
   assert second == first
     as "the second find answers the process, subject and incarnation of the first: the map is not started twice"
-  assert maps.find(
+  assert world_map_registry.find(
       world.maps,
       ship,
       incarnation: first.incarnation,
@@ -138,7 +143,7 @@ pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test
     )
     == Ok(first)
     as "find with the incarnation of the run that is running answers it"
-  assert maps.find(
+  assert world_map_registry.find(
       world.maps,
       ship,
       incarnation: first.incarnation + 1,
@@ -161,7 +166,11 @@ pub fn concurrent_finds_for_one_map_start_it_once_test() -> Nil {
     process.spawn_unlinked(fn() {
       process.send(
         results,
-        maps.find_or_start(world.maps, ship, deadline_ms: deadline()),
+        world_map_registry.find_or_start(
+          world.maps,
+          ship,
+          deadline_ms: deadline(),
+        ),
       )
     })
   })
@@ -189,7 +198,7 @@ pub fn a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_
   let again = started(world, ship)
   assert again.pid != first.pid && again.incarnation != first.incarnation
     as "the next find started the map again, empty, as another run"
-  assert maps.find(
+  assert world_map_registry.find(
       world.maps,
       ship,
       incarnation: first.incarnation,
@@ -197,7 +206,7 @@ pub fn a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_
     )
     == Error(Nil)
     as "a find with the old incarnation is an error: a player's connection that watches the old run learns it ended"
-  assert maps.find(
+  assert world_map_registry.find(
       world.maps,
       ship,
       incarnation: again.incarnation,
@@ -214,14 +223,15 @@ fn await_not_found(
   incarnation incarnation: Int,
 ) -> Nil {
   event_wait.until("Maps stops finding a map that ended", fn() {
-    maps.find(world.maps, map, incarnation:, call_ms: 1000) == Error(Nil)
+    world_map_registry.find(world.maps, map, incarnation:, call_ms: 1000)
+    == Error(Nil)
   })
 }
 
 pub fn an_ask_is_given_up_at_the_askers_deadline_and_maps_not_running_is_an_error_test() -> Nil {
   use <- owned_test.run(30_000)
   let world = start_world()
-  assert maps.find_or_start(
+  assert world_map_registry.find_or_start(
       world.maps,
       ship,
       deadline_ms: ask_support.monotonic_ms() - 1,
@@ -229,9 +239,11 @@ pub fn an_ask_is_given_up_at_the_askers_deadline_and_maps_not_running_is_an_erro
     == Error(Nil)
     as "a deadline that has passed leaves no time to wait for Maps' answer"
   let nobody = process.new_name("no_maps")
-  assert maps.find_or_start(nobody, ship, deadline_ms: deadline()) == Error(Nil)
+  assert world_map_registry.find_or_start(nobody, ship, deadline_ms: deadline())
+    == Error(Nil)
     as "Maps is not running: no process holds its name"
-  assert maps.find(nobody, ship, incarnation: 1, call_ms: 1000) == Error(Nil)
+  assert world_map_registry.find(nobody, ship, incarnation: 1, call_ms: 1000)
+    == Error(Nil)
 }
 
 pub fn an_ask_past_its_deadline_is_never_sent_to_maps_test() -> Nil {
@@ -239,7 +251,7 @@ pub fn an_ask_past_its_deadline_is_never_sent_to_maps_test() -> Nil {
   let stand_in = process.new_name("stand_in_maps")
   let assert Ok(Nil) = process.register(process.self(), stand_in)
     as "the test process holds the name Maps would"
-  assert maps.find_or_start(
+  assert world_map_registry.find_or_start(
       stand_in,
       ship,
       deadline_ms: ask_support.monotonic_ms() - 1,

@@ -1,7 +1,7 @@
 %% The clock, the unique numbers and the logger that every shell uses
 %% (genesis_prime/step/runtime). Each function returns the Gleam shape its
 %% caller declares.
--module(step_runtime_ffi).
+-module(genesis_prime_step_runtime_ffi).
 
 -export([unique_id/0, monotonic_ms/0, filetime/0, log/3, set_about/1, term_text/1,
          log_stray/2, show_info_lines/0, keep_mailboxes_out_of_crash_reports/0]).

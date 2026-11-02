@@ -478,18 +478,18 @@ pub fn a_recording_of_a_rule_that_is_no_connection_but_took_socket_bytes_fails_t
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let #(name, recording) =
-    planted(folder:, rule: "genesis_prime/sessions", reads: [<<1>>])
+    planted(folder:, rule: "genesis_prime/account_session", reads: [<<1>>])
   assert wire_client_message.read(name, recording)
     == Error(NotRead(
       connection: name,
       line: 2,
-      problem: RuleNotKnown(rule: "genesis_prime/sessions"),
+      problem: RuleNotKnown(rule: "genesis_prime/account_session"),
     ))
     as "a recording of another rule with socket bytes is reported, never passed unread"
   let #(quiet_name, quiet) =
     planted(
       folder: folder <> "/quiet",
-      rule: "genesis_prime/sessions",
+      rule: "genesis_prime/account_session",
       reads: [],
     )
   assert wire_client_message.read(quiet_name, quiet) == Ok(None)

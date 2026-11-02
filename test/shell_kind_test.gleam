@@ -32,15 +32,15 @@ const sources = [
   "genesis_prime/wire_recording.gleam",
   "genesis_prime/wire_recording/recorder.gleam",
   "genesis_prime/service.gleam",
-  "genesis_prime/service_ffi.erl",
+  "genesis_prime/genesis_prime_service_ffi.erl",
   "genesis_prime/service/shell.gleam",
   "genesis_prime/connection/frame.gleam",
   "genesis_prime/connection/script.gleam",
   "genesis_prime/connection/shell.gleam",
-  "genesis_prime/connection/connection_shell_ffi.erl",
+  "genesis_prime/connection/genesis_prime_connection_shell_ffi.erl",
   "genesis_prime/connection/registry.gleam",
-  "genesis_prime/connection/connection_registry_ffi.erl",
-  "step_runtime_ffi.erl",
+  "genesis_prime/connection/genesis_prime_connection_registry_ffi.erl",
+  "genesis_prime_step_runtime_ffi.erl",
 ]
 
 /// The packages the shells import, found in `build/packages`.
