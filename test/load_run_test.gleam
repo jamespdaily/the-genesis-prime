@@ -14,9 +14,11 @@
 //// - `eaddrnotavail` is the operating system's answer when the machine has no
 ////   local port to connect from.
 
+import ask_support
+import event_wait
 import genesis_prime/load_player.{
   AuthLogin, CharacterList, Create, EnterWorld, FirstPong, GameHello, Ping,
-  StsLogin,
+  Position, StsLogin,
 }
 import genesis_prime/load_run.{Failure}
 import genesis_prime/load_sample
@@ -69,6 +71,32 @@ pub fn three_clients_each_reach_the_world_and_report_their_seven_stage_times_in_
     assert list.map(stage_times, fn(stage_time) { stage_time.0 }) == stage_order
       as "each client reports each stage once, in the path's order"
   })
+}
+
+pub fn a_player_that_moves_drops_and_logs_in_again_reads_back_the_position_it_sent_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started = login_support.start()
+  let accounts = load_player.accounts(first: 0, count: 1)
+  load_player.seed(
+    pool: pog.named_connection(started.settings.pool.pool_name),
+    accounts:,
+  )
+  let assert [account] = accounts
+  let to = Position(x: 100.5, y: -20.25, z: 300.125)
+  let back =
+    load_player.moves_and_returns(
+      account:,
+      ports: login_support.ports(started),
+      to:,
+      after_the_drop: fn() {
+        event_wait.until("the game listener's connection ended", fn() {
+          ask_support.connections_of(started.settings.game.listener) == []
+        })
+      },
+    )
+  assert back == to
+    as "the unit the server created at the second login stands where the first login's movement put it: 0x637 kept, saved at the drop and read back (opcode.0x637, 0x1404586e0); the values are exact 32-bit floats"
+  login_support.stop(started)
 }
 
 pub fn an_unknown_account_is_counted_as_a_failure_at_login_and_the_others_go_on_test() -> Nil {

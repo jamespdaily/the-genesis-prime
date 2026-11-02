@@ -231,6 +231,26 @@ pub fn play(
   Nil
 }
 
+/// Where a player stands: the world position x, y, z, each a 32-bit float.
+pub type Position {
+  Position(x: Float, y: Float, z: Float)
+}
+
+/// Plays the path as the account's player to the world, sends one movement
+/// message that puts the player at `to`, drops the game connection, calls
+/// `after_the_drop` (which returns once the server has taken the drop), logs in
+/// again as the same account, plays the same character and reads the position
+/// of the unit the server creates (0x262's kind 2). A step of the server that is
+/// not what the client expects stops the process.
+pub fn moves_and_returns(
+  account _account: Account,
+  ports _ports: Ports,
+  to _to: Position,
+  after_the_drop _after_the_drop: fn() -> Nil,
+) -> Position {
+  panic as "built in the next commit"
+}
+
 /// Pings until the step ends, each ping as the client's rule has it.
 fn keep_pinging(
   game game: game_client.Game,

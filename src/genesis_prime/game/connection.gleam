@@ -812,6 +812,13 @@ pub fn taken_message_ids() -> List(Int) {
   [create_character.message_id, ..list.map(taken_messages, pair.first)]
 }
 
+/// The ids of the client's messages the rule takes only with the player in the
+/// world: the movement messages. In any other state they are logged as
+/// unhandled, since no player stands anywhere to keep.
+pub fn taken_in_the_world_message_ids() -> List(Int) {
+  []
+}
+
 /// The client's 0x025C: the whole frame of a 0x025B create request, which
 /// character select checks and asks the store to make.
 fn create_requested(
