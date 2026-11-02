@@ -43,7 +43,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_facts  # noqa: E402
 import ghidra_env  # noqa: E402
-from query_client import NotConfigured, QueryFailed, QueryProcessEnded, QueryTimeout, open_query_client  # noqa: E402
+import query  # noqa: E402
+from query_client import NotConfigured, QueryFailed, QueryProcessEnded, QueryTimeout  # noqa: E402
 
 STATE_FILE = "state.json"
 PENDING_FILE = "pending.json"
@@ -98,8 +99,7 @@ def copy_directory(env) -> Path:
     if env.get("GENESIS_DECOMPILED_DIR"):
         directory = Path(env["GENESIS_DECOMPILED_DIR"])
     else:
-        home = Path(env["GENESIS_HOME"]) if env.get("GENESIS_HOME") else Path(env.get("HOME") or Path.home()) / ".genesis-prime"
-        directory = home / "decompiled"
+        directory = ghidra_env.genesis_home(env) / "decompiled"
     repository = check_facts.REPOSITORY.resolve()
     resolved = directory.resolve()
     if resolved == repository or repository in resolved.parents:
@@ -351,4 +351,4 @@ def main(argv: list[str], env, open_client, out=None, err=None) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:], os.environ, lambda: open_query_client(os.environ)))
+    sys.exit(main(sys.argv[1:], os.environ, lambda: query.open_client(os.environ)))
