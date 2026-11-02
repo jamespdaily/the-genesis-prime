@@ -416,7 +416,7 @@ fn values_types(schema: Schema) -> List(NamedValues) {
     list.flat_map(schema.records, fn(record) { record.fields }),
   )
   |> list.filter_map(fn(field) {
-    option.to_result(message_schema.named_values(field), Nil)
+    option.to_result(message_schema.named_values(field:), Nil)
   })
   |> list.unique
 }
@@ -526,7 +526,7 @@ fn imports(fields: List(Field), types: List(String)) -> List(String) {
   }
   let modules =
     list.filter_map(fields, fn(field) {
-      case field.kind, message_schema.named_values(field) {
+      case field.kind, message_schema.named_values(field:) {
         message_schema.ArrayOfRecord(record:, ..), _ ->
           Ok(#(record, camel(record)))
         _, Some(named_values) ->
@@ -605,7 +605,7 @@ fn safe_by_doc(field: Field) -> List(String) {
 }
 
 fn field_type(field: Field) -> String {
-  case message_schema.named_values(field) {
+  case message_schema.named_values(field:) {
     Some(named_values) -> named_values.type_name
     None -> kind_type(field.kind)
   }
@@ -644,7 +644,7 @@ fn held(fields: List(Field)) -> List(Field) {
 /// The pipeline step that writes a field of the value held in `owner`.
 fn write_step(field: Field, owner: String) -> List(String) {
   let name = "\"" <> field.name <> "\""
-  let value = case message_schema.named_values(field) {
+  let value = case message_schema.named_values(field:) {
     Some(named_values) ->
       values_module(named_values)
       <> ".to_value("
@@ -774,7 +774,7 @@ fn read_step(field: Field) -> List(String) {
   }
   let read =
     use_line(pattern:, call_head: "bit_stream." <> function, arguments:)
-  case message_schema.named_values(field) {
+  case message_schema.named_values(field:) {
     Some(named_values) ->
       list.append(read, [
         "  let "

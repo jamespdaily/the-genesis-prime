@@ -185,7 +185,7 @@ fn check_values_types(
       list.flat_map(messages, fn(message) { message.fields }),
       list.flat_map(records, fn(record) { record.fields }),
     )
-    |> list.filter_map(fn(field) { option.to_result(named_values(field), Nil) })
+    |> list.filter_map(fn(field) { option.to_result(named_values(field:), Nil) })
   list.try_fold(named, [], fn(seen: List(NamedValues), values) {
     case
       list.find(seen, fn(earlier) { earlier.type_name == values.type_name })
