@@ -258,9 +258,9 @@ type Status {
   TakingSessionKey
   /// Sessions is asked to make the connection the account's session, and its
   /// answer is awaited. `resume` is where the client is after the answer: a
-  /// new character select for the first claim; the select it was in, or its
-  /// player in the world, for a later one. `retries` is how many times
-  /// Sessions was not running for this claim.
+  /// new character select for the first claim; a new one again, or its player
+  /// in the world, for a later one. `retries` is how many times Sessions was
+  /// not running for this claim.
   ClaimingSession(holder: Holder, resume: Resume, retries: Int)
   /// The connection waits on the claim timer before it asks Sessions again,
   /// with `resume` and `retries` as `ClaimingSession` holds them. No ask is
@@ -630,11 +630,10 @@ fn inner_message(
         | RenameRequest
         | NotTaken -> unhandled(session:, message_id: inner.message_id)
       }
-    TakingSessionKey
-    | ClaimingSession(..)
-    | WaitingToClaim(..)
-    | EnteringWorld(..) ->
+    TakingSessionKey | ClaimingSession(..) | EnteringWorld(..) ->
       end_for(session, "a frame was taken while an ask was out")
+    WaitingToClaim(..) ->
+      end_for(session, "a frame was taken while the claim waited on its timer")
   }
 }
 

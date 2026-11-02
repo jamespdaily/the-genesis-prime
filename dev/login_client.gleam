@@ -97,21 +97,6 @@ pub type Heard {
   Heard(client: StsClient, reply: Reply)
 }
 
-/// The bytes through the RC4 stream when it is on, and the stream after them;
-/// plain bytes and no stream while it is off.
-pub fn crypt_when_on(
-  stream stream: Option(rc4.Stream),
-  bytes bytes: BitArray,
-) -> #(Option(rc4.Stream), BitArray) {
-  case stream {
-    Some(stream) -> {
-      let #(stream, crypted) = rc4.crypt(stream, bytes)
-      #(Some(stream), crypted)
-    }
-    None -> #(None, bytes)
-  }
-}
-
 /// The client with both RC4 streams started from the session key, as the
 /// library does once the proof is accepted.
 pub fn ciphering(
@@ -155,7 +140,7 @@ pub fn ask(
 
 /// The bytes through the sending stream when the ciphers are on, and the
 /// ciphers after them; plain bytes while they are off.
-fn send_through(
+pub fn send_through(
   ciphers ciphers: Option(Ciphers),
   bytes bytes: BitArray,
 ) -> #(Option(Ciphers), BitArray) {
@@ -170,7 +155,7 @@ fn send_through(
 
 /// The bytes through the receiving stream when the ciphers are on, and the
 /// ciphers after them; the bytes as they are while the ciphers are off.
-fn receive_through(
+pub fn receive_through(
   ciphers ciphers: Option(Ciphers),
   bytes bytes: BitArray,
 ) -> #(Option(Ciphers), BitArray) {
