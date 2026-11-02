@@ -424,8 +424,8 @@ pub fn a_seed_or_a_time_taken_from_another_recording_shows_in_the_bytes_test() -
     support.run(folder: folder <> "/time", rule: script_rule.rule())
     as "the clock gave the time the line holds"
   assert connection == "script_rule-1.jsonl"
-  assert difference.offset == 33
-    as "the first byte of the monotonic time, after the letter and the seed"
+  assert difference.offset == 40
+    as "the last byte of the 64-bit monotonic time, where 10 and 11 differ, after the letter and the 32-byte seed"
 }
 
 pub fn the_scripts_are_handed_out_once_each_in_the_order_of_the_accept_ordinals_test() -> Nil {

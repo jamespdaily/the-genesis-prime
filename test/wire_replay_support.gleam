@@ -4,8 +4,16 @@
 //// the server's own so a session can be small and every byte of it known.
 
 import ask_support
+import client_tables
+import genesis_prime/client_archive
+import genesis_prime/game/connection as game_connection
+import genesis_prime/login/auth_connection
+import genesis_prime/login/sts_connection
+import genesis_prime/message/bit_stream.{Endpoint}
+import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Now}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/wire_recording.{
   type Input, type Side, Closing, Header, Took, Wrote,
 }
@@ -15,9 +23,11 @@ import gleam/dict
 import gleam/erlang/process
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/otp/static_supervisor as supervisor
 import gleam/string
+import login_support
+import pog
 import simplifile
 
 /// One connection of a session written by hand: the rule it ran, its seed and
@@ -191,4 +201,104 @@ fn run_planned(
   ask_support.stop(server)
   let _lines = wire_replay.finish(replay)
   result
+}
+
+/// The folder of the session recorded live on 2026-11-01: the real client's
+/// login through the STS, auth and game servers, played into the world with a
+/// level-3 Veteran character (`session.sh` of the playing-live skill), converted
+/// from the rule recordings it was made as.
+pub const committed_session = "test/wire_recording/2026-11-01-full-session"
+
+/// What the committed session was recorded under, which the replay's tree is
+/// made with (the settings the term recordings' headers held): the auth server
+/// handed the client to the game server at 192.168.8.128 port 24000 as realm 1,
+/// "Genesis"; every other setting is the server's own.
+fn session_settings(
+  settings settings: server.Settings,
+  replay replay: wire_replay.Replay,
+) -> server.Settings {
+  let servers = login_support.servers_settings()
+  let realm =
+    auth_connection.Realm(
+      id: 1,
+      name: "Genesis",
+      game_server: Endpoint(address: 0xC0A80880, port: 24_000),
+    )
+  server.Settings(
+    ..settings,
+    login: server.Login(
+      sts: wire_replay.serve_from(
+        server.Served(
+          ..settings.login.sts,
+          settings: servers.login.sts.settings,
+        ),
+        replay,
+      ),
+      auth: wire_replay.serve_from(
+        server.Served(
+          ..settings.login.auth,
+          settings: auth_connection.Settings(
+            ..servers.login.auth.settings,
+            realm:,
+          ),
+        ),
+        replay,
+      ),
+    ),
+    game: wire_replay.serve_from(
+      server.Served(
+        ..settings.game,
+        settings: game_connection.Settings(
+          ..servers.game.settings,
+          tables: client_tables.shared(),
+        ),
+      ),
+      replay,
+    ),
+  )
+}
+
+/// Replays the session in `folder` against the real server tree on a database
+/// of its own, with the fixture applied: the result, and the log lines each
+/// connection wrote.
+pub fn replay_tree(
+  folder folder: String,
+) -> #(Result(Nil, Failure), List(wire_replay.Logged)) {
+  let session = load(folder)
+  let digest = Some(table_store.digest(client_tables.shared()))
+  let refused = case
+    wire_replay.refuse_stale(session, client_archive.target_build, digest)
+  {
+    Ok(Nil) -> wire_replay.refuse_unreproducible(session, 60_000)
+    Error(refusal) -> Error(refusal)
+  }
+  case refused {
+    Error(refusal) -> #(Error(wire_replay.Refused(refusal)), [])
+    Ok(Nil) -> {
+      let replay = start_replay(session)
+      let started =
+        login_support.start_with(change: session_settings(_, replay))
+      let ports = login_support.ports(started)
+      let result = case
+        wire_replay.prepare(
+          session,
+          pog.named_connection(started.settings.pool.pool_name),
+        )
+      {
+        Error(failure) -> Error(failure)
+        Ok(Nil) ->
+          wire_replay.play(
+            session:,
+            replay:,
+            ports: dict.from_list([
+              #(sts_connection.rule_name, ports.sts_port),
+              #(auth_connection.rule_name, ports.auth_port),
+              #(game_connection.rule_name, ports.game_port),
+            ]),
+          )
+      }
+      login_support.stop(started)
+      #(result, wire_replay.finish(replay))
+    }
+  }
 }
