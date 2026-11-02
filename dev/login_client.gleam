@@ -79,15 +79,17 @@ pub fn send(client client: mug.Socket, bytes bytes: BitArray) -> Nil {
   Nil
 }
 
-/// The client's side of an STS connection: its socket, its RC4 streams once
-/// the exchange is done, and the next sequence number.
+/// The two RC4 streams of an STS connection once the exchange is done: one
+/// for what the client sends and one for what it receives, which the library
+/// starts together from the session key.
+pub type Ciphers {
+  Ciphers(sending: rc4.Stream, receiving: rc4.Stream)
+}
+
+/// The client's side of an STS connection: its socket, its ciphers once the
+/// exchange is done (`None` before), and the next sequence number.
 pub type StsClient {
-  StsClient(
-    socket: mug.Socket,
-    sending: Option(rc4.Stream),
-    receiving: Option(rc4.Stream),
-    next_sequence: Int,
-  )
+  StsClient(socket: mug.Socket, ciphers: Option(Ciphers), next_sequence: Int)
 }
 
 /// What the server answered, or that it closed the connection first.
@@ -110,6 +112,17 @@ pub fn crypt_when_on(
   }
 }
 
+/// The client with both RC4 streams started from the session key, as the
+/// library does once the proof is accepted.
+pub fn ciphering(
+  client client: StsClient,
+  session_key session_key: BitArray,
+) -> StsClient {
+  let assert Ok(receiving) = rc4.start(session_key) as "this OTP has RC4"
+  let assert Ok(sending) = rc4.start(session_key) as "this OTP has RC4"
+  StsClient(..client, ciphers: Some(Ciphers(sending:, receiving:)))
+}
+
 /// Writes a request the way the library does, through RC4 once it is on, and
 /// reads the reply: bytes are deciphered as they arrive, in order, until they
 /// make one whole reply.
@@ -126,34 +139,61 @@ pub fn ask(
       command:,
       body: sts_xml.render(body),
     )
-  let #(sending, wire) = crypt_when_on(stream: client.sending, bytes: plain)
+  let #(ciphers, wire) = send_through(ciphers: client.ciphers, bytes: plain)
   send(client: client.socket, bytes: wire)
-  let #(receiving, reply) = read_reply(client, <<>>)
+  let client = StsClient(..client, ciphers:)
+  let #(ciphers, reply) = read_reply(client, <<>>)
   Heard(
     client: StsClient(
       ..client,
-      sending:,
-      receiving:,
+      ciphers:,
       next_sequence: client.next_sequence + 1,
     ),
     reply:,
   )
 }
 
+/// The bytes through the sending stream when the ciphers are on, and the
+/// ciphers after them; plain bytes while they are off.
+fn send_through(
+  ciphers ciphers: Option(Ciphers),
+  bytes bytes: BitArray,
+) -> #(Option(Ciphers), BitArray) {
+  case ciphers {
+    Some(Ciphers(sending:, receiving:)) -> {
+      let #(sending, crypted) = rc4.crypt(sending, bytes)
+      #(Some(Ciphers(sending:, receiving:)), crypted)
+    }
+    None -> #(None, bytes)
+  }
+}
+
+/// The bytes through the receiving stream when the ciphers are on, and the
+/// ciphers after them; the bytes as they are while the ciphers are off.
+fn receive_through(
+  ciphers ciphers: Option(Ciphers),
+  bytes bytes: BitArray,
+) -> #(Option(Ciphers), BitArray) {
+  case ciphers {
+    Some(Ciphers(sending:, receiving:)) -> {
+      let #(receiving, plain) = rc4.crypt(receiving, bytes)
+      #(Some(Ciphers(sending:, receiving:)), plain)
+    }
+    None -> #(None, bytes)
+  }
+}
+
 /// Reads bytes, deciphering each as it arrives and in order, until they make
-/// one whole reply; gives the receiving stream after them and the reply.
-fn read_reply(
-  client: StsClient,
-  have: BitArray,
-) -> #(Option(rc4.Stream), Reply) {
+/// one whole reply; gives the ciphers after them and the reply.
+fn read_reply(client: StsClient, have: BitArray) -> #(Option(Ciphers), Reply) {
   let assert Ok(bytes) =
     mug.receive(client.socket, timeout_milliseconds: wait_ms)
     as "the server did not answer the request"
-  let #(receiving, plain) = crypt_when_on(stream: client.receiving, bytes:)
+  let #(ciphers, plain) = receive_through(ciphers: client.ciphers, bytes:)
   let all = <<have:bits, plain:bits>>
-  let client = StsClient(..client, receiving:)
+  let client = StsClient(..client, ciphers:)
   case scripted_client.read_reply(all) {
-    Ok(reply) -> #(receiving, reply)
+    Ok(reply) -> #(ciphers, reply)
     Error(Nil) -> read_reply(client, all)
   }
 }
@@ -178,7 +218,7 @@ pub fn sts_connect(ports: Ports) -> StsClient {
       ),
     ),
   )
-  StsClient(socket:, sending: None, receiving: None, next_sequence: 1)
+  StsClient(socket:, ciphers: None, next_sequence: 1)
 }
 
 /// LoginStart and the SRP answer: the reply to the answer, and what the client
@@ -243,15 +283,8 @@ pub fn sts_login(
       True,
     )
     as "StsConnLib64.MT.dll!0x18002d3b0: M2 = SHA-256(A | M1 | K)"
-  let assert Ok(receiving) = rc4.start(exchange.session_key)
-    as "this OTP has RC4"
-  let assert Ok(sending) = rc4.start(exchange.session_key) as "this OTP has RC4"
   let client =
-    StsClient(
-      ..answered.client,
-      sending: Some(sending),
-      receiving: Some(receiving),
-    )
+    ciphering(client: answered.client, session_key: exchange.session_key)
   let finished =
     ask(
       client: client,
