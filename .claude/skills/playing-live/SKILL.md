@@ -5,7 +5,7 @@ description: How to run the server for the real client and see the client's scre
 
 # Playing live
 
-The machine's values live in `~/.genesis-prime/env.sh`, never in the repository, which is public: `GENESIS_PLAY_PC` (the ssh login of the PC that runs the client) and `GENESIS_PLAY_ADDRESS` (this machine's address on the PC's network). The commands that drive the client also read `GENESIS_PLAY_CLIENT_DIR` (the client's install folder on the PC, for example `C:\WildStar-HD`) and, to log in from the command line, `GENESIS_PLAY_ACCOUNT` and `GENESIS_PLAY_PASSWORD`. A script that needs one fails naming it when it is missing.
+The machine's values live in `~/.genesis-prime/env.sh`, never in the repository, which is public: `GENESIS_PLAY_PC` (the ssh login of the PC that runs the client) and `GENESIS_PLAY_ADDRESS` (this machine's address on the PC's network). The commands that drive the client also read `GENESIS_PLAY_CLIENT_DIR` (the client's install folder on the PC, for example `C:\WildStar-HD`) and, to log in from the command line, `GENESIS_PLAY_ACCOUNT` and `GENESIS_PLAY_PASSWORD`. A script that needs one fails naming it when it is missing. The play account's password is used nowhere but the play server: a recording's fixture holds the account's SRP verifier, and recordings are committed to this public repository, which also sees the play address the auth server hands the client (Jim, 2026-11-02). The scripts named below are in this skill's `scripts/` folder.
 
 ## Ports
 
@@ -62,7 +62,7 @@ Save the `client.sh start` line, with the program's SHA-256, in the session fold
 
 ## A whole session without a person
 
-`scripts/session.sh <folder>` runs the session above, from the server's start to the verdict, into an empty or new `<folder>`. It needs no person and takes no focus. It exits non-zero on any miss and says which. A passing folder holds the recordings, `client-start.txt`, `client-end.txt`, `failures.txt`, the report as JSON and `verdict.txt`, ready to replay. A failed folder also keeps `Logs` and `Errors`, which name the PC's machine: delete them before committing it. `session.sh --verdict <folder>` judges a folder with no PC, against `genesis_play`.
+`scripts/session.sh <folder>` runs the session above, from the server's start to the verdict, into an empty or new `<folder>`. It needs no person and takes no focus. It exits non-zero on any miss and says which. A passing folder holds the recordings (one `.jsonl` per connection and the starting rows as SQL; committed as a dated folder under `test/wire_recording/`, where the replay tests read every folder), `client-start.txt`, `client-end.txt`, `failures.txt`, the report as JSON and `verdict.txt`, ready to replay. A failed folder also keeps `Logs` and `Errors`, which name the PC's machine: delete them before committing it. `session.sh --verdict <folder>` judges a folder with no PC, against `genesis_play`.
 
 The lock is `~/.genesis-prime/live.lock/`. A second `scripts/session.sh`, or a `client.sh start`, `client.sh stop`, `client.sh type`, `client.sh key` or `client.sh click` outside the run, refuses and names the owner. A `client.sh start` outside a run holds the lock until `client.sh stop`. A lock whose owner is gone is stale and is never taken over: `scripts/session.sh --recover` ends what the owner started and releases it. A failed recover exits non-zero and keeps the lock.
 

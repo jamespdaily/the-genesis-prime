@@ -29,9 +29,9 @@ The server is designed for the BEAM from the first line. Processes, messages, su
 
 ## Shells and rules
 
-A process that decides anything the client or the game can observe is a shell plus one rule. OTP plumbing (supervisors, registries, worker factories) is not, and makes no such decision. A recorded session replays through the rule alone, so every decision must be in it.
+A process that decides anything the client or the game can observe is a shell plus one rule. OTP plumbing (supervisors, registries, worker factories) is not, and makes no such decision. Every decision is in the rule, so a test drives it with inputs alone, and a recorded session replays through the whole server.
 
-- A change to a rule's types makes its recordings refuse to replay ("record again"): record the session again live, and never re-stamp a recording.
+- A recording holds only what crossed the wire (`src/genesis_prime/wire_recording.gleam`), so a change to a rule's types replays as before. A replay that differs after a change meant to alter what the client receives is recorded again live; a recording is never edited to match.
 
 - The shell turns everything that reaches the process into the rule's inputs: socket reads, other processes' messages, a monitor's down, a late reply, a failed write, the server stopping. Each input carries the monotonic time and the system time, read once as the shell takes it.
 - The shell carries out the rule's effects in order and decides nothing. It never branches on a message's content.
