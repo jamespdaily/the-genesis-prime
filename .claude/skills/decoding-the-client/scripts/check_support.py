@@ -15,9 +15,7 @@ GENESIS_PYGHIDRA_PYTHON, GENESIS_LLVM_OBJDUMP (default below).
 
 import atexit
 import inspect
-import json
 import os
-import queue
 import random
 import re
 import shutil
@@ -38,6 +36,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import formulas_by_hand  # noqa: E402
+import query_client  # noqa: E402
 
 DEFAULT_CLIENT_EXE = "/Users/jimd/Coding/wildstar/client/WildStar/Client64/WildStar64.exe"
 DEFAULT_OBJDUMP = "/opt/homebrew/opt/llvm/bin/llvm-objdump"
@@ -499,16 +498,7 @@ def query_environment(project_dir: Path, ghidra_dir: Path | None = None) -> dict
     return env
 
 
-def query_command(seed: Path | None = None, unseeded: bool = False) -> list[str]:
-    # No -I: the script puts its own directory on sys.path to import its siblings.
-    # `--seed PATH` is used only when the project does not exist yet; `--unseeded` is the
-    # explicit first import without a seed, which the process refuses to make unasked.
-    cmd = [require_env("GENESIS_PYGHIDRA_PYTHON"), str(SCRIPTS / "ghidra_query.py")]
-    if unseeded:
-        cmd += ["--unseeded"]
-    elif seed is not None:
-        cmd += ["--seed", str(seed)]
-    return cmd
+query_command = query_client.query_command
 
 
 @dataclass(frozen=True)
@@ -522,77 +512,39 @@ class Reply:
         return self.body["answer"]
 
 
-class QueryProcess:
-    """The query process as a subprocess, one JSON line per request and reply."""
+class QueryProcess(query_client.QueryClient):
+    """The query process on a project, as the tests use it: replies carry their time, and every
+    failure is an AssertionError carrying the process's stderr."""
 
     def __init__(
         self, project_dir: Path, seed: Path | None = None, ghidra_dir: Path | None = None, unseeded: bool = False
     ):
-        self.stderr_file = tempfile.TemporaryFile()
         self.started = time.monotonic()
-        self.proc = subprocess.Popen(
-            query_command(seed, unseeded),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=self.stderr_file,
-            env=query_environment(project_dir, ghidra_dir),
-            cwd=project_dir,
-        )
-        self.lines: queue.Queue = queue.Queue()
         self.first_reply_seconds: float | None = None
-        self._next_id = 0
-        threading.Thread(target=self._read, daemon=True).start()
+        super().__init__(query_command(seed, unseeded), query_environment(project_dir, ghidra_dir), cwd=project_dir)
 
-    def _read(self):
-        for line in self.proc.stdout:
-            self.lines.put(line)
-        self.lines.put(None)
-
-    def stderr_text(self) -> str:
-        self.stderr_file.seek(0)
-        return self.stderr_file.read().decode(errors="replace")
-
-    def _reply(self, started: float, timeout: float) -> Reply:
+    def _reply(self, exchange, *arguments, **keywords) -> Reply:
         try:
-            line = self.lines.get(timeout=timeout)
-        except queue.Empty:
-            raise AssertionError(f"no reply within {timeout} s; stderr:\n{self.stderr_text()}")
-        ms = (time.perf_counter() - started) * 1000
-        if line is None:
-            raise AssertionError(f"the process closed stdout; stderr:\n{self.stderr_text()}")
+            body = exchange(*arguments, **keywords)
+        except (query_client.QueryTimeout, query_client.QueryProcessEnded) as error:
+            raise AssertionError(str(error)) from error
         if self.first_reply_seconds is None:
             self.first_reply_seconds = time.monotonic() - self.started
-        return Reply(json.loads(line), ms)
+        return Reply(body, self.last_exchange_seconds * 1000)
 
     def send_line(self, raw: bytes, timeout: float = 120) -> Reply:
         """One raw line (a newline is added) and the next reply line."""
-        started = time.perf_counter()
-        self.proc.stdin.write(raw + b"\n")
-        self.proc.stdin.flush()
-        return self._reply(started, timeout)
+        return self._reply(self.exchange, raw, timeout)
 
     def ask(self, kind: str, timeout: float = 120, **arguments) -> Reply:
-        self._next_id += 1
-        request = {"id": self._next_id, "kind": kind, **arguments}
-        reply = self.send_line(json.dumps(request).encode(), timeout)
-        if reply.body.get("id") != self._next_id:
-            raise AssertionError(f"reply {reply.body} is not for request {request}")
-        return reply
+        return self._reply(self.request, kind, timeout, **arguments)
 
     def close(self, timeout: float = 60) -> int:
         """Closes stdin and waits for the process to end; kills it and fails after timeout."""
-        if not self.proc.stdin.closed:
-            self.proc.stdin.close()
         try:
-            return self.proc.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            self.proc.kill()
-            raise AssertionError(f"the process did not stop {timeout} s after stdin closed")
-
-    def kill(self):
-        if self.proc.poll() is None:
-            self.proc.kill()
-            self.proc.wait()
+            return super().close(timeout)
+        except query_client.QueryTimeout as error:
+            raise AssertionError(str(error)) from error
 
 
 # ---------------------------------------------------------------- the socket watcher
