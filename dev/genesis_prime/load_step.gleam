@@ -150,13 +150,15 @@ fn failed_lines(observation: Observation) -> List(Line) {
     #(
       StoreBacklog,
       arrival != []
-        && list.all(arrival, fn(sample) { sample.store_waiting > 0 }),
+        && list.all(arrival, fn(sample) {
+        load_sample.store_waiting(sample) > 0
+      }),
     ),
     #(ServerLogLine, load_sample.log_lines_between(observation.server) > 0),
     #(
       NotDrained,
       list.last(observation.server)
-        |> result.map(fn(last) { int.sum(last.connections) > 0 })
+        |> result.map(fn(last) { int.sum(load_sample.connections(last)) > 0 })
         |> result.unwrap(False),
     ),
   ]

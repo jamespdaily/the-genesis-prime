@@ -210,7 +210,7 @@ fn collect(collecting: Collecting) -> Collecting {
   }
   let drained =
     list.first(collecting.server)
-    |> result.map(fn(last) { int.sum(last.connections) == 0 })
+    |> result.map(fn(last) { int.sum(load_sample.connections(last)) == 0 })
     |> result.unwrap(True)
   case collecting.ended && { drained || now >= collecting.drain_until_ms } {
     True -> collecting
@@ -533,7 +533,9 @@ fn describe(
   }
   let connections = fn(index) {
     peak(server, fn(sample) {
-      list.drop(sample.connections, index) |> list.first |> result.unwrap(0)
+      list.drop(load_sample.connections(sample), index)
+      |> list.first
+      |> result.unwrap(0)
     })
   }
   let cores = fn(samples: List(Sample)) {
@@ -560,8 +562,8 @@ fn describe(
     #("largest heap words", peak(server, fn(s) { s.largest_heap_words })),
     #("server cores %", cores(server)),
     #("run queue", peak(server, fn(s) { s.run_queue })),
-    #("store workers waiting", peak(server, fn(s) { s.store_waiting })),
-    #("worker start us", peak(server, fn(s) { s.worker_start_us })),
+    #("store workers waiting", peak(server, load_sample.store_waiting)),
+    #("worker start us", peak(server, load_sample.worker_start_us)),
     #("memory MB", peak(server, fn(s) { s.memory_bytes }) / 1_000_000),
     #("log lines", load_sample.log_lines_between(server)),
     #("connections left", int.sum(peak_last(server))),
@@ -609,5 +611,7 @@ fn longest_mailbox(sample: Sample) -> Int {
 
 /// The connections the last sample found open.
 fn peak_last(samples: List(Sample)) -> List(Int) {
-  list.last(samples) |> result.map(fn(s) { s.connections }) |> result.unwrap([])
+  list.last(samples)
+  |> result.map(load_sample.connections)
+  |> result.unwrap([])
 }
