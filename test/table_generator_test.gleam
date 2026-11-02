@@ -24,9 +24,17 @@
 ////   `attributeMilestoneGroupId00` AttributeMilestoneGroup ids; the table
 ////   files of `game_table.file`). The planted tables use made-up names in the
 ////   same shape.
+//// - a 32-bit (type 3) column has no sign in the client's loader, which copies
+////   the 4 bytes (0x1407c15c0); each reader decides, so the generator reads a
+////   column unsigned only when it is listed Unsigned with its reader
+////   (`game_table.column_type`). 0xB2D05E00 is 3,000,000,000 unsigned and
+////   3,000,000,000 - 2^32 = -1,294,967,296 signed. A column whose every value
+////   has bit 31 clear reads the same either way.
 
+import client_tables
 import genesis_prime/table/loader/tbl_file.{type Schema, Column, Schema}
 import genesis_prime/table_generator
+import genesis_prime/table_generator/column_sign
 import genesis_prime/table_generator/difference.{
   type Difference, Changed, Extra, Missing,
 }
@@ -41,6 +49,7 @@ import gleam/string
 import owned_test
 import planted_table.{Integer}
 import simplifile
+import unitest
 
 pub fn a_table_name_in_camel_case_is_a_snake_case_module_name_test() -> Nil {
   use <- owned_test.run(5000)
@@ -112,7 +121,8 @@ fn planted_file(schema: Schema) -> BitArray {
 fn generated(
   tables: List(#(String, BitArray)),
 ) -> Result(dict.Dict(String, String), table_generator.GenerateError) {
-  table_generator.generate(tables) |> result.map(fn(made) { made.files })
+  table_generator.generate(tables:, signs: [])
+  |> result.map(fn(made) { made.files })
 }
 
 /// The differences between the committed code and what the tables generate.
@@ -120,7 +130,7 @@ fn differences(
   folder: String,
   source: String,
 ) -> Result(List(Difference), table_generator.GenerateError) {
-  table_generator.check(folder, against: source)
+  table_generator.check(folder, against: source, signs: [], loaded: [])
   |> result.map(fn(checked) { checked.differences })
 }
 
@@ -292,7 +302,7 @@ fn with_written_code(body: fn(String, String) -> a) -> a {
   ]
   use folder <- planted_table.in_folder(tables)
   use source <- planted_table.in_folder([])
-  let assert Ok(_) = table_generator.write(folder, into: source)
+  let assert Ok(_) = table_generator.write(folder, into: source, signs: [])
     as "the planted tables are written"
   body(folder, source)
 }
@@ -464,7 +474,8 @@ pub fn a_column_that_names_no_loaded_table_stays_an_int_with_no_reader_test() ->
 
 pub fn a_column_that_names_an_id_of_no_loaded_table_is_listed_with_the_generated_files_test() -> Nil {
   use <- owned_test.run(5000)
-  let assert Ok(made) = table_generator.generate(reference_tables())
+  let assert Ok(made) =
+    table_generator.generate(tables: reference_tables(), signs: [])
     as "the planted tables are generated"
   assert made.unmatched
     == [table_generator.IdColumn("PlantedOwner", "plantedMoonId")]
@@ -541,11 +552,241 @@ pub fn write_and_check_give_the_columns_that_name_no_loaded_table_with_one_read_
   use folder <- planted_table.in_folder(reference_tables())
   use source <- planted_table.in_folder([])
   let expected = [table_generator.IdColumn("PlantedOwner", "plantedMoonId")]
-  assert table_generator.write(folder, into: source) == Ok(expected)
+  assert table_generator.write(folder, into: source, signs: []) == Ok(expected)
     as "write gives the list from the same generation that wrote the files"
-  let assert Ok(checked) = table_generator.check(folder, against: source)
+  let assert Ok(checked) =
+    table_generator.check(folder, against: source, signs: [], loaded: [])
     as "the check runs"
   assert checked.differences == []
     as "the check regenerates the same formatted code"
   assert checked.unmatched == expected as "the check gives the same list"
+}
+
+/// A planted table with one 32-bit column for each way a column's sign can be
+/// given: listed unsigned, listed signed, listed unread, and not listed.
+fn sign_schema() -> Schema {
+  Schema(table: "PlantedSign", file: "PlantedSign", record_size: 0, columns: [
+    Column("ID", tbl_file.Integer32),
+    Column("plantedUnsigned", tbl_file.Integer32),
+    Column("plantedSigned", tbl_file.Integer32),
+    Column("plantedUnread", tbl_file.Integer32),
+    Column("plantedUnlisted", tbl_file.Integer32),
+  ])
+}
+
+fn planted_signs() -> List(column_sign.ColumnSign) {
+  [
+    column_sign.ColumnSign(
+      table: "PlantedSign",
+      column: "plantedUnsigned",
+      sign: column_sign.Unsigned,
+      evidence: "planted",
+    ),
+    column_sign.ColumnSign(
+      table: "PlantedSign",
+      column: "plantedSigned",
+      sign: column_sign.Signed,
+      evidence: "planted",
+    ),
+    column_sign.ColumnSign(
+      table: "PlantedSign",
+      column: "plantedUnread",
+      sign: column_sign.Unread,
+      evidence: "planted",
+    ),
+  ]
+}
+
+/// The decoder's pattern segment of the column held in the variable, such as
+/// `c1:size(32)-little,`.
+fn segment_of(module: String, variable: String) -> String {
+  let assert Ok(line) =
+    string.split(module, "\n")
+    |> list.map(string.trim)
+    |> list.find(string.starts_with(_, variable <> ":"))
+    as { "the decoder has a segment for " <> variable }
+  line
+}
+
+pub fn a_column_listed_unsigned_is_read_as_an_unsigned_number_and_any_other_as_a_signed_one_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(made) =
+    table_generator.generate(
+      tables: [#("PlantedSign", planted_file(sign_schema()))],
+      signs: planted_signs(),
+    )
+    as "the planted table is generated"
+  let module = module_of(made.files, "planted_sign")
+  assert segment_of(module, "c1") == "c1:size(32)-little,"
+    as "a column listed Unsigned has a segment with no `-signed`, which Gleam reads as an unsigned number"
+  assert segment_of(module, "c2") == "c2:size(32)-little-signed,"
+    as "a column listed Signed is read as a signed number"
+  assert segment_of(module, "c3") == "c3:size(32)-little-signed,"
+    as "a column listed Unread keeps the signed reading"
+  assert segment_of(module, "c4") == "c4:size(32)-little-signed,"
+    as "a column not listed keeps the signed reading"
+  assert segment_of(module, "c0") == "c0:size(32)-little-signed,"
+    as "the id column is not listed"
+  let bytes = <<0x00, 0x5E, 0xD0, 0xB2>>
+  let assert <<unsigned:size(32)-little>> = bytes
+    as "the segment of an unsigned column reads the four bytes"
+  assert unsigned == 3_000_000_000
+    as "the four bytes 00 5E D0 B2 are 0xB2D05E00, 3,000,000,000, read unsigned"
+  let assert <<signed:size(32)-little-signed>> = bytes
+    as "the segment of any other column reads the four bytes"
+  assert signed == -1_294_967_296
+    as "0xB2D05E00 has its top bit set, so read signed it is 3,000,000,000 - 2^32"
+}
+
+pub fn a_column_is_unsigned_only_when_its_table_and_column_are_listed_unsigned_test() -> Nil {
+  use <- owned_test.run(5000)
+  let signs = planted_signs()
+  let unsigned = fn(table, column) {
+    column_sign.is_unsigned(signs:, table:, column:)
+  }
+  assert unsigned("PlantedSign", "plantedUnsigned") as "listed Unsigned"
+  assert !unsigned("PlantedSign", "plantedSigned") as "listed Signed"
+  assert !unsigned("PlantedSign", "plantedUnread") as "listed Unread"
+  assert !unsigned("PlantedSign", "plantedUnlisted") as "not listed"
+  assert !unsigned("PlantedOther", "plantedUnsigned")
+    as "the same column name of another table is not the listed column"
+}
+
+/// A planted table whose 32-bit columns hold a value with the top bit set, the
+/// largest value without it, and a small one; its float and 64-bit columns
+/// hold values whose top bit is set.
+fn gauge_schema() -> Schema {
+  Schema(table: "PlantedGauge", file: "PlantedGauge", record_size: 0, columns: [
+    Column("ID", tbl_file.Integer32),
+    Column("plantedMask", tbl_file.Integer32),
+    Column("plantedLargest", tbl_file.Integer32),
+    Column("plantedCount", tbl_file.Integer32),
+    Column("plantedWeight", tbl_file.Float32),
+    Column("plantedBig", tbl_file.Integer64),
+  ])
+}
+
+fn gauge_file() -> #(String, BitArray) {
+  let schema = gauge_schema()
+  planted_table.file(schema, [
+    planted_table.row(schema, [
+      #("ID", Integer(1)),
+      #("plantedMask", Integer(0xB2D05E00)),
+      #("plantedLargest", Integer(0x7FFFFFFF)),
+      #("plantedCount", Integer(5)),
+      #("plantedWeight", planted_table.Float(-1.0)),
+      #("plantedBig", Integer(0xFFFFFFFFFFFFFFFF)),
+    ]),
+    planted_table.row(schema, [#("ID", Integer(2))]),
+  ])
+}
+
+/// What the check finds of the planted gauge table when it is the only file
+/// and `loaded` names the loaded tables.
+fn unlisted_in_gauge(
+  signs signs: List(column_sign.ColumnSign),
+  loaded loaded: List(String),
+) -> Result(List(column_sign.Unlisted), table_generator.GenerateError) {
+  use folder <- planted_table.in_folder([gauge_file()])
+  use source <- planted_table.in_folder([])
+  table_generator.check(folder, against: source, signs:, loaded:)
+  |> result.map(fn(checked) { checked.unlisted })
+}
+
+pub fn a_loaded_tables_32_bit_column_with_a_top_bit_value_and_no_list_entry_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let assert Ok(unlisted) =
+    unlisted_in_gauge(signs: [], loaded: ["PlantedGauge"])
+    as "the check runs"
+  assert unlisted
+    == [column_sign.Unlisted(table: "PlantedGauge", column: "plantedMask")]
+    as "plantedMask holds 0xB2D05E00, which has bit 31 set. plantedLargest holds 0x7FFFFFFF and plantedCount 5, which read the same signed or unsigned, so they are not refused; plantedWeight is a float and plantedBig a 64-bit integer, which are not 32-bit integer columns"
+  let assert [found] = unlisted
+  let words = column_sign.describe(found)
+  assert string.contains(words, "PlantedGauge") as "the refusal names the table"
+  assert string.contains(words, "plantedMask") as "the refusal names the column"
+}
+
+pub fn a_loaded_tables_column_with_a_top_bit_value_passes_when_it_is_listed_test() -> Nil {
+  use <- owned_test.run(60_000)
+  list.each(
+    [column_sign.Signed, column_sign.Unsigned, column_sign.Unread],
+    fn(sign) {
+      let signs = [
+        column_sign.ColumnSign(
+          table: "PlantedGauge",
+          column: "plantedMask",
+          sign:,
+          evidence: "planted",
+        ),
+      ]
+      assert unlisted_in_gauge(signs:, loaded: ["PlantedGauge"]) == Ok([])
+        as "a listed column passes whichever sign it is listed with, because the list names the reader that decides"
+    },
+  )
+}
+
+pub fn a_table_the_server_does_not_load_is_not_checked_for_top_bit_values_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert unlisted_in_gauge(signs: [], loaded: []) == Ok([])
+    as "only the tables the server loads have rules that read their columns"
+}
+
+pub fn a_loaded_table_the_client_has_no_file_for_is_refused_by_name_test() -> Nil {
+  use <- owned_test.run(60_000)
+  assert unlisted_in_gauge(signs: [], loaded: ["PlantedMissing"])
+    == Error(table_generator.LoadedTableMissing(table: "PlantedMissing"))
+    as "a loaded table's name that no file holds would let the check pass over a table it cannot read"
+}
+
+pub fn the_sign_list_names_each_column_once_with_its_evidence_test() -> Nil {
+  use <- owned_test.run(5000)
+  let signs = column_sign.all()
+  assert signs != [] as "the list holds the columns whose readers are known"
+  assert list.length(
+      list.unique(list.map(signs, fn(sign) { #(sign.table, sign.column) })),
+    )
+    == list.length(signs)
+    as "a column has one sign"
+  list.each(signs, fn(sign) {
+    let name = sign.table <> "." <> sign.column
+    case sign.sign {
+      column_sign.Signed | column_sign.Unsigned -> {
+        assert string.contains(sign.evidence, "0x14")
+          as {
+            name
+            <> " is read with a sign, so its evidence names the client's reader"
+          }
+      }
+      column_sign.Unread -> {
+        assert sign.evidence != ""
+          as {
+            name
+            <> " is unread, so its evidence says why the signed reading is safe"
+          }
+      }
+    }
+  })
+}
+
+pub fn each_entry_of_the_sign_list_names_a_32_bit_column_of_the_clients_files_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use <- unitest.guard(client_tables.present())
+  list.each(column_sign.all(), fn(sign) {
+    let assert Ok(description) =
+      tbl_file.describe(client_tables.read(sign.table))
+      as { sign.table <> ".tbl is a table file" }
+    assert description.table == sign.table
+      as "the file named for the table holds that table (game_table.schema: only Redacted and WordFilterAlt are named otherwise)"
+    assert list.contains(
+      description.columns,
+      Column(sign.column, tbl_file.Integer32),
+    )
+      as {
+        sign.table
+        <> " has a column "
+        <> sign.column
+        <> " of type 3, a 32-bit integer"
+      }
+  })
 }

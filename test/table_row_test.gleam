@@ -1,4 +1,4 @@
-//// Known rows of five of the client's tables, decoded through their generated
+//// Known rows of six of the client's tables, decoded through their generated
 //// modules, against the values the `.tbl` bytes hold. Every expected value
 //// names the file offset it was read from: the offset of the field in
 //// `<Table>.tbl`, with the layout of the fact file's `game_table.file` (header
@@ -21,6 +21,7 @@ import client_tables
 import genesis_prime/table/creature2
 import genesis_prime/table/id
 import genesis_prime/table/item2
+import genesis_prime/table/level_up_unlock
 import genesis_prime/table/loader/store
 import genesis_prime/table/localized_text
 import genesis_prime/table/spell4
@@ -89,10 +90,24 @@ pub fn a_32_bit_integer_column_is_read_as_a_signed_number_test() -> Nil {
   let assert Ok(first) = creature2.get(tables, id.Creature2Id(1))
     as "Creature2.tbl: id 1 has a row"
   assert first.quest_anim_objective_index == -1
-    as "Creature2.tbl 0x333c holds the bytes ff ff ff ff; 189,158 type-3 values in the files are 0xffffffff, which a signed reading makes -1 (the sign of type 3 is a gap in game_table.column_type)"
+    as "Creature2.tbl 0x333c holds the bytes ff ff ff ff; 189,158 type-3 values in the files are 0xffffffff. Creature2.questAnimObjectiveIndex is not in the sign list, so it keeps the signed reading, -1 (game_table.column_type: a type-3 column has no sign in the loader, each reader decides)"
   let assert Ok(last) = creature2.get(tables, id.Creature2Id(80_249))
     as "Creature2.tbl: id 80249 has a row"
   assert last.quest_anim_objective_index == 0 as "Creature2.tbl 0x256d5bc: u32"
+  store.unload(tables)
+}
+
+pub fn a_32_bit_integer_column_the_client_reads_unsigned_is_read_as_an_unsigned_number_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = load(level_up_unlock.entry())
+  let assert Ok(unlock) = level_up_unlock.get(tables, id.LevelUpUnlockId(36))
+    as "LevelUpUnlock.tbl: lookup entry of id 36 (file offset 0x1a00) is row 28"
+  assert unlock.level == 4_294_967_295
+    as "LevelUpUnlock.tbl 0x6d8 holds the bytes ff ff ff ff; the client compares the level as unsigned, so -1 is above every level (GetPendingLevelUpUnlockList, 0x1404b0e70)"
+  let assert Ok(first) = level_up_unlock.get(tables, id.LevelUpUnlockId(1))
+    as "LevelUpUnlock.tbl: lookup entry of id 1 (file offset 0x1974) is row 0"
+  assert first.level == 20 as "LevelUpUnlock.tbl 0x278: u32 20"
   store.unload(tables)
 }
 

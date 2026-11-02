@@ -3,6 +3,7 @@
 //// is unformatted; the generator runs `gleam format` over what it writes.
 
 import genesis_prime/table/loader/tbl_file
+import genesis_prime/table_generator/column_sign.{type ColumnSign}
 import genesis_prime/table_generator/difference
 import genesis_prime/table_generator/naming
 import genesis_prime/table_generator/reference.{type Table}
@@ -53,12 +54,14 @@ pub type Rendered {
 
 /// The module for a table: `file` is the name of its file without `.tbl`,
 /// `table` is the table's names, and `tables` is every table that is loaded,
-/// which the columns that hold their ids are matched against.
+/// which the columns that hold their ids are matched against. `signs` gives
+/// the 32-bit columns the client reads unsigned.
 pub fn render(
   file file: String,
   description description: tbl_file.Description,
   table own: Table,
   tables tables: Dict(String, Table),
+  signs signs: List(ColumnSign),
 ) -> Result(Rendered, ModuleError) {
   let table = description.table
   let type_name = own.type_name
@@ -91,7 +94,7 @@ pub fn render(
         all(type_name, table),
         list.map(readers, reader(type_name, _)) |> string.join("\n"),
         row_id(type_name),
-        decoder(type_name, fields),
+        decoder(type_name:, table:, fields:, signs:),
       ],
       "\n",
     )
@@ -381,8 +384,13 @@ fn row_id(type_name: String) -> String {
 /// The record decoder: one pattern over the record's bytes, a segment for each
 /// field and a skip for each padding gap, then the conversions of booleans and
 /// strings, then the row. Matched values are `c0`, `c1`, and so on, by column.
-fn decoder(type_name: String, fields: List(NamedField)) -> String {
-  let segments = segments(fields:, position: 0, made: [])
+fn decoder(
+  type_name type_name: String,
+  table table: String,
+  fields fields: List(NamedField),
+  signs signs: List(ColumnSign),
+) -> String {
+  let segments = segments(fields:, table:, signs:, position: 0, made: [])
   let conversions =
     list.filter_map(fields, fn(named) {
       let variable = variable(named)
@@ -453,9 +461,12 @@ fn variable(named: NamedField) -> String {
 }
 
 /// The pattern segments of the fields in record order, each preceded by a skip
-/// over any padding before it.
+/// over any padding before it. A 32-bit integer column is unsigned when `signs`
+/// lists it so for the client's `table`, signed otherwise.
 fn segments(
   fields fields: List(NamedField),
+  table table: String,
+  signs signs: List(ColumnSign),
   position position: Int,
   made made: List(String),
 ) -> List(String) {
@@ -470,7 +481,17 @@ fn segments(
         False -> []
       }
       let #(size, options) = case named.placed.column.column_type {
-        tbl_file.Integer32 -> #(4, "size(32)-little-signed")
+        tbl_file.Integer32 ->
+          case
+            column_sign.is_unsigned(
+              signs:,
+              table:,
+              column: named.placed.column.name,
+            )
+          {
+            True -> #(4, "size(32)-little")
+            False -> #(4, "size(32)-little-signed")
+          }
         tbl_file.Float32 -> #(4, "size(32)-little-float")
         tbl_file.Boolean32 -> #(4, "size(32)-little")
         tbl_file.Integer64 -> #(8, "size(64)-little-signed")
@@ -479,6 +500,8 @@ fn segments(
       let segment = "      " <> variable(named) <> ":" <> options <> ","
       segments(
         fields: rest,
+        table:,
+        signs:,
         position: offset + size,
         made: list.append([segment, ..skip], made),
       )
