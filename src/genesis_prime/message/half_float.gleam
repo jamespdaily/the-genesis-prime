@@ -4,8 +4,6 @@
 //// pattern round-trips, and a rule that needs the number reads it with
 //// `from_bits`.
 
-import gleam/bool
-import gleam/float
 import gleam/int
 
 /// What 16 bits of a half float hold. A Gleam float cannot hold an infinity or
@@ -21,33 +19,19 @@ pub type HalfFloat {
   NotANumber
 }
 
-/// The value of 16 bits: a sign bit, 5 bits of exponent with a bias of 15 and 10
-/// bits of fraction. An exponent of 0 is zero or a subnormal worth the fraction
-/// times 2^-24; an exponent of 31 is infinity or not a number; any other is
-/// (1 + fraction / 1024) times 2^(exponent - 15).
+/// The value of 16 bits: a sign bit, 5 bits of exponent and 10 bits of
+/// fraction. An exponent of all ones is infinity or not a number, which the
+/// runtime's 16-bit float segment cannot read, so they are told apart here; any
+/// other pattern is read by that segment.
 pub fn from_bits(bits bits: Int) -> HalfFloat {
-  let negative = int.bitwise_and(bits, 0x8000) != 0
   let exponent = int.bitwise_and(int.bitwise_shift_right(bits, 10), 0x1F)
-  let fraction = int.bitwise_and(bits, 0x3FF)
-  case exponent, fraction {
-    31, 0 -> Infinite(negative:)
+  case exponent, int.bitwise_and(bits, 0x3FF) {
+    31, 0 -> Infinite(negative: int.bitwise_and(bits, 0x8000) != 0)
     31, _ -> NotANumber
-    0, _ -> Finite(signed(scaled(fraction, -24), negative:))
-    _, _ -> Finite(signed(scaled(1024 + fraction, exponent - 25), negative:))
+    _, _ -> {
+      let assert <<value:float-size(16)>> = <<bits:size(16)>>
+        as "a pattern whose exponent is not all ones is a finite half float"
+      Finite(value)
+    }
   }
-}
-
-/// `mantissa` times 2 to the `power`, exact for the mantissas and powers of a
-/// half float.
-fn scaled(mantissa: Int, power: Int) -> Float {
-  case power >= 0 {
-    True -> int.to_float(int.bitwise_shift_left(mantissa, power))
-    False ->
-      int.to_float(mantissa) /. int.to_float(int.bitwise_shift_left(1, -power))
-  }
-}
-
-fn signed(value: Float, negative negative: Bool) -> Float {
-  use <- bool.guard(when: negative, return: float.negate(value))
-  value
 }
