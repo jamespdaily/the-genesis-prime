@@ -168,7 +168,7 @@ pub fn the_first_join_is_unit_1_with_a_watch_on_the_connection_and_the_maps_inca
       Watch(WatchId(1), Connection(ConnectionId(7))),
       OwnEffect(Reply(
         CallerId(1),
-        answer_of(character(107), unit_id: 1, visuals: row_10_body()),
+        answer_of(character: character(107), unit_id: 1, visuals: row_10_body()),
       )),
     ]
     as "the player's connection is watched, then the join is answered with the unit of the Join's character at the Join's place, in the map's realm, with the body of its look: unit ids start at 1"
@@ -193,7 +193,7 @@ pub fn each_join_gets_the_next_unit_id_and_its_own_watch_test() -> Nil {
       Watch(WatchId(2), Connection(ConnectionId(8))),
       OwnEffect(Reply(
         CallerId(2),
-        answer_of(character(108), unit_id: 2, visuals: row_10_body()),
+        answer_of(character: character(108), unit_id: 2, visuals: row_10_body()),
       )),
     ]
     as "the watch ids go up too, so a watch is never taken for an older one"
@@ -249,7 +249,7 @@ pub fn a_second_join_from_a_connection_in_the_map_answers_the_unit_it_keeps_and_
     == [
       #(
         CallerId(2),
-        answer_of(character(107), unit_id: 1, visuals: row_10_body()),
+        answer_of(character: character(107), unit_id: 1, visuals: row_10_body()),
       ),
     ]
     as "the answer is the record of the unit the map keeps, character 107, not one built from the second Join's character 900"
@@ -280,7 +280,9 @@ pub fn a_character_whose_look_the_tables_lack_is_answered_with_fewer_visuals_tes
   let #(_, taken) =
     join_as(state: started(), connection: 7, caller: 1, character: unknown)
   assert support.replies(taken)
-    == [#(CallerId(1), answer_of(unknown, unit_id: 1, visuals: []))]
+    == [
+      #(CallerId(1), answer_of(character: unknown, unit_id: 1, visuals: [])),
+    ]
     as "the tables hold no CharacterCustomization row of race 3, so the body is empty and the join is still answered with the unit, as for any character"
   assert support.logs_of(step: taken, level: LogError) == []
   assert list.length(support.watches(taken)) == 1
