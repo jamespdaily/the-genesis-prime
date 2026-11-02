@@ -504,6 +504,25 @@ pub fn a_lookup_entry_past_the_record_count_fails_the_load_test() -> Nil {
     as "0x1407c1115 cmp edx, [r8 + 0x30]: a lookup entry at or past the record count (2) is no record"
 }
 
+pub fn a_lookup_entry_equal_to_the_record_count_fails_the_load_test() -> Nil {
+  use <- owned_test.run(5000)
+  let file =
+    planted_table.Planted(
+      ..planted_table.table(localized_text.schema, [
+        localized_text_row(1, 7),
+        localized_text_row(2, 9),
+      ]),
+      lookup: Some([0xFFFFFFFF, 2, 1]),
+    )
+    |> planted_table.bytes
+  assert load_file("LocalizedText", file)
+    == Error(store.TableFileInvalid(
+      "LocalizedText",
+      tbl_file.LookupPointsOutside(id: 1, row: 2),
+    ))
+    as "0x1407c1115 cmp edx, [r8 + 0x30]: a lookup entry at or past the record count (2) is no record, so entry 2 is the first one past the last record"
+}
+
 pub fn a_record_the_lookup_never_names_fails_the_load_test() -> Nil {
   use <- owned_test.run(5000)
   let file =
