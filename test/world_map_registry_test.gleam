@@ -15,18 +15,24 @@
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
+import character_tables
 import event_wait
 import genesis_prime/connection/registry.{type Registry}
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
+import genesis_prime/store.{type Character, Character, CharacterId, NameStands}
+import genesis_prime/table/id.{ClassId, RaceId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
 import gleam/erlang/process.{type Name, type Pid}
 import gleam/list
+import gleam/option
 import gleam/otp/static_supervisor as supervisor
 import owned_test
+import place_support
 
 /// The world supervisor as the server builds it, with the names it was built
 /// with, a registry the maps find their players' connections in, and, when the
@@ -56,7 +62,13 @@ fn start_world() -> World {
     |> supervisor.restart_tolerance(intensity: 3, period: 10)
     |> supervisor.add(registry.supervised(scope))
   let assert Ok(started) =
-    server.add_world(tree:, world:, locate: locate(scope, _))
+    server.add_world(
+      tree:,
+      world:,
+      realm_id: 1,
+      tables: character_tables.shared(),
+      locate: locate(scope, _),
+    )
     |> supervisor.start
     as "the world tree started"
   process.unlink(started.pid)
@@ -107,17 +119,52 @@ fn deadline() -> Int {
   ask_support.monotonic_ms() + ask_support.event_wait_ms
 }
 
-/// What a join of the connection to the running map was answered with.
-fn joined(found: MapProcess, id: Int) -> map.Outgoing {
+/// The place the client is told for every join of these tests.
+fn joined_place() -> Place {
+  place_support.at(
+    world_id: 3460,
+    world_zone_id: 6009,
+    x: 4605.65,
+    y: -7.571,
+    z: 494.996,
+  )
+}
+
+/// A character whose id is `number`.
+fn character(number: Int) -> Character {
+  Character(
+    character_id: CharacterId(number),
+    name: "Roxo Stompstone",
+    gender: 0,
+    race_id: RaceId(1),
+    class_id: ClassId(1),
+    faction_id: 166,
+    level: 1,
+    path: 0,
+    place: option.Some(joined_place()),
+    look: [],
+    bones: [],
+    naming: NameStands,
+  )
+}
+
+/// The unit id and the incarnation a join of the connection to the running map
+/// was answered with.
+fn joined(found: MapProcess, id: Int) -> #(Int, Int) {
   let #(_, answer) =
     ask_support.ask_and_wait(send: fn(reply) {
       service.call_subject(
         found.subject,
-        map.Join(connection: ConnectionId(id), character_id: 100 + id),
+        map.Join(
+          connection: ConnectionId(id),
+          character: character(100 + id),
+          place: joined_place(),
+        ),
         reply,
       )
     })
-  answer
+  let map.Joined(unit:, incarnation:) = answer
+  #(unit.unit_id, incarnation)
 }
 
 pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test() -> Nil {
@@ -268,11 +315,9 @@ pub fn a_map_gives_each_player_a_unit_id_and_never_gives_one_twice_after_a_leave
   let world = start_world()
   let found = started(world, ship)
   let first_connection = connection(world, 1)
-  assert joined(found, 1)
-    == map.Joined(unit_id: 1, incarnation: found.incarnation)
+  assert joined(found, 1) == #(1, found.incarnation)
     as "the first player of the map is unit 1, in the run Maps started"
-  assert joined(found, 2)
-    == map.Joined(unit_id: 2, incarnation: found.incarnation)
+  assert joined(found, 2) == #(2, found.incarnation)
     as "the second joins as a connection that is not in the map's registry: its watch ends at once, and it is still a unit of its own"
   let ended = process.monitor(first_connection)
   process.kill(first_connection)
@@ -282,8 +327,7 @@ pub fn a_map_gives_each_player_a_unit_id_and_never_gives_one_twice_after_a_leave
   // than this test's join. That the end removes the player is the rule's,
   // tested in map_test.
   let _next = connection(world, 4)
-  assert joined(found, 4)
-    == map.Joined(unit_id: 3, incarnation: found.incarnation)
+  assert joined(found, 4) == #(3, found.incarnation)
     as "a player that joins after one has left is a new unit, never unit 1 again"
 }
 

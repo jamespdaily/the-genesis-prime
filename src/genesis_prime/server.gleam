@@ -98,6 +98,7 @@ import genesis_prime/service.{type Call, type Locate, type Reach, type Sent}
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type ConnectionRule}
 import genesis_prime/store/worker.{type Job}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry as world_map_registry
@@ -321,19 +322,28 @@ fn world(
   settings: Settings,
 ) -> supervision.ChildSpecification(supervisor.Supervisor) {
   use tree <- subtree(supervisor.RestForOne)
-  add_world(tree:, world: settings.world, locate: locate(settings))
+  add_world(
+    tree:,
+    world: settings.world,
+    realm_id: settings.game.settings.realm_id,
+    tables: settings.game.settings.tables,
+    locate: locate(settings),
+  )
 }
 
 /// Adds Maps and the map supervisor to a `rest_for_one` supervisor, in that
 /// order: Maps' restart restarts the map supervisor, so every map ends with
 /// the registry that knew them. A map is started by the map supervisor with
-/// the rule of its id and incarnation, no name, a reach that finds what it
-/// watches with `locate`, and, when `world` records, a recording of its own,
-/// named by its world, instance and incarnation. The server's tree and the
+/// the rule of its id and incarnation, the realm and game tables its players'
+/// units are built from, no name, a reach that finds what it watches with
+/// `locate`, and, when `world` records, a recording of its own, named by its
+/// world, instance and incarnation. The server's tree and the
 /// tests start the world with this function.
 pub fn add_world(
   tree tree: supervisor.Builder,
   world world: World,
+  realm_id realm_id: Int,
+  tables tables: table_store.Tables,
   locate locate: Locate,
 ) -> supervisor.Builder {
   tree
@@ -347,7 +357,12 @@ pub fn add_world(
       shutdown_ms: world.map_shutdown_ms,
       start: fn(start: world_map_registry.MapStart) {
         service_shell.start_unnamed(service_shell.Settings(
-          rule: map.rule(map: start.map, incarnation: start.incarnation),
+          rule: map.rule(
+            map: start.map,
+            incarnation: start.incarnation,
+            realm_id:,
+            tables:,
+          ),
           reach: service.watch_only(locate:),
           shutdown_ms: world.map_shutdown_ms,
         ))

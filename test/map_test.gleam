@@ -10,23 +10,62 @@
 ////   (opcode.0x262), so no unit id is given twice in a map's life, whoever
 ////   leaves.
 
+import character_tables
 import connection_rule_support as support
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, Connection,
   ConnectionId, Effects, LogError, OwnEffect, OwnEvent, Reply, Started, Stop,
   Stopping, Watch, WatchEnded, WatchId,
 }
+import genesis_prime/store.{type Character, Character, CharacterId, NameStands}
+import genesis_prime/table/id.{ClassId, RaceId}
 import genesis_prime/world_map/map.{type State, Join, Joined}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import owned_test
+import place_support
 
 const incarnation = 31
 
 fn started() -> State {
-  map.new(map.Settings(map: MapId(world_id: 3460, instance: 0), incarnation:))
+  map.new(map.Settings(
+    map: MapId(world_id: 3460, instance: 0),
+    incarnation:,
+    realm_id: 1,
+    tables: character_tables.shared(),
+  ))
+}
+
+/// The place the client is told for every join of these tests.
+fn joined_place() -> Place {
+  place_support.at(
+    world_id: 3460,
+    world_zone_id: 6009,
+    x: 4605.65,
+    y: -7.571,
+    z: 494.996,
+  )
+}
+
+/// A character whose id is `number`.
+fn character(number: Int) -> Character {
+  Character(
+    character_id: CharacterId(number),
+    name: "Roxo Stompstone",
+    gender: 0,
+    race_id: RaceId(1),
+    class_id: ClassId(1),
+    faction_id: 166,
+    level: 1,
+    path: 0,
+    place: option.Some(joined_place()),
+    look: [],
+    bones: [],
+    naming: NameStands,
+  )
 }
 
 fn feed(
@@ -48,7 +87,8 @@ fn join(
       caller: CallerId(caller),
       message: Join(
         connection: ConnectionId(connection),
-        character_id: 100 + connection,
+        character: character(100 + connection),
+        place: joined_place(),
       ),
     )),
   )
@@ -56,24 +96,24 @@ fn join(
 
 /// The unit id a join was answered with.
 fn unit_of(taken: ServiceStep(map.Outgoing), caller: Int) -> Int {
-  let assert [#(CallerId(number), Joined(unit_id:, incarnation: given))] =
+  let assert [#(CallerId(number), Joined(unit:, incarnation: given))] =
     support.replies(taken)
     as "one reply answers the join"
   assert number == caller as "the reply is for the caller that joined"
   assert given == incarnation
     as "every Joined carries the map's incarnation, so the joiner watches the run that holds its player"
-  unit_id
+  unit.unit_id
 }
 
 pub fn the_first_join_is_unit_1_with_a_watch_on_the_connection_and_the_maps_incarnation_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, taken) = join(state: started(), connection: 7, caller: 1)
-  assert support.effects_of(taken)
-    == [
-      Watch(WatchId(1), Connection(ConnectionId(7))),
-      OwnEffect(Reply(CallerId(1), Joined(unit_id: 1, incarnation:))),
-    ]
-    as "the player's connection is watched, then the join is answered: unit ids start at 1"
+  let assert [
+    Watch(WatchId(1), Connection(ConnectionId(7))),
+    OwnEffect(Reply(CallerId(1), Joined(unit:, incarnation: given))),
+  ] = support.effects_of(taken)
+    as "the player's connection is watched, then the join is answered"
+  assert unit.unit_id == 1 && given == incarnation as "unit ids start at 1"
 }
 
 pub fn started_does_nothing_and_stopping_stops_the_rule_test() -> Nil {
@@ -90,11 +130,9 @@ pub fn each_join_gets_the_next_unit_id_and_its_own_watch_test() -> Nil {
   let #(_, second) = join(state:, connection: 8, caller: 2)
   assert unit_of(first, 1) == 1
   assert unit_of(second, 2) == 2
-  assert support.effects_of(second)
-    == [
-      Watch(WatchId(2), Connection(ConnectionId(8))),
-      OwnEffect(Reply(CallerId(2), Joined(unit_id: 2, incarnation:))),
-    ]
+  let assert [Watch(watch, Connection(ConnectionId(8))), _] =
+    support.effects_of(second)
+  assert watch == WatchId(2)
     as "the watch ids go up too, so a watch is never taken for an older one"
 }
 

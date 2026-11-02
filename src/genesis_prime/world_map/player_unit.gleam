@@ -1,8 +1,9 @@
-//// A player character's unit as message 0x262 creates it in the client: the
-//// character's own values, alive at its saved place, with the body the
-//// character list shows. The connection builds it when the character enters
-//// the world (genesis_prime/game/world_entry); the map, which owns the units
-//// the client sees, takes ownership of it after that.
+//// A player character's unit: the character's own values, alive at the place
+//// it was placed at, with the body the character list shows. The map, which
+//// owns the units the client sees, builds it when the character joins and keeps
+//// it while the player is in the map (genesis_prime/world_map/map); `create`
+//// turns it into message 0x262, which creates the unit in the client, whenever
+//// one is sent.
 ////
 //// - **Alive:** stat 0 (health) above 0, or the client creates the player
 ////   dead (0x140457bc5). No client table or retail record gives a player's
@@ -52,15 +53,46 @@ const level_stat = 10
 /// (0x1404584b0).
 const base_health_property = 7
 
-/// Message 0x262 for the character as the unit `unit_id`, in the realm, at
-/// `place` with the body `visuals`.
-pub fn create(
+/// A player's unit in a map: the character as the unit `unit_id`, placed at
+/// `place` with the body `visuals`. Only `new` builds one, so a unit always
+/// holds all four.
+pub opaque type PlayerUnit {
+  PlayerUnit(
+    character: Character,
+    place: Place,
+    unit_id: Int,
+    visuals: List(ItemVisual),
+  )
+}
+
+/// The unit of the character as the unit `unit_id`, at `place` with the body
+/// `visuals`.
+pub fn new(
   character character: Character,
   place place: Place,
   unit_id unit_id: Int,
-  realm_id realm_id: Int,
   visuals visuals: List(ItemVisual),
+) -> PlayerUnit {
+  PlayerUnit(character:, place:, unit_id:, visuals:)
+}
+
+/// The unit's id in its map.
+pub fn unit_id(unit unit: PlayerUnit) -> Int {
+  unit.unit_id
+}
+
+/// The id of the unit's character, for a log line.
+pub fn character_id(unit unit: PlayerUnit) -> Int {
+  let CharacterId(character_id) = unit.character.character_id
+  character_id
+}
+
+/// Message 0x262 for the unit, in the realm.
+pub fn create(
+  unit unit: PlayerUnit,
+  realm_id realm_id: Int,
 ) -> UnitCreatePlayer {
+  let PlayerUnit(character:, place:, unit_id:, visuals:) = unit
   let CharacterId(character_id) = character.character_id
   let health = float32.to_bits(int.to_float(stand_in_health))
   let facing = start_place.facing(place)

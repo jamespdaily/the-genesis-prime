@@ -119,6 +119,7 @@ import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import genesis_prime/world_map/map.{Join, Joined}
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/player_unit
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -1210,6 +1211,28 @@ const unit_id = 5
 
 const incarnation = 77
 
+/// The map's answer to a join of `character`: its unit, in the settings' realm,
+/// at the place the client is told, with the body of CharacterCustomization row
+/// 10 (display 137 on slot 25).
+fn joined_as(character: store.Character) -> map.Outgoing {
+  let assert Some(place) = character.place
+    as "the tests' characters have a saved place"
+  Joined(
+    unit: player_unit.create(
+      unit: player_unit.new(
+        character:,
+        place: start_place.within_the_worlds_box(place),
+        unit_id:,
+        visuals: [
+          ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0),
+        ],
+      ),
+      realm_id: 5,
+    ),
+    incarnation:,
+  )
+}
+
 /// The connection after the map took `character`: the burst is written.
 fn entered_as(
   character: store.Character,
@@ -1223,11 +1246,7 @@ fn entered_from(
   character: store.Character,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = joining_from(in_character_select, character)
-  answer(
-    state:,
-    taken:,
-    outcome: step.Answer(FromMap(Joined(unit_id:, incarnation:))),
-  )
+  answer(state:, taken:, outcome: step.Answer(FromMap(joined_as(character))))
 }
 
 /// The connection after the map took the player: the burst is written.
@@ -1280,15 +1299,18 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
       ),
     )
   assert ask_request(taken)
-    == AskMap(MapId(world_id: 3460, instance: 0), Join(ConnectionId(1), 42))
-    as "the saved world of the character, its one open instance, the connection's id and the character's id"
+    == AskMap(
+      MapId(world_id: 3460, instance: 0),
+      Join(ConnectionId(1), world_character(), entry_place()),
+    )
+    as "the saved world of the character, its one open instance, the connection's id, the character and the place the client is told"
   assert support.writes(taken) == []
     as "nothing is written before the map answers"
   let #(_, taken) =
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromMap(Joined(unit_id:, incarnation:))),
+      outcome: step.Answer(FromMap(joined_as(world_character()))),
     )
   assert list.map(heard(taken, keyed()), fn(frame) { frame.message_id })
     == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
@@ -1458,7 +1480,7 @@ pub fn an_answer_that_is_none_world_entry_asked_for_is_a_bug_with_reason_8_and_a
   list.each(
     [
       // The map's answer while the store is asked.
-      #(playing(42), step.Answer(FromMap(Joined(unit_id:, incarnation:)))),
+      #(playing(42), step.Answer(FromMap(joined_as(world_character())))),
       // The store's answer while the map is asked.
       #(
         joining(),
@@ -1503,7 +1525,7 @@ pub fn a_world_answer_when_character_select_asked_the_store_is_a_bug_with_reason
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromMap(Joined(unit_id:, incarnation:))),
+      outcome: step.Answer(FromMap(joined_as(world_character()))),
     )
   assert disconnect(taken, keyed()) == LostUserServer
   assert list.length(support.logs_of(step: taken, level: LogError)) == 1
@@ -2196,7 +2218,7 @@ fn answers_to_other_asks() -> List(Outcome(Answer)) {
     step.Answer(FromStore(ForWorld(NotTheAccounts))),
     step.Answer(FromHandOff(NoHolder)),
     step.Answer(FromSessions(Claimed)),
-    step.Answer(FromMap(Joined(unit_id:, incarnation:))),
+    step.Answer(FromMap(joined_as(world_character()))),
   ]
 }
 
