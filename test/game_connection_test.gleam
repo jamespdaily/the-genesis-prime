@@ -2836,31 +2836,55 @@ pub fn a_connection_given_taken_over_writes_0x036a_reason_19_under_its_cipher_an
 pub fn a_claim_answered_taken_over_ends_the_connection_as_a_takeover_does_test() -> Nil {
   use <- owned_test.run(10_000)
   // A newer login holds the slot: Sessions answers the claim `TakenOver`, for
-  // a first claim and for a claim made again after Sessions ended, in
-  // character select or in the world.
+  // a first claim and for a claim made again after Sessions ended in
+  // character select.
   let #(state, taken) = claiming()
   let #(_, taken) =
     answer(state:, taken:, outcome: step.Answer(FromSessions(TakenOver)))
   assert_taken_over(taken)
-  list.each([in_select_with_a_list(), in_world()], fn(held) {
-    let #(state, _) = feed(held, WatchEnded(WatchId(1)))
-    let #(state, taken) = feed(state, OwnEvent(TimerFired(TimerId(1))))
-    assert ask_request(taken) == claim_ask()
-    let #(state, taken) =
-      answer(state:, taken:, outcome: step.Answer(FromSessions(TakenOver)))
-    case support.asked(taken) {
-      None -> assert_taken_over(taken)
-      Some(_) -> {
-        // A player in the world is saved before the client is told: the takeover
-        // is logged with the ask, and the notice follows the answer.
-        let assert [line] = support.logs_of(step: taken, level: LogInfo)
-          as "the takeover is logged at info, once"
-        assert line.about.account_id == Some(7)
-        let #(_, saved) = answer(state:, taken:, outcome: place_saved())
-        assert disconnect(saved, keyed()) == AccountDisconnected
-        assert support.logs(saved) == []
-      }
-    }
+  let #(state, taken) = claiming_again(in_select_with_a_list())
+  let #(_, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromSessions(TakenOver)))
+  assert_taken_over(taken)
+}
+
+/// The connection `held` after Sessions ended and the wait ran out: the claim
+/// is out again.
+fn claiming_again(
+  held: game_connection.State,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, _) = feed(held, WatchEnded(WatchId(1)))
+  let #(state, taken) = feed(state, OwnEvent(TimerFired(TimerId(1))))
+  assert ask_request(taken) == claim_ask()
+  #(state, taken)
+}
+
+pub fn a_claim_made_again_in_the_world_and_answered_taken_over_saves_the_place_then_tells_the_client_reason_19_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = claiming_again(in_world())
+  let #(state, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromSessions(TakenOver)))
+  assert ask_request(taken) == save_asked(1, entry_place())
+    as "a player in the world is saved before the client is told"
+  assert support.writes(taken) == [] as "the notice follows the save's answer"
+  let assert [line] = support.logs_of(step: taken, level: LogInfo)
+    as "the takeover is logged at info, once, with the ask"
+  assert line.about.account_id == Some(7)
+  let #(_, saved) = answer(state:, taken:, outcome: place_saved())
+  assert disconnect(saved, keyed()) == AccountDisconnected
+  assert support.logs(saved) == []
+}
+
+pub fn a_claim_made_again_in_the_world_that_sessions_does_not_answer_saves_the_place_then_tells_the_client_reason_8_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each([NoAnswerInTime, EndedBeforeAnswer], fn(outcome) {
+    let #(state, taken) = claiming_again(in_world())
+    let #(state, taken) = answer(state:, taken:, outcome:)
+    assert ask_request(taken) == save_asked(1, entry_place())
+      as "a player in the world is saved before the client is told"
+    assert support.writes(taken) == [] as "the notice follows the save's answer"
+    let #(_, saved) = answer(state:, taken:, outcome: place_saved())
+    assert disconnect(saved, keyed()) == LostUserServer
   })
 }
 
