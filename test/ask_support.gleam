@@ -9,12 +9,12 @@ import asking_rule.{
 import gate_rule
 import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/registry.{type Registry}
+import genesis_prime/connection/script
 import genesis_prime/connection/shell
 import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type ConnectionRule, type ServiceRule, Rule}
-import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Job}
 import gleam/erlang/atom
 import gleam/erlang/process.{type Name, type Pid}
@@ -84,8 +84,7 @@ pub fn start_joined(
       shutdown_ms:,
       recorder:,
       wire_recorder: None,
-      seed_source: runtime.operating_system_seed,
-      clock: runtime.now,
+      scripts: script.operating_system,
       directory:,
       registry:,
       locate:,

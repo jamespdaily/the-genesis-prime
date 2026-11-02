@@ -87,6 +87,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/registry.{type Registry}
+import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/connection/shell as connection_shell
 import genesis_prime/game/connection as game_connection
 import genesis_prime/hand_off
@@ -97,7 +98,6 @@ import genesis_prime/service.{type Call, type Locate, type Reach, type Sent}
 import genesis_prime/service/shell as service_shell
 import genesis_prime/sessions
 import genesis_prime/step.{type ConnectionRule}
-import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Job}
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map
@@ -185,9 +185,9 @@ pub type Login {
 /// the settings its rule is made with, where each connection's inputs are
 /// recorded (`recorder`) and where the bytes of its socket are
 /// (`wire_recorder`), `None` for both unless the dev start turns recording on,
-/// and where each connection gets its seed and its time: the operating system's
-/// source and the node's clock in the server (`runtime.operating_system_seed`,
-/// `runtime.now`), the recorded ones in a replay.
+/// and where each accepted connection gets its script, its seed, the time of
+/// each input and its timers (`scripts`): the server's own in the server
+/// (`script.operating_system`), each connection's recorded one in a replay.
 pub type Served(settings) {
   Served(
     listener: Name(Nil),
@@ -196,8 +196,7 @@ pub type Served(settings) {
     settings: settings,
     recorder: Option(Recorder),
     wire_recorder: Option(WireRecorder),
-    seed_source: runtime.SeedSource,
-    clock: runtime.Clock,
+    scripts: Scripts,
   )
 }
 
@@ -470,8 +469,7 @@ fn serve(
         shutdown_ms: settings.connection_shutdown_ms,
         recorder: served.recorder,
         wire_recorder: served.wire_recorder,
-        seed_source: served.seed_source,
-        clock: served.clock,
+        scripts: served.scripts,
         directory:,
         registry:,
         locate: locate(settings),

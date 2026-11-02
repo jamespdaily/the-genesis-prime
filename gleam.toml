@@ -86,6 +86,7 @@ effectful_modules = [
   { module = "genesis_prime/readiness", reason = "asks the store for the readiness probe and waits for its answer, retrying until a deadline" },
   { module = "genesis_prime/server", reason = "starts the supervision tree" },
   { module = "genesis_prime/connection/closer", reason = "closes every listener to new sockets when the server stops" },
+  { module = "genesis_prime/connection/script", reason = "draws a connection's seed from the operating system and starts its timers with the operating system's timer" },
   { module = "genesis_prime/connection/shell", reason = "owns a client socket and carries out its rule's effects" },
   { module = "genesis_prime/connection/listener", reason = "starts a Ranch listener under the supervision tree" },
   { module = "genesis_prime/connection/registry", reason = "starts OTP's pg scope under the supervision tree, and joins and looks in it for a connection shell" },

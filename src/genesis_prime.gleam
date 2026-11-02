@@ -19,6 +19,7 @@ import envoy
 import genesis_prime/application
 import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/registry
+import genesis_prime/connection/script
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
@@ -445,8 +446,7 @@ fn login() -> server.Login {
       ),
       recorder: None,
       wire_recorder: None,
-      seed_source: runtime.operating_system_seed,
-      clock: runtime.now,
+      scripts: script.operating_system,
     ),
     auth: server.Served(
       listener: process.new_name("auth_listener"),
@@ -465,8 +465,7 @@ fn login() -> server.Login {
       ),
       recorder: None,
       wire_recorder: None,
-      seed_source: runtime.operating_system_seed,
-      clock: runtime.now,
+      scripts: script.operating_system,
     ),
   )
 }
@@ -493,8 +492,7 @@ fn game(tables: store.Tables) -> server.Served(game_connection.Settings) {
     ),
     recorder: None,
     wire_recorder: None,
-    seed_source: runtime.operating_system_seed,
-    clock: runtime.now,
+    scripts: script.operating_system,
   )
 }
 

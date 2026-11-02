@@ -14,6 +14,7 @@ import genesis_prime/add_account/sql
 import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/listener
 import genesis_prime/connection/registry
+import genesis_prime/connection/script
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/guid
@@ -21,7 +22,6 @@ import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/server
-import genesis_prime/step/runtime
 import gleam/erlang/process.{type Pid}
 import gleam/option.{None, Some}
 import login_client.{type Ports, Ports}
@@ -77,8 +77,7 @@ pub fn login() -> server.Login {
       settings: sts_settings(),
       recorder: None,
       wire_recorder: None,
-      seed_source: runtime.operating_system_seed,
-      clock: runtime.now,
+      scripts: script.operating_system,
     ),
     auth: server.Served(
       listener: process.new_name("test_auth_listener"),
@@ -87,8 +86,7 @@ pub fn login() -> server.Login {
       settings: auth_settings(),
       recorder: None,
       wire_recorder: None,
-      seed_source: runtime.operating_system_seed,
-      clock: runtime.now,
+      scripts: script.operating_system,
     ),
   )
 }
@@ -122,8 +120,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
     ),
     recorder: None,
     wire_recorder: None,
-    seed_source: runtime.operating_system_seed,
-    clock: runtime.now,
+    scripts: script.operating_system,
   )
 }
 

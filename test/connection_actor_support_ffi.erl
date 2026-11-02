@@ -22,21 +22,23 @@ message_queue_data(Pid) ->
 %% The Running record of an open connection, read from the actor's state as
 %% OTP's sys:get_state gives it.
 running(Pid) ->
-    {connection, _Settings, _Parent, _Subject, _Answers, {open, Running}}
+    {connection, _Settings, _Parent, _Timers, _Answers, {open, Running}}
         = sys:get_state(Pid),
     Running.
 
 %% How many asks an open connection keeps for a late answer or the end of
 %% their target: the Running record's kept dictionary.
 kept_asks(Pid) ->
-    {running, _Socket, _State, _Writer, _Wire, _At, Kept, _Watches, _Timers, _Stopping}
+    {running, _Socket, _Script, _State, _Writer, _Wire, _At, _TakenMs, _ClosedBy, Kept,
+     _Watches, _Timers, _Stopping}
         = running(Pid),
     maps:size(Kept).
 
 %% The buffer, in bytes, of an open connection's socket, which bounds what one
 %% read of it holds: the Running record's socket.
 socket_buffer(Pid) ->
-    {running, Socket, _State, _Writer, _Wire, _At, _Kept, _Watches, _Timers, _Stopping}
+    {running, Socket, _Script, _State, _Writer, _Wire, _At, _TakenMs, _ClosedBy, _Kept,
+     _Watches, _Timers, _Stopping}
         = running(Pid),
     {ok, [{buffer, Buffer}]} = inet:getopts(Socket, [buffer]),
     Buffer.

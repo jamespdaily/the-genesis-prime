@@ -22,6 +22,7 @@
 import ask_support
 import event_wait
 import genesis_prime/connection/frame
+import genesis_prime/connection/script
 import genesis_prime/connection/shell
 import genesis_prime/rule_recording
 import genesis_prime/rule_recording/file.{type Recorder}
@@ -133,8 +134,7 @@ fn settings(
     shutdown_ms: 1000,
     recorder:,
     wire_recorder: None,
-    seed_source: runtime.operating_system_seed,
-    clock: runtime.now,
+    scripts: script.operating_system,
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     registry: None,
     locate: fn(_address) { Error(Nil) },

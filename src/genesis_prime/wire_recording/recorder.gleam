@@ -1,14 +1,19 @@
 //// Writes a connection's wire recording (genesis_prime/wire_recording) to a
-//// file, a line after each socket read and each socket write as the shell
-//// does them. A `WireRecorder` is made only by the dev start; the server's own
-//// start has none, and a connection with none writes nothing.
+//// file, a line for each input the shell takes and each write it makes. A
+//// `WireRecorder` is made only by the dev start; the server's own start has
+//// none, and a connection with none writes nothing.
+////
+//// The shell takes each line's sequence number from `runtime.unique_id` as
+//// the line's event happens (a write's before the socket is given the bytes)
+//// and hands it in, since the runtime module calls this one.
 
 import genesis_prime/step.{type Now}
+import genesis_prime/wire_recording.{type Input, type Side}
 import gleam/option.{type Option, None, Some}
 
 /// Where and how each connection of a listener is recorded: a folder, and what
-/// a recording's header holds besides the rule's name, the seed and the time,
-/// which the shell gives.
+/// a recording's header holds besides the rule's name, the seed and the accept
+/// ordinal, which the shell gives.
 pub opaque type WireRecorder {
   WireRecorder(folder: String, client_build: Int, tables_digest: Option(String))
 }
@@ -38,8 +43,8 @@ pub fn open_if(
   recorder recorder: Option(WireRecorder),
   rule_name _rule_name: String,
   connection _connection: Int,
+  accept_ordinal _accept_ordinal: Int,
   seed _seed: BitArray,
-  started _started: Now,
 ) -> Result(Option(WireWriter), WriteError) {
   case recorder {
     None -> Ok(None)
@@ -47,12 +52,13 @@ pub fn open_if(
   }
 }
 
-/// Appends the bytes the shell read from the socket, as taken at `at`. With no
-/// recording open it writes nothing.
-pub fn received(
+/// Appends the line of an input the shell is taking, with the `Now` its clock
+/// gave it. With no recording open it writes nothing.
+pub fn taken(
   writer writer: Option(WireWriter),
+  sequence _sequence: Int,
   at _at: Now,
-  bytes _bytes: BitArray,
+  input _input: Input,
 ) -> Result(Nil, WriteError) {
   case writer {
     None -> Ok(Nil)
@@ -60,11 +66,12 @@ pub fn received(
   }
 }
 
-/// Appends the bytes the shell wrote to the socket, in the step of the input
-/// taken at `at`. With no recording open it writes nothing.
+/// Appends the line of bytes the socket took from the shell, with the sequence
+/// number taken before they were given to it. With no recording open it writes
+/// nothing.
 pub fn sent(
   writer writer: Option(WireWriter),
-  at _at: Now,
+  sequence _sequence: Int,
   bytes _bytes: BitArray,
 ) -> Result(Nil, WriteError) {
   case writer {
@@ -73,8 +80,13 @@ pub fn sent(
   }
 }
 
-/// Ends the recording when one is open: appends the closing line.
-pub fn close_if(writer writer: Option(WireWriter)) -> Result(Nil, WriteError) {
+/// Ends the recording when one is open: appends the closing line, naming the
+/// side that ended the connection.
+pub fn close_if(
+  writer writer: Option(WireWriter),
+  sequence _sequence: Int,
+  by _by: Side,
+) -> Result(Nil, WriteError) {
   case writer {
     None -> Ok(Nil)
     Some(_) -> panic as "built in the next commit"
