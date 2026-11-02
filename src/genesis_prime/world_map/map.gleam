@@ -49,7 +49,7 @@ import gleam/dict.{type Dict}
 import gleam/int
 import gleam/option.{Some}
 
-/// The rule's name in a recording's header.
+/// The rule's name: its module path.
 const rule_name = "genesis_prime/world_map/map"
 
 /// What a map is started with: which map it is, and the incarnation Maps

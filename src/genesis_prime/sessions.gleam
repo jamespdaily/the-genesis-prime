@@ -94,7 +94,7 @@ import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
 import gleam/list
 
-/// The rule's name in a recording's header and in the server's tree.
+/// The rule's name: its module path.
 const rule_name = "genesis_prime/sessions"
 
 /// What another process asks Sessions.

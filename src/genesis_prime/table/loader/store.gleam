@@ -8,15 +8,12 @@
 //// - **A derived value** is built once from the loaded tables, after the
 ////   requirements hold, and stored as a term of its own under the same key, so
 ////   every reader takes it from the tables' key without building it again. It
-////   is not part of the `Tables` value, which a rule's settings hold and a
-////   recording's header writes.
+////   is not part of the `Tables` value, which a rule's settings hold.
 //// - **The server's key is fixed.** The server's tables are stored under
-////   `ServerKey`, a constant the server writes, so the tables a rule's
-////   settings hold are the same value in every run and a recording of the
-////   settings compares equal to a replay's. Any other load (a test's, the
+////   `ServerKey`, a constant the server writes. Any other load (a test's, the
 ////   coverage measure's) takes a key made for it, so two loads never share
-////   terms. Only the server's own start and the tests that replay a
-////   recording load under `ServerKey`, and each once in a run.
+////   terms. Only the server's own start and the tests that load the server's
+////   tables load under `ServerKey`, and each once in a run.
 //// - **The digest** is SHA-256 over every file read, each preceded by its
 ////   name, in the order of the entries. A recording's header holds it, so a
 ////   replay on other table files is told to record again.

@@ -2,8 +2,9 @@
 //// function `step(state, input) -> #(state, Step)`: it takes one input and
 //// returns its new state and what its shell must carry out. The shell turns
 //// everything that reaches its process into an input, carries out the effects
-//// in order and decides nothing, so what crossed a process's socket, with the
-//// times of its inputs, replays its every decision (genesis_prime/wire_recording).
+//// in order and decides nothing, so every decision is the rule's, and a
+//// connection's recorded session (genesis_prime/wire_recording) replays them
+//// through the real server.
 ////
 //// There are two kinds of process, each with its own shell: a connection
 //// (genesis_prime/connection/shell), which owns a client socket, and a service
@@ -38,7 +39,8 @@ import genesis_prime/world_map/map_id.{type MapId}
 import gleam/option.{type Option, None}
 
 /// A rule as its shell runs it. `name` is the rule's module path, which a
-/// recording's header names, and `settings` are made once at start. This is the shell's view of a rule, so it holds functions; no
+/// connection's wire recording names in its header, and `settings` are made
+/// once at start. This is the shell's view of a rule, so it holds functions; no
 /// type a rule takes or returns does. `own_input` and `own_effect` are the
 /// kind's own types, which `ConnectionRule` and `ServiceRule` fix.
 pub type Rule(settings, state, request, own_input, own_effect) {
