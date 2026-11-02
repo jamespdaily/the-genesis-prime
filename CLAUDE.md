@@ -27,6 +27,7 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 - The full check passes before every push, and files are staged by name.
 - No shortcut makes a check pass: no stub or hard-coded value in place of the client's behaviour, no test skipped or loosened without its reason in the test, no swallowed error. A gap is stated where it is enforced and reported as missing or a question.
 - Every requirement and fact lives in the code, test, config or check that enforces it. No design documents or decision records: the issue keeps the reasoning, and a choice becomes one line in its place. Tools that gate a merge (the check script, the setup check, the table extractor) have tests that CI runs; other tools and guidance are checked by real use.
+- A step's working detail goes in Markdown artifacts on its issue, named "Client trace", "Design" or "Review", each edited in place and never deleted. A step moves from `investigation` to `ready` once its trace and design are written and its test list is posted. Once the step merges, its artifacts are history, and nothing enforced lives only there.
 - A lesson becomes a test, a shared function or a permission first; a written rule only for a recurring judgement. A new rule replaces an old one or shows what it saved. A change to this file, a skill or an agent lands in its own pull request once Jim approves it; an approved change that waits for a step is written on that step's card.
 
 ## A step
