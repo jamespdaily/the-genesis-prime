@@ -37,6 +37,21 @@ class NotConfigured(Exception):
     """GENESIS_PYGHIDRA_PYTHON is not set."""
 
 
+def answer_of(body: dict):
+    """The answer in a reply; an error reply raises QueryFailed with its error text."""
+    if body.get("ok") is not True:
+        raise QueryFailed(body.get("error", "no error text in %s" % body))
+    return body["answer"]
+
+
+def check_reply_id(request: object, body: dict) -> None:
+    """Raises QueryProcessEnded when the request is an object with an id and the reply carries another:
+    the reply answers an earlier request, so the line protocol is out of step. A request with no id,
+    or that is not an object, has none to check."""
+    if isinstance(request, dict) and "id" in request and body.get("id") != request["id"]:
+        raise QueryProcessEnded("reply %s is not for request %s" % (body, request["id"]))
+
+
 def query_command(seed: Path | None = None, unseeded: bool = False, env=None) -> list[str]:
     """The pinned Python running ghidra_query.py. No -I: the script puts its own directory on
     sys.path to import its siblings. `--seed PATH` is used only when the project does not exist
@@ -116,17 +131,14 @@ class QueryClient:
     def request(self, kind: str, timeout: float = DEFAULT_TIMEOUT_S, **arguments) -> dict:
         """The whole reply to a request, an error reply included."""
         self._next_id += 1
-        body = self.exchange(json.dumps({"id": self._next_id, "kind": kind, **arguments}).encode(), timeout)
-        if body.get("id") != self._next_id:
-            raise QueryProcessEnded("reply %s is not for request %d" % (body, self._next_id))
+        request = {"id": self._next_id, "kind": kind, **arguments}
+        body = self.exchange(json.dumps(request).encode(), timeout)
+        check_reply_id(request, body)
         return body
 
     def answer(self, kind: str, timeout: float = DEFAULT_TIMEOUT_S, **arguments):
         """A request's answer; an error reply raises QueryFailed with its error text."""
-        body = self.request(kind, timeout, **arguments)
-        if body.get("ok") is not True:
-            raise QueryFailed(body.get("error", "no error text in %s" % body))
-        return body["answer"]
+        return answer_of(self.request(kind, timeout, **arguments))
 
     def close(self, timeout: float = 60) -> int:
         """Closes stdin and waits for the process to end, and returns its exit status 0. Kills it and
