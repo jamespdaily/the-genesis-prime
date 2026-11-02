@@ -8,6 +8,7 @@
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table_rows
 import gleam/list
+import gleam/result
 
 /// How a listed column is read.
 pub type Sign {
@@ -56,6 +57,12 @@ pub fn all() -> List(ColumnSign) {
       column: "level",
       sign: Unsigned,
       evidence: "0x1404b0e70 compares the level as unsigned, so -1 is above every level",
+    ),
+    ColumnSign(
+      table: "XpPerLevel",
+      column: "minXpForLevel",
+      sign: Signed,
+      evidence: "0x140029820 compares the experience with the column as signed: cmp ebp, dword ptr [rbx+0x4] then jl, jg",
     ),
     ColumnSign(
       table: "GameFormula",
@@ -118,7 +125,7 @@ pub fn unlisted(
   let table = read.description.table
   list.filter(read.description.columns, fn(column) {
     column.column_type == tbl_file.Integer32
-    && find(signs:, table:, column: column.name) == Error(Nil)
+    && result.is_error(find(signs:, table:, column: column.name))
     && list.any(read.rows, holds_top_bit(_, column.name))
   })
   |> list.map(fn(column) { Unlisted(table:, column: column.name) })

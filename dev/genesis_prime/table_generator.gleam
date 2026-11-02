@@ -55,7 +55,10 @@ pub type GenerateError {
   /// `gleam format` failed on the generated files.
   FormatFailed(output: String)
   /// A table the server loads has no file in the tables folder.
-  LoadedTableMissing(table: String)
+  LoadedTableMissing(file: String)
+  /// Loaded tables' 32-bit columns that hold a value with bit 31 set and are
+  /// not in the sign list.
+  UnlistedColumns(columns: List(column_sign.Unlisted))
 }
 
 const table_folder = "genesis_prime/table"
@@ -290,21 +293,17 @@ pub fn write(
   |> result.replace(generated.unmatched)
 }
 
-/// What a check found: how the committed code differs from the generated, the
-/// columns that name an id of no loaded table, and the loaded tables' 32-bit
-/// columns that hold a value with bit 31 set and are not in the sign list.
+/// What a check found: how the committed code differs from the generated, and
+/// the columns that name an id of no loaded table.
 pub type Checked {
-  Checked(
-    differences: List(Difference),
-    unmatched: List(IdColumn),
-    unlisted: List(column_sign.Unlisted),
-  )
+  Checked(differences: List(Difference), unmatched: List(IdColumn))
 }
 
 /// Generates the code from the `.tbl` files in `folder` and compares it with
-/// the generated files under `source`. `loaded` names, by the client's table
-/// name, the tables the server's rules read; each of their 32-bit columns that
-/// holds a value with bit 31 set must be in `signs`. The folder is read once.
+/// the generated files under `source`. `loaded` names, by file name without
+/// `.tbl`, the tables the server's rules read; each of their 32-bit columns
+/// that holds a value with bit 31 set must be in `signs`, else the check is an
+/// `UnlistedColumns` error. The folder is read once.
 pub fn check(
   tables folder: String,
   against source: String,
@@ -314,31 +313,30 @@ pub fn check(
   use tables <- result.try(read_tables(folder))
   use generated <- result.try(generate_formatted(tables, signs))
   use unlisted <- result.try(unlisted_columns(tables:, signs:, loaded:))
+  use <- bool.guard(
+    when: unlisted != [],
+    return: Error(UnlistedColumns(columns: unlisted)),
+  )
   Ok(Checked(
     differences: difference.between(
       generated: generated.files,
       committed: read_committed(source),
     ),
     unmatched: generated.unmatched,
-    unlisted:,
   ))
 }
 
 /// The 32-bit columns of the loaded tables that hold a value with bit 31 set
-/// and are not in `signs`, in the order of `loaded`.
+/// and are not in `signs`, in the order of `loaded`, the files' names.
 fn unlisted_columns(
   tables tables: List(#(String, BitArray)),
   signs signs: List(ColumnSign),
   loaded loaded: List(String),
 ) -> Result(List(column_sign.Unlisted), GenerateError) {
-  list.try_map(loaded, fn(table) {
-    use #(file, bytes) <- result.try(
-      list.find(tables, fn(found) {
-        tbl_file.describe(found.1)
-        |> result.map(fn(description) { description.table == table })
-        |> result.unwrap(or: False)
-      })
-      |> result.replace_error(LoadedTableMissing(table:)),
+  list.try_map(loaded, fn(file) {
+    use bytes <- result.try(
+      list.key_find(tables, file)
+      |> result.replace_error(LoadedTableMissing(file:)),
     )
     table_rows.read(bytes:, table: file)
     |> result.replace_error(UnreadableTable(file))
@@ -398,9 +396,10 @@ pub fn main() -> Nil {
   }
 }
 
-/// The client's names of the tables the server loads at its start.
+/// The names of the files, without `.tbl`, of the tables the server loads at
+/// its start.
 fn loaded_tables() -> List(String) {
-  list.map(server_table.entries(), fn(entry) { store.schema(entry).table })
+  list.map(server_table.entries(), store.file)
 }
 
 fn finish(
@@ -434,15 +433,6 @@ fn report_write(unmatched: List(IdColumn)) -> Nil {
 
 fn report_check(checked: Checked) -> Nil {
   report_unmatched(checked.unmatched)
-  case checked.unlisted {
-    [] -> Nil
-    unlisted -> {
-      list.each(unlisted, fn(column) {
-        io.println(column_sign.describe(column))
-      })
-      halt_with(1)
-    }
-  }
   case checked.differences {
     [] -> io.println("generated tables match the client's headers")
     differences -> {
@@ -469,10 +459,12 @@ fn describe(error: GenerateError) -> String {
       file <> ".tbl is the module " <> module <> ", which holds the typed ids"
     Unwritable(path:) -> path <> " could not be written"
     FormatFailed(output:) -> "gleam format failed: " <> output
-    LoadedTableMissing(table:) ->
-      "the server loads the table "
-      <> table
-      <> ", and no file in the tables folder holds it"
+    LoadedTableMissing(file:) ->
+      "the server loads the table file "
+      <> file
+      <> ".tbl, and the tables folder has no such file"
+    UnlistedColumns(columns:) ->
+      list.map(columns, column_sign.describe) |> string.join("\n")
   }
 }
 

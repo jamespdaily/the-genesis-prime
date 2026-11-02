@@ -627,15 +627,10 @@ pub fn a_column_listed_unsigned_is_read_as_an_unsigned_number_and_any_other_as_a
     as "a column not listed keeps the signed reading"
   assert segment_of(module, "c0") == "c0:size(32)-little-signed,"
     as "the id column is not listed"
-  let bytes = <<0x00, 0x5E, 0xD0, 0xB2>>
-  let assert <<unsigned:size(32)-little>> = bytes
-    as "the segment of an unsigned column reads the four bytes"
-  assert unsigned == 3_000_000_000
-    as "the four bytes 00 5E D0 B2 are 0xB2D05E00, 3,000,000,000, read unsigned"
-  let assert <<signed:size(32)-little-signed>> = bytes
-    as "the segment of any other column reads the four bytes"
-  assert signed == -1_294_967_296
-    as "0xB2D05E00 has its top bit set, so read signed it is 3,000,000,000 - 2^32"
+  // The segment text is the evidence: Gleam reads `size(32)-little` as an
+  // unsigned number and adds `-signed` for a signed one. The test
+  // `a_32_bit_integer_column_the_client_reads_unsigned_is_read_as_an_unsigned_number_test`
+  // in table_row_test reads a real row through generated code.
 }
 
 pub fn a_column_is_unsigned_only_when_its_table_and_column_are_listed_unsigned_test() -> Nil {
@@ -681,28 +676,25 @@ fn gauge_file() -> #(String, BitArray) {
   ])
 }
 
-/// What the check finds of the planted gauge table when it is the only file
-/// and `loaded` names the loaded tables.
-fn unlisted_in_gauge(
+/// What the check gives for the planted gauge table when it is the only file
+/// and `loaded` names the loaded tables' files.
+fn check_gauge(
   signs signs: List(column_sign.ColumnSign),
   loaded loaded: List(String),
-) -> Result(List(column_sign.Unlisted), table_generator.GenerateError) {
+) -> Result(table_generator.Checked, table_generator.GenerateError) {
   use folder <- planted_table.in_folder([gauge_file()])
   use source <- planted_table.in_folder([])
   table_generator.check(folder, against: source, signs:, loaded:)
-  |> result.map(fn(checked) { checked.unlisted })
 }
 
-pub fn a_loaded_tables_32_bit_column_with_a_top_bit_value_and_no_list_entry_is_refused_by_name_test() -> Nil {
+pub fn a_loaded_tables_32_bit_column_with_a_top_bit_value_and_no_list_entry_fails_the_check_by_name_test() -> Nil {
   use <- owned_test.run(60_000)
-  let assert Ok(unlisted) =
-    unlisted_in_gauge(signs: [], loaded: ["PlantedGauge"])
-    as "the check runs"
-  assert unlisted
-    == [column_sign.Unlisted(table: "PlantedGauge", column: "plantedMask")]
-    as "plantedMask holds 0xB2D05E00, which has bit 31 set. plantedLargest holds 0x7FFFFFFF and plantedCount 5, which read the same signed or unsigned, so they are not refused; plantedWeight is a float and plantedBig a 64-bit integer, which are not 32-bit integer columns"
-  let assert [found] = unlisted
-  let words = column_sign.describe(found)
+  let unlisted =
+    column_sign.Unlisted(table: "PlantedGauge", column: "plantedMask")
+  let checked = check_gauge(signs: [], loaded: ["PlantedGauge"])
+  assert checked == Error(table_generator.UnlistedColumns(columns: [unlisted]))
+    as "the check returns an error, so the ./check that runs it fails. plantedMask holds 0xB2D05E00, which has bit 31 set. plantedLargest holds 0x7FFFFFFF and plantedCount 5, which read the same signed or unsigned, so they are not refused; plantedWeight is a float and plantedBig a 64-bit integer, which are not 32-bit integer columns"
+  let words = column_sign.describe(unlisted)
   assert string.contains(words, "PlantedGauge") as "the refusal names the table"
   assert string.contains(words, "plantedMask") as "the refusal names the column"
 }
@@ -720,7 +712,7 @@ pub fn a_loaded_tables_column_with_a_top_bit_value_passes_when_it_is_listed_test
           evidence: "planted",
         ),
       ]
-      assert unlisted_in_gauge(signs:, loaded: ["PlantedGauge"]) == Ok([])
+      assert result.is_ok(check_gauge(signs:, loaded: ["PlantedGauge"]))
         as "a listed column passes whichever sign it is listed with, because the list names the reader that decides"
     },
   )
@@ -728,15 +720,33 @@ pub fn a_loaded_tables_column_with_a_top_bit_value_passes_when_it_is_listed_test
 
 pub fn a_table_the_server_does_not_load_is_not_checked_for_top_bit_values_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert unlisted_in_gauge(signs: [], loaded: []) == Ok([])
+  assert result.is_ok(check_gauge(signs: [], loaded: []))
     as "only the tables the server loads have rules that read their columns"
 }
 
 pub fn a_loaded_table_the_client_has_no_file_for_is_refused_by_name_test() -> Nil {
   use <- owned_test.run(60_000)
-  assert unlisted_in_gauge(signs: [], loaded: ["PlantedMissing"])
-    == Error(table_generator.LoadedTableMissing(table: "PlantedMissing"))
+  assert check_gauge(signs: [], loaded: ["PlantedMissing"])
+    == Error(table_generator.LoadedTableMissing(file: "PlantedMissing"))
     as "a loaded table's name that no file holds would let the check pass over a table it cannot read"
+}
+
+pub fn the_column_a_rule_reads_with_a_signed_client_reader_is_listed_signed_test() -> Nil {
+  use <- owned_test.run(5000)
+  let signs = column_sign.all()
+  let assert Ok(listed) =
+    list.find(signs, fn(sign) {
+      sign.table == "XpPerLevel" && sign.column == "minXpForLevel"
+    })
+    as "XpPerLevel.minXpForLevel, which the level rule reads, is listed"
+  assert listed.sign == column_sign.Signed
+    as "GetLevelForExperience 0x140029820 compares it with cmp ebp, dword ptr [rbx+0x4] then jl, jg: signed"
+  assert !column_sign.is_unsigned(
+    signs:,
+    table: "XpPerLevel",
+    column: "minXpForLevel",
+  )
+    as "a signed column is read as a signed number"
 }
 
 pub fn the_sign_list_names_each_column_once_with_its_evidence_test() -> Nil {
