@@ -671,6 +671,40 @@ pub fn a_derived_value_is_built_once_from_the_loaded_tables_and_every_read_gives
     as "unload erases the derived value's term with the table's"
 }
 
+/// A derived key that is spelt like the Creature2 table's key.
+const creature2_named_derived_key: store.DerivedKey(List(String)) =
+  store.DerivedKey("Creature2")
+
+pub fn a_derived_value_named_like_a_table_neither_reads_nor_overwrites_the_tables_rows_test() -> Nil {
+  use <- owned_test.run(5000)
+  use folder <- planted_table.in_folder([
+    #("Creature2", creature2_file(14_610, [])),
+  ])
+  let key = reference.new()
+  let assert Ok(tables) =
+    store.load(
+      under: key,
+      from: folder,
+      entries: [creature2.entry()],
+      requirements: [],
+      derivations: [
+        store.derivation(key: creature2_named_derived_key, build: fn(_tables) {
+          ["a derived value"]
+        }),
+      ],
+    )
+    as "a planted Creature2 table loads with a derivation spelt like it"
+  assert list.map(creature2.all(tables), creature2.id) == [id.Creature2Id(1)]
+    as "the table's rows are still the table's, not the derived value"
+  assert store.derived(tables:, key: creature2_named_derived_key)
+    == ["a derived value"]
+    as "the derived value is its own term, not the table's rows"
+  assert planted_table.persistent_terms_under(key) == 2
+    as "one term for the table and one for the derived value, though both are named Creature2"
+  store.unload(tables)
+  assert planted_table.persistent_terms_under(key) == 0
+}
+
 pub fn a_derived_value_is_not_built_when_a_required_row_is_missing_test() -> Nil {
   use <- owned_test.run(5000)
   use folder <- planted_table.in_folder([
