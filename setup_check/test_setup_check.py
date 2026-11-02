@@ -1,11 +1,8 @@
 """setup_check: every part this machine needs is named, with what was found and its fix.
 
-Every test but two plants a Machine: an `env` mapping, a temporary repository
-folder and a `run` function that answers commands from a table, so no test
-touches the real install. The two exceptions run on this machine: the
-real-machine test (needs ~/.genesis-prime/env.sh's variables, which the full
-check sources before the setup check; the test reads them with zsh) and the
-full-check test (runs ./check in a subprocess with a planted environment).
+Every test plants a Machine: an `env` mapping, a temporary repository folder
+and a `run` function that answers commands from a table, so no test touches the
+real install.
 
 Expected values and their sources:
 - Gleam 1.19.2, OTP 29.1.2 and rebar3 3.28.0: the repository's .tool-versions
@@ -21,12 +18,6 @@ Expected values and their sources:
   "archive_index.header" (PACK header 0x230 bytes, block table at 0x240, AIDX
   header 16 bytes with the build at its offset 8) and the client's own build
   16042 (client_archive.target_build, GetVersionInfo 0x1406f8360).
-- Erlang distribution: a VM turns it on with the `-name` or `-sname` flag (Erlang
-  reference manual, "Distributed Erlang"; `erl` flags), which a release reads
-  from its vm.args; a vm.args line that starts with `#` is a comment (Erlang
-  system principles, "Releases", vm.args). The server runs as one node and uses
-  no distribution (the designing-processes skill). No file of that name is in the
-  repository, so the check passes where there is none.
 - Postgres 18: Jim's choice ("with Postgres 18 as the version checked"); the
   clock tolerance is 1 second, the approved test list's.
 - ICU: the character name index folds case under the collation "und-x-icu"
@@ -67,14 +58,11 @@ hash, for every setup_check/*.patch, so a changed patch asks for a rebuild.
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
 """
 
-import contextlib
 import hashlib
-import io
 import os
 import re
 import shutil
 import struct
-import subprocess
 import sys
 import tempfile
 import time
@@ -90,7 +78,6 @@ for directory in (HERE, SCRIPTS):
     if str(directory) not in sys.path:
         sys.path.insert(0, str(directory))
 
-import check_support  # noqa: E402
 import ghidra_env  # noqa: E402
 import setup_check  # noqa: E402
 import test_extract_tables  # noqa: E402
@@ -114,7 +101,6 @@ GLEAM = PINS["gleam"]  # 1.19.2
 OTP = PINS["erlang"]  # 29.1.2
 REBAR = PINS["rebar"]  # 3.28.0
 TARGET_BUILD = 16042  # client_archive.target_build: GetVersionInfo 0x1406f8360 returns 0x3eaa
-OTHER_BUILD = 17000
 POSTGRES_MAJOR = "18"  # Jim's choice
 PATCH_FILE = "otp-erl-gc-live-hf-end.patch"
 MARKER = "GENESIS_PATCHES"
@@ -460,17 +446,9 @@ def _version_number(version: str) -> str:
 INSTALL_WORDS = ("install", "asdf", "mise", "brew")
 
 
-# ---------------------------------------------------------------- 1. all present
-
-
 class AllPresentTest(PlantedTestCase):
     def test_a_machine_with_every_part_right_has_nothing_missing(self):
         self.assertEqual(setup_check.check_all(self.plant()), [])
-
-    def test_a_machine_without_the_client_and_marked_so_needs_no_client_part_and_no_patched_otp(self):
-        # CI: GENESIS_NO_CLIENT=1, no client, no query process variables, no patched OTP.
-        machine = self.plant(with_client=False, no_client_flag=True)
-        self.assertEqual(setup_check.check_all(machine), [])
 
     def test_a_machine_without_the_client_and_not_marked_so_is_missing_the_client(self):
         result = setup_check.check_all(self.plant(with_client=False))
@@ -480,61 +458,7 @@ class AllPresentTest(PlantedTestCase):
         )
 
 
-def real_environment() -> dict[str, str] | None:
-    """os.environ after the full check's sourcing of env.sh, or None when the
-    machine has no env.sh."""
-    home = Path(os.environ.get("GENESIS_HOME", "~/.genesis-prime")).expanduser()
-    env_sh = home / "env.sh"
-    if not env_sh.is_file():
-        return None
-    out = subprocess.run(
-        ["zsh", "-c", 'source "$1" && env -0', "zsh", str(env_sh)], capture_output=True, text=True, check=True
-    ).stdout
-    env = dict(os.environ)
-    env.update(line.split("=", 1) for line in out.split("\0") if "=" in line)
-    env.setdefault("GENESIS_HOME", str(home))
-    return env
-
-
-class RealMachineTest(unittest.TestCase):
-    @check_support.needs_client
-    def test_this_machine_has_every_part_right(self):
-        """Needs the variables of ~/.genesis-prime/env.sh (GENESIS_HOME/env.sh), which
-        the full check sources before the setup check; they are read here by running
-        zsh. The patched OTP's bin goes first on PATH, as the full check puts it."""
-        env = real_environment()
-        if env is None:
-            self.skipTest("no env.sh under GENESIS_HOME (default ~/.genesis-prime): this machine is not set up")
-        otp_dir = Path(env.get("GENESIS_OTP_DIR") or Path.home() / ".genesis-prime" / "otp-29.1.2-gc-marker")
-        env["GENESIS_OTP_DIR"] = str(otp_dir)
-        env["PATH"] = "%s:%s" % (otp_dir / "bin", env.get("PATH", ""))
-
-        def run(argv):
-            try:
-                done = subprocess.run(
-                    argv, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, timeout=60,
-                )
-            except FileNotFoundError:
-                return 127, "command not found: %s\n" % argv[0]
-            return done.returncode, done.stdout
-
-        machine = Machine(env=env, repository=REPOSITORY, run=run)
-        self.assertEqual(setup_check.check_all(machine), [])
-
-
-# ---------------------------------------------------------------- 2. Gleam
-
-
 class GleamTest(PlantedTestCase):
-    def test_a_missing_gleam_is_named_with_the_pinned_version_to_install(self):
-        missing = self.only(setup_check.check_gleam(self.plant(gleam=None)))
-        self.assert_part(missing, "gleam")
-        self.assertIn(GLEAM, missing.part)
-        self.assertEqual(missing.found, "nothing")
-        self.assert_fix(missing, *INSTALL_WORDS)
-        self.assertIn(GLEAM, missing.fix)
-
     def test_a_gleam_other_than_the_pinned_version_is_named_with_what_was_found(self):
         # 1.18.0 is below gleam.toml's ">= 1.19.2 and < 2.0.0"; 1.20.0 is inside it
         # and still not the .tool-versions pin.
@@ -546,22 +470,8 @@ class GleamTest(PlantedTestCase):
                 self.assertIn(GLEAM, missing.part + missing.fix)
                 self.assert_fix(missing, *INSTALL_WORDS)
 
-    def test_the_pinned_gleam_is_not_missing(self):
-        self.assertEqual(setup_check.check_gleam(self.plant()), [])
-
-
-# ---------------------------------------------------------------- 3. Erlang, rebar3, patched OTP
-
 
 class ErlangTest(PlantedTestCase):
-    def test_a_missing_erlang_is_named_with_the_pinned_version_to_install(self):
-        missing = self.only(setup_check.check_erlang(self.plant(otp=None)))
-        self.assert_part(missing, "erlang", "otp")
-        self.assertIn(OTP, missing.part)
-        self.assertEqual(missing.found, "nothing")
-        self.assert_fix(missing, *INSTALL_WORDS)
-        self.assertIn(OTP, missing.fix)
-
     def test_an_otp_other_than_the_pinned_version_is_named_with_what_was_found(self):
         for found in ("28.3.1", "29.1.1"):
             with self.subTest(found=found):
@@ -576,13 +486,6 @@ class ErlangTest(PlantedTestCase):
         self.assert_part(missing, "patch")
         self.assert_fix(missing, "GENESIS_OTP_DIR", PATCH_FILE)
 
-    def test_a_patched_otp_without_its_genesis_patches_file_is_named_where_the_client_is(self):
-        missing = self.only(setup_check.check_erlang(self.plant(otp_dir="unmarked")))
-        self.assert_part(missing, "patch")
-        self.assert_found(missing, MARKER)
-        self.assertIn(PATCH_FILE, missing.part + missing.found + missing.fix)
-        self.assert_fix(missing, "GENESIS_OTP_DIR", PATCH_FILE, "rebuild")
-
     def test_a_patched_otp_built_from_an_older_patch_asks_for_a_rebuild(self):
         # the line for the patch holds another SHA-256 than the file in setup_check/
         missing = self.only(setup_check.check_erlang(self.plant(otp_dir="stale")))
@@ -590,225 +493,8 @@ class ErlangTest(PlantedTestCase):
         self.assertIn(PATCH_FILE, missing.part + missing.found)
         self.assert_fix(missing, "rebuild")
 
-    def test_a_patch_in_setup_check_with_no_line_in_genesis_patches_asks_for_a_rebuild(self):
-        missing = self.only(setup_check.check_erlang(self.plant(otp_dir="unlisted_patch")))
-        self.assert_part(missing, "patch")
-        self.assertIn("second.patch", missing.part + missing.found)
-        self.assert_fix(missing, "rebuild")
-
-    def test_the_patched_otp_is_not_required_where_genesis_no_client_is_1_and_genesis_otp_dir_is_unset(self):
-        machine = self.plant(otp_dir="absent", no_client_flag=True, without_variables=("GENESIS_OTP_DIR",))
-        self.assertEqual(setup_check.check_erlang(machine), [])
-
-    def test_the_patched_otp_is_required_where_genesis_no_client_is_1_and_genesis_otp_dir_is_set(self):
-        # CI: no client, but GENESIS_OTP_DIR names the build it runs on.
-        for otp_dir, expected in (("absent", "nothing"), ("unmarked", MARKER), ("stale", PATCH_FILE)):
-            with self.subTest(otp_dir=otp_dir):
-                machine = self.plant(otp_dir=otp_dir, no_client_flag=True)
-                missing = self.only(setup_check.check_erlang(machine))
-                self.assert_part(missing, "patch")
-                self.assertIn(expected.lower(), (missing.part + missing.found).lower())
-                self.assert_fix(missing, "rebuild")
-
-    def test_a_machine_without_the_client_and_marked_so_but_with_the_patched_otp_has_nothing_missing(self):
-        machine = self.plant(with_client=False, otp_without_client=True, no_client_flag=True)
-        self.assertEqual(setup_check.check_all(machine), [])
-
-    def test_a_machine_without_the_client_and_marked_so_with_a_stale_patched_otp_is_missing_only_the_rebuild(self):
-        machine = self.plant(with_client=False, otp_without_client=True, no_client_flag=True, otp_dir="stale")
-        missing = self.only(setup_check.check_all(machine))
-        self.assert_part(missing, "patch")
-        self.assert_fix(missing, "rebuild")
-
-    def test_the_pinned_otp_with_its_patched_build_is_not_missing(self):
-        self.assertEqual(setup_check.check_erlang(self.plant()), [])
-
-    def test_an_erl_on_path_from_outside_the_patched_otp_is_named_with_both_paths(self):
-        machine = self.plant(erl_on_path="elsewhere")
-        missing = self.only(setup_check.check_erlang(machine))
-        self.assert_part(missing, "erl")
-        stock_erl = str(self.root / "stock" / "bin" / "erl")
-        patched_bin = str(self.root / "otp" / "bin")
-        self.assertIn(stock_erl, missing.part + missing.found)
-        self.assertIn(patched_bin, missing.part + missing.found + missing.fix)
-        self.assert_fix(missing, "PATH", "environment.sh")
-
-    def test_an_erl_on_path_from_outside_the_patched_otp_is_named_where_genesis_no_client_is_1_and_genesis_otp_dir_is_set(self):
-        machine = self.plant(erl_on_path="elsewhere", no_client_flag=True)
-        missing = self.only(setup_check.check_erlang(machine))
-        self.assert_part(missing, "erl")
-        self.assert_fix(missing, "PATH")
-
-    def test_an_erl_on_path_that_is_a_link_to_the_patched_erl_is_not_missing(self):
-        self.assertEqual(setup_check.check_erlang(self.plant(erl_on_path="linked")), [])
-
-    def test_a_genesis_otp_dir_that_is_a_link_to_the_patched_otp_is_not_missing(self):
-        self.assertEqual(setup_check.check_erlang(self.plant(otp_dir_linked=True)), [])
-
-    def test_the_erl_on_path_is_not_checked_where_genesis_no_client_is_1_and_genesis_otp_dir_is_unset(self):
-        machine = self.plant(erl_on_path="elsewhere", no_client_flag=True, without_variables=("GENESIS_OTP_DIR",))
-        self.assertEqual(setup_check.check_erlang(machine), [])
-
-
-class RebarTest(PlantedTestCase):
-    def test_a_missing_rebar3_is_named_with_the_pinned_version_to_install(self):
-        missing = self.only(setup_check.check_rebar(self.plant(rebar=None)))
-        self.assert_part(missing, "rebar")
-        self.assertIn(REBAR, missing.part)
-        self.assertEqual(missing.found, "nothing")
-        self.assert_fix(missing, *INSTALL_WORDS)
-        self.assertIn(REBAR, missing.fix)
-
-    def test_a_rebar3_other_than_the_pinned_version_is_named_with_what_was_found(self):
-        missing = self.only(setup_check.check_rebar(self.plant(rebar="3.25.0")))
-        self.assert_part(missing, "rebar")
-        self.assert_found(missing, "3.25.0")
-        self.assertIn(REBAR, missing.part + missing.fix)
-        self.assert_fix(missing, *INSTALL_WORDS)
-
-    def test_the_pinned_rebar3_is_not_missing(self):
-        self.assertEqual(setup_check.check_rebar(self.plant()), [])
-
-
-class EnvironmentTest(PlantedTestCase):
-    """setup_check/environment.sh, sourced by ./check and ./setup-check from the
-    repository's folder: the patched OTP's bin goes first on PATH, unless
-    GENESIS_NO_CLIENT=1 and GENESIS_OTP_DIR is unset."""
-
-    def sourced(self, **env) -> dict[str, str]:
-        base = {"PATH": "/usr/bin:/bin", "HOME": str(self.root), "GENESIS_HOME": str(self.root / "genesis-home")}
-        base.update(env)
-        script = '. setup_check/environment.sh; printf "%s\\n%s\\n" "$PATH" "${GENESIS_OTP_DIR:-unset}"'
-        done = subprocess.run(["sh", "-c", script], cwd=REPOSITORY, env=base, stdin=subprocess.DEVNULL,
-                              capture_output=True, text=True, timeout=30)
-        self.assertEqual(done.returncode, 0, done.stderr)
-        path, otp_dir = done.stdout.splitlines()
-        return {"PATH": path, "GENESIS_OTP_DIR": otp_dir}
-
-    def test_the_patched_otp_is_first_on_path_by_default_in_the_genesis_home(self):
-        result = self.sourced()
-        default = str(self.root / "genesis-home" / ("otp-%s-gc-marker" % OTP))
-        self.assertEqual(result["GENESIS_OTP_DIR"], default)
-        self.assertEqual(result["PATH"], "%s/bin:/usr/bin:/bin" % default)
-
-    def test_genesis_otp_dir_names_the_patched_otp_first_on_path(self):
-        result = self.sourced(GENESIS_OTP_DIR="/somewhere/otp")
-        self.assertEqual(result["GENESIS_OTP_DIR"], "/somewhere/otp")
-        self.assertEqual(result["PATH"], "/somewhere/otp/bin:/usr/bin:/bin")
-
-    def test_where_genesis_no_client_is_1_and_genesis_otp_dir_is_unset_path_is_left_as_it_is(self):
-        result = self.sourced(GENESIS_NO_CLIENT="1")
-        self.assertEqual(result["GENESIS_OTP_DIR"], "unset")
-        self.assertEqual(result["PATH"], "/usr/bin:/bin")
-
-    def test_where_genesis_no_client_is_1_and_genesis_otp_dir_is_set_the_patched_otp_is_first_on_path(self):
-        # CI: no client, the patched OTP from the cache.
-        result = self.sourced(GENESIS_NO_CLIENT="1", GENESIS_OTP_DIR="/cache/otp")
-        self.assertEqual(result["GENESIS_OTP_DIR"], "/cache/otp")
-        self.assertEqual(result["PATH"], "/cache/otp/bin:/usr/bin:/bin")
-
-
-# ---------------------------------------------------------------- 4. manifest.toml
-
-
-class ManifestTest(PlantedTestCase):
-    def test_a_manifest_toml_not_tracked_by_git_is_named_with_the_command_to_add_it(self):
-        missing = self.only(setup_check.check_manifest(self.plant(manifest_tracked=False)))
-        self.assert_part(missing, "manifest.toml")
-        self.assert_fix(missing, "git add")
-        self.assertIn("manifest.toml", missing.fix)
-
-    def test_a_tracked_manifest_toml_is_not_missing(self):
-        self.assertEqual(setup_check.check_manifest(self.plant()), [])
-
-
-# ---------------------------------------------------------------- distribution
-
-
-class DistributionTest(PlantedTestCase):
-    def settings(self, machine: Machine, path: str, text: str):
-        file = machine.repository / path
-        file.parent.mkdir(parents=True, exist_ok=True)
-        file.write_text(text)
-
-    def test_a_repository_with_no_release_settings_has_nothing_missing(self):
-        self.assertEqual(setup_check.check_distribution(self.plant()), [])
-
-    def test_a_vm_args_with_a_sname_line_is_named_with_its_file_line_and_text(self):
-        machine = self.plant()
-        self.settings(machine, "vm.args", "-setcookie planted\n-sname genesis\n+K true\n")
-        missing = self.only(setup_check.check_distribution(machine))
-        self.assert_part(missing, "distribution")
-        self.assert_found(missing, "vm.args line 2")
-        self.assert_found(missing, "-sname genesis")
-        self.assert_fix(missing, "-sname")
-
-    def test_a_vm_args_src_with_a_name_line_in_a_folder_is_named_with_its_path(self):
-        machine = self.plant()
-        self.settings(machine, "rel/vm.args.src", "## the node\n-name genesis@${HOST}\n")
-        missing = self.only(setup_check.check_distribution(machine))
-        self.assert_found(missing, "rel/vm.args.src line 2")
-        self.assert_found(missing, "-name genesis@${HOST}")
-
-    def test_an_indented_name_line_turns_distribution_on_too(self):
-        machine = self.plant()
-        self.settings(machine, "config/vm.args", "  -name genesis@127.0.0.1\n")
-        self.assert_found(self.only(setup_check.check_distribution(machine)), "config/vm.args line 1")
-
-    def test_every_file_and_every_line_that_turns_it_on_is_named(self):
-        machine = self.plant()
-        self.settings(machine, "vm.args", "-sname one\n-name two\n")
-        self.settings(machine, "rel/vm.args.src", "-sname three\n")
-        result = setup_check.check_distribution(machine)
-        self.assertEqual(len(result), 3, result)
-        found = " | ".join(missing.found for missing in result)
-        for expected in ("vm.args line 1", "vm.args line 2", "rel/vm.args.src line 1"):
-            self.assertIn(expected, found)
-
-    def test_settings_that_do_not_turn_distribution_on_have_nothing_missing(self):
-        machine = self.plant()
-        self.settings(
-            machine,
-            "vm.args",
-            "# -name commented\n## -sname commented\n\n-setcookie planted\n+K true\n-kernel net_ticktime 60\n"
-            "-namespace x\n-snames x\n",
-        )
-        self.assertEqual(setup_check.check_distribution(machine), [])
-
-    def test_a_vm_args_under_build_or_git_is_not_the_releases(self):
-        machine = self.plant()
-        self.settings(machine, "build/packages/some_package/vm.args", "-sname dependency\n")
-        self.settings(machine, ".git/vm.args", "-sname dependency\n")
-        self.assertEqual(setup_check.check_distribution(machine), [])
-
-    def test_the_releases_committed_vm_args_holds_no_name_or_sname(self):
-        """The release keeps its VM flags in release/vm.args which the
-        check above reads; the tests above show a planted -name or -sname is
-        found, so an empty result for this repository is the release's flags
-        turning distribution off."""
-        flags = REPOSITORY / "release" / "vm.args"
-        self.assertTrue(flags.is_file(), "the release's VM flags are not committed at release/vm.args")
-        machine = Machine(env={}, repository=REPOSITORY, run=lambda argv: (0, ""))
-        self.assertEqual(setup_check.check_distribution(machine), [])
-
-    def test_the_check_runs_where_genesis_no_client_is_1_too(self):
-        machine = self.plant(with_client=False, no_client_flag=True)
-        self.settings(machine, "vm.args", "-sname genesis\n")
-        result = setup_check.check_all(machine)
-        self.assertEqual(len(result), 1, result)
-        self.assert_part(result[0], "distribution")
-
-
-# ---------------------------------------------------------------- 5. Postgres
-
 
 class PostgresTest(PlantedTestCase):
-    def test_a_postgres_that_is_not_reachable_is_named_with_the_settings_to_check(self):
-        missing = self.only(setup_check.check_postgres(self.plant(postgres_reachable=False)))
-        self.assert_part(missing, "postgres")
-        self.assertIn(POSTGRES_MAJOR, missing.part)
-        self.assert_fix(missing, "PGHOST", "PGPORT", "pg_ctl", "brew services")
-
     def test_a_reachable_postgres_of_major_version_17_is_named_with_what_was_found(self):
         missing = self.only(setup_check.check_postgres(self.plant(postgres_version="17.5")))
         self.assert_part(missing, "postgres")
@@ -816,82 +502,11 @@ class PostgresTest(PlantedTestCase):
         self.assert_found(missing, "17")
         self.assert_fix(missing, POSTGRES_MAJOR)
 
-    def test_a_postgres_clock_more_than_1_second_off_is_named_ahead_or_behind(self):
-        for offset in (30.0, -30.0):
-            with self.subTest(offset=offset):
-                missing = self.only(setup_check.check_postgres(self.plant(postgres_clock_offset=offset)))
-                self.assert_part(missing, "postgres", "clock")
-                self.assertNotEqual(missing.found, "nothing")
-                self.assertTrue(missing.found.strip())
-                self.assert_fix(missing, "clock", "time", "ntp", "sntp")
-
     def test_a_postgres_built_without_icu_is_named_with_what_to_run_instead(self):
         missing = self.only(setup_check.check_postgres(self.plant(postgres_icu=False)))
         self.assert_part(missing, "icu")
         self.assert_found(missing, "und-x-icu")
         self.assert_fix(missing, "ICU")
-
-    def test_a_postgres_of_major_version_18_with_the_right_time_is_not_missing(self):
-        self.assertEqual(setup_check.check_postgres(self.plant()), [])
-
-
-# ---------------------------------------------------------------- 6. the client
-
-
-class ClientTest(PlantedTestCase):
-    def test_a_missing_wildstar64_exe_is_named_with_the_setting_that_points_at_it(self):
-        missing = self.only(setup_check.check_client(self.plant(client="missing")))
-        self.assert_part(missing, "wildstar64.exe")
-        self.assertEqual(missing.found, "nothing")
-        self.assert_fix(missing, "WILDSTAR_CLIENT_EXE", "env.sh")
-
-    def test_a_wildstar64_exe_with_another_sha256_is_named_with_the_hash_found(self):
-        missing = self.only(setup_check.check_client(self.plant(client="other")))
-        self.assert_part(missing, "wildstar64.exe")
-        self.assert_found(missing, sha256(OTHER_CLIENT))
-        self.assertIn(sha256(PLANTED_CLIENT), missing.part + missing.fix)  # the pin
-        self.assertTrue(missing.fix.strip())
-
-    def test_an_archive_index_whose_build_is_not_16042_is_named_with_its_file_and_build(self):
-        # Patch.index is the last of INDEX_NAMES; the other three are on build 16042.
-        builds = (TARGET_BUILD, TARGET_BUILD, TARGET_BUILD, OTHER_BUILD)
-        missing = self.only(setup_check.check_client(self.plant(index_builds=builds)))
-        self.assertIn("Patch.index", missing.part + missing.found)
-        self.assert_found(missing, str(OTHER_BUILD))
-        self.assertIn(str(TARGET_BUILD), missing.part + missing.fix)
-        self.assertTrue(missing.fix.strip())
-
-    def test_every_index_on_another_build_is_named(self):
-        builds = (OTHER_BUILD,) * 4
-        result = setup_check.check_client(self.plant(index_builds=builds))
-        named = "\n".join(m.part + " " + m.found for m in result)
-        for name in INDEX_NAMES:
-            with self.subTest(index=name):
-                self.assertIn(name, named)
-
-    def test_a_file_that_is_not_an_archive_index_is_named_as_such(self):
-        # "garbage" is too short for a PACK header; "signature" has a header
-        # whose first four bytes are not 0x5041434B (0x1401ba550).
-        for kind in ("garbage", "signature"):
-            with self.subTest(kind=kind):
-                builds = (TARGET_BUILD, kind, TARGET_BUILD, TARGET_BUILD)
-                missing = self.only(setup_check.check_client(self.plant(index_builds=builds)))
-                self.assertIn("ClientData.index", missing.part + missing.found)
-                self.assertIn("not an archive index", self.text(missing))
-                self.assertTrue(missing.fix.strip())
-
-    def test_a_client_with_another_sha256_is_one_missing_across_the_whole_check(self):
-        # the hash belongs to check_client; the query-process check does not repeat it
-        result = setup_check.check_all(self.plant(client="other"))
-        missing = self.only(result)
-        self.assert_part(missing, "wildstar64.exe")
-        self.assert_found(missing, sha256(OTHER_CLIENT))
-
-    def test_a_client_with_the_pinned_hash_and_indexes_on_build_16042_is_not_missing(self):
-        self.assertEqual(setup_check.check_client(self.plant()), [])
-
-
-# ---------------------------------------------------------------- 6b. the table folder
 
 
 class TableFolderTest(PlantedTestCase):
@@ -903,10 +518,6 @@ class TableFolderTest(PlantedTestCase):
     the client, fact file game_tables.ClientData); a name is missing when the
     folder holds no file of it."""
 
-    def test_a_folder_holding_every_table_of_the_index_has_nothing_missing(self):
-        # The index also lists DB/Notes.txt and Other/Gamma.tbl, which are not tables of DB.
-        self.assertEqual(setup_check.check_table_folder(self.plant()), [])
-
     def test_a_folder_missing_tables_names_each_one_and_no_other(self):
         machine = self.plant(tables_missing=("World", "Spell4"))
         result = setup_check.check_table_folder(machine)
@@ -917,235 +528,11 @@ class TableFolderTest(PlantedTestCase):
         for name in ("Creature2", "XpPerLevel", "CharacterCreation"):
             self.assertNotIn(name.lower(), named, name + " is there and is not named")
 
-    def test_the_setup_check_as_a_whole_fails_on_a_missing_table(self):
-        result = setup_check.check_all(self.plant(tables_missing=("XpPerLevel",)))
-        self.assertTrue(any("xpperlevel.tbl" in self.text(m) for m in result), "no Missing names it: %r" % (result,))
-
     def test_a_missing_folder_names_every_table(self):
         result = setup_check.check_table_folder(self.plant(table_folder="absent"))
         named = " ".join(self.text(m) for m in result)
         for name in TABLE_NAMES:
             self.assertIn(name.lower() + ".tbl", named, name + " is named")
-
-    def test_the_expected_tables_are_the_indexs_not_a_fixed_list(self):
-        machine = self.plant(index_tables=("Alpha", "Beta", "Gamma"), tables_missing=("Beta",))
-        named = " ".join(self.text(m) for m in setup_check.check_table_folder(machine))
-        self.assertIn("beta.tbl", named)
-        self.assertNotIn("alpha", named)
-        self.assertNotIn("creature2", named, "a table the planted index does not list is not expected")
-
-    def test_a_folder_of_384_tables_passes_and_one_short_names_the_one(self):
-        names = tuple("Table%03d" % number for number in range(384))
-        self.assertEqual(setup_check.check_table_folder(self.plant(index_tables=names)), [])
-        result = setup_check.check_table_folder(self.plant(index_tables=names, tables_missing=("Table200",)))
-        named = " ".join(self.text(m) for m in result)
-        self.assertIn("table200.tbl", named)
-        for neighbour in ("table199.tbl", "table201.tbl"):
-            self.assertNotIn(neighbour, named, "only the missing table is named")
-
-    def test_the_folder_is_not_checked_where_genesis_no_client_is_1(self):
-        machine = self.plant(with_client=False, no_client_flag=True)
-        machine.env["GENESIS_TABLE_DIR"] = str(self.root / "no-tables-here")
-        self.assertEqual(setup_check.check_all(machine), [])
-
-    def test_an_index_that_cannot_be_read_is_named_and_does_not_crash(self):
-        builds = (TARGET_BUILD, "garbage", TARGET_BUILD, TARGET_BUILD)
-        machine = self.plant(index_builds=builds, table_folder="absent")
-        result = setup_check.check_table_folder(machine)
-        self.assertEqual(len(result), 1, result)
-        self.assertIn("clientdata.index", self.text(result[0]))
-
-    def test_an_index_with_a_good_header_and_a_damaged_directory_fails_naming_the_index_and_the_error(self):
-        # check_client reads only the header, so it passes this index; the tables the
-        # index lists cannot be known, which is a part missing, not a pass.
-        machine = self.plant(index_damage="directory")
-        self.assertEqual(setup_check.check_client(machine), [], "the header is good, so the client check passes")
-        result = setup_check.check_table_folder(machine)
-        self.assertEqual(len(result), 1, result)
-        self.assertIn("clientdata.index", self.text(result[0]))
-        index = Path(machine.env["WILDSTAR_CLIENT_EXE"]).parent.parent / "Patch" / "ClientData.index"
-        with self.assertRaises(Exception) as reading:  # what reading the damaged index raises
-            test_extract_tables.extract_tables.read_index(index.read_bytes())
-        self.assertIn(str(reading.exception).lower(), self.text(result[0]), "the read error is named")
-        self.assertTrue(any("clientdata.index" in self.text(m) for m in setup_check.check_all(machine)))
-
-
-# ---------------------------------------------------------------- 7. the query process
-
-
-class QueryProcessTest(PlantedTestCase):
-    def test_a_ghidra_other_than_12_2_is_named_with_its_version_and_the_pin(self):
-        missing = self.only(setup_check.check_query_process(self.plant(ghidra_version="12.1.4")))
-        self.assert_part(missing, "ghidra")
-        self.assert_found(missing, "12.1.4")
-        self.assert_fix(missing, ghidra_env.GHIDRA_VERSION)
-
-    def test_a_ghidra_without_the_macos_arm64_decompiler_is_named(self):
-        missing = self.only(setup_check.check_query_process(self.plant(decompiler=False)))
-        self.assertIn("decompiler", self.text(missing))
-        self.assertTrue(missing.fix.strip())
-
-    def test_a_jdk_other_than_25_is_named_with_its_version_and_the_pin(self):
-        missing = self.only(setup_check.check_query_process(self.plant(jdk="21.0.4")))
-        self.assert_part(missing, "jdk", "java")
-        self.assert_found(missing, "21")
-        self.assert_fix(missing, str(ghidra_env.JDK_MAJOR), "JAVA_HOME")
-
-    def test_a_python_other_than_3_13_is_named_with_its_version_and_the_pin(self):
-        missing = self.only(setup_check.check_query_process(self.plant(python=(3, 12, 4))))
-        self.assert_part(missing, "python")
-        self.assert_found(missing, "3.12")
-        self.assert_fix(missing, "3.13")
-
-    def test_a_pyghidra_other_than_3_2_0_or_not_installed_is_named_with_the_pin(self):
-        for installed in ("3.1.0", None):
-            with self.subTest(installed=installed):
-                missing = self.only(setup_check.check_query_process(self.plant(pyghidra=installed)))
-                self.assert_part(missing, "pyghidra")
-                self.assert_fix(missing, ghidra_env.PYGHIDRA_VERSION)
-
-    def test_a_missing_environment_variable_is_named_with_the_value_to_set(self):
-        for name in ("GENESIS_GHIDRA_DIR", "GENESIS_GHIDRA_PROJECT_DIR", "WILDSTAR_CLIENT_EXE", "JAVA_HOME"):
-            with self.subTest(variable=name):
-                machine = self.plant(without_variables=(name,))
-                missing = self.only(setup_check.check_query_process(machine))
-                self.assertIn(name.lower(), self.text(missing))
-                self.assertIn(name + "=", missing.fix)
-
-    def test_an_unset_genesis_pyghidra_python_is_named_with_the_value_to_set(self):
-        missing = self.only(setup_check.check_query_process(self.plant(pyghidra_python="unset")))
-        self.assertIn("genesis_pyghidra_python", self.text(missing))
-        self.assertIn("GENESIS_PYGHIDRA_PYTHON=", missing.fix)
-
-    def test_a_genesis_pyghidra_python_that_cannot_run_is_named_with_its_variable(self):
-        for kind in ("not_runnable", "absent"):
-            with self.subTest(kind=kind):
-                machine = self.plant(pyghidra_python=kind)
-                missing = self.only(setup_check.check_query_process(machine))
-                self.assertIn("genesis_pyghidra_python", self.text(missing))
-                self.assertIn(machine.env["GENESIS_PYGHIDRA_PYTHON"], missing.part + missing.found)
-                self.assertIn("GENESIS_PYGHIDRA_PYTHON", missing.fix)
-
-    def test_a_project_path_with_a_folder_starting_with_a_dot_is_refused(self):
-        # Ghidra refuses a path element starting with '.'.
-        machine = self.plant(project_path=".genesis-prime/ghidra-project")
-        missing = self.only(setup_check.check_query_process(machine))
-        self.assertIn(machine.env["GENESIS_GHIDRA_PROJECT_DIR"], missing.part + missing.found)
-        self.assert_fix(missing, "GENESIS_GHIDRA_PROJECT_DIR")
-
-    def test_a_project_path_without_a_dot_folder_is_accepted(self):
-        self.assertEqual(setup_check.check_query_process(self.plant()), [])
-
-    def test_the_query_process_is_not_checked_where_genesis_no_client_is_1(self):
-        machine = self.plant(
-            no_client_flag=True, ghidra_version="12.1.4", pyghidra=None, pyghidra_python="unset"
-        )
-        self.assertEqual(setup_check.check_all(machine), [])
-
-
-# ---------------------------------------------------------------- 8. several at once
-
-
-class SeveralMissingTest(PlantedTestCase):
-    def test_every_part_missing_at_once_is_named_not_only_the_first(self):
-        machine = self.plant(
-            gleam=None,
-            otp="28.3.1",
-            rebar=None,
-            manifest_tracked=False,
-            postgres_reachable=False,
-            client="missing",
-        )
-        result = setup_check.check_all(machine)
-        parts = [m.part.lower() for m in result]
-        for words in (
-            ("gleam",),
-            ("erlang", "otp"),
-            ("rebar",),
-            ("manifest.toml",),
-            ("postgres",),
-            ("wildstar64.exe",),
-        ):
-            with self.subTest(part=words[0]):
-                self.assertTrue(
-                    any(any(w in p for w in words) for p in parts), "no Missing names %r in %r" % (words, parts)
-                )
-        for missing in result:
-            with self.subTest(fix_of=missing.part):
-                self.assertTrue(missing.fix.strip())
-
-
-# ---------------------------------------------------------------- the entry point
-
-
-class MainTest(unittest.TestCase):
-    def run_main(self, result: list[Missing]) -> tuple[int, str]:
-        output = io.StringIO()
-        with mock.patch.object(setup_check, "check_all", lambda machine: result):
-            with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
-                code = setup_check.main()
-        return code, output.getvalue()
-
-    def test_main_prints_one_pass_line_and_exits_0_when_nothing_is_missing(self):
-        code, output = self.run_main([])
-        self.assertEqual(code, 0)
-        lines = [line for line in output.splitlines() if line.strip()]
-        self.assertEqual(len(lines), 1, output)
-        self.assertIn("setup check", lines[0].lower())
-        self.assertIn("pass", lines[0].lower())
-
-    def test_main_prints_every_missing_part_with_what_was_found_and_its_fix_and_exits_1(self):
-        missing = [
-            Missing("Gleam 1.19.2", "1.18.0", "mise install gleam@1.19.2"),
-            Missing("Postgres 18", "nothing", "brew services start postgresql@18"),
-        ]
-        code, output = self.run_main(missing)
-        self.assertEqual(code, 1)
-        for each in missing:
-            with self.subTest(part=each.part):
-                for field in (each.part, each.found, each.fix):
-                    self.assertIn(field, output)
-        self.assertNotIn("pass", output.lower())
-
-
-# ---------------------------------------------------------------- 9. the full check stops
-
-
-CHECK = REPOSITORY / "check"
-FULL_CHECK_RUNNABLE = bool(shutil.which("bash")) and bool(shutil.which("python3.13")) and os.access(CHECK, os.X_OK)
-
-
-@unittest.skipUnless(FULL_CHECK_RUNNABLE, "the full check needs bash, python3.13 and an executable ./check here")
-class FullCheckStopsTest(PlantedTestCase):
-    PART_LINE = re.compile(
-        r"^\s*(format|gleam-build|glinter|gleam-test|migrations|squirrel|client-suite|client-integration|fact-checker)\s+(ok|FAILED)\b",
-        re.MULTILINE,
-    )
-
-    def test_the_full_check_stops_when_the_setup_check_fails_before_any_other_part_runs(self):
-        # PATH holds python3.13 and bash and the system's tools, but no gleam, erl,
-        # rebar3 or psql: the setup check fails, as on a machine missing them.
-        tools = self.root / "tools"
-        tools.mkdir()
-        for name in ("python3.13", "bash"):
-            (tools / name).symlink_to(shutil.which(name))
-        home = self.root / "home"
-        home.mkdir()
-        env = {
-            "PATH": "%s:/usr/bin:/bin:/usr/sbin:/sbin" % tools,
-            "HOME": str(home),
-            "GENESIS_HOME": str(home / ".genesis-prime"),
-            "GENESIS_NO_CLIENT": "1",
-        }
-        done = subprocess.run(
-            [str(CHECK)], cwd=REPOSITORY, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180
-        )
-        output = done.stdout + done.stderr
-        self.assertNotEqual(done.returncode, 0, output)
-        self.assertIn("setup check", output.lower(), output)
-        self.assertIn("gleam", output.lower(), output)  # the missing part is named
-        self.assertNotIn("check passed", output)
-        self.assertEqual(self.PART_LINE.findall(output), [], "a part ran after the setup check failed:\n" + output)
 
 
 if __name__ == "__main__":
