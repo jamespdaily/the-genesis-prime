@@ -35,11 +35,8 @@ import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
 import genesis_prime/message/float32
 import genesis_prime/message/game_server_handoff
-import genesis_prime/message/movement_command
 import genesis_prime/message/play_character.{PlayCharacter}
-import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/start_movement
-import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/step/runtime
 import gleam/erlang/process.{type Subject}
@@ -332,28 +329,15 @@ fn enter_world(
 /// The body of 0x0637 that moves the player to the position: one kind 2 command
 /// with its bit clear (opcode.0x637, 0x1400ad350).
 fn move_to(position: Position) -> BitArray {
-  let assert Ok(body) =
-    player_movement.encode(
-      PlayerMovement(client_clock: 0, commands: [
-        movement_command.Position(UnitPositionCommand(
-          x: float32.to_bits(position.x),
-          y: float32.to_bits(position.y),
-          z: float32.to_bits(position.z),
-          blends: 0,
-        )),
-      ]),
-    )
-    as "0x0637 encodes"
-  body
+  game_client.moves_body(client_clock: 0, commands: [
+    game_client.position_command(x: position.x, y: position.y, z: position.z),
+  ])
 }
 
 /// The position the burst of an entry places the player at: the kind 2 command
 /// of 0x262, which the server writes first (0x1404586e0).
 fn placed_at(burst: List(Frame)) -> Position {
-  let assert Ok(unit) =
-    list.find(burst, fn(frame) { frame.message_id == 0x0262 })
-    as "the burst holds 0x0262"
-  let assert Ok(unit) = unit_create_player.decode(unit.body) as "0x0262 decodes"
+  let unit = game_client.unit_create_player_in(frames: burst)
   let assert [start_movement.Position(UnitPositionCommand(x:, y:, z:, ..)), ..] =
     unit.movement_commands
     as "0x0262 places the unit with a kind 2 command, the first of its commands"

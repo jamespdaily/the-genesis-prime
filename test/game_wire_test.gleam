@@ -27,9 +27,8 @@
 import ask_support
 import character_support
 import connection_rule_support as support
-import event_wait
 import game_client
-import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/connection/frame.{Frame}
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
 import genesis_prime/login/guid
 import genesis_prime/message/character_list
@@ -46,10 +45,8 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
-import genesis_prime/message/movement_command
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/play_character.{PlayCharacter}
-import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
@@ -581,78 +578,16 @@ fn send_move(
   position position: #(Float, Float, Float),
   rotation rotation: #(Float, Float, Float),
 ) -> Nil {
-  let assert Ok(body) =
-    player_movement.encode(
-      PlayerMovement(client_clock: 0x1234, commands: [
-        movement_command.Position(UnitPositionCommand(
-          x: float32.to_bits(position.0),
-          y: float32.to_bits(position.1),
-          z: float32.to_bits(position.2),
-          blends: 0,
-        )),
-        movement_command.Rotation(MovementRotation(
-          yaw: float32.to_bits(rotation.0),
-          pitch: float32.to_bits(rotation.1),
-          roll: float32.to_bits(rotation.2),
-          blends: 0,
-        )),
-      ]),
-    )
-    as "0x0637 encodes"
+  let body =
+    game_client.moves_body(client_clock: 0x1234, commands: [
+      game_client.position_command(x: position.0, y: position.1, z: position.2),
+      game_client.rotation_command(
+        yaw: rotation.0,
+        pitch: rotation.1,
+        roll: rotation.2,
+      ),
+    ])
   game_client.send_world(game:, message_id: 0x0637, body:)
-}
-
-/// Waits until the game listener holds no connection, which is when the
-/// connection that ended has saved and stopped.
-fn await_no_game_connection(started: login_support.Started) -> Nil {
-  event_wait.until("the game listener's connection ended", fn() {
-    ask_support.connections_of(started.settings.game.listener) == []
-  })
-}
-
-/// The 0x262 among the burst of an entry, decoded.
-fn player_of(burst: List(Frame)) -> unit_create_player.UnitCreatePlayer {
-  let assert Ok(Frame(body:, ..)) =
-    list.find(burst, fn(frame) { frame.message_id == 0x0262 })
-    as "the burst holds 0x0262"
-  let assert Ok(player) = unit_create_player.decode(body) as "0x0262 decodes"
-  player
-}
-
-/// What a character's row holds of where it stands and of the login that saved:
-/// its world, position, rotation, epoch and the number of the last save.
-fn standing_in(
-  pool pool: pog.Connection,
-  character_id character_id: Int,
-) -> #(Int, #(Float, Float, Float), #(Float, Float, Float), Int, Int) {
-  let decoder = {
-    use world_id <- decode.field(0, decode.int)
-    use x <- decode.field(1, decode.float)
-    use y <- decode.field(2, decode.float)
-    use z <- decode.field(3, decode.float)
-    use yaw <- decode.field(4, decode.float)
-    use pitch <- decode.field(5, decode.float)
-    use roll <- decode.field(6, decode.float)
-    use session_epoch <- decode.field(7, decode.int)
-    use save_sequence <- decode.field(8, decode.int)
-    decode.success(#(
-      world_id,
-      #(x, y, z),
-      #(yaw, pitch, roll),
-      session_epoch,
-      save_sequence,
-    ))
-  }
-  let assert Ok(returned) =
-    pog.query(
-      "select world_id, position_x::float8, position_y::float8, position_z::float8, rotation_yaw::float8, rotation_pitch::float8, rotation_roll::float8, session_epoch, save_sequence from character where character_id = $1",
-    )
-    |> pog.parameter(pog.int(character_id))
-    |> pog.returning(decoder)
-    |> pog.execute(pool)
-    as "the row reads"
-  let assert [row] = returned.rows as "the character has one row"
-  row
 }
 
 pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_next_login_test() -> Nil {
@@ -670,7 +605,7 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
   let first = game_client.read(game:, count: 7)
-  assert player_of(first).movement_commands
+  assert game_client.unit_create_player_in(frames: first).movement_commands
     == [
       start_movement.Position(UnitPositionCommand(
         x: float32.to_bits(1.5),
@@ -692,9 +627,16 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
     0.5,
   ))
   game_client.close(game:)
-  await_no_game_connection(started)
-  assert standing_in(pool:, character_id: character)
-    == #(1387, #(100.5, -20.25, 300.125), #(1.5, -0.25, 0.5), 1, 1)
+  login_support.await_no_game_connection(started)
+  assert character_support.place_row(pool:, character_id: character)
+    == character_support.PlaceRow(
+      world_id: 1387,
+      world_zone_id: 1100,
+      position: #(100.5, -20.25, 300.125),
+      rotation: #(1.5, -0.25, 0.5),
+      session_epoch: 1,
+      save_sequence: 1,
+    )
     as "the drop saved the place the client last sent, at the epoch its login raised and as its first save"
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
@@ -705,7 +647,7 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
     && entered.position_y == float32.to_bits(-20.25)
     && entered.position_z == float32.to_bits(300.125)
     as "0xAD loads the world where the player left"
-  assert player_of(second).movement_commands
+  assert game_client.unit_create_player_in(frames: second).movement_commands
     == [
       start_movement.Position(UnitPositionCommand(
         x: float32.to_bits(100.5),
@@ -753,10 +695,17 @@ pub fn a_connection_that_crashes_saves_nothing_is_not_restarted_and_the_place_sa
     ask_support.connections_of(started.settings.game.listener)
     as "the game listener holds the one connection"
   process.kill(connection)
-  await_no_game_connection(started)
+  login_support.await_no_game_connection(started)
   assert game_client.closed(game:) as "the client's socket is closed with it"
-  assert standing_in(pool:, character_id: character)
-    == #(1387, #(1.5, 2.5, 3.5), #(0.0, 0.0, 0.0), 1, 0)
+  assert character_support.place_row(pool:, character_id: character)
+    == character_support.PlaceRow(
+      world_id: 1387,
+      world_zone_id: 1100,
+      position: #(1.5, 2.5, 3.5),
+      rotation: #(0.0, 0.0, 0.0),
+      session_epoch: 1,
+      save_sequence: 0,
+    )
     as "a crash runs no save: the row holds the place it had, and no save was made at this login's epoch (the 60 s save would have been the last)"
   assert ask_support.connections_of(started.settings.game.listener) == []
     as "Ranch starts connections as temporary children, so nothing restarts it"

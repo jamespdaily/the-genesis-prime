@@ -140,7 +140,7 @@ pub fn a_message_with_no_position_leaves_the_place_test() -> Nil {
   let state = kept(state: entered(), commands: [Other(0), Other(8), Other(11)])
   assert at(state) == #(1.0, 2.0, 3.0)
     as "opcode.0x637: only the commands that changed are sent, so a message without kind 2 changes no position"
-  assert faces(state) == Facing(yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert faces(state) == start_place.unturned
 }
 
 pub fn a_position_sent_under_a_platform_is_in_that_units_frame_and_is_not_kept_test() -> Nil {
@@ -166,7 +166,7 @@ pub fn the_last_kind_1_stands_across_messages_and_a_position_or_rotation_is_kept
     ])
   assert at(state) == #(1.0, 2.0, 3.0)
     as "opcode.0x637: the client sends only what changed, so a message with no kind 1 is still under the platform the last one named"
-  assert faces(state) == Facing(yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert faces(state) == start_place.unturned
     as "the rotation of kind 14 is in the unit's frame too, so it is kept only with the position"
   let state =
     kept(state:, commands: [

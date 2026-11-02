@@ -1094,52 +1094,6 @@ fn save(
   )
 }
 
-/// The place a character's row holds, with the numbers that fence a save: its
-/// epoch and the sequence of the last save stored.
-type Row {
-  Row(
-    world_id: Int,
-    world_zone_id: Int,
-    position: #(Float, Float, Float),
-    rotation: #(Float, Float, Float),
-    session_epoch: Int,
-    save_sequence: Int,
-  )
-}
-
-fn row_of(store store: Store, character_id character_id: Int) -> Row {
-  let decoder = {
-    use world_id <- decode.field(0, decode.int)
-    use world_zone_id <- decode.field(1, decode.int)
-    use x <- decode.field(2, decode.float)
-    use y <- decode.field(3, decode.float)
-    use z <- decode.field(4, decode.float)
-    use yaw <- decode.field(5, decode.float)
-    use pitch <- decode.field(6, decode.float)
-    use roll <- decode.field(7, decode.float)
-    use session_epoch <- decode.field(8, decode.int)
-    use save_sequence <- decode.field(9, decode.int)
-    decode.success(Row(
-      world_id:,
-      world_zone_id:,
-      position: #(x, y, z),
-      rotation: #(yaw, pitch, roll),
-      session_epoch:,
-      save_sequence:,
-    ))
-  }
-  let assert Ok(returned) =
-    pog.query(
-      "select world_id, world_zone_id, position_x::float8, position_y::float8, position_z::float8, rotation_yaw::float8, rotation_pitch::float8, rotation_roll::float8, session_epoch, save_sequence from character where character_id = $1",
-    )
-    |> pog.parameter(pog.int(character_id))
-    |> pog.returning(decoder)
-    |> pog.execute(store.pool)
-    as "the row reads"
-  let assert [row] = returned.rows as "the character has one row"
-  row
-}
-
 /// A place in World 3460, zone 6009, at x, y, z (each exactly a 32-bit float)
 /// facing yaw, pitch, roll.
 fn place_facing(
@@ -1197,10 +1151,11 @@ pub fn each_load_raises_the_epoch_by_one_and_starts_the_saves_of_its_login_again
       place: here,
     )
     == ForMove(PlaceSaved)
-  assert row_of(store:, character_id: id).save_sequence == 4
+  assert character_support.place_row(pool: store.pool, character_id: id).save_sequence
+    == 4
   assert epoch_of_load(store:, account:, character_id: id) == 2
     as "the next login raises it again"
-  let row = row_of(store:, character_id: id)
+  let row = character_support.place_row(pool: store.pool, character_id: id)
   assert row.session_epoch == 2 && row.save_sequence == 0
     as "and its saves are numbered from 1 again, whatever the last login reached"
   assert epoch_of_load(store:, account:, character_id: id) == 3
@@ -1231,8 +1186,8 @@ pub fn a_save_stores_the_place_and_the_facing_and_the_next_load_reads_them_test(
     )
     == ForMove(PlaceSaved)
     as "the epoch is the login's and the sequence is its first"
-  assert row_of(store:, character_id: id)
-    == Row(
+  assert character_support.place_row(pool: store.pool, character_id: id)
+    == character_support.PlaceRow(
       world_id: 3460,
       world_zone_id: 6009,
       position: #(4110.7099609375, -658.6248779296875, -5145.47998046875),
@@ -1268,7 +1223,8 @@ pub fn a_save_naming_an_older_epoch_changes_nothing_and_the_newer_logins_saves_d
     )
     == ForMove(NothingSaved)
     as "the first login's epoch is 1 and the character is at 2: a save of an older login changes nothing (opcode.0x36a reason 19: the older connection was taken over)"
-  assert row_of(store:, character_id: id).position == #(1.5, 2.5, 3.5)
+  assert character_support.place_row(pool: store.pool, character_id: id).position
+    == #(1.5, 2.5, 3.5)
     as "the row still holds the place it was made at"
   assert save(
       store:,
@@ -1280,7 +1236,8 @@ pub fn a_save_naming_an_older_epoch_changes_nothing_and_the_newer_logins_saves_d
     )
     == ForMove(PlaceSaved)
     as "the newer login's save is written"
-  assert row_of(store:, character_id: id).position == #(11.0, 21.0, 31.0)
+  assert character_support.place_row(pool: store.pool, character_id: id).position
+    == #(11.0, 21.0, 31.0)
   stop(store)
 }
 
@@ -1312,7 +1269,8 @@ pub fn a_save_that_reaches_the_database_after_a_newer_one_of_its_login_changes_n
     )
     == ForMove(NothingSaved)
     as "a save cut short by a stop can still commit after the next one: the sequence it was asked under is older, so it changes nothing"
-  assert row_of(store:, character_id: id).position == #(11.0, 21.0, 31.0)
+  assert character_support.place_row(pool: store.pool, character_id: id).position
+    == #(11.0, 21.0, 31.0)
     as "the place of the newer save stands"
   assert save(
       store:,
@@ -1334,7 +1292,8 @@ pub fn a_save_that_reaches_the_database_after_a_newer_one_of_its_login_changes_n
     )
     == ForMove(PlaceSaved)
     as "a newer one is written"
-  assert row_of(store:, character_id: id).save_sequence == 3
+  assert character_support.place_row(pool: store.pool, character_id: id).save_sequence
+    == 3
   stop(store)
 }
 
@@ -1366,7 +1325,8 @@ pub fn a_save_for_a_character_the_account_does_not_have_or_that_does_not_exist_c
     )
     == ForMove(NothingSaved)
     as "no such character"
-  assert row_of(store:, character_id: id).position == #(1.5, 2.5, 3.5)
+  assert character_support.place_row(pool: store.pool, character_id: id).position
+    == #(1.5, 2.5, 3.5)
   stop(store)
 }
 
@@ -1423,7 +1383,8 @@ pub fn a_save_the_database_refuses_for_a_check_is_answered_place_refused_and_the
     )
     == ForMove(PlaceRefused)
     as "a constraint the database holds refused the place: the asker is told, and the worker does not crash"
-  assert row_of(store:, character_id: id).position == #(1.5, 2.5, 3.5)
+  assert character_support.place_row(pool: store.pool, character_id: id).position
+    == #(1.5, 2.5, 3.5)
   let near =
     place_facing(x: 5.0, y: 0.0, z: 0.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
   assert save(

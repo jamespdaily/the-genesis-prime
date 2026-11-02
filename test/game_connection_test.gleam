@@ -69,7 +69,6 @@ import genesis_prime/message/disconnect_reason.{
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/fall_value.{FallValue}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
-import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
@@ -86,7 +85,6 @@ import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world
-import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/player_path.{PlayerPath}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
@@ -241,7 +239,15 @@ fn replied() -> #(game_connection.State, ConnectionStep(Request)) {
 /// The connection after the hand-off held the key: Sessions asked to claim
 /// the account.
 fn claiming() -> #(game_connection.State, ConnectionStep(Request)) {
-  let #(state, taken) = replied()
+  claiming_from(connected())
+}
+
+/// `fresh`, a connection the server has accepted, after the hand-off held the
+/// key: Sessions asked to claim the account.
+fn claiming_from(
+  fresh: game_connection.State,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = read(fresh, hello_reply())
   answer(
     state:,
     taken:,
@@ -265,7 +271,13 @@ fn claimed(
 /// The connection after Sessions answered the claim: in character select,
 /// nothing asked.
 fn in_select() -> game_connection.State {
-  let #(state, taken) = claiming()
+  in_select_from(connected())
+}
+
+/// `fresh`, a connection the server has accepted, after Sessions answered the
+/// claim: in character select, nothing asked.
+fn in_select_from(fresh: game_connection.State) -> game_connection.State {
+  let #(state, taken) = claiming_from(fresh)
   claimed(state:, taken:).0
 }
 
@@ -1121,7 +1133,16 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
 fn playing(
   character_id: Int,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  read(in_select(), play_message(character_id))
+  playing_from(in_select(), character_id)
+}
+
+/// `in_character_select` after 0x07DD for the character, with its ask to the
+/// store.
+fn playing_from(
+  in_character_select: game_connection.State,
+  character_id: Int,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  read(in_character_select, play_message(character_id))
 }
 
 /// A Dominion human male, class 2, who stands in World 3460 at the place of
@@ -1159,7 +1180,15 @@ fn world_character() -> store.Character {
 fn joining_as(
   character: store.Character,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  let #(state, taken) = playing(42)
+  joining_from(in_select(), character)
+}
+
+/// `in_character_select` after the store gave `character`: the map is asked.
+fn joining_from(
+  in_character_select: game_connection.State,
+  character: store.Character,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = playing_from(in_character_select, 42)
   answer(
     state:,
     taken:,
@@ -1185,7 +1214,15 @@ const incarnation = 77
 fn entered_as(
   character: store.Character,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  let #(state, taken) = joining_as(character)
+  entered_from(in_select(), character)
+}
+
+/// `in_character_select` after the map took `character`: the burst is written.
+fn entered_from(
+  in_character_select: game_connection.State,
+  character: store.Character,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = joining_from(in_character_select, character)
   answer(
     state:,
     taken:,
@@ -1205,11 +1242,7 @@ fn in_world() -> game_connection.State {
 
 /// The 0x262 among the burst, decoded.
 fn player_in(taken: ConnectionStep(Request)) -> UnitCreatePlayer {
-  let assert Ok(Frame(body:, ..)) =
-    list.find(heard(taken, keyed()), fn(frame) { frame.message_id == 0x0262 })
-    as "the burst holds 0x0262"
-  let assert Ok(player) = unit_create_player.decode(body) as "0x0262 decodes"
-  player
+  game_client.unit_create_player_in(frames: heard(taken, keyed()))
 }
 
 /// A world message as the client sends it: inside 0x038C, whose first byte is
@@ -1650,36 +1683,7 @@ pub fn a_second_0x058f_or_a_play_in_the_world_is_not_taken_again_test() -> Nil {
 
 /// 0x637 holding `commands`, as the client writes it, under the session key.
 fn moves_message(commands: List(movement_command.MovementCommand)) -> BitArray {
-  let assert Ok(body) =
-    player_movement.encode(PlayerMovement(client_clock: 0x1234, commands:))
-    as "the commands encode"
-  world_message(0x0637, body)
-}
-
-fn position_command(
-  x x: Float,
-  y y: Float,
-  z z: Float,
-) -> movement_command.MovementCommand {
-  movement_command.Position(UnitPositionCommand(
-    x: float32.to_bits(x),
-    y: float32.to_bits(y),
-    z: float32.to_bits(z),
-    blends: 0,
-  ))
-}
-
-fn rotation_command(
-  yaw yaw: Float,
-  pitch pitch: Float,
-  roll roll: Float,
-) -> movement_command.MovementCommand {
-  movement_command.Rotation(MovementRotation(
-    yaw: float32.to_bits(yaw),
-    pitch: float32.to_bits(pitch),
-    roll: float32.to_bits(roll),
-    blends: 0,
-  ))
+  world_message(0x0637, game_client.moves_body(client_clock: 0x1234, commands:))
 }
 
 fn platform_command(unit_id: Int) -> movement_command.MovementCommand {
@@ -1722,7 +1726,7 @@ fn moved_to(
   y y: Float,
   z z: Float,
 ) -> game_connection.State {
-  read(state, moves_message([position_command(x:, y:, z:)])).0
+  read(state, moves_message([game_client.position_command(x:, y:, z:)])).0
 }
 
 /// The outcomes in which a store ask gets no answer, for a save.
@@ -1738,7 +1742,10 @@ fn no_answers() -> List(Outcome(Answer)) {
 pub fn the_client_moving_gets_no_answer_and_every_later_move_is_read_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) =
-    read(in_world(), moves_message([position_command(x: 1.5, y: 2.5, z: 3.5)]))
+    read(
+      in_world(),
+      moves_message([game_client.position_command(x: 1.5, y: 2.5, z: 3.5)]),
+    )
   assert support.writes(taken) == []
     as "opcode.0x637: the server sends nothing in answer: no echo, no acknowledgement, no 0x638 for a unit under the client's control and no 0x639, which would end the client's control"
   assert support.asked(taken) == None && !support.stops(taken)
@@ -1748,8 +1755,8 @@ pub fn the_client_moving_gets_no_answer_and_every_later_move_is_read_test() -> N
     read(
       state,
       bit_array.concat([
-        moves_message([position_command(x: 2.5, y: 2.5, z: 3.5)]),
-        moves_message([position_command(x: 3.5, y: 2.5, z: 3.5)]),
+        moves_message([game_client.position_command(x: 2.5, y: 2.5, z: 3.5)]),
+        moves_message([game_client.position_command(x: 3.5, y: 2.5, z: 3.5)]),
         support.ping(1),
       ]),
     )
@@ -1768,12 +1775,14 @@ pub fn the_place_kept_is_the_last_world_position_and_a_platforms_frame_is_not_ke
     read(
       in_world(),
       bit_array.concat([
-        moves_message([position_command(x: 5.5, y: 6.5, z: 7.5)]),
+        moves_message([game_client.position_command(x: 5.5, y: 6.5, z: 7.5)]),
         moves_message([
           platform_command(9),
-          position_command(x: 100.0, y: 100.0, z: 100.0),
+          game_client.position_command(x: 100.0, y: 100.0, z: 100.0),
         ]),
-        moves_message([position_command(x: 200.0, y: 200.0, z: 200.0)]),
+        moves_message([
+          game_client.position_command(x: 200.0, y: 200.0, z: 200.0),
+        ]),
       ]),
     ).0
   let #(_, taken) = feed(state, step.OwnEvent(step.PeerClosed))
@@ -1785,8 +1794,8 @@ pub fn the_place_kept_is_the_last_world_position_and_a_platforms_frame_is_not_ke
       state,
       moves_message([
         platform_command(0),
-        position_command(x: 8.5, y: 9.5, z: 10.5),
-        rotation_command(yaw: 1.5, pitch: -0.25, roll: 0.5),
+        game_client.position_command(x: 8.5, y: 9.5, z: 10.5),
+        game_client.rotation_command(yaw: 1.5, pitch: -0.25, roll: 0.5),
       ]),
     ).0
   let #(_, taken) = feed(state, step.OwnEvent(step.PeerClosed))
@@ -1827,7 +1836,7 @@ fn refused_messages() -> List(#(BitArray, String)) {
     #(moves_message([position_of(one, infinity, one)]), "a height of infinity"),
     #(moves_message([position_of(zero, 0xFF800000, zero)]), "minus infinity"),
     #(
-      moves_message([position_command(x: 0.0, y: -2048.5, z: 0.0)]),
+      moves_message([game_client.position_command(x: 0.0, y: -2048.5, z: 0.0)]),
       "a height below -2048",
     ),
     #(
@@ -1854,7 +1863,7 @@ fn refused_messages() -> List(#(BitArray, String)) {
     #(world_message(0x063B, <<3, 0, 0, 0>>), "a move speed setting above 2"),
     #(
       moves_message([
-        position_command(x: 99.0, y: 99.0, z: 99.0),
+        game_client.position_command(x: 99.0, y: 99.0, z: 99.0),
         position_of(one, not_a_number, one),
       ]),
       "a refused command after a good one, of which nothing is kept",
@@ -2318,43 +2327,19 @@ pub fn an_end_reached_while_a_save_is_out_never_saves_a_second_time_test() -> Ni
   )
 }
 
-/// A connection with a different rate, in the world.
-fn in_world_at(rate rate: client_connection.Bucket) -> game_connection.State {
-  let state = accepted(Settings(..settings(), rate:)).0
-  let #(state, taken) = read(state, hello_reply())
-  let #(state, taken) =
-    answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromHandOff(Taken(holder: holder()))),
-    )
-  let state = claimed(state:, taken:).0
-  let #(state, taken) = read(state, play_message(42))
-  let #(state, taken) =
-    answer(
-      state:,
-      taken:,
-      outcome: step.Answer(
-        FromStore(
-          ForWorld(CharacterLoaded(
-            world_character(),
-            character_support.epoch(1),
-          )),
-        ),
-      ),
-    )
-  answer(
-    state:,
-    taken:,
-    outcome: step.Answer(FromMap(Joined(unit_id:, incarnation:))),
-  ).0
-}
-
 pub fn the_rate_and_the_held_bytes_limits_end_the_connection_in_the_world_without_a_save_test() -> Nil {
   use <- owned_test.run(10_000)
   // The last 60 s save stands: a client past a limit is no client, and the
   // limits end the connection inside the shared client connection code.
-  let state = in_world_at(rate: support.bucket(burst: 10, per_second: 1))
+  let state =
+    entered_from(
+      in_select_from(
+        accepted(
+          Settings(..settings(), rate: support.bucket(burst: 10, per_second: 1)),
+        ).0,
+      ),
+      world_character(),
+    ).0
   let #(state, taken) = read(state, support.pings(count: 8))
   assert !support.stops(taken)
   let #(_, taken) = read(state, support.ping(8))

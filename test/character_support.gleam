@@ -76,6 +76,57 @@ pub fn try_insert(
   })
 }
 
+/// The place a character's row holds, with the numbers that fence a save: its
+/// epoch and the sequence of the last save stored.
+pub type PlaceRow {
+  PlaceRow(
+    world_id: Int,
+    world_zone_id: Int,
+    position: #(Float, Float, Float),
+    rotation: #(Float, Float, Float),
+    session_epoch: Int,
+    save_sequence: Int,
+  )
+}
+
+/// What the character's row holds of where it stands and of the login that
+/// saved, read straight from the database.
+pub fn place_row(
+  pool pool: pog.Connection,
+  character_id character_id: Int,
+) -> PlaceRow {
+  let decoder = {
+    use world_id <- decode.field(0, decode.int)
+    use world_zone_id <- decode.field(1, decode.int)
+    use x <- decode.field(2, decode.float)
+    use y <- decode.field(3, decode.float)
+    use z <- decode.field(4, decode.float)
+    use yaw <- decode.field(5, decode.float)
+    use pitch <- decode.field(6, decode.float)
+    use roll <- decode.field(7, decode.float)
+    use session_epoch <- decode.field(8, decode.int)
+    use save_sequence <- decode.field(9, decode.int)
+    decode.success(PlaceRow(
+      world_id:,
+      world_zone_id:,
+      position: #(x, y, z),
+      rotation: #(yaw, pitch, roll),
+      session_epoch:,
+      save_sequence:,
+    ))
+  }
+  let assert Ok(returned) =
+    pog.query(
+      "select world_id, world_zone_id, position_x::float8, position_y::float8, position_z::float8, rotation_yaw::float8, rotation_pitch::float8, rotation_roll::float8, session_epoch, save_sequence from character where character_id = $1",
+    )
+    |> pog.parameter(pog.int(character_id))
+    |> pog.returning(decoder)
+    |> pog.execute(pool)
+    as "the row reads"
+  let assert [row] = returned.rows as "the character has one row"
+  row
+}
+
 /// Inserts one character row for the account, which the table accepts, and
 /// gives its id.
 pub fn insert(

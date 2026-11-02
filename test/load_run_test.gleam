@@ -14,8 +14,6 @@
 //// - `eaddrnotavail` is the operating system's answer when the machine has no
 ////   local port to connect from.
 
-import ask_support
-import event_wait
 import genesis_prime/load_player.{
   AuthLogin, CharacterList, Create, EnterWorld, FirstPong, GameHello, Ping,
   Position, StsLogin,
@@ -88,11 +86,7 @@ pub fn a_player_that_moves_drops_and_logs_in_again_reads_back_the_position_it_se
       account:,
       ports: login_support.ports(started),
       to:,
-      after_the_drop: fn() {
-        event_wait.until("the game listener's connection ended", fn() {
-          ask_support.connections_of(started.settings.game.listener) == []
-        })
-      },
+      after_the_drop: fn() { login_support.await_no_game_connection(started) },
     )
   assert back == to
     as "the unit the server created at the second login stands where the first login's movement put it: 0x637 kept, saved at the drop and read back (opcode.0x637, 0x1404586e0); the values are exact 32-bit floats"

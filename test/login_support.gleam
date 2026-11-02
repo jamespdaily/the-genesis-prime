@@ -9,6 +9,7 @@ import character_tables
 import connection_rule_support as support
 import database_support
 import envoy
+import event_wait
 import genesis_prime
 import genesis_prime/add_account/sql
 import genesis_prime/client_connection.{type Bucket}
@@ -231,6 +232,14 @@ pub fn start_with_jim() -> #(Started, Ports, Int) {
 pub fn stop(started: Started) -> Nil {
   let _reason = ask_support.stop_tree(started.tree)
   Nil
+}
+
+/// Waits until the game listener holds no connection, which is when the
+/// connection that ended has saved and stopped.
+pub fn await_no_game_connection(started: Started) -> Nil {
+  event_wait.until("the game listener's connection ended", fn() {
+    ask_support.connections_of(started.settings.game.listener) == []
+  })
 }
 
 /// Inserts an account into the tree's database, as the add-account tool does,

@@ -17,8 +17,14 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/message/float32
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
+import genesis_prime/message/movement_command.{type MovementCommand}
+import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/server_hello
+import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/world_message.{WorldMessage}
 import gleam/list
 import gleam/result
@@ -185,6 +191,44 @@ pub fn send_world(
   send(game:, message_id: 0x038C, body: world_body(kind: 3, message_id:, body:))
 }
 
+/// The movement command of kind 2 that puts the player at x, y, z with its
+/// bit clear, as the client's movement update sends it (opcode.0x637).
+pub fn position_command(x x: Float, y y: Float, z z: Float) -> MovementCommand {
+  movement_command.Position(UnitPositionCommand(
+    x: float32.to_bits(x),
+    y: float32.to_bits(y),
+    z: float32.to_bits(z),
+    blends: 0,
+  ))
+}
+
+/// The movement command of kind 14 that turns the player to yaw, pitch and
+/// roll in radians, with its bit clear (opcode.0x637).
+pub fn rotation_command(
+  yaw yaw: Float,
+  pitch pitch: Float,
+  roll roll: Float,
+) -> MovementCommand {
+  movement_command.Rotation(MovementRotation(
+    yaw: float32.to_bits(yaw),
+    pitch: float32.to_bits(pitch),
+    roll: float32.to_bits(roll),
+    blends: 0,
+  ))
+}
+
+/// The body of 0x0637 that holds `commands`, sent when the client's own clock
+/// reads `client_clock` milliseconds (opcode.0x637).
+pub fn moves_body(
+  client_clock client_clock: Int,
+  commands commands: List(MovementCommand),
+) -> BitArray {
+  let assert Ok(body) =
+    player_movement.encode(PlayerMovement(client_clock:, commands:))
+    as "0x0637 encodes"
+  body
+}
+
 /// Reads until `count` messages have arrived from the server, each opened from
 /// its 0x3DC wrapper under the session cipher, in order.
 pub fn read(game game: Game, count count: Int) -> List(Frame) {
@@ -196,6 +240,16 @@ pub fn read(game game: Game, count count: Int) -> List(Frame) {
   assert list.length(outers) == count
     as "the game server wrote no more messages than the test reads"
   list.map(outers, in_the_game_wrapper(_, game.cipher))
+}
+
+/// The 0x262 among the messages of an entry, decoded: the player the burst
+/// creates.
+pub fn unit_create_player_in(frames frames: List(Frame)) -> UnitCreatePlayer {
+  let assert Ok(Frame(body:, ..)) =
+    list.find(frames, fn(frame) { frame.message_id == 0x0262 })
+    as "the burst holds 0x0262"
+  let assert Ok(player) = unit_create_player.decode(body) as "0x0262 decodes"
+  player
 }
 
 /// Sends the network layer's ping with the number, bare: never wrapped and
