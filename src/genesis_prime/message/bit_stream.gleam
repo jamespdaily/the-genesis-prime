@@ -358,6 +358,24 @@ pub fn write_unsigned_array(
   )
 }
 
+/// Writes the items through `write_item`, with no count: the reader takes as
+/// many as the list `like` holds, so a list of another length is an error.
+pub fn write_array_like(
+  writer writer: Writer,
+  field field: String,
+  items items: List(a),
+  like like: List(b),
+  write_item write_item: fn(Writer, a) -> Writer,
+) -> Writer {
+  let expected = list.length(like)
+  let actual = list.length(items)
+  use <- bool.guard(
+    when: expected != actual,
+    return: fail(writer:, error: ItemCountDisagrees(field:, expected:, actual:)),
+  )
+  list.fold(items, writer, write_item)
+}
+
 /// Writes unsigned values in `bits` bits each, with no count: the reader takes
 /// as many as the list `like` holds, so a list of another length is an error.
 pub fn write_unsigned_array_like(
@@ -367,13 +385,7 @@ pub fn write_unsigned_array_like(
   like like: List(a),
   bits bits: Int,
 ) -> Writer {
-  let expected = list.length(like)
-  let actual = list.length(items)
-  use <- bool.guard(
-    when: expected != actual,
-    return: fail(writer:, error: ItemCountDisagrees(field:, expected:, actual:)),
-  )
-  list.fold(items, writer, fn(writer, item) {
+  write_array_like(writer:, field:, items:, like:, write_item: fn(writer, item) {
     write_unsigned(writer:, field:, value: item, bits:)
   })
 }
@@ -571,18 +583,48 @@ pub fn read_unsigned_array(
   })
 }
 
+/// Reads as many items through `read_item` as the list `like` holds, with no
+/// count of their own.
+pub fn read_array_like(
+  reader reader: Reader,
+  like like: List(a),
+  read_item read_item: fn(Reader) -> Result(#(b, Reader), DecodeError),
+) -> Result(#(List(b), Reader), DecodeError) {
+  read_items(reader:, remaining: list.length(like), read_item:, built: [])
+}
+
 /// Reads as many unsigned values of `bits` bits each as the list `like` holds.
 pub fn read_unsigned_array_like(
   reader reader: Reader,
   like like: List(a),
   bits bits: Int,
 ) -> Result(#(List(Int), Reader), DecodeError) {
-  read_items(
-    reader:,
-    remaining: list.length(like),
-    read_item: fn(reader) { read_unsigned(reader:, bits:) },
-    built: [],
-  )
+  read_array_like(reader:, like:, read_item: fn(reader) {
+    read_unsigned(reader:, bits:)
+  })
+}
+
+/// Reads the next `bits` bits, 1 to 64, as an unsigned value without moving the
+/// reader, so a list whose items start with a kind can choose the reader of
+/// the item by its kind, and that reader reads the kind as its first field
+/// (ReadMovementCommand 0x1400af930).
+pub fn peek_unsigned(
+  reader reader: Reader,
+  bits bits: Int,
+) -> Result(Int, DecodeError) {
+  use #(value, _) <- result.try(read_unsigned(reader:, bits:))
+  Ok(value)
+}
+
+/// Reads an item with `read`, which gives its fields, and the item `wrap`
+/// makes of them: a variant of a union around the record its kind picked.
+pub fn read_variant(
+  reader reader: Reader,
+  read read: fn(Reader) -> Result(#(a, Reader), DecodeError),
+  wrap wrap: fn(a) -> b,
+) -> Result(#(b, Reader), DecodeError) {
+  use #(item, reader) <- result.try(read(reader))
+  Ok(#(wrap(item), reader))
 }
 
 /// Reads a count in `count_bits` bits, then that many 32-bit floats as the

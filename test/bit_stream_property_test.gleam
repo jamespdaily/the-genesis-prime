@@ -16,9 +16,19 @@
 //// - A wide text counts its UTF-16 units in 7 bits, or in 15 when it has more
 ////   than 127 (WriteWideText 0x140336040), a counted text in 16 bits with a
 ////   zero after the units (WriteCountedWideText 0x1400c2f70).
+//// - A list whose items start with a kind that picks their layout, as the
+////   movement commands of message 0x637 do (0x140c1f070, 0x1400af930): the
+////   kind is read without moving on, so the layout's reader takes it as its
+////   first field, a kind with no layout fails the read, and a count that
+////   promises more items than the bytes hold fails where the bytes end
+////   (0x1400b06f0).
+//// - A list of records counted by an earlier list holds as many items as that
+////   list, with no count of its own (0x140c1f070: kinds 3, 9, 12 and 15 hold
+////   n vectors after n values).
 
 import genesis_prime/message/bit_stream.{type DecodeError, type Reader}
 import gleam/bit_array
+import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/result
@@ -43,6 +53,8 @@ type Field {
   UnsignedArrayLike(bits: Int, items: List(Int))
   Constant(bits: Int, value: Int)
   Records(count_bits: Int, items: List(Item))
+  RecordsLike(like: List(Int), items: List(Item))
+  Shapes(count_bits: Int, items: List(Shape))
 }
 
 /// The record inside an array, as the schema's records are: an unsigned value
@@ -50,6 +62,19 @@ type Field {
 type Item {
   Item(number: Int, name: String)
 }
+
+/// An item of a list that picks its layout by its first 5 bits, as the
+/// movement commands do: each layout starts with its own kind as a fixed value.
+type Shape {
+  /// Kind 3: one bit.
+  Switch(Int)
+  /// Kind 17: 32 bits, then 3 bits.
+  Pair(#(Int, Int))
+  /// Kind 30: a count of 4 bits, then that many values of 7 bits.
+  Run(List(Int))
+}
+
+const shape_kind_bits = 5
 
 // ---- the field kinds, one test each ----
 
@@ -126,6 +151,61 @@ pub fn a_constant_reads_back_as_itself_test() -> Nil {
 pub fn an_array_of_records_reads_back_as_written_test() -> Nil {
   use <- owned_test.run(60_000)
   reads_back(records_field())
+}
+
+pub fn an_array_of_tagged_items_reads_back_as_written_test() -> Nil {
+  use <- owned_test.run(60_000)
+  reads_back(shapes_field())
+}
+
+pub fn records_counted_by_another_array_read_back_as_written_test() -> Nil {
+  use <- owned_test.run(60_000)
+  reads_back(records_like_field())
+}
+
+pub fn a_peeked_value_is_the_next_read_and_moves_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use #(prefix_bits, prefix, bits, value) <- qcheck.given({
+    use prefix_bits <- qcheck.bind(qcheck.bounded_int(from: 1, to: 7))
+    use prefix <- qcheck.bind(unsigned_of(prefix_bits))
+    use bits <- qcheck.bind(width())
+    use value <- qcheck.map(unsigned_of(bits))
+    #(prefix_bits, prefix, bits, value)
+  })
+  let assert Ok(bytes) =
+    written(fn(writer) {
+      writer
+      |> bit_stream.write_unsigned("prefix", prefix, prefix_bits)
+      |> bit_stream.write_unsigned("value", value, bits)
+    })
+    as "both values are within their widths"
+  let reader = bit_stream.new_reader(bytes)
+  let assert Ok(#(_, reader)) = bit_stream.read_unsigned(reader, prefix_bits)
+    as "the bits before the value are there"
+  assert bit_stream.peek_unsigned(reader, bits) == Ok(value)
+    as "the peeked value is the one written"
+  assert bit_stream.peek_unsigned(reader, bits) == Ok(value)
+    as "peeking again gives the same value, so the reader did not move"
+  let assert Ok(#(read, reader)) = bit_stream.read_unsigned(reader, bits)
+    as "the value is there to read"
+  assert read == value as "the next read is the peeked value"
+  assert bit_stream.finish_reading(reader) == Ok(Nil)
+    as "the value ended within the last byte"
+}
+
+pub fn a_peek_past_the_end_of_the_bytes_fails_like_a_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use #(bytes, extra) <- qcheck.given(qcheck.tuple2(
+    qcheck.bounded_int(from: 0, to: 7),
+    qcheck.bounded_int(from: 1, to: 8),
+  ))
+  let body = <<0:size({ bytes * 8 })>>
+  assert bit_stream.peek_unsigned(
+      bit_stream.new_reader(body),
+      bytes * 8 + extra,
+    )
+    == Error(bit_stream.EndOfData)
+    as "ReadBitsSlow 0x140336d60: a value that needs more bits than the bytes hold fails"
 }
 
 pub fn a_run_of_fields_of_every_kind_reads_back_as_written_test() -> Nil {
@@ -221,6 +301,67 @@ pub fn a_constant_field_refuses_any_other_value_when_read_test() -> Nil {
     )
     == Error(bit_stream.UnexpectedValue(field: "value", value: other))
     as "a value other than the fixed one is refused"
+}
+
+pub fn records_counted_by_an_array_of_another_length_are_refused_when_written_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use #(like, items) <- qcheck.given({
+    use like <- qcheck.bind(qcheck.generic_list(
+      unsigned_of(32),
+      qcheck.bounded_int(from: 0, to: 6),
+    ))
+    use items <- qcheck.map(qcheck.generic_list(
+      item_of(),
+      qcheck.bounded_int(from: 0, to: 6),
+    ))
+    #(like, items)
+  })
+  use <- bool.guard(when: list.length(like) == list.length(items), return: Nil)
+  assert written(bit_stream.write_array_like(_, "f", items, like, write_item))
+    == Error(bit_stream.ItemCountDisagrees(
+      field: "f",
+      expected: list.length(like),
+      actual: list.length(items),
+    ))
+    as "0x140c1f070: a command holds as many vectors as values, so a list of another length is not a command the client's reader takes"
+}
+
+pub fn a_count_that_promises_more_tagged_items_than_the_bytes_hold_is_a_decode_error_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use #(more, shapes) <- qcheck.given(qcheck.tuple2(
+    qcheck.bounded_int(from: 1, to: 4_000_000_000),
+    qcheck.generic_list(shape_of(), qcheck.bounded_int(from: 0, to: 6)),
+  ))
+  let assert Ok(items) =
+    written(fn(writer) { list.fold(shapes, writer, write_shape) })
+    as "every shape is within its width"
+  let counted = <<{ list.length(shapes) + more }:size(32)-little, items:bits>>
+  let read =
+    bit_stream.read_array(bit_stream.new_reader(counted), 32, read_shape)
+  let assert Error(error) = result.replace(read, Nil)
+    as "0x1400b06f0: the reader takes the commands one by one and fails where the bytes end, so a count of billions builds nothing"
+  assert error == bit_stream.EndOfData
+    || error == bit_stream.UnexpectedValue(field: "kind", value: 0)
+    as "the read fails at the end of the bytes, or one item sooner when the zero bits that pad the last byte read as a kind 0, which this union has no layout for"
+}
+
+pub fn a_tagged_item_whose_kind_has_no_layout_is_refused_when_read_test() -> Nil {
+  use <- owned_test.run(60_000)
+  use #(kind, data) <- qcheck.given(qcheck.tuple2(
+    qcheck.bounded_int(from: 0, to: 31),
+    unsigned_of(32),
+  ))
+  use <- bool.guard(when: list.contains([3, 17, 30], kind), return: Nil)
+  let assert Ok(body) =
+    written(fn(writer) {
+      writer
+      |> bit_stream.write_unsigned("kind", kind, shape_kind_bits)
+      |> bit_stream.write_unsigned("data", data, 32)
+    })
+    as "both values are within their widths"
+  assert result.replace(read_shape(bit_stream.new_reader(body)), Nil)
+    == Error(bit_stream.UnexpectedValue(field: "kind", value: kind))
+    as "0x1400af930: a kind with no reader fails the read, and the kind is named"
 }
 
 pub fn a_counted_text_of_exactly_its_limit_is_written_and_one_unit_more_is_refused_test() -> Nil {
@@ -325,12 +466,88 @@ fn write(writer: bit_stream.Writer, field: Field) -> bit_stream.Writer {
     Constant(bits:, value:) ->
       bit_stream.write_constant(writer, "f", value, bits)
     Records(count_bits:, items:) ->
-      bit_stream.write_array(writer, "f", items, count_bits, fn(writer, item) {
-        writer
-        |> bit_stream.write_unsigned("number", item.number, 5)
-        |> bit_stream.write_wide_text("name", item.name)
-      })
+      bit_stream.write_array(writer, "f", items, count_bits, write_item)
+    RecordsLike(like:, items:) ->
+      bit_stream.write_array_like(writer, "f", items, like, write_item)
+    Shapes(count_bits:, items:) ->
+      bit_stream.write_array(writer, "f", items, count_bits, write_shape)
   }
+}
+
+fn write_item(writer: bit_stream.Writer, item: Item) -> bit_stream.Writer {
+  writer
+  |> bit_stream.write_unsigned("number", item.number, 5)
+  |> bit_stream.write_wide_text("name", item.name)
+}
+
+fn read_item(reader: Reader) -> Result(#(Item, Reader), DecodeError) {
+  use #(number, reader) <- result.try(bit_stream.read_unsigned(reader, 5))
+  use #(name, reader) <- result.try(bit_stream.read_wide_text(reader))
+  Ok(#(Item(number:, name:), reader))
+}
+
+/// Writes a shape as a record of the schema does: its kind as a fixed value,
+/// then its data.
+fn write_shape(writer: bit_stream.Writer, shape: Shape) -> bit_stream.Writer {
+  case shape {
+    Switch(on) ->
+      writer
+      |> bit_stream.write_constant("kind", 3, shape_kind_bits)
+      |> bit_stream.write_unsigned("on", on, 1)
+    Pair(#(first, second)) ->
+      writer
+      |> bit_stream.write_constant("kind", 17, shape_kind_bits)
+      |> bit_stream.write_unsigned("first", first, 32)
+      |> bit_stream.write_unsigned("second", second, 3)
+    Run(values) ->
+      writer
+      |> bit_stream.write_constant("kind", 30, shape_kind_bits)
+      |> bit_stream.write_unsigned_array("values", values, 4, 7)
+  }
+}
+
+/// Reads a shape as a generated union does: the kind is peeked, and the
+/// layout of that kind reads it, kind included.
+fn read_shape(reader: Reader) -> Result(#(Shape, Reader), DecodeError) {
+  use kind <- result.try(bit_stream.peek_unsigned(reader, shape_kind_bits))
+  case kind {
+    3 -> bit_stream.read_variant(reader, read_switch, Switch)
+    17 -> bit_stream.read_variant(reader, read_pair, Pair)
+    30 -> bit_stream.read_variant(reader, read_run, Run)
+    _ -> Error(bit_stream.UnexpectedValue(field: "kind", value: kind))
+  }
+}
+
+fn read_switch(reader: Reader) -> Result(#(Int, Reader), DecodeError) {
+  use reader <- result.try(bit_stream.read_constant(
+    reader,
+    "kind",
+    shape_kind_bits,
+    3,
+  ))
+  bit_stream.read_unsigned(reader, 1)
+}
+
+fn read_pair(reader: Reader) -> Result(#(#(Int, Int), Reader), DecodeError) {
+  use reader <- result.try(bit_stream.read_constant(
+    reader,
+    "kind",
+    shape_kind_bits,
+    17,
+  ))
+  use #(first, reader) <- result.try(bit_stream.read_unsigned(reader, 32))
+  use #(second, reader) <- result.try(bit_stream.read_unsigned(reader, 3))
+  Ok(#(#(first, second), reader))
+}
+
+fn read_run(reader: Reader) -> Result(#(List(Int), Reader), DecodeError) {
+  use reader <- result.try(bit_stream.read_constant(
+    reader,
+    "kind",
+    shape_kind_bits,
+    30,
+  ))
+  bit_stream.read_unsigned_array(reader, 4, 7)
 }
 
 /// Reads the field `like` is from the reader: the same kind with the same
@@ -377,12 +594,14 @@ fn read(
       bit_stream.read_constant(reader, "f", bits, value)
       |> result.map(fn(reader) { #(Constant(bits:, value:), reader) })
     Records(count_bits:, ..) ->
-      bit_stream.read_array(reader, count_bits, fn(reader) {
-        use #(number, reader) <- result.try(bit_stream.read_unsigned(reader, 5))
-        use #(name, reader) <- result.try(bit_stream.read_wide_text(reader))
-        Ok(#(Item(number:, name:), reader))
-      })
+      bit_stream.read_array(reader, count_bits, read_item)
       |> map_field(Records(count_bits:, items: _))
+    RecordsLike(like:, ..) ->
+      bit_stream.read_array_like(reader, like, read_item)
+      |> map_field(RecordsLike(like:, items: _))
+    Shapes(count_bits:, ..) ->
+      bit_stream.read_array(reader, count_bits, read_shape)
+      |> map_field(Shapes(count_bits:, items: _))
   }
 }
 
@@ -412,6 +631,8 @@ fn any_field() -> Generator(Field) {
     unsigned_array_like_field(),
     constant_field(),
     records_field(),
+    records_like_field(),
+    shapes_field(),
   ])
 }
 
@@ -566,12 +787,46 @@ fn constant_field() -> Generator(Field) {
   Constant(bits:, value:)
 }
 
+fn item_of() -> Generator(Item) {
+  use number <- qcheck.bind(unsigned_of(5))
+  use name <- qcheck.map(wide_text_of())
+  Item(number:, name:)
+}
+
 fn records_field() -> Generator(Field) {
-  let item = {
-    use number <- qcheck.bind(unsigned_of(5))
-    use name <- qcheck.map(wide_text_of())
-    Item(number:, name:)
-  }
-  use #(count_bits, items) <- qcheck.map(counted(item))
+  use #(count_bits, items) <- qcheck.map(counted(item_of()))
   Records(count_bits:, items:)
+}
+
+/// Records as many as the list that counts them: the list is of 32-bit
+/// values, as the commands' lists are.
+fn records_like_field() -> Generator(Field) {
+  use items <- qcheck.bind(qcheck.generic_list(
+    item_of(),
+    qcheck.bounded_int(from: 1, to: 6),
+  ))
+  use like <- qcheck.map(qcheck.generic_list(
+    unsigned_of(32),
+    qcheck.constant(list.length(items)),
+  ))
+  RecordsLike(like:, items:)
+}
+
+/// A shape of any of the three layouts.
+fn shape_of() -> Generator(Shape) {
+  let switch = qcheck.map(unsigned_of(1), Switch)
+  let pair = {
+    use first <- qcheck.bind(unsigned_of(32))
+    use second <- qcheck.map(unsigned_of(3))
+    Pair(#(first, second))
+  }
+  let run =
+    qcheck.generic_list(unsigned_of(7), qcheck.bounded_int(from: 0, to: 6))
+    |> qcheck.map(Run)
+  qcheck.from_generators(switch, [pair, run])
+}
+
+fn shapes_field() -> Generator(Field) {
+  use #(count_bits, items) <- qcheck.map(counted(shape_of()))
+  Shapes(count_bits:, items:)
 }
