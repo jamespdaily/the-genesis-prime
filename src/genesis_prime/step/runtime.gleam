@@ -7,6 +7,8 @@
 
 import genesis_prime/rule_recording/file.{type FileError, type Writer}
 import genesis_prime/step.{type About, type LogLevel, type Now, LogError, Now}
+import genesis_prime/wire_recording/recorder.{type WireWriter, type WriteError}
+import gleam/crypto
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process
 import gleam/option.{type Option}
@@ -36,10 +38,26 @@ pub fn down_monitor(down: process.Down) -> process.Monitor {
   }
 }
 
+/// Where a connection shell reads the time each input carries. The server's
+/// start passes `now`; a replay passes the clock of the recording it plays.
+pub type Clock =
+  fn() -> Now
+
+/// Where a connection shell draws the 32 bytes of the seed it gives its rule in
+/// `Accepted`, one draw for each connection. The server's start passes
+/// `operating_system_seed`; a replay passes the recorded seed.
+pub type SeedSource =
+  fn() -> BitArray
+
 /// The time as one input carries it: the monotonic clock in milliseconds and
 /// the system time as a FILETIME, both read now.
 pub fn now() -> Now {
   Now(monotonic_ms: monotonic_ms(), filetime: filetime())
+}
+
+/// A seed of 32 bytes from the operating system's strong random source.
+pub fn operating_system_seed() -> BitArray {
+  crypto.strong_random_bytes(32)
 }
 
 /// A number that is not given again while the node runs, for a connection's
@@ -84,6 +102,30 @@ pub fn finish_recording(writer: Option(Writer)) -> Nil {
       log(
         LogError,
         "the recording could not be finished: " <> file.describe(error),
+        step.no_one,
+      )
+  }
+}
+
+/// Logs that a read or a write of the socket could not be recorded, which ends
+/// the process before the input is taken or the next effect is carried out.
+pub fn log_wire_recording_failure(error: WriteError) -> Nil {
+  log(
+    LogError,
+    "the wire recording could not be written: " <> recorder.describe(error),
+    step.no_one,
+  )
+}
+
+/// Ends the wire recording of a process that is stopping. A recording that
+/// cannot be ended is logged, since the process ends either way.
+pub fn finish_wire_recording(writer: Option(WireWriter)) -> Nil {
+  case recorder.close_if(writer) {
+    Ok(Nil) -> Nil
+    Error(error) ->
+      log(
+        LogError,
+        "the wire recording could not be finished: " <> recorder.describe(error),
         step.no_one,
       )
   }

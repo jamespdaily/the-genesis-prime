@@ -444,6 +444,9 @@ fn login() -> server.Login {
         rate: sts_rate(),
       ),
       recorder: None,
+      wire_recorder: None,
+      seed_source: runtime.operating_system_seed,
+      clock: runtime.now,
     ),
     auth: server.Served(
       listener: process.new_name("auth_listener"),
@@ -461,6 +464,9 @@ fn login() -> server.Login {
         rate: auth_rate(),
       ),
       recorder: None,
+      wire_recorder: None,
+      seed_source: runtime.operating_system_seed,
+      clock: runtime.now,
     ),
   )
 }
@@ -486,6 +492,9 @@ fn game(tables: store.Tables) -> server.Served(game_connection.Settings) {
       rate: game_rate(),
     ),
     recorder: None,
+    wire_recorder: None,
+    seed_source: runtime.operating_system_seed,
+    clock: runtime.now,
   )
 }
 

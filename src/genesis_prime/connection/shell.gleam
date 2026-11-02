@@ -12,7 +12,8 @@
 ////     returns at once; Ranch then sends the handshake
 ////   Begin ─▶ ranch:handshake, the socket's options, exits trapped, the logger
 ////     metadata of the process (connection, peer)
-////   the recorder, when on, opens the file and writes the header
+////   the seed is drawn from the settings' seed source and the accept time read from
+////     their clock; the recorders, when on, open their files and write the headers
 ////   the registry, when the settings hold one: the shell joins the group of
 ////     Connection(id), so other processes find it (genesis_prime/connection/registry)
 ////   OwnEvent(Accepted(connection id, peer, seed)) ─▶ step ─▶ effects
@@ -26,7 +27,9 @@
 ////     {tcp_closed}        ─▶ OwnEvent(PeerClosed)   ─▶ step ─▶ effects
 ////     {tcp_error, reason} ─▶ OwnEvent(ReadFailed(_)) ─▶ step ─▶ effects
 ////     the parent's exit   ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
-////   each step: the recorder writes Taken(input, step) before its effects
+////   each step: the rule recorder writes Taken(input, step) before its effects;
+////     the wire recorder writes each read before its input is taken and each
+////     write after the socket took it, with the input's `Now`
 //// ```
 ////
 //// - **A handshake that fails.** A client gone before the handshake, or a
@@ -47,7 +50,9 @@
 ////   is dropped.
 //// - **Time.** Each input carries one `Now`, read as the shell takes the
 ////   input: the monotonic clock in milliseconds and the system time as a
-////   FILETIME.
+////   FILETIME, from the settings' clock (the node's in the server, the recording's in
+////   a replay). The seed of `Accepted` likewise comes from the settings' seed
+////   source.
 //// - **A failed write.** The step's later effects are not carried out; the
 ////   next input is `OwnEvent(WriteFailed(_))`. A write that does not finish
 ////   within the send deadline fails as `SendTimedOut` and closes the socket.
@@ -183,7 +188,9 @@ import genesis_prime/step.{
 }
 import genesis_prime/step/runtime
 import genesis_prime/step/watch.{type Watches}
-import gleam/crypto
+import genesis_prime/wire_recording/recorder.{
+  type WireRecorder, type WireWriter, type WriteError,
+}
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{
@@ -207,6 +214,18 @@ pub type Settings(settings, state, message, answer, request) {
     /// Where each connection's inputs are recorded; `None` unless the dev
     /// start turns recording on.
     recorder: Option(Recorder),
+    /// Where the bytes of each connection's socket reads and writes are
+    /// recorded, a line after each (genesis_prime/wire_recording); `None`
+    /// unless the dev start turns recording on.
+    wire_recorder: Option(WireRecorder),
+    /// Where each connection draws the seed it gives its rule in `Accepted`:
+    /// the operating system's random source in the server, the recorded seed
+    /// in a replay.
+    seed_source: runtime.SeedSource,
+    /// Where each input gets the `Now` it carries, and where an ask's wait
+    /// reads the time its deadline counts from: the node's clock in the
+    /// server, the recording's in a replay.
+    clock: runtime.Clock,
     /// How the shell reaches the process a request names: it sends the
     /// request with `reply` and says where it went, or `Error(Nil)` when that
     /// process is not running. Made once at start from the services' names,
@@ -290,14 +309,18 @@ type Kept {
 }
 
 /// A connection that has taken its socket: the socket, the rule's state, the
-/// recording file when there is one, the asks kept by their tags, the monitor
-/// of each watch the rule has open, each timer it has running and the stop
-/// deadline of a stop that arrived during an ask.
+/// recording files when there are any, the `Now` of the input whose step is
+/// being carried out (which each write recorded in that step carries), the
+/// asks kept by their tags, the monitor of each watch the rule has open, each
+/// timer it has running and the stop deadline of a stop that arrived during an
+/// ask.
 type Running(state) {
   Running(
     socket: ClientSocket,
     state: state,
     writer: Option(file.Writer),
+    wire: Option(WireWriter),
+    at: step.Now,
     kept: Dict(Reference, Kept),
     watches: Watches,
     timers: Dict(TimerId, Started),
@@ -442,11 +465,20 @@ fn handle(
           panic as "a connection takes Begin first: its initialiser queued it before Ranch could send anything"
       }
     Open(running:) -> {
-      let now = runtime.now()
+      let now = connection.settings.clock()
       case mail {
         Begin -> panic as "a connection takes Begin once"
         FromSocket(Read(bytes:)) ->
-          take(connection:, running:, now:, event: OwnEvent(step.Read(bytes:)))
+          case recorder.received(writer: running.wire, at: now, bytes:) {
+            Ok(Nil) ->
+              take(
+                connection:,
+                running:,
+                now:,
+                event: OwnEvent(step.Read(bytes:)),
+              )
+            Error(error) -> wire_recording_failed(running.socket, error)
+          }
         FromSocket(ClosedByPeer) ->
           take(connection:, running:, now:, event: OwnEvent(step.PeerClosed))
         FromSocket(FailedToRead(failure:)) ->
@@ -514,11 +546,25 @@ fn begin(
           peer: Some(accepted),
         ),
       )
+      let seed = settings.seed_source()
+      let started = settings.clock()
       let writer = case
         file.open_if(settings.recorder, settings.rule, connection: id)
       {
         Ok(writer) -> writer
         Error(error) -> recording_failed(socket, error)
+      }
+      let wire = case
+        recorder.open_if(
+          recorder: settings.wire_recorder,
+          rule_name: settings.rule.name,
+          connection: id,
+          seed:,
+          started:,
+        )
+      {
+        Ok(wire) -> wire
+        Error(error) -> wire_recording_failed(socket, error)
       }
       join_registry(settings.registry, ConnectionId(id))
       let rule = settings.rule
@@ -528,16 +574,18 @@ fn begin(
           socket:,
           state: rule.new(rule.settings),
           writer:,
+          wire:,
+          at: started,
           kept: dict.new(),
           watches: watch.new(),
           timers: dict.new(),
           stopping: None,
         ),
-        now: runtime.now(),
+        now: started,
         event: OwnEvent(Accepted(
           connection: ConnectionId(id),
           peer: accepted,
-          seed: crypto.strong_random_bytes(32),
+          seed:,
         )),
       )
     }
@@ -586,7 +634,7 @@ fn take(
     Ok(taken) -> taken
     Error(error) -> recording_failed(running.socket, error)
   }
-  let running = Running(..running, state:, writer:)
+  let running = Running(..running, state:, writer:, at: now)
   case step {
     Effects(effects:) ->
       carry(connection:, running:, effects:, then: WaitForInput)
@@ -643,7 +691,11 @@ fn carry_effect(
   case effect {
     OwnEffect(Write(bytes:)) ->
       case send(running.socket, bytes), then {
-        Ok(Nil), _ -> carry(connection:, running:, effects: later, then:)
+        Ok(Nil), _ ->
+          case recorder.sent(writer: running.wire, at: running.at, bytes:) {
+            Ok(Nil) -> carry(connection:, running:, effects: later, then:)
+            Error(error) -> wire_recording_failed(running.socket, error)
+          }
         Error(failure), EndProcess -> {
           runtime.log(
             LogWarning,
@@ -658,7 +710,7 @@ fn carry_effect(
           take(
             connection:,
             running:,
-            now: runtime.now(),
+            now: connection.settings.clock(),
             event: OwnEvent(WriteFailed(failure:)),
           )
       }
@@ -790,7 +842,7 @@ fn finish(
       take(
         connection:,
         running:,
-        now: runtime.now(),
+        now: connection.settings.clock(),
         event: OwnEvent(Answered(ask: ask.ask, outcome: StoppedWaiting)),
       )
     WaitForInput, _ -> wait_for_input(connection:, running:)
@@ -813,14 +865,14 @@ fn wait_for_input(
       take(
         connection:,
         running: Running(..running, watches:),
-        now: runtime.now(),
+        now: connection.settings.clock(),
         event: step.WatchEnded(watch:),
       )
     Error(Nil), Some(deadline_ms) ->
       take(
         connection:,
         running: Running(..running, stopping: None),
-        now: runtime.now(),
+        now: connection.settings.clock(),
         event: Stopping(deadline_ms:),
       )
     Error(Nil), None ->
@@ -830,7 +882,7 @@ fn wait_for_input(
           take(
             connection:,
             running:,
-            now: runtime.now(),
+            now: connection.settings.clock(),
             event: OwnEvent(ReadFailed(failure:)),
           )
       }
@@ -856,7 +908,7 @@ fn make_ask(
       take(
         connection:,
         running:,
-        now: runtime.now(),
+        now: connection.settings.clock(),
         event: OwnEvent(Answered(ask: ask.ask, outcome: NotRunning)),
       )
     Ok(sent) -> wait_for_answer(connection:, running:, ask:, tag:, sent:)
@@ -885,8 +937,9 @@ fn wait_for_answer(
       parent: connection.parent,
       kept: running.kept,
       deadline_ms: ask.deadline_ms,
+      clock: connection.settings.clock,
     )
-  let known = runtime.now()
+  let known = connection.settings.clock()
   let running = Running(..running, kept:)
   let #(running, outcome) = case waited {
     Replied(answer:) -> #(running, Answer(answer:))
@@ -938,6 +991,7 @@ fn await_answer(
   parent parent: Pid,
   kept kept: Dict(Reference, Kept),
   deadline_ms deadline_ms: Int,
+  clock clock: runtime.Clock,
 ) -> #(Waited(answer), Dict(Reference, Kept)) {
   let selector =
     process.new_selector()
@@ -951,7 +1005,7 @@ fn await_answer(
         False -> OtherGone
       }
     })
-  wait_until(selector:, tag:, monitor:, kept:, deadline_ms:)
+  wait_until(selector:, tag:, monitor:, kept:, deadline_ms:, clock:)
 }
 
 fn wait_until(
@@ -960,8 +1014,9 @@ fn wait_until(
   monitor monitor: Monitor,
   kept kept: Dict(Reference, Kept),
   deadline_ms deadline_ms: Int,
+  clock clock: runtime.Clock,
 ) -> #(Waited(answer), Dict(Reference, Kept)) {
-  let remaining = deadline_ms - runtime.now().monotonic_ms
+  let remaining = deadline_ms - clock().monotonic_ms
   case remaining <= 0 {
     True -> #(DeadlinePassed, kept)
     False ->
@@ -977,11 +1032,12 @@ fn wait_until(
             monitor:,
             kept: drop_kept(kept:, tag: heard),
             deadline_ms:,
+            clock:,
           )
         Ok(TargetDown) -> #(TargetEnded, kept)
         Ok(ParentGone) -> #(ParentStopping, kept)
         Ok(OtherGone) ->
-          wait_until(selector:, tag:, monitor:, kept:, deadline_ms:)
+          wait_until(selector:, tag:, monitor:, kept:, deadline_ms:, clock:)
         Error(Nil) -> #(DeadlinePassed, kept)
       }
   }
@@ -997,10 +1053,11 @@ fn keep(
 }
 
 /// The one end of a connection that was open: closes the socket, ends the
-/// recording with `End` and lets the actor stop normally. Every stop of an
-/// open connection goes through it: the rule's `Stop`, also after a write
-/// that failed. A crash does not: the process ends with its reason, the socket
-/// closes with it, and the recording has no `End`, so it never replays.
+/// recordings (`End` of the rule recording, the closing line of the wire
+/// recording) and lets the actor stop normally. Every stop of an open
+/// connection goes through it: the rule's `Stop`, also after a write that
+/// failed. A crash does not: the process ends with its reason, the socket
+/// closes with it, and the recordings have no end, so they never replay.
 fn stop(
   running: Running(state),
 ) -> actor.Next(
@@ -1009,6 +1066,7 @@ fn stop(
 ) {
   close(running.socket)
   runtime.finish_recording(running.writer)
+  runtime.finish_wire_recording(running.wire)
   actor.stop()
 }
 
@@ -1018,6 +1076,14 @@ fn recording_failed(socket: ClientSocket, error: FileError) -> a {
   runtime.log_recording_failure(error)
   close(socket)
   panic as "a connection's recording could not be written"
+}
+
+/// Ends the connection before its input is taken or the next effect carried
+/// out, since the socket's read or write could not be recorded.
+fn wire_recording_failed(socket: ClientSocket, error: WriteError) -> a {
+  runtime.log_wire_recording_failure(error)
+  close(socket)
+  panic as "a connection's wire recording could not be written"
 }
 
 /// Continues with the connection open.

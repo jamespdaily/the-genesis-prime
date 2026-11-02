@@ -21,6 +21,7 @@ import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/server
+import genesis_prime/step/runtime
 import gleam/erlang/process.{type Pid}
 import gleam/option.{None, Some}
 import login_client.{type Ports, Ports}
@@ -75,6 +76,9 @@ pub fn login() -> server.Login {
       max_connections: sts_max_connections,
       settings: sts_settings(),
       recorder: None,
+      wire_recorder: None,
+      seed_source: runtime.operating_system_seed,
+      clock: runtime.now,
     ),
     auth: server.Served(
       listener: process.new_name("test_auth_listener"),
@@ -82,6 +86,9 @@ pub fn login() -> server.Login {
       max_connections: auth_max_connections,
       settings: auth_settings(),
       recorder: None,
+      wire_recorder: None,
+      seed_source: runtime.operating_system_seed,
+      clock: runtime.now,
     ),
   )
 }
@@ -114,6 +121,9 @@ pub fn game() -> server.Served(game_connection.Settings) {
       rate: support.roomy(),
     ),
     recorder: None,
+    wire_recorder: None,
+    seed_source: runtime.operating_system_seed,
+    clock: runtime.now,
   )
 }
 

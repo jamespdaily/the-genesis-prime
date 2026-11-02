@@ -14,6 +14,7 @@ import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type ConnectionRule, type ServiceRule, Rule}
+import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Job}
 import gleam/erlang/atom
 import gleam/erlang/process.{type Name, type Pid}
@@ -82,6 +83,9 @@ pub fn start_joined(
       send_deadline_ms: 300,
       shutdown_ms:,
       recorder:,
+      wire_recorder: None,
+      seed_source: runtime.operating_system_seed,
+      clock: runtime.now,
       directory:,
       registry:,
       locate:,

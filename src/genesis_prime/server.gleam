@@ -97,7 +97,9 @@ import genesis_prime/service.{type Call, type Locate, type Reach, type Sent}
 import genesis_prime/service/shell as service_shell
 import genesis_prime/sessions
 import genesis_prime/step.{type ConnectionRule}
+import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Job}
+import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id
 import genesis_prime/world_map/maps
@@ -180,8 +182,12 @@ pub type Login {
 /// One listener: its name in Ranch, unique on the node and made once with
 /// `process.new_name`, the port it listens on (0 for one the system picks),
 /// the most connections it holds at once (`genesis_prime/connection/listener`),
-/// the settings its rule is made with, and where each connection's inputs are
-/// recorded, `None` unless the dev start turns recording on.
+/// the settings its rule is made with, where each connection's inputs are
+/// recorded (`recorder`) and where the bytes of its socket are
+/// (`wire_recorder`), `None` for both unless the dev start turns recording on,
+/// and where each connection gets its seed and its time: the operating system's
+/// source and the node's clock in the server (`runtime.operating_system_seed`,
+/// `runtime.now`), the recorded ones in a replay.
 pub type Served(settings) {
   Served(
     listener: Name(Nil),
@@ -189,6 +195,9 @@ pub type Served(settings) {
     max_connections: Int,
     settings: settings,
     recorder: Option(Recorder),
+    wire_recorder: Option(WireRecorder),
+    seed_source: runtime.SeedSource,
+    clock: runtime.Clock,
   )
 }
 
@@ -460,6 +469,9 @@ fn serve(
         send_deadline_ms: settings.send_deadline_ms,
         shutdown_ms: settings.connection_shutdown_ms,
         recorder: served.recorder,
+        wire_recorder: served.wire_recorder,
+        seed_source: served.seed_source,
+        clock: served.clock,
         directory:,
         registry:,
         locate: locate(settings),

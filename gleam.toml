@@ -64,6 +64,14 @@ avoid_panic = "off"
 # The recording's types are the shape the shell's record mode and the replay
 # are built on; no module records or replays, so no other module uses them.
 "src/genesis_prime/rule_recording.gleam" = ["unused_exports"]
+# The wire recording's reader, encoders, fixture writer and replay are the shape
+# the recorder and the replay tests are built on; the shell calls only the
+# recorder's writers, so nothing outside these modules calls the rest. The build
+# commit of the step removes these entries.
+"src/genesis_prime/wire_recording.gleam" = ["unused_exports"]
+"src/genesis_prime/wire_recording/fixture.gleam" = ["unused_exports"]
+"src/genesis_prime/wire_recording/recorder.gleam" = ["unused_exports"]
+"dev/genesis_prime/wire_replay.gleam" = ["unused_exports"]
 # The test runner finds public `_test` functions by name, and test-support
 # modules are shared across test modules, so no other module calls them.
 "test/**/*.gleam" = ["unused_exports"]
@@ -82,6 +90,8 @@ effectful_modules = [
   { module = "genesis_prime/connection/listener", reason = "starts a Ranch listener under the supervision tree" },
   { module = "genesis_prime/connection/registry", reason = "starts OTP's pg scope under the supervision tree, and joins and looks in it for a connection shell" },
   { module = "genesis_prime/rule_recording/file", reason = "writes a connection's recording to a file" },
+  { module = "genesis_prime/wire_recording/recorder", reason = "writes a connection's wire recording to a file, a line after each socket read and write" },
+  { module = "genesis_prime/wire_recording/fixture", reason = "writes the rows a recorded session starts from to a file and runs them on a database" },
   { module = "genesis_prime/step/runtime", reason = "reads the clock and the node's unique numbers and writes log lines for a shell" },
   { module = "genesis_prime/step/watch", reason = "monitors the processes a shell's rule watches, for the service shell and the connection shell" },
   { module = "genesis_prime/service", reason = "reaches a named service by a send, for an asker's directory" },
