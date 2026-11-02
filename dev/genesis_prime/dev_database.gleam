@@ -4,8 +4,10 @@
 //// PGDATABASE (`genesis_prime.pool`), and one query run on it.
 
 import genesis_prime
+import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/io
+import gleam/result
 import pog
 
 /// Why a query on the developer's database gave no rows.
@@ -28,6 +30,26 @@ const connection_attempts = 5
 
 /// How long to wait before trying again, in milliseconds.
 const connection_wait_ms = 100
+
+/// Starts the pool and waits until it has a connection, so the first query is
+/// not answered as unavailable: gives the pool.
+pub fn connect() -> Result(pog.Connection, Failure) {
+  case pog.start(genesis_prime.pool()) {
+    Error(_) -> Error(DatabaseDown)
+    Ok(started) -> {
+      use _ <- result.map(attempt(
+        pool: started.data,
+        query: fn(db) {
+          pog.query("select 1")
+          |> pog.returning(decode.at([0], decode.int))
+          |> pog.execute(db)
+        },
+        attempts: connection_attempts,
+      ))
+      started.data
+    }
+  }
+}
 
 /// Starts the pool and runs the query on it, giving its rows.
 pub fn run(

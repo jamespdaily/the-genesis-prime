@@ -193,12 +193,12 @@ fn recorded(pool: pog.Connection) -> Result(Recorded, Nil) {
     Error(Unexpected(error: pog.PostgresqlError(code: "42P01", ..))) ->
       Ok(NoRecord)
     Error(Unexpected(error:)) | Error(Refused(error:, ..)) ->
-      Ok(Unreadable(reason: describe(error)))
+      Ok(Unreadable(reason: describe_query_error(error)))
   }
 }
 
 /// The error as a sentence for the log: what Postgres or pog said.
-fn describe(error: pog.QueryError) -> String {
+pub fn describe_query_error(error: pog.QueryError) -> String {
   case error {
     pog.PostgresqlError(code:, name:, message:) ->
       name <> " (" <> code <> "): " <> message

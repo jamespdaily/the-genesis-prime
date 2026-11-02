@@ -156,20 +156,6 @@ type Stage {
   TokenGiven
 }
 
-/// The RC4 stream the connection deciphers the client's bytes with, once the
-/// proof has passed and RC4 is on; `None` before. A replay folds a recording's
-/// inputs through the rule and reads the stream from the state it reaches.
-pub fn receiving(state state: State) -> Option(rc4.Stream) {
-  case state {
-    NotAccepted(..) -> None
-    Connected(session:) ->
-      case session.status {
-        Proven(ciphers:, ..) -> Some(ciphers.receiving)
-        AwaitingLoginStart | FindingAccount(..) | AwaitingProof(..) -> None
-      }
-  }
-}
-
 /// The error code the client shows as "Invalid account name or password".
 const invalid_credentials = 3002
 

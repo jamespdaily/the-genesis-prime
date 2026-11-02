@@ -2,7 +2,8 @@
 //// places.
 //// - CLAUDE.md and the designing-processes skill: shutdown is ordered, so a
 ////   stopping server gives every process its `Stopping`, and a recorded
-////   process closes its recording with `End` (`genesis_prime/step/runtime`).
+////   connection closes its recording with its closing line, naming the server
+////   as the side that closed it (`genesis_prime/step/runtime`).
 //// - OTP: SIGTERM makes the VM run `init:stop`, which stops the applications
 ////   in order, so the server, started as the application and its tree under
 ////   the application's root, stops through OTP, and the VM halts with status
@@ -19,14 +20,13 @@
 //// ended.
 
 import database_support
-import genesis_prime/rule_recording.{type Record, End}
-import genesis_prime/sessions
-import genesis_prime/step.{type NoAsk, type ServiceEffect, type ServiceEvent}
+import genesis_prime/wire_recording.{Recording, Server}
 import gleam/list
 import gleam/string
 import owned_test
 import recording_support
 import serving_node.{GivesUp, Serving, SlowStop, UnreachableDatabase}
+import simplifile
 
 /// What the node prints when the server can serve: the start of its ready
 /// line.
@@ -61,36 +61,38 @@ fn assert_no_crash(node: serving_node.Node) -> Nil {
     as "the node's program did not crash"
 }
 
-/// Whether Sessions' recording in the folder ends with `End` that counts the
-/// records before it.
-fn ends_with_end(folder: String) -> Bool {
-  let assert Ok(#(_, records)) =
-    rule_recording.read(recording_support.recording_in(folder))
-    as "the recording reads"
-  let records: List(
-    Record(
-      NoAsk,
-      ServiceEvent(sessions.Message),
-      ServiceEffect(sessions.Outgoing),
-    ),
-  ) = records
-  case list.last(records) {
-    Ok(End(count:)) -> count == list.length(records) - 1
-    Ok(_) | Error(Nil) -> False
-  }
+/// The side that closed each recording in the folder, which must be whole: a
+/// file whose closing line is missing is no recording of a process that was
+/// stopped in order.
+fn closed_by(folder: String) -> List(wire_recording.Side) {
+  let assert Ok(names) = simplifile.read_directory(folder)
+    as "the recording folder reads"
+  list.map(names, fn(name) {
+    let assert Ok(text) = simplifile.read(folder <> "/" <> name)
+      as "a recording reads"
+    let assert Ok(Recording(closing:, ..)) = wire_recording.read(text)
+      as { name <> " is whole: the stop reached its process" }
+    closing.by
+  })
 }
 
-pub fn sigterm_stops_the_server_through_otp_and_its_recording_ends_with_end_test() -> Nil {
+pub fn sigterm_stops_the_server_through_otp_and_its_recording_ends_with_its_closing_line_test() -> Nil {
   use <- owned_test.run(120_000)
   use node, folder <- with_node(Serving)
   assert serving_node.await_output(node, ready_line, node_wait_ms)
     as "the node printed its ready line"
+  assert serving_node.await_output(
+    node,
+    "a connection is recorded",
+    node_wait_ms,
+  )
+    as "the node holds a connection to its STS listener, and the shell has opened its recording"
   serving_node.terminate(node)
   assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
     as "SIGTERM ends the node with status 0"
   assert_no_crash(node)
-  assert ends_with_end(folder)
-    as "the recording Sessions kept ends with End: the stop reached its process"
+  assert closed_by(folder) == [Server]
+    as "the connection's recording ends with its closing line, the server as the side that closed it: the stop reached its process"
   let printed = serving_node.output(node)
   assert string.contains(printed, "every listener stopped accepting")
     as "the closer, the tree's first child to stop, closed the listeners"
@@ -107,7 +109,8 @@ pub fn sigterm_before_the_ready_line_ends_the_node_with_status_0_and_no_ready_li
   assert serving_node.await_exit(node, node_wait_ms) == Ok(0)
     as "SIGTERM while the readiness ask waits ends the node with status 0"
   assert_no_crash(node)
-  assert ends_with_end(folder) as "no recording is left without End"
+  assert closed_by(folder) == []
+    as "no connection was made, so no recording is left without its closing line"
   assert !string.contains(serving_node.output(node), ready_line)
     as "no ready line is printed for a server that was stopped"
 }

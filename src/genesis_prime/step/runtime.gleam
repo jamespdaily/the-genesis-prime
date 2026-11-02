@@ -5,8 +5,9 @@
 //// It also holds what the two shells do alike when a recording cannot be
 //// written or ended, and the reason they give a process they end.
 
-import genesis_prime/rule_recording/file.{type FileError, type Writer}
 import genesis_prime/step.{type About, type LogLevel, type Now, LogError, Now}
+import genesis_prime/wire_recording.{type Side}
+import genesis_prime/wire_recording/recorder.{type WireWriter, type WriteError}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process
 import gleam/option.{type Option}
@@ -68,8 +69,10 @@ pub fn now() -> Now {
   Now(monotonic_ms: monotonic_ms(), filetime: filetime())
 }
 
-/// A number that is not given again while the node runs, for a connection's
-/// id and the name of its recording.
+/// A number that is not given again while the node runs and that grows with
+/// each call, for a connection's id, the name of its recording and the sequence
+/// number of each line of a wire recording, which orders the lines of every
+/// connection of the node.
 @external(erlang, "step_runtime_ffi", "unique_id")
 pub fn unique_id() -> Int
 
@@ -91,25 +94,29 @@ pub fn set_about(about: About) -> Nil
 @external(erlang, "step_runtime_ffi", "log_stray")
 pub fn log_stray(message message: Dynamic, shell shell: String) -> Nil
 
-/// Logs that a step's input could not be recorded, which ends the process
-/// before the step's effects, so no input is carried out without its record.
-pub fn log_recording_failure(error: FileError) -> Nil {
+/// Logs that a read or a write of the socket could not be recorded, which ends
+/// the process before the input is taken or the next effect is carried out.
+pub fn log_wire_recording_failure(error: WriteError) -> Nil {
   log(
     LogError,
-    "the recording could not be written: " <> file.describe(error),
+    "the wire recording could not be written: " <> recorder.describe(error),
     step.no_one,
   )
 }
 
-/// Ends the recording of a process that is stopping. A recording that cannot
-/// be ended is logged, since the process ends either way.
-pub fn finish_recording(writer: Option(Writer)) -> Nil {
-  case file.finish_if(writer) {
+/// Ends the wire recording of a process that is stopping, with the side that
+/// closed the connection. A recording that cannot be ended is logged, since the
+/// process ends either way.
+pub fn finish_wire_recording(
+  writer writer: Option(WireWriter),
+  by by: Side,
+) -> Nil {
+  case recorder.close_if(writer:, sequence: unique_id(), by:) {
     Ok(Nil) -> Nil
     Error(error) ->
       log(
         LogError,
-        "the recording could not be finished: " <> file.describe(error),
+        "the wire recording could not be finished: " <> recorder.describe(error),
         step.no_one,
       )
   }
@@ -129,8 +136,11 @@ pub fn show_info_lines() -> Nil
 @external(erlang, "step_runtime_ffi", "keep_mailboxes_out_of_crash_reports")
 pub fn keep_mailboxes_out_of_crash_reports() -> Nil
 
+/// The node's monotonic clock in milliseconds, read now. A wait on real time
+/// counts from it; the time an input carries comes from the connection's script
+/// (`now` in the server).
 @external(erlang, "step_runtime_ffi", "monotonic_ms")
-fn monotonic_ms() -> Int
+pub fn monotonic_ms() -> Int
 
 @external(erlang, "step_runtime_ffi", "filetime")
 fn filetime() -> Int

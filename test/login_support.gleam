@@ -14,13 +14,14 @@ import genesis_prime/add_account/sql
 import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/listener
 import genesis_prime/connection/registry
+import genesis_prime/connection/script
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
 import genesis_prime/login/guid
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
-import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/server
+import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import gleam/erlang/process.{type Pid}
 import gleam/option.{None, Some}
 import login_client.{type Ports, Ports}
@@ -74,14 +75,16 @@ pub fn login() -> server.Login {
       port: 0,
       max_connections: sts_max_connections,
       settings: sts_settings(),
-      recorder: None,
+      wire_recorder: None,
+      scripts: script.operating_system,
     ),
     auth: server.Served(
       listener: process.new_name("test_auth_listener"),
       port: 0,
       max_connections: auth_max_connections,
       settings: auth_settings(),
-      recorder: None,
+      wire_recorder: None,
+      scripts: script.operating_system,
     ),
   )
 }
@@ -94,7 +97,6 @@ pub fn world() -> server.World {
     map_supervisor: process.new_name("test_map_supervisor"),
     maps_call_ms: 2000,
     map_shutdown_ms: 1000,
-    map_recordings: None,
   )
 }
 
@@ -113,7 +115,8 @@ pub fn game() -> server.Served(game_connection.Settings) {
       ask_deadline_ms: 5000,
       rate: support.roomy(),
     ),
-    recorder: None,
+    wire_recorder: None,
+    scripts: script.operating_system,
   )
 }
 
@@ -132,7 +135,6 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
     hand_off_shutdown_ms: 1500,
     sessions: process.new_name("sessions"),
     sessions_shutdown_ms: 1500,
-    sessions_recorder: None,
     registry: registry.new(),
     world: world(),
     send_deadline_ms: 300,
@@ -142,21 +144,24 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
   )
 }
 
-/// The rate bucket the server's own settings give the auth rule. The settings
-/// read two variables that a started server sets for real; this gives them
-/// values.
-pub fn servers_auth_rate() -> Bucket {
+/// The settings the server's own start makes. They read two variables that a
+/// started server sets for real; this gives them values.
+pub fn servers_settings() -> server.Settings {
   envoy.set("GENESIS_GAME_ADDRESS", "127.0.0.1")
   envoy.set("GENESIS_REALM_NAME", "Test")
-  let settings = genesis_prime.settings(tables: character_tables.shared())
-  settings.login.auth.settings.rate
+  genesis_prime.settings(tables: character_tables.shared())
+}
+
+/// The rate bucket the server's own settings give the auth rule.
+pub fn servers_auth_rate() -> Bucket {
+  servers_settings().login.auth.settings.rate
 }
 
 /// Starts the server's tree as `start` does, with the auth listener's rate as
-/// `rate` and its connections recorded by `recorder`.
+/// `rate` and its connections recorded on the wire by `recorder`.
 pub fn start_recording_auth(
   rate rate: Bucket,
-  recorder recorder: Recorder,
+  recorder recorder: WireRecorder,
 ) -> Started {
   start_with(change: fn(settings) {
     let auth = settings.login.auth
@@ -167,7 +172,7 @@ pub fn start_recording_auth(
         auth: server.Served(
           ..auth,
           settings: auth_connection.Settings(..auth.settings, rate:),
-          recorder: Some(recorder),
+          wire_recorder: Some(recorder),
         ),
       ),
     )

@@ -24,17 +24,18 @@ import simplifile
 /// The project's modules and Erlang files the two shells need, as paths under
 /// `src`.
 const sources = [
+  "genesis_prime/seed.gleam",
   "genesis_prime/step.gleam",
   "genesis_prime/step/runtime.gleam",
   "genesis_prime/step/watch.gleam",
   "genesis_prime/world_map/map_id.gleam",
-  "genesis_prime/rule_recording.gleam",
-  "genesis_prime/rule_recording_ffi.erl",
-  "genesis_prime/rule_recording/file.gleam",
+  "genesis_prime/wire_recording.gleam",
+  "genesis_prime/wire_recording/recorder.gleam",
   "genesis_prime/service.gleam",
   "genesis_prime/service_ffi.erl",
   "genesis_prime/service/shell.gleam",
   "genesis_prime/connection/frame.gleam",
+  "genesis_prime/connection/script.gleam",
   "genesis_prime/connection/shell.gleam",
   "genesis_prime/connection/connection_shell_ffi.erl",
   "genesis_prime/connection/registry.gleam",
@@ -44,8 +45,8 @@ const sources = [
 
 /// The packages the shells import, found in `build/packages`.
 const packages = [
-  "gleam_stdlib", "gleam_erlang", "gleam_otp", "gleam_crypto", "simplifile",
-  "filepath",
+  "gleam_stdlib", "gleam_erlang", "gleam_otp", "gleam_crypto", "gleam_json",
+  "simplifile", "filepath",
 ]
 
 pub fn a_rule_that_answers_a_caller_does_not_compile_against_the_connection_shell_test() -> Nil {

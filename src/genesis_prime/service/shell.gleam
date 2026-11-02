@@ -13,7 +13,6 @@
 ////
 //// ```
 //// supervisor starts it ─▶ the actor registers its name, traps exits
-////   the recorder, when on, opens the file and writes the header
 ////   OwnEvent(Started)                               ─▶ step ─▶ effects
 ////   after each step's effects, before the mailbox is read:
 ////     a watch of a target no process holds ─▶ WatchEnded(id) ─▶ step ─▶ effects
@@ -23,7 +22,6 @@
 ////     the parent's exit     ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
 ////   Reply(CallerId(n), answer): the shell calls that call's reply with the
 ////     answer and forgets the caller
-////   each step: the recorder writes Taken(input, step) before its effects
 //// ```
 ////
 //// An ask, from the asker's side (the connection shell carries it out):
@@ -94,12 +92,11 @@
 ////   has no values, so no rule can build a step that ends in one; the shell's
 ////   case for such a step is unreachable.
 
-import genesis_prime/rule_recording/file.{type FileError, type Recorder}
 import genesis_prime/service.{type Call, type Reach, Call}
 import genesis_prime/step.{
   type Effect, type Event, type ServiceEffect, type ServiceEvent,
   type ServiceRule, type WatchId, Asked, CallerId, Effects, EffectsThenAsk,
-  OwnEffect, OwnEvent, Reply, Send, Started, Stopping, WatchEnded,
+  Input, OwnEffect, OwnEvent, Reply, Send, Started, Stopping, WatchEnded,
 }
 import genesis_prime/step/runtime.{Shutdown}
 import genesis_prime/step/watch.{type Watches}
@@ -122,9 +119,6 @@ pub type Settings(settings, state, message, outgoing) {
     /// How long it has to stop once the supervisor stops it; the child's
     /// shutdown timeout.
     shutdown_ms: Int,
-    /// Where its inputs are recorded; `None` unless the dev start turns
-    /// recording on.
-    recorder: Option(Recorder),
   )
 }
 
@@ -139,16 +133,14 @@ type Mail(message, outgoing) {
   Stray(message: Dynamic)
 }
 
-/// A running service: its settings, its parent, the rule's state, the
-/// recording file when there is one, the calls not yet answered by the
-/// number the shell gave each, and the monitor of each watch the rule has
-/// open.
+/// A running service: its settings, its parent, the rule's state, the calls
+/// not yet answered by the number the shell gave each, and the monitor of each
+/// watch the rule has open.
 type Running(settings, state, message, outgoing) {
   Running(
     settings: Settings(settings, state, message, outgoing),
     parent: Pid,
     state: state,
-    writer: Option(file.Writer),
     callers: Dict(Int, fn(outgoing) -> Nil),
     next_caller: Int,
     watches: Watches,
@@ -158,7 +150,6 @@ type Running(settings, state, message, outgoing) {
 /// Why a service could not start.
 type StartFailure {
   NameTaken
-  RecordingNotOpened(error: FileError)
 }
 
 /// The service as a permanent child of a supervisor, registered under `name`,
@@ -198,7 +189,7 @@ fn start(
 }
 
 /// Registers the name (a named service) or makes the subject its callers send
-/// to (an unnamed one), traps exits, opens the recording and takes `Started`.
+/// to (an unnamed one), traps exits and takes `Started`.
 fn initialise(
   settings settings: Settings(settings, state, message, outgoing),
   parent parent: Pid,
@@ -219,14 +210,6 @@ fn initialise(
     None -> Ok(process.new_subject())
   })
   process.trap_exits(True)
-  use writer <- result.try(
-    file.open_if(
-      settings.recorder,
-      settings.rule,
-      connection: runtime.unique_id(),
-    )
-    |> result.map_error(RecordingNotOpened),
-  )
   let rule = settings.rule
   let running =
     take(
@@ -234,7 +217,6 @@ fn initialise(
         settings:,
         parent:,
         state: rule.new(rule.settings),
-        writer:,
         callers: dict.new(),
         next_caller: 1,
         watches: watch.new(),
@@ -299,7 +281,7 @@ fn handle(
   }
 }
 
-/// Folds one input through the rule, records it, then carries out the step.
+/// Folds one input through the rule, then carries out the step.
 /// The end of each watch of a target no process holds that the step opened is
 /// then taken as the next input, in the order opened, before the mailbox is
 /// read.
@@ -308,19 +290,9 @@ fn take(
   now now: step.Now,
   event event: Event(ServiceEvent(message)),
 ) -> Running(settings, state, message, outgoing) {
-  let #(state, step, writer) = case
-    file.fold(
-      rule: running.settings.rule,
-      state: running.state,
-      writer: running.writer,
-      now:,
-      event:,
-    )
-  {
-    Ok(taken) -> taken
-    Error(error) -> recording_failed(error)
-  }
-  let running = Running(..running, state:, writer:)
+  let rule = running.settings.rule
+  let #(state, step) = rule.step(running.state, Input(now:, event:))
+  let running = Running(..running, state:)
   let running = case step {
     Effects(effects:) -> carry(running:, effects:, ending: False)
     EffectsThenAsk(..) ->
@@ -347,7 +319,7 @@ fn carry(
   case effects {
     [] ->
       case ending {
-        True -> stop(running)
+        True -> stop()
         False -> running
       }
     [effect, ..later] ->
@@ -446,21 +418,11 @@ fn watch_ended(
   }
 }
 
-/// Ends the recording and exits with the reason `shutdown`.
-fn stop(running: Running(settings, state, message, outgoing)) -> a {
-  runtime.finish_recording(running.writer)
+/// Exits with the reason `shutdown`.
+fn stop() -> a {
   runtime.exit_now(Shutdown)
 }
 
-fn recording_failed(error: FileError) -> a {
-  runtime.log_recording_failure(error)
-  panic as "a service's recording could not be written"
-}
-
-fn explain(failure: StartFailure) -> String {
-  case failure {
-    NameTaken -> "the service's name is already registered"
-    RecordingNotOpened(error:) ->
-      "the recording could not be opened: " <> file.describe(error)
-  }
+fn explain(_failure: StartFailure) -> String {
+  "the service's name is already registered"
 }

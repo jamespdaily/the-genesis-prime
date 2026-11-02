@@ -65,8 +65,8 @@ pub fn files() -> List(String) {
 /// The server's own tables (`server_table.entries`), loaded once per test run
 /// under the server's own key exactly as the server's start loads them: the
 /// first caller loads them, every later caller in any test process gets the
-/// same `Tables`, and a recording of the game rule replays on them, as its
-/// settings hold the tables under that key. A failed load stops the caller,
+/// same `Tables`, and the game rule's settings hold the tables under that key.
+/// A failed load stops the caller,
 /// naming the table. Never unload them, and never load the tables again for a
 /// test that reads the real files; a test of the load itself loads its own
 /// under a key of its own and unloads it.

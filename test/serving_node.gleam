@@ -17,18 +17,20 @@
 //// - `GivesUp`: the hand-off is killed once more than the tree's restart
 ////   intensity allows, so the tree ends with `shutdown` while the node runs.
 ////
-//// The node records Sessions into the folder it is given.
+//// The node records the connections of its STS listener on the wire into the
+//// folder it is given, and in `Serving` mode holds one connection open to it,
+//// so there is a connection to record.
 
 import ask_support
 import database_support
 import envoy
 import genesis_prime
 import genesis_prime/application
+import genesis_prime/connection/listener
 import genesis_prime/migration.{Recorded}
 import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/service.{type Sent, ToWorker}
-import genesis_prime/sessions
 import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Probed, Reached}
 import gleam/bool
@@ -36,8 +38,10 @@ import gleam/erlang/process
 import gleam/io
 import gleam/option.{Some}
 import login_support
+import mug
 import pog
 import recording_support
+import simplifile
 
 /// A node the calling process started, as the test sees it. Every function that
 /// takes one is called by that process.
@@ -126,13 +130,19 @@ pub fn main() -> Nil {
     UnreachableDatabase -> pog.port(pool, 1)
     Serving | LateDatabase | SlowStop | GivesUp -> pool
   }
+  let base = login_support.settings(pool:)
   let settings =
     server.Settings(
-      ..login_support.settings(pool:),
-      sessions_recorder: Some(recording_support.recorder(
-        folder: variable("SERVING_FOLDER"),
-        rule_module: sessions.rule_name,
-      )),
+      ..base,
+      login: server.Login(
+        ..base.login,
+        sts: server.Served(
+          ..base.login.sts,
+          wire_recorder: Some(
+            recording_support.wire_recorder(folder: variable("SERVING_FOLDER")),
+          ),
+        ),
+      ),
       sessions_shutdown_ms: 3000,
     )
   runtime.show_info_lines()
@@ -149,6 +159,10 @@ pub fn main() -> Nil {
       pause_ms: 100,
     )
   let probe = fn(reply) { worker.probe(store: settings.store, reply:) }
+  case mode {
+    Serving -> hold_a_connection(settings)
+    UnreachableDatabase | LateDatabase | SlowStop | GivesUp -> Nil
+  }
   case mode {
     Serving | UnreachableDatabase | LateDatabase ->
       genesis_prime.serve(
@@ -187,6 +201,42 @@ pub fn main() -> Nil {
         say: io.println,
       )
     }
+  }
+}
+
+/// Connects to the STS listener and holds the connection open, and says so
+/// once its recording is on disk: the recording's file exists once the
+/// shell has taken the socket, so the node says it only after that.
+fn hold_a_connection(settings: server.Settings) -> Nil {
+  let assert Ok(port) = listener.port(settings.login.sts.listener)
+    as "the STS listener has a port"
+  let _client =
+    process.spawn(fn() {
+      let assert Ok(_socket) =
+        mug.new("127.0.0.1", port:)
+        |> mug.ip_version_preference(mug.Ipv4Only)
+        |> mug.timeout(5000)
+        |> mug.connect
+        as "the node connected to its STS listener"
+      await_recording(variable("SERVING_FOLDER"), 3000)
+      io.println("a connection is recorded")
+      process.sleep_forever()
+    })
+  Nil
+}
+
+/// Waits until the folder holds a recording, asking every 10 ms up to `times`
+/// times.
+fn await_recording(folder: String, times: Int) -> Nil {
+  let assert Ok(names) = simplifile.read_directory(folder)
+    as "the recording folder reads"
+  case names, times > 0 {
+    [_, ..], _ -> Nil
+    [], True -> {
+      process.sleep(10)
+      await_recording(folder, times - 1)
+    }
+    [], False -> panic as "the connection was never recorded"
   }
 }
 

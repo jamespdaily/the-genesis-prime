@@ -1,13 +1,11 @@
 //// What the tests of a recorder share: a folder of its own under `build/`, the
-//// rule recording read back from it, and a recorder of a rule that writes into
-//// it.
+//// wire recording read back from it, and a recorder that writes into it.
 
-import genesis_prime/rule_recording/file
-import genesis_prime/rule_types
+import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import gleam/bit_array
 import gleam/crypto
 import gleam/erlang/process
-import gleam/option.{type Option, None}
+import gleam/option.{None}
 import gleam/string
 import simplifile
 
@@ -54,43 +52,18 @@ fn remove_when_owner_ends(folder: String) -> Nil {
   Nil
 }
 
-/// The bytes of the one rule recording in the folder.
-pub fn recording_in(folder: String) -> BitArray {
+/// The text of the one wire recording in the folder, whole or cut as the
+/// shell left it.
+pub fn wire_text_in(folder: String) -> String {
   let assert Ok([name]) = simplifile.read_directory(folder)
-    as "one recording in the folder"
-  let assert Ok(bytes) = simplifile.read_bits(folder <> "/" <> name)
-    as "the recording reads"
-  bytes
+    as "one wire recording in the folder"
+  let assert Ok(text) = simplifile.read(folder <> "/" <> name)
+    as "the wire recording reads"
+  text
 }
 
-/// The digest of the types of the rule in `rule_module`, as the code stands.
-pub fn types_digest(rule_module: String) -> String {
-  let assert Ok(digest) =
-    rule_types.digest(rule_module:, source_roots: ["src", "test"])
-    as "the rule's types digest"
-  digest
-}
-
-/// A recorder of the rule in `rule_module` that writes into `folder`, on the
-/// client build the tests are made for and with no table digest.
-pub fn recorder(
-  folder folder: String,
-  rule_module rule_module: String,
-) -> file.Recorder {
-  recorder_of_tables(folder:, rule_module:, tables_digest: None)
-}
-
-/// A recorder as `recorder` makes, whose header holds the digest of the game
-/// tables the rule reads.
-pub fn recorder_of_tables(
-  folder folder: String,
-  rule_module rule_module: String,
-  tables_digest tables_digest: Option(String),
-) -> file.Recorder {
-  file.recorder(
-    folder:,
-    client_build: 16_042,
-    tables_digest:,
-    types_digest: types_digest(rule_module),
-  )
+/// A wire recorder that writes into `folder`, on the client build the tests are
+/// made for and with no table digest and no realm.
+pub fn wire_recorder(folder folder: String) -> WireRecorder {
+  recorder.new(folder:, client_build: 16_042, tables_digest: None, realm: None)
 }

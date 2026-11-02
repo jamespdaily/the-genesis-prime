@@ -238,3 +238,9 @@ pub fn asked(step: Step(request, own)) -> Option(Ask(request)) {
 pub fn says(line line: LogLine, words words: String) -> Bool {
   string.contains(string.lowercase(line.text), string.lowercase(words))
 }
+
+/// A step's effect that logs `text` as a warning, as every test rule does when
+/// it refuses an input.
+pub fn warn(text: String) -> Effect(step.ConnectionEffect) {
+  Log(step.LogLine(level: step.LogWarning, text:, about: step.no_one))
+}

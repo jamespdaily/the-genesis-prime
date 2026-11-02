@@ -31,12 +31,13 @@
 ////
 //// The rule stops when the client closes or its socket fails.
 
+import connection_rule_support
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionInput, type ConnectionRule,
   type ConnectionStep, type Effect, Accepted, Ask, AskId, CancelTimer, Effects,
-  EffectsThenAsk, Input, Log, LogLine, LogWarning, OwnEffect, OwnEvent,
-  PeerClosed, Read, ReadFailed, Rule, Sessions, StartTimer, Stop, TimerFired,
-  TimerId, Watch, WatchEnded, WatchId, Woken, Write, WriteFailed,
+  EffectsThenAsk, Input, OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed, Rule,
+  Sessions, StartTimer, Stop, TimerFired, TimerId, Watch, WatchEnded, WatchId,
+  Woken, Write, WriteFailed,
 }
 import gleam/int
 import gleam/list
@@ -112,7 +113,7 @@ pub fn step(
     OwnEvent(PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(ReadFailed(..)) | OwnEvent(WriteFailed(..)) -> #(
       state,
-      Effects([warn("the socket failed"), Stop]),
+      Effects([connection_rule_support.warn("the socket failed"), Stop]),
     )
     OwnEvent(step.Answered(ask: AskId(n), ..)) -> #(
       state,
@@ -210,8 +211,4 @@ fn command(
 
 fn record(letter: Int, number: Int) -> Effect(ConnectionEffect) {
   OwnEffect(Write(<<letter, number:64>>))
-}
-
-fn warn(text: String) -> Effect(ConnectionEffect) {
-  Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }

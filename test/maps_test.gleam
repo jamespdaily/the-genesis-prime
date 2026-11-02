@@ -17,7 +17,6 @@
 import ask_support
 import event_wait
 import genesis_prime/connection/registry.{type Registry}
-import genesis_prime/rule_recording
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
@@ -25,13 +24,9 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/maps.{type MapProcess}
 import gleam/erlang/process.{type Name, type Pid}
-import gleam/int
 import gleam/list
-import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
 import owned_test
-import recording_support
-import simplifile
 
 /// The world supervisor as the server builds it, with the names it was built
 /// with, a registry the maps find their players' connections in, and, when the
@@ -45,7 +40,7 @@ type World {
   )
 }
 
-fn start_world(recording_folder: Option(String)) -> World {
+fn start_world() -> World {
   let maps_name = process.new_name("maps")
   let map_supervisor_name = process.new_name("map_supervisor")
   let scope = registry.new()
@@ -55,10 +50,6 @@ fn start_world(recording_folder: Option(String)) -> World {
       map_supervisor: map_supervisor_name,
       maps_call_ms: 1000,
       map_shutdown_ms: 1000,
-      map_recordings: option.map(recording_folder, recording_support.recorder(
-        _,
-        map.rule_name,
-      )),
     )
   let tree =
     supervisor.new(supervisor.RestForOne)
@@ -131,7 +122,7 @@ fn joined(found: MapProcess, id: Int) -> map.Outgoing {
 
 pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world(None)
+  let world = start_world()
   assert maps.find(world.maps, ship, incarnation: 1, call_ms: 1000)
     == Error(Nil)
     as "find never starts a map: no map is running"
@@ -164,7 +155,7 @@ pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test
 
 pub fn concurrent_finds_for_one_map_start_it_once_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world(None)
+  let world = start_world()
   let results = process.new_subject()
   list.each([1, 2, 3, 4, 5, 6, 7, 8], fn(_) {
     process.spawn_unlinked(fn() {
@@ -187,7 +178,7 @@ pub fn concurrent_finds_for_one_map_start_it_once_test() -> Nil {
 
 pub fn a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_is_not_found_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world(None)
+  let world = start_world()
   let first = started(world, ship)
   let ended = process.monitor(first.pid)
   process.kill(first.pid)
@@ -229,7 +220,7 @@ fn await_not_found(
 
 pub fn an_ask_is_given_up_at_the_askers_deadline_and_maps_not_running_is_an_error_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world(None)
+  let world = start_world()
   assert maps.find_or_start(
       world.maps,
       ship,
@@ -262,7 +253,7 @@ pub fn an_ask_past_its_deadline_is_never_sent_to_maps_test() -> Nil {
 
 pub fn a_map_gives_each_player_a_unit_id_and_never_gives_one_twice_after_a_leave_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world(None)
+  let world = start_world()
   let found = started(world, ship)
   let first_connection = connection(world, 1)
   assert joined(found, 1)
@@ -286,7 +277,7 @@ pub fn a_map_gives_each_player_a_unit_id_and_never_gives_one_twice_after_a_leave
 
 pub fn a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_test() -> Nil {
   use <- owned_test.run(30_000)
-  let world = start_world(None)
+  let world = start_world()
   let first = started(world, ship)
   let assert Ok(maps_pid) = process.named(world.maps) as "Maps is registered"
   let assert Ok(supervisor_pid) = process.named(world.map_supervisor)
@@ -316,50 +307,4 @@ pub fn a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_
   let again = started(world, ship)
   assert again.pid != first.pid && again.incarnation != first.incarnation
     as "rest_for_one: the map supervisor restarted with Maps, so every map ended, and a registry that lost its list never starts a second copy of a running map"
-}
-
-pub fn the_recording_of_a_map_run_is_named_by_its_world_instance_and_incarnation_and_replays_to_the_same_steps_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let world = start_world(Some(folder))
-  let found = started(world, ship)
-  // Both joiners are connection ids no process holds, so each watch ends as
-  // the map's next input, before the tree's stop is read. A live connection killed
-  // here would race the tree's stop: its end comes from another sender than
-  // the stop, so the map may stop before it takes it.
-  let _joined = joined(found, 2)
-  let _joined = joined(found, 3)
-  let _reason = ask_support.stop_tree(world.tree)
-  let bytes = recording_support.recording_in(folder)
-  assert simplifile.read_bits(
-      folder
-      <> "/genesis_prime.world_map.map-world-3460-instance-0-incarnation-"
-      <> int.to_string(found.incarnation)
-      <> ".recording",
-    )
-    == Ok(bytes)
-    as "the file is named by the map's world, instance and incarnation, as the server names it"
-  let assert Ok(#(header, records)) = rule_recording.read(bytes)
-    as "the recording reads"
-  assert header.rule == map.rule_name
-  assert header.settings
-    == map.Settings(map: ship, incarnation: found.incarnation)
-    as "the header holds the map and the run the recording is of"
-  let assert Ok(rule_recording.End(count:)) = list.last(records)
-    as "the stop of the tree ended the recording"
-  assert rule_recording.replay(
-      bytes,
-      step.Rule(
-        name: map.rule_name,
-        settings: header.settings,
-        new: map.new,
-        step: map.step,
-      ),
-      recording_support.types_digest(map.rule_name),
-      None,
-    )
-    == Ok(count)
-    as "every recorded step is the step the rule gives again: the first input, the two joins, the two watches' ends and the stop"
-  assert count == 6
-    as "Started, two Asked, each followed by the WatchEnded of its joiner's watch, and Stopping"
 }

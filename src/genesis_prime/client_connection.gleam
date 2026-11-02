@@ -85,7 +85,7 @@ pub type Link {
 /// client that has sent nothing for a while may send `burst` at once, and the
 /// bucket fills by `per_second` each second, so a client that sends at exactly
 /// `per_second` is never refused. Both are the server's choice, in each rule's
-/// settings so a recording's header holds them, and `bucket` is the only way
+/// settings, and `bucket` is the only way
 /// to make one, so none is a value that refuses every client or one that
 /// refuses a client for the server's own wait.
 pub opaque type Bucket {

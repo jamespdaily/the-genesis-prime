@@ -9,14 +9,15 @@ import asking_rule.{
 import gate_rule
 import genesis_prime/connection/listener.{Listener}
 import genesis_prime/connection/registry.{type Registry}
+import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/connection/shell
-import genesis_prime/rule_recording/file.{type Recorder}
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type ConnectionRule, type ServiceRule, Rule}
 import genesis_prime/store/worker.{type Job}
+import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import gleam/erlang/atom
-import gleam/erlang/process.{type Name, type Pid}
+import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
@@ -42,21 +43,18 @@ pub type Record {
 }
 
 /// Starts a listener whose connections run `rule` with this directory, beside
-/// what `with` adds to the same supervisor. A test with a recorder passes it in
-/// `recorder`.
+/// what `with` adds to the same supervisor.
 pub fn start(
   rule rule: ConnectionRule(settings, state, request, Nil, answer),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
     Result(service.Sent, Nil),
   shutdown_ms shutdown_ms: Int,
-  recorder recorder: Option(Recorder),
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
   start_joined(
     rule:,
     directory:,
     shutdown_ms:,
-    recorder:,
     registry: None,
     locate: fn(_address) { Error(Nil) },
     with:,
@@ -70,7 +68,32 @@ pub fn start_joined(
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
     Result(service.Sent, Nil),
   shutdown_ms shutdown_ms: Int,
-  recorder recorder: Option(Recorder),
+  registry registry: Option(Registry(message)),
+  locate locate: service.Locate,
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+) -> Server {
+  start_scripted(
+    rule:,
+    directory:,
+    shutdown_ms:,
+    wire_recorder: None,
+    scripts: script.operating_system,
+    registry:,
+    locate:,
+    with:,
+  )
+}
+
+/// Starts a listener as `start_joined` does, whose connections are recorded on
+/// the wire by `wire_recorder` and are given their scripts (seed, clock, timers)
+/// by `scripts`.
+pub fn start_scripted(
+  rule rule: ConnectionRule(settings, state, request, message, answer),
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  shutdown_ms shutdown_ms: Int,
+  wire_recorder wire_recorder: Option(WireRecorder),
+  scripts scripts: Scripts,
   registry registry: Option(Registry(message)),
   locate locate: service.Locate,
   with with: fn(supervisor.Builder) -> supervisor.Builder,
@@ -81,7 +104,8 @@ pub fn start_joined(
       rule:,
       send_deadline_ms: 300,
       shutdown_ms:,
-      recorder:,
+      wire_recorder:,
+      scripts:,
       directory:,
       registry:,
       locate:,
@@ -293,17 +317,8 @@ pub fn max_connections_of(listener: Name(Nil)) -> Int
 pub fn gate(
   name name: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   shutdown_ms shutdown_ms: Int,
-  recorder recorder: Option(Recorder),
 ) -> ChildSpecification(Nil) {
-  reaching(
-    name:,
-    shutdown_ms:,
-    recorder:,
-    reach: service.Reach(
-      locate: fn(_address) { Error(Nil) },
-      send: fn(_to, _message) { Error(Nil) },
-    ),
-  )
+  reaching(name:, shutdown_ms:, reach: reaching_nothing())
 }
 
 /// The gate as a child of a supervisor, registered as `name`, that finds and
@@ -311,18 +326,30 @@ pub fn gate(
 pub fn reaching(
   name name: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   shutdown_ms shutdown_ms: Int,
-  recorder recorder: Option(Recorder),
   reach reach: service.Reach(gate_rule.Answer),
 ) -> ChildSpecification(Nil) {
-  service_shell.supervised(
-    name:,
-    settings: service_shell.Settings(
-      rule: gate_as_rule(),
-      reach:,
-      shutdown_ms:,
-      recorder:,
-    ),
-  )
+  service_shell.supervised(name:, settings: gate_settings(shutdown_ms:, reach:))
+}
+
+/// What the gate's shell is started with: the gate's rule, the processes it
+/// reaches and how long it has to stop.
+fn gate_settings(
+  shutdown_ms shutdown_ms: Int,
+  reach reach: service.Reach(gate_rule.Answer),
+) -> service_shell.Settings(
+  Nil,
+  gate_rule.State,
+  gate_rule.Message,
+  gate_rule.Answer,
+) {
+  service_shell.Settings(rule: gate_as_rule(), reach:, shutdown_ms:)
+}
+
+/// A reach that finds no process and sends to none.
+fn reaching_nothing() -> service.Reach(gate_rule.Answer) {
+  service.Reach(locate: fn(_address) { Error(Nil) }, send: fn(_to, _message) {
+    Error(Nil)
+  })
 }
 
 /// The gate's rule as its shell runs it.
@@ -337,6 +364,30 @@ fn gate_as_rule() -> ServiceRule(
     settings: Nil,
     new: gate_rule.new,
     step: gate_rule.step,
+  )
+}
+
+/// The gate as `gate` makes it, whose shell hands each input it takes to `into`
+/// as it takes it: a test's own reading of what the shell fed the rule, in the
+/// order it took the inputs.
+pub fn observed_gate(
+  name name: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
+  shutdown_ms shutdown_ms: Int,
+  into into: Subject(step.Event(step.ServiceEvent(gate_rule.Message))),
+) -> ChildSpecification(Nil) {
+  let settings = gate_settings(shutdown_ms:, reach: reaching_nothing())
+  service_shell.supervised(
+    name:,
+    settings: service_shell.Settings(
+      ..settings,
+      rule: Rule(
+        ..settings.rule,
+        step: fn(state, input: step.ServiceInput(gate_rule.Message)) {
+          process.send(into, input.event)
+          gate_rule.step(state, input)
+        },
+      ),
+    ),
   )
 }
 

@@ -1,5 +1,4 @@
-//// The connection shell, its listener, the recorder and replay, proven on
-//// the hello rule. Expected values come from these places.
+//// The connection shell and its listener, proven on the hello rule. Expected values come from these places.
 //// - The hello's bytes: `vector.opcode.0x3.body`, the client's own 47 bytes
 ////   for the values below, in a frame of 53 bytes (length 35 00 00 00, id
 ////   03 00; record `0x1403355e0`, WriteMessageFrame).
@@ -7,37 +6,26 @@
 ////   the number, and 07 00 00 00 01 00 then the same number.
 //// - The frame size limit, 131,070 bytes (MessageSizeLimit `0x140335ec0`).
 //// - The shell's contract in the doc comment of `genesis_prime/connection/
-////   shell` and the recording's layout in `genesis_prime/rule_recording`, as
-////   approved on the shell card.
+////   shell`, as approved on the shell card.
 //// - FILETIME: 100-nanosecond intervals since 1601, 116,444,736,000,000,000 of
 ////   them at the Unix epoch (opcode.0x117 carries the server's time so).
 //// Every wait is for an event, with a deadline a passing test never reaches.
 
 import ask_support
 import genesis_prime/message/server_hello.{ServerHello}
-import genesis_prime/rule_recording.{
-  type Record, CountDiffers, End, Header, Incomplete, RecordAgain, StepDiffers,
-  Taken,
-}
-import genesis_prime/rule_recording/file
 import genesis_prime/step.{
-  type ConnectionEffect, type ConnectionEvent, type ConnectionInput,
-  type ConnectionRule, type ConnectionStep, type Rule, Accepted, ConnectionId,
-  Effects, Input, Log, Now, OwnEffect, OwnEvent, Peer, PeerClosed, Read,
-  ReadFailed, Rule, Stop, Stopping, Write, WriteFailed,
+  type ConnectionEvent, type ConnectionInput, type ConnectionRule,
+  type ConnectionStep, Accepted, ConnectionId, Effects, Input, Log, Now,
+  OwnEffect, OwnEvent, Peer, PeerClosed, Read, ReadFailed, Rule, Stop, Stopping,
+  Write, WriteFailed,
 }
 import gleam/bit_array
 import gleam/erlang/process
 import gleam/list
-import gleam/option.{None, Some}
-import gleam/result
-import gleam/string
-import gleam/time/timestamp
 import hello_rule
+import mailbox_support
 import mug
 import owned_test
-import recording_support
-import simplifile
 
 // ---- the hello rule, pure ----
 
@@ -96,7 +84,7 @@ pub fn a_frame_over_the_size_limit_logs_and_stops_test() -> Nil {
 
 pub fn a_client_gets_the_hello_and_a_pong_for_its_ping_test() -> Nil {
   use <- owned_test.run(30_000)
-  use server <- serving(hello_rule_as_rule(), None, 1000)
+  use server <- serving(hello_rule_as_rule(), 1000)
   let client = ask_support.connect(server)
   assert ask_support.read_bytes(client, 53) == hello_frame()
     as "the hello comes first"
@@ -108,7 +96,7 @@ pub fn a_client_gets_the_hello_and_a_pong_for_its_ping_test() -> Nil {
 
 pub fn a_clients_close_ends_the_process_normally_test() -> Nil {
   use <- owned_test.run(30_000)
-  use server <- serving(hello_rule_as_rule(), None, 1000)
+  use server <- serving(hello_rule_as_rule(), 1000)
   let client = ask_support.connect(server)
   let _hello = ask_support.read_bytes(client, 53)
   let assert [connection] = ask_support.connections(server)
@@ -120,18 +108,19 @@ pub fn a_clients_close_ends_the_process_normally_test() -> Nil {
 
 pub fn a_failed_write_reaches_the_rule_and_the_steps_later_effects_are_not_carried_out_test() -> Nil {
   use <- owned_test.run(60_000)
-  use folder <- recording_support.in_folder
   // The rule writes 64 MiB to a client that never reads, then 1 KiB, then
   // stops. The BEAM queues the first write whole; the second waits for the
   // queue and cannot finish within the 300 ms send deadline. Had the shell
   // carried out the Stop after the failed write, no WriteFailed input would
-  // follow it in the recording.
-  let rule = big_write_rule()
-  use server <- serving(
-    rule,
-    Some(recording_support.recorder(folder, rule_module: "hello_rule")),
-    1000,
-  )
+  // follow it. The inputs are read as the shell hands them to the rule.
+  let inputs = process.new_subject()
+  let writing = big_write_rule()
+  let rule =
+    Rule(..writing, step: fn(state, input: ConnectionInput(Nil, Nil)) {
+      process.send(inputs, input.event)
+      writing.step(state, input)
+    })
+  use server <- serving(rule, 1000)
   let client = ask_support.connect(server)
   // The first byte shows the connection's process has started.
   let _first_byte = ask_support.read_bytes(client, 1)
@@ -140,21 +129,15 @@ pub fn a_failed_write_reaches_the_rule_and_the_steps_later_effects_are_not_carri
   assert ask_support.ended(process.monitor(connection)) == process.Normal
     as "the rule stopped after the failed write"
   let _still_open = client
-  let assert Ok(#(_, records)) =
-    rule_recording.read(recording_support.recording_in(folder))
-    as "the recording reads"
-  let assert [
-    Taken(input: Input(event: OwnEvent(Accepted(..)), ..), ..),
-    Taken(input: Input(event: OwnEvent(WriteFailed(step.SendTimedOut)), ..), ..),
-    End(count: 2),
-  ] = records
+  let assert [OwnEvent(Accepted(..)), OwnEvent(WriteFailed(step.SendTimedOut))] =
+    mailbox_support.drain(inputs)
     as "the failed write came back as the next input, before anything else"
   Nil
 }
 
 pub fn a_rule_that_crashes_ends_only_its_connection_test() -> Nil {
   use <- owned_test.run(30_000)
-  use server <- serving(crash_on_0xee_rule(), None, 1000)
+  use server <- serving(crash_on_0xee_rule(), 1000)
   let first = ask_support.connect(server)
   let _hello = ask_support.read_bytes(first, 53)
   let assert [connection] = ask_support.connections(server)
@@ -170,7 +153,7 @@ pub fn a_rule_that_crashes_ends_only_its_connection_test() -> Nil {
 
 pub fn a_connection_that_crashes_leaves_another_open_connection_running_unchanged_test() -> Nil {
   use <- owned_test.run(30_000)
-  use server <- serving(crash_on_0xee_rule(), None, 1000)
+  use server <- serving(crash_on_0xee_rule(), 1000)
   let crashing = ask_support.connect(server)
   let _hello = ask_support.read_bytes(crashing, 53)
   let assert [crashing_process] = ask_support.connections(server)
@@ -192,328 +175,6 @@ pub fn a_connection_that_crashes_leaves_another_open_connection_running_unchange
     as "opcode.0x1: the connection that stayed answers its ping after the other crashed"
   assert ask_support.connections(server) == [staying_process]
     as "the BEAM isolates a crash to its process: the connection that stayed is the same process it was before"
-}
-
-pub fn every_input_carries_one_time_reading_taken_as_the_shell_takes_it_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let rule = hello_rule_as_rule()
-  use server <- serving(
-    rule,
-    Some(recording_support.recorder(folder, rule_module: "hello_rule")),
-    1000,
-  )
-  // Each input is bounded by the test's own readings around the action that
-  // caused it, so a reading reused from an earlier input falls outside.
-  let before_accept = reading()
-  let client = ask_support.connect(server)
-  let _hello = ask_support.read_bytes(client, 53)
-  let after_accept = reading()
-  let before_ping = reading()
-  assert mug.send(client, <<7, 0, 0, 0, 0, 0, 3>>) == Ok(Nil) as "a ping"
-  let _pong = ask_support.read_bytes(client, 7)
-  let after_ping = reading()
-  let assert [connection] = ask_support.connections(server)
-    as "one connection process"
-  let watched = process.monitor(connection)
-  let before_close = reading()
-  assert mug.shutdown(client) == Ok(Nil) as "the client closed"
-  let _reason = ask_support.ended(watched)
-  let after_close = reading()
-  let inputs = taken_inputs(folder)
-  assert inputs != [] as "the session recorded its inputs"
-  list.each(inputs, fn(input) {
-    let window = case input.event {
-      OwnEvent(Accepted(..)) -> #(before_accept, after_accept)
-      OwnEvent(Read(..)) -> #(before_ping, after_ping)
-      OwnEvent(PeerClosed) -> #(before_close, after_close)
-      OwnEvent(ReadFailed(..)) | OwnEvent(WriteFailed(..)) ->
-        panic as "this session has no socket failure"
-      OwnEvent(step.Woken(..))
-      | step.WatchEnded(..)
-      | OwnEvent(step.TimerFired(..))
-      | OwnEvent(step.Answered(..))
-      | Stopping(..) -> panic as "this session causes no other input"
-    }
-    assert within(input.now, window)
-      as "an input's reading lies between the test's readings around its cause"
-  })
-}
-
-// ---- the recorder and replay ----
-
-pub fn a_recorded_session_holds_the_header_one_record_per_input_and_end_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let rule = hello_rule_as_rule()
-  record_one_ping(rule:, folder:, number: 5)
-  let assert Ok(#(header, records)) =
-    rule_recording.read(recording_support.recording_in(folder))
-    as "the recording reads"
-  assert header == recorded_header(rule)
-    as "the header names the format, the rule, its settings and its types"
-  let events = list.map(taken(records), fn(input) { input.event })
-  let assert [OwnEvent(Accepted(..)), ..reads_and_close] = events
-    as "the accept comes first"
-  let assert [OwnEvent(PeerClosed), ..reads] = list.reverse(reads_and_close)
-    as "the close comes last"
-  assert joined_reads(list.reverse(reads)) == <<7, 0, 0, 0, 0, 0, 5>>
-    as "between them, the ping's bytes in the reads the socket gave"
-  assert list.last(records) == Ok(End(count: list.length(events)))
-    as "End counts the inputs"
-}
-
-pub fn replay_gives_the_same_steps_with_no_socket_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let rule = hello_rule_as_rule()
-  record_one_ping(rule:, folder:, number: 5)
-  let inputs = list.length(taken_inputs(folder))
-  assert rule_recording.replay(
-      recording_support.recording_in(folder),
-      rule,
-      recording_support.types_digest("hello_rule"),
-      None,
-    )
-    == Ok(inputs)
-    as "every recorded step is the step the rule gives again"
-}
-
-pub fn a_changed_byte_in_a_recorded_read_fails_replay_at_that_record_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let rule = hello_rule_as_rule()
-  record_one_ping(rule:, folder:, number: 5)
-  let assert Ok(#(header, records)) =
-    rule_recording.read(recording_support.recording_in(folder))
-    as "the recording reads"
-  // The read that ends the ping holds its number, 5, as its last byte; it is
-  // changed to 6 and the file written again with that one byte different.
-  let last_read =
-    list.index_map(taken(records), fn(input, index) { #(input, index) })
-    |> list.filter(fn(numbered) { is_read(numbered.0) })
-    |> list.last
-  let assert Ok(#(_, index)) = last_read as "the session holds a read"
-  let changed =
-    list.index_map(records, fn(record, at) {
-      case at == index {
-        True -> {
-          let assert Taken(
-            input: Input(event: OwnEvent(Read(bytes:)), ..) as input,
-            step:,
-          ) = record
-            as "the record at the index is the read"
-          Taken(
-            input: Input(..input, event: OwnEvent(Read(last_byte_6(bytes)))),
-            step:,
-          )
-        }
-        False -> record
-      }
-    })
-  let file =
-    list.fold(changed, rule_recording.encode(header), fn(written, record) {
-      <<written:bits, rule_recording.encode(record):bits>>
-    })
-  assert file != recording_support.recording_in(folder)
-    as "one byte of the file changed"
-  let assert Error(StepDiffers(index: failed_at, ..)) =
-    rule_recording.replay(
-      file,
-      rule,
-      recording_support.types_digest("hello_rule"),
-      None,
-    )
-    as "the changed read now gives pong 6, not the recorded pong 5"
-  assert failed_at == index as "replay fails at the changed read"
-}
-
-pub fn a_cut_recording_or_a_wrong_end_count_fails_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let rule = hello_rule_as_rule()
-  record_one_ping(rule:, folder:, number: 5)
-  let bytes = recording_support.recording_in(folder)
-  let inputs = list.length(taken_inputs(folder))
-  let end = rule_recording.encode(end_record(inputs))
-  let body_size = bit_array.byte_size(bytes) - bit_array.byte_size(end)
-  let assert Ok(without_end) = bit_array.slice(bytes, 0, body_size)
-    as "the recording ends with End and its count"
-  let assert Error(Incomplete(_)) =
-    rule_recording.replay(
-      without_end,
-      rule,
-      recording_support.types_digest("hello_rule"),
-      None,
-    )
-    as "no End: the process never finished"
-  let assert Ok(cut) = bit_array.slice(bytes, 0, bit_array.byte_size(bytes) - 1)
-    as "one byte shorter"
-  let assert Error(Incomplete(_)) =
-    rule_recording.replay(
-      cut,
-      rule,
-      recording_support.types_digest("hello_rule"),
-      None,
-    )
-    as "a record cut short"
-  let wrong = <<
-    without_end:bits,
-    rule_recording.encode(end_record(inputs + 1)):bits,
-  >>
-  assert rule_recording.replay(
-      wrong,
-      rule,
-      recording_support.types_digest("hello_rule"),
-      None,
-    )
-    == Error(CountDiffers(end: inputs + 1, records: inputs))
-    as "End must count the records"
-}
-
-pub fn another_rule_name_or_type_digest_fails_with_record_again_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let rule = hello_rule_as_rule()
-  record_one_ping(rule:, folder:, number: 5)
-  let bytes = recording_support.recording_in(folder)
-  assert rule_recording.replay(
-      bytes,
-      Rule(..rule, name: "another"),
-      recording_support.types_digest("hello_rule"),
-      None,
-    )
-    == Error(RecordAgain(reason: "the rule"))
-    as "the header names another rule"
-  assert rule_recording.replay(bytes, rule, "another digest", None)
-    == Error(RecordAgain(reason: "the rule's types"))
-    as "the rule's types have changed since the recording"
-}
-
-pub fn a_recording_replays_only_on_the_game_tables_it_was_recorded_on_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let rule = hello_rule_as_rule()
-  record_one_ping_of(
-    rule:,
-    recorder: recording_support.recorder_of_tables(
-      folder:,
-      rule_module: "hello_rule",
-      tables_digest: Some("A1B2"),
-    ),
-    number: 5,
-  )
-  let bytes = recording_support.recording_in(folder)
-  let assert Ok(#(header, _)) = rule_recording.read(bytes)
-    as "the recording reads"
-  assert header.tables_digest == Some("A1B2")
-    as "the recorder writes the digest of the tables the server loaded into the header"
-  let types_digest = recording_support.types_digest("hello_rule")
-  assert result.is_ok(rule_recording.replay(
-    bytes,
-    rule,
-    types_digest,
-    Some("A1B2"),
-  ))
-    as "the same tables replay"
-  assert rule_recording.replay(bytes, rule, types_digest, Some("C3D4"))
-    == Error(RecordAgain(reason: "the game tables"))
-    as "other table files than the recording was made on: record again"
-  assert rule_recording.replay(bytes, rule, types_digest, None)
-    == Error(RecordAgain(reason: "the game tables"))
-    as "a recording of a rule that read tables does not replay with none loaded"
-}
-
-pub fn the_servers_own_code_never_turns_recording_on_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let assert Ok(paths) = simplifile.get_files("src")
-    as "the source folder lists"
-  let callers =
-    list.filter(paths, fn(path) {
-      string.ends_with(path, ".gleam")
-      && path != "src/genesis_prime/rule_recording/file.gleam"
-      && {
-        let assert Ok(text) = simplifile.read(path) as "a source file reads"
-        string.contains(text, "file.recorder(")
-      }
-    })
-  assert callers == []
-    as "only the dev start makes a recorder, so the server records nothing"
-}
-
-pub fn when_the_server_stops_the_rule_gets_stopping_and_a_rule_that_stops_in_time_ends_its_recording_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let rule = hello_rule_as_rule()
-  let server =
-    start(
-      rule:,
-      recorder: Some(recording_support.recorder(
-        folder,
-        rule_module: "hello_rule",
-      )),
-      shutdown_ms: 2000,
-    )
-  let client = ask_support.connect(server)
-  let _hello = ask_support.read_bytes(client, 53)
-  ask_support.stop(server)
-  let assert Ok(#(_, records)) =
-    rule_recording.read(recording_support.recording_in(folder))
-    as "the recording reads"
-  let assert [
-    Taken(..),
-    Taken(input: Input(event: Stopping(..), ..), step: Effects([Stop])),
-    End(count: 2),
-  ] = records
-    as "Stopping came as the second input, and the rule stopped"
-  Nil
-}
-
-pub fn a_rule_that_does_not_stop_in_time_is_killed_and_its_recording_is_incomplete_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  let rule = ignore_stopping_rule()
-  let server =
-    start(
-      rule:,
-      recorder: Some(recording_support.recorder(
-        folder,
-        rule_module: "hello_rule",
-      )),
-      shutdown_ms: 300,
-    )
-  let client = ask_support.connect(server)
-  let _hello = ask_support.read_bytes(client, 53)
-  ask_support.stop(server)
-  let bytes = recording_support.recording_in(folder)
-  let assert Error(Incomplete(records: 3)) =
-    rule_recording.replay(
-      bytes,
-      rule,
-      recording_support.types_digest("hello_rule"),
-      None,
-    )
-    as "the header, accept and Stopping, then nothing: killed at the deadline"
-  Nil
-}
-
-pub fn a_recording_that_cannot_be_written_ends_the_connection_before_the_steps_effects_test() -> Nil {
-  use <- owned_test.run(30_000)
-  use folder <- recording_support.in_folder
-  // A file where the recording folder should be: the recording cannot open.
-  let blocked = folder <> "/blocked"
-  let assert Ok(Nil) = simplifile.write(blocked, "")
-    as "a file stands where the folder should be"
-  let rule = hello_rule_as_rule()
-  use server <- serving(
-    rule,
-    Some(recording_support.recorder(blocked, rule_module: "hello_rule")),
-    1000,
-  )
-  let client = ask_support.connect(server)
-  assert mug.receive(client, timeout_milliseconds: ask_support.event_wait_ms)
-    == Error(mug.Closed)
-    as "the connection closed without the hello, the accept's effect"
 }
 
 // ---- helpers ----
@@ -570,20 +231,6 @@ fn crash_on_0xee_rule() -> HelloRule {
   )
 }
 
-/// The hello rule, except that it takes `Stopping` and does not stop.
-fn ignore_stopping_rule() -> HelloRule {
-  Rule(
-    ..hello_rule_as_rule(),
-    step: fn(state, input: ConnectionInput(Nil, Nil)) {
-      case input.event {
-        Stopping(..) -> #(state, Effects([]))
-        OwnEvent(..) -> hello_rule.step(state, input)
-        step.WatchEnded(..) -> hello_rule.step(state, input)
-      }
-    },
-  )
-}
-
 /// On accept, writes 64 MiB, then 1 KiB, then stops; on a failed write, stops.
 fn big_write_rule() -> HelloRule {
   Rule(
@@ -624,154 +271,26 @@ fn take(
   hello_rule.step(state, Input(now: Now(monotonic_ms: 0, filetime: 0), event:))
 }
 
-fn recorded_header(
-  rule: Rule(hello_rule.Settings, a, b, c, d),
-) -> rule_recording.Header(hello_rule.Settings) {
-  Header(
-    format: rule_recording.format,
-    rule: rule.name,
-    client_build: 16_042,
-    tables_digest: None,
-    settings: rule.settings,
-    types_digest: recording_support.types_digest("hello_rule"),
-  )
-}
-
-fn end_record(
-  count: Int,
-) -> Record(Nil, ConnectionEvent(Nil, Nil), ConnectionEffect) {
-  End(count:)
-}
-
-/// Records a session of one ping with `number`, then the client's close.
-fn record_one_ping(
-  rule rule: HelloRule,
-  folder folder: String,
-  number number: Int,
-) -> Nil {
-  record_one_ping_of(
-    rule:,
-    recorder: recording_support.recorder(folder, rule_module: "hello_rule"),
-    number:,
-  )
-}
-
-/// Records a session of one ping with `number` through the recorder, then the
-/// client's close.
-fn record_one_ping_of(
-  rule rule: HelloRule,
-  recorder recorder: file.Recorder,
-  number number: Int,
-) -> Nil {
-  use server <- serving(rule, Some(recorder), 1000)
-  let client = ask_support.connect(server)
-  let _hello = ask_support.read_bytes(client, 53)
-  assert mug.send(client, <<7, 0, 0, 0, 0, 0, number>>) == Ok(Nil) as "a ping"
-  let _pong = ask_support.read_bytes(client, 7)
-  let assert [connection] = ask_support.connections(server)
-    as "one connection process"
-  let watched = process.monitor(connection)
-  assert mug.shutdown(client) == Ok(Nil) as "the client closed"
-  let _reason = ask_support.ended(watched)
-  Nil
-}
-
 /// Starts a listener whose connections run `rule` and ask no one.
 fn start(
   rule rule: ConnectionRule(settings, state, Nil, Nil, Nil),
-  recorder recorder: option.Option(file.Recorder),
   shutdown_ms shutdown_ms: Int,
 ) -> ask_support.Server {
   ask_support.start(
     rule:,
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     shutdown_ms:,
-    recorder:,
     with: fn(builder) { builder },
   )
 }
 
 fn serving(
   rule: ConnectionRule(settings, state, Nil, Nil, Nil),
-  recorder: option.Option(file.Recorder),
   shutdown_ms: Int,
   body: fn(ask_support.Server) -> a,
 ) -> a {
-  let server = start(rule:, recorder:, shutdown_ms:)
+  let server = start(rule:, shutdown_ms:)
   let result = body(server)
   ask_support.stop(server)
   result
-}
-
-/// The test's own reading of both clocks.
-fn reading() -> #(Int, Int) {
-  #(ask_support.monotonic_ms(), filetime_now())
-}
-
-/// Whether a shell's reading lies within the test's two readings.
-fn within(now: step.Now, window: #(#(Int, Int), #(Int, Int))) -> Bool {
-  let #(#(from_ms, from_filetime), #(to_ms, to_filetime)) = window
-  now.monotonic_ms >= from_ms
-  && now.monotonic_ms <= to_ms
-  && now.filetime >= from_filetime
-  && now.filetime <= to_filetime
-}
-
-/// The inputs of the one recording in the folder, in order.
-fn taken_inputs(folder: String) -> List(ConnectionInput(Nil, Nil)) {
-  let assert Ok(#(_, records)) =
-    rule_recording.read(recording_support.recording_in(folder))
-    as "the recording reads"
-  taken(records)
-}
-
-fn taken(
-  records: List(Record(Nil, ConnectionEvent(Nil, Nil), ConnectionEffect)),
-) -> List(ConnectionInput(Nil, Nil)) {
-  list.filter_map(records, fn(record) {
-    case record {
-      Taken(input:, ..) -> Ok(input)
-      End(..) -> Error(Nil)
-    }
-  })
-}
-
-fn is_read(input: ConnectionInput(Nil, Nil)) -> Bool {
-  case input.event {
-    OwnEvent(Read(..)) -> True
-    OwnEvent(Accepted(..))
-    | OwnEvent(PeerClosed)
-    | OwnEvent(ReadFailed(..))
-    | OwnEvent(WriteFailed(..))
-    | OwnEvent(step.Woken(..))
-    | step.WatchEnded(..)
-    | OwnEvent(step.TimerFired(..))
-    | OwnEvent(step.Answered(..))
-    | Stopping(..) -> False
-  }
-}
-
-/// The bytes of the reads, one after another.
-fn joined_reads(
-  events: List(step.Event(ConnectionEvent(Nil, Nil))),
-) -> BitArray {
-  list.fold(events, <<>>, fn(joined, event) {
-    let assert OwnEvent(Read(bytes:)) = event as "only reads lie between"
-    <<joined:bits, bytes:bits>>
-  })
-}
-
-/// The bytes with their last byte, 5, made 6.
-fn last_byte_6(bytes: BitArray) -> BitArray {
-  let size = bit_array.byte_size(bytes)
-  let assert Ok(<<5>>) = bit_array.slice(bytes, size - 1, 1)
-    as "the read ends with the ping's number"
-  let assert Ok(front) = bit_array.slice(bytes, 0, size - 1) as "its front"
-  <<front:bits, 6>>
-}
-
-fn filetime_now() -> Int {
-  let #(seconds, nanoseconds) =
-    timestamp.system_time() |> timestamp.to_unix_seconds_and_nanoseconds
-  seconds * 10_000_000 + nanoseconds / 100 + 116_444_736_000_000_000
 }

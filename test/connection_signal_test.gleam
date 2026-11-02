@@ -63,7 +63,6 @@ fn start_asking(
     rule: signalling_rule.rule(),
     directory:,
     shutdown_ms: 1000,
-    recorder: None,
     registry:,
     locate: fn(address: Address) {
       case address {
