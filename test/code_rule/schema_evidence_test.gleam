@@ -529,3 +529,159 @@ pub fn the_game_servers_messages_with_their_records_name_every_field_or_its_safe
     == []
     as "CLAUDE.md: a value the server sends that the client never reads is shown safe by a fact, in the character list's entry and its visuals as in the messages, and in the player's 0x262 with its stats, movement commands and properties, 0xAD, 0x19B, 0x6BC and 0xF1"
 }
+
+// ---- unions, and records counted by an earlier array ----
+
+/// A message that holds an array of `planted_union`, the union's one record
+/// (`planted_entry`, which fixes the kind 2 in 3 bits, then has
+/// `entry_fields`), and the union with the given evidence and `named_by` key on
+/// its one variant.
+fn schema_with_union(
+  direction direction: String,
+  entry_fields entry_fields: List(String),
+  union_evidence union_evidence: String,
+  named_by named_by: String,
+) -> String {
+  string.join(
+    list.flatten([
+      [
+        "[[message]]",
+        "id = 0x0001",
+        "name = \"planted_hello\"",
+        "direction = \"" <> direction <> "\"",
+        "evidence = \"opcode.0x1\"",
+        "summary = \"a planted message\"",
+        "fields = [",
+        "  { name = \"shapes\", kind = \"array\", count_bits = 4, element = \"planted_union\", evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },",
+        "]",
+        "",
+        "[[record]]",
+        "name = \"planted_entry\"",
+        "evidence = \"0x1400ac130\"",
+        "summary = \"a planted record\"",
+        "fields = [",
+        "  { name = \"kind\", kind = \"constant\", bits = 3, value = 2, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },",
+      ],
+      entry_fields,
+      [
+        "]",
+        "",
+        "[[union]]",
+        "name = \"planted_union\"",
+        "evidence = \"" <> union_evidence <> "\"",
+        "summary = \"a planted union\"",
+        "tag_bits = 3",
+        "variants = [",
+        "  { tag = 2, name = \"entry\", record = \"planted_entry\", named_by = \""
+          <> named_by
+          <> "\" },",
+        "]",
+        "",
+      ],
+    ]),
+    "\n",
+  )
+}
+
+pub fn a_union_whose_evidence_is_not_a_fact_key_is_a_breach_at_its_evidence_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let good =
+    schema_with_union(
+      direction: "client_to_server",
+      entry_fields: [named_field],
+      union_evidence: "0x1400ac130",
+      named_by: "opcode.0x2",
+    )
+  assert breach_lines(good) == []
+    as "a union with evidence and a named kind that are fact keys is no breach"
+  let bad =
+    schema_with_union(
+      direction: "client_to_server",
+      entry_fields: [named_field],
+      union_evidence: "opcode.0x7",
+      named_by: "opcode.0x2",
+    )
+  let assert [breach] =
+    schema_evidence.breaches(
+      file: SourceFile(path: "src/planted/schema.toml", text: bad),
+      fact_keys:,
+      sent_messages: [],
+    )
+    as "expected exactly one breach"
+  assert breach.line == 22 as "the union's evidence line"
+  assert string.contains(breach.rule, "planted_union")
+    as "the breach names the union"
+  assert string.contains(breach.rule, "opcode.0x7")
+    as "the breach names the key the fact file lacks"
+}
+
+pub fn a_variant_whose_kind_is_named_by_no_fact_key_is_a_breach_at_its_line_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    schema_with_union(
+      direction: "client_to_server",
+      entry_fields: [named_field],
+      union_evidence: "0x1400ac130",
+      named_by: "opcode.0x9",
+    )
+  let assert [breach] =
+    schema_evidence.breaches(
+      file: SourceFile(path: "src/planted/schema.toml", text:),
+      fact_keys:,
+      sent_messages: [],
+    )
+    as "expected exactly one breach"
+  assert breach.line == 26 as "the variant's line"
+  assert string.contains(breach.rule, "planted_union.entry")
+    as "the breach names the union and the variant"
+  assert string.contains(breach.rule, "opcode.0x9")
+    as "the breach names the key the fact file lacks"
+}
+
+pub fn an_unnamed_field_with_no_safe_by_in_a_record_a_union_of_a_sent_message_holds_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let text =
+    schema_with_union(
+      direction: "server_to_client",
+      entry_fields: [named_field, unnamed_field],
+      union_evidence: "0x1400ac130",
+      named_by: "opcode.0x2",
+    )
+  let assert [breach] = breach_rules(text, ["planted_hello"])
+    as "the union's record is sent inside the message's array, so its field needs a name or a safe_by"
+  assert string.contains(breach, "planted_entry.field_3")
+    as "the breach names the record and the field"
+  assert breach_rules(text, []) == []
+    as "a message no module outside the message folder imports is never sent, nor the records of its unions"
+  let safe =
+    schema_with_union(
+      direction: "server_to_client",
+      entry_fields: [named_field, unnamed_safe_field],
+      union_evidence: "0x1400ac130",
+      named_by: "opcode.0x2",
+    )
+  assert breach_rules(safe, ["planted_hello"]) == []
+}
+
+pub fn an_unnamed_field_in_a_record_counted_by_an_array_of_a_sent_message_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let ids =
+    "  { name = \"ids\", kind = \"array\", count_bits = 4, element = \"unsigned\", element_bits = 32, evidence = \"0x1400a9140\", named_by = \"opcode.0x2\" },"
+  let text =
+    string.replace(
+      schema_with_nested_records(
+        entry_fields: [named_field, ids],
+        inner_fields: [named_field, unnamed_field],
+      ),
+      "{ name = \"inners\", kind = \"array\", count_bits = 4,",
+      "{ name = \"inners\", kind = \"array\", counted_by = \"ids\",",
+    )
+  let assert [breach] = breach_rules(text, ["planted_hello"])
+    as "the records counted by an array are sent inside the entry"
+  assert string.contains(breach, "planted_inner.field_3")
+    as "the breach names the record and the field"
+}
