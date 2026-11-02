@@ -25,10 +25,10 @@ Expected values and their sources:
   reference manual, "Distributed Erlang"; `erl` flags), which a release reads
   from its vm.args; a vm.args line that starts with `#` is a comment (Erlang
   system principles, "Releases", vm.args). The server runs as one node and uses
-  no distribution (issue #30, closing summary). No file of that name is in the
+  no distribution (the designing-processes skill). No file of that name is in the
   repository, so the check passes where there is none.
-- Postgres 18: Jim's choice on issue #13 ("with Postgres 18 as the version
-  checked"); the clock tolerance is 1 second, from the issue's test list.
+- Postgres 18: Jim's choice ("with Postgres 18 as the version checked"); the
+  clock tolerance is 1 second, the approved test list's.
 - ICU: the character name index folds case under the collation "und-x-icu"
   (priv/migrations/0005_character_name_unique_in_icu.sql), which exists only in
   a Postgres built with ICU; the setup check refuses one without it (Jim's
@@ -115,7 +115,7 @@ OTP = PINS["erlang"]  # 29.1.2
 REBAR = PINS["rebar"]  # 3.28.0
 TARGET_BUILD = 16042  # client_archive.target_build: GetVersionInfo 0x1406f8360 returns 0x3eaa
 OTHER_BUILD = 17000
-POSTGRES_MAJOR = "18"  # issue #13, Jim's choice
+POSTGRES_MAJOR = "18"  # Jim's choice
 PATCH_FILE = "otp-erl-gc-live-hf-end.patch"
 MARKER = "GENESIS_PATCHES"
 
@@ -782,7 +782,7 @@ class DistributionTest(PlantedTestCase):
         self.assertEqual(setup_check.check_distribution(machine), [])
 
     def test_the_releases_committed_vm_args_holds_no_name_or_sname(self):
-        """The release keeps its VM flags in release/vm.args (issue #43), which the
+        """The release keeps its VM flags in release/vm.args which the
         check above reads; the tests above show a planted -name or -sname is
         found, so an empty result for this repository is the release's flags
         turning distribution off."""
@@ -895,7 +895,7 @@ class ClientTest(PlantedTestCase):
 
 
 class TableFolderTest(PlantedTestCase):
-    """Issue 109, item 4: the setup check checks the table folder holds every
+    """The setup check checks the table folder holds every
     table of the client's index.
 
     Expected values: the tables are the files directly in DB/ ending in .tbl of
@@ -1027,7 +1027,7 @@ class QueryProcessTest(PlantedTestCase):
                 self.assertIn("GENESIS_PYGHIDRA_PYTHON", missing.fix)
 
     def test_a_project_path_with_a_folder_starting_with_a_dot_is_refused(self):
-        # Ghidra refuses a path element starting with '.' (issue #13, found on #7).
+        # Ghidra refuses a path element starting with '.'.
         machine = self.plant(project_path=".genesis-prime/ghidra-project")
         missing = self.only(setup_check.check_query_process(machine))
         self.assertIn(machine.env["GENESIS_GHIDRA_PROJECT_DIR"], missing.part + missing.found)

@@ -17,13 +17,13 @@ Expected values and their sources:
   "game_table.file".
 - 26 of the 384 files are stored as is (flag 1), 358 LZMA-compressed (flag 5),
   read from the client's index; a stored file's SHA-1 is the index's.
-- all or nothing (issue 109, item 5): a run that fails leaves the folder exactly
+- all or nothing: a run that fails leaves the folder exactly
   as it was, and one that succeeds replaces it whole, so a file of an earlier
   run that the index no longer lists is gone. The swap moves the old folder to
   `.old` beside it, then the staged set in; a crash between the two renames
   leaves `.old` and no folder, which the next run moves back (rolls back), and a
   crash after them leaves a folder and `.old`, which it removes (the folder was
-  verified before the swap). These rules are the step's own design (issue 109);
+  verified before the swap). These rules are this script's own design;
   the 384 is the fact file's.
 - the settings: GENESIS_TABLE_DIR, else $GENESIS_HOME/tables, else
   ~/.genesis-prime/tables (setup_check/environment.sh); WILDSTAR_CLIENT_EXE
@@ -257,7 +257,7 @@ OLD_FILES = {"Alpha.tbl": b"LBTD an earlier alpha", "Stale.tbl": b"LBTD a table 
 
 
 class AllOrNothingTest(WorkInFolderCase):
-    """Issue 109, item 5: extraction is all or nothing."""
+    """Extraction is all or nothing."""
 
     def assert_nothing_beside_the_folder(self):
         """No staging or old folder is left beside the destination, so the next

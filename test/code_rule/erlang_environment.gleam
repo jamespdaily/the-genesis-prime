@@ -1,7 +1,7 @@
 //// The Erlang environment rule: no Erlang file reads an environment variable
 //// or the command-line arguments itself. Gleam reads them through envoy and
 //// argv, packages already in the tree, which come before an Erlang external
-//// in the package order of the writing-gleam skill.
+//// in the package order of the choosing-packages skill.
 
 import code_rule/erlang_calls.{Target}
 import code_rule/source.{type Breach, type SourceFile, Breach}

@@ -1,5 +1,5 @@
-//// The module-path rules. Expected values are the writing-gleam skill,
-//// Modules: "Name and split modules by game domain. Never group by kind (no
+//// The module-path rules. Expected values are the writing-code skill,
+//// Modules and files: "Name and split modules by game domain. Never group by kind (no
 //// `types`, `rules` or `utils`), and no module in a folder named for another
 //// package", with the kind names the folder-tree issue's test list gives
 //// (test 2): `type`, `types`, `util`, `utils`, `helper`, `helpers`, `rule`,

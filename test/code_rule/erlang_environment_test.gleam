@@ -1,5 +1,5 @@
-//// The Erlang environment rule. Expected values are the writing-gleam skill,
-//// Packages: take the first step that does the job, and a Gleam package from
+//// The Erlang environment rule. Expected values are the choosing-packages
+//// skill: take the first step that does the job, and a Gleam package from
 //// Hex (envoy for an environment variable, argv for the arguments) comes
 //// before an Erlang external. So no tracked `.erl` file calls `os:getenv`
 //// (any arity) or `init:get_plain_arguments`. A call is text outside an

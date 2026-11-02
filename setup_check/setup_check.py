@@ -35,7 +35,7 @@ import extract_tables  # noqa: E402
 import ghidra_env  # noqa: E402
 
 TARGET_BUILD = extract_tables.TARGET_BUILD
-POSTGRES_MAJOR = 18  # Jim's choice on issue #13
+POSTGRES_MAJOR = 18  # Jim's choice
 CLOCK_TOLERANCE_SECONDS = 1.0
 MARKER = "GENESIS_PATCHES"
 BUILD_SCRIPT = "setup_check/build_patched_otp.sh"

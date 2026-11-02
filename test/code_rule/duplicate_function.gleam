@@ -1,5 +1,5 @@
 //// No two modules hold a function with the same body: a copy is moved to the
-//// module both callers share (the writing-gleam skill, Modules).
+//// module both callers share (the writing-code skill, Reuse).
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax

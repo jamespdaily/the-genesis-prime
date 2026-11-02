@@ -21,16 +21,14 @@ the real toolchain, the real database or the real client:
 
 - the planted repository is a git repository on a branch `feature` of `main`
   (the planted files are the first commit), because the integration tests run
-  only when the branch changes a file under the client scripts folder, as
-  issue 109's item 3 (changed 2026-10-27, Jim's yes) says.
+  only when the branch changes a file under the client scripts folder.
 
 A planted run costs about two seconds, so tests that only read what one run
 printed or logged share it (`shared_run`), the whole file stays under a minute,
 and tests of what does not depend on the parts' work run `./check fast`, which
 has four parts instead of all of them.
 
-Expected values and their sources: issue 109's test list, items 1, 2, 3, 6 and
-7. The part names are the ones ./check prints.
+The part names are the ones ./check prints.
 
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
 """
@@ -363,7 +361,7 @@ class ControlTest(unittest.TestCase):
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class PartThatNeverRanTest(unittest.TestCase):
-    """Issue 109, item 1: a part that ends without writing its status fails the check.
+    """A part that ends without writing its status fails the check.
     The planted format part's own shell ends before the check can write its status;
     every other part writes its own."""
 
@@ -585,7 +583,7 @@ def change_something_else(case: PlantedCheckCase) -> None:
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class ClientIntegrationTest(unittest.TestCase):
-    """Issue 109, item 3 (changed 2026-10-27): the query process's integration
+    """The query process's integration
     tests run in the full check when the branch changes a file under the client
     scripts folder, compared with its merge base with main (origin/main when
     there is one); otherwise they are skipped and the output says so. Where they
@@ -705,7 +703,7 @@ class ClientIntegrationTest(unittest.TestCase):
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class FastModeTest(unittest.TestCase):
-    """Issue 109, item 6: `./check fast` is the format check, the build with
+    """`./check fast` is the format check, the build with
     warnings as errors, glinter and the code-rule tests, and nothing else.
 
     The planted `gleam` stands for the tools: it fails the format check on a
@@ -802,7 +800,7 @@ TEST_WORKERS = default_workers() if RUNNABLE else "1"
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class WorkerCountTest(unittest.TestCase):
-    """Issue 109, item 7: the worker count is one setting of the check."""
+    """The worker count is one setting of the check."""
 
     def test_the_setting_is_given_to_the_test_run_as_the_worker_count(self):
         run = shared_run("workers-3", GENESIS_TEST_WORKERS="3")

@@ -1,5 +1,5 @@
-//// The duplicate-function rule. Expected values are the writing-gleam skill,
-//// Modules: never copy a function from another module, move it to the module
+//// The duplicate-function rule. Expected values are the writing-code skill,
+//// Reuse: never copy a function from another module, move it to the module
 //// both callers share. Two functions in different modules are copies when
 //// their bodies are the same once string literals are alike; a body shorter
 //// than the minimum, a body repeated inside one module and a generated module
