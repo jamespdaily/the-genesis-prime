@@ -29,9 +29,7 @@ import genesis_prime/game/character_creation.{
   NoLevelForExperience, NoStartPlace, NoSuchRow, PathAbove3, RowDisabled,
   TooManyLabels, WrongBoneCount,
 }
-import genesis_prime/game/start_place.{
-  Level50, Novice, OtherStart, Place, Veteran,
-}
+import genesis_prime/game/start_place.{Level50, Novice, OtherStart, Veteran}
 import genesis_prime/message/create_character.{
   type CreateCharacter, CreateCharacter,
 }
@@ -47,6 +45,7 @@ import gleam/pair
 import gleam/result
 import gleam/string
 import owned_test
+import place_support
 import unitest
 
 /// A request for the creation row with the name.
@@ -84,7 +83,7 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
       faction_id: 167,
       level: 1,
       path: 2,
-      place: Place(
+      place: place_support.at(
         world_id: 3460,
         world_zone_id: 6009,
         x: 29.128599166870117,
@@ -107,7 +106,7 @@ pub fn a_nexus_row_gives_the_character_the_place_of_its_veteran_start_test() -> 
     character_creation.check(tables, request(338, "Ab Cd"))
     as "CharacterCreation row 338 is an enabled Nexus row with no entitlement and no cost"
   assert character.place
-    == Place(
+    == place_support.at(
       world_id: 426,
       world_zone_id: 648,
       x: 4110.7099609375,

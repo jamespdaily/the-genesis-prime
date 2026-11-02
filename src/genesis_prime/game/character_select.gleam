@@ -86,7 +86,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
 import genesis_prime/game/character_name
-import genesis_prime/game/start_place.{Place}
+import genesis_prime/game/start_place
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{
   type CharacterListEntry, CharacterListEntry,
@@ -119,11 +119,6 @@ import gleam/option.{type Option, None, Some}
 /// further back (lua.CharacterSelection.OnLoadFromCharacter.preselect,
 /// 0x1401e83a0: negative for a past time).
 const just_now_days = -0.000001
-
-/// What the entry of a character with no saved place carries in its world,
-/// zone and position fields: 0 in each.
-const no_saved_place =
-  Place(world_id: 0, world_zone_id: 0, x: 0.0, y: 0.0, z: 0.0)
 
 /// What a character select asks or sends; the game connection's rule turns
 /// each into its own effect.
@@ -496,7 +491,18 @@ fn entry(
   index index: appearance.Index,
 ) -> CharacterListEntry {
   let CharacterId(character_id) = character.character_id
-  let place = option.unwrap(character.place, no_saved_place)
+  let #(world_id, world_zone_id, position_x, position_y, position_z) = case
+    character.place
+  {
+    Some(place) -> #(
+      start_place.world_id(place),
+      start_place.world_zone_id(place),
+      float32.to_bits(start_place.x(place)),
+      float32.to_bits(start_place.y(place)),
+      float32.to_bits(start_place.z(place)),
+    )
+    None -> #(0, 0, 0, 0, 0)
+  }
   CharacterListEntry(
     character_id:,
     name: character.name,
@@ -513,12 +519,12 @@ fn entry(
       look: character.look,
     ),
     worn_visuals: [],
-    world_id: place.world_id,
-    world_zone_id: place.world_zone_id,
+    world_id:,
+    world_zone_id:,
     field_12: 0,
-    position_x: float32.to_bits(place.x),
-    position_y: float32.to_bits(place.y),
-    position_z: float32.to_bits(place.z),
+    position_x:,
+    position_y:,
+    position_z:,
     field_16: 0,
     field_17: 0,
     path: character.path,

@@ -23,7 +23,7 @@ import character_support
 import character_tables
 import client_tables
 import genesis_prime/game/start_place.{
-  type Place, type Start, Level50, Novice, OtherStart, Place, Veteran,
+  type Place, type Start, Level50, Novice, OtherStart, Veteran,
 }
 import genesis_prime/table/character_creation as creation_table
 import genesis_prime/table/id.{RaceId, WorldLocation2Id}
@@ -34,6 +34,7 @@ import gleam/int
 import gleam/list
 import gleam/pair
 import owned_test
+import place_support
 import planted_table.{Float, Integer}
 import unitest
 
@@ -104,6 +105,57 @@ pub fn each_start_of_each_race_and_faction_is_the_place_of_its_world_location2_r
   })
 }
 
+pub fn a_place_in_world_0_cannot_be_made_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert start_place.place(
+      world_id: 0,
+      world_zone_id: 6009,
+      x: 1.0,
+      y: 2.0,
+      z: 3.0,
+    )
+    == Error(Nil)
+    as "world 0 is no World row, which 0xAD needs (opcode.0xad), so no place is in it"
+  let assert Ok(place) =
+    start_place.place(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 1.0,
+      y: 2.0,
+      z: 3.0,
+    )
+    as "a place in a world is made"
+  assert #(
+      start_place.world_id(place),
+      start_place.world_zone_id(place),
+      start_place.x(place),
+      start_place.y(place),
+      start_place.z(place),
+    )
+    == #(3460, 6009, 1.0, 2.0, 3.0)
+}
+
+pub fn a_start_whose_world_location2_row_is_in_world_0_has_no_place_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let tables = character_tables.shared_with_novice_start_in_world_0()
+  assert start_place.of(
+      tables:,
+      faction_id: exile,
+      race_id: RaceId(1),
+      start: Novice,
+    )
+    == Error(Nil)
+    as "the Novice row's World is 0, which is no World row (opcode.0xad)"
+  assert start_place.of(
+      tables:,
+      faction_id: exile,
+      race_id: RaceId(1),
+      start: Veteran,
+    )
+    == Ok(place_of_row(1594))
+    as "the Veteran row, in World 426, still has its place"
+}
+
 pub fn a_start_race_or_faction_with_no_row_has_no_place_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
@@ -142,7 +194,7 @@ pub fn each_start_of_each_race_and_faction_is_the_place_of_its_world_location2_r
         race_id: RaceId(race_id),
         start:,
       )
-      == Ok(Place(
+      == Ok(place_support.at(
         world_id: row.world_id,
         world_zone_id: row.world_zone_id,
         x: row.position0,

@@ -22,7 +22,6 @@ import character_support
 import character_tables
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/character_select.{Ask, Send, Warn}
-import genesis_prime/game/start_place.{Place}
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry.{type CharacterListEntry}
 import genesis_prime/message/create_character.{CreateCharacter}
@@ -50,6 +49,7 @@ import gleam/list
 import gleam/option.{None}
 import gleam/string
 import owned_test
+import place_support
 
 const filetime = 133_900_000_000_000_000
 
@@ -273,7 +273,7 @@ pub fn a_valid_request_asks_the_store_to_make_the_character_with_the_slot_count_
           faction_id: 167,
           level: 1,
           path: 1,
-          place: Place(
+          place: place_support.at(
             world_id: 3460,
             world_zone_id: 6009,
             x: 29.128599166870117,

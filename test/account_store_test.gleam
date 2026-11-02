@@ -27,7 +27,6 @@ import asking_rule
 import character_support
 import database_support
 import genesis_prime/add_character/sql as add_character_sql
-import genesis_prime/game/start_place.{Place}
 import genesis_prime/login/guid
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
@@ -51,6 +50,7 @@ import gleam/result
 import gleam/string
 import login_support
 import owned_test
+import place_support
 import pog
 import readiness_support
 import relay
@@ -311,7 +311,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
           faction_id: 166,
           level: 9,
           path: 2,
-          place: Some(Place(
+          place: Some(place_support.at(
             world_id: 1387,
             world_zone_id: 1100,
             x: 1.5,
@@ -331,7 +331,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
           faction_id: 166,
           level: 9,
           path: 0,
-          place: Some(Place(
+          place: Some(place_support.at(
             world_id: 1387,
             world_zone_id: 1100,
             x: 1.5,
@@ -704,7 +704,7 @@ fn a_new_character(name: String) -> store.NewCharacter {
     faction_id: 167,
     level: 3,
     path: 2,
-    place: Place(
+    place: place_support.at(
       world_id: 3460,
       world_zone_id: 6009,
       x: 29.128599166870117,
@@ -758,7 +758,7 @@ pub fn a_create_stores_the_character_at_the_level_it_was_given_with_the_values_i
           faction_id: 167,
           level: 3,
           path: 2,
-          place: Some(Place(
+          place: Some(place_support.at(
             world_id: 3460,
             world_zone_id: 6009,
             x: 29.128599166870117,
@@ -888,7 +888,7 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
         faction_id: 166,
         level: 9,
         path: 2,
-        place: Some(Place(
+        place: Some(place_support.at(
           world_id: 1387,
           world_zone_id: 1100,
           x: 1.5,

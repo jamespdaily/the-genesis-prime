@@ -55,7 +55,7 @@
 //// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
 ////   an asker waiting on one gets `EndedBeforeAnswer`.
 
-import genesis_prime/game/start_place.{type Place, Place}
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/login/guid
 import genesis_prime/migration.{
   type Recorded, Migration, NoRecord, Recorded, Unreadable,
@@ -78,7 +78,7 @@ import genesis_prime/table/id.{ClassId, RaceId}
 import gleam/bool
 import gleam/erlang/process.{type Name}
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{type Option}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
@@ -370,17 +370,14 @@ fn saved_place(
   position_y position_y: Float,
   position_z position_z: Float,
 ) -> Option(Place) {
-  case world_id {
-    0 -> None
-    _ ->
-      Some(Place(
-        world_id:,
-        world_zone_id:,
-        x: position_x,
-        y: position_y,
-        z: position_z,
-      ))
-  }
+  start_place.place(
+    world_id:,
+    world_zone_id:,
+    x: position_x,
+    y: position_y,
+    z: position_z,
+  )
+  |> option.from_result
 }
 
 /// Whether the row's rename mark is set.
@@ -415,11 +412,11 @@ fn create_character(
         list.map(character.look, fn(entry) { entry.value }),
         character.bones,
         character_slots,
-        character.place.world_id,
-        character.place.world_zone_id,
-        character.place.x,
-        character.place.y,
-        character.place.z,
+        start_place.world_id(character.place),
+        start_place.world_zone_id(character.place),
+        start_place.x(character.place),
+        start_place.y(character.place),
+        start_place.z(character.place),
         character.level,
       )
     })

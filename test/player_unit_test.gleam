@@ -13,7 +13,7 @@
 //// - The level: stat 10 of the unit's stats is its level, and a unit created
 ////   without it is level 1 (0x140458140, 0x1404543c1).
 
-import genesis_prime/game/start_place.{type Place, Place}
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_stat.{UnitStat}
@@ -24,10 +24,17 @@ import gleam/list
 import gleam/option.{Some}
 import message_support
 import owned_test
+import place_support
 
 /// Where the live character of the vector stands.
 fn roxo_place() -> Place {
-  Place(world_id: 3460, world_zone_id: 6009, x: 4605.65, y: -7.571, z: 494.996)
+  place_support.at(
+    world_id: 3460,
+    world_zone_id: 6009,
+    x: 4605.65,
+    y: -7.571,
+    z: 494.996,
+  )
 }
 
 /// Roxo Stompstone as the live character of the vector.

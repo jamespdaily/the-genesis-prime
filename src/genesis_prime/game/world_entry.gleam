@@ -178,7 +178,10 @@ pub fn loaded(
               )
             Some(place) -> {
               let map =
-                MapId(world_id: place.world_id, instance: open_world_instance)
+                MapId(
+                  world_id: start_place.world_id(place),
+                  instance: open_world_instance,
+                )
               Join(state: Joining(character:, place:, map:), effects: [
                 AskMap(map:, message: map.Join(connection:, character_id:)),
               ])
@@ -231,10 +234,10 @@ pub fn joined(
 fn enter_world(place place: Place) -> Effect {
   let assert Ok(body) =
     enter_world.encode(EnterWorld(
-      world_id: place.world_id,
-      position_x: float32.to_bits(place.x),
-      position_y: float32.to_bits(place.y),
-      position_z: float32.to_bits(place.z),
+      world_id: start_place.world_id(place),
+      position_x: float32.to_bits(start_place.x(place)),
+      position_y: float32.to_bits(start_place.y(place)),
+      position_z: float32.to_bits(start_place.z(place)),
       field_5: float32.to_bits(0.0),
       field_6: float32.to_bits(0.0),
     ))

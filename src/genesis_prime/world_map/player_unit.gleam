@@ -84,9 +84,9 @@ pub fn create(
     server_time_estimate_start: 0,
     movement_commands: [
       UnitPositionCommand(
-        x: float32.to_bits(place.x),
-        y: float32.to_bits(place.y),
-        z: float32.to_bits(place.z),
+        x: float32.to_bits(start_place.x(place)),
+        y: float32.to_bits(start_place.y(place)),
+        z: float32.to_bits(start_place.z(place)),
         blends: 0,
       ),
     ],

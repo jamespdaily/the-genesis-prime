@@ -48,7 +48,6 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/coverage/sent_message
 import genesis_prime/game/connection.{Settings} as game_connection
-import genesis_prime/game/start_place.{Place}
 import genesis_prime/hand_off.{
   AlreadyHeld, Holder, Kept, NoHolder, SessionKey, Take, Taken,
 }
@@ -109,6 +108,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
+import place_support
 
 /// What the tests' game connections are made with: a realm id and a
 /// character limit the hello and the list must carry, the number of character
@@ -308,7 +308,7 @@ fn character(id id: Int, name name: String, seed seed: Int) -> store.Character {
     faction_id: 166 - seed % 2,
     level: 10 + seed,
     path: seed % 4,
-    place: Some(Place(
+    place: Some(place_support.at(
       world_id: 1000 + seed,
       world_zone_id: 2000 + seed,
       x: 1.5,
@@ -872,7 +872,7 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
           faction_id: 167,
           level: 1,
           path: 2,
-          place: Place(
+          place: place_support.at(
             world_id: 3460,
             world_zone_id: 6009,
             x: 29.128599166870117,
@@ -1060,7 +1060,7 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
           faction_id: 167,
           level: 1,
           path: 2,
-          place: Place(
+          place: place_support.at(
             world_id: 3460,
             world_zone_id: 6009,
             x: 29.128599166870117,
@@ -1117,7 +1117,7 @@ fn world_character() -> store.Character {
     faction_id: 166,
     level: 1,
     path: 3,
-    place: Some(Place(
+    place: Some(place_support.at(
       world_id: 3460,
       world_zone_id: 6009,
       x: 29.128599166870117,
