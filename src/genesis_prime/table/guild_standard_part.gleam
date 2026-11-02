@@ -45,9 +45,12 @@ pub const schema =
     ],
   )
 
+/// The key of the GuildStandardPart table's rows in the store.
+const key: store.Key(GuildStandardPart) = store.Key("GuildStandardPart")
+
 /// The entry that loads the GuildStandardPart table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the GuildStandardPart table with the id, or an error when it has none.
@@ -55,12 +58,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: GuildStandardPartId,
 ) -> Result(GuildStandardPart, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the GuildStandardPart table, in id order.
 pub fn all(tables: store.Tables) -> List(GuildStandardPart) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

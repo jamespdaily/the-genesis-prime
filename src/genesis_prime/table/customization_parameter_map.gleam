@@ -46,9 +46,13 @@ pub const schema =
     ],
   )
 
+/// The key of the CustomizationParameterMap table's rows in the store.
+const key: store.Key(CustomizationParameterMap) =
+  store.Key("CustomizationParameterMap")
+
 /// The entry that loads the CustomizationParameterMap table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the CustomizationParameterMap table with the id, or an error when it has none.
@@ -56,12 +60,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: CustomizationParameterMapId,
 ) -> Result(CustomizationParameterMap, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the CustomizationParameterMap table, in id order.
 pub fn all(tables: store.Tables) -> List(CustomizationParameterMap) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

@@ -49,9 +49,12 @@ pub const schema =
     ],
   )
 
+/// The key of the QuestDirectionEntry table's rows in the store.
+const key: store.Key(QuestDirectionEntry) = store.Key("QuestDirectionEntry")
+
 /// The entry that loads the QuestDirectionEntry table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the QuestDirectionEntry table with the id, or an error when it has none.
@@ -59,12 +62,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: QuestDirectionEntryId,
 ) -> Result(QuestDirectionEntry, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the QuestDirectionEntry table, in id order.
 pub fn all(tables: store.Tables) -> List(QuestDirectionEntry) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

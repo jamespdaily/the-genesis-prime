@@ -35,9 +35,12 @@ pub const schema =
     ],
   )
 
+/// The key of the SoundImpactEvents table's rows in the store.
+const key: store.Key(SoundImpactEvents) = store.Key("SoundImpactEvents")
+
 /// The entry that loads the SoundImpactEvents table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the SoundImpactEvents table with the id, or an error when it has none.
@@ -45,12 +48,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: SoundImpactEventsId,
 ) -> Result(SoundImpactEvents, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the SoundImpactEvents table, in id order.
 pub fn all(tables: store.Tables) -> List(SoundImpactEvents) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

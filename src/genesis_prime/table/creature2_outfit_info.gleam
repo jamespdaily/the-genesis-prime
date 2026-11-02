@@ -54,9 +54,12 @@ pub const schema =
     ],
   )
 
+/// The key of the Creature2OutfitInfo table's rows in the store.
+const key: store.Key(Creature2OutfitInfo) = store.Key("Creature2OutfitInfo")
+
 /// The entry that loads the Creature2OutfitInfo table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the Creature2OutfitInfo table with the id, or an error when it has none.
@@ -64,12 +67,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: Creature2OutfitInfoId,
 ) -> Result(Creature2OutfitInfo, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the Creature2OutfitInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(Creature2OutfitInfo) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

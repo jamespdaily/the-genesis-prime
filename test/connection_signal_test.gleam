@@ -43,7 +43,7 @@ type Record {
 }
 
 fn start(
-  registry registry: option.Option(registry.Registry),
+  registry registry: option.Option(registry.Registry(Int)),
   sessions sessions: Result(Pid, Nil),
 ) -> ask_support.Server {
   start_asking(
@@ -55,7 +55,7 @@ fn start(
 
 /// As `start`, with the directory the rule's asks go through.
 fn start_asking(
-  registry registry: option.Option(registry.Registry),
+  registry registry: option.Option(registry.Registry(Int)),
   sessions sessions: Result(Pid, Nil),
   directory directory: fn(Nil, Int, fn(Nil) -> Nil) -> Result(service.Sent, Nil),
 ) -> ask_support.Server {

@@ -30,9 +30,12 @@ pub const schema =
     ],
   )
 
+/// The key of the SoundUIContext table's rows in the store.
+const key: store.Key(SoundUIContext) = store.Key("SoundUIContext")
+
 /// The entry that loads the SoundUIContext table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the SoundUIContext table with the id, or an error when it has none.
@@ -40,12 +43,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: SoundUIContextId,
 ) -> Result(SoundUIContext, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the SoundUIContext table, in id order.
 pub fn all(tables: store.Tables) -> List(SoundUIContext) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

@@ -80,9 +80,13 @@ pub const schema =
     ],
   )
 
+/// The key of the PathScientistScanBotProfile table's rows in the store.
+const key: store.Key(PathScientistScanBotProfile) =
+  store.Key("PathScientistScanBotProfile")
+
 /// The entry that loads the PathScientistScanBotProfile table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the PathScientistScanBotProfile table with the id, or an error when it has none.
@@ -90,12 +94,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: PathScientistScanBotProfileId,
 ) -> Result(PathScientistScanBotProfile, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the PathScientistScanBotProfile table, in id order.
 pub fn all(tables: store.Tables) -> List(PathScientistScanBotProfile) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

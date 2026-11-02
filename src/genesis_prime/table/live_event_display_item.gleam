@@ -36,9 +36,12 @@ pub const schema =
     ],
   )
 
+/// The key of the LiveEventDisplayItem table's rows in the store.
+const key: store.Key(LiveEventDisplayItem) = store.Key("LiveEventDisplayItem")
+
 /// The entry that loads the LiveEventDisplayItem table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the LiveEventDisplayItem table with the id, or an error when it has none.
@@ -46,12 +49,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: LiveEventDisplayItemId,
 ) -> Result(LiveEventDisplayItem, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the LiveEventDisplayItem table, in id order.
 pub fn all(tables: store.Tables) -> List(LiveEventDisplayItem) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

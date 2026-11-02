@@ -631,10 +631,13 @@ pub fn a_file_that_ends_inside_its_lookup_fails_the_load_test() -> Nil {
     as "0x1407c1f9a..0x1407c1fc6: the lookup (header 0x50 offset, 0x48 count of 4-byte entries) must lie inside the file; this one loses its last entry"
 }
 
+/// The key of the derived ids of the planted LocalizedText rows.
+const ids_key: store.Key(List(Int)) = store.Key("LocalizedTextIds")
+
 /// A derivation of the ids of the planted LocalizedText rows, which tells the
 /// subject each time it is built.
 fn ids_derivation(built: process.Subject(Nil)) -> store.Derivation {
-  store.derivation(name: "LocalizedTextIds", build: fn(tables) {
+  store.derivation(key: ids_key, build: fn(tables) {
     process.send(built, Nil)
     store.ids(localized_text.entry(), tables)
   })
@@ -658,8 +661,8 @@ pub fn a_derived_value_is_built_once_from_the_loaded_tables_and_every_read_gives
     as "a planted table loads with a derivation"
   assert process.receive(built, 0) == Ok(Nil)
     as "the load built the derived value once"
-  let first: List(Int) = store.derived(tables:, name: "LocalizedTextIds")
-  let second: List(Int) = store.derived(tables:, name: "LocalizedTextIds")
+  let first: List(Int) = store.derived(tables:, key: ids_key)
+  let second: List(Int) = store.derived(tables:, key: ids_key)
   assert first == [1, 3] as "the ids of the two planted rows, read by the build"
   assert second == first as "every read gives the value the load built"
   assert process.receive(built, 0) == Error(Nil)

@@ -59,9 +59,12 @@ pub const schema =
     ],
   )
 
+/// The key of the WorldWaterLayer table's rows in the store.
+const key: store.Key(WorldWaterLayer) = store.Key("WorldWaterLayer")
+
 /// The entry that loads the WorldWaterLayer table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the WorldWaterLayer table with the id, or an error when it has none.
@@ -69,12 +72,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: WorldWaterLayerId,
 ) -> Result(WorldWaterLayer, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the WorldWaterLayer table, in id order.
 pub fn all(tables: store.Tables) -> List(WorldWaterLayer) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

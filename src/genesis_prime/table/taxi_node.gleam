@@ -62,9 +62,12 @@ pub const schema =
     ],
   )
 
+/// The key of the TaxiNode table's rows in the store.
+const key: store.Key(TaxiNode) = store.Key("TaxiNode")
+
 /// The entry that loads the TaxiNode table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the TaxiNode table with the id, or an error when it has none.
@@ -72,12 +75,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: TaxiNodeId,
 ) -> Result(TaxiNode, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the TaxiNode table, in id order.
 pub fn all(tables: store.Tables) -> List(TaxiNode) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

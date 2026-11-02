@@ -28,9 +28,12 @@ pub const schema =
     ],
   )
 
+/// The key of the QuestGroup table's rows in the store.
+const key: store.Key(QuestGroup) = store.Key("QuestGroup")
+
 /// The entry that loads the QuestGroup table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the QuestGroup table with the id, or an error when it has none.
@@ -38,12 +41,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: QuestGroupId,
 ) -> Result(QuestGroup, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the QuestGroup table, in id order.
 pub fn all(tables: store.Tables) -> List(QuestGroup) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

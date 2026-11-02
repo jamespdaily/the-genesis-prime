@@ -30,9 +30,12 @@ pub const schema =
     ],
   )
 
+/// The key of the MapZoneWorldJoin table's rows in the store.
+const key: store.Key(MapZoneWorldJoin) = store.Key("MapZoneWorldJoin")
+
 /// The entry that loads the MapZoneWorldJoin table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the MapZoneWorldJoin table with the id, or an error when it has none.
@@ -40,12 +43,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: MapZoneWorldJoinId,
 ) -> Result(MapZoneWorldJoin, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the MapZoneWorldJoin table, in id order.
 pub fn all(tables: store.Tables) -> List(MapZoneWorldJoin) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

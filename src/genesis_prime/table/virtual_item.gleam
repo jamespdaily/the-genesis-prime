@@ -47,9 +47,12 @@ pub const schema =
     ],
   )
 
+/// The key of the VirtualItem table's rows in the store.
+const key: store.Key(VirtualItem) = store.Key("VirtualItem")
+
 /// The entry that loads the VirtualItem table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the VirtualItem table with the id, or an error when it has none.
@@ -57,12 +60,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: VirtualItemId,
 ) -> Result(VirtualItem, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the VirtualItem table, in id order.
 pub fn all(tables: store.Tables) -> List(VirtualItem) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

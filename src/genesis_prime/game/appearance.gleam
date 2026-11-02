@@ -74,15 +74,16 @@ type Filed {
 /// The index of the client's tables, which their load built
 /// (`derivation`). Stops the caller for tables loaded without it.
 pub fn index(tables tables: table_store.Tables) -> Index {
-  table_store.derived(tables:, name: index_name)
+  table_store.derived(tables:, key: index_key)
 }
 
-const index_name = "AppearanceIndex"
+/// The key of the index in the tables' store.
+const index_key: table_store.Key(Index) = table_store.Key("AppearanceIndex")
 
 /// The index as a value the tables' load builds once, under the tables' key,
 /// from the rows of CharacterCustomization and CharacterCustomizationLabel.
 pub fn derivation() -> table_store.Derivation {
-  table_store.derivation(name: index_name, build: fn(tables) {
+  table_store.derivation(key: index_key, build: fn(tables) {
     index_from_rows(
       rows: character_customization.all(tables),
       labels: character_customization_label.all(tables),

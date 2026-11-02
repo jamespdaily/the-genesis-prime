@@ -72,7 +72,7 @@ pub fn start_joined(
     Result(service.Sent, Nil),
   shutdown_ms shutdown_ms: Int,
   recorder recorder: Option(Recorder),
-  registry registry: Option(Registry),
+  registry registry: Option(Registry(message)),
   locate locate: service.Locate,
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {

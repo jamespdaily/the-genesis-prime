@@ -27,9 +27,12 @@ pub const schema =
     ],
   )
 
+/// The key of the SoundSwitch table's rows in the store.
+const key: store.Key(SoundSwitch) = store.Key("SoundSwitch")
+
 /// The entry that loads the SoundSwitch table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the SoundSwitch table with the id, or an error when it has none.
@@ -37,12 +40,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: SoundSwitchId,
 ) -> Result(SoundSwitch, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the SoundSwitch table, in id order.
 pub fn all(tables: store.Tables) -> List(SoundSwitch) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

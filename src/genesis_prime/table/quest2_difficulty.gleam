@@ -39,9 +39,12 @@ pub const schema =
     ],
   )
 
+/// The key of the Quest2Difficulty table's rows in the store.
+const key: store.Key(Quest2Difficulty) = store.Key("Quest2Difficulty")
+
 /// The entry that loads the Quest2Difficulty table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the Quest2Difficulty table with the id, or an error when it has none.
@@ -49,12 +52,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: Quest2DifficultyId,
 ) -> Result(Quest2Difficulty, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the Quest2Difficulty table, in id order.
 pub fn all(tables: store.Tables) -> List(Quest2Difficulty) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

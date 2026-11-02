@@ -38,9 +38,12 @@ pub const schema =
     ],
   )
 
+/// The key of the TutorialAnchor table's rows in the store.
+const key: store.Key(TutorialAnchor) = store.Key("TutorialAnchor")
+
 /// The entry that loads the TutorialAnchor table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the TutorialAnchor table with the id, or an error when it has none.
@@ -48,12 +51,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: TutorialAnchorId,
 ) -> Result(TutorialAnchor, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the TutorialAnchor table, in id order.
 pub fn all(tables: store.Tables) -> List(TutorialAnchor) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

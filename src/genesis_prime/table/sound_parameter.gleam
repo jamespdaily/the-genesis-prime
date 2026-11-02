@@ -26,9 +26,12 @@ pub const schema =
     ],
   )
 
+/// The key of the SoundParameter table's rows in the store.
+const key: store.Key(SoundParameter) = store.Key("SoundParameter")
+
 /// The entry that loads the SoundParameter table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the SoundParameter table with the id, or an error when it has none.
@@ -36,12 +39,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: SoundParameterId,
 ) -> Result(SoundParameter, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the SoundParameter table, in id order.
 pub fn all(tables: store.Tables) -> List(SoundParameter) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.
