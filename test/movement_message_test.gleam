@@ -68,6 +68,7 @@ import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/zone_value_changed.{ZoneValueChanged}
 import gleam/int
 import gleam/list
+import gleam/result
 import message_support
 import owned_test
 
@@ -577,21 +578,21 @@ pub fn kinds_8_and_11_hold_half_floats_test() -> Nil {
     as "the two commands decode"
   let assert Velocity(MovementVelocity(x:, y:, z:, ..)) = velocity
     as "kind 8 is the velocity"
-  assert [
+  assert result.all([
       half_float.from_bits(x),
       half_float.from_bits(y),
       half_float.from_bits(z),
-    ]
-    == [Finite(1.0), Finite(-1.0), Infinite(negative: False)]
+    ])
+    == Ok([Finite(1.0), Finite(-1.0), Infinite(negative: False)])
     as "0x1401c9800: 0x3c00 is 1.0, 0xbc00 is -1.0 and 0x7c00 is infinity"
   let assert MoveAsked(MovementMoveAsked(x:, y:, z:, ..)) = move_asked
     as "kind 11 is the move asked for"
-  assert [
+  assert result.all([
       half_float.from_bits(x),
       half_float.from_bits(y),
       half_float.from_bits(z),
-    ]
-    == [Infinite(negative: False), Finite(1.0), Finite(-1.0)]
+    ])
+    == Ok([Infinite(negative: False), Finite(1.0), Finite(-1.0)])
     as "kind 11 holds half floats as kind 8 does"
 }
 
