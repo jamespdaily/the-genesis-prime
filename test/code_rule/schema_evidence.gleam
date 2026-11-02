@@ -220,7 +220,7 @@ fn field_breaches(
     ]
     None, _ -> []
   }
-  let values = case field.named_values {
+  let values = case message_schema.named_values(field) {
     None -> []
     Some(named_values) ->
       list.flat_map(named_values.values, fn(value) {

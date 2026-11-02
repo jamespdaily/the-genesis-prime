@@ -143,7 +143,7 @@ pub fn a_field_lists_its_named_values_with_their_evidence_test() -> Nil {
     as "the planted schema parses"
   let assert [message] = schema.messages as "one message"
   let assert [field] = message.fields as "one field"
-  assert field.named_values
+  assert message_schema.named_values(field)
     == Some(
       NamedValues(type_name: "Cause", values: [
         message_schema.Value(value: 6, name: "gone", evidence: Some("x")),
