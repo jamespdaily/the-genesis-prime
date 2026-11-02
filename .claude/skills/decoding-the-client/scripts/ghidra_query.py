@@ -34,7 +34,14 @@ Kinds and their arguments (addresses are 0x-prefixed lower-case hex):
                   | start, stop              the function with that start, or of [start, stop) up to
                                              1 MiB. bytes is hex; text is Ghidra's syntax with the
                                              project's own names.
-  emulate         function | start, stop, -> {"result": {"rax": int, "xmm0_low": int},
+  decode          start, stop             -> [{address, bytes, text}]: the instructions the bytes from
+                                             start decode to, one after another, up to the first that
+                                             reaches stop (at most 1 MiB), whether or not Ghidra has
+                                             disassembled them (the cases of a switch it did not
+                                             recover). The project is not changed. text is Ghidra's
+                                             syntax, with addresses as numbers. Bytes that decode to
+                                             no instruction are an error reply naming the address.
+  emulate        function | start, stop, -> {"result": {"rax": int, "xmm0_low": int},
                   args, registers, memory,    "registers": {name: int}, "read": [hex], "steps": n,
                   read, stand_ins,            "stopped_at": address}
                   follow_calls, max_steps
@@ -85,7 +92,7 @@ import ghidra_env  # noqa: E402
 
 KINDS = (
     "bytes", "function_at", "functions", "callers", "callees", "refs_to",
-    "string_refs", "switch_targets", "seed_report", "emulate", "decompile", "disassemble",
+    "string_refs", "switch_targets", "seed_report", "emulate", "decompile", "disassemble", "decode",
 )
 MAX_BYTES = 1 << 20
 TOP = (1 << 64) - 1
@@ -397,6 +404,28 @@ def _disassemble(program, request: dict) -> list[dict]:
     ]
 
 
+def _decode(program, request: dict) -> list[dict]:
+    from ghidra.app.util import PseudoDisassembler
+    from ghidra.program.model.lang import InsufficientBytesException, UnknownContextException, UnknownInstructionException
+
+    start, stop = _address(program, request, "start"), _address(program, request, "stop")
+    end = stop.getOffset() & TOP
+    if not 0 < end - (start.getOffset() & TOP) <= MAX_BYTES:
+        raise BadRequest("'stop' must be above 'start' and at most %d bytes after it" % MAX_BYTES)
+    disassembler = PseudoDisassembler(program)
+    decoded, address = [], start
+    while address.getOffset() & TOP < end:
+        try:
+            instruction = disassembler.disassemble(address)
+        except (InsufficientBytesException, UnknownContextException, UnknownInstructionException) as error:
+            raise BadRequest("the bytes at %s decode to no instruction: %s" % (_hex(address), error)) from error
+        if instruction is None:  # the disassembler's answer for bytes that are no instruction
+            raise BadRequest("the bytes at %s decode to no instruction" % _hex(address))
+        decoded.append({"address": _hex(address), "bytes": bytes(instruction.getBytes()).hex(), "text": str(instruction)})
+        address = address.add(instruction.getLength())
+    return decoded
+
+
 def _seed_report(opened) -> dict | None:
     report = opened.seed_report
     if report is None:
@@ -439,6 +468,8 @@ def handle(opened, request: dict) -> object:
         return _decompile(program, request)
     if kind == "disassemble":
         return _disassemble(program, request)
+    if kind == "decode":
+        return _decode(program, request)
     return _emulate(program, request)
 
 

@@ -75,7 +75,8 @@ def _parse_instruction(line: str) -> Instruction | None:
     return Instruction(int(m.group(1), 16), tokens[0], operands, int(comment.group(1), 16) if comment else None)
 
 
-def _disassemble(pe: ClientPE, low: int, high: int) -> list[Instruction]:
+def disassemble(pe: ClientPE, low: int, high: int) -> list[Instruction]:
+    """llvm-objdump's linear listing of [low, high), whatever Ghidra has made of it."""
     command = [
         str(objdump_path()), "-d", "--no-show-raw-insn", "--x86-asm-syntax=intel",
         "--start-address=0x%x" % low, "--stop-address=0x%x" % high, str(pe.path),
@@ -242,7 +243,7 @@ def read_function(pe: ClientPE, function_start: int) -> list[JumpTable]:
     for low, high in _merged(pe.root_ranges(function_start)):
         if not INDIRECT_JMP_BYTES.search(pe.read(low, high - low)):
             continue
-        code = _disassemble(pe, low, high)
+        code = disassemble(pe, low, high)
         for position, ins in enumerate(code):
             if ins.mnemonic == "jmp" and len(ins.operands) == 1 and FAMILY.get(ins.operands[0]) == ins.operands[0]:
                 tables.append(_analyse(pe, code, position))
