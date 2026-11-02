@@ -15,8 +15,9 @@ the real toolchain, the real database or the real client:
   generate_messages) fails when a file under test/code_rule holds PLANTED_BREACH;
 - `python3.13` is the real one, except for the run the stub stands in for:
   check_facts.py, which succeeds at once;
-- the client query process's scripts are the real check_support.py and
-  formulas_by_hand.py with one planted test file whose test is gated by
+- the client query process's scripts are the real check_support.py (with the
+  query_client.py and ghidra_env.py it imports) and formulas_by_hand.py with
+  one planted test file whose test is gated by
   check_support.integration_only, so the gate is the real one.
 
 - the planted repository is a git repository on a branch `feature` of `main`
@@ -176,7 +177,7 @@ class PlantedCheckCase(unittest.TestCase):
         (repository / "test" / "code_rule" / "planted_test.gleam").write_text("// a code-rule test\n")
         scripts = repository / SCRIPTS
         scripts.mkdir(parents=True)
-        for name in ("check_support.py", "formulas_by_hand.py"):
+        for name in ("check_support.py", "query_client.py", "ghidra_env.py", "formulas_by_hand.py"):
             shutil.copyfile(REPOSITORY / SCRIPTS / name, scripts / name)
         self.plant_integration_test(fails=False)
         tools = self.root / "tools"
