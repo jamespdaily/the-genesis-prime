@@ -9,7 +9,7 @@
 
 import genesis_prime/message_schema.{
   type Field, type Kind, type Message, type NamedValues, type Record,
-  type Schema, type Union,
+  type Schema, type Union, type Variant,
 }
 import gleam/int
 import gleam/list
@@ -318,7 +318,7 @@ fn union_module(union: Union) -> String {
       header(head),
       bit_stream_import(["DecodeError", "Reader", "Writer"]),
       module_imports,
-      ["import gleam/result", ""],
+      ["import gleam/pair", "import gleam/result", ""],
       wrap(
         "///",
         "One item of the union: its first "
@@ -372,17 +372,7 @@ fn union_module(union: Union) -> String {
           <> "))",
         "  case kind {",
       ],
-      list.flat_map(union.variants, fn(variant) {
-        case_arm(
-          pattern: int.to_string(variant.tag),
-          head: "bit_stream.read_variant",
-          arguments: [
-            "reader",
-            variant.record <> ".read",
-            camel(variant.name),
-          ],
-        )
-      }),
+      list.flat_map(union.variants, read_arm),
       case_arm(pattern: "_", head: "Error", arguments: [
         "bit_stream.UnexpectedValue(field: \""
         <> union.name
@@ -391,6 +381,24 @@ fn union_module(union: Union) -> String {
       ["  }", "}"],
     ]),
   )
+}
+
+/// The arm of a union's `read` for one variant: the kind's record reads the
+/// item and the variant wraps it, as a pipeline on the arm's line when it fits
+/// and one step to a line when it does not (`gleam format` keeps a pipeline as
+/// it is written, and breaks one only when its line is too long).
+fn read_arm(variant: Variant) -> List(String) {
+  let steps = [
+    "reader",
+    "|> " <> variant.record <> ".read",
+    "|> result.map(pair.map_first(_, " <> camel(variant.name) <> "))",
+  ]
+  let pattern = "    " <> int.to_string(variant.tag) <> " ->"
+  let one = pattern <> " " <> string.join(steps, " ")
+  case string.length(one) <= width {
+    True -> [one]
+    False -> [pattern, ..list.map(steps, fn(step) { "      " <> step })]
+  }
 }
 
 /// The module of every message the client sends: a variant for each message

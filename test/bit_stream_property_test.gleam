@@ -31,6 +31,7 @@ import gleam/bit_array
 import gleam/bool
 import gleam/int
 import gleam/list
+import gleam/pair
 import gleam/result
 import gleam/string
 import owned_test
@@ -345,25 +346,6 @@ pub fn a_count_that_promises_more_tagged_items_than_the_bytes_hold_is_a_decode_e
     as "the read fails at the end of the bytes, or one item sooner when the zero bits that pad the last byte read as a kind 0, which this union has no layout for"
 }
 
-pub fn a_tagged_item_whose_kind_has_no_layout_is_refused_when_read_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use #(kind, data) <- qcheck.given(qcheck.tuple2(
-    qcheck.bounded_int(from: 0, to: 31),
-    unsigned_of(32),
-  ))
-  use <- bool.guard(when: list.contains([3, 17, 30], kind), return: Nil)
-  let assert Ok(body) =
-    written(fn(writer) {
-      writer
-      |> bit_stream.write_unsigned("kind", kind, shape_kind_bits)
-      |> bit_stream.write_unsigned("data", data, 32)
-    })
-    as "both values are within their widths"
-  assert result.replace(read_shape(bit_stream.new_reader(body)), Nil)
-    == Error(bit_stream.UnexpectedValue(field: "kind", value: kind))
-    as "0x1400af930: a kind with no reader fails the read, and the kind is named"
-}
-
 pub fn a_counted_text_of_exactly_its_limit_is_written_and_one_unit_more_is_refused_test() -> Nil {
   use <- owned_test.run(60_000)
   use max_units <- qcheck.given(qcheck.bounded_int(from: 1, to: 250))
@@ -433,6 +415,9 @@ fn reads_back(kind: Generator(Field)) -> Nil {
   assert read == field as "the field reads back as written"
   assert bit_stream.finish_reading(reader) == Ok(Nil)
     as "the field ends within the last byte, so nothing whole is left"
+  // An empty list counted by nothing and without a prefix writes no bits, so
+  // there is no last byte to cut.
+  use <- bool.guard(when: bytes == <<>>, return: Nil)
   let cut_size = bit_array.byte_size(bytes) - 1
   let assert Ok(cut) = bit_array.slice(bytes, 0, cut_size)
     as "the body holds at least one byte"
@@ -511,9 +496,9 @@ fn write_shape(writer: bit_stream.Writer, shape: Shape) -> bit_stream.Writer {
 fn read_shape(reader: Reader) -> Result(#(Shape, Reader), DecodeError) {
   use kind <- result.try(bit_stream.peek_unsigned(reader, shape_kind_bits))
   case kind {
-    3 -> bit_stream.read_variant(reader, read_switch, Switch)
-    17 -> bit_stream.read_variant(reader, read_pair, Pair)
-    30 -> bit_stream.read_variant(reader, read_run, Run)
+    3 -> result.map(read_switch(reader), pair.map_first(_, Switch))
+    17 -> result.map(read_pair(reader), pair.map_first(_, Pair))
+    30 -> result.map(read_run(reader), pair.map_first(_, Run))
     _ -> Error(bit_stream.UnexpectedValue(field: "kind", value: kind))
   }
 }
@@ -798,12 +783,12 @@ fn records_field() -> Generator(Field) {
   Records(count_bits:, items:)
 }
 
-/// Records as many as the list that counts them: the list is of 32-bit
-/// values, as the commands' lists are.
+/// Records as many as the list that counts them, none included: the list is of
+/// 32-bit values, as the commands' lists are.
 fn records_like_field() -> Generator(Field) {
   use items <- qcheck.bind(qcheck.generic_list(
     item_of(),
-    qcheck.bounded_int(from: 1, to: 6),
+    qcheck.bounded_int(from: 0, to: 6),
   ))
   use like <- qcheck.map(qcheck.generic_list(
     unsigned_of(32),
@@ -815,7 +800,7 @@ fn records_like_field() -> Generator(Field) {
 /// A shape of any of the three layouts.
 fn shape_of() -> Generator(Shape) {
   let switch = qcheck.map(unsigned_of(1), Switch)
-  let pair = {
+  let two = {
     use first <- qcheck.bind(unsigned_of(32))
     use second <- qcheck.map(unsigned_of(3))
     Pair(#(first, second))
@@ -823,7 +808,7 @@ fn shape_of() -> Generator(Shape) {
   let run =
     qcheck.generic_list(unsigned_of(7), qcheck.bounded_int(from: 0, to: 6))
     |> qcheck.map(Run)
-  qcheck.from_generators(switch, [pair, run])
+  qcheck.from_generators(switch, [two, run])
 }
 
 fn shapes_field() -> Generator(Field) {

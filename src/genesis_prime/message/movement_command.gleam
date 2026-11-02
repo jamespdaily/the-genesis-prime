@@ -39,6 +39,7 @@ import genesis_prime/message/movement_state_flags.{type MovementStateFlags}
 import genesis_prime/message/movement_time.{type MovementTime}
 import genesis_prime/message/movement_velocity.{type MovementVelocity}
 import genesis_prime/message/unit_position_command.{type UnitPositionCommand}
+import gleam/pair
 import gleam/result
 
 /// One item of the union: its first 5 bits are its kind, which picks the
@@ -155,36 +156,102 @@ pub fn write(writer writer: Writer, record record: MovementCommand) -> Writer {
 pub fn read(reader: Reader) -> Result(#(MovementCommand, Reader), DecodeError) {
   use kind <- result.try(bit_stream.peek_unsigned(reader, 5))
   case kind {
-    0 -> bit_stream.read_variant(reader, movement_time.read, Time)
-    1 -> bit_stream.read_variant(reader, movement_platform.read, Platform)
-    2 -> bit_stream.read_variant(reader, unit_position_command.read, Position)
-    3 -> bit_stream.read_variant(reader, movement_kind_3.read, Kind3)
-    4 -> bit_stream.read_variant(reader, movement_kind_4.read, Kind4)
-    5 -> bit_stream.read_variant(reader, movement_kind_5.read, Kind5)
-    6 -> bit_stream.read_variant(reader, movement_kind_6.read, Kind6)
-    7 -> bit_stream.read_variant(reader, movement_kind_7.read, Kind7)
-    8 -> bit_stream.read_variant(reader, movement_velocity.read, Velocity)
-    9 -> bit_stream.read_variant(reader, movement_kind_9.read, Kind9)
-    10 -> bit_stream.read_variant(reader, movement_kind_10.read, Kind10)
-    11 -> bit_stream.read_variant(reader, movement_move_asked.read, MoveAsked)
-    12 -> bit_stream.read_variant(reader, movement_kind_12.read, Kind12)
-    13 -> bit_stream.read_variant(reader, movement_kind_13.read, Kind13)
-    14 -> bit_stream.read_variant(reader, movement_rotation.read, Rotation)
-    15 -> bit_stream.read_variant(reader, movement_kind_15.read, Kind15)
-    16 -> bit_stream.read_variant(reader, movement_kind_16.read, Kind16)
-    17 -> bit_stream.read_variant(reader, movement_kind_17.read, Kind17)
-    18 -> bit_stream.read_variant(reader, movement_kind_18.read, Kind18)
-    19 -> bit_stream.read_variant(reader, movement_kind_19.read, Kind19)
-    20 -> bit_stream.read_variant(reader, movement_kind_20.read, Kind20)
-    21 -> bit_stream.read_variant(reader, movement_kind_21.read, Kind21)
-    22 -> bit_stream.read_variant(reader, movement_kind_22.read, Kind22)
-    23 -> bit_stream.read_variant(reader, movement_kind_23.read, Kind23)
-    24 -> bit_stream.read_variant(reader, movement_state_flags.read, StateFlags)
-    25 -> bit_stream.read_variant(reader, movement_kind_25.read, Kind25)
-    26 -> bit_stream.read_variant(reader, movement_kind_26.read, Kind26)
-    27 -> bit_stream.read_variant(reader, movement_mode.read, Mode)
-    28 -> bit_stream.read_variant(reader, movement_kind_28.read, Kind28)
-    29 -> bit_stream.read_variant(reader, movement_kind_29.read, Kind29)
+    0 -> reader |> movement_time.read |> result.map(pair.map_first(_, Time))
+    1 ->
+      reader
+      |> movement_platform.read
+      |> result.map(pair.map_first(_, Platform))
+    2 ->
+      reader
+      |> unit_position_command.read
+      |> result.map(pair.map_first(_, Position))
+    3 -> reader |> movement_kind_3.read |> result.map(pair.map_first(_, Kind3))
+    4 -> reader |> movement_kind_4.read |> result.map(pair.map_first(_, Kind4))
+    5 -> reader |> movement_kind_5.read |> result.map(pair.map_first(_, Kind5))
+    6 -> reader |> movement_kind_6.read |> result.map(pair.map_first(_, Kind6))
+    7 -> reader |> movement_kind_7.read |> result.map(pair.map_first(_, Kind7))
+    8 ->
+      reader
+      |> movement_velocity.read
+      |> result.map(pair.map_first(_, Velocity))
+    9 -> reader |> movement_kind_9.read |> result.map(pair.map_first(_, Kind9))
+    10 ->
+      reader
+      |> movement_kind_10.read
+      |> result.map(pair.map_first(_, Kind10))
+    11 ->
+      reader
+      |> movement_move_asked.read
+      |> result.map(pair.map_first(_, MoveAsked))
+    12 ->
+      reader
+      |> movement_kind_12.read
+      |> result.map(pair.map_first(_, Kind12))
+    13 ->
+      reader
+      |> movement_kind_13.read
+      |> result.map(pair.map_first(_, Kind13))
+    14 ->
+      reader
+      |> movement_rotation.read
+      |> result.map(pair.map_first(_, Rotation))
+    15 ->
+      reader
+      |> movement_kind_15.read
+      |> result.map(pair.map_first(_, Kind15))
+    16 ->
+      reader
+      |> movement_kind_16.read
+      |> result.map(pair.map_first(_, Kind16))
+    17 ->
+      reader
+      |> movement_kind_17.read
+      |> result.map(pair.map_first(_, Kind17))
+    18 ->
+      reader
+      |> movement_kind_18.read
+      |> result.map(pair.map_first(_, Kind18))
+    19 ->
+      reader
+      |> movement_kind_19.read
+      |> result.map(pair.map_first(_, Kind19))
+    20 ->
+      reader
+      |> movement_kind_20.read
+      |> result.map(pair.map_first(_, Kind20))
+    21 ->
+      reader
+      |> movement_kind_21.read
+      |> result.map(pair.map_first(_, Kind21))
+    22 ->
+      reader
+      |> movement_kind_22.read
+      |> result.map(pair.map_first(_, Kind22))
+    23 ->
+      reader
+      |> movement_kind_23.read
+      |> result.map(pair.map_first(_, Kind23))
+    24 ->
+      reader
+      |> movement_state_flags.read
+      |> result.map(pair.map_first(_, StateFlags))
+    25 ->
+      reader
+      |> movement_kind_25.read
+      |> result.map(pair.map_first(_, Kind25))
+    26 ->
+      reader
+      |> movement_kind_26.read
+      |> result.map(pair.map_first(_, Kind26))
+    27 -> reader |> movement_mode.read |> result.map(pair.map_first(_, Mode))
+    28 ->
+      reader
+      |> movement_kind_28.read
+      |> result.map(pair.map_first(_, Kind28))
+    29 ->
+      reader
+      |> movement_kind_29.read
+      |> result.map(pair.map_first(_, Kind29))
     _ ->
       Error(bit_stream.UnexpectedValue(field: "movement_command", value: kind))
   }

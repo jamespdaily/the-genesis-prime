@@ -452,8 +452,8 @@ pub fn a_union_is_a_module_that_peeks_its_kind_and_refuses_one_no_variant_has_te
       "    Flag(variant) -> planted_flag.write(writer, variant)",
       "    Pair(variant) -> planted_pair.write(writer, variant)",
       "  use kind <- result.try(bit_stream.peek_unsigned(reader, 3))",
-      "    2 -> bit_stream.read_variant(reader, planted_flag.read, Flag)",
-      "    5 -> bit_stream.read_variant(reader, planted_pair.read, Pair)",
+      "    2 -> reader |> planted_flag.read |> result.map(pair.map_first(_, Flag))",
+      "    5 -> reader |> planted_pair.read |> result.map(pair.map_first(_, Pair))",
       "    _ -> Error(bit_stream.UnexpectedValue(field: \"planted_union\", value: kind))",
     ],
     fn(text) {

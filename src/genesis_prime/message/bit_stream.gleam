@@ -616,17 +616,6 @@ pub fn peek_unsigned(
   Ok(value)
 }
 
-/// Reads an item with `read`, which gives its fields, and the item `wrap`
-/// makes of them: a variant of a union around the record its kind picked.
-pub fn read_variant(
-  reader reader: Reader,
-  read read: fn(Reader) -> Result(#(a, Reader), DecodeError),
-  wrap wrap: fn(a) -> b,
-) -> Result(#(b, Reader), DecodeError) {
-  use #(item, reader) <- result.try(read(reader))
-  Ok(#(wrap(item), reader))
-}
-
 /// Reads a count in `count_bits` bits, then that many 32-bit floats as the
 /// bits they are.
 pub fn read_float32_array(
