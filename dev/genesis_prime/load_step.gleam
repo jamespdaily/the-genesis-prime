@@ -129,12 +129,11 @@ pub fn held(
   observation observation: Observation,
   samples samples: List(Sample),
 ) -> List(Sample) {
-  within(samples:, from: 0, to: observation.held_ms)
+  until(samples:, to: observation.held_ms)
 }
 
 fn failed_lines(observation: Observation) -> List(Line) {
-  let arrival =
-    within(samples: observation.server, from: 0, to: observation.arrived_ms)
+  let arrival = until(samples: observation.server, to: observation.arrived_ms)
   [
     #(PlayerFailed, observation.failures > 0),
     #(
@@ -176,13 +175,19 @@ pub fn percentile(values values: List(Int), percent percent: Int) -> Int {
   }
 }
 
+/// The samples taken up to `to` milliseconds on the monotonic clock, which can
+/// be negative, so no sample's time is taken to be 0 or more.
+fn until(samples samples: List(Sample), to to: Int) -> List(Sample) {
+  list.filter(samples, fn(sample) { sample.at_ms <= to })
+}
+
 /// The samples taken from `from` to `to` milliseconds, both included.
 fn within(
   samples samples: List(Sample),
   from from: Int,
   to to: Int,
 ) -> List(Sample) {
-  list.filter(samples, fn(sample) { sample.at_ms >= from && sample.at_ms <= to })
+  list.filter(until(samples:, to:), fn(sample) { sample.at_ms >= from })
 }
 
 /// The processes with messages waiting in every sample of the last 10 s of the

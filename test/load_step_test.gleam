@@ -299,3 +299,32 @@ pub fn a_player_the_machine_had_no_local_port_for_makes_the_step_clients_limited
     == ClientsLimited
     as "eaddrnotavail: the clients' machine ran out of ports, which says nothing of the server"
 }
+
+pub fn a_step_on_a_negative_monotonic_clock_is_judged_the_same_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The monotonic clock can be negative, so no time is taken to start at 0.
+  let earlier = fn(sample: Sample) {
+    Sample(..sample, at_ms: sample.at_ms - 1_000_000)
+  }
+  let shifted = fn(observation: Observation) {
+    Observation(
+      ..observation,
+      server: list.map(observation.server, earlier),
+      clients: list.map(observation.clients, earlier),
+      arrived_ms: observation.arrived_ms - 1_000_000,
+      held_ms: observation.held_ms - 1_000_000,
+    )
+  }
+  let queued =
+    changing(last: 10, changed: fn(_) { True }, change: fn(sample) {
+      Sample(..sample, store_waiting: 2)
+    })
+  assert load_step.judge(shifted(Observation(..kept(), server: queued)))
+    == Failed([StoreBacklog])
+  let busy = [
+    Sample(..calm(0), busy_us: 0, total_us: 0),
+    Sample(..calm(10_000), busy_us: 3_000_000, total_us: 4_000_000),
+  ]
+  assert load_step.judge(shifted(Observation(..kept(), clients: busy)))
+    == ClientsLimited
+}
