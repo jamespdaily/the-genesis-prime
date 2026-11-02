@@ -1,6 +1,7 @@
-//// Writes the Gleam codec of every message and record in the schema: one
-//// module for each under `src/genesis_prime/message/`, with its type, and for
-//// a message `encode` and `decode`, for a record `write` and `read`; and the
+//// Writes the Gleam codec of every message, record and union in the schema:
+//// one module for each under `src/genesis_prime/message/`, with its type, and
+//// for a message `encode` and `decode`, for a record or a union `write` and
+//// `read`; and the
 //// `client_message` module, which decodes a message the client sends by its
 //// number. The text is already in `gleam format`'s layout, so a regenerated
 //// file equals the committed one byte for byte, and `mismatches` names each
@@ -8,7 +9,7 @@
 
 import genesis_prime/message_schema.{
   type Field, type Kind, type Message, type NamedValues, type Record,
-  type Schema,
+  type Schema, type Union,
 }
 import gleam/int
 import gleam/list
@@ -94,7 +95,8 @@ pub fn describe_failure(failure: ReadFailure) -> String {
 }
 
 /// The files the schema generates: a module for each message, then each
-/// record, then each type of named values, then the client message module.
+/// record, then each union, then each type of named values, then the client
+/// message module.
 pub fn generate(schema: Schema) -> List(GeneratedFile) {
   list.flatten([
     list.map(schema.messages, fn(message) {
@@ -107,6 +109,12 @@ pub fn generate(schema: Schema) -> List(GeneratedFile) {
       GeneratedFile(
         path: directory <> "/" <> record.name <> ".gleam",
         text: record_module(record),
+      )
+    }),
+    list.map(schema.unions, fn(union) {
+      GeneratedFile(
+        path: directory <> "/" <> union.name <> ".gleam",
+        text: union_module(union),
       )
     }),
     list.map(values_types(schema), fn(named_values) {
@@ -278,6 +286,109 @@ fn record_module(record: Record) -> String {
       read_steps(record.fields),
       construct_with_reader(record.fields, type_name),
       ["}"],
+    ]),
+  )
+}
+
+/// The module of a union: its type with a variant around the record of each
+/// kind, `write`, which writes the variant's record, and `read`, which peeks the
+/// kind and has the record of that kind read the item, kind included. A kind
+/// no variant has is refused.
+fn union_module(union: Union) -> String {
+  let type_name = camel(union.name)
+  let head =
+    wrap(
+      "////",
+      "A union inside a message body: "
+        <> union.summary
+        <> ". Its variants are listed in `schema.toml` with the client's evidence, and the fact file's `"
+        <> union.evidence
+        <> "` names the union.",
+    )
+  let module_imports =
+    union.variants
+    |> list.map(fn(variant) { variant.record })
+    |> list.unique
+    |> list.sort(string.compare)
+    |> list.flat_map(fn(record) {
+      type_import(module: record, type_name: camel(record))
+    })
+  lines_to_text(
+    list.flatten([
+      header(head),
+      bit_stream_import(["DecodeError", "Reader", "Writer"]),
+      module_imports,
+      ["import gleam/result", ""],
+      wrap(
+        "///",
+        "One item of the union: its first "
+          <> int.to_string(union.tag_bits)
+          <> " bits are its kind, which picks the variant, and the variant's record reads them again as its first field. A kind no variant has is refused.",
+      ),
+      ["pub type " <> type_name <> " {"],
+      list.flat_map(union.variants, fn(variant) {
+        let named = case variant.named_by {
+          Some(key) -> " The fact file's `" <> key <> "` names the kind."
+          None -> ""
+        }
+        list.flatten([
+          wrap(
+            "  ///",
+            "Kind "
+              <> int.to_string(variant.tag)
+              <> ", read by `"
+              <> variant.record
+              <> "`."
+              <> named,
+          ),
+          ["  " <> camel(variant.name) <> "(" <> camel(variant.record) <> ")"],
+        ])
+      }),
+      ["}", ""],
+      ["/// Writes the variant's record to the stream."],
+      function_head(
+        name: "write",
+        parameters: ["writer writer: Writer", "record record: " <> type_name],
+        returns: "Writer",
+      ),
+      ["  case record {"],
+      list.flat_map(union.variants, fn(variant) {
+        case_arm(
+          pattern: camel(variant.name) <> "(variant)",
+          head: variant.record <> ".write",
+          arguments: ["writer", "variant"],
+        )
+      }),
+      ["  }", "}", ""],
+      ["/// Reads the item from the stream, and the stream after it."],
+      function_head(
+        name: "read",
+        parameters: ["reader: Reader"],
+        returns: "Result(#(" <> type_name <> ", Reader), DecodeError)",
+      ),
+      [
+        "  use kind <- result.try(bit_stream.peek_unsigned(reader, "
+          <> int.to_string(union.tag_bits)
+          <> "))",
+        "  case kind {",
+      ],
+      list.flat_map(union.variants, fn(variant) {
+        case_arm(
+          pattern: int.to_string(variant.tag),
+          head: "bit_stream.read_variant",
+          arguments: [
+            "reader",
+            variant.record <> ".read",
+            camel(variant.name),
+          ],
+        )
+      }),
+      case_arm(pattern: "_", head: "Error", arguments: [
+        "bit_stream.UnexpectedValue(field: \""
+        <> union.name
+        <> "\", value: kind)",
+      ]),
+      ["  }", "}"],
     ]),
   )
 }
@@ -512,23 +623,12 @@ fn imports(fields: List(Field), types: List(String)) -> List(String) {
     True -> ["Endpoint", ..types]
     False -> types
   }
-  let sorted = list.sort(named, string.compare)
-  let items = string.join(list.map(sorted, fn(name) { "type " <> name }), ", ")
-  let bit_stream_line =
-    "import genesis_prime/message/bit_stream.{" <> items <> "}"
-  let bit_stream_import = case string.length(bit_stream_line) > width {
-    True -> [
-      "import genesis_prime/message/bit_stream.{",
-      "  " <> items <> ",",
-      "}",
-    ]
-    False -> [bit_stream_line]
-  }
   let modules =
     list.filter_map(fields, fn(field) {
       case field.kind, message_schema.named_values(field:) {
-        message_schema.ArrayOfRecord(record:, ..), _ ->
-          Ok(#(record, camel(record)))
+        message_schema.ArrayOfRecord(record:, ..), _
+        | message_schema.ArrayOfRecordCountedBy(record:, ..), _
+        -> Ok(#(record, camel(record)))
         _, Some(named_values) ->
           Ok(#(values_module(named_values), named_values.type_name))
         _, None -> Error(Nil)
@@ -540,7 +640,27 @@ fn imports(fields: List(Field), types: List(String)) -> List(String) {
     list.flat_map(modules, fn(module) {
       type_import(module: module.0, type_name: module.1)
     })
-  list.flatten([bit_stream_import, module_imports, ["import gleam/result", ""]])
+  list.flatten([
+    bit_stream_import(named),
+    module_imports,
+    ["import gleam/result", ""],
+  ])
+}
+
+/// The import of the bit stream module with the types the code names, on one
+/// line when it fits and else one type to a line.
+fn bit_stream_import(types: List(String)) -> List(String) {
+  let sorted = list.sort(types, string.compare)
+  let items = string.join(list.map(sorted, fn(name) { "type " <> name }), ", ")
+  let line = "import genesis_prime/message/bit_stream.{" <> items <> "}"
+  case string.length(line) > width {
+    True -> [
+      "import genesis_prime/message/bit_stream.{",
+      "  " <> items <> ",",
+      "}",
+    ]
+    False -> [line]
+  }
 }
 
 /// The import of one type from a message module, as `gleam format` lays it
@@ -622,7 +742,9 @@ fn kind_type(kind: Kind) -> String {
     | message_schema.WholeFrame -> "BitArray"
     message_schema.Endpoint -> "Endpoint"
     message_schema.ArrayOfWideText(..) -> "List(String)"
-    message_schema.ArrayOfRecord(record:, ..) -> "List(" <> camel(record) <> ")"
+    message_schema.ArrayOfRecord(record:, ..)
+    | message_schema.ArrayOfRecordCountedBy(record:, ..) ->
+      "List(" <> camel(record) <> ")"
     message_schema.ArrayOfUnsigned(..)
     | message_schema.ArrayOfFloat32(..)
     | message_schema.UnsignedArrayCountedBy(..) -> "List(Int)"
@@ -705,6 +827,10 @@ fn write_step(field: Field, owner: String) -> List(String) {
       "write_unsigned_array_like",
       [name, value, owner <> "." <> counted_by, int.to_string(bits)],
     )
+    message_schema.ArrayOfRecordCountedBy(counted_by:, record:) -> #(
+      "write_array_like",
+      [name, value, owner <> "." <> counted_by, record <> ".write"],
+    )
     message_schema.Constant(bits:, value: constant) -> #("write_constant", [
       name,
       int.to_string(constant),
@@ -760,6 +886,10 @@ fn read_step(field: Field) -> List(String) {
     message_schema.UnsignedArrayCountedBy(counted_by:, bits:) -> #(
       "read_unsigned_array_like",
       ["reader", counted_by, int.to_string(bits)],
+    )
+    message_schema.ArrayOfRecordCountedBy(counted_by:, record:) -> #(
+      "read_array_like",
+      ["reader", counted_by, record <> ".read"],
     )
     message_schema.Constant(bits:, value:) -> #("read_constant", [
       "reader",

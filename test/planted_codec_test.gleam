@@ -70,6 +70,30 @@ pub fn a_generated_codec_whose_decoder_reads_another_width_fails_the_round_trip_
     as "a decoder that reads a 4-bit field where the encoder writes 3 does not read the message back, so the driver exits with an error"
 }
 
+pub fn a_generated_union_that_peeks_fewer_bits_than_its_kind_fails_the_round_trip_test() -> Nil {
+  use <- owned_test.run(180_000)
+  use folder <- recording_support.in_folder
+  let files =
+    list.map(planted_files(), fn(file) {
+      case string.ends_with(file.path, "/planted_union.gleam") {
+        True ->
+          GeneratedFile(
+            ..file,
+            text: string.replace(
+              file.text,
+              "bit_stream.peek_unsigned(reader, 3)",
+              "bit_stream.peek_unsigned(reader, 2)",
+            ),
+          )
+        False -> file
+      }
+    })
+  assert files != planted_files()
+    as "the planted edit changes the width the union peeks"
+  assert result.is_error(build_and_run(folder:, files:))
+    as "a union that peeks 2 bits of a 3-bit kind picks the wrong layout or none, so the driver exits with an error"
+}
+
 /// The files the planted schema generates.
 fn planted_files() -> List(GeneratedFile) {
   let assert Ok(text) = simplifile.read("test/planted_codec/schema.toml")

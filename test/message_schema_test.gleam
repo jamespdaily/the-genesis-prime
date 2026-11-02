@@ -6,10 +6,11 @@
 
 import genesis_prime/message_generator
 import genesis_prime/message_schema.{
-  ArrayOfFloat32, ArrayOfUnsigned, Both, ConflictingValues, Constant,
-  DuplicateValue, DuplicateValueName, NamedValues, UnknownCountField,
-  UnsignedArrayCountedBy, UnsignedBelow, ValueNamedOther, ValuesOnOtherKind,
-  WrongTypeOfKey,
+  ArrayOfFloat32, ArrayOfRecord, ArrayOfRecordCountedBy, ArrayOfUnsigned, Both,
+  ConflictingValues, Constant, DuplicateTag, DuplicateValue, DuplicateValueName,
+  DuplicateVariantName, NamedValues, Union, UnknownCountField, UnknownRecord,
+  UnknownVariantRecord, UnsignedArrayCountedBy, UnsignedBelow, ValueNamedOther,
+  ValuesOnOtherKind, Variant, VariantKindDisagrees, WrongTypeOfKey,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -316,4 +317,214 @@ pub fn a_field_with_a_safe_by_says_its_value_is_safe_by_that_fact_and_one_withou
     "    /// Safe by `opcode.0x3`: the client's code gives this field no use the\n    /// server needs, and that fact shows its value is safe.\n    field_1: Int,\n    field_2: Int,",
   )
     as "the doc of the field with a safe_by names the fact, and the field with none has no doc"
+}
+
+// ---- unions, and lists of records counted by an earlier list ----
+
+/// A schema with two records that start with their own 3-bit kind, a union of
+/// them whose variants are `variants`, and a message with `fields`.
+fn union_schema(variants variants: String, fields fields: String) -> String {
+  "[[message]]\nid = 0x0001\nname = \"planted\"\ndirection = \"client_to_server\"\nevidence = \"opcode.0x1\"\nsummary = \"a planted message\"\nfields = [\n"
+  <> fields
+  <> "\n]\n\n[[record]]\nname = \"planted_flag\"\nevidence = \"x\"\nsummary = \"a planted flag\"\nfields = [\n  { name = \"kind\", kind = \"constant\", bits = 3, value = 2, evidence = \"x\" },\n  { name = \"on\", kind = \"unsigned\", bits = 1, evidence = \"x\" },\n]\n"
+  <> "\n[[record]]\nname = \"planted_pair\"\nevidence = \"x\"\nsummary = \"a planted pair\"\nfields = [\n  { name = \"kind\", kind = \"constant\", bits = 3, value = 5, evidence = \"x\" },\n  { name = \"first\", kind = \"unsigned\", bits = 8, evidence = \"x\" },\n]\n"
+  <> "\n[[union]]\nname = \"planted_union\"\nevidence = \"x\"\nsummary = \"a planted union\"\ntag_bits = 3\nvariants = [\n"
+  <> variants
+  <> "\n]\n"
+}
+
+const flag_and_pair =
+  "  { tag = 2, name = \"flag\", record = \"planted_flag\", named_by = \"x\" },
+  { tag = 5, name = \"pair\", record = \"planted_pair\" },"
+
+const shapes_field =
+  "  { name = \"shapes\", kind = \"array\", count_bits = 4, element = \"planted_union\", evidence = \"x\" },"
+
+pub fn a_union_lists_its_variants_by_kind_and_a_list_of_it_is_a_list_of_records_test() -> Nil {
+  use <- owned_test.run(5000)
+  let text = union_schema(variants: flag_and_pair, fields: shapes_field)
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the planted schema parses"
+  assert schema.unions
+    == [
+      Union(
+        name: "planted_union",
+        evidence: "x",
+        summary: "a planted union",
+        tag_bits: 3,
+        variants: [
+          Variant(
+            tag: 2,
+            name: "flag",
+            record: "planted_flag",
+            named_by: Some("x"),
+          ),
+          Variant(tag: 5, name: "pair", record: "planted_pair", named_by: None),
+        ],
+      ),
+    ]
+    as "the union holds its variants in the order the schema lists them"
+  assert field_kinds(text)
+    == [ArrayOfRecord(count_bits: 4, record: "planted_union")]
+    as "a union is read and written as a record is, so an array of it is an array of records"
+}
+
+pub fn a_variant_of_a_kind_that_does_not_fit_the_tag_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(union_schema(
+      variants: "  { tag = 8, name = \"flag\", record = \"planted_flag\" },",
+      fields: shapes_field,
+    ))
+    == Error(WrongTypeOfKey("flag", "tag"))
+    as "a 3-bit tag holds 0 to 7"
+}
+
+pub fn a_kind_given_to_two_variants_or_a_name_given_twice_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(union_schema(
+      variants: "  { tag = 2, name = \"flag\", record = \"planted_flag\" },
+  { tag = 2, name = \"pair\", record = \"planted_pair\" },",
+      fields: shapes_field,
+    ))
+    == Error(DuplicateTag(union: "planted_union", tag: 2))
+    as "a kind picks one layout"
+  assert message_schema.parse(union_schema(
+      variants: "  { tag = 2, name = \"flag\", record = \"planted_flag\" },
+  { tag = 5, name = \"flag\", record = \"planted_pair\" },",
+      fields: shapes_field,
+    ))
+    == Error(DuplicateVariantName(union: "planted_union", name: "flag"))
+    as "a variant's name is its constructor, so two cannot share one"
+}
+
+pub fn a_variant_of_a_record_the_schema_lacks_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(union_schema(
+      variants: "  { tag = 2, name = \"flag\", record = \"missing\" },",
+      fields: shapes_field,
+    ))
+    == Error(UnknownVariantRecord(
+      union: "planted_union",
+      variant: "flag",
+      record: "missing",
+    ))
+    as "a variant is read by a record of the schema"
+}
+
+pub fn a_variant_whose_record_does_not_start_with_its_own_kind_is_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(union_schema(
+      variants: "  { tag = 3, name = \"flag\", record = \"planted_flag\" },",
+      fields: shapes_field,
+    ))
+    == Error(VariantKindDisagrees(union: "planted_union", variant: "flag"))
+    as "the record reads the kind again as its first field and fixes it to 2, so a variant of kind 3 could never be read"
+  let without_constant =
+    string.replace(
+      union_schema(variants: flag_and_pair, fields: shapes_field),
+      "{ name = \"kind\", kind = \"constant\", bits = 3, value = 2, evidence = \"x\" },",
+      "{ name = \"kind\", kind = \"unsigned\", bits = 3, evidence = \"x\" },",
+    )
+  assert message_schema.parse(without_constant)
+    == Error(VariantKindDisagrees(union: "planted_union", variant: "flag"))
+    as "a record that does not fix its kind is no layout of one kind"
+  let wider =
+    string.replace(
+      union_schema(variants: flag_and_pair, fields: shapes_field),
+      "{ name = \"kind\", kind = \"constant\", bits = 3, value = 2, evidence = \"x\" },",
+      "{ name = \"kind\", kind = \"constant\", bits = 4, value = 2, evidence = \"x\" },",
+    )
+  assert message_schema.parse(wider)
+    == Error(VariantKindDisagrees(union: "planted_union", variant: "flag"))
+    as "the kind is the union's 3 bits"
+}
+
+pub fn a_union_is_a_module_that_peeks_its_kind_and_refuses_one_no_variant_has_test() -> Nil {
+  use <- owned_test.run(5000)
+  let files =
+    generated(union_schema(variants: flag_and_pair, fields: shapes_field))
+  let union = generated_file(files, "planted_union")
+  list.each(
+    [
+      "pub type PlantedUnion {",
+      "  Flag(PlantedFlag)",
+      "  Pair(PlantedPair)",
+      "    Flag(variant) -> planted_flag.write(writer, variant)",
+      "    Pair(variant) -> planted_pair.write(writer, variant)",
+      "  use kind <- result.try(bit_stream.peek_unsigned(reader, 3))",
+      "    2 -> bit_stream.read_variant(reader, planted_flag.read, Flag)",
+      "    5 -> bit_stream.read_variant(reader, planted_pair.read, Pair)",
+      "    _ -> Error(bit_stream.UnexpectedValue(field: \"planted_union\", value: kind))",
+    ],
+    fn(text) {
+      assert string.contains(union, text)
+        as { "the union module holds `" <> text <> "`" }
+    },
+  )
+  let message = generated_file(files, "planted")
+  list.each(
+    [
+      "import genesis_prime/message/planted_union.{type PlantedUnion}",
+      "Planted(shapes: List(PlantedUnion))",
+      "bit_stream.write_array(\"shapes\", message.shapes, 4, planted_union.write)",
+      "bit_stream.read_array(\n    reader,\n    4,\n    planted_union.read,\n  )",
+    ],
+    fn(text) {
+      assert string.contains(message, text)
+        as { "the message holds the array of the union: `" <> text <> "`" }
+    },
+  )
+}
+
+const counted_records =
+  "  { name = \"ids\", kind = \"array\", count_bits = 4, element = \"unsigned\", element_bits = 32, evidence = \"x\" },
+  { name = \"pairs\", kind = \"array\", counted_by = \"ids\", element = \"planted_pair\", evidence = \"x\" },"
+
+pub fn the_reader_knows_records_counted_by_an_earlier_array_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert field_kinds(union_schema(
+      variants: flag_and_pair,
+      fields: counted_records,
+    ))
+    == [
+      ArrayOfUnsigned(count_bits: 4, bits: 32),
+      ArrayOfRecordCountedBy(counted_by: "ids", record: "planted_pair"),
+    ]
+}
+
+pub fn records_counted_by_a_field_that_is_not_an_earlier_array_are_refused_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert message_schema.parse(union_schema(
+      variants: flag_and_pair,
+      fields: "  { name = \"pairs\", kind = \"array\", counted_by = \"ids\", element = \"planted_pair\", evidence = \"x\" },
+  { name = \"ids\", kind = \"array\", count_bits = 4, element = \"unsigned\", element_bits = 32, evidence = \"x\" },",
+    ))
+    == Error(UnknownCountField(field: "pairs", counted_by: "ids"))
+    as "a decoder reads the fields in order, so the count must be read before the records it counts"
+  assert message_schema.parse(union_schema(
+      variants: flag_and_pair,
+      fields: "  { name = \"ids\", kind = \"array\", count_bits = 4, element = \"unsigned\", element_bits = 32, evidence = \"x\" },
+  { name = \"pairs\", kind = \"array\", counted_by = \"ids\", element = \"missing\", evidence = \"x\" },",
+    ))
+    == Error(UnknownRecord(field: "pairs", record: "missing"))
+    as "the records are one of the schema's"
+}
+
+pub fn records_counted_by_an_array_are_written_and_read_with_no_count_of_their_own_test() -> Nil {
+  use <- owned_test.run(5000)
+  let files =
+    generated(union_schema(variants: flag_and_pair, fields: counted_records))
+  let message = generated_file(files, "planted")
+  list.each(
+    [
+      "import genesis_prime/message/planted_pair.{type PlantedPair}",
+      "Planted(ids: List(Int), pairs: List(PlantedPair))",
+      "bit_stream.write_array_like(\n    \"pairs\",\n    message.pairs,\n    message.ids,\n    planted_pair.write,\n  )",
+      "bit_stream.read_array_like(\n    reader,\n    ids,\n    planted_pair.read,\n  )",
+    ],
+    fn(text) {
+      assert string.contains(message, text)
+        as { "the message holds `" <> text <> "`" }
+    },
+  )
 }

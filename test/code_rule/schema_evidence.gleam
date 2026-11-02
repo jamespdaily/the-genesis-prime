@@ -3,21 +3,23 @@
 //// position, a key that says what it is. So does every message and record, and
 //// every named value of a field, which names the key that shows the client
 //// gives the value that meaning (the schema reader refuses a number or a name
-//// listed twice).
+//// listed twice). So does every union, and each of its variants that names the
+//// key that gives the variant's kind a meaning.
 //// A field of a message the server sends that has no name must carry a
 //// `safe_by` key of the fact file, which shows the value the server sends is
 //// safe. A message is sent when it travels to the client, or both ways, and a
 //// module outside `src/genesis_prime/message/` imports its module; a record is
 //// sent when a message that is sent holds it, directly or inside another
-//// record that is sent.
+//// record that is sent, and a record of a union is held by whatever holds the
+//// union.
 
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
 import genesis_prime/message_schema.{
-  type Field, type Record, type Schema, ArrayOfFloat32, ArrayOfRecord,
-  ArrayOfUnsigned, ArrayOfWideText, ClientToServer, Constant, CountedWideText,
-  Endpoint, Float32, Guid, RawBytes, Unsigned, UnsignedArrayCountedBy,
-  UnsignedBelow, WholeFrame, WideText,
+  type Field, type Record, type Schema, type Union, ArrayOfFloat32,
+  ArrayOfRecord, ArrayOfRecordCountedBy, ArrayOfUnsigned, ArrayOfWideText,
+  ClientToServer, Constant, CountedWideText, Endpoint, Float32, Guid, RawBytes,
+  Unsigned, UnsignedArrayCountedBy, UnsignedBelow, WholeFrame, WideText,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -73,6 +75,7 @@ fn owners(schema: Schema, sent_messages: List(String)) -> List(Owner) {
   let sent_records =
     records_reached(
       records: schema.records,
+      unions: schema.unions,
       from: list.flat_map(sent, fn(message) { message.fields }),
       found: [],
     )
@@ -96,21 +99,21 @@ fn owners(schema: Schema, sent_messages: List(String)) -> List(Owner) {
   )
 }
 
-/// The names of the records the fields hold in arrays, and the records those
-/// hold in turn, each once.
+/// The names of the records the fields hold in arrays, the records of the
+/// variants of each union they hold, and the records those hold in turn, each
+/// once.
 fn records_reached(
   records records: List(Record),
+  unions unions: List(Union),
   from fields: List(Field),
   found found: List(String),
 ) -> List(String) {
   let named =
-    list.filter_map(fields, fn(field) {
+    list.flat_map(fields, fn(field) {
       case field.kind {
-        ArrayOfRecord(record:, ..) ->
-          case list.contains(found, record) {
-            True -> Error(Nil)
-            False -> Ok(record)
-          }
+        ArrayOfRecord(record:, ..) | ArrayOfRecordCountedBy(record:, ..) ->
+          records_of(unions:, name: record)
+          |> list.filter(fn(record) { !list.contains(found, record) })
         Unsigned(..)
         | UnsignedBelow(..)
         | Float32
@@ -124,7 +127,7 @@ fn records_reached(
         | ArrayOfUnsigned(..)
         | ArrayOfFloat32(..)
         | UnsignedArrayCountedBy(..)
-        | Constant(..) -> Error(Nil)
+        | Constant(..) -> []
       }
     })
     |> list.unique
@@ -133,6 +136,7 @@ fn records_reached(
     _ ->
       records_reached(
         records:,
+        unions:,
         from: list.flat_map(records, fn(record) {
           case list.contains(named, record.name) {
             True -> record.fields
@@ -144,6 +148,70 @@ fn records_reached(
   }
 }
 
+/// The records a name stands for: the records of a union's variants, or the
+/// record itself.
+fn records_of(unions unions: List(Union), name name: String) -> List(String) {
+  case list.find(unions, fn(union) { union.name == name }) {
+    Ok(union) -> list.map(union.variants, fn(variant) { variant.record })
+    Error(Nil) -> [name]
+  }
+}
+
+/// Each union whose evidence is not a key of the fact file, at its evidence's
+/// line, and each variant whose `named_by` is not, at the variant's line.
+fn union_breaches(
+  file file: SourceFile,
+  union union: Union,
+  fact_keys fact_keys: List(String),
+) -> List(Breach) {
+  let lines = string.split(file.text, "\n")
+  let union_line =
+    line_of(lines:, from: 0, text: "name = \"" <> union.name <> "\"")
+  let own = case list.contains(fact_keys, union.evidence) {
+    True -> []
+    False -> [
+      Breach(
+        path: file.path,
+        line: line_of(
+          lines:,
+          from: union_line - 1,
+          text: "evidence = \"" <> union.evidence <> "\"",
+        ),
+        rule: "a schema owner whose evidence is not a key of the fact file: "
+          <> union.name
+          <> " names "
+          <> union.evidence,
+      ),
+    ]
+  }
+  let variants =
+    list.filter_map(union.variants, fn(variant) {
+      case variant.named_by {
+        Some(key) ->
+          case list.contains(fact_keys, key) {
+            True -> Error(Nil)
+            False ->
+              Ok(Breach(
+                path: file.path,
+                line: line_of(
+                  lines:,
+                  from: union_line,
+                  text: "name = \"" <> variant.name <> "\"",
+                ),
+                rule: "a schema variant whose named_by is not a key of the fact file: "
+                  <> union.name
+                  <> "."
+                  <> variant.name
+                  <> " names "
+                  <> key,
+              ))
+          }
+        None -> Error(Nil)
+      }
+    })
+  list.append(own, variants)
+}
+
 fn owners_breaches(
   file file: SourceFile,
   schema schema: Schema,
@@ -151,6 +219,19 @@ fn owners_breaches(
   sent_messages sent_messages: List(String),
 ) -> List(Breach) {
   let lines = string.split(file.text, "\n")
+  list.append(
+    list.flat_map(schema.unions, union_breaches(file:, union: _, fact_keys:)),
+    owners_field_breaches(file:, lines:, schema:, fact_keys:, sent_messages:),
+  )
+}
+
+fn owners_field_breaches(
+  file file: SourceFile,
+  lines lines: List(String),
+  schema schema: Schema,
+  fact_keys fact_keys: List(String),
+  sent_messages sent_messages: List(String),
+) -> List(Breach) {
   list.flat_map(owners(schema, sent_messages), fn(owner) {
     let owner_line =
       line_of(lines:, from: 0, text: "name = \"" <> owner.name <> "\"")

@@ -1,6 +1,6 @@
-//// The message schema as data: every message body and record, its fields in
-//// wire order with each field's width or kind and the fact-file key that
-//// proves it. The schema file is `src/genesis_prime/message/schema.toml`; this
+//// The message schema as data: every message body, record and union, its
+//// fields in wire order with each field's width or kind and the fact-file key
+//// that proves it. The schema file is `src/genesis_prime/message/schema.toml`; this
 //// module reads it for the generator and for the rule that every field names
 //// its evidence.
 
@@ -12,9 +12,9 @@ import gleam/result
 import gleam/string
 import tom.{type Toml}
 
-/// Every message and every record the schema holds.
+/// Every message, every record and every union the schema holds.
 pub type Schema {
-  Schema(messages: List(Message), records: List(Record))
+  Schema(messages: List(Message), records: List(Record), unions: List(Union))
 }
 
 /// Which way a message travels.
@@ -42,6 +42,27 @@ pub type Message {
 /// array, such as one realm of the realm list.
 pub type Record {
   Record(name: String, evidence: String, summary: String, fields: List(Field))
+}
+
+/// An item of a list that is one of several records, picked by the item's
+/// leading kind, such as one movement command. The kind is the first
+/// `tag_bits` bits of the item, and each variant's record reads them again as
+/// its first field, a constant of that kind.
+pub type Union {
+  Union(
+    name: String,
+    evidence: String,
+    summary: String,
+    tag_bits: Int,
+    variants: List(Variant),
+  )
+}
+
+/// One variant of a union: the kind that picks it, its name (the constructor
+/// the generated type gives it), the record that reads it and, when the kind
+/// has a name beyond its number, the fact-file key that gives it.
+pub type Variant {
+  Variant(tag: Int, name: String, record: String, named_by: Option(String))
 }
 
 /// One field: its name, how its value is written, the fact-file key that gives
@@ -98,7 +119,8 @@ pub type Kind {
   WholeFrame
   /// A count in `count_bits` bits, then that many wide texts.
   ArrayOfWideText(count_bits: Int)
-  /// A count in `count_bits` bits, then that many of the named record.
+  /// A count in `count_bits` bits, then that many of the named record or
+  /// union.
   ArrayOfRecord(count_bits: Int, record: String)
   /// A count in `count_bits` bits, then that many unsigned values of `bits`
   /// bits each.
@@ -109,6 +131,9 @@ pub type Kind {
   /// Unsigned values of `bits` bits each, as many as the earlier array field
   /// `counted_by` holds, with no count of their own.
   UnsignedArrayCountedBy(counted_by: String, bits: Int)
+  /// Records of the named record, as many as the earlier array field
+  /// `counted_by` holds, with no count of their own.
+  ArrayOfRecordCountedBy(counted_by: String, record: String)
   /// A value of `bits` bits that is always `value`. It is no field of the
   /// type: the encoder writes it, and the decoder refuses any other value.
   Constant(bits: Int, value: Int)
@@ -132,6 +157,16 @@ pub type SchemaError {
   /// A field is counted by a field that is not an array before it in the same
   /// message or record.
   UnknownCountField(field: String, counted_by: String)
+  /// Two variants of a union have one kind.
+  DuplicateTag(union: String, tag: Int)
+  /// Two variants of a union have one name.
+  DuplicateVariantName(union: String, name: String)
+  /// A variant names a record the schema does not hold.
+  UnknownVariantRecord(union: String, variant: String, record: String)
+  /// A variant's record does not start with a constant of the variant's kind
+  /// in the union's `tag_bits` bits, so the record could not read the kind its
+  /// union picked it by.
+  VariantKindDisagrees(union: String, variant: String)
   /// A field lists values and is not an unsigned value.
   ValuesOnOtherKind(field: String)
   /// A field lists one number for two values.
@@ -159,19 +194,126 @@ pub fn parse(text: String) -> Result(Schema, SchemaError) {
     owner: "schema",
     key: "message",
   ))
+  use union_tables <- result.try(
+    case tables(table: document, owner: "schema", key: "union") {
+      Error(MissingKey(..)) -> Ok([])
+      found -> found
+    },
+  )
   use record_names <- result.try(
     list.try_map(record_tables, fn(table) {
       string_of(table:, owner: "record", key: "name")
     }),
   )
-  use records <- result.try(
-    list.try_map(record_tables, parse_record(_, record_names)),
+  use union_names <- result.try(
+    list.try_map(union_tables, fn(table) {
+      string_of(table:, owner: "union", key: "name")
+    }),
   )
+  let item_names = list.append(record_names, union_names)
+  use records <- result.try(
+    list.try_map(record_tables, parse_record(_, item_names)),
+  )
+  use unions <- result.try(list.try_map(union_tables, parse_union(_, records)))
   use messages <- result.try(
-    list.try_map(message_tables, parse_message(_, record_names)),
+    list.try_map(message_tables, parse_message(_, item_names)),
   )
   use Nil <- result.try(check_values_types(messages:, records:))
-  Ok(Schema(messages:, records:))
+  Ok(Schema(messages:, records:, unions:))
+}
+
+fn parse_union(
+  table: Dict(String, Toml),
+  records: List(Record),
+) -> Result(Union, SchemaError) {
+  use name <- result.try(string_of(table:, owner: "union", key: "name"))
+  use evidence <- result.try(string_of(table:, owner: name, key: "evidence"))
+  use summary <- result.try(string_of(table:, owner: name, key: "summary"))
+  use tag_bits <- result.try(int_in(
+    table:,
+    owner: name,
+    key: "tag_bits",
+    least: 1,
+    most: 32,
+  ))
+  use variant_tables <- result.try(tables(table:, owner: name, key: "variants"))
+  use variants <- result.try(
+    list.try_map(variant_tables, parse_variant(_, tag_bits)),
+  )
+  use Nil <- result.try(
+    check_variants_are_distinct(union: name, variants:, seen: []),
+  )
+  use Nil <- result.try(
+    list.try_each(variants, fn(variant) {
+      check_variant_record(union: name, tag_bits:, records:, variant:)
+    }),
+  )
+  Ok(Union(name:, evidence:, summary:, tag_bits:, variants:))
+}
+
+fn parse_variant(
+  table: Dict(String, Toml),
+  tag_bits: Int,
+) -> Result(Variant, SchemaError) {
+  use name <- result.try(string_of(table:, owner: "variant", key: "name"))
+  use tag <- result.try(int_in(
+    table:,
+    owner: name,
+    key: "tag",
+    least: 0,
+    most: int.bitwise_shift_left(1, tag_bits) - 1,
+  ))
+  use record <- result.try(string_of(table:, owner: name, key: "record"))
+  Ok(Variant(tag:, name:, record:, named_by: optional_string(table, "named_by")))
+}
+
+fn check_variants_are_distinct(
+  union union: String,
+  variants variants: List(Variant),
+  seen seen: List(Variant),
+) -> Result(Nil, SchemaError) {
+  case variants {
+    [] -> Ok(Nil)
+    [variant, ..rest] ->
+      case
+        list.find(seen, fn(earlier) { earlier.tag == variant.tag }),
+        list.find(seen, fn(earlier) { earlier.name == variant.name })
+      {
+        Ok(_), _ -> Error(DuplicateTag(union:, tag: variant.tag))
+        Error(Nil), Ok(_) ->
+          Error(DuplicateVariantName(union:, name: variant.name))
+        Error(Nil), Error(Nil) ->
+          check_variants_are_distinct(union:, variants: rest, seen: [
+            variant,
+            ..seen
+          ])
+      }
+  }
+}
+
+/// A variant's record is one of the schema's, and starts with the constant its
+/// union picked it by.
+fn check_variant_record(
+  union union: String,
+  tag_bits tag_bits: Int,
+  records records: List(Record),
+  variant variant: Variant,
+) -> Result(Nil, SchemaError) {
+  case list.find(records, fn(record) { record.name == variant.record }) {
+    Error(Nil) ->
+      Error(UnknownVariantRecord(
+        union:,
+        variant: variant.name,
+        record: variant.record,
+      ))
+    Ok(record) ->
+      case record.fields {
+        [Field(kind: Constant(bits:, value:), ..), ..]
+          if bits == tag_bits && value == variant.tag
+        -> Ok(Nil)
+        _ -> Error(VariantKindDisagrees(union:, variant: variant.name))
+      }
+  }
 }
 
 /// Every field that names a `values_type` lists the same values as every
@@ -277,6 +419,15 @@ fn check_counted_by_loop(
             True -> check_counted_by_loop(fields: rest, earlier_arrays:)
             False -> Error(UnknownCountField(field: field.name, counted_by:))
           }
+        ArrayOfRecordCountedBy(counted_by:, ..) ->
+          case list.contains(earlier_arrays, counted_by) {
+            True ->
+              check_counted_by_loop(fields: rest, earlier_arrays: [
+                field.name,
+                ..earlier_arrays
+              ])
+            False -> Error(UnknownCountField(field: field.name, counted_by:))
+          }
         ArrayOfWideText(..)
         | ArrayOfRecord(..)
         | ArrayOfUnsigned(..)
@@ -327,6 +478,7 @@ fn parse_field(
     | ArrayOfUnsigned(..)
     | ArrayOfFloat32(..)
     | UnsignedArrayCountedBy(..)
+    | ArrayOfRecordCountedBy(..)
     | Constant(..) -> refuse_values(table:, field: name)
   })
   Ok(Field(
@@ -355,6 +507,7 @@ pub fn named_values(field field: Field) -> Option(NamedValues) {
     | ArrayOfUnsigned(..)
     | ArrayOfFloat32(..)
     | UnsignedArrayCountedBy(..)
+    | ArrayOfRecordCountedBy(..)
     | Constant(..) -> None
   }
 }
@@ -545,7 +698,7 @@ fn parse_kind(
 
 /// An array field: the count is in `count_bits` bits or is the length of
 /// an earlier array (`counted_by`), and the elements are wide texts, 32-bit
-/// floats, unsigned values of `element_bits` bits or records.
+/// floats, unsigned values of `element_bits` bits, records or unions.
 fn parse_array(
   table table: Dict(String, Toml),
   field field: String,
@@ -554,10 +707,13 @@ fn parse_array(
   use element <- result.try(string_of(table:, owner: field, key: "element"))
   case optional_string(table, "counted_by") {
     Some(counted_by) -> {
-      use bits <- result.try(element_bits(table:, field:))
-      case element {
-        "unsigned" -> Ok(UnsignedArrayCountedBy(counted_by:, bits:))
-        other -> Error(UnknownKind(field:, kind: "array of " <> other))
+      case element, list.contains(record_names, element) {
+        "unsigned", _ -> {
+          use bits <- result.map(element_bits(table:, field:))
+          UnsignedArrayCountedBy(counted_by:, bits:)
+        }
+        _, True -> Ok(ArrayOfRecordCountedBy(counted_by:, record: element))
+        _, False -> Error(UnknownRecord(field:, record: element))
       }
     }
     None -> {
@@ -673,6 +829,22 @@ pub fn describe(error: SchemaError) -> String {
       <> " is counted by "
       <> counted_by
       <> ", which is no array field before it"
+    DuplicateTag(union:, tag:) ->
+      union <> " gives the kind " <> int.to_string(tag) <> " to two variants"
+    DuplicateVariantName(union:, name:) ->
+      union <> " gives the name " <> name <> " to two variants"
+    UnknownVariantRecord(union:, variant:, record:) ->
+      union
+      <> " has the variant "
+      <> variant
+      <> " of the record "
+      <> record
+      <> ", which the schema lacks"
+    VariantKindDisagrees(union:, variant:) ->
+      union
+      <> " has the variant "
+      <> variant
+      <> ", whose record does not start with a constant of its kind in the union's width"
     ValuesOnOtherKind(field:) ->
       field <> " lists values and is not an unsigned value"
     DuplicateValue(field:, value:) ->
