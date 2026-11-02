@@ -543,7 +543,7 @@ class QueryProcess(query_client.QueryClient):
         """Closes stdin and waits for the process to end; kills it and fails after timeout."""
         try:
             return super().close(timeout)
-        except query_client.QueryTimeout as error:
+        except (query_client.QueryTimeout, query_client.QueryProcessEnded) as error:
             raise AssertionError(str(error)) from error
 
 

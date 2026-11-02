@@ -24,14 +24,14 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_facts  # noqa: E402
 import check_support as cs  # noqa: E402
 import decompiled  # noqa: E402
-from query_client import QueryClient, QueryFailed, QueryProcessEnded  # noqa: E402
-
+from query_client import QueryClient, QueryFailed, QueryProcessEnded, QueryTimeout, open_query_client  # noqa: E402
 PLANTED_CALLER = 0x140000100
 PLANTED_CALLEE = 0x140000200
 PLANTED_BYSTANDER = 0x140000300
@@ -56,28 +56,67 @@ def base_names() -> dict[int, str]:
     }
 
 
+PLANTED_POINTER_USER = 0x140000600
+PLANTED_POINTER = 0x140000700
+PLANTED_POINTER_TO_ADDED = 0x140000800
+# pointer address -> the address it points to
+POINTERS = {PLANTED_POINTER: PLANTED_CALLEE, PLANTED_POINTER_TO_ADDED: PLANTED_ADDED}
+
+
 class PlantedClient:
     """Answers the query process's requests from a function table, and notes each decompile asked.
 
     PLANTED_CALLER calls PLANTED_CALLEE and PLANTED_ADDED. Its text writes a callee that is a function
-    by its current name, and one that is no function by its address, as Ghidra's C does."""
+    by its current name, and one that is no function by its address, as Ghidra's C does.
+    PLANTED_POINTER_USER, where the table has it, calls through each pointer in POINTERS by the label
+    Ghidra gives the pointer: PTR_FUN_<pointer address> for a default-named target, PTR_<name>_<pointer
+    address> for a named one, PTR_DAT_<pointer address> where the target is no function; the label holds
+    neither the target's name nor its address.
 
-    def __init__(self, names: dict[int, str], failing=(), ends_after: int | None = None):
+    ends_after: the decompile that raises QueryProcessEnded; refuses: a request kind answered with an
+    error reply; close_raises: what close() raises."""
+
+    def __init__(
+        self,
+        names: dict[int, str],
+        failing=(),
+        ends_after: int | None = None,
+        refuses: str | None = None,
+        close_raises: Exception | None = None,
+    ):
         self.names = dict(names)
         self.failing = set(failing)
         self.ends_after = ends_after
+        self.refuses = refuses
+        self.close_raises = close_raises
         self.decompiled: list[int] = []
+
+    def pointer_label(self, pointer: int) -> str:
+        name = self.names.get(POINTERS[pointer])
+        stem = "DAT" if name is None else "FUN" if name.startswith("FUN_") else name
+        return "PTR_%s_%x" % (stem, pointer)
 
     def text(self, address: int) -> str:
         calls = [PLANTED_CALLEE, PLANTED_ADDED] if address == PLANTED_CALLER else []
         body = "".join(
             "  %s();\n" % self.names[c] if c in self.names else "  (*(code *)0x%x)();\n" % c for c in calls
         )
+        if address == PLANTED_POINTER_USER:
+            body = "".join("  (*%s)();\n" % self.pointer_label(p) for p in sorted(POINTERS))
         return "\nvoid %s(void)\n\n{\n%s}\n" % (self.names[address], body)
 
     def answer(self, kind: str, timeout=None, **arguments):
+        if kind == self.refuses:
+            raise QueryFailed("planted refusal of " + kind)
         if kind == "functions":
             return ["0x%x" % a for a in sorted(self.names)]
+        if kind == "refs_to":
+            target = int(arguments["address"], 16)
+            return [
+                {"from": "0x%x" % pointer, "type": "DATA", "function": None}
+                for pointer in sorted(POINTERS)
+                if POINTERS[pointer] == target
+            ]
         address = int(arguments["address" if kind == "function_at" else "function"], 16)
         if kind == "function_at":
             return {"start": "0x%x" % address, "name": self.names[address]}
@@ -90,7 +129,8 @@ class PlantedClient:
         return {"signature": "void f(void)", "c": self.text(address)}
 
     def close(self):
-        pass
+        if self.close_raises is not None:
+            raise self.close_raises
 
     def kill(self):
         pass
@@ -188,6 +228,17 @@ class CheckTest(TemporaryDirectoryTest):
         self.assertEqual(report.status, decompiled.Status.STALE)
         self.assertEqual(report.removed, [(PLANTED_BYSTANDER, "Bystander")])
 
+    def test_a_missing_file_makes_the_copy_stale_and_is_named_and_refresh_makes_it_again(self):
+        decompiled.refresh(PlantedClient(base_names()), self.directory)
+        file_of(self.directory, PLANTED_CALLEE).unlink()
+        report = decompiled.check(PlantedClient(base_names()), self.directory)
+        self.assertEqual(report.status, decompiled.Status.STALE)
+        self.assertEqual(report.missing, [PLANTED_CALLEE])
+        again = PlantedClient(base_names())
+        decompiled.refresh(again, self.directory)
+        self.assertEqual(again.decompiled, [PLANTED_CALLEE])
+        self.assertEqual(decompiled.check(PlantedClient(base_names()), self.directory).status, decompiled.Status.CURRENT)
+
     def test_check_changes_nothing_in_the_copy(self):
         decompiled.refresh(PlantedClient(base_names()), self.directory)
         before = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in self.directory.iterdir()}
@@ -244,6 +295,53 @@ class RefreshAfterAChangeTest(TemporaryDirectoryTest):
     def test_a_refresh_of_a_current_copy_decompiles_nothing(self):
         client = self.refresh_after(base_names())
         self.assertEqual(client.decompiled, [])
+
+    def test_a_refresh_removes_the_temporary_files_a_stopped_refresh_left(self):
+        decompiled.refresh(PlantedClient(base_names()), self.directory)
+        (self.directory / ("0x%x.c.tmp" % PLANTED_CALLER)).write_text("half")
+        (self.directory / "state.json.tmp").write_text("{")
+        decompiled.refresh(PlantedClient(base_names()), self.directory)
+        self.assertEqual(sorted(p.name for p in self.directory.glob("*.tmp")), [])
+
+
+class PointerLabelTest(TemporaryDirectoryTest):
+    """A file that reaches a function through a pointer label holds neither its name nor its address."""
+
+    def pointer_names(self, names: dict[int, str]) -> dict[int, str]:
+        return {**names, PLANTED_POINTER_USER: "UsesPointers"}
+
+    def refresh_after(self, changed_names: dict[int, str]) -> PlantedClient:
+        decompiled.refresh(PlantedClient(self.pointer_names(base_names())), self.directory)
+        client = PlantedClient(self.pointer_names(changed_names))
+        decompiled.refresh(client, self.directory)
+        return client
+
+    def test_the_planted_label_holds_neither_the_functions_name_nor_its_address(self):
+        decompiled.refresh(PlantedClient(self.pointer_names(base_names())), self.directory)
+        text = file_of(self.directory, PLANTED_POINTER_USER).read_text()
+        self.assertIn("PTR_FUN_%x" % PLANTED_POINTER, text)
+        self.assertNotIn("%x" % PLANTED_CALLEE, text)
+
+    def test_a_rename_redoes_the_file_that_reaches_the_function_through_a_pointer_label(self):
+        client = self.refresh_after({**base_names(), PLANTED_CALLEE: "ReadFileToMemory"})
+        self.assertIn(PLANTED_POINTER_USER, client.decompiled)
+        self.assertIn("(*PTR_ReadFileToMemory_%x)();" % PLANTED_POINTER, file_of(self.directory, PLANTED_POINTER_USER).read_text())
+
+    def test_a_new_function_redoes_the_file_that_reaches_its_address_through_a_pointer_label(self):
+        client = self.refresh_after({**base_names(), PLANTED_ADDED: "FindMapZoneAt"})
+        self.assertIn(PLANTED_POINTER_USER, client.decompiled)
+        self.assertIn("(*PTR_FindMapZoneAt_%x)();" % PLANTED_POINTER_TO_ADDED, file_of(self.directory, PLANTED_POINTER_USER).read_text())
+
+    def test_a_function_that_is_gone_redoes_the_file_that_reaches_its_address_through_a_pointer_label(self):
+        names = base_names()
+        del names[PLANTED_CALLEE]
+        client = self.refresh_after(names)
+        self.assertIn(PLANTED_POINTER_USER, client.decompiled)
+        self.assertIn("(*PTR_DAT_%x)();" % PLANTED_POINTER, file_of(self.directory, PLANTED_POINTER_USER).read_text())
+
+    def test_the_bystander_is_not_redone_by_a_pointer_needle(self):
+        client = self.refresh_after({**base_names(), PLANTED_CALLEE: "ReadFileToMemory"})
+        self.assertNotIn(PLANTED_BYSTANDER, client.decompiled)
 
 
 class FailedDecompileTest(TemporaryDirectoryTest):
@@ -326,12 +424,51 @@ class KilledRefreshTest(TemporaryDirectoryTest):
         self.assertIn("  ReadFileToMemory();\n", file_of(self.directory, PLANTED_CALLER).read_text())
         self.assertEqual(decompiled.check(PlantedClient(renamed), self.directory).status, decompiled.Status.CURRENT)
 
-    def test_a_refresh_that_ends_leaves_only_whole_files_named_by_address(self):
+    def test_a_file_is_written_beside_its_place_and_moved_so_a_stop_before_the_move_leaves_every_old_file(self):
+        decompiled.refresh(PlantedClient(base_names()), self.directory)
+        before = {p.name: p.read_bytes() for p in self.directory.glob("0x*.c")}
+        renamed = {**base_names(), PLANTED_CALLEE: "ReadFileToMemory"}
+        real_replace = os.replace
+
+        def stop_before_moving_a_c_file(source, target):
+            if str(target).endswith(".c"):
+                raise OSError("planted: stopped before the move")
+            real_replace(source, target)
+
+        with mock.patch("decompiled.os.replace", side_effect=stop_before_moving_a_c_file):
+            with self.assertRaises(OSError):
+                decompiled.refresh(PlantedClient(renamed), self.directory)
+        self.assertEqual({p.name: p.read_bytes() for p in self.directory.glob("0x*.c")}, before)
+
+    def test_a_refresh_that_ends_leaves_a_pending_file_and_a_finished_one_removes_it(self):
         with self.assertRaises(QueryProcessEnded):
             decompiled.refresh(PlantedClient(base_names(), ends_after=1), self.directory)
-        for path in self.directory.iterdir():
-            self.assertRegex(path.name, r"^0x[0-9a-f]+\.c$")
-            self.assertTrue(path.read_text().endswith("}\n"))
+        self.assertTrue((self.directory / "pending.json").exists())
+        decompiled.refresh(PlantedClient(base_names()), self.directory)
+        self.assertFalse((self.directory / "pending.json").exists())
+
+    def test_a_rename_after_an_ended_refresh_redoes_the_file_that_names_the_ended_refreshs_name(self):
+        # the ended refresh redid PLANTED_CALLER under the name ReadFileToMemory and ended before the
+        # callee, so the saved state still says the old name; the rename that follows is to a third name
+        decompiled.refresh(PlantedClient(base_names()), self.directory)
+        with self.assertRaises(QueryProcessEnded):
+            decompiled.refresh(PlantedClient({**base_names(), PLANTED_CALLEE: "ReadFileToMemory"}, ends_after=1), self.directory)
+        self.assertIn("ReadFileToMemory", file_of(self.directory, PLANTED_CALLER).read_text())  # the premise
+        decompiled.refresh(PlantedClient({**base_names(), PLANTED_CALLEE: "LoadFile"}), self.directory)
+        text = file_of(self.directory, PLANTED_CALLER).read_text()
+        self.assertIn("  LoadFile();\n", text)
+        self.assertNotIn("ReadFileToMemory", text)
+
+    def test_a_rename_back_to_the_saved_name_after_an_ended_refresh_redoes_the_file_the_ended_refresh_made(self):
+        decompiled.refresh(PlantedClient(base_names()), self.directory)
+        with self.assertRaises(QueryProcessEnded):
+            decompiled.refresh(PlantedClient({**base_names(), PLANTED_CALLEE: "ReadFileToMemory"}, ends_after=1), self.directory)
+        report = decompiled.check(PlantedClient(base_names()), self.directory)
+        self.assertEqual(report.status, decompiled.Status.STALE)
+        self.assertTrue(report.unfinished)
+        decompiled.refresh(PlantedClient(base_names()), self.directory)
+        self.assertIn("  FUN_%x();\n" % PLANTED_CALLEE, file_of(self.directory, PLANTED_CALLER).read_text())
+        self.assertEqual(decompiled.check(PlantedClient(base_names()), self.directory).status, decompiled.Status.CURRENT)
 
 
 class DirectoryTest(unittest.TestCase):
@@ -357,6 +494,19 @@ class DirectoryTest(unittest.TestCase):
             with self.subTest(folder=str(inside)):
                 with self.assertRaisesRegex(decompiled.Refused, "inside the repository"):
                     decompiled.copy_directory({"GENESIS_DECOMPILED_DIR": str(inside)})
+
+    def test_a_folder_inside_any_git_working_tree_is_refused(self):
+        with tempfile.TemporaryDirectory() as other:
+            subprocess.run(["git", "init", "-q", other], check=True)
+            for inside in (Path(other) / "decompiled", Path(other) / "a" / "b" / "decompiled"):
+                with self.subTest(folder=str(inside)):
+                    with self.assertRaisesRegex(decompiled.Refused, "inside a git working tree"):
+                        decompiled.copy_directory({"GENESIS_DECOMPILED_DIR": str(inside)})
+
+    def test_a_folder_outside_every_git_working_tree_is_accepted_though_it_does_not_exist_yet(self):
+        with tempfile.TemporaryDirectory() as outside:
+            folder = Path(outside) / "not" / "yet" / "decompiled"
+            self.assertEqual(decompiled.copy_directory({"GENESIS_DECOMPILED_DIR": str(folder)}), folder)
 
     def test_the_main_function_refuses_a_folder_inside_the_repository_and_runs_nothing(self):
         asked = []
@@ -410,6 +560,38 @@ class MainTest(TemporaryDirectoryTest):
         self.assertIn("planted: the query process ended", err.getvalue())
         self.assertFalse((self.directory / "state.json").exists())
 
+    def run_main_with_errors(self, command: str, client: PlantedClient) -> tuple[int, str]:
+        out, err = io.StringIO(), io.StringIO()
+        env = {"GENESIS_DECOMPILED_DIR": str(self.directory)}
+        return decompiled.main([command], env, lambda: client, out, err), err.getvalue()
+
+    def test_a_refusal_of_functions_or_function_at_gives_a_message_and_exit_1_not_a_traceback(self):
+        for command in ("check", "refresh"):
+            for kind in ("functions", "function_at"):
+                with self.subTest(command=command, request=kind):
+                    status, text = self.run_main_with_errors(command, PlantedClient(base_names(), refuses=kind))
+                    self.assertEqual(status, 1)
+                    self.assertIn("planted refusal of " + kind, text)
+
+    def test_a_close_that_times_out_gives_a_message_and_exit_1(self):
+        client = PlantedClient(base_names(), close_raises=QueryTimeout("planted: did not stop"))
+        status, text = self.run_main_with_errors("refresh", client)
+        self.assertEqual(status, 1)
+        self.assertIn("planted: did not stop", text)
+
+    def test_check_names_a_missing_file_and_an_unfinished_refresh(self):
+        self.run_main("refresh", PlantedClient(base_names()))
+        file_of(self.directory, PLANTED_CALLEE).unlink()
+        status, text = self.run_main("check", PlantedClient(base_names()))
+        self.assertEqual(status, 1)
+        self.assertIn("0x%x missing" % PLANTED_CALLEE, text)
+        self.run_main("refresh", PlantedClient(base_names()))
+        ended = PlantedClient({**base_names(), PLANTED_CALLEE: "ReadFileToMemory"}, ends_after=1)
+        self.assertEqual(self.run_main_with_errors("refresh", ended)[0], 1)
+        status, text = self.run_main("check", PlantedClient(base_names()))
+        self.assertEqual(status, 1)
+        self.assertIn("an earlier refresh did not finish", text)
+
 
 # Addresses measured on WildStar64.exe (SHA-256 565c2fa1...fe0b10), each a record of the fact file:
 # 0x140283670 InitSpriteRendererAndFonts calls 0x1401b6d00 by its project name, and 0x14077ed70 is a small
@@ -423,7 +605,7 @@ PLANTED_NAME = "PlantedReadFileToMemory"
 
 
 def real_client(project_dir: Path) -> QueryClient:
-    return QueryClient(cs.query_command(), cs.query_environment(project_dir), cwd=project_dir)
+    return open_query_client(cs.query_environment(project_dir))
 
 
 def project_name(client: QueryClient, address: int) -> str:
@@ -479,14 +661,9 @@ class RealQueryProcessTest(TemporaryDirectoryTest):
 RENAME_SCRIPT = r"""
 import os, sys
 sys.path.insert(0, %(scripts)r)
-import ghidra_env, ghidra_project, name_functions, pyghidra
-opened = ghidra_project.open_existing(ghidra_env.settings_from_env(os.environ))
-try:
-    outcomes = name_functions.apply_names(opened.program, [(%(address)d, %(name)r)], True)
-    assert not [o for o in outcomes if o.failed], outcomes
-    opened.program.save("planted rename", pyghidra.task_monitor())
-finally:
-    opened.close()
+import ghidra_env, name_functions
+outcomes = name_functions.name_and_save(ghidra_env.settings_from_env(os.environ), [(%(address)d, %(name)r)], True)
+assert not [o for o in outcomes if o.failed], outcomes
 """
 
 

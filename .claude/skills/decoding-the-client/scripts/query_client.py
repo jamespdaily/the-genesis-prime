@@ -37,12 +37,13 @@ class NotConfigured(Exception):
     """GENESIS_PYGHIDRA_PYTHON is not set."""
 
 
-def query_command(seed: Path | None = None, unseeded: bool = False) -> list[str]:
+def query_command(seed: Path | None = None, unseeded: bool = False, env=None) -> list[str]:
     """The pinned Python running ghidra_query.py. No -I: the script puts its own directory on
     sys.path to import its siblings. `--seed PATH` is used only when the project does not exist
     yet; `--unseeded` is the explicit first import without a seed, which the process refuses to
-    make unasked; with neither it opens the project that exists."""
-    python = os.environ.get("GENESIS_PYGHIDRA_PYTHON")
+    make unasked; with neither it opens the project that exists. The python comes from env, which
+    defaults to the process's own environment."""
+    python = (os.environ if env is None else env).get("GENESIS_PYGHIDRA_PYTHON")
     if not python:
         raise NotConfigured("GENESIS_PYGHIDRA_PYTHON is not set; source ~/.genesis-prime/env.sh")
     command = [python, str(SCRIPTS / "ghidra_query.py")]
@@ -58,7 +59,7 @@ def open_query_client(env) -> "QueryClient":
     ghidra_env.WrongVersion for a variable that is not set and NotConfigured without
     GENESIS_PYGHIDRA_PYTHON; the process itself refuses a missing project and says so on stderr."""
     settings = ghidra_env.settings_from_env(env)
-    return QueryClient(query_command(), dict(env), cwd=settings.project_dir)
+    return QueryClient(query_command(env=env), dict(env), cwd=settings.project_dir)
 
 
 class QueryClient:
@@ -104,7 +105,13 @@ class QueryClient:
         if line is None:
             raise QueryProcessEnded("the query process closed stdout; stderr:\n%s" % self.stderr_text())
         self.last_exchange_seconds = time.perf_counter() - started
-        return json.loads(line)
+        try:
+            body = json.loads(line)
+        except ValueError:
+            body = None
+        if not isinstance(body, dict):
+            raise QueryProcessEnded("the reply %r breaks the line protocol; stderr:\n%s" % (line[:200], self.stderr_text()))
+        return body
 
     def request(self, kind: str, timeout: float = DEFAULT_TIMEOUT_S, **arguments) -> dict:
         """The whole reply to a request, an error reply included."""
@@ -122,15 +129,21 @@ class QueryClient:
         return body["answer"]
 
     def close(self, timeout: float = 60) -> int:
-        """Closes stdin and waits for the process to end; kills it and raises after timeout."""
-        if not self.proc.stdin.closed:
+        """Closes stdin and waits for the process to end, and returns its exit status 0. Kills it and
+        raises QueryTimeout after timeout; raises QueryProcessEnded for any other exit status."""
+        try:
             self.proc.stdin.close()
+        except BrokenPipeError:
+            pass  # the process ended with input unread
         try:
             status = self.proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
             self.kill()
             raise QueryTimeout("the process did not stop %s s after stdin closed" % timeout) from None
+        failure = None if status == 0 else "the query process ended with exit status %d; stderr:\n%s" % (status, self.stderr_text())
         self._release()
+        if failure:
+            raise QueryProcessEnded(failure)
         return status
 
     def kill(self):

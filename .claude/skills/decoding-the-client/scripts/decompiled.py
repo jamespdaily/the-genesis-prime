@@ -11,14 +11,16 @@ lists (its `functions` and `function_at` requests), first 16 hex digits: a renam
 function change it. It cannot see a change that is not a name or an address, such as a type edit.
 
 A refresh with no copy decompiles every function. With a copy it decompiles the functions whose name
-changed or that are new, the ones that failed last time, and every saved file whose text holds a
-changed function's old name or its address, as a name or as an address in the C. A file that is not
-redone keeps the hash it was made under. `state.json` is written last, so a refresh that ends midway
-leaves the old state and the next run does the same work again.
+changed or that are new, the ones that failed last time, the ones whose file is missing, and every saved
+file whose text holds a changed function's old name, its address, or the address of a place that refers
+to it (a pointer's label, PTR_FUN_<pointer address>, holds neither). A file that is not redone keeps the
+hash it was made under. A refresh writes `pending.json` (the names it sets out to write) before the first
+file and removes it after `state.json`, which is written last: one that ends midway leaves the old state,
+and the next run does the same work again, and also redoes files that hold the ended run's names.
 
 The copy is the client's code: it lives outside the repository, in $GENESIS_DECOMPILED_DIR or
 $GENESIS_HOME/decompiled (GENESIS_HOME defaults to ~/.genesis-prime), and a folder inside the
-repository is refused.
+repository or in any git working tree is refused.
 
 Usage, with ~/.genesis-prime/env.sh read and no other process holding the Ghidra project:
     python3 -I decompiled.py check      exit 0 when current; 1 and the changes when stale or no copy
@@ -31,6 +33,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -43,6 +46,7 @@ import ghidra_env  # noqa: E402
 from query_client import NotConfigured, QueryFailed, QueryProcessEnded, QueryTimeout, open_query_client  # noqa: E402
 
 STATE_FILE = "state.json"
+PENDING_FILE = "pending.json"
 HASH_DIGITS = 16
 DECOMPILE_TIMEOUT_S = 60
 PROGRESS_EVERY = 1000
@@ -77,6 +81,8 @@ class CheckReport:
     added: list[tuple[int, str]]  # in the project and not in the copy
     removed: list[tuple[int, str]]  # in the copy and not in the project
     failed: dict[int, str]  # functions of the copy with no C
+    missing: list[int]  # functions of the project whose file is not in the copy
+    unfinished: bool  # an earlier refresh ended before it finished
 
 
 @dataclass(frozen=True)
@@ -88,7 +94,7 @@ class RefreshReport:
 
 
 def copy_directory(env) -> Path:
-    """Where the copy lives; raises Refused for a folder inside the repository."""
+    """Where the copy lives; raises Refused for a folder inside this repository or any git working tree."""
     if env.get("GENESIS_DECOMPILED_DIR"):
         directory = Path(env["GENESIS_DECOMPILED_DIR"])
     else:
@@ -98,7 +104,20 @@ def copy_directory(env) -> Path:
     resolved = directory.resolve()
     if resolved == repository or repository in resolved.parents:
         raise Refused("%s is inside the repository %s; the client's code stays outside it" % (directory, repository))
+    if _inside_work_tree(resolved):
+        raise Refused("%s is inside a git working tree; the client's code stays outside every repository" % directory)
     return directory
+
+
+def _inside_work_tree(directory: Path) -> bool:
+    """Whether git says the folder, or the nearest folder above it that exists, is in a working tree."""
+    existing = directory
+    while not existing.exists():
+        existing = existing.parent
+    done = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"], cwd=existing, capture_output=True, text=True
+    )
+    return done.returncode == 0 and done.stdout.strip() == "true"
 
 
 def names_hash(names: dict[int, str]) -> str:
@@ -127,6 +146,14 @@ def load_state(directory: Path) -> State | None:
         {int(a, 16): n for a, n in raw["names"].items()},
         {int(a, 16): e for a, e in raw["failed"].items()},
     )
+
+
+def load_pending(directory: Path) -> dict[int, str] | None:
+    """The names the latest refresh set out to write, when it did not finish; else None."""
+    path = directory / PENDING_FILE
+    if not path.is_file():
+        return None
+    return {int(a, 16): n for a, n in json.loads(path.read_text())["names"].items()}
 
 
 def _write(path: Path, text: str) -> None:
@@ -158,10 +185,13 @@ def check(client, directory: Path, scope: set[int] | None = None) -> CheckReport
     digest = names_hash(names)
     state = load_state(directory)
     if state is None:
-        return CheckReport(Status.NO_COPY, digest, len(names), [], [], [], {})
+        return CheckReport(Status.NO_COPY, digest, len(names), [], [], [], {}, [], False)
     renamed, added, removed = _compare(state.names, names)
-    status = Status.CURRENT if state.hash == digest else Status.STALE
-    return CheckReport(status, digest, len(names), renamed, added, removed, state.failed)
+    missing = sorted(set(names) - _saved_addresses(directory))
+    unfinished = (directory / PENDING_FILE).exists()
+    current = state.hash == digest and not missing and not unfinished
+    status = Status.CURRENT if current else Status.STALE
+    return CheckReport(status, digest, len(names), renamed, added, removed, state.failed, missing, unfinished)
 
 
 def _mentioning(directory: Path, candidates: set[int], needles: set[str]) -> set[int]:
@@ -178,30 +208,49 @@ def _mentioning(directory: Path, candidates: set[int], needles: set[str]) -> set
     return found
 
 
-def _addresses_to_redo(directory: Path, state: State | None, names: dict[int, str]) -> tuple[set[int], set[int]]:
-    """(the functions to decompile, the saved files to delete)."""
+def _addresses_to_redo(
+    client, directory: Path, state: State | None, pending: dict[int, str] | None, names: dict[int, str]
+) -> tuple[set[int], set[int]]:
+    """(the functions to decompile, the saved files to delete).
+
+    A saved file is redone when it holds a needle of a changed function: its old name, its address, and
+    the address of each place the project refers to it from (a pointer's label, PTR_FUN_<pointer
+    address>, holds neither the name nor the function's address). A function has changed against the
+    saved state and against the names an unfinished refresh set out to write, since that refresh may have
+    redone files under those names before it ended."""
     saved = _saved_addresses(directory)
     if state is None:
         return set(names), saved - set(names)
-    renamed, added, removed = _compare(state.names, names)
-    redo = {a for a, _old, _new in renamed} | {a for a, _name in added} | (set(state.failed) & set(names))
-    needles = {old for _a, old, _new in renamed} | {name for _a, name in removed}
-    needles |= {"%x" % a for a, _old, _new in renamed} | {"%x" % a for a, _name in added} | {"%x" % a for a, _name in removed}
-    candidates = (saved & set(names)) - redo
+    redo = (set(state.failed) & set(names)) | (set(names) - saved)
+    needles: set[str] = set()
+    changed: set[int] = set()
+    for baseline in [state.names] + ([pending] if pending is not None else []):
+        renamed, added, removed = _compare(baseline, names)
+        redo |= {a for a, _old, _new in renamed} | {a for a, _name in added}
+        needles |= {old for _a, old, _new in renamed} | {name for _a, name in removed}
+        changed |= {a for a, _old, _new in renamed} | {a for a, _name in added} | {a for a, _name in removed}
+    for address in sorted(changed):
+        needles.add("%x" % address)
+        needles |= {"%x" % int(ref["from"], 16) for ref in client.answer("refs_to", address="0x%x" % address)}
     if needles:
-        redo |= _mentioning(directory, candidates, needles)
+        redo |= _mentioning(directory, (saved & set(names)) - redo, needles)
     return redo, saved - set(names)
 
 
 def refresh(client, directory: Path, scope: set[int] | None = None, timeout_s: float = DECOMPILE_TIMEOUT_S, progress=None) -> RefreshReport:
     """Brings the copy in directory up to the project now; see the module's description.
-    A QueryProcessEnded or QueryTimeout propagates and leaves the old state.
+    A QueryProcessEnded or QueryTimeout propagates and leaves the old state and a pending file with the
+    names this refresh set out to write; any other leftover *.tmp file is removed at the start.
     progress, when given, is called with (done, total) after every PROGRESS_EVERY functions.
     Only the tests pass a scope, to keep a real-process run to a few functions."""
     names = read_names(client, scope)
     digest = names_hash(names)
     directory.mkdir(parents=True, exist_ok=True)
-    redo, gone = _addresses_to_redo(directory, load_state(directory), names)
+    for leftover in directory.glob("*.tmp"):
+        leftover.unlink()
+    redo, gone = _addresses_to_redo(client, directory, load_state(directory), load_pending(directory), names)
+    intended = {"hash": digest, "names": {"0x%x" % a: names[a] for a in sorted(names)}}
+    _write(directory / PENDING_FILE, json.dumps(intended, indent=0) + "\n")
     failed: dict[int, str] = {}
     for done, address in enumerate(sorted(redo), 1):
         header = "// 0x%x %s made under %s\n" % (address, names[address], digest)
@@ -222,6 +271,7 @@ def refresh(client, directory: Path, scope: set[int] | None = None, timeout_s: f
         "failed": {"0x%x" % a: failed[a] for a in sorted(failed)},
     }
     _write(directory / STATE_FILE, json.dumps(state, indent=0) + "\n")
+    (directory / PENDING_FILE).unlink()
     return RefreshReport(digest, len(redo) - len(failed), len(gone), failed)
 
 
@@ -239,6 +289,10 @@ def _report_check(report: CheckReport, directory: Path, out) -> int:
             print("0x%x new %s" % (address, name), file=out)
         for address, name in report.removed:
             print("0x%x gone %s" % (address, name), file=out)
+    for address in report.missing:
+        print("0x%x missing: no file in the copy" % address, file=out)
+    if report.unfinished:
+        print("an earlier refresh did not finish; run refresh", file=out)
     for address in sorted(report.failed):
         print("0x%x has no C: %s" % (address, report.failed[address]), file=out)
     return 0 if report.status is Status.CURRENT else 1
@@ -281,10 +335,18 @@ def main(argv: list[str], env, open_client, out=None, err=None) -> int:
         client.kill()
         print("decompiled: the query process failed: %s" % error, file=err)
         return 1
+    except QueryFailed as error:
+        client.kill()
+        print("decompiled: the query process refused a request: %s" % error, file=err)
+        return 1
     except BaseException:
         client.kill()
         raise
-    client.close()
+    try:
+        client.close()
+    except (QueryProcessEnded, QueryTimeout) as error:
+        print("decompiled: the query process did not stop cleanly: %s" % error, file=err)
+        return 1
     return status
 
 
