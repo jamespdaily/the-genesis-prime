@@ -22,7 +22,8 @@ The copy is the client's code: it lives outside the repository, in $GENESIS_DECO
 $GENESIS_HOME/decompiled (GENESIS_HOME defaults to ~/.genesis-prime), and a folder inside the
 repository or in any git working tree is refused.
 
-Usage, with ~/.genesis-prime/env.sh read and no other process holding the Ghidra project:
+Usage, with ~/.genesis-prime/env.sh read. It reaches the query process through query.py's holder, which
+it starts when none runs, and which stays up after it (`query.py stop` ends it):
     python3 -I decompiled.py check      exit 0 when current; 1 and the changes when stale or no copy
     python3 -I decompiled.py refresh    a whole client takes about 7 minutes; failures are listed, exit 0
 """
@@ -326,7 +327,7 @@ def main(argv: list[str], env, open_client, out=None, err=None) -> int:
         return 1
     try:
         client = open_client()
-    except (ghidra_env.WrongVersion, NotConfigured, OSError) as error:
+    except (ghidra_env.WrongVersion, NotConfigured, query.BadSetting, query.BadLock, query.HolderUnavailable, OSError) as error:
         print("decompiled: %s" % error, file=err)
         return 1
     try:
