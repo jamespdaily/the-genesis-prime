@@ -25,7 +25,7 @@ Length alone is never a reason to split; shared state and shared types are.
 A name says what the thing does in the game, and every client name is earned by evidence. One word means one thing.
 
 - A client value, field, message or type with no evidence is named by its number.
-- Write names in full, with no abbreviations. Acronyms are written as one word.
+- Write names in full, with no abbreviations. Acronyms are written as one word. A unit suffix such as `_ms` is part of a full name.
 - An opcode is written as four hex digits (`0x037E`); a client code address in full.
 - An id is named after the client table it keys: `spell4_id`, `spell4_base_id`.
 - A game term is defined once, in the doc comment of its type. No glossary file.

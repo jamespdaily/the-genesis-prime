@@ -17,6 +17,6 @@ Check each expected value against its source as the `writing-tests` skill says.
 
 Write the tests from the list first, then the code, running only the named tests, and hand back once, when both are done.
 
-Run the checks in the brief's Checks item and hand back as the hand-back says (both in the `running-a-step` skill).
+Run the checks in the brief's Checks item and hand back as the hand-back says (both in the `running-a-step` skill). Never open, merge or close a pull request; hand back to the coordinator.
 
 Report anything found outside the list, sorted as missing, a bug or a question, with its evidence.

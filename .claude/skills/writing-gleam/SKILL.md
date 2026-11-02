@@ -23,7 +23,7 @@ Gleam code also follows the writing-code skill: reuse, module naming and splitti
 
 - No catch-all `_` over a type that can gain variants.
 - Decode every enum once at the edge (packet, row, table load) into a custom type with an `Other(id)` case, including bit flags and states.
-- Make invalid states impossible: fields that belong together sit in one variant; replace a `Bool` with a type that names its states.
+- Make invalid states impossible: fields that belong together sit in one variant; a `Bool` stays for a yes-or-no function, an answer read by its field name, a guard, a table or packet flag passed on, or a codec primitive, and becomes a type that names its states when callers pass a bare `True` or `False` by position.
 - A module guards its type's rules behind a small API; other modules cannot build an invalid value.
 - None is `Option`, never 0, -1 or an empty string.
 - Ids are typed (`Spell4Id(Int)`), so one id cannot pass as another. A typed id costs about 5% of a hot path's time and 3 words per id held (measured on issue #12), so a hot path may keep a plain `Int`; its module's doc comment names it as one, with that measurement.
