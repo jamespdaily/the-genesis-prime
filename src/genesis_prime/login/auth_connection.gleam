@@ -316,6 +316,7 @@ fn handle(
     )
   {
     client_connection.Settled(handled:) -> handled
+    client_connection.Broken(text:) -> end_for(session, text)
     client_connection.Inside(inner:) ->
       case
         list.key_find(taken_messages, inner.message_id)

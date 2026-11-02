@@ -190,12 +190,13 @@ fn account_statement(row: sql.AccountsNamedRow) -> String {
 }
 
 fn character_statement(row: sql.CharactersOfAccountsNamedRow) -> String {
-  "insert into character (character_id, account_id, session_epoch, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z, look_labels, look_values, bones, needs_rename) overriding system value values ("
+  "insert into character (character_id, account_id, session_epoch, save_sequence, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z, rotation_yaw, rotation_pitch, rotation_roll, look_labels, look_values, bones, needs_rename) overriding system value values ("
   <> string.join(
     [
       int.to_string(row.character_id),
       int.to_string(row.account_id),
       int.to_string(row.session_epoch),
+      int.to_string(row.save_sequence),
       text(row.name),
       int.to_string(row.gender),
       int.to_string(row.race_id),
@@ -208,6 +209,9 @@ fn character_statement(row: sql.CharactersOfAccountsNamedRow) -> String {
       real(row.position_x),
       real(row.position_y),
       real(row.position_z),
+      real(row.rotation_yaw),
+      real(row.rotation_pitch),
+      real(row.rotation_roll),
       integers(row.look_labels),
       integers(row.look_values),
       integers(row.bones),

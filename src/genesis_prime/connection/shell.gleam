@@ -66,8 +66,9 @@
 ////   within the send deadline fails as `SendTimedOut` and closes the socket.
 //// - **Stop.** The shell carries out the rest of the step's effects in order,
 ////   closes the socket, the wire recorder writes the closing line (the client
-////   closed it when the shell took the socket's close, the server otherwise),
-////   and the process ends
+////   closed it when the shell took the socket's close, the server otherwise,
+////   also when the rule asked before it stopped, so that the step that stops is
+////   not the one that took the close), and the process ends
 ////   normally; a step with a `Stop` makes no ask, and a
 ////   failed write after the `Stop` is logged as a warning, closes the socket
 ////   and ends the process with no `WriteFailed` input. Bytes still queued
@@ -345,6 +346,11 @@ type Running(state) {
     watches: Watches,
     timers: Dict(TimerId, Started),
     stopping: Option(Int),
+    /// The side the recording's closing line names: the client once the shell
+    /// has taken the socket's close, the server until then. The rule may ask
+    /// before it stops, so the step that stops is not always the one that took
+    /// the close, and the side is kept from that input.
+    closed_by: Side,
   )
 }
 
@@ -643,6 +649,7 @@ fn accepted(
       watches: watch.new(),
       timers: dict.new(),
       stopping: None,
+      closed_by: wire_recording.Server,
     ),
     now:,
     event: OwnEvent(Accepted(
@@ -722,8 +729,6 @@ fn take(
   }
   let rule = connection.settings.rule
   let #(state, step) = rule.step(running.state, Input(now:, event:))
-  let running =
-    Running(..running, state:, at: now, taken_ms: runtime.monotonic_ms())
   let closing = case event {
     OwnEvent(step.PeerClosed) -> wire_recording.Client
     OwnEvent(Accepted(..))
@@ -734,8 +739,16 @@ fn take(
     | OwnEvent(WriteFailed(..))
     | OwnEvent(step.Woken(..))
     | step.WatchEnded(..)
-    | Stopping(..) -> wire_recording.Server
+    | Stopping(..) -> running.closed_by
   }
+  let running =
+    Running(
+      ..running,
+      state:,
+      at: now,
+      taken_ms: runtime.monotonic_ms(),
+      closed_by: closing,
+    )
   case step {
     Effects(effects:) ->
       carry(connection:, running:, effects:, then: WaitForInput, closing:)

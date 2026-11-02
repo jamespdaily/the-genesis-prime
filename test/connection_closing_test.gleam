@@ -40,6 +40,8 @@ pub fn a_close_by_the_client_that_asks_before_it_stops_is_recorded_as_the_client
   use folder <- recording_support.in_folder
   let server = started(folder)
   let client = ask_support.connect(server)
+  assert ask_support.read_bytes(client:, bytes: 1) == <<1>>
+    as "the shell took the connection: the rule wrote its byte"
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
   let watched = process.monitor(connection)
@@ -57,7 +59,9 @@ pub fn a_stop_of_the_server_that_asks_before_it_stops_is_recorded_as_the_servers
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
   let server = started(folder)
-  let _client = ask_support.connect(server)
+  let client = ask_support.connect(server)
+  assert ask_support.read_bytes(client:, bytes: 1) == <<1>>
+    as "the shell took the connection: the rule wrote its byte"
   ask_support.stop(server)
   let assert Ok(Recording(closing:, ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))

@@ -97,6 +97,7 @@ import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
+import genesis_prime/message/unit_movement_command
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
@@ -1211,6 +1212,12 @@ fn player_in(taken: ConnectionStep(Request)) -> UnitCreatePlayer {
   player
 }
 
+/// A world message as the client sends it: inside 0x038C, whose first byte is
+/// the 5-bit value 3 of SendWorldMessage (opcode.0x38c), under the session key.
+fn world_message(message_id: Int, body: BitArray) -> BitArray {
+  keyed_message(0x038C, game_client.world_body(kind: 3, message_id:, body:))
+}
+
 fn move_message(message_id: Int) -> BitArray {
   keyed_message(message_id, <<0, 0, 0, 0>>)
 }
@@ -1307,13 +1314,13 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
       ],
       server_time_estimate_start: 0,
       movement_commands: [
-        movement_command.Position(UnitPositionCommand(
+        unit_movement_command.Position(UnitPositionCommand(
           x: 0x41E9075F,
           y: 0xC45577C8,
           z: 0xC40C0C08,
           blends: 0,
         )),
-        movement_command.Rotation(MovementRotation(
+        unit_movement_command.Rotation(MovementRotation(
           yaw: 0,
           pitch: 0,
           roll: 0,
@@ -1646,7 +1653,7 @@ fn moves_message(commands: List(movement_command.MovementCommand)) -> BitArray {
   let assert Ok(body) =
     player_movement.encode(PlayerMovement(client_clock: 0x1234, commands:))
     as "the commands encode"
-  keyed_message(0x0637, body)
+  world_message(0x0637, body)
 }
 
 fn position_command(
@@ -1691,7 +1698,7 @@ fn entry_place() -> Place {
 
 /// The ask of a save of the tests' player: the account and character of the
 /// tests' connection, the epoch its load gave, the save's number and the place.
-fn save_asked(sequence sequence: Int, place place: Place) -> Request {
+fn save_asked(sequence: Int, place: Place) -> Request {
   AskStore(
     Move(SavePlace(
       account_id: AccountId(7),
@@ -1750,7 +1757,8 @@ pub fn the_client_moving_gets_no_answer_and_every_later_move_is_read_test() -> N
     as "each move is read, and only the ping is answered"
   assert support.logs(taken) == []
   let #(_, taken) = feed(state, step.OwnEvent(step.PeerClosed))
-  assert ask_request(taken) == save_asked(1, standing_at(3.5, 2.5, 3.5))
+  assert ask_request(taken)
+    == save_asked(1, standing_at(x: 3.5, y: 2.5, z: 3.5))
     as "the moves were all read: the last one is where the player stands"
 }
 
@@ -1769,7 +1777,8 @@ pub fn the_place_kept_is_the_last_world_position_and_a_platforms_frame_is_not_ke
       ]),
     ).0
   let #(_, taken) = feed(state, step.OwnEvent(step.PeerClosed))
-  assert ask_request(taken) == save_asked(1, standing_at(5.5, 6.5, 7.5))
+  assert ask_request(taken)
+    == save_asked(1, standing_at(x: 5.5, y: 6.5, z: 7.5))
     as "opcode.0x637: a kind 2 under a platform is in that unit's frame, and the client sends only what changed, so the next message's kind 2 is under the platform still"
   let state =
     read(
@@ -1785,7 +1794,7 @@ pub fn the_place_kept_is_the_last_world_position_and_a_platforms_frame_is_not_ke
     == save_asked(
       1,
       start_place.turned(
-        standing_at(8.5, 9.5, 10.5),
+        standing_at(x: 8.5, y: 9.5, z: 10.5),
         Facing(yaw: 1.5, pitch: -0.25, roll: 0.5),
       ),
     )
@@ -1794,10 +1803,10 @@ pub fn the_place_kept_is_the_last_world_position_and_a_platforms_frame_is_not_ke
 
 pub fn a_position_beyond_the_worlds_box_is_kept_as_the_client_sent_it_test() -> Nil {
   use <- owned_test.run(10_000)
-  let state = moved_to(in_world(), x: 40_000.0, y: 3000.0, z: -40_000.0)
+  let state = moved_to(state: in_world(), x: 40_000.0, y: 3000.0, z: -40_000.0)
   let #(_, taken) = feed(state, step.OwnEvent(step.PeerClosed))
   assert ask_request(taken)
-    == save_asked(1, standing_at(40_000.0, 3000.0, -40_000.0))
+    == save_asked(1, standing_at(x: 40_000.0, y: 3000.0, z: -40_000.0))
     as "movement_command.position_bound: x and z beyond 32768 and y above 2048 come from the client's own frames at the edge, so they are kept as sent"
 }
 
@@ -1842,7 +1851,7 @@ fn refused_messages() -> List(#(BitArray, String)) {
       moves_message([movement_command.Mode(MovementMode(mode: 2))]),
       "a mode other than 0, 1 and 3",
     ),
-    #(keyed_message(0x063B, <<3, 0, 0, 0>>), "a move speed setting above 2"),
+    #(world_message(0x063B, <<3, 0, 0, 0>>), "a move speed setting above 2"),
     #(
       moves_message([
         position_command(x: 99.0, y: 99.0, z: 99.0),
@@ -1855,7 +1864,7 @@ fn refused_messages() -> List(#(BitArray, String)) {
 
 pub fn a_command_the_clients_code_never_sends_ends_the_connection_after_saving_the_last_good_place_and_writes_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
-  let state = moved_to(in_world(), x: 7.5, y: 8.5, z: 9.5)
+  let state = moved_to(state: in_world(), x: 7.5, y: 8.5, z: 9.5)
   list.each(refused_messages(), fn(refused) {
     let #(bytes, what) = refused
     let #(refusing, taken) = read(state, bytes)
@@ -1864,7 +1873,8 @@ pub fn a_command_the_clients_code_never_sends_ends_the_connection_after_saving_t
     assert line.about.account_id == Some(7)
       && line.about.character_id == Some(42)
       as "and whose it is"
-    assert ask_request(taken) == save_asked(1, standing_at(7.5, 8.5, 9.5))
+    assert ask_request(taken)
+      == save_asked(1, standing_at(x: 7.5, y: 8.5, z: 9.5))
       as {
         what
         <> ": the last good place is saved, and nothing of the message is kept"
@@ -1916,7 +1926,7 @@ pub fn the_clients_0x063a_0x00d5_0x063b_0x00f2_0x00fb_and_0x00fc_are_decoded_and
   use <- owned_test.run(10_000)
   list.each(decoded_and_dropped(), fn(message) {
     let #(message_id, body) = message
-    let #(state, taken) = read(in_world(), keyed_message(message_id, body))
+    let #(state, taken) = read(in_world(), world_message(message_id, body))
     assert support.logs(taken) == []
       as "opcode.0x63a, opcode.0xd5, opcode.0x63b, opcode.0xf2, opcode.0xfb and opcode.0xfc: the rule takes each, so none is logged as unhandled"
     assert support.writes(taken) == [] && support.asked(taken) == None
@@ -1930,7 +1940,7 @@ pub fn the_clients_0x063a_0x00d5_0x063b_0x00f2_0x00fb_and_0x00fc_are_decoded_and
 pub fn a_body_of_one_of_the_movement_messages_that_the_clients_reader_would_refuse_ends_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each([0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC], fn(id) {
-    let #(state, taken) = read(in_world(), keyed_message(id, <<>>))
+    let #(state, taken) = read(in_world(), world_message(id, <<>>))
     let assert [line] = support.logs_of(step: taken, level: LogError)
       as "an empty body is shorter than any of the messages' fields"
     assert support.says(line:, words: "does not decode")
@@ -1944,16 +1954,27 @@ pub fn a_body_of_one_of_the_movement_messages_that_the_clients_reader_would_refu
 pub fn the_movement_messages_before_the_world_are_logged_as_unhandled_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each([0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC], fn(id) {
-    let #(_, taken) = read(in_select_with_a_list(), move_message(id))
+    let #(_, taken) =
+      read(in_select_with_a_list(), world_message(id, <<0, 0, 0, 0>>))
     assert support.unhandled_ids(taken) == [Some(#("unhandled", id))]
       as "no player is in the world in character select, so there is no place to keep: the message is logged as unhandled as before"
     assert !support.stops(taken)
   })
 }
 
+pub fn a_movement_message_sent_on_its_own_and_not_inside_0x038c_is_logged_as_unhandled_even_in_the_world_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each([0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC], fn(id) {
+    let #(_, taken) = read(in_world(), move_message(id))
+    assert support.unhandled_ids(taken) == [Some(#("unhandled", id))]
+      as "opcode.0x38c, opcode.0x637: the client sends every world message inside 0x038C and no other way, so one on its own is no message the rule takes"
+    assert !support.stops(taken) && support.asked(taken) == None
+  })
+}
+
 pub fn the_clients_0x0635_is_still_logged_as_unhandled_in_the_world_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(_, taken) = read(in_world(), move_message(0x0635))
+  let #(_, taken) = read(in_world(), world_message(0x0635, <<0, 0, 0, 0>>))
   assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x0635))]
     as "opcode.0x635 answers 0x636 and is no part of the move step"
   assert !support.stops(taken)
@@ -1983,13 +2004,13 @@ pub fn the_login_places_the_player_at_the_saved_place_and_turns_it_the_saved_way
     as "opcode.0xad: the world loads at the saved position"
   assert player_in(taken).movement_commands
     == [
-      movement_command.Position(UnitPositionCommand(
+      unit_movement_command.Position(UnitPositionCommand(
         x: 0x41E9075F,
         y: 0xC45577C8,
         z: 0xC40C0C08,
         blends: 0,
       )),
-      movement_command.Rotation(MovementRotation(
+      unit_movement_command.Rotation(MovementRotation(
         yaw: 0x3FC00000,
         pitch: 0xBE800000,
         roll: 0x3F000000,
@@ -2003,13 +2024,13 @@ pub fn a_character_never_saved_still_gets_a_position_at_its_start_place_and_face
   use <- owned_test.run(10_000)
   assert player_in(entered().1).movement_commands
     == [
-      movement_command.Position(UnitPositionCommand(
+      unit_movement_command.Position(UnitPositionCommand(
         x: 0x41E9075F,
         y: 0xC45577C8,
         z: 0xC40C0C08,
         blends: 0,
       )),
-      movement_command.Rotation(MovementRotation(
+      unit_movement_command.Rotation(MovementRotation(
         yaw: 0,
         pitch: 0,
         roll: 0,
@@ -2049,9 +2070,10 @@ pub fn every_60_seconds_the_last_known_position_is_saved_also_when_no_move_came_
   assert ask_request(taken) == save_asked(2, entry_place())
     as "the second save of the login is numbered 2"
   let #(state, _) = answer(state:, taken:, outcome: place_saved())
-  let state = moved_to(state, x: 1.5, y: 2.5, z: 3.5)
+  let state = moved_to(state: state, x: 1.5, y: 2.5, z: 3.5)
   let #(_, taken) = feed(state, OwnEvent(TimerFired(TimerId(2))))
-  assert ask_request(taken) == save_asked(3, standing_at(1.5, 2.5, 3.5))
+  assert ask_request(taken)
+    == save_asked(3, standing_at(x: 1.5, y: 2.5, z: 3.5))
     as "a move since the last save is in the next"
 }
 
@@ -2176,9 +2198,10 @@ pub fn a_client_close_or_a_failed_read_or_write_saves_the_last_place_then_ends_w
   use <- owned_test.run(10_000)
   list.each(socket_ends(), fn(socket_end) {
     let #(event, warnings) = socket_end
-    let state = moved_to(in_world(), x: 7.5, y: 8.5, z: 9.5)
+    let state = moved_to(state: in_world(), x: 7.5, y: 8.5, z: 9.5)
     let #(state, taken) = feed(state, event)
-    assert ask_request(taken) == save_asked(1, standing_at(7.5, 8.5, 9.5))
+    assert ask_request(taken)
+      == save_asked(1, standing_at(x: 7.5, y: 8.5, z: 9.5))
       as "the place the player last stood at is saved when the connection drops"
     assert !support.stops(taken) && support.writes(taken) == []
     assert list.length(support.logs_of(step: taken, level: LogWarning))
@@ -2208,9 +2231,10 @@ pub fn a_drop_the_store_cannot_save_is_a_warning_and_the_connection_ends_anyway_
 
 pub fn a_takeover_in_the_world_saves_the_place_then_writes_0x036a_reason_19_and_ends_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
-  let state = moved_to(in_world(), x: 7.5, y: 8.5, z: 9.5)
+  let state = moved_to(state: in_world(), x: 7.5, y: 8.5, z: 9.5)
   let #(state, taken) = feed(state, taken_over())
-  assert ask_request(taken) == save_asked(1, standing_at(7.5, 8.5, 9.5))
+  assert ask_request(taken)
+    == save_asked(1, standing_at(x: 7.5, y: 8.5, z: 9.5))
     as "a newer login took the account: the older connection saves at its own epoch, which changes nothing once the newer login has loaded the character"
   assert support.writes(taken) == [] && !support.stops(taken)
     as "the notice is written after the save"
@@ -2454,9 +2478,10 @@ pub fn the_save_timer_is_cancelled_while_the_connection_claims_again_and_started
   assert support.effects_of(taken)
     == [OwnEffect(StartTimer(TimerId(2), 60_000))]
     as "the claim answered, the player is in the world and the save timer runs again"
-  let state = moved_to(state, x: 4.5, y: 5.5, z: 6.5)
+  let state = moved_to(state: state, x: 4.5, y: 5.5, z: 6.5)
   let #(_, taken) = feed(state, OwnEvent(step.PeerClosed))
-  assert ask_request(taken) == save_asked(1, standing_at(4.5, 5.5, 6.5))
+  assert ask_request(taken)
+    == save_asked(1, standing_at(x: 4.5, y: 5.5, z: 6.5))
     as "the claim kept where the player stands"
 }
 
@@ -2796,9 +2821,21 @@ pub fn a_claim_answered_taken_over_ends_the_connection_as_a_takeover_does_test()
     let #(state, _) = feed(held, WatchEnded(WatchId(1)))
     let #(state, taken) = feed(state, OwnEvent(TimerFired(TimerId(1))))
     assert ask_request(taken) == claim_ask()
-    let #(_, taken) =
+    let #(state, taken) =
       answer(state:, taken:, outcome: step.Answer(FromSessions(TakenOver)))
-    assert_taken_over(taken)
+    case support.asked(taken) {
+      None -> assert_taken_over(taken)
+      Some(_) -> {
+        // A player in the world is saved before the client is told: the takeover
+        // is logged with the ask, and the notice follows the answer.
+        let assert [line] = support.logs_of(step: taken, level: LogInfo)
+          as "the takeover is logged at info, once"
+        assert line.about.account_id == Some(7)
+        let #(_, saved) = answer(state:, taken:, outcome: place_saved())
+        assert disconnect(saved, keyed()) == AccountDisconnected
+        assert support.logs(saved) == []
+      }
+    }
   })
 }
 
@@ -3191,10 +3228,7 @@ pub fn the_game_rule_names_the_client_messages_it_takes_test() -> Nil {
       0x0637, 0x063A, 0x063B, 0x0786, 0x07DD, 0x07E0,
     ]
     as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB and 0x00FC"
-  assert list.sort(
-      game_connection.taken_in_the_world_message_ids(),
-      int.compare,
-    )
+  assert list.sort(game_connection.carried_message_ids(), int.compare)
     == [0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x0637, 0x063A, 0x063B]
     as "the movement messages are taken only with the player in the world"
 }
@@ -3213,7 +3247,7 @@ pub fn character_select_takes_exactly_the_ids_the_rule_names_and_logs_every_othe
     let taken_as_sent =
       list.contains(named, id)
       && id != 0x025B
-      && !list.contains(game_connection.taken_in_the_world_message_ids(), id)
+      && !list.contains(game_connection.carried_message_ids(), id)
     assert logged_unhandled == !taken_as_sent
       as {
         "id "

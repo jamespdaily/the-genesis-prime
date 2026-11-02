@@ -44,23 +44,30 @@
 ////   save changes nothing, and the older login loses at most the movement since
 ////   its last save, within `save_period_ms`.
 
-import genesis_prime/game/start_place.{type Facing, type Place}
+import genesis_prime/game/start_place.{type Facing, type Place, Facing}
 import genesis_prime/message/float32.{type Bits}
+import genesis_prime/message/movement_command.{type MovementCommand}
+import genesis_prime/message/movement_mode.{MovementMode}
+import genesis_prime/message/movement_platform.{MovementPlatform}
+import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/player_movement.{type PlayerMovement}
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type MoveAnswer, type MoveRequest,
-  type SessionEpoch,
+  type SessionEpoch, NothingSaved, PlaceRefused, PlaceSaved, SavePlace,
 }
+import gleam/bool
+import gleam/float
+import gleam/int
+import gleam/list
+import gleam/result
 
-/// What the movement asks or logs; the game connection's rule turns each into
-/// its own effect.
+/// What the store's answer to a save says, for the game connection's rule to
+/// write as a log line.
 pub type Effect {
-  /// Ask the store; its answer comes back to `saved`.
-  AskStore(request: MoveRequest)
   /// Log an error: a bug of the server's.
   Fault(text: String)
-  /// Log a warning: an outside failure the server recovered from.
-  Warn(text: String)
   /// Log at info.
   Note(text: String)
 }
@@ -76,8 +83,12 @@ pub opaque type Footing {
 /// The frame kind 1's unit id names: the world's for 0, else the frame of that
 /// unit. `Error(Nil)` for a number below 0 or above 0xFFFFFFFF, which is no
 /// unit id.
-pub fn footing(unit_id _unit_id: Int) -> Result(Footing, Nil) {
-  Ok(OnTheWorld)
+pub fn footing(unit_id unit_id: Int) -> Result(Footing, Nil) {
+  case unit_id {
+    0 -> Ok(OnTheWorld)
+    unit_id if unit_id > 0 && unit_id <= 0xFFFFFFFF -> Ok(OnPlatform(unit_id:))
+    _ -> Error(Nil)
+  }
 }
 
 /// Where the player stands and how it is held: the last place the client's
@@ -163,8 +174,62 @@ pub fn facing(state state: State) -> Facing {
 /// The commands of a decoded 0x637 as the rule takes them: kind 1 as the frame
 /// it names, kinds 2 and 14 with their floats as 32 bits, kinds 24 and 27 with
 /// their values, and every other kind, its data read, as `Other`.
-pub fn moves(message _message: PlayerMovement) -> Moves {
-  panic as "built in the next commit"
+pub fn moves(message message: PlayerMovement) -> Moves {
+  Moves(
+    client_clock: message.client_clock,
+    commands: list.map(message.commands, command),
+  )
+}
+
+/// One decoded command as the rule takes it. The codec reads each float in 32
+/// bits and kind 1's unit id in 32 bits, so neither is out of range.
+fn command(command: MovementCommand) -> Command {
+  case command {
+    movement_command.Platform(MovementPlatform(unit_id:)) -> {
+      let assert Ok(footing) = footing(unit_id:)
+        as "kind 1's unit id is 32 bits (movement_platform)"
+      Standing(footing:)
+    }
+    movement_command.Position(UnitPositionCommand(x:, y:, z:, ..)) ->
+      Position(x: single(x), y: single(y), z: single(z))
+    movement_command.Rotation(MovementRotation(yaw:, pitch:, roll:, ..)) ->
+      Rotation(yaw: single(yaw), pitch: single(pitch), roll: single(roll))
+    movement_command.StateFlags(MovementStateFlags(flags:)) ->
+      StateFlags(flags:)
+    movement_command.Mode(MovementMode(mode:)) -> Mode(mode:)
+    movement_command.Time(_) -> Other(kind: 0)
+    movement_command.Kind3(_) -> Other(kind: 3)
+    movement_command.Kind4(_) -> Other(kind: 4)
+    movement_command.Kind5(_) -> Other(kind: 5)
+    movement_command.Kind6(_) -> Other(kind: 6)
+    movement_command.Kind7(_) -> Other(kind: 7)
+    movement_command.Velocity(_) -> Other(kind: 8)
+    movement_command.Kind9(_) -> Other(kind: 9)
+    movement_command.Kind10(_) -> Other(kind: 10)
+    movement_command.MoveAsked(_) -> Other(kind: 11)
+    movement_command.Kind12(_) -> Other(kind: 12)
+    movement_command.Kind13(_) -> Other(kind: 13)
+    movement_command.Kind15(_) -> Other(kind: 15)
+    movement_command.Kind16(_) -> Other(kind: 16)
+    movement_command.Kind17(_) -> Other(kind: 17)
+    movement_command.Kind18(_) -> Other(kind: 18)
+    movement_command.Kind19(_) -> Other(kind: 19)
+    movement_command.Kind20(_) -> Other(kind: 20)
+    movement_command.Kind21(_) -> Other(kind: 21)
+    movement_command.Kind22(_) -> Other(kind: 22)
+    movement_command.Kind23(_) -> Other(kind: 23)
+    movement_command.Kind25(_) -> Other(kind: 25)
+    movement_command.Kind26(_) -> Other(kind: 26)
+    movement_command.Kind28(_) -> Other(kind: 28)
+    movement_command.Kind29(_) -> Other(kind: 29)
+  }
+}
+
+/// The 32 bits a decoded message holds a float in.
+fn single(number: Int) -> Bits {
+  let assert Ok(bits) = float32.bits(number)
+    as "the codec reads a float in 32 bits (bit_stream.read_float32_bits)"
+  bits
 }
 
 /// What a 0x637 does to where the player stands, command by command in the
@@ -172,37 +237,123 @@ pub fn moves(message _message: PlayerMovement) -> Moves {
 /// messages; a position or rotation in the world's frame is kept; a command
 /// the client's own code never sends is refused, and then nothing of the
 /// message is kept.
-pub fn moved(
-  state _state: State,
-  moves _moves: Moves,
-) -> Result(State, Refusal) {
-  panic as "built in the next commit"
+pub fn moved(state state: State, moves moves: Moves) -> Result(State, Refusal) {
+  list.try_fold(moves.commands, state, apply)
+}
+
+/// What one command does to the state, or why it is refused.
+fn apply(state: State, command: Command) -> Result(State, Refusal) {
+  case command {
+    Standing(footing:) -> Ok(State(..state, footing:))
+    Position(x:, y:, z:) -> {
+      use x <- result.try(finite(x, kind: 2))
+      use y <- result.try(finite(y, kind: 2))
+      use z <- result.try(finite(z, kind: 2))
+      case state.footing {
+        OnTheWorld if y <. -2048.0 -> Error(BelowTheWorld(y:))
+        OnTheWorld ->
+          Ok(State(..state, place: start_place.moved(state.place, x:, y:, z:)))
+        OnPlatform(..) -> Ok(state)
+      }
+    }
+    Rotation(yaw:, pitch:, roll:) -> {
+      use yaw <- result.try(finite(yaw, kind: 14))
+      use pitch <- result.try(finite(pitch, kind: 14))
+      use roll <- result.try(finite(roll, kind: 14))
+      case state.footing {
+        OnTheWorld ->
+          Ok(
+            State(
+              ..state,
+              place: start_place.turned(
+                state.place,
+                Facing(yaw:, pitch:, roll:),
+              ),
+            ),
+          )
+        OnPlatform(..) -> Ok(state)
+      }
+    }
+    StateFlags(flags:) if flags > 0x3ffff -> Error(UnknownStateFlags(flags:))
+    StateFlags(..) -> Ok(state)
+    Mode(mode: 0) | Mode(mode: 1) | Mode(mode: 3) -> Ok(state)
+    Mode(mode:) -> Error(UnknownMode(mode:))
+    Other(..) -> Ok(state)
+  }
+}
+
+/// The float the bits of a command of `kind` hold, or why the command is
+/// refused.
+fn finite(bits: Bits, kind kind: Int) -> Result(Float, Refusal) {
+  float32.value(bits) |> result.replace_error(NotFinite(kind:))
 }
 
 /// Whether a move speed setting is one the client has: 0 to 2 (0x140c45dd0).
-pub fn speed_setting(setting _setting: Int) -> Result(Nil, Refusal) {
-  panic as "built in the next commit"
+pub fn speed_setting(setting setting: Int) -> Result(Nil, Refusal) {
+  use <- bool.guard(
+    when: setting < 0 || setting > 2,
+    return: Error(UnknownSpeedSetting(setting:)),
+  )
+  Ok(Nil)
 }
 
 /// A sentence that says what the client sent that is refused, for the log.
-pub fn describe(refusal _refusal: Refusal) -> String {
-  panic as "built in the next commit"
+pub fn describe(refusal refusal: Refusal) -> String {
+  case refusal {
+    NotFinite(kind: 2) -> "0x0637 holds a position that is not finite"
+    NotFinite(kind: 14) -> "0x0637 holds a rotation that is not finite"
+    NotFinite(kind:) ->
+      "0x0637 holds a command of kind "
+      <> int.to_string(kind)
+      <> " that is not finite"
+    BelowTheWorld(y:) ->
+      "0x0637 holds a height of " <> float.to_string(y) <> ", below -2048"
+    UnknownStateFlags(flags:) ->
+      "0x0637 holds state flags 0x" <> int.to_base16(flags) <> ", above 0x3ffff"
+    UnknownMode(mode:) ->
+      "0x0637 holds the mode " <> int.to_string(mode) <> ", none of 0, 1 and 3"
+    UnknownSpeedSetting(setting:) ->
+      "0x063B holds the move speed setting "
+      <> int.to_string(setting)
+      <> ", above 2"
+  }
 }
 
 /// The save of where the player stands now, named by the login's epoch and
 /// numbered one above the last save this login asked, and the state that holds
-/// that number.
+/// that number. A save asked and never answered keeps its number, so a late
+/// answer is never taken for a newer save's.
 pub fn save(
-  state _state: State,
-  account_id _account_id: AccountId,
-  character_id _character_id: CharacterId,
-) -> #(State, Effect) {
-  panic as "built in the next commit"
+  state state: State,
+  account_id account_id: AccountId,
+  character_id character_id: CharacterId,
+) -> #(State, MoveRequest) {
+  let save_sequence = state.save_sequence + 1
+  #(
+    State(..state, save_sequence:),
+    SavePlace(
+      account_id:,
+      character_id:,
+      session_epoch: state.session_epoch,
+      save_sequence:,
+      place: state.place,
+    ),
+  )
 }
 
 /// What the store's answer to the save says: nothing for a saved place, a note
 /// for a save that changed nothing, and an error for a place the database
 /// refused.
-pub fn saved(answer _answer: MoveAnswer) -> List(Effect) {
-  panic as "built in the next commit"
+pub fn saved(answer answer: MoveAnswer) -> List(Effect) {
+  case answer {
+    PlaceSaved -> []
+    NothingSaved -> [
+      Note(
+        text: "a save changed nothing: a later login holds the character, a newer save of this login was stored first, or the account has no such character",
+      ),
+    ]
+    PlaceRefused -> [
+      Fault(text: "the database refused the place it was asked to save"),
+    ]
+  }
 }

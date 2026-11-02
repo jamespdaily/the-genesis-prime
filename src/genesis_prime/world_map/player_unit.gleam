@@ -10,9 +10,11 @@
 ////   Health) are `stand_in_health`, 136, the client's level-1 creature Base
 ////   Health (CreatureLevel row 1), until a marked retail record gives a player's.
 //// - **Level:** stat 10 is the character's level (0x140458140).
-//// - **Place:** one kind 2 movement command at the saved position; after 0xAD
-////   the client never drops the player to the ground, so it must be on the
-////   floor (0x1404586e0, 0x1403e828a).
+//// - **Place:** a kind 2 movement command at the saved position, with its bit
+////   clear, which places the unit at once, then a kind 14 with the saved yaw,
+////   pitch and roll, which turns it (0x1404586e0, 0x140715350); after 0xAD the
+////   client never drops the player to the ground, so it must be on the floor
+////   (0x1403e828a).
 //// - **Body:** the item visuals the character list sends
 ////   (genesis_prime/game/appearance), and the stored bone values
 ////   (opcode.0x262.player_fields).
@@ -24,10 +26,11 @@
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{type ItemVisual}
-import genesis_prime/message/movement_command
+import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_movement_command
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
@@ -60,6 +63,7 @@ pub fn create(
 ) -> UnitCreatePlayer {
   let CharacterId(character_id) = character.character_id
   let health = float32.to_bits(int.to_float(stand_in_health))
+  let facing = start_place.facing(place)
   UnitCreatePlayer(
     unit_id:,
     character_id:,
@@ -84,10 +88,16 @@ pub fn create(
     ],
     server_time_estimate_start: 0,
     movement_commands: [
-      movement_command.Position(UnitPositionCommand(
+      unit_movement_command.Position(UnitPositionCommand(
         x: float32.to_bits(start_place.x(place)),
         y: float32.to_bits(start_place.y(place)),
         z: float32.to_bits(start_place.z(place)),
+        blends: 0,
+      )),
+      unit_movement_command.Rotation(MovementRotation(
+        yaw: float32.to_bits(facing.yaw),
+        pitch: float32.to_bits(facing.pitch),
+        roll: float32.to_bits(facing.roll),
         blends: 0,
       )),
     ],

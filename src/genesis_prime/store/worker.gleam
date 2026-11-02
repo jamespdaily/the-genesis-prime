@@ -42,9 +42,12 @@
 ////   is never taken; it raises the character's `session_epoch` by one and
 ////   returns the new value with the row, so the login that loaded the
 ////   character holds that epoch. No row is `NotTheAccounts`.
-//// - **A save is one statement.** It names the account's id, the character's
-////   and the epoch the saving login was told, so a save from an older login
-////   matches no row and changes nothing.
+//// - **A save is one statement.** It names the account's id, the character's,
+////   the epoch the saving login was told and the save's own sequence number, so
+////   a save from an older login, or one that reaches the database after a newer
+////   save of its own login, matches no row and changes nothing. A save that a
+////   check constraint of the table refuses is `PlaceRefused`, and the worker
+////   does not crash for it.
 //// - **A delete and a rename are one statement each.** Both name the account's
 ////   id, so another account's character is never touched; a rename also
 ////   clears the character's mark in the same update, and its name's
@@ -76,8 +79,9 @@ import genesis_prime/store.{
   CharacterRenamed, CreateCharacter, Created, DeleteCharacter, Deleted,
   FindAccount, ForLogin, ForMove, ForSelect, ForWorld, ListCharacters, Listed,
   LoadCharacter, Login, Move, NameStands, NameTaken, NeedsRename, NewNameTaken,
-  NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts, RenameCharacter,
-  Renamed, SavePlace, Select, Unavailable, World,
+  NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved,
+  PlaceRefused, PlaceSaved, RenameCharacter, Renamed, SavePlace, Select,
+  Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, RaceId}
@@ -295,15 +299,45 @@ fn world(
 }
 
 /// Runs one of the player's movement's requests: a save is one statement that
-/// names the account, the character and the epoch (save_place.sql), answering
-/// `PlaceSaved` when it changed a row and `NothingSaved` when it matched none;
-/// `Error(Nil)` when the database is away.
-fn move(
-  _pool: pog.Connection,
-  request: MoveRequest,
-) -> Result(MoveAnswer, Nil) {
-  let SavePlace(..) = request
-  panic as "built in the next commit"
+/// names the account, the character, the epoch and the save's sequence
+/// (save_place.sql), answering `PlaceSaved` when it changed a row and
+/// `NothingSaved` when it matched none, and `PlaceRefused` when a check of the
+/// table refused the place; `Error(Nil)` when the database is away.
+fn move(pool: pog.Connection, request: MoveRequest) -> Result(MoveAnswer, Nil) {
+  let SavePlace(
+    account_id: AccountId(account_id),
+    character_id: CharacterId(character_id),
+    session_epoch:,
+    save_sequence:,
+    place:,
+  ) = request
+  let facing = start_place.facing(place)
+  case
+    attempt(fn() {
+      sql.save_place(
+        pool,
+        character_id,
+        account_id,
+        store.session_epoch_number(session_epoch),
+        start_place.world_id(place),
+        start_place.world_zone_id(place),
+        start_place.x(place),
+        start_place.y(place),
+        start_place.z(place),
+        facing.yaw,
+        facing.pitch,
+        facing.roll,
+        save_sequence,
+      )
+    })
+  {
+    Ok([_]) -> Ok(PlaceSaved)
+    Ok([]) -> Ok(NothingSaved)
+    Ok(_) -> panic as "a character id is unique, so a save changes at most one"
+    Error(Unreachable) -> Error(Nil)
+    Error(Refused(..)) -> Ok(PlaceRefused)
+    Error(Unexpected(error:)) -> exit_with(error)
+  }
 }
 
 /// The account's characters in creation order; an account with none, or no

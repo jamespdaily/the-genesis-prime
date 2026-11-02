@@ -291,7 +291,7 @@ pub fn the_sequences_of_other_accounts_rows_still_count_after_the_fixture_test()
   assert rows(target)
     == [
       "1|genesis|01|02|01234567-89ab-cdef-0123-456789abcdef",
-      "1|1|0|Mine|0|1|1|167|1|0|0|0|0|0|0|{}|{}|{}|false",
+      "1|1|0|0|Mine|0|1|1|167|1|0|0|0|0|0|0|0|0|0|{}|{}|{}|false",
     ]
     as "only the named account's rows"
   assert next_character_id(target) == "3"

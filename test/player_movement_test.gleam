@@ -22,9 +22,9 @@
 
 import character_support
 import genesis_prime/game/movement.{
-  type Command, type Refusal, type State, AskStore, BelowTheWorld, Fault, Mode,
-  Moves, NotFinite, Note, Other, Position, Rotation, Standing, StateFlags,
-  UnknownMode, UnknownSpeedSetting, UnknownStateFlags,
+  type Command, type Refusal, type State, BelowTheWorld, Fault, Mode, Moves,
+  NotFinite, Note, Other, Position, Rotation, Standing, StateFlags, UnknownMode,
+  UnknownSpeedSetting, UnknownStateFlags,
 }
 import genesis_prime/game/start_place.{type Facing, Facing}
 import genesis_prime/message/float32
@@ -236,8 +236,12 @@ pub fn x_and_z_beyond_32768_and_y_above_2048_are_kept_as_sent_test() -> Nil {
     ])
   assert at(state) == #(40_000.0, 3000.0, -40_000.0)
     as "movement_command.position_bound: the client sends them by up to one frame's movement past the box, so refusing them would refuse its own moves at the edge, and how far one frame goes is not read"
-  let state = kept(state:, commands: [position(x: 3.0e38, y: 0.0, z: -3.0e38)])
-  assert at(state) == #(3.0e38, 0.0, -3.0e38) as "any finite float is kept"
+  let state =
+    kept(state:, commands: [
+      position(x: 1.7014118346046923e38, y: 0.0, z: -1.7014118346046923e38),
+    ])
+  assert at(state) == #(1.7014118346046923e38, 0.0, -1.7014118346046923e38)
+    as "any finite float is kept: 2^127, 0x7F000000, is one a 32-bit float holds exactly"
 }
 
 pub fn a_refused_message_keeps_nothing_of_itself_test() -> Nil {
@@ -438,13 +442,13 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       character_id: CharacterId(42),
     )
   assert first
-    == AskStore(SavePlace(
+    == SavePlace(
       account_id: AccountId(7),
       character_id: CharacterId(42),
       session_epoch: character_support.epoch(3),
       save_sequence: 1,
       place: movement.place(entered()),
-    ))
+    )
     as "the save names the epoch the login was told (3 here) and is the login's first"
   let state = kept(state:, commands: [position(x: 5.0, y: 6.0, z: 7.0)])
   let #(state, second) =
@@ -454,13 +458,13 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       character_id: CharacterId(42),
     )
   assert second
-    == AskStore(SavePlace(
+    == SavePlace(
       account_id: AccountId(7),
       character_id: CharacterId(42),
       session_epoch: character_support.epoch(3),
       save_sequence: 2,
       place: movement.place(state),
-    ))
+    )
     as "the next save carries the place the moves since put the player at, numbered 2: the store keeps only a newer save of a login"
   assert at(state) == #(5.0, 6.0, 7.0)
   let #(_, third) =
@@ -469,7 +473,7 @@ pub fn each_save_names_the_logins_epoch_and_is_numbered_one_above_the_last_test(
       account_id: AccountId(7),
       character_id: CharacterId(42),
     )
-  let assert AskStore(SavePlace(save_sequence: 3, ..)) = third
+  let assert SavePlace(save_sequence: 3, ..) = third
     as "a save asked and never answered still took its number, so an answer that comes late is never taken for a newer save"
   Nil
 }

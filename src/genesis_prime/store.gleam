@@ -8,6 +8,7 @@ import genesis_prime/table/id.{
   type CharacterCustomizationLabelId, type ClassId, type RaceId,
   CharacterCustomizationLabelId,
 }
+import gleam/bool
 import gleam/list
 import gleam/option.{type Option}
 
@@ -50,6 +51,7 @@ pub opaque type SessionEpoch {
 /// The epoch with this number, `Error(Nil)` for a number below 1, which no
 /// login is told.
 pub fn session_epoch(number number: Int) -> Result(SessionEpoch, Nil) {
+  use <- bool.guard(when: number < 1, return: Error(Nil))
   Ok(SessionEpoch(number))
 }
 

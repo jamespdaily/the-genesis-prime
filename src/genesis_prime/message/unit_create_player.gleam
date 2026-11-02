@@ -10,7 +10,7 @@
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/item_visual.{type ItemVisual}
-import genesis_prime/message/movement_command.{type MovementCommand}
+import genesis_prime/message/unit_movement_command.{type UnitMovementCommand}
 import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/message/unit_stat.{type UnitStat}
 import gleam/result
@@ -42,7 +42,7 @@ pub type UnitCreatePlayer {
     create_flags: Int,
     stats: List(UnitStat),
     server_time_estimate_start: Int,
-    movement_commands: List(MovementCommand),
+    movement_commands: List(UnitMovementCommand),
     properties: List(UnitProperty),
     item_visuals: List(ItemVisual),
     cast_id: Int,
@@ -104,7 +104,7 @@ pub fn encode(message: UnitCreatePlayer) -> Result(BitArray, EncodeError) {
     "movement_commands",
     message.movement_commands,
     5,
-    movement_command.write,
+    unit_movement_command.write,
   )
   |> bit_stream.write_array(
     "properties",
@@ -194,7 +194,7 @@ pub fn decode(body: BitArray) -> Result(UnitCreatePlayer, DecodeError) {
   use #(movement_commands, reader) <- result.try(bit_stream.read_array(
     reader,
     5,
-    movement_command.read,
+    unit_movement_command.read,
   ))
   use #(properties, reader) <- result.try(bit_stream.read_array(
     reader,

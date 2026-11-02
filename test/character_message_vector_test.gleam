@@ -35,7 +35,6 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
-import genesis_prime/message/movement_command
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
@@ -50,6 +49,7 @@ import genesis_prime/message/unit_create_player.{
 }
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
+import genesis_prime/message/unit_movement_command
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
@@ -570,7 +570,7 @@ fn minimal_player() -> UnitCreatePlayer {
     stats: [],
     server_time_estimate_start: 0,
     movement_commands: [
-      movement_command.Position(UnitPositionCommand(
+      unit_movement_command.Position(UnitPositionCommand(
         x: 0x45879585,
         y: 0xC487D70A,
         z: 0xC570E87B,

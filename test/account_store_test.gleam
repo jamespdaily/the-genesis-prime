@@ -1183,7 +1183,7 @@ pub fn a_session_epoch_is_1_or_more_and_only_that_makes_one_test() -> Nil {
 pub fn each_load_raises_the_epoch_by_one_and_starts_the_saves_of_its_login_again_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
-  let #(account, id) = one_character(store)
+  let #(account, id) = one_character(store:)
   assert epoch_of_load(store:, account:, character_id: id) == 1
     as "a character that was never loaded is at 0, and the first login raises it to 1"
   let here =
@@ -1210,7 +1210,7 @@ pub fn each_load_raises_the_epoch_by_one_and_starts_the_saves_of_its_login_again
 pub fn a_save_stores_the_place_and_the_facing_and_the_next_load_reads_them_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
-  let #(account, id) = one_character(store)
+  let #(account, id) = one_character(store:)
   let _epoch = epoch_of_load(store:, account:, character_id: id)
   let here =
     place_facing(
@@ -1251,7 +1251,7 @@ pub fn a_save_stores_the_place_and_the_facing_and_the_next_load_reads_them_test(
 pub fn a_save_naming_an_older_epoch_changes_nothing_and_the_newer_logins_saves_do_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
-  let #(account, id) = one_character(store)
+  let #(account, id) = one_character(store:)
   let first =
     place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
   let second =
@@ -1287,7 +1287,7 @@ pub fn a_save_naming_an_older_epoch_changes_nothing_and_the_newer_logins_saves_d
 pub fn a_save_that_reaches_the_database_after_a_newer_one_of_its_login_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
-  let #(account, id) = one_character(store)
+  let #(account, id) = one_character(store:)
   let older =
     place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
   let newer =
@@ -1341,7 +1341,7 @@ pub fn a_save_that_reaches_the_database_after_a_newer_one_of_its_login_changes_n
 pub fn a_save_for_a_character_the_account_does_not_have_or_that_does_not_exist_changes_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
-  let #(account, id) = one_character(store)
+  let #(account, id) = one_character(store:)
   let other = insert_account(store, "login-2")
   let _login = epoch_of_load(store:, account:, character_id: id)
   let there =
@@ -1373,7 +1373,7 @@ pub fn a_save_for_a_character_the_account_does_not_have_or_that_does_not_exist_c
 pub fn the_table_refuses_a_position_a_rotation_or_a_save_sequence_it_cannot_hold_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
-  let #(_account, id) = one_character(store)
+  let #(_account, id) = one_character(store:)
   let update = fn(set) {
     pog.query("update character set " <> set <> " where character_id = $1")
     |> pog.parameter(pog.int(id))
@@ -1405,7 +1405,7 @@ pub fn the_table_refuses_a_position_a_rotation_or_a_save_sequence_it_cannot_hold
 pub fn a_save_the_database_refuses_for_a_check_is_answered_place_refused_and_the_store_goes_on_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 2)
-  let #(account, id) = one_character(store)
+  let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   execute(
     store.pool,

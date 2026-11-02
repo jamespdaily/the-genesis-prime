@@ -174,6 +174,17 @@ pub fn world_body(
   carried
 }
 
+/// Sends a world message as the client does: inside 0x038C, whose first byte is
+/// the 5-bit value 3 of SendWorldMessage (opcode.0x38c), inside 0x244 under the
+/// session cipher.
+pub fn send_world(
+  game game: Game,
+  message_id message_id: Int,
+  body body: BitArray,
+) -> Nil {
+  send(game:, message_id: 0x038C, body: world_body(kind: 3, message_id:, body:))
+}
+
 /// Reads until `count` messages have arrived from the server, each opened from
 /// its 0x3DC wrapper under the session cipher, in order.
 pub fn read(game game: Game, count count: Int) -> List(Frame) {

@@ -8,14 +8,22 @@
 ////   (Base Health) 136.0 twice, which the client's reader takes in all 1120
 ////   bits. The path is 0 there, as the PvP flags are, so the vector fits the
 ////   unit this module builds.
+//// - The place: a kind 2 command at the saved position with its bit clear, then
+////   a kind 14 command with the saved yaw, pitch and roll (0x1404586e0,
+////   0x140715350); 0.5 is the 32 bits 0x3F000000, -0.25 is 0xBE800000 and 1.5
+////   is 0x3FC00000 (IEEE 754 binary32).
 //// - The stand-in: health is 136, the client's level-1 creature Base Health
 ////   (0x1404585c0); no client table or retail record gives a player's health.
 //// - The level: stat 10 of the unit's stats is its level, and a unit created
 ////   without it is level 1 (0x140458140, 0x1404543c1).
 
-import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/start_place.{type Place, Facing}
+import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{ItemVisual}
+import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
+import genesis_prime/message/unit_movement_command
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, RaceId}
@@ -67,14 +75,48 @@ pub fn the_unit_of_the_live_character_is_the_clients_1120_bits_test() -> Nil {
     )
   let assert Ok(body) =
     unit_create_player.encode(
-      UnitCreatePlayer(..unit, stats: [UnitStat(stat_id: 0, value: 136)]),
+      UnitCreatePlayer(
+        ..unit,
+        stats: [UnitStat(stat_id: 0, value: 136)],
+        movement_commands: list.take(unit.movement_commands, 1),
+      ),
     )
-    as "the unit encodes, with the vector's one stat: the vector holds no stat 10, and the level stat is tested apart"
+    as "the unit encodes, with the vector's one stat and its one kind 2 command: the vector holds no stat 10 and no kind 14, and the level stat and the rotation are tested apart"
   assert body
     == message_support.hex(
       "0100000054000000000000004000e02105f0068007f006000230054007f006d006000730074007f006e006500630020000000000000000000000000000000001800800000000000010c44cfb639168913c70dfdffd908003000084210000842100000000008053e0140000000000000000000000004000000000000000000040000000000000000000000000",
     )
     as "vector.opcode.0x262.roxo_alive: the client's reader takes these 140 bytes for the live character, alive at its place, with Base Health"
+}
+
+pub fn the_unit_is_placed_at_its_position_and_turned_the_way_the_place_faces_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let turned =
+    start_place.turned(roxo_place(), Facing(yaw: 0.5, pitch: -0.25, roll: 1.5))
+  let unit =
+    player_unit.create(
+      character: roxo(),
+      place: turned,
+      unit_id: 1,
+      realm_id: 1,
+      visuals: [],
+    )
+  assert unit.movement_commands
+    == [
+      unit_movement_command.Position(UnitPositionCommand(
+        x: float32.to_bits(4605.65),
+        y: float32.to_bits(-7.571),
+        z: float32.to_bits(494.996),
+        blends: 0,
+      )),
+      unit_movement_command.Rotation(MovementRotation(
+        yaw: 0x3F000000,
+        pitch: 0xBE800000,
+        roll: 0x3FC00000,
+        blends: 0,
+      )),
+    ]
+    as "kind 2 places the unit at once (its bit is clear) and kind 14 turns it by the place's facing"
 }
 
 pub fn the_unit_carries_the_visuals_and_bones_it_is_given_and_the_path_never_reaches_its_pvp_flags_test() -> Nil {
