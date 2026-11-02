@@ -20,6 +20,7 @@ A server for WildStar that the original client connects to and plays on. Gleam o
 ## Every change
 - Handle errors you can act on; let anything else crash the process, and its supervisor rebuilds it from storage.
 - Decode client bytes at the connection into typed values. Bytes the client's own reader would refuse end the connection; a whole frame the server does not know yet is logged as unhandled, and the connection goes on.
+- Refuse any value the client sends that its own code or tables would not allow.
 - Game tables load once at start into named records; a missing row fails the load.
 - Every packet layout lives in one schema with its evidence. The generated codec states each field's size and byte order and is never edited by hand; the bit stream's field kinds and the generator are property-tested, and each message with a client vector is checked against it.
 - A bug fix starts with a test that fails because of the bug.
@@ -48,6 +49,6 @@ Ask Jim only for decisions you cannot make, in one batch of plain yes-or-no ques
 ## Tracking
 - All planned work lives in GitHub: one board, a milestone with a parent issue whose sub-issues are its steps in order, and a measured end condition on the parent.
 - Before opening an issue, search the code and the issues under several names. File and move it with `dev/card.sh`: milestone, parent, order and status (To do, In progress, Waiting on Jim, Done).
-- A step's issue carries its test list, progress, dated measurements and closing summary; a new session resumes from the parent issue and the board. A step is labelled `ready` only when an agent could finish it without inventing requirements.
+- A step's issue carries its test list, progress, dated measurements and closing summary; a new session resumes from the parent issue and the board.
 - A branch is `jimd/<issue>-<topic>`; each commit names its issue and says why; an issue title states the outcome.
 - A playable server is set up whenever Jim asks (the `playing-live` skill).
