@@ -38,8 +38,8 @@ import genesis_prime/message/game_server_handoff
 import genesis_prime/message/movement_command
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/player_movement.{PlayerMovement}
+import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player
-import genesis_prime/message/unit_movement_command
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/step/runtime
 import gleam/erlang/process.{type Subject}
@@ -354,10 +354,8 @@ fn placed_at(burst: List(Frame)) -> Position {
     list.find(burst, fn(frame) { frame.message_id == 0x0262 })
     as "the burst holds 0x0262"
   let assert Ok(unit) = unit_create_player.decode(unit.body) as "0x0262 decodes"
-  let assert [
-    unit_movement_command.Position(UnitPositionCommand(x:, y:, z:, ..)),
-    ..
-  ] = unit.movement_commands
+  let assert [start_movement.Position(UnitPositionCommand(x:, y:, z:, ..)), ..] =
+    unit.movement_commands
     as "0x0262 places the unit with a kind 2 command, the first of its commands"
   Position(x: finite(x), y: finite(y), z: finite(z))
 }

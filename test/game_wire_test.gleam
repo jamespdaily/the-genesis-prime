@@ -53,8 +53,8 @@ import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
+import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player
-import genesis_prime/message/unit_movement_command
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
@@ -672,13 +672,13 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
   let first = game_client.read(game:, count: 7)
   assert player_of(first).movement_commands
     == [
-      unit_movement_command.Position(UnitPositionCommand(
+      start_movement.Position(UnitPositionCommand(
         x: float32.to_bits(1.5),
         y: float32.to_bits(2.5),
         z: float32.to_bits(3.5),
         blends: 0,
       )),
-      unit_movement_command.Rotation(MovementRotation(
+      start_movement.Rotation(MovementRotation(
         yaw: 0,
         pitch: 0,
         roll: 0,
@@ -707,13 +707,13 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
     as "0xAD loads the world where the player left"
   assert player_of(second).movement_commands
     == [
-      unit_movement_command.Position(UnitPositionCommand(
+      start_movement.Position(UnitPositionCommand(
         x: float32.to_bits(100.5),
         y: float32.to_bits(-20.25),
         z: float32.to_bits(300.125),
         blends: 0,
       )),
-      unit_movement_command.Rotation(MovementRotation(
+      start_movement.Rotation(MovementRotation(
         yaw: float32.to_bits(1.5),
         pitch: float32.to_bits(-0.25),
         roll: float32.to_bits(0.5),

@@ -124,7 +124,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/unit_create_player.gleam",
       "src/genesis_prime/message/unit_destroyed.gleam",
       "src/genesis_prime/message/unit_is_player.gleam",
-      "src/genesis_prime/message/unit_movement_command.gleam",
+      "src/genesis_prime/message/start_movement.gleam",
       "src/genesis_prime/message/unit_position_command.gleam",
       "src/genesis_prime/message/unit_property.gleam",
       "src/genesis_prime/message/unit_stat.gleam",

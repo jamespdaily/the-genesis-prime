@@ -19,7 +19,7 @@ import gleam/result
 /// One item of the union: its first 5 bits are its kind, which picks the
 /// variant, and the variant's record reads them again as its first field. A
 /// kind no variant has is refused.
-pub type UnitMovementCommand {
+pub type StartMovement {
   /// Kind 2, read by `unit_position_command`. The fact file's `0x1400ad350`
   /// names the kind.
   Position(UnitPositionCommand)
@@ -29,10 +29,7 @@ pub type UnitMovementCommand {
 }
 
 /// Writes the variant's record to the stream.
-pub fn write(
-  writer writer: Writer,
-  record record: UnitMovementCommand,
-) -> Writer {
+pub fn write(writer writer: Writer, record record: StartMovement) -> Writer {
   case record {
     Position(variant) -> unit_position_command.write(writer, variant)
     Rotation(variant) -> movement_rotation.write(writer, variant)
@@ -40,9 +37,7 @@ pub fn write(
 }
 
 /// Reads the item from the stream, and the stream after it.
-pub fn read(
-  reader: Reader,
-) -> Result(#(UnitMovementCommand, Reader), DecodeError) {
+pub fn read(reader: Reader) -> Result(#(StartMovement, Reader), DecodeError) {
   use kind <- result.try(bit_stream.peek_unsigned(reader, 5))
   case kind {
     2 ->
@@ -53,10 +48,6 @@ pub fn read(
       reader
       |> movement_rotation.read
       |> result.map(pair.map_first(_, Rotation))
-    _ ->
-      Error(bit_stream.UnexpectedValue(
-        field: "unit_movement_command",
-        value: kind,
-      ))
+    _ -> Error(bit_stream.UnexpectedValue(field: "start_movement", value: kind))
   }
 }

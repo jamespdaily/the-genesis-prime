@@ -92,12 +92,12 @@ import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/server_hello.{ServerHello}
+import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
-import genesis_prime/message/unit_movement_command
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
@@ -1314,13 +1314,13 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
       ],
       server_time_estimate_start: 0,
       movement_commands: [
-        unit_movement_command.Position(UnitPositionCommand(
+        start_movement.Position(UnitPositionCommand(
           x: 0x41E9075F,
           y: 0xC45577C8,
           z: 0xC40C0C08,
           blends: 0,
         )),
-        unit_movement_command.Rotation(MovementRotation(
+        start_movement.Rotation(MovementRotation(
           yaw: 0,
           pitch: 0,
           roll: 0,
@@ -2004,13 +2004,13 @@ pub fn the_login_places_the_player_at_the_saved_place_and_turns_it_the_saved_way
     as "opcode.0xad: the world loads at the saved position"
   assert player_in(taken).movement_commands
     == [
-      unit_movement_command.Position(UnitPositionCommand(
+      start_movement.Position(UnitPositionCommand(
         x: 0x41E9075F,
         y: 0xC45577C8,
         z: 0xC40C0C08,
         blends: 0,
       )),
-      unit_movement_command.Rotation(MovementRotation(
+      start_movement.Rotation(MovementRotation(
         yaw: 0x3FC00000,
         pitch: 0xBE800000,
         roll: 0x3F000000,
@@ -2024,13 +2024,13 @@ pub fn a_character_never_saved_still_gets_a_position_at_its_start_place_and_face
   use <- owned_test.run(10_000)
   assert player_in(entered().1).movement_commands
     == [
-      unit_movement_command.Position(UnitPositionCommand(
+      start_movement.Position(UnitPositionCommand(
         x: 0x41E9075F,
         y: 0xC45577C8,
         z: 0xC40C0C08,
         blends: 0,
       )),
-      unit_movement_command.Rotation(MovementRotation(
+      start_movement.Rotation(MovementRotation(
         yaw: 0,
         pitch: 0,
         roll: 0,

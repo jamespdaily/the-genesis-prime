@@ -27,10 +27,10 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
-import genesis_prime/message/unit_movement_command
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
@@ -88,13 +88,13 @@ pub fn create(
     ],
     server_time_estimate_start: 0,
     movement_commands: [
-      unit_movement_command.Position(UnitPositionCommand(
+      start_movement.Position(UnitPositionCommand(
         x: float32.to_bits(start_place.x(place)),
         y: float32.to_bits(start_place.y(place)),
         z: float32.to_bits(start_place.z(place)),
         blends: 0,
       )),
-      unit_movement_command.Rotation(MovementRotation(
+      start_movement.Rotation(MovementRotation(
         yaw: float32.to_bits(facing.yaw),
         pitch: float32.to_bits(facing.pitch),
         roll: float32.to_bits(facing.roll),

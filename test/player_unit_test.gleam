@@ -21,8 +21,8 @@ import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
-import genesis_prime/message/unit_movement_command
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/store.{Character, CharacterId, NameStands}
@@ -103,13 +103,13 @@ pub fn the_unit_is_placed_at_its_position_and_turned_the_way_the_place_faces_tes
     )
   assert unit.movement_commands
     == [
-      unit_movement_command.Position(UnitPositionCommand(
+      start_movement.Position(UnitPositionCommand(
         x: float32.to_bits(4605.65),
         y: float32.to_bits(-7.571),
         z: float32.to_bits(494.996),
         blends: 0,
       )),
-      unit_movement_command.Rotation(MovementRotation(
+      start_movement.Rotation(MovementRotation(
         yaw: 0x3F000000,
         pitch: 0xBE800000,
         roll: 0x3FC00000,
