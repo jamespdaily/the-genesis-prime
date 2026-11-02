@@ -8,18 +8,26 @@
 //// it does nothing where `GENESIS_NO_CLIENT=1`, because there is no client to
 //// read. Both format what they write with `gleam format`, and both print the
 //// columns that name an id of no loaded table, which stay `Int`.
+////
+//// A 32-bit column is read as a signed number unless `column_sign.all` lists
+//// it `Unsigned`. `check` also fails for each 32-bit column of a table the
+//// server loads that holds a value with bit 31 set and is not in that list.
 
 import argv
 import envoy
 import filepath
+import genesis_prime/table/loader/server_table
+import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table_folder
+import genesis_prime/table_generator/column_sign.{type ColumnSign}
 import genesis_prime/table_generator/difference.{type Difference}
 import genesis_prime/table_generator/id_text
 import genesis_prime/table_generator/module_text
 import genesis_prime/table_generator/naming
 import genesis_prime/table_generator/reference.{type Table, Table}
 import genesis_prime/table_generator/registry_text
+import genesis_prime/table_rows
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -46,6 +54,11 @@ pub type GenerateError {
   Unwritable(path: String)
   /// `gleam format` failed on the generated files.
   FormatFailed(output: String)
+  /// A table the server loads has no file in the tables folder.
+  LoadedTableMissing(file: String)
+  /// Loaded tables' 32-bit columns that hold a value with bit 31 set and are
+  /// not in the sign list.
+  UnlistedColumns(columns: List(column_sign.Unlisted))
 }
 
 const table_folder = "genesis_prime/table"
@@ -78,9 +91,11 @@ pub type Generated {
 /// name without extension and bytes, plus the `genesis_prime/table` module and
 /// the typed ids of `genesis_prime/table/id`, and the columns that name an id
 /// of no loaded table. A path is relative to the source folder:
-/// `genesis_prime/table/creature2.gleam`. The text is unformatted.
+/// `genesis_prime/table/creature2.gleam`. The text is unformatted. A 32-bit
+/// column is read as unsigned when `signs` lists it so.
 pub fn generate(
   tables tables: List(#(String, BitArray)),
+  signs signs: List(ColumnSign),
 ) -> Result(Generated, GenerateError) {
   use named <- result.try(named_tables(tables))
   let known = list.map(named, fn(table) { table.table })
@@ -92,6 +107,7 @@ pub fn generate(
         description: table.description,
         table: table.table,
         tables: index,
+        signs:,
       )
       |> result.map(fn(rendered) { #(table, rendered) })
       |> result.map_error(BadTable(table.file, _))
@@ -177,10 +193,12 @@ fn read_tables(
 }
 
 /// The generated code, formatted by `gleam format`, with what the generation
-/// found. The folder is read once.
-fn generate_formatted(folder: String) -> Result(Generated, GenerateError) {
-  use tables <- result.try(read_tables(folder))
-  use generated <- result.try(generate(tables:))
+/// found, from the table files `read_tables` gave.
+fn generate_formatted(
+  tables: List(#(String, BitArray)),
+  signs: List(ColumnSign),
+) -> Result(Generated, GenerateError) {
+  use generated <- result.try(generate(tables:, signs:))
   let scratch = scratch_folder(temporary_folder())
   let formatted = format_in(scratch, generated.files)
   use _ <- result.try(
@@ -250,12 +268,15 @@ fn read_committed(source: String) -> Dict(String, String) {
 /// Generates the code from the `.tbl` files in `folder`, writes it under
 /// `source` (the folder that holds `genesis_prime/`) and formats it. A
 /// generated file the generator no longer writes is deleted. It gives the
-/// columns that name an id of no loaded table.
+/// columns that name an id of no loaded table. A 32-bit column is read as
+/// unsigned when `signs` lists it so.
 pub fn write(
   tables folder: String,
   into source: String,
+  signs signs: List(ColumnSign),
 ) -> Result(List(IdColumn), GenerateError) {
-  use generated <- result.try(generate_formatted(folder))
+  use tables <- result.try(read_tables(folder))
+  use generated <- result.try(generate_formatted(tables, signs))
   let committed = read_committed(source)
   use _ <- result.try(write_files(source, generated.files))
   difference.between(generated: generated.files, committed:)
@@ -279,12 +300,23 @@ pub type Checked {
 }
 
 /// Generates the code from the `.tbl` files in `folder` and compares it with
-/// the generated files under `source`.
+/// the generated files under `source`. `loaded` names, by file name without
+/// `.tbl`, the tables the server's rules read; each of their 32-bit columns
+/// that holds a value with bit 31 set must be in `signs`, else the check is an
+/// `UnlistedColumns` error. The folder is read once.
 pub fn check(
   tables folder: String,
   against source: String,
+  signs signs: List(ColumnSign),
+  loaded loaded: List(String),
 ) -> Result(Checked, GenerateError) {
-  use generated <- result.try(generate_formatted(folder))
+  use tables <- result.try(read_tables(folder))
+  use generated <- result.try(generate_formatted(tables, signs))
+  use unlisted <- result.try(unlisted_columns(tables:, signs:, loaded:))
+  use <- bool.guard(
+    when: unlisted != [],
+    return: Error(UnlistedColumns(columns: unlisted)),
+  )
   Ok(Checked(
     differences: difference.between(
       generated: generated.files,
@@ -292,6 +324,25 @@ pub fn check(
     ),
     unmatched: generated.unmatched,
   ))
+}
+
+/// The 32-bit columns of the loaded tables that hold a value with bit 31 set
+/// and are not in `signs`, in the order of `loaded`, the files' names.
+fn unlisted_columns(
+  tables tables: List(#(String, BitArray)),
+  signs signs: List(ColumnSign),
+  loaded loaded: List(String),
+) -> Result(List(column_sign.Unlisted), GenerateError) {
+  list.try_map(loaded, fn(file) {
+    use bytes <- result.try(
+      list.key_find(tables, file)
+      |> result.replace_error(LoadedTableMissing(file:)),
+    )
+    table_rows.read(bytes:, table: file)
+    |> result.replace_error(UnreadableTable(file))
+    |> result.map(fn(read) { column_sign.unlisted(signs:, read:) })
+  })
+  |> result.map(list.flatten)
 }
 
 /// The differences a check found, for printing.
@@ -318,9 +369,24 @@ pub fn main() -> Nil {
         "generated tables not compared: GENESIS_NO_CLIENT=1, no client",
       )
     ["check"], _ ->
-      finish(check(tables: table_folder.path(), against: "src"), report_check)
+      finish(
+        check(
+          tables: table_folder.path(),
+          against: "src",
+          signs: column_sign.all(),
+          loaded: loaded_tables(),
+        ),
+        report_check,
+      )
     ["write"], _ ->
-      finish(write(tables: table_folder.path(), into: "src"), report_write)
+      finish(
+        write(
+          tables: table_folder.path(),
+          into: "src",
+          signs: column_sign.all(),
+        ),
+        report_write,
+      )
     _, _ -> {
       io.println(
         "usage: gleam run -m genesis_prime/table_generator write | check",
@@ -328,6 +394,12 @@ pub fn main() -> Nil {
       halt_with(2)
     }
   }
+}
+
+/// The names of the files, without `.tbl`, of the tables the server loads at
+/// its start.
+fn loaded_tables() -> List(String) {
+  list.map(server_table.entries(), store.file)
 }
 
 fn finish(
@@ -387,6 +459,12 @@ fn describe(error: GenerateError) -> String {
       file <> ".tbl is the module " <> module <> ", which holds the typed ids"
     Unwritable(path:) -> path <> " could not be written"
     FormatFailed(output:) -> "gleam format failed: " <> output
+    LoadedTableMissing(file:) ->
+      "the server loads the table file "
+      <> file
+      <> ".tbl, and the tables folder has no such file"
+    UnlistedColumns(columns:) ->
+      list.map(columns, column_sign.describe) |> string.join("\n")
   }
 }
 
