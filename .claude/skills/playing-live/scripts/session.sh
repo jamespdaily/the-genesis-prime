@@ -31,7 +31,7 @@
 # report.sh install, client-log.sh start, client.sh start (logged in from the command line); on the
 # select screen Enter plays the first character in the list; report.sh collect is retried until the
 # report is in; client-log.sh collect, client.sh stop, report.sh remove, and SIGTERM to the server's
-# VM, so every recording gets its End. Then the verdict (session_verdict.py): the report against the
+# VM, so every recording gets its closing line. Then the verdict (session_verdict.py): the report against the
 # saved row of the character it names, the client's failure log, any client error report, and that
 # the client was still running when the session ended. Any miss fails the run.
 #
@@ -213,7 +213,7 @@ stop_tree() {
 }
 
 # Stops the server. With its VM recorded, SIGTERM goes to that VM alone (so the supervision tree
-# stops and every recording gets its End), and the launcher is left to end by itself; without one,
+# stops and every recording gets its closing line), and the launcher is left to end by itself; without one,
 # the launcher's whole process tree is stopped.
 stop_server() {
   local deadline ended="server: was not running"

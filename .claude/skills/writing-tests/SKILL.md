@@ -10,7 +10,7 @@ A test proves the game, not the code. Four layers, most tests at the bottom:
 1. **Pure rules:** state and input in, effects out. No database, no process.
 2. **Whole tables:** every row of a client table through its engine, checking one fact each; property tests for invariants and round-trips.
 3. **Processes:** started under a supervisor inside the test, covering failure paths: a service away or restarting, a failed save, a second login.
-4. **The edge:** the client's bytes in and out; recorded sessions replayed through each rule; the server's messages read by the client's own reader.
+4. **The edge:** the client's bytes in and out; recorded sessions replayed through the whole server; the server's messages read by the client's own reader.
 
 - A test's expected value names its source (a client address, a table row, a recording, a retail record) or states the game rule it checks. It is never computed by the code under test. An expected value that seems wrong is checked against its source: a value its source settles is corrected with the source named, and any other is reported.
 - Test at the boundary where you can, through public functions: a process's messages, the client's bytes, a recording. Assert on the effect that matters, found by a helper; build test data from defaults with record update.
