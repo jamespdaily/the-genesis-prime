@@ -19,3 +19,22 @@ pub fn to_bits(value value: Float) -> Int {
     as "a float written in 32 bits is 32 bits"
   bits
 }
+
+/// The 32 bits a message carries a float in: 0 to 0xFFFFFFFF, so a value wider
+/// than 32 bits is never held. Any pattern is held, a float that is infinite or
+/// not a number among them, so a rule that takes a client's float can refuse it.
+pub opaque type Bits {
+  Bits(number: Int)
+}
+
+/// The 32 bits with this number, `Error(Nil)` for a number below 0 or above
+/// 0xFFFFFFFF, which is not 32 bits.
+pub fn bits(number _number: Int) -> Result(Bits, Nil) {
+  panic as "built in the next commit"
+}
+
+/// The float the 32 bits hold, `Error(Nil)` for infinity and for a number that
+/// is not one, which the runtime's float cannot hold.
+pub fn value(bits _bits: Bits) -> Result(Float, Nil) {
+  panic as "built in the next commit"
+}

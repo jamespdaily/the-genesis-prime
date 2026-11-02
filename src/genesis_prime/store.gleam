@@ -40,9 +40,23 @@ pub type CharacterId {
 /// How many logins have taken a character: the character's `session_epoch`.
 /// Each login that loads the character raises it by one and is told the new
 /// value, and a save names the value its login was told, so a save made by an
-/// older login finds the epoch moved on and changes nothing.
-pub type SessionEpoch {
+/// older login finds the epoch moved on and changes nothing. A login's epoch is
+/// 1 or more, and only `session_epoch` makes one, so no character id or count
+/// passes as an epoch.
+pub opaque type SessionEpoch {
   SessionEpoch(Int)
+}
+
+/// The epoch with this number, `Error(Nil)` for a number below 1, which no
+/// login is told.
+pub fn session_epoch(number number: Int) -> Result(SessionEpoch, Nil) {
+  Ok(SessionEpoch(number))
+}
+
+/// The epoch's number, as the database holds it.
+pub fn session_epoch_number(epoch epoch: SessionEpoch) -> Int {
+  let SessionEpoch(number) = epoch
+  number
 }
 
 /// One label of a character's look with the value it was given: the client's
@@ -145,11 +159,15 @@ pub type WorldRequest {
 pub type MoveRequest {
   /// Saves where the character stands, only while its `session_epoch` is still
   /// `session_epoch`, the one the login that saves was told when it loaded the
-  /// character. The account's id is in the statement, as for a load.
+  /// character, and only when `save_sequence` is above the last one stored for
+  /// that login. A login numbers its saves from 1, in the order it asks them,
+  /// so a save that reaches the database after a newer one of its own changes
+  /// nothing. The account's id is in the statement, as for a load.
   SavePlace(
     account_id: AccountId,
     character_id: CharacterId,
     session_epoch: SessionEpoch,
+    save_sequence: Int,
     place: Place,
   )
 }
@@ -219,9 +237,14 @@ pub type WorldAnswer {
 pub type MoveAnswer {
   /// The place was saved: the character's `session_epoch` was the save's.
   PlaceSaved
-  /// Nothing was saved: a later login raised the character's `session_epoch`
-  /// past the save's, or the account has no such character.
+  /// Nothing was saved, for one of three causes the statement cannot tell
+  /// apart: a later login raised the character's `session_epoch` past the
+  /// save's, a newer save of the same login was stored first, or the account
+  /// has no such character.
   NothingSaved
+  /// The database refused the place for a check constraint it holds, which no
+  /// place the rule keeps breaks: a bug of the server's, so nothing was saved.
+  PlaceRefused
 }
 
 /// What the store answers character select, one variant for each of its

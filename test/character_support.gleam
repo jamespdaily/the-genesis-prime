@@ -25,6 +25,13 @@ import gleam/list
 import gleam/result
 import pog
 
+/// The session epoch with this number, for a test whose number is 1 or more.
+pub fn epoch(number number: Int) -> store.SessionEpoch {
+  let assert Ok(epoch) = store.session_epoch(number)
+    as "the test's epoch is 1 or more"
+  epoch
+}
+
 /// Why an insert gave no row.
 pub type Refused {
   /// The table's constraint of this name refused the row.

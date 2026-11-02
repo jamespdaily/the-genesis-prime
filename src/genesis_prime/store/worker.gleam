@@ -77,7 +77,7 @@ import genesis_prime/store.{
   FindAccount, ForLogin, ForMove, ForSelect, ForWorld, ListCharacters, Listed,
   LoadCharacter, Login, Move, NameStands, NameTaken, NeedsRename, NewNameTaken,
   NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts, RenameCharacter,
-  Renamed, SavePlace, Select, SessionEpoch, Unavailable, World,
+  Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, RaceId}
@@ -332,7 +332,9 @@ fn load_character(
     query(fn() { sql.load_character(pool, character_id, account_id) }),
   )
   case rows {
-    [row] ->
+    [row] -> {
+      let assert Ok(epoch) = store.session_epoch(row.session_epoch)
+        as "a load raises the epoch by one, so it is 1 or more"
       CharacterLoaded(
         character: Character(
           character_id: CharacterId(row.character_id),
@@ -357,8 +359,9 @@ fn load_character(
           bones: row.bones,
           naming: naming(row.needs_rename),
         ),
-        session_epoch: SessionEpoch(row.session_epoch),
+        session_epoch: epoch,
       )
+    }
     [] -> NotTheAccounts
     _ -> panic as "a character id is unique, so a read returns at most one"
   }

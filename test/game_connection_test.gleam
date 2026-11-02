@@ -68,6 +68,7 @@ import genesis_prime/message/disconnect_reason.{
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
+import genesis_prime/message/movement_command
 import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
@@ -97,7 +98,7 @@ import genesis_prime/store.{
   CharacterLoaded, CharacterRenamed, Created, Deleted, ForSelect, ForWorld,
   ListCharacters, Listed, LoadCharacter, LookEntry, NameStands, NameTaken,
   NewCharacter, NewNameTaken, NoFreeSlot, NoSuchCharacter, NotRenamable,
-  NotTheAccounts, Renamed, Select, SessionEpoch, Unavailable, World,
+  NotTheAccounts, Renamed, Select, Unavailable, World,
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -1030,7 +1031,9 @@ pub fn a_play_of_a_character_with_no_saved_place_is_refused_the_same_way_and_the
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(ForWorld(CharacterLoaded(no_place, SessionEpoch(1)))),
+        FromStore(
+          ForWorld(CharacterLoaded(no_place, character_support.epoch(1))),
+        ),
       ),
     )
   let assert [Frame(message_id: 0x0162, body:)] = heard(taken, keyed())
@@ -1142,7 +1145,9 @@ fn joining() -> #(game_connection.State, ConnectionStep(Request)) {
     state:,
     taken:,
     outcome: step.Answer(
-      FromStore(ForWorld(CharacterLoaded(world_character(), SessionEpoch(1)))),
+      FromStore(
+        ForWorld(CharacterLoaded(world_character(), character_support.epoch(1))),
+      ),
     ),
   )
 }
@@ -1196,7 +1201,12 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(ForWorld(CharacterLoaded(world_character(), SessionEpoch(1)))),
+        FromStore(
+          ForWorld(CharacterLoaded(
+            world_character(),
+            character_support.epoch(1),
+          )),
+        ),
       ),
     )
   assert ask_request(taken)
@@ -1263,12 +1273,12 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
       ],
       server_time_estimate_start: 0,
       movement_commands: [
-        UnitPositionCommand(
+        movement_command.Position(UnitPositionCommand(
           x: 0x41E9075F,
           y: 0xC45577C8,
           z: 0xC40C0C08,
           blends: 0,
-        ),
+        )),
       ],
       properties: [
         UnitProperty(property_id: 7, field_2: 0x43080000, value: 0x43080000),
@@ -1374,7 +1384,10 @@ pub fn an_answer_that_is_none_world_entry_asked_for_is_a_bug_with_reason_8_and_a
         joining(),
         step.Answer(
           FromStore(
-            ForWorld(CharacterLoaded(world_character(), SessionEpoch(1))),
+            ForWorld(CharacterLoaded(
+              world_character(),
+              character_support.epoch(1),
+            )),
           ),
         ),
       ),

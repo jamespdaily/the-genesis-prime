@@ -396,10 +396,11 @@ pub type LoadCharacterRow {
 
 /// The account's character with this id, as the world's entry needs it: the
 /// same columns as the list, with the saved place, and the character taken by
-/// this login: `session_epoch` is raised by one in the same statement and the
-/// new value returned, so the login that read the character is the one that
-/// holds that epoch, and a save made under an earlier epoch (an older login's)
-/// finds no row to change (save_place.sql). The account's id is in the
+/// this login: `session_epoch` is raised by one in the same statement, with
+/// `save_sequence` back to 0 for the new login, and the new epoch returned, so
+/// the login that read the character is the one that holds that epoch, and a
+/// save made under an earlier epoch (an older login's) finds no row to change
+/// (save_place.sql). The account's id is in the
 /// statement, so another account's character, which a modified client could
 /// name, is never taken. No row means the account has no such character.
 ///
@@ -460,14 +461,15 @@ pub fn load_character(
 
   "-- The account's character with this id, as the world's entry needs it: the
 -- same columns as the list, with the saved place, and the character taken by
--- this login: `session_epoch` is raised by one in the same statement and the
--- new value returned, so the login that read the character is the one that
--- holds that epoch, and a save made under an earlier epoch (an older login's)
--- finds no row to change (save_place.sql). The account's id is in the
+-- this login: `session_epoch` is raised by one in the same statement, with
+-- `save_sequence` back to 0 for the new login, and the new epoch returned, so
+-- the login that read the character is the one that holds that epoch, and a
+-- save made under an earlier epoch (an older login's) finds no row to change
+-- (save_place.sql). The account's id is in the
 -- statement, so another account's character, which a modified client could
 -- name, is never taken. No row means the account has no such character.
 update character
-set session_epoch = session_epoch + 1
+set session_epoch = session_epoch + 1, save_sequence = 0
 where character_id = $1 and account_id = $2
 returning
   character_id,
@@ -600,10 +602,13 @@ pub type SavePlaceRow {
 /// Saves where a character stands: its world, zone, position and facing, only
 /// while the character is still held by the login that made the save, that is
 /// while its `session_epoch` is still the one that login raised it to
-/// (load_character.sql). A login that came after raised the epoch, so a save
-/// from an older login matches no row and changes nothing. The account's id is
-/// in the statement, as for a load. No row means the epoch moved on or the
-/// account has no such character.
+/// (load_character.sql), and only when the save is newer than the last one stored
+/// for that login: `save_sequence` ($12) is above the stored one. A login that
+/// came after raised the epoch, so a save from an older login matches no row and
+/// changes nothing; a save of this login that comes after a newer one of its own
+/// matches none either. The account's id is in the statement, as for a load. No
+/// row means the epoch moved on, a newer save was stored first, or the account
+/// has no such character.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
@@ -620,7 +625,8 @@ pub fn save_place(
   arg_8: Float,
   arg_9: Float,
   arg_10: Float,
-  rotation_roll: Float,
+  arg_11: Float,
+  save_sequence: Int,
 ) -> Result(pog.Returned(SavePlaceRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
@@ -630,10 +636,13 @@ pub fn save_place(
   "-- Saves where a character stands: its world, zone, position and facing, only
 -- while the character is still held by the login that made the save, that is
 -- while its `session_epoch` is still the one that login raised it to
--- (load_character.sql). A login that came after raised the epoch, so a save
--- from an older login matches no row and changes nothing. The account's id is
--- in the statement, as for a load. No row means the epoch moved on or the
--- account has no such character.
+-- (load_character.sql), and only when the save is newer than the last one stored
+-- for that login: `save_sequence` ($12) is above the stored one. A login that
+-- came after raised the epoch, so a save from an older login matches no row and
+-- changes nothing; a save of this login that comes after a newer one of its own
+-- matches none either. The account's id is in the statement, as for a load. No
+-- row means the epoch moved on, a newer save was stored first, or the account
+-- has no such character.
 update character
 set
   world_id = $4,
@@ -643,8 +652,10 @@ set
   position_z = $8,
   rotation_yaw = $9,
   rotation_pitch = $10,
-  rotation_roll = $11
+  rotation_roll = $11,
+  save_sequence = $12
 where character_id = $1 and account_id = $2 and session_epoch = $3
+  and save_sequence < $12
 returning character_id;
 "
   |> pog.query
@@ -658,7 +669,8 @@ returning character_id;
   |> pog.parameter(pog.float(arg_8))
   |> pog.parameter(pog.float(arg_9))
   |> pog.parameter(pog.float(arg_10))
-  |> pog.parameter(pog.float(rotation_roll))
+  |> pog.parameter(pog.float(arg_11))
+  |> pog.parameter(pog.int(save_sequence))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

@@ -24,6 +24,7 @@
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{type ItemVisual}
+import genesis_prime/message/movement_command
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
@@ -83,12 +84,12 @@ pub fn create(
     ],
     server_time_estimate_start: 0,
     movement_commands: [
-      UnitPositionCommand(
+      movement_command.Position(UnitPositionCommand(
         x: float32.to_bits(start_place.x(place)),
         y: float32.to_bits(start_place.y(place)),
         z: float32.to_bits(start_place.z(place)),
         blends: 0,
-      ),
+      )),
     ],
     properties: [
       UnitProperty(
