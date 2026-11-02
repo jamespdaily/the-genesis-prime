@@ -55,6 +55,14 @@ fn start_metadata(
   with_metadata: Bool,
 ) -> Capture
 
+/// Every line waiting in the subject a capture sends to, in the order they came.
+pub fn drain(lines: Subject(line)) -> List(line) {
+  case process.receive(lines, 0) {
+    Ok(line) -> [line, ..drain(lines)]
+    Error(Nil) -> []
+  }
+}
+
 /// Stops the capture.
 @external(erlang, "log_capture_ffi", "stop")
 pub fn stop(capture: Capture) -> Nil

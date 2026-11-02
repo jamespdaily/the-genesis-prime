@@ -140,7 +140,7 @@ pub fn entry(
     file: schema.file,
     put: fn(bytes, load) {
       tbl_file.read(bytes:, schema:, decode:, id:)
-      |> result.map(fn(table) { put_term(load, key.name, table) })
+      |> result.map(fn(table) { put_term(load:, name: key.name, term: table) })
     },
     ids: fn(tables) { list.map(rows(tables:, key:), id) },
   )
@@ -154,7 +154,7 @@ pub fn derivation(
   build build: fn(Tables) -> value,
 ) -> Derivation {
   Derivation(name: key.name, put: fn(tables) {
-    put_term(tables.load, key.name, build(tables))
+    put_term(load: tables.load, name: key.name, term: build(tables))
   })
 }
 
@@ -369,7 +369,7 @@ fn table_of(load: Load, key: Key(row)) -> tbl_file.Table(row) {
 }
 
 /// Writes a term, a table or a derived value, under the load and a name.
-fn put_term(load: Load, name: String, term: term) -> Nil {
+fn put_term(load load: Load, name name: String, term term: term) -> Nil {
   let _ok = persistent_term_put(#(load, name), term)
   Nil
 }

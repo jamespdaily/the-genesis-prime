@@ -157,14 +157,6 @@ fn greeted(server: ask_support.Server) -> #(mug.Socket, Pid) {
   #(client, connection)
 }
 
-/// Every line waiting in the subject.
-fn drain(lines: Subject(Line)) -> List(Line) {
-  case process.receive(lines, 0) {
-    Ok(line) -> [line, ..drain(lines)]
-    Error(Nil) -> []
-  }
-}
-
 fn is_warning_or_error(line: Line) -> Bool {
   line.0 == "warning" || line.0 == "error"
 }
@@ -255,7 +247,7 @@ pub fn a_burst_of_plain_and_reset_hang_ups_logs_no_warning_or_error_test() -> Ni
       Error(Nil) -> False
     }
   }
-  assert list.filter(drain(lines), fn(line) {
+  assert list.filter(log_capture.drain(lines), fn(line) {
       is_warning_or_error(line) && ours(line)
     })
     == []
@@ -320,7 +312,7 @@ fn hand_over(
   hand_over(connection, ref)
   let reason = ask_support.ended(watched)
   log_capture.stop(capture)
-  #(reason, drain(lines), simplifile.read_directory(folder))
+  #(reason, log_capture.drain(lines), simplifile.read_directory(folder))
 }
 
 pub fn a_parent_that_stops_before_the_handshake_ends_the_connection_with_no_recording_test() -> Nil {

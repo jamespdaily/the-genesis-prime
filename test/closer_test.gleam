@@ -8,7 +8,7 @@
 import ask_support
 import asking_rule
 import genesis_prime/connection/closer
-import gleam/erlang/process.{type Subject}
+import gleam/erlang/process
 import gleam/list
 import gleam/option.{None}
 import gleam/otp/static_supervisor as supervisor
@@ -16,9 +16,6 @@ import gleam/string
 import log_capture
 import owned_test
 import unitest
-
-type Line =
-  #(String, String, List(#(String, String)))
 
 pub fn a_listener_the_closer_cannot_close_is_logged_as_a_warning_with_the_reason_test() -> Nil {
   use <- owned_test.run(60_000)
@@ -37,7 +34,7 @@ pub fn a_listener_the_closer_cannot_close_is_logged_as_a_warning_with_the_reason
   ask_support.stop(server)
   log_capture.stop(capture)
   let closed =
-    drain(lines)
+    log_capture.drain(lines)
     |> list.filter(fn(line) { string.contains(line.1, "listener") })
     |> list.map(fn(line) { #(line.0, line.1) })
   assert list.contains(closed, #(
@@ -50,11 +47,4 @@ pub fn a_listener_the_closer_cannot_close_is_logged_as_a_warning_with_the_reason
     "every listener stopped accepting new connections",
   ))
     as "and does not say every listener closed"
-}
-
-fn drain(lines: Subject(Line)) -> List(Line) {
-  case process.receive(lines, 0) {
-    Ok(line) -> [line, ..drain(lines)]
-    Error(Nil) -> []
-  }
 }

@@ -99,10 +99,14 @@ pub fn a_tree_that_does_not_start_gives_the_reason_its_start_reported_test() -> 
 
 pub fn without_the_applications_root_no_tree_starts_test() -> Nil {
   use <- owned_test.run(60_000)
-  fresh_node.must_return(
-    module: "application_test",
-    function: "start_without_the_application",
-  )
+  let returned =
+    fresh_node.run(
+      module: "application_test",
+      function: "start_without_the_application",
+      timeout_ms: 50_000,
+    )
+  assert returned == Ok(Nil)
+    as "start_without_the_application returns in a fresh node, where no application runs"
 }
 
 /// Run in a fresh node, where the application is not started and has no root.

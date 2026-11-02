@@ -174,7 +174,7 @@ pub fn sent_to_worker(
 }
 
 /// A sentence for the log that says why a child did not start.
-pub fn describe_start_child_error(error: StartChildError) -> String {
+fn describe_start_child_error(error: StartChildError) -> String {
   case error {
     SupervisorNotRunning -> "the supervisor is not running"
     ChildNotStarted(reason:) ->
