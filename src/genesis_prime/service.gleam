@@ -14,7 +14,6 @@
 
 import genesis_prime/step.{type Address}
 import genesis_prime/step/runtime
-import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
@@ -114,12 +113,22 @@ pub fn send_by_name(
   pid
 }
 
-/// Starts a child of the named factory supervisor: `Error(Nil)` when the
-/// supervisor is not running or the child does not start.
+/// Why a child of a factory supervisor was not started.
+pub type StartChildError {
+  /// No process holds the supervisor's name, or it ended while the call
+  /// waited.
+  SupervisorNotRunning
+  /// The supervisor is running and the child's start failed, as the start
+  /// reported it.
+  ChildNotStarted(reason: actor.StartError)
+}
+
+/// Starts a child of the named factory supervisor, or says why it did not
+/// start.
 pub fn start_child(
   supervisor name: Name(factory_supervisor.Message(argument, data)),
   argument argument: argument,
-) -> Result(actor.Started(data), Nil) {
+) -> Result(actor.Started(data), StartChildError) {
   case
     unless_supervisor_not_running(fn() {
       factory_supervisor.start_child(
@@ -129,12 +138,48 @@ pub fn start_child(
     })
   {
     Ok(Ok(started)) -> Ok(started)
-    Ok(Error(_)) | Error(Nil) -> Error(Nil)
+    Ok(Error(reason)) -> Error(ChildNotStarted(reason:))
+    Error(Nil) -> Error(SupervisorNotRunning)
   }
 }
 
+/// Logs why a child was not started, as a warning, for a caller that goes on
+/// without it. A supervisor that is not running is not logged: it is stopping
+/// or restarting, which its own log lines say.
+pub fn warn_unless_not_running(error: StartChildError) -> Nil {
+  case error {
+    SupervisorNotRunning -> Nil
+    ChildNotStarted(reason:) ->
+      runtime.log(
+        step.LogWarning,
+        "the child " <> runtime.describe_start_error(reason),
+        step.no_one,
+      )
+  }
+}
+
+/// The worker a started child is, as the `Sent` its asker monitors and ends at
+/// its deadline; `Error(Nil)` for a child that did not start, whose reason is
+/// logged (`warn_unless_not_running`).
+pub fn sent_to_worker(
+  started: Result(actor.Started(data), StartChildError),
+) -> Result(Sent, Nil) {
+  case started {
+    Ok(started) -> Ok(ToWorker(pid: started.pid))
+    Error(error) -> {
+      warn_unless_not_running(error)
+      Error(Nil)
+    }
+  }
+}
+
+/// OTP's `erlang:send/2`, which gives back the message it sent. The message is
+/// the form a named subject receives, which `send_by_name`'s test pins.
 @external(erlang, "erlang", "send")
-fn send_to(pid: Pid, message: #(Name(message), message)) -> Dynamic
+fn send_to(
+  pid: Pid,
+  message: #(Name(message), message),
+) -> #(Name(message), message)
 
 /// Runs a function and turns the exits that say no supervisor is running into
 /// an error: no process holds its name, or it ended with `shutdown` while the

@@ -11,6 +11,8 @@
 //// 'C'     ask the gate to crash         'S' n   ask the store for "login-n"
 //// 'P' n   no ask: write the pong 'p' n at once
 //// 'Q' n   no ask: the step is `Stop` and then a write of 'q' n
+//// 'B' n   the step is a write of the pong 'p' n and then an ask of the gate for key n
+//// 'F' n   no ask: the step is a write of 'p' n, a write of 'q' n and then `Stop`
 //// ```
 ////
 //// Each record the rule writes is twelve bytes: a letter, the ask's number
@@ -69,6 +71,10 @@ pub const store_command = 0x53
 pub const ping_command = 0x50
 
 pub const stop_then_write_command = 0x51
+
+pub const pong_then_ask_command = 0x42
+
+pub const pongs_then_stop_command = 0x46
 
 /// The letters that start a record.
 pub const asked = 0x61
@@ -178,6 +184,26 @@ fn run(
             OwnEffect(Write(<<0x70, n>>)),
             ..written
           ])
+        _ if letter == pong_then_ask_command ->
+          ask(
+            state:,
+            now:,
+            written: [OwnEffect(Write(<<0x70, n>>)), ..written],
+            rest:,
+            request: OfGate(gate_rule.Await(n)),
+            wait:,
+          )
+        _ if letter == pongs_then_stop_command -> #(
+          State(..state, pending: rest),
+          Effects(
+            list.reverse([
+              Stop,
+              OwnEffect(Write(<<0x71, n>>)),
+              OwnEffect(Write(<<0x70, n>>)),
+              ..written
+            ]),
+          ),
+        )
         _ if letter == stop_then_write_command -> #(
           State(..state, pending: rest),
           Effects(

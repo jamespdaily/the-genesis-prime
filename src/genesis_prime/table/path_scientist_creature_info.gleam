@@ -75,9 +75,13 @@ pub const schema =
     ],
   )
 
+/// The key of the PathScientistCreatureInfo table's rows in the store.
+const key: store.TermKey(PathScientistCreatureInfo) =
+  store.TermKey("PathScientistCreatureInfo")
+
 /// The entry that loads the PathScientistCreatureInfo table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the PathScientistCreatureInfo table with the id, or an error when it has none.
@@ -85,12 +89,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: PathScientistCreatureInfoId,
 ) -> Result(PathScientistCreatureInfo, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the PathScientistCreatureInfo table, in id order.
 pub fn all(tables: store.Tables) -> List(PathScientistCreatureInfo) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

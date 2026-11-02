@@ -81,8 +81,8 @@
 ////   that each give their connections `connection_shutdown_ms`.
 
 import genesis_prime/client_connection.{
-  type Answer, type Request, AskHandOff, AskMap, AskSessions, AskStore,
-  FromHandOff, FromMap, FromSessions, FromStore, SentBySessions,
+  type Answer, type Message, type Request, AskHandOff, AskMap, AskSessions,
+  AskStore, FromHandOff, FromMap, FromSessions, FromStore, SentBySessions,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -134,7 +134,7 @@ pub type Settings {
     sessions_recorder: Option(Recorder),
     /// Where the game connections are found, made once with
     /// `registry.new`.
-    registry: Registry,
+    registry: Registry(Message),
     /// The world subtree: Maps and the map supervisor.
     world: World,
     /// How long a write may wait for a client's socket, on every listener.
@@ -455,7 +455,7 @@ fn serve(
   rule rule: fn(rule_settings) ->
     ConnectionRule(rule_settings, state, Request, message, Answer),
   directory directory: Directory,
-  registry registry: Option(Registry),
+  registry registry: Option(Registry(message)),
 ) -> supervisor.Builder {
   supervisor.add(
     tree,

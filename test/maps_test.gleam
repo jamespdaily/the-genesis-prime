@@ -41,7 +41,7 @@ type World {
     tree: Pid,
     maps: Name(maps.Message),
     map_supervisor: Name(maps.MapSupervisor),
-    registry: Registry,
+    registry: Registry(Nil),
   )
 }
 
@@ -78,7 +78,7 @@ fn start_world(recording_folder: Option(String)) -> World {
   )
 }
 
-fn locate(scope: Registry, address: Address) -> Result(Pid, Nil) {
+fn locate(scope: Registry(Nil), address: Address) -> Result(Pid, Nil) {
   case address {
     Connection(connection:) -> registry.find(scope, connection)
     step.Sessions | step.HandOff | step.Store | step.Maps | step.Map(..) ->

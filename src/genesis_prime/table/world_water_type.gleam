@@ -42,9 +42,12 @@ pub const schema =
     ],
   )
 
+/// The key of the WorldWaterType table's rows in the store.
+const key: store.TermKey(WorldWaterType) = store.TermKey("WorldWaterType")
+
 /// The entry that loads the WorldWaterType table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the WorldWaterType table with the id, or an error when it has none.
@@ -52,12 +55,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: WorldWaterTypeId,
 ) -> Result(WorldWaterType, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the WorldWaterType table, in id order.
 pub fn all(tables: store.Tables) -> List(WorldWaterType) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

@@ -10,7 +10,7 @@
 ////                                            for each listener, in order:
 ////                                              stop_accepting ────────▶ acceptors end,
 ////                                                                       listening socket closes
-////                                              ◀── Ok | Error(Nil)
+////                                              ◀── Ok | Error(reason)
 ////                                            exits `shutdown`
 ////   next child: the game subtree, then login, world, Sessions, ...
 ////     each listener's connections get `Stopping` and drain
@@ -26,10 +26,10 @@
 //// - **It decides nothing.** It holds no state but the listeners' names: the
 ////   parent's exit is its one message, and what it does on it is the same
 ////   every time.
-//// - **A listener that cannot be closed** (`Error(Nil)`: no listener runs under
-////   the name, as when its supervisor is restarting it) is logged as a
-////   warning and the rest are closed; that listener is stopped in its turn
-////   like any other.
+//// - **A listener that cannot be closed** (no listener runs under the name, as
+////   when its supervisor is restarting it) is logged as a warning with the
+////   reason Ranch gave, and the rest are closed; that listener is stopped in
+////   its turn like any other.
 //// - **The closer's deadline** is 5 s, after which the supervisor kills it:
 ////   the drain then starts with some listeners still open, and each listener's
 ////   own stop closes its socket before its connections drain.
@@ -45,6 +45,7 @@ import gleam/erlang/process.{type Name, type Pid}
 import gleam/list
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
+import gleam/result
 
 /// How long the closer has to close every listener before it is killed.
 const shutdown_ms = 5000
@@ -101,21 +102,26 @@ fn handle(closing: Closing, mail: Mail) -> actor.Next(Closing, Mail) {
 }
 
 /// Closes each listener to new sockets, in order, and says in the log what it
-/// did: one info line when all closed, one warning when one could not be.
+/// did: one info line when all closed, one warning with the reason for each
+/// that could not be.
 fn close_all(listeners: List(Name(Nil))) -> Nil {
-  let closed = list.map(listeners, listener.stop_accepting)
-  case list.contains(closed, Error(Nil)) {
-    False ->
+  let #(_closed, failures) =
+    list.map(listeners, listener.stop_accepting) |> result.partition
+  case failures {
+    [] ->
       runtime.log(
         step.LogInfo,
         "every listener stopped accepting new connections",
         step.no_one,
       )
-    True ->
-      runtime.log(
-        step.LogWarning,
-        "a listener could not be closed to new connections",
-        step.no_one,
-      )
+    _ ->
+      list.each(failures, fn(failure) {
+        runtime.log(
+          step.LogWarning,
+          "a listener could not be closed to new connections: "
+            <> listener.describe(failure),
+          step.no_one,
+        )
+      })
   }
 }

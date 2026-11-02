@@ -3,7 +3,7 @@
 %% caller declares.
 -module(step_runtime_ffi).
 
--export([unique_id/0, monotonic_ms/0, filetime/0, log/3, set_about/1,
+-export([unique_id/0, monotonic_ms/0, filetime/0, log/3, set_about/1, term_text/1,
          log_stray/2, show_info_lines/0, keep_mailboxes_out_of_crash_reports/0]).
 
 %% FILETIME counts 100-nanosecond intervals from 1601-01-01; the Unix epoch is
@@ -46,6 +46,10 @@ empty_mailbox(Info) when is_list(Info) ->
     lists:keystore(messages, 1, Info, {messages, []});
 empty_mailbox(Other) ->
     Other.
+
+%% A term as Erlang writes it on one line.
+term_text(Term) ->
+    unicode:characters_to_binary(io_lib:format("~0p", [Term])).
 
 unique_id() ->
     erlang:unique_integer([positive, monotonic]).

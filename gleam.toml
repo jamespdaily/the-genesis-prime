@@ -109,6 +109,7 @@ pure_erlang = [
   "tbl_file_ffi:row",
   "tbl_file_ffi:rows",
   "genesis_prime_login_ffi:mod_pow",
+  "genesis_prime_sts_wire_ffi:find",
   "erlang:term_to_binary",
   "rule_recording_ffi:decode_header",
   "rule_recording_ffi:decode_record",

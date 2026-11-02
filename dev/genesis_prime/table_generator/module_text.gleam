@@ -88,7 +88,7 @@ pub fn render(
         imports(fields:, own:, readers:),
         row_type(type_name:, table:, fields:),
         schema(file, description),
-        entry(table),
+        entry(type_name, table),
         get(own, table),
         all(type_name, table),
         list.map(readers, reader(type_name, _)) |> string.join("\n"),
@@ -325,12 +325,19 @@ fn schema(file: String, description: tbl_file.Description) -> String {
   )
 }
 
-fn entry(table: String) -> String {
+fn entry(type_name: String, table: String) -> String {
   string.join(
     [
+      "/// The key of the " <> table <> " table's rows in the store.",
+      "const key: store.TermKey("
+        <> type_name
+        <> ") = store.TermKey(\""
+        <> table
+        <> "\")",
+      "",
       "/// The entry that loads the " <> table <> " table.",
       "pub fn entry() -> store.Entry {",
-      "  store.entry(schema:, decode: decode_record, id: row_id)",
+      "  store.entry(key:, schema:, decode: decode_record, id: row_id)",
       "}",
       "",
     ],
@@ -348,7 +355,7 @@ fn get(own: Table, table: String) -> String {
       "  tables tables: store.Tables,",
       "  id id: " <> id_type(own) <> ",",
       ") -> Result(" <> own.type_name <> ", Nil) {",
-      "  store.row(tables, schema.table, id.value)",
+      "  store.row(tables, key, id.value)",
       "}",
       "",
     ],
@@ -361,7 +368,7 @@ fn all(type_name: String, table: String) -> String {
     [
       "/// Every row of the " <> table <> " table, in id order.",
       "pub fn all(tables: store.Tables) -> List(" <> type_name <> ") {",
-      "  store.rows(tables, schema.table)",
+      "  store.rows(tables, key)",
       "}",
       "",
     ],

@@ -43,7 +43,7 @@ type Record {
 }
 
 fn start(
-  registry registry: option.Option(registry.Registry),
+  registry registry: option.Option(registry.Registry(Int)),
   sessions sessions: Result(Pid, Nil),
 ) -> ask_support.Server {
   start_asking(
@@ -55,7 +55,7 @@ fn start(
 
 /// As `start`, with the directory the rule's asks go through.
 fn start_asking(
-  registry registry: option.Option(registry.Registry),
+  registry registry: option.Option(registry.Registry(Int)),
   sessions sessions: Result(Pid, Nil),
   directory directory: fn(Nil, Int, fn(Nil) -> Nil) -> Result(service.Sent, Nil),
 ) -> ask_support.Server {
@@ -254,6 +254,30 @@ pub fn a_timer_fires_once_as_timer_fired_with_its_id_test() -> Nil {
   )
   assert read_record(client) == Record(signalling_rule.pong, 2)
     as "the timer fired once"
+  ask_support.stop(server)
+}
+
+pub fn a_timer_started_again_with_the_same_id_after_it_fired_fires_again_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let server = start(registry: None, sessions: Ok(a_sessions()))
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  ask_support.command(
+    client:,
+    letter: signalling_rule.timer_command,
+    n: 1,
+    wait_ms: 20,
+  )
+  assert read_record(client) == Record(signalling_rule.timer_fired, 1)
+    as "the first start of timer 1 fired as TimerFired(TimerId(1))"
+  ask_support.command(
+    client:,
+    letter: signalling_rule.timer_command,
+    n: 1,
+    wait_ms: 20,
+  )
+  assert read_record(client) == Record(signalling_rule.timer_fired, 1)
+    as "the shell's contract: a timer that fired is forgotten, so the rule may start its id again and it fires again"
   ask_support.stop(server)
 }
 

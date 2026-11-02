@@ -59,7 +59,7 @@ import genesis_prime/login/guid
 import genesis_prime/migration.{
   type Recorded, Migration, NoRecord, Recorded, Unreadable,
 }
-import genesis_prime/service.{type Sent, ToWorker}
+import genesis_prime/service.{type Sent}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type CharacterId,
   type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type Naming,
@@ -127,7 +127,7 @@ pub fn ask(
   reply reply: fn(Answer) -> Nil,
 ) -> Result(Sent, Nil) {
   service.start_child(supervisor: store, argument: Job(request:, reply:))
-  |> result.map(fn(started) { ToWorker(pid: started.pid) })
+  |> service.sent_to_worker
 }
 
 /// Starts a worker for the probe, for the readiness ask
@@ -142,7 +142,7 @@ pub fn probe(
   reply reply: fn(Probed) -> Nil,
 ) -> Result(Sent, Nil) {
   service.start_child(supervisor: store, argument: Probe(reply:))
-  |> result.map(fn(started) { ToWorker(pid: started.pid) })
+  |> service.sent_to_worker
 }
 
 /// Spawns the worker and returns at once, so the supervisor's start call

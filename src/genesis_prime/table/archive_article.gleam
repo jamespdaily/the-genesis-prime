@@ -141,9 +141,12 @@ pub const schema =
     ],
   )
 
+/// The key of the ArchiveArticle table's rows in the store.
+const key: store.TermKey(ArchiveArticle) = store.TermKey("ArchiveArticle")
+
 /// The entry that loads the ArchiveArticle table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the ArchiveArticle table with the id, or an error when it has none.
@@ -151,12 +154,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: ArchiveArticleId,
 ) -> Result(ArchiveArticle, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the ArchiveArticle table, in id order.
 pub fn all(tables: store.Tables) -> List(ArchiveArticle) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

@@ -97,20 +97,13 @@ pub fn take(
     when: !could_start_a_request(received),
     return: Error(BadRequestLine),
   )
-  let scanned = case bit_array.slice(received, 0, head_limit) {
-    Ok(prefix) -> prefix
-    Error(Nil) -> received
-  }
-  case end_of_head(scanned, 0) {
+  case split_head(received) {
     None ->
       case bit_array.byte_size(received) >= head_limit {
         True -> Error(HeadTooLong)
         False -> Ok(None)
       }
-    Some(head_size) -> {
-      let assert <<head:bytes-size(head_size), "\r\n\r\n":utf8, after:bytes>> =
-        received
-        as "the head's end was found in these bytes"
+    Some(#(head, after)) -> {
       use #(request, length) <- result.try(read_head(head))
       use <- bool.guard(
         when: length > body_limit,
@@ -143,15 +136,25 @@ fn prefix_of_post(size: Int) -> BitArray {
   }
 }
 
-/// The offset of the blank line that ends a head, when the whole of it is
-/// within the head limit.
-fn end_of_head(bytes: BitArray, offset: Int) -> Option(Int) {
-  case bytes {
-    <<"\r\n\r\n":utf8, _:bytes>> -> Some(offset)
-    <<_, rest:bytes>> -> end_of_head(rest, offset + 1)
-    _ -> None
+/// The head, the bytes before the first blank line, and the bytes after that
+/// line; `None` when the whole blank line is not within `head_limit` bytes of
+/// the start.
+fn split_head(bytes: BitArray) -> Option(#(BitArray, BitArray)) {
+  case find(bytes, <<"\r\n\r\n":utf8>>, head_limit) {
+    Ok(start) ->
+      case bytes {
+        <<head:bytes-size(start), _blank_line:bytes-size(4), after:bytes>> ->
+          Some(#(head, after))
+        _ -> None
+      }
+    Error(Nil) -> None
   }
 }
+
+/// Where the first `pattern` starts in the first `within` bytes of `bytes`
+/// (OTP's `binary:match/3` with a scope; no Gleam library searches a bit array).
+@external(erlang, "genesis_prime_sts_wire_ffi", "find")
+fn find(bytes: BitArray, pattern: BitArray, within: Int) -> Result(Int, Nil)
 
 /// A head's request, without its body, and the length its `l` header names.
 fn read_head(head: BitArray) -> Result(#(Request, Int), WireError) {
@@ -226,12 +229,10 @@ fn read_headers(
 fn read_header(line: String) -> Result(#(String, String), WireError) {
   let name_length = name_length(string.to_graphemes(line), 0)
   let header_name = string.slice(line, 0, name_length)
-  let after_name = string.drop_start(line, name_length) |> string.trim_start
-  case string.starts_with(after_name, ":"), header_name {
-    True, "" -> Error(BadHeader(name: line))
-    True, _ ->
-      Ok(#(header_name, string.drop_start(after_name, 1) |> string.trim_start))
-    False, _ -> Error(BadHeader(name: line))
+  case string.drop_start(line, name_length) |> string.trim_start, header_name {
+    ":" <> _, "" -> Error(BadHeader(name: line))
+    ":" <> value, _ -> Ok(#(header_name, string.trim_start(value)))
+    _, _ -> Error(BadHeader(name: line))
   }
 }
 

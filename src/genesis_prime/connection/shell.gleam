@@ -249,7 +249,7 @@ pub type Settings(settings, state, message, answer, request) {
     /// Where each connection joins as it is accepted, so other processes
     /// find it by its id; `None` for a connection no process addresses (the
     /// login's).
-    registry: Option(Registry),
+    registry: Option(Registry(message)),
     /// How the shell finds the process a `Watch` names. Made once at start
     /// from the processes' names; a rule never sees it.
     locate: Locate,
@@ -414,7 +414,13 @@ fn initialise(
     answers:,
     status: AwaitingHandshake(ranch_ref:),
   ))
-  |> actor.selecting(selector(subject:, timers:, answers:, parent:))
+  |> actor.selecting(selector(
+    subject:,
+    timers:,
+    answers:,
+    parent:,
+    registry: settings.registry,
+  ))
   |> actor.returning(Nil)
 }
 
@@ -427,6 +433,7 @@ fn selector(
   timers timers: Subject(Elapsed),
   answers answers: Subject(#(Reference, answer)),
   parent parent: Pid,
+  registry registry: Option(Registry(message)),
 ) -> Selector(Mail(message, answer)) {
   process.new_selector()
   |> process.select_other(Stray)
@@ -446,8 +453,20 @@ fn selector(
       False -> OtherExited
     }
   })
-  |> registry.select_delivered(Delivered)
+  |> select_delivered(registry)
   |> process.select_monitors(Ended)
+}
+
+/// The messages other processes deliver through the registry; a connection
+/// with no registry is found by no process and takes none.
+fn select_delivered(
+  selector: Selector(Mail(message, answer)),
+  registry: Option(Registry(message)),
+) -> Selector(Mail(message, answer)) {
+  case registry {
+    Some(registry) -> registry.select_delivered(registry, selector, Delivered)
+    None -> selector
+  }
 }
 
 /// The first elements of the socket's messages, as the atoms `tcp`,
@@ -653,7 +672,10 @@ fn describe_handshake(failure: HandshakeFailure) -> String {
 }
 
 /// Joins the connection's group in the registry, when the settings hold one.
-fn join_registry(registry: Option(Registry), connection: ConnectionId) -> Nil {
+fn join_registry(
+  registry: Option(Registry(message)),
+  connection: ConnectionId,
+) -> Nil {
   case registry {
     Some(registry) -> registry.join(registry:, connection:)
     None -> Nil

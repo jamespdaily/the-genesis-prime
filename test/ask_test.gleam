@@ -355,6 +355,45 @@ pub fn a_connection_step_of_stop_then_write_still_writes_the_bytes_before_the_so
   ask_support.stop(server)
 }
 
+pub fn the_writes_of_a_step_before_its_stop_leave_in_the_order_the_rule_gave_and_then_the_socket_closes_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let gate = process.new_name("gate")
+  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
+  let client = ask_support.connect(server)
+  ask_support.command(
+    client,
+    asking_rule.pongs_then_stop_command,
+    4,
+    wait_ms: 0,
+  )
+  assert [ask_support.read_pong(client), ask_support.read_pong(client)]
+    == [<<0x70, 4>>, <<0x71, 4>>]
+    as "the asking rule's contract: a step's effects are carried out in the order it gave them, the two writes first and Stop last"
+  assert mug.receive(client, timeout_milliseconds: ask_support.event_wait_ms)
+    == Error(mug.Closed)
+    as "and the socket closed after them"
+  ask_support.stop(server)
+}
+
+pub fn the_write_of_a_step_before_its_ask_leaves_before_the_ask_is_made_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let gate = process.new_name("gate")
+  let server = start_with(gate:, shutdown_ms: 1000, recorder: None)
+  let client = ask_support.connect(server)
+  ask_support.command(
+    client,
+    asking_rule.pong_then_ask_command,
+    9,
+    wait_ms: ask_support.patient,
+  )
+  assert ask_support.read_pong(client) == <<0x70, 9>>
+    as "the asking rule's contract: the write the step gave before its ask leaves first"
+  let asked = ask_support.read_record(client)
+  assert asked.letter == asking_rule.asked && asked.ask == 1
+    as "the ask's own record is the step's last write: the ask is made after the step's effects"
+  ask_support.stop(server)
+}
+
 // ---- helpers ----
 
 fn start_with(

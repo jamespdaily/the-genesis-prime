@@ -64,9 +64,12 @@ pub const schema =
     ],
   )
 
+/// The key of the Item2Category table's rows in the store.
+const key: store.TermKey(Item2Category) = store.TermKey("Item2Category")
+
 /// The entry that loads the Item2Category table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the Item2Category table with the id, or an error when it has none.
@@ -74,12 +77,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: Item2CategoryId,
 ) -> Result(Item2Category, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the Item2Category table, in id order.
 pub fn all(tables: store.Tables) -> List(Item2Category) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

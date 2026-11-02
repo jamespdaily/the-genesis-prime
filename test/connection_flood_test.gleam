@@ -32,6 +32,7 @@ import gleam/string
 import log_capture
 import login_client
 import login_support
+import mailbox_support
 import owned_test
 import recording_support
 import rule_replay_support
@@ -142,7 +143,7 @@ fn flood(sending bytes: BitArray) -> Flooded {
   let flooded =
     Flooded(
       heard:,
-      lines: log_capture.drain(lines),
+      lines: mailbox_support.drain(lines),
       recording: recording_support.recording_in(folder),
     )
   login_support.stop(started)

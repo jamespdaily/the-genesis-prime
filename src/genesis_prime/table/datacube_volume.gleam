@@ -70,9 +70,12 @@ pub const schema =
     ],
   )
 
+/// The key of the DatacubeVolume table's rows in the store.
+const key: store.TermKey(DatacubeVolume) = store.TermKey("DatacubeVolume")
+
 /// The entry that loads the DatacubeVolume table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the DatacubeVolume table with the id, or an error when it has none.
@@ -80,12 +83,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: DatacubeVolumeId,
 ) -> Result(DatacubeVolume, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the DatacubeVolume table, in id order.
 pub fn all(tables: store.Tables) -> List(DatacubeVolume) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.

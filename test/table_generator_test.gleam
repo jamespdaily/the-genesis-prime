@@ -510,7 +510,7 @@ pub fn a_get_takes_the_typed_id_of_its_table_test() -> Nil {
   let spell = module_of(files, "planted_spell")
   assert string.contains(spell, "id id: PlantedSpellId,")
     as "get takes the id of its own table"
-  assert string.contains(spell, "store.row(tables, schema.table, id.value)")
+  assert string.contains(spell, "store.row(tables, key, id.value)")
     as "and looks the row up by the integer inside"
   assert !string.contains(spell, "id id: Int") as "no get takes a bare Int"
 }

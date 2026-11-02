@@ -78,9 +78,13 @@ pub const schema =
     ],
   )
 
+/// The key of the TradeskillAchievementReward table's rows in the store.
+const key: store.TermKey(TradeskillAchievementReward) =
+  store.TermKey("TradeskillAchievementReward")
+
 /// The entry that loads the TradeskillAchievementReward table.
 pub fn entry() -> store.Entry {
-  store.entry(schema:, decode: decode_record, id: row_id)
+  store.entry(key:, schema:, decode: decode_record, id: row_id)
 }
 
 /// The row of the TradeskillAchievementReward table with the id, or an error when it has none.
@@ -88,12 +92,12 @@ pub fn get(
   tables tables: store.Tables,
   id id: TradeskillAchievementRewardId,
 ) -> Result(TradeskillAchievementReward, Nil) {
-  store.row(tables, schema.table, id.value)
+  store.row(tables, key, id.value)
 }
 
 /// Every row of the TradeskillAchievementReward table, in id order.
 pub fn all(tables: store.Tables) -> List(TradeskillAchievementReward) {
-  store.rows(tables, schema.table)
+  store.rows(tables, key)
 }
 
 /// The row's own id, as the typed id of its table.
