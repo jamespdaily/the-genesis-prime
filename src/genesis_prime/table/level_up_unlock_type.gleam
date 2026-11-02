@@ -30,7 +30,8 @@ pub const schema =
   )
 
 /// The key of the LevelUpUnlockType table's rows in the store.
-const key: store.TermKey(LevelUpUnlockType) = store.TermKey("LevelUpUnlockType")
+const key: store.TableKey(LevelUpUnlockType) =
+  store.TableKey("LevelUpUnlockType")
 
 /// The entry that loads the LevelUpUnlockType table.
 pub fn entry() -> store.Entry {

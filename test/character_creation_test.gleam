@@ -45,6 +45,7 @@ import gleam/pair
 import gleam/result
 import gleam/string
 import owned_test
+import place_support
 import unitest
 
 /// A request for the creation row with the name.
@@ -82,11 +83,13 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
       faction_id: 167,
       level: 1,
       path: 2,
-      world_id: 3460,
-      world_zone_id: 6009,
-      position_x: 29.128599166870117,
-      position_y: -853.87158203125,
-      position_z: -560.18798828125,
+      place: place_support.at(
+        world_id: 3460,
+        world_zone_id: 6009,
+        x: 29.128599166870117,
+        y: -853.87158203125,
+        z: -560.18798828125,
+      ),
       look: [
         LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
         LookEntry(label: CharacterCustomizationLabelId(22), value: 1),
@@ -102,14 +105,14 @@ pub fn a_nexus_row_gives_the_character_the_place_of_its_veteran_start_test() -> 
   let assert Ok(character) =
     character_creation.check(tables, request(338, "Ab Cd"))
     as "CharacterCreation row 338 is an enabled Nexus row with no entitlement and no cost"
-  assert #(
-      character.world_id,
-      character.world_zone_id,
-      character.position_x,
-      character.position_y,
-      character.position_z,
+  assert character.place
+    == place_support.at(
+      world_id: 426,
+      world_zone_id: 648,
+      x: 4110.7099609375,
+      y: -658.6248779296875,
+      z: -5145.47998046875,
     )
-    == #(426, 648, 4110.7099609375, -658.6248779296875, -5145.47998046875)
     as "row 338 is the Veteran start (3) of Exile (167) Human (1): WorldLocation2 row 1594, World 426, zone 648 (Jim's world database; the client's row)"
 }
 

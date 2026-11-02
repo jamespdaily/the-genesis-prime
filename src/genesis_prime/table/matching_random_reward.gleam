@@ -73,8 +73,8 @@ pub const schema =
   )
 
 /// The key of the MatchingRandomReward table's rows in the store.
-const key: store.TermKey(MatchingRandomReward) =
-  store.TermKey("MatchingRandomReward")
+const key: store.TableKey(MatchingRandomReward) =
+  store.TableKey("MatchingRandomReward")
 
 /// The entry that loads the MatchingRandomReward table.
 pub fn entry() -> store.Entry {

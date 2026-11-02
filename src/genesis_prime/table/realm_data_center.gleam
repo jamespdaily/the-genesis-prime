@@ -82,7 +82,7 @@ pub const schema =
   )
 
 /// The key of the RealmDataCenter table's rows in the store.
-const key: store.TermKey(RealmDataCenter) = store.TermKey("RealmDataCenter")
+const key: store.TableKey(RealmDataCenter) = store.TableKey("RealmDataCenter")
 
 /// The entry that loads the RealmDataCenter table.
 pub fn entry() -> store.Entry {

@@ -69,7 +69,7 @@ pub const schema =
   )
 
 /// The key of the WorldWaterWake table's rows in the store.
-const key: store.TermKey(WorldWaterWake) = store.TermKey("WorldWaterWake")
+const key: store.TableKey(WorldWaterWake) = store.TableKey("WorldWaterWake")
 
 /// The entry that loads the WorldWaterWake table.
 pub fn entry() -> store.Entry {

@@ -61,8 +61,7 @@ import scripted_client.{type Exchange, type Reply}
 type Session {
   Session(
     state: sts_connection.State,
-    sending: Option(rc4.Stream),
-    receiving: Option(rc4.Stream),
+    ciphers: Option(login_client.Ciphers),
     sequence: Int,
   )
 }
@@ -83,12 +82,7 @@ fn accepted(
 ) -> Session {
   let #(session, taken) =
     feed(
-      Session(
-        state: sts_connection.new(settings),
-        sending: None,
-        receiving: None,
-        sequence: 1,
-      ),
+      Session(state: sts_connection.new(settings), ciphers: None, sequence: 1),
       step.OwnEvent(step.Accepted(ConnectionId(1), support.peer, seed)),
     )
   assert support.writes(taken) == [] as "the STS server waits for the client"
@@ -100,9 +94,9 @@ fn send_bytes(
   session: Session,
   plain: BitArray,
 ) -> #(Session, ConnectionStep(Request)) {
-  let #(sending, wire) =
-    login_client.crypt_when_on(stream: session.sending, bytes: plain)
-  feed(Session(..session, sending:), step.OwnEvent(step.Read(wire)))
+  let #(ciphers, wire) =
+    login_client.send_through(ciphers: session.ciphers, bytes: plain)
+  feed(Session(..session, ciphers:), step.OwnEvent(step.Read(wire)))
 }
 
 /// A request with the next sequence number.
@@ -181,9 +175,9 @@ fn hear(
 ) -> #(Session, BitArray) {
   let assert [written] = support.writes(taken)
     as "the taken writes exactly one reply"
-  let #(receiving, plain) =
-    login_client.crypt_when_on(stream: session.receiving, bytes: written)
-  #(Session(..session, receiving:), plain)
+  let #(ciphers, plain) =
+    login_client.receive_through(ciphers: session.ciphers, bytes: written)
+  #(Session(..session, ciphers:), plain)
 }
 
 fn reply_of(bytes: BitArray) -> Reply {
@@ -278,7 +272,10 @@ fn proven_with_m2(
   let #(session, m2) = hear(session, taken)
   let assert Ok(stream) = rc4.start(exchange.session_key)
   #(
-    Session(..session, sending: Some(stream), receiving: Some(stream)),
+    Session(
+      ..session,
+      ciphers: Some(login_client.Ciphers(sending: stream, receiving: stream)),
+    ),
     exchange,
     taken,
     m2,
@@ -413,8 +410,7 @@ pub fn login_start_for_an_unknown_name_answers_error_3002_and_nothing_is_ciphere
     )
   let #(session, bytes) = hear(session, taken)
   assert_error_reply(bytes:, sequence: 1, code: 3002)
-  assert session.receiving == None && session.sending == None
-    as "no RC4 starts after a refusal"
+  assert session.ciphers == None as "no RC4 starts after a refusal"
   assert !support.stops(taken) as "the client decides when to close"
   let #(_, taken) = login_start(session)
   assert option.is_some(support.asked(taken))
@@ -544,7 +540,7 @@ pub fn request_game_token_answers_the_token_kept_at_login_finish_with_no_ask_tes
     answer(session:, taken: first, outcome: step.Answer(FromHandOff(Kept)))
   let assert [finish_reply, list_reply, token_reply] = support.writes(taken)
     as "after the answer the rule replies to each request in order"
-  let assert Some(receiving) = session.receiving
+  let assert Some(login_client.Ciphers(receiving:, ..)) = session.ciphers
   let #(receiving, plain) = rc4.crypt(receiving, finish_reply)
   assert login_client.child(reply: reply_of(plain), name: "AuthType") == "0"
   let #(receiving, plain) = rc4.crypt(receiving, list_reply)

@@ -85,7 +85,16 @@ type Heard {
   Ended(process.Down)
 }
 
+/// Where a step's collector is: hearing players that are still playing, or,
+/// once every player has ended, waiting until `until_ms` on the monotonic
+/// clock for the server's connections to close.
+type Phase {
+  Playing
+  Draining(until_ms: Int)
+}
+
 /// A step's collector: what the players have told it and what it has sampled.
+/// `players` holds those that have not ended.
 type Collecting {
   Collecting(
     selector: process.Selector(Heard),
@@ -95,16 +104,12 @@ type Collecting {
     lag_ms: Int,
     failures: List(Failure),
     unconnected: Int,
-    pending: Int,
     server: List(Sample),
     clients: List(Sample),
     next_sample_ms: Int,
     arrived_ms: Int,
     held_ms: Int,
-    /// Whether every player has ended, and then when the wait for the server's
-    /// connections to close gives up.
-    ended: Bool,
-    drain_until_ms: Int,
+    phase: Phase,
     sample_server: fn() -> Sample,
   )
 }
@@ -182,14 +187,12 @@ pub fn run_step(
     lag_ms: 0,
     failures: [],
     unconnected: 0,
-    pending: count,
     server: [],
     clients: [],
     next_sample_ms: started_ms,
     arrived_ms: started_ms + arrival_ms,
     held_ms:,
-    ended: False,
-    drain_until_ms: 0,
+    phase: Playing,
     sample_server:,
   )
   |> collect
@@ -200,21 +203,22 @@ pub fn run_step(
 /// server holds no connection, or the wait for that is over.
 fn collect(collecting: Collecting) -> Collecting {
   let now = runtime.now().monotonic_ms
-  let collecting = case collecting.pending == 0 && !collecting.ended {
-    True ->
+  let collecting = case collecting.phase, dict.is_empty(collecting.players) {
+    Playing, True ->
       sample(
-        Collecting(..collecting, ended: True, drain_until_ms: now + drain_ms),
+        Collecting(..collecting, phase: Draining(until_ms: now + drain_ms)),
       )
-    False if now >= collecting.next_sample_ms -> sample(collecting)
-    False -> collecting
+    Playing, False | Draining(..), _ if now >= collecting.next_sample_ms ->
+      sample(collecting)
+    Playing, False | Draining(..), _ -> collecting
   }
   let drained =
     list.first(collecting.server)
-    |> result.map(fn(last) { int.sum(last.connections) == 0 })
+    |> result.map(fn(last) { int.sum(load_sample.connections(last)) == 0 })
     |> result.unwrap(True)
-  case collecting.ended && { drained || now >= collecting.drain_until_ms } {
-    True -> collecting
-    False -> {
+  case collecting.phase {
+    Draining(until_ms:) if drained || now >= until_ms -> collecting
+    Playing | Draining(..) -> {
       let wait = int.max(1, collecting.next_sample_ms - now)
       case process.selector_receive(from: collecting.selector, within: wait) {
         Ok(heard) -> collect(hear(collecting, heard))
@@ -249,11 +253,7 @@ fn hear(collecting: Collecting, heard: Heard) -> Collecting {
       Collecting(..collecting, trips: [round_trips_us, ..collecting.trips])
     Ended(process.ProcessDown(pid:, reason:, ..)) -> {
       let ended =
-        Collecting(
-          ..collecting,
-          players: dict.delete(collecting.players, pid),
-          pending: collecting.pending - 1,
-        )
+        Collecting(..collecting, players: dict.delete(collecting.players, pid))
       case reason, dict.get(collecting.players, pid) {
         process.Normal, _ -> ended
         _, Ok(player) -> failed(collecting: ended, player:, reason:)
@@ -533,7 +533,9 @@ fn describe(
   }
   let connections = fn(index) {
     peak(server, fn(sample) {
-      list.drop(sample.connections, index) |> list.first |> result.unwrap(0)
+      list.drop(load_sample.connections(sample), index)
+      |> list.first
+      |> result.unwrap(0)
     })
   }
   let cores = fn(samples: List(Sample)) {
@@ -560,8 +562,8 @@ fn describe(
     #("largest heap words", peak(server, fn(s) { s.largest_heap_words })),
     #("server cores %", cores(server)),
     #("run queue", peak(server, fn(s) { s.run_queue })),
-    #("store workers waiting", peak(server, fn(s) { s.store_waiting })),
-    #("worker start us", peak(server, fn(s) { s.worker_start_us })),
+    #("store workers waiting", peak(server, load_sample.store_waiting)),
+    #("worker start us", peak(server, load_sample.worker_start_us)),
     #("memory MB", peak(server, fn(s) { s.memory_bytes }) / 1_000_000),
     #("log lines", load_sample.log_lines_between(server)),
     #("connections left", int.sum(peak_last(server))),
@@ -609,5 +611,7 @@ fn longest_mailbox(sample: Sample) -> Int {
 
 /// The connections the last sample found open.
 fn peak_last(samples: List(Sample)) -> List(Int) {
-  list.last(samples) |> result.map(fn(s) { s.connections }) |> result.unwrap([])
+  list.last(samples)
+  |> result.map(load_sample.connections)
+  |> result.unwrap([])
 }

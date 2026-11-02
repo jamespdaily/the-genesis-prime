@@ -43,7 +43,7 @@ pub const schema =
   )
 
 /// The key of the SoundCombatLoop table's rows in the store.
-const key: store.TermKey(SoundCombatLoop) = store.TermKey("SoundCombatLoop")
+const key: store.TableKey(SoundCombatLoop) = store.TableKey("SoundCombatLoop")
 
 /// The entry that loads the SoundCombatLoop table.
 pub fn entry() -> store.Entry {

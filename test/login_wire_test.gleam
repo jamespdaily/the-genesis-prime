@@ -19,7 +19,6 @@
 import connection_rule_support as support
 import genesis_prime/hand_off
 import genesis_prime/login/guid
-import genesis_prime/login/rc4
 import genesis_prime/login/sts_xml
 import genesis_prime/message/game_server_handoff
 import genesis_prime/message/login_accepted.{LoginAccepted}
@@ -28,8 +27,7 @@ import genesis_prime/service
 import genesis_prime/store.{AccountId}
 import gleam/bit_array
 import gleam/erlang/process
-import gleam/option.{Some}
-import login_client.{StsClient}
+import login_client
 import login_support
 import login_vectors as vector
 import owned_test
@@ -52,13 +50,10 @@ pub fn the_sts_login_runs_plain_to_m2_and_then_both_ways_on_rc4_under_k_one_stat
       True,
     )
     as "StsConnLib64.MT.dll!0x18002d3b0: M2 = SHA-256(A | M1 | K), read with no cipher on"
-  let assert Ok(sending) = rc4.start(exchange.session_key)
-  let assert Ok(receiving) = rc4.start(exchange.session_key)
   let client =
-    StsClient(
-      ..answered.client,
-      sending: Some(sending),
-      receiving: Some(receiving),
+    login_client.ciphering(
+      client: answered.client,
+      session_key: exchange.session_key,
     )
   // Nothing the server sent between M2 and LoginFinish: its reply to
   // LoginFinish deciphers from the first byte of the receiving stream.

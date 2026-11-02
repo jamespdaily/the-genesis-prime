@@ -60,7 +60,7 @@ pub const schema =
   )
 
 /// The key of the WorldZone table's rows in the store.
-const key: store.TermKey(WorldZone) = store.TermKey("WorldZone")
+const key: store.TableKey(WorldZone) = store.TableKey("WorldZone")
 
 /// The entry that loads the WorldZone table.
 pub fn entry() -> store.Entry {

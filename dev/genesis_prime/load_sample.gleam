@@ -3,13 +3,13 @@
 //// it: Erlang's `telemetry` only passes events along, and its poller cannot
 //// see a process that has no name, such as a connection's shell.
 ////
-//// One sample holds, for the node it is taken on: the monotonic time; the
-//// connections each watched listener holds; every process with messages
-//// waiting, with its mailbox and heap (the heap is in words); the largest heap
-//// of any process; the memory the VM holds; the schedulers' busy and passed
+//// One sample holds, for the node it is taken on: the monotonic time; every
+//// process with messages waiting, with its mailbox and heap (the heap is in
+//// words); the largest heap of any process; the memory the VM holds; the schedulers' busy and passed
 //// wall time, summed over the online normal schedulers (two samples give the
-//// share of the cores used between a node's first and last, `use_between`); the run queue; and,
-//// for the server, how many store workers are waiting and how long a store
+//// share of the cores used between a node's first and last, `use_between`); the
+//// run queue; and, for the server only (`ServerReading`), the connections each
+//// listener holds, how many store workers are waiting and how long a store
 //// worker takes to start.
 ////
 //// A store worker is one process an ask starts under the store's factory
@@ -28,6 +28,7 @@ import genesis_prime/store/worker
 import gleam/erlang/process.{type Name, type Pid}
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// A process that has messages waiting.
@@ -35,19 +36,30 @@ pub type Waiting {
   Waiting(pid: Pid, mailbox: Int, heap_words: Int, described: String)
 }
 
-/// What one reading of a node showed.
+/// What a reading of the server shows that a node of clients has no listener
+/// or store for: the connections each of the STS, auth and game listeners
+/// holds, in that order, the store's workers waiting for the pool, and the
+/// microseconds a worker took to start.
+pub type ServerReading {
+  ServerReading(
+    connections: List(Int),
+    store_waiting: Int,
+    worker_start_us: Int,
+  )
+}
+
+/// What one reading of a node showed; `server` is `None` for a node that is
+/// not the server.
 pub type Sample {
   Sample(
     at_ms: Int,
-    connections: List(Int),
     waiting: List(Waiting),
     largest_heap_words: Int,
     memory_bytes: Int,
     busy_us: Int,
     total_us: Int,
     run_queue: Int,
-    store_waiting: Int,
-    worker_start_us: Int,
+    server: Option(ServerReading),
     log_lines: Int,
   )
 }
@@ -58,15 +70,13 @@ pub fn take_node() -> Sample {
   let #(busy_us, total_us) = scheduler_time()
   Sample(
     at_ms: runtime.now().monotonic_ms,
-    connections: [],
     waiting:,
     largest_heap_words:,
     memory_bytes: memory(Total),
     busy_us:,
     total_us:,
     run_queue: statistics(TotalRunQueueLengths),
-    store_waiting: 0,
-    worker_start_us: 0,
+    server: None,
     log_lines: log_lines(),
   )
 }
@@ -87,12 +97,35 @@ pub fn take(settings: Settings) -> Sample {
   let worker_start_us = monotonic_time(Microsecond) - started_at
   Sample(
     ..take_node(),
-    connections: list.map(listeners, fn(listener) {
-      list.length(procs(listener, Connections))
-    }),
-    store_waiting:,
-    worker_start_us:,
+    server: Some(ServerReading(
+      connections: list.map(listeners, fn(listener) {
+        list.length(procs(listener, Connections))
+      }),
+      store_waiting:,
+      worker_start_us:,
+    )),
   )
+}
+
+/// The connections each listener held when the sample was taken, none for a
+/// sample of a node that is not the server.
+pub fn connections(sample sample: Sample) -> List(Int) {
+  option.map(sample.server, fn(reading) { reading.connections })
+  |> option.unwrap([])
+}
+
+/// How many store workers were waiting for the pool, 0 for a sample of a node
+/// that is not the server.
+pub fn store_waiting(sample sample: Sample) -> Int {
+  option.map(sample.server, fn(reading) { reading.store_waiting })
+  |> option.unwrap(0)
+}
+
+/// The microseconds a store worker took to start, 0 for a sample of a node
+/// that is not the server.
+pub fn worker_start_us(sample sample: Sample) -> Int {
+  option.map(sample.server, fn(reading) { reading.worker_start_us })
+  |> option.unwrap(0)
 }
 
 /// A sample list's first and last.

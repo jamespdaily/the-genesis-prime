@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the ModelCluster table's rows in the store.
-const key: store.TermKey(ModelCluster) = store.TermKey("ModelCluster")
+const key: store.TableKey(ModelCluster) = store.TableKey("ModelCluster")
 
 /// The entry that loads the ModelCluster table.
 pub fn entry() -> store.Entry {

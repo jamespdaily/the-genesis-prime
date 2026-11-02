@@ -34,7 +34,7 @@ pub const schema =
   )
 
 /// The key of the Spell4Telegraph table's rows in the store.
-const key: store.TermKey(Spell4Telegraph) = store.TermKey("Spell4Telegraph")
+const key: store.TableKey(Spell4Telegraph) = store.TableKey("Spell4Telegraph")
 
 /// The entry that loads the Spell4Telegraph table.
 pub fn entry() -> store.Entry {

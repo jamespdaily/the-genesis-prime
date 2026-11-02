@@ -72,8 +72,8 @@ pub const schema =
   )
 
 /// The key of the PrimalMatrixReward table's rows in the store.
-const key: store.TermKey(PrimalMatrixReward) =
-  store.TermKey("PrimalMatrixReward")
+const key: store.TableKey(PrimalMatrixReward) =
+  store.TableKey("PrimalMatrixReward")
 
 /// The entry that loads the PrimalMatrixReward table.
 pub fn entry() -> store.Entry {

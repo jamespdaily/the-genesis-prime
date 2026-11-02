@@ -71,7 +71,7 @@ pub const schema =
   )
 
 /// The key of the DatacubeVolume table's rows in the store.
-const key: store.TermKey(DatacubeVolume) = store.TermKey("DatacubeVolume")
+const key: store.TableKey(DatacubeVolume) = store.TableKey("DatacubeVolume")
 
 /// The entry that loads the DatacubeVolume table.
 pub fn entry() -> store.Entry {

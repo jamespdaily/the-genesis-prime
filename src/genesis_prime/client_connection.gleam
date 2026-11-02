@@ -70,8 +70,10 @@ pub type Message {
 /// What an accepted connection keeps beside its rule's own state: who
 /// it is for log lines, the seed's random source, the number of the last
 /// ask it made, so each ask has an id of its own, and what the client may
-/// still send before the rate refuses it.
-pub type Link {
+/// still send before the rate refuses it. Only this module builds or changes
+/// one (`link`, `charge`, `draw`, `ask`), so an ask's id is never reused and
+/// the rate's bucket is never swapped for a larger one.
+pub opaque type Link {
   Link(
     connection: ConnectionId,
     peer: Peer,
@@ -158,7 +160,7 @@ pub fn per_second(bucket bucket: Bucket) -> Int {
 /// monotonic time of the last whole request or frame, in thousandths of one,
 /// so a refill of `per_second` a second is whole thousandths each millisecond
 /// and no time is lost to rounding.
-pub type Allowance {
+pub opaque type Allowance {
   Allowance(bucket: Bucket, thousandths: Int, as_of_ms: Int)
 }
 
@@ -259,6 +261,11 @@ pub fn hold(
     )),
   )
   Ok(<<held:bits, bytes:bits>>)
+}
+
+/// The id of the connection the link is for.
+pub fn connection(link link: Link) -> ConnectionId {
+  link.connection
 }
 
 /// The next `count` random bytes of the connection's seed.

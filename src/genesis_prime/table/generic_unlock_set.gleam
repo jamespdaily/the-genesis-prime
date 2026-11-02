@@ -66,7 +66,7 @@ pub const schema =
   )
 
 /// The key of the GenericUnlockSet table's rows in the store.
-const key: store.TermKey(GenericUnlockSet) = store.TermKey("GenericUnlockSet")
+const key: store.TableKey(GenericUnlockSet) = store.TableKey("GenericUnlockSet")
 
 /// The entry that loads the GenericUnlockSet table.
 pub fn entry() -> store.Entry {

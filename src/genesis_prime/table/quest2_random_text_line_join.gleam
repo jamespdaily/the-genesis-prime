@@ -37,8 +37,8 @@ pub const schema =
   )
 
 /// The key of the Quest2RandomTextLineJoin table's rows in the store.
-const key: store.TermKey(Quest2RandomTextLineJoin) =
-  store.TermKey("Quest2RandomTextLineJoin")
+const key: store.TableKey(Quest2RandomTextLineJoin) =
+  store.TableKey("Quest2RandomTextLineJoin")
 
 /// The entry that loads the Quest2RandomTextLineJoin table.
 pub fn entry() -> store.Entry {

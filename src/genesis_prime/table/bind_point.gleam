@@ -33,7 +33,7 @@ pub const schema =
   )
 
 /// The key of the BindPoint table's rows in the store.
-const key: store.TermKey(BindPoint) = store.TermKey("BindPoint")
+const key: store.TableKey(BindPoint) = store.TableKey("BindPoint")
 
 /// The entry that loads the BindPoint table.
 pub fn entry() -> store.Entry {

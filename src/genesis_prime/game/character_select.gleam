@@ -86,6 +86,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
 import genesis_prime/game/character_name
+import genesis_prime/game/start_place
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{
   type CharacterListEntry, CharacterListEntry,
@@ -490,6 +491,18 @@ fn entry(
   index index: appearance.Index,
 ) -> CharacterListEntry {
   let CharacterId(character_id) = character.character_id
+  let #(world_id, world_zone_id, position_x, position_y, position_z) = case
+    character.place
+  {
+    Some(place) -> #(
+      start_place.world_id(place),
+      start_place.world_zone_id(place),
+      float32.to_bits(start_place.x(place)),
+      float32.to_bits(start_place.y(place)),
+      float32.to_bits(start_place.z(place)),
+    )
+    None -> #(0, 0, 0, 0, 0)
+  }
   CharacterListEntry(
     character_id:,
     name: character.name,
@@ -506,12 +519,12 @@ fn entry(
       look: character.look,
     ),
     worn_visuals: [],
-    world_id: character.world_id,
-    world_zone_id: character.world_zone_id,
+    world_id:,
+    world_zone_id:,
     field_12: 0,
-    position_x: float32.to_bits(character.position_x),
-    position_y: float32.to_bits(character.position_y),
-    position_z: float32.to_bits(character.position_z),
+    position_x:,
+    position_y:,
+    position_z:,
     field_16: 0,
     field_17: 0,
     path: character.path,

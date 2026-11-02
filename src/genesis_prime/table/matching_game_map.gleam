@@ -67,7 +67,7 @@ pub const schema =
   )
 
 /// The key of the MatchingGameMap table's rows in the store.
-const key: store.TermKey(MatchingGameMap) = store.TermKey("MatchingGameMap")
+const key: store.TableKey(MatchingGameMap) = store.TableKey("MatchingGameMap")
 
 /// The entry that loads the MatchingGameMap table.
 pub fn entry() -> store.Entry {

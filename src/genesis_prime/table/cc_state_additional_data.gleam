@@ -53,8 +53,8 @@ pub const schema =
   )
 
 /// The key of the CCStateAdditionalData table's rows in the store.
-const key: store.TermKey(CCStateAdditionalData) =
-  store.TermKey("CCStateAdditionalData")
+const key: store.TableKey(CCStateAdditionalData) =
+  store.TableKey("CCStateAdditionalData")
 
 /// The entry that loads the CCStateAdditionalData table.
 pub fn entry() -> store.Entry {

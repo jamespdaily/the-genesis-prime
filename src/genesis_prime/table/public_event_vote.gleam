@@ -96,7 +96,7 @@ pub const schema =
   )
 
 /// The key of the PublicEventVote table's rows in the store.
-const key: store.TermKey(PublicEventVote) = store.TermKey("PublicEventVote")
+const key: store.TableKey(PublicEventVote) = store.TableKey("PublicEventVote")
 
 /// The entry that loads the PublicEventVote table.
 pub fn entry() -> store.Entry {

@@ -63,7 +63,7 @@ pub const schema =
   )
 
 /// The key of the TaxiNode table's rows in the store.
-const key: store.TermKey(TaxiNode) = store.TermKey("TaxiNode")
+const key: store.TableKey(TaxiNode) = store.TableKey("TaxiNode")
 
 /// The entry that loads the TaxiNode table.
 pub fn entry() -> store.Entry {

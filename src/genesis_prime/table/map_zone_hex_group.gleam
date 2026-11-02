@@ -29,7 +29,7 @@ pub const schema =
   )
 
 /// The key of the MapZoneHexGroup table's rows in the store.
-const key: store.TermKey(MapZoneHexGroup) = store.TermKey("MapZoneHexGroup")
+const key: store.TableKey(MapZoneHexGroup) = store.TableKey("MapZoneHexGroup")
 
 /// The entry that loads the MapZoneHexGroup table.
 pub fn entry() -> store.Entry {

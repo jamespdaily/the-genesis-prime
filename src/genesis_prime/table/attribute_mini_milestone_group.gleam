@@ -571,8 +571,8 @@ pub const schema =
   )
 
 /// The key of the AttributeMiniMilestoneGroup table's rows in the store.
-const key: store.TermKey(AttributeMiniMilestoneGroup) =
-  store.TermKey("AttributeMiniMilestoneGroup")
+const key: store.TableKey(AttributeMiniMilestoneGroup) =
+  store.TableKey("AttributeMiniMilestoneGroup")
 
 /// The entry that loads the AttributeMiniMilestoneGroup table.
 pub fn entry() -> store.Entry {

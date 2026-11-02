@@ -43,8 +43,8 @@ pub const schema =
   )
 
 /// The key of the Creature2DisplayGroupEntry table's rows in the store.
-const key: store.TermKey(Creature2DisplayGroupEntry) =
-  store.TermKey("Creature2DisplayGroupEntry")
+const key: store.TableKey(Creature2DisplayGroupEntry) =
+  store.TableKey("Creature2DisplayGroupEntry")
 
 /// The entry that loads the Creature2DisplayGroupEntry table.
 pub fn entry() -> store.Entry {

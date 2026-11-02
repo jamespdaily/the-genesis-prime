@@ -21,7 +21,7 @@
 
 import character_support
 import database_support
-import genesis_prime/game/start_place.{type Place, Place}
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
@@ -35,12 +35,37 @@ import genesis_prime/table/xp_per_level
 import gleam/erlang/reference
 import gleam/int
 import gleam/list
+import place_support
 import planted_table.{type Cell, Boolean, Float, Integer}
 
 /// The planted tables, loaded once per test run under a key of their own and
 /// never unloaded, as `client_tables.shared` does for the real ones.
 pub fn shared() -> store.Tables {
   database_support.once("character_tables", load)
+}
+
+/// The planted tables with the Novice start's WorldLocation2 row (51596) in
+/// World 0, which is no World row, in place of World 3460. Loaded once under a
+/// key of its own.
+pub fn shared_with_novice_start_in_world_0() -> store.Tables {
+  database_support.once("character_tables_novice_world_0", fn() {
+    let rows =
+      list.map(start_locations(), fn(location_row) {
+        case location_row.0 {
+          51_596 ->
+            location(id: 51_596, world: 0, zone: 0, position: #(0.0, 0.0, 0.0))
+          id -> start_location_row(id:, place: location_row.1)
+        }
+      })
+    load_files(
+      list.map(files(), fn(file) {
+        case file.0 == world_location2.schema.file {
+          True -> planted_table.file(world_location2.schema, rows)
+          False -> file
+        }
+      }),
+    )
+  })
 }
 
 /// The planted files of the server's tables, each by its file name: one file
@@ -372,7 +397,7 @@ pub fn start_locations() -> List(#(Int, Place)) {
   [
     #(
       1594,
-      Place(
+      place_support.at(
         world_id: 426,
         world_zone_id: 648,
         x: 4110.7099609375,
@@ -382,7 +407,7 @@ pub fn start_locations() -> List(#(Int, Place)) {
     ),
     #(
       8223,
-      Place(
+      place_support.at(
         world_id: 870,
         world_zone_id: 1236,
         x: -8260.708984375,
@@ -392,7 +417,7 @@ pub fn start_locations() -> List(#(Int, Place)) {
     ),
     #(
       18_987,
-      Place(
+      place_support.at(
         world_id: 1387,
         world_zone_id: 1411,
         x: -3835.3408203125,
@@ -402,7 +427,7 @@ pub fn start_locations() -> List(#(Int, Place)) {
     ),
     #(
       37_015,
-      Place(
+      place_support.at(
         world_id: 990,
         world_zone_id: 1417,
         x: -771.822998046875,
@@ -412,7 +437,7 @@ pub fn start_locations() -> List(#(Int, Place)) {
     ),
     #(
       51_596,
-      Place(
+      place_support.at(
         world_id: 3460,
         world_zone_id: 6009,
         x: 29.128599166870117,
@@ -426,13 +451,22 @@ pub fn start_locations() -> List(#(Int, Place)) {
 /// The planted WorldLocation2 rows of the start places.
 fn start_location_rows() -> List(List(Cell)) {
   list.map(start_locations(), fn(location_row) {
-    let #(id, place) = location_row
-    location(id:, world: place.world_id, zone: place.world_zone_id, position: #(
-      place.x,
-      place.y,
-      place.z,
-    ))
+    start_location_row(id: location_row.0, place: location_row.1)
   })
+}
+
+/// The planted WorldLocation2 row of a start place.
+fn start_location_row(id id: Int, place place: Place) -> List(Cell) {
+  location(
+    id:,
+    world: start_place.world_id(place),
+    zone: start_place.world_zone_id(place),
+    position: #(
+      start_place.x(place),
+      start_place.y(place),
+      start_place.z(place),
+    ),
+  )
 }
 
 /// The GameFormula row of the highest level: row 145, whose dataint0 is 50.

@@ -45,7 +45,7 @@ pub const schema =
   )
 
 /// The key of the DailyLoginReward table's rows in the store.
-const key: store.TermKey(DailyLoginReward) = store.TermKey("DailyLoginReward")
+const key: store.TableKey(DailyLoginReward) = store.TableKey("DailyLoginReward")
 
 /// The entry that loads the DailyLoginReward table.
 pub fn entry() -> store.Entry {

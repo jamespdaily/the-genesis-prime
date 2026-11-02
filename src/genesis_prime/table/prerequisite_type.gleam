@@ -33,7 +33,7 @@ pub const schema =
   )
 
 /// The key of the PrerequisiteType table's rows in the store.
-const key: store.TermKey(PrerequisiteType) = store.TermKey("PrerequisiteType")
+const key: store.TableKey(PrerequisiteType) = store.TableKey("PrerequisiteType")
 
 /// The entry that loads the PrerequisiteType table.
 pub fn entry() -> store.Entry {

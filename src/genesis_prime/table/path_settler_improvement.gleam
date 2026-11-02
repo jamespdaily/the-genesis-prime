@@ -54,8 +54,8 @@ pub const schema =
   )
 
 /// The key of the PathSettlerImprovement table's rows in the store.
-const key: store.TermKey(PathSettlerImprovement) =
-  store.TermKey("PathSettlerImprovement")
+const key: store.TableKey(PathSettlerImprovement) =
+  store.TableKey("PathSettlerImprovement")
 
 /// The entry that loads the PathSettlerImprovement table.
 pub fn entry() -> store.Entry {

@@ -46,7 +46,7 @@ pub const schema =
   )
 
 /// The key of the DyeColorRamp table's rows in the store.
-const key: store.TermKey(DyeColorRamp) = store.TermKey("DyeColorRamp")
+const key: store.TableKey(DyeColorRamp) = store.TableKey("DyeColorRamp")
 
 /// The entry that loads the DyeColorRamp table.
 pub fn entry() -> store.Entry {

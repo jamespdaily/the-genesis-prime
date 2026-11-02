@@ -55,8 +55,8 @@ pub const schema =
   )
 
 /// The key of the ArchiveEntryUnlockRule table's rows in the store.
-const key: store.TermKey(ArchiveEntryUnlockRule) =
-  store.TermKey("ArchiveEntryUnlockRule")
+const key: store.TableKey(ArchiveEntryUnlockRule) =
+  store.TableKey("ArchiveEntryUnlockRule")
 
 /// The entry that loads the ArchiveEntryUnlockRule table.
 pub fn entry() -> store.Entry {

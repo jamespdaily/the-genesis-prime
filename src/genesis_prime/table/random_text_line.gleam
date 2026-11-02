@@ -34,7 +34,7 @@ pub const schema =
   )
 
 /// The key of the RandomTextLine table's rows in the store.
-const key: store.TermKey(RandomTextLine) = store.TermKey("RandomTextLine")
+const key: store.TableKey(RandomTextLine) = store.TableKey("RandomTextLine")
 
 /// The entry that loads the RandomTextLine table.
 pub fn entry() -> store.Entry {

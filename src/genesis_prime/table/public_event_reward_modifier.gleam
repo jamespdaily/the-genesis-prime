@@ -39,8 +39,8 @@ pub const schema =
   )
 
 /// The key of the PublicEventRewardModifier table's rows in the store.
-const key: store.TermKey(PublicEventRewardModifier) =
-  store.TermKey("PublicEventRewardModifier")
+const key: store.TableKey(PublicEventRewardModifier) =
+  store.TableKey("PublicEventRewardModifier")
 
 /// The entry that loads the PublicEventRewardModifier table.
 pub fn entry() -> store.Entry {

@@ -102,7 +102,7 @@ pub const schema =
   )
 
 /// The key of the TelegraphDamage table's rows in the store.
-const key: store.TermKey(TelegraphDamage) = store.TermKey("TelegraphDamage")
+const key: store.TableKey(TelegraphDamage) = store.TableKey("TelegraphDamage")
 
 /// The entry that loads the TelegraphDamage table.
 pub fn entry() -> store.Entry {

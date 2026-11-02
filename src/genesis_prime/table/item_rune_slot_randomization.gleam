@@ -42,8 +42,8 @@ pub const schema =
   )
 
 /// The key of the ItemRuneSlotRandomization table's rows in the store.
-const key: store.TermKey(ItemRuneSlotRandomization) =
-  store.TermKey("ItemRuneSlotRandomization")
+const key: store.TableKey(ItemRuneSlotRandomization) =
+  store.TableKey("ItemRuneSlotRandomization")
 
 /// The entry that loads the ItemRuneSlotRandomization table.
 pub fn entry() -> store.Entry {

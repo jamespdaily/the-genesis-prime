@@ -29,7 +29,8 @@ pub const schema =
   )
 
 /// The key of the ModelBonePriority table's rows in the store.
-const key: store.TermKey(ModelBonePriority) = store.TermKey("ModelBonePriority")
+const key: store.TableKey(ModelBonePriority) =
+  store.TableKey("ModelBonePriority")
 
 /// The entry that loads the ModelBonePriority table.
 pub fn entry() -> store.Entry {

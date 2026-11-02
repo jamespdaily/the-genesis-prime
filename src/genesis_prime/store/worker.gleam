@@ -55,6 +55,7 @@
 //// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
 ////   an asker waiting on one gets `EndedBeforeAnswer`.
 
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/login/guid
 import genesis_prime/migration.{
   type Recorded, Migration, NoRecord, Recorded, Unreadable,
@@ -77,6 +78,7 @@ import genesis_prime/table/id.{ClassId, RaceId}
 import gleam/bool
 import gleam/erlang/process.{type Name}
 import gleam/list
+import gleam/option.{type Option}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
@@ -319,11 +321,13 @@ fn load_character(
         faction_id: row.faction_id,
         level: row.level,
         path: row.path,
-        world_id: row.world_id,
-        world_zone_id: row.world_zone_id,
-        position_x: row.position_x,
-        position_y: row.position_y,
-        position_z: row.position_z,
+        place: saved_place(
+          world_id: row.world_id,
+          world_zone_id: row.world_zone_id,
+          position_x: row.position_x,
+          position_y: row.position_y,
+          position_z: row.position_z,
+        ),
         look: store.look(labels: row.look_labels, values: row.look_values),
         bones: row.bones,
         naming: naming(row.needs_rename),
@@ -344,15 +348,36 @@ fn character(row: sql.ListCharactersRow) -> Character {
     faction_id: row.faction_id,
     level: row.level,
     path: row.path,
-    world_id: row.world_id,
-    world_zone_id: row.world_zone_id,
-    position_x: row.position_x,
-    position_y: row.position_y,
-    position_z: row.position_z,
+    place: saved_place(
+      world_id: row.world_id,
+      world_zone_id: row.world_zone_id,
+      position_x: row.position_x,
+      position_y: row.position_y,
+      position_z: row.position_z,
+    ),
     look: store.look(labels: row.look_labels, values: row.look_values),
     bones: row.bones,
     naming: naming(row.needs_rename),
   )
+}
+
+/// The place a row saves: `None` for world 0, which is no World row, so its
+/// zone and position mean nothing (opcode.0xad).
+fn saved_place(
+  world_id world_id: Int,
+  world_zone_id world_zone_id: Int,
+  position_x position_x: Float,
+  position_y position_y: Float,
+  position_z position_z: Float,
+) -> Option(Place) {
+  start_place.place(
+    world_id:,
+    world_zone_id:,
+    x: position_x,
+    y: position_y,
+    z: position_z,
+  )
+  |> option.from_result
 }
 
 /// Whether the row's rename mark is set.
@@ -387,11 +412,11 @@ fn create_character(
         list.map(character.look, fn(entry) { entry.value }),
         character.bones,
         character_slots,
-        character.world_id,
-        character.world_zone_id,
-        character.position_x,
-        character.position_y,
-        character.position_z,
+        start_place.world_id(character.place),
+        start_place.world_zone_id(character.place),
+        start_place.x(character.place),
+        start_place.y(character.place),
+        start_place.z(character.place),
         character.level,
       )
     })

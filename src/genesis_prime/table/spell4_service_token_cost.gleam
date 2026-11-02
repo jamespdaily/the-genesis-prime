@@ -31,8 +31,8 @@ pub const schema =
   )
 
 /// The key of the Spell4ServiceTokenCost table's rows in the store.
-const key: store.TermKey(Spell4ServiceTokenCost) =
-  store.TermKey("Spell4ServiceTokenCost")
+const key: store.TableKey(Spell4ServiceTokenCost) =
+  store.TableKey("Spell4ServiceTokenCost")
 
 /// The entry that loads the Spell4ServiceTokenCost table.
 pub fn entry() -> store.Entry {

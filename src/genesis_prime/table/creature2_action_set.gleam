@@ -32,8 +32,8 @@ pub const schema =
   )
 
 /// The key of the Creature2ActionSet table's rows in the store.
-const key: store.TermKey(Creature2ActionSet) =
-  store.TermKey("Creature2ActionSet")
+const key: store.TableKey(Creature2ActionSet) =
+  store.TableKey("Creature2ActionSet")
 
 /// The entry that loads the Creature2ActionSet table.
 pub fn entry() -> store.Entry {

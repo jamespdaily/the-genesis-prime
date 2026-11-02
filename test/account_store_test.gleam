@@ -43,13 +43,14 @@ import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{None, Some}
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
 import gleam/result
 import gleam/string
 import login_support
 import owned_test
+import place_support
 import pog
 import readiness_support
 import relay
@@ -310,11 +311,13 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
           faction_id: 166,
           level: 9,
           path: 2,
-          world_id: 1387,
-          world_zone_id: 1100,
-          position_x: 1.5,
-          position_y: 2.5,
-          position_z: 3.5,
+          place: Some(place_support.at(
+            world_id: 1387,
+            world_zone_id: 1100,
+            x: 1.5,
+            y: 2.5,
+            z: 3.5,
+          )),
           look: [],
           bones: [],
           naming: NameStands,
@@ -328,11 +331,13 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
           faction_id: 166,
           level: 9,
           path: 0,
-          world_id: 1387,
-          world_zone_id: 1100,
-          position_x: 1.5,
-          position_y: 2.5,
-          position_z: 3.5,
+          place: Some(place_support.at(
+            world_id: 1387,
+            world_zone_id: 1100,
+            x: 1.5,
+            y: 2.5,
+            z: 3.5,
+          )),
           look: [],
           bones: [],
           naming: NameStands,
@@ -458,11 +463,7 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
           faction_id: 167,
           level: 1,
           path: 0,
-          world_id: 0,
-          world_zone_id: 0,
-          position_x: 0.0,
-          position_y: 0.0,
-          position_z: 0.0,
+          place: None,
           look: [],
           bones: [],
           naming: NameStands,
@@ -703,11 +704,13 @@ fn a_new_character(name: String) -> store.NewCharacter {
     faction_id: 167,
     level: 3,
     path: 2,
-    world_id: 3460,
-    world_zone_id: 6009,
-    position_x: 29.128599166870117,
-    position_y: -853.87158203125,
-    position_z: -560.18798828125,
+    place: place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 29.128599166870117,
+      y: -853.87158203125,
+      z: -560.18798828125,
+    ),
     look: [
       LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
       LookEntry(label: CharacterCustomizationLabelId(22), value: 4_000_000_000),
@@ -755,11 +758,13 @@ pub fn a_create_stores_the_character_at_the_level_it_was_given_with_the_values_i
           faction_id: 167,
           level: 3,
           path: 2,
-          world_id: 3460,
-          world_zone_id: 6009,
-          position_x: 29.128599166870117,
-          position_y: -853.87158203125,
-          position_z: -560.18798828125,
+          place: Some(place_support.at(
+            world_id: 3460,
+            world_zone_id: 6009,
+            x: 29.128599166870117,
+            y: -853.87158203125,
+            z: -560.18798828125,
+          )),
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
             LookEntry(
@@ -773,6 +778,81 @@ pub fn a_create_stores_the_character_at_the_level_it_was_given_with_the_values_i
       ]),
     )
     as "the create's result: race, sex, class and faction from the creation row, the level the create gave (3, not 1), the start place the create gave (World 3460, zone 6009 and the position of WorldLocation2 row 51596, as 32-bit floats), the look and the bones as the client sent them (32-bit values come back as they went in)"
+  stop(store)
+}
+
+pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let AccountId(id) = account
+  let assert Ok(pog.Returned(rows: [character_id], ..)) =
+    pog.query(
+      "insert into character (account_id, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z) values ($1, 'Ab Cd', 1, 1, 1, 167, 1, 0, 0, 0, 0, 0, 0) returning character_id",
+    )
+    |> pog.parameter(pog.int(id))
+    |> pog.returning(decode.at([0], decode.int))
+    |> pog.execute(store.pool)
+    as "the table allows world 0 with no zone and no position"
+  let character =
+    Character(
+      character_id: CharacterId(character_id),
+      name: "Ab Cd",
+      gender: 1,
+      race_id: RaceId(1),
+      class_id: ClassId(1),
+      faction_id: 167,
+      level: 1,
+      path: 0,
+      place: None,
+      look: [],
+      bones: [],
+      naming: NameStands,
+    )
+  assert ask(store, Select(ListCharacters(account)))
+    == ForSelect(Listed([character]))
+    as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
+  assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
+    == ForWorld(CharacterLoaded(character))
+    as "the load reads the same row the same way"
+  stop(store)
+}
+
+pub fn the_table_refuses_a_character_with_no_world_that_has_a_zone_or_a_position_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let AccountId(id) = account
+  let insert = fn(name, world_id, world_zone_id, x, y, z) {
+    pog.query(
+      "insert into character (account_id, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z) values ($1, $2, 1, 1, 1, 167, 1, 0, $3, $4, $5, $6, $7)",
+    )
+    |> pog.parameter(pog.int(id))
+    |> pog.parameter(pog.text(name))
+    |> pog.parameter(pog.int(world_id))
+    |> pog.parameter(pog.int(world_zone_id))
+    |> pog.parameter(pog.float(x))
+    |> pog.parameter(pog.float(y))
+    |> pog.parameter(pog.float(z))
+    |> pog.execute(store.pool)
+    |> result.map_error(fn(error) {
+      let assert pog.ConstraintViolated(constraint:, ..) = error
+        as "the table refused with a constraint"
+      constraint
+    })
+    |> result.replace(Nil)
+  }
+  let refused = Error("character_no_world_has_no_zone_or_position")
+  assert insert("Zone", 0, 7, 0.0, 0.0, 0.0) == refused
+    as "world 0 is no World row (opcode.0xad), so a zone of it means nothing"
+  assert insert("Xx", 0, 0, 1.5, 0.0, 0.0) == refused
+  assert insert("Yy", 0, 0, 0.0, 2.5, 0.0) == refused
+  assert insert("Zz", 0, 0, 0.0, 0.0, 3.5) == refused
+    as "nor does any one coordinate"
+  assert insert("None", 0, 0, 0.0, 0.0, 0.0) == Ok(Nil)
+    as "a character with no place is world 0, zone 0 and position 0"
+  assert insert("Placed", 1387, 1100, 1.5, 2.5, 3.5) == Ok(Nil)
+    as "a character with a world keeps its zone and position"
   stop(store)
 }
 
@@ -808,11 +888,13 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
         faction_id: 166,
         level: 9,
         path: 2,
-        world_id: 1387,
-        world_zone_id: 1100,
-        position_x: 1.5,
-        position_y: 2.5,
-        position_z: 3.5,
+        place: Some(place_support.at(
+          world_id: 1387,
+          world_zone_id: 1100,
+          x: 1.5,
+          y: 2.5,
+          z: 3.5,
+        )),
         look: [],
         bones: [],
         naming: NameStands,

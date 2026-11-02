@@ -48,8 +48,7 @@ pub type Record {
 /// its width, the key that says what it is when it has a name beyond its
 /// position, and, for a field with no name, the key that shows the value the
 /// server sends is safe. A field with no `evidence` is read as such, so the
-/// rule that every field names its evidence can report it. A field whose
-/// values the client's code names also lists them.
+/// rule that every field names its evidence can report it.
 pub type Field {
   Field(
     name: String,
@@ -57,7 +56,6 @@ pub type Field {
     evidence: Option(String),
     named_by: Option(String),
     safe_by: Option(String),
-    named_values: Option(NamedValues),
   )
 }
 
@@ -77,8 +75,9 @@ pub type Value {
 
 /// How a field's value is written on the wire.
 pub type Kind {
-  /// An unsigned value of 1 to 64 bits.
-  Unsigned(bits: Int)
+  /// An unsigned value of 1 to 64 bits, with the values the client's code names
+  /// when it names any: only an unsigned value has them.
+  Unsigned(bits: Int, values: Option(NamedValues))
   /// An unsigned value of `bits` bits that is below `limit`: the encoder
   /// refuses a value at or above it and the decoder fails on one.
   UnsignedBelow(bits: Int, limit: Int)
@@ -186,7 +185,7 @@ fn check_values_types(
       list.flat_map(messages, fn(message) { message.fields }),
       list.flat_map(records, fn(record) { record.fields }),
     )
-    |> list.filter_map(fn(field) { option.to_result(field.named_values, Nil) })
+    |> list.filter_map(fn(field) { option.to_result(named_values(field:), Nil) })
   list.try_fold(named, [], fn(seen: List(NamedValues), values) {
     case
       list.find(seen, fn(earlier) { earlier.type_name == values.type_name })
@@ -313,28 +312,76 @@ fn parse_field(
     kind: kind_name,
     record_names:,
   ))
-  use named_values <- result.try(parse_named_values(table:, field: name, kind:))
+  use Nil <- result.try(case kind {
+    Unsigned(..) -> Ok(Nil)
+    UnsignedBelow(..)
+    | Float32
+    | WideText
+    | CountedWideText(..)
+    | Guid
+    | Endpoint
+    | RawBytes(..)
+    | WholeFrame
+    | ArrayOfWideText(..)
+    | ArrayOfRecord(..)
+    | ArrayOfUnsigned(..)
+    | ArrayOfFloat32(..)
+    | UnsignedArrayCountedBy(..)
+    | Constant(..) -> refuse_values(table:, field: name)
+  })
   Ok(Field(
     name:,
     kind:,
     evidence: optional_string(table, "evidence"),
     named_by: optional_string(table, "named_by"),
     safe_by: optional_string(table, "safe_by"),
-    named_values:,
   ))
 }
 
-/// The named values of a field, when it lists any: an unsigned field whose
-/// values are each below `2^bits`, with no number and no name twice.
+/// The values a field's kind names, none for any kind but an unsigned one.
+pub fn named_values(field field: Field) -> Option(NamedValues) {
+  case field.kind {
+    Unsigned(values:, ..) -> values
+    UnsignedBelow(..)
+    | Float32
+    | WideText
+    | CountedWideText(..)
+    | Guid
+    | Endpoint
+    | RawBytes(..)
+    | WholeFrame
+    | ArrayOfWideText(..)
+    | ArrayOfRecord(..)
+    | ArrayOfUnsigned(..)
+    | ArrayOfFloat32(..)
+    | UnsignedArrayCountedBy(..)
+    | Constant(..) -> None
+  }
+}
+
+/// A field of a kind that holds no named values lists none.
+fn refuse_values(
+  table table: Dict(String, Toml),
+  field field: String,
+) -> Result(Nil, SchemaError) {
+  case tom.get_array(table, ["values"]) {
+    Error(tom.NotFound(_)) -> Ok(Nil)
+    Error(tom.WrongType(..)) -> Error(WrongTypeOfKey(field, "values"))
+    Ok(_) -> Error(ValuesOnOtherKind(field))
+  }
+}
+
+/// The named values of an unsigned field of `bits` bits, when it lists any:
+/// each value is below `2^bits`, with no number and no name twice.
 fn parse_named_values(
   table table: Dict(String, Toml),
   field field: String,
-  kind kind: Kind,
+  bits bits: Int,
 ) -> Result(Option(NamedValues), SchemaError) {
-  case tom.get_array(table, ["values"]), kind {
-    Error(tom.NotFound(_)), _ -> Ok(None)
-    Error(tom.WrongType(..)), _ -> Error(WrongTypeOfKey(field, "values"))
-    Ok(_), Unsigned(bits:) -> {
+  case tom.get_array(table, ["values"]) {
+    Error(tom.NotFound(_)) -> Ok(None)
+    Error(tom.WrongType(..)) -> Error(WrongTypeOfKey(field, "values"))
+    Ok(_) -> {
       use type_name <- result.try(string_of(
         table:,
         owner: field,
@@ -359,7 +406,6 @@ fn parse_named_values(
       )
       Ok(Some(NamedValues(type_name:, values:)))
     }
-    Ok(_), _ -> Error(ValuesOnOtherKind(field))
   }
 }
 
@@ -430,7 +476,8 @@ fn parse_kind(
         least: 1,
         most: 64,
       ))
-      Ok(Unsigned(bits:))
+      use values <- result.try(parse_named_values(table:, field:, bits:))
+      Ok(Unsigned(bits:, values:))
     }
     "unsigned_below" -> {
       use bits <- result.try(int_in(

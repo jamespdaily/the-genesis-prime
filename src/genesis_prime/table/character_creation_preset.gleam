@@ -40,8 +40,8 @@ pub const schema =
   )
 
 /// The key of the CharacterCreationPreset table's rows in the store.
-const key: store.TermKey(CharacterCreationPreset) =
-  store.TermKey("CharacterCreationPreset")
+const key: store.TableKey(CharacterCreationPreset) =
+  store.TableKey("CharacterCreationPreset")
 
 /// The entry that loads the CharacterCreationPreset table.
 pub fn entry() -> store.Entry {

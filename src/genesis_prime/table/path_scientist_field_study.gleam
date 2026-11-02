@@ -137,8 +137,8 @@ pub const schema =
   )
 
 /// The key of the PathScientistFieldStudy table's rows in the store.
-const key: store.TermKey(PathScientistFieldStudy) =
-  store.TermKey("PathScientistFieldStudy")
+const key: store.TableKey(PathScientistFieldStudy) =
+  store.TableKey("PathScientistFieldStudy")
 
 /// The entry that loads the PathScientistFieldStudy table.
 pub fn entry() -> store.Entry {

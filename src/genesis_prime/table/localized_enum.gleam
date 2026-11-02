@@ -31,7 +31,7 @@ pub const schema =
   )
 
 /// The key of the LocalizedEnum table's rows in the store.
-const key: store.TermKey(LocalizedEnum) = store.TermKey("LocalizedEnum")
+const key: store.TableKey(LocalizedEnum) = store.TableKey("LocalizedEnum")
 
 /// The entry that loads the LocalizedEnum table.
 pub fn entry() -> store.Entry {

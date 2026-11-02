@@ -63,8 +63,8 @@ pub const schema =
   )
 
 /// The key of the PublicEventObjectiveGatherResource table's rows in the store.
-const key: store.TermKey(PublicEventObjectiveGatherResource) =
-  store.TermKey("PublicEventObjectiveGatherResource")
+const key: store.TableKey(PublicEventObjectiveGatherResource) =
+  store.TableKey("PublicEventObjectiveGatherResource")
 
 /// The entry that loads the PublicEventObjectiveGatherResource table.
 pub fn entry() -> store.Entry {

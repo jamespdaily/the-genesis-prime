@@ -27,8 +27,8 @@ pub const schema =
   )
 
 /// The key of the Spell4Prerequisites table's rows in the store.
-const key: store.TermKey(Spell4Prerequisites) =
-  store.TermKey("Spell4Prerequisites")
+const key: store.TableKey(Spell4Prerequisites) =
+  store.TableKey("Spell4Prerequisites")
 
 /// The entry that loads the Spell4Prerequisites table.
 pub fn entry() -> store.Entry {

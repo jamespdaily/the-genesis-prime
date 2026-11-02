@@ -2,7 +2,9 @@
 //// character list has one to show: the character's name, and the race, sex,
 //// class and faction of one row of the client's CharacterCreation table
 //// (raceId, sex, classId, factionId). The character starts at level 1, path 0,
-//// with no world, zone or position, which the character list does not read.
+//// with no saved place: world 0, zone 0 and position 0, which the store reads
+//// as no place (genesis_prime/store), so the character is listed and a play of
+//// it is refused.
 ////
 //// `gleam run -m genesis_prime/add_character -- <login name> <character name> <race id> <sex> <class id> <faction id>`
 ////

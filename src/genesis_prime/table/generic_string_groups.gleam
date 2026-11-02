@@ -30,8 +30,8 @@ pub const schema =
   )
 
 /// The key of the GenericStringGroups table's rows in the store.
-const key: store.TermKey(GenericStringGroups) =
-  store.TermKey("GenericStringGroups")
+const key: store.TableKey(GenericStringGroups) =
+  store.TableKey("GenericStringGroups")
 
 /// The entry that loads the GenericStringGroups table.
 pub fn entry() -> store.Entry {

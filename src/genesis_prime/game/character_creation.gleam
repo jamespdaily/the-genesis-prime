@@ -178,11 +178,7 @@ pub fn check_row(
             faction_id: row.faction_id,
             level:,
             path: request.path,
-            world_id: place.world_id,
-            world_zone_id: place.world_zone_id,
-            position_x: place.x,
-            position_y: place.y,
-            position_z: place.z,
+            place:,
             look:,
             bones: request.bone_values,
           ))

@@ -103,8 +103,8 @@ pub const schema =
   )
 
 /// The key of the PathSettlerInfrastructure table's rows in the store.
-const key: store.TermKey(PathSettlerInfrastructure) =
-  store.TermKey("PathSettlerInfrastructure")
+const key: store.TableKey(PathSettlerInfrastructure) =
+  store.TableKey("PathSettlerInfrastructure")
 
 /// The entry that loads the PathSettlerInfrastructure table.
 pub fn entry() -> store.Entry {

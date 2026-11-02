@@ -43,8 +43,8 @@ pub const schema =
   )
 
 /// The key of the HousingWarplotBossToken table's rows in the store.
-const key: store.TermKey(HousingWarplotBossToken) =
-  store.TermKey("HousingWarplotBossToken")
+const key: store.TableKey(HousingWarplotBossToken) =
+  store.TableKey("HousingWarplotBossToken")
 
 /// The entry that loads the HousingWarplotBossToken table.
 pub fn entry() -> store.Entry {

@@ -50,7 +50,7 @@ pub const schema =
   )
 
 /// The key of the XpPerLevel table's rows in the store.
-const key: store.TermKey(XpPerLevel) = store.TermKey("XpPerLevel")
+const key: store.TableKey(XpPerLevel) = store.TableKey("XpPerLevel")
 
 /// The entry that loads the XpPerLevel table.
 pub fn entry() -> store.Entry {

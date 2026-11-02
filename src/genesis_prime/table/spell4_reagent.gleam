@@ -40,7 +40,7 @@ pub const schema =
   )
 
 /// The key of the Spell4Reagent table's rows in the store.
-const key: store.TermKey(Spell4Reagent) = store.TermKey("Spell4Reagent")
+const key: store.TableKey(Spell4Reagent) = store.TableKey("Spell4Reagent")
 
 /// The entry that loads the Spell4Reagent table.
 pub fn entry() -> store.Entry {

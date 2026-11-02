@@ -104,8 +104,8 @@ pub const schema =
   )
 
 /// The key of the HousingWarplotPlugInfo table's rows in the store.
-const key: store.TermKey(HousingWarplotPlugInfo) =
-  store.TermKey("HousingWarplotPlugInfo")
+const key: store.TableKey(HousingWarplotPlugInfo) =
+  store.TableKey("HousingWarplotPlugInfo")
 
 /// The entry that loads the HousingWarplotPlugInfo table.
 pub fn entry() -> store.Entry {

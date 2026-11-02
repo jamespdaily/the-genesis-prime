@@ -27,7 +27,7 @@ pub const schema =
   )
 
 /// The key of the HousingPlotType table's rows in the store.
-const key: store.TermKey(HousingPlotType) = store.TermKey("HousingPlotType")
+const key: store.TableKey(HousingPlotType) = store.TableKey("HousingPlotType")
 
 /// The entry that loads the HousingPlotType table.
 pub fn entry() -> store.Entry {

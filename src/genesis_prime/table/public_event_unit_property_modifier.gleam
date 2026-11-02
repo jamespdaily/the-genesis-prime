@@ -38,8 +38,8 @@ pub const schema =
   )
 
 /// The key of the PublicEventUnitPropertyModifier table's rows in the store.
-const key: store.TermKey(PublicEventUnitPropertyModifier) =
-  store.TermKey("PublicEventUnitPropertyModifier")
+const key: store.TableKey(PublicEventUnitPropertyModifier) =
+  store.TableKey("PublicEventUnitPropertyModifier")
 
 /// The entry that loads the PublicEventUnitPropertyModifier table.
 pub fn entry() -> store.Entry {

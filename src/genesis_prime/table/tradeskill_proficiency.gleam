@@ -32,8 +32,8 @@ pub const schema =
   )
 
 /// The key of the TradeskillProficiency table's rows in the store.
-const key: store.TermKey(TradeskillProficiency) =
-  store.TermKey("TradeskillProficiency")
+const key: store.TableKey(TradeskillProficiency) =
+  store.TableKey("TradeskillProficiency")
 
 /// The entry that loads the TradeskillProficiency table.
 pub fn entry() -> store.Entry {

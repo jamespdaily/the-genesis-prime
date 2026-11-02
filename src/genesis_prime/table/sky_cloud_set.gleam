@@ -62,7 +62,7 @@ pub const schema =
   )
 
 /// The key of the SkyCloudSet table's rows in the store.
-const key: store.TermKey(SkyCloudSet) = store.TermKey("SkyCloudSet")
+const key: store.TableKey(SkyCloudSet) = store.TableKey("SkyCloudSet")
 
 /// The entry that loads the SkyCloudSet table.
 pub fn entry() -> store.Entry {

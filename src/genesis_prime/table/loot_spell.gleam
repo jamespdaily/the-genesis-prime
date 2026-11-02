@@ -62,7 +62,7 @@ pub const schema =
   )
 
 /// The key of the LootSpell table's rows in the store.
-const key: store.TermKey(LootSpell) = store.TermKey("LootSpell")
+const key: store.TableKey(LootSpell) = store.TableKey("LootSpell")
 
 /// The entry that loads the LootSpell table.
 pub fn entry() -> store.Entry {

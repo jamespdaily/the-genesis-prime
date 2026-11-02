@@ -31,7 +31,8 @@ pub const schema =
   )
 
 /// The key of the TicketSubCategory table's rows in the store.
-const key: store.TermKey(TicketSubCategory) = store.TermKey("TicketSubCategory")
+const key: store.TableKey(TicketSubCategory) =
+  store.TableKey("TicketSubCategory")
 
 /// The entry that loads the TicketSubCategory table.
 pub fn entry() -> store.Entry {

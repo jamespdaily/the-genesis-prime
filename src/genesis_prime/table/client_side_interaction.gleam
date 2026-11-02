@@ -112,8 +112,8 @@ pub const schema =
   )
 
 /// The key of the ClientSideInteraction table's rows in the store.
-const key: store.TermKey(ClientSideInteraction) =
-  store.TermKey("ClientSideInteraction")
+const key: store.TableKey(ClientSideInteraction) =
+  store.TableKey("ClientSideInteraction")
 
 /// The entry that loads the ClientSideInteraction table.
 pub fn entry() -> store.Entry {
