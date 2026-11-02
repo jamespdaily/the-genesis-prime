@@ -12,7 +12,7 @@
 start_scope(Scope) ->
     case pg:start_link(Scope) of
         {ok, Pid} -> {ok, Pid};
-        {error, Reason} -> {error, {could_not_start, format(Reason)}}
+        {error, Reason} -> {error, {could_not_start, step_runtime_ffi:term_text(Reason)}}
     end.
 
 %% Makes the calling process a member of the group; the scope removes it when it
@@ -33,6 +33,3 @@ send_woken(Pid, Message) ->
 
 %% The message inside what send_woken sent.
 woken_message({woken, Message}) -> Message.
-
-format(Reason) ->
-    unicode:characters_to_binary(io_lib:format("~0p", [Reason])).

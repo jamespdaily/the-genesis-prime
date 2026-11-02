@@ -31,7 +31,7 @@ describe(Pid) ->
                undefined -> [];
                Found -> Found
            end,
-    unicode:characters_to_binary(io_lib:format("~0p", [Info])).
+    step_runtime_ffi:term_text(Info).
 
 %% The wall time the online normal schedulers have been busy and have passed,
 %% in the scheduler's own unit, summed: two readings give the share of the cores

@@ -33,7 +33,7 @@ start_listener(Ref, Port, MaxConnections, ShutdownMs, Settings) ->
     case ranch_embedded_sup:start_link(Ref, ranch_tcp, TransportOptions,
                                        connection_shell_ffi, Settings) of
         {ok, Pid} -> {ok, Pid};
-        {error, Reason} -> {error, {could_not_listen, format(Reason)}}
+        {error, Reason} -> {error, {could_not_listen, step_runtime_ffi:term_text(Reason)}}
     end.
 
 %% The listener's port: `ranch:get_port/1` gives `undefined` for a listener whose
@@ -59,7 +59,7 @@ listener_port(Ref) ->
 suspend_listener(Ref) ->
     try ranch:suspend_listener(Ref) of
         ok -> {ok, nil};
-        {error, Reason} -> {error, {ranch_failed, format(Reason)}}
+        {error, Reason} -> {error, {ranch_failed, step_runtime_ffi:term_text(Reason)}}
     catch
         error:badarg -> {error, listener_not_running};
         exit:{_Reason, {gen_server, call, _}} -> {error, listener_not_running}
@@ -126,7 +126,4 @@ peer(Socket) ->
 failure(closed) -> closed;
 failure(econnreset) -> reset;
 failure(timeout) -> send_timed_out;
-failure(Reason) -> {other_socket_failure, format(Reason)}.
-
-format(Reason) ->
-    unicode:characters_to_binary(io_lib:format("~0p", [Reason])).
+failure(Reason) -> {other_socket_failure, step_runtime_ffi:term_text(Reason)}.
