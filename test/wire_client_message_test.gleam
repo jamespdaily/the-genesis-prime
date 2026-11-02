@@ -30,6 +30,9 @@ import genesis_prime/login/sts_connection
 import genesis_prime/login/sts_message
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_message
+import genesis_prime/message/movement_command
+import genesis_prime/message/movement_mode
+import genesis_prime/message/movement_state_flags
 import genesis_prime/message/ping.{Ping}
 import genesis_prime/step.{type Now, Now}
 import genesis_prime/wire_recording.{type Recording, Accepted, Client, Read}
@@ -141,6 +144,131 @@ pub fn every_decoded_message_encodes_back_to_the_body_the_client_sent_test() -> 
         <> int.to_string(message.line)
         <> ": a decoded message encodes to the body the client sent, so every bit of it was read"
       }
+  })
+}
+
+/// The messages of the player moving that the client sends in the world: the
+/// movement commands and the five small messages the move step reads.
+const moving_ids = [0x0637, 0x063A, 0x00D5, 0x063B, 0x00FB, 0x00FC]
+
+/// Every message the committed sessions hold with a decoder, with the
+/// connection's name and its line, in order.
+fn recorded_messages() -> List(#(String, Received)) {
+  list.flat_map(support.recorded_sessions(), fn(folder) {
+    list.flat_map(support.load(folder).connections, fn(connection) {
+      case wire_client_message.read(connection.name, connection.recording) {
+        Ok(Some(FramesRead(messages:, ..))) ->
+          list.map(messages, fn(message) { #(connection.name, message) })
+        Ok(Some(PlatformLogin(..))) | Ok(None) | Error(NotRead(..)) -> []
+      }
+    })
+  })
+}
+
+pub fn every_movement_message_in_every_wire_recording_decodes_and_encodes_back_to_its_body_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let moving =
+    list.filter(recorded_messages(), fn(entry) {
+      list.contains(moving_ids, client_message.message_id({ entry.1 }.message))
+    })
+  let ids =
+    list.map(moving, fn(entry) {
+      client_message.message_id({ entry.1 }.message)
+    })
+  list.each([0x0637, 0x063A, 0x00D5, 0x063B], fn(id) {
+    assert list.contains(ids, id)
+      as "the committed session holds this message, which the client sends after 0x636 and 0xF1 (opcode.0x637, opcode.0x63a, opcode.0xd5, opcode.0x63b)"
+  })
+  list.each(moving, fn(entry) {
+    let #(name, message) = entry
+    assert client_message.encode(message.message) == Ok(message.body)
+      as {
+        name
+        <> " line "
+        <> int.to_string(message.line)
+        <> ": the message encodes to the body the client sent"
+      }
+  })
+  let #(_, without_decoder) = frames_of(game_connection.rule_name)
+  assert list.filter(without_decoder, fn(unread) {
+      list.contains(moving_ids, unread.message_id)
+    })
+    == []
+    as "none of them is listed as having no decoder"
+}
+
+/// The kind of a movement command, its first 5 bits as written.
+fn kind_of(command: movement_command.MovementCommand) -> Int {
+  let assert Ok(bytes) =
+    bit_stream.new_writer()
+    |> movement_command.write(command)
+    |> bit_stream.finish
+    as "a command read from the recording is within its widths"
+  let assert Ok(kind) =
+    bit_stream.peek_unsigned(bit_stream.new_reader(bytes), 5)
+    as "a command is at least its 5-bit kind"
+  kind
+}
+
+/// The recorded messages of the number `id`, in order.
+fn recorded_of(id: Int) -> List(client_message.ClientMessage) {
+  recorded_messages()
+  |> list.map(fn(entry) { { entry.1 }.message })
+  |> list.filter(fn(message) { client_message.message_id(message) == id })
+}
+
+pub fn the_recorded_movement_holds_what_the_clients_per_frame_update_sends_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let moves =
+    list.map(recorded_of(0x0637), fn(message) {
+      let assert client_message.PlayerMovement(message:) = message
+        as "0x0637 is the player's movement"
+      message
+    })
+  assert moves != [] as "the committed session holds movement"
+  let commands = list.flat_map(moves, fn(move) { move.commands })
+  assert commands != [] as "the recorded movement holds commands"
+  list.each(commands, fn(command) {
+    let kind = kind_of(command)
+    assert list.contains([0, 1, 2, 8, 11, 14, 24, 27], kind)
+      as "opcode.0x637: the client's per-frame update sends the kinds 0, 1, 2, 8, 11, 14, 24 and 27 only"
+    case kind {
+      24 -> {
+        let assert movement_command.StateFlags(movement_state_flags.MovementStateFlags(
+          flags:,
+        )) = command
+          as "kind 24 is the state flags"
+        assert flags <= 0x3FFFF
+          as "movement_command.kind_24: the client builds the flags from bits 0 to 17 only"
+      }
+      27 -> {
+        let assert movement_command.Mode(movement_mode.MovementMode(mode:)) =
+          command
+          as "kind 27 is the mode"
+        assert list.contains([0, 1, 3], mode)
+          as "movement_command.kind_27: the client sends only the modes 0, 1 and 3"
+      }
+      _ -> Nil
+    }
+  })
+  let clocks = list.map(moves, fn(move) { move.client_clock })
+  assert clocks == list.sort(clocks, int.compare)
+    as "opcode.0x637: the clock is the client's own millisecond clock, so a later message is not earlier"
+}
+
+pub fn the_recorded_zone_value_and_move_speed_are_what_the_client_keeps_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let assert [client_message.ZoneValueChanged(message: first), ..] =
+    recorded_of(0x063A)
+    as "the committed session holds a 0x63A"
+  assert first.old_value == first.new_value
+    as "opcode.0x63a: after 0x636 the client sends the value it keeps as both the old and the new"
+  let assert [_, ..] = recorded_of(0x063B)
+    as "the committed session holds a 0x63B"
+  list.each(recorded_of(0x063B), fn(message) {
+    let assert client_message.MoveSpeedSetting(message:) = message
+      as "0x063B is the move speed setting"
+    assert message.move_speed <= 2 as "opcode.0x63b: the setting is 0 to 2"
   })
 }
 
@@ -312,7 +440,7 @@ pub fn a_message_with_no_decoder_is_listed_and_the_read_goes_on_test() -> Nil {
   use folder <- recording_support.in_folder
   let #(name, recording) =
     planted(folder:, rule: auth_connection.rule_name, reads: [
-      wrapped(id: 0x0637, body: <<1, 2, 3>>, key: cipher.base_key),
+      wrapped(id: 0x0FFF, body: <<1, 2, 3>>, key: cipher.base_key),
       wrapped(
         id: 0x0592,
         body: recorded_login_request_body(),
@@ -322,8 +450,8 @@ pub fn a_message_with_no_decoder_is_listed_and_the_read_goes_on_test() -> Nil {
   let assert Ok(Some(FramesRead(messages:, without_decoder:))) =
     wire_client_message.read(name, recording)
     as "a message the decoders do not know does not fail the read"
-  assert without_decoder == [Unread(line: 2, message_id: 0x0637)]
-    as "0x0637 is listed with its line"
+  assert without_decoder == [Unread(line: 2, message_id: 0x0FFF)]
+    as "0x0FFF, which the schema holds no message of, is listed with its line"
   assert list.map(messages, fn(message) { message.line }) == [3]
     as "the login request after it is read"
 }

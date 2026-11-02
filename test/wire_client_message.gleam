@@ -417,6 +417,12 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.RenameCharacter(..)
     | client_message.ChooseRealm(..)
     | client_message.ClientControlEchoed(..)
-    | client_message.TerrainLoaded(..) -> Plain
+    | client_message.TerrainLoaded(..)
+    | client_message.PlayerMovement(..)
+    | client_message.ZoneValueChanged(..)
+    | client_message.MovementSendIntervalAnswer(..)
+    | client_message.MoveSpeedSetting(..)
+    | client_message.FallValue(..)
+    | client_message.FellBelowFloor(..) -> Plain
   }
 }
