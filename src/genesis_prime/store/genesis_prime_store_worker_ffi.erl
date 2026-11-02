@@ -1,7 +1,7 @@
 %% Runs a function and turns the one exit that says the database pool is not
 %% running into an error, where an answer of "not running" is wanted. Any other
 %% exit, including a noproc from elsewhere, passes.
--module(store_worker_ffi).
+-module(genesis_prime_store_worker_ffi).
 -export([unless_pool_not_running/1]).
 
 %% pgo's checkout exits with {noproc, {pgo_pool, checkout, _}} when the pool's

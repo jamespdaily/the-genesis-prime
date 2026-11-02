@@ -249,7 +249,7 @@ pub fn the_sessions_rule_and_the_contract_it_runs_under_hold_no_pid_monitor_or_s
   use <- unitest.tag("code_rule")
   let files =
     pure_rules_the_check_covers(paths: [
-      "src/genesis_prime/sessions.gleam",
+      "src/genesis_prime/account_session.gleam",
       "src/genesis_prime/step.gleam",
       "src/genesis_prime/client_connection.gleam",
       "src/genesis_prime/game/connection.gleam",

@@ -49,15 +49,15 @@ silence_crash_reports() ->
 describe_exit(killed) -> <<"killed">>;
 describe_exit({abnormal, {#{message := Message, value := Value}, _Stack}})
   when is_binary(Message) ->
-    cut(<<Message/binary, ": ", (cut(step_runtime_ffi:term_text(Value), 120))/binary>>, 240);
+    cut(<<Message/binary, ": ", (cut(genesis_prime_step_runtime_ffi:term_text(Value), 120))/binary>>, 240);
 describe_exit({abnormal, {#{message := Message}, _Stack}}) when is_binary(Message) ->
     cut(Message, 240);
 describe_exit({abnormal, Reason}) ->
-    cut(step_runtime_ffi:term_text(Reason), 240).
+    cut(genesis_prime_step_runtime_ffi:term_text(Reason), 240).
 
 %% Whether `eaddrnotavail` is anywhere in the exit reason, however deep and long.
 no_local_port({abnormal, Reason}) ->
-    string:find(step_runtime_ffi:term_text(Reason), "eaddrnotavail") =/= nomatch;
+    string:find(genesis_prime_step_runtime_ffi:term_text(Reason), "eaddrnotavail") =/= nomatch;
 no_local_port(_) ->
     false.
 

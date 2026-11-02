@@ -48,7 +48,7 @@
 ////   the hand-off's and Sessions' answers, and 0x038C and 0x0241 after the
 ////   store's.
 //// - **The claim** makes this connection the account's one session
-////   (genesis_prime/sessions). It follows the hand-off's answer, since the
+////   (genesis_prime/account_session). It follows the hand-off's answer, since the
 ////   account is known only then, and comes before the list, so a client that
 ////   reaches character select holds the slot. The rule opens its one watch
 ////   on Sessions (watch 1) with each claim. Sessions answers `Claimed` to the
@@ -115,7 +115,7 @@
 ////   (genesis_prime/game/world_entry), as character select is: it asks the
 ////   store and the map, and the rule turns its effects into writes, the asks
 ////   and its watch on the map. The map's ask goes through Maps, which starts
-////   the map when it is not running (genesis_prime/world_map/maps); a map
+////   the map when it is not running (genesis_prime/world_map/registry); a map
 ////   that cannot be reached, ends before its answer or gives none in time
 ////   ends the connection with reason 8, as the store does.
 //// - **In the world** the connection watches its map (watch 2): the map's
@@ -150,6 +150,7 @@
 ////   0x038C with 0x082D inside it, 0x0241 and any other, is logged as
 ////   unhandled and the connection goes on (opcode.0x241).
 
+import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
   AskMap, AskSessions, AskStore, Asking, Bytes, Connect, Continue, Done,
@@ -177,7 +178,6 @@ import genesis_prime/message/game_hello_reply
 import genesis_prime/message/play_character
 import genesis_prime/message/rename_character
 import genesis_prime/message/world_message
-import genesis_prime/sessions
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionEvent, type ConnectionInput,
   type ConnectionRule, type ConnectionStep, type Effect, type Event, type Now,
@@ -1050,7 +1050,7 @@ fn claim(
       status: ClaimingSession(holder:, resume:, retries:),
     ),
     now:,
-    request: AskSessions(sessions.Claim(
+    request: AskSessions(account_session.Claim(
       account: holder.account_id,
       connection: session.link.connection,
     )),
@@ -1072,7 +1072,7 @@ fn claim_answered(
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case outcome {
-    step.Answer(FromSessions(sessions.Claimed)) ->
+    step.Answer(FromSessions(account_session.Claimed)) ->
       Continue(
         Session(..session, status: case resume {
           ResumeSelect(select:) -> InCharacterSelect(holder:, select:)
@@ -1080,7 +1080,7 @@ fn claim_answered(
         }),
         [],
       )
-    step.Answer(FromSessions(sessions.TakenOver)) -> taken_over(session)
+    step.Answer(FromSessions(account_session.TakenOver)) -> taken_over(session)
     step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromMap(..)) ->
@@ -1129,18 +1129,18 @@ fn taken_over(session: Session) -> client_connection.Handled(Session) {
 /// has claimed.
 fn sessions_sent(
   session session: Session,
-  message message: sessions.Outgoing,
+  message message: account_session.Outgoing,
 ) -> client_connection.Handled(Session) {
   case message, session.status {
-    sessions.TakenOver, InCharacterSelect(..)
-    | sessions.TakenOver, ClaimingSession(..)
-    | sessions.TakenOver, EnteringWorld(..)
-    | sessions.TakenOver, InWorld(..)
+    account_session.TakenOver, InCharacterSelect(..)
+    | account_session.TakenOver, ClaimingSession(..)
+    | account_session.TakenOver, EnteringWorld(..)
+    | account_session.TakenOver, InWorld(..)
     -> taken_over(session)
-    sessions.TakenOver, AwaitingHelloReply
-    | sessions.TakenOver, TakingSessionKey
+    account_session.TakenOver, AwaitingHelloReply
+    | account_session.TakenOver, TakingSessionKey
     -> end_for(session, "Sessions sent a takeover before the claim")
-    sessions.Claimed, _ ->
+    account_session.Claimed, _ ->
       end_for(session, "Sessions sent an answer as a message")
   }
 }

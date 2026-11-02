@@ -149,12 +149,12 @@ pub fn start_server(
 
 /// Finds the root with `application:get_supervisor/1` and starts the tree
 /// under it with `supervisor:start_child/2`; no gleam_erlang or gleam_otp
-/// function does either (application_ffi says why).
-@external(erlang, "application_ffi", "start_tree")
+/// function does either (genesis_prime_application_ffi says why).
+@external(erlang, "genesis_prime_application_ffi", "start_tree")
 fn start_tree(settings: server.Settings) -> Result(Pid, StartFailure)
 
 /// Whether the node has begun to stop: `init:get_status/0` says `stopping`.
-@external(erlang, "application_ffi", "node_stopping")
+@external(erlang, "genesis_prime_application_ffi", "node_stopping")
 pub fn node_stopping() -> Bool
 
 /// Whether the server can be said to serve: its tree is running and the node is

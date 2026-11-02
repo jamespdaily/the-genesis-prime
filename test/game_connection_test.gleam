@@ -39,6 +39,7 @@ import character_support
 import character_tables
 import connection_rule_support as support
 import game_client
+import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskSessions,
   AskStore, FromHandOff, FromMap, FromSessions, FromStore, SentBySessions,
@@ -84,7 +85,6 @@ import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
-import genesis_prime/sessions.{Claim, Claimed, TakenOver}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
   ConnectionId, EndedBeforeAnswer, LogError, LogInfo, LogWarning, Map,
@@ -1808,7 +1808,7 @@ pub fn a_0x025c_or_0x07dd_the_clients_reader_would_refuse_ends_the_connection_te
 // again after a short wait; a takeover disconnects the old connection), 0x036A
 // reason 19 for a takeover and reason 8 for the server's own failure
 // (0x1400168a0, opcode.0x36a), and the claim's contract in
-// `genesis_prime/sessions`. The wait is 100 ms and the retries of a claim that
+// `genesis_prime/account_session`. The wait is 100 ms and the retries of a claim that
 // finds Sessions not running are 5, as the rule's constants state.
 
 /// The wait, in milliseconds, before a claim is made again.

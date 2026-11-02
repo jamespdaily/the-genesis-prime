@@ -1,5 +1,5 @@
 //// The sessions rule, pure. Expected values come from the rule's own contract
-//// in the doc comment of `genesis_prime/sessions`, as approved on the one
+//// in the doc comment of `genesis_prime/account_session`, as approved on the one
 //// login per account card: one slot per account, the newest login (the
 //// highest `ConnectionId`) keeps it whichever order claims arrive in, the
 //// connection it replaced is sent `TakenOver`, a claim older than the holder
@@ -9,7 +9,7 @@
 //// a watch by its `WatchId`; the effects name both.
 
 import connection_rule_support as support
-import genesis_prime/sessions.{type State, Claim, Claimed, TakenOver}
+import genesis_prime/account_session.{type State, Claim, Claimed, TakenOver}
 import genesis_prime/step.{
   Asked, CallerId, Connection, ConnectionId, Effects, OwnEffect, OwnEvent, Reply,
   Send, Stopping, Watch, WatchEnded, WatchId,
@@ -28,9 +28,9 @@ const account = AccountId(7)
 fn ask(
   state state: State,
   caller caller: Int,
-  message message: sessions.Message,
-) -> #(State, step.ServiceStep(sessions.Outgoing)) {
-  sessions.step(
+  message message: account_session.Message,
+) -> #(State, step.ServiceStep(account_session.Outgoing)) {
+  account_session.step(
     state,
     support.input(OwnEvent(Asked(caller: CallerId(caller), message:))),
   )
@@ -39,15 +39,15 @@ fn ask(
 fn ended(
   state state: State,
   watch watch: Int,
-) -> #(State, step.ServiceStep(sessions.Outgoing)) {
-  sessions.step(state, support.input(WatchEnded(watch: WatchId(watch))))
+) -> #(State, step.ServiceStep(account_session.Outgoing)) {
+  account_session.step(state, support.input(WatchEnded(watch: WatchId(watch))))
 }
 
 pub fn a_first_claim_takes_the_slot_answers_claimed_and_watches_the_claimer_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, taken) =
     ask(
-      state: sessions.new(Nil),
+      state: account_session.new(Nil),
       caller: 1,
       message: Claim(account:, connection: first),
     )
@@ -63,7 +63,7 @@ pub fn a_second_claim_for_the_same_account_answers_claimed_sends_taken_over_to_t
   use <- owned_test.run(5000)
   let #(state, _) =
     ask(
-      state: sessions.new(Nil),
+      state: account_session.new(Nil),
       caller: 1,
       message: Claim(account:, connection: first),
     )
@@ -82,7 +82,7 @@ pub fn a_claim_by_the_holder_answers_claimed_and_changes_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
     ask(
-      state: sessions.new(Nil),
+      state: account_session.new(Nil),
       caller: 1,
       message: Claim(account:, connection: first),
     )
@@ -106,7 +106,7 @@ pub fn claims_for_different_accounts_do_not_touch_each_other_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
     ask(
-      state: sessions.new(Nil),
+      state: account_session.new(Nil),
       caller: 1,
       message: Claim(account:, connection: first),
     )
@@ -128,7 +128,7 @@ pub fn a_holders_end_frees_its_slot_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
     ask(
-      state: sessions.new(Nil),
+      state: account_session.new(Nil),
       caller: 1,
       message: Claim(account:, connection: first),
     )
@@ -148,7 +148,7 @@ pub fn an_old_holders_end_after_a_takeover_frees_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
     ask(
-      state: sessions.new(Nil),
+      state: account_session.new(Nil),
       caller: 1,
       message: Claim(account:, connection: first),
     )
@@ -174,7 +174,7 @@ pub fn a_restarted_sessions_rebuilds_its_slots_from_the_claims_that_arrive_test(
   // claim arrives.
   let #(state, first_claim) =
     ask(
-      state: sessions.new(Nil),
+      state: account_session.new(Nil),
       caller: 1,
       message: Claim(account:, connection: first),
     )
@@ -216,8 +216,8 @@ fn older_and_newer_claim(
   older_first older_first: Bool,
 ) -> #(
   State,
-  step.ServiceStep(sessions.Outgoing),
-  step.ServiceStep(sessions.Outgoing),
+  step.ServiceStep(account_session.Outgoing),
+  step.ServiceStep(account_session.Outgoing),
 ) {
   let older = Claim(account:, connection: first)
   let newer = Claim(account:, connection: second)
@@ -233,7 +233,7 @@ fn older_and_newer_claim(
 pub fn after_a_restart_the_newer_login_keeps_the_slot_when_the_older_claims_first_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, older, newer) =
-    older_and_newer_claim(state: sessions.new(Nil), older_first: True)
+    older_and_newer_claim(state: account_session.new(Nil), older_first: True)
   assert older
     == Effects([
       Watch(watch: WatchId(1), target: Connection(first)),
@@ -261,7 +261,7 @@ pub fn after_a_restart_the_newer_login_keeps_the_slot_when_the_older_claims_firs
 pub fn after_a_restart_the_newer_login_keeps_the_slot_when_it_claims_first_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, newer, older) =
-    older_and_newer_claim(state: sessions.new(Nil), older_first: False)
+    older_and_newer_claim(state: account_session.new(Nil), older_first: False)
   assert newer
     == Effects([
       Watch(watch: WatchId(1), target: Connection(second)),
@@ -286,7 +286,7 @@ pub fn after_two_restarts_the_newer_login_keeps_the_slot_when_the_older_claims_f
   // slots are lost with it, so the third starts empty.
   let #(_lost_with_the_second_sessions, taken) =
     ask(
-      state: sessions.new(Nil),
+      state: account_session.new(Nil),
       caller: 1,
       message: Claim(account:, connection: second),
     )
@@ -297,7 +297,7 @@ pub fn after_two_restarts_the_newer_login_keeps_the_slot_when_the_older_claims_f
     ])
     as "the second Sessions gave the newer login the slot"
   let #(_, older, newer) =
-    older_and_newer_claim(state: sessions.new(Nil), older_first: True)
+    older_and_newer_claim(state: account_session.new(Nil), older_first: True)
   assert older
     == Effects([
       Watch(watch: WatchId(1), target: Connection(first)),
@@ -317,7 +317,7 @@ pub fn after_two_restarts_the_newer_login_keeps_the_slot_when_it_claims_first_te
   use <- owned_test.run(5000)
   // The newer login claimed in the second Sessions, lost with it, as above.
   let #(_, newer, older) =
-    older_and_newer_claim(state: sessions.new(Nil), older_first: False)
+    older_and_newer_claim(state: account_session.new(Nil), older_first: False)
   assert newer
     == Effects([
       Watch(watch: WatchId(1), target: Connection(second)),
@@ -331,7 +331,7 @@ pub fn a_claim_after_the_holder_ended_takes_the_freed_slot_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
     ask(
-      state: sessions.new(Nil),
+      state: account_session.new(Nil),
       caller: 1,
       message: Claim(account:, connection: second),
     )
@@ -349,6 +349,9 @@ pub fn a_claim_after_the_holder_ended_takes_the_freed_slot_test() -> Nil {
 pub fn a_stopping_sessions_stops_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, taken) =
-    sessions.step(sessions.new(Nil), support.input(Stopping(deadline_ms: 5000)))
+    account_session.step(
+      account_session.new(Nil),
+      support.input(Stopping(deadline_ms: 5000)),
+    )
   assert taken == Effects([step.Stop])
 }
