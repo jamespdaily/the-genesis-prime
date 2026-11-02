@@ -193,8 +193,8 @@ gap = "HandleMessage00AD hands the world handler (built by 0x1403e1400 and kept 
 name = "HandleWorldMessage"
 
 ["0x1403ec719"]
-statement = "The jump of HandleWorldMessage's 2,322-case switch on the message id: case k handles id 97 + k, ids 97 to 2418. Ids outside that range go to the default 0x1403f12d2. The table is 2,322 four-byte image-relative entries at 0x1403f1344 with 636 distinct targets; 1,677 entries are the default. Ghidra recovers none of its targets."
-proof = "0x1403ec6eb lea eax, [rbx-0x61]; 0x1403ec6fc cmp eax, 0x911; 0x1403ec701 ja 0x1403f12d2; 0x1403ec707 lea r9, [0x140000000]; 0x1403ec70e mov ecx, [r9+rax*4+0x3f1344]; 0x1403ec716 add rcx, r9; 0x1403ec719 jmp rcx. Entries read from the file with client_pe: 636 distinct, from 0x1403ec71b to 0x1403f12d2, 1,677 equal to 0x1403f12d2. Ghidra switch_targets returns []. test_jump_tables.py (test_the_2322_case_switch_has_636_distinct_targets, test_the_2322_case_switch_targets_are_the_table_entries_in_the_file) and test_query_process.py (test_ghidra_agrees_with_the_jump_table_reader_on_299_of_302_switches) check it."
+statement = "The jump of HandleWorldMessage's 2,322-case switch on the message id: case k handles id 97 + k, ids 97 to 2418. Ids outside that range go to the default 0x1403f12d2. The table is 2,322 four-byte image-relative entries at 0x1403f1344 with 636 distinct targets; 1,677 entries are the default. Ghidra recovers none of its targets and disassembles none of the cases; the query process's decode request lists a case's instructions all the same."
+proof = "0x1403ec6eb lea eax, [rbx-0x61]; 0x1403ec6fc cmp eax, 0x911; 0x1403ec701 ja 0x1403f12d2; 0x1403ec707 lea r9, [0x140000000]; 0x1403ec70e mov ecx, [r9+rax*4+0x3f1344]; 0x1403ec716 add rcx, r9; 0x1403ec719 jmp rcx. Entries read from the file with client_pe: 636 distinct, from 0x1403ec71b to 0x1403f12d2, 1,677 equal to 0x1403f12d2. Ghidra switch_targets returns []. test_jump_tables.py (test_the_2322_case_switch_has_636_distinct_targets, test_the_2322_case_switch_targets_are_the_table_entries_in_the_file) and test_query_process.py (test_ghidra_agrees_with_the_jump_table_reader_on_299_of_302_switches) check it; test_query_process.py test_decode_lists_a_switch_case_ghidra_never_disassembled_as_llvm_objdump_does checks the decode of the case for 1428 (0x1403ec81d) against llvm-objdump."
 grade = "sure"
 
 ["0x1403f12d2"]
@@ -658,10 +658,10 @@ proof = "VS_FIXEDFILEINFO signature 0xfeef04bd at file offset 0xcee048 in .rsrc 
 grade = "sure"
 
 ["opcode.0x637"]
-statement = "Message 0x637 (1591), client to server: the player's movement commands. Fields: the client clock in milliseconds when sent, the number of commands, and the commands. It is sent only by FlushPlayerMovementCommands, at most once per movement send interval (125 ms until the server sets it with message 0xf1, then 25 to 1000 ms), only while the player unit is under client control, and only when the queued commands hold a change; a player standing still sends none. A dash flushes it on every movement update while the dash lasts."
-proof = "0x14057a333 mov edx, 0x637; 0x14057a340 mov eax, [0x140c636a8] (the clock) stored first; 0x14057a34d mov [rbp-0x3c], ecx (the count from 0x140799e80's output); 0x14057a357 the command pointer; 0x14057a35b call 0x1403f4900. Registered in 0x1400a8190 with size 0x10 and routines 0x1400b04c0, 0x1400b0560, 0x1400b06f0. No other send site passes 0x637: the immediate ids before every call of 0x1403f4900 and 0x1403f4740 were collected from the disassembly. Sending rule: see the records of 0x14057a2c0, 0x140799e80 and 0x1403a25c0."
+statement = "Message 0x637 (1591), client to server: the player's movement commands. Body, in wire order: the client clock in milliseconds when sent (32 bits), the number of commands (32 bits), then each command as a 5-bit kind (0 to 29; the writer refuses 30 and 31) and the kind's data, laid out as the movement command readers give (record 0x140c1f070), the same layout as message 0x262's and 0x638's commands. The client's own reader takes the same layout. A batch from the per-frame movement update holds, after the time command (kind 0: the clock plus twice the movement send interval), kind 1 (the platform unit id, 0 for none), kind 2 (position, three floats and a bit), kind 8 (the velocity) and kind 11 (the move asked for by the movement keys, times the move speed), each three half-precision floats and a bit, kind 14 (rotation, left out in one unit state), kind 24 (state flags, bits 0 to 17 only) and kind 27 (mode: 0, 1 or 3); records movement_command.kind_8, kind_11, kind_24 and kind_27. The position stays within one frame's movement of the world box and its height never below -2048 (movement_command.position_bound). With kind 1 at 0 the position, vectors and rotation are world values; when kind 1 names a platform unit, the position and the two vectors are in that unit's frame and the rotation's yaw is relative to the unit's facing, so a world position needs the platform's own placement. The collapse before sending drops each command that has not changed, so a message holds only what changed, and other moves the game starts queue other kinds. It is sent only by FlushPlayerMovementCommands, at most once per movement send interval (125 ms until the server sets it with message 0xf1, then 25 to 1000 ms), only while the player unit is under client control, and only when the queued commands hold a change; a player standing still sends none. A dash flushes it on every movement update while the dash lasts. Nothing on its path waits for an answer: the client neither expects an echo nor stops sending when none comes; it stops only when it loses the player unit or client control (message 0x639, or a world change through message 0xad, which removes every unit)."
+proof = "0x14057a333 mov edx, 0x637; 0x14057a340 mov eax, [0x140c636a8] (the clock) stored first; 0x14057a34d mov [rbp-0x3c], ecx (the count from 0x140799e80's output); 0x14057a357 the command pointer; 0x14057a35b call 0x1403f4900. Registered in 0x1400a8190: 0x1400a8655 lea r8d, [rdi+0x10] (size 0x10); 0x1400a864e lea r9, [0x1400b04c0] (sizer); 0x1400a8642 lea rcx, [0x1400b0560] stored as the writer; 0x1400a8632 lea rcx, [0x1400b06f0] stored as the reader; 0x1400a865c mov edx, 0x637. Writer 0x1400b0560 (decompiled): 32 bits of record word 0, 32 bits of word 1, then 0x1400af840 per 0x48-byte command; 0x1400af840: 5 bits of the kind (0x1400af895 and eax, 0x1f), 0x1400af8fb cmp rax, 0x1e / 0x1400af901 mov eax, 0x80004005 (kind 30 or more fails), else 0x1400af911 lea r8, [0x140c1ef80] / 0x1400af91f call qword ptr [r8+rax*8] with the command's data (0x1400af918 lea rdx, [rdi+0x8]). Reader 0x1400b06f0 (decompiled): ReadBits32 0x20, ReadBits32 0x20, then 0x1400af930 per command. Emulator: vector.opcode.0x637.body. The batch: UpdatePlayerMovement 0x1403a25c0 (decompiled tail): entries 1, 2, 8 (0x1401c9800 of the first vector), 0xb (of the second), then 0x14079a780 (kind 0xe) only when the unit's word 0x1620 is 0, 0x14079a810 (kind 0x18), 0x14079a990 (kind 0x1b); QueuePlayerMovementCommands adds the time command. The platform: with no platform unit the entries take the movement state's position (0x20), vectors (0x40, 0x50) and the yaw as they are, and kind 1 is 0; with one, kind 1 is the unit's id (its word 8) and the three are multiplied by the matrix the unit keeps at 0x11f0..0x122c (the position with its translation, the vectors without), and the yaw less the unit's facing at 0x12c0 (decompiled). No other send site passes 0x637: the immediate ids before every call of 0x1403f4900 and 0x1403f4740 were collected from the disassembly; a scan of the 48 bytes before each of the 345 SendWorldMessage sites for the encoding of mov edx, 0x637 finds only 0x14057a35b. No answer: FlushPlayerMovementCommands 0x14057a2c0 re-arms itself unconditionally (0x14057a3d2 call 0x140195960) and stops only at 0x14057a2e0 cmp dword [rax+0xd50], 0 (client control) or with no player unit; the client-control flag is cleared by HandleMessage0639 (0x14057a7ee) and new units start without it (0x14045870f); the in-world 0xad handler 0x1403b6de0 clears the world's player and controlled unit and removes every unit (decompiled). Sending rule: see the records of 0x14057a2c0, 0x140799e80 and 0x1403a25c0."
 grade = "fairly sure"
-gap = "The wire layout of the commands (routines 0x1400b0560 and 0x1400b06f0) is not read, nor the message's id in the outer wrapping (0x1403f4900 nests it in message 0x38c, sent as 0x244)."
+gap = "The layout is sure for kinds 0, 2 and 8 (the emulator vector) and read from the readers' decompile for the rest; that no other code clears the client-control flag is not searched beyond the two writers named (a scan for stores to that unit word would settle it); the message's id in the outer wrapping is not read (0x1403f4900 nests it in message 0x38c, sent as 0x244); kinds 8, 11, 24 and 27 carry the gaps of their own records; that the platform matrix at 0x11f0 is the inverse of the unit's world matrix, and which units count as platforms, are not read; the other queuers (0x14039daf0, 0x14039fb30, 0x14039fff0, 0x1403a0670, 0x14046bb00, 0x14046bd10, 0x14047fc40, 0x1405b3fc0) are not read for which kinds they add."
 
 ["opcode.0xf1"]
 statement = "Message 0xf1 (241), server to client. Body: values of 2, 32, 8 and 32 bits, in that order, none aligned to a byte (74 bits, padded to 10 bytes). Its handler stores the first three, and the fourth is the player's movement send interval in milliseconds: values below 25 become 25 and above 1000 become 1000. Until it arrives the interval is 125 ms. The client has no writer for it. Its handler also sets the world flag that the end of loading waits for (CheckWorldLoaded), so the client does not finish entering a world without it."
@@ -711,7 +711,7 @@ name = "MovementCommandIsRedundant"
 statement = "Updates the player's own movement once per game update, while the player unit exists, is the controlled unit and is under client control: it moves the unit and builds a batch of movement commands (platform, position, two packed vectors, rotation (left out in one unit state), state flags and mode), applies it to the unit and queues it to be sent (QueuePlayerMovementCommands). It sends the queue at once (FlushPlayerMovementCommands) while a dash is in progress, when a dash ends, before reporting a fall (message 0xfb) and before message 0xfc."
 proof = "Early returns 0x1403a25c0..: game 0x6490 null, not equal to game 0x6488, unit 0xd50 zero, unit 0xdf4 == 1, unit 0x16e8 null. Batch: entries type 1 (word 2 the platform id), 2 (position, word 0x17 the interpolate flag), 8 and 0xb (0x1401c9800 packs a vector), then 0x14079a780 (type 0xe, skipped when unit 0x1620 is set), 0x14079a810 (type 0x18), 0x14079a990 (type 0x1b); 0x1405b3b80 applies it; 0x1403a62b3 call 0x14057a190. Direct sends: 0x14057a2c0 called when game 0x78d8 is set (set to 1 with 'DashCastSuccess' in 0x14039eff0), when the dash window from GameFormula rows 0x10c and 0x11b ends (game 0x78d8 cleared), before 0x1403f4900 with 0xfb and before 0xfc. Caller: 0x1403e85d0 (UpdateGame) at 0x1403e8942, once in each of its runs; it runs once a frame: 0x140008bc0 -> 0x1400094f0 -> 0x1400097d0 -> 0x140013d00 -> each stage's update, the world stage's 0x1400344d0 calling 0x1403e85d0 until it hands the game object over as a stage of its own, which 0x140013d00 then updates directly."
 grade = "fairly sure"
-gap = "Whether the frame of the hand-over runs 0x1403e85d0 twice is not read (see 0x1400344d0); the meaning of command types 8, 11, 24 and 27 is not read."
+gap = "Whether the frame of the hand-over runs 0x1403e85d0 twice is not read (see 0x1400344d0); the batch's kinds 8, 11, 24 and 27 and the position's bound are in records movement_command.kind_8, kind_11, kind_24, kind_27 and position_bound, with their own gaps."
 name = "UpdatePlayerMovement"
 
 ["0x1403f4900"]
@@ -1201,7 +1201,7 @@ name = "HandleLoginGameServerHello"
 statement = "Starts character select on a game connection: keeps the connection, sets character select idle, loads the character-select interface (strata such as CharacterSelection and AccountServices) and, only when that load succeeds, sends message 0x7e0 with a one-byte record, 0, which the message's writer leaves out, so the body on the wire is empty. It needs no server message first; a failed load sends nothing and returns the failure."
 proof = "Instructions: 0x140020c16 mov qword ptr [rdi+0xb8], rbx (the connection); 0x140020c5b mov dword ptr [rdi+0x170], 0x0; 0x140020cbb call 0x14003db40; 0x140020cc2 js 0x140020d96 (no send); 0x140020cf6 mov r8d, 0x7e0; 0x140020d0e call qword ptr [rax+0x108]; 0x140020d4c call qword ptr [r9+0x10] (the connection's cipher); 0x140020d88 mov r8d, 0x244; 0x140020d8e call qword ptr [rax+0xf0]. Decompiled: 0x14003db40 with L'AccountServices', L'Navigation', L'DefaultStratum', L'TempBlocker' and L'Character', L'CharacterSelection', L'AccountServices', L'Credits', L'MicroStore'; network slot 0x108 with 0x7e0 and a zero byte, sent as 0x244. Callers include 0x140038120 (after login) and 0x140046340 (after a realm switch)."
 grade = "fairly sure"
-gap = "Read from Ghidra's decompile; what 0x7e0 asks for is not read; the callers 0x140033d60, 0x140045b70, 0x140047730 and 0x1403b6a80 (returns to character select) are not read."
+gap = "Read from Ghidra's decompile; what 0x7e0 asks for is not read; the callers 0x140033d60, 0x140045b70 and 0x140047730 are not read; 0x1403b6a80 calls it to return to character select on message 0x594 (its record)."
 name = "StartCharacterSelect"
 
 ["0x14044db80"]
@@ -3757,10 +3757,10 @@ gap = "Read from Ghidra's decompile; the creature path 0x1404585c0 is not read."
 name = "SetUnitPropertiesFromCreate"
 
 ["0x140c1f070"]
-statement = "The movement command readers, one per kind 0 to 29, used for message 0x262's command list and message 0x638's commands (each command on the wire is a 5-bit kind and then the kind's data). Kind 1 (platform: the unit id stood on, 0 for none), kind 24 (state flags) and kind 27 (mode) are one 32-bit value each, as are kind 0 and kind 18 apart; kind 2 (position) and kind 14 (rotation) are three floats and one bit, as is kind 19. A standing player needs only kind 2: the client itself builds just a kind 2 when it places a unit (CheckWorldLoaded's drop to the ground, EnableClientMovementControl)."
-proof = "Thirty 8-byte pointers read from Ghidra's memory at 0x140c1f070: 0 0x14007ab50, 1 0x14007ab50, 2 0x1400ad350, 3 0x1400ad750, 4 0x1400adc00, 5 0x1400adec0, 6 0x1400ae180, 7 0x1400ae470, 8 0x1400ae640, 9 0x1400ae800, 10 0x1400807f0, 11 0x1400ae640, 12 0x1400ae800, 13 0x1400807f0, 14 0x1400ad350, 15 0x1400ad750, 16 0x1400aea40, 17 0x1400aecb0, 18 0x14007c340, 19 0x1400ad350, 20 0x1400aef30, 21 0x1400807f0, 22 0x1400af0e0, 23 0x1400af480, 24 0x14007ab50, 25 0x1400af6c0, 26 0x1400807f0, 27 0x14007ab50, 28 0x1400af6c0, 29 0x1400807f0. 0x14007ab50 is ReadBits32 0x20 (decompiled); 0x1400ad350 is ReadMoveCommandSetPosition. 0x1400af930 reads the 5-bit kind (above 0x1d fails) and calls the entry for 0x638; ReadMessage0262Body does the same for 0x262. The kind meanings 1, 2, 14, 24, 27 are from UpdatePlayerMovement's batch (0x1403a25c0) and the apply switch 0x1405b4ab0 (kind 1 to the unit's 0xf40, 2 to 0xf60, 14 to 0x10a0, 24 to 0x1070, 27 to 0x1088). Emulator: vector.opcode.0x262.position."
+statement = "The movement command readers, one per kind 0 to 29, used for message 0x262's command list, message 0x638's commands and message 0x637 (each command on the wire is a 5-bit kind and then the kind's data). Each kind's data, in wire order (u32 a 32-bit value, f32 a float, h16 a 16-bit value, which for kinds 8 and 11 the client fills with a half-precision float, n a count): kinds 0 (time), 1 (platform: the unit id stood on, 0 for none), 24 (state flags) and 27 (mode): u32. Kinds 2 (position), 14 (rotation) and 19: three f32 and one bit. Kinds 8 and 11: three h16 and one bit. Kinds 10, 13, 21, 26 and 29: one bit. Kind 18: u32 and one bit. Kind 22: 16 bits and one bit. Kinds 3 and 15: n (10 bits), n u32, n times three f32, 2 bits, u32, one bit. Kind 4: n (10 bits), n times three f32, 16 bits, 2 bits, 4 bits, u32, one bit. Kind 5: u32, f32, f32, three h16, 4 bits, u32, three single bits. Kind 6: n (10 bits), n u32, 16 bits, three f32, three h16, 4 bits, u32, u32, two single bits. Kind 7: three f32, three f32, u32, f32, u32, one bit. Kinds 9 and 12: n (10 bits), n u32, n times three h16, 2 bits, u32, one bit. Kind 16: u32, 16 bits, f32, 4 bits, u32, two single bits. Kind 17: n (10 bits), n u32, 16 bits, three f32, 4 bits, u32, u32, one bit. Kind 20: three f32, u32, 16 bits, u32, one bit. Kind 23: n (8 bits), n u32, n times 16 bits, 2 bits, u32, one bit. Kinds 25 and 28: n (8 bits), n u32, n u32, u32. A standing player needs only kind 2: the client itself builds just a kind 2 when it places a unit (CheckWorldLoaded's drop to the ground, EnableClientMovementControl)."
+proof = "Thirty 8-byte pointers read from Ghidra's memory at 0x140c1f070: 0 0x14007ab50, 1 0x14007ab50, 2 0x1400ad350, 3 0x1400ad750, 4 0x1400adc00, 5 0x1400adec0, 6 0x1400ae180, 7 0x1400ae470, 8 0x1400ae640, 9 0x1400ae800, 10 0x1400807f0, 11 0x1400ae640, 12 0x1400ae800, 13 0x1400807f0, 14 0x1400ad350, 15 0x1400ad750, 16 0x1400aea40, 17 0x1400aecb0, 18 0x14007c340, 19 0x1400ad350, 20 0x1400aef30, 21 0x1400807f0, 22 0x1400af0e0, 23 0x1400af480, 24 0x14007ab50, 25 0x1400af6c0, 26 0x1400807f0, 27 0x14007ab50, 28 0x1400af6c0, 29 0x1400807f0. 0x14007ab50 is ReadBits32 0x20 (decompiled); 0x1400ad350 is ReadMoveCommandSetPosition. 0x1400af930 reads the 5-bit kind (above 0x1d fails) and calls the entry for 0x638; ReadMessage0262Body does the same for 0x262. The kind meanings 1, 2, 14, 24, 27 are from UpdatePlayerMovement's batch (0x1403a25c0) and the apply switch 0x1405b4ab0 (kind 1 to the unit's 0xf40, 2 to 0xf60, 14 to 0x10a0, 24 to 0x1070, 27 to 0x1088). Emulator: vector.opcode.0x262.position. The other readers, decompiled (ReadBits32 widths, ReadBits16, ReadFloat, and ReadBytesAsBits of n times 4 or 6 bytes for the lists): 0x1400ad750 (3, 15), 0x1400adc00 (4; its vectors through 0x1400a8a30, three ReadFloat), 0x1400adec0 (5), 0x1400ae180 (6), 0x1400ae470 (7), 0x1400ae640 (8, 11: 0x1400a8b70, three ReadBits16 0x10, then one bit), 0x1400ae800 (9, 12), 0x1400807f0 (10, 13, 21, 26, 29: ReadBits32 1), 0x1400aea40 (16), 0x1400aecb0 (17), 0x14007c340 (18: ReadBits32 0x20 then 1), 0x1400aef30 (20), 0x1400af0e0 (22), 0x1400af480 (23), 0x1400af6c0 (25, 28). The writers, thirty pointers at 0x140c1ef80 (bytes read), mirror them for the kinds read: 0x14007d010 (0, 1, 24, 27: 32 bits), 0x1400ad240 (2, 14, 19: three 32-bit floats through 0x14006bd80, then one bit), 0x1400ae530 (8, 11: three 16-bit values through 0x1400a8a90, then 0x1400ae575 cmp dword ptr [rdi+0x8], 0x0, one bit), 0x14007e610 (10, 13, 21, 26: one bit). The sizers are the thirty pointers at 0x140c1ee90."
 grade = "fairly sure"
-gap = "The pointers were read through Ghidra, not a test; the readers of kinds 3 to 13, 15 to 17, 20 to 23, 25, 26, 28 and 29 are not read; that a standing player needs nothing but kind 2 is inferred from what the client builds itself, and a live entry with a kind 2 alone would settle it."
+gap = "The pointers were read through Ghidra, not a test; the readers of the list and spline kinds are read from Ghidra's decompile, not run, and their writers (other than those named) are not read; what kinds 3 to 13, 15 to 23, 25, 26, 28 and 29 mean is not read; that a standing player needs nothing but kind 2 is inferred from what the client builds itself, and a live entry with a kind 2 alone would settle it."
 
 ["0x1407138f0"]
 statement = "Applies a kind 2 movement command (set position) to a unit's position track at the given time. With the command's bit clear it starts a new segment, so the unit is placed at the position; with the bit set and the track's last segment a position segment, it adds the position to that segment, so the unit moves to it smoothly from where it was, and the caller is told the command blended. A unit's first position, as in message 0x262, should carry the bit clear; the client's own placements (CheckWorldLoaded, EnableClientMovementControl) use 0."
@@ -4481,3 +4481,381 @@ proof = "Decompiled: the path built from the folder at 0xa7c of the object at 0x
 grade = "fairly sure"
 gap = "Read from Ghidra's decompile; how the file is read back at start (likely 0x14000b690) and the folder text at 0x1320 are not read. A call to these functions through a pointer would not be found by the reference scan."
 name = "SaveLevelUpUnlocks"
+
+["vector.opcode.0x637.body"]
+statement = "Message 0x637's body as the client writes it, for clock 0x1234 and three commands: a time command (kind 0) of 0x1335, a position (kind 2) at (1.0, 2.0, -3.0) with its bit set, and a kind 8 of the half-precision values 0x3c00, 0x0000, 0xbc00 (1.0, 0.0, -1.0) with its bit set: the 257 bits (33 bytes) 3412000003000000a066020040000000fe000000000100000147003c000000bc01. In wire order: clock (32 bits), count 3 (32 bits), kind 0 (5 bits), 0x1335 (32 bits), kind 2 (5 bits), the three floats (32 bits each), the bit, kind 8 (5 bits), the three 16-bit values, the bit."
+proof = "The query process's emulate request on the writer 0x1400b0560 with calls followed, a planted bit writer (stream at 0x70000000: its buffer object pointer and a bit offset of 0; the buffer object's cursor and end around a zeroed 4 KiB buffer at 0x70002000), the record 34120000 03000000 and a pointer to three planted 0x48-byte commands (kind at 0, data from 8; the kind 8 bit at 0x10, as UpdatePlayerMovement 0x1403a25c0 stores it): result 0, 629 steps, the cursor and bit offset give 257 bits written, and the buffer reads back as these bytes. Decoding the bits low first gives the fields listed."
+grade = "sure"
+
+["0x1400b0560"]
+statement = "Writes message 0x637's body: the clock (32 bits), the number of commands (32 bits), then each command (WriteMovementCommand)."
+proof = "Registered as 0x637's writer in 0x1400a8190 (0x1400a8642 lea rcx, [0x1400b0560]). Decompiled: two 32-bit writes of record words 0 and 1, then 0x1400af840 for each 0x48-byte command from the record's pointer at 8. Emulator: vector.opcode.0x637.body."
+grade = "sure"
+name = "WriteMessage0637Body"
+
+["0x1400b06f0"]
+statement = "Reads message 0x637's body: the clock (32 bits), the number of commands (32 bits), space for that many commands, then each command (ReadMovementCommand); a failing command fails the read."
+proof = "Registered as 0x637's reader in 0x1400a8190 (0x1400a8632 lea rcx, [0x1400b06f0]). Decompiled: ReadBits32 0x20 at record 0 and 4; AllocateMessageSpace of count times 0x48; 0x1400af930 per command, returning its failure."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run; the reader is never used by the client on its own traffic that was read (it sends 0x637 and has no handler case for it read)."
+name = "ReadMessage0637Body"
+
+["0x1400b04c0"]
+statement = "Sizes message 0x637's body: 64 bits, then for each command 5 bits plus its kind's size; a kind of 30 or more makes the size 0."
+proof = "Registered as 0x637's sizer in 0x1400a8190 (0x1400a864e lea r9, [0x1400b04c0]). Decompiled: size plus 0x40; per command plus 5 and the kind's entry of the table at 0x140c1ee90 when the kind is below 0x1e, else the size is set to 0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "SizeMessage0637Body"
+
+["0x1400af840"]
+statement = "Writes one movement command: its kind in 5 bits, then the kind's data with the kind's writer; a kind of 30 or more fails."
+proof = "0x1400af895 and eax, 0x1f; 0x1400af8e6 mov r8d, 0x5 (the slow path's width); 0x1400af8fb cmp rax, 0x1e; 0x1400af901 mov eax, 0x80004005; 0x1400af911 lea r8, [0x140c1ef80]; 0x1400af918 lea rdx, [rdi+0x8]; 0x1400af91f call qword ptr [r8+rax*8]. Emulator: vector.opcode.0x637.body."
+grade = "sure"
+name = "WriteMovementCommand"
+
+["0x1400af930"]
+statement = "Reads one movement command: its kind in 5 bits (above 29 fails), then the kind's data with the kind's reader (record 0x140c1f070)."
+proof = "Called by ReadMessage0637Body 0x1400b06f0 per command and by message 0x638's reader 0x1400b03a0. The kind check and the reader table are as the record of 0x140c1f070 gives (above 0x1d fails; the table at 0x140c1f070)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile through the records that cite it; not run."
+name = "ReadMovementCommand"
+
+["0x140c1ef80"]
+statement = "The movement command writers, one per kind 0 to 29, used by message 0x637 (WriteMovementCommand). They mirror the readers (record 0x140c1f070) for the kinds read."
+proof = "Thirty 8-byte pointers read with the bytes request at 0x140c1ee90 (720 bytes, the sizer, writer and reader tables in a row): writers 0 0x14007d010, 1 0x14007d010, 2 0x1400ad240, 3 0x1400ad400, 4 0x1400ad8a0, 5 0x1400add60, 6 0x1400adfd0, 7 0x1400ae300, 8 0x1400ae530, 9 0x1400ae6d0, 10 0x14007e610, 11 0x1400ae530, 12 0x1400ae6d0, 13 0x14007e610, 14 0x1400ad240, 15 0x1400ad400, 16 0x1400ae910, 17 0x1400aeb30, 18 0x14007aea0, 19 0x1400ad240, 20 0x1400aee00, 21 0x14007e610, 22 0x1400af000, 23 0x1400af180, 24 0x14007d010, 25 0x1400af5d0, 26 0x14007e610, 27 0x14007d010, 28 0x1400af5d0, 29 0x1400af790; the reader half matches the record of 0x140c1f070 entry for entry. Used at 0x1400af911 lea r8, [0x140c1ef80]."
+grade = "fairly sure"
+gap = "Only the writers of kinds 0, 1, 2, 8, 10, 11, 13, 14, 19, 21, 24, 26 and 27 are read; the others are taken to mirror their readers."
+
+["0x140c1ee90"]
+statement = "The movement command sizers, one per kind 0 to 29, used to size message 0x637 (SizeMessage0637Body)."
+proof = "Thirty 8-byte pointers read with the bytes request at 0x140c1ee90: 0 0x14007d000, 1 0x14007d000, 2 0x1400847a0, 3 0x1400ad3c0, 4 0x1400ad870, 5 0x1400add50, 6 0x1400adfb0, 7 0x1400ae2f0, 8 0x140093570, 9 0x1400ae690, 10 0x14007e600, 11 0x140093570, 12 0x1400ae690, 13 0x14007e600, 14 0x1400847a0, 15 0x1400ad3c0, 16 0x1400ae900, 17 0x1400aeb10, 18 0x14007ae90, 19 0x1400847a0, 20 0x1400aedf0, 21 0x14007e600, 22 0x1400aeff0, 23 0x1400af140, 24 0x14007d000, 25 0x1400af5a0, 26 0x14007e600, 27 0x14007d000, 28 0x1400af5a0, 29 0x14007e600. Used by 0x1400b04c0."
+grade = "fairly sure"
+gap = "The sizers themselves are not read."
+
+["0x1400ad240"]
+statement = "Writes a movement command of three floats and one bit (kinds 2, 14 and 19: position, rotation and one not read): each float as its 32 bits, then the bit, set when the command's flag is not 0."
+proof = "Entries 2, 14 and 19 of the writer table at 0x140c1ef80. 0x1400ad24a movss xmm1, dword ptr [rdx] / 0x1400ad254 call 0x14006bd80 (32 bits); 0x1400ad261 movss xmm1, dword ptr [rdi+0x4] / 0x1400ad269 call; 0x1400ad276 movss xmm1, dword ptr [rdi+0x8] / 0x1400ad27e call; 0x1400ad28b cmp dword ptr [rdi+0xc], 0x0; 0x1400ad293 setnz dl, written as one bit. Emulator: vector.opcode.0x637.body (kind 2)."
+grade = "sure"
+name = "WriteMoveCommandThreeFloats"
+
+["0x1400ae530"]
+statement = "Writes a movement command of three 16-bit values and one bit (kinds 8 and 11), the bit set when the command's flag is not 0. The client fills the three values with half-precision floats (PackHalfVector)."
+proof = "Entries 8 and 11 of the writer table at 0x140c1ef80. 0x1400ae540, 0x1400ae554 and 0x1400ae568 call 0x1400a8a90 (16 bits) at data 0, 2 and 4; 0x1400ae575 cmp dword ptr [rdi+0x8], 0x0; 0x1400ae57d setnz dl, written as one bit. Emulator: vector.opcode.0x637.body (kind 8)."
+grade = "sure"
+name = "WriteMoveCommandThreeHalves"
+
+["0x1400ae640"]
+statement = "Reads a movement command of three 16-bit values and one bit (kinds 8 and 11)."
+proof = "Entries 8 and 11 of the reader table at 0x140c1f070. Decompiled: 0x1400a8b70 (three ReadBits16 0x10 at data 0, 2 and 4), then ReadBits32 1 at data 8."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run."
+name = "ReadMoveCommandThreeHalves"
+
+["0x1401c9800"]
+statement = "Packs three floats into three IEEE 754 half-precision values: 1.0 gives 0x3c00, -2.0 gives 0xc000, 0.5 gives 0x3800, 0.1 gives 0x2e66, 0.0 gives 0x0000, and 65536.0 (above the largest half) gives infinity, 0x7c00. The per-frame movement update packs its two movement vectors with it for kinds 8 and 11."
+proof = "The query process's emulate request on 0x1401c9800 with the output at 0x70000000 and the input floats at 0x70001000: input 0000803f 000000c0 0000003f (1.0, -2.0, 0.5) gives 003c 00c0 0038; input 00008047 cdcccc3d 00000000 (65536.0, 0.1, 0.0) gives 007c 662e 0000; 43 steps each. Callers include UpdatePlayerMovement 0x1403a25c0 (before storing kinds 8 and 0xb) and 0x14039fff0."
+grade = "sure"
+name = "PackHalfVector"
+
+["opcode.0x63a"]
+statement = "Message 0x63a (1594), client to server: the value of the player unit's that message 0xf2 carries (likely its zone) has changed. Body: the old value (15 bits) and the new value (15 bits). The client sends it from FlushPlayerMovementCommands, after any 0x637 of that run, whenever the player unit's value differs from the one it last sent, and then keeps the new one; and from HandleMessage0636, with the kept value as both old and new, when the unit carries the flag message 0x638 or creation sets."
+proof = "Registered in 0x1400a8190: 0x1400a8759 lea r8d, [rdi+0x8] (size 8); 0x1400a8752 lea r9, [0x1400b0a40] (sizer); 0x1400a8746 lea rcx, [0x1400b0a50] (writer); 0x1400a8736 lea rcx, [0x1400b0be0] (reader); 0x1400a8760 mov edx, 0x63a. Writer 0x1400b0a50 (decompiled): WriteBitsSlow width 0xf of record word 0, then of word 1. Reader 0x1400b0be0: ReadBits32 0xf at 0 and 4. FlushPlayerMovementCommands: 0x14057a367 mov edi, dword ptr [rax+0x17e8] (the player unit's value); 0x14057a36d mov eax, dword ptr [rbx+0x7150] (the kept value); 0x14057a373 cmp edi, eax / 0x14057a375 jz (no send); 0x14057a389 mov dword ptr [rbp+0x10], eax (old); 0x14057a38c mov dword ptr [rbp+0x14], edi (new); 0x14057a37d mov edx, 0x63a; 0x14057a38f call 0x1403f4900; 0x14057a394 mov dword ptr [rbx+0x7150], edi. CheckWorldLoaded sends the same unit value in 0xf2 and keeps it at the world's 0x7150. The scan of the bytes before each SendWorldMessage site finds 0x63a only at 0x14057a38f and 0x14057a6e6."
+grade = "fairly sure"
+gap = "What the value is (the unit's word 0x17e8, set by 0x1405b4e90) is not read; that it is the zone is a guess from 0xf2's width."
+
+["opcode.0xd5"]
+statement = "Message 0xd5 (213), client to server, sent once when the client handles message 0xf1, right after it applies the movement send interval. Body: three values the world handler keeps, of 4 bits, 1 bit and 14 bits (19 bits). The client has no reader for it."
+proof = "Registered in 0x14006c290: 0x1400710a2 mov edx, 0xd5; 0x1400710a7 mov r8d, 0xc (size 12); 0x14007108d lea r9, [0x14008a440] (sizer); 0x14007107e lea rcx, [0x14008a450] (writer); 0x140071094 mov qword ptr [rsp+0x28], 0x0 (no reader). Writer 0x14008a450 (decompiled): WriteBitsSlow width 4 of record word 0, width 1 of word 1, width 0xe of word 2. Sent by HandleMessage00F1 0x1403b67e0 at 0x1403b6a0f with the game's 0x7ba0 (8 bytes) and 0x7ba8 (4 bytes); the scan of the bytes before each SendWorldMessage site finds 0xd5 there only."
+grade = "fairly sure"
+gap = "What the three values are (who writes the game's 0x7ba0..0x7bab) is not read. The server needs nothing from them to place or move the player as far as the path read here goes."
+
+["opcode.0x63b"]
+statement = "Message 0x63b (1595), client to server: the player's movement speed setting (player.moveSpeed, 0 to 2, default 2), as one 32-bit value. The client sends it when it handles message 0xf1 (after 0xd5) and again whenever the setting changes, when it also raises PlayerMovementSpeedUpdate with the new value. The client has no reader for it."
+proof = "Registered in 0x14006c290: 0x1400708e6 mov edx, 0x63b; 0x1400708eb mov r8d, 0x4; 0x1400708c2 lea rcx, [0x14007d010] (WriteUint32Body); 0x1400708d8 mov qword ptr [rsp+0x28], 0x0 (no reader). Sends found by the scan of the bytes before each SendWorldMessage site: HandleMessage00F1 at 0x1403b6a4b and the setting's change routine 0x1404dafb0 at 0x1404dafd2 (decompiled: SendWorldMessage with its argument, then the UI event 'PlayerMovementSpeedUpdate'). The setting: record 0x140c45dd0."
+grade = "fairly sure"
+gap = "What the three speeds mean is not read."
+
+["0x1404dafb0"]
+statement = "The change routine of the setting player.moveSpeed: when the client is in a world it sends the new value in message 0x63b and raises PlayerMovementSpeedUpdate with it."
+proof = "Stored as the setting's change routine by 0x14093ddc0 (record 0x140c45dd0). Decompiled: returns unless the game at 0x140c65898 is set; SendWorldMessage 0x1403f4900 with 0x63b (0x1404dafd2) and the argument; 0x1400ea3e0 with 'PlayerMovementSpeedUpdate'."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "OnMoveSpeedSettingChanged"
+
+["opcode.0xfb"]
+statement = "Message 0xfb (251), client to server, sent by the per-frame movement update after a flush of the movement queue, when a movement value of the player's is above 0 (likely a fall's distance or speed for falling damage) and the player unit is not of unit type 23. Body: one float (32 bits). The client has no reader for it."
+proof = "Registered in 0x14006c290: 0x140070878 mov edx, 0xfb; 0x14007087d mov r8d, 0x4; 0x14007085c lea rcx, [0x1400896f0] (writer: decompiled, 0x14006bd80 of word 0, 32 bits); 0x140070863 mov qword ptr [rsp+0x20], 0x0 (no reader). UpdatePlayerMovement 0x1403a25c0 (decompiled): when the movement state's float at 0x90 is above 0 and the unit's type word is not 0x17, FlushPlayerMovementCommands when its timer is set, then SendWorldMessage with 0xfb and that float (site 0x1403a62ff, the only one the scan finds)."
+grade = "fairly sure"
+gap = "What the float measures is not read; a live fall that logs the value against the height dropped would settle it."
+
+["opcode.0xfc"]
+statement = "Message 0xfc (252), client to server: the player has fallen below the world's floor. Body: one bit, set when the client found no ground below the player, then the camera's position as three floats. The per-frame movement update sends it, once until its flag is cleared, when the player's height is below a floor the terrain gives for the player's x and z; first it casts a ray down and, finding ground, moves the player onto it (bit clear); finding none, the bit is set, and a player far enough below is put back at the unit's last position; it flushes the movement queue before sending."
+proof = "Registered in 0x14006c290: 0x14007155c mov edx, 0xfc; 0x140071561 mov r8d, 0x10 (size 16); 0x140071547 lea r9, [0x1400847a0] (sizer); 0x140071538 lea rcx, [0x14008b880] (writer); no reader. Writer 0x14008b880 (decompiled): one bit of record word 0 not being 0, then 0x14006bd80 (32 bits) of words 1, 2 and 3. UpdatePlayerMovement 0x1403a25c0 (decompiled): the bound is filled by slot 0xe0 of the world's terrain object (0x1403a4998 call qword ptr [r10+0xe0] with the unit's x and z); when the movement height at 0x24 is below the bound less the unit's scaled height and the game's 0x70a4 is 0: a ray cast through slot 0x1a8 of the world's 0x7248 object with mask 0x4041; hit: the height is set from the hit and the bit is 0; no hit: the bit stays 1, and when the height is also below the bound less the value at 8 of what slot 0x48 of the world's 0x7248 object returns, the position is reset from the unit's 0x11e0; then, while the game's 0x1b80 is 0: FlushPlayerMovementCommands, SendWorldMessage with 0xfc and the record (the bit, the main camera's 0x40, 0x44, 0x48), and the game's 0x1b80 set to 1."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what slot 0xe0 of the terrain returns (the floor's height), what clears the game's 0x1b80 so a second 0xfc can be sent, and what the server is expected to answer are not read. A live entry at a position below the terrain floor would show it."
+
+["opcode.0xbf"]
+statement = "Message 0xbf (191), client to server: start or cancel leaving the world (camping). Body: one bit, 1 to start and 0 to cancel. The client sends 1 from two methods of its camp object, which keep the mode they ask for, only while no camp is running: mode 1 (Lua Camp, from the /camp command and the Options addon, and RequestCamp) leaves the world and waits for the server's message 0x594; mode 2 (Lua ExitGame) ends the client program once message 0xc0 is sent. The bit does not carry the mode, so the server cannot tell the two apart. It sends 0 from a third method (Lua CancelExit: the exit window's Cancel, and its answer to PlayerCampCancel), which clears the camp. Sending 1 starts nothing on the client: the countdown starts only when the server's message 0x92 arrives. The client has no reader for it."
+proof = "Registered in 0x14006c290: 0x140079d97 mov edx, 0xbf; 0x140079d9c mov r8d, 0x4; 0x140079d73 lea rcx, [0x14007e610] (writer: one bit of word 0 not being 0); 0x140079d89 mov qword ptr [rsp+0x28], 0x0. The scan of the bytes before each SendWorldMessage site finds 0xbf only in 0x14054f110, 0x14054f150 and 0x14054f190. Decompiled: 0x14054f110 and 0x14054f150, when the object's state word at 0xc is 0, send 0xbf with 1 and store 1 or 2 at 8; 0x14054f190 sends 0xbf with 0 and clears the words at 8 and 0x14. They are slots 3, 4 and 5 of the class table at 0x140b6c620, stored by 0x14054f210 (refs at 0x14054f239 and 0x14054f246). The update, slot 1 (0x14054ef20, decompiled): in state 2, once the object's word at 0x10 is set, PostQuitMessage."
+grade = "fairly sure"
+gap = "The methods and their Lua callers (records 0x14050c3d0, 0x1400449a0, 0x1400449e0, 0x14050c4e0, 0x14050c480) are read from Ghidra's decompile. That mode 1 returns to character select is the server's doing: the client goes there when 0x594 arrives with its bit set (opcode.0x594)."
+
+["opcode.0xc0"]
+statement = "Message 0xc0 (192), client to server: the camp has finished, so leave the world now. Its body is empty. The client sends it at most once per camp, and only while a camp the server started with message 0x92 is running: in mode 1 when the countdown runs out (while a list the camp checks is empty), or earlier when the exit window's Exit button calls ConfirmCamp, which it enables once the countdown is over, or at any time in mode 2 (Quit); Lua ExitNow also sends it in mode 2. In mode 2 the client then ends the program itself; in mode 1 it sends nothing more and waits for the server's message 0x594, which returns it to character select. So a 0xc0 can come before the server's countdown ends (a Quit), and the server cannot tell the modes apart. The client has no reader for it."
+proof = "Registered in 0x14006c290: 0x140079dce mov edx, 0xc0; 0x140079dd3 mov r8d, 0x1; 0x140079daa lea rcx, [WriteEmptyBody]; 0x140079db9 lea r9, [SizeEmptyBody]; 0x140079dc0 mov qword ptr [rsp+0x28], 0x0. The scan of the bytes before each SendWorldMessage site finds 0xc0 only in 0x14054f1d0 (decompiled: when the camp object's state word at 0xc is set and its word at 0x10 is 0, send 0xc0 and set the word at 0x10 to 1), slot 6 of the class table at 0x140b6c620. The update 0x14054ef20 (decompiled): in state 1, once the client clock passes the deadline at 0x14, it calls slot 6 (0x14054ef7a jmp through the table). The camp start 0x14054ef90 (decompiled): with a non-zero countdown, the deadline is the clock plus the countdown in milliseconds, the state becomes the kept mode (1 when none), and 'PlayerCampStart' is raised; a zero countdown with no mode or with its second flag set clears the camp and raises 'PlayerCampCancel'. UpdateCamp in mode 2 returns until the word at 0x10 is set, then PostQuitMessage. The other callers of slot 6: Lua ConfirmCamp 0x14050c3f0 (when the state is not 0) and Lua ExitNow 0x14050c430 (in mode 2, then PostQuitMessage); UI/WelcomeWindow/ExitWindow.lua line 297 (btnExitGame enabled when not counting down or when ePendingEvent is Quit) and lines 346-349 (OnExitGameBtn calls ConfirmCamp)."
+grade = "fairly sure"
+gap = "The camp code is read from Ghidra's decompile (the camp start is message 0x92, opcode.0x92; the answer to 0xc0 in mode 1 is 0x594, opcode.0x594). What the list at 0x140c659e0 holds, which holds back the countdown's own 0xc0 while it is not empty, is not read."
+
+["0x14054ef90"]
+statement = "Starts or cancels the client's camp from server message 0x92: a countdown in milliseconds, a cancel bit and the signature bonuses. A zero countdown, when no mode was asked for or the bit is set, clears the camp and raises PlayerCampCancel. Any other message sets the camp's deadline to the client clock plus the countdown, starts the camp in the mode the client asked for (1 when none), marks 0xc0 not yet sent, keeps the bonuses and raises PlayerCampStart."
+proof = "Slot 2 of the class table at 0x140b6c620 (bytes at 0x140b6c630: 0x14054ef90). Decompiled: when message word 0 is 0 and (the mode at 8 is 0 or message word 1 is not 0), the words at 8, 0x10 and 0x18 cleared and 'PlayerCampCancel' raised; otherwise deadline word 0x14 = message word 0 plus the clock at 0x140c636a8, word 0x18 set to 1 when it was 0 and the countdown is not, state word 0xc = the mode at 8 or 1, word 0x10 = 0, 0x118 bytes from message offset 8 copied to 0x20, 0x1400ea3e0 with 'PlayerCampStart'."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what the word at 0x18, set by the first non-zero countdown and cleared by a cancel, is for is not read. The message is 0x92 (opcode.0x92: its case 0x1403f103d calls this slot)."
+name = "HandleCampStart"
+
+["0x14054ef20"]
+statement = "Updates the client's camp each run: with a camp in mode 1, once the deadline passes (and, while some list is not empty, only after the camp is marked done) it sends message 0xc0; in mode 2, once the camp is marked done, it ends the client program."
+proof = "Slot 1 of the class table at 0x140b6c620 (bytes at 0x140b6c628). Decompiled: state word 0xc; mode 1 tests the count of the list at 0x140c659e0 and the word at 0x10; the deadline test is the clock at 0x140c636a8 minus the word at 0x14 not negative; mode 1 jumps through slot 6 (0x14054f1d0, which sends 0xc0); otherwise PostQuitMessage(0)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what the list at 0x140c659e0 holds is not read."
+name = "UpdateCamp"
+
+["0x14054f110"]
+statement = "Asks the server to start a camp in mode 1, unless one is running: sends message 0xbf with 1 and keeps the mode."
+proof = "Decompiled: when the word at 0xc is 0, SendWorldMessage 0x1403f4900 with 0xbf and 1 (0x14054f138), then 1 stored at 8. Slot 3 of the class table at 0x140b6c620."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; its Lua caller is not read."
+name = "RequestCampMode1"
+
+["0x14054f150"]
+statement = "Asks the server to start a camp in mode 2 (the one that ends the client program), unless one is running: sends message 0xbf with 1 and keeps the mode."
+proof = "Decompiled: when the word at 0xc is 0, SendWorldMessage 0x1403f4900 with 0xbf and 1 (0x14054f178), then 2 stored at 8. Slot 4 of the class table at 0x140b6c620; UpdateCamp 0x14054ef20 calls PostQuitMessage in mode 2."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; its Lua caller is not read."
+name = "RequestCampMode2"
+
+["0x14054f190"]
+statement = "Asks the server to cancel the camp: sends message 0xbf with 0 and clears the camp's mode, state and deadline."
+proof = "Decompiled: SendWorldMessage 0x1403f4900 with 0xbf and 0 (0x14054f1b4); the eight bytes at 8 and the word at 0x14 set to 0. Slot 5 of the class table at 0x140b6c620."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; its Lua caller is not read."
+name = "RequestCampCancel"
+
+["0x14054f1d0"]
+statement = "Tells the server once that the camp has finished: while a camp is running and this was not yet sent, sends message 0xc0 and marks it sent."
+proof = "Decompiled: when the word at 0xc is not 0 and the word at 0x10 is 0, SendWorldMessage 0x1403f4900 with 0xc0 (0x14054f1fc), then 1 at 0x10. Slot 6 of the class table at 0x140b6c620."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "SendCampFinished"
+
+["opcode.0x594"]
+statement = "Message 0x594 (1428), game server to client: leave the world. Body: a bit, then a reason (5 bits). The client takes and ignores it at realm select and character select. In the world it tears the world down, then: when the bit is set and the reason is none of 6, 7, 8, 12, 15, 16, 19 and 20, it starts character select on the same connection (StartCharacterSelect, which sends message 0x7e0) and raises LogOut; otherwise (the bit clear, or one of those reasons, which clear it) it shows the error screen with the reason's text, the same texts as message 0x36a's: 6 'You were logged out by a GM.', 7 'You lost connection with the server due to inactivity.', 8 'Lost connection with user server.', 12 'Lost connection with gateway server.', 15 'Lost connection with world server.', 16 'You are out of game time.', 19 'This account has been disconnected', 20 'You have been disconnected due to a critical transaction failure.', any other 'You have lost connection with the server.'. So 0x594 with the bit set and reason 0 returns the player to character select; it is the answer a camp in mode 1 waits for after message 0xc0, since the camp's own code sends and does nothing more. The client has no writer for it."
+proof = "Registered in 0x14006c290: 0x14006d858 mov edx, 0x594; 0x14006d851 lea r8d, [r9+0x8] (size 8); 0x14006d83a lea rcx, [0x14007e8f0] stored as the reader (decompiled: ReadBits32 1 at record 0, ReadBits32 5 at 4); 0x14006d85d mov qword ptr [rsp+0x20], 0x0 (no writer). Emulator: vector.opcode.0x594.body. Ignored by HandleCharacterSelectMessage 0x140020ea0 and HandleRealmSelectMessage 0x140045a70. HandleWorldMessage's jump table entry for 1428 (bytes at 0x1403f2810: 1dc83e00) is 0x1403ec81d, which Ghidra has not disassembled; the query process's decode request lists it: 0x1403ec81d mov rdx, rdi (the message: 0x1403ec6c4 mov rdi, r9 in the dispatcher's head); 0x1403ec820 mov rcx, rsi (the world handler: 0x1403ec6ca mov rsi, rcx); 0x1403ec823 call 0x1403b6a80; 0x1403ec828 mov ebx, eax; 0x1403ec82a jmp 0x1403f1320. test_query_process.py test_decode_lists_a_switch_case_ghidra_never_disassembled_as_llvm_objdump_does checks those five instructions against llvm-objdump. HandleMessage0594: record 0x1403b6a80. Texts in en-US.bin by id: as opcode.0x36a's record for reasons 6 to 20, and 143475 (0x23073) 'You have lost connection with the server.'. The camp: records opcode.0xbf, opcode.0x92, opcode.0xc0."
+grade = "fairly sure"
+gap = "What the world teardown calls do (0x1403fa730, 0x1403fa3d0 and 0x140016480, which 0x36a's world case 0x1403b6d10 also makes) and what the error-screen stage does with the connection it keeps are not read. A live camp answered with 0x594 (bit set, reason 0) would show the return to character select."
+
+["vector.opcode.0x594.body"]
+statement = "Message 0x594's body read by the client: the byte 01 is the bit set and reason 0; 1e is the bit clear and reason 15; 3f is the bit set and reason 31; c1 reads as the bit set and reason 0, its top 2 bits left unread; each read takes 6 bits. An empty body fails with 0x80070026 after 0 bits."
+proof = "The query process's emulate request (2026-11-02): the reader 0x14007e8f0 run whole with rcx = a planted received stream (chunk pointer at 0x10, read pointer at 0x18, bit offset at 0x20, no chain at 0x28; the chunk's end at its 0x20) over the byte plus 16 bytes of slack, rdx = a planted record space and r8 = a zeroed 8-byte record, calls followed: result 0, the record's two words (1, 0), (0, 15), (1, 31) and (1, 0), and the read position 6 bits; over no bytes, 0x80070026 at 0 bits."
+grade = "sure"
+
+["0x1403b6a80"]
+statement = "Handles message 0x594 in the world. For reasons 6, 7, 8, 12, 15, 16, 19 and 20 it takes that reason's disconnect text and treats the bit as clear; for any other reason it takes text 143475 'You have lost connection with the server.' and keeps the bit. It then tears the world down. With the bit set it builds a character-select stage, starts character select on the world's connection (StartCharacterSelect), hands the stage over and raises the UI event LogOut. With the bit clear it builds an error-screen stage that keeps the world's connection, shows the text on it and hands that stage over. A failure to start either stage is returned."
+proof = "Listed whole by the disassemble request: 0x1403b6a94 mov eax, dword ptr [rdx+0x4] (the reason); 0x1403b6a97 mov edi, dword ptr [rdx] (the bit); 0x1403b6a9b add eax, -0x6; 0x1403b6aa1 cmp eax, 0xe; 0x1403b6aa4 ja 0x1403b6b03; 0x1403b6ab9 jmp rdx through the table read as bytes at 0x1403b6cc8 (d66a3b00 f16a3b00 c46a3b00 036b3b00 036b3b00 036b3b00 bb6a3b00 036b3b00 036b3b00 cd6a3b00 e86a3b00 036b3b00 036b3b00 df6a3b00 fa6a3b00, reasons 6 to 20): 6 0x1403b6ad6 mov esi, 0x8e9e8; 7 0x1403b6af1 mov esi, 0xa638e; 8 0x1403b6ac4 mov esi, 0x8e9e5; 12 0x1403b6abb mov esi, 0x8e9e7; 15 0x1403b6acd mov esi, 0x8e9e6; 16 0x1403b6ae8 mov esi, 0x96ae5; 19 0x1403b6adf mov esi, 0xb268e; 20 0x1403b6afa mov esi, 0xb3600, each followed by mov edi, ebx (ebx 0 from 0x1403b6a99 xor ebx, ebx); 9 to 11, 13, 14, 17, 18 and above 20: 0x1403b6b03 mov esi, 0x23073. Teardown: 0x1403b6b0b call 0x1403fa730; 0x1403b6b13 call 0x1403fa3d0; 0x1403b6b1f call 0x140016480 with the game object. 0x1403b6b26 test edi, edi; 0x1403b6b28 jz 0x1403b6bc3. Bit set: 0x1403b6b2e mov ecx, 0x2d0 / AllocMemory; 0x1403b6b40 call 0x140020730; 0x1403b6b48 mov rdx, qword ptr [rbp+0x7928] (the world's connection); 0x1403b6b52 call StartCharacterSelect (0x140020bc0); 0x1403b6b5d mov r8d, 0x1; 0x1403b6b69 call 0x140048100; 0x1403b6b82 lea rdx, ['LogOut' at 0x1409e8cdc]; 0x1403b6b90 call 0x1400ea3e0 (the UI event raiser). Bit clear: 0x1403b6bc3 mov ecx, 0x88 / AllocMemory; 0x1403b6c0e lea rax, [0x140b555d0] stored as its class table; 0x1403b6c2c mov edx, esi; 0x1403b6c2e call GetLocalizedText; 0x1403b6c3d mov qword ptr [rdi+0x80], rcx (the world's connection); 0x1403b6c4a call 0x140033780 with the text (the error-screen start ShowErrorScreen 0x140015ec0 also makes); 0x1403b6c55 mov r8d, 0x2; 0x1403b6c61 call 0x140048100; the stage linked at the world handler's 0x63f8. Called from HandleWorldMessage's case 0x1403ec81d (opcode.0x594). Texts: opcode.0x594."
+grade = "fairly sure"
+gap = "The branches and text ids are read from the instructions; what the calls they lead to do (0x140020730, 0x140048100 with modes 1 and 2, 0x140033780, the teardown calls) is taken from the records that cite them or their names, not read here."
+name = "HandleMessage0594"
+
+["opcode.0x92"]
+statement = "Message 0x92 (146), game server to client: start or cancel the player's camp, the countdown to leaving the world. Body, in wire order and none of it aligned to a byte: the countdown in milliseconds (32 bits), a cancel bit (1 bit), then the signature bonuses the exit window shows: experience (32 bits), elder points (32 bits), 15 currency amounts (64 bits each, currency index 0 to 14) and 19 account currency amounts (64 bits each, index 0 to 18): 2273 bits, 285 bytes. In the world the client hands it to its camp (HandleCampStart): a countdown of 0 with the cancel bit set, or with no camp asked for by message 0xbf, cancels the camp and raises PlayerCampCancel. Anything else starts the camp: its deadline becomes the client clock plus the countdown, it takes the mode message 0xbf asked for (1 when none, so a camp the server starts unasked is in mode 1), the bonuses are kept for GameLib.GetGameExitInfo, and PlayerCampStart is raised. A countdown of 0 with the bit clear after a 0xbf starts a camp that is already due. The client sends 0xbf and then waits: without 0x92 no countdown runs and 0xc0 is never sent. The client has no writer for it."
+proof = "Registered in 0x14006c290: 0x1400797ef lea rcx, [0x1400a4fe0] stored as the reader (0x1400797fe mov qword ptr [rsp+0x28], rcx); 0x140079803 xor r9d, r9d (no sizer); 0x140079809 mov edx, 0x92; 0x14007980e mov r8d, 0x120 (record size); 0x140079814 mov qword ptr [rsp+0x20], 0x0 (no writer). Reader: record 0x1400a4fe0; emulator: vector.opcode.0x92.body. HandleWorldMessage's jump table entry for 146 (bytes at 0x1403f1408: 3d103f00) is 0x1403f103d, which Ghidra has not disassembled; the query process's decode request lists it: 0x1403f103d call 0x14054f210 (GetCamp); 0x1403f1042 mov rdx, rdi (the message: 0x1403ec6c4 mov rdi, r9 in the dispatcher's head); 0x1403f1045 mov r8, qword ptr [rax]; 0x1403f1048 mov rcx, rax; 0x1403f104b call qword ptr [r8+0x10] (slot 2 of the camp class table at 0x140b6c620; bytes at 0x140b6c630: 900ef54401000000, HandleCampStart 0x14054ef90); 0x1403f104f mov ebx, eax; 0x1403f1051 jmp 0x1403f1320. The camp's handling: record 0x14054ef90. The bonuses' meaning: GameLib.GetGameExitInfo 0x140701bd0 names them nXp, nElderPoints, tCurrencies and tAccountCurrencies inside tSignatureBonuses. That the camp does nothing until 0x92: RequestCampMode1 0x14054f110 and RequestCampMode2 0x14054f150 only send 0xbf and keep the mode, and of the camp class's eleven methods (slot 0, 0x14054eef0, only resets the class table) the state that UpdateCamp 0x14054ef20 acts on is set only by HandleCampStart."
+grade = "fairly sure"
+gap = "HandleCampStart is read from Ghidra's decompile; which currency each index names (GetGameExitInfo passes the index with each non-zero amount to Game.Money) and what the camp's flag set by its first non-zero countdown is for are not read. A live camp would show the countdown on the exit window."
+
+["vector.opcode.0x92.body"]
+statement = "Message 0x92's body read by the client: countdown 30000, cancel bit 0, experience 0x11111111, elder points 0x22222222, currency i (0 to 14) 0x0100000000000001 + i and account currency j (0 to 18) 0x0200000000000100 + j are these 2273 bits (285 bytes), read back to those values with 16 bytes after them or with none: 30750000222222224444444402000000000000020400000000000002060000000000000208000000000000020a000000000000020c000000000000020e00000000000002100000000000000212000000000000021400000000000002160000000000000218000000000000021a000000000000021c000000000000021e00000000000002000200000000000402020000000000040402000000000004060200000000000408020000000000040a020000000000040c020000000000040e02000000000004100200000000000412020000000000041402000000000004160200000000000418020000000000041a020000000000041c020000000000041e0200000000000420020000000000042202000000000004240200000000000400. The first 284 bytes alone fail with 0x80070026."
+proof = "The query process's emulate request (2026-11-02): ReadMessage0092Body 0x1400a4fe0 run whole with rcx = a planted received stream (chunk pointer at 0x10, read pointer at 0x18, bit offset at 0x20, no chain at 0x28; the chunk's end at its 0x20) over the bytes, rdx = a planted record space and r8 = a zeroed 0x120-byte record, calls followed: result 0 in 3391 steps, the record's first two words 30000 and 0, the 0x118 bytes from offset 8 the bonuses in order, and the stream's read position 284 bytes and 1 bit, with 16 bytes of slack and with none; over the first 284 bytes alone, 0x80070026 in 3632 steps."
+grade = "sure"
+
+["0x1400a4fe0"]
+statement = "Reads message 0x92's body: the countdown (32 bits), the cancel bit (1 bit), then the signature bonuses (ReadSignatureBonuses); the first failing read fails the message."
+proof = "Listed whole: 0x1400a4ff0 test r8, r8 (no record: 0x1400a4ff5 mov eax, 0x80004005); 0x1400a5005 mov r8d, 0x20; 0x1400a500e call ReadBits32 into record 0; 0x1400a5015 js; 0x1400a5017 lea rdx, [rbx+0x4]; 0x1400a501b mov r8d, 0x1; 0x1400a5024 call ReadBits32; 0x1400a502b js; 0x1400a502d lea r8, [rbx+0x8]; 0x1400a5034 call 0x1400ad1b0. Emulator: vector.opcode.0x92.body."
+grade = "sure"
+name = "ReadMessage0092Body"
+
+["0x1400ad1b0"]
+statement = "Reads the signature bonuses of message 0x92: experience (32 bits), elder points (32 bits), then 15 currency amounts (120 bytes) and 19 account currency amounts (152 bytes) as raw bytes, 64 bits each."
+proof = "Listed whole: 0x1400ad1d5 mov r8d, 0x20; 0x1400ad1de call ReadBits32 at record 0; 0x1400ad1e7 lea rdx, [rbx+0x4]; 0x1400ad1eb mov r8d, 0x20; 0x1400ad1f4 call ReadBits32; 0x1400ad1fd lea rdx, [rbx+0x8]; 0x1400ad201 mov r8d, 0x78; 0x1400ad20a call ReadBytesAsBits (0x140337160); 0x1400ad213 lea rdx, [rbx+0x80]; 0x1400ad21a mov r8d, 0x98; 0x1400ad223 call ReadBytesAsBits; each js to the return. Emulator: vector.opcode.0x92.body."
+grade = "sure"
+name = "ReadSignatureBonuses"
+
+["0x14054f210"]
+statement = "Returns the client's one camp object, making it on first use with no mode, no state, nothing sent, no deadline and the bonus space zeroed."
+proof = "Decompiled: returns the global at 0x140c65b68 when set; else AllocMemory 0x138 bytes, class table 0x140b6c620, words 8 to 0x1b zeroed, 0x118 bytes from 0x20 zeroed (0x1407e4830), stored at 0x140c65b68 (writes at 0x14054f261 and 0x14054f27a). Callers: the case of message 0x92 at 0x1403f103d, the Lua functions Camp (through 0x1404da940), ConfirmCamp, ExitNow, CancelExit, ExitGame (two tables), RequestCamp, GetGameExitInfo, and 0x14053a990."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the other reader of 0x140c65b68, 0x1403e3350, and the caller 0x14053a990 are not read."
+name = "GetCamp"
+
+["0x140701bd0"]
+statement = "Lua GameLib.GetGameExitInfo(): returns a table of fTimeRemaining (the seconds left to the camp's deadline, 0 with none), ePendingEvent (the camp's state: 0 none, else its mode), bConfirmed (true once message 0xc0 was sent) and tSignatureBonuses, which holds nXp, nElderPoints, tCurrencies (a Game.Money for each non-zero amount of the 15, with its index) and tAccountCurrencies (the same for each non-zero amount of the 19): the bonuses of the last message 0x92."
+proof = "Decompiled and listed: slot 8 of the camp (0x14054f0d0: the deadline less the clock times the float read as bytes at 0x140b79d04, 6f12833a = 0.001) under 0x140701c73 lea rdx, [u'fTimeRemaining' 0x140b41c28]; slot 7 (0x1401d8c10 returns the state word) under 0x140701d29 lea r8, [u'ePendingEvent' 0x140b41c08]; slot 9 (0x1400b6680 returns the sent word) under 0x140701d84 lea rdx, [u'bConfirmed' 0x140b41bf0]; slot 10 (0x1402e0810, the bonus space) gives word 0 under u'nXp' (0x140b41be8) and word 1 under 0x140701ec2 lea r8, [u'nElderPoints' 0x140b41bc8]; a loop over 15 64-bit amounts skipping zeros, each made a 'Game.Money' (0x140701fac), under 0x1407020da lea rdx, [u'tCurrencies']; a loop over 19 from the space's offset 0x80 under 0x14070255a lea rdx, [u'tAccountCurrencies']; 0x140702733 lea rdx, [u'tSignatureBonuses']. Its name pair at 0x140b730e0: 'GetGameExitInfo' (0x140b430d0). Camp class table slots read as bytes at 0x140b6c620: 0x14054eef0, 0x14054ef20, 0x14054ef90, 0x14054f110, 0x14054f150, 0x14054f190, 0x14054f1d0, 0x1401d8c10, 0x14054f0d0, 0x1400b6680, 0x1402e0810. UI/WelcomeWindow/ExitWindow.lua calls it as GameLib.GetGameExitInfo (lines 62, 87, 105, 289)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; which table the name pair sits in (GameLib, from the addon's use) and the values of GameLib.CodeEnumExitEvent (the addon compares ePendingEvent with its Camp and Quit) are not read; that tSignatureBonuses wraps the four keys is inferred from the order of the stores."
+name = "LuaGetGameExitInfo"
+
+["0x14050c3d0"]
+statement = "Lua Camp(): in a world, asks for a camp in mode 1: with a world connection the camp sends message 0xbf with 1 (RequestCampMode1); without one, another stage is built and handed over."
+proof = "Decompiled: 0x1404da940 when the game at 0x140c65898 is set. 0x1404da940 (decompiled): with the game's world connection (0x7928), slot 3 of GetCamp's object (0x14054f110); else 0x1400367f0 on a new 0x108-byte object, 0x140036bf0, 0x140048100 with mode 1. Name pair at 0x140c59c40: 'Camp' (0x140b10f24). Callers in the addons: the /camp slash command (UI/WelcomeWindow/ExitWindow.lua lines 48 and 68-71) and two buttons of UI/ProtectedAddons/Options/Options.lua (lines 1887 and 1905)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the stage built without a world connection (0x1400367f0) is not read."
+name = "LuaCamp"
+
+["0x1400449a0"]
+statement = "Lua RequestCamp(): without a game it ends the client program; with one it asks for a camp in mode 1 (RequestCampMode1, message 0xbf with 1)."
+proof = "Decompiled: PostQuitMessage when the game at 0x140c65898 is 0; else 0x140016480 on 0x140c65678, then slot 3 of GetCamp's object. Name pair at 0x140c569b0: 'RequestCamp' (0x1409fe820). Called by UI/ProtectedAddons/Options/Options.lua lines 2369 (restart prompt) and 2817 (OnRequestCampSignal)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what 0x140016480 does with 0x140c65678 is not read."
+name = "LuaRequestCamp"
+
+["0x1400449e0"]
+statement = "Lua ExitGame() of the table that also holds RequestCamp: without a game it ends the client program; with one it asks for a camp in mode 2 (RequestCampMode2, message 0xbf with 1), which ends the program once message 0xc0 is sent."
+proof = "Decompiled: PostQuitMessage when the game at 0x140c65898 is 0; else 0x140016480 on 0x140c65678, then slot 4 of GetCamp's object (0x14054f150). Name pair at 0x140c569c0: 'ExitGame' (0x1409fe810). UI/ProtectedAddons/Options/Options.lua line 2821 calls ExitGame()."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; which of the two ExitGame registrations the Options addon reaches is not read."
+name = "LuaExitGameWithRequestCamp"
+
+["0x14050c4e0"]
+statement = "Lua ExitGame() of the table that also holds Camp: asks for a camp in mode 2 (RequestCampMode2)."
+proof = "Decompiled: slot 4 of GetCamp's object. Name pair at 0x140c59de0: 'ExitGame' (0x140b11288)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "LuaExitGame"
+
+["0x14050c3f0"]
+statement = "Lua ConfirmCamp(): in a world, while a camp is running, tells the server the camp is finished (SendCampFinished: message 0xc0, once per camp). The exit window's Exit button calls it; the button is enabled once the countdown is over, or at any time while the pending event is Quit (mode 2)."
+proof = "Decompiled: when the game at 0x140c65898 is set and slot 7 of GetCamp's object (the state) is not 0, slot 6 (0x14054f1d0). Name pair at 0x140c59c50: 'ConfirmCamp' (0x140b10f18). UI/WelcomeWindow/ExitWindow.lua: line 297 enables btnExitGame when not counting down or when ePendingEvent is GameLib.CodeEnumExitEvent.Quit; lines 346-349 OnExitGameBtn calls ConfirmCamp()."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; that the enum's Quit is mode 2 is inferred from mode 2 ending the program, not read from the enum's registration."
+name = "LuaConfirmCamp"
+
+["0x14050c430"]
+statement = "Lua ExitNow(): in a world with a camp in mode 2, sends message 0xc0 unless it was sent, then ends the client program; in any other state it does nothing."
+proof = "Decompiled: when the game at 0x140c65898 is set and slot 7 of GetCamp's object is 2: slot 9 (the sent word) 0 calls slot 6 (0x14054f1d0); then PostQuitMessage(0). Name pair at 0x140c59c60: 'ExitNow' (0x140b10f40)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; no addon in UI/ calls it."
+name = "LuaExitNow"
+
+["0x14050c480"]
+statement = "Lua CancelExit(): in a world, asks the server to cancel the camp (RequestCampCancel: message 0xbf with 0) and clears it. The exit window's Cancel calls it, and so does its handler of PlayerCampCancel."
+proof = "Decompiled: when the game at 0x140c65898 is set, slot 5 of GetCamp's object (0x14054f190). Name pair at 0x140c59c70: 'CancelExit' (0x140b10f30). UI/WelcomeWindow/ExitWindow.lua lines 351-358: OnPlayerCampCancel calls OnCancel, which calls CancelExit()."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile. On PlayerCampCancel (raised by a cancelling 0x92) the addon calls CancelExit, so the client answers a server's cancel with 0xbf 0; a live cancel would show it."
+name = "LuaCancelExit"
+
+["movement_command.kind_8"]
+statement = "Movement command kind 8 (three half floats and a bit): the unit's velocity. The per-frame update sends the player's movement velocity: the vector a jump adds its push to and gravity and the ground act on, which also takes the platform unit's own velocity when the player stands on a platform but is not moving in its frame. When kind 1 names a platform, it is in that platform's frame: the client makes a unit's world velocity from it as the platform's velocity plus this vector turned by the platform's rotation. With no platform it is the world velocity. The game's own moves (other queuers) send kind 8 too, with values not followed."
+proof = "UpdatePlayerMovement 0x1403a25c0 (decompiled): kind 8 packs (PackHalfVector 0x1401c9800) the movement state's vector at 0x40, which is loaded each update from the unit's group 0xff0 (where ApplyMovementCommand 0x1405b4ab0 puts kinds 8 to 10), gets a jump's push added (the decompile's block setting the in-air words 0x88 and 0x94 adds a turned vector to it) and, when the frame unit differs from the platform found, the platform's 0x1120..0x112c (its world velocity); flag 0x1 of kind 24 is set when its squared length is below the constant at 0x140c44798 with no move asked. UpdateUnitWorldMatrix 0x1405b5070 (decompiled): the unit's 0x1120 = the platform's 0x1120 + the platform's rotation rows 0x11b0..0x11dc times the unit's 0xff0 (no translation added), or the unit's own vector with no platform. QueueGamePlayerMove 0x14039fff0 and the queuers 0x1403a0670 and 0x1405b3fc0 also write kind 8 entries (decompiled), packing vectors of their own."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the units (world units per second is likely, from the move speed it is scaled by) and the meaning of the bit (MovementCommandIsRedundant 0x1407999e0 uses it as the interpolate flag) are not read. A live run that logs kind 8 against the change of kind 2 per second would settle the units."
+
+["movement_command.kind_11"]
+statement = "Movement command kind 11 (three half floats and a bit): the move the player asks for. The per-frame update sends the direction from the movement keys, turned into the world by the player's facing, cut to length 1 when longer, then scaled by the unit's move speed (or by the dash's speed while a dash lasts); it is 0, 0, 0 when no movement key is held. When kind 1 names a platform it is in that platform's frame (turned by the platform's rotation, with no platform velocity added). The game's own moves (other queuers) send kind 11 too; 0x1403a0670 sends 0, 0, 0."
+proof = "UpdatePlayerMovement 0x1403a25c0 (decompiled): the movement state's vector at 0x50 is the input vector times the basis local_3e8 (the block before 0x1403a4437), raised or lowered by two input terms, divided by its length when the squared length passes 1.0 (the float at 0x140b79ed0), then multiplied by 0x1405b45e0's speed for the unit (or the dash's constant at 0x140dc21f8 or 0x140dc21f4 times its timer); its squared length not 0 sets the 'move asked' value that flags 0x1 and 0x2 of kind 24 test. Kind 11 packs it (PackHalfVector 0x1401c9800). UpdateUnitWorldMatrix 0x1405b5070: the unit's 0x1130 = the platform's rotation rows times the unit's 0x1030 (where ApplyMovementCommand puts kinds 11 to 13), with no velocity term. The game's queuers 0x14039fff0, 0x1403a0670 and 0x1405b3fc0 write kind 11 entries; 0x1403a0670 (decompiled) packs a vector it has just zeroed."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; 0x1405b45e0 (the speed) and the basis (facing or camera) are not read; that the game's queuer 0x14039fff0 packs a real vector for kind 11 is in its decompile but its value is not followed."
+
+["movement_command.kind_24"]
+statement = "Movement command kind 24 (32 bits): the unit's movement state flags. The per-frame update builds them from bits 0 to 17 only (the mask 0x3ffff): 0x1 velocity near zero with no move asked; 0x2 a move asked and kind 11 not near zero; 0x4 in the air (with 0x8 when also past a height), 0x10 a second in-air state (with 0x20 likewise), skipped when 0x80 is set; 0x40 and 0x800 two further states of the movement; 0x80 mode 1 or 3; 0x100 on the ground in a mode other than 3, when 0x80 is clear; 0x200 below a height the ground ray gives (likely under water); 0x400 mode 2; 0x1000 and 0x2000 two states set earlier in the update; 0x4000 the window after a dash; 0x8000 and 0x10000 a dodge by its direction (0x10000 for direction 2, 0x8000 for 1, 3 and 4), 0x20000 the window after it. For a unit of type 23 that finds no ground below, it sends the unit's last applied flags instead, which may be ones the server set. No other client code sends kind 24."
+proof = "UpdatePlayerMovement 0x1403a25c0 (decompiled): uVar34, passed to 0x14079a810 (which appends a kind 0x18 entry with the value at entry word 2), starts at 0, 0x4000, 0x8000, 0x10000 or 0x20000 by the dash (game 0x78d8 and GameFormula rows 0x10c, 0x11b) and dodge (game 0x78ec, its direction at 0x78f8, rows 0x1e2, 0x1e3) timers; adds 0x1000 and 0x2000 in the middle of the update; then 0x1 (state 0x40's squared length below the float at 0x140c44798 and no move asked), 0x2 (state 0x50's squared length above it with a move asked), 0x80 ((mode - 1) & ~2 == 0), 0x400 (mode 2); while bit 7 is clear 0x100 (state 0x88 zero, mode not 3) or 0x4 / 0xc (state 0x88 set; 0xc when a value is at most state 0x8c), 0x10 / 0x30 (state 0x94; 0x30 when at most state 0x98); 0x40 (state 0xa0), 0x800 (state 0xb0), 0x200 (the height below the ray's local_218). In the unit type 0x17 branch, a failed ray sets uVar34 to the unit's 0x1070 (the group ApplyMovementCommand 0x1405b4ab0 puts kinds 24 to 26 in). The other queuers (0x14039daf0, 0x14039fb30, 0x14039fff0, 0x1403a0670, 0x14046bb00, 0x14046bd10, 0x14047fc40, 0x1405b3fc0, decompiled) write kinds 1, 2, 8, 11, 13, 14, 18, 20 and 27, never 24."
+grade = "fairly sure"
+gap = "The bits and their conditions are read from Ghidra's decompile of a long function; what most conditions mean in the game (the in-air states, 0x40, 0x800, 0x1000, 0x2000, the height for 0x200) is not read, and the words above are likely names only. What unit type 23 is, is not read."
+
+["movement_command.kind_27"]
+statement = "Movement command kind 27 (32 bits): the unit's movement mode. The client sends only 0, 1 and 3: the per-frame update sends 3 while the player rides a unit of certain kinds (likely a mount or vehicle), 1 in a state of the game's and in some cases of the player's height against the ground below, else 0; the game's own moves (QueueGamePlayerMove) send 0. No client code sends 2, though the flags builder tests for it (flag 0x400)."
+proof = "UpdatePlayerMovement 0x1403a25c0 (decompiled): uVar26, passed to 0x14079a990 (which appends a kind 0x1b entry with the value at entry word 2), is set to 0 before the tests, then 3 when 0x14039e130 returns 1 (decompiled: the unit the world's player record names at its 0xc0 exists, answers its slot 0x20, and has a kind at its 0xb8 object's word 4 of 2, 3 or 7), else 1 or 0 by the tests on the game's 0x70a8 state (local_42c), the height against the ground ray and a timer; no later store to it before the call. QueueGamePlayerMove 0x14039fff0: a kind 0x1b entry with value 0. The other queuers write no kind 27 (see movement_command.kind_24)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what the modes mean in the game, and what the game's 0x70a8 and 0x70a4 states are, are not read (mode 3's unit kinds are read, the unit's nature is a guess). A live ride on a mount would show mode 3."
+
+["movement_command.position_bound"]
+statement = "The position the client sends in movement command kind 2 stays within one frame's movement of the world box. Each per-frame update starts the player from the unit's drawn position, which UpdateUnitWorldMatrix clamped on its last run into x and z between -32768 and 32768 and y between -2048 and 2048, moves it by this frame's movement and sends that; the next update starts again from the clamped place. A height below -2048 is raised to -2048 before it is sent, so y is never below -2048; x, z and the top of y can pass the box by one frame's step. The start is not reset while the game's state that makes mode 1 holds, and with a platform unit named the position is in the platform's frame, where the box does not apply."
+proof = "UpdatePlayerMovement 0x1403a25c0 (decompiled): at function level, when local_42c (the game's 0x70a8, set only while 0x70a4 is set) is 0, the movement state's position at 0x20..0x2c is set from the player unit's 0x11e0..0x11ec; UpdateUnitWorldMatrix 0x1405b5070 clamps 0x11e0..0x11e8 with the bounds of record 0x140c7e010 and stores them back; the later integration moves state 0x20 by one update; before the batch, when the state's height at 0x24 is below the float at 0x140c7ad44 it is set to it (and the in-air words 0x88 and 0x94 cleared); the batch's kind 2 takes the state's 0x20..0x28 (or its platform transform). 0x140c7ad44 is y of the least vector at 0x140c7ad40: record 0x140c7ad40. Two more resets from 0x11e0 (the type 0x17 branch and the fall below the floor that sends 0xfc) only pull the position back."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the size of one frame's step (move speed times the frame's time, larger for a dash, a fall or a long frame) is not read, nor the game's 0x70a8 state in which the start is not reset, nor whether a position that turns non-finite is sent once before the clamp zeroes it. A live run into the box's edge, logging kind 2, would show the step."
+
+["0x140c7ad40"]
+statement = "A second copy of the world's position bounds, set once at start: the least (-32768, -2048, -32768) and, 16 bytes on, the greatest (32768, 2048, 32768). Only the least y, -2048, is read: the player's per-frame movement update raises a lower height to it before sending, and takes it as the floor when the terrain gives none. The greatest is never read."
+proof = "InitPlayerMoveBounds 0x14093d8a0 (listed whole): 0x14093d8a0 movss xmm4, dword ptr [0x140c448b8]; 0x14093d8a8 movss xmm3, dword ptr [0x140c44918]; sign flips with xorps against 0x140b7b530; unpcklps to (A, B, A, 0) and (-A, -B, -A, 0); 0x14093d8d9 movaps xmmword ptr [0x140c7ad50], xmm5; 0x14093d8ef movaps xmmword ptr [0x140c7ad40], xmm3. Bytes at 0x140c448b8: 00000047 (32768.0); bytes at 0x140c44918: 00000045 (2048.0). refs_to: 0x140c7ad40 and 0x140c7ad50 written only there; 0x140c7ad44 read only at 0x1403a49a3, 0x1403a49f3 and 0x1403a5ae0 in UpdatePlayerMovement 0x1403a25c0; 0x14093d8a0 reached only from the start-up table entry at 0x14095ab58."
+grade = "sure"
+
+["0x14093d8a0"]
+statement = "Sets the second copy of the world's position bounds at start: x and z within 32768 and y within 2048 of the origin."
+proof = "Listed whole: 0x14093d8a0 movss xmm4, dword ptr [0x140c448b8]; 0x14093d8a8 movss xmm3, dword ptr [0x140c44918]; 0x14093d8d9 movaps xmmword ptr [0x140c7ad50], xmm5; 0x14093d8ef movaps xmmword ptr [0x140c7ad40], xmm3; 0x14093d8f6 ret. Bytes at 0x140c448b8: 00000047; bytes at 0x140c44918: 00000045."
+grade = "sure"
+name = "InitPlayerMoveBounds"
+
+["0x1405b4ab0"]
+statement = "Applies one movement command to a unit by its kind, each class to its own part of the unit: 1 the platform; 2 to 7 the position; 8 to 10 the velocity; 11 to 13 the requested move; 14 to 21 the rotation; 22 and 23 one more; 24 to 26 the state flags; 27 to 29 the mode. Kind 0 (time) changes no state: given a server-time estimate, it turns the command's time into the client's clock. Any other kind is logged and fails."
+proof = "Decompiled switch on the command's kind: 1 0x1407135f0 on the unit's 0xf40; 2 ApplyMoveCommandSetPosition, 3 to 7 0x140713ab0..0x140714010 on 0xf60; 8 0x140714a90, 9 0x140714be0, 10 0x140714ce0 on 0xff0; 11 0x140715020, 12 0x140715170, 13 0x140715270 on 0x1030; 14 ApplyMoveCommandSetRotation, 15 to 21 on 0x10a0; 22 0x140715f60, 23 0x140716080 on 0x10e0; 24 0x1407163d0, 25 0x1407164d0, 26 0x140716610 on 0x1070; 27 0x1407166b0, 28 0x1407167b0, 29 0x1407168f0 on 0x1088; default LogMessage(5, 2, ...) and 0x80004005; kind 0 with a fit (the fourth argument) sets the out time from the fit's slope and offset. The classes match CollapseMovementCommands' table (record 0x140799e80)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the appliers themselves are not read, and the names of the classes come from what the per-frame update puts in them (movement_command.kind_8, kind_11, kind_24, kind_27)."
+name = "ApplyMovementCommand"
+
+["0x1403b6de0"]
+statement = "Handles message 0xad in the world (a move to another world): it cancels any pending world removal, removes every unit, clears the world's player and the controlled unit, resets the world's difficulty to 2, logs the world id and position and loads the new world at that position, then shows the world's loading screen. The server must then send the player's unit, player and control messages again as at first entry."
+proof = "Named in the records of opcode.0xad.last_floats and opcode.0xf1. Decompiled: 0x140195d70 on a timer, 'PendingWorldRemovalCancel', a loop of 0x1403d9590 while the unit list at the world's 0x6f30 is not empty; the world's 0x78 (the player) and 0x6490 (the controlled unit) set to 0; 0x6424 = 2; LogMessage with word 0 and the floats of words 1 to 3; LoadWorld 0x1403e70d0 with word 0 and words 1 to 3; ShowWorldLoadingScreen 0x1400360f0 with word 0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the many reset calls before the log (about twenty) are not read, nor whether the world's loaded flags are all cleared (opcode.0xf1 names the store at 0x1403b711c)."
+name = "HandleMessage00ADInWorld"
+
+["0x14079ab90"]
+statement = "Keeps a unit's estimate of the server's time against the client clock: a line fitted by least squares over the last 16 (server time, client clock) samples, its slope starting at 1. A new sample is taken only when the server time has moved on by at least half the movement send interval since the last one. Messages 0x262 (the unit's creation) and 0x638 (a unit the server moves) feed it; the player's own movement (message 0x637) does not use it."
+proof = "Decompiled: with no samples, count 1, slope 0x3f800000 (1.0), offset 0, the first pair; otherwise when the server time minus the last sample's is at least the interval at 0x140c3a004 shifted right by 1, the ring of 16 pairs (index mask 0xf) takes the pair, the means and the sums of products give the slope (word 2) and the offset (word 3). Called by ApplyCreateMovementCommands 0x1404586e0 and HandleMessage0638 0x14057a830 (their records)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run; that the client's own movement never reads the estimate is from the paths read here (UpdatePlayerMovement and FlushPlayerMovementCommands use the clock at 0x140c636a8 directly)."
+name = "FitServerTime"
+
+["0x1405b5070"]
+statement = "Builds a unit's world matrix from its movement state, each update. A position that is not finite in any of x, y and z is replaced by 0, 0, 0, and the position is then clamped into the world's box: x and z between -32768 and 32768, y between -2048 and 2048 (WorldPositionBounds). The player is drawn, and the camera follows, at the clamped position."
+proof = "Decompiled: 0x1405b3b30 (each of the three floats finite, through 0x1407ddb6c) on the translation at 0x11e0; when it fails, slot 1 is called and 0x11e0, 0x11e4, 0x11e8 set to 0; then minps with the vector at 0x140c7e020 and maxps with the one at 0x140c7e010 (reads at 0x1405b535c and 0x1405b5363, and again at 0x1405b6558 and 0x1405b6574) stored back to 0x11e0..0x11e8. The bounds: record 0x140c7e010. Called at the end of ApplyCreateMovementCommands (its record)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile of a long function (about 1,900 lines). Only the drawn position is clamped here; the position message 0x637 sends starts each update from it, so it stays within one frame's movement of the box (movement_command.position_bound). A live entry at x 40000 would show the client placed at 32768."
+name = "UpdateUnitWorldMatrix"
+
+["0x140c7e010"]
+statement = "The world's position bounds, two vectors: the least (-32768, -2048, -32768) and, 16 bytes on, the greatest (32768, 2048, 32768). They are set once at start from the constants 32768 and 2048 and only read by UpdateUnitWorldMatrix."
+proof = "Bytes at 0x140c7e010: 32 zero bytes in the file (filled at start). Initializer 0x140947d60 (listed whole): 0x140947d60 movss xmm4, dword ptr [0x140c4a488]; 0x140947d68 movss xmm3, dword ptr [0x140c4a4e8]; sign flips with xorps against 0x140b7b530; unpcklps to (A, B, A, 0); 0x140947d99 movaps xmmword ptr [0x140c7e020], xmm5; 0x140947daf movaps xmmword ptr [0x140c7e010], xmm3 (-A, -B, -A, 0). Bytes at 0x140c4a488: 00000047 (32768.0); bytes at 0x140c4a4e8: 00000045 (2048.0). refs_to: each constant read only by 0x140947d60; each bound written only there and read only by 0x1405b5070; 0x140947d60 is reached only from the start-up table entry at 0x14095b640."
+grade = "sure"
+
+["0x140947d60"]
+statement = "Sets the world's position bounds at start: x and z within 32768 and y within 2048 of the origin."
+proof = "Listed whole: 0x140947d60 movss xmm4, dword ptr [0x140c4a488]; 0x140947d68 movss xmm3, dword ptr [0x140c4a4e8]; 0x140947d99 movaps xmmword ptr [0x140c7e020], xmm5; 0x140947daf movaps xmmword ptr [0x140c7e010], xmm3; 0x140947db6 ret. Bytes at 0x140c4a488: 00000047; bytes at 0x140c4a4e8: 00000045."
+grade = "sure"
+name = "InitWorldPositionBounds"
+
+["0x1405b3b30"]
+statement = "Tells whether all three floats of a position are finite (no infinity or NaN)."
+proof = "Decompiled: 0x1407ddb6c on each of the three floats as doubles, 1 only when all three give 1. 0x1407ddb6c returns bit 63 of the double's bits without its sign plus 0x8010000000000000, which is 1 exactly when the exponent is not all ones."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run."
+name = "IsFinitePosition"
+
+["0x1407ddb6c"]
+statement = "Tells whether a double is finite: 1 unless it is an infinity or a NaN."
+proof = "Decompiled: (bits and 0x7fffffffffffffff) + 0x8010000000000000, shifted right by 63."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run."
+name = "IsFiniteDouble"
+
+["0x1407bbc40"]
+statement = "Moves a collision shape along a path with a step up: it lifts the shape by a height, sweeps it against the world with the same collision mask the movement update's ground ray uses, and repeats along the path; a table of a collision class's functions holds it. It is not a planner of keys: it computes no values that message 0x637 sends directly."
+proof = "Decompiled: 0x1407b6330, then a sweep 0x1407b64c0 from the shape's position at 0x40 to that plus the height in y with mask 0x4041, 0x1407b74e0, 0x1407b80b0, 0x1407b93e0 in a loop. Bytes read at 0x140b79600, eight pointers: 0x14013d820, 0x1402e0810, 0x1402f6180, 0x1407ba850, 0x1407bc630, 0x1407bbc40 (at 0x140b79628), 0x1407bbf40 (at 0x140b79630), 0x1407bc6b0; refs_to 0x1407bbc40: 0x140b79628 and the exception tables only; UpdatePlayerMovement's listing calls no 0x1407bb.. address directly."
+grade = "fairly sure"
+gap = "Read from the first part of Ghidra's decompile; what the class is (the player's character controller is likely) and what the next function in the table (0x1407bbf40) does are not read."
+name = "SweepWithStepUp"
+
+["0x14039fff0"]
+statement = "Queues a batch of movement commands for a move the game itself starts for the player (one of several such queuers): only while the player unit is under client control and has its model, it builds commands including kinds 11, 13, 20 and 27 and, unless the unit is in the state that leaves rotation out, kind 14, applies them to the unit and queues them to be sent in message 0x637 (QueuePlayerMovementCommands). It does not send anything itself."
+proof = "Decompiled: returns when the controlled unit's 0xd50 or 0x16e8 is 0; entries with kind 0xb (after PackHalfVector 0x1401c9800), 0xd, 0x14 and 0x1b; 0x14079a780 when the unit's 0x1620 is 0; 0x1405b3b80 with the clock 0x140c636a8; QueuePlayerMovementCommands 0x14057a190. refs_to: data only (0x140bc87c8, 0x140bc8828, 0x140bc8838 and the exception tables); no direct callers."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; which game action calls it (through its table) and what the commands mean are not read."
+name = "QueueGamePlayerMove"

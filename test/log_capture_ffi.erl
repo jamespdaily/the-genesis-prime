@@ -81,24 +81,22 @@ ensure_table() ->
         _ -> ok
     end.
 
-%% The handler is installed once. A caller that finds it being installed by
-%% another waits until the logger lists it.
+%% The handler is installed once. Callers take a lock first and add it only
+%% when the logger does not list it: the logger checks that a handler's id is
+%% free when it takes the request, not when it adds the handler, so two adds of
+%% one id that overlap are both accepted and list the handler twice, and every
+%% event then reaches each capture twice.
 ensure_handler() ->
-    case lists:member(?HANDLER, logger:get_handler_ids()) of
-        true -> ok;
-        false ->
-            case logger:add_handler(?HANDLER, ?MODULE, #{}) of
-                ok -> ok;
-                {error, {already_exist, ?HANDLER}} -> wait_for_handler(5000)
-            end
-    end.
-
-wait_for_handler(WaitMs) ->
-    case lists:member(?HANDLER, logger:get_handler_ids()) of
-        true -> ok;
-        false when WaitMs > 0 -> timer:sleep(1), wait_for_handler(WaitMs - 1);
-        false -> error(log_capture_handler_not_installed)
-    end.
+    ok =
+        global:trans({{?MODULE, handler}, self()},
+                     fun() ->
+                             case lists:member(?HANDLER, logger:get_handler_ids()) of
+                                 true -> ok;
+                                 false -> ok = logger:add_handler(?HANDLER, ?MODULE, #{})
+                             end
+                     end,
+                     [node()]),
+    ok.
 
 primary_level() ->
     #{level := Level} = logger:get_primary_config(),

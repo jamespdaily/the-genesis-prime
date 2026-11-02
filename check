@@ -6,9 +6,8 @@
 #                         the loop while editing
 #
 # The wall time counts from the start of this script, setup check included. The
-# budget is a target: GENESIS_CHECK_BUDGET_SECONDS (default 120, the 2 minutes
-# CLAUDE.md gives the full check; ./check fast has its own,
-# GENESIS_CHECK_FAST_BUDGET_SECONDS). A run that ends over its budget passes
+# budget is a target: GENESIS_CHECK_BUDGET_SECONDS (default 120; ./check fast has
+# its own, GENESIS_CHECK_FAST_BUDGET_SECONDS). A run that ends over its budget passes
 # and prints a warning line with its wall time and its budget, because a loaded
 # machine (two agents testing at once, a cold build) turns correct code into a
 # slow run. Only a hung run fails: one still going at three times its budget has
@@ -22,7 +21,17 @@
 # GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS (three times that is the hang limit)
 # and the output says so.
 #
-# First the setup check (./setup-check): it names every part this machine is
+# The full check starts with branch-current: HEAD must hold every commit of
+# origin/main as last fetched (git rev-list --count HEAD..origin/main; the check
+# fetches nothing). A branch that lacks any fails the check at once, naming how
+# many commits and the tip compared and saying to merge origin/main, and no other
+# part runs, setup check included. Where there is no origin/main (CI's checkout
+# fetches only the merge ref, which holds main by construction) the part is
+# skipped and the output says so; so is a shallow history (CI's pushes to main),
+# where the count of commits HEAD lacks can include commits it holds.
+# ./check fast does not run it.
+#
+# Then the setup check (./setup-check): it names every part this machine is
 # missing, and when it fails nothing else runs. Before it, this script reads
 # $GENESIS_HOME/env.sh (default ~/.genesis-prime/env.sh) and puts
 # $GENESIS_OTP_DIR/bin first on PATH, unless GENESIS_NO_CLIENT=1 and
@@ -91,15 +100,15 @@ esac
 # The wall time the check may take, in seconds.
 budget=${GENESIS_CHECK_BUDGET_SECONDS:-120}
 
-# The same for ./check fast, from a cold build: measured 2026-10-27 (issue 109)
-# right after removing build/dev/erlang/genesis_prime, 10, 9 and 9 s in 3 runs on
+# The same for ./check fast, from a cold build: measured right after removing
+# build/dev/erlang/genesis_prime, 10, 9 and 9 s in 3 runs on
 # the development Mac (warm: 6, 7 and 7 s); 10 s times 1.25, rounded up.
 if [ "$mode" = fast ]; then
   budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-13}
 fi
 
 # The budget of a run that includes the integration tests: the slowest of 3
-# solo runs on the development Mac (2026-10-26, issue 109) was 466 s, times
+# solo runs on the development Mac was 466 s, times
 # 1.25, rounded up.
 integration_budget=${GENESIS_CHECK_INTEGRATION_BUDGET_SECONDS:-583}
 
@@ -107,7 +116,7 @@ client_scripts=.claude/skills/decoding-the-client/scripts
 
 # How many module groups `gleam test` runs at once; each also runs up to one test
 # per scheduler at once. 1 is the smallest count that leaves 25% of the 120 s
-# budget spare: measured 2026-10-27 (issue 109), the whole check took 75 s with 1
+# budget spare: measured, the whole check took 75 s with 1
 # (gleam-test 68 s with the serial tests, beside the setup suite) and 62 to 67 s
 # with 2; `gleam test -- --workers 1` alone took 58 to 75 s in 16 runs on the
 # development Mac (12 schedulers) and 67 s with 4 schedulers (ERL_FLAGS="+S 4:4",
@@ -236,7 +245,33 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 
+# branch_current: the first part of the full check. Prints one line, and ends the
+# check when HEAD lacks commits of origin/main as last fetched.
+branch_current() {
+  local behind tip noun=commits
+  if ! tip=$(git rev-parse --short --verify --quiet origin/main 2>/dev/null); then
+    printf '  %-18s skipped (there is no origin/main to compare with)\n' branch-current
+    return
+  fi
+  if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+    printf '  %-18s skipped (the history is shallow, so whether HEAD holds origin/main cannot be established)\n' branch-current
+    return
+  fi
+  if ! behind=$(git rev-list --count HEAD..origin/main); then
+    echo "check FAILED: branch-current: git could not count the commits of origin/main that HEAD lacks, so no other part ran"
+    exit 1
+  fi
+  if [ "$behind" = 0 ]; then
+    printf '  %-18s ok      HEAD holds origin/main (tip %s)\n' branch-current "$tip"
+    return
+  fi
+  [ "$behind" = 1 ] && noun=commit
+  echo "check FAILED: branch-current: HEAD lacks $behind $noun of origin/main (tip $tip): merge origin/main first, so no other part ran"
+  exit 1
+}
+
 if [ "$mode" = full ]; then
+  branch_current
   decide_integration
   if [ "$integration_run" = yes ]; then
     if [ "$integration_budget" -gt "$budget" ]; then

@@ -98,7 +98,7 @@ pub fn in_the_game_wrapper(outer outer: Frame, cipher cipher: Cipher) -> Frame {
 /// Connects to the game listener and reads its hello: message 3 inside 0x3DC
 /// under the base key, with the build and the message table checksum the client
 /// checks (opcode.0x3).
-pub fn open(port: Int) -> mug.Socket {
+fn open(port: Int) -> mug.Socket {
   let socket = login_client.connect(port)
   let assert Ok([outer, ..]) =
     frame_reader.read(have: <<>>, count: 1, next: fn() {
@@ -119,7 +119,7 @@ pub fn open(port: Int) -> mug.Socket {
 
 /// Answers the hello with 0x58F inside 0x244 under the base key, then keys
 /// the cipher from the session key.
-pub fn answer_hello(
+fn answer_hello(
   socket socket: mug.Socket,
   session_key session_key: BitArray,
   account_name account_name: String,
@@ -160,20 +160,6 @@ pub fn send_create(game game: Game, body body: BitArray) -> Nil {
   send(game:, message_id: 0x025C, body: plain)
 }
 
-/// Sends a world message the way SendWorldMessage does: its whole frame inside
-/// 0x38C with the 5-bit value 3, inside 0x244 (opcode.0x38c).
-pub fn send_world(
-  game game: Game,
-  message_id message_id: Int,
-  body body: BitArray,
-) -> Nil {
-  send(
-    game:,
-    message_id: world_message.message_id,
-    body: world_body(kind: 3, message_id:, body:),
-  )
-}
-
 /// The body of 0x38C that carries a world message: its 5-bit value `kind` and
 /// the message's whole frame (opcode.0x38c).
 pub fn world_body(
@@ -199,6 +185,27 @@ pub fn read(game game: Game, count count: Int) -> List(Frame) {
   assert list.length(outers) == count
     as "the game server wrote no more messages than the test reads"
   list.map(outers, in_the_game_wrapper(_, game.cipher))
+}
+
+/// Sends the network layer's ping with the number, bare: never wrapped and
+/// never ciphered (opcode.0x0).
+pub fn send_ping(game game: Game, number number: Int) -> Nil {
+  let assert Ok(bytes) = frame.encode(0x0000, <<number:size(8)>>)
+    as "a ping frames"
+  let assert Ok(Nil) = mug.send(game.socket, bytes)
+    as "the server closed the connection before the ping"
+  Nil
+}
+
+/// Reads the server's answer to a ping: the bare pong and its number
+/// (opcode.0x1).
+pub fn read_pong(game game: Game) -> Int {
+  let assert Ok([Frame(message_id: 0x0001, body: <<number:size(8)>>)]) =
+    frame_reader.read(have: <<>>, count: 1, next: fn() {
+      mug.receive(game.socket, timeout_milliseconds: wait_ms)
+    })
+    as "the game server answered the ping with one bare pong"
+  number
 }
 
 /// Whether the server closes the connection within the wait: what it sends

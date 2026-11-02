@@ -1,14 +1,15 @@
 //// Where a new character starts (`genesis_prime/game/start_place`). Expected
 //// values come from these places.
 //// - Jim's world database, converted from another server project and used
-////   under Jim's one-time exception (decision D18 on #2; wildstar-knowledge,
+////   under Jim's one-time exception (his decision in the Foundation milestone's
+////   review; wildstar-knowledge,
 ////   world-data/start_location.tsv): the WorldLocation2 row of each
 ////   start of each race and faction. Novice (characterCreationStartEnum 4):
 ////   row 51596 for every race and faction. Veteran (3): Exile Human and
 ////   Granok 1594, Aurin and Mordesh 37015; Dominion Cassian and Mechari
 ////   18987, Draken and Chua 8223. Its Level 50 rows (53050 and 53051) are not
 ////   kept: every Level 50 CharacterCreation row costs account currency, which
-////   a create refuses first (decision D7 on #2).
+////   a create refuses first (Jim's decision in the same review).
 //// - The client's own WorldLocation2 rows: the world, zone and position of
 ////   each, as `character_tables` plants them (`character_tables_test` compares
 ////   them with the real file) and as the real table holds them.

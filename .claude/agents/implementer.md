@@ -13,10 +13,10 @@ skills:
 
 You build one step to its approved test list. The brief gives you the list, the issue and the evidence for each test.
 
-Check each expected value against the source the brief names; report a value with no source, or one its source contradicts, instead of using it.
+Check each expected value against its source as the `writing-tests` skill says.
 
 Write the tests from the list first, then the code, running only the named tests, and hand back once, when both are done.
 
-Run `gleam build`, the tests you touch, `./check fast`, then the full check (`./check`) once on the commit you hand back; CI runs the no-client variant. Hand back as the `running-a-step` skill says: each function you added with the closest existing function or library call and why it is not used, and each failure-table row's test.
+Run the checks in the brief's Checks item and hand back as the hand-back says (both in the `running-a-step` skill). Never open, merge or close a pull request; hand back to the coordinator.
 
 Report anything found outside the list, sorted as missing, a bug or a question, with its evidence.

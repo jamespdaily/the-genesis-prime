@@ -2,7 +2,7 @@
 %% path over standard_io, so it needs no distribution, and stopped after.
 %% Nothing in the peer is loaded but what the call itself loads.
 -module(fresh_node_ffi).
--export([run/3, project_paths/0]).
+-export([run/3, run_function/2, project_paths/0]).
 
 %% The code path of the project and its packages, without OTP's own: what a
 %% node of its own is given so it loads the same code.
@@ -11,14 +11,20 @@ project_paths() ->
     [Path || Path <- code:get_path(), not lists:prefix(Root, Path)].
 
 run(Module, Function, TimeoutMs) ->
+    call(binary_to_atom(Module), binary_to_atom(Function), [], TimeoutMs).
+
+%% Runs the function the fun holds, which the peer loads when it calls it.
+run_function(Fun, TimeoutMs) ->
+    call(erlang, apply, [Fun, []], TimeoutMs).
+
+call(Module, Function, Arguments, TimeoutMs) ->
     %% The peer's own erl holds OTP's paths; it is given the project's.
     Paths = project_paths(),
     Peer = case peer:start_link(#{connection => standard_io, args => ["-pa" | Paths]}) of
                {ok, Started} -> Started;
                {ok, Started, _Node} -> Started
            end,
-    try peer:call(Peer, binary_to_atom(Module), binary_to_atom(Function), [],
-                  TimeoutMs) of
+    try peer:call(Peer, Module, Function, Arguments, TimeoutMs) of
         _ -> {ok, nil}
     catch
         Class:Reason ->
