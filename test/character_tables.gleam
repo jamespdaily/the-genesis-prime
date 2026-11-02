@@ -8,8 +8,9 @@
 //// - GameFormula row 145 (its dataint0, the highest level) and XpPerLevel
 ////   records 1 to 51 with their minXpForLevel, which GetLevelForExperience
 ////   0x140029820 reads.
-//// - CharacterCustomization rows 2, 9 and 10 and the labels they use, 2, 21
-////   and 22 (CharacterCustomizationLabel).
+//// - CharacterCustomization rows 2, 9 and 10 (race 1, sex 0) and 603 and 604
+////   (race 1, sex 1) and the labels they use, 2, 21 and 22
+////   (CharacterCustomizationLabel).
 //// - WorldLocation2 rows 51596, 1594, 37015, 18987 and 8223,
 ////   the start places (genesis_prime/game/start_place), with the world, zone
 ////   and position of the client's row.
@@ -32,6 +33,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/world_location2
 import genesis_prime/table/xp_per_level
 import gleam/erlang/reference
+import gleam/int
 import gleam/list
 import planted_table.{type Cell, Boolean, Float, Integer}
 
@@ -45,10 +47,42 @@ pub fn shared() -> store.Tables {
 /// for every entry of `server_table.entries`, so a load of the server's list
 /// from a folder of them reads every file and meets every requirement.
 pub fn files() -> List(#(String, BitArray)) {
+  files_with_looks(customization: customization_rows(), labels: label_rows())
+}
+
+/// The planted tables with a look that has `count` labels: labels 1 to
+/// `count`, each for every faction and each held at the value 1 by one row of
+/// race 1, sex 1, in place of the planted look rows. Loaded once per count
+/// under a key of its own.
+pub fn shared_with_labels(count count: Int) -> store.Tables {
+  database_support.once(
+    "character_tables_labels_" <> int.to_string(count),
+    fn() {
+      let ids = character_support.numbers(count)
+      load_files(files_with_looks(
+        customization: list.map(ids, fn(id) {
+          customization(
+            id: 1000 + id,
+            sex: 1,
+            display: 2000 + id,
+            first: #(id, 1),
+            second: #(0, 0),
+          )
+        }),
+        labels: list.map(ids, fn(id) { label(id:, faction: 0) }),
+      ))
+    },
+  )
+}
+
+fn files_with_looks(
+  customization customization: List(List(Cell)),
+  labels labels: List(List(Cell)),
+) -> List(#(String, BitArray)) {
   [
     planted_table.file(character_creation.schema, creation_rows()),
-    planted_table.file(character_customization.schema, customization_rows()),
-    planted_table.file(character_customization_label.schema, label_rows()),
+    planted_table.file(character_customization.schema, customization),
+    planted_table.file(character_customization_label.schema, labels),
     planted_table.file(customization_parameter.schema, parameter_rows()),
     planted_table.file(customization_parameter_map.schema, map_rows()),
     planted_table.file(world_location2.schema, start_location_rows()),
@@ -72,7 +106,11 @@ pub fn map_file_naming(parameter_id parameter_id: Int) -> #(String, BitArray) {
 }
 
 fn load() -> store.Tables {
-  use folder <- planted_table.in_folder(files())
+  load_files(files())
+}
+
+fn load_files(files: List(#(String, BitArray))) -> store.Tables {
+  use folder <- planted_table.in_folder(files)
   let assert Ok(tables) =
     server_table.load_under(under: reference.new(), from: folder)
     as "the planted character tables load as the server's tables do"
@@ -219,9 +257,10 @@ fn creation_rows() -> List(List(Cell)) {
   ]
 }
 
-/// A CharacterCustomization row of race 1, sex 0, slot 25, flags 2.
+/// A CharacterCustomization row of race 1, slot 25, flags 2.
 fn customization(
   id id: Int,
+  sex sex: Int,
   display display: Int,
   first first: #(Int, Int),
   second second: #(Int, Int),
@@ -229,7 +268,7 @@ fn customization(
   planted_table.row(character_customization.schema, [
     #("ID", Integer(id)),
     #("raceId", Integer(1)),
-    #("gender", Integer(0)),
+    #("gender", Integer(sex)),
     #("itemSlotId", Integer(25)),
     #("itemDisplayId", Integer(display)),
     #("flags", Integer(2)),
@@ -242,11 +281,20 @@ fn customization(
 
 fn customization_rows() -> List(List(Cell)) {
   [
-    // Labels 22 = 1 and 2 = 1 (the Exile face), 22 = 2 and 2 = 1, and
-    // 21 = 2 and 2 = 1 (the Dominion face).
-    customization(id: 2, display: 135, first: #(22, 1), second: #(2, 1)),
-    customization(id: 9, display: 136, first: #(22, 2), second: #(2, 1)),
-    customization(id: 10, display: 137, first: #(21, 2), second: #(2, 1)),
+    // Sex 0: labels 22 = 1 and 2 = 1 (the Exile face), 22 = 2 and 2 = 1, and
+    // 21 = 2 and 2 = 1 (the Dominion face). Sex 1: 22 = 1 and 2 = 1, and
+    // 22 = 2 and 2 = 1.
+    customization(id: 2, sex: 0, display: 135, first: #(22, 1), second: #(2, 1)),
+    customization(id: 9, sex: 0, display: 136, first: #(22, 2), second: #(2, 1)),
+    customization(id: 10, sex: 0, display: 137, first: #(21, 2), second: #(2, 1)),
+    customization(id: 603, sex: 1, display: 311, first: #(22, 1), second: #(
+      2,
+      1,
+    )),
+    customization(id: 604, sex: 1, display: 312, first: #(22, 2), second: #(
+      2,
+      1,
+    )),
   ]
 }
 

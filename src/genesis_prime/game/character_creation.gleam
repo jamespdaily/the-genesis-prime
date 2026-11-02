@@ -4,8 +4,9 @@
 //// rule 0, the CharacterCreation row and its entitlement and cost, a path up
 //// to 3), and a client that is not the real one can send anything, so the
 //// server makes them again, and the request's counts as well (opcode.0x25b,
-//// opcode.0x25b.counts: at most 27 labels, and the bone values the race and
-//// sex have).
+//// opcode.0x25b.counts: at most 25 labels, each once and in label-id order,
+//// the labels and values the race, sex and faction's index holds, and the bone
+//// values the race and sex have).
 ////
 //// A request that passes gives the character to make: its gender, race, class
 //// and faction are the row's, and its place is its start's
@@ -22,7 +23,7 @@ import genesis_prime/game/level
 import genesis_prime/game/start_place
 import genesis_prime/message/create_character.{type CreateCharacter}
 import genesis_prime/message/create_result.{type CreateResult}
-import genesis_prime/store.{type NewCharacter, NewCharacter}
+import genesis_prime/store.{type LookEntry, type NewCharacter, NewCharacter}
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/id.{CharacterCreationId}
 import genesis_prime/table/loader/store as table_store
@@ -30,9 +31,11 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 
-/// The most labels a request carries: the label table's size (opcode.0x25b.counts).
-const most_labels = 27
+/// The most labels a request carries: the label table's 27, less labels 26
+/// and 27, which set the race and never enter a look (opcode.0x25b.counts).
+const most_labels = 25
 
 /// The highest path a request may name (0x140023e90).
 const highest_path = 3
@@ -53,8 +56,16 @@ pub type Refusal {
   CostsCurrency(creation_id: Int)
   /// The path is above 3.
   PathAbove3(creation_id: Int, path: Int)
-  /// The request holds more than 27 labels.
+  /// The request holds more than 25 labels.
   TooManyLabels(creation_id: Int, count: Int)
+  /// The request's labels do not strictly increase: a label repeats or comes
+  /// before the one that precedes it.
+  LabelsNotIncreasing(creation_id: Int, previous: Int, label: Int)
+  /// A label has no label row of faction 0 or the row's faction.
+  LabelNotAllowed(creation_id: Int, label: Int)
+  /// No CharacterCustomization row holds the label at the value for the row's
+  /// race, sex and faction.
+  LookValueNotHeld(creation_id: Int, label: Int, value: Int)
   /// The request holds another number of bone values than its race and sex
   /// have.
   WrongBoneCount(creation_id: Int, expected: Int, got: Int)
@@ -133,6 +144,12 @@ pub fn check_row(
     Error(BoneNotFinite(creation_id:)),
   )
   let race_id = character_creation.race_id(row)
+  let look =
+    store.look(
+      labels: request.customisation_labels,
+      values: request.customisation_values,
+    )
+  use Nil <- result.try(check_look(tables:, row:, request:, look:))
   case
     start_place.of(
       tables:,
@@ -166,12 +183,45 @@ pub fn check_row(
             position_x: place.x,
             position_y: place.y,
             position_z: place.z,
-            look: store.look(
-              labels: request.customisation_labels,
-              values: request.customisation_values,
-            ),
+            look:,
             bones: request.bone_values,
           ))
+      }
+  }
+}
+
+/// Checks the request's look: its labels strictly increase (each label at most
+/// once, in label-id order), each label is allowed for the row's faction and
+/// each value is one the index holds for the row's race and sex
+/// (opcode.0x25b.counts, SetLookLabel 0x1400310b0, SetLookValue 0x14002ec40).
+fn check_look(
+  tables tables: table_store.Tables,
+  row row: CharacterCreation,
+  request request: CreateCharacter,
+  look look: List(LookEntry),
+) -> Result(Nil, Refusal) {
+  let creation_id = row.id
+  case
+    list.window_by_2(request.customisation_labels)
+    |> list.find(fn(pair) { pair.0 >= pair.1 })
+  {
+    Ok(#(previous, label)) ->
+      Error(LabelsNotIncreasing(creation_id:, previous:, label:))
+    Error(Nil) ->
+      case
+        appearance.check_look(
+          index: appearance.index(tables:),
+          race_id: character_creation.race_id(row),
+          sex: row.sex,
+          faction_id: row.faction_id,
+          look:,
+        )
+      {
+        Ok(Nil) -> Ok(Nil)
+        Error(appearance.LabelNotAllowed(label:)) ->
+          Error(LabelNotAllowed(creation_id:, label: label.value))
+        Error(appearance.ValueNotHeld(label:, value:)) ->
+          Error(LookValueNotHeld(creation_id:, label: label.value, value:))
       }
   }
 }
@@ -196,6 +246,9 @@ pub fn result_of(refusal: Refusal) -> CreateResult {
     | CostsCurrency(..)
     | PathAbove3(..)
     | TooManyLabels(..)
+    | LabelsNotIncreasing(..)
+    | LabelNotAllowed(..)
+    | LookValueNotHeld(..)
     | WrongBoneCount(..)
     | BoneNotFinite(..)
     | NoStartPlace(..)
@@ -216,6 +269,9 @@ pub fn warning(refusal: Refusal) -> Option(String) {
     | CostsCurrency(..)
     | PathAbove3(..)
     | TooManyLabels(..)
+    | LabelsNotIncreasing(..)
+    | LabelNotAllowed(..)
+    | LookValueNotHeld(..)
     | WrongBoneCount(..)
     | BoneNotFinite(..)
     | NoStartPlace(..)
@@ -243,6 +299,24 @@ pub fn describe(refusal: Refusal) -> String {
       <> " was asked with "
       <> int.to_string(count)
       <> " customisation labels"
+    LabelsNotIncreasing(creation_id:, previous:, label:) ->
+      row_text(creation_id)
+      <> " was asked with label "
+      <> int.to_string(label)
+      <> " after label "
+      <> int.to_string(previous)
+    LabelNotAllowed(creation_id:, label:) ->
+      row_text(creation_id)
+      <> " was asked with label "
+      <> int.to_string(label)
+      <> ", which has no label row for its faction"
+    LookValueNotHeld(creation_id:, label:, value:) ->
+      row_text(creation_id)
+      <> " was asked with label "
+      <> int.to_string(label)
+      <> " at value "
+      <> int.to_string(value)
+      <> ", which no customization row of its race and sex holds"
     WrongBoneCount(creation_id:, expected:, got:) ->
       row_text(creation_id)
       <> " was asked with "

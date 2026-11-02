@@ -59,7 +59,7 @@ pub fn the_planted_customization_rows_and_labels_are_the_clients_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let real = client_tables.shared()
   let planted = character_tables.shared()
-  list.each([2, 9, 10], fn(id) {
+  list.each([2, 9, 10, 603, 604], fn(id) {
     let get = fn(tables) {
       character_customization.get(tables:, id: CharacterCustomizationId(id))
     }

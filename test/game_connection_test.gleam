@@ -769,12 +769,12 @@ pub fn a_second_0x07e0_asks_the_store_again_and_sends_a_new_list_test() -> Nil {
 // ---- create and the play that follows ----
 
 /// A create request for CharacterCreation row 466 with a path of 2 and the
-/// look of labels 2 and 21.
+/// look of labels 2 and 22 (the Exile face of CharacterCustomization row 604).
 fn a_create_request(name: String) -> create_character.CreateCharacter {
   CreateCharacter(
     ..character_support.create_request(name),
     path: 2,
-    customisation_labels: [2, 21],
+    customisation_labels: [2, 22],
     customisation_values: [1, 2],
   )
 }
@@ -830,7 +830,7 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
           position_z: -560.18798828125,
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-            LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+            LookEntry(label: CharacterCustomizationLabelId(22), value: 2),
           ],
           bones: character_support.bones(46),
         ),
@@ -1016,7 +1016,7 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
           position_z: -560.18798828125,
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-            LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
+            LookEntry(label: CharacterCustomizationLabelId(22), value: 2),
           ],
           bones: character_support.bones(46),
         ),

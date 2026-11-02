@@ -122,6 +122,74 @@ pub fn index_from_rows(
   Index(label_factions:, rows: filed)
 }
 
+/// Why a (label, value) of a look is no entry the client's create screen could
+/// hold.
+pub type LookFault {
+  /// The label has no CharacterCustomizationLabel row of faction 0 or the
+  /// look's faction.
+  LabelNotAllowed(label: CharacterCustomizationLabelId)
+  /// No row of the index holds the label at the value for the race, sex and
+  /// faction.
+  ValueNotHeld(label: CharacterCustomizationLabelId, value: Int)
+}
+
+/// The first fault in a look for the race, sex and faction, against the
+/// index: a label with no row of CharacterCustomizationLabel for the faction
+/// (SetLookLabel 0x1400310b0), or a value no row of the race, sex and faction
+/// holds for the label (SetLookValue 0x14002ec40). The rows are those
+/// `body_visuals` draws from, so the create check and the body the world
+/// shows read the table once, one way.
+pub fn check_look(
+  index index: Index,
+  race_id race_id: RaceId,
+  sex sex: Int,
+  faction_id faction_id: Int,
+  look look: List(LookEntry),
+) -> Result(Nil, LookFault) {
+  let faction = Faction2Id(faction_id)
+  let held = held_values(candidate_rows(index:, race_id:, sex:, faction:))
+  list.try_each(look, fn(entry) {
+    case
+      label_allowed(
+        label: entry.label,
+        label_factions: index.label_factions,
+        faction:,
+      )
+    {
+      False -> Error(LabelNotAllowed(label: entry.label))
+      True ->
+        case list.contains(held_for(held, entry.label), entry.value) {
+          True -> Ok(Nil)
+          False -> Error(ValueNotHeld(label: entry.label, value: entry.value))
+        }
+    }
+  })
+}
+
+/// The rows a character of the race, sex and faction may use: the index's rows
+/// for the race and sex that are filed under faction 0 or the faction.
+fn candidate_rows(
+  index index: Index,
+  race_id race_id: RaceId,
+  sex sex: Int,
+  faction faction: Faction2Id,
+) -> List(CharacterCustomization) {
+  dict.get(index.rows, #(race_id, sex))
+  |> result.unwrap([])
+  |> list.filter(fn(filed) {
+    faction_allows(faction:, row_faction: filed.faction)
+  })
+  |> list.map(fn(filed) { filed.row })
+}
+
+/// The values the candidate rows hold for a label, none when no row uses it.
+fn held_for(
+  held: Dict(CharacterCustomizationLabelId, List(Int)),
+  label: CharacterCustomizationLabelId,
+) -> List(Int) {
+  dict.get(held, label) |> result.unwrap([])
+}
+
 /// The body visuals of a character's look, one for each slot a row shows, in
 /// slot order, for the race and sex and faction.
 pub fn body_visuals(
@@ -133,22 +201,13 @@ pub fn body_visuals(
 ) -> List(ItemVisual) {
   let faction = Faction2Id(faction_id)
   let label_factions = index.label_factions
-  let candidates =
-    dict.get(index.rows, #(race_id, sex))
-    |> result.unwrap([])
-    |> list.filter(fn(filed) {
-      faction_allows(faction:, row_faction: filed.faction)
-    })
-    |> list.map(fn(filed) { filed.row })
+  let candidates = candidate_rows(index:, race_id:, sex:, faction:)
   let held = held_values(candidates)
   let current =
     list.fold(look, lowest_values(held), fn(current, entry) {
       case
         label_allowed(label: entry.label, label_factions:, faction:)
-        && list.contains(
-          dict.get(held, entry.label) |> result.unwrap([]),
-          entry.value,
-        )
+        && list.contains(held_for(held, entry.label), entry.value)
       {
         True -> dict.insert(current, entry.label, entry.value)
         False -> current
