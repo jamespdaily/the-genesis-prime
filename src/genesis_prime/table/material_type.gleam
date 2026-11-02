@@ -27,7 +27,7 @@ pub const schema =
   )
 
 /// The key of the MaterialType table's rows in the store.
-const key: store.TermKey(MaterialType) = store.TermKey("MaterialType")
+const key: store.TableKey(MaterialType) = store.TableKey("MaterialType")
 
 /// The entry that loads the MaterialType table.
 pub fn entry() -> store.Entry {

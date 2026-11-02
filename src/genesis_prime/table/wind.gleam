@@ -56,7 +56,7 @@ pub const schema =
   )
 
 /// The key of the Wind table's rows in the store.
-const key: store.TermKey(Wind) = store.TermKey("Wind")
+const key: store.TableKey(Wind) = store.TableKey("Wind")
 
 /// The entry that loads the Wind table.
 pub fn entry() -> store.Entry {

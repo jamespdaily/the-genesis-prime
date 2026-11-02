@@ -27,7 +27,7 @@ pub const schema =
   )
 
 /// The key of the SoundParameter table's rows in the store.
-const key: store.TermKey(SoundParameter) = store.TermKey("SoundParameter")
+const key: store.TableKey(SoundParameter) = store.TableKey("SoundParameter")
 
 /// The entry that loads the SoundParameter table.
 pub fn entry() -> store.Entry {

@@ -40,7 +40,8 @@ pub const schema =
   )
 
 /// The key of the BinkMovieSubtitle table's rows in the store.
-const key: store.TermKey(BinkMovieSubtitle) = store.TermKey("BinkMovieSubtitle")
+const key: store.TableKey(BinkMovieSubtitle) =
+  store.TableKey("BinkMovieSubtitle")
 
 /// The entry that loads the BinkMovieSubtitle table.
 pub fn entry() -> store.Entry {

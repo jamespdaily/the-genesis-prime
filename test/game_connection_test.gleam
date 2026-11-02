@@ -108,6 +108,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
+import place_support
 
 /// What the tests' game connections are made with: a realm id and a
 /// character limit the hello and the list must carry, the number of character
@@ -307,11 +308,13 @@ fn character(id id: Int, name name: String, seed seed: Int) -> store.Character {
     faction_id: 166 - seed % 2,
     level: 10 + seed,
     path: seed % 4,
-    world_id: 1000 + seed,
-    world_zone_id: 2000 + seed,
-    position_x: 1.5,
-    position_y: 2.5,
-    position_z: 3.5,
+    place: Some(place_support.at(
+      world_id: 1000 + seed,
+      world_zone_id: 2000 + seed,
+      x: 1.5,
+      y: 2.5,
+      z: 3.5,
+    )),
     look: [],
     bones: [],
     naming: NameStands,
@@ -869,11 +872,13 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
           faction_id: 167,
           level: 1,
           path: 2,
-          world_id: 3460,
-          world_zone_id: 6009,
-          position_x: 29.128599166870117,
-          position_y: -853.87158203125,
-          position_z: -560.18798828125,
+          place: place_support.at(
+            world_id: 3460,
+            world_zone_id: 6009,
+            x: 29.128599166870117,
+            y: -853.87158203125,
+            z: -560.18798828125,
+          ),
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
             LookEntry(label: CharacterCustomizationLabelId(22), value: 2),
@@ -1019,7 +1024,7 @@ pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_then_0
 pub fn a_play_of_a_character_with_no_saved_place_is_refused_the_same_way_and_the_map_is_not_asked_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = playing(42)
-  let no_place = Character(..world_character(), world_id: 0)
+  let no_place = Character(..world_character(), place: None)
   let #(_, taken) =
     answer(
       state:,
@@ -1055,11 +1060,13 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
           faction_id: 167,
           level: 1,
           path: 2,
-          world_id: 3460,
-          world_zone_id: 6009,
-          position_x: 29.128599166870117,
-          position_y: -853.87158203125,
-          position_z: -560.18798828125,
+          place: place_support.at(
+            world_id: 3460,
+            world_zone_id: 6009,
+            x: 29.128599166870117,
+            y: -853.87158203125,
+            z: -560.18798828125,
+          ),
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
             LookEntry(label: CharacterCustomizationLabelId(22), value: 2),
@@ -1110,11 +1117,13 @@ fn world_character() -> store.Character {
     faction_id: 166,
     level: 1,
     path: 3,
-    world_id: 3460,
-    world_zone_id: 6009,
-    position_x: 29.128599166870117,
-    position_y: -853.87158203125,
-    position_z: -560.18798828125,
+    place: Some(place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 29.128599166870117,
+      y: -853.87158203125,
+      z: -560.18798828125,
+    )),
     look: [
       LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
       LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
@@ -2151,6 +2160,23 @@ pub fn a_watch_or_timer_the_rule_did_not_open_is_a_bug_with_an_error_and_the_end
       assert list.length(support.logs_of(step: taken, level: LogError)) == 1
     },
   )
+}
+
+pub fn a_claim_timer_that_fires_while_the_claims_ask_is_out_is_a_bug_with_an_error_and_the_end_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(claim_after_the_hand_off, _) = claiming()
+  let #(state, _) = feed(in_select_with_a_list(), WatchEnded(WatchId(1)))
+  let #(claim_after_the_watch_ended, taken) =
+    feed(state, OwnEvent(TimerFired(TimerId(1))))
+  assert ask_request(taken) == claim_ask()
+    as "the timer's firing made the claim, so its ask is out"
+  list.each([claim_after_the_hand_off, claim_after_the_watch_ended], fn(state) {
+    let #(_, taken) = feed(state, OwnEvent(TimerFired(TimerId(1))))
+    assert support.stops(taken)
+      as "the timer is waited on only before the claim is asked; a second claim would put two asks out"
+    assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    assert support.asked(taken) == None
+  })
 }
 
 pub fn a_claim_that_finds_sessions_not_running_is_made_again_after_a_wait_up_to_the_retries_then_reason_8_test() -> Nil {

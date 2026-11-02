@@ -117,8 +117,8 @@ pub const schema =
   )
 
 /// The key of the PublicEventObjective table's rows in the store.
-const key: store.TermKey(PublicEventObjective) =
-  store.TermKey("PublicEventObjective")
+const key: store.TableKey(PublicEventObjective) =
+  store.TableKey("PublicEventObjective")
 
 /// The entry that loads the PublicEventObjective table.
 pub fn entry() -> store.Entry {

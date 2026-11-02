@@ -47,8 +47,8 @@ pub const schema =
   )
 
 /// The key of the RewardRotationModifier table's rows in the store.
-const key: store.TermKey(RewardRotationModifier) =
-  store.TermKey("RewardRotationModifier")
+const key: store.TableKey(RewardRotationModifier) =
+  store.TableKey("RewardRotationModifier")
 
 /// The entry that loads the RewardRotationModifier table.
 pub fn entry() -> store.Entry {

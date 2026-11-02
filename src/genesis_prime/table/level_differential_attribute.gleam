@@ -43,8 +43,8 @@ pub const schema =
   )
 
 /// The key of the LevelDifferentialAttribute table's rows in the store.
-const key: store.TermKey(LevelDifferentialAttribute) =
-  store.TermKey("LevelDifferentialAttribute")
+const key: store.TableKey(LevelDifferentialAttribute) =
+  store.TableKey("LevelDifferentialAttribute")
 
 /// The entry that loads the LevelDifferentialAttribute table.
 pub fn entry() -> store.Entry {

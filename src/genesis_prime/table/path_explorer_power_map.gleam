@@ -56,8 +56,8 @@ pub const schema =
   )
 
 /// The key of the PathExplorerPowerMap table's rows in the store.
-const key: store.TermKey(PathExplorerPowerMap) =
-  store.TermKey("PathExplorerPowerMap")
+const key: store.TableKey(PathExplorerPowerMap) =
+  store.TableKey("PathExplorerPowerMap")
 
 /// The entry that loads the PathExplorerPowerMap table.
 pub fn entry() -> store.Entry {

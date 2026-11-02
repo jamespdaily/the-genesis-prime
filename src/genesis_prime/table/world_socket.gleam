@@ -42,7 +42,7 @@ pub const schema =
   )
 
 /// The key of the WorldSocket table's rows in the store.
-const key: store.TermKey(WorldSocket) = store.TermKey("WorldSocket")
+const key: store.TableKey(WorldSocket) = store.TableKey("WorldSocket")
 
 /// The entry that loads the WorldSocket table.
 pub fn entry() -> store.Entry {

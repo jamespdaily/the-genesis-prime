@@ -44,7 +44,7 @@ pub const schema =
   )
 
 /// The key of the PvPRatingFloor table's rows in the store.
-const key: store.TermKey(PvPRatingFloor) = store.TermKey("PvPRatingFloor")
+const key: store.TableKey(PvPRatingFloor) = store.TableKey("PvPRatingFloor")
 
 /// The entry that loads the PvPRatingFloor table.
 pub fn entry() -> store.Entry {

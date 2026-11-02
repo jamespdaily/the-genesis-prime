@@ -45,7 +45,7 @@ pub const schema =
   )
 
 /// The key of the HookAsset table's rows in the store.
-const key: store.TermKey(HookAsset) = store.TermKey("HookAsset")
+const key: store.TableKey(HookAsset) = store.TableKey("HookAsset")
 
 /// The entry that loads the HookAsset table.
 pub fn entry() -> store.Entry {

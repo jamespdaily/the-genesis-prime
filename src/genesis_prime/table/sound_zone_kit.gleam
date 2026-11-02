@@ -98,7 +98,7 @@ pub const schema =
   )
 
 /// The key of the SoundZoneKit table's rows in the store.
-const key: store.TermKey(SoundZoneKit) = store.TermKey("SoundZoneKit")
+const key: store.TableKey(SoundZoneKit) = store.TableKey("SoundZoneKit")
 
 /// The entry that loads the SoundZoneKit table.
 pub fn entry() -> store.Entry {

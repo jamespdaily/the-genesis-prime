@@ -333,7 +333,7 @@ pub const schema =
   )
 
 /// The key of the Class table's rows in the store.
-const key: store.TermKey(Class) = store.TermKey("Class")
+const key: store.TableKey(Class) = store.TableKey("Class")
 
 /// The entry that loads the Class table.
 pub fn entry() -> store.Entry {

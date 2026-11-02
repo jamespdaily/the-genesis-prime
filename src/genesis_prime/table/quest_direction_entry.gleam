@@ -50,8 +50,8 @@ pub const schema =
   )
 
 /// The key of the QuestDirectionEntry table's rows in the store.
-const key: store.TermKey(QuestDirectionEntry) =
-  store.TermKey("QuestDirectionEntry")
+const key: store.TableKey(QuestDirectionEntry) =
+  store.TableKey("QuestDirectionEntry")
 
 /// The entry that loads the QuestDirectionEntry table.
 pub fn entry() -> store.Entry {

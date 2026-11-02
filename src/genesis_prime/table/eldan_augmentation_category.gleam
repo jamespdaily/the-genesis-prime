@@ -66,8 +66,8 @@ pub const schema =
   )
 
 /// The key of the EldanAugmentationCategory table's rows in the store.
-const key: store.TermKey(EldanAugmentationCategory) =
-  store.TermKey("EldanAugmentationCategory")
+const key: store.TableKey(EldanAugmentationCategory) =
+  store.TableKey("EldanAugmentationCategory")
 
 /// The entry that loads the EldanAugmentationCategory table.
 pub fn entry() -> store.Entry {

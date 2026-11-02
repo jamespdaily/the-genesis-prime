@@ -30,8 +30,8 @@ pub const schema =
   )
 
 /// The key of the PlayerNotificationType table's rows in the store.
-const key: store.TermKey(PlayerNotificationType) =
-  store.TermKey("PlayerNotificationType")
+const key: store.TableKey(PlayerNotificationType) =
+  store.TableKey("PlayerNotificationType")
 
 /// The entry that loads the PlayerNotificationType table.
 pub fn entry() -> store.Entry {

@@ -29,7 +29,7 @@ pub const schema =
   )
 
 /// The key of the BugCategory table's rows in the store.
-const key: store.TermKey(BugCategory) = store.TermKey("BugCategory")
+const key: store.TableKey(BugCategory) = store.TableKey("BugCategory")
 
 /// The entry that loads the BugCategory table.
 pub fn entry() -> store.Entry {

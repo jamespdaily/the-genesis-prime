@@ -16,7 +16,7 @@
 ////   port for is the clients' limit and not the server's.
 //// Each line is shown failing, and passing at the value just below it.
 
-import genesis_prime/load_sample.{type Sample, Sample, Waiting}
+import genesis_prime/load_sample.{type Sample, Sample, ServerReading, Waiting}
 import genesis_prime/load_step.{
   type Observation, ClientsLimited, Failed, Kept, LoginToWorldSlow,
   MailboxBacklog, NotDrained, Observation, PingSlow, PlayerFailed, ServerLogLine,
@@ -25,6 +25,7 @@ import genesis_prime/load_step.{
 import gleam/erlang/process
 import gleam/int
 import gleam/list
+import gleam/option.{Some}
 import owned_test
 
 /// The whole numbers from `first` to `last`.
@@ -37,17 +38,36 @@ fn through(first: Int, last: Int) -> List(Int) {
 fn calm(at_ms: Int) -> Sample {
   Sample(
     at_ms:,
-    connections: [],
     waiting: [],
     largest_heap_words: 1000,
     memory_bytes: 1_000_000,
     busy_us: at_ms * 1000,
     total_us: at_ms * 4000,
     run_queue: 0,
-    store_waiting: 0,
-    worker_start_us: 50,
+    server: Some(ServerReading(
+      connections: [],
+      store_waiting: 0,
+      worker_start_us: 50,
+    )),
     log_lines: 0,
   )
+}
+
+/// The sample as if `waiting` store workers waited for the pool.
+fn with_store_waiting(sample: Sample, waiting: Int) -> Sample {
+  let assert Some(reading) = sample.server
+    as "a sample of the server carries its reading"
+  Sample(
+    ..sample,
+    server: Some(ServerReading(..reading, store_waiting: waiting)),
+  )
+}
+
+/// The sample as if the listeners held `held` connections.
+fn with_connections(sample: Sample, held: List(Int)) -> Sample {
+  let assert Some(reading) = sample.server
+    as "a sample of the server carries its reading"
+  Sample(..sample, server: Some(ServerReading(..reading, connections: held)))
 }
 
 /// Calm samples one second apart from 0 to `last` seconds.
@@ -205,7 +225,7 @@ pub fn the_mailbox_window_includes_the_sample_10_s_before_the_hold_ends_and_no_o
 
 pub fn store_workers_waiting_in_every_sample_of_the_arrival_fail_and_one_empty_sample_passes_test() -> Nil {
   use <- owned_test.run(5000)
-  let queued = fn(sample: Sample) { Sample(..sample, store_waiting: 2) }
+  let queued = fn(sample: Sample) { with_store_waiting(sample, 2) }
   let in_arrival = fn(missing: Int) {
     Observation(
       ..kept(),
@@ -256,7 +276,7 @@ pub fn a_warning_line_only_while_the_players_leave_fails_the_step_test() -> Nil 
 pub fn connections_still_held_when_the_wait_ends_fail_the_step_test() -> Nil {
   use <- owned_test.run(5000)
   let ending = fn(held: List(Int)) {
-    list.append(seconds(10), [Sample(..calm(11_000), connections: held)])
+    list.append(seconds(10), [with_connections(calm(11_000), held)])
   }
   assert load_step.judge(Observation(..kept(), server: ending([0, 0, 2])))
     == Failed([NotDrained])
@@ -317,7 +337,7 @@ pub fn a_step_on_a_negative_monotonic_clock_is_judged_the_same_test() -> Nil {
   }
   let queued =
     changing(last: 10, changed: fn(_) { True }, change: fn(sample) {
-      Sample(..sample, store_waiting: 2)
+      with_store_waiting(sample, 2)
     })
   assert load_step.judge(shifted(Observation(..kept(), server: queued)))
     == Failed([StoreBacklog])

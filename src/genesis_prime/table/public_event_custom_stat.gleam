@@ -48,8 +48,8 @@ pub const schema =
   )
 
 /// The key of the PublicEventCustomStat table's rows in the store.
-const key: store.TermKey(PublicEventCustomStat) =
-  store.TermKey("PublicEventCustomStat")
+const key: store.TableKey(PublicEventCustomStat) =
+  store.TableKey("PublicEventCustomStat")
 
 /// The entry that loads the PublicEventCustomStat table.
 pub fn entry() -> store.Entry {

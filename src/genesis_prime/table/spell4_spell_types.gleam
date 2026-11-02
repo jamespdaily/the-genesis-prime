@@ -29,7 +29,7 @@ pub const schema =
   )
 
 /// The key of the Spell4SpellTypes table's rows in the store.
-const key: store.TermKey(Spell4SpellTypes) = store.TermKey("Spell4SpellTypes")
+const key: store.TableKey(Spell4SpellTypes) = store.TableKey("Spell4SpellTypes")
 
 /// The entry that loads the Spell4SpellTypes table.
 pub fn entry() -> store.Entry {

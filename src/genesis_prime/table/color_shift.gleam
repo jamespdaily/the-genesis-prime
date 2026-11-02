@@ -40,7 +40,7 @@ pub const schema =
   )
 
 /// The key of the ColorShift table's rows in the store.
-const key: store.TermKey(ColorShift) = store.TermKey("ColorShift")
+const key: store.TableKey(ColorShift) = store.TableKey("ColorShift")
 
 /// The entry that loads the ColorShift table.
 pub fn entry() -> store.Entry {

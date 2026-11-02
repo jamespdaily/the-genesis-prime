@@ -83,7 +83,7 @@ pub const schema =
   )
 
 /// The key of the World table's rows in the store.
-const key: store.TermKey(World) = store.TermKey("World")
+const key: store.TableKey(World) = store.TableKey("World")
 
 /// The entry that loads the World table.
 pub fn entry() -> store.Entry {

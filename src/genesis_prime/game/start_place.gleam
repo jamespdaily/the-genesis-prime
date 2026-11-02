@@ -30,9 +30,50 @@ import gleam/list
 import gleam/result
 
 /// A character's place in the world: the World row, the WorldZone row and the
-/// position, as the client's WorldLocation2 row gives them.
-pub type Place {
+/// position, as the client's WorldLocation2 row gives them. It is always in a
+/// world: `place` refuses world 0, which is no World row (opcode.0xad), so a
+/// zone and a position with no world cannot be held.
+pub opaque type Place {
   Place(world_id: Int, world_zone_id: Int, x: Float, y: Float, z: Float)
+}
+
+/// The place in the World row `world_id`, `Error(Nil)` for world 0.
+pub fn place(
+  world_id world_id: Int,
+  world_zone_id world_zone_id: Int,
+  x x: Float,
+  y y: Float,
+  z z: Float,
+) -> Result(Place, Nil) {
+  case world_id {
+    0 -> Error(Nil)
+    _ -> Ok(Place(world_id:, world_zone_id:, x:, y:, z:))
+  }
+}
+
+/// The place's World row, never 0.
+pub fn world_id(place: Place) -> Int {
+  place.world_id
+}
+
+/// The place's WorldZone row.
+pub fn world_zone_id(place: Place) -> Int {
+  place.world_zone_id
+}
+
+/// The place's position on the x axis.
+pub fn x(place: Place) -> Float {
+  place.x
+}
+
+/// The place's position on the y axis.
+pub fn y(place: Place) -> Float {
+  place.y
+}
+
+/// The place's position on the z axis.
+pub fn z(place: Place) -> Float {
+  place.z
 }
 
 /// The Dominion faction's Faction2 id, as the CharacterCreation rows hold it.
@@ -123,7 +164,8 @@ const starts = [
 
 /// The place a character of this faction and race starts at for a
 /// CharacterCreation row's start, from the client's WorldLocation2 row.
-/// `Error(Nil)` for a start, race or faction with no row above.
+/// `Error(Nil)` for a start, race or faction with no row above, and for a row
+/// in world 0.
 pub fn of(
   tables tables: table_store.Tables,
   faction_id faction_id: Int,
@@ -137,11 +179,11 @@ pub fn of(
       && list.contains(candidate.race_ids, race_id)
     }),
   )
-  use row <- result.map(world_location2.get(
+  use row <- result.try(world_location2.get(
     tables:,
     id: WorldLocation2Id(found.location_id),
   ))
-  Place(
+  place(
     world_id: row.world_id,
     world_zone_id: row.world_zone_id,
     x: row.position0,

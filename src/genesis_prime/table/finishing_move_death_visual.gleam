@@ -72,8 +72,8 @@ pub const schema =
   )
 
 /// The key of the FinishingMoveDeathVisual table's rows in the store.
-const key: store.TermKey(FinishingMoveDeathVisual) =
-  store.TermKey("FinishingMoveDeathVisual")
+const key: store.TableKey(FinishingMoveDeathVisual) =
+  store.TableKey("FinishingMoveDeathVisual")
 
 /// The entry that loads the FinishingMoveDeathVisual table.
 pub fn entry() -> store.Entry {

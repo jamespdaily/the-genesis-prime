@@ -42,8 +42,8 @@ pub const schema =
   )
 
 /// The key of the PathSoldierActivate table's rows in the store.
-const key: store.TermKey(PathSoldierActivate) =
-  store.TermKey("PathSoldierActivate")
+const key: store.TableKey(PathSoldierActivate) =
+  store.TableKey("PathSoldierActivate")
 
 /// The entry that loads the PathSoldierActivate table.
 pub fn entry() -> store.Entry {

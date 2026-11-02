@@ -48,7 +48,7 @@ pub const schema =
   )
 
 /// The key of the GameFormula table's rows in the store.
-const key: store.TermKey(GameFormula) = store.TermKey("GameFormula")
+const key: store.TableKey(GameFormula) = store.TableKey("GameFormula")
 
 /// The entry that loads the GameFormula table.
 pub fn entry() -> store.Entry {

@@ -37,7 +37,7 @@ pub const schema =
   )
 
 /// The key of the RewardProperty table's rows in the store.
-const key: store.TermKey(RewardProperty) = store.TermKey("RewardProperty")
+const key: store.TableKey(RewardProperty) = store.TableKey("RewardProperty")
 
 /// The entry that loads the RewardProperty table.
 pub fn entry() -> store.Entry {

@@ -30,8 +30,8 @@ pub const schema =
   )
 
 /// The key of the PathScientistDatacubeDiscovery table's rows in the store.
-const key: store.TermKey(PathScientistDatacubeDiscovery) =
-  store.TermKey("PathScientistDatacubeDiscovery")
+const key: store.TableKey(PathScientistDatacubeDiscovery) =
+  store.TableKey("PathScientistDatacubeDiscovery")
 
 /// The entry that loads the PathScientistDatacubeDiscovery table.
 pub fn entry() -> store.Entry {

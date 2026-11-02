@@ -41,8 +41,8 @@ pub const schema =
   )
 
 /// The key of the SoundDirectionalAmbience table's rows in the store.
-const key: store.TermKey(SoundDirectionalAmbience) =
-  store.TermKey("SoundDirectionalAmbience")
+const key: store.TableKey(SoundDirectionalAmbience) =
+  store.TableKey("SoundDirectionalAmbience")
 
 /// The entry that loads the SoundDirectionalAmbience table.
 pub fn entry() -> store.Entry {

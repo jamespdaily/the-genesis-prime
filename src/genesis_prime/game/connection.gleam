@@ -68,15 +68,18 @@
 ////   shell decide by a message's content.
 //// - **Sessions ending.** When the watch on Sessions ends (`WatchEnded`) the
 ////   connection waits `claim_wait_ms` on a timer, since a restarted Sessions
-////   is not yet there, then claims again (`TimerFired`), with its character
-////   select state kept and the frames it holds waiting for the answer; the
-////   client sees nothing. When a newer login of the account claimed first,
-////   Sessions answers the claim `TakenOver` and the connection ends as a
-////   takeover does. A claim that finds Sessions not running (the
+////   is not yet there, then claims again (`TimerFired`), with the frames it
+////   holds waiting for the answer; the client sees nothing. The end of a watch
+////   is taken only between steps, when no ask of character select is out and
+////   its state is at rest, so the connection resumes in a new one. When a
+////   newer login of the account claimed first, Sessions answers the claim
+////   `TakenOver` and the connection ends as a takeover does. A claim that finds Sessions not running (the
 ////   outcome `NotRunning`) drops its watch and waits again, up to
 ////   `claim_retries` times, before the client is told the server failed. A
 ////   claim Sessions does not answer, or that ends before its answer, is that
-////   failure at once.
+////   failure at once. The wait is its own status (`WaitingToClaim`), so the
+////   timer's firing is taken only there, and an answer only while the claim's
+////   ask is out (`ClaimingSession`); either in the other is a bug.
 //// - **The character list and creating a character** are character select's
 ////   own feature (genesis_prime/game/character_select): it makes its own store
 ////   asks and takes the store's answers, and the rule turns its effects into
@@ -124,7 +127,7 @@
 ////   connection, so a connection that ends leaves its map. A takeover ends
 ////   it with reason 19, as in character select.
 //// - **Sessions ending in the world.** The claim again keeps where the
-////   client is: character select's state, or the player in the world.
+////   client is: character select, or the player in the world.
 //// - **0x038C** carries a 5-bit kind in its first byte, then exactly one whole
 ////   frame (0x14007e180, opcode.0x38c); the inner message is logged as
 ////   unhandled under its own id. A body that holds no whole frame, or bytes
@@ -253,31 +256,33 @@ type Status {
   AwaitingHelloReply
   /// The hand-off is asked to take the session key.
   TakingSessionKey
-  /// Sessions is asked to make the connection the account's session, or the
-  /// connection waits on the claim timer before it asks. `resume` is where the
-  /// client is after the answer: a new character select for the first claim;
-  /// the select it was in, or its player in the world, for a later one. `retries` is
-  /// how many times Sessions was not running for this claim.
+  /// Sessions is asked to make the connection the account's session, and its
+  /// answer is awaited. `resume` is where the client is after the answer: a
+  /// new character select for the first claim; a new one again, or its player
+  /// in the world, for a later one. `retries` is how many times Sessions was
+  /// not running for this claim.
   ClaimingSession(holder: Holder, resume: Resume, retries: Int)
+  /// The connection waits on the claim timer before it asks Sessions again,
+  /// with `resume` and `retries` as `ClaimingSession` holds them. No ask is
+  /// out, so no answer is taken here.
+  WaitingToClaim(holder: Holder, resume: Resume, retries: Int)
   /// The session key was held for `holder` and Sessions holds the account's
   /// slot for this connection; the client is in character select, which holds
   /// its own state, asks the store itself and says when its answer is awaited.
   InCharacterSelect(holder: Holder, select: character_select.State)
   /// The client asked to play a character; world entry asks the store, then
-  /// the map. `select` is where a refusal hands the client back to.
-  EnteringWorld(
-    holder: Holder,
-    select: character_select.State,
-    entry: world_entry.State,
-  )
+  /// the map. A refusal hands the client back to a new character select.
+  EnteringWorld(holder: Holder, entry: world_entry.State)
   /// The player is in the world, in `entered`'s map, which the connection
   /// watches (`map_watch`).
   InWorld(holder: Holder, entered: world_entry.Entered)
 }
 
-/// Where a claim made again after Sessions ended puts the client back.
+/// Where a claim made again after Sessions ended puts the client back. The
+/// shell takes the end of a watch only between steps, so no ask of character
+/// select is out then, and a character select resumes as a new one.
 type Resume {
-  ResumeSelect(select: character_select.State)
+  ResumeSelect
   ResumeWorld(entered: world_entry.Entered)
 }
 
@@ -444,7 +449,10 @@ fn settled(
 /// Whether an ask is in flight, so the frames after the one that asked wait.
 fn asking(status: Status) -> Bool {
   case status {
-    TakingSessionKey | ClaimingSession(..) | EnteringWorld(..) -> True
+    TakingSessionKey
+    | ClaimingSession(..)
+    | WaitingToClaim(..)
+    | EnteringWorld(..) -> True
     InCharacterSelect(select:, ..) -> character_select.waiting(select)
     AwaitingHelloReply | InWorld(..) -> False
   }
@@ -555,7 +563,7 @@ fn inner_message(
               <> client_connection.message_text(inner.message_id),
           )
       }
-    InCharacterSelect(holder:, select:) ->
+    InCharacterSelect(holder:, ..) ->
       case taken {
         HelloReplyAgain -> end_for(session, "0x058F was sent a second time")
         SelectStart ->
@@ -573,7 +581,7 @@ fn inner_message(
             },
           )
         CreateRequest -> create_requested(session:, now:, holder:, inner:)
-        PlayRequest -> play_requested(session:, now:, holder:, select:, inner:)
+        PlayRequest -> play_requested(session:, now:, holder:, inner:)
         DeleteRequest ->
           decoded_step(
             session:,
@@ -624,6 +632,8 @@ fn inner_message(
       }
     TakingSessionKey | ClaimingSession(..) | EnteringWorld(..) ->
       end_for(session, "a frame was taken while an ask was out")
+    WaitingToClaim(..) ->
+      end_for(session, "a frame was taken while the claim waited on its timer")
   }
 }
 
@@ -870,20 +880,18 @@ fn select_step(
 }
 
 /// The client's 0x07DD: world entry asks the store for the character, and the
-/// connection waits in `EnteringWorld`, with the select it came from for a
-/// refusal to hand back to.
+/// connection waits in `EnteringWorld`.
 fn play_requested(
   session session: Session,
   now now: Now,
   holder holder: Holder,
-  select select: character_select.State,
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
   use request <- decoded_step(session:, inner:, decode: play_character.decode)
   let #(entry, effects) =
     world_entry.play_requested(account_id: holder.account_id, request:)
   carry_out(
-    session: Session(..session, status: EnteringWorld(holder:, select:, entry:)),
+    session: Session(..session, status: EnteringWorld(holder:, entry:)),
     now:,
     effects: list.map(effects, from_entry),
     written: [],
@@ -982,9 +990,9 @@ fn answered(
       claim_answered(session:, holder:, resume:, retries:, outcome:)
     InCharacterSelect(holder:, select:) ->
       select_answered(session:, now:, holder:, select:, outcome:)
-    EnteringWorld(holder:, select:, entry:) ->
-      entry_answered(session:, now:, holder:, select:, entry:, outcome:)
-    AwaitingHelloReply | InWorld(..) ->
+    EnteringWorld(holder:, entry:) ->
+      entry_answered(session:, now:, holder:, entry:, outcome:)
+    AwaitingHelloReply | WaitingToClaim(..) | InWorld(..) ->
       end_for(session, "an answer came when no ask was out")
   }
 }
@@ -998,13 +1006,7 @@ fn key_taken(
 ) -> client_connection.Handled(Session) {
   case outcome {
     step.Answer(FromHandOff(hand_off.Taken(holder:))) ->
-      claim(
-        session:,
-        now:,
-        holder:,
-        resume: ResumeSelect(select: character_select.new()),
-        retries: 0,
-      )
+      claim(session:, now:, holder:, resume: ResumeSelect, retries: 0)
     step.Answer(FromHandOff(hand_off.NoHolder)) ->
       told(
         session:,
@@ -1052,7 +1054,7 @@ fn claim(
     now:,
     request: AskSessions(account_session.Claim(
       account: holder.account_id,
-      connection: session.link.connection,
+      connection: client_connection.connection(session.link),
     )),
     before: [Watch(watch: sessions_watch, target: Sessions)],
   )
@@ -1075,7 +1077,8 @@ fn claim_answered(
     step.Answer(FromSessions(account_session.Claimed)) ->
       Continue(
         Session(..session, status: case resume {
-          ResumeSelect(select:) -> InCharacterSelect(holder:, select:)
+          ResumeSelect ->
+            InCharacterSelect(holder:, select: character_select.new())
           ResumeWorld(entered:) -> InWorld(holder:, entered:)
         }),
         [],
@@ -1094,7 +1097,7 @@ fn claim_answered(
       Done(
         Session(
           ..session,
-          status: ClaimingSession(holder:, resume:, retries: retries + 1),
+          status: WaitingToClaim(holder:, resume:, retries: retries + 1),
         ),
         [
           Unwatch(watch: sessions_watch),
@@ -1134,6 +1137,7 @@ fn sessions_sent(
   case message, session.status {
     account_session.TakenOver, InCharacterSelect(..)
     | account_session.TakenOver, ClaimingSession(..)
+    | account_session.TakenOver, WaitingToClaim(..)
     | account_session.TakenOver, EnteringWorld(..)
     | account_session.TakenOver, InWorld(..)
     -> taken_over(session)
@@ -1156,12 +1160,13 @@ fn watch_ended(
   watch watch: WatchId,
 ) -> client_connection.Handled(Session) {
   case session.status, watch {
-    InCharacterSelect(holder:, select:), id if id == sessions_watch ->
-      waiting_to_claim(session:, holder:, resume: ResumeSelect(select:))
+    InCharacterSelect(holder:, ..), id if id == sessions_watch ->
+      waiting_to_claim(session:, holder:, resume: ResumeSelect)
     InWorld(holder:, entered:), id if id == sessions_watch ->
       waiting_to_claim(session:, holder:, resume: ResumeWorld(entered:))
     InWorld(..), id
     | ClaimingSession(resume: ResumeWorld(..), ..), id
+    | WaitingToClaim(resume: ResumeWorld(..), ..), id
       if id == map_watch
     ->
       told(
@@ -1173,6 +1178,7 @@ fn watch_ended(
     InCharacterSelect(..), _
     | InWorld(..), _
     | ClaimingSession(..), _
+    | WaitingToClaim(..), _
     | EnteringWorld(..), _
     | AwaitingHelloReply, _
     | TakingSessionKey, _
@@ -1188,7 +1194,7 @@ fn waiting_to_claim(
   resume resume: Resume,
 ) -> client_connection.Handled(Session) {
   Done(
-    Session(..session, status: ClaimingSession(holder:, resume:, retries: 0)),
+    Session(..session, status: WaitingToClaim(holder:, resume:, retries: 0)),
     [OwnEffect(StartTimer(timer: claim_timer, after_ms: claim_wait_ms))],
   )
 }
@@ -1202,9 +1208,10 @@ fn claim_wait_over(
   timer timer: TimerId,
 ) -> client_connection.Handled(Session) {
   case session.status {
-    ClaimingSession(holder:, resume:, retries:) if timer == claim_timer ->
+    WaitingToClaim(holder:, resume:, retries:) if timer == claim_timer ->
       claim(session:, now:, holder:, resume:, retries:)
-    ClaimingSession(..)
+    WaitingToClaim(..)
+    | ClaimingSession(..)
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | InWorld(..)
@@ -1315,7 +1322,6 @@ fn entry_answered(
   session session: Session,
   now now: Now,
   holder holder: Holder,
-  select select: character_select.State,
   entry entry: world_entry.State,
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
@@ -1329,13 +1335,17 @@ fn entry_answered(
       )
     step.Answer(FromStore(store.ForWorld(answer))) ->
       case
-        world_entry.loaded(entry, answer:, connection: session.link.connection)
+        world_entry.loaded(
+          entry,
+          answer:,
+          connection: client_connection.connection(session.link),
+        )
       {
         Ok(world_entry.Join(state:, effects:)) ->
           carry_out(
             session: Session(
               ..session,
-              status: EnteringWorld(holder:, select:, entry: state),
+              status: EnteringWorld(holder:, entry: state),
             ),
             now:,
             effects: list.map(effects, from_entry),
@@ -1484,8 +1494,10 @@ fn about_of(session: Session) -> About {
 fn entered_of(status: Status) -> Option(world_entry.Entered) {
   case status {
     InWorld(entered:, ..)
-    | ClaimingSession(resume: ResumeWorld(entered:), ..) -> Some(entered)
-    ClaimingSession(resume: ResumeSelect(..), ..)
+    | ClaimingSession(resume: ResumeWorld(entered:), ..)
+    | WaitingToClaim(resume: ResumeWorld(entered:), ..) -> Some(entered)
+    ClaimingSession(resume: ResumeSelect, ..)
+    | WaitingToClaim(resume: ResumeSelect, ..)
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | AwaitingHelloReply
@@ -1507,6 +1519,10 @@ fn account_id_of(status: Status) -> Option(Int) {
       )
     | InWorld(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
     | ClaimingSession(
+        holder: hand_off.Holder(account_id: store.AccountId(id), ..),
+        ..,
+      )
+    | WaitingToClaim(
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),
         ..,
       ) -> Some(id)

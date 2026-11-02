@@ -33,8 +33,8 @@ pub const schema =
   )
 
 /// The key of the TradeskillMaterialCategory table's rows in the store.
-const key: store.TermKey(TradeskillMaterialCategory) =
-  store.TermKey("TradeskillMaterialCategory")
+const key: store.TableKey(TradeskillMaterialCategory) =
+  store.TableKey("TradeskillMaterialCategory")
 
 /// The entry that loads the TradeskillMaterialCategory table.
 pub fn entry() -> store.Entry {

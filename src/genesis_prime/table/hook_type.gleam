@@ -26,7 +26,7 @@ pub const schema =
   )
 
 /// The key of the HookType table's rows in the store.
-const key: store.TermKey(HookType) = store.TermKey("HookType")
+const key: store.TableKey(HookType) = store.TableKey("HookType")
 
 /// The entry that loads the HookType table.
 pub fn entry() -> store.Entry {

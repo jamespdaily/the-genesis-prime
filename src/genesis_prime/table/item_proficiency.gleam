@@ -34,7 +34,7 @@ pub const schema =
   )
 
 /// The key of the ItemProficiency table's rows in the store.
-const key: store.TermKey(ItemProficiency) = store.TermKey("ItemProficiency")
+const key: store.TableKey(ItemProficiency) = store.TableKey("ItemProficiency")
 
 /// The entry that loads the ItemProficiency table.
 pub fn entry() -> store.Entry {

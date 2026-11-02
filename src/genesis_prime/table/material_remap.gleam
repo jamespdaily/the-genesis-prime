@@ -39,7 +39,7 @@ pub const schema =
   )
 
 /// The key of the MaterialRemap table's rows in the store.
-const key: store.TermKey(MaterialRemap) = store.TermKey("MaterialRemap")
+const key: store.TableKey(MaterialRemap) = store.TableKey("MaterialRemap")
 
 /// The entry that loads the MaterialRemap table.
 pub fn entry() -> store.Entry {

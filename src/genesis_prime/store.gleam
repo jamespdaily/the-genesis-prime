@@ -2,12 +2,14 @@
 //// ask in a worker of its own (genesis_prime/store/worker); these types are
 //// the ask's contract, so a rule can hold them.
 
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/table/id.{
   type CharacterCustomizationLabelId, type ClassId, type RaceId,
   CharacterCustomizationLabelId,
 }
 import gleam/list
+import gleam/option.{type Option}
 
 /// An account, keyed by the account table's id.
 pub type AccountId {
@@ -70,9 +72,12 @@ pub type Naming {
 /// entry carries (opcode.0x117). Each id keys the client table of its name,
 /// except `faction_id`, a Faction2 id the CharacterCreation table does not
 /// name as one; `gender` and `path` are the client's own numbers (the client
-/// shows paths 0 to 3). `look` and `bones` are what the create request carried:
-/// the look's labels with their values, and each bone value as the 32 bits of
-/// its float. `naming` is the entry's rename bit.
+/// shows paths 0 to 3). `place` is where the character is saved, `None` for a
+/// row with world 0, which a character made before create wrote its start
+/// place has: world 0 is no World row, so its zone and position mean nothing
+/// and are not read (opcode.0xad). `look` and `bones` are what the create
+/// request carried: the look's labels with their values, and each bone value as
+/// the 32 bits of its float. `naming` is the entry's rename bit.
 pub type Character {
   Character(
     character_id: CharacterId,
@@ -83,11 +88,7 @@ pub type Character {
     faction_id: Int,
     level: Int,
     path: Int,
-    world_id: Int,
-    world_zone_id: Int,
-    position_x: Float,
-    position_y: Float,
-    position_z: Float,
+    place: Option(Place),
     look: List(LookEntry),
     bones: List(Int),
     naming: Naming,
@@ -107,11 +108,7 @@ pub type NewCharacter {
     faction_id: Int,
     level: Int,
     path: Int,
-    world_id: Int,
-    world_zone_id: Int,
-    position_x: Float,
-    position_y: Float,
-    position_z: Float,
+    place: Place,
     look: List(LookEntry),
     bones: List(Int),
   )

@@ -57,8 +57,8 @@ pub const schema =
   )
 
 /// The key of the WaterSurfaceEffect table's rows in the store.
-const key: store.TermKey(WaterSurfaceEffect) =
-  store.TermKey("WaterSurfaceEffect")
+const key: store.TableKey(WaterSurfaceEffect) =
+  store.TableKey("WaterSurfaceEffect")
 
 /// The entry that loads the WaterSurfaceEffect table.
 pub fn entry() -> store.Entry {

@@ -40,7 +40,7 @@ pub const schema =
   )
 
 /// The key of the VeteranTier table's rows in the store.
-const key: store.TermKey(VeteranTier) = store.TermKey("VeteranTier")
+const key: store.TableKey(VeteranTier) = store.TableKey("VeteranTier")
 
 /// The entry that loads the VeteranTier table.
 pub fn entry() -> store.Entry {

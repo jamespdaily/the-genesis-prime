@@ -41,7 +41,7 @@ pub const schema =
   )
 
 /// The key of the Language table's rows in the store.
-const key: store.TermKey(Language) = store.TermKey("Language")
+const key: store.TableKey(Language) = store.TableKey("Language")
 
 /// The entry that loads the Language table.
 pub fn entry() -> store.Entry {

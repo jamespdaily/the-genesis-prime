@@ -31,8 +31,8 @@ pub const schema =
   )
 
 /// The key of the Spell4CCConditions table's rows in the store.
-const key: store.TermKey(Spell4CCConditions) =
-  store.TermKey("Spell4CCConditions")
+const key: store.TableKey(Spell4CCConditions) =
+  store.TableKey("Spell4CCConditions")
 
 /// The entry that loads the Spell4CCConditions table.
 pub fn entry() -> store.Entry {

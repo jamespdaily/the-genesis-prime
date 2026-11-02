@@ -63,7 +63,7 @@ pub const schema =
   )
 
 /// The key of the UnitProperty2 table's rows in the store.
-const key: store.TermKey(UnitProperty2) = store.TermKey("UnitProperty2")
+const key: store.TableKey(UnitProperty2) = store.TableKey("UnitProperty2")
 
 /// The entry that loads the UnitProperty2 table.
 pub fn entry() -> store.Entry {

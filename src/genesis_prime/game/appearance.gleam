@@ -78,8 +78,8 @@ pub fn index(tables tables: table_store.Tables) -> Index {
 }
 
 /// The key of the index in the tables' store.
-const index_key: table_store.TermKey(Index) =
-  table_store.TermKey("AppearanceIndex")
+const index_key: table_store.DerivedKey(Index) =
+  table_store.DerivedKey("AppearanceIndex")
 
 /// The index as a value the tables' load builds once, under the tables' key,
 /// from the rows of CharacterCustomization and CharacterCustomizationLabel.

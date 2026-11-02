@@ -31,7 +31,7 @@ pub const schema =
   )
 
 /// The key of the BugSubcategory table's rows in the store.
-const key: store.TermKey(BugSubcategory) = store.TermKey("BugSubcategory")
+const key: store.TableKey(BugSubcategory) = store.TableKey("BugSubcategory")
 
 /// The entry that loads the BugSubcategory table.
 pub fn entry() -> store.Entry {

@@ -28,7 +28,7 @@ pub const schema =
   )
 
 /// The key of the SoundContext table's rows in the store.
-const key: store.TermKey(SoundContext) = store.TermKey("SoundContext")
+const key: store.TableKey(SoundContext) = store.TableKey("SoundContext")
 
 /// The entry that loads the SoundContext table.
 pub fn entry() -> store.Entry {

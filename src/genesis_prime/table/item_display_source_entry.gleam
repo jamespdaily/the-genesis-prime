@@ -44,8 +44,8 @@ pub const schema =
   )
 
 /// The key of the ItemDisplaySourceEntry table's rows in the store.
-const key: store.TermKey(ItemDisplaySourceEntry) =
-  store.TermKey("ItemDisplaySourceEntry")
+const key: store.TableKey(ItemDisplaySourceEntry) =
+  store.TableKey("ItemDisplaySourceEntry")
 
 /// The entry that loads the ItemDisplaySourceEntry table.
 pub fn entry() -> store.Entry {

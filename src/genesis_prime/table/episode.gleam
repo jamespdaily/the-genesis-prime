@@ -59,7 +59,7 @@ pub const schema =
   )
 
 /// The key of the Episode table's rows in the store.
-const key: store.TermKey(Episode) = store.TermKey("Episode")
+const key: store.TableKey(Episode) = store.TableKey("Episode")
 
 /// The entry that loads the Episode table.
 pub fn entry() -> store.Entry {

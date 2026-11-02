@@ -40,8 +40,8 @@ pub const schema =
   )
 
 /// The key of the Creature2OverrideProperties table's rows in the store.
-const key: store.TermKey(Creature2OverrideProperties) =
-  store.TermKey("Creature2OverrideProperties")
+const key: store.TableKey(Creature2OverrideProperties) =
+  store.TableKey("Creature2OverrideProperties")
 
 /// The entry that loads the Creature2OverrideProperties table.
 pub fn entry() -> store.Entry {

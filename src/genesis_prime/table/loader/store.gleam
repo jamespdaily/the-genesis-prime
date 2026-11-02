@@ -36,20 +36,44 @@ pub opaque type Key {
   LoadKey(Reference)
 }
 
-/// The name of one term of a load, a table's rows or a derived value, and the
-/// type of what it holds: the load writes the term from a decoder or a build
-/// function of that type (`entry`, `derivation`), and a read by the key gives
-/// that type back, so a reader cannot name another one. A generated table
-/// module and each derivation declare theirs once, as a constant.
-pub type TermKey(value) {
-  TermKey(name: String)
+/// The name of a table's term in a load, and the type of the table's rows:
+/// `entry` writes the term from a decoder of that type, and a read by the key
+/// gives that type back.
+///
+/// The constructor is public because a Gleam constant cannot call a function,
+/// so nothing stops a key from claiming a row type its table does not have:
+/// the compiler holds the key's type to the decoder's only where `entry` takes
+/// both. A key is therefore declared once, as a private constant, in the
+/// module that owns its table, and no other module makes one.
+pub type TableKey(row) {
+  TableKey(name: String)
+}
+
+/// The name of a derived value's term in a load, and the type of the value:
+/// `derivation` writes the term from a build function of that type, and
+/// `derived` gives that type back. It is a type of its own, and its term is
+/// stored apart from the tables' (`TermName`), so a derived value's key neither
+/// reads a table nor overwrites one of the same name.
+///
+/// The constructor is public for the reason `TableKey`'s is, and the same rule
+/// holds: a key is declared once, as a private constant, in the module that
+/// owns its derivation.
+pub type DerivedKey(value) {
+  DerivedKey(name: String)
+}
+
+/// What a term of a load is stored under with the load's key: a table's name or
+/// a derived value's name, kept apart so one spelling never names both.
+type TermName {
+  TableTerm(name: String)
+  DerivedTerm(name: String)
 }
 
 /// The tables of one load. It holds the key their terms are stored under, so a
 /// process that reads a table is started with it, and the digest of the files
 /// they were read from.
 pub opaque type Tables {
-  Tables(key: Key, tables: List(String), digest: String)
+  Tables(key: Key, terms: List(TermName), digest: String)
 }
 
 /// One table the loader reads: the client's name, its file, and how to read
@@ -125,7 +149,7 @@ pub fn describe(error: LoadError) -> String {
 /// gives back to `row` and `rows`. The key's name is the table's
 /// (`schema.table`).
 pub fn entry(
-  key key: TermKey(row),
+  key key: TableKey(row),
   schema schema: tbl_file.Schema,
   decode decode: fn(BitArray, tbl_file.Strings) ->
     Result(row, tbl_file.RecordError),
@@ -137,7 +161,9 @@ pub fn entry(
     file: schema.file,
     put: fn(bytes, load) {
       tbl_file.read(bytes:, schema:, decode:, id:)
-      |> result.map(fn(table) { put_term(load:, name: key.name, term: table) })
+      |> result.map(fn(table) {
+        put_term(load:, name: TableTerm(key.name), term: table)
+      })
     },
     ids: fn(tables) { list.map(rows(tables:, key:), id) },
   )
@@ -147,18 +173,18 @@ pub fn entry(
 /// name of a table of the client. `build` reads the loaded tables once, when
 /// they load; `derived` then gives its result.
 pub fn derivation(
-  key key: TermKey(value),
+  key key: DerivedKey(value),
   build build: fn(Tables) -> value,
 ) -> Derivation {
   Derivation(name: key.name, put: fn(tables) {
-    put_term(load: tables.key, name: key.name, term: build(tables))
+    put_term(load: tables.key, name: DerivedTerm(key.name), term: build(tables))
   })
 }
 
 /// The value a derivation built when these tables loaded; a key no derivation
 /// of the load had stops the caller.
-pub fn derived(tables tables: Tables, key key: TermKey(value)) -> value {
-  get_term(tables.key, key.name)
+pub fn derived(tables tables: Tables, key key: DerivedKey(value)) -> value {
+  get_term(tables.key, DerivedTerm(key.name))
 }
 
 /// The digest of the files the tables were read from, as upper-case hex.
@@ -225,7 +251,7 @@ fn load_under(
   {
     Error(#(error, written)) -> {
       unload(with_derived_names(
-        Tables(key: load, tables: written, digest: ""),
+        Tables(key: load, terms: written, digest: ""),
         derivations,
       ))
       Error(error)
@@ -233,7 +259,7 @@ fn load_under(
     Ok(#(written, digest)) ->
       check_and_derive(
         tables: with_derived_names(
-          Tables(key: load, tables: written, digest:),
+          Tables(key: load, terms: written, digest:),
           derivations,
         ),
         requirements:,
@@ -267,9 +293,9 @@ fn check_and_derive(
 fn with_derived_names(tables: Tables, derivations: List(Derivation)) -> Tables {
   Tables(
     ..tables,
-    tables: list.append(
-      list.map(derivations, fn(derivation) { derivation.name }),
-      tables.tables,
+    terms: list.append(
+      list.map(derivations, fn(derivation) { DerivedTerm(derivation.name) }),
+      tables.terms,
     ),
   )
 }
@@ -281,16 +307,16 @@ fn put_each(
   load load: Key,
   folder folder: String,
   entries entries: List(Entry),
-  written written: List(String),
+  written written: List(TermName),
   hasher hasher: crypto.Hasher,
-) -> Result(#(List(String), String), #(LoadError, List(String))) {
+) -> Result(#(List(TermName), String), #(LoadError, List(TermName))) {
   case entries {
     [] -> Ok(#(written, bit_array.base16_encode(crypto.digest(hasher))))
     [entry, ..rest] ->
       case put_one(load:, folder:, entry:, hasher:) {
         Ok(hasher) ->
           put_each(load:, folder:, entries: rest, hasher:, written: [
-            entry.table,
+            TableTerm(entry.table),
             ..written
           ])
         Error(error) -> Error(#(error, written))
@@ -341,57 +367,57 @@ fn first_missing_row(
 
 /// Erases the terms of one load.
 pub fn unload(tables: Tables) -> Nil {
-  list.each(tables.tables, fn(name) { erase_term(#(tables.key, name)) })
+  list.each(tables.terms, fn(name) { erase_term(#(tables.key, name)) })
 }
 
 /// The row with an id in the table the key names, or an error when it has
 /// none.
 pub fn row(
   tables tables: Tables,
-  key key: TermKey(row),
+  key key: TableKey(row),
   id id: Int,
 ) -> Result(row, Nil) {
   tbl_file.row(table_of(tables.key, key), id)
 }
 
 /// Every row of the table the key names, in id order.
-pub fn rows(tables tables: Tables, key key: TermKey(row)) -> List(row) {
+pub fn rows(tables tables: Tables, key key: TableKey(row)) -> List(row) {
   tbl_file.rows(table_of(tables.key, key))
 }
 
 /// The table a key names: the term `entry` wrote from `decode`, whose rows are
 /// the key's type.
-fn table_of(load: Key, key: TermKey(row)) -> tbl_file.Table(row) {
-  get_term(load, key.name)
+fn table_of(load: Key, key: TableKey(row)) -> tbl_file.Table(row) {
+  get_term(load, TableTerm(key.name))
 }
 
 /// Writes a term, a table or a derived value, under the load and a name.
-fn put_term(load load: Key, name name: String, term term: term) -> Nil {
+fn put_term(load load: Key, name name: TermName, term term: term) -> Nil {
   let _ok = persistent_term_put(#(load, name), term)
   Nil
 }
 
 /// OTP's `persistent_term:put/2`, which returns the atom `ok`.
 @external(erlang, "persistent_term", "put")
-fn persistent_term_put(key: #(Key, String), value: value) -> Atom
+fn persistent_term_put(key: #(Key, TermName), value: value) -> Atom
 
 /// The term under the load and a name. The callers, `table_of` and `derived`,
 /// give it the type `entry` or `derivation` wrote under the name of the key
 /// they were given.
-fn get_term(load: Key, name: String) -> term {
+fn get_term(load: Key, name: TermName) -> term {
   persistent_term_get(#(load, name))
 }
 
 /// OTP's `persistent_term:get/1`.
 @external(erlang, "persistent_term", "get")
-fn persistent_term_get(key: #(Key, String)) -> term
+fn persistent_term_get(key: #(Key, TermName)) -> term
 
 /// Erases a term, whether it was written or not.
-fn erase_term(key: #(Key, String)) -> Nil {
+fn erase_term(key: #(Key, TermName)) -> Nil {
   let _erased = persistent_term_erase(key)
   Nil
 }
 
 /// OTP's `persistent_term:erase/1`, which returns whether a term was erased.
 @external(erlang, "persistent_term", "erase")
-fn persistent_term_erase(key: #(Key, String)) -> Bool
+fn persistent_term_erase(key: #(Key, TermName)) -> Bool

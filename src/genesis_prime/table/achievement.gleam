@@ -121,7 +121,7 @@ pub const schema =
   )
 
 /// The key of the Achievement table's rows in the store.
-const key: store.TermKey(Achievement) = store.TermKey("Achievement")
+const key: store.TableKey(Achievement) = store.TableKey("Achievement")
 
 /// The entry that loads the Achievement table.
 pub fn entry() -> store.Entry {
