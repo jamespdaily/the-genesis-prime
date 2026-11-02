@@ -304,6 +304,17 @@ fn column_type_of(code: Int) -> Result(ColumnType, Nil) {
   }
 }
 
+/// The client's type code of a column type (`game_table.column_type`).
+pub fn type_code(column_type: ColumnType) -> Int {
+  case column_type {
+    Integer32 -> 3
+    Float32 -> 4
+    Boolean32 -> 11
+    Integer64 -> 20
+    Utf16Text -> 130
+  }
+}
+
 fn round_up(value: Int, multiple: Int) -> Int {
   { value + multiple - 1 } / multiple * multiple
 }
@@ -334,6 +345,34 @@ pub fn layout(columns: List(Column)) -> #(List(Field), Int) {
     False -> round_up(end, 4)
   }
   #(list.reverse(fields), record_size)
+}
+
+/// Whether the first column is a 32-bit integer named `id`, in any case: the
+/// id that a table's lookup indexes its rows by.
+pub fn has_id_column(columns: List(Column)) -> Bool {
+  case columns {
+    [Column(name:, column_type: Integer32), ..] ->
+      string.lowercase(name) == "id"
+    _ -> False
+  }
+}
+
+/// Why a file's record size is not the one the placement rule gives its
+/// columns.
+pub type PlacementError {
+  /// The rule gives `placed` bytes and the header says `header`.
+  RecordSizeNotPlaced(placed: Int, header: Int)
+}
+
+/// The columns of a file placed in the record by `layout`, when the record size
+/// the rule gives is the header's.
+pub fn place(description: Description) -> Result(List(Field), PlacementError) {
+  let #(fields, placed) = layout(description.columns)
+  case placed == description.record_size {
+    True -> Ok(fields)
+    False ->
+      Error(RecordSizeNotPlaced(placed:, header: description.record_size))
+  }
 }
 
 /// The first difference between what the file says and the schema: the table's

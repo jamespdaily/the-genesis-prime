@@ -25,6 +25,7 @@ import genesis_prime
 import genesis_prime/client_archive
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/dev_database
+import genesis_prime/dev_exit
 import genesis_prime/login/auth_connection
 import genesis_prime/login/recorded_realm
 import genesis_prime/server
@@ -52,14 +53,10 @@ pub fn main() -> Nil {
     Ok(Nil) -> Nil
     Error(failure) -> {
       io.println_error(describe(failure))
-      halt(1)
+      dev_exit.halt(1)
     }
   }
 }
-
-/// Ends the program with a status.
-@external(erlang, "erlang", "halt")
-fn halt(status: Int) -> Nil
 
 fn start() -> Result(Nil, Failure) {
   use #(folder, planted) <- result.try(arguments())

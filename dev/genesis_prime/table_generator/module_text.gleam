@@ -67,17 +67,15 @@ pub fn render(
     return: Error(ReservedTypeName(table)),
   )
   use <- bool.guard(
-    when: !has_id_column(description.columns),
+    when: !tbl_file.has_id_column(description.columns),
     return: Error(NoIdColumn(table)),
   )
-  let #(placed, record_size) = tbl_file.layout(description.columns)
-  use <- bool.guard(
-    when: record_size != description.record_size,
-    return: Error(LayoutDiffers(
-      table:,
-      placed: record_size,
-      header: description.record_size,
-    )),
+  use placed <- result.try(
+    tbl_file.place(description)
+    |> result.map_error(fn(error) {
+      let tbl_file.RecordSizeNotPlaced(placed:, header:) = error
+      LayoutDiffers(table:, placed:, header:)
+    }),
   )
   use fields <- result.try(name_fields(table, placed))
   let #(readers, unmatched) = readers(fields:, own:, tables:)
@@ -98,14 +96,6 @@ pub fn render(
       "\n",
     )
   Ok(Rendered(text:, unmatched:))
-}
-
-fn has_id_column(columns: List(tbl_file.Column)) -> Bool {
-  case columns {
-    [tbl_file.Column(name:, column_type: tbl_file.Integer32), ..] ->
-      string.lowercase(name) == "id"
-    _ -> False
-  }
 }
 
 /// The readers of a table: its own `id` column, and each 32-bit integer column
