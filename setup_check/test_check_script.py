@@ -581,6 +581,11 @@ def change_something_else(case: PlantedCheckCase) -> None:
     case.git("commit", "-q", "-m", "a change outside the scripts folder")
 
 
+def part_line(output: str, part: str) -> str:
+    """The line of the summary that names the part, or an empty string."""
+    return next((line for line in output.splitlines() if part in line), "")
+
+
 def set_origin_main(case: PlantedCheckCase, revision: str) -> None:
     """Makes `origin/main` the planted repository's commit at `revision`, as a fetch would."""
     case.git("update-ref", "refs/remotes/origin/main", case.git("rev-parse", revision))
@@ -593,10 +598,6 @@ class ClientIntegrationTest(unittest.TestCase):
     scripts folder, compared with its merge base with main (origin/main when
     there is one); otherwise they are skipped and the output says so. Where they
     run, the budget is raised and the output says why."""
-
-    @staticmethod
-    def part_line(output: str) -> str:
-        return next((line for line in output.splitlines() if "client-integration" in line), "")
 
     def changed(self) -> Run:
         # The planted gated test fails; the usual budget (1 s) is raised to 30 s, which
@@ -648,7 +649,7 @@ class ClientIntegrationTest(unittest.TestCase):
         run = self.unchanged()
         self.assertEqual(run.done.returncode, 0, run.output)
         self.assertFalse(run.marker_ran, "an integration test ran with no change under the scripts folder")
-        line = self.part_line(run.output)
+        line = part_line(run.output, "client-integration")
         self.assertIn("skipped", line, "the part's line says it was skipped:\n" + run.output)
         self.assertIn("unchanged", line, "and why:\n" + run.output)
 
@@ -671,7 +672,7 @@ class ClientIntegrationTest(unittest.TestCase):
             "integration-no-client", prepare=lambda case: (plant_failing_gated_test(case), change_the_scripts(case)),
             GENESIS_INTEGRATION="1",
         )
-        line = self.part_line(run.output)
+        line = part_line(run.output, "client-integration")
         self.assertIn("skipped", line, "the part's line says it was skipped:\n" + run.output)
         self.assertIn("GENESIS_NO_CLIENT", line, "and why:\n" + run.output)
 
@@ -698,7 +699,7 @@ class ClientIntegrationTest(unittest.TestCase):
         run = shared_run("integration-no-main", client=True, prepare=plant)
         self.assertEqual(run.done.returncode, 0, run.output)
         self.assertTrue(run.marker_ran, "with no merge base, the safe course is to run them")
-        self.assertIn("main", self.part_line(run.output) + run.output)
+        self.assertIn("main", part_line(run.output, "client-integration") + run.output)
 
     def test_the_fast_check_does_not_run_the_integration_tests(self):
         run = shared_run("fast-changed", "fast", client=True, prepare=change_the_scripts)
@@ -716,6 +717,22 @@ def advance_origin_main(case: PlantedCheckCase, commits: int) -> None:
     case.git("checkout", "-q", "feature")
 
 
+def plant_branch_holding_origin_main(case: PlantedCheckCase) -> None:
+    """`feature` holds the one commit `origin/main` gained, and has a commit of its own."""
+    advance_origin_main(case, 1)
+    case.git("merge", "-q", "main")
+    case.commit_change(".gitignore")
+
+
+def make_the_repository_shallow(case: PlantedCheckCase) -> None:
+    """Replaces the planted repository with a clone of it that keeps one commit of each
+    branch, as CI's checkout does: the commits a branch holds are no longer all reachable."""
+    clone = case.root / "shallow"
+    case.git("clone", "-q", "--depth", "1", "--no-single-branch", "file://%s" % case.repository, str(clone))
+    shutil.move(str(case.repository), str(case.root / "full"))
+    shutil.move(str(clone), str(case.repository))
+
+
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class BranchHoldsMainTest(unittest.TestCase):
     """The full check compares HEAD with `origin/main` as last fetched, first of all:
@@ -726,29 +743,21 @@ class BranchHoldsMainTest(unittest.TestCase):
 
     BEHIND = 2
 
-    @staticmethod
-    def part_line(output: str) -> str:
-        return next((line for line in output.splitlines() if "branch-current" in line), "")
+    # The tip of origin/main in the planted repository, kept with the run that is shared.
+    tips: dict[str, str] = {}
 
     def behind(self) -> tuple[Run, str]:
-        tips: list[str] = []
-
         def plant(case: PlantedCheckCase) -> None:
             advance_origin_main(case, self.BEHIND)
-            tips.append(case.git("rev-parse", "--short", "origin/main"))
+            self.tips["behind"] = case.git("rev-parse", "--short", "origin/main")
 
         run = shared_run("branch-behind-origin-main", prepare=plant)
-        return run, tips[0] if tips else ""
+        return run, self.tips["behind"]
 
     def test_a_branch_holding_every_commit_of_origin_main_passes_the_part(self):
-        def plant(case: PlantedCheckCase) -> None:
-            advance_origin_main(case, 1)
-            case.git("merge", "-q", "main")
-            case.commit_change(".gitignore")
-
-        run = shared_run("branch-holds-origin-main", prepare=plant)
+        run = shared_run("branch-holds-origin-main", prepare=plant_branch_holding_origin_main)
         self.assertEqual(run.done.returncode, 0, run.output)
-        line = self.part_line(run.output)
+        line = part_line(run.output, "branch-current")
         self.assertRegex(line, r"\bok\b", "the part's line says it passed:\n" + run.output)
         self.assertIn("origin/main", line)
 
@@ -771,14 +780,27 @@ class BranchHoldsMainTest(unittest.TestCase):
     def test_a_repository_with_no_origin_main_skips_the_part_and_says_why(self):
         run = shared_run("full")
         self.assertEqual(run.done.returncode, 0, run.output)
-        line = self.part_line(run.output)
+        line = part_line(run.output, "branch-current")
         self.assertIn("skipped", line, "the part's line says it was skipped:\n" + run.output)
         self.assertIn("no origin/main", line, "and why")
+
+    def test_a_shallow_repository_skips_the_part_and_says_why(self):
+        # The branch holds origin/main, but the clone keeps one commit of each, so a count
+        # of the commits HEAD lacks would say 1.
+        def plant(case: PlantedCheckCase) -> None:
+            plant_branch_holding_origin_main(case)
+            make_the_repository_shallow(case)
+
+        run = shared_run("branch-shallow", prepare=plant)
+        self.assertEqual(run.done.returncode, 0, run.output)
+        line = part_line(run.output, "branch-current")
+        self.assertIn("skipped", line, "the part's line says it was skipped:\n" + run.output)
+        self.assertIn("the history is shallow, so whether HEAD holds origin/main cannot be established", line)
 
     def test_the_fast_check_on_a_branch_behind_origin_main_does_not_run_the_part(self):
         run = shared_run("fast-branch-behind", "fast", prepare=lambda case: advance_origin_main(case, self.BEHIND))
         self.assertEqual(run.done.returncode, 0, run.output)
-        self.assertEqual(self.part_line(run.output), "", run.output)
+        self.assertEqual(part_line(run.output, "branch-current"), "", run.output)
 
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
