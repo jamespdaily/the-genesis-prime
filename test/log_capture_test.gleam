@@ -11,15 +11,12 @@ import gleam/list
 import log_capture
 import owned_test
 
-/// The function of this module that runs in the fresh node.
-const in_fresh_node = "captures_started_at_once"
-
 /// How many captures start at the same moment.
 const captures = 20
 
 pub fn captures_that_start_at_once_in_a_fresh_node_each_see_a_line_once_test() -> Nil {
   use <- owned_test.run(60_000)
-  fresh_node.must_return(module: "log_capture_test", function: in_fresh_node)
+  fresh_node.must_return_function(captures_started_at_once)
 }
 
 /// Starts `captures` captures of this process's lines from as many processes

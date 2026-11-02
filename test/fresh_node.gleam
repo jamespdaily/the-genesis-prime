@@ -14,6 +14,20 @@ pub fn must_return(module module: String, function function: String) -> Nil {
     as { function <> " returns in a fresh node, with nothing loaded before it" }
 }
 
+/// Runs `function` in a fresh node and stops the test unless it returns there,
+/// within 50 seconds. The function is one of the test's own module, which the
+/// node loads when it calls it.
+pub fn must_return_function(function: fn() -> Nil) -> Nil {
+  assert run_function(function:, timeout_ms: 50_000) == Ok(Nil)
+    as "the function returns in a fresh node, with nothing loaded before it"
+}
+
+@external(erlang, "fresh_node_ffi", "run_function")
+fn run_function(
+  function function: fn() -> Nil,
+  timeout_ms timeout_ms: Int,
+) -> Result(Nil, NotReturned)
+
 /// Runs `module.function()` in a fresh node: `Ok(Nil)` when it returns.
 @external(erlang, "fresh_node_ffi", "run")
 pub fn run(

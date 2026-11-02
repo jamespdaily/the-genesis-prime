@@ -48,6 +48,8 @@ pub fn a_client_past_the_rate_gets_pongs_for_at_most_its_burst_and_is_closed_wit
   let burst = client_connection.burst(login_support.servers_auth_rate())
   let flooded = flood(sending: support.pings(count: burst + 1))
   let pongs = bit_array.byte_size(flooded.heard) / 7
+  assert pongs >= burst
+    as "the whole burst is answered: tokens only grow between reads, so the bucket never holds less than a full burst's worth of frames"
   assert pongs <= burst as "the bucket holds the burst, and one more is refused"
   assert flooded.heard == pongs_of(count: pongs)
     as "each pong answers its ping in order, and nothing else was written"
