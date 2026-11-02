@@ -1,4 +1,4 @@
--module(tbl_file_ffi).
+-module(genesis_prime_tbl_file_ffi).
 -export([utf16_text/1, gap/0, table_of/1, row/2, rows/1]).
 
 %% The UTF-8 form of the UTF-16 little-endian text at the start of Bytes, up

@@ -595,7 +595,7 @@ fn drain(
 
 /// A process id as the logger writes it into a line's metadata: as Erlang prints
 /// a term on one line, which is how the log capture prints each value.
-@external(erlang, "step_runtime_ffi", "term_text")
+@external(erlang, "genesis_prime_step_runtime_ffi", "term_text")
 fn pid_text(pid: Pid) -> String
 
 /// Ends the capture of log lines, and gives those not yet given by `logged`.

@@ -550,25 +550,25 @@ pub fn boolean(
 }
 
 /// The row of an id, or an error when the id has no row.
-@external(erlang, "tbl_file_ffi", "row")
+@external(erlang, "genesis_prime_tbl_file_ffi", "row")
 pub fn row(table: Table(row), id: Int) -> Result(row, Nil)
 
 /// Every row, in id order.
-@external(erlang, "tbl_file_ffi", "rows")
+@external(erlang, "genesis_prime_tbl_file_ffi", "rows")
 pub fn rows(table: Table(row)) -> List(row)
 
 /// The UTF-8 form of the UTF-16 little-endian text at the start of the bytes,
 /// up to its first zero character; an error when there is none or the text is
 /// not valid UTF-16.
-@external(erlang, "tbl_file_ffi", "utf16_text")
+@external(erlang, "genesis_prime_tbl_file_ffi", "utf16_text")
 fn utf16_text(bytes: BitArray) -> Result(String, Nil)
 
 /// What stands in a table's tuple where an id has no row.
-@external(erlang, "tbl_file_ffi", "gap")
+@external(erlang, "genesis_prime_tbl_file_ffi", "gap")
 fn gap() -> row
 
 /// Puts the rows, and the gaps among them, in one tuple.
-@external(erlang, "tbl_file_ffi", "table_of")
+@external(erlang, "genesis_prime_tbl_file_ffi", "table_of")
 fn table_of(rows: List(row)) -> Table(row)
 
 /// A sentence that says why a file is not accepted as its table, for the

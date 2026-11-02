@@ -52,7 +52,7 @@ import genesis_prime/message/unit_create_player
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/maps
+import genesis_prime/world_map/registry as world_map_registry
 import gleam/bool
 import gleam/dynamic/decode
 import gleam/erlang/process
@@ -347,7 +347,7 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
     as "the player entered the world"
   // The player's map is the run the real Maps holds for the character's world.
   let assert Ok(found) =
-    maps.find_or_start(
+    world_map_registry.find_or_start(
       started.settings.world.maps,
       MapId(world_id: 1387, instance: 0),
       deadline_ms: ask_support.monotonic_ms() + ask_support.event_wait_ms,

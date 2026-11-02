@@ -1,7 +1,7 @@
 %% Runs a function and turns the exits that say a supervisor is not running
 %% into an error, where an answer of "not running" is wanted. Any other exit,
 %% including a noproc from elsewhere, passes.
--module(service_ffi).
+-module(genesis_prime_service_ffi).
 -export([unless_supervisor_not_running/1]).
 
 %% OTP's supervisor:start_child/2 is gen_server:call(Supervisor, _, infinity).

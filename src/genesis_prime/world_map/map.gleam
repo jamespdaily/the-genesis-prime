@@ -4,7 +4,7 @@
 ////
 //// This is the rule of a map's service shell (genesis_prime/service/shell),
 //// started without a name by the map supervisor when Maps is first asked for
-//// it (genesis_prime/world_map/maps). Its players live only in the process: a
+//// it (genesis_prime/world_map/registry). Its players live only in the process: a
 //// restart loses them, and each player's connection, which watches its map,
 //// ends (genesis_prime/game/connection).
 ////

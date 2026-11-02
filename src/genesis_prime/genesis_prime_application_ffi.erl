@@ -9,7 +9,7 @@
 %%   one. `application:get_supervisor/1` finds the root by the application's
 %%   name, and `supervisor:start_child/2` starts the tree under it.
 %% - The node's own state: gleam_erlang has nothing for `init:get_status/0`.
--module(application_ffi).
+-module(genesis_prime_application_ffi).
 
 -export([start_tree/1, node_stopping/0]).
 
