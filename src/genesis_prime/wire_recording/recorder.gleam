@@ -7,9 +7,10 @@
 //// the line's event happens (a write's before the socket is given the bytes)
 //// and hands it in, since the runtime module calls this one.
 
+import genesis_prime/seed.{type Seed}
 import genesis_prime/step.{type Now}
 import genesis_prime/wire_recording.{
-  type Input, type Side, Closing, Header, Took, Wrote,
+  type Input, type Realm, type Side, Closing, Header, Took, Wrote,
 }
 import gleam/int
 import gleam/option.{type Option, None, Some}
@@ -19,9 +20,16 @@ import simplifile
 
 /// Where and how each connection of a listener is recorded: a folder, and what
 /// a recording's header holds besides the rule's name, the seed and the accept
-/// ordinal, which the shell gives.
+/// ordinal, which the shell gives: the client build, the digest of the game
+/// tables the rule reads (`None` for a rule that reads none) and the realm the
+/// rule writes (`None` for a rule that writes none).
 pub opaque type WireRecorder {
-  WireRecorder(folder: String, client_build: Int, tables_digest: Option(String))
+  WireRecorder(
+    folder: String,
+    client_build: Int,
+    tables_digest: Option(String),
+    realm: Option(Realm),
+  )
 }
 
 /// One open recording: the path of its file.
@@ -40,8 +48,25 @@ pub fn new(
   folder folder: String,
   client_build client_build: Int,
   tables_digest tables_digest: Option(String),
+  realm realm: Option(Realm),
 ) -> WireRecorder {
-  WireRecorder(folder:, client_build:, tables_digest:)
+  WireRecorder(folder:, client_build:, tables_digest:, realm:)
+}
+
+/// The suffix of the file of a connection's recording: JSON lines.
+pub const file_suffix = ".jsonl"
+
+/// The name of the file of the connection numbered `connection` that ran the
+/// rule `rule_name`: the rule's module with dots for slashes, a dash, the number
+/// and the suffix.
+pub fn file_name(
+  rule_name rule_name: String,
+  connection connection: Int,
+) -> String {
+  string.replace(rule_name, "/", ".")
+  <> "-"
+  <> int.to_string(connection)
+  <> file_suffix
 }
 
 /// Opens the recording of one connection when there is a recorder; with none
@@ -52,18 +77,12 @@ pub fn open_if(
   rule_name rule_name: String,
   connection connection: Int,
   accept_ordinal accept_ordinal: Int,
-  seed seed: BitArray,
+  seed seed: Seed,
 ) -> Result(Option(WireWriter), WriteError) {
   case recorder {
     None -> Ok(None)
     Some(recorder) -> {
-      let path =
-        recorder.folder
-        <> "/"
-        <> string.replace(rule_name, "/", ".")
-        <> "-"
-        <> int.to_string(connection)
-        <> ".jsonl"
+      let path = recorder.folder <> "/" <> file_name(rule_name:, connection:)
       let header =
         Header(
           format: wire_recording.format,
@@ -72,6 +91,7 @@ pub fn open_if(
           tables_digest: recorder.tables_digest,
           seed:,
           accept_ordinal:,
+          realm: recorder.realm,
         )
       use Nil <- result.try(
         simplifile.create_directory_all(recorder.folder)

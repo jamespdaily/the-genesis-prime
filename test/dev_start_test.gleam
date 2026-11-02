@@ -4,7 +4,10 @@
 //// values come from these places.
 //// - The recording's layout in `genesis_prime/wire_recording`: one file for
 ////   each connection, named after its rule, whose header names the rule and
-////   whose closing line ends it when the server stops.
+////   whose closing line ends it when the server stops. A header holds what its
+////   rule reads or writes: the game rule reads the game tables (their digest),
+////   the auth rule writes the realm it hands the client to (the auth settings'
+////   own `realm`), and the STS rule reads and writes neither.
 //// - The rules' names (`rule_name` of each connection rule) and the three
 ////   listeners the server opens: the STS, the auth and the game server.
 //// - The scripted client's login (`login_client`, `game_client`), written from
@@ -18,7 +21,6 @@ import genesis_prime/login/sts_connection
 import genesis_prime/message/game_server_handoff
 import genesis_prime/server
 import genesis_prime/wire_recording.{Recording}
-import genesis_prime/wire_recording/recorder
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
@@ -36,11 +38,9 @@ pub fn the_dev_start_records_each_sts_auth_and_game_connection_test() -> Nil {
     login_support.start_with(change: fn(settings) {
       dev_start.recorded(
         settings:,
-        recorder: recorder.new(
-          folder:,
-          client_build: 16_042,
-          tables_digest: Some("C3D4"),
-        ),
+        folder:,
+        client_build: 16_042,
+        tables_digest: "C3D4",
       )
     })
   let ports = login_support.ports(started)
@@ -73,24 +73,39 @@ pub fn the_dev_start_records_each_sts_auth_and_game_connection_test() -> Nil {
   login_support.stop(started)
   let assert Ok(names) = simplifile.read_directory(folder)
     as "the recording folder reads"
-  let rules =
+  let headers =
     list.map(list.sort(names, string.compare), fn(name) {
       let assert Ok(text) = simplifile.read(folder <> "/" <> name)
         as "a recording reads"
       let assert Ok(Recording(header:, ..)) = wire_recording.read(text)
         as { name <> " is a whole recording" }
       assert header.client_build == 16_042
-        && header.tables_digest == Some("C3D4")
-        as "each header names the build and the tables the recorder was given"
-      header.rule
+        as "each header names the build the recorder was given"
+      header
     })
-  assert rules
+  assert list.map(headers, fn(header) { header.rule })
     == [
       game_connection.rule_name,
       auth_connection.rule_name,
       sts_connection.rule_name,
     ]
     as "one file for each of the three connections, named after its rule"
+  assert list.map(headers, fn(header) { header.tables_digest })
+    == [Some("C3D4"), None, None]
+    as "the game rule reads the tables and its header holds their digest; the auth and the STS rules read none"
+  let realm = started.settings.login.auth.settings.realm
+  assert list.map(headers, fn(header) { header.realm })
+    == [
+      None,
+      Some(wire_recording.Realm(
+        id: realm.id,
+        name: realm.name,
+        address: realm.game_server.address,
+        port: realm.game_server.port,
+      )),
+      None,
+    ]
+    as "the auth rule writes the realm its settings hold, so its header holds it"
 }
 
 pub fn the_servers_own_settings_record_nothing_and_the_dev_start_turns_it_on_test() -> Nil {
@@ -100,12 +115,16 @@ pub fn the_servers_own_settings_record_nothing_and_the_dev_start_turns_it_on_tes
     && settings.login.auth.wire_recorder == None
     && settings.game.wire_recorder == None
     as "the server's own start turns no wire recording on"
-  let wire =
-    recorder.new(folder: "unused", client_build: 16_042, tables_digest: None)
-  let recorded = dev_start.recorded(settings:, recorder: wire)
-  assert recorded.login.sts.wire_recorder == Some(wire)
-    && recorded.login.auth.wire_recorder == Some(wire)
-    && recorded.game.wire_recorder == Some(wire)
+  let recorded =
+    dev_start.recorded(
+      settings:,
+      folder: "unused",
+      client_build: 16_042,
+      tables_digest: "C3D4",
+    )
+  assert option.is_some(recorded.login.sts.wire_recorder)
+    && option.is_some(recorded.login.auth.wire_recorder)
+    && option.is_some(recorded.game.wire_recorder)
     as "the dev start turns it on for the STS, the auth and the game listener"
   assert server.Settings(..recorded, login: settings.login, game: settings.game)
     == settings

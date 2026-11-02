@@ -63,7 +63,7 @@ pub fn wire_text_in(folder: String) -> String {
 }
 
 /// A wire recorder that writes into `folder`, on the client build the tests are
-/// made for and with no table digest.
+/// made for and with no table digest and no realm.
 pub fn wire_recorder(folder folder: String) -> WireRecorder {
-  recorder.new(folder:, client_build: 16_042, tables_digest: None)
+  recorder.new(folder:, client_build: 16_042, tables_digest: None, realm: None)
 }

@@ -8,24 +8,37 @@
 //// timer: they share nothing else, and the table answers each in the order it
 //// is asked.
 ////
+//// - **A connection's states.** A connection's entry is one of four: not handed
+////   out (its script is still to be asked for), handed out (its shell has not
+////   asked for a `Now`), running (its shell has, and it holds the shell's
+////   process), and failed (its shell took an input that matches no recorded
+////   one; it holds the mismatch and the count taken before it).
 //// - **A `Now`.** `take` matches an input the shell took with the next
-////   recorded input: another kind than the recording's next is an ordering
-////   mismatch, an input after the last recorded one is an unrecorded input, and
-////   either is kept against the connection, so the client sees it however late
-////   it asks. A read of `n` bytes takes the `Now` of the recorded read line its
-////   last byte falls in, and the line counts as taken once its last byte has
-////   been; reads that are parts of one line leave the line's bytes taken so far
-////   (`partial`).
+////   recorded input by kind: another kind than the recording's next is an
+////   ordering mismatch, an input after the last recorded one is an unrecorded
+////   input, and either is kept against the connection, so the client sees it
+////   however late it asks. A read of `n` bytes takes the `Now` of the recorded
+////   read line its last byte falls in, and the line counts as taken once its
+////   last byte has been; reads that are parts of one line leave the line's bytes
+////   taken so far (`PartlyRead`).
 //// - **A wait.** The client's wait for a count of taken inputs or a started
 ////   timer is a message the table answers when it can: at once, or when the
 ////   shell takes the input or starts the timer. The client bounds the wait
 ////   itself; a waiter whose client has given up is answered into a mailbox
-////   nobody reads.
+////   nobody reads. A timer's start goes to the oldest wait for it, and is kept
+////   only when no wait is there, so the one start is delivered once.
+//// - **A table that ends.** The client's calls watch the table's process: a
+////   table that ends (its supervisor starts another that knows no connection)
+////   answers no call, and the client's call says so (`TableEnded`) instead of
+////   exiting. The shells' calls, `take`, `next_read` and `handout`, exit with
+////   the table's end, which ends their connection.
 
-import genesis_prime/connection/script.{type Elapsed, type Taking}
+import genesis_prime/connection/script.{type Elapsed}
+import genesis_prime/seed.{type Seed}
 import genesis_prime/step.{type Now}
 import genesis_prime/wire_recording.{type Input}
 import gleam/bit_array
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/erlang/reference.{type Reference}
@@ -48,15 +61,15 @@ pub type Prepared {
   Prepared(
     name: String,
     ordinal: Int,
-    seed: BitArray,
+    seed: Seed,
     inputs: List(Recorded),
     closing_line: Int,
   )
 }
 
 /// What the table gave a script that asked for its connection.
-pub type Handed {
-  Handed(name: String, ordinal: Int, seed: BitArray)
+pub type HandedOut {
+  HandedOut(name: String, ordinal: Int, seed: Seed)
 }
 
 /// Why an input the shell took matches no recorded input.
@@ -66,7 +79,7 @@ pub type Mismatch {
   Unrecorded(line: Int)
   /// The shell took an input of another kind than the next recorded one,
   /// which is on `line`.
-  OutOfOrder(line: Int, expected: Taking, taken: Taking)
+  OutOfOrder(line: Int, expected: Input, taken: Input)
 }
 
 /// A sentence that says why an input matches no recorded one, for the log of the
@@ -88,13 +101,32 @@ pub type Started {
   Started(subject: Subject(Elapsed), reference: Reference)
 }
 
+/// Why a call of the client got no answer.
+pub type Unanswered {
+  /// The table did not answer in time.
+  NotInTime
+  /// The table's process ended before it answered.
+  TableEnded
+}
+
+/// Why a wait for the shell to take inputs ended.
+pub type Waited {
+  /// The shell took an input that matches no recorded one.
+  Mismatched(mismatch: Mismatch)
+  /// The shell had not taken that many inputs in time; `taken` is how many it
+  /// had.
+  TimedOut(taken: Int)
+  /// The table's process ended.
+  WaitedTableEnded
+}
+
 /// What the table is told. Only this module makes one, through its functions.
 pub opaque type Command {
   Load(connections: List(Prepared), reply: Subject(Nil))
-  Handout(reply: Subject(Result(Handed, Nil)))
+  Handout(reply: Subject(Result(HandedOut, Nil)))
   Take(
     connection: String,
-    taking: Taking,
+    taking: Input,
     shell: Pid,
     reply: Subject(Result(Now, Mismatch)),
   )
@@ -105,7 +137,7 @@ pub opaque type Command {
     inputs: Int,
     reply: Subject(Result(Nil, Mismatch)),
   )
-  AwaitHanded(connection: String, reply: Subject(Nil))
+  AwaitHandedOut(connection: String, reply: Subject(Nil))
   TimerStarted(connection: String, timer: Int, started: Started)
   TimerCancelled(connection: String, timer: Int, reference: Reference)
   AwaitTimer(connection: String, timer: Int, reply: Subject(Started))
@@ -113,21 +145,52 @@ pub opaque type Command {
   FailureOf(connection: String, reply: Subject(Option(Mismatch)))
 }
 
+/// What a recording says of a connection, which no state of its entry changes.
+type Plan {
+  Plan(name: String, ordinal: Int, seed: Seed, closing_line: Int)
+}
+
+/// The recorded inputs the shell has still to take.
+type Pending {
+  /// None of the first of these has been taken.
+  Untouched(inputs: List(Recorded))
+  /// `first` is a read of which `have` bytes, fewer than it holds, have been
+  /// taken.
+  PartlyRead(have: Int, first: Recorded, later: List(Recorded))
+}
+
+/// A wait of the client for the shell to take `inputs` inputs.
+type TakenWaiter {
+  TakenWaiter(inputs: Int, reply: Subject(Result(Nil, Mismatch)))
+}
+
+/// How far a connection's shell is through its recorded inputs: what it has
+/// still to take, how many it has taken, and who waits for it to take more.
+type Progress {
+  Progress(pending: Pending, taken: Int, waiting: List(TakenWaiter))
+}
+
+/// One connection of the loaded session, in the state its shell has brought it
+/// to.
 type Entry {
-  Entry(
-    name: String,
-    ordinal: Int,
-    seed: BitArray,
-    closing_line: Int,
-    pending: List(Recorded),
-    partial: Int,
-    taken: Int,
-    handed: Bool,
-    shell: Option(Pid),
-    failure: Option(Mismatch),
-    handed_waiters: List(Subject(Nil)),
-    taken_waiters: List(#(Int, Subject(Result(Nil, Mismatch)))),
+  /// Loaded; its script is still to be handed out, and clients wait for that.
+  NotHanded(
+    plan: Plan,
+    progress: Progress,
+    waiting_for_hand_out: List(Subject(Nil)),
   )
+  /// Its script is handed out; its shell has not asked for a `Now`.
+  HandedOutNotRunning(plan: Plan, progress: Progress)
+  /// Its shell has asked for a `Now`.
+  Running(plan: Plan, shell: Pid, progress: Progress)
+  /// Its shell took an input that matches no recorded one: `taken` inputs
+  /// matched before it.
+  Failed(plan: Plan, shell: Pid, mismatch: Mismatch, taken: Int)
+}
+
+/// A timer wait of the client.
+type TimerWaiter {
+  TimerWaiter(connection: String, timer: Int, reply: Subject(Started))
 }
 
 type State {
@@ -135,12 +198,13 @@ type State {
     connections: Dict(String, Entry),
     to_hand_out: List(String),
     timers: Dict(#(String, Int), Started),
-    timer_waiters: List(#(String, Int, Subject(Started))),
+    timer_waiters: List(TimerWaiter),
   )
 }
 
-/// How long a call to the table may take, in milliseconds. The table answers
-/// at once, so only a table that has ended or is stuck is waited for this long.
+/// How long a call of a shell to the table may take, in milliseconds. The table
+/// answers at once, so only a table that has ended or is stuck is waited for this
+/// long.
 const call_ms = 5000
 
 /// The table, named, as a child of the replay's supervisor.
@@ -173,7 +237,8 @@ pub fn load(
 }
 
 /// The next connection's script to hand out, or `Error(Nil)` when each has been.
-pub fn handout(table: Subject(Command)) -> Result(Handed, Nil) {
+/// A shell calls it, and exits with the table.
+pub fn handout(table: Subject(Command)) -> Result(HandedOut, Nil) {
   actor.call(table, waiting: call_ms, sending: Handout)
 }
 
@@ -182,7 +247,7 @@ pub fn handout(table: Subject(Command)) -> Result(Handed, Nil) {
 pub fn take(
   table table: Subject(Command),
   connection connection: String,
-  taking taking: Taking,
+  taking taking: Input,
 ) -> Result(Now, Mismatch) {
   actor.call(table, waiting: call_ms, sending: fn(reply) {
     Take(connection:, taking:, shell: process.self(), reply:)
@@ -199,23 +264,46 @@ pub fn next_read(
   })
 }
 
+/// Sends the table a command and waits up to `within_ms` for the answer,
+/// ending the wait at once when the table's process ends: a client's call.
+fn ask(
+  table: Subject(Command),
+  within_ms: Int,
+  make: fn(Subject(answer)) -> Command,
+) -> Result(answer, Unanswered) {
+  case process.subject_owner(table) {
+    Error(Nil) -> Error(TableEnded)
+    Ok(pid) -> {
+      let reply = process.new_subject()
+      let monitor = process.monitor(pid)
+      process.send(table, make(reply))
+      let heard =
+        process.new_selector()
+        |> process.select_map(reply, Replied)
+        |> process.select_specific_monitor(monitor, fn(_down) { Gone })
+        |> process.selector_receive(within: within_ms)
+      process.demonitor_process(monitor)
+      case heard {
+        Ok(Replied(answer)) -> Ok(answer)
+        Ok(Gone) -> Error(TableEnded)
+        Error(Nil) -> Error(NotInTime)
+      }
+    }
+  }
+}
+
+/// What a client's wait hears: the table's answer, or the table's end.
+type Heard(answer) {
+  Replied(answer: answer)
+  Gone
+}
+
 /// How many recorded inputs the connection's shell has taken.
 pub fn taken(
   table table: Subject(Command),
   connection connection: String,
-) -> Int {
-  actor.call(table, waiting: call_ms, sending: fn(reply) {
-    Taken(connection:, reply:)
-  })
-}
-
-/// Why a wait for the shell to take inputs ended.
-pub type Waited {
-  /// The shell took an input that matches no recorded one.
-  Mismatched(mismatch: Mismatch)
-  /// The shell had not taken that many inputs in time; `taken` is how many it
-  /// had.
-  TimedOut(taken: Int)
+) -> Result(Int, Unanswered) {
+  ask(table, call_ms, fn(reply) { Taken(connection:, reply:) })
 }
 
 /// Waits up to `within_ms` until the connection's shell has taken `inputs`
@@ -226,24 +314,27 @@ pub fn await_taken(
   inputs inputs: Int,
   within_ms within_ms: Int,
 ) -> Result(Nil, Waited) {
-  let reply = process.new_subject()
-  process.send(table, AwaitTaken(connection:, inputs:, reply:))
-  case process.receive(reply, within: within_ms) {
+  case
+    ask(table, within_ms, fn(reply) { AwaitTaken(connection:, inputs:, reply:) })
+  {
     Ok(Ok(Nil)) -> Ok(Nil)
     Ok(Error(mismatch)) -> Error(Mismatched(mismatch:))
-    Error(Nil) -> Error(TimedOut(taken: taken(table:, connection:)))
+    Error(TableEnded) -> Error(WaitedTableEnded)
+    Error(NotInTime) ->
+      case taken(table:, connection:) {
+        Ok(taken) -> Error(TimedOut(taken:))
+        Error(NotInTime) | Error(TableEnded) -> Error(WaitedTableEnded)
+      }
   }
 }
 
 /// Waits up to `within_ms` until the connection's script has been handed out.
-pub fn await_handed(
+pub fn await_handed_out(
   table table: Subject(Command),
   connection connection: String,
   within_ms within_ms: Int,
-) -> Result(Nil, Nil) {
-  let reply = process.new_subject()
-  process.send(table, AwaitHanded(connection:, reply:))
-  process.receive(reply, within: within_ms)
+) -> Result(Nil, Unanswered) {
+  ask(table, within_ms, fn(reply) { AwaitHandedOut(connection:, reply:) })
 }
 
 /// Tells the table a shell started a timer, which a firing is sent to.
@@ -272,30 +363,24 @@ pub fn await_timer(
   connection connection: String,
   timer timer: Int,
   within_ms within_ms: Int,
-) -> Result(Started, Nil) {
-  let reply = process.new_subject()
-  process.send(table, AwaitTimer(connection:, timer:, reply:))
-  process.receive(reply, within: within_ms)
+) -> Result(Started, Unanswered) {
+  ask(table, within_ms, fn(reply) { AwaitTimer(connection:, timer:, reply:) })
 }
 
 /// The process of the connection's shell, once it has asked for a `Now`.
 pub fn shell_of(
   table table: Subject(Command),
   connection connection: String,
-) -> Option(Pid) {
-  actor.call(table, waiting: call_ms, sending: fn(reply) {
-    ShellOf(connection:, reply:)
-  })
+) -> Result(Option(Pid), Unanswered) {
+  ask(table, call_ms, fn(reply) { ShellOf(connection:, reply:) })
 }
 
 /// The mismatch the connection's shell met, if it met one.
 pub fn failure_of(
   table table: Subject(Command),
   connection connection: String,
-) -> Option(Mismatch) {
-  actor.call(table, waiting: call_ms, sending: fn(reply) {
-    FailureOf(connection:, reply:)
-  })
+) -> Result(Option(Mismatch), Unanswered) {
+  ask(table, call_ms, fn(reply) { FailureOf(connection:, reply:) })
 }
 
 fn handle(state: State, command: Command) -> actor.Next(State, Command) {
@@ -323,13 +408,14 @@ fn handle(state: State, command: Command) -> actor.Next(State, Command) {
           actor.continue(state)
         }
         [name, ..rest] -> {
-          let assert Ok(entry) = dict.get(state.connections, name)
-            as "a connection to hand out is loaded"
+          let entry = entry_named(state, name)
+          let assert NotHanded(plan:, progress:, waiting_for_hand_out:) = entry
+            as "a connection to hand out has not been handed out"
           process.send(
             reply,
-            Ok(Handed(name:, ordinal: entry.ordinal, seed: entry.seed)),
+            Ok(HandedOut(name:, ordinal: plan.ordinal, seed: plan.seed)),
           )
-          list.each(entry.handed_waiters, process.send(_, Nil))
+          list.each(waiting_for_hand_out, process.send(_, Nil))
           actor.continue(
             State(
               ..state,
@@ -337,7 +423,7 @@ fn handle(state: State, command: Command) -> actor.Next(State, Command) {
               connections: dict.insert(
                 state.connections,
                 name,
-                Entry(..entry, handed: True, handed_waiters: []),
+                HandedOutNotRunning(plan:, progress:),
               ),
             ),
           )
@@ -347,56 +433,54 @@ fn handle(state: State, command: Command) -> actor.Next(State, Command) {
       with_entry(state, connection, answer_take(_, taking:, shell:, reply:))
     NextRead(connection:, reply:) ->
       with_entry(state, connection, fn(entry) {
-        process.send(reply, next_read_of(entry.pending))
+        process.send(reply, next_read_of(entry))
         entry
       })
     Taken(connection:, reply:) ->
       with_entry(state, connection, fn(entry) {
-        process.send(reply, entry.taken)
+        process.send(reply, taken_by(entry))
         entry
       })
     AwaitTaken(connection:, inputs:, reply:) ->
+      with_entry(state, connection, await_taken_by(_, inputs:, reply:))
+    AwaitHandedOut(connection:, reply:) ->
       with_entry(state, connection, fn(entry) {
-        case entry.taken >= inputs, entry.failure {
-          True, _ -> {
-            process.send(reply, Ok(Nil))
-            entry
-          }
-          False, Some(mismatch) -> {
-            process.send(reply, Error(mismatch))
-            entry
-          }
-          False, None ->
-            Entry(..entry, taken_waiters: [
-              #(inputs, reply),
-              ..entry.taken_waiters
+        case entry {
+          NotHanded(waiting_for_hand_out:, ..) ->
+            NotHanded(..entry, waiting_for_hand_out: [
+              reply,
+              ..waiting_for_hand_out
             ])
-        }
-      })
-    AwaitHanded(connection:, reply:) ->
-      with_entry(state, connection, fn(entry) {
-        case entry.handed {
-          True -> {
+          HandedOutNotRunning(..) | Running(..) | Failed(..) -> {
             process.send(reply, Nil)
             entry
           }
-          False ->
-            Entry(..entry, handed_waiters: [reply, ..entry.handed_waiters])
         }
       })
     TimerStarted(connection:, timer:, started:) -> {
       let #(waiting, others) =
         list.partition(state.timer_waiters, fn(waiter) {
-          waiter.0 == connection && waiter.1 == timer
+          waiter.connection == connection && waiter.timer == timer
         })
-      list.each(waiting, fn(waiter) { process.send(waiter.2, started) })
-      actor.continue(
-        State(
-          ..state,
-          timers: dict.insert(state.timers, #(connection, timer), started),
-          timer_waiters: others,
-        ),
-      )
+      // The oldest wait is the last of those kept newest first.
+      case list.reverse(waiting) {
+        [oldest, ..newer] -> {
+          process.send(oldest.reply, started)
+          actor.continue(
+            State(
+              ..state,
+              timer_waiters: list.append(list.reverse(newer), others),
+            ),
+          )
+        }
+        [] ->
+          actor.continue(
+            State(
+              ..state,
+              timers: dict.insert(state.timers, #(connection, timer), started),
+            ),
+          )
+      }
     }
     TimerCancelled(connection:, timer:, reference:) ->
       case dict.get(state.timers, #(connection, timer)) {
@@ -423,22 +507,28 @@ fn handle(state: State, command: Command) -> actor.Next(State, Command) {
         Error(Nil) ->
           actor.continue(
             State(..state, timer_waiters: [
-              #(connection, timer, reply),
+              TimerWaiter(connection:, timer:, reply:),
               ..state.timer_waiters
             ]),
           )
       }
     ShellOf(connection:, reply:) ->
       with_entry(state, connection, fn(entry) {
-        process.send(reply, entry.shell)
+        process.send(reply, shell_in(entry))
         entry
       })
     FailureOf(connection:, reply:) ->
       with_entry(state, connection, fn(entry) {
-        process.send(reply, entry.failure)
+        process.send(reply, mismatch_in(entry))
         entry
       })
   }
+}
+
+fn entry_named(state: State, connection: String) -> Entry {
+  let assert Ok(entry) = dict.get(state.connections, connection)
+    as "a call names a connection of the loaded session"
+  entry
 }
 
 fn with_entry(
@@ -446,8 +536,7 @@ fn with_entry(
   connection: String,
   change: fn(Entry) -> Entry,
 ) -> actor.Next(State, Command) {
-  let assert Ok(entry) = dict.get(state.connections, connection)
-    as "a call names a connection of the loaded session"
+  let entry = entry_named(state, connection)
   actor.continue(
     State(
       ..state,
@@ -456,153 +545,257 @@ fn with_entry(
   )
 }
 
-/// Gives the shell the `Now` of the input it took, or the mismatch that ended
-/// its inputs, and answers the waiters the change reaches.
-fn answer_take(
-  entry entry: Entry,
-  taking taking: Taking,
-  shell shell: Pid,
-  reply reply: Subject(Result(Now, Mismatch)),
-) -> Entry {
-  let entry = Entry(..entry, shell: Some(shell))
-  case entry.failure {
-    Some(mismatch) -> {
-      process.send(reply, Error(mismatch))
-      entry
-    }
-    None ->
-      case take_input(entry, taking) {
-        Ok(#(entry, now)) -> {
-          process.send(reply, Ok(now))
-          notify_taken(entry)
-        }
-        Error(mismatch) -> {
-          process.send(reply, Error(mismatch))
-          notify_failed(Entry(..entry, failure: Some(mismatch)), mismatch)
-        }
-      }
-  }
-}
-
 fn entry_of(prepared: Prepared) -> Entry {
-  Entry(
-    name: prepared.name,
-    ordinal: prepared.ordinal,
-    seed: prepared.seed,
-    closing_line: prepared.closing_line,
-    pending: prepared.inputs,
-    partial: 0,
-    taken: 0,
-    handed: False,
-    shell: None,
-    failure: None,
-    handed_waiters: [],
-    taken_waiters: [],
+  NotHanded(
+    plan: Plan(
+      name: prepared.name,
+      ordinal: prepared.ordinal,
+      seed: prepared.seed,
+      closing_line: prepared.closing_line,
+    ),
+    progress: Progress(
+      pending: Untouched(inputs: prepared.inputs),
+      taken: 0,
+      waiting: [],
+    ),
+    waiting_for_hand_out: [],
   )
 }
 
-/// Matches an input the shell took with the next recorded one: the entry with
-/// that input taken, and its `Now`.
-fn take_input(entry: Entry, taking: Taking) -> Result(#(Entry, Now), Mismatch) {
-  case entry.pending, taking {
-    [], _ -> Error(Unrecorded(line: entry.closing_line))
-    [Recorded(input: wire_recording.Read(..), ..), ..], script.Read(byte_count:)
-    -> take_read(entry, byte_count)
-    [Recorded(line:, input:, at:), ..rest], _ ->
-      case taking_of(input) == taking {
-        True -> Ok(#(Entry(..entry, pending: rest, taken: entry.taken + 1), at))
-        False ->
-          Error(OutOfOrder(line:, expected: taking_of(input), taken: taking))
-      }
+fn taken_by(entry: Entry) -> Int {
+  case entry {
+    NotHanded(progress:, ..)
+    | HandedOutNotRunning(progress:, ..)
+    | Running(progress:, ..) -> progress.taken
+    Failed(taken:, ..) -> taken
   }
 }
 
-/// Takes `byte_count` bytes of the recorded reads: each recorded read line is
-/// taken once its last byte has been, and the `Now` is that of the line the last
-/// byte falls in. Bytes beyond the recorded read lines match no input.
-fn take_read(entry: Entry, byte_count: Int) -> Result(#(Entry, Now), Mismatch) {
-  place(
-    entry:,
-    pending: entry.pending,
-    have: entry.partial + byte_count,
-    taken: entry.taken,
-    byte_count:,
-  )
-}
-
-fn place(
-  entry entry: Entry,
-  pending pending: List(Recorded),
-  have have: Int,
-  taken taken: Int,
-  byte_count byte_count: Int,
-) -> Result(#(Entry, Now), Mismatch) {
-  case pending {
-    [Recorded(input: wire_recording.Read(bytes:), at:, ..), ..rest] -> {
-      let size = bit_array.byte_size(bytes)
-      case have >= size, have - size {
-        True, 0 ->
-          Ok(#(Entry(..entry, pending: rest, partial: 0, taken: taken + 1), at))
-        True, more ->
-          place(
-            entry:,
-            pending: rest,
-            have: more,
-            taken: taken + 1,
-            byte_count:,
-          )
-        False, _ -> Ok(#(Entry(..entry, pending:, partial: have, taken:), at))
-      }
-    }
-    [Recorded(line:, input:, ..), ..] ->
-      Error(OutOfOrder(
-        line:,
-        expected: taking_of(input),
-        taken: script.Read(byte_count:),
-      ))
-    [] -> Error(Unrecorded(line: entry.closing_line))
+fn shell_in(entry: Entry) -> Option(Pid) {
+  case entry {
+    NotHanded(..) | HandedOutNotRunning(..) -> None
+    Running(shell:, ..) | Failed(shell:, ..) -> Some(shell)
   }
 }
 
-fn next_read_of(pending: List(Recorded)) -> Option(Int) {
+fn mismatch_in(entry: Entry) -> Option(Mismatch) {
+  case entry {
+    NotHanded(..) | HandedOutNotRunning(..) | Running(..) -> None
+    Failed(mismatch:, ..) -> Some(mismatch)
+  }
+}
+
+fn next_read_of(entry: Entry) -> Option(Int) {
+  case entry {
+    NotHanded(progress:, ..)
+    | HandedOutNotRunning(progress:, ..)
+    | Running(progress:, ..) ->
+      case progress.pending {
+        Untouched(inputs:) -> next_read_in(inputs)
+        PartlyRead(first:, later:, ..) -> next_read_in([first, ..later])
+      }
+    Failed(..) -> None
+  }
+}
+
+fn next_read_in(pending: List(Recorded)) -> Option(Int) {
   case pending {
     [] -> None
     [Recorded(input: wire_recording.Read(bytes:), ..), ..] ->
       Some(bit_array.byte_size(bytes))
-    [_, ..rest] -> next_read_of(rest)
+    [_, ..rest] -> next_read_in(rest)
   }
 }
 
-/// What the clock is told when the shell takes the recorded `input`.
-fn taking_of(input: Input) -> Taking {
-  case input {
-    wire_recording.Accepted -> script.Accepted
-    wire_recording.Read(bytes:) ->
-      script.Read(byte_count: bit_array.byte_size(bytes))
-    wire_recording.Answered(..) -> script.Answered
-    wire_recording.TimerFired(..) -> script.TimerFired
-    wire_recording.PeerClosed -> script.PeerClosed
-    wire_recording.ReadFailed -> script.ReadFailed
-    wire_recording.WriteFailed -> script.WriteFailed
-    wire_recording.Woken -> script.Woken
-    wire_recording.WatchEnded -> script.WatchEnded
-    wire_recording.Stopping -> script.Stopping
+/// Answers a client's wait for `inputs` taken: at once when the shell has taken
+/// them or has met a mismatch, else when it does.
+fn await_taken_by(
+  entry entry: Entry,
+  inputs inputs: Int,
+  reply reply: Subject(Result(Nil, Mismatch)),
+) -> Entry {
+  case entry {
+    Failed(taken:, mismatch:, ..) -> {
+      case taken >= inputs {
+        True -> process.send(reply, Ok(Nil))
+        False -> process.send(reply, Error(mismatch))
+      }
+      entry
+    }
+    NotHanded(progress:, ..) ->
+      NotHanded(..entry, progress: waiting_for(progress:, inputs:, reply:))
+    HandedOutNotRunning(progress:, ..) ->
+      HandedOutNotRunning(
+        ..entry,
+        progress: waiting_for(progress:, inputs:, reply:),
+      )
+    Running(progress:, ..) ->
+      Running(..entry, progress: waiting_for(progress:, inputs:, reply:))
+  }
+}
+
+fn waiting_for(
+  progress progress: Progress,
+  inputs inputs: Int,
+  reply reply: Subject(Result(Nil, Mismatch)),
+) -> Progress {
+  case progress.taken >= inputs {
+    True -> {
+      process.send(reply, Ok(Nil))
+      progress
+    }
+    False ->
+      Progress(..progress, waiting: [
+        TakenWaiter(inputs:, reply:),
+        ..progress.waiting
+      ])
+  }
+}
+
+/// Gives the shell the `Now` of the input it took, or the mismatch that ended
+/// its inputs, and answers the waiters the change reaches.
+fn answer_take(
+  entry entry: Entry,
+  taking taking: Input,
+  shell shell: Pid,
+  reply reply: Subject(Result(Now, Mismatch)),
+) -> Entry {
+  case entry {
+    Failed(mismatch:, ..) -> {
+      process.send(reply, Error(mismatch))
+      entry
+    }
+    NotHanded(..) ->
+      panic as "a shell asks for a Now only after its script was handed out"
+    HandedOutNotRunning(plan:, progress:) | Running(plan:, progress:, ..) ->
+      case take_input(plan:, progress:, taking:) {
+        Ok(#(progress, now)) -> {
+          process.send(reply, Ok(now))
+          Running(plan:, shell:, progress: notify_taken(progress))
+        }
+        Error(mismatch) -> {
+          process.send(reply, Error(mismatch))
+          list.each(progress.waiting, fn(waiter) {
+            process.send(waiter.reply, Error(mismatch))
+          })
+          Failed(plan:, shell:, mismatch:, taken: progress.taken)
+        }
+      }
+  }
+}
+
+/// Matches an input the shell took with the next recorded one: the progress
+/// with that input taken, and its `Now`.
+fn take_input(
+  plan plan: Plan,
+  progress progress: Progress,
+  taking taking: Input,
+) -> Result(#(Progress, Now), Mismatch) {
+  case progress.pending {
+    Untouched(inputs: []) -> Error(Unrecorded(line: plan.closing_line))
+    Untouched(inputs: [first, ..later]) ->
+      match_input(plan:, progress:, first:, later:, have: 0, taking:)
+    PartlyRead(have:, first:, later:) ->
+      match_input(plan:, progress:, first:, later:, have:, taking:)
+  }
+}
+
+fn match_input(
+  plan plan: Plan,
+  progress progress: Progress,
+  first first: Recorded,
+  later later: List(Recorded),
+  have have: Int,
+  taking taking: Input,
+) -> Result(#(Progress, Now), Mismatch) {
+  case first.input, taking {
+    wire_recording.Read(bytes: recorded), wire_recording.Read(bytes: arrived) ->
+      take_read(
+        plan:,
+        progress:,
+        first:,
+        size: bit_array.byte_size(recorded),
+        later:,
+        have: have + bit_array.byte_size(arrived),
+        taking:,
+      )
+    recorded, _ ->
+      case wire_recording.same_kind(recorded, taking) {
+        True ->
+          Ok(#(
+            Progress(
+              ..progress,
+              pending: Untouched(inputs: later),
+              taken: progress.taken + 1,
+            ),
+            first.at,
+          ))
+        False ->
+          Error(OutOfOrder(line: first.line, expected: recorded, taken: taking))
+      }
+  }
+}
+
+/// Takes bytes of the recorded reads: each recorded read line is taken once its
+/// last byte has been, and the `Now` is that of the line the last byte falls in.
+/// Bytes beyond the recorded read lines match no input.
+fn take_read(
+  plan plan: Plan,
+  progress progress: Progress,
+  first first: Recorded,
+  size size: Int,
+  later later: List(Recorded),
+  have have: Int,
+  taking taking: Input,
+) -> Result(#(Progress, Now), Mismatch) {
+  use <- bool.guard(
+    when: have < size,
+    return: Ok(#(
+      Progress(..progress, pending: PartlyRead(have:, first:, later:)),
+      first.at,
+    )),
+  )
+  let progress =
+    Progress(
+      ..progress,
+      pending: Untouched(inputs: later),
+      taken: progress.taken + 1,
+    )
+  case have - size, later {
+    0, _ -> Ok(#(progress, first.at))
+    _, [] -> Error(Unrecorded(line: plan.closing_line))
+    more, [next, ..rest] ->
+      case next.input {
+        wire_recording.Read(bytes:) ->
+          take_read(
+            plan:,
+            progress:,
+            first: next,
+            size: bit_array.byte_size(bytes),
+            later: rest,
+            have: more,
+            taking:,
+          )
+        wire_recording.Accepted
+        | wire_recording.Answered(..)
+        | wire_recording.TimerFired(..)
+        | wire_recording.PeerClosed
+        | wire_recording.ReadFailed
+        | wire_recording.WriteFailed
+        | wire_recording.Woken
+        | wire_recording.WatchEnded
+        | wire_recording.Stopping ->
+          Error(OutOfOrder(line: next.line, expected: next.input, taken: taking))
+      }
   }
 }
 
 /// Answers the waiters whose count the shell has now reached.
-fn notify_taken(entry: Entry) -> Entry {
+fn notify_taken(progress: Progress) -> Progress {
   let #(reached, waiting) =
-    list.partition(entry.taken_waiters, fn(waiter) { waiter.0 <= entry.taken })
-  list.each(reached, fn(waiter) { process.send(waiter.1, Ok(Nil)) })
-  Entry(..entry, taken_waiters: waiting)
-}
-
-/// Answers every waiter with the mismatch: no later input will be given a
-/// `Now`.
-fn notify_failed(entry: Entry, mismatch: Mismatch) -> Entry {
-  list.each(entry.taken_waiters, fn(waiter) {
-    process.send(waiter.1, Error(mismatch))
-  })
-  Entry(..entry, taken_waiters: [])
+    list.partition(progress.waiting, fn(waiter) {
+      waiter.inputs <= progress.taken
+    })
+  list.each(reached, fn(waiter) { process.send(waiter.reply, Ok(Nil)) })
+  Progress(..progress, waiting:)
 }

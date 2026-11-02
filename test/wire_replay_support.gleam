@@ -6,10 +6,12 @@
 import ask_support
 import client_tables
 import genesis_prime/client_archive
+import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/login/auth_connection
+import genesis_prime/login/recorded_realm
 import genesis_prime/login/sts_connection
-import genesis_prime/message/bit_stream.{Endpoint}
+import genesis_prime/seed.{type Seed}
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Now}
@@ -18,10 +20,11 @@ import genesis_prime/wire_recording.{
   type Input, type Side, Closing, Header, Took, Wrote,
 }
 import genesis_prime/wire_recording/fixture
+import genesis_prime/wire_recording/recorder
 import genesis_prime/wire_replay.{type Action, type Failure, type Session}
+import gleam/bit_array
 import gleam/dict
 import gleam/erlang/process
-import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/static_supervisor as supervisor
@@ -33,7 +36,7 @@ import simplifile
 /// One connection of a session written by hand: the rule it ran, its seed and
 /// its place in the order the server accepted connections.
 pub type Planted {
-  Planted(rule: String, seed: BitArray, ordinal: Int)
+  Planted(rule: String, seed: Seed, ordinal: Int)
 }
 
 /// One line of a session written by hand, in the order the node saw them: the
@@ -46,20 +49,11 @@ pub type Step {
 }
 
 /// The seed of 32 bytes all `byte`.
-pub fn seed(byte: Int) -> BitArray {
-  list.repeat(<<byte>>, 32) |> bit_array_concat
-}
-
-fn bit_array_concat(parts: List(BitArray)) -> BitArray {
-  list.fold(parts, <<>>, fn(whole, part) { <<whole:bits, part:bits>> })
-}
-
-/// The name of the file of connection `connection` of a session written by hand.
-pub fn file_of(planted planted: Planted, connection connection: Int) -> String {
-  string.replace(planted.rule, "/", ".")
-  <> "-"
-  <> int.to_string(connection)
-  <> ".jsonl"
+pub fn seed(byte: Int) -> Seed {
+  let assert Ok(seed) =
+    seed.from_bytes(bit_array.concat(list.repeat(<<byte>>, seed.byte_count)))
+    as "32 bytes are a seed"
+  seed
 }
 
 /// Writes the session into `folder`: an empty fixture and a recording for each
@@ -73,8 +67,7 @@ pub fn write(
 ) -> Nil {
   let assert Ok(Nil) = simplifile.create_directory_all(folder)
     as "the session's folder was made"
-  let assert Ok(Nil) = simplifile.write(folder <> "/" <> fixture.file_name, "")
-    as "the fixture was written"
+  empty_fixture(folder:)
   list.index_map(connections, fn(planted, index) {
     let header =
       wire_recording.encode_header(Header(
@@ -84,6 +77,7 @@ pub fn write(
         tables_digest: None,
         seed: planted.seed,
         accept_ordinal: planted.ordinal,
+        realm: None,
       ))
     let lines =
       list.index_map(steps, fn(step, sequence) {
@@ -102,7 +96,10 @@ pub fn write(
         }
       })
       |> list.flatten
-    let path = folder <> "/" <> file_of(planted:, connection: index)
+    let path =
+      folder
+      <> "/"
+      <> recorder.file_name(rule_name: planted.rule, connection: index)
     let assert Ok(Nil) = simplifile.write(path, header <> string.concat(lines))
       as "a recording was written"
     Nil
@@ -200,6 +197,31 @@ fn run_planned(
   with with: fn(supervisor.Builder) -> supervisor.Builder,
   actions actions: fn(Session) -> List(Action),
 ) -> #(Result(Nil, Failure), List(wire_replay.Logged)) {
+  run_scripted(
+    folder:,
+    rule:,
+    directory:,
+    with:,
+    actions:,
+    scripts: fn(replay) { replay.scripts },
+    after_start: fn(_server, _replay) { Nil },
+  )
+}
+
+/// As `run_planned`, for a test that stands between the replay and the
+/// listener: `scripts` makes what the listener hands each connection from the
+/// replay (the replay's own, or those wrapped), and `after_start` is called
+/// with the running listener and the replay before the client plays.
+pub fn run_scripted(
+  folder folder: String,
+  rule rule: step.ConnectionRule(settings, state, request, message, answer),
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+  actions actions: fn(Session) -> List(Action),
+  scripts scripts: fn(wire_replay.Replay) -> Scripts,
+  after_start after_start: fn(ask_support.Server, wire_replay.Replay) -> Nil,
+) -> #(Result(Nil, Failure), List(wire_replay.Logged)) {
   let session = load(folder)
   let replay = start_replay(session)
   let server =
@@ -208,11 +230,12 @@ fn run_planned(
       directory:,
       shutdown_ms: 1000,
       wire_recorder: None,
-      scripts: replay.scripts,
+      scripts: scripts(replay),
       registry: None,
       locate: fn(_address) { Error(Nil) },
       with:,
     )
+  after_start(server, replay)
   let result =
     wire_replay.play_actions(
       session:,
@@ -226,25 +249,45 @@ fn run_planned(
 
 /// The folder of the session recorded live on 2026-11-01: the real client's
 /// login through the STS, auth and game servers, played into the world with a
-/// level-3 Veteran character (`session.sh` of the playing-live skill), converted
-/// from the rule recordings it was made as.
+/// level-3 Veteran character (`session.sh` of the playing-live skill).
 pub const committed_session = "test/wire_recording/2026-11-01-full-session"
 
+/// The folder every recorded session is kept in.
+const recordings_folder = "test/wire_recording"
+
+/// The folder of each recorded session in the repository, sorted: every folder
+/// under `test/wire_recording`.
+pub fn recorded_sessions() -> List(String) {
+  let assert Ok(names) = simplifile.read_directory(recordings_folder)
+    as "the folder of recorded sessions reads"
+  list.sort(names, string.compare)
+  |> list.map(fn(name) { recordings_folder <> "/" <> name })
+  |> list.filter(fn(path) { simplifile.is_directory(path) == Ok(True) })
+}
+
+/// The realm the session's auth connection recorded in its header: the server
+/// settings that show in the bytes the auth server wrote are the recording's, so
+/// no machine's address lives in this repository.
+fn recorded_auth_realm(session: Session) -> auth_connection.Realm {
+  let assert Ok(connection) =
+    list.find(session.connections, fn(connection) {
+      connection.recording.header.rule == auth_connection.rule_name
+    })
+    as "the session holds an auth connection"
+  let assert Some(realm) = connection.recording.header.realm
+    as "the auth connection's header records the realm it hands the client to"
+  recorded_realm.from_header(realm)
+}
+
 /// What the committed session was recorded under, which the replay's tree is
-/// made with (the settings the term recordings' headers held): the auth server
-/// handed the client to the game server at 192.168.8.128 port 24000 as realm 1,
-/// "Genesis"; every other setting is the server's own.
+/// made with: the auth server's realm is the one the auth header records, and
+/// every other setting is the server's own.
 fn session_settings(
   settings settings: server.Settings,
   replay replay: wire_replay.Replay,
+  realm realm: auth_connection.Realm,
 ) -> server.Settings {
   let servers = login_support.servers_settings()
-  let realm =
-    auth_connection.Realm(
-      id: 1,
-      name: "Genesis",
-      game_server: Endpoint(address: 0xC0A80880, port: 24_000),
-    )
   server.Settings(
     ..settings,
     login: server.Login(
@@ -298,7 +341,11 @@ pub fn replay_tree(
     Ok(Nil) -> {
       let replay = start_replay(session)
       let started =
-        login_support.start_with(change: session_settings(_, replay))
+        login_support.start_with(change: session_settings(
+          _,
+          replay,
+          recorded_auth_realm(session),
+        ))
       let ports = login_support.ports(started)
       let result = case
         wire_replay.prepare(

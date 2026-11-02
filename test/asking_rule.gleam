@@ -26,13 +26,14 @@
 ////
 //// The rule stops when the client closes and when the server stops.
 
+import connection_rule_support
 import gate_rule
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionInput, type ConnectionRule,
   type ConnectionStep, type Effect, type Outcome, Accepted, Answered, Ask, AskId,
-  Effects, EffectsThenAsk, EndedBeforeAnswer, Input, Log, LogLine, LogWarning,
-  NoAnswerInTime, NotRunning, OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed,
-  Rule, Stop, StoppedWaiting, Stopping, Write, WriteFailed,
+  Effects, EffectsThenAsk, EndedBeforeAnswer, Input, NoAnswerInTime, NotRunning,
+  OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed, Rule, Stop, StoppedWaiting,
+  Stopping, Write, WriteFailed,
 }
 import genesis_prime/store
 import gleam/int
@@ -129,7 +130,7 @@ pub fn step(
     OwnEvent(PeerClosed) -> #(state, Effects([Stop]))
     OwnEvent(ReadFailed(..)) | OwnEvent(WriteFailed(..)) -> #(
       state,
-      Effects([warn("the socket failed"), Stop]),
+      Effects([connection_rule_support.warn("the socket failed"), Stop]),
     )
     OwnEvent(Answered(ask: AskId(number), outcome: result)) -> {
       let #(code, extra) = coded(result)
@@ -164,7 +165,10 @@ pub fn step(
     | step.WatchEnded(..)
     | OwnEvent(step.TimerFired(..)) -> #(
       state,
-      Effects([warn("an input a connection does not take"), Stop]),
+      Effects([
+        connection_rule_support.warn("an input a connection does not take"),
+        Stop,
+      ]),
     )
   }
 }
@@ -216,7 +220,11 @@ fn run(
             Error(Nil) -> #(
               state,
               Effects(
-                list.reverse([Stop, warn("an unknown command"), ..written]),
+                list.reverse([
+                  Stop,
+                  connection_rule_support.warn("an unknown command"),
+                  ..written
+                ]),
               ),
             )
           }
@@ -301,8 +309,4 @@ fn record(
   milliseconds milliseconds: Int,
 ) -> BitArray {
   <<letter, number, code, extra, milliseconds:64>>
-}
-
-fn warn(text: String) -> Effect(ConnectionEffect) {
-  Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }

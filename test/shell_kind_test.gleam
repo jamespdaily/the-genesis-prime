@@ -24,6 +24,7 @@ import simplifile
 /// The project's modules and Erlang files the two shells need, as paths under
 /// `src`.
 const sources = [
+  "genesis_prime/seed.gleam",
   "genesis_prime/step.gleam",
   "genesis_prime/step/runtime.gleam",
   "genesis_prime/step/watch.gleam",

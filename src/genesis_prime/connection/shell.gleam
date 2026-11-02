@@ -196,6 +196,7 @@ import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/connection/script.{
   type Cancel, type Elapsed, type Issued, type Script, type Scripts,
 }
+import genesis_prime/seed
 import genesis_prime/service.{type Locate, type Sent}
 import genesis_prime/step.{
   type Ask, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
@@ -354,8 +355,11 @@ type Reading {
   TakeWhatArrives
   /// The script gave the byte count `wanted` of the next recorded read, which
   /// is more than has arrived: the connection holds `held` and takes no input
-  /// until the rest has come, and then takes the one `Read`.
-  Reassembling(held: BitArray, wanted: Int)
+  /// until the rest has come, and then takes the one `Read`. `deadline_ms` is
+  /// the time on the node's monotonic clock by which the rest must have come,
+  /// counted once from the first part, so parts that keep arriving do not put it
+  /// off.
+  Reassembling(held: BitArray, wanted: Int, deadline_ms: Int)
 }
 
 /// Where the connection is: waiting to take its socket from Ranch, or open.
@@ -523,7 +527,7 @@ fn handle(
             event: OwnEvent(step.ReadFailed(failure:)),
           )
         ParentExited -> {
-          let now = running.script.clock(script.Stopping)
+          let now = running.script.clock(wire_recording.Stopping)
           take(
             connection:,
             running:,
@@ -624,7 +628,7 @@ fn accepted(
   }
   join_registry(settings.registry, ConnectionId(id))
   let rule = settings.rule
-  let now = script.clock(script.Accepted)
+  let now = script.clock(wire_recording.Accepted)
   take(
     connection:,
     running: Running(
@@ -644,7 +648,7 @@ fn accepted(
     event: OwnEvent(Accepted(
       connection: ConnectionId(id),
       peer: accepted,
-      seed: script.seed,
+      seed: seed.bytes(script.seed),
     )),
   )
 }
@@ -682,7 +686,12 @@ fn take_next(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
-  take(connection:, running:, now: running.script.clock(taking(event)), event:)
+  take(
+    connection:,
+    running:,
+    now: running.script.clock(wire_input(event)),
+    event:,
+  )
 }
 
 /// The one way an input reaches the rule: the wire recorder writes its line,
@@ -753,18 +762,30 @@ fn read_arrived(
   Mail(message, answer),
 ) {
   let #(held, wanted) = case running.reading {
-    Reassembling(held:, wanted:) -> #(<<held:bits, bytes:bits>>, Some(wanted))
+    Reassembling(held:, wanted:, ..) -> #(
+      <<held:bits, bytes:bits>>,
+      Some(wanted),
+    )
     TakeWhatArrives -> #(bytes, running.script.next_read())
   }
   let held_count = bit_array.byte_size(held)
   case wanted {
     Some(wanted) if held_count < wanted ->
       case read_once(running.socket) {
-        Ok(Nil) ->
+        Ok(Nil) -> {
+          let deadline_ms = case running.reading {
+            Reassembling(deadline_ms:, ..) -> deadline_ms
+            TakeWhatArrives -> runtime.monotonic_ms() + held_read_wait_ms
+          }
           wait_for_rest(
             connection:,
-            running: Running(..running, reading: Reassembling(held:, wanted:)),
+            running: Running(
+              ..running,
+              reading: Reassembling(held:, wanted:, deadline_ms:),
+            ),
+            deadline_ms:,
           )
+        }
         Error(failure) ->
           take_next(
             connection:,
@@ -787,7 +808,8 @@ const held_read_wait_ms = 5000
 
 /// Waits for the rest of a read the shell holds part of, with a selective
 /// receive that takes only the socket's messages and the exits (the parent's is
-/// the server's stop, another process's is dropped), until the bound. Everything
+/// the server's stop, another process's is dropped), until `deadline_ms`, an
+/// absolute time on the monotonic clock fixed by the first part. Everything
 /// else, a delivered message, a timer, a watch's end, a late answer, stays in
 /// the mailbox, so the read is taken before any of it and the rule gets the
 /// inputs in the order the recording holds. A message the wait takes is handled
@@ -796,40 +818,56 @@ const held_read_wait_ms = 5000
 fn wait_for_rest(
   connection connection: Connection(settings, state, message, answer, request),
   running running: Running(state),
-) -> actor.Next(
-  Connection(settings, state, message, answer, request),
-  Mail(message, answer),
-) {
-  wait_for_rest_until(
-    connection:,
-    running:,
-    deadline_ms: runtime.monotonic_ms() + held_read_wait_ms,
-  )
-}
-
-fn wait_for_rest_until(
-  connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
   deadline_ms deadline_ms: Int,
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
+  case
+    receive_until(
+      selector: socket_and_exits(connection.parent),
+      deadline_ms:,
+      skip: fn(mail) {
+        case mail {
+          OtherExited -> True
+          Begin
+          | FromSocket(..)
+          | ParentExited
+          | Delivered(..)
+          | TimerElapsed(..)
+          | Ended(..)
+          | AnswerArrived(..)
+          | Stray(..) -> False
+        }
+      },
+    )
+  {
+    Ok(mail) -> handle(Connection(..connection, status: Open(running:)), mail)
+    Error(Nil) -> keep_open(connection:, running:)
+  }
+}
+
+/// Receives the next message the selector takes that `skip` does not say to
+/// pass over, until `deadline_ms`, an absolute time on the node's monotonic
+/// clock that is read again after each message passed over, so no stream of
+/// messages puts the deadline off. `Error(Nil)` when the deadline passes first,
+/// also when it has already passed.
+fn receive_until(
+  selector selector: Selector(heard),
+  deadline_ms deadline_ms: Int,
+  skip skip: fn(heard) -> Bool,
+) -> Result(heard, Nil) {
   let remaining = deadline_ms - runtime.monotonic_ms()
   case remaining <= 0 {
-    True -> keep_open(connection:, running:)
+    True -> Error(Nil)
     False ->
-      case
-        process.selector_receive(
-          socket_and_exits(connection.parent),
-          within: remaining,
-        )
-      {
-        Ok(OtherExited) ->
-          wait_for_rest_until(connection:, running:, deadline_ms:)
-        Ok(mail) ->
-          handle(Connection(..connection, status: Open(running:)), mail)
-        Error(Nil) -> keep_open(connection:, running:)
+      case process.selector_receive(selector, within: remaining) {
+        Ok(heard) ->
+          case skip(heard) {
+            True -> receive_until(selector:, deadline_ms:, skip:)
+            False -> Ok(heard)
+          }
+        Error(Nil) -> Error(Nil)
       }
   }
 }
@@ -847,23 +885,6 @@ fn socket_and_exits(parent: Pid) -> Selector(Mail(message, answer)) {
       False -> OtherExited
     }
   })
-}
-
-/// What the script's clock is told an input is.
-fn taking(event: Event(ConnectionEvent(message, answer))) -> script.Taking {
-  case event {
-    OwnEvent(Accepted(..)) -> script.Accepted
-    OwnEvent(step.Read(bytes:)) ->
-      script.Read(byte_count: bit_array.byte_size(bytes))
-    OwnEvent(Answered(..)) -> script.Answered
-    OwnEvent(step.TimerFired(..)) -> script.TimerFired
-    OwnEvent(step.PeerClosed) -> script.PeerClosed
-    OwnEvent(ReadFailed(..)) -> script.ReadFailed
-    OwnEvent(WriteFailed(..)) -> script.WriteFailed
-    OwnEvent(step.Woken(..)) -> script.Woken
-    step.WatchEnded(..) -> script.WatchEnded
-    Stopping(..) -> script.Stopping
-  }
 }
 
 /// The sequence number of a wire recording's next line, taken as the line's
@@ -1222,22 +1243,28 @@ fn wait_for_answer(
       kept: running.kept,
       deadline_ms:,
     )
-  let known = running.script.clock(script.Answered)
+  let outcome = case waited {
+    Replied(answer:) -> Answer(answer:)
+    TargetEnded -> EndedBeforeAnswer
+    DeadlinePassed -> NoAnswerInTime
+    ParentStopping -> StoppedWaiting
+  }
+  let known =
+    running.script.clock(
+      wire_recording.Answered(outcome: wire_outcome(outcome)),
+    )
   let running = Running(..running, kept:)
-  let #(running, outcome) = case waited {
-    Replied(answer:) -> #(running, Answer(answer:))
-    TargetEnded -> #(running, EndedBeforeAnswer)
+  let running = case waited {
+    Replied(..) | TargetEnded -> running
     DeadlinePassed -> {
       service.end_worker(sent)
-      #(keep(running:, tag:, monitor:), NoAnswerInTime)
+      keep(running:, tag:, monitor:)
     }
-    ParentStopping -> #(
+    ParentStopping ->
       Running(
         ..keep(running:, tag:, monitor:),
         stopping: Some(stop_deadline(known, connection.settings)),
-      ),
-      StoppedWaiting,
-    )
+      )
   }
   take(
     connection:,
@@ -1290,9 +1317,9 @@ fn await_answer(
   wait_until(selector:, tag:, monitor:, kept:, deadline_ms:)
 }
 
-/// Receives until the deadline on the node's own monotonic clock, read again
-/// after each message that does not end the wait, so no stream of other messages
-/// puts the deadline off and the wait ends within the time the ask allowed.
+/// Receives until the deadline on the node's own monotonic clock (`receive_until`),
+/// so no stream of other messages puts the deadline off and the wait ends within
+/// the time the ask allowed.
 fn wait_until(
   selector selector: Selector(Heard(answer)),
   tag tag: Reference,
@@ -1300,29 +1327,30 @@ fn wait_until(
   kept kept: Dict(Reference, Kept),
   deadline_ms deadline_ms: Int,
 ) -> #(Waited(answer), Dict(Reference, Kept)) {
-  let remaining = deadline_ms - runtime.monotonic_ms()
-  case remaining <= 0 {
-    True -> #(DeadlinePassed, kept)
-    False ->
-      case process.selector_receive(selector, remaining) {
-        Ok(AnswerHeard(tag: heard, answer:)) if heard == tag -> {
-          process.demonitor_process(monitor)
-          #(Replied(answer:), kept)
-        }
-        Ok(AnswerHeard(tag: heard, ..)) ->
-          wait_until(
-            selector:,
-            tag:,
-            monitor:,
-            kept: drop_kept(kept:, tag: heard),
-            deadline_ms:,
-          )
-        Ok(TargetDown) -> #(TargetEnded, kept)
-        Ok(ParentGone) -> #(ParentStopping, kept)
-        Ok(OtherGone) ->
-          wait_until(selector:, tag:, monitor:, kept:, deadline_ms:)
-        Error(Nil) -> #(DeadlinePassed, kept)
+  case
+    receive_until(selector:, deadline_ms:, skip: fn(heard) {
+      case heard {
+        OtherGone -> True
+        AnswerHeard(..) | TargetDown | ParentGone -> False
       }
+    })
+  {
+    Ok(AnswerHeard(tag: heard, answer:)) if heard == tag -> {
+      process.demonitor_process(monitor)
+      #(Replied(answer:), kept)
+    }
+    Ok(AnswerHeard(tag: heard, ..)) ->
+      wait_until(
+        selector:,
+        tag:,
+        monitor:,
+        kept: drop_kept(kept:, tag: heard),
+        deadline_ms:,
+      )
+    Ok(TargetDown) -> #(TargetEnded, kept)
+    Ok(ParentGone) -> #(ParentStopping, kept)
+    Ok(OtherGone) -> wait_until(selector:, tag:, monitor:, kept:, deadline_ms:)
+    Error(Nil) -> #(DeadlinePassed, kept)
   }
 }
 

@@ -10,7 +10,10 @@
 ////   (opcode.0x117 carries it in 64 bits).
 //// - The rule that a file is whole only with its closing line: a file that
 ////   ends before it, or inside a line, is cut.
+//// - The seed's size: the 32 bytes the server draws for each connection
+////   (`step.Accepted`).
 
+import genesis_prime/seed
 import genesis_prime/step.{Now}
 import genesis_prime/wire_recording.{
   Accepted, Answer, Answered, Client, Closing, Cut, EndedBeforeAnswer, Header,
@@ -24,14 +27,26 @@ import gleam/option.{None, Some}
 import gleam/string
 import owned_test
 
+/// The 32 bytes `00 01 FE FF` and 28 times `AB`.
+fn seed_bytes() -> BitArray {
+  <<0, 1, 254, 255, bit_array.concat(list.repeat(<<0xAB>>, 28)):bits>>
+}
+
+/// The same 32 bytes in lower-case hexadecimal.
+fn seed_hex() -> String {
+  "0001feff" <> string.repeat("ab", 28)
+}
+
 fn header() -> wire_recording.Header {
+  let assert Ok(seed) = seed.from_bytes(seed_bytes()) as "32 bytes are a seed"
   Header(
     format: 1,
     rule: "genesis_prime/login/sts_connection",
     client_build: 16_042,
     tables_digest: Some("52E6"),
-    seed: <<0, 1, 254, 255>>,
+    seed:,
     accept_ordinal: 3,
+    realm: None,
   )
 }
 
@@ -44,8 +59,58 @@ fn at() -> step.Now {
 pub fn the_header_is_one_json_line_with_its_keys_in_order_test() -> Nil {
   use <- owned_test.run(30_000)
   assert wire_recording.encode_header(header())
-    == "{\"format\":1,\"rule\":\"genesis_prime/login/sts_connection\",\"client_build\":16042,\"tables_digest\":\"52E6\",\"seed\":\"0001feff\",\"accept_ordinal\":3}\n"
-    as "the header's keys are format, rule, client_build, tables_digest, seed and accept_ordinal, the seed in lower-case hex"
+    == "{\"format\":1,\"rule\":\"genesis_prime/login/sts_connection\",\"client_build\":16042,\"tables_digest\":\"52E6\",\"seed\":\""
+    <> seed_hex()
+    <> "\",\"accept_ordinal\":3,\"realm\":null}\n"
+    as "the header's keys are format, rule, client_build, tables_digest, seed, accept_ordinal and realm, the seed in lower-case hex"
+}
+
+pub fn the_realm_a_rule_writes_is_in_its_header_and_reads_back_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let with_realm =
+    Header(
+      ..header(),
+      realm: Some(wire_recording.Realm(
+        id: 1,
+        name: "Genesis",
+        address: 3_232_237_696,
+        port: 24_000,
+      )),
+    )
+  let text = wire_recording.encode_header(with_realm)
+  assert string.contains(
+    text,
+    "\"realm\":{\"id\":1,\"name\":\"Genesis\",\"address\":3232237696,\"port\":24000}",
+  )
+    as "the realm's id, name, address and port, in that order"
+  let closing = Closing(sequence: 2, by: Client)
+  assert wire_recording.read(text <> wire_recording.encode_closing(closing))
+    == Ok(Recording(with_realm, [], closing))
+    as "the header with its realm reads back as written"
+}
+
+pub fn a_seed_that_is_not_32_bytes_is_no_header_of_the_format_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let closing = wire_recording.encode_closing(Closing(sequence: 2, by: Client))
+  let header_with = fn(seed_text) {
+    "{\"format\":1,\"rule\":\"x\",\"client_build\":16042,\"tables_digest\":null,\"seed\":\""
+    <> seed_text
+    <> "\",\"accept_ordinal\":1,\"realm\":null}\n"
+    <> closing
+  }
+  let assert Ok(_) = wire_recording.read(header_with(seed_hex()))
+    as "32 bytes are a seed"
+  let assert Error(NotALine(line: 0, reason:)) =
+    wire_recording.read(header_with("0001feff"))
+    as "4 bytes are no seed"
+  assert string.contains(reason, "a seed of 32 bytes")
+    as "the reason says what the line should hold"
+  let assert Error(NotALine(line: 0, ..)) =
+    wire_recording.read(header_with(seed_hex() <> "ab"))
+    as "33 bytes are no seed"
+  let assert Error(NotALine(line: 0, ..)) = wire_recording.read(header_with(""))
+    as "no bytes are no seed"
+  Nil
 }
 
 pub fn a_rule_that_reads_no_table_has_a_null_tables_digest_test() -> Nil {

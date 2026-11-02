@@ -20,6 +20,7 @@
 
 import ask_support
 import genesis_prime/connection/script.{Issued, Script}
+import genesis_prime/seed
 import genesis_prime/step.{type Now, Effects, Now}
 import genesis_prime/wire_recording.{
   type Closing, Accepted, Client, Closing, Cut, Header, PeerClosed, Read,
@@ -44,6 +45,11 @@ fn seed() -> BitArray {
   |> bit_array.concat
 }
 
+fn seed_value() -> seed.Seed {
+  let assert Ok(value) = seed.from_bytes(seed()) as "32 bytes are a seed"
+  value
+}
+
 pub fn with_no_recorder_nothing_is_opened_or_written_test() -> Nil {
   use <- owned_test.run(30_000)
   assert recorder.open_if(
@@ -51,7 +57,7 @@ pub fn with_no_recorder_nothing_is_opened_or_written_test() -> Nil {
       rule_name: "script_rule",
       connection: 1,
       accept_ordinal: 1,
-      seed: seed(),
+      seed: seed_value(),
     )
     == Ok(None)
     as "no recorder opens no recording"
@@ -66,6 +72,18 @@ pub fn with_no_recorder_nothing_is_opened_or_written_test() -> Nil {
   assert recorder.close_if(writer: None, sequence: 3, by: Server) == Ok(Nil)
 }
 
+pub fn a_connections_file_is_named_after_its_rule_with_dots_and_its_number_test() -> Nil {
+  use <- owned_test.run(30_000)
+  assert recorder.file_name(
+      rule_name: "genesis_prime/login/sts_connection",
+      connection: 3,
+    )
+    == "genesis_prime.login.sts_connection-3.jsonl"
+    as "the rule's module with a dot for each slash, a dash, the connection's number and the JSON-lines suffix"
+  assert recorder.file_name(rule_name: "script_rule", connection: 12)
+    == "script_rule-12" <> recorder.file_suffix
+}
+
 pub fn a_recorder_opens_one_file_for_each_connection_and_never_overwrites_it_test() -> Nil {
   use <- owned_test.run(30_000)
   use folder <- recording_support.in_folder
@@ -76,7 +94,7 @@ pub fn a_recorder_opens_one_file_for_each_connection_and_never_overwrites_it_tes
       rule_name:,
       connection: 3,
       accept_ordinal: 7,
-      seed: seed(),
+      seed: seed_value(),
     )
     as "the recording opens"
   let path = folder <> "/genesis_prime.login.sts_connection-3.jsonl"
@@ -87,8 +105,9 @@ pub fn a_recorder_opens_one_file_for_each_connection_and_never_overwrites_it_tes
         rule: rule_name,
         client_build: 16_042,
         tables_digest: None,
-        seed: seed(),
+        seed: seed_value(),
         accept_ordinal: 7,
+        realm: None,
       )),
     )
     as "the file is named after the rule, with / as a dot, and the connection, and holds the header alone"
@@ -111,8 +130,9 @@ pub fn a_recorder_opens_one_file_for_each_connection_and_never_overwrites_it_tes
         rule: rule_name,
         client_build: 16_042,
         tables_digest: None,
-        seed: seed(),
+        seed: seed_value(),
         accept_ordinal: 7,
+        realm: None,
       ),
       lines: [Took(10, at, Accepted), Wrote(11, <<1, 2>>)],
       closing: Closing(12, Client),
@@ -124,7 +144,7 @@ pub fn a_recorder_opens_one_file_for_each_connection_and_never_overwrites_it_tes
       rule_name:,
       connection: 3,
       accept_ordinal: 8,
-      seed: seed(),
+      seed: seed_value(),
     )
     as "a file that is there is never overwritten"
   assert failed == path as "the error names the file"
@@ -139,11 +159,12 @@ pub fn a_recorder_records_the_digest_of_the_tables_in_the_header_test() -> Nil {
         folder:,
         client_build: 16_042,
         tables_digest: Some("C3D4"),
+        realm: None,
       )),
       rule_name: "script_rule",
       connection: 1,
       accept_ordinal: 1,
-      seed: seed(),
+      seed: seed_value(),
     )
     as "the recording opens"
   assert string.contains(
@@ -158,17 +179,17 @@ pub fn a_recorder_records_the_digest_of_the_tables_in_the_header_test() -> Nil {
 /// asked to start is never started.
 fn scripted(
   ordinal: Int,
-  given: Subject(#(script.Taking, Now)),
+  given: Subject(#(wire_recording.Input, Now)),
 ) -> script.Scripts {
   fn() {
     Ok(Issued(
       ordinal:,
       script: Script(
-        seed: seed(),
-        clock: fn(taking) {
+        seed: seed_value(),
+        clock: fn(input) {
           let number = unique()
           let now = Now(monotonic_ms: number, filetime: number * 7)
-          process.send(given, #(taking, now))
+          process.send(given, #(input, now))
           now
         },
         schedule: fn(_subject, _timer, _reference, _after_ms) { fn() { Nil } },
@@ -221,19 +242,18 @@ pub fn a_connection_is_recorded_input_by_input_with_the_time_its_script_gave_eac
   let watched = process.monitor(connection)
   assert mug.shutdown(client) == Ok(Nil) as "the client closed"
   let _reason = ask_support.ended(watched)
-  let assert Ok(#(script.Accepted, first)) = process.receive(given, 0)
+  let assert Ok(#(Accepted, first)) = process.receive(given, 0)
     as "the clock was called for the accept"
-  let assert Ok(#(script.Read(byte_count: 4), second)) =
-    process.receive(given, 0)
-    as "the clock was called for the read, told its byte count"
-  let assert Ok(#(script.PeerClosed, third)) = process.receive(given, 0)
+  let assert Ok(#(Read(<<1, 2, 3, 4>>), second)) = process.receive(given, 0)
+    as "the clock was called for the read, told its bytes"
+  let assert Ok(#(PeerClosed, third)) = process.receive(given, 0)
     as "the clock was called for the client's close"
   assert process.receive(given, 0) == Error(Nil)
     as "no other input was taken, so no other call was made"
   let assert Ok(Recording(header:, lines:, closing:)) =
     wire_recording.read(recording_support.wire_text_in(folder))
     as "the recording is whole"
-  assert header.seed == seed() && header.accept_ordinal == 5
+  assert header.seed == seed_value() && header.accept_ordinal == 5
     as "the header holds the script's seed and ordinal"
   assert header.rule == "script_rule"
   let accepted_bytes = accepted_bytes(first)
@@ -400,7 +420,7 @@ pub fn an_input_taken_with_the_servers_script_carries_readings_between_the_tests
   let assert Ok(Recording(header:, lines:, ..)) =
     wire_recording.read(recording_support.wire_text_in(folder))
     as "the recording is whole"
-  assert bit_array.byte_size(header.seed) == 32
+  assert bit_array.byte_size(seed.bytes(header.seed)) == 32
     as "the server's script draws 32 bytes"
   let assert [
     Took(at: accepted, ..),

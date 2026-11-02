@@ -2,6 +2,7 @@
 //// a client with the server hello and answers each ping with its pong, and
 //// nothing else. The login card's rules replace it in the server.
 
+import connection_rule_support
 import frame_reader
 import genesis_prime/connection/frame
 import genesis_prime/connection/network_message.{
@@ -9,8 +10,8 @@ import genesis_prime/connection/network_message.{
 }
 import genesis_prime/message/server_hello.{type ServerHello}
 import genesis_prime/step.{
-  type ConnectionEffect, type ConnectionInput, type ConnectionStep, type Effect,
-  Effects, Input, Log, LogLine, LogWarning, OwnEffect, OwnEvent, Stop, Write,
+  type ConnectionInput, type ConnectionStep, Effects, Input, OwnEffect, OwnEvent,
+  Stop, Write,
 }
 import gleam/list
 
@@ -46,14 +47,17 @@ pub fn step(
     OwnEvent(step.PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(step.ReadFailed(..)) | OwnEvent(step.WriteFailed(..)) -> #(
       state,
-      Effects([warn("the socket failed"), Stop]),
+      Effects([connection_rule_support.warn("the socket failed"), Stop]),
     )
     OwnEvent(step.Woken(..))
     | step.WatchEnded(..)
     | OwnEvent(step.TimerFired(..))
     | OwnEvent(step.Answered(..)) -> #(
       state,
-      Effects([warn("an input a connection does not take"), Stop]),
+      Effects([
+        connection_rule_support.warn("an input a connection does not take"),
+        Stop,
+      ]),
     )
   }
 }
@@ -65,8 +69,15 @@ fn read(state: State, received: BitArray) -> #(State, ConnectionStep(Nil)) {
       case network_message.handle(frame: found) {
         Answer(bytes:) -> [OwnEffect(Write(bytes))]
         Accepted -> []
-        NotNetwork -> [warn("a message the hello rule does not answer")]
-        Malformed(..) -> [warn("a malformed network message"), Stop]
+        NotNetwork -> [
+          connection_rule_support.warn(
+            "a message the hello rule does not answer",
+          ),
+        ]
+        Malformed(..) -> [
+          connection_rule_support.warn("a malformed network message"),
+          Stop,
+        ]
       }
     })
     |> list.flatten
@@ -74,7 +85,12 @@ fn read(state: State, received: BitArray) -> #(State, ConnectionStep(Nil)) {
     Ok(pending) -> #(State(..state, pending:), Effects(answers))
     Error(error) -> #(
       State(..state, pending: <<>>),
-      Effects(list.append(answers, [warn(frame_problem(error)), Stop])),
+      Effects(
+        list.append(answers, [
+          connection_rule_support.warn(frame_problem(error)),
+          Stop,
+        ]),
+      ),
     )
   }
 }
@@ -95,8 +111,4 @@ fn hello_frame(state: State) -> BitArray {
   let assert Ok(bytes) = frame.encode(server_hello.message_id, body)
     as "the hello is far below the size limit"
   bytes
-}
-
-fn warn(text: String) -> Effect(ConnectionEffect) {
-  Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }

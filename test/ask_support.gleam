@@ -318,14 +318,7 @@ pub fn gate(
   name name: Name(service.Call(gate_rule.Message, gate_rule.Answer)),
   shutdown_ms shutdown_ms: Int,
 ) -> ChildSpecification(Nil) {
-  reaching(
-    name:,
-    shutdown_ms:,
-    reach: service.Reach(
-      locate: fn(_address) { Error(Nil) },
-      send: fn(_to, _message) { Error(Nil) },
-    ),
-  )
+  reaching(name:, shutdown_ms:, reach: reaching_nothing())
 }
 
 /// The gate as a child of a supervisor, registered as `name`, that finds and
@@ -335,10 +328,28 @@ pub fn reaching(
   shutdown_ms shutdown_ms: Int,
   reach reach: service.Reach(gate_rule.Answer),
 ) -> ChildSpecification(Nil) {
-  service_shell.supervised(
-    name:,
-    settings: service_shell.Settings(rule: gate_as_rule(), reach:, shutdown_ms:),
-  )
+  service_shell.supervised(name:, settings: gate_settings(shutdown_ms:, reach:))
+}
+
+/// What the gate's shell is started with: the gate's rule, the processes it
+/// reaches and how long it has to stop.
+fn gate_settings(
+  shutdown_ms shutdown_ms: Int,
+  reach reach: service.Reach(gate_rule.Answer),
+) -> service_shell.Settings(
+  Nil,
+  gate_rule.State,
+  gate_rule.Message,
+  gate_rule.Answer,
+) {
+  service_shell.Settings(rule: gate_as_rule(), reach:, shutdown_ms:)
+}
+
+/// A reach that finds no process and sends to none.
+fn reaching_nothing() -> service.Reach(gate_rule.Answer) {
+  service.Reach(locate: fn(_address) { Error(Nil) }, send: fn(_to, _message) {
+    Error(Nil)
+  })
 }
 
 /// The gate's rule as its shell runs it.
@@ -364,21 +375,18 @@ pub fn observed_gate(
   shutdown_ms shutdown_ms: Int,
   into into: Subject(step.Event(step.ServiceEvent(gate_rule.Message))),
 ) -> ChildSpecification(Nil) {
+  let settings = gate_settings(shutdown_ms:, reach: reaching_nothing())
   service_shell.supervised(
     name:,
     settings: service_shell.Settings(
+      ..settings,
       rule: Rule(
-        ..gate_as_rule(),
+        ..settings.rule,
         step: fn(state, input: step.ServiceInput(gate_rule.Message)) {
           process.send(into, input.event)
           gate_rule.step(state, input)
         },
       ),
-      reach: service.Reach(
-        locate: fn(_address) { Error(Nil) },
-        send: fn(_to, _message) { Error(Nil) },
-      ),
-      shutdown_ms:,
     ),
   )
 }

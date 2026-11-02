@@ -20,12 +20,12 @@
 //// The rule stops when the client closes, when the server stops and when it
 //// takes an input it has no use for (a delivered message, an answer).
 
+import connection_rule_support
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionInput, type ConnectionRule,
-  type ConnectionStep, type Effect, Accepted, CancelTimer, Effects, Input, Log,
-  LogLine, LogWarning, OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed, Rule,
-  Sessions, StartTimer, Stop, TimerFired, TimerId, Watch, WatchEnded, WatchId,
-  Write, WriteFailed,
+  type ConnectionStep, type Effect, Accepted, CancelTimer, Effects, Input,
+  OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed, Rule, Sessions, StartTimer,
+  Stop, TimerFired, TimerId, Watch, WatchEnded, WatchId, Write, WriteFailed,
 }
 import gleam/int
 import gleam/list
@@ -86,11 +86,14 @@ pub fn step(
     OwnEvent(PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(ReadFailed(..)) | OwnEvent(WriteFailed(..)) -> #(
       state,
-      Effects([warn("the socket failed"), Stop]),
+      Effects([connection_rule_support.warn("the socket failed"), Stop]),
     )
     OwnEvent(step.Woken(..)) | OwnEvent(step.Answered(..)) -> #(
       state,
-      Effects([warn("an input the replay rule does not take"), Stop]),
+      Effects([
+        connection_rule_support.warn("an input the replay rule does not take"),
+        Stop,
+      ]),
     )
   }
 }
@@ -105,7 +108,9 @@ fn run(
   case state.pending {
     <<letter, n, _:16, rest:bytes>> if letter == refuse_command -> #(
       State(pending: rest),
-      Effects(list.reverse([Stop, warn(refusal(n)), ..effects])),
+      Effects(
+        list.reverse([Stop, connection_rule_support.warn(refusal(n)), ..effects]),
+      ),
     )
     <<letter, n, milliseconds:16, rest:bytes>> ->
       run(State(pending: rest), [command(letter:, n:, milliseconds:), ..effects])
@@ -130,8 +135,4 @@ fn command(
 
 fn record(letter: Int, number: Int) -> Effect(ConnectionEffect) {
   OwnEffect(Write(<<letter, number:64>>))
-}
-
-fn warn(text: String) -> Effect(ConnectionEffect) {
-  Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }

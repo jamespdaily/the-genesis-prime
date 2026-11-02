@@ -8,25 +8,29 @@
 ////
 //// - `recording folder`: where each connection's recording
 ////   (genesis_prime/wire_recording) is written, made when it is missing, with
-////   the fixture of the rows the database holds when the session starts
-////   (genesis_prime/wire_recording/fixture); by convention
-////   `test/wire_recording/<date>-<flow>`.
+////   the fixture of the session's account and its characters as the database
+////   holds them when the session starts (genesis_prime/wire_recording/fixture);
+////   by convention `test/wire_recording/<date>-<flow>`.
 //// - `planted message id`: a message id, such as `0x0914`, sent once with an
 ////   empty body in the auth wrapper after the hello. Left out, nothing is
 ////   planted.
 ////
-//// The environment is the one `gleam run` reads (genesis_prime).
+//// The environment is the one `gleam run` reads (genesis_prime), and
+//// `GENESIS_PLAY_ACCOUNT`, the login name of the account the session's client
+//// logs in with (the playing-live skill), whose rows the fixture keeps.
 
 import argv
+import envoy
 import genesis_prime
 import genesis_prime/client_archive
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/dev_database
 import genesis_prime/login/auth_connection
+import genesis_prime/login/recorded_realm
 import genesis_prime/server
 import genesis_prime/table/loader/store
 import genesis_prime/wire_recording/fixture
-import genesis_prime/wire_recording/recorder.{type WireRecorder}
+import genesis_prime/wire_recording/recorder
 import gleam/int
 import gleam/io
 import gleam/option.{type Option, None, Some}
@@ -39,6 +43,7 @@ type Failure {
   WrongArguments
   NotAMessageId(text: String)
   FolderNotMade(path: String, reason: String)
+  NoPlayAccount
   FixtureNotSaved(error: fixture.FixtureError)
 }
 
@@ -64,9 +69,10 @@ fn start() -> Result(Nil, Failure) {
       FolderNotMade(path: folder, reason: simplifile.describe_error(error))
     }),
   )
+  use account <- result.try(play_account())
   let #(tables, loaded) = genesis_prime.load_tables()
   let settings = genesis_prime.settings(tables:)
-  use Nil <- result.try(save_fixture(folder))
+  use Nil <- result.try(save_fixture(folder:, account:))
   let auth =
     server.Served(
       ..settings.login.auth,
@@ -78,33 +84,47 @@ fn start() -> Result(Nil, Failure) {
         ..settings,
         login: server.Login(..settings.login, auth:),
       ),
-      recorder: recorder.new(
-        folder:,
-        client_build: client_archive.target_build,
-        tables_digest: Some(store.digest(tables)),
-      ),
+      folder:,
+      client_build: client_archive.target_build,
+      tables_digest: store.digest(tables),
     ),
     tables: loaded,
   )
   Ok(Nil)
 }
 
-/// The settings with `recorder` on the STS, auth and game listeners: each
-/// connection of them is recorded into its folder, the header naming the
-/// client's build and the digest of the game tables the server loaded. Nothing
-/// else changes.
+/// The settings with a recorder on the STS, auth and game listeners: each
+/// connection of them is recorded into `folder`, the header naming the client's
+/// build. Only what a rule reads or writes is recorded in its header: the game
+/// rule reads the game tables, so its header holds their digest, and the auth
+/// rule writes the realm it hands the client to, so its header holds the realm;
+/// the STS rule reads and writes neither. Nothing else changes.
 pub fn recorded(
   settings settings: server.Settings,
-  recorder recorder: WireRecorder,
+  folder folder: String,
+  client_build client_build: Int,
+  tables_digest tables_digest: String,
 ) -> server.Settings {
   let login = settings.login
+  let recorder_of = fn(tables_digest, realm) {
+    Some(recorder.new(folder:, client_build:, tables_digest:, realm:))
+  }
   server.Settings(
     ..settings,
     login: server.Login(
-      sts: server.Served(..login.sts, wire_recorder: Some(recorder)),
-      auth: server.Served(..login.auth, wire_recorder: Some(recorder)),
+      sts: server.Served(..login.sts, wire_recorder: recorder_of(None, None)),
+      auth: server.Served(
+        ..login.auth,
+        wire_recorder: recorder_of(
+          None,
+          Some(recorded_realm.to_header(login.auth.settings.realm)),
+        ),
+      ),
     ),
-    game: server.Served(..settings.game, wire_recorder: Some(recorder)),
+    game: server.Served(
+      ..settings.game,
+      wire_recorder: recorder_of(Some(tables_digest), None),
+    ),
   )
 }
 
@@ -121,10 +141,22 @@ fn planted_after_hello(
   )
 }
 
-/// Saves the rows the database holds into the folder's fixture before the
-/// server accepts a connection, from a pool of its own on the database the
-/// server's settings name.
-fn save_fixture(folder: String) -> Result(Nil, Failure) {
+/// The login name of the account the session's client logs in with, lower case
+/// as the STS login names it, from the environment.
+fn play_account() -> Result(String, Failure) {
+  case envoy.get("GENESIS_PLAY_ACCOUNT") {
+    Ok(name) if name != "" -> Ok(string.lowercase(name))
+    Ok(_) | Error(Nil) -> Error(NoPlayAccount)
+  }
+}
+
+/// Saves the rows of the account and of its characters, and the state of the id
+/// sequences, into the folder's fixture before the server accepts a connection,
+/// from a pool of its own on the database the server's settings name.
+fn save_fixture(
+  folder folder: String,
+  account account: String,
+) -> Result(Nil, Failure) {
   use database <- result.try(
     dev_database.connect()
     |> result.map_error(fn(failure) {
@@ -136,7 +168,7 @@ fn save_fixture(folder: String) -> Result(Nil, Failure) {
       )
     }),
   )
-  fixture.write(database, folder <> "/" <> fixture.file_name)
+  fixture.write(database, folder <> "/" <> fixture.file_name, [account])
   |> result.map_error(fn(error) { FixtureNotSaved(error:) })
 }
 
@@ -166,6 +198,8 @@ fn describe(failure: Failure) -> String {
       text <> " is not a message id: write it as 0x0914, 16 bits in hexadecimal"
     FolderNotMade(path:, reason:) ->
       "the recording folder " <> path <> " could not be made: " <> reason
+    NoPlayAccount ->
+      "GENESIS_PLAY_ACCOUNT names no account: set it to the login name of the account the client logs in with"
     FixtureNotSaved(error:) ->
       "the fixture could not be saved: " <> describe_fixture(error)
   }
@@ -176,5 +210,7 @@ fn describe_fixture(error: fixture.FixtureError) -> String {
     fixture.FileFailed(path:, reason:) -> path <> ": " <> reason
     fixture.StatementFailed(statement:, reason:) -> statement <> ": " <> reason
     fixture.DatabaseFailed(reason:) -> reason
+    fixture.NoSuchAccount(login_name:) ->
+      "the database holds no account " <> login_name
   }
 }

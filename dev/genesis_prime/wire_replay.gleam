@@ -42,8 +42,8 @@
 //// shell reads on until it holds that many bytes, so a socket that delivers one
 //// recorded read in two parts (a loopback split after a complete request, say)
 //// lets no answer or message be taken between the parts. The script's clock is
-//// told what each input is (`Taking`) as a second guard: a read gets the `Now`
-//// of the recorded read line in which its last byte falls, any other input takes
+//// told the input the shell took, as a second guard: a read gets the `Now` of
+//// the recorded read line in which its last byte falls, any other input takes
 //// the next recorded input of its kind, and one that is not the kind of the
 //// next recorded input is an ordering failure (`TookOutOfOrder`), so an input
 //// that arrives earlier or later than recorded is named and never shows up as a
@@ -51,27 +51,31 @@
 ////
 //// Every wait of the replay client is bounded by `wait_ms` of real time, and
 //// so is the shell's wait for an ask (genesis_prime/connection/shell): a replay
-//// ends, and says what it waited for. A refusal, a difference, a silence or a
-//// shell that never takes an input ends the replay with a `Failure` that names
-//// the connection and the recorded line.
+//// ends, and says what it waited for. The wait for a write is one bound for all
+//// the pieces the server writes it in, not one for each. A refusal, a
+//// difference, a silence or a shell that never takes an input ends the replay
+//// with a `Failure` that names the connection and the recorded line. A replay
+//// whose table process ends or stops answering (genesis_prime/wire_replay/table)
+//// fails as `TableLost`.
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame
 import genesis_prime/connection/script.{
-  type Clock, type Scheduler, type Scripts, type Taking, Issued, Script,
+  type Clock, type Scheduler, type Scripts, Issued, Script,
 }
 import genesis_prime/server
 import genesis_prime/step.{TimerId}
+import genesis_prime/step/runtime
 import genesis_prime/wire_recording.{
   type Input, type ReadFailure, type Recording, type Side, NoAnswerInTime, Took,
   Wrote,
 }
 import genesis_prime/wire_recording/fixture.{type FixtureError}
+import genesis_prime/wire_recording/recorder
 import genesis_prime/wire_replay/table.{type Recorded, Recorded} as replay_table
 import gleam/bit_array
 import gleam/bool
 import gleam/dict.{type Dict}
-import gleam/erlang/charlist.{type Charlist}
 import gleam/erlang/process.{type Name, type Pid, type Subject}
 import gleam/int
 import gleam/list
@@ -121,6 +125,11 @@ pub type Refusal {
   /// process would have answered is a matter of time, so a replay cannot
   /// bring the outcome about, and the session must be recorded again.
   AskTimedOut(connection: String, line: Int)
+  /// A connection took the server's stop (`Stopping`), or an ask of it ended
+  /// because the server stopped (`StoppedWaiting`), on `line`. A replay cannot
+  /// make the tree send the exit that is a stop, at that place in the session, so
+  /// the session must be recorded again without a shutdown in it.
+  ShutdownRecorded(connection: String, line: Int)
   /// A connection was accepted more than the hand-off keys' lifetime after the
   /// connection before it was last read from, in recorded time, so a key the
   /// one put could not be taken by the other. A replay runs no slower than the
@@ -153,9 +162,9 @@ pub type Difference {
   Difference(offset: Int, recorded: Decoded, written: Decoded)
 }
 
-/// Why the replay of a session failed. Every variant but `Refused` and
-/// `FixtureFailed` names the connection and the line of its recording (from 0,
-/// the header being 0) the replay was at.
+/// Why the replay of a session failed. Every variant but `Refused`,
+/// `FixtureFailed` and `TableLost` names the connection and the line of its
+/// recording (from 0, the header being 0) the replay was at.
 pub type Failure {
   /// The session is not played.
   Refused(refusal: Refusal)
@@ -185,7 +194,7 @@ pub type Failure {
   /// clock was told `taken` where the line records `expected`, which is a
   /// message, an answer or a timer that came earlier or later than recorded.
   /// `line` is the recorded line the replay was at.
-  TookOutOfOrder(connection: String, line: Int, expected: Taking, taken: Taking)
+  TookOutOfOrder(connection: String, line: Int, expected: Input, taken: Input)
   /// The server ended the connection where the recording goes on: `reason` is what the
   /// socket said, and `logged` the log lines the connection wrote (its refusal of a
   /// client byte among them).
@@ -198,6 +207,10 @@ pub type Failure {
   /// The recording's last line says the server closed the connection, and it
   /// had not within `wait_ms`.
   StillOpen(connection: String, line: Int)
+  /// The replay's table process ended or answered no call within its bound, and
+  /// with it what the replay knew of its connections, so the replay cannot go
+  /// on.
+  TableLost
 }
 
 /// One step of the replay client, in the order it takes them.
@@ -277,10 +290,6 @@ pub fn table_supervised(of of: Table) -> ChildSpecification(Nil) {
   replay_table.supervised(of.name)
 }
 
-/// The suffix of the file of a recording: one JSON-lines file for each
-/// connection of the session.
-const recording_suffix = ".jsonl"
-
 /// Reads every recording of the folder, and the fixture beside them, and
 /// orders the connections by the accept ordinal of their headers.
 pub fn load(folder folder: String) -> Result(Session, Refusal) {
@@ -294,7 +303,7 @@ pub fn load(folder folder: String) -> Result(Session, Refusal) {
     return: Error(NoFixture(path: fixture_path)),
   )
   let recordings =
-    list.filter(names, string.ends_with(_, recording_suffix))
+    list.filter(names, string.ends_with(_, recorder.file_suffix))
     |> list.sort(string.compare)
   use connections <- result.map(
     list.try_map(recordings, fn(name) { read_connection(folder:, name:) }),
@@ -327,8 +336,10 @@ fn read_connection(
   |> result.map_error(fn(failure) { Unreadable(connection: name, failure:) })
 }
 
-/// Refuses a session whose recordings were made on another client build or on
-/// other game table files than the ones given.
+/// Refuses a session whose recordings were made on another client build than
+/// `client_build`, or whose header holds a digest of the game table files other
+/// than `tables_digest`. A header with no digest is of a rule that reads no
+/// table, and is not checked against the tables.
 pub fn refuse_stale(
   session session: Session,
   client_build client_build: Int,
@@ -343,19 +354,20 @@ pub fn refuse_stale(
           recorded: header.client_build,
           current: client_build,
         ))
-      True, recorded if recorded != tables_digest ->
+      True, Some(recorded) if Some(recorded) != tables_digest ->
         Error(TablesDiffer(
           connection: connection.name,
-          recorded:,
+          recorded: Some(recorded),
           current: tables_digest,
         ))
-      True, _ -> Ok(Nil)
+      True, Some(_) | True, None -> Ok(Nil)
     }
   })
 }
 
-/// Refuses a session a replay cannot bring about: an ask that timed out, or a
-/// hand-off key that outlived `hand_off_lifetime_ms` between two connections.
+/// Refuses a session a replay cannot bring about: an ask that timed out, a
+/// shutdown (the server's stop reaching a connection, or an ask), or a hand-off
+/// key that outlived `hand_off_lifetime_ms` between two connections.
 pub fn refuse_unreproducible(
   session session: Session,
   hand_off_lifetime_ms hand_off_lifetime_ms: Int,
@@ -366,15 +378,23 @@ pub fn refuse_unreproducible(
         list.index_map(connection.recording.lines, fn(line, index) {
           #(index + 1, line)
         })
-        |> list.find(fn(numbered) {
+        |> list.find_map(fn(numbered) {
           case numbered.1 {
             Took(input: wire_recording.Answered(outcome: NoAnswerInTime), ..) ->
-              True
-            Took(..) | Wrote(..) -> False
+              Ok(AskTimedOut(connection: connection.name, line: numbered.0))
+            Took(input: wire_recording.Stopping, ..)
+            | Took(
+                input: wire_recording.Answered(
+                  outcome: wire_recording.StoppedWaiting,
+                ),
+                ..,
+              ) ->
+              Ok(ShutdownRecorded(connection: connection.name, line: numbered.0))
+            Took(..) | Wrote(..) -> Error(Nil)
           }
         })
       {
-        Ok(#(line, _)) -> Error(AskTimedOut(connection: connection.name, line:))
+        Ok(refusal) -> Error(refusal)
         Error(Nil) -> Ok(Nil)
       }
     }),
@@ -444,8 +464,8 @@ pub fn prepare(
 
 /// What the session's connections are given: one script for each, with the
 /// recording's seed, the byte count of each recorded read (`next_read`), a clock
-/// that matches each input the shell takes with a recorded line by the `Taking`
-/// it is told (a read by its byte count against the recorded read lines' sizes,
+/// that matches each input the shell takes with a recorded line by the input it
+/// is told (a read by its byte count against the recorded read lines' sizes,
 /// any other input by kind against the next recorded input) and gives that
 /// line's `Now`, and a scheduler that starts its timers in the table and fires
 /// them when the replay client asks. The capture of log lines starts here, owned
@@ -549,8 +569,10 @@ fn logged(replay replay: Replay) -> List(Logged) {
   let shells =
     list.filter_map(dict.keys(replay.progress), fn(connection) {
       case replay_table.shell_of(table: subject, connection:) {
-        Some(pid) -> Ok(#(pid_text(pid), connection))
-        None -> Error(Nil)
+        Ok(Some(pid)) -> Ok(#(pid_text(pid), connection))
+        Ok(None)
+        | Error(replay_table.NotInTime)
+        | Error(replay_table.TableEnded) -> Error(Nil)
       }
     })
   drain(replay.logs)
@@ -571,13 +593,10 @@ fn drain(
   }
 }
 
-/// A process id as the logger writes it into a line's metadata.
-fn pid_text(pid: Pid) -> String {
-  charlist.to_string(pid_to_list(pid))
-}
-
-@external(erlang, "erlang", "pid_to_list")
-fn pid_to_list(pid: Pid) -> Charlist
+/// A process id as the logger writes it into a line's metadata: as Erlang prints
+/// a term on one line, which is how the log capture prints each value.
+@external(erlang, "step_runtime_ffi", "term_text")
+fn pid_text(pid: Pid) -> String
 
 /// Ends the capture of log lines, and gives those not yet given by `logged`.
 pub fn finish(replay replay: Replay) -> List(Logged) {
@@ -594,9 +613,13 @@ pub fn serve_from(
   server.Served(..served, wire_recorder: None, scripts: replay.scripts)
 }
 
-/// How many inputs the shell of a connection has taken.
+/// How many inputs the shell of a connection has taken. It ends the calling test
+/// when the replay's table has ended, which no count can then be read from.
 pub fn taken(progress progress: Progress) -> Int {
-  replay_table.taken(table: progress.table, connection: progress.connection)
+  let assert Ok(taken) =
+    replay_table.taken(table: progress.table, connection: progress.connection)
+    as "the replay's table answered"
+  taken
 }
 
 /// The replay client's steps for the session: the lines of every connection
@@ -770,8 +793,9 @@ pub fn play(
 }
 
 /// What the replay client holds while it plays: a socket for each connection it
-/// has made, the bytes the server wrote that no `Expect` has taken yet, and
-/// how many bytes of each stream the `Expect`s have taken.
+/// has made, the bytes the server wrote that no `Expect` has taken yet (which a
+/// later `Expect` takes, wherever the socket cut them), and how many bytes of
+/// each stream the `Expect`s have taken.
 type Client {
   Client(
     sockets: Dict(String, mug.Socket),
@@ -811,8 +835,10 @@ fn final_check(
   let table = process.named_subject(replay.table.name)
   list.try_each(session.connections, fn(connection) {
     case replay_table.failure_of(table:, connection: connection.name) {
-      Some(mismatch) -> Error(mismatch_failure(connection.name, mismatch))
-      None -> Ok(Nil)
+      Ok(Some(mismatch)) -> Error(mismatch_failure(connection.name, mismatch))
+      Ok(None) -> Ok(Nil)
+      Error(replay_table.NotInTime) | Error(replay_table.TableEnded) ->
+        Error(TableLost)
     }
   })
 }
@@ -866,26 +892,18 @@ fn act(
             line:,
             otherwise: NeverTaken(connection:, line:, input:, taken:),
           ))
+        Error(replay_table.WaitedTableEnded) -> Error(TableLost)
       }
     Send(connection:, line:, bytes:) ->
-      case dict.get(client.buffers, connection) {
-        Ok(unexpected) if unexpected != <<>> ->
-          Error(Unexpected(
+      case mug.send(socket_of(client, connection), bytes) {
+        Ok(Nil) -> Ok(client)
+        Error(error) ->
+          Error(ended(
+            replay:,
             connection:,
             line:,
-            written: decode(bytes: unexpected),
+            reason: mug.describe_error(error),
           ))
-        Ok(_) | Error(Nil) ->
-          case mug.send(socket_of(client, connection), bytes) {
-            Ok(Nil) -> Ok(client)
-            Error(error) ->
-              Error(ended(
-                replay:,
-                connection:,
-                line:,
-                reason: mug.describe_error(error),
-              ))
-          }
       }
     Fire(connection:, line:, timer:) ->
       case
@@ -903,14 +921,23 @@ fn act(
           )
           Ok(client)
         }
-        Error(Nil) -> Error(TimerNeverStarted(connection:, line:, timer:))
+        Error(replay_table.NotInTime) ->
+          Error(TimerNeverStarted(connection:, line:, timer:))
+        Error(replay_table.TableEnded) -> Error(TableLost)
       }
     CloseClientSocket(connection:, ..) -> {
       let _closed = mug.shutdown(socket_of(client, connection))
       Ok(client)
     }
     Expect(connection:, line:, bytes:) ->
-      expect(replay:, client:, connection:, line:, expected: bytes)
+      expect(
+        replay:,
+        client:,
+        connection:,
+        line:,
+        expected: bytes,
+        deadline_ms: runtime.monotonic_ms() + wait_ms,
+      )
     AwaitEnd(connection:, line:, by:) ->
       await_end(session:, replay:, client:, connection:, line:, by:)
   }
@@ -957,7 +984,11 @@ fn connect(
           ))
         Ok(socket) ->
           case
-            replay_table.await_handed(table:, connection:, within_ms: wait_ms)
+            replay_table.await_handed_out(
+              table:,
+              connection:,
+              within_ms: wait_ms,
+            )
           {
             Ok(Nil) ->
               Ok(Client(
@@ -965,25 +996,29 @@ fn connect(
                 buffers: dict.insert(client.buffers, connection, <<>>),
                 written: dict.insert(client.written, connection, 0),
               ))
-            Error(Nil) ->
+            Error(replay_table.NotInTime) ->
               Error(NotConnected(
                 connection:,
                 reason: "the server did not hand out the connection's script",
               ))
+            Error(replay_table.TableEnded) -> Error(TableLost)
           }
       }
   }
 }
 
-/// Waits for the server to write the bytes of a write line, comparing them with
-/// the stream as they arrive: a byte that differs ends the wait at once, and
-/// bytes of the next write line that arrive with these stay for it.
+/// Waits for the server to write the bytes of a write line and compares them with
+/// the stream as it arrives: a byte that differs ends the wait at once, and bytes
+/// of the next write line that arrive with these stay for it. The wait ends at
+/// `deadline_ms`, an absolute time on the node's monotonic clock fixed when the
+/// wait began, however many pieces the server writes the bytes in.
 fn expect(
   replay replay: Replay,
   client client: Client,
   connection connection: String,
   line line: Int,
   expected expected: BitArray,
+  deadline_ms deadline_ms: Int,
 ) -> Result(Client, Failure) {
   let buffer = result.unwrap(dict.get(client.buffers, connection), <<>>)
   let have = bit_array.byte_size(buffer)
@@ -1020,7 +1055,7 @@ fn expect(
       case
         mug.receive(
           socket_of(client, connection),
-          timeout_milliseconds: wait_ms,
+          timeout_milliseconds: int.max(deadline_ms - runtime.monotonic_ms(), 0),
         )
       {
         Ok(more) ->
@@ -1036,6 +1071,7 @@ fn expect(
             connection:,
             line:,
             expected:,
+            deadline_ms:,
           )
         Error(mug.Timeout) ->
           Error(ended_or(
@@ -1061,8 +1097,9 @@ fn expect(
 }
 
 /// Waits for the end of the connection: a close of the client's is awaited in
-/// the shell, which must have taken every input, the close among them; a close
-/// of the server's is awaited on the socket, and no byte may come before it.
+/// the shell, which must have taken every input, the close among them, and then
+/// ended; a close of the server's is awaited on the socket, and no byte may come
+/// before it.
 fn await_end(
   session session: Session,
   replay replay: Replay,
@@ -1093,7 +1130,7 @@ fn await_end(
           within_ms: wait_ms,
         )
       {
-        Ok(Nil) -> Ok(client)
+        Ok(Nil) -> await_shell_end(table:, client:, connection:, line:)
         Error(replay_table.Mismatched(mismatch:)) ->
           Error(mismatch_failure(connection, mismatch))
         Error(replay_table.TimedOut(taken:)) ->
@@ -1103,6 +1140,7 @@ fn await_end(
             input: wire_recording.PeerClosed,
             taken:,
           ))
+        Error(replay_table.WaitedTableEnded) -> Error(TableLost)
       }
     }
     wire_recording.Server ->
@@ -1120,8 +1158,10 @@ fn await_end(
         | Error(mug.Econnaborted)
         | Error(mug.Epipe) ->
           case replay_table.failure_of(table:, connection:) {
-            Some(mismatch) -> Error(mismatch_failure(connection, mismatch))
-            None -> Ok(client)
+            Ok(Some(mismatch)) -> Error(mismatch_failure(connection, mismatch))
+            Ok(None) -> Ok(client)
+            Error(replay_table.NotInTime) | Error(replay_table.TableEnded) ->
+              Error(TableLost)
           }
         Error(error) ->
           Error(ended(
@@ -1131,6 +1171,35 @@ fn await_end(
             reason: mug.describe_error(error),
           ))
       }
+  }
+}
+
+/// Waits until the connection's shell has ended, which it must within `wait_ms`
+/// once it has taken the client's close: a shell that took the close and stays
+/// open is a connection that did not end where the recording says it did. A
+/// connection whose shell never asked for a `Now` has none to wait for.
+fn await_shell_end(
+  table table: Subject(replay_table.Command),
+  client client: Client,
+  connection connection: String,
+  line line: Int,
+) -> Result(Client, Failure) {
+  case replay_table.shell_of(table:, connection:) {
+    Ok(Some(shell)) -> {
+      let monitor = process.monitor(shell)
+      let ended =
+        process.new_selector()
+        |> process.select_specific_monitor(monitor, fn(_down) { Nil })
+        |> process.selector_receive(within: wait_ms)
+      process.demonitor_process(monitor)
+      case ended {
+        Ok(Nil) -> Ok(client)
+        Error(Nil) -> Error(StillOpen(connection:, line:))
+      }
+    }
+    Ok(None) -> Ok(client)
+    Error(replay_table.NotInTime) | Error(replay_table.TableEnded) ->
+      Error(TableLost)
   }
 }
 
@@ -1156,8 +1225,8 @@ fn ended(
 ) -> Failure {
   let table = process.named_subject(replay.table.name)
   case replay_table.failure_of(table:, connection:) {
-    Some(mismatch) -> mismatch_failure(connection, mismatch)
-    None ->
+    Ok(Some(mismatch)) -> mismatch_failure(connection, mismatch)
+    Ok(None) ->
       EndedEarly(
         connection:,
         line:,
@@ -1169,6 +1238,7 @@ fn ended(
           }
         }),
       )
+    Error(replay_table.NotInTime) | Error(replay_table.TableEnded) -> TableLost
   }
 }
 
@@ -1183,13 +1253,14 @@ fn ended_or(
 ) -> Failure {
   let table = process.named_subject(replay.table.name)
   case replay_table.failure_of(table:, connection:) {
-    Some(mismatch) -> mismatch_failure(connection, mismatch)
-    None ->
+    Ok(Some(mismatch)) -> mismatch_failure(connection, mismatch)
+    Ok(None) ->
       case mug.receive(socket_of(client, connection), timeout_milliseconds: 0) {
         Ok(_) | Error(mug.Timeout) -> otherwise
         Error(error) ->
           ended(replay:, connection:, line:, reason: mug.describe_error(error))
       }
+    Error(replay_table.NotInTime) | Error(replay_table.TableEnded) -> TableLost
   }
 }
 
@@ -1231,14 +1302,35 @@ fn first_difference(
   }
 }
 
-/// What a stream holds at `offset`: nothing when it ended there, else its first
-/// message.
+/// What a stream holds at `offset`: nothing when it ended there, else the
+/// message whose bytes hold the offset, found by cutting the stream into frames
+/// from its start; bytes that are no whole frame before or at the offset are
+/// left as they are, from where the frame began.
 fn decode_at(stream stream: BitArray, offset offset: Int) -> Decoded {
   use <- bool.guard(
     when: bit_array.byte_size(stream) <= offset,
     return: Undecoded(<<>>),
   )
-  decode(bytes: stream)
+  message_holding(stream:, offset:)
+}
+
+/// The message of the first frame of `stream` that holds the byte at `offset`.
+fn message_holding(stream stream: BitArray, offset offset: Int) -> Decoded {
+  case frame.take(stream) {
+    Ok(Some(#(found, rest))) -> {
+      let size = bit_array.byte_size(stream) - bit_array.byte_size(rest)
+      case offset < size {
+        True -> message_of(found)
+        False -> message_holding(stream: rest, offset: offset - size)
+      }
+    }
+    Ok(None)
+    | Error(frame.LengthOverLimit(..))
+    | Error(frame.LengthBelowHeader(..))
+    | Error(frame.ShorterThanHeader(..))
+    | Error(frame.LengthDisagrees(..))
+    | Error(frame.MessageIdOutOfRange(..)) -> Undecoded(stream)
+  }
 }
 
 /// Reads the first message of `bytes` with the current codec: a whole frame
@@ -1247,18 +1339,13 @@ fn decode_at(stream stream: BitArray, offset offset: Int) -> Decoded {
 /// no cipher, which the replay client does not hold, so a ciphered stream is
 /// bytes.
 pub fn decode(bytes bytes: BitArray) -> Decoded {
-  case frame.take(bytes) {
-    Ok(Some(#(found, _rest))) ->
-      Message(
-        message_id: found.message_id,
-        name: client_connection.message_text(message_id: found.message_id),
-        text: string.lowercase(bit_array.base16_encode(found.body)),
-      )
-    Ok(None)
-    | Error(frame.LengthOverLimit(..))
-    | Error(frame.LengthBelowHeader(..))
-    | Error(frame.ShorterThanHeader(..))
-    | Error(frame.LengthDisagrees(..))
-    | Error(frame.MessageIdOutOfRange(..)) -> Undecoded(bytes)
-  }
+  message_holding(stream: bytes, offset: 0)
+}
+
+fn message_of(found: frame.Frame) -> Decoded {
+  Message(
+    message_id: found.message_id,
+    name: client_connection.message_text(message_id: found.message_id),
+    text: wire_recording.hex(found.body),
+  )
 }

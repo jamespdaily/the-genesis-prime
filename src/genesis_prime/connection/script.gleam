@@ -1,25 +1,25 @@
-//// What one accepted connection takes from outside its socket: the 32 bytes
-//// of its seed, the time of each input it takes, and the timers it starts. A
+//// What one accepted connection takes from outside its socket: its seed, the
+//// time of each input it takes, and the timers it starts. A
 //// listener hands each connection its own `Script` as the shell takes the
 //// connection's socket (`Scripts`), so a replay can give every connection of a
 //// recorded session the seed, the times and the timers of its own recording.
 ////
 //// ```
 //// the shell, after the handshake:   scripts() ─▶ Issued(ordinal, script)
-//// each input the shell takes:       script.clock(Taking) ─▶ the input's Now, once
+//// each input the shell takes:       script.clock(Input) ─▶ the input's Now, once
 //// StartTimer(id, ms):               script.schedule(its subject, id, reference, ms)
 ////                                     ─▶ Cancel
 //// ```
 ////
-//// - **The server's script** (`operating_system`): the seed is 32 bytes from
+//// - **The server's script** (`operating_system`): the seed is drawn from
 ////   the operating system's strong random source, the clock is the node's
 ////   (`runtime.now`) and a timer is the operating system's (`process.send_after`).
 ////   Its ordinal is a number that grows with each call, so the order of
 ////   accepts is recorded and never inferred from times.
 //// - **A replay's script** (genesis_prime/wire_replay): the seed is the
-////   recording's, the clock gives the recording's `Now`s as it is told what each
-////   call serves (`Taking`), and a timer fires when the replay client reaches
-////   its line. The shell takes each recorded read as one input: the script
+////   recording's, the clock gives the recording's `Now`s as it is told the input
+////   each call serves (the shell's `wire_recording.Input`), and a timer fires
+////   when the replay client reaches its line. The shell takes each recorded read as one input: the script
 ////   tells it how many bytes the next recorded read holds (`next_read`), and the
 ////   shell keeps reading until it holds that many, so a socket that delivers
 ////   one recorded read in two parts gives the rule one input. As a safety net,
@@ -30,41 +30,25 @@
 ////   connection. A listener that restarts keeps its `Scripts` (the value is
 ////   made before the tree, not by the listener), so a connection accepted after
 ////   the restart is handed the next script, never one already used.
-//// - **One call of the clock for each input the shell takes**, told which kind
-////   of input it is, made as the
-////   shell takes the input, and none for a message the shell drops. The
+//// - **One call of the clock for each input the shell takes**, told the input,
+////   made as the shell takes the input, and none for a message the shell drops. The
 ////   number of calls is how many inputs the shell has taken, which the replay
 ////   client reads to know where each connection's shell is.
 
+import genesis_prime/seed.{type Seed}
 import genesis_prime/step.{type Now, type TimerId}
 import genesis_prime/step/runtime
-import gleam/crypto
+import genesis_prime/wire_recording.{type Input}
 import gleam/erlang/process.{type Subject}
 import gleam/erlang/reference.{type Reference}
 import gleam/option.{type Option, None}
 
-/// What an input is, as far as the clock needs to know: its kind and, for a
-/// read, how many bytes it holds. The server's clock ignores it; a replay's
-/// uses it to give each input the `Now` of the recorded input it matches.
-pub type Taking {
-  Accepted
-  /// Bytes arrived: `byte_count` of them, in one read of the socket.
-  Read(byte_count: Int)
-  Answered
-  TimerFired
-  PeerClosed
-  ReadFailed
-  WriteFailed
-  Woken
-  WatchEnded
-  Stopping
-}
-
-/// Where a connection reads the time its next input carries, told which input
-/// it serves. Each call is one input: the shell makes it as it takes the input
-/// and at no other time.
+/// Where a connection reads the time its next input carries, told the input it
+/// serves as the wire recording keeps it (the server's clock ignores it; a
+/// replay's matches it with a recorded input of the same kind). Each call is one
+/// input: the shell makes it as it takes the input and at no other time.
 pub type Clock =
-  fn(Taking) -> Now
+  fn(Input) -> Now
 
 /// Ends a timer that was started: a timeout already sent is discarded by the
 /// shell when it arrives, since no timer holds its reference.
@@ -94,7 +78,7 @@ pub type NextRead =
 
 /// What one connection takes from outside its socket.
 pub type Script {
-  Script(seed: BitArray, clock: Clock, schedule: Scheduler, next_read: NextRead)
+  Script(seed: Seed, clock: Clock, schedule: Scheduler, next_read: NextRead)
 }
 
 /// A connection's script with its accept ordinal: the place of the connection
@@ -117,7 +101,7 @@ pub fn operating_system() -> Result(Issued, Nil) {
   Ok(Issued(
     ordinal: runtime.unique_id(),
     script: Script(
-      seed: crypto.strong_random_bytes(32),
+      seed: seed.from_system(),
       clock: fn(_taking) { runtime.now() },
       schedule: operating_system_timer,
       next_read: fn() { None },

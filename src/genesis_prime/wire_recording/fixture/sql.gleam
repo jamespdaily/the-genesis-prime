@@ -7,14 +7,52 @@
 import gleam/dynamic/decode
 import pog
 
-/// A row you get from running the `all_accounts` query
-/// defined in `./src/genesis_prime/wire_recording/fixture/sql/all_accounts.sql`.
+/// A row you get from running the `account_sequence` query
+/// defined in `./src/genesis_prime/wire_recording/fixture/sql/account_sequence.sql`.
 ///
 /// > 🐿️ This type definition was generated automatically using v4.7.0 of the
 /// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
-pub type AllAccountsRow {
-  AllAccountsRow(
+pub type AccountSequenceRow {
+  AccountSequenceRow(last_value: Int, is_called: Bool)
+}
+
+/// Where the account id sequence stands: the last value it gave (or the value it
+/// gives first, when it has given none) and whether it has given one, which the
+/// fixture of a recorded session (genesis_prime/wire_recording/fixture) restores
+/// with `setval`, so an account a replay makes gets the id it got live.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn account_sequence(
+  db: pog.Connection,
+) -> Result(pog.Returned(AccountSequenceRow), pog.QueryError) {
+  let decoder = {
+    use last_value <- decode.field(0, decode.int)
+    use is_called <- decode.field(1, decode.bool)
+    decode.success(AccountSequenceRow(last_value:, is_called:))
+  }
+
+  "-- Where the account id sequence stands: the last value it gave (or the value it
+-- gives first, when it has given none) and whether it has given one, which the
+-- fixture of a recorded session (genesis_prime/wire_recording/fixture) restores
+-- with `setval`, so an account a replay makes gets the id it got live.
+select last_value, is_called from account_account_id_seq;
+"
+  |> pog.query
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `accounts_named` query
+/// defined in `./src/genesis_prime/wire_recording/fixture/sql/accounts_named.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type AccountsNamedRow {
+  AccountsNamedRow(
     account_id: Int,
     login_name: String,
     srp_salt: BitArray,
@@ -23,25 +61,27 @@ pub type AllAccountsRow {
   )
 }
 
-/// Every account, in the order of its id, with every column the fixture of a
-/// recorded session keeps (genesis_prime/wire_recording/fixture): the id the
-/// session's rows name, the login name, the SRP salt and verifier and the game
-/// account's GUID as its 8-4-4-4-12 text. `created_at` is left out: it is the
-/// time a row was made, which no flow reads.
+/// The accounts with these login names, in the order of their ids, with every
+/// column the fixture of a recorded session keeps
+/// (genesis_prime/wire_recording/fixture): the id the session's rows name, the
+/// login name, the SRP salt and verifier and the game account's GUID as its
+/// 8-4-4-4-12 text. `created_at` is left out: it is the time a row was made,
+/// which no flow reads.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
-pub fn all_accounts(
+pub fn accounts_named(
   db: pog.Connection,
-) -> Result(pog.Returned(AllAccountsRow), pog.QueryError) {
+  arg_1: List(String),
+) -> Result(pog.Returned(AccountsNamedRow), pog.QueryError) {
   let decoder = {
     use account_id <- decode.field(0, decode.int)
     use login_name <- decode.field(1, decode.string)
     use srp_salt <- decode.field(2, decode.bit_array)
     use srp_verifier <- decode.field(3, decode.bit_array)
     use game_account_id <- decode.field(4, decode.string)
-    decode.success(AllAccountsRow(
+    decode.success(AccountsNamedRow(
       account_id:,
       login_name:,
       srp_salt:,
@@ -50,11 +90,12 @@ pub fn all_accounts(
     ))
   }
 
-  "-- Every account, in the order of its id, with every column the fixture of a
--- recorded session keeps (genesis_prime/wire_recording/fixture): the id the
--- session's rows name, the login name, the SRP salt and verifier and the game
--- account's GUID as its 8-4-4-4-12 text. `created_at` is left out: it is the
--- time a row was made, which no flow reads.
+  "-- The accounts with these login names, in the order of their ids, with every
+-- column the fixture of a recorded session keeps
+-- (genesis_prime/wire_recording/fixture): the id the session's rows name, the
+-- login name, the SRP salt and verifier and the game account's GUID as its
+-- 8-4-4-4-12 text. `created_at` is left out: it is the time a row was made,
+-- which no flow reads.
 select
   account_id,
   login_name,
@@ -62,21 +103,61 @@ select
   srp_verifier,
   game_account_id::text as game_account_id
 from account
+where login_name = any($1)
 order by account_id;
+"
+  |> pog.query
+  |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_1))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `character_sequence` query
+/// defined in `./src/genesis_prime/wire_recording/fixture/sql/character_sequence.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type CharacterSequenceRow {
+  CharacterSequenceRow(last_value: Int, is_called: Bool)
+}
+
+/// Where the character id sequence stands: the last value it gave (or the value it
+/// gives first, when it has given none) and whether it has given one, which the
+/// fixture of a recorded session (genesis_prime/wire_recording/fixture) restores
+/// with `setval`, so a character a replay makes gets the id it got live.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn character_sequence(
+  db: pog.Connection,
+) -> Result(pog.Returned(CharacterSequenceRow), pog.QueryError) {
+  let decoder = {
+    use last_value <- decode.field(0, decode.int)
+    use is_called <- decode.field(1, decode.bool)
+    decode.success(CharacterSequenceRow(last_value:, is_called:))
+  }
+
+  "-- Where the character id sequence stands: the last value it gave (or the value it
+-- gives first, when it has given none) and whether it has given one, which the
+-- fixture of a recorded session (genesis_prime/wire_recording/fixture) restores
+-- with `setval`, so a character a replay makes gets the id it got live.
+select last_value, is_called from character_character_id_seq;
 "
   |> pog.query
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
 
-/// A row you get from running the `all_characters` query
-/// defined in `./src/genesis_prime/wire_recording/fixture/sql/all_characters.sql`.
+/// A row you get from running the `characters_of_accounts_named` query
+/// defined in `./src/genesis_prime/wire_recording/fixture/sql/characters_of_accounts_named.sql`.
 ///
 /// > 🐿️ This type definition was generated automatically using v4.7.0 of the
 /// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
-pub type AllCharactersRow {
-  AllCharactersRow(
+pub type CharactersOfAccountsNamedRow {
+  CharactersOfAccountsNamedRow(
     character_id: Int,
     account_id: Int,
     session_epoch: Int,
@@ -99,19 +180,20 @@ pub type AllCharactersRow {
   )
 }
 
-/// Every character, in the order of its id, with every column the fixture of a
-/// recorded session keeps (genesis_prime/wire_recording/fixture): the id, the
-/// account it belongs to, the session epoch that fences a stale save, what the
-/// character list shows, where it stands, its look and bones and its rename
-/// mark. `created_at` is left out: it is the time a row was made, which no flow
-/// reads.
+/// The characters of the accounts with these login names, in the order of their
+/// ids, with every column the fixture of a recorded session keeps
+/// (genesis_prime/wire_recording/fixture): the id, the account it belongs to, the
+/// session epoch that fences a stale save, what the character list shows, where
+/// it stands, its look and bones and its rename mark. `created_at` is left out:
+/// it is the time a row was made, which no flow reads.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
 ///
-pub fn all_characters(
+pub fn characters_of_accounts_named(
   db: pog.Connection,
-) -> Result(pog.Returned(AllCharactersRow), pog.QueryError) {
+  arg_1: List(String),
+) -> Result(pog.Returned(CharactersOfAccountsNamedRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
     use account_id <- decode.field(1, decode.int)
@@ -132,7 +214,7 @@ pub fn all_characters(
     use look_values <- decode.field(16, decode.list(decode.int))
     use bones <- decode.field(17, decode.list(decode.int))
     use needs_rename <- decode.field(18, decode.bool)
-    decode.success(AllCharactersRow(
+    decode.success(CharactersOfAccountsNamedRow(
       character_id:,
       account_id:,
       session_epoch:,
@@ -155,12 +237,12 @@ pub fn all_characters(
     ))
   }
 
-  "-- Every character, in the order of its id, with every column the fixture of a
--- recorded session keeps (genesis_prime/wire_recording/fixture): the id, the
--- account it belongs to, the session epoch that fences a stale save, what the
--- character list shows, where it stands, its look and bones and its rename
--- mark. `created_at` is left out: it is the time a row was made, which no flow
--- reads.
+  "-- The characters of the accounts with these login names, in the order of their
+-- ids, with every column the fixture of a recorded session keeps
+-- (genesis_prime/wire_recording/fixture): the id, the account it belongs to, the
+-- session epoch that fences a stale save, what the character list shows, where
+-- it stands, its look and bones and its rename mark. `created_at` is left out:
+-- it is the time a row was made, which no flow reads.
 select
   character_id,
   account_id,
@@ -182,9 +264,13 @@ select
   bones,
   needs_rename
 from character
+where account_id in (
+  select account_id from account where login_name = any($1)
+)
 order by character_id;
 "
   |> pog.query
+  |> pog.parameter(pog.array(fn(value) { pog.text(value) }, arg_1))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

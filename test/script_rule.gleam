@@ -11,10 +11,10 @@
 ////
 //// The rule stops when the client closes or its socket fails.
 
+import connection_rule_support
 import genesis_prime/step.{
-  type ConnectionEffect, type ConnectionInput, type ConnectionRule,
-  type ConnectionStep, type Effect, Accepted, Effects, Input, Log, LogLine,
-  LogWarning, OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed, Rule, Stop,
+  type ConnectionInput, type ConnectionRule, type ConnectionStep, Accepted,
+  Effects, Input, OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed, Rule, Stop,
   Write, WriteFailed,
 }
 
@@ -62,18 +62,17 @@ pub fn step(
     OwnEvent(PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(ReadFailed(..)) | OwnEvent(WriteFailed(..)) -> #(
       state,
-      Effects([warn("the socket failed"), Stop]),
+      Effects([connection_rule_support.warn("the socket failed"), Stop]),
     )
     OwnEvent(step.Woken(..))
     | step.WatchEnded(..)
     | OwnEvent(step.TimerFired(..))
     | OwnEvent(step.Answered(..)) -> #(
       state,
-      Effects([warn("an input the script rule does not take"), Stop]),
+      Effects([
+        connection_rule_support.warn("an input the script rule does not take"),
+        Stop,
+      ]),
     )
   }
-}
-
-fn warn(text: String) -> Effect(ConnectionEffect) {
-  Log(LogLine(level: LogWarning, text:, about: step.no_one))
 }

@@ -7,9 +7,10 @@
 //// takes inputs and writes:
 ////
 //// ```
-//// header   {"format":1,"rule":"genesis_prime/login/sts_connection",
-////           "client_build":16042,"tables_digest":"...","seed":"<hex>",
-////           "accept_ordinal":3}
+//// header   {"format":1,"rule":"genesis_prime/login/auth_connection",
+////           "client_build":16042,"tables_digest":null,"seed":"<hex>",
+////           "accept_ordinal":3,
+////           "realm":{"id":1,"name":"Genesis","address":..,"port":..}}
 //// an input {"sequence":41,"monotonic_ms":..,"filetime":..,"in":"read","bytes":"<hex>"}
 ////          {"sequence":43,"monotonic_ms":..,"filetime":..,"in":"answered","outcome":"answer"}
 ////          {"sequence":47,"monotonic_ms":..,"filetime":..,"in":"timer_fired","timer":2}
@@ -24,6 +25,11 @@
 ////   socket is given a write's bytes, and as an input is taken. The lines of
 ////   every connection of a session, sorted by it, are the order the node saw
 ////   them in, so a replay walks them in that order.
+//// - **Settings in the bytes.** A server setting that shows in the bytes the
+////   server writes is recorded in the header, so a replay builds the server
+////   from the recording and no machine's value lives in the repository: the
+////   realm the auth server hands the client to (`realm`, `null` for a rule
+////   that writes none).
 //// - **Time.** An input line holds the whole `Now` the shell's clock gave the
 ////   input: the monotonic clock and the FILETIME. A write line holds none: the
 ////   bytes depend on the time of the input whose step wrote them, and a replay
@@ -40,6 +46,7 @@
 ////   line holds only the kind of input and, for an answer, how the ask ended.
 ////   A replay gets the same messages and answers by running the real services.
 
+import genesis_prime/seed.{type Seed}
 import genesis_prime/step.{type Now, Now}
 import gleam/bit_array
 import gleam/dynamic/decode
@@ -64,11 +71,20 @@ pub type Header {
     /// A digest of the game table files the rule reads, or `None` for a rule
     /// that reads no table.
     tables_digest: Option(String),
-    /// The 32 bytes the rule's random values are all drawn from.
-    seed: BitArray,
+    /// The seed the rule's random values are all drawn from.
+    seed: Seed,
     /// The place of the connection among those its server accepted.
     accept_ordinal: Int,
+    /// The realm the auth server handed the client to, when the rule writes
+    /// it.
+    realm: Option(Realm),
   )
+}
+
+/// The realm the auth server hands the client to, as the server writes it: its
+/// id and name, and the address and port of its game server.
+pub type Realm {
+  Realm(id: Int, name: String, address: Int, port: Int)
 }
 
 /// How an ask ended, without the answer, which is the rule's own type.
@@ -102,6 +118,35 @@ pub type Input {
   WatchEnded
   /// The server is stopping.
   Stopping
+}
+
+/// Whether two inputs are of one kind, whatever they carry: a replay matches the
+/// input its shell took with the recorded one by kind, and the bytes, the
+/// outcome or the timer's number may differ.
+pub fn same_kind(first first: Input, second second: Input) -> Bool {
+  case first, second {
+    Accepted, Accepted -> True
+    Read(..), Read(..) -> True
+    Answered(..), Answered(..) -> True
+    TimerFired(..), TimerFired(..) -> True
+    PeerClosed, PeerClosed -> True
+    ReadFailed, ReadFailed -> True
+    WriteFailed, WriteFailed -> True
+    Woken, Woken -> True
+    WatchEnded, WatchEnded -> True
+    Stopping, Stopping -> True
+    Accepted, _
+    | Read(..), _
+    | Answered(..), _
+    | TimerFired(..), _
+    | PeerClosed, _
+    | ReadFailed, _
+    | WriteFailed, _
+    | Woken, _
+    | WatchEnded, _
+    | Stopping, _
+    -> False
+  }
 }
 
 /// Which side ended the connection.
@@ -149,8 +194,9 @@ pub fn encode_header(header header: Header) -> String {
     #("rule", json.string(header.rule)),
     #("client_build", json.int(header.client_build)),
     #("tables_digest", json.nullable(header.tables_digest, json.string)),
-    #("seed", json.string(hex(header.seed))),
+    #("seed", json.string(hex(bytes: seed.bytes(header.seed)))),
     #("accept_ordinal", json.int(header.accept_ordinal)),
+    #("realm", json.nullable(header.realm, realm_json)),
   ])
 }
 
@@ -169,7 +215,7 @@ pub fn encode_line(line line: Line) -> String {
     Wrote(sequence:, bytes:) ->
       line_of([
         #("sequence", json.int(sequence)),
-        #("out", json.string(hex(bytes))),
+        #("out", json.string(hex(bytes:))),
       ])
   }
 }
@@ -191,7 +237,7 @@ fn line_of(entries: List(#(String, Json))) -> String {
 fn input_entries(input: Input) -> List(#(String, Json)) {
   case input {
     Accepted -> [kind("accepted")]
-    Read(bytes:) -> [kind("read"), #("bytes", json.string(hex(bytes)))]
+    Read(bytes:) -> [kind("read"), #("bytes", json.string(hex(bytes:)))]
     Answered(outcome:) -> [
       kind("answered"),
       #("outcome", json.string(outcome_name(outcome))),
@@ -227,7 +273,18 @@ fn side_name(side: Side) -> String {
   }
 }
 
-fn hex(bytes: BitArray) -> String {
+fn realm_json(realm: Realm) -> Json {
+  json.object([
+    #("id", json.int(realm.id)),
+    #("name", json.string(realm.name)),
+    #("address", json.int(realm.address)),
+    #("port", json.int(realm.port)),
+  ])
+}
+
+/// The bytes as lower-case hexadecimal, the way a recording, a fixture and a
+/// failure's text write them.
+pub fn hex(bytes bytes: BitArray) -> String {
   string.lowercase(bit_array.base16_encode(bytes))
 }
 
@@ -282,8 +339,9 @@ fn header_decoder() -> decode.Decoder(Header) {
     "tables_digest",
     decode.optional(decode.string),
   )
-  use seed <- decode.field("seed", hex_decoder())
+  use seed <- decode.field("seed", seed_decoder())
   use accept_ordinal <- decode.field("accept_ordinal", decode.int)
+  use realm <- decode.field("realm", decode.optional(realm_decoder()))
   decode.success(Header(
     format:,
     rule:,
@@ -291,7 +349,30 @@ fn header_decoder() -> decode.Decoder(Header) {
     tables_digest:,
     seed:,
     accept_ordinal:,
+    realm:,
   ))
+}
+
+fn realm_decoder() -> decode.Decoder(Realm) {
+  use id <- decode.field("id", decode.int)
+  use name <- decode.field("name", decode.string)
+  use address <- decode.field("address", decode.int)
+  use port <- decode.field("port", decode.int)
+  decode.success(Realm(id:, name:, address:, port:))
+}
+
+/// A seed written as hexadecimal: 32 bytes, no other length.
+fn seed_decoder() -> decode.Decoder(Seed) {
+  decode.then(hex_decoder(), fn(bytes) {
+    case seed.from_bytes(bytes) {
+      Ok(seed) -> decode.success(seed)
+      Error(seed.WrongLength(..)) ->
+        decode.failure(
+          seed.zeros(),
+          "a seed of " <> int.to_string(seed.byte_count) <> " bytes",
+        )
+    }
+  })
 }
 
 fn hex_decoder() -> decode.Decoder(BitArray) {

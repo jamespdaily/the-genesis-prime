@@ -21,6 +21,7 @@ import ask_support
 import event_wait
 import genesis_prime/connection/registry
 import genesis_prime/connection/script.{type Scripts, Issued, Script}
+import genesis_prime/seed
 import genesis_prime/step.{
   type Address, type Now, ConnectionId, Now, Sessions, TimerId,
 }
@@ -29,6 +30,7 @@ import genesis_prime/wire_recording.{
   Accepted, PeerClosed, Read, Recording, Server, Took, Wrote,
 }
 import gleam/bit_array
+import gleam/erlang/atom
 import gleam/erlang/process.{type Subject}
 import gleam/erlang/reference
 import gleam/list
@@ -46,15 +48,15 @@ pub fn the_servers_script_draws_each_seed_from_the_system_and_numbers_the_connec
   use <- owned_test.run(30_000)
   let assert Ok(first) = script.operating_system() as "the server's script"
   let assert Ok(second) = script.operating_system() as "and another"
-  assert bit_array.byte_size(first.script.seed) == 32
-    && bit_array.byte_size(second.script.seed) == 32
+  assert bit_array.byte_size(seed.bytes(first.script.seed)) == 32
+    && bit_array.byte_size(seed.bytes(second.script.seed)) == 32
     as "32 bytes, as the STS cipher's key is drawn"
   assert first.script.seed != second.script.seed
     as "a seed is drawn for each connection"
   assert second.ordinal > first.ordinal
     as "the ordinal grows with each connection, so the order of accepts is recorded and never inferred from times"
   let before = runtime.monotonic_ms()
-  let Now(monotonic_ms:, ..) = first.script.clock(script.Accepted)
+  let Now(monotonic_ms:, ..) = first.script.clock(Accepted)
   let after = runtime.monotonic_ms()
   assert monotonic_ms >= before && monotonic_ms <= after
     as "the clock is the node's own monotonic clock"
@@ -81,8 +83,8 @@ fn fixed(now: Now) -> Scripts {
     Ok(Issued(
       ordinal: 1,
       script: Script(
-        seed: seed(),
-        clock: fn(_taking) { now },
+        seed: counting_seed(),
+        clock: fn(_input) { now },
         schedule: fn(_subject, _timer, _reference, _after_ms) { fn() { Nil } },
         next_read: fn() { None },
       ),
@@ -90,10 +92,17 @@ fn fixed(now: Now) -> Scripts {
   }
 }
 
-fn seed() -> BitArray {
+/// The seed whose bytes are `0..31`.
+fn counting_seed_bytes() -> BitArray {
   list.repeat(Nil, 32)
   |> list.index_map(fn(_, byte) { <<byte>> })
   |> bit_array.concat
+}
+
+fn counting_seed() -> seed.Seed {
+  let assert Ok(counting) = seed.from_bytes(counting_seed_bytes())
+    as "32 bytes are a seed"
+  counting
 }
 
 fn start_script_rule(scripts: Scripts) -> ask_support.Server {
@@ -131,7 +140,7 @@ pub fn a_given_script_gives_the_same_bytes_twice_test() -> Nil {
   assert first
     == <<
       script_rule.accepted,
-      seed():bits,
+      counting_seed_bytes():bits,
       now.monotonic_ms:64,
       now.filetime:64,
       script_rule.read,
@@ -155,7 +164,7 @@ pub fn two_connections_of_one_listener_each_take_a_script_of_their_own_test() ->
   let one = accepted_script(ask_support.read_bytes(client_one, 49))
   let client_two = ask_support.connect(server)
   let two = accepted_script(ask_support.read_bytes(client_two, 49))
-  assert one.0 == seed() && two.0 == seed()
+  assert one.0 == counting_seed_bytes() && two.0 == counting_seed_bytes()
     as "each script's seed is the one it was made with"
   assert one.1.filetime == one.1.monotonic_ms * 10
     && two.1.filetime == two.1.monotonic_ms * 10
@@ -429,13 +438,15 @@ pub fn a_stop_while_the_shell_holds_part_of_a_read_reaches_the_rule_as_stopping_
   assert closing.by == Server
 }
 
-pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_after_5_s_and_takes_the_mailbox_test() -> Nil {
+pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_5_s_after_its_first_part_however_many_parts_come_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = registry.new()
   let looked = process.new_subject()
-  let server = start_signalling(scope, reading(8, looked))
+  let server = start_signalling(scope, reading(100, looked))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
+  let assert [shell] = ask_support.connections(server) as "one connection"
+  let started = ask_support.monotonic_ms()
   ask_support.command(
     client:,
     letter: signalling_rule.pong_command,
@@ -445,10 +456,27 @@ pub fn a_shell_that_waits_for_the_rest_of_a_read_gives_up_after_5_s_and_takes_th
   let assert Ok(Nil) = process.receive(looked, ask_support.event_wait_ms)
     as "the shell took the first part and holds it"
   assert registry.deliver(scope, ConnectionId(id), 9) == Ok(Nil)
-  // The rest of the read never comes. The wait is bounded by 5 s of real time,
-  // the bound this test proves, and then the shell takes what waits.
+  // The rest of the read never comes whole: three more parts arrive 1.2 s
+  // apart, each well inside the bound, and between them an exit of another
+  // process that the wait must pass over. The pace is the scenario: a part
+  // that came every second renews a bound that counts from the last part.
+  list.each([2, 3, 4], fn(n) {
+    process.sleep(1200)
+    process.send_abnormal_exit(shell, atom.create("irrelevant"))
+    ask_support.command(
+      client:,
+      letter: signalling_rule.pong_command,
+      n:,
+      wait_ms: 0,
+    )
+  })
   assert read_record_within(client, 15_000) == Record(signalling_rule.woken, 9)
-    as "after the bound the message is taken, and the held part is not a read"
+    as "after the bound the message is taken, and the held parts are not a read"
+  let elapsed = ask_support.monotonic_ms() - started
+  assert elapsed >= 5000
+    as "the shell waited the whole bound for the rest of the read"
+  assert elapsed < 7000
+    as "and the bound counted from the first part: the last part, at 3.6 s, did not renew it"
   event_wait.until("the connection is still open", fn() {
     ask_support.connections(server) != []
   })

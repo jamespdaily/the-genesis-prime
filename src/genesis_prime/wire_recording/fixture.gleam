@@ -4,11 +4,14 @@
 //// fixture, and the session finds the same account and characters it found
 //// live.
 ////
-//// - **What is kept.** Every column of both tables but `created_at`, which no
-////   flow reads. The ids are identity columns, so each insert overrides its
-////   id, and a statement after the rows moves each id sequence to the largest
-////   id kept, so a row a replay makes gets an id above them. A table with no
-////   rows adds no statement.
+//// - **What is kept.** The accounts the session names by login name and their
+////   characters, never the rest of the database, and every column of both tables
+////   but `created_at`, which no flow reads. The ids are identity columns, so each
+////   insert overrides its id. A statement after the rows of each table sets its
+////   id sequence to where the live database's stood (its last value and whether
+////   it had given one), so a row a replay makes gets the id it got live, whatever
+////   rows the live database lost since: a deleted character, a rolled-back
+////   insert, a row of another account.
 //// - **The order.** Accounts first, then the characters that reference them.
 //// - **The file.** One statement for each row, each ending in a semicolon and a
 ////   line feed. A text is quoted by doubling its quotes and a byte string is
@@ -18,8 +21,9 @@
 //// - **Applying.** The statements run in one transaction, so a statement the
 ////   database refuses leaves no row of the file behind.
 
+import genesis_prime/store/worker
+import genesis_prime/wire_recording
 import genesis_prime/wire_recording/fixture/sql
-import gleam/bit_array
 import gleam/bool
 import gleam/float
 import gleam/int
@@ -35,57 +39,104 @@ pub type FixtureError {
   FileFailed(path: String, reason: String)
   /// The database refused a statement, naming it.
   StatementFailed(statement: String, reason: String)
+  /// The database holds no account with this login name, so the session's
+  /// fixture would hold nothing of it.
+  NoSuchAccount(login_name: String)
   /// The database could not be asked for its rows, or could not be reached.
   DatabaseFailed(reason: String)
 }
 
-/// Saves every row of the account and character tables of the database
-/// `database` reaches as data-only SQL in the file at `path`, in an order
-/// that satisfies each table's references. A file already there is never
-/// overwritten. The dev start writes it before it accepts the first
-/// connection.
+/// Saves the accounts of `login_names` and their characters from the database
+/// `database` reaches, and where its two id sequences stand, as data-only SQL in
+/// the file at `path`, in an order that satisfies each table's references. A
+/// login name the database has no account for is `NoSuchAccount`, and a file
+/// already there is never overwritten. The dev start writes it before it accepts
+/// the first connection.
 pub fn write(
   database database: pog.Connection,
   path path: String,
+  login_names login_names: List(String),
 ) -> Result(Nil, FixtureError) {
   use accounts <- result.try(
-    sql.all_accounts(database) |> result.map_error(database_failed),
+    sql.accounts_named(database, login_names)
+    |> result.map_error(database_failed),
+  )
+  use Nil <- result.try(
+    list.try_each(login_names, fn(login_name) {
+      case list.any(accounts.rows, fn(row) { row.login_name == login_name }) {
+        True -> Ok(Nil)
+        False -> Error(NoSuchAccount(login_name:))
+      }
+    }),
   )
   use characters <- result.try(
-    sql.all_characters(database) |> result.map_error(database_failed),
+    sql.characters_of_accounts_named(database, login_names)
+    |> result.map_error(database_failed),
   )
+  use account_sequence <- result.try(
+    sql.account_sequence(database) |> result.map_error(database_failed),
+  )
+  use character_sequence <- result.try(
+    sql.character_sequence(database) |> result.map_error(database_failed),
+  )
+  let assert [account_sequence] = account_sequence.rows
+    as "a sequence holds one row"
+  let assert [character_sequence] = character_sequence.rows
+    as "a sequence holds one row"
   use Nil <- result.try(
     simplifile.create_file(path) |> result.map_error(file_failed(path)),
   )
   simplifile.write(
     path,
-    render(accounts: accounts.rows, characters: characters.rows),
+    render(
+      accounts: accounts.rows,
+      account_sequence: Sequence(
+        last_value: account_sequence.last_value,
+        is_called: account_sequence.is_called,
+      ),
+      characters: characters.rows,
+      character_sequence: Sequence(
+        last_value: character_sequence.last_value,
+        is_called: character_sequence.is_called,
+      ),
+    ),
   )
   |> result.map_error(file_failed(path))
 }
 
-/// The text of a fixture file for these rows: an insert for each account, an
-/// insert for each character, and the statement that moves each id sequence.
+/// Where an id sequence stands: the last value it gave, or the value it gives
+/// first when `is_called` is false.
+type Sequence {
+  Sequence(last_value: Int, is_called: Bool)
+}
+
+/// The text of a fixture file for these rows: an insert for each account, the
+/// statement that sets the account id sequence, an insert for each character and
+/// the statement that sets the character id sequence.
 fn render(
-  accounts accounts: List(sql.AllAccountsRow),
-  characters characters: List(sql.AllCharactersRow),
+  accounts accounts: List(sql.AccountsNamedRow),
+  account_sequence account_sequence: Sequence,
+  characters characters: List(sql.CharactersOfAccountsNamedRow),
+  character_sequence character_sequence: Sequence,
 ) -> String {
   string.concat(
     list.flatten([
       list.map(accounts, account_statement),
-      sequence_statement(
-        table: "account",
-        column: "account_id",
-        rows: accounts,
-        id: fn(row) { row.account_id },
-      ),
+      [
+        sequence_statement(
+          table: "account",
+          column: "account_id",
+          state: account_sequence,
+        ),
+      ],
       list.map(characters, character_statement),
-      sequence_statement(
-        table: "character",
-        column: "character_id",
-        rows: characters,
-        id: fn(row) { row.character_id },
-      ),
+      [
+        sequence_statement(
+          table: "character",
+          column: "character_id",
+          state: character_sequence,
+        ),
+      ],
     ]),
   )
 }
@@ -107,7 +158,7 @@ pub fn apply(
       |> pog.execute(connection)
       |> result.map(fn(_returned) { Nil })
       |> result.map_error(fn(error) {
-        StatementFailed(statement:, reason: describe_query_error(error))
+        StatementFailed(statement:, reason: worker.describe_query_error(error))
       })
     })
   })
@@ -115,7 +166,7 @@ pub fn apply(
     case error {
       pog.TransactionRolledBack(failed) -> failed
       pog.TransactionQueryError(error) ->
-        DatabaseFailed(reason: describe_query_error(error))
+        DatabaseFailed(reason: worker.describe_query_error(error))
     }
   })
 }
@@ -123,7 +174,7 @@ pub fn apply(
 /// The name of the fixture's file inside a recording folder.
 pub const file_name = "fixture.sql"
 
-fn account_statement(row: sql.AllAccountsRow) -> String {
+fn account_statement(row: sql.AccountsNamedRow) -> String {
   "insert into account (account_id, login_name, srp_salt, srp_verifier, game_account_id) overriding system value values ("
   <> string.join(
     [
@@ -138,7 +189,7 @@ fn account_statement(row: sql.AllAccountsRow) -> String {
   <> ");\n"
 }
 
-fn character_statement(row: sql.AllCharactersRow) -> String {
+fn character_statement(row: sql.CharactersOfAccountsNamedRow) -> String {
   "insert into character (character_id, account_id, session_epoch, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z, look_labels, look_values, bones, needs_rename) overriding system value values ("
   <> string.join(
     [
@@ -167,26 +218,21 @@ fn character_statement(row: sql.AllCharactersRow) -> String {
   <> ");\n"
 }
 
-/// The statement that moves the id sequence of `table` to the largest id of its
-/// rows, or none for a table with no rows.
+/// The statement that sets the id sequence of `table` to `state`.
 fn sequence_statement(
   table table: String,
   column column: String,
-  rows rows: List(row),
-  id id: fn(row) -> Int,
-) -> List(String) {
-  case list.map(rows, id) |> list.reduce(int.max) {
-    Ok(largest) -> [
-      "select setval(pg_get_serial_sequence('"
-      <> table
-      <> "', '"
-      <> column
-      <> "'), "
-      <> int.to_string(largest)
-      <> ");\n",
-    ]
-    Error(Nil) -> []
-  }
+  state state: Sequence,
+) -> String {
+  "select setval(pg_get_serial_sequence('"
+  <> table
+  <> "', '"
+  <> column
+  <> "'), "
+  <> int.to_string(state.last_value)
+  <> ", "
+  <> bool(state.is_called)
+  <> ");\n"
 }
 
 /// A text as an SQL literal, its quotes doubled.
@@ -197,7 +243,7 @@ fn text(value: String) -> String {
 /// A byte string as the call of `decode` on its hexadecimal, which does not
 /// depend on how the database reads backslashes in a literal.
 fn bytes(value: BitArray) -> String {
-  "decode('" <> string.lowercase(bit_array.base16_encode(value)) <> "', 'hex')"
+  "decode('" <> wire_recording.hex(value) <> "', 'hex')"
 }
 
 /// A `real` column's value as a literal of its own type: the float is the
@@ -219,20 +265,5 @@ fn file_failed(path: String) -> fn(simplifile.FileError) -> FixtureError {
 }
 
 fn database_failed(error: pog.QueryError) -> FixtureError {
-  DatabaseFailed(reason: describe_query_error(error))
-}
-
-/// A sentence that says what the database answered.
-fn describe_query_error(error: pog.QueryError) -> String {
-  case error {
-    pog.ConstraintViolated(message:, constraint:, ..) ->
-      message <> " (" <> constraint <> ")"
-    pog.PostgresqlError(name:, message:, ..) -> name <> ": " <> message
-    pog.UnexpectedArgumentCount(..)
-    | pog.UnexpectedArgumentType(..)
-    | pog.UnexpectedResultType(..) ->
-      "the statement and what it was given do not match"
-    pog.QueryTimeout -> "the database did not answer in time"
-    pog.ConnectionUnavailable -> "the database could not be reached"
-  }
+  DatabaseFailed(reason: worker.describe_query_error(error))
 }
