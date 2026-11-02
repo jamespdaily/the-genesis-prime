@@ -43,6 +43,7 @@ import genesis_prime/message/player_path.{PlayerPath}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
+import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
@@ -569,12 +570,12 @@ fn minimal_player() -> UnitCreatePlayer {
     stats: [],
     server_time_estimate_start: 0,
     movement_commands: [
-      UnitPositionCommand(
+      start_movement.Position(UnitPositionCommand(
         x: 0x45879585,
         y: 0xC487D70A,
         z: 0xC570E87B,
         blends: 0,
-      ),
+      )),
     ],
     properties: [],
     item_visuals: [],

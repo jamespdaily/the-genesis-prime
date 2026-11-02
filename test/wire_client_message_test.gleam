@@ -304,6 +304,11 @@ pub fn the_login_session_holds_the_platform_logins_clear_requests_up_to_key_data
   Nil
 }
 
+/// The messages that came inside the client's wrapper 0x0244.
+fn wrapped_only(messages: List(Received)) -> List(Received) {
+  list.filter(messages, fn(message) { message.carried == Wrapped })
+}
+
 fn as_pairs(
   messages: List(Received),
 ) -> List(#(Int, client_message.ClientMessage)) {
@@ -312,8 +317,10 @@ fn as_pairs(
 
 pub fn the_auth_connection_holds_the_login_request_in_its_wrapper_test() -> Nil {
   use <- owned_test.run(30_000)
-  let assert #([login], []) = frames_of(auth_connection.rule_name)
-    as "the auth connection holds one message and none without a decoder"
+  let assert #(messages, []) = frames_of(auth_connection.rule_name)
+    as "the auth connection holds no message without a decoder"
+  let assert [login] = wrapped_only(messages)
+    as "and one message in the client's wrapper; the pings the client sends on its idle connections are the network layer's, bare"
   assert login.carried == Wrapped
     as "the message is the login request, in 0x0244"
   let assert client_message.LoginRequest(message: request) = login.message
@@ -365,8 +372,8 @@ pub fn the_clients_pings_count_up_and_start_again_at_20_test() -> Nil {
 
 /// The body of the login request in the committed session.
 fn recorded_login_request_body() -> BitArray {
-  let assert #([login], _) = frames_of(auth_connection.rule_name)
-    as "the committed session's auth connection holds one message"
+  let assert [login] = wrapped_only(frames_of(auth_connection.rule_name).0)
+    as "the committed session's auth connection holds one message in the client's wrapper"
   login.body
 }
 

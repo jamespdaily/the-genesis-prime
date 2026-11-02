@@ -44,11 +44,15 @@ import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
 }
 import genesis_prime/message/enter_world
+import genesis_prime/message/float32
+import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
+import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
@@ -562,5 +566,199 @@ pub fn a_rename_with_a_name_failing_rule_0_is_0x014b_15_and_an_unmarked_characte
     as "lua.CharacterSelection.OnCharacterRenameResult: 13; the character is not marked, so the client would not offer a rename"
   assert names_of(pool) == ["Zed"] as "nothing changes"
   game_client.close(game:)
+  login_support.stop(started)
+}
+
+// ---- the player moves and the place is kept ----
+
+/// Sends 0x0637 holding a position and a rotation, as the client's movement
+/// update does (opcode.0x637).
+fn send_move(
+  game game: game_client.Game,
+  position position: #(Float, Float, Float),
+  rotation rotation: #(Float, Float, Float),
+) -> Nil {
+  let body =
+    game_client.moves_body(client_clock: 0x1234, commands: [
+      game_client.position_command(x: position.0, y: position.1, z: position.2),
+      game_client.rotation_command(
+        yaw: rotation.0,
+        pitch: rotation.1,
+        roll: rotation.2,
+      ),
+    ])
+  game_client.send_world(game:, message_id: 0x0637, body:)
+}
+
+pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_next_login_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let character =
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let game = in_select(started:, port:, account:)
+  send_play(game:, character_id: character)
+  let first = game_client.read(game:, count: 7)
+  assert game_client.unit_create_player_in(frames: first).movement_commands
+    == [
+      start_movement.Position(UnitPositionCommand(
+        x: float32.to_bits(1.5),
+        y: float32.to_bits(2.5),
+        z: float32.to_bits(3.5),
+        blends: 0,
+      )),
+      start_movement.Rotation(MovementRotation(
+        yaw: 0,
+        pitch: 0,
+        roll: 0,
+        blends: 0,
+      )),
+    ]
+    as "a character never saved starts where the test inserted it, facing 0, 0, 0"
+  send_move(game:, position: #(100.5, -20.25, 300.125), rotation: #(
+    1.5,
+    -0.25,
+    0.5,
+  ))
+  game_client.close(game:)
+  login_support.await_no_game_connection(started)
+  assert character_support.place_row(pool:, character_id: character)
+    == character_support.PlaceRow(
+      world_id: 1387,
+      world_zone_id: 1100,
+      position: #(100.5, -20.25, 300.125),
+      rotation: #(1.5, -0.25, 0.5),
+      session_epoch: 1,
+      save_sequence: 1,
+    )
+    as "the drop saved the place the client last sent, at the epoch its login raised and as its first save"
+  let game = in_select(started:, port:, account:)
+  send_play(game:, character_id: character)
+  let second = game_client.read(game:, count: 7)
+  let assert [Frame(body: world, ..), ..] = second
+  let assert Ok(entered) = enter_world.decode(world)
+  assert entered.position_x == float32.to_bits(100.5)
+    && entered.position_y == float32.to_bits(-20.25)
+    && entered.position_z == float32.to_bits(300.125)
+    as "0xAD loads the world where the player left"
+  assert game_client.unit_create_player_in(frames: second).movement_commands
+    == [
+      start_movement.Position(UnitPositionCommand(
+        x: float32.to_bits(100.5),
+        y: float32.to_bits(-20.25),
+        z: float32.to_bits(300.125),
+        blends: 0,
+      )),
+      start_movement.Rotation(MovementRotation(
+        yaw: float32.to_bits(1.5),
+        pitch: float32.to_bits(-0.25),
+        roll: float32.to_bits(0.5),
+        blends: 0,
+      )),
+    ]
+    as "0x262 places the player there at once, facing the way it faced"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
+pub fn a_stop_with_a_player_in_the_world_saves_the_place_it_last_stood_at_before_the_tree_ends_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let character =
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let game = in_select(started:, port:, account:)
+  send_play(game:, character_id: character)
+  let _burst = game_client.read(game:, count: 7)
+  send_move(game:, position: #(100.5, -20.25, 300.125), rotation: #(
+    1.5,
+    -0.25,
+    0.5,
+  ))
+  game_client.send_ping(game:, number: 1)
+  assert game_client.read_pong(game:) == 1
+    as "the connection answers after it took the move, which came first on its one socket"
+  login_support.stop(started)
+  let assert [notice] = game_client.read(game:, count: 1)
+  assert disconnect_notice.decode(notice.body)
+    == Ok(DisconnectNotice(reason: LostUserServer))
+    as "0x1400168a0: 8 is the server's own end, which the player in the world is told once its place is saved"
+  let assert Ok(after) =
+    pog.start(
+      pog.Config(
+        ..started.settings.pool,
+        pool_name: process.new_name("after_the_stop"),
+      ),
+    )
+    as "a pool of its own reads the database the stopped tree had"
+  process.unlink(after.pid)
+  assert character_support.place_row(pool: after.data, character_id: character)
+    == character_support.PlaceRow(
+      world_id: 1387,
+      world_zone_id: 1100,
+      position: #(100.5, -20.25, 300.125),
+      rotation: #(1.5, -0.25, 0.5),
+      session_epoch: 1,
+      save_sequence: 1,
+    )
+    as "the stop saved the place the client last sent, as the login's first save, before the tree ended"
+  process.kill(after.pid)
+  game_client.close(game:)
+}
+
+pub fn a_connection_that_crashes_saves_nothing_is_not_restarted_and_the_place_saved_before_stands_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let character =
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let game = in_select(started:, port:, account:)
+  send_play(game:, character_id: character)
+  let _burst = game_client.read(game:, count: 7)
+  send_move(game:, position: #(100.5, -20.25, 300.125), rotation: #(
+    1.5,
+    -0.25,
+    0.5,
+  ))
+  // A read of the connection's state after the move, so the move is taken
+  // before the connection is killed: the ping's answer comes after it.
+  game_client.send_ping(game:, number: 1)
+  assert game_client.read_pong(game:) == 1
+  let assert [connection] =
+    ask_support.connections_of(started.settings.game.listener)
+    as "the game listener holds the one connection"
+  process.kill(connection)
+  login_support.await_no_game_connection(started)
+  assert game_client.closed(game:) as "the client's socket is closed with it"
+  assert character_support.place_row(pool:, character_id: character)
+    == character_support.PlaceRow(
+      world_id: 1387,
+      world_zone_id: 1100,
+      position: #(1.5, 2.5, 3.5),
+      rotation: #(0.0, 0.0, 0.0),
+      session_epoch: 1,
+      save_sequence: 0,
+    )
+    as "a crash runs no save: the row holds the place it had, and no save was made at this login's epoch (the 60 s save would have been the last)"
+  assert ask_support.connections_of(started.settings.game.listener) == []
+    as "Ranch starts connections as temporary children, so nothing restarts it"
   login_support.stop(started)
 }

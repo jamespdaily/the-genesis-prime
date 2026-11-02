@@ -63,7 +63,7 @@ fn insert_rows(pool: pog.Connection) -> Nil {
   )
   run(
     pool,
-    "insert into character (character_id, account_id, session_epoch, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z, look_labels, look_values, bones, needs_rename) overriding system value values (1, 1, 3, 'Tess Renamed', 1, 1, 1, 167, 3, 0, 426, 648, 4110.7099609375, -658.6248779296875, -5145.47998046875, '{}', '{}', '{}', false)",
+    "insert into character (character_id, account_id, session_epoch, save_sequence, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x, position_y, position_z, rotation_yaw, rotation_pitch, rotation_roll, look_labels, look_values, bones, needs_rename) overriding system value values (1, 1, 3, 4, 'Tess Renamed', 1, 1, 1, 167, 3, 0, 426, 648, 4110.7099609375, -658.6248779296875, -5145.47998046875, 1.5, -0.25, 0.5, '{}', '{}', '{}', false)",
   )
   run(
     pool,
@@ -86,7 +86,7 @@ fn rows(pool: pog.Connection) -> List(String) {
   let characters =
     query_texts(
       pool,
-      "select concat_ws('|', character_id, account_id, session_epoch, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x::text, position_y::text, position_z::text, look_labels::text, look_values::text, bones::text, needs_rename::text) from character order by character_id",
+      "select concat_ws('|', character_id, account_id, session_epoch, save_sequence, name, gender, race_id, class_id, faction_id, level, path, world_id, world_zone_id, position_x::text, position_y::text, position_z::text, rotation_yaw::text, rotation_pitch::text, rotation_roll::text, look_labels::text, look_values::text, bones::text, needs_rename::text) from character order by character_id",
     )
   list.append(accounts, characters)
 }
@@ -118,11 +118,11 @@ pub fn the_rows_of_the_named_accounts_written_and_applied_to_a_new_database_are_
     == [
       "1|genesis|00005c27ff|0a0d5c|01234567-89ab-cdef-0123-456789abcdef",
       "4|o'brien|01|02|fedcba98-7654-3210-fedc-ba9876543210",
-      "1|1|3|Tess Renamed|1|1|1|167|3|0|426|648|4110.71|-658.6249|-5145.48|{}|{}|{}|false",
-      "2|1|0|Nova Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|{2,4,7}|{1,2,10}|{0,1065353216}|true",
-      "6|4|0|O'Neil Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|{2,4,7}|{1,2,10}|{0,1065353216}|true",
+      "1|1|3|4|Tess Renamed|1|1|1|167|3|0|426|648|4110.71|-658.6249|-5145.48|1.5|-0.25|0.5|{}|{}|{}|false",
+      "2|1|0|0|Nova Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|0|0|0|{2,4,7}|{1,2,10}|{0,1065353216}|true",
+      "6|4|0|0|O'Neil Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|0|0|0|{2,4,7}|{1,2,10}|{0,1065353216}|true",
     ]
-    as "every account and character with its id, its bytes, its look and its rename mark, as inserted"
+    as "every account and character with its id, its bytes, the numbers that fence a save, the way it faces, its look and its rename mark, as inserted"
   assert rows(source) == rows(target)
     as "and the same as the database the fixture was written from"
 }
@@ -144,8 +144,8 @@ pub fn the_fixture_holds_only_the_named_accounts_and_their_characters_test() -> 
   assert rows(target)
     == [
       "1|genesis|00005c27ff|0a0d5c|01234567-89ab-cdef-0123-456789abcdef",
-      "1|1|3|Tess Renamed|1|1|1|167|3|0|426|648|4110.71|-658.6249|-5145.48|{}|{}|{}|false",
-      "2|1|0|Nova Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|{2,4,7}|{1,2,10}|{0,1065353216}|true",
+      "1|1|3|4|Tess Renamed|1|1|1|167|3|0|426|648|4110.71|-658.6249|-5145.48|1.5|-0.25|0.5|{}|{}|{}|false",
+      "2|1|0|0|Nova Entry|0|1|1|167|1|0|3460|6009|29.1286|-853.8716|-560.188|0|0|0|{2,4,7}|{1,2,10}|{0,1065353216}|true",
     ]
     as "the named account and both its characters, and no other"
 }
@@ -291,7 +291,7 @@ pub fn the_sequences_of_other_accounts_rows_still_count_after_the_fixture_test()
   assert rows(target)
     == [
       "1|genesis|01|02|01234567-89ab-cdef-0123-456789abcdef",
-      "1|1|0|Mine|0|1|1|167|1|0|0|0|0|0|0|{}|{}|{}|false",
+      "1|1|0|0|Mine|0|1|1|167|1|0|0|0|0|0|0|0|0|0|{}|{}|{}|false",
     ]
     as "only the named account's rows"
   assert next_character_id(target) == "3"

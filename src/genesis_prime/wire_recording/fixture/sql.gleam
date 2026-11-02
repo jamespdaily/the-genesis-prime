@@ -161,6 +161,7 @@ pub type CharactersOfAccountsNamedRow {
     character_id: Int,
     account_id: Int,
     session_epoch: Int,
+    save_sequence: Int,
     name: String,
     gender: Int,
     race_id: Int,
@@ -173,6 +174,9 @@ pub type CharactersOfAccountsNamedRow {
     position_x: Float,
     position_y: Float,
     position_z: Float,
+    rotation_yaw: Float,
+    rotation_pitch: Float,
+    rotation_roll: Float,
     look_labels: List(Int),
     look_values: List(Int),
     bones: List(Int),
@@ -183,8 +187,9 @@ pub type CharactersOfAccountsNamedRow {
 /// The characters of the accounts with these login names, in the order of their
 /// ids, with every column the fixture of a recorded session keeps
 /// (genesis_prime/wire_recording/fixture): the id, the account it belongs to, the
-/// session epoch that fences a stale save, what the character list shows, where
-/// it stands, its look and bones and its rename mark. `created_at` is left out:
+/// session epoch that fences a stale save and the number of the last save of that
+/// login, what the character list shows, where it stands and which way it faces,
+/// its look and bones and its rename mark. `created_at` is left out:
 /// it is the time a row was made, which no flow reads.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
@@ -198,26 +203,31 @@ pub fn characters_of_accounts_named(
     use character_id <- decode.field(0, decode.int)
     use account_id <- decode.field(1, decode.int)
     use session_epoch <- decode.field(2, decode.int)
-    use name <- decode.field(3, decode.string)
-    use gender <- decode.field(4, decode.int)
-    use race_id <- decode.field(5, decode.int)
-    use class_id <- decode.field(6, decode.int)
-    use faction_id <- decode.field(7, decode.int)
-    use level <- decode.field(8, decode.int)
-    use path <- decode.field(9, decode.int)
-    use world_id <- decode.field(10, decode.int)
-    use world_zone_id <- decode.field(11, decode.int)
-    use position_x <- decode.field(12, decode.float)
-    use position_y <- decode.field(13, decode.float)
-    use position_z <- decode.field(14, decode.float)
-    use look_labels <- decode.field(15, decode.list(decode.int))
-    use look_values <- decode.field(16, decode.list(decode.int))
-    use bones <- decode.field(17, decode.list(decode.int))
-    use needs_rename <- decode.field(18, decode.bool)
+    use save_sequence <- decode.field(3, decode.int)
+    use name <- decode.field(4, decode.string)
+    use gender <- decode.field(5, decode.int)
+    use race_id <- decode.field(6, decode.int)
+    use class_id <- decode.field(7, decode.int)
+    use faction_id <- decode.field(8, decode.int)
+    use level <- decode.field(9, decode.int)
+    use path <- decode.field(10, decode.int)
+    use world_id <- decode.field(11, decode.int)
+    use world_zone_id <- decode.field(12, decode.int)
+    use position_x <- decode.field(13, decode.float)
+    use position_y <- decode.field(14, decode.float)
+    use position_z <- decode.field(15, decode.float)
+    use rotation_yaw <- decode.field(16, decode.float)
+    use rotation_pitch <- decode.field(17, decode.float)
+    use rotation_roll <- decode.field(18, decode.float)
+    use look_labels <- decode.field(19, decode.list(decode.int))
+    use look_values <- decode.field(20, decode.list(decode.int))
+    use bones <- decode.field(21, decode.list(decode.int))
+    use needs_rename <- decode.field(22, decode.bool)
     decode.success(CharactersOfAccountsNamedRow(
       character_id:,
       account_id:,
       session_epoch:,
+      save_sequence:,
       name:,
       gender:,
       race_id:,
@@ -230,6 +240,9 @@ pub fn characters_of_accounts_named(
       position_x:,
       position_y:,
       position_z:,
+      rotation_yaw:,
+      rotation_pitch:,
+      rotation_roll:,
       look_labels:,
       look_values:,
       bones:,
@@ -240,13 +253,15 @@ pub fn characters_of_accounts_named(
   "-- The characters of the accounts with these login names, in the order of their
 -- ids, with every column the fixture of a recorded session keeps
 -- (genesis_prime/wire_recording/fixture): the id, the account it belongs to, the
--- session epoch that fences a stale save, what the character list shows, where
--- it stands, its look and bones and its rename mark. `created_at` is left out:
+-- session epoch that fences a stale save and the number of the last save of that
+-- login, what the character list shows, where it stands and which way it faces,
+-- its look and bones and its rename mark. `created_at` is left out:
 -- it is the time a row was made, which no flow reads.
 select
   character_id,
   account_id,
   session_epoch,
+  save_sequence,
   name,
   gender::int as gender,
   race_id::int as race_id,
@@ -259,6 +274,9 @@ select
   position_x,
   position_y,
   position_z,
+  rotation_yaw,
+  rotation_pitch,
+  rotation_roll,
   look_labels,
   look_values,
   bones,

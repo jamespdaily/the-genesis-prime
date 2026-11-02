@@ -113,6 +113,7 @@ pub fn a_place_in_world_0_cannot_be_made_test() -> Nil {
       x: 1.0,
       y: 2.0,
       z: 3.0,
+      facing: start_place.unturned,
     )
     == Error(Nil)
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so no place is in it"
@@ -123,6 +124,7 @@ pub fn a_place_in_world_0_cannot_be_made_test() -> Nil {
       x: 1.0,
       y: 2.0,
       z: 3.0,
+      facing: start_place.unturned,
     )
     as "a place in a world is made"
   assert #(
@@ -341,4 +343,46 @@ pub fn every_level_50_row_of_the_clients_table_costs_account_currency_so_a_creat
         <> " is one"
       }
   })
+}
+
+pub fn a_position_is_bounded_to_the_box_the_client_bounds_a_unit_to_and_nothing_else_changes_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let place =
+    place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: 40_000.0,
+      y: -3000.0,
+      z: -1.0e9,
+    )
+  let bounded = start_place.within_the_worlds_box(place)
+  assert #(
+      start_place.x(bounded),
+      start_place.y(bounded),
+      start_place.z(bounded),
+    )
+    == #(32_768.0, -2048.0, -32_768.0)
+    as "0x1405b5070: x and z are bounded to -32768 and 32768, y to -2048 and 2048"
+  assert start_place.within_the_worlds_box(place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: -32_768.0,
+      y: 2048.0,
+      z: 32_768.0,
+    ))
+    == place_support.at(
+      world_id: 3460,
+      world_zone_id: 6009,
+      x: -32_768.0,
+      y: 2048.0,
+      z: 32_768.0,
+    )
+    as "0x1405b5070: a position on the box's edge is inside it"
+  assert #(
+      start_place.world_id(bounded),
+      start_place.world_zone_id(bounded),
+      start_place.facing(bounded),
+    )
+    == #(3460, 6009, start_place.unturned)
+    as "only the position is bounded"
 }

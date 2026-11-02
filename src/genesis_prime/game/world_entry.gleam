@@ -18,7 +18,11 @@
 ////   and 0x6BC's case 0x1403ecc9b, which does nothing until 0x19B has set the
 ////   player). 0xF1 sets the flag loading's last stage waits on (0x1403b67e0).
 //// - **0xAD** carries the saved world and position, and 0.0 in its last two
-////   floats, which neither entry path reads (opcode.0xad.last_floats).
+////   floats, which neither entry path reads (opcode.0xad.last_floats). The
+////   position, here and in 0x262, is bounded to the box the client bounds a
+////   unit's position to (`start_place.within_the_worlds_box`), because the
+////   client's world load keeps 0xAD's as sent (opcode.0xad.position); the
+////   place the character is saved at is not bounded.
 //// - **0x6BC** carries the character's stored path, experience 0 on each of the
 ////   four paths (path level 1), only the character's own path unlocked and
 ////   -1.0 days since the last path change, which leaves no change cooldown
@@ -44,6 +48,7 @@
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/appearance
+import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
@@ -56,7 +61,8 @@ import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/step.{type ConnectionId}
 import genesis_prime/store.{
-  type AccountId, type Character, type CharacterId, CharacterId,
+  type AccountId, type Character, type CharacterId, type SessionEpoch,
+  CharacterId,
 }
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
@@ -84,8 +90,14 @@ pub type Effect {
 pub opaque type State {
   /// The store is asked for the character.
   Loading(character_id: CharacterId)
-  /// The map is asked to take the character at its saved place.
-  Joining(character: Character, place: Place, map: MapId)
+  /// The map is asked to take the character at its saved place, which this
+  /// login holds as the epoch `session_epoch`.
+  Joining(
+    character: Character,
+    place: Place,
+    session_epoch: SessionEpoch,
+    map: MapId,
+  )
 }
 
 /// What the store's read of the character leads to.
@@ -97,9 +109,16 @@ pub type Loaded {
 }
 
 /// A player in the world: its character, its map, the run of the map that took
-/// it, which the rule watches as `Map(map, incarnation)`, and its unit id.
+/// it, which the rule watches as `Map(map, incarnation)`, its unit id and where
+/// it stands (genesis_prime/game/movement), which the rule keeps up to date.
 pub type Entered {
-  Entered(character_id: CharacterId, map: MapId, incarnation: Int, unit_id: Int)
+  Entered(
+    character_id: CharacterId,
+    map: MapId,
+    incarnation: Int,
+    unit_id: Int,
+    movement: movement.State,
+  )
 }
 
 /// The process whose answer world entry waits for, for the log line of an ask
@@ -167,7 +186,7 @@ pub fn loaded(
               <> int.to_string(character_id)
               <> ", which the account does not have",
           )
-        store.CharacterLoaded(character:) ->
+        store.CharacterLoaded(character:, session_epoch:) ->
           case character.place {
             None ->
               Refused(
@@ -182,9 +201,12 @@ pub fn loaded(
                   world_id: start_place.world_id(place),
                   instance: open_world_instance,
                 )
-              Join(state: Joining(character:, place:, map:), effects: [
-                AskMap(map:, message: map.Join(connection:, character_id:)),
-              ])
+              Join(
+                state: Joining(character:, place:, session_epoch:, map:),
+                effects: [
+                  AskMap(map:, message: map.Join(connection:, character_id:)),
+                ],
+              )
             }
           }
       })
@@ -203,8 +225,9 @@ pub fn joined(
   tables tables: table_store.Tables,
 ) -> Result(#(Entered, List(Effect)), Nil) {
   case state {
-    Joining(character:, place:, map:) -> {
+    Joining(character:, place:, session_epoch:, map:) -> {
       let map.Joined(unit_id:, incarnation:) = answer
+      let sent = start_place.within_the_worlds_box(place)
       Ok(
         #(
           Entered(
@@ -212,10 +235,17 @@ pub fn joined(
             map:,
             incarnation:,
             unit_id:,
+            movement: movement.entered(place:, session_epoch:),
           ),
           [
-            enter_world(place:),
-            player_created(character:, place:, unit_id:, realm_id:, tables:),
+            enter_world(place: sent),
+            player_created(
+              character:,
+              place: sent,
+              unit_id:,
+              realm_id:,
+              tables:,
+            ),
             unit_is_player(unit_id:),
             player_path(character:),
             control_granted(unit_id:),

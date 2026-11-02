@@ -8,6 +8,7 @@ import genesis_prime/table/id.{
   type CharacterCustomizationLabelId, type ClassId, type RaceId,
   CharacterCustomizationLabelId,
 }
+import gleam/bool
 import gleam/list
 import gleam/option.{type Option}
 
@@ -35,6 +36,29 @@ pub type Account {
 /// A character, keyed by the character table's id.
 pub type CharacterId {
   CharacterId(Int)
+}
+
+/// How many logins have taken a character: the character's `session_epoch`.
+/// Each login that loads the character raises it by one and is told the new
+/// value, and a save names the value its login was told, so a save made by an
+/// older login finds the epoch moved on and changes nothing. A login's epoch is
+/// 1 or more, and only `session_epoch` makes one, so no character id or count
+/// passes as an epoch.
+pub opaque type SessionEpoch {
+  SessionEpoch(Int)
+}
+
+/// The epoch with this number, `Error(Nil)` for a number below 1, which no
+/// login is told.
+pub fn session_epoch(number number: Int) -> Result(SessionEpoch, Nil) {
+  use <- bool.guard(when: number < 1, return: Error(Nil))
+  Ok(SessionEpoch(number))
+}
+
+/// The epoch's number, as the database holds it.
+pub fn session_epoch_number(epoch epoch: SessionEpoch) -> Int {
+  let SessionEpoch(number) = epoch
+  number
 }
 
 /// One label of a character's look with the value it was given: the client's
@@ -115,19 +139,39 @@ pub type NewCharacter {
 }
 
 /// What a rule asks the store, grouped by who asks: the STS login's request,
-/// character select's and world entry's, so a rule names only the groups it
-/// does not ask as a mismatch.
+/// character select's, world entry's and the player's movement's, so a rule
+/// names only the groups it does not ask as a mismatch.
 pub type Request {
   Login(request: LoginRequest)
   Select(request: SelectRequest)
   World(request: WorldRequest)
+  Move(request: MoveRequest)
 }
 
 /// What world entry asks the store.
 pub type WorldRequest {
-  /// The account's character with this id, with its saved place. The
-  /// account's id is in the read, so no other account's character is read.
+  /// The account's character with this id, with its saved place, taken by this
+  /// login: the character's `session_epoch` is raised by one in the same
+  /// statement and returned. The account's id is in the statement, so no other
+  /// account's character is taken.
   LoadCharacter(account_id: AccountId, character_id: CharacterId)
+}
+
+/// What the player's movement asks the store.
+pub type MoveRequest {
+  /// Saves where the character stands, only while its `session_epoch` is still
+  /// `session_epoch`, the one the login that saves was told when it loaded the
+  /// character, and only when `save_sequence` is above the last one stored for
+  /// that login. A login numbers its saves from 1, in the order it asks them,
+  /// so a save that reaches the database after a newer one of its own changes
+  /// nothing. The account's id is in the statement, as for a load.
+  SavePlace(
+    account_id: AccountId,
+    character_id: CharacterId,
+    session_epoch: SessionEpoch,
+    save_sequence: Int,
+    place: Place,
+  )
 }
 
 /// What the STS login asks the store.
@@ -167,7 +211,9 @@ pub type SelectRequest {
 pub type Answer {
   /// The database could not be reached, or a read waited longer than its
   /// query's timeout for a connection (pog's query timeout bounds that wait,
-  /// not the query's run). A read changed nothing, so asking again is safe. A
+  /// not the query's run). A list changed nothing, and a load raised the
+  /// epoch at most once more than the asker learned, so asking again is safe;
+  /// a save that did not run leaves the place saved before it. A
   /// create's statements run on the one connection its transaction holds and
   /// have no query timeout: the asker's deadline bounds them. A create ran in
   /// one transaction, which committed or did not, and the account's list on its
@@ -176,14 +222,31 @@ pub type Answer {
   ForLogin(answer: FindAccountAnswer)
   ForSelect(answer: SelectAnswer)
   ForWorld(answer: WorldAnswer)
+  ForMove(answer: MoveAnswer)
 }
 
 /// What the store answers world entry.
 pub type WorldAnswer {
-  /// The account's character.
-  CharacterLoaded(character: Character)
+  /// The account's character, taken by this login, whose `session_epoch` is
+  /// `session_epoch` after the raise. Asking again takes the character again
+  /// and raises it again.
+  CharacterLoaded(character: Character, session_epoch: SessionEpoch)
   /// The account has no character with the id.
   NotTheAccounts
+}
+
+/// What the store answers the player's movement.
+pub type MoveAnswer {
+  /// The place was saved: the character's `session_epoch` was the save's.
+  PlaceSaved
+  /// Nothing was saved, for one of three causes the statement cannot tell
+  /// apart: a later login raised the character's `session_epoch` past the
+  /// save's, a newer save of the same login was stored first, or the account
+  /// has no such character.
+  NothingSaved
+  /// The database refused the place for a check constraint it holds, which no
+  /// place the rule keeps breaks: a bug of the server's, so nothing was saved.
+  PlaceRefused
 }
 
 /// What the store answers character select, one variant for each of its

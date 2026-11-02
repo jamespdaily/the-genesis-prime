@@ -27,16 +27,18 @@ import asking_rule
 import character_support
 import database_support
 import genesis_prime/add_character/sql as add_character_sql
+import genesis_prime/game/start_place.{Facing}
 import genesis_prime/login/guid
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
   type AccountId, Account, AccountFound, AccountId, Character, CharacterCreated,
   CharacterDeleted, CharacterId, CharacterLoaded, CharacterRenamed,
   CreateCharacter, Created, DeleteCharacter, Deleted, FindAccount, ForLogin,
-  ForSelect, ForWorld, ListCharacters, Listed, LoadCharacter, Login, LookEntry,
-  NameStands, NameTaken, NeedsRename, NewCharacter, NewNameTaken, NoFreeSlot,
-  NoSuchAccount, NoSuchCharacter, NotRenamable, NotTheAccounts, RenameCharacter,
-  Renamed, Select, Unavailable, World,
+  ForMove, ForSelect, ForWorld, ListCharacters, Listed, LoadCharacter, Login,
+  LookEntry, Move, NameStands, NameTaken, NeedsRename, NewCharacter,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
+  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, RenameCharacter,
+  Renamed, SavePlace, Select, Unavailable, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -813,8 +815,8 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
     == ForSelect(Listed([character]))
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
-    == ForWorld(CharacterLoaded(character))
-    as "the load reads the same row the same way"
+    == ForWorld(CharacterLoaded(character, character_support.epoch(1)))
+    as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   stop(store)
 }
 
@@ -878,8 +880,8 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
       path: 2,
     )
   assert ask(store, World(LoadCharacter(account, CharacterId(mine))))
-    == ForWorld(
-      CharacterLoaded(Character(
+    == ForWorld(CharacterLoaded(
+      Character(
         character_id: CharacterId(mine),
         name: "Zed",
         gender: 1,
@@ -898,9 +900,10 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
         look: [],
         bones: [],
         naming: NameStands,
-      )),
-    )
-    as "the row as character_support inserted it: the saved world, zone and position come with it"
+      ),
+      character_support.epoch(1),
+    ))
+    as "the row as character_support inserted it: the saved world, zone and position come with it, and the epoch the load raised from 0 to 1"
   assert ask(store, World(LoadCharacter(account, CharacterId(theirs))))
     == ForWorld(NotTheAccounts)
     as "a modified client could name any id: the read is scoped by the account's id (genesis_prime/store)"
@@ -1053,6 +1056,374 @@ pub fn the_table_refuses_a_look_whose_labels_and_values_differ_in_number_and_a_t
     )
     == Ok(Nil)
     as "27 pairs and 48 bones are the most a request carries"
+  stop(store)
+}
+
+// ---- the epoch and the save of the player's place ----
+
+/// The epoch a character's load answers with, for a character that exists.
+fn epoch_of_load(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+) -> Int {
+  let assert ForWorld(CharacterLoaded(session_epoch:, ..)) =
+    ask(store, World(LoadCharacter(account, CharacterId(character_id))))
+    as "the account has the character"
+  store.session_epoch_number(session_epoch)
+}
+
+/// Saves the place under the epoch and sequence of a login.
+fn save(
+  store store: Store,
+  account account: AccountId,
+  character_id character_id: Int,
+  epoch epoch: Int,
+  sequence sequence: Int,
+  place place: start_place.Place,
+) -> store.Answer {
+  ask(
+    store,
+    Move(SavePlace(
+      account_id: account,
+      character_id: CharacterId(character_id),
+      session_epoch: character_support.epoch(epoch),
+      save_sequence: sequence,
+      place:,
+    )),
+  )
+}
+
+/// A place in World 3460, zone 6009, at x, y, z (each exactly a 32-bit float)
+/// facing yaw, pitch, roll.
+fn place_facing(
+  x x: Float,
+  y y: Float,
+  z z: Float,
+  yaw yaw: Float,
+  pitch pitch: Float,
+  roll roll: Float,
+) -> start_place.Place {
+  start_place.turned(
+    place_support.at(world_id: 3460, world_zone_id: 6009, x:, y:, z:),
+    Facing(yaw:, pitch:, roll:),
+  )
+}
+
+/// An account with one character that the account's first login holds, and
+/// the character's id.
+fn one_character(store store: Store) -> #(AccountId, Int) {
+  let account = insert_account(store, "login-1")
+  let id =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Zed",
+      class_id: 4,
+      path: 2,
+    )
+  #(account, id)
+}
+
+pub fn a_session_epoch_is_1_or_more_and_only_that_makes_one_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert store.session_epoch(0) == Error(Nil)
+    as "no login is told 0: a load raises the epoch by one from 0 at least"
+  assert store.session_epoch(-4) == Error(Nil)
+  let assert Ok(epoch) = store.session_epoch(7)
+  assert store.session_epoch_number(epoch) == 7
+}
+
+pub fn each_load_raises_the_epoch_by_one_and_starts_the_saves_of_its_login_again_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  assert epoch_of_load(store:, account:, character_id: id) == 1
+    as "a character that was never loaded is at 0, and the first login raises it to 1"
+  let here =
+    place_facing(x: 1.5, y: 2.5, z: 3.5, yaw: 0.5, pitch: 0.0, roll: 0.0)
+  assert save(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 4,
+      place: here,
+    )
+    == ForMove(PlaceSaved)
+  assert character_support.place_row(pool: store.pool, character_id: id).save_sequence
+    == 4
+  assert epoch_of_load(store:, account:, character_id: id) == 2
+    as "the next login raises it again"
+  let row = character_support.place_row(pool: store.pool, character_id: id)
+  assert row.session_epoch == 2 && row.save_sequence == 0
+    as "and its saves are numbered from 1 again, whatever the last login reached"
+  assert epoch_of_load(store:, account:, character_id: id) == 3
+  stop(store)
+}
+
+pub fn a_save_stores_the_place_and_the_facing_and_the_next_load_reads_them_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _epoch = epoch_of_load(store:, account:, character_id: id)
+  let here =
+    place_facing(
+      x: 4110.7099609375,
+      y: -658.6248779296875,
+      z: -5145.47998046875,
+      yaw: 1.5,
+      pitch: -0.25,
+      roll: 0.5,
+    )
+  assert save(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: here,
+    )
+    == ForMove(PlaceSaved)
+    as "the epoch is the login's and the sequence is its first"
+  assert character_support.place_row(pool: store.pool, character_id: id)
+    == character_support.PlaceRow(
+      world_id: 3460,
+      world_zone_id: 6009,
+      position: #(4110.7099609375, -658.6248779296875, -5145.47998046875),
+      rotation: #(1.5, -0.25, 0.5),
+      session_epoch: 1,
+      save_sequence: 1,
+    )
+    as "the world, zone, position and facing of the save, in the row, and the login's numbers"
+  let assert ForWorld(CharacterLoaded(character:, ..)) =
+    ask(store, World(LoadCharacter(account, CharacterId(id))))
+  assert character.place == Some(here)
+    as "the next login finds the character where the last one left it, facing the way it faced"
+  stop(store)
+}
+
+pub fn a_save_naming_an_older_epoch_changes_nothing_and_the_newer_logins_saves_do_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let first =
+    place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let second =
+    place_facing(x: 11.0, y: 21.0, z: 31.0, yaw: 1.0, pitch: 0.0, roll: 0.0)
+  let _first_login = epoch_of_load(store:, account:, character_id: id)
+  let _second_login = epoch_of_load(store:, account:, character_id: id)
+  assert save(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: first,
+    )
+    == ForMove(NothingSaved)
+    as "the first login's epoch is 1 and the character is at 2: a save of an older login changes nothing (opcode.0x36a reason 19: the older connection was taken over)"
+  assert character_support.place_row(pool: store.pool, character_id: id).position
+    == #(1.5, 2.5, 3.5)
+    as "the row still holds the place it was made at"
+  assert save(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 2,
+      sequence: 1,
+      place: second,
+    )
+    == ForMove(PlaceSaved)
+    as "the newer login's save is written"
+  assert character_support.place_row(pool: store.pool, character_id: id).position
+    == #(11.0, 21.0, 31.0)
+  stop(store)
+}
+
+pub fn a_save_that_reaches_the_database_after_a_newer_one_of_its_login_changes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let older =
+    place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  let newer =
+    place_facing(x: 11.0, y: 21.0, z: 31.0, yaw: 1.0, pitch: 0.0, roll: 0.0)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  assert save(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 2,
+      place: newer,
+    )
+    == ForMove(PlaceSaved)
+  assert save(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: older,
+    )
+    == ForMove(NothingSaved)
+    as "a save cut short by a stop can still commit after the next one: the sequence it was asked under is older, so it changes nothing"
+  assert character_support.place_row(pool: store.pool, character_id: id).position
+    == #(11.0, 21.0, 31.0)
+    as "the place of the newer save stands"
+  assert save(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 2,
+      place: older,
+    )
+    == ForMove(NothingSaved)
+    as "the same sequence twice is no newer"
+  assert save(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 3,
+      place: older,
+    )
+    == ForMove(PlaceSaved)
+    as "a newer one is written"
+  assert character_support.place_row(pool: store.pool, character_id: id).save_sequence
+    == 3
+  stop(store)
+}
+
+pub fn a_save_for_a_character_the_account_does_not_have_or_that_does_not_exist_changes_nothing_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let other = insert_account(store, "login-2")
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  let there =
+    place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert save(
+      store:,
+      account: other,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: there,
+    )
+    == ForMove(NothingSaved)
+    as "the save names the account too, so a modified client's id of another account's character is never written"
+  assert save(
+      store:,
+      account:,
+      character_id: id + 1000,
+      epoch: 1,
+      sequence: 1,
+      place: there,
+    )
+    == ForMove(NothingSaved)
+    as "no such character"
+  assert character_support.place_row(pool: store.pool, character_id: id).position
+    == #(1.5, 2.5, 3.5)
+  stop(store)
+}
+
+pub fn the_table_refuses_a_position_a_rotation_or_a_save_sequence_it_cannot_hold_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(_account, id) = one_character(store:)
+  let update = fn(set) {
+    pog.query("update character set " <> set <> " where character_id = $1")
+    |> pog.parameter(pog.int(id))
+    |> pog.execute(store.pool)
+    |> result.map_error(fn(error) {
+      let assert pog.ConstraintViolated(constraint:, ..) = error
+        as "the table refused with a constraint"
+      constraint
+    })
+    |> result.replace(Nil)
+  }
+  list.each(["'Infinity'", "'-Infinity'", "'NaN'"], fn(value) {
+    assert update("position_x = " <> value <> "::real")
+      == Error("character_position_is_finite")
+      as "the client places the player by the saved position, and the server never writes one that is no number"
+    assert update("position_z = " <> value <> "::real")
+      == Error("character_position_is_finite")
+    assert update("rotation_pitch = " <> value <> "::real")
+      == Error("character_rotation_is_finite")
+  })
+  assert update("save_sequence = -1")
+    == Error("character_save_sequence_is_not_negative")
+  assert update("position_y = -2048, rotation_yaw = 3.5, save_sequence = 0")
+    == Ok(Nil)
+    as "any finite place is held"
+  stop(store)
+}
+
+pub fn a_save_the_database_refuses_for_a_check_is_answered_place_refused_and_the_store_goes_on_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let #(account, id) = one_character(store:)
+  let _login = epoch_of_load(store:, account:, character_id: id)
+  execute(
+    store.pool,
+    "alter table character add constraint test_refuses_far_x check (position_x < 1000)",
+  )
+  let far =
+    place_facing(x: 2000.0, y: 0.0, z: 0.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert save(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: far,
+    )
+    == ForMove(PlaceRefused)
+    as "a constraint the database holds refused the place: the asker is told, and the worker does not crash"
+  assert character_support.place_row(pool: store.pool, character_id: id).position
+    == #(1.5, 2.5, 3.5)
+  let near =
+    place_facing(x: 5.0, y: 0.0, z: 0.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert save(
+      store:,
+      account:,
+      character_id: id,
+      epoch: 1,
+      sequence: 1,
+      place: near,
+    )
+    == ForMove(PlaceSaved)
+    as "the store answers the next save, and the refused one took no sequence"
+  stop(store)
+}
+
+pub fn a_save_with_the_database_pool_not_running_is_unavailable_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let pool = pog.named_connection(process.new_name("absent_pool"))
+  let name = process.new_name("store")
+  let assert Ok(started) =
+    supervisor.new(supervisor.OneForOne)
+    |> supervisor.add(worker.supervised(name:, pool:))
+    |> supervisor.start
+    as "the store started"
+  process.unlink(started.pid)
+  ask_support.guard(started.pid)
+  let store = Store(tree: started.pid, pool:, name:)
+  let there =
+    place_facing(x: 10.0, y: 20.0, z: 30.0, yaw: 0.0, pitch: 0.0, roll: 0.0)
+  assert save(
+      store:,
+      account: AccountId(1),
+      character_id: 1,
+      epoch: 1,
+      sequence: 1,
+      place: there,
+    )
+    == Unavailable
+    as "the pool is not running, so the save cannot reach the database, and the place saved before it stands"
   stop(store)
 }
 

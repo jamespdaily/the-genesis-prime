@@ -417,13 +417,15 @@ pub fn hear(
     OwnEvent(PeerClosed) -> Otherwise(Effects([Stop]))
     Stopping(..) -> Otherwise(Effects(list.append(stopping(), [Stop])))
     OwnEvent(ReadFailed(failure:)) | OwnEvent(WriteFailed(failure:)) ->
-      ends(
-        LogWarning,
-        "the socket failed (" <> step.describe_socket_failure(failure) <> ")",
-      )
+      ends(LogWarning, socket_failed_text(failure:))
     OwnEvent(Woken(..)) | step.WatchEnded(..) | OwnEvent(TimerFired(..)) ->
       ends(LogError, "a connection rule took an input it never asked for")
   }
+}
+
+/// The sentence a failed socket is logged with.
+pub fn socket_failed_text(failure failure: step.SocketFailure) -> String {
+  "the socket failed (" <> step.describe_socket_failure(failure) <> ")"
 }
 
 /// What taking one request or frame, or one answer, decided.
@@ -557,11 +559,15 @@ pub fn shared_message_ids() -> List(Int) {
 /// What a whole frame from the client is to a rule that takes the client's
 /// wrapper.
 pub type Opened(session) {
-  /// The network layer's message, a frame the rule does not take, or a frame
-  /// that is none the client's reader accepts: decided.
+  /// The network layer's message, or a frame of a message the rule does not
+  /// take: decided.
   Settled(handled: Handled(session))
   /// The frame inside the client's wrapper, for the rule to take.
   Inside(inner: Frame)
+  /// A frame the client's reader would refuse: the rule ends the connection,
+  /// with `text` as the reason it logs. The rule ends it, since only the rule
+  /// knows what an end must do first (the game rule saves the player's place).
+  Broken(text: String)
 }
 
 /// Sorts a whole frame from the client: the network layer's messages first
@@ -571,7 +577,7 @@ pub type Opened(session) {
 /// wrapper, opened with `cipher` (genesis_prime/connection/encrypted_frame),
 /// whose inner frame is given to the rule; and a frame of a message the rule
 /// does not take, logged as unhandled by `server`. A wrapper or inner frame
-/// that is none the client's reader accepts ends the connection.
+/// that is none the client's reader accepts is `Broken`.
 pub fn open(
   session session: session,
   about about: About,
@@ -579,7 +585,6 @@ pub fn open(
   frame whole: Frame,
   cipher cipher: Cipher,
 ) -> Opened(session) {
-  let ends = fn(text) { Settled(end_for(session:, about:, text:)) }
   let unknown = fn(message_id) {
     Settled(unhandled(session:, about:, server:, message_id:, level: LogWarning))
   }
@@ -588,8 +593,10 @@ pub fn open(
       Settled(Continue(session, [OwnEffect(Write(bytes))]))
     network_message.Accepted -> Settled(Continue(session, []))
     network_message.Malformed(message_id:, ..) ->
-      ends(
-        "a network message " <> message_text(message_id:) <> " does not decode",
+      Broken(
+        text: "a network message "
+        <> message_text(message_id:)
+        <> " does not decode",
       )
     network_message.NotNetwork ->
       case whole.message_id == encrypted_frame.message_id(ClientWrapper) {
@@ -600,7 +607,9 @@ pub fn open(
             Error(encrypted_frame.NotAWrapper(message_id:)) ->
               unknown(message_id)
             Error(encrypted_frame.BadFrame(error)) ->
-              ends("the wrapped frame is no frame: " <> frame.describe(error))
+              Broken(
+                text: "the wrapped frame is no frame: " <> frame.describe(error),
+              )
           }
       }
   }

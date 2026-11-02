@@ -3,14 +3,14 @@
 ////
 //// Message 0x0262 (unit_create_player), server to client: creates a unit of
 //// type 20, a player character, in the world, with its stats, its movement
-//// commands (only kind 2, the position) and its properties; the lists the
-//// schema does not hold are sent empty. Its fields are listed in `schema.toml`
-//// with the client's evidence, and the fact file's `opcode.0x262` names the
-//// message.
+//// commands (the server writes kind 2, the position, and kind 14, the
+//// rotation) and its properties; the lists the schema does not hold are sent
+//// empty. Its fields are listed in `schema.toml` with the client's evidence,
+//// and the fact file's `opcode.0x262` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import genesis_prime/message/item_visual.{type ItemVisual}
-import genesis_prime/message/unit_position_command.{type UnitPositionCommand}
+import genesis_prime/message/start_movement.{type StartMovement}
 import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/message/unit_stat.{type UnitStat}
 import gleam/result
@@ -42,7 +42,7 @@ pub type UnitCreatePlayer {
     create_flags: Int,
     stats: List(UnitStat),
     server_time_estimate_start: Int,
-    movement_commands: List(UnitPositionCommand),
+    movement_commands: List(StartMovement),
     properties: List(UnitProperty),
     item_visuals: List(ItemVisual),
     cast_id: Int,
@@ -104,7 +104,7 @@ pub fn encode(message: UnitCreatePlayer) -> Result(BitArray, EncodeError) {
     "movement_commands",
     message.movement_commands,
     5,
-    unit_position_command.write,
+    start_movement.write,
   )
   |> bit_stream.write_array(
     "properties",
@@ -194,7 +194,7 @@ pub fn decode(body: BitArray) -> Result(UnitCreatePlayer, DecodeError) {
   use #(movement_commands, reader) <- result.try(bit_stream.read_array(
     reader,
     5,
-    unit_position_command.read,
+    start_movement.read,
   ))
   use #(properties, reader) <- result.try(bit_stream.read_array(
     reader,

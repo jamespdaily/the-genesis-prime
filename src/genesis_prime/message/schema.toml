@@ -388,7 +388,7 @@ id = 0x0262
 name = "unit_create_player"
 direction = "server_to_client"
 evidence = "opcode.0x262"
-summary = "creates a unit of type 20, a player character, in the world, with its stats, its movement commands (only kind 2, the position) and its properties; the lists the schema does not hold are sent empty"
+summary = "creates a unit of type 20, a player character, in the world, with its stats, its movement commands (the server writes kind 2, the position, and kind 14, the rotation) and its properties; the lists the schema does not hold are sent empty"
 fields = [
   { name = "unit_id", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "opcode.0x262" },
   { name = "unit_type", kind = "constant", bits = 6, value = 20, evidence = "0x140096fa0", named_by = "opcode.0x262" },
@@ -410,7 +410,7 @@ fields = [
   { name = "create_flags", kind = "unsigned", bits = 8, evidence = "0x140096fa0", named_by = "opcode.0x262.unit_fields" },
   { name = "stats", kind = "array", count_bits = 5, element = "unit_stat", evidence = "0x140096fa0", named_by = "0x140458140" },
   { name = "server_time_estimate_start", kind = "unsigned", bits = 32, evidence = "0x140096fa0", named_by = "0x1404586e0" },
-  { name = "movement_commands", kind = "array", count_bits = 5, element = "unit_position_command", evidence = "0x140096fa0", named_by = "0x1404586e0" },
+  { name = "movement_commands", kind = "array", count_bits = 5, element = "start_movement", evidence = "0x140096fa0", named_by = "0x1404586e0" },
   { name = "properties", kind = "array", count_bits = 8, element = "unit_property", evidence = "0x140096fa0", named_by = "0x1404584b0" },
   { name = "item_visuals", kind = "array", count_bits = 7, element = "item_visual", evidence = "0x140096fa0", named_by = "0x1400ab890" },
   { name = "no_other_entries", kind = "constant", bits = 9, value = 0, evidence = "0x140096fa0", named_by = "opcode.0x262" },
@@ -1100,5 +1100,15 @@ variants = [
   { tag = 27, name = "mode", record = "movement_mode", named_by = "movement_command.kind_27" },
   { tag = 28, name = "kind_28", record = "movement_kind_28" },
   { tag = 29, name = "kind_29", record = "movement_kind_29" },
+]
+
+[[union]]
+name = "start_movement"
+evidence = "0x140c1f070"
+summary = "one movement command of a new unit that the server writes: the kind in 5 bits picks the layout of its data, and the server writes only kind 2, the position, and kind 14, the rotation; the client's reader takes all 30 kinds (movement_command)"
+tag_bits = 5
+variants = [
+  { tag = 2, name = "position", record = "unit_position_command", named_by = "0x1400ad350" },
+  { tag = 14, name = "rotation", record = "movement_rotation", named_by = "0x140715350" },
 ]
 

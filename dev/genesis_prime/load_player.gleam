@@ -20,15 +20,24 @@
 //// is the one after it modulo 20, and goes at most once every 500 ms after the
 //// last was sent. It is the game connection that is pinged here; the other two
 //// are idle.
+////
+//// A player can also walk and return (`moves_and_returns`): it enters the world,
+//// sends one movement message (0x0637, opcode.0x637) that puts it at a position,
+//// drops its game connection, logs in again as the same account and reads the
+//// position 0x262 places the player at, which is where the server saved it.
 
 import game_client
 import genesis_prime/add_account
+import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/load_sample
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
+import genesis_prime/message/float32
 import genesis_prime/message/game_server_handoff
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/start_movement
+import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/step/runtime
 import gleam/erlang/process.{type Subject}
 import gleam/int
@@ -187,12 +196,7 @@ pub fn play(
     )
   let mark = reached(StsLogin, begun)
   let auth = login_client.auth_login(ports:, login:, build:)
-  let assert [_accepted, handoff] =
-    login_client.read_frames(client: auth, have: <<>>, count: 2)
-    as "the auth server answers a login with 0x0591 and 0x03DB"
-  let assert Ok(handed) =
-    game_server_handoff.decode(login_client.in_the_auth_wrapper(handoff).body)
-    as "0x03DB decodes"
+  let handed = handed_off(auth)
   let mark = reached(AuthLogin, mark)
   let game =
     game_client.connect(
@@ -201,24 +205,11 @@ pub fn play(
       account_name: account.login_name,
     )
   let mark = reached(GameHello, mark)
-  game_client.send(game:, message_id: 0x07E0, body: <<>>)
-  let assert [_level, _list] = game_client.read(game:, count: 2)
-    as "0x0036 and 0x0117 answer 0x07E0"
+  list_characters(game)
   let mark = reached(CharacterList, mark)
-  game_client.send_create(game:, body: create_request(account.character_name))
-  let assert [created] = game_client.read(game:, count: 1)
-    as "one 0x00DC answers a create"
-  let assert Ok(created) = create_character_result.decode(created.body)
-    as "0x00DC decodes"
-  assert created.result == create_result.CreateOk
-    as "the server created the character"
+  let character_id = create_character(game:, name: account.character_name)
   let mark = reached(Create, mark)
-  let assert Ok(play_body) =
-    play_character.encode(PlayCharacter(character_id: created.character_id))
-    as "0x07DD encodes"
-  game_client.send(game:, message_id: 0x07DD, body: play_body)
-  let assert [_, _, _, _, _, _, _] = game_client.read(game:, count: 7)
-    as "the player enters the world with 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1 and 0x61"
+  let _burst = enter_world(game:, character_id:)
   let mark = reached(EnterWorld, mark)
   let sent_at_ms = runtime.now().monotonic_ms
   let first = round_trip(game:, number: 0)
@@ -229,6 +220,136 @@ pub fn play(
   game_client.close(game:)
   let _closed = mug.shutdown(auth)
   Nil
+}
+
+/// Where a player stands: the world position x, y, z, each a 32-bit float.
+pub type Position {
+  Position(x: Float, y: Float, z: Float)
+}
+
+/// Plays the path as the account's player to the world, sends one movement
+/// message that puts the player at `to`, drops the game connection, calls
+/// `after_the_drop` (which returns once the server has taken the drop), logs in
+/// again as the same account, plays the same character and reads the position
+/// of the unit the server creates (0x262's kind 2). A step of the server that is
+/// not what the client expects stops the process.
+pub fn moves_and_returns(
+  account account: Account,
+  ports ports: Ports,
+  to to: Position,
+  after_the_drop after_the_drop: fn() -> Nil,
+) -> Position {
+  let #(game, auth) = log_in(account:, ports:)
+  list_characters(game)
+  let character_id = create_character(game:, name: account.character_name)
+  let _burst = enter_world(game:, character_id:)
+  game_client.send_world(game:, message_id: 0x0637, body: move_to(to))
+  game_client.close(game:)
+  let _closed = mug.shutdown(auth)
+  after_the_drop()
+  let #(game, auth) = log_in(account:, ports:)
+  list_characters(game)
+  let burst = enter_world(game:, character_id:)
+  game_client.close(game:)
+  let _closed = mug.shutdown(auth)
+  placed_at(burst)
+}
+
+/// The STS login, the auth login and the game hello of the account's player: its
+/// game connection and its auth connection.
+fn log_in(
+  account account: Account,
+  ports ports: Ports,
+) -> #(game_client.Game, mug.Socket) {
+  let login =
+    login_client.sts_login(
+      ports:,
+      name: account.login_name,
+      password: account.password,
+      seed: account.seed,
+    )
+  let auth = login_client.auth_login(ports:, login:, build:)
+  let handed = handed_off(auth)
+  let game =
+    game_client.connect(
+      port: ports.game_port,
+      session_key: handed.session_key,
+      account_name: account.login_name,
+    )
+  #(game, auth)
+}
+
+/// What the auth server hands the player to the game server with: 0x0591 and
+/// 0x03DB answer the login, and 0x03DB carries the session key.
+fn handed_off(auth: mug.Socket) -> game_server_handoff.GameServerHandoff {
+  let assert [_accepted, handoff] =
+    login_client.read_frames(client: auth, have: <<>>, count: 2)
+    as "the auth server answers a login with 0x0591 and 0x03DB"
+  let assert Ok(handed) =
+    game_server_handoff.decode(login_client.in_the_auth_wrapper(handoff).body)
+    as "0x03DB decodes"
+  handed
+}
+
+/// Asks for the character list, which 0x0036 and 0x0117 answer.
+fn list_characters(game: game_client.Game) -> Nil {
+  game_client.send(game:, message_id: 0x07E0, body: <<>>)
+  let assert [_level, _list] = game_client.read(game:, count: 2)
+    as "0x0036 and 0x0117 answer 0x07E0"
+  Nil
+}
+
+/// Creates the player's character, and its id.
+fn create_character(game game: game_client.Game, name name: String) -> Int {
+  game_client.send_create(game:, body: create_request(name))
+  let assert [created] = game_client.read(game:, count: 1)
+    as "one 0x00DC answers a create"
+  let assert Ok(created) = create_character_result.decode(created.body)
+    as "0x00DC decodes"
+  assert created.result == create_result.CreateOk
+    as "the server created the character"
+  created.character_id
+}
+
+/// Plays the character into the world, and the messages that put it there.
+fn enter_world(
+  game game: game_client.Game,
+  character_id character_id: Int,
+) -> List(Frame) {
+  let assert Ok(play_body) = play_character.encode(PlayCharacter(character_id:))
+    as "0x07DD encodes"
+  game_client.send(game:, message_id: 0x07DD, body: play_body)
+  let burst = game_client.read(game:, count: 7)
+  assert list.map(burst, fn(frame) { frame.message_id })
+    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
+    as "the player enters the world with 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1 and 0x61"
+  burst
+}
+
+/// The body of 0x0637 that moves the player to the position: one kind 2 command
+/// with its bit clear (opcode.0x637, 0x1400ad350).
+fn move_to(position: Position) -> BitArray {
+  game_client.moves_body(client_clock: 0, commands: [
+    game_client.position_command(x: position.x, y: position.y, z: position.z),
+  ])
+}
+
+/// The position the burst of an entry places the player at: the kind 2 command
+/// of 0x262, which the server writes first (0x1404586e0).
+fn placed_at(burst: List(Frame)) -> Position {
+  let unit = game_client.unit_create_player_in(frames: burst)
+  let assert [start_movement.Position(UnitPositionCommand(x:, y:, z:, ..)), ..] =
+    unit.movement_commands
+    as "0x0262 places the unit with a kind 2 command, the first of its commands"
+  Position(x: finite(x), y: finite(y), z: finite(z))
+}
+
+/// The float a position's 32 bits hold: the server writes a finite one.
+fn finite(number: Int) -> Float {
+  let assert Ok(bits) = float32.bits(number) as "the codec reads 32 bits"
+  let assert Ok(value) = float32.value(bits)
+    as "the server places the player at a finite position"
+  value
 }
 
 /// Pings until the step ends, each ping as the client's rule has it.
