@@ -1055,7 +1055,7 @@ fn claim(
     now:,
     request: AskSessions(account_session.Claim(
       account: holder.account_id,
-      connection: session.link.connection,
+      connection: client_connection.connection(session.link),
     )),
     before: [Watch(watch: sessions_watch, target: Sessions)],
   )
@@ -1336,7 +1336,11 @@ fn entry_answered(
       )
     step.Answer(FromStore(store.ForWorld(answer))) ->
       case
-        world_entry.loaded(entry, answer:, connection: session.link.connection)
+        world_entry.loaded(
+          entry,
+          answer:,
+          connection: client_connection.connection(session.link),
+        )
       {
         Ok(world_entry.Join(state:, effects:)) ->
           carry_out(
