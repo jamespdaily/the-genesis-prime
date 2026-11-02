@@ -20,7 +20,7 @@
 //// 0x244{0x025C{0x025B}}        ─▶ checked                         ─▶ store: CreateCharacter(..)
 ////     CharacterCreated(id)     ◀─ 0x3DC{0x00DC create result}, session key
 //// 0x244{0x07DD}                ─▶ world entry                     ─▶ store: LoadCharacter(account, id)
-////     CharacterLoaded(row)                                        ─▶ map MapId(world, 0): Join(connection, id)
+////     CharacterLoaded(row, epoch)                                 ─▶ map MapId(world, 0): Join(connection, id)
 ////       Joined(unit)           ◀─ 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1, 0x61; watches the map (watch 2)
 ////     NotTheAccounts, or no place ◀─ 0x3DC{0x0162 refused}       ─▶ store: ListCharacters(account)
 ////       Characters(rows)       ◀─ 0x0036, 0x0117, as above
@@ -276,6 +276,19 @@ type Status {
   /// The player is in the world, in `entered`'s map, which the connection
   /// watches (`map_watch`).
   InWorld(holder: Holder, entered: world_entry.Entered)
+  /// The store is asked to save where the player stands, and its answer is
+  /// awaited; `then` says what follows it.
+  SavingPlace(holder: Holder, entered: world_entry.Entered, then: AfterSave)
+}
+
+/// What a save of the player's place is for, so its answer knows what comes
+/// next.
+pub type AfterSave {
+  /// The save the timer asked for: the player goes on playing.
+  Playing
+  /// The connection ends once the save is answered, whatever the answer:
+  /// `notice` is written first when there is one, then the connection stops.
+  Leaving(notice: Option(DisconnectReason))
 }
 
 /// Where a claim made again after Sessions ended puts the client back. The
@@ -309,6 +322,10 @@ const map_watch = WatchId(2)
 /// The timer a connection waits on before it claims again; one runs at a
 /// time.
 const claim_timer = TimerId(1)
+
+/// The timer that saves the player's place every `movement.save_period_ms`
+/// while the player is in the world.
+const save_timer = TimerId(2)
 
 /// The longest the rule can hold the client's frames untaken, given how long
 /// an ask may take: frames that arrive while an ask is out or the claim waits
@@ -383,6 +400,8 @@ fn connected(
     OwnEvent(Woken(message: SentBySessions(message:))) ->
       settled(handled: sessions_sent(session:, message:), now:)
     WatchEnded(watch:) -> settled(handled: watch_ended(session:, watch:), now:)
+    OwnEvent(TimerFired(timer:)) if timer == save_timer ->
+      settled(handled: save_due(session:, now:), now:)
     OwnEvent(TimerFired(timer:)) ->
       settled(handled: claim_wait_over(session:, now:, timer:), now:)
     OwnEvent(step.Accepted(..))
@@ -452,7 +471,8 @@ fn asking(status: Status) -> Bool {
     TakingSessionKey
     | ClaimingSession(..)
     | WaitingToClaim(..)
-    | EnteringWorld(..) -> True
+    | EnteringWorld(..)
+    | SavingPlace(..) -> True
     InCharacterSelect(select:, ..) -> character_select.waiting(select)
     AwaitingHelloReply | InWorld(..) -> False
   }
@@ -630,7 +650,10 @@ fn inner_message(
         | RenameRequest
         | NotTaken -> unhandled(session:, message_id: inner.message_id)
       }
-    TakingSessionKey | ClaimingSession(..) | EnteringWorld(..) ->
+    TakingSessionKey
+    | ClaimingSession(..)
+    | EnteringWorld(..)
+    | SavingPlace(..) ->
       end_for(session, "a frame was taken while an ask was out")
     WaitingToClaim(..) ->
       end_for(session, "a frame was taken while the claim waited on its timer")
@@ -992,6 +1015,8 @@ fn answered(
       select_answered(session:, now:, holder:, select:, outcome:)
     EnteringWorld(holder:, entry:) ->
       entry_answered(session:, now:, holder:, entry:, outcome:)
+    SavingPlace(holder:, entered:, then:) ->
+      save_answered(session:, now:, holder:, entered:, then:, outcome:)
     AwaitingHelloReply | WaitingToClaim(..) | InWorld(..) ->
       end_for(session, "an answer came when no ask was out")
   }
@@ -1140,6 +1165,7 @@ fn sessions_sent(
     | account_session.TakenOver, WaitingToClaim(..)
     | account_session.TakenOver, EnteringWorld(..)
     | account_session.TakenOver, InWorld(..)
+    | account_session.TakenOver, SavingPlace(..)
     -> taken_over(session)
     account_session.TakenOver, AwaitingHelloReply
     | account_session.TakenOver, TakingSessionKey
@@ -1180,6 +1206,7 @@ fn watch_ended(
     | ClaimingSession(..), _
     | WaitingToClaim(..), _
     | EnteringWorld(..), _
+    | SavingPlace(..), _
     | AwaitingHelloReply, _
     | TakingSessionKey, _
     -> end_for(session, "a watch the rule did not open ended")
@@ -1215,10 +1242,46 @@ fn claim_wait_over(
     | InCharacterSelect(..)
     | EnteringWorld(..)
     | InWorld(..)
+    | SavingPlace(..)
     | AwaitingHelloReply
     | TakingSessionKey ->
       end_for(session, "a timer the rule did not start fired")
   }
+}
+
+/// The save timer fired: the player's place is saved and the timer started
+/// again, and the player goes on playing once the store answers. The timer
+/// runs only while the player is in the world, so a firing in any other status
+/// is a bug.
+fn save_due(
+  session session: Session,
+  now _now: Now,
+) -> client_connection.Handled(Session) {
+  case session.status {
+    InWorld(..) -> panic as "built in the next commit"
+    WaitingToClaim(..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | SavingPlace(..)
+    | AwaitingHelloReply
+    | TakingSessionKey ->
+      end_for(session, "a timer the rule did not start fired")
+  }
+}
+
+/// The store's answer to the save of the player's place: what it says is
+/// logged, and then the player goes on playing or the connection ends, as
+/// `then` says. A save that gets no answer is a warning, as for any store ask.
+fn save_answered(
+  session _session: Session,
+  now _now: Now,
+  holder _holder: Holder,
+  entered _entered: world_entry.Entered,
+  then _then: AfterSave,
+  outcome _outcome: Outcome(Answer),
+) -> client_connection.Handled(Session) {
+  panic as "built in the next commit"
 }
 
 /// The store's answer to character select's ask: the failures every store ask
@@ -1256,7 +1319,8 @@ fn select_answered(
         store.Renamed(answer:) -> character_select.renamed(select, answer)
       })
     step.Answer(FromStore(store.ForLogin(..)))
-    | step.Answer(FromStore(store.ForWorld(..))) ->
+    | step.Answer(FromStore(store.ForWorld(..)))
+    | step.Answer(FromStore(store.ForMove(..))) ->
       select_taken(session:, now:, holder:, taken: Error(Nil))
     step.Answer(FromHandOff(..)) ->
       told(
@@ -1375,6 +1439,7 @@ fn entry_answered(
       }
     step.Answer(FromStore(store.ForLogin(..)))
     | step.Answer(FromStore(store.ForSelect(..)))
+    | step.Answer(FromStore(store.ForMove(..)))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromSessions(..)) -> entry_unasked(session)
     step.NotRunning | step.NoAnswerInTime | step.EndedBeforeAnswer ->
@@ -1494,6 +1559,7 @@ fn about_of(session: Session) -> About {
 fn entered_of(status: Status) -> Option(world_entry.Entered) {
   case status {
     InWorld(entered:, ..)
+    | SavingPlace(entered:, ..)
     | ClaimingSession(resume: ResumeWorld(entered:), ..)
     | WaitingToClaim(resume: ResumeWorld(entered:), ..) -> Some(entered)
     ClaimingSession(resume: ResumeSelect, ..)
@@ -1518,6 +1584,10 @@ fn account_id_of(status: Status) -> Option(Int) {
         ..,
       )
     | InWorld(holder: hand_off.Holder(account_id: store.AccountId(id), ..), ..)
+    | SavingPlace(
+        holder: hand_off.Holder(account_id: store.AccountId(id), ..),
+        ..,
+      )
     | ClaimingSession(
         holder: hand_off.Holder(account_id: store.AccountId(id), ..),
         ..,

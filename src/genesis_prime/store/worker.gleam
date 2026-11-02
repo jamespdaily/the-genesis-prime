@@ -37,9 +37,14 @@
 ////   account's creates run one after another, and then inserts the character
 ////   unless the account already has its slots, in one statement; the name's
 ////   uniqueness is the index on the ICU-folded `lower(name collate "und-x-icu")`.
-//// - **A load is one statement.** World entry's read of a character names the
+//// - **A load is one statement.** World entry's load of a character names the
 ////   account's id as well as the character's, so another account's character
-////   is never read; no row is `NotTheAccounts`.
+////   is never taken; it raises the character's `session_epoch` by one and
+////   returns the new value with the row, so the login that loaded the
+////   character holds that epoch. No row is `NotTheAccounts`.
+//// - **A save is one statement.** It names the account's id, the character's
+////   and the epoch the saving login was told, so a save from an older login
+////   matches no row and changes nothing.
 //// - **A delete and a rename are one statement each.** Both name the account's
 ////   id, so another account's character is never touched; a rename also
 ////   clears the character's mark in the same update, and its name's
@@ -55,7 +60,7 @@
 //// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
 ////   an asker waiting on one gets `EndedBeforeAnswer`.
 
-import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/login/guid
 import genesis_prime/migration.{
   type Recorded, Migration, NoRecord, Recorded, Unreadable,
@@ -63,15 +68,16 @@ import genesis_prime/migration.{
 import genesis_prime/service.{type Sent}
 import genesis_prime/store.{
   type AccountId, type Answer, type Character, type CharacterId,
-  type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type Naming,
-  type NewCharacter, type RenameAnswer, type Request, type SelectAnswer,
-  type SelectRequest, type WorldAnswer, type WorldRequest, Account, AccountFound,
-  AccountId, Character, CharacterCreated, CharacterDeleted, CharacterId,
-  CharacterLoaded, CharacterRenamed, CreateCharacter, Created, DeleteCharacter,
-  Deleted, FindAccount, ForLogin, ForSelect, ForWorld, ListCharacters, Listed,
-  LoadCharacter, Login, NameStands, NameTaken, NeedsRename, NewNameTaken,
+  type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type MoveAnswer,
+  type MoveRequest, type Naming, type NewCharacter, type RenameAnswer,
+  type Request, type SelectAnswer, type SelectRequest, type WorldAnswer,
+  type WorldRequest, Account, AccountFound, AccountId, Character,
+  CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
+  CharacterRenamed, CreateCharacter, Created, DeleteCharacter, Deleted,
+  FindAccount, ForLogin, ForMove, ForSelect, ForWorld, ListCharacters, Listed,
+  LoadCharacter, Login, Move, NameStands, NameTaken, NeedsRename, NewNameTaken,
   NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts, RenameCharacter,
-  Renamed, Select, Unavailable, World,
+  Renamed, SavePlace, Select, SessionEpoch, Unavailable, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{ClassId, RaceId}
@@ -226,6 +232,9 @@ fn run_request(request: Request, pool: pog.Connection) -> Answer {
     World(request:) ->
       world(pool, request)
       |> result.map(ForWorld)
+    Move(request:) ->
+      move(pool, request)
+      |> result.map(ForMove)
   }
   result.unwrap(answer, Unavailable)
 }
@@ -285,6 +294,18 @@ fn world(
   load_character(pool:, account_id:, character_id:)
 }
 
+/// Runs one of the player's movement's requests: a save is one statement that
+/// names the account, the character and the epoch (save_place.sql), answering
+/// `PlaceSaved` when it changed a row and `NothingSaved` when it matched none;
+/// `Error(Nil)` when the database is away.
+fn move(
+  _pool: pog.Connection,
+  request: MoveRequest,
+) -> Result(MoveAnswer, Nil) {
+  let SavePlace(..) = request
+  panic as "built in the next commit"
+}
+
 /// The account's characters in creation order; an account with none, or no
 /// such account, has an empty list. `Error(Nil)` when the database is away.
 fn list_characters(
@@ -296,10 +317,10 @@ fn list_characters(
   |> result.map(list.map(_, character))
 }
 
-/// The account's character with the id, read in one statement that names the
-/// account too, so another account's character is never read;
-/// `NotTheAccounts` when it has none, and `Error(Nil)` when the database is
-/// away.
+/// The account's character with the id, taken in one statement that names the
+/// account too, so another account's character is never taken, and that raises
+/// its session epoch; `NotTheAccounts` when it has none, and `Error(Nil)` when
+/// the database is away.
 fn load_character(
   pool pool: pog.Connection,
   account_id account_id: AccountId,
@@ -312,26 +333,32 @@ fn load_character(
   )
   case rows {
     [row] ->
-      CharacterLoaded(Character(
-        character_id: CharacterId(row.character_id),
-        name: row.name,
-        gender: row.gender,
-        race_id: RaceId(row.race_id),
-        class_id: ClassId(row.class_id),
-        faction_id: row.faction_id,
-        level: row.level,
-        path: row.path,
-        place: saved_place(
-          world_id: row.world_id,
-          world_zone_id: row.world_zone_id,
-          position_x: row.position_x,
-          position_y: row.position_y,
-          position_z: row.position_z,
+      CharacterLoaded(
+        character: Character(
+          character_id: CharacterId(row.character_id),
+          name: row.name,
+          gender: row.gender,
+          race_id: RaceId(row.race_id),
+          class_id: ClassId(row.class_id),
+          faction_id: row.faction_id,
+          level: row.level,
+          path: row.path,
+          place: saved_place(
+            world_id: row.world_id,
+            world_zone_id: row.world_zone_id,
+            position_x: row.position_x,
+            position_y: row.position_y,
+            position_z: row.position_z,
+            rotation_yaw: row.rotation_yaw,
+            rotation_pitch: row.rotation_pitch,
+            rotation_roll: row.rotation_roll,
+          ),
+          look: store.look(labels: row.look_labels, values: row.look_values),
+          bones: row.bones,
+          naming: naming(row.needs_rename),
         ),
-        look: store.look(labels: row.look_labels, values: row.look_values),
-        bones: row.bones,
-        naming: naming(row.needs_rename),
-      ))
+        session_epoch: SessionEpoch(row.session_epoch),
+      )
     [] -> NotTheAccounts
     _ -> panic as "a character id is unique, so a read returns at most one"
   }
@@ -354,6 +381,9 @@ fn character(row: sql.ListCharactersRow) -> Character {
       position_x: row.position_x,
       position_y: row.position_y,
       position_z: row.position_z,
+      rotation_yaw: row.rotation_yaw,
+      rotation_pitch: row.rotation_pitch,
+      rotation_roll: row.rotation_roll,
     ),
     look: store.look(labels: row.look_labels, values: row.look_values),
     bones: row.bones,
@@ -362,13 +392,16 @@ fn character(row: sql.ListCharactersRow) -> Character {
 }
 
 /// The place a row saves: `None` for world 0, which is no World row, so its
-/// zone and position mean nothing (opcode.0xad).
+/// zone, position and facing mean nothing (opcode.0xad).
 fn saved_place(
   world_id world_id: Int,
   world_zone_id world_zone_id: Int,
   position_x position_x: Float,
   position_y position_y: Float,
   position_z position_z: Float,
+  rotation_yaw rotation_yaw: Float,
+  rotation_pitch rotation_pitch: Float,
+  rotation_roll rotation_roll: Float,
 ) -> Option(Place) {
   start_place.place(
     world_id:,
@@ -376,6 +409,11 @@ fn saved_place(
     x: position_x,
     y: position_y,
     z: position_z,
+    facing: Facing(
+      yaw: rotation_yaw,
+      pitch: rotation_pitch,
+      roll: rotation_roll,
+    ),
   )
   |> option.from_result
 }
@@ -418,6 +456,9 @@ fn create_character(
         start_place.y(character.place),
         start_place.z(character.place),
         character.level,
+        start_place.facing(character.place).yaw,
+        start_place.facing(character.place).pitch,
+        start_place.facing(character.place).roll,
       )
     })
     |> result.map_error(fn(error) {

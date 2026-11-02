@@ -29,12 +29,33 @@ import genesis_prime/table/world_location2
 import gleam/list
 import gleam/result
 
-/// A character's place in the world: the World row, the WorldZone row and the
-/// position, as the client's WorldLocation2 row gives them. It is always in a
-/// world: `place` refuses world 0, which is no World row (opcode.0xad), so a
-/// zone and a position with no world cannot be held.
+/// The way a character faces: yaw, pitch and roll in radians, as the movement
+/// command of kind 14 carries them (0x140715350). A float here is always
+/// finite: the VM holds no infinity and no NaN.
+pub type Facing {
+  Facing(yaw: Float, pitch: Float, roll: Float)
+}
+
+/// The facing of a character that has never turned: 0, 0, 0, which is what a
+/// character's row holds until its first save, and what a new character starts
+/// with. The start's WorldLocation2 row holds a facing (facing0 to facing3) that
+/// is not converted to yaw, pitch and roll.
+pub const unturned = Facing(yaw: 0.0, pitch: 0.0, roll: 0.0)
+
+/// A character's place in the world: the World row, the WorldZone row, the
+/// position and the way it faces. It is always in a world: `place` refuses
+/// world 0, which is no World row (opcode.0xad), so a zone, a position and a
+/// facing with no world cannot be held. Moving or turning a place keeps its
+/// world and zone, so a moved place is never in another world.
 pub opaque type Place {
-  Place(world_id: Int, world_zone_id: Int, x: Float, y: Float, z: Float)
+  Place(
+    world_id: Int,
+    world_zone_id: Int,
+    x: Float,
+    y: Float,
+    z: Float,
+    facing: Facing,
+  )
 }
 
 /// The place in the World row `world_id`, `Error(Nil)` for world 0.
@@ -44,10 +65,11 @@ pub fn place(
   x x: Float,
   y y: Float,
   z z: Float,
+  facing facing: Facing,
 ) -> Result(Place, Nil) {
   case world_id {
     0 -> Error(Nil)
-    _ -> Ok(Place(world_id:, world_zone_id:, x:, y:, z:))
+    _ -> Ok(Place(world_id:, world_zone_id:, x:, y:, z:, facing:))
   }
 }
 
@@ -74,6 +96,21 @@ pub fn y(place: Place) -> Float {
 /// The place's position on the z axis.
 pub fn z(place: Place) -> Float {
   place.z
+}
+
+/// The way the place faces.
+pub fn facing(place: Place) -> Facing {
+  place.facing
+}
+
+/// The place's world and zone, standing at the position `x`, `y`, `z`.
+pub fn moved(place place: Place, x x: Float, y y: Float, z z: Float) -> Place {
+  Place(..place, x:, y:, z:)
+}
+
+/// The place's world, zone and position, facing `facing`.
+pub fn turned(place place: Place, facing facing: Facing) -> Place {
+  Place(..place, facing:)
 }
 
 /// The Dominion faction's Faction2 id, as the CharacterCreation rows hold it.
@@ -189,6 +226,7 @@ pub fn of(
     x: row.position0,
     y: row.position1,
     z: row.position2,
+    facing: unturned,
   )
 }
 

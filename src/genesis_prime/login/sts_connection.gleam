@@ -81,8 +81,8 @@ import genesis_prime/step.{
   Write,
 }
 import genesis_prime/store.{
-  type Account, AccountFound, FindAccount, ForLogin, ForSelect, ForWorld, Login,
-  NoSuchAccount, Unavailable,
+  type Account, AccountFound, FindAccount, ForLogin, ForMove, ForSelect,
+  ForWorld, Login, NoSuchAccount, Unavailable,
 }
 import gleam/int
 import gleam/option.{type Option, None, Some}
@@ -667,6 +667,11 @@ fn found(
       end_for(
         session,
         "the store answered the ask for the account with an answer for world entry",
+      )
+    step.Answer(FromStore(ForMove(..))) ->
+      end_for(
+        session,
+        "the store answered the ask for the account with an answer for the player's movement",
       )
     step.NotRunning
     | step.NoAnswerInTime

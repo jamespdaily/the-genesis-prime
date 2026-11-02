@@ -18,8 +18,8 @@ pub type CreateCharacterRow {
 }
 
 /// Makes a character of an account: at the level the create gave, standing at
-/// the start place the create gave (a world, a zone and a position), and the
-/// values the create request gave. It makes none, and gives no row, when the
+/// the start place the create gave (a world, a zone, a position and a facing),
+/// and the values the create request gave. It makes none, and gives no row, when the
 /// account already has as many characters as its slots. A name that another
 /// character holds in any case breaks the unique index on
 /// lower(name collate "und-x-icu"), which the caller reports as its own error.
@@ -46,6 +46,9 @@ pub fn create_character(
   arg_15: Float,
   arg_16: Float,
   arg_17: Int,
+  arg_18: Float,
+  arg_19: Float,
+  arg_20: Float,
 ) -> Result(pog.Returned(CreateCharacterRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
@@ -53,19 +56,21 @@ pub fn create_character(
   }
 
   "-- Makes a character of an account: at the level the create gave, standing at
--- the start place the create gave (a world, a zone and a position), and the
--- values the create request gave. It makes none, and gives no row, when the
+-- the start place the create gave (a world, a zone, a position and a facing),
+-- and the values the create request gave. It makes none, and gives no row, when the
 -- account already has as many characters as its slots. A name that another
 -- character holds in any case breaks the unique index on
 -- lower(name collate \"und-x-icu\"), which the caller reports as its own error.
 insert into character (
   account_id, name, gender, race_id, class_id, faction_id, level, path,
   world_id, world_zone_id, position_x, position_y, position_z,
+  rotation_yaw, rotation_pitch, rotation_roll,
   look_labels, look_values, bones
 )
 select
   $1::bigint, $2::text, $3::int, $4::int, $5::int, $6::int, $17::int, $7::int,
   $12::int, $13::int, $14::real, $15::real, $16::real,
+  $18::real, $19::real, $20::real,
   $8::bigint[], $9::bigint[], $10::bigint[]
 where (select count(*) from character where account_id = $1::bigint) < $11::bigint
 returning character_id;
@@ -88,6 +93,9 @@ returning character_id;
   |> pog.parameter(pog.float(arg_15))
   |> pog.parameter(pog.float(arg_16))
   |> pog.parameter(pog.int(arg_17))
+  |> pog.parameter(pog.float(arg_18))
+  |> pog.parameter(pog.float(arg_19))
+  |> pog.parameter(pog.float(arg_20))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
@@ -214,6 +222,9 @@ pub type ListCharactersRow {
     position_x: Float,
     position_y: Float,
     position_z: Float,
+    rotation_yaw: Float,
+    rotation_pitch: Float,
+    rotation_roll: Float,
     look_labels: List(Int),
     look_values: List(Int),
     bones: List(Int),
@@ -245,10 +256,13 @@ pub fn list_characters(
     use position_x <- decode.field(10, decode.float)
     use position_y <- decode.field(11, decode.float)
     use position_z <- decode.field(12, decode.float)
-    use look_labels <- decode.field(13, decode.list(decode.int))
-    use look_values <- decode.field(14, decode.list(decode.int))
-    use bones <- decode.field(15, decode.list(decode.int))
-    use needs_rename <- decode.field(16, decode.bool)
+    use rotation_yaw <- decode.field(13, decode.float)
+    use rotation_pitch <- decode.field(14, decode.float)
+    use rotation_roll <- decode.field(15, decode.float)
+    use look_labels <- decode.field(16, decode.list(decode.int))
+    use look_values <- decode.field(17, decode.list(decode.int))
+    use bones <- decode.field(18, decode.list(decode.int))
+    use needs_rename <- decode.field(19, decode.bool)
     decode.success(ListCharactersRow(
       character_id:,
       name:,
@@ -263,6 +277,9 @@ pub fn list_characters(
       position_x:,
       position_y:,
       position_z:,
+      rotation_yaw:,
+      rotation_pitch:,
+      rotation_roll:,
       look_labels:,
       look_values:,
       bones:,
@@ -286,6 +303,9 @@ select
   position_x,
   position_y,
   position_z,
+  rotation_yaw,
+  rotation_pitch,
+  rotation_roll,
   look_labels,
   look_values,
   bones,
@@ -351,6 +371,7 @@ order by name;
 pub type LoadCharacterRow {
   LoadCharacterRow(
     character_id: Int,
+    session_epoch: Int,
     name: String,
     gender: Int,
     race_id: Int,
@@ -363,6 +384,9 @@ pub type LoadCharacterRow {
     position_x: Float,
     position_y: Float,
     position_z: Float,
+    rotation_yaw: Float,
+    rotation_pitch: Float,
+    rotation_roll: Float,
     look_labels: List(Int),
     look_values: List(Int),
     bones: List(Int),
@@ -371,9 +395,13 @@ pub type LoadCharacterRow {
 }
 
 /// The account's character with this id, as the world's entry needs it: the
-/// same columns as the list, with the saved place. The account's id is in the
+/// same columns as the list, with the saved place, and the character taken by
+/// this login: `session_epoch` is raised by one in the same statement and the
+/// new value returned, so the login that read the character is the one that
+/// holds that epoch, and a save made under an earlier epoch (an older login's)
+/// finds no row to change (save_place.sql). The account's id is in the
 /// statement, so another account's character, which a modified client could
-/// name, is never read. No row means the account has no such character.
+/// name, is never taken. No row means the account has no such character.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
@@ -381,28 +409,33 @@ pub type LoadCharacterRow {
 pub fn load_character(
   db: pog.Connection,
   character_id: Int,
-  arg_2: Int,
+  account_id: Int,
 ) -> Result(pog.Returned(LoadCharacterRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
-    use name <- decode.field(1, decode.string)
-    use gender <- decode.field(2, decode.int)
-    use race_id <- decode.field(3, decode.int)
-    use class_id <- decode.field(4, decode.int)
-    use faction_id <- decode.field(5, decode.int)
-    use level <- decode.field(6, decode.int)
-    use path <- decode.field(7, decode.int)
-    use world_id <- decode.field(8, decode.int)
-    use world_zone_id <- decode.field(9, decode.int)
-    use position_x <- decode.field(10, decode.float)
-    use position_y <- decode.field(11, decode.float)
-    use position_z <- decode.field(12, decode.float)
-    use look_labels <- decode.field(13, decode.list(decode.int))
-    use look_values <- decode.field(14, decode.list(decode.int))
-    use bones <- decode.field(15, decode.list(decode.int))
-    use needs_rename <- decode.field(16, decode.bool)
+    use session_epoch <- decode.field(1, decode.int)
+    use name <- decode.field(2, decode.string)
+    use gender <- decode.field(3, decode.int)
+    use race_id <- decode.field(4, decode.int)
+    use class_id <- decode.field(5, decode.int)
+    use faction_id <- decode.field(6, decode.int)
+    use level <- decode.field(7, decode.int)
+    use path <- decode.field(8, decode.int)
+    use world_id <- decode.field(9, decode.int)
+    use world_zone_id <- decode.field(10, decode.int)
+    use position_x <- decode.field(11, decode.float)
+    use position_y <- decode.field(12, decode.float)
+    use position_z <- decode.field(13, decode.float)
+    use rotation_yaw <- decode.field(14, decode.float)
+    use rotation_pitch <- decode.field(15, decode.float)
+    use rotation_roll <- decode.field(16, decode.float)
+    use look_labels <- decode.field(17, decode.list(decode.int))
+    use look_values <- decode.field(18, decode.list(decode.int))
+    use bones <- decode.field(19, decode.list(decode.int))
+    use needs_rename <- decode.field(20, decode.bool)
     decode.success(LoadCharacterRow(
       character_id:,
+      session_epoch:,
       name:,
       gender:,
       race_id:,
@@ -415,6 +448,9 @@ pub fn load_character(
       position_x:,
       position_y:,
       position_z:,
+      rotation_yaw:,
+      rotation_pitch:,
+      rotation_roll:,
       look_labels:,
       look_values:,
       bones:,
@@ -423,11 +459,19 @@ pub fn load_character(
   }
 
   "-- The account's character with this id, as the world's entry needs it: the
--- same columns as the list, with the saved place. The account's id is in the
+-- same columns as the list, with the saved place, and the character taken by
+-- this login: `session_epoch` is raised by one in the same statement and the
+-- new value returned, so the login that read the character is the one that
+-- holds that epoch, and a save made under an earlier epoch (an older login's)
+-- finds no row to change (save_place.sql). The account's id is in the
 -- statement, so another account's character, which a modified client could
--- name, is never read. No row means the account has no such character.
-select
+-- name, is never taken. No row means the account has no such character.
+update character
+set session_epoch = session_epoch + 1
+where character_id = $1 and account_id = $2
+returning
   character_id,
+  session_epoch,
   name,
   gender::int as gender,
   race_id::int as race_id,
@@ -440,16 +484,17 @@ select
   position_x,
   position_y,
   position_z,
+  rotation_yaw,
+  rotation_pitch,
+  rotation_roll,
   look_labels,
   look_values,
   bones,
-  needs_rename
-from character
-where character_id = $1 and account_id = $2;
+  needs_rename;
 "
   |> pog.query
   |> pog.parameter(pog.int(character_id))
-  |> pog.parameter(pog.int(arg_2))
+  |> pog.parameter(pog.int(account_id))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }
@@ -538,6 +583,82 @@ returning name;
   |> pog.parameter(pog.int(character_id))
   |> pog.parameter(pog.int(account_id))
   |> pog.parameter(pog.text(arg_3))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
+/// A row you get from running the `save_place` query
+/// defined in `./src/genesis_prime/store/sql/save_place.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type SavePlaceRow {
+  SavePlaceRow(character_id: Int)
+}
+
+/// Saves where a character stands: its world, zone, position and facing, only
+/// while the character is still held by the login that made the save, that is
+/// while its `session_epoch` is still the one that login raised it to
+/// (load_character.sql). A login that came after raised the epoch, so a save
+/// from an older login matches no row and changes nothing. The account's id is
+/// in the statement, as for a load. No row means the epoch moved on or the
+/// account has no such character.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn save_place(
+  db: pog.Connection,
+  character_id: Int,
+  account_id: Int,
+  session_epoch: Int,
+  arg_4: Int,
+  arg_5: Int,
+  arg_6: Float,
+  arg_7: Float,
+  arg_8: Float,
+  arg_9: Float,
+  arg_10: Float,
+  rotation_roll: Float,
+) -> Result(pog.Returned(SavePlaceRow), pog.QueryError) {
+  let decoder = {
+    use character_id <- decode.field(0, decode.int)
+    decode.success(SavePlaceRow(character_id:))
+  }
+
+  "-- Saves where a character stands: its world, zone, position and facing, only
+-- while the character is still held by the login that made the save, that is
+-- while its `session_epoch` is still the one that login raised it to
+-- (load_character.sql). A login that came after raised the epoch, so a save
+-- from an older login matches no row and changes nothing. The account's id is
+-- in the statement, as for a load. No row means the epoch moved on or the
+-- account has no such character.
+update character
+set
+  world_id = $4,
+  world_zone_id = $5,
+  position_x = $6,
+  position_y = $7,
+  position_z = $8,
+  rotation_yaw = $9,
+  rotation_pitch = $10,
+  rotation_roll = $11
+where character_id = $1 and account_id = $2 and session_epoch = $3
+returning character_id;
+"
+  |> pog.query
+  |> pog.parameter(pog.int(character_id))
+  |> pog.parameter(pog.int(account_id))
+  |> pog.parameter(pog.int(session_epoch))
+  |> pog.parameter(pog.int(arg_4))
+  |> pog.parameter(pog.int(arg_5))
+  |> pog.parameter(pog.float(arg_6))
+  |> pog.parameter(pog.float(arg_7))
+  |> pog.parameter(pog.float(arg_8))
+  |> pog.parameter(pog.float(arg_9))
+  |> pog.parameter(pog.float(arg_10))
+  |> pog.parameter(pog.float(rotation_roll))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

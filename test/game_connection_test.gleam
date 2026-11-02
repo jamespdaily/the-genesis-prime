@@ -97,7 +97,7 @@ import genesis_prime/store.{
   CharacterLoaded, CharacterRenamed, Created, Deleted, ForSelect, ForWorld,
   ListCharacters, Listed, LoadCharacter, LookEntry, NameStands, NameTaken,
   NewCharacter, NewNameTaken, NoFreeSlot, NoSuchCharacter, NotRenamable,
-  NotTheAccounts, Renamed, Select, Unavailable, World,
+  NotTheAccounts, Renamed, Select, SessionEpoch, Unavailable, World,
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -1029,7 +1029,9 @@ pub fn a_play_of_a_character_with_no_saved_place_is_refused_the_same_way_and_the
     answer(
       state:,
       taken:,
-      outcome: step.Answer(FromStore(ForWorld(CharacterLoaded(no_place)))),
+      outcome: step.Answer(
+        FromStore(ForWorld(CharacterLoaded(no_place, SessionEpoch(1)))),
+      ),
     )
   let assert [Frame(message_id: 0x0162, body:)] = heard(taken, keyed())
     as "the world 0 a character made before create wrote its start place has no World row, which 0xAD needs (opcode.0xad)"
@@ -1140,7 +1142,7 @@ fn joining() -> #(game_connection.State, ConnectionStep(Request)) {
     state:,
     taken:,
     outcome: step.Answer(
-      FromStore(ForWorld(CharacterLoaded(world_character()))),
+      FromStore(ForWorld(CharacterLoaded(world_character(), SessionEpoch(1)))),
     ),
   )
 }
@@ -1194,7 +1196,7 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
       state:,
       taken:,
       outcome: step.Answer(
-        FromStore(ForWorld(CharacterLoaded(world_character()))),
+        FromStore(ForWorld(CharacterLoaded(world_character(), SessionEpoch(1)))),
       ),
     )
   assert ask_request(taken)
@@ -1370,7 +1372,11 @@ pub fn an_answer_that_is_none_world_entry_asked_for_is_a_bug_with_reason_8_and_a
       // The store's answer while the map is asked.
       #(
         joining(),
-        step.Answer(FromStore(ForWorld(CharacterLoaded(world_character())))),
+        step.Answer(
+          FromStore(
+            ForWorld(CharacterLoaded(world_character(), SessionEpoch(1))),
+          ),
+        ),
       ),
       // Another process's answers.
       #(playing(42), step.Answer(FromStore(ForSelect(Listed([]))))),

@@ -113,6 +113,7 @@ pub fn a_place_in_world_0_cannot_be_made_test() -> Nil {
       x: 1.0,
       y: 2.0,
       z: 3.0,
+      facing: start_place.unturned,
     )
     == Error(Nil)
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so no place is in it"
@@ -123,6 +124,7 @@ pub fn a_place_in_world_0_cannot_be_made_test() -> Nil {
       x: 1.0,
       y: 2.0,
       z: 3.0,
+      facing: start_place.unturned,
     )
     as "a place in a world is made"
   assert #(

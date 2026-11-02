@@ -36,7 +36,7 @@ import genesis_prime/store.{
   ForSelect, ForWorld, ListCharacters, Listed, LoadCharacter, Login, LookEntry,
   NameStands, NameTaken, NeedsRename, NewCharacter, NewNameTaken, NoFreeSlot,
   NoSuchAccount, NoSuchCharacter, NotRenamable, NotTheAccounts, RenameCharacter,
-  Renamed, Select, Unavailable, World,
+  Renamed, Select, SessionEpoch, Unavailable, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
@@ -813,8 +813,8 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
     == ForSelect(Listed([character]))
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert ask(store, World(LoadCharacter(account, CharacterId(character_id))))
-    == ForWorld(CharacterLoaded(character))
-    as "the load reads the same row the same way"
+    == ForWorld(CharacterLoaded(character, SessionEpoch(1)))
+    as "the load reads the same row the same way, and raises the epoch of a character made at 0 to 1"
   stop(store)
 }
 
@@ -878,8 +878,8 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
       path: 2,
     )
   assert ask(store, World(LoadCharacter(account, CharacterId(mine))))
-    == ForWorld(
-      CharacterLoaded(Character(
+    == ForWorld(CharacterLoaded(
+      Character(
         character_id: CharacterId(mine),
         name: "Zed",
         gender: 1,
@@ -898,9 +898,10 @@ pub fn a_load_gives_the_accounts_character_with_its_saved_place_and_not_another_
         look: [],
         bones: [],
         naming: NameStands,
-      )),
-    )
-    as "the row as character_support inserted it: the saved world, zone and position come with it"
+      ),
+      SessionEpoch(1),
+    ))
+    as "the row as character_support inserted it: the saved world, zone and position come with it, and the epoch the load raised from 0 to 1"
   assert ask(store, World(LoadCharacter(account, CharacterId(theirs))))
     == ForWorld(NotTheAccounts)
     as "a modified client could name any id: the read is scoped by the account's id (genesis_prime/store)"
