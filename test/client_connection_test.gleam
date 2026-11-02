@@ -13,8 +13,14 @@ import character_tables
 import envoy
 import genesis_prime
 import genesis_prime/client_connection.{
-  BurstBelowOne, BurstBelowWait, PerSecondBelowOne,
+  AskStore, BurstBelowOne, BurstBelowWait, Continue, Done, PerSecondBelowOne,
 }
+import genesis_prime/step.{
+  type ConnectionEffect, type Effect, Ask, AskId, Effects, EffectsThenAsk, Log,
+  LogInfo, LogLine, Stop,
+}
+import genesis_prime/store
+import gleam/option.{None, Some}
 import owned_test
 
 pub fn a_bucket_that_holds_less_than_one_or_never_fills_is_refused_test() -> Nil {
@@ -81,4 +87,77 @@ pub fn each_rules_bucket_in_the_servers_settings_holds_what_a_client_sends_at_th
   assert client_connection.burst(game.rate)
     >= sent_through(game.rate, 2 * game.ask_deadline_ms + 5 * 100)
     as "game asks twice in a row, and a Sessions that is not running is claimed from five times, 100 ms apart"
+}
+
+/// A flow over a session that is its unread bytes, each byte one item. A 1
+/// goes on after the log lines "first" and "second"; a 2 asks after its own
+/// line "own"; a 3 ends the connection after "own".
+fn byte_flow() -> client_connection.Flow(BitArray, Int, Nil, Nil) {
+  client_connection.Flow(
+    pending: fn(bytes) { bytes },
+    take: fn(bytes) {
+      case bytes {
+        <<>> -> Ok(None)
+        <<byte, rest:bytes>> -> Ok(Some(#(byte, rest)))
+        _ -> Error(Nil)
+      }
+    },
+    taking: fn(_bytes, byte, rest) {
+      case byte {
+        1 -> Continue(rest, [a_line("first"), a_line("second")])
+        2 -> client_connection.Asking(rest, [a_line("own")], an_ask())
+        _ -> Done(rest, [a_line("own"), Stop])
+      }
+    },
+    refused: fn(bytes, _error) { Done(bytes, [Stop]) },
+    charged: fn(bytes) { Ok(bytes) },
+    connected: fn(_bytes) { Nil },
+  )
+}
+
+fn a_line(text: String) -> Effect(ConnectionEffect) {
+  Log(LogLine(level: LogInfo, text:, about: step.no_one))
+}
+
+fn an_ask() -> step.Ask(client_connection.Request) {
+  Ask(
+    ask: AskId(1),
+    request: AskStore(store.Login(store.FindAccount("an-account"))),
+    deadline_ms: 100,
+  )
+}
+
+pub fn the_effects_of_items_before_an_item_that_asks_leave_before_its_own_and_in_the_order_taken_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) =
+    client_connection.drive(
+      session: <<1, 1, 2, 1>>,
+      flow: byte_flow(),
+      carried: [],
+    )
+  assert taken
+    == EffectsThenAsk(
+      [
+        a_line("first"),
+        a_line("second"),
+        a_line("first"),
+        a_line("second"),
+        a_line("own"),
+      ],
+      an_ask(),
+    )
+    as "drive's contract: each item's effects leave in the order the items came, the asking item's own last, and the item after the ask waits"
+}
+
+pub fn the_effects_of_items_before_an_item_that_ends_the_connection_leave_before_its_own_and_in_the_order_taken_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) =
+    client_connection.drive(
+      session: <<1, 3, 1>>,
+      flow: byte_flow(),
+      carried: [],
+    )
+  assert taken
+    == Effects([a_line("first"), a_line("second"), a_line("own"), Stop])
+    as "drive's contract: the effects of the items before the ending item, then its own, with Stop last"
 }
