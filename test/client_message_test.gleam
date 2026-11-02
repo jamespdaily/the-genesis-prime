@@ -16,15 +16,26 @@ import genesis_prime/message/close_notice.{CloseNotice}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_carrier.{CreateCharacterCarrier}
 import genesis_prime/message/delete_character.{DeleteCharacter}
+import genesis_prime/message/fall_value.{FallValue}
+import genesis_prime/message/fell_below_floor.{FellBelowFloor}
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/login_request.{LoginRequest}
+import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
+import genesis_prime/message/movement_command
+import genesis_prime/message/movement_mode.{MovementMode}
+import genesis_prime/message/movement_send_interval_answer.{
+  MovementSendIntervalAnswer,
+}
+import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/ping.{Ping}
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/pong.{Pong}
 import genesis_prime/message/realm_select_start.{RealmSelectStart}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/world_message.{WorldMessage}
+import genesis_prime/message/zone_value_changed.{ZoneValueChanged}
 import genesis_prime/message_schema
 import gleam/int
 import gleam/list
@@ -199,5 +210,41 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       )),
     ),
     #(0x00F2, client_message.TerrainLoaded(message: TerrainLoaded(field_1: 2))),
+    #(
+      0x0637,
+      client_message.PlayerMovement(
+        message: PlayerMovement(client_clock: 0x1234, commands: [
+          movement_command.Time(MovementTime(time: 0x1335)),
+          movement_command.Mode(MovementMode(mode: 3)),
+        ]),
+      ),
+    ),
+    #(
+      0x063A,
+      client_message.ZoneValueChanged(message: ZoneValueChanged(
+        old_value: 1,
+        new_value: 2,
+      )),
+    ),
+    #(
+      0x00D5,
+      client_message.MovementSendIntervalAnswer(
+        message: MovementSendIntervalAnswer(field_1: 1, field_2: 0, field_3: 3),
+      ),
+    ),
+    #(
+      0x063B,
+      client_message.MoveSpeedSetting(message: MoveSpeedSetting(move_speed: 2)),
+    ),
+    #(0x00FB, client_message.FallValue(message: FallValue(field_1: 0x40000000))),
+    #(
+      0x00FC,
+      client_message.FellBelowFloor(message: FellBelowFloor(
+        no_ground: 1,
+        camera_x: 0x3F800000,
+        camera_y: 0x40000000,
+        camera_z: 0xC0400000,
+      )),
+    ),
   ]
 }

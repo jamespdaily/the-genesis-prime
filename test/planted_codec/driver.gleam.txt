@@ -7,11 +7,15 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/client_message
 import genesis_prime/message/planted_message.{type PlantedMessage, PlantedMessage}
 import genesis_prime/message/planted_mode.{First, Other}
+import genesis_prime/message/planted_flag.{PlantedFlag}
+import genesis_prime/message/planted_pair.{PlantedPair}
 import genesis_prime/message/planted_record.{PlantedRecord}
+import genesis_prime/message/planted_union.{Flag, Pair}
 import gleam/bit_array
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/result
 import gleam/string
 
 pub fn main() -> Nil {
@@ -80,6 +84,35 @@ fn refusals() -> Nil {
       actual: 1,
     ))
     as "values counted by another array are as many as it holds"
+  assert planted_message.encode(PlantedMessage(..base, counted_records: []))
+    == Error(bit_stream.ItemCountDisagrees(
+      field: "counted_records",
+      expected: list.length(base.numbers),
+      actual: 0,
+    ))
+    as "records counted by another array are as many as it holds"
+  list.each(upto(0, 7), fn(kind) {
+    let read =
+      planted_union.read(bit_stream.new_reader(<<kind, 0, 0, 0, 0>>))
+      |> result.map(fn(read) { read.0 })
+    case kind {
+      2 -> {
+        assert read == Ok(Flag(PlantedFlag(on: 0))) as "kind 2 is a flag"
+      }
+      5 -> {
+        assert read == Ok(Pair(PlantedPair(values: [], label: "")))
+          as "kind 5 is a pair"
+      }
+      _ -> {
+        assert read
+          == Error(bit_stream.UnexpectedValue(
+            field: "planted_union",
+            value: kind,
+          ))
+          as "a kind no variant has is refused, and the kind is named"
+      }
+    }
+  })
   assert planted_message.encode(PlantedMessage(..base, frame: <<9, 0, 0, 0>>))
     == Error(bit_stream.InnerFrameDisagrees(field: "frame"))
     as "a whole frame whose length differs from its bytes is refused"
@@ -115,6 +148,8 @@ fn empty() -> #(String, PlantedMessage) {
       floats: [],
       records: [],
       counted_numbers: [],
+      counted_records: [],
+      shapes: [],
       mode: Other(0),
       frame: <<4, 0, 0, 0>>,
     ),
@@ -143,6 +178,20 @@ fn full() -> #(String, PlantedMessage) {
           PlantedRecord(number: number * 2, label: string.repeat("l", number))
         }),
       counted_numbers: list.map(numbers, fn(number) { number * 4 }),
+      counted_records: list.map(numbers, fn(number) {
+        PlantedRecord(number: number % 32, label: string.repeat("c", number))
+      }),
+      shapes: upto(0, 14)
+        |> list.map(fn(number) {
+          case number % 2 {
+            0 -> Flag(PlantedFlag(on: number % 4 / 2))
+            _ ->
+              Pair(PlantedPair(
+                values: list.map(upto(1, number % 4), fn(value) { value * 20 }),
+                label: string.repeat("p", number),
+              ))
+          }
+        }),
       mode: First,
       frame: <<8, 0, 0, 0, 1, 2, 3, 4>>,
     ),
@@ -167,6 +216,11 @@ fn mixed() -> #(String, PlantedMessage) {
       floats: [],
       records: [PlantedRecord(number: 31, label: "\u{1F600}")],
       counted_numbers: [511],
+      counted_records: [PlantedRecord(number: 0, label: "\u{1F600}")],
+      shapes: [
+        Pair(PlantedPair(values: [63, 0, 63], label: "\u{1F600}")),
+        Flag(PlantedFlag(on: 1)),
+      ],
       mode: planted_mode.Second,
       frame: <<5, 0, 0, 0, 7>>,
     ),

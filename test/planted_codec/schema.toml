@@ -7,6 +7,35 @@ fields = [
   { name = "label", kind = "wide_text" },
 ]
 
+[[record]]
+name = "planted_flag"
+evidence = "planted"
+summary = "a planted layout of kind 2: one bit"
+fields = [
+  { name = "kind", kind = "constant", bits = 3, value = 2 },
+  { name = "on", kind = "unsigned", bits = 1 },
+]
+
+[[record]]
+name = "planted_pair"
+evidence = "planted"
+summary = "a planted layout of kind 5: a count of 2 bits, that many values of 6 bits, and a wide text"
+fields = [
+  { name = "kind", kind = "constant", bits = 3, value = 5 },
+  { name = "values", kind = "array", count_bits = 2, element = "unsigned", element_bits = 6 },
+  { name = "label", kind = "wide_text" },
+]
+
+[[union]]
+name = "planted_union"
+evidence = "planted"
+summary = "a planted list item whose first 3 bits pick its layout"
+tag_bits = 3
+variants = [
+  { tag = 2, name = "flag", record = "planted_flag" },
+  { tag = 5, name = "pair", record = "planted_pair" },
+]
+
 [[message]]
 id = 0x7F01
 name = "planted_message"
@@ -28,6 +57,8 @@ fields = [
   { name = "floats", kind = "array", count_bits = 4, element = "float32" },
   { name = "records", kind = "array", count_bits = 4, element = "planted_record" },
   { name = "counted_numbers", kind = "array", element = "unsigned", element_bits = 9, counted_by = "numbers" },
+  { name = "counted_records", kind = "array", element = "planted_record", counted_by = "numbers" },
+  { name = "shapes", kind = "array", count_bits = 4, element = "planted_union" },
   { name = "fixed", kind = "constant", bits = 2, value = 1 },
   { name = "mode", kind = "unsigned", bits = 3, values_type = "PlantedMode", values = [ { value = 1, name = "first" }, { value = 5, name = "second" } ] },
   { name = "frame", kind = "whole_frame" },
