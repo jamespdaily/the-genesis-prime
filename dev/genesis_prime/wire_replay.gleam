@@ -16,8 +16,9 @@
 ////                        the script of its ordinal
 ////                      an input line the client causes (a read, a timer, the
 ////                        client's close): first waits until that connection's
-////                        shell has taken every earlier input (`taken`, the
-////                        number of times its script's clock was called),
+////                        shell has taken every earlier recorded input
+////                        (`taken`, how many recorded input lines its script
+////                        has given a `Now`),
 ////                        then sends the bytes, fires the timer at the
 ////                        scheduler or closes the socket
 ////                      an input line the server causes (an answer, a
@@ -33,8 +34,15 @@
 //// cut it into writes, so a replay gives the same result when the server cuts
 //// its writes differently. The client's bytes are sent as the recording holds
 //// them, one send for each read line, each only after the shell has taken the
-//// input before it: a read line is one input and one `Now`, so a replay does
-//// not join or split them.
+//// input before it. The script's clock is told what each input is (`Taking`),
+//// so a read gets the `Now` of the recorded read line in which its last byte
+//// falls (the script keeps the byte offsets of the recorded read lines): a
+//// socket that delivers one recorded read in two parts gives both parts that
+//// line's `Now` and shifts no later input's, and the line counts as taken once
+//// its last byte has been. Any other input takes the next recorded input of
+//// its kind; one that is not the kind of the next recorded input is an
+//// ordering failure (`TookOutOfOrder`), so an input that arrives earlier or
+//// later than recorded is named and never shows up as a difference in bytes.
 ////
 //// Every wait of the replay client is bounded by `wait_ms` of real time, and
 //// so is the shell's wait for an ask (genesis_prime/connection/shell): a replay
@@ -42,7 +50,7 @@
 //// shell that never takes an input ends the replay with a `Failure` that names
 //// the connection and the recorded line.
 
-import genesis_prime/connection/script.{type Scripts}
+import genesis_prime/connection/script.{type Scripts, type Taking}
 import genesis_prime/server
 import genesis_prime/wire_recording.{
   type Input, type ReadFailure, type Recording, type Side,
@@ -92,9 +100,12 @@ pub type Refusal {
   /// bring the outcome about, and the session must be recorded again.
   AskTimedOut(connection: String, line: Int)
   /// A connection was accepted more than the hand-off keys' lifetime after the
-  /// connection before it was last read from, so a key the one put could not
-  /// be taken by the other. A replay runs no slower than the recording and
-  /// would take the key, so the session must be recorded again.
+  /// connection before it was last read from, in recorded time, so a key the
+  /// one put could not be taken by the other. A replay runs no slower than the
+  /// recording and would take the key, so the session must be recorded again.
+  /// This is the one expiry the wire shows: a key that expired within a
+  /// connection, or between connections closer than the lifetime, is not seen
+  /// here and shows as `Differs` where the server's bytes then differ.
   HandOffKeyExpired(
     earlier: String,
     later: String,
@@ -148,6 +159,11 @@ pub type Failure {
   /// The shell took an input the recording does not hold, so its script's
   /// clock had no `Now` to give.
   TookUnrecordedInput(connection: String, line: Int)
+  /// The shell took an input of another kind than the recording's next: its
+  /// clock was told `taken` where the line records `expected`, which is a
+  /// message, an answer or a timer that came earlier or later than recorded.
+  /// `line` is the recorded line the replay was at.
+  TookOutOfOrder(connection: String, line: Int, expected: Taking, taken: Taking)
   /// The server ended the connection where the recording goes on, with the
   /// log lines the connection wrote (its refusal of a client byte among them).
   EndedEarly(connection: String, line: Int, logged: List(String))
@@ -179,9 +195,10 @@ pub type Action {
   AwaitEnd(connection: String, line: Int, by: Side)
 }
 
-/// How many inputs one connection's shell has taken: the number of times its
-/// script's clock has been called. The replay client reads it to know how far
-/// the shell is, and the shell never writes it any other way.
+/// How many recorded input lines one connection's shell has taken: the lines
+/// its script's clock has given a `Now`, a read line counting once its last
+/// byte has been taken. The replay client reads it to know how far the shell is,
+/// and the shell never writes it any other way.
 pub type Progress
 
 /// The scheduler's table of the timers the replay's shells have started, kept
@@ -250,9 +267,11 @@ pub fn prepare(
 }
 
 /// What the session's connections are given: one script for each, with the
-/// recording's seed, a clock that queues its recorded `Now`s (one for each
-/// call, and the `Now`s of an input the recording holds only), and a scheduler
-/// that starts its timers in `timers` and fires them when the replay client asks.
+/// recording's seed, a clock that matches each input the shell takes with a
+/// recorded line by the `Taking` it is told (a read by its byte count against
+/// the recorded read lines' byte offsets, any other input by kind against the
+/// next recorded input) and gives that line's `Now`, and a scheduler that starts
+/// its timers in `timers` and fires them when the replay client asks.
 pub fn replay(session _session: Session, timers _timers: Timers) -> Replay {
   panic as "built in the next commit"
 }

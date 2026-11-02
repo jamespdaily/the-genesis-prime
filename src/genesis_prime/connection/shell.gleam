@@ -28,7 +28,7 @@
 ////     {tcp_closed}        ─▶ OwnEvent(PeerClosed)   ─▶ step ─▶ effects
 ////     {tcp_error, reason} ─▶ OwnEvent(ReadFailed(_)) ─▶ step ─▶ effects
 ////     the parent's exit   ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
-////   each input: the script's clock is called once for its `Now`; the wire
+////   each input: the script's clock is called once, told its kind, for its `Now`; the wire
 ////     recorder writes the input's line, then the rule recorder writes
 ////     Taken(input, step) before the step's effects; the wire recorder writes
 ////     each write after the socket took it, with a sequence number taken before
@@ -209,6 +209,7 @@ import genesis_prime/wire_recording.{type Side}
 import genesis_prime/wire_recording/recorder.{
   type WireRecorder, type WireWriter, type WriteError,
 }
+import gleam/bit_array
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Monitor, type Pid, type Selector, type Subject}
@@ -506,7 +507,7 @@ fn handle(
             event: OwnEvent(step.ReadFailed(failure:)),
           )
         ParentExited -> {
-          let now = running.script.clock()
+          let now = running.script.clock(script.Stopping)
           take(
             connection:,
             running:,
@@ -613,7 +614,7 @@ fn accepted(
   }
   join_registry(settings.registry, ConnectionId(id))
   let rule = settings.rule
-  let now = script.clock()
+  let now = script.clock(script.Accepted)
   take(
     connection:,
     running: Running(
@@ -669,7 +670,7 @@ fn take_next(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
-  take(connection:, running:, now: running.script.clock(), event:)
+  take(connection:, running:, now: running.script.clock(taking(event)), event:)
 }
 
 /// The one way an input reaches the rule: the wire recorder writes its line,
@@ -723,6 +724,23 @@ fn take(
       carry(connection:, running:, effects:, then: WaitForInput)
     EffectsThenAsk(effects:, ask:) ->
       carry(connection:, running:, effects:, then: MakeAsk(ask))
+  }
+}
+
+/// What the script's clock is told an input is.
+fn taking(event: Event(ConnectionEvent(message, answer))) -> script.Taking {
+  case event {
+    OwnEvent(Accepted(..)) -> script.Accepted
+    OwnEvent(step.Read(bytes:)) ->
+      script.Read(byte_count: bit_array.byte_size(bytes))
+    OwnEvent(Answered(..)) -> script.Answered
+    OwnEvent(step.TimerFired(..)) -> script.TimerFired
+    OwnEvent(step.PeerClosed) -> script.PeerClosed
+    OwnEvent(ReadFailed(..)) -> script.ReadFailed
+    OwnEvent(WriteFailed(..)) -> script.WriteFailed
+    OwnEvent(step.Woken(..)) -> script.Woken
+    step.WatchEnded(..) -> script.WatchEnded
+    Stopping(..) -> script.Stopping
   }
 }
 
@@ -1067,7 +1085,7 @@ fn wait_for_answer(
       kept: running.kept,
       deadline_ms:,
     )
-  let known = running.script.clock()
+  let known = running.script.clock(script.Answered)
   let running = Running(..running, kept:)
   let #(running, outcome) = case waited {
     Replied(answer:) -> #(running, Answer(answer:))
