@@ -36,9 +36,11 @@ fn start_supervisor(
 ) -> Pid {
   let assert Ok(started) =
     factory_supervisor.worker_child(fn(held: Held) {
+      let ready = process.new_subject()
       let pid =
         process.spawn(fn() {
           process.trap_exits(True)
+          process.send(ready, Nil)
           let _exit =
             process.new_selector()
             |> process.select_trapped_exits(fn(exit) { exit })
@@ -49,6 +51,10 @@ fn start_supervisor(
             as "the test let the child end"
           runtime.exit_now(Shutdown)
         })
+      // The child is started once it traps exits: the stop the supervisor
+      // sends it is then a message it answers, and no exit signal ends it first.
+      let assert Ok(Nil) = process.receive(ready, ask_support.event_wait_ms)
+        as "the child traps exits"
       Ok(actor.Started(pid:, data: Nil))
     })
     |> factory_supervisor.named(name)
@@ -172,14 +178,18 @@ pub fn a_supervisor_that_ends_while_the_call_waits_is_a_supervisor_that_is_not_r
   let assert Ok(release) = process.receive(held, ask_support.event_wait_ms)
     as "the child was asked to stop"
   let results = process.new_subject()
-  let _caller =
+  let caller =
     process.spawn_unlinked(fn() {
       process.send(
         results,
         service.start_child(supervisor: name, argument: held),
       )
     })
-  mailbox_support.await_queued(supervisor)
+  mailbox_support.await_call_from(
+    pid: supervisor,
+    caller:,
+    within_ms: ask_support.event_wait_ms,
+  )
   process.send(release, Nil)
   let _reason = ask_support.ended(stopped)
   let assert Ok(result) = process.receive(results, ask_support.event_wait_ms)

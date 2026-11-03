@@ -75,10 +75,17 @@ pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_
   // waits, and the supervisor then ends while the call waits (an exit with the
   // reason `killed`, which the caller of a call sees as `{killed, {gen_server,
   // call, ...}}`).
+  let assert [closer, _listener] =
+    supervisor_children.in_start_order(closing.supervisor)
+    as "the closing tree holds the closer, then its own listener"
   let assert True = ask_support.suspend_process(first_supervisor)
     as "the listener's supervisor was suspended"
   let stopping = ask_support.begin_stop_tree(closing.supervisor)
-  mailbox_support.await_queued(first_supervisor)
+  mailbox_support.await_call_from(
+    pid: first_supervisor,
+    caller: closer,
+    within_ms: ask_support.event_wait_ms,
+  )
   process.kill(first_supervisor)
   assert ask_support.ended(stopping) == ask_support.shutdown()
     as "the closing tree stopped as a stop ends it"
