@@ -17,7 +17,7 @@
 //// - The level: stat 10 of the unit's stats is its level, and a unit created
 ////   without it is level 1 (0x140458140, 0x1404543c1).
 
-import genesis_prime/game/start_place.{type Place, Facing}
+import genesis_prime/game/start_place.{Facing}
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -34,17 +34,6 @@ import message_support
 import owned_test
 import place_support
 
-/// Where the live character of the vector stands.
-fn roxo_place() -> Place {
-  place_support.at(
-    world_id: 3460,
-    world_zone_id: 6009,
-    x: 4605.65,
-    y: -7.571,
-    z: 494.996,
-  )
-}
-
 /// Roxo Stompstone as the live character of the vector.
 fn roxo() -> store.Character {
   Character(
@@ -56,7 +45,7 @@ fn roxo() -> store.Character {
     faction_id: 167,
     level: 1,
     path: 0,
-    place: Some(roxo_place()),
+    place: Some(place_support.live_character_place()),
     look: [],
     bones: [],
     naming: NameStands,
@@ -67,11 +56,13 @@ pub fn the_unit_of_the_live_character_is_the_clients_1120_bits_test() -> Nil {
   use <- owned_test.run(10_000)
   let unit =
     player_unit.create(
-      character: roxo(),
-      place: roxo_place(),
-      unit_id: 1,
+      unit: player_unit.new(
+        character: roxo(),
+        place: place_support.live_character_place(),
+        unit_id: 1,
+        visuals: [],
+      ),
       realm_id: 1,
-      visuals: [],
     )
   let assert Ok(body) =
     unit_create_player.encode(
@@ -92,14 +83,19 @@ pub fn the_unit_of_the_live_character_is_the_clients_1120_bits_test() -> Nil {
 pub fn the_unit_is_placed_at_its_position_and_turned_the_way_the_place_faces_test() -> Nil {
   use <- owned_test.run(10_000)
   let turned =
-    start_place.turned(roxo_place(), Facing(yaw: 0.5, pitch: -0.25, roll: 1.5))
+    start_place.turned(
+      place_support.live_character_place(),
+      Facing(yaw: 0.5, pitch: -0.25, roll: 1.5),
+    )
   let unit =
     player_unit.create(
-      character: roxo(),
-      place: turned,
-      unit_id: 1,
+      unit: player_unit.new(
+        character: roxo(),
+        place: turned,
+        unit_id: 1,
+        visuals: [],
+      ),
       realm_id: 1,
-      visuals: [],
     )
   assert unit.movement_commands
     == [
@@ -125,11 +121,13 @@ pub fn the_unit_carries_the_visuals_and_bones_it_is_given_and_the_path_never_rea
     ItemVisual(slot: 25, display_id: 137, item_color_set_id: 0, dye: 0)
   let unit =
     player_unit.create(
-      character: Character(..roxo(), path: 3, bones: [0x3F800001, 0x3F800002]),
-      place: roxo_place(),
-      unit_id: 9,
+      unit: player_unit.new(
+        character: Character(..roxo(), path: 3, bones: [0x3F800001, 0x3F800002]),
+        place: place_support.live_character_place(),
+        unit_id: 9,
+        visuals: [visual],
+      ),
       realm_id: 4,
-      visuals: [visual],
     )
   assert unit.item_visuals == [visual]
     as "opcode.0x262: the body is the character list's visuals, as given"
@@ -150,11 +148,13 @@ pub fn the_unit_carries_its_characters_level_as_stat_10_test() -> Nil {
   use <- owned_test.run(10_000)
   let unit =
     player_unit.create(
-      character: Character(..roxo(), level: 3),
-      place: roxo_place(),
-      unit_id: 1,
+      unit: player_unit.new(
+        character: Character(..roxo(), level: 3),
+        place: place_support.live_character_place(),
+        unit_id: 1,
+        visuals: [],
+      ),
       realm_id: 1,
-      visuals: [],
     )
   assert list.contains(unit.stats, UnitStat(stat_id: 10, value: 3))
     as "0x140458140: stat 10, in the integer form, is the unit's level; a unit created without it is level 1 (0x1404543c1), so a level 3 character needs it"

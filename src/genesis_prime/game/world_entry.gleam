@@ -7,12 +7,16 @@
 ////
 //// ```
 //// 0x07DD play, character id  ─▶ play_requested ─▶ Ask store LoadCharacter(account, id)
-//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, id)
+//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place)
 ////                                                 (or Refused: the rule hands back to select)
-//// Joined(unit id, run)       ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1,
+//// Joined(unit record, run)   ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1,
 ////                                                 0x61, WatchMap(map, run)
 //// ```
 ////
+//// - **The unit** is the map's: it builds the player's unit when it takes the
+////   player (genesis_prime/world_map/map) and answers 0x262's record, which
+////   `joined` sends as it is. The place the map is given, and 0xAD and 0x262
+////   carry, is bounded (below).
 //// - **The order** is the client's: 0xAD first; 0x262 before 0x19B; 0x19B
 ////   before 0x6BC, 0x636 and 0x61 (0x1403b5ad0, 0x14057a630, 0x1403c74d0,
 ////   and 0x6BC's case 0x1403ecc9b, which does nothing until 0x19B has set the
@@ -47,7 +51,6 @@
 ////   to ask for.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/appearance
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
@@ -57,17 +60,15 @@ import genesis_prime/message/movement_send_interval.{MovementSendInterval}
 import genesis_prime/message/play_character.{type PlayCharacter}
 import genesis_prime/message/player_entered_world.{PlayerEnteredWorld}
 import genesis_prime/message/player_path.{PlayerPath}
-import genesis_prime/message/unit_create_player
+import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/step.{type ConnectionId}
 import genesis_prime/store.{
   type AccountId, type Character, type CharacterId, type SessionEpoch,
   CharacterId,
 }
-import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
-import genesis_prime/world_map/player_unit
 import gleam/int
 import gleam/option.{None, Some}
 
@@ -196,6 +197,7 @@ pub fn loaded(
                   <> ", which has no saved place",
               )
             Some(place) -> {
+              let sent = start_place.within_the_worlds_box(place)
               let map =
                 MapId(
                   world_id: start_place.world_id(place),
@@ -204,7 +206,10 @@ pub fn loaded(
               Join(
                 state: Joining(character:, place:, session_epoch:, map:),
                 effects: [
-                  AskMap(map:, message: map.Join(connection:, character_id:)),
+                  AskMap(
+                    map:,
+                    message: map.Join(connection:, character:, place: sent),
+                  ),
                 ],
               )
             }
@@ -221,13 +226,12 @@ pub fn loaded(
 pub fn joined(
   state state: State,
   answer answer: map.Outgoing,
-  realm_id realm_id: Int,
-  tables tables: table_store.Tables,
 ) -> Result(#(Entered, List(Effect)), Nil) {
   case state {
     Joining(character:, place:, session_epoch:, map:) -> {
-      let map.Joined(unit_id:, incarnation:) = answer
+      let map.Joined(unit:, incarnation:) = answer
       let sent = start_place.within_the_worlds_box(place)
+      let unit_id = unit.unit_id
       Ok(
         #(
           Entered(
@@ -239,13 +243,7 @@ pub fn joined(
           ),
           [
             enter_world(place: sent),
-            player_created(
-              character:,
-              place: sent,
-              unit_id:,
-              realm_id:,
-              tables:,
-            ),
+            player_created(unit:),
             unit_is_player(unit_id:),
             player_path(character:),
             control_granted(unit_id:),
@@ -275,30 +273,9 @@ fn enter_world(place place: Place) -> Effect {
   Send(Frame(message_id: enter_world.message_id, body:))
 }
 
-/// 0x262 for the player, with the body visuals of the character list.
-fn player_created(
-  character character: Character,
-  place place: Place,
-  unit_id unit_id: Int,
-  realm_id realm_id: Int,
-  tables tables: table_store.Tables,
-) -> Effect {
-  let visuals =
-    appearance.body_visuals(
-      index: appearance.index(tables:),
-      race_id: character.race_id,
-      sex: character.gender,
-      faction_id: character.faction_id,
-      look: character.look,
-    )
-  let assert Ok(body) =
-    unit_create_player.encode(player_unit.create(
-      character:,
-      place:,
-      unit_id:,
-      realm_id:,
-      visuals:,
-    ))
+/// 0x262 for the player, as the map built its unit.
+fn player_created(unit unit: UnitCreatePlayer) -> Effect {
+  let assert Ok(body) = unit_create_player.encode(unit)
     as "a stored character's values fit the message's fields: the table's checks hold each"
   Send(Frame(message_id: unit_create_player.message_id, body:))
 }

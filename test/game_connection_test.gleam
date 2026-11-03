@@ -101,7 +101,7 @@ import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/message/zone_value_changed.{ZoneValueChanged}
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
+  type ConnectionEvent, type ConnectionStep, type Event, type Outcome, CallerId,
   CancelTimer, ConnectionId, EndedBeforeAnswer, LogError, LogInfo, LogWarning,
   Map, NoAnswerInTime, NotRunning, OtherSocketFailure, OwnEffect, OwnEvent,
   Sessions, StartTimer, StoppedWaiting, TimerFired, TimerId, Unwatch, Watch,
@@ -117,7 +117,7 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
-import genesis_prime/world_map/map.{Join, Joined}
+import genesis_prime/world_map/map.{Join}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/bit_array
 import gleam/int
@@ -1167,10 +1167,7 @@ fn world_character() -> store.Character {
       y: -853.87158203125,
       z: -560.18798828125,
     )),
-    look: [
-      LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-      LookEntry(label: CharacterCustomizationLabelId(21), value: 2),
-    ],
+    look: character_tables.row_10_look(),
     bones: character_support.bones(48),
     naming: NameStands,
   )
@@ -1205,10 +1202,61 @@ fn joining() -> #(game_connection.State, ConnectionStep(Request)) {
   joining_as(world_character())
 }
 
-/// The unit id and the run of the map the tests' map gives.
-const unit_id = 5
-
+/// The run of the tests' map.
 const incarnation = 77
+
+/// A map of the tests' realm and tables, as the server starts one for the tests'
+/// connections, with four other connections joined, so the next join is unit 5.
+fn map_with_four_players() -> map.State {
+  let state =
+    map.new(map.Settings(
+      map: MapId(world_id: 3460, instance: 0),
+      incarnation:,
+      realm_id: settings().realm_id,
+      tables: settings().tables,
+    ))
+  list.fold([2, 3, 4, 5], state, fn(state, other) {
+    let assert Some(place) = world_character().place
+      as "the tests' character has a saved place"
+    let #(state, _) =
+      map.step(
+        state,
+        support.input(
+          OwnEvent(step.Asked(
+            caller: CallerId(other),
+            message: Join(
+              connection: ConnectionId(other),
+              character: world_character(),
+              place:,
+            ),
+          )),
+        ),
+      )
+    state
+  })
+}
+
+/// The map's answer to the join the connection asked, which the real map gives:
+/// the ask the connection emitted is stepped through a map of the connection's
+/// realm and tables, and the reply is the answer.
+fn map_answer(taken: ConnectionStep(Request)) -> map.Outgoing {
+  let assert AskMap(message:, ..) = ask_request(taken)
+    as "the connection asked the map to take the player"
+  let #(_, mapped) =
+    map.step(
+      map_with_four_players(),
+      support.input(OwnEvent(step.Asked(caller: CallerId(1), message:))),
+    )
+  let assert [#(CallerId(1), outgoing)] = support.replies(mapped)
+    as "the map answers the join once, to its caller"
+  outgoing
+}
+
+/// The map's answer to a join of the tests' player, for the tests that need an
+/// answer and read nothing in it.
+fn a_join_answer() -> map.Outgoing {
+  map_answer(joining().1)
+}
 
 /// The connection after the map took `character`: the burst is written.
 fn entered_as(
@@ -1223,11 +1271,7 @@ fn entered_from(
   character: store.Character,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   let #(state, taken) = joining_from(in_character_select, character)
-  answer(
-    state:,
-    taken:,
-    outcome: step.Answer(FromMap(Joined(unit_id:, incarnation:))),
-  )
+  answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
 }
 
 /// The connection after the map took the player: the burst is written.
@@ -1280,16 +1324,15 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
       ),
     )
   assert ask_request(taken)
-    == AskMap(MapId(world_id: 3460, instance: 0), Join(ConnectionId(1), 42))
-    as "the saved world of the character, its one open instance, the connection's id and the character's id"
+    == AskMap(
+      MapId(world_id: 3460, instance: 0),
+      Join(ConnectionId(1), world_character(), entry_place()),
+    )
+    as "the saved world of the character, its one open instance, the connection's id, the character and the place the client is told"
   assert support.writes(taken) == []
     as "nothing is written before the map answers"
   let #(_, taken) =
-    answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromMap(Joined(unit_id:, incarnation:))),
-    )
+    answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
   assert list.map(heard(taken, keyed()), fn(frame) { frame.message_id })
     == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
     as "the order the client needs: 0xAD first; 0x262 before 0x19B; 0x19B before 0x6BC, 0x636 and 0x61 (the client drops 0x6BC until 0x19B has set the player, opcode.0x6bc); 0xF1 after 0xAD (opcode.0xad, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0x61, opcode.0xf1)"
@@ -1458,7 +1501,7 @@ pub fn an_answer_that_is_none_world_entry_asked_for_is_a_bug_with_reason_8_and_a
   list.each(
     [
       // The map's answer while the store is asked.
-      #(playing(42), step.Answer(FromMap(Joined(unit_id:, incarnation:)))),
+      #(playing(42), step.Answer(FromMap(a_join_answer()))),
       // The store's answer while the map is asked.
       #(
         joining(),
@@ -1500,11 +1543,7 @@ pub fn a_world_answer_when_character_select_asked_the_store_is_a_bug_with_reason
   assert list.length(support.logs_of(step: taken, level: LogError)) == 1
   let #(state, taken) = listing()
   let #(_, taken) =
-    answer(
-      state:,
-      taken:,
-      outcome: step.Answer(FromMap(Joined(unit_id:, incarnation:))),
-    )
+    answer(state:, taken:, outcome: step.Answer(FromMap(a_join_answer())))
   assert disconnect(taken, keyed()) == LostUserServer
   assert list.length(support.logs_of(step: taken, level: LogError)) == 1
 }
@@ -2196,7 +2235,7 @@ fn answers_to_other_asks() -> List(Outcome(Answer)) {
     step.Answer(FromStore(ForWorld(NotTheAccounts))),
     step.Answer(FromHandOff(NoHolder)),
     step.Answer(FromSessions(Claimed)),
-    step.Answer(FromMap(Joined(unit_id:, incarnation:))),
+    step.Answer(FromMap(a_join_answer())),
   ]
 }
 

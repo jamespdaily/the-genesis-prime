@@ -1,8 +1,9 @@
-//// A player character's unit as message 0x262 creates it in the client: the
-//// character's own values, alive at its saved place, with the body the
-//// character list shows. The connection builds it when the character enters
-//// the world (genesis_prime/game/world_entry); the map, which owns the units
-//// the client sees, takes ownership of it after that.
+//// A player character's unit: the character's own values, alive at the place
+//// it was placed at, with the body the character list shows. The map, which
+//// owns the units the client sees, builds it when the character joins and keeps
+//// it while the player is in the map (genesis_prime/world_map/map); `create`
+//// turns it into message 0x262, which creates the unit in the client, whenever
+//// one is sent.
 ////
 //// - **Alive:** stat 0 (health) above 0, or the client creates the player
 ////   dead (0x140457bc5). No client table or retail record gives a player's
@@ -10,11 +11,14 @@
 ////   Health) are `stand_in_health`, 136, the client's level-1 creature Base
 ////   Health (CreatureLevel row 1), until a marked retail record gives a player's.
 //// - **Level:** stat 10 is the character's level (0x140458140).
-//// - **Place:** a kind 2 movement command at the saved position, with its bit
-////   clear, which places the unit at once, then a kind 14 with the saved yaw,
-////   pitch and roll, which turns it (0x1404586e0, 0x140715350); after 0xAD the
-////   client never drops the player to the ground, so it must be on the floor
-////   (0x1403e828a).
+//// - **Place:** the unit's own place, which the map is given with the join
+////   (the saved place, bounded to the box the client bounds a unit's position
+////   to): a kind 2 movement command at its position, with its bit clear, which
+////   places the unit at once, then a kind 14 with its yaw, pitch and roll,
+////   which turns it (0x1404586e0, 0x140715350); after 0xAD the client never
+////   drops the player to the ground, so it must be on the floor (0x1403e828a).
+////   The character's own `place` field is never read: a unit holds the
+////   character for its other values, and its place only as the unit's own.
 //// - **Body:** the item visuals the character list sends
 ////   (genesis_prime/game/appearance), and the stored bone values
 ////   (opcode.0x262.player_fields).
@@ -52,15 +56,46 @@ const level_stat = 10
 /// (0x1404584b0).
 const base_health_property = 7
 
-/// Message 0x262 for the character as the unit `unit_id`, in the realm, at
-/// `place` with the body `visuals`.
-pub fn create(
+/// A player's unit in a map: the character as the unit `unit_id`, placed at
+/// `place` with the body `visuals`. Only `new` builds one, so a unit always
+/// holds all four.
+pub opaque type PlayerUnit {
+  PlayerUnit(
+    character: Character,
+    place: Place,
+    unit_id: Int,
+    visuals: List(ItemVisual),
+  )
+}
+
+/// The unit of the character as the unit `unit_id`, at `place` with the body
+/// `visuals`.
+pub fn new(
   character character: Character,
   place place: Place,
   unit_id unit_id: Int,
-  realm_id realm_id: Int,
   visuals visuals: List(ItemVisual),
+) -> PlayerUnit {
+  PlayerUnit(character:, place:, unit_id:, visuals:)
+}
+
+/// The unit's id in its map.
+pub fn unit_id(unit unit: PlayerUnit) -> Int {
+  unit.unit_id
+}
+
+/// The id of the unit's character, for a log line.
+pub fn character_id(unit unit: PlayerUnit) -> Int {
+  let CharacterId(character_id) = unit.character.character_id
+  character_id
+}
+
+/// Message 0x262 for the unit, in the realm.
+pub fn create(
+  unit unit: PlayerUnit,
+  realm_id realm_id: Int,
 ) -> UnitCreatePlayer {
+  let PlayerUnit(character:, place:, unit_id:, visuals:) = unit
   let CharacterId(character_id) = character.character_id
   let health = float32.to_bits(int.to_float(stand_in_health))
   let facing = start_place.facing(place)

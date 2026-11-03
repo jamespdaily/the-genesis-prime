@@ -20,8 +20,8 @@
 //// 0x244{0x025C{0x025B}}        ─▶ checked                         ─▶ store: CreateCharacter(..)
 ////     CharacterCreated(id)     ◀─ 0x3DC{0x00DC create result}, session key
 //// 0x244{0x07DD}                ─▶ world entry                     ─▶ store: LoadCharacter(account, id)
-////     CharacterLoaded(row, epoch)                                 ─▶ map MapId(world, 0): Join(connection, id)
-////       Joined(unit)           ◀─ 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1, 0x61; watches the map (watch 2)
+////     CharacterLoaded(row, epoch)                                 ─▶ map MapId(world, 0): Join(connection, row, place)
+////       Joined(unit record)    ◀─ 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1, 0x61; watches the map (watch 2)
 ////     NotTheAccounts, or no place ◀─ 0x3DC{0x0162 refused}       ─▶ store: ListCharacters(account)
 ////       Characters(rows)       ◀─ 0x0036, 0x0117, as above
 //// in the world, inside 0x038C: 0x637, 0x63A, 0xD5, 0x63B, 0xF2, 0xFB, 0xFC
@@ -1937,14 +1937,7 @@ fn entry_answered(
         Error(Nil) -> entry_unasked(session, now)
       }
     step.Answer(FromMap(answer)) ->
-      case
-        world_entry.joined(
-          entry,
-          answer:,
-          realm_id: session.settings.realm_id,
-          tables: session.settings.tables,
-        )
-      {
+      case world_entry.joined(entry, answer:) {
         Ok(#(entered, effects)) ->
           in_the_world(session:, now:, holder:, entered:, effects:)
         Error(Nil) -> entry_unasked(session, now)

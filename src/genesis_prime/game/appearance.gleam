@@ -37,7 +37,7 @@
 ////   lookup of one never finds none.
 
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
-import genesis_prime/store.{type LookEntry}
+import genesis_prime/store.{type Character, type LookEntry}
 import genesis_prime/table/character_customization.{type CharacterCustomization}
 import genesis_prime/table/character_customization_label.{
   type CharacterCustomizationLabel,
@@ -236,6 +236,21 @@ pub fn body_visuals(
       dye: 0,
     )
   })
+}
+
+/// The body visuals of a stored character's look: `body_visuals` for its race,
+/// sex, faction and look.
+pub fn character_body_visuals(
+  index index: Index,
+  character character: Character,
+) -> List(ItemVisual) {
+  body_visuals(
+    index:,
+    race_id: character.race_id,
+    sex: character.gender,
+    faction_id: character.faction_id,
+    look: character.look,
+  )
 }
 
 /// The row a slot shows once `row` is considered: the row already found,
