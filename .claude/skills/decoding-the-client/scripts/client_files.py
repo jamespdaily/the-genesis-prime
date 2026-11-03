@@ -12,18 +12,22 @@ Client64) holds ClientData.index/.archive and ClientDataEN.index/.archive. Both 
 The folder is $GENESIS_CLIENT_FILES_DIR, else $GENESIS_HOME/client-files, else ~/.genesis-prime/client-files.
 It is the client's data, so a folder inside this repository or any git working tree is refused. It is
 replaced as a whole, so a folder that exists, holds something and has no state.json is refused: it is not
-one this script made.
+one this script made. A state.json that cannot be read is refused, naming the file; run extract.
 
 extract   Writes every file under UI/ of ClientData (the forms, scripts and art the client's UI loads, about
           16,000 files and 1.8 GB) and en-US.bin of ClientDataEN (at the root of that index) into the
           folder, each file checked against the SHA-1 its index holds, as setup_check/extract_tables.py
-          checks the game tables, and swapped in whole (a run that fails leaves the folder as it was).
-          Prints the file count of each part. state.json records each file's path in the archive and its
-          index SHA-1, and each index's build.
-check     Reads both indexes and compares them with state.json and with the folder: exit 0 and "current";
-          exit 1 and each file that is new, gone, has another SHA-1 or is missing or the wrong size on
-          disk (the first 50), or "no copy". It changes nothing.
-text      Prints `<id>\\t<text>` for each id given (decimal or 0x hex), in the order given; an id the file
+          checks the game tables, then the whole staged set against the indexes' files and sizes, and
+          swapped in whole (a run that fails leaves the folder as it was). About 20 seconds. Prints the
+          file count of each part. state.json records each file's path in the archive, its index SHA-1 and
+          the SHA-1 of its content as written, and each index's build. A second extract started while one
+          runs is refused at once, naming the lock file (the folder's name and ".lock", left in place):
+          the two would share one staging folder.
+check     Reads both indexes and compares them with state.json and with the folder, hashing every file's
+          content (about 2 seconds): exit 0 and "current"; exit 1 and each file that is new, gone, has
+          another SHA-1 in the index, is missing, the wrong size, or is not the content extract wrote (the
+          first 50), or "no copy". It changes nothing.
+text      Prints `<id>\\t<text>` for each id given (decimal, leading zeros allowed, or 0x hex), in the order given; an id the file
           lacks prints `<id>\\t(none)` and the exit is 1. With --search, prints every text that holds all
           the words, ignoring case, in id order, then `N texts`. A newline, carriage return or tab inside
           a text prints as \\n, \\r or \\t. Without en-US.bin in the folder it says to run extract.
@@ -38,6 +42,9 @@ entries or text past its end, an offset past the text, ids not in order, or a un
 
 import argparse
 import bisect
+import contextlib
+import fcntl
+import hashlib
 import json
 import os
 import shutil
@@ -55,7 +62,6 @@ sys.path.insert(0, str(check_facts.REPOSITORY / "setup_check"))
 
 import decompiled  # noqa: E402
 import extract_tables  # noqa: E402
-import ghidra_env  # noqa: E402
 from decompiled import Refused  # noqa: E402
 
 STATE_FILE = "state.json"
@@ -78,12 +84,7 @@ class Part:
 
 def client_files_folder(env) -> Path:
     """The folder named in the module's description; raises Refused for one inside a git tree."""
-    if env.get("GENESIS_CLIENT_FILES_DIR"):
-        folder = Path(env["GENESIS_CLIENT_FILES_DIR"])
-    else:
-        folder = ghidra_env.genesis_home(env) / "client-files"
-    decompiled.require_outside_work_trees(folder, "the client's files")
-    return folder
+    return decompiled.outside_work_tree_folder(env, "GENESIS_CLIENT_FILES_DIR", "client-files", "the client's files")
 
 
 def read_parts(patch: Path) -> list[Part]:
@@ -101,42 +102,80 @@ def read_parts(patch: Path) -> list[Part]:
     return parts
 
 
-def _state(parts: list[Part]) -> dict:
+def _state(parts: list[Part], written: dict[str, str]) -> dict:
+    """What state.json holds: the builds, and per file its archive, its index SHA-1 and the SHA-1 of the
+    content as written."""
     return {
         "builds": {part.archive: part.build for part in parts},
         "files": {
-            path: {"archive": part.archive, "sha1": file.sha1.hex()} for part in parts for path, file in sorted(part.files.items())
+            path: {"archive": part.archive, "sha1": file.sha1.hex(), "content_sha1": written[path]}
+            for part in parts
+            for path, file in sorted(part.files.items())
         },
     }
 
 
+def load_state(folder: Path) -> dict | None:
+    """state.json of the folder, or None when there is none; raises Refused when it is not one extract wrote."""
+    path = folder / STATE_FILE
+    if not path.is_file():
+        return None
+    try:
+        saved = json.loads(path.read_text())
+        if not isinstance(saved["builds"], dict):
+            raise TypeError("builds is not an object")
+        for name, entry in saved["files"].items():
+            for key in ("archive", "sha1", "content_sha1"):
+                if not isinstance(entry[key], str):
+                    raise TypeError("%s: %s is not text" % (name, key))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as bad:
+        raise Refused("%s cannot be read (%s); run extract" % (path, bad)) from None
+    return saved
+
+
+@contextlib.contextmanager
+def _one_extract_at_a_time(folder: Path):
+    """Holds an exclusive lock on the file beside folder for the block, or raises Refused when another
+    extract holds it."""
+    lock = folder.with_name(folder.name + ".lock")
+    with open(lock, "a") as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Refused("another extract is running into %s (it holds %s); wait for it to end" % (folder, lock)) from None
+        yield
+
+
 def extract(patch: Path, folder: Path) -> list[Part]:
     """Fills folder as the module's description says; raises Corrupt naming the file or index that fails, or
-    Refused for a folder that is not one this script made. The folder is as it was after any failure."""
+    Refused for a folder that is not one this script made or one another extract is filling. The folder is as
+    it was after any failure."""
     parts = read_parts(patch)
-    if folder.exists() and any(folder.iterdir()) and not (folder / STATE_FILE).is_file():
-        raise Refused("%s holds files and no %s: it is not a folder this script made, and it is replaced as a whole" % (folder, STATE_FILE))
     folder.parent.mkdir(parents=True, exist_ok=True)
-    extract_tables.recover(folder)
-    staging = extract_tables.staging_of(folder)
-    staging.mkdir()
-    try:
-        for part in parts:
-            extract_tables.stage_files(patch / (part.archive + ".archive"), part.files, staging)
-        (staging / STATE_FILE).write_text(json.dumps(_state(parts), indent=0) + "\n")
-        extract_tables.swap_whole(staging, folder)
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
+    with _one_extract_at_a_time(folder):
+        if folder.exists() and any(folder.iterdir()) and not (folder / STATE_FILE).is_file():
+            raise Refused("%s holds files and no %s: it is not a folder this script made, and it is replaced as a whole" % (folder, STATE_FILE))
+        extract_tables.recover(folder)
+        staging = extract_tables.staging_of(folder)
+        staging.mkdir()
+        try:
+            written: dict[str, str] = {}
+            for part in parts:
+                written |= extract_tables.stage_files(patch / (part.archive + ".archive"), part.files, staging)
+            extract_tables.verify_staged(staging, {path: file for part in parts for path, file in part.files.items()}, None)
+            (staging / STATE_FILE).write_text(json.dumps(_state(parts, written), indent=0) + "\n")
+            extract_tables.swap_whole(staging, folder)
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
     return parts
 
 
 def changes(parts: list[Part], folder: Path) -> list[str] | None:
     """What differs between the indexes, state.json and the folder, one line each; None when there is no
     copy; an empty list when the copy is current."""
-    path = folder / STATE_FILE
-    if not path.is_file():
+    saved = load_state(folder)
+    if saved is None:
         return None
-    saved = json.loads(path.read_text())
     found = []
     for part in parts:
         before = saved["builds"].get(part.archive)
@@ -149,13 +188,18 @@ def changes(parts: list[Part], folder: Path) -> list[str] | None:
         found.append("%s is gone from the index" % name)
     for name in sorted(wanted.keys() & saved["files"].keys()):
         archive, file = wanted[name]
-        if saved["files"][name]["sha1"] != file.sha1.hex() or saved["files"][name]["archive"] != archive:
+        entry = saved["files"][name]
+        if entry["sha1"] != file.sha1.hex() or entry["archive"] != archive:
             found.append("%s has another SHA-1 in the index" % name)
         on_disk = folder / name
         if not on_disk.is_file():
             found.append("%s is missing from the folder" % name)
         elif on_disk.stat().st_size != file.size:
             found.append("%s is %d bytes in the folder, the index says %d" % (name, on_disk.stat().st_size, file.size))
+        else:
+            with open(on_disk, "rb") as content:
+                if hashlib.file_digest(content, "sha1").hexdigest() != entry["content_sha1"]:
+                    found.append("%s is not the content extract wrote" % name)
     return found
 
 
@@ -232,7 +276,7 @@ def _printable(text: str) -> str:
 
 def _text_id(word: str) -> int:
     try:
-        return int(word, 0)
+        return int(word, 16) if word[:2] in ("0x", "0X") else int(word, 10)
     except ValueError:
         raise argparse.ArgumentTypeError("%r is not a text id (decimal or 0x hex)" % word) from None
 

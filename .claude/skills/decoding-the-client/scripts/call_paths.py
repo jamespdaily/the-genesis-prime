@@ -6,31 +6,34 @@ Run with ~/.genesis-prime/env.sh read (WILDSTAR_CLIENT_EXE, and llvm-objdump as 
 Addresses are 0x hex. N is 1 to 8, default 4. The walk is over client_refs.py's reference index (llvm-objdump
 over the whole executable, built per run in a few seconds), not Ghidra's references: Ghidra disassembled none
 of the case blocks of HandleWorldMessage 0x1403ec6a0, so its references miss every flow through a world
-message. A function is a .pdata function start; a call from any of its .pdata ranges, chained chunks
-included, is a call from it.
+message. A function is a .pdata function start, or a leaf function: an address in an executable section that
+no .pdata function holds and that the index records a call or jmp to (a leaf has no .pdata entry; GetLocalizedText
+0x14034bdd0 is one). A call from any of a function's .pdata ranges, chained chunks included, is a call from it.
 
 Down (the default): every chain of at most N calls from <function> that ends at a target, each function at
 most once in a chain; a chain ends at the first target it reaches. A call is a `call`, or a `jmp` to another
-function's start (a tail call). Chains are listed shortest first, then by address, each hop with its call
-sites and, for a site in a chained chunk of the caller, that chunk. At most 50 chains are listed; a longer
-list says so and stops.
+function's start or a leaf (a tail call). Chains are listed shortest first, then by address, each hop with
+its call sites and, for a site in a chained chunk of the caller, that chunk. At most 50 chains are listed; a
+longer list says so and stops. A leaf's own calls are not walked: nothing says where its code ends.
     unfollowed:  each `call [rip+x]` and `jmp [rip+x]` site (not an import's, which the index names) in a
                  walked function, nearest the start first, with its function and the pointer it goes
                  through; at most 50 lines. Its target is known only when it runs, so no chain goes through it.
 
 --up: the same walk over callers, from <function> up to a target (which functions reach this one).
-    reached only as data:  each walked function with no caller, with every other reference the index holds to
-                 it (a pointer in a table, a `lea` of its address): the hop a call walk cannot take. At most
-                 50 lines.
+    reached only as data:  each walked function with no caller that is another function, with every other
+                 reference the index holds to it: a pointer in a table, a `lea` of its address, a call from
+                 itself, and a call or jmp from code outside .pdata ("called from code outside .pdata at
+                 X"; such code is a leaf whose start the index does not give, so the walk stops there). At
+                 most 50 lines.
 
-Not followed: a call through a register (`call rax`) or a jump table (the index holds neither), a
-conditional jump to a function start (it shows as `jcc` among the data references under --up), and a call
-to a leaf function, which has no .pdata entry (11,952 of the client's 124,273 call sites; GetLocalizedText
-0x14034bdd0 is one). A `no path` therefore says no chain of direct calls and tail calls between .pdata
-functions exists within N, not that the client has none.
+Not in the index, so never listed and never followed: a call through a register (`call rax`), a virtual call
+through a register's table (`call qword ptr [rcx+0x28]`) and a jump through a register or a table
+(`jmp rax`, a switch). A conditional jump to a function start is not followed either (under --up it shows as
+`jcc` among the references). A `no path` therefore says no chain of direct calls and tail calls exists
+within N, not that the client has none; `unfollowed:` is not the whole list of calls the walk cannot see.
 
-A function or target that is not a .pdata function start is refused, naming it and the function it lies in
-(a leaf function has no .pdata entry, so it cannot be a function or a target).
+A function or target that is neither a .pdata function start nor a leaf is refused, naming it and why (inside
+the function at X, in no executable section, or nothing calls or jumps to it).
 Exit 0 when a chain is listed; 1 for `no path` or a refusal. Function names come from the fact file's records.
 """
 
@@ -44,6 +47,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_facts  # noqa: E402
 import check_support  # noqa: E402
+import name_functions  # noqa: E402
 from client_refs import RefIndex  # noqa: E402
 
 DEFAULT_DEPTH = 4
@@ -124,25 +128,39 @@ class Names:
     """Function names from the fact file's records, for the lines that print an address."""
 
     def __init__(self):
-        records = check_facts.load(check_facts.FACT_FILE)
-        self._names = {int(key, 16): record.name for key, record in records.items() if record.name and key.startswith("0x")}
+        self._names = dict(name_functions.name_pairs(check_facts.load(check_facts.FACT_FILE)))
 
     def label(self, address: int) -> str:
         name = self._names.get(address)
         return "0x%x %s" % (address, name) if name else "0x%x" % address
 
 
-def require_function_start(index: RefIndex, starts: set[int], address: int, role: str) -> None:
-    """Raises Refused unless address is in starts, the .pdata function starts."""
+def is_leaf_address(index: RefIndex, address: int) -> bool:
+    """Whether address is in an executable section and no .pdata function holds it."""
+    section = index.pe.section_of(address)
+    return section is not None and section.executable and index.pe.root_of(address) is None
+
+
+def require_node(index: RefIndex, starts: set[int], address: int, role: str) -> None:
+    """Raises Refused unless address is in starts (the .pdata function starts) or is a leaf: held by no .pdata
+    function, in an executable section, and the target of a call or jmp the index records."""
     if address in starts:
         return
     inside = index.pe.root_of(address)
-    where = (
-        "it lies inside the function at 0x%x" % inside
-        if inside is not None
-        else "no .pdata function holds it (a leaf function has no .pdata entry, and the walk covers .pdata functions only)"
-    )
-    raise Refused("%s 0x%x is not a function start: %s" % (role, address, where))
+    if inside is not None:
+        why = "it lies inside the function at 0x%x" % inside
+    elif not is_leaf_address(index, address):
+        why = "it is in no executable section"
+    elif not any(r.kind in ("call", "jmp") for r in index.refs_to(address)):
+        why = "no .pdata function holds it and the index records no call or jmp to it"
+    else:
+        return
+    raise Refused("%s 0x%x is neither a function start nor a called leaf function: %s" % (role, address, why))
+
+
+def direct_callers(index: RefIndex, at: int) -> list[int]:
+    """The .pdata functions that call or tail-jump to at, itself left out."""
+    return [caller for caller in index.callers(at) if caller != at]
 
 
 def _sites(index: RefIndex, caller: int, callee: int) -> list:
@@ -180,22 +198,41 @@ def _print_unfollowed(index: RefIndex, names: Names, walk: Walk, on_paths: set[i
         for ref in index.sites_from(function, {"call-mem", "jmp-mem"}):
             if ref.target not in imports:
                 found.append((function not in on_paths, distance, ref.source, function, ref))
-    print("unfollowed (%d sites in the walked functions; no chain goes through them):" % len(found), file=out)
+    print(
+        "unfollowed (%d sites through [rip+x]; not in the index, so not listed: `call qword ptr [rcx+0x28]`, `call rax`, `jmp reg`):"
+        % len(found),
+        file=out,
+    )
     for _off_path, _distance, _site, function, ref in sorted(found, key=lambda f: f[:3])[:MAX_LINES]:
         print("  %s at 0x%x in %s, through 0x%x" % (ref.kind, ref.source, names.label(function), ref.target), file=out)
     if len(found) > MAX_LINES:
         print("  and %d more" % (len(found) - MAX_LINES), file=out)
 
 
+def _other_references(index: RefIndex, function: int) -> list[str]:
+    """What else refers to function, when no function calls it: each reference as a phrase."""
+    phrases = []
+    for ref in index.refs_to(function):
+        if ref.kind in ("call", "jmp"):
+            root = index.pe.root_of(ref.source)
+            if root is None:
+                phrases.append("called from code outside .pdata at 0x%x" % ref.source)
+            else:
+                phrases.append("%s from itself at 0x%x" % (ref.kind, ref.source))
+        else:
+            phrases.append("%s at 0x%x" % (ref.kind, ref.source))
+    return phrases
+
+
 def _print_data_only(index: RefIndex, names: Names, walk: Walk, out) -> None:
     found = []
     for function, distance in walk.expanded.items():
-        if not index.callers(function):
-            found.append((distance, function, [r for r in index.refs_to(function) if r.kind not in ("call", "jmp")]))
-    print("reached only as data (walked functions with no caller: %d):" % len(found), file=out)
-    for _distance, function, refs in sorted(found, key=lambda f: f[:2])[:MAX_LINES]:
-        held = ", ".join("%s at 0x%x" % (r.kind, r.source) for r in refs[:MAX_SITES]) or "no reference at all"
-        print("  %s: %s%s" % (names.label(function), held, "; and %d more" % (len(refs) - MAX_SITES) if len(refs) > MAX_SITES else ""), file=out)
+        if not direct_callers(index, function):
+            found.append((distance, function, _other_references(index, function)))
+    print("reached only as data or from code outside .pdata (walked functions with no calling function: %d):" % len(found), file=out)
+    for _distance, function, phrases in sorted(found, key=lambda f: f[:2])[:MAX_LINES]:
+        held = ", ".join(phrases[:MAX_SITES]) or "no reference at all"
+        print("  %s: %s%s" % (names.label(function), held, "; and %d more" % (len(phrases) - MAX_SITES) if len(phrases) > MAX_SITES else ""), file=out)
     if len(found) > MAX_LINES:
         print("  and %d more" % (len(found) - MAX_LINES), file=out)
 
@@ -204,18 +241,21 @@ def run(index: RefIndex, function: int, targets: list[int], depth: int, up: bool
     """Prints the walk's report; returns the exit status."""
     starts = set(index.pe.function_starts())
     for address, role in [(function, "function")] + [(t, "target") for t in targets]:
-        require_function_start(index, starts, address, role)
+        require_node(index, starts, address, role)
     if function in targets:
         raise Refused("function 0x%x is also a target" % function)
     names = Names()
+    if function not in starts and not up:
+        print("0x%x has no .pdata entry: its own calls are not walked" % function, file=out)
 
     def callees(at: int) -> list[int]:
-        return [r.target for r in index.sites_from(at, {"call", "jmp"}) if r.target != at and r.target in starts]
+        return [
+            r.target
+            for r in index.sites_from(at, {"call", "jmp"})
+            if r.target != at and (r.target in starts or is_leaf_address(index, r.target))
+        ]
 
-    def callers(at: int) -> list[int]:
-        return [caller for caller in index.callers(at) if caller != at]
-
-    walk = reach(callers if up else callees, function, set(targets), depth)
+    walk = reach(lambda at: direct_callers(index, at) if up else callees(at), function, set(targets), depth)
     if walk.paths:
         _print_paths(index, names, walk, up, out)
     else:

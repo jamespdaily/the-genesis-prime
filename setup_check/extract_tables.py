@@ -285,11 +285,13 @@ def aside_of(destination: Path) -> Path:
     return destination.with_name(destination.name + ".old")
 
 
-def stage_files(archive_path: Path, files: Mapping[str, IndexedFile], staging: Path) -> None:
+def stage_files(archive_path: Path, files: Mapping[str, IndexedFile], staging: Path) -> dict[str, str]:
     """Writes each file of files, keyed by its path under staging, from the
     archive at archive_path, each checked against the index's SHA-1 before it
-    is written, creating the folders a key names. Raises Corrupt naming the file
+    is written, creating the folders a key names. Returns the SHA-1 (hex) of
+    each file's content as written, by key. Raises Corrupt naming the file
     whose block does not match. Touches nothing but staging."""
+    written: dict[str, str] = {}
     with open(archive_path, "rb") as archive:
         blocks, entries = _archive_entries(archive, archive_path.name)
         for relative, file in files.items():
@@ -303,9 +305,12 @@ def stage_files(archive_path: Path, files: Mapping[str, IndexedFile], staging: P
             stored = archive.read(size)
             if hashlib.sha1(stored).digest() != file.sha1:
                 raise Corrupt(file.path, "the block's SHA-1 is not the index's")
+            content = _content(file, stored)
             target = staging / relative
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(_content(file, stored))
+            target.write_bytes(content)
+            written[relative] = hashlib.sha1(content).hexdigest()
+    return written
 
 
 def stage_tables(patch_folder: Path, staging: Path) -> list[IndexedFile]:
@@ -323,23 +328,23 @@ def _file_name(file: IndexedFile) -> str:
     return file.path.split("/", 1)[1]
 
 
-def verify_staged(staging: Path, tables: list[IndexedFile], expected_count: int | None) -> None:
-    """Raises Corrupt unless staging holds exactly the files of tables, each of
-    the size the index gives, and, when expected_count is given, exactly that
-    many (the fact file's 384 for the client). Run after stage_tables and
-    before swap_whole, so a set that is short or wrong is never published."""
-    if expected_count is not None and len(tables) != expected_count:
-        raise Corrupt("ClientData.index", "lists %d tables, %d were expected" % (len(tables), expected_count))
-    held = {path.name: path for path in staging.iterdir()}
-    for file in tables:
-        path = held.get(_file_name(file))
+def verify_staged(staging: Path, files: Mapping[str, IndexedFile], expected_count: int | None) -> None:
+    """Raises Corrupt unless staging holds exactly the files of files, keyed by
+    their path under staging, each of the size the index gives, and, when
+    expected_count is given, exactly that many (the fact file's 384 for the
+    client). Run after staging and before swap_whole, so a set that is short or
+    wrong is never published."""
+    if expected_count is not None and len(files) != expected_count:
+        raise Corrupt("ClientData.index", "lists %d tables, %d were expected" % (len(files), expected_count))
+    held = {path.relative_to(staging).as_posix(): path for path in staging.rglob("*") if path.is_file()}
+    for relative, file in files.items():
+        path = held.get(relative)
         if path is None:
             raise Corrupt(file.path, "is not in the staged set")
         if path.stat().st_size != file.size:
             raise Corrupt(file.path, "is %d bytes in the staged set, the index says %d" % (path.stat().st_size, file.size))
-    listed = {_file_name(file) for file in tables}
     for name in sorted(held):
-        if name not in listed:
+        if name not in files:
             raise Corrupt(name, "is in the staged set and the index does not list it")
 
 
@@ -401,7 +406,7 @@ def extract(patch_folder: Path, destination: Path, expected_count: int | None = 
     staging.mkdir()
     try:
         tables = stage_tables(patch_folder, staging)
-        verify_staged(staging, tables, expected_count)
+        verify_staged(staging, {_file_name(file): file for file in tables}, expected_count)
         swap_whole(staging, destination)
     finally:
         shutil.rmtree(staging, ignore_errors=True)

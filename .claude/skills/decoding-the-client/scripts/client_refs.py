@@ -210,17 +210,8 @@ class RefIndex:
     def callees(self, function_start: int) -> tuple[list[int], list[str]]:
         """(direct call targets, imports called through the IAT as 'dll!name')."""
         imports = self.pe.imports()
-        internal, called = set(), set()
-        for low, high in self.pe.root_ranges(function_start):
-            first = bisect.bisect_left(self._sources, low, 0, self._code_count)
-            for i in range(first, self._code_count):
-                if self._sources[i] >= high:
-                    break
-                kind = self._kinds[i]
-                if kind == KIND_CODE["call"]:
-                    internal.add(self._targets[i])
-                elif kind == KIND_CODE["call-mem"] and self._targets[i] in imports:
-                    called.add(imports[self._targets[i]])
+        internal = {r.target for r in self.sites_from(function_start, {"call"})}
+        called = {imports[r.target] for r in self.sites_from(function_start, {"call-mem"}) if r.target in imports}
         return sorted(internal), sorted(called)
 
     def sites_from(self, function_start: int, kinds: set[str]) -> list[Ref]:
