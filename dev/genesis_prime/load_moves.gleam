@@ -14,7 +14,8 @@
 //// All the players log in, create a character and enter the same map, where
 //// every character starts at the same place, so each is in sight of every other;
 //// each then sends a 0x0637 every 125 ms (`genesis_prime/load_player`, walking)
-//// for `hold_ms`, so the map relays each move to every other player.
+//// for `hold_ms`, so each player's connection sends each move to every other
+//// player's connection.
 ////
 //// The step is printed as the load run prints one (`load_run.describe`, with
 //// its verdict, its ping round trips and the lines the server logged), followed

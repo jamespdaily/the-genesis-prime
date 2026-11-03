@@ -60,15 +60,37 @@ pub type Request {
   /// for this ask (genesis_prime/world_map/registry).
   AskMapRun(map: MapId, incarnation: Int, message: map.Message)
   /// What a `Tell` effect sends the run of a map (genesis_prime/step): that the
-  /// player of `connection` moved to `place` and sent these relayed `commands`
-  /// (genesis_prime/world_map/map `Moved`). The only tell there is, so a tell of
-  /// a join or a leave cannot be built. It is never asked: the directory answers
-  /// an ask of it as no process running.
-  TellMoved(
-    connection: ConnectionId,
-    place: Place,
-    commands: List(RelayedMovement),
-  )
+  /// player of `connection` moved to `place` (genesis_prime/world_map/map
+  /// `Moved`), for the map to decide who sees whom. A tell of a join or a leave
+  /// cannot be built. It is never asked: the directory answers an ask of it as
+  /// no process running.
+  TellMoved(connection: ConnectionId, place: Place)
+  /// What a `Tell` effect sends the connection of a player who sees this one
+  /// (genesis_prime/step `Connection`): a move of this player, which that
+  /// connection writes as 0x638. Never asked, and never told to a map.
+  TellPeer(move: PeerMove)
+}
+
+/// One 0x638 a mover's connection sends the connection of a player who sees
+/// it: the mover's unit, the map's server time at the move (the map's clock,
+/// `world_map/map.server_time`), and at most 31 of its relayed commands in the
+/// order sent, since 0x638's count is 5 bits (opcode.0x638).
+pub type PeerMove {
+  PeerMove(unit_id: Int, server_time_ms: Int, commands: List(RelayedMovement))
+}
+
+/// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).
+const most_commands_in_a_message = 31
+
+/// The 0x638s a move is sent as: its `commands` in order, at most 31 to a
+/// message, and none for no command.
+pub fn peer_moves(
+  unit_id unit_id: Int,
+  server_time_ms server_time_ms: Int,
+  commands commands: List(RelayedMovement),
+) -> List(PeerMove) {
+  list.sized_chunk(commands, most_commands_in_a_message)
+  |> list.map(fn(chunk) { PeerMove(unit_id:, server_time_ms:, commands: chunk) })
 }
 
 /// What comes back from an ask, by the process asked.
@@ -84,10 +106,14 @@ pub type Answer {
 pub type Message {
   SentBySessions(message: account_session.Outgoing)
   /// What a map sends the connection of a player in it without waiting:
-  /// another player's unit seen, moved or gone (`Seen`, `MovedUnit`,
-  /// `Unseen`). A map's answers (`Joined`, `Left`) come as an ask's outcome,
-  /// never as this.
+  /// another player's unit seen or gone (`Seen`, `Unseen`), and who sees this
+  /// connection's player (`Watched`, `Unwatched`). A map's answers (`Joined`,
+  /// `Left`) come as an ask's outcome, never as this.
   SentByMap(message: map.Outgoing)
+  /// What the connection of a player who is seen by this one's player sends it
+  /// without waiting: that player's move, written as 0x638 while this player is
+  /// in the world (genesis_prime/game/connection).
+  SentByPeer(move: PeerMove)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who

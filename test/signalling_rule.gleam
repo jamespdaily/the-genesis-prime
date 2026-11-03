@@ -11,6 +11,7 @@
 //// 'W' n    watch n on Sessions            'T' n ms start timer n, which fires after ms
 //// 'X' n    cancel timer n                 'P' n    write the record 'p' n
 //// 'U' n    drop watch n                   'Y' n    tell Sessions (no answer)
+//// 'C' n    tell connection n (no answer)
 //// 'Z' n ms start timer n, which would fire after ms, and cancel it in the
 ////          same step, so no machine's speed decides whether it fired first
 //// 'A' n ms ask the directory with ask n, which has ms before its deadline;
@@ -63,6 +64,8 @@ pub const pong_command = 0x50
 pub const unwatch_command = 0x55
 
 pub const tell_command = 0x59
+
+pub const tell_connection_command = 0x43
 
 pub const start_then_cancel_command = 0x5A
 
@@ -213,6 +216,11 @@ fn command(
   case letter {
     _ if letter == watch_command -> Watch(WatchId(n), Sessions)
     _ if letter == unwatch_command -> Unwatch(WatchId(n))
+    _ if letter == tell_connection_command ->
+      OwnEffect(step.Tell(
+        to: step.Connection(step.ConnectionId(n)),
+        request: Nil,
+      ))
     _ if letter == tell_command ->
       OwnEffect(step.Tell(to: Sessions, request: Nil))
     _ if letter == timer_command ->

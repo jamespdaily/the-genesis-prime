@@ -227,9 +227,9 @@
 ////   The shell takes a send between steps, after an ask's outcome and the step it
 ////   starts, and entering the world writes its whole burst in the one step that
 ////   takes the map's `Joined`, so no send reaches the connection between the
-////   answer and the end of the burst: no status holds sends during entry. A
-////   player whose place is being saved by the 60 s timer is still in the world,
-////   and its sends are taken. With no player in the world (after the camp's leave,
+////   answer and the end of the burst: no status holds sends during entry. A send
+////   that arrives while any ask is out, a save among them, waits for its outcome.
+////   With no player in the world (after the camp's leave,
 ////   say) a send is dropped and nothing is written for other units; a player that
 ////   enters again starts with no viewers, and the map's new join sends it a
 ////   `Watched` for each player in sight.
@@ -272,7 +272,7 @@ import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
   AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
   Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Inside,
-  Otherwise, SentByMap, SentBySessions, Settled, TellMoved,
+  Otherwise, SentByMap, SentByPeer, SentBySessions, Settled, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -311,6 +311,7 @@ import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
+import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -532,6 +533,8 @@ fn connected(
       settled(handled: sessions_sent(session:, now:, message:), now:)
     OwnEvent(Woken(message: SentByMap(message:))) ->
       settled(handled: map_sent(session:, now:, message:), now:)
+    OwnEvent(Woken(message: SentByPeer(move:))) ->
+      settled(handled: peer_sent(session:, move:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
@@ -935,14 +938,17 @@ fn movement_message(
           }),
           case commands {
             [] -> []
-            [_, ..] -> [
-              tells_the_map_moved(
-                connection: client_connection.connection(session.link),
-                entered:,
-                place:,
-                commands:,
-              ),
-            ]
+            [_, ..] ->
+              list.append(
+                [
+                  tells_the_map_moved(
+                    connection: client_connection.connection(session.link),
+                    entered:,
+                    place:,
+                  ),
+                ],
+                sends_the_move_to_the_viewers(entered:, now:, commands:),
+              )
           },
         ]),
       )
@@ -968,18 +974,44 @@ fn moving(
 }
 
 /// The tell to the run of the player's map that the player moved: it names
-/// the player's connection, the place the movement now keeps and the commands
-/// the client sent, and no answer comes (`step.Tell`).
+/// the player's connection and the place the movement now keeps, for the map
+/// to decide who sees whom, and no answer comes (`step.Tell`).
 fn tells_the_map_moved(
   connection connection: ConnectionId,
   entered entered: world_entry.Entered,
   place place: Place,
-  commands commands: List(RelayedMovement),
 ) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(step.Tell(
     to: step.Map(map: entered.map, incarnation: entered.incarnation),
-    request: TellMoved(connection:, place:, commands:),
+    request: TellMoved(connection:, place:),
   ))
+}
+
+/// The move sent to each connection that sees the player, as 0x638s of at most
+/// 31 relayed commands each, in order, stamped with the map's clock at the time
+/// of the input (`map.server_time`, from the origin `Joined` carried): a send
+/// through the registry that the shell makes with no answer. None when no
+/// player sees this one.
+fn sends_the_move_to_the_viewers(
+  entered entered: world_entry.Entered,
+  now now: Now,
+  commands commands: List(RelayedMovement),
+) -> List(Effect(ConnectionEffect(Request))) {
+  use <- bool.guard(when: set.is_empty(entered.viewers), return: [])
+  let moves =
+    client_connection.peer_moves(
+      unit_id: entered.unit_id,
+      server_time_ms: map.server_time(
+        origin_ms: entered.clock_origin_ms,
+        monotonic_ms: now.monotonic_ms,
+      ),
+      commands:,
+    )
+  list.flat_map(set.to_list(entered.viewers), fn(viewer) {
+    list.map(moves, fn(move) {
+      OwnEffect(step.Tell(to: step.Connection(viewer), request: TellPeer(move:)))
+    })
+  })
 }
 
 /// What the camp messages do, taken from inside 0x038C, in the world
@@ -1603,12 +1635,79 @@ fn map_sent(
   case message {
     map.Joined(..) | map.Left ->
       end_for(session:, now:, text: "the map sent an answer as a message")
-    map.Seen(..) | map.MovedUnit(..) | map.Unseen(..) ->
+    map.Seen(..) | map.Unseen(..) ->
       case holds_the_world(session.status) {
         True ->
           Continue(session, [to_client(session, other_unit_frame(message))])
         False -> Continue(session, [])
       }
+    map.Watched(by:) ->
+      Continue(
+        Session(
+          ..session,
+          status: viewers_changed(status: session.status, change: set.insert(
+            _,
+            by,
+          )),
+        ),
+        [],
+      )
+    map.Unwatched(by:) ->
+      Continue(
+        Session(
+          ..session,
+          status: viewers_changed(status: session.status, change: set.delete(
+            _,
+            by,
+          )),
+        ),
+        [],
+      )
+  }
+}
+
+/// What another player's connection sent about the player it holds: its move,
+/// written as 0x638 while this player is in the world, and dropped otherwise.
+/// A 0x638 for a unit the client does not have yet, or no longer has, is
+/// written all the same: the client logs it and goes on (opcode.0x638).
+fn peer_sent(
+  session session: Session,
+  move move: client_connection.PeerMove,
+) -> client_connection.Handled(Session) {
+  use <- bool.guard(
+    when: !holds_the_world(session.status),
+    return: Continue(session, []),
+  )
+  Continue(session, [to_client(session, peer_move_frame(move))])
+}
+
+/// The status with the viewers of the player it holds changed by `change`: the
+/// player in the world, or in the world and waiting to claim again, where a
+/// send is taken. A status that takes no send, since the shell takes none while
+/// an ask is out, or that holds no player in the world, is as it was.
+fn viewers_changed(
+  status status: Status,
+  change change: fn(Set(ConnectionId)) -> Set(ConnectionId),
+) -> Status {
+  let viewed = fn(entered: world_entry.Entered) {
+    world_entry.Entered(..entered, viewers: change(entered.viewers))
+  }
+  case status {
+    InWorld(holder:, entered:) -> InWorld(holder:, entered: viewed(entered))
+    WaitingToClaim(holder:, resume: ResumeWorld(entered:), retries:) ->
+      WaitingToClaim(
+        holder:,
+        resume: ResumeWorld(entered: viewed(entered)),
+        retries:,
+      )
+    WaitingToClaim(resume: ResumeSelect, ..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> status
   }
 }
 
@@ -1630,33 +1729,35 @@ fn holds_the_world(status: Status) -> Bool {
 }
 
 /// The message to write for what the map sent about another player's unit:
-/// 0x262 for `Seen`, 0x638 with the reset bit 0 and the kept bit 0 for
-/// `MovedUnit`, and 0x355 with its one bit 0 for `Unseen`
-/// (opcode.0x262, opcode.0x638, opcode.0x355).
+/// 0x262 for `Seen` and 0x355 with its one bit 0 for `Unseen` (opcode.0x262,
+/// opcode.0x355).
 fn other_unit_frame(message: map.Outgoing) -> Frame {
   case message {
     map.Seen(unit:) -> world_entry.unit_created_frame(unit:)
-    map.MovedUnit(unit_id:, server_time_ms:, commands:) -> {
-      let assert Ok(body) =
-        unit_movement.encode(UnitMovement(
-          unit_id:,
-          server_time: server_time_ms,
-          reset_movement: 0,
-          kept: 0,
-          commands:,
-        ))
-        as "the map sends at most 31 commands and a time of 32 bits"
-      Frame(message_id: unit_movement.message_id, body:)
-    }
     map.Unseen(unit_id:) -> {
       let assert Ok(body) =
         unit_destroyed.encode(UnitDestroyed(unit_id:, field_2: 0))
         as "a unit id of 32 bits fits the message"
       Frame(message_id: unit_destroyed.message_id, body:)
     }
-    map.Joined(..) | map.Left ->
-      panic as "an answer of the map is no message about another unit"
+    map.Joined(..) | map.Left | map.Watched(..) | map.Unwatched(..) ->
+      panic as "only a unit seen or gone is a message about another unit"
   }
+}
+
+/// 0x638 for a move of another player's unit, with the reset bit 0 (the unit's
+/// movement is not rebuilt) and the kept bit 0 (opcode.0x638).
+fn peer_move_frame(move: client_connection.PeerMove) -> Frame {
+  let assert Ok(body) =
+    unit_movement.encode(UnitMovement(
+      unit_id: move.unit_id,
+      server_time: move.server_time_ms,
+      reset_movement: 0,
+      kept: 0,
+      commands: move.commands,
+    ))
+    as "a mover sends at most 31 commands and a time of 32 bits"
+  Frame(message_id: unit_movement.message_id, body:)
 }
 
 /// The end of a watch the rule opened. Sessions' (`sessions_watch`): the
@@ -1962,7 +2063,8 @@ fn leave_answered(
     step.StoppedWaiting -> stopped(session, now)
     step.Answer(FromMap(map.Joined(..)))
     | step.Answer(FromMap(map.Seen(..)))
-    | step.Answer(FromMap(map.MovedUnit(..)))
+    | step.Answer(FromMap(map.Watched(..)))
+    | step.Answer(FromMap(map.Unwatched(..)))
     | step.Answer(FromMap(map.Unseen(..)))
     | step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))

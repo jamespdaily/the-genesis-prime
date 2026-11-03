@@ -70,6 +70,7 @@ fn answer_of(
       realm_id:,
     ),
     incarnation:,
+    clock_origin_ms: 0,
   )
 }
 
@@ -135,7 +136,7 @@ fn without_sends(
 
 /// The unit id a join was answered with.
 fn unit_of(taken: ServiceStep(map.Outgoing), caller: Int) -> Int {
-  let assert [#(CallerId(number), Joined(unit:, incarnation: given))] =
+  let assert [#(CallerId(number), Joined(unit:, incarnation: given, ..))] =
     support.replies(taken)
     as "one reply answers the join"
   assert number == caller as "the reply is for the caller that joined"
@@ -333,9 +334,13 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
         Connection(ConnectionId(8)),
         map.Unseen(unit_id: unit_of(first, 1)),
       )),
+      OwnEffect(step.Send(
+        Connection(ConnectionId(8)),
+        map.Unwatched(by: ConnectionId(7)),
+      )),
       OwnEffect(Reply(CallerId(3), Left)),
     ]
-    as "the connection's watch, which the join opened as watch 1, is dropped: the connection goes on after its camp, so the map must not hold it as a player; the other player, who saw it, is sent its Unseen; then the leave is answered"
+    as "the connection's watch, which the join opened as watch 1, is dropped: the connection goes on after its camp, so the map must not hold it as a player; the other player, who saw it, is sent its Unseen and told its viewer 7 is gone; then the leave is answered"
   assert support.logs(left) == []
   let #(state, again) = join(state:, connection: 7, caller: 4)
   assert unit_of(first, 1) == 1 && unit_of(other, 2) == 2

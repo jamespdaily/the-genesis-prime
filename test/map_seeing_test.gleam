@@ -15,28 +15,28 @@
 //// - Unit ids: never 0 (a 0x262 with unit id 0 becomes the controlled unit,
 ////   0x1403d9760) and never given twice (the client does nothing for a unit it
 ////   has, 0x1403d9760).
-//// - 0x638: at most 31 commands, since its count is 5 bits (opcode.0x638,
-////   vector.opcode.0x638.body), and the encoder refuses 32; a unit comes back
-////   into sight as 0x355 then 0x262 (0x1403d9590, 0x1403d9760).
+//// - A unit comes back into sight as 0x355 then 0x262 (0x1403d9590,
+////   0x1403d9760).
+//// - The design of issue 272 (the map's doc comment): the map decides sight and
+////   sends no move; with each `Seen` of a unit it sends that unit's connection a
+////   `Watched`, and with each `Unseen` an `Unwatched`, in the same step.
 //// - The map's clock: milliseconds since the map started, the monotonic time of
-////   the input minus the monotonic time of `Started`, one clock for a unit's
-////   0x262 and its 0x638s (the doc comment of `map.server_time`).
+////   the input minus the monotonic time of `Started`, taken mod 2^32 because the
+////   client's fields hold 32 bits (the doc comment of `map.server_time`);
+////   `Joined` carries the origin.
 
 import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
-import genesis_prime/message/movement_mode.{MovementMode}
-import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player
-import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, ConnectionId,
   LogError, OwnEvent, Started, Told, WatchEnded, WatchId,
 }
 import genesis_prime/world_map/map.{
-  type State, Join, Joined, Leave, Moved, MovedUnit, Seen, Unseen,
+  type State, Join, Joined, Leave, Moved, Seen, Unseen, Unwatched, Watched,
 }
 import genesis_prime/world_map/sight
 import gleam/int
@@ -94,49 +94,85 @@ fn join(
   )
 }
 
-fn position(x: Float) -> RelayedMovement {
-  relayed_movement.Position(UnitPositionCommand(
-    x: float32.to_bits(x),
-    y: float32.to_bits(0.0),
-    z: float32.to_bits(0.0),
-    blends: 1,
-  ))
-}
-
-fn mode(number: Int) -> RelayedMovement {
-  relayed_movement.Mode(MovementMode(mode: number))
-}
-
-/// A move of connection `connection` to `x`, with `commands`, `elapsed_ms`
-/// after the map started: a tell.
+/// A move of connection `connection` to `x`, `elapsed_ms` after the map
+/// started: a tell, which holds the place and nothing else.
 fn move(
   state state: State,
   connection connection: Int,
   x x: Float,
-  commands commands: List(RelayedMovement),
   elapsed_ms elapsed_ms: Int,
 ) -> #(State, ServiceStep(map.Outgoing)) {
   feed(
     state: state,
     at_ms: started_at_ms + elapsed_ms,
     event: OwnEvent(
-      Told(message: Moved(
-        connection: ConnectionId(connection),
-        place: at(x),
-        commands:,
-      )),
+      Told(message: Moved(connection: ConnectionId(connection), place: at(x))),
     ),
   )
 }
 
-/// The unit ids a step's sends say, with the connection each goes to.
+/// A leave of connection `connection`.
+fn leave(
+  state state: State,
+  connection connection: Int,
+  elapsed_ms elapsed_ms: Int,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state: state,
+    at_ms: started_at_ms + elapsed_ms,
+    event: OwnEvent(Asked(
+      CallerId(9),
+      Leave(connection: ConnectionId(connection)),
+    )),
+  )
+}
+
+/// The units a step puts in sight or takes out of it: its sends of `Seen` and
+/// `Unseen`, in order, with the connection each goes to.
+fn units(taken: ServiceStep(map.Outgoing)) -> List(#(Int, map.Outgoing)) {
+  list.filter(support.sends(taken), fn(sent) {
+    case sent.1 {
+      Seen(..) | Unseen(..) -> True
+      Watched(..) | Unwatched(..) | Joined(..) | map.Left -> False
+    }
+  })
+}
+
+/// The viewers a step announces: its sends of `Watched` and `Unwatched`, in
+/// order, with the connection each goes to.
+fn notices(taken: ServiceStep(map.Outgoing)) -> List(#(Int, map.Outgoing)) {
+  list.filter(support.sends(taken), fn(sent) {
+    case sent.1 {
+      Watched(..) | Unwatched(..) -> True
+      Seen(..) | Unseen(..) | Joined(..) | map.Left -> False
+    }
+  })
+}
+
+/// The unit id a send of a unit says.
 fn unit_id_of(message: map.Outgoing) -> Int {
   case message {
     Seen(unit:) -> unit.unit_id
-    MovedUnit(unit_id:, ..) | Unseen(unit_id:) -> unit_id
+    Unseen(unit_id:) -> unit_id
     Joined(unit:, ..) -> unit.unit_id
-    map.Left -> 0
+    Watched(..) | Unwatched(..) | map.Left -> 0
   }
+}
+
+/// Each send of a step as the connection it goes to and what it says, with
+/// the unit ids and viewers by number: `Seen 1`, `Unseen 2`, `Watched by 2`.
+fn shape(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
+  list.map(support.sends(taken), fn(sent) {
+    #(sent.0, case sent.1 {
+      Seen(unit:) -> "Seen " <> int.to_string(unit.unit_id)
+      Unseen(unit_id:) -> "Unseen " <> int.to_string(unit_id)
+      Watched(by: ConnectionId(number)) ->
+        "Watched by " <> int.to_string(number)
+      Unwatched(by: ConnectionId(number)) ->
+        "Unwatched by " <> int.to_string(number)
+      Joined(..) | map.Left -> "an answer"
+    })
+  })
 }
 
 /// A map with connections 1 and 2 joined at x 0 and `x`.
@@ -152,7 +188,7 @@ pub fn a_player_joining_within_1024_units_is_seen_by_the_other_and_sees_it_test(
   use <- owned_test.run(5000)
   let #(_, taken) = two_players(1024.0)
   let assert [#(2, Seen(unit: of_first)), #(1, Seen(unit: of_second))] =
-    support.sends(taken)
+    units(taken)
     as "the joiner is sent one Seen of the player in sight, and that player one of the joiner, each once"
   assert of_first.unit_id == 1 && of_second.unit_id == 2
     as "each Seen names the other's own unit id"
@@ -161,11 +197,11 @@ pub fn a_player_joining_within_1024_units_is_seen_by_the_other_and_sees_it_test(
 pub fn a_pair_at_exactly_1024_units_sees_each_other_and_one_at_1024_01_does_not_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, at_the_range) = two_players(1024.0)
-  assert list.length(support.sends(at_the_range)) == 2
+  assert list.length(units(at_the_range)) == 2
     as "1024.0 is within the range: the decision on issue 272, at most 1024 units"
   let #(_, past) = two_players(1024.01)
   assert support.sends(past) == []
-    as "1024.01 is past the range: no Seen either way"
+    as "1024.01 is past the range: no Seen and no Watched either way"
   assert sight.sees(at(0.0), at(1024.0)) && !sight.sees(at(0.0), at(1024.01))
 }
 
@@ -187,7 +223,7 @@ pub fn sight_is_three_dimensional_test() -> Nil {
 pub fn a_seen_record_is_the_players_own_0x262_at_its_current_place_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, taken) = two_players(100.0)
-  let assert [#(2, Seen(unit: record)), ..] = support.sends(taken)
+  let assert [#(2, Seen(unit: record)), ..] = units(taken)
   let first = map_support.character(101)
   assert record.unit_id == 1
   assert record.character_id == 101 && record.character_id != 0
@@ -223,17 +259,10 @@ pub fn a_seen_record_is_the_players_own_0x262_at_its_current_place_test() -> Nil
 pub fn a_seen_record_names_the_place_the_unit_has_moved_to_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) = two_players(100.0)
-  let #(state, _) =
-    move(
-      state: state,
-      connection: 1,
-      x: 500.0,
-      commands: [position(500.0)],
-      elapsed_ms: 300,
-    )
+  let #(state, _) = move(state: state, connection: 1, x: 500.0, elapsed_ms: 300)
   let #(_, joined) =
     join(state: state, connection: 3, place: at(450.0), elapsed_ms: 400)
-  let assert [#(3, Seen(unit: record)), ..] = support.sends(joined)
+  let assert [#(3, Seen(unit: record)), ..] = units(joined)
     as "the joiner is sent the first player first (the connections go in order)"
   let assert [start_movement.Position(UnitPositionCommand(x:, ..)), ..] =
     record.movement_commands
@@ -249,12 +278,7 @@ pub fn no_unit_id_is_0_and_none_is_given_twice_in_a_maps_life_test() -> Nil {
     join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 10)
   let #(state, second) =
     join(state: state, connection: 2, place: at(10.0), elapsed_ms: 20)
-  let #(state, left) =
-    feed(
-      state: state,
-      at_ms: started_at_ms + 30,
-      event: OwnEvent(Asked(CallerId(9), Leave(connection: ConnectionId(1)))),
-    )
+  let #(state, left) = leave(state: state, connection: 1, elapsed_ms: 30)
   let #(_, again) =
     join(state: state, connection: 1, place: at(0.0), elapsed_ms: 40)
   let joined_ids =
@@ -268,7 +292,7 @@ pub fn no_unit_id_is_0_and_none_is_given_twice_in_a_maps_life_test() -> Nil {
     as "unit ids start at 1, which the client needs, and a unit that left and joined again is a new one"
   let named =
     list.flat_map([first, second, left, again], fn(taken) {
-      list.map(support.sends(taken), fn(sent) { unit_id_of(sent.1) })
+      list.map(units(taken), fn(sent) { unit_id_of(sent.1) })
     })
   assert list.all(named, fn(id) { id >= 1 })
     as "no Seen or Unseen names a unit id 0"
@@ -278,163 +302,123 @@ pub fn a_pair_in_sight_gets_no_second_seen_and_one_that_leaves_and_returns_gets_
   use <- owned_test.run(5000)
   let #(state, _) = two_players(100.0)
   let #(state, near) =
-    move(
-      state: state,
-      connection: 2,
-      x: 300.0,
-      commands: [position(300.0)],
-      elapsed_ms: 300,
-    )
-  assert list.all(support.sends(near), fn(sent) {
-    case sent.1 {
-      MovedUnit(..) -> True
-      Seen(..) | Unseen(..) | Joined(..) | map.Left -> False
-    }
-  })
-    as "a pair that stays in sight is sent moves, never a second Seen"
+    move(state: state, connection: 2, x: 300.0, elapsed_ms: 300)
+  assert support.sends(near) == []
+    as "a pair that stays in sight is told nothing by the map: the mover's connection sends the moves"
   let #(state, away) =
-    move(
-      state: state,
-      connection: 2,
-      x: 5000.0,
-      commands: [position(5000.0)],
-      elapsed_ms: 400,
-    )
-  assert support.sends(away)
-    == [
-      #(1, Unseen(unit_id: 2)),
-      #(2, Unseen(unit_id: 1)),
-    ]
-    as "the pair that leaves sight is sent Unseen both ways, in connection order of the viewer"
-  let #(_, back) =
-    move(
-      state: state,
-      connection: 2,
-      x: 200.0,
-      commands: [position(200.0)],
-      elapsed_ms: 500,
-    )
-  let assert [#(1, Seen(unit: of_mover)), #(2, Seen(unit: of_other))] =
-    support.sends(back)
+    move(state: state, connection: 2, x: 5000.0, elapsed_ms: 400)
+  assert units(away) == [#(2, Unseen(unit_id: 1)), #(1, Unseen(unit_id: 2))]
+    as "the pair that leaves sight is sent Unseen both ways"
+  let #(_, back) = move(state: state, connection: 2, x: 200.0, elapsed_ms: 500)
+  let assert [#(2, Seen(unit: of_other)), #(1, Seen(unit: of_mover))] =
+    units(back)
     as "the pair that returns is sent Seen both ways"
   assert of_mover.unit_id == 2 && of_other.unit_id == 1
 }
 
-// ---- moves ----
+// ---- who is watched ----
 
-pub fn a_move_is_relayed_once_to_each_player_who_sees_the_mover_and_to_no_other_test() -> Nil {
+pub fn each_seen_of_a_join_is_sent_with_a_watched_to_the_seen_players_connection_in_the_same_step_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, taken) = two_players(100.0)
+  assert shape(taken)
+    == [
+      #(2, "Seen 1"),
+      #(1, "Watched by 2"),
+      #(1, "Seen 2"),
+      #(2, "Watched by 1"),
+    ]
+    as "player 1 is seen by the joiner, so it is told its viewer is 2; the joiner is seen by player 1, so it is told its viewer is 1: all four in the join's one step"
+}
+
+pub fn each_unseen_of_a_move_out_of_sight_is_sent_with_an_unwatched_in_the_same_step_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = two_players(100.0)
+  let #(_, away) = move(state: state, connection: 2, x: 5000.0, elapsed_ms: 300)
+  assert shape(away)
+    == [
+      #(2, "Unseen 1"),
+      #(1, "Unwatched by 2"),
+      #(1, "Unseen 2"),
+      #(2, "Unwatched by 1"),
+    ]
+    as "each player is told its unit is gone from the other's sight and the other is no longer its viewer, in one step"
+}
+
+pub fn a_move_into_sight_sends_seen_and_watched_both_ways_in_one_step_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) =
+    join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 10)
+  let #(state, joined) =
+    join(state: state, connection: 2, place: at(9000.0), elapsed_ms: 20)
+  assert support.sends(joined) == [] as "far apart at the join: nothing is sent"
+  let #(_, near) = move(state: state, connection: 2, x: 500.0, elapsed_ms: 30)
+  assert notices(near)
+    == [#(1, Watched(by: ConnectionId(2))), #(2, Watched(by: ConnectionId(1)))]
+  assert list.length(units(near)) == 2
+  assert list.length(support.sends(near)) == 4
+    as "into sight: Seen and Watched both ways, and no move for a pair that was out of sight"
+}
+
+pub fn a_leave_sends_an_unseen_and_an_unwatched_to_each_player_who_saw_the_leaver_and_none_to_it_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
     join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 10)
   let #(state, _) =
     join(state: state, connection: 2, place: at(100.0), elapsed_ms: 20)
   let #(state, _) =
-    join(state: state, connection: 3, place: at(50_000.0), elapsed_ms: 30)
-  let #(_, taken) =
-    move(
-      state: state,
-      connection: 2,
-      x: 150.0,
-      commands: [position(150.0)],
-      elapsed_ms: 40,
-    )
-  let assert [#(1, MovedUnit(unit_id: 2, ..))] = support.sends(taken)
-    as "the player who sees the mover is sent one MovedUnit; the mover and the player out of sight are sent none"
-  Nil
+    join(state: state, connection: 3, place: at(90_000.0), elapsed_ms: 30)
+  let #(_, left) = leave(state: state, connection: 2, elapsed_ms: 40)
+  assert support.sends(left)
+    == [#(1, Unseen(unit_id: 2)), #(1, Unwatched(by: ConnectionId(2)))]
+    as "the player who saw it is sent its Unseen and told its viewer 2 is gone; the leaver and the player out of sight are sent nothing"
 }
 
-pub fn a_moved_unit_carries_the_commands_in_order_with_their_bits_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) = two_players(100.0)
-  let commands = [mode(1), position(120.0), mode(3), position(130.0)]
-  let #(_, taken) =
-    move(
-      state: state,
-      connection: 2,
-      x: 130.0,
-      commands: commands,
-      elapsed_ms: 300,
-    )
-  let assert [#(1, MovedUnit(commands: relayed, ..))] = support.sends(taken)
-  assert relayed == commands
-    as "the relayed commands in the order sent, each with its own bit (the position's bit is 1 here)"
-}
-
-pub fn a_list_of_40_commands_is_sent_as_31_and_9_in_order_and_the_encoder_refuses_32_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) = two_players(100.0)
-  let commands =
-    list.index_map(list.repeat(Nil, 40), fn(_, n) { position(int.to_float(n)) })
-  let #(_, taken) =
-    move(
-      state: state,
-      connection: 2,
-      x: 39.0,
-      commands: commands,
-      elapsed_ms: 300,
-    )
-  let assert [
-    #(1, MovedUnit(commands: first, ..)),
-    #(1, MovedUnit(commands: second, ..)),
-  ] = support.sends(taken)
-    as "opcode.0x638: the count is 5 bits, so 40 commands are two messages"
-  assert list.length(first) == 31 && list.length(second) == 9
-  assert list.append(first, second) == commands as "in order"
-  let message = fn(commands) {
-    unit_movement.encode(UnitMovement(
-      unit_id: 2,
-      server_time: 1,
-      reset_movement: 0,
-      kept: 0,
-      commands:,
-    ))
-  }
-  assert result.is_ok(message(first))
-  assert !result.is_ok(message(list.append(first, [position(0.0)])))
-    as "32 commands do not fit the 5-bit count"
-}
-
-pub fn a_move_with_nothing_to_relay_sends_no_moved_unit_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) = two_players(100.0)
-  let #(_, taken) =
-    move(state: state, connection: 2, x: 100.0, commands: [], elapsed_ms: 300)
-  assert support.sends(taken) == []
-    as "a 0x638 with no command carries nothing, so none is sent"
-}
-
-pub fn a_units_seen_and_moved_unit_read_the_maps_one_clock_and_it_never_goes_back_test() -> Nil {
+pub fn a_connection_ending_sends_the_same_notices_and_a_unit_that_was_gone_is_not_unseen_twice_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =
+    join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 10)
+  let #(state, _) =
+    join(state: state, connection: 2, place: at(100.0), elapsed_ms: 20)
+  let #(state, ended) =
+    feed(state: state, at_ms: started_at_ms + 30, event: WatchEnded(WatchId(2)))
+  assert support.sends(ended)
+    == [#(1, Unseen(unit_id: 2)), #(1, Unwatched(by: ConnectionId(2)))]
+    as "a viewer's connection that is gone is no longer anyone's viewer, so the movers stop sending to it"
+  let #(_, moved) = move(state: state, connection: 1, x: 50.0, elapsed_ms: 40)
+  assert support.sends(moved) == [] as "the player that ended is no longer seen"
+}
+
+pub fn a_second_join_resends_the_joiner_a_seen_and_a_watched_of_each_player_it_sees_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, _) = two_players(100.0)
+  let #(_, again) =
+    join(state: state, connection: 2, place: at(100.0), elapsed_ms: 300)
+  assert list.map(units(again), fn(sent) { #(sent.0, unit_id_of(sent.1)) })
+    == [#(2, 1)]
+    as "the joiner is sent a Seen of the one player it sees, as well as the error line"
+  assert notices(again) == [#(2, Watched(by: ConnectionId(1)))]
+    as "and told that player is its viewer, so a joiner that lost its viewers has them again"
+  assert support.logs_of(step: again, level: LogError) != []
+}
+
+// ---- the map's clock ----
+
+pub fn a_units_seen_reads_the_maps_clock_and_joined_carries_its_origin_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, first) =
     join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 100)
-  let #(state, joined) =
+  let assert [#(_, Joined(clock_origin_ms:, ..))] = support.replies(first)
+  assert clock_origin_ms == started_at_ms
+    as "the origin is the monotonic time the map started at, from which a mover's connection stamps its 0x638s"
+  let #(_, joined) =
     join(state: state, connection: 2, place: at(10.0), elapsed_ms: 250)
-  let assert [#(2, Seen(unit: first_seen)), _] = support.sends(joined)
+  let assert [#(2, Seen(unit: first_seen)), ..] = units(joined)
   assert first_seen.server_time_estimate_start == 250
     as "the join came 250 ms after the map started, whatever the monotonic time"
-  let #(state, moved_once) =
-    move(
-      state: state,
-      connection: 2,
-      x: 20.0,
-      commands: [position(20.0)],
-      elapsed_ms: 250,
-    )
-  let assert [#(1, MovedUnit(server_time_ms: same, ..))] =
-    support.sends(moved_once)
-  assert same == 250 as "the same input time reads the same clock"
-  let #(_, moved_later) =
-    move(
-      state: state,
-      connection: 2,
-      x: 30.0,
-      commands: [position(30.0)],
-      elapsed_ms: 900,
-    )
-  let assert [#(1, MovedUnit(server_time_ms: later, ..))] =
-    support.sends(moved_later)
-  assert later == 900 && later >= same
-    as "the clock only goes forward with the monotonic time"
+  assert map.server_time(origin_ms: clock_origin_ms, monotonic_ms: 5000 + 250)
+    == 250
+    as "a connection reads the same clock from the origin"
 }
 
 pub fn a_clock_past_2_to_the_32_ms_is_written_mod_2_to_the_32_test() -> Nil {
@@ -445,131 +429,19 @@ pub fn a_clock_past_2_to_the_32_ms_is_written_mod_2_to_the_32_test() -> Nil {
   let wrap_ms = 4_294_967_296
   let #(state, _) =
     join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 100)
-  let #(state, joined) =
+  let #(_, joined) =
     join(
       state: state,
       connection: 2,
       place: at(10.0),
       elapsed_ms: wrap_ms + 250,
     )
-  let assert [#(2, Seen(unit: seen)), _] = support.sends(joined)
+  let assert [#(2, Seen(unit: seen)), ..] = units(joined)
   assert seen.server_time_estimate_start == 250
     as "a Seen 2^32 + 250 ms into the map's life says 250"
-  let #(_, moved) =
-    move(
-      state: state,
-      connection: 2,
-      x: 20.0,
-      commands: [position(20.0)],
-      elapsed_ms: wrap_ms + 900,
-    )
-  let assert [#(1, MovedUnit(server_time_ms:, ..))] = support.sends(moved)
-  assert server_time_ms == 900
-    as "a MovedUnit 2^32 + 900 ms into the map's life says 900"
-}
-
-pub fn a_move_that_takes_a_player_out_of_sight_is_unseen_both_ways_and_into_sight_seen_both_ways_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) =
-    join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 10)
-  let #(state, joined) =
-    join(state: state, connection: 2, place: at(9000.0), elapsed_ms: 20)
-  assert support.sends(joined) == [] as "far apart at the join: no Seen"
-  let #(state, near) =
-    move(
-      state: state,
-      connection: 2,
-      x: 500.0,
-      commands: [position(500.0)],
-      elapsed_ms: 30,
-    )
-  let assert [#(1, Seen(unit: _)), #(2, Seen(unit: _))] = support.sends(near)
-    as "into sight: Seen both ways, and no MovedUnit for a pair that was out of sight"
-  let #(_, far) =
-    move(
-      state: state,
-      connection: 2,
-      x: 9000.0,
-      commands: [position(9000.0)],
-      elapsed_ms: 40,
-    )
-  assert support.sends(far)
-    == [#(1, Unseen(unit_id: 2)), #(2, Unseen(unit_id: 1))]
-    as "out of sight: Unseen both ways"
-}
-
-pub fn a_pair_that_crosses_sight_twice_in_one_batch_is_decided_on_the_final_place_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) =
-    join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 10)
-  let #(state, _) =
-    join(state: state, connection: 2, place: at(9000.0), elapsed_ms: 20)
-  // One Moved whose commands go in and out of sight and end out: at most one
-  // Seen or Unseen for the pair, and here none, since it was out and ends out.
-  let #(_, taken) =
-    move(
-      state: state,
-      connection: 2,
-      x: 9100.0,
-      commands: [position(500.0), position(9100.0)],
-      elapsed_ms: 30,
-    )
-  assert support.sends(taken) == []
-    as "decided on the final place, which is out of sight as the pair was"
-}
-
-// ---- leaving ----
-
-pub fn a_leave_sends_one_unseen_to_each_player_who_saw_the_leaver_and_none_to_it_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) =
-    join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 10)
-  let #(state, _) =
-    join(state: state, connection: 2, place: at(100.0), elapsed_ms: 20)
-  let #(state, _) =
-    join(state: state, connection: 3, place: at(90_000.0), elapsed_ms: 30)
-  let #(_, left) =
-    feed(
-      state: state,
-      at_ms: started_at_ms + 40,
-      event: OwnEvent(Asked(CallerId(9), Leave(connection: ConnectionId(2)))),
-    )
-  assert support.sends(left) == [#(1, Unseen(unit_id: 2))]
-    as "the player who saw it is sent its Unseen; the leaver and the player out of sight are sent nothing"
-}
-
-pub fn a_connection_ending_sends_the_same_unseen_and_a_unit_that_was_gone_is_not_unseen_twice_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) =
-    join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 10)
-  let #(state, _) =
-    join(state: state, connection: 2, place: at(100.0), elapsed_ms: 20)
-  let #(state, ended) =
-    feed(state: state, at_ms: started_at_ms + 30, event: WatchEnded(WatchId(2)))
-  assert support.sends(ended) == [#(1, Unseen(unit_id: 2))]
-  let #(_, moved) =
-    move(
-      state: state,
-      connection: 1,
-      x: 50.0,
-      commands: [position(50.0)],
-      elapsed_ms: 40,
-    )
-  assert support.sends(moved) == []
-    as "the player that ended is no longer seen, so a move is relayed to no one"
-}
-
-pub fn a_second_join_resends_the_joiner_a_seen_of_each_player_it_sees_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) = two_players(100.0)
-  let #(_, again) =
-    join(state: state, connection: 2, place: at(100.0), elapsed_ms: 300)
-  assert list.map(support.sends(again), fn(sent) {
-      #(sent.0, unit_id_of(sent.1))
-    })
-    == [#(2, 1)]
-    as "the joiner is sent a Seen of the one player it sees, as well as the error line"
-  assert support.logs_of(step: again, level: LogError) != []
+  assert map.server_time(origin_ms: 5000, monotonic_ms: 5000 + wrap_ms + 900)
+    == 900
+    as "the clock a mover's connection reads wraps the same way"
 }
 
 // ---- failures ----
@@ -578,45 +450,20 @@ pub fn a_moved_from_a_connection_not_in_the_map_changes_nothing_and_logs_an_erro
   use <- owned_test.run(5000)
   let #(state, _) = two_players(100.0)
   let #(after, taken) =
-    move(
-      state: state,
-      connection: 9,
-      x: 50.0,
-      commands: [position(50.0)],
-      elapsed_ms: 300,
-    )
+    move(state: state, connection: 9, x: 50.0, elapsed_ms: 300)
   assert support.sends(taken) == []
   assert support.logs_of(step: taken, level: LogError) != []
     as "a connection's rule tells only while joined, so this is a bug"
-  // The map is as it was: a move of a player in it is relayed as before.
-  let #(_, relayed) =
-    move(
-      state: after,
-      connection: 2,
-      x: 120.0,
-      commands: [position(120.0)],
-      elapsed_ms: 400,
-    )
-  assert list.length(support.sends(relayed)) == 1
+  // The map is as it was: a move of a player in it still decides sight.
+  let #(_, away) = move(state: after, connection: 2, x: 9000.0, elapsed_ms: 400)
+  assert list.length(units(away)) == 2
 }
 
 pub fn a_moved_after_the_connections_leave_is_ignored_with_an_error_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) = two_players(100.0)
-  let #(state, _) =
-    feed(
-      state: state,
-      at_ms: started_at_ms + 300,
-      event: OwnEvent(Asked(CallerId(9), Leave(connection: ConnectionId(2)))),
-    )
-  let #(_, taken) =
-    move(
-      state: state,
-      connection: 2,
-      x: 120.0,
-      commands: [position(120.0)],
-      elapsed_ms: 400,
-    )
+  let #(state, _) = leave(state: state, connection: 2, elapsed_ms: 300)
+  let #(_, taken) = move(state: state, connection: 2, x: 120.0, elapsed_ms: 400)
   assert support.sends(taken) == []
   assert support.logs_of(step: taken, level: LogError) != []
 }

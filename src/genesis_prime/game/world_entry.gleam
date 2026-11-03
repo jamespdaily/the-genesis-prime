@@ -75,6 +75,7 @@ import genesis_prime/world_map/map_id.{type MapId, MapId}
 import gleam/int
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/set.{type Set}
 
 /// What world entry asks or sends; the game connection's rule turns each into
 /// its own effect.
@@ -120,16 +121,22 @@ pub type Loaded {
 }
 
 /// A player in the world: its character, its map, the run of the map that took
-/// it, which the rule watches as `Map(map, incarnation)`, its unit id, where
-/// it stands (genesis_prime/game/movement) and whether it is camping
+/// it, which the rule watches as `Map(map, incarnation)`, its unit id, the
+/// origin of the map's clock (`Joined` carries it), who sees it, where it
+/// stands (genesis_prime/game/movement) and whether it is camping
 /// (genesis_prime/game/camp), which the rule keeps up to date. A player that has
-/// just entered is not camping.
+/// just entered is not camping and has no viewers: the map's `Watched` and
+/// `Unwatched` keep `viewers`, the connections whose players see this one, and
+/// the connection sends each move of the player to them
+/// (genesis_prime/game/connection).
 pub type Entered {
   Entered(
     character_id: CharacterId,
     map: MapId,
     incarnation: Int,
     unit_id: Int,
+    clock_origin_ms: Int,
+    viewers: Set(ConnectionId),
     movement: movement.State,
     camp: camp.Camp,
   )
@@ -261,7 +268,7 @@ pub fn joined(
   case state {
     Joining(character:, place:, session_epoch:, map:) -> {
       case answer {
-        map.Joined(unit:, incarnation:) -> {
+        map.Joined(unit:, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
           let unit_id = unit.unit_id
           Ok(
@@ -271,6 +278,8 @@ pub fn joined(
                 map:,
                 incarnation:,
                 unit_id:,
+                clock_origin_ms:,
+                viewers: set.new(),
                 movement: movement.entered(place:, session_epoch:),
                 camp: camp.none(),
               ),
@@ -287,8 +296,11 @@ pub fn joined(
             ),
           )
         }
-        map.Left | map.Seen(..) | map.MovedUnit(..) | map.Unseen(..) ->
-          Error(Nil)
+        map.Left
+        | map.Seen(..)
+        | map.Unseen(..)
+        | map.Watched(..)
+        | map.Unwatched(..) -> Error(Nil)
       }
     }
     Loading(..) -> Error(Nil)

@@ -19,7 +19,7 @@
 ////   the running supervisor holds.
 
 import ask_support
-import genesis_prime/client_connection.{AskMap, TellMoved}
+import genesis_prime/client_connection.{AskMap, PeerMove, TellMoved, TellPeer}
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
@@ -134,9 +134,9 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
   let run = process.new_subject()
   let connection = ConnectionId(7)
   let place = place_support.live_character_place()
-  server.tell_the_run(run, TellMoved(connection:, place:, commands: []))
+  server.tell_the_run(run, TellMoved(connection:, place:))
   assert process.receive(run, 0)
-    == Ok(service.TellCall(map.Moved(connection:, place:, commands: [])))
+    == Ok(service.TellCall(map.Moved(connection:, place:)))
     as "a move reaches the run as the map's own Moved, told with no reply"
   let logged = process.new_subject()
   let capture = log_capture.start(from: process.self(), into: logged)
@@ -150,6 +150,10 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
   let assert Ok(#("error", _text)) =
     process.receive(logged, within: ask_support.event_wait_ms)
     as "a tell that is an ask is a bug in the rule that tells it: an error line"
+  server.tell_the_run(run, TellPeer(PeerMove(9, 1, [])))
+  let assert Ok(#("error", _text)) =
+    process.receive(logged, within: ask_support.event_wait_ms)
+    as "a tell for a connection is none for a map: an error line too"
   log_capture.stop(capture)
   assert process.receive(run, 0) == Error(Nil)
     as "and nothing is sent to the map"

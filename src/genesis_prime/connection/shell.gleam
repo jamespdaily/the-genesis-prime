@@ -154,7 +154,10 @@
 ////   open watch on `to` found with its lookup (`Tellable`), so a tell makes no
 ////   lookup and a move costs none; it goes with the watch, whether the rule
 ////   drops it or the process ends. A tell to an address with no such watch is
-////   dropped with a warning.
+////   dropped with a warning. A tell to a `Connection` needs no watch: the
+////   settings' `deliver` sends it through the registry, one lookup of the
+////   group of the connection's id as any service's send makes, and a connection
+////   that is gone drops it with no line.
 //// - **A message delivered.** Another process sends the connection's pid
 ////   `{woken, message}` (`registry.deliver`); the shell takes it between steps
 ////   as `OwnEvent(Woken(message))`, in the order it arrived among the socket's
@@ -266,6 +269,11 @@ pub type Settings(settings, state, message, answer, request) {
     /// running or the lookup got no reply. Made once at start from the
     /// processes' names; a rule never sees it.
     locate: fn(step.Address) -> Result(watch.Found(fn(request) -> Nil), Nil),
+    /// How the shell sends a request to the connection a `Connection` address
+    /// names, which needs no watch: through the registry, as the services'
+    /// sends are made; `Error(Nil)` when no connection is there, and the request
+    /// is dropped. Made once at start; a rule never sees it.
+    deliver: fn(step.Address, request) -> Result(Nil, Nil),
   )
 }
 
@@ -1070,7 +1078,7 @@ fn carry_effect(
         closing:,
       )
     OwnEffect(step.Tell(to:, request:)) -> {
-      tell(running:, to:, request:)
+      tell(connection:, running:, to:, request:)
       carry(connection:, running:, effects: later, then:, closing:)
     }
     OwnEffect(CancelTimer(timer:)) ->
@@ -1104,23 +1112,34 @@ fn open_watch(
   )
 }
 
-/// Tells the process at the address the request, through the way the open
-/// watch on that address found, so a move costs no lookup. A tell to an address
-/// no open watch found a process for is dropped with a warning: the watch was
-/// dropped, the process ended, or it was never running.
+/// Tells the process at the address the request. A connection is sent it
+/// through the settings' `deliver`, which finds it in the registry; one that
+/// has ended drops it, as a send to a gone process is dropped, with no line
+/// since a player's viewers end all the time. Any other process is told through
+/// the way the open watch on that address found, so a move costs no lookup, and
+/// a tell to an address no open watch found a process for is dropped with a
+/// warning: the watch was dropped, the process ended, or it was never running.
 fn tell(
+  connection connection: Connection(settings, state, message, answer, request),
   running running: Running(state, request),
   to to: step.Address,
   request request: request,
 ) -> Nil {
-  case watch.sender_at(watches: running.watches, address: to) {
-    Ok(sender) -> sender(request)
-    Error(Nil) ->
-      runtime.log(
-        LogWarning,
-        "a tell was dropped: no open watch holds a process at its address",
-        step.no_one,
-      )
+  case to {
+    step.Connection(..) -> {
+      let _delivered = connection.settings.deliver(to, request)
+      Nil
+    }
+    step.Sessions | step.HandOff | step.Store | step.Maps | step.Map(..) ->
+      case watch.sender_at(watches: running.watches, address: to) {
+        Ok(sender) -> sender(request)
+        Error(Nil) ->
+          runtime.log(
+            LogWarning,
+            "a tell was dropped: no open watch holds a process at its address",
+            step.no_one,
+          )
+      }
   }
 }
 

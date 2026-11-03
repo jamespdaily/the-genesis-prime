@@ -1106,16 +1106,24 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
     second_have:,
     ..,
   ) = two_players_enter_one_map()
-  // The second player moves; only the first sees it.
-  game_client.send_world(
-    game: second,
-    message_id: 0x0637,
-    body: game_client.moves_body(client_clock: 0x1234, commands: [
-      game_client.position_command(x: 100.5, y: 50.25, z: -200.75),
-    ]),
-  )
-  let #(moved, first_have) = game_client.next(game: first, have: first_have)
-  assert moved.message_id == 0x0638 as "opcode.0x638: each move is relayed"
+  // The second player moves five times at once; only the first sees it, each
+  // move as the second's own connection sent it, in the order sent, and all
+  // before the map's 0x355 of the unit that follows.
+  list.each([0.0, 1.0, 2.0, 3.0, 4.0], fn(step) {
+    game_client.send_world(
+      game: second,
+      message_id: 0x0637,
+      body: game_client.moves_body(client_clock: 0x1234, commands: [
+        game_client.position_command(x: 100.5 +. step, y: 50.25, z: -200.75),
+      ]),
+    )
+  })
+  let #(moves, first_have) =
+    game_client.read_kept(game: first, have: first_have, count: 5)
+  assert list.map(moves, fn(frame) { frame.message_id })
+    == [0x0638, 0x0638, 0x0638, 0x0638, 0x0638]
+    as "opcode.0x638: each move is sent to the viewer"
+  let assert [moved, ..] = moves
   let assert Ok(relayed) = unit_movement.decode(moved.body)
   assert relayed.unit_id == 2
     && relayed.reset_movement == 0
@@ -1130,10 +1138,14 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
       )),
     ]
     as "the position the player sent, with its bit"
-  // The first player's bot model: the second stands where it moved to.
+  // The first player's bot model: the second stands where its last move put it.
   let view = game_client.observe(others: dict.new(), frame: seen_second)
-  let view = game_client.observe(others: view, frame: moved)
-  assert view == dict.from_list([#(2, #(100.5, 50.25, -200.75))])
+  let view =
+    list.fold(moves, view, fn(view, frame) {
+      game_client.observe(others: view, frame:)
+    })
+  assert view == dict.from_list([#(2, #(104.5, 50.25, -200.75))])
+    as "the moves arrive in the order sent"
   // The second player camps out: the first sees its unit go.
   game_client.send_world(game: second, message_id: 0x00BF, body: <<1>>)
   let #(_countdown, second_have) =

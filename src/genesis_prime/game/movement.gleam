@@ -273,7 +273,8 @@ pub type Taken {
   /// at in the world's frame (`place`), the commands it sent that are relayed,
   /// in the order sent with their bits, and the kinds of those that are not
   /// (`unrelayed`, once each, in the order sent). The game connection tells the
-  /// map, which relays the commands to the players who see this one
+  /// map, which decides who sees this player, and sends the commands to the
+  /// connections of the players who see this one
   /// (genesis_prime/world_map/map `Moved`).
   Relayed(
     state: State,

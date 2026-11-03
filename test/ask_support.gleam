@@ -110,13 +110,15 @@ pub fn start_scripted(
     scripts:,
     registry:,
     locate: fn(address) { result.map(locate(address), watch.Watched) },
+    deliver: fn(_address, _request) { Error(Nil) },
     with:,
   )
 }
 
 /// Starts a listener as `start_scripted` does, whose connections find what
 /// their rule watches with `locate`, which also gives the way to tell a
-/// process the rule tells (`Tellable`).
+/// process the rule tells (`Tellable`), and send the connections their rule
+/// tells with `deliver`.
 pub fn start_telling(
   rule rule: ConnectionRule(settings, state, request, message, answer),
   directory directory: fn(request, Int, fn(answer) -> Nil) ->
@@ -126,6 +128,7 @@ pub fn start_telling(
   scripts scripts: Scripts,
   registry registry: Option(Registry(message)),
   locate locate: fn(Address) -> Result(watch.Found(fn(request) -> Nil), Nil),
+  deliver deliver: fn(Address, request) -> Result(Nil, Nil),
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
   let name = process.new_name("test_listener")
@@ -139,6 +142,7 @@ pub fn start_telling(
       directory:,
       registry:,
       locate:,
+      deliver:,
     )
   let assert Ok(started) =
     supervisor.new(supervisor.OneForOne)

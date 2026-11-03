@@ -637,6 +637,7 @@ fn counting_lookup(
 
 fn start_telling(
   locate locate: fn(Address) -> Result(watch.Found(fn(Nil) -> Nil), Nil),
+  deliver deliver: fn(Address, Nil) -> Result(Nil, Nil),
 ) -> ask_support.Server {
   ask_support.start_telling(
     rule: signalling_rule.rule(),
@@ -646,6 +647,7 @@ fn start_telling(
     scripts: script.operating_system,
     registry: None,
     locate:,
+    deliver:,
     with: fn(builder) { builder },
   )
 }
@@ -674,11 +676,10 @@ pub fn a_tell_goes_through_the_target_resolved_when_the_watch_opened_and_looks_n
   let lookups = process.new_subject()
   let told = process.new_subject()
   let server =
-    start_telling(locate: counting_lookup(
-      sessions: a_sessions(),
-      lookups:,
-      told:,
-    ))
+    start_telling(
+      locate: counting_lookup(sessions: a_sessions(), lookups:, told:),
+      deliver: fn(_address, _request) { Error(Nil) },
+    )
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   command_then_pong(
@@ -708,11 +709,10 @@ pub fn a_tell_after_the_watch_is_dropped_goes_nowhere_and_one_after_a_watch_open
   let lookups = process.new_subject()
   let told = process.new_subject()
   let server =
-    start_telling(locate: counting_lookup(
-      sessions: a_sessions(),
-      lookups:,
-      told:,
-    ))
+    start_telling(
+      locate: counting_lookup(sessions: a_sessions(), lookups:, told:),
+      deliver: fn(_address, _request) { Error(Nil) },
+    )
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   command_then_pong(
@@ -761,7 +761,10 @@ pub fn a_tell_after_the_watched_process_ended_goes_nowhere_test() -> Nil {
   let told = process.new_subject()
   let sessions = a_sessions()
   let server =
-    start_telling(locate: counting_lookup(sessions:, lookups:, told:))
+    start_telling(
+      locate: counting_lookup(sessions:, lookups:, told:),
+      deliver: fn(_address, _request) { Error(Nil) },
+    )
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
   command_then_pong(
@@ -818,4 +821,52 @@ pub fn a_read_that_cannot_be_armed_because_the_peer_closed_reaches_the_rule_as_a
     })
     == []
     as "a socket the peer closed is no warning, whichever call found it out"
+}
+
+pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is_dropped_with_no_warning_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use <- unitest.tag("serial")
+  let lines = process.new_subject()
+  let capture = log_capture.start_all(into: lines)
+  let delivered = process.new_subject()
+  let server =
+    start_telling(
+      locate: fn(_address) { Error(Nil) },
+      deliver: fn(address, _request) {
+        process.send(delivered, address)
+        case address {
+          step.Connection(ConnectionId(99)) -> Error(Nil)
+          step.Connection(..)
+          | step.Sessions
+          | step.HandOff
+          | step.Store
+          | step.Maps
+          | step.Map(..) -> Ok(Nil)
+        }
+      },
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_connection_command,
+    n: 7,
+    pong: 1,
+  )
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_connection_command,
+    n: 99,
+    pong: 2,
+  )
+  assert mailbox_support.drain(delivered)
+    == [step.Connection(ConnectionId(7)), step.Connection(ConnectionId(99))]
+    as "each tell reached the settings' deliver by the connection's address, with no watch opened"
+  ask_support.stop(server)
+  log_capture.stop(capture)
+  assert list.filter(mailbox_support.drain(lines), fn(line) {
+      line.0 == "warning" || line.0 == "error"
+    })
+    == []
+    as "a connection that is gone is no warning: a player's viewers end all the time"
 }

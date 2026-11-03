@@ -84,7 +84,7 @@ import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
-  SentByMap, SentBySessions, TellMoved,
+  SentByMap, SentByPeer, SentBySessions, TellMoved, TellPeer,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -286,7 +286,7 @@ fn directory(settings: Settings) -> Directory {
           deadline_ms:,
           reply: fn(answer) { reply(FromMap(answer)) },
         )
-      TellMoved(..) -> Error(Nil)
+      TellMoved(..) | TellPeer(..) -> Error(Nil)
     }
   }
 }
@@ -365,12 +365,12 @@ pub fn tell_the_run(
   request request: Request,
 ) -> Nil {
   case request {
-    TellMoved(connection:, place:, commands:) -> {
-      let _sent =
-        service.tell_subject(subject, map.Moved(connection:, place:, commands:))
+    TellMoved(connection:, place:) -> {
+      let _sent = service.tell_subject(subject, map.Moved(connection:, place:))
       Nil
     }
-    AskStore(..)
+    TellPeer(..)
+    | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
     | AskMap(..)
@@ -380,6 +380,35 @@ pub fn tell_the_run(
         "a rule told a map something other than a move, which a map takes only by an ask",
         step.no_one,
       )
+  }
+}
+
+/// How a connection's shell sends a request to another connection by address
+/// (`Tell` to a `Connection`): a move of a player (`TellPeer`) goes through the
+/// registry as `SentByPeer`, by the same reach the services' sends take
+/// (`connection_reach`). Any other request is no tell to a connection: a rule
+/// that sends one has a bug, logged as an error, and nothing is sent.
+fn connection_deliver(
+  settings: Settings,
+) -> fn(step.Address, Request) -> Result(Nil, Nil) {
+  let reach = connection_reach(settings, SentByPeer)
+  fn(to: step.Address, request: Request) {
+    case request {
+      TellPeer(move:) -> reach.send(to, move)
+      TellMoved(..)
+      | AskStore(..)
+      | AskHandOff(..)
+      | AskSessions(..)
+      | AskMap(..)
+      | AskMapRun(..) -> {
+        runtime.log(
+          LogError,
+          "a rule sent a connection something other than a player's move",
+          step.no_one,
+        )
+        Error(Nil)
+      }
+    }
   }
 }
 
@@ -543,6 +572,7 @@ fn serve(
         directory:,
         registry:,
         locate: connection_locate(settings),
+        deliver: connection_deliver(settings),
       ),
     )),
   )
