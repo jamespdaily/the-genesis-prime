@@ -128,6 +128,23 @@ fn join(
   join_as(state:, connection:, caller:, character: character(100 + connection))
 }
 
+/// The effects that are not sends to a connection: a join of two players at
+/// one place also sends each a `Seen` of the other.
+fn without_sends(
+  effects: List(step.Effect(step.ServiceEffect(map.Outgoing))),
+) -> List(step.Effect(step.ServiceEffect(map.Outgoing))) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      OwnEffect(step.Send(..)) -> False
+      OwnEffect(Reply(..))
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..)
+      | Stop -> True
+    }
+  })
+}
+
 /// The unit id a join was answered with.
 fn unit_of(taken: ServiceStep(map.Outgoing), caller: Int) -> Int {
   let assert [#(CallerId(number), Joined(unit:, incarnation: given))] =
@@ -167,7 +184,7 @@ pub fn each_join_gets_the_next_unit_id_and_its_own_watch_test() -> Nil {
   let #(_, second) = join(state:, connection: 8, caller: 2)
   assert unit_of(first, 1) == 1
   assert unit_of(second, 2) == 2
-  assert support.effects_of(second)
+  assert without_sends(support.effects_of(second))
     == [
       Watch(WatchId(2), Connection(ConnectionId(8))),
       OwnEffect(Reply(
@@ -175,7 +192,7 @@ pub fn each_join_gets_the_next_unit_id_and_its_own_watch_test() -> Nil {
         answer_of(character: character(108), unit_id: 2, visuals: row_10_body()),
       )),
     ]
-    as "the watch ids go up too, so a watch is never taken for an older one"
+    as "the watch ids go up too, so a watch is never taken for an older one; the two players stand at one place, so the join also sends their `Seen`s, which the seeing tests below check"
 }
 
 pub fn a_unit_id_is_never_given_twice_across_leaves_and_rejoins_test() -> Nil {
@@ -305,8 +322,15 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
   let #(state, other) = join(state:, connection: 8, caller: 2)
   let #(state, left) = leave(state:, connection: 7, caller: 3)
   assert support.effects_of(left)
-    == [Unwatch(WatchId(1)), OwnEffect(Reply(CallerId(3), Left))]
-    as "the connection's watch, which the join opened as watch 1, is dropped: the connection goes on after its camp, so the map must not hold it as a player; then the leave is answered"
+    == [
+      Unwatch(WatchId(1)),
+      OwnEffect(step.Send(
+        Connection(ConnectionId(8)),
+        map.Unseen(unit_id: unit_of(first, 1)),
+      )),
+      OwnEffect(Reply(CallerId(3), Left)),
+    ]
+    as "the connection's watch, which the join opened as watch 1, is dropped: the connection goes on after its camp, so the map must not hold it as a player; the other player, who saw it, is sent its Unseen; then the leave is answered"
   assert support.logs(left) == []
   let #(state, again) = join(state:, connection: 7, caller: 4)
   assert unit_of(first, 1) == 1 && unit_of(other, 2) == 2

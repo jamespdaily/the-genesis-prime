@@ -15,7 +15,14 @@ import gleam/result
 /// record: its own doc names the fact that shows its value is safe, and one
 /// with no such doc has no use the client's code shows.
 pub type MovementVelocity {
-  MovementVelocity(x: Int, y: Int, z: Int, field_5: Int)
+  MovementVelocity(
+    x: Int,
+    y: Int,
+    z: Int,
+    /// Safe by `opcode.0x637`: the client's code gives this field no use the
+    /// server needs, and that fact shows its value is safe.
+    field_5: Int,
+  )
 }
 
 /// Writes the record's fields to the stream.

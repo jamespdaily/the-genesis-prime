@@ -119,6 +119,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/realm_handoff.gleam",
       "src/genesis_prime/message/realm_list.gleam",
       "src/genesis_prime/message/realm_select_start.gleam",
+      "src/genesis_prime/message/relayed_movement.gleam",
       "src/genesis_prime/message/rename_character.gleam",
       "src/genesis_prime/message/rename_character_result.gleam",
       "src/genesis_prime/message/rename_result.gleam",

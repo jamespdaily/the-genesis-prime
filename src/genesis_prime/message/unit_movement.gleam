@@ -3,12 +3,12 @@
 ////
 //// Message 0x0638 (unit_movement), server to client: movement commands for a
 //// unit the server moves: the unit, the server's time, a bit that resets the
-//// unit's movement, a bit the unit keeps, and at most 31 commands in the
-//// layout of 0x637's. Its fields are listed in `schema.toml` with the client's
-//// evidence, and the fact file's `opcode.0x638` names the message.
+//// unit's movement, a bit the unit keeps, and at most 31 relayed commands in
+//// the layout of 0x637's. Its fields are listed in `schema.toml` with the
+//// client's evidence, and the fact file's `opcode.0x638` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
-import genesis_prime/message/movement_command.{type MovementCommand}
+import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import gleam/result
 
 /// The message's number.
@@ -23,7 +23,7 @@ pub type UnitMovement {
     server_time: Int,
     reset_movement: Int,
     kept: Int,
-    commands: List(MovementCommand),
+    commands: List(RelayedMovement),
   )
 }
 
@@ -39,7 +39,7 @@ pub fn encode(message: UnitMovement) -> Result(BitArray, EncodeError) {
     "commands",
     message.commands,
     5,
-    movement_command.write,
+    relayed_movement.write,
   )
   |> bit_stream.finish
 }
@@ -57,7 +57,7 @@ pub fn decode(body: BitArray) -> Result(UnitMovement, DecodeError) {
   use #(commands, reader) <- result.try(bit_stream.read_array(
     reader,
     5,
-    movement_command.read,
+    relayed_movement.read,
   ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
   Ok(UnitMovement(unit_id:, server_time:, reset_movement:, kept:, commands:))

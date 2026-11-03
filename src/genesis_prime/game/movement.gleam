@@ -60,6 +60,7 @@ import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/movement_send_interval_answer
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/player_movement.{type PlayerMovement}
+import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/terrain_loaded
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/zone_value_changed
@@ -269,10 +270,90 @@ pub type Taken {
   /// relay: the state it leaves.
   Kept(state: State)
   /// An accepted 0x0637: the state it leaves, the place the player now stands
-  /// at in the world's frame (`place`), and the commands it sent, in the order
-  /// sent with their bits. The game connection tells the map, which relays them
-  /// to the players who see this one (genesis_prime/world_map/map `Moved`).
-  Relayed(state: State, place: Place, commands: List(MovementCommand))
+  /// at in the world's frame (`place`), the commands it sent that are relayed,
+  /// in the order sent with their bits, and the kinds of those that are not
+  /// (`unrelayed`, once each, in the order sent). The game connection tells the
+  /// map, which relays the commands to the players who see this one
+  /// (genesis_prime/world_map/map `Moved`).
+  Relayed(
+    state: State,
+    place: Place,
+    commands: List(RelayedMovement),
+    unrelayed: List(Int),
+  )
+}
+
+/// What a command of a 0x0637 is to the players who see the sender.
+type Relay {
+  /// A kind the server relays, with its data.
+  Sent(command: RelayedMovement)
+  /// Kind 0, the sender's own client clock, which is no one else's
+  /// (movement_command.kind_0): dropped.
+  Clock
+  /// Any other kind: dropped, and named once per connection in a log line,
+  /// since the client's writer may send it and `opcode.0x637` does not say
+  /// what it means for another player.
+  Unrelayed(kind: Int)
+}
+
+/// The commands of a 0x0637 that other players are sent, in order, and the
+/// kinds of the others, each once in the order first sent: kind 0 is the
+/// sender's clock and is never relayed or named, and the kinds
+/// `genesis_prime/message/relayed_movement` does not hold are named.
+pub fn relayed(
+  commands commands: List(MovementCommand),
+) -> #(List(RelayedMovement), List(Int)) {
+  let relays = list.map(commands, relay)
+  #(
+    list.filter_map(relays, fn(relay) {
+      case relay {
+        Sent(command:) -> Ok(command)
+        Clock | Unrelayed(..) -> Error(Nil)
+      }
+    }),
+    list.filter_map(relays, fn(relay) {
+      case relay {
+        Unrelayed(kind:) -> Ok(kind)
+        Sent(..) | Clock -> Error(Nil)
+      }
+    })
+      |> list.unique,
+  )
+}
+
+fn relay(command: MovementCommand) -> Relay {
+  case command {
+    movement_command.Platform(data) -> Sent(relayed_movement.Platform(data))
+    movement_command.Position(data) -> Sent(relayed_movement.Position(data))
+    movement_command.Velocity(data) -> Sent(relayed_movement.Velocity(data))
+    movement_command.MoveAsked(data) -> Sent(relayed_movement.MoveAsked(data))
+    movement_command.Rotation(data) -> Sent(relayed_movement.Rotation(data))
+    movement_command.StateFlags(data) -> Sent(relayed_movement.StateFlags(data))
+    movement_command.Mode(data) -> Sent(relayed_movement.Mode(data))
+    movement_command.Time(_) -> Clock
+    movement_command.Kind3(_) -> Unrelayed(3)
+    movement_command.Kind4(_) -> Unrelayed(4)
+    movement_command.Kind5(_) -> Unrelayed(5)
+    movement_command.Kind6(_) -> Unrelayed(6)
+    movement_command.Kind7(_) -> Unrelayed(7)
+    movement_command.Kind9(_) -> Unrelayed(9)
+    movement_command.Kind10(_) -> Unrelayed(10)
+    movement_command.Kind12(_) -> Unrelayed(12)
+    movement_command.Kind13(_) -> Unrelayed(13)
+    movement_command.Kind15(_) -> Unrelayed(15)
+    movement_command.Kind16(_) -> Unrelayed(16)
+    movement_command.Kind17(_) -> Unrelayed(17)
+    movement_command.Kind18(_) -> Unrelayed(18)
+    movement_command.Kind19(_) -> Unrelayed(19)
+    movement_command.Kind20(_) -> Unrelayed(20)
+    movement_command.Kind21(_) -> Unrelayed(21)
+    movement_command.Kind22(_) -> Unrelayed(22)
+    movement_command.Kind23(_) -> Unrelayed(23)
+    movement_command.Kind25(_) -> Unrelayed(25)
+    movement_command.Kind26(_) -> Unrelayed(26)
+    movement_command.Kind28(_) -> Unrelayed(28)
+    movement_command.Kind29(_) -> Unrelayed(29)
+  }
 }
 
 /// What one movement message does to where the player stands: the body is
@@ -293,7 +374,8 @@ pub fn take(
       |> undecoded(player_movement.message_id)
       |> result.try(fn(decoded) {
         use state <- result.map(moved(state:, moves: moves(message: decoded)))
-        Relayed(state:, place: place(state:), commands: decoded.commands)
+        let #(commands, unrelayed) = relayed(commands: decoded.commands)
+        Relayed(state:, place: place(state:), commands:, unrelayed:)
       })
     SpeedChosen ->
       move_speed_setting.decode(body)

@@ -43,7 +43,7 @@ import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
-  SentBySessions, TellMapRun,
+  SentBySessions, TellMoved,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -3580,7 +3580,7 @@ fn mapped(
 ) -> #(map.State, map.Outgoing) {
   let message = case ask_request(taken) {
     AskMap(message:, ..) | AskMapRun(message:, ..) -> message
-    AskStore(..) | AskHandOff(..) | AskSessions(..) | TellMapRun(..) ->
+    AskStore(..) | AskHandOff(..) | AskSessions(..) | TellMoved(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
   let #(map_state, mapped) =

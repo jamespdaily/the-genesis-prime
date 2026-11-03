@@ -108,6 +108,7 @@ pub fn start_scripted(
       scripts:,
       directory:,
       registry:,
+      teller: fn(_address) { Error(Nil) },
       locate:,
     )
   let assert Ok(started) =

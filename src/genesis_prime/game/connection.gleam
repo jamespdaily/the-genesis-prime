@@ -147,7 +147,9 @@
 ////   ending); each feature decodes its messages and returns its decisions as
 ////   effects the connection carries out: a write, a warning, an ask of the
 ////   store or the map, the watch on the map, the save timer, and the leave of
-////   the world (`Decided`), or the refusal that ends the connection. The player
+////   the world (`Decided`), or the refusal that ends the connection; an accepted
+////   0x0637 also tells the map that the player moved (`Tell`, which the shell
+////   sends with no answer). The player
 ////   camps (genesis_prime/game/camp), moves (genesis_prime/game/movement), picks
 ////   a character (genesis_prime/game/character_select) and plays one
 ////   (genesis_prime/game/world_entry) by those rows.
@@ -249,7 +251,7 @@ import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
   AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
   Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Inside,
-  Otherwise, SentByMap, SentBySessions, Settled, TellMapRun,
+  Otherwise, SentByMap, SentBySessions, Settled, TellMoved,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -272,7 +274,10 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/leave_world.{LeaveWorld}
-import genesis_prime/message/movement_command.{type MovementCommand}
+import genesis_prime/message/relayed_movement.{type RelayedMovement}
+import genesis_prime/message/unit_create_player
+import genesis_prime/message/unit_destroyed.{UnitDestroyed}
+import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/world_message
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
@@ -339,6 +344,9 @@ type Session {
     /// The ids of the messages already logged as unhandled on this
     /// connection: the first of an id is a warning, a repeat a debug line.
     unhandled_logged: Set(Int),
+    /// The kinds of movement command already named in a log line as not
+    /// relayed to other players on this connection.
+    unrelayed_logged: Set(Int),
     status: Status,
   )
 }
@@ -478,6 +486,7 @@ pub fn step(
             pending: <<>>,
             cipher: cipher.base(),
             unhandled_logged: set.new(),
+            unrelayed_logged: set.new(),
             status: AwaitingHelloReply,
           )),
           Effects([OwnEffect(Write(hello_bytes(settings)))]),
@@ -876,8 +885,46 @@ fn movement_message(
   case movement.take(entered.movement, message, inner.body) {
     Ok(movement.Kept(state:)) ->
       Continue(moving(session:, holder:, entered:, state:), [])
-    Ok(movement.Relayed(state:, ..)) ->
-      Continue(moving(session:, holder:, entered:, state:), [])
+    Ok(movement.Relayed(state:, place:, commands:, unrelayed:)) -> {
+      let new_kinds =
+        list.filter(unrelayed, fn(kind) {
+          !set.contains(session.unrelayed_logged, kind)
+        })
+      let session =
+        Session(
+          ..moving(session:, holder:, entered:, state:),
+          unrelayed_logged: list.fold(
+            new_kinds,
+            session.unrelayed_logged,
+            set.insert,
+          ),
+        )
+      Continue(
+        session,
+        list.flatten([
+          list.map(new_kinds, fn(kind) {
+            log(
+              session:,
+              level: LogInfo,
+              text: "kind "
+                <> int.to_string(kind)
+                <> " of 0x0637 is not relayed to the players who see this one",
+            )
+          }),
+          case commands {
+            [] -> []
+            [_, ..] -> [
+              tells_the_map_moved(
+                connection: client_connection.connection(session.link),
+                entered:,
+                place:,
+                commands:,
+              ),
+            ]
+          },
+        ]),
+      )
+    }
     Error(refusal) -> end_for(session:, now:, text: movement.describe(refusal))
   }
 }
@@ -905,15 +952,12 @@ pub fn tells_the_map_moved(
   connection connection: ConnectionId,
   entered entered: world_entry.Entered,
   place place: Place,
-  commands commands: List(MovementCommand),
+  commands commands: List(RelayedMovement),
 ) -> Effect(ConnectionEffect(Request)) {
-  OwnEffect(
-    step.Tell(TellMapRun(
-      map: entered.map,
-      incarnation: entered.incarnation,
-      message: map.Moved(connection:, place:, commands:),
-    )),
-  )
+  OwnEffect(step.Tell(
+    to: step.Map(map: entered.map, incarnation: entered.incarnation),
+    request: TellMoved(connection:, place:, commands:),
+  ))
 }
 
 /// What the camp messages do, taken from inside 0x038C, in the world
@@ -1531,7 +1575,67 @@ fn map_sent(
   now now: Now,
   message message: map.Outgoing,
 ) -> client_connection.Handled(Session) {
-  todo as "write 0x262, 0x638 or 0x355 for the player in the world; drop the send otherwise; Joined and Left are a bug"
+  case message {
+    map.Joined(..) | map.Left ->
+      end_for(session:, now:, text: "the map sent an answer as a message")
+    map.Seen(..) | map.MovedUnit(..) | map.Unseen(..) ->
+      case holds_the_world(session.status) {
+        True ->
+          Continue(session, [to_client(session, other_unit_frame(message))])
+        False -> Continue(session, [])
+      }
+  }
+}
+
+/// Whether the client holds the player in its world, so another unit's message
+/// is written: the player is in the world, or its claim is made again with the
+/// player in it. A claim with its ask out, a save and a leave take no send.
+fn holds_the_world(status: Status) -> Bool {
+  case status {
+    InWorld(..) | WaitingToClaim(resume: ResumeWorld(..), ..) -> True
+    WaitingToClaim(resume: ResumeSelect, ..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> False
+  }
+}
+
+/// The message to write for what the map sent about another player's unit:
+/// 0x262 for `Seen`, 0x638 with the reset bit 0 and the kept bit 0 for
+/// `MovedUnit`, and 0x355 with its one bit 0 for `Unseen`
+/// (opcode.0x262, opcode.0x638, opcode.0x355).
+fn other_unit_frame(message: map.Outgoing) -> Frame {
+  case message {
+    map.Seen(unit:) -> {
+      let assert Ok(body) = unit_create_player.encode(unit)
+        as "a stored character's values fit the message's fields: the table's checks hold each"
+      Frame(message_id: unit_create_player.message_id, body:)
+    }
+    map.MovedUnit(unit_id:, server_time_ms:, commands:) -> {
+      let assert Ok(body) =
+        unit_movement.encode(UnitMovement(
+          unit_id:,
+          server_time: server_time_ms,
+          reset_movement: 0,
+          kept: 0,
+          commands:,
+        ))
+        as "the map sends at most 31 commands and a time of 32 bits"
+      Frame(message_id: unit_movement.message_id, body:)
+    }
+    map.Unseen(unit_id:) -> {
+      let assert Ok(body) =
+        unit_destroyed.encode(UnitDestroyed(unit_id:, field_2: 0))
+        as "a unit id of 32 bits fits the message"
+      Frame(message_id: unit_destroyed.message_id, body:)
+    }
+    map.Joined(..) | map.Left ->
+      panic as "an answer of the map is no message about another unit"
+  }
 }
 
 /// The end of a watch the rule opened. Sessions' (`sessions_watch`): the

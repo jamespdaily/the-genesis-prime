@@ -136,6 +136,7 @@ fn settings(
     scripts: script.operating_system,
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     registry: None,
+    teller: fn(_address) { Error(Nil) },
     locate: fn(_address) { Error(Nil) },
   )
 }

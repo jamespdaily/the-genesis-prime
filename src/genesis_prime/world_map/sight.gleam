@@ -23,5 +23,8 @@ pub const range = 1024.0
 /// Whether the two places are within `range` of each other, inclusive:
 /// exactly 1024.0 apart sees, 1024.01 does not.
 pub fn sees(first first: Place, second second: Place) -> Bool {
-  todo as "squared distance of x, y and z at most range squared"
+  let dx = start_place.x(first) -. start_place.x(second)
+  let dy = start_place.y(first) -. start_place.y(second)
+  let dz = start_place.z(first) -. start_place.z(second)
+  dx *. dx +. dy *. dy +. dz *. dz <=. range *. range
 }

@@ -24,8 +24,10 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{type Wrapper, ClientWrapper}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
+import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/random.{type Random}
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
@@ -56,11 +58,16 @@ pub type Request {
   /// map that is not running, or runs as another incarnation, is not running
   /// for this ask (genesis_prime/world_map/registry).
   AskMapRun(map: MapId, incarnation: Int, message: map.Message)
-  /// Tell the run of the map with this incarnation, which Maps never starts,
-  /// and go on: nothing waits for an answer, and a run that is not running
-  /// drops the tell. It is made only by a `Tell` effect (genesis_prime/step);
-  /// as an ask it would wait for an answer that never comes.
-  TellMapRun(map: MapId, incarnation: Int, message: map.Message)
+  /// What a `Tell` effect sends the run of a map (genesis_prime/step): that the
+  /// player of `connection` moved to `place` and sent these relayed `commands`
+  /// (genesis_prime/world_map/map `Moved`). The only tell there is, so a tell of
+  /// a join or a leave cannot be built. It is never asked: the directory answers
+  /// an ask of it as no process running.
+  TellMoved(
+    connection: ConnectionId,
+    place: Place,
+    commands: List(RelayedMovement),
+  )
 }
 
 /// What comes back from an ask, by the process asked.

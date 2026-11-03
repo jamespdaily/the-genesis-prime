@@ -236,25 +236,6 @@ pub fn ask_run(
   }
 }
 
-/// Serves a connection's tell to the run of a map: the message is sent to the
-/// run `find` finds, which is never started, with no reply. `Error(Nil)` when
-/// the map is not running, and `Ok(NoReplyInTime)` with nothing sent when
-/// Maps gives no answer by the deadline; the telling shell drops either, since
-/// a tell has no outcome.
-pub fn tell_run(
-  maps maps: Name(Message),
-  map map: MapId,
-  incarnation incarnation: Int,
-  message message: map.Message,
-  deadline_ms deadline_ms: Int,
-) -> Result(Sent, Nil) {
-  case find(maps:, map:, incarnation:, deadline_ms:) {
-    Ok(found) -> service.tell_subject(found.subject, message)
-    Error(NotFound) -> Error(Nil)
-    Error(NoReply) -> Ok(NoReplyInTime)
-  }
-}
-
 /// Sends Maps the find and waits for its reply until the deadline. An ask
 /// whose deadline has passed is never sent, and a reply that is already
 /// queued once the deadline passes is never taken.

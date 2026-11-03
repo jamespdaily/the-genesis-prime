@@ -16,7 +16,7 @@
 //// - a connection: `ConnectionEvent(message, answer)` in (its socket, a
 ////   message sent to it, a timer, the outcome of its ask) and
 ////   `ConnectionEffect` out (a write, a timer, a tell);
-//// - a service: `ServiceEvent(message)` in (its start, an ask) and
+//// - a service: `ServiceEvent(message)` in (its start, an ask, a tell) and
 ////   `ServiceEffect(outgoing)` out (a reply, a send).
 //// A shell is handed only its kind's types, so a rule that returns an effect
 //// its shell does not carry out, or takes an input its shell never gives, does
@@ -128,9 +128,10 @@ pub type ServiceEvent(message) {
   /// Another process asked the process something; the rule answers it once,
   /// with `Reply`.
   Asked(caller: CallerId, message: message)
-  /// Another process told the process something with no answer expected
-  /// (`Tell`); the rule replies to no one, and a rule that gets a message in
-  /// the form it takes only as an ask, or the reverse, has a bug.
+  /// Another process told the process something with no answer expected (a
+  /// connection's `Tell` effect); the rule replies to no one, and a rule that
+  /// gets a message in the form it takes only as an ask, or the reverse, has a
+  /// bug.
   Told(message: message)
 }
 
@@ -224,12 +225,12 @@ pub type ConnectionEffect(request) {
   StartTimer(timer: TimerId, after_ms: Int)
   /// Cancel a timer. A `TimerFired` for it already waiting is dropped.
   CancelTimer(timer: TimerId)
-  /// Tell another process something and go on at once: the request goes to the
-  /// process it names as an ask does (the shell's directory), but nothing waits
-  /// for an answer, no deadline runs and no outcome comes back. A process that
-  /// is not running drops it, and a rule that must know watches that process.
-  /// The service takes it as `Told`.
-  Tell(request: request)
+  /// Tell the process at `to` something and go on at once: nothing waits for
+  /// an answer, no deadline runs and no outcome comes back. The shell resolves
+  /// `to` once and keeps the way to it while the rule's watch on `to` lives; a
+  /// process that is not running drops the tell, and a rule that must know
+  /// watches it. The process takes it as `ServiceEvent`'s `Told`.
+  Tell(to: Address, request: request)
 }
 
 /// What only a service carries out.

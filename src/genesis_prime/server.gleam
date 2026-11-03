@@ -84,7 +84,7 @@ import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
-  SentByMap, SentBySessions, TellMapRun,
+  SentByMap, SentBySessions, TellMoved,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -284,14 +284,7 @@ fn directory(settings: Settings) -> Directory {
           deadline_ms:,
           reply: fn(answer) { reply(FromMap(answer)) },
         )
-      TellMapRun(map:, incarnation:, message:) ->
-        world_map_registry.tell_run(
-          maps: maps_name,
-          map:,
-          incarnation:,
-          message:,
-          deadline_ms:,
-        )
+      TellMoved(..) -> Error(Nil)
     }
   }
 }
@@ -322,6 +315,54 @@ fn locate(settings: Settings) -> Locate {
         )
         |> result.map(fn(found) { found.pid })
         |> result.replace_error(Nil)
+    }
+  }
+}
+
+/// How a connection's shell resolves the address of a process its rule tells,
+/// once, into the way to tell it: the run of a map, found through Maps, which
+/// is told that a player moved (`TellMoved`). Any other address, and any other
+/// request, has no process that takes a tell, and the way to it drops what it
+/// is given.
+fn teller(
+  settings: Settings,
+) -> fn(step.Address) -> Result(fn(Request) -> Nil, Nil) {
+  let maps_name = settings.world.maps
+  let maps_call_ms = settings.world.maps_call_ms
+  fn(address: step.Address) {
+    case address {
+      step.Map(map:, incarnation:) ->
+        world_map_registry.find(
+          maps_name,
+          map,
+          incarnation,
+          deadline_ms: runtime.now().monotonic_ms + maps_call_ms,
+        )
+        |> result.map(fn(found) {
+          fn(request: Request) {
+            case request {
+              TellMoved(connection:, place:, commands:) -> {
+                let _sent =
+                  service.tell_subject(
+                    found.subject,
+                    map.Moved(connection:, place:, commands:),
+                  )
+                Nil
+              }
+              AskStore(..)
+              | AskHandOff(..)
+              | AskSessions(..)
+              | AskMap(..)
+              | AskMapRun(..) -> Nil
+            }
+          }
+        })
+        |> result.replace_error(Nil)
+      step.Sessions
+      | step.HandOff
+      | step.Store
+      | step.Maps
+      | step.Connection(..) -> Error(Nil)
     }
   }
 }
@@ -497,6 +538,7 @@ fn serve(
         scripts: served.scripts,
         directory:,
         registry:,
+        teller: teller(settings),
         locate: locate(settings),
       ),
     )),

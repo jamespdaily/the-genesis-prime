@@ -26,7 +26,7 @@ import gleam/result
 /// so it is a shell's type, never a rule's.
 pub type Call(message, answer) {
   Call(message: message, reply: fn(answer) -> Nil)
-  Tell(message: message)
+  TellCall(message: message)
 }
 
 /// Where an asker's request went, so the asker knows what to watch and what
@@ -115,7 +115,7 @@ pub fn tell_subject(
   message message: message,
 ) -> Result(Sent, Nil) {
   use pid <- result.map(process.subject_owner(subject))
-  process.send(subject, Tell(message:))
+  process.send(subject, TellCall(message:))
   ToService(pid:)
 }
 
