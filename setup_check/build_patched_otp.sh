@@ -16,13 +16,15 @@
 # system (libssl-dev, with libncurses-dev, autoconf and m4 for configure; this
 # script installs nothing).
 #
-# The one patch is OTP's own commit 1b4ac11, "erts: Clear live_hf_end flag when
-# disabled GC is re-enabled" (fixes https://github.com/erlang/otp/issues/11923),
-# kept with its header as setup_check/otp-1b4ac11-clear-live-hf-end.patch. A
-# garbage collection disabled by a trapping BIF left its saved heap-fragment
-# marker set, and the next collection then took every fragment created since as
-# live, so the heap grew far larger than its data. The commit is on OTP's maint
-# and master; OTP 29.1.2 lacks it.
+# The one patch is OTP's own fix, commit 1b4ac11, "erts: Clear live_hf_end flag
+# when disabled GC is re-enabled" (fixes
+# https://github.com/erlang/otp/issues/11923), as OTP's maint merge 99c8b6a20b
+# spells it (the ARM JIT's a64::Mem, where 1b4ac11 has arm::Mem, which 29.1.2's
+# asmjit lacks). It is kept with OTP's header as
+# setup_check/otp-1b4ac11-clear-live-hf-end.patch. A garbage collection disabled
+# by a trapping BIF left its saved heap-fragment marker set, and the next
+# collection then took every fragment created since as live, so the heap grew
+# far larger than its data. OTP 29.1.2 lacks the fix.
 #
 # Usage: setup_check/build_patched_otp.sh
 set -euo pipefail
