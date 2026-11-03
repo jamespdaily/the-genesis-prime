@@ -64,6 +64,15 @@ pub fn the_servers_script_draws_each_seed_from_the_system_and_numbers_the_connec
     as "the server fixes no size for a read: what arrived is the input"
 }
 
+pub fn the_servers_node_time_for_an_input_is_the_monotonic_reading_of_its_own_now_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let assert Ok(issued) = script.operating_system() as "the server's script"
+  // A time no read of the node's clock gives: a second read would not return it.
+  let now = Now(monotonic_ms: 4242, filetime: 7)
+  assert issued.script.node_monotonic_ms(now) == 4242
+    as "the one read of the clock is the node's time too, so an ask's deadline the rule writes is the one the shell counts"
+}
+
 pub fn the_servers_scheduler_sends_the_timer_to_the_subject_after_its_time_test() -> Nil {
   use <- owned_test.run(30_000)
   let assert Ok(issued) = script.operating_system() as "the server's script"
@@ -85,6 +94,7 @@ fn fixed(now: Now) -> Scripts {
       script: Script(
         seed: counting_seed(),
         clock: fn(_input) { now },
+        node_monotonic_ms: fn(_now) { runtime.monotonic_ms() },
         schedule: fn(_subject, _timer, _reference, _after_ms) { fn() { Nil } },
         next_read: fn() { None },
       ),

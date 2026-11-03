@@ -58,9 +58,10 @@
 ////   with one call as it takes the input, and makes no call for a message it
 ////   drops (a stale timer, a late answer, another process's exit, a stray
 ////   message), so the calls made are the inputs taken. The seed of `Accepted`
-////   is the script's. The only other time the shell reads is the node's own
-////   monotonic clock (`runtime.monotonic_ms`), for the wait of an ask, which
-////   is real time whatever the clock says.
+////   is the script's. The only other time the shell takes is the node's own
+////   monotonic time for that input, from the script (`node_monotonic_ms`), for
+////   the wait of an ask, which is real time whatever the clock says; in the
+////   server it is the `Now`'s own reading, never a second read.
 //// - **A failed write.** The step's later effects are not carried out; the
 ////   next input is `OwnEvent(WriteFailed(_))`. A write that does not finish
 ////   within the send deadline fails as `SendTimedOut` and closes the socket.
@@ -361,8 +362,8 @@ type Kept {
 
 /// A connection that has taken its socket: the socket, its script, the rule's
 /// state, the recording files when there are any, the `Now` of the input whose
-/// step is being carried out and the node's own monotonic time when the shell
-/// took it (the two an ask's wait counts its deadline from), whether it is
+/// step is being carried out and the node's own monotonic time for it (the two
+/// an ask's wait counts its deadline from), whether it is
 /// taking what the socket delivers or putting one recorded read together, the
 /// asks kept by their tags, the monitor of each watch the rule has open, each
 /// timer it has running and the stop deadline of a stop that arrived during an
@@ -679,7 +680,7 @@ fn accepted(
       state: rule.new(rule.settings),
       wire:,
       at: now,
-      taken_ms: runtime.monotonic_ms(),
+      taken_ms: script.node_monotonic_ms(now),
       reading: TakeWhatArrives,
       kept: dict.new(),
       watches: watch.new(),
@@ -782,7 +783,7 @@ fn take(
       ..running,
       state:,
       at: now,
-      taken_ms: runtime.monotonic_ms(),
+      taken_ms: running.script.node_monotonic_ms(now),
       closed_by: closing,
     )
   case step {
@@ -1352,10 +1353,11 @@ fn make_ask(
 /// The ask's deadline on the node's own monotonic clock, which every wait of
 /// the shell and the directory's lookups count on: the time the ask allows from
 /// the `Now` of the input whose step made it (the ask's deadline less that
-/// input's monotonic time), counted from the node's time when the shell took
-/// the input. In the server the two clocks are one and this is the ask's own
-/// deadline; in a replay the input's `Now` comes from the recording, whose
-/// monotonic times are of another run, so only the time allowed carries over.
+/// input's monotonic time), counted from the node's time for the input
+/// (`taken_ms`). In the server the two clocks are one reading and this is the
+/// ask's own deadline; in a replay the input's `Now` comes from the recording,
+/// whose monotonic times are of another run, so only the time allowed carries
+/// over.
 fn real_deadline_ms(
   running running: Running(state, request),
   ask ask: Ask(request),

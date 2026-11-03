@@ -22,6 +22,7 @@ import ask_support
 import genesis_prime/connection/script.{Issued, Script}
 import genesis_prime/seed
 import genesis_prime/step.{type Now, Effects, Now}
+import genesis_prime/step/runtime
 import genesis_prime/wire_recording.{
   type Closing, Accepted, Client, Closing, Cut, Header, PeerClosed, Read,
   Recording, Server, Took, Wrote,
@@ -192,6 +193,7 @@ fn scripted(
           process.send(given, #(input, now))
           now
         },
+        node_monotonic_ms: fn(_now) { runtime.monotonic_ms() },
         schedule: fn(_subject, _timer, _reference, _after_ms) { fn() { Nil } },
         next_read: fn() { None },
       ),
