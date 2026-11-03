@@ -3,11 +3,11 @@
 //// next unit id and the body of the character's look, keeps it, and forgets
 //// the player and its unit when the player's connection ends. It owns who sees
 //// whom: two players see each other when they are within
-//// `genesis_prime/world_map/sight.range`. It decides sight and tells it; it does
-//// not carry the players' moves. Each player's connection sends its own moves
-//// to the connections of the players who see it (genesis_prime/game/connection),
-//// so the work of a move is spread over the movers' processes, and the map's
-//// is one sight check per other player.
+//// `genesis_prime/world_map/sight.range`. It decides sight and tells it; it
+//// sends the client no unit and carries no move. Each player's connection sends
+//// everything about its own unit to the connections of the players who see it
+//// (genesis_prime/game/connection), so the work of a move is spread over the
+//// movers' processes, and the map's is one sight check per other player.
 ////
 //// This is the rule of a map's service shell (genesis_prime/service/shell),
 //// started without a name by the map supervisor when Maps is first asked for
@@ -15,7 +15,7 @@
 //// in the process: a restart loses them, and each player's connection, which
 //// watches its map, ends (genesis_prime/game/connection).
 ////
-//// Join, from the map's side, and what the players in sight are sent:
+//// Join, from the map's side, and what the players in sight are told:
 ////
 //// ```
 //// connection c1                      map                                      shell
@@ -27,8 +27,8 @@
 ////   ◀─ Joined(0x262's record of unit, run, the map's clock origin)
 ////                                ◀─ OwnEffect(Reply(caller, Joined(..)))
 ////                                          for each player c2 in sight, in the same step:
-////   ◀─ Seen(c2's unit), Watched(by: c2)                                       ─▶ send to c1
-////                                          Seen(unit) and Watched(by: c1) to c2 ─▶ send to c2
+////   ◀─ Watched(by: c2)                                                        ─▶ send to c1
+////                                          Watched(by: c1) to c2               ─▶ send to c2
 //// ```
 ////
 //// Leave, from the map's side, for a player whose connection goes on after its
@@ -40,7 +40,7 @@
 ////                                          its watch w1 forgotten
 ////                                          Unwatch(w1)                         ─▶ drops the watch on c1
 ////                                          to each player c2 who saw c1:
-////                                          Unseen(u) and Unwatched(by: c1)     ─▶ sends to c2
+////                                          Unwatched(by: c1)                   ─▶ sends to c2
 ////   ◀─ Left                    ◀─ OwnEffect(Reply(caller, Left))
 //// ```
 ////
@@ -51,21 +51,25 @@
 ////   Moved(B, place)            ─▶ Told ─▶ B's unit at place; each pair decided on that place:
 ////                                         in sight before and after: nothing
 ////                                         into sight, in one step:
-////                                           Seen(B's unit) ─▶ A      Watched(by: A) ─▶ B
-////                                           Seen(A's unit) ─▶ B      Watched(by: B) ─▶ A
+////                                           Watched(by: A) ─▶ B      Watched(by: B) ─▶ A
 ////                                         out of sight, in one step:
-////                                           Unseen(B) ─▶ A           Unwatched(by: A) ─▶ B
-////                                           Unseen(A) ─▶ B           Unwatched(by: B) ─▶ A
-//// B's connection, for each move the client sends, in the world, with its viewers
-//// (the players it has been told `Watched` by and not `Unwatched`):
-////   0x638 ─▶ the connection of each viewer, as a send through the registry
+////                                           Unwatched(by: A) ─▶ B    Unwatched(by: B) ─▶ A
+//// A connection's end (its watch's DOWN)   ─▶ to each player c2 who saw it, in one step:
+////                                           Unwatched(by: it) and Gone(its unit) ─▶ c2
 //// ```
+////
+//// What a connection does with them is its own (genesis_prime/game/connection):
+//// told `Watched(by: v)`, it sends v its 0x262 at its current place, then its
+//// 0x638s as it moves; told `Unwatched(by: v)`, its 0x355; on its camp, its 0x355
+//// to every viewer before its `Leave`. A viewer's connection writes only what
+//// its client can take, from the units it has shown and the ones the map reported
+//// `Gone`.
 ////
 //// - **The unit** is a game-level value (genesis_prime/world_map/player_unit)
 ////   the map keeps for as long as the player is in it, standing where the
 ////   player's last `Moved` put it; the answer's 0x262 record is built from it
-////   with the map's realm whenever one is sent. The `place` of a Join is the
-////   bounded place the client is told.
+////   with the map's realm. The `place` of a Join is the bounded place the client
+////   is told.
 //// - **The incarnation** is in every `Joined`, so the joiner watches the run
 ////   of the map that holds its player, not a later one started after this
 ////   one ended.
@@ -76,8 +80,8 @@
 ////   map that gives four billion ids crashes, and its players' connections end.
 //// - **A second Join from a connection in the map** answers the record built
 ////   from the unit the map keeps, not from the new Join, sends the joiner a
-////   `Seen` and a `Watched` of each player it sees again, changes nothing else
-////   and logs an error: the connection's rule joins once.
+////   `Watched` for each player it sees again, changes nothing else and logs an
+////   error: the connection's rule joins once.
 //// - **A Leave** removes the connection's player with its unit and its watch,
 ////   and is answered `Left`, so the player's connection, which lives on in
 ////   character select, is not watched by a map it has left; a later Join from
@@ -87,8 +91,10 @@
 ////   so the line shows a bug, and the answer lets the connection go on.
 //// - **A player's connection ends.** Its watch comes back as `WatchEnded(w)`;
 ////   the player whose watch is `w` is removed, and its unit with it, as a Leave
-////   removes it. A watch that names no player is a bug: logged as an error, and
-////   nothing changes.
+////   removes it, and each player that saw it is also sent `Gone(unit)`: the
+////   connection that ended cannot send its 0x355, so this is the one case the
+////   map speaks of a unit, and only after its owner has ended. A watch that
+////   names no player is a bug: logged as an error, and nothing changes.
 //// - **A caller that ended before its answer** is dropped by the shell; the
 ////   player stays until its connection's watch ends, which the joining
 ////   connection's end then gives.
@@ -98,45 +104,53 @@
 //// - **Sight** is `genesis_prime/world_map/sight`: one threshold, 1024 units. A
 ////   pair is in sight or not after each join, move, leave and end; the map keeps
 ////   each player's `sees`, and the relation is symmetric. A pair that comes into
-////   sight is sent `Seen` and `Watched` both ways, a pair that leaves it
-////   `Unseen` and `Unwatched` both ways, in one step, so a connection's viewers
-////   are exactly the players whose `Seen` it was sent and not `Unseen`. A pair
-////   already in sight never gets a second `Seen`.
-//// - **A move is decided on the place it ends at.** At most one `Seen` or
-////   `Unseen` per pair per `Moved`. The map sends no move: its `Moved` holds
+////   sight is sent `Watched` both ways, a pair that leaves it `Unwatched` both
+////   ways, in one step, so a connection's viewers are exactly the players whose
+////   `Watched` it was sent and not `Unwatched`.
+//// - **A move is decided on the place it ends at.** At most one `Watched` or
+////   `Unwatched` per pair per `Moved`. The map sends no move: its `Moved` holds
 ////   the place and nothing else.
 //// - **Server time** is the map's one clock, in milliseconds since the map
 ////   started, taken from the monotonic time of the input being handled
 ////   (`server_time`) mod 2^32 (the client's fields hold 32 bits, opcode.0x638).
-////   A unit's `Seen` reads it, and `Joined` carries its origin, the monotonic
-////   time the map started at, so a mover's connection stamps its 0x638s from
-////   the same clock (`server_time`): a unit's 0x262 and its 0x638s share one
-////   clock, though a 0x638 can carry an earlier time than the 0x262 that reached
-////   a viewer first (a move is stamped when the mover takes it, a 0x262 when the
-////   map sends it), which is no failure: the client ignores a time sample until
-////   the time has passed the last by half the send interval (FitServerTime
-////   0x14079ab90). The clock only goes forward until the map is 49.7 days old, when it
-////   counts from 0 again: the client takes a time sample only when its signed
-////   32-bit difference from the last is at least half the send interval, and
-////   ignores one that is not (FitServerTime 0x14079ab90); its fit across the
-////   wrap is not read.
+////   `Joined` carries its origin, the monotonic time the map started at, so a
+////   connection stamps its units' 0x262 and 0x638s from the same clock
+////   (`server_time`). A 0x638 can carry an earlier time than the 0x262 that
+////   reached a viewer first (a move is stamped when the mover takes it, a 0x262
+////   when its owner sends it), which is no failure: the client ignores a time
+////   sample until the time has passed the last by half the send interval
+////   (FitServerTime 0x14079ab90). The clock only goes forward until the map is
+////   49.7 days old, when it counts from 0 again: the client takes a sample only
+////   when its signed 32-bit difference from the last is at least half the send
+////   interval, so the wrap is a step forward in that difference; its fit across
+////   the wrap is not read.
 //// - **A `Moved` from a connection not in the map** changes nothing and is
 ////   logged as an error: the connection's rule tells only while joined. A
 ////   tell in the form of an ask, or an ask in the form of a tell, is a bug and
 ////   crashes the map.
 //// - **Started** sets the map's clock: a map starts empty.
 ////
+//// Order, in short: every 0x262, 0x638 and 0x355 about a live unit comes from its
+//// owner's connection, so for one viewer they are one sender's messages and
+//// arrive in the order sent (the BEAM orders signals of one sender to one
+//// receiver); the map's `Watched` and `Unwatched` to one owner are one sender's,
+//// so the owner's view of its viewers changes in order. The one case two senders
+//// speak of a unit is `Gone` after an owner's end, which a viewer filters
+//// (genesis_prime/game/connection).
+////
 //// What happens at each failure point of seeing:
 ////
 //// | Point | What happens |
 //// |---|---|
 //// | the map dies | every connection in it ends (genesis_prime/game/connection), so no one is left seeing a unit with no owner |
-//// | a viewer's connection is gone | a mover's send to it is dropped (the registry finds no process); its watch ends, and the map removes it and sends each player who saw it `Unseen` and `Unwatched`, so the mover stops sending to it |
+//// | a viewer's connection is gone | an owner's send to it is dropped (the registry finds no process); its watch ends, and the map sends each player who saw it `Unwatched`, so the owner stops sending to it |
+//// | an owner's connection ends (a crash, a close, a takeover) | it sends nothing; the map sends each viewer `Unwatched` and `Gone`, and the viewer writes the 0x355 if its client shows the unit |
+//// | an owner's 0x262 lands after the map's `Gone` of it | the viewer drops it: the unit is no ghost |
+//// | an owner's 0x638 reaches a viewer before the owner's 0x262 of it, or after its 0x355 | not possible from one sender; one that lands after `Gone` is dropped, since the viewer shows no such unit |
+//// | a 0x262, 0x638 or 0x355 for a unit of another run of the map, or another map | dropped by the viewer's connection |
 //// | `Moved` reaches the map after that connection's `Leave` | ignored, with an error line |
-//// | a mover's 0x638 reaches a viewer before the map's 0x262 of it, or after its 0x355 | the viewer's connection writes it and nothing ends: the client logs a 0x638 for a unit it does not have and goes on (opcode.0x638) |
-//// | a mover's 0x638 reaches a viewer that is not in the world (camped, or leaving) | dropped by the viewer's connection |
 //// | a connection's `Watched` or `Unwatched` reaches it with no player in the world | dropped: a player that enters again starts with no viewers and is sent a `Watched` for each player in sight by its new join |
-//// | the same pair crosses sight twice in one `Moved` batch | the map decides on the final place: at most one `Seen` or `Unseen` per pair per `Moved` |
+//// | the same pair crosses sight twice in one `Moved` batch | the map decides on the final place: at most one `Watched` or `Unwatched` per pair per `Moved` |
 
 import genesis_prime/game/appearance
 import genesis_prime/game/start_place.{type Place}
