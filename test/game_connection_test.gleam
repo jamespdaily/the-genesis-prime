@@ -49,6 +49,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/coverage/sent_message
 import genesis_prime/game/connection.{Settings} as game_connection
 import genesis_prime/game/start_place.{type Place, Facing}
+import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{
   AlreadyHeld, Holder, Kept, NoHolder, SessionKey, Take, Taken,
 }
@@ -133,7 +134,7 @@ fn settings() -> game_connection.Settings {
   Settings(
     realm_id: 5,
     max_characters: 9,
-    character_slots: 3,
+    game: GameSettings(..game_settings.defaults(), character_slots: 3),
     tables: character_tables.shared(),
     ask_deadline_ms: 4000,
     rate: support.roomy(),

@@ -510,6 +510,50 @@ fields = [
   { name = "field_2", kind = "unsigned", bits = 1, evidence = "0x14007c340", safe_by = "0x1403d98f0" },
 ]
 
+[[message]]
+id = 0x00BF
+name = "camp_request"
+direction = "client_to_server"
+evidence = "opcode.0xbf"
+summary = "the client's request, inside message 0x38C, to start or cancel leaving the world (camping): the bit is 1 to start and 0 to cancel, and does not say whether the camp is a camp or a quit"
+fields = [
+  { name = "start", kind = "unsigned", bits = 1, evidence = "opcode.0xbf", named_by = "opcode.0xbf" },
+]
+
+[[message]]
+id = 0x00C0
+name = "camp_finished"
+direction = "client_to_server"
+evidence = "opcode.0xc0"
+summary = "the client's notice, inside message 0x38C, that its camp has finished and it leaves the world now; its body is empty, and a quit sends it before the countdown ends"
+fields = []
+
+[[message]]
+id = 0x0092
+name = "camp_countdown"
+direction = "server_to_client"
+evidence = "opcode.0x92"
+summary = "starts the client's camp with a countdown in milliseconds, or cancels it; the signature bonuses the exit window shows are sent as 0 until the server has a source for them"
+fields = [
+  { name = "countdown_ms", kind = "unsigned", bits = 32, evidence = "0x1400a4fe0", named_by = "opcode.0x92" },
+  { name = "cancel", kind = "unsigned", bits = 1, evidence = "0x1400a4fe0", named_by = "opcode.0x92" },
+  { name = "experience", kind = "unsigned", bits = 32, evidence = "0x1400ad1b0", named_by = "opcode.0x92" },
+  { name = "elder_points", kind = "unsigned", bits = 32, evidence = "0x1400ad1b0", named_by = "opcode.0x92" },
+  { name = "currencies", kind = "raw_bytes", count = 120, evidence = "0x1400ad1b0", named_by = "opcode.0x92" },
+  { name = "account_currencies", kind = "raw_bytes", count = 152, evidence = "0x1400ad1b0", named_by = "opcode.0x92" },
+]
+
+[[message]]
+id = 0x0594
+name = "leave_world"
+direction = "server_to_client"
+evidence = "opcode.0x594"
+summary = "tells the client to leave the world: with the bit set and a reason of 0 it returns to character select on the same connection, sending 0x7E0; otherwise it shows the error screen with the reason's text"
+fields = [
+  { name = "returning", kind = "unsigned", bits = 1, evidence = "opcode.0x594", named_by = "opcode.0x594" },
+  { name = "reason", kind = "unsigned", bits = 5, evidence = "opcode.0x594", named_by = "opcode.0x594" },
+]
+
 [[record]]
 name = "realm_entry"
 evidence = "0x1400ac130"

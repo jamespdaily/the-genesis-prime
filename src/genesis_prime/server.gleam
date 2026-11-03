@@ -31,7 +31,7 @@
 //// (genesis_prime/application), so the host's SIGTERM stops it this way. A map's ask
 //// goes through Maps (genesis_prime/world_map/registry), which finds the map or
 //// starts it; a map's address is found the same way, never started, for a
-//// watch. One directory, made once in `start` from
+//// watch and for the ask of a leave. One directory, made once in `start` from
 //// the store's, the hand-off's and Sessions' names, sends the asks of every
 //// listener's rules; one `Locate` and the sessions' `Reach`, made from the
 //// same names and the registry, find the processes a rule watches or sends to.
@@ -82,8 +82,9 @@
 
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, AskHandOff, AskMap, AskSessions,
-  AskStore, FromHandOff, FromMap, FromSessions, FromStore, SentBySessions,
+  type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
+  AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
+  SentBySessions,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -97,6 +98,7 @@ import genesis_prime/login/sts_connection
 import genesis_prime/service.{type Call, type Locate, type Reach, type Sent}
 import genesis_prime/service/shell as service_shell
 import genesis_prime/step.{type ConnectionRule}
+import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Job}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
@@ -244,7 +246,8 @@ pub fn start(
 
 /// How a rule's ask reaches the process it names: to the store by its name,
 /// to the hand-off and Sessions by theirs, and to a map through Maps, which
-/// finds it or starts it by the ask's deadline; each answer is wrapped in the
+/// finds it or starts it by the ask's deadline (`AskMap`), or only finds the
+/// run the ask names and never starts a map (`AskMapRun`); each answer is wrapped in the
 /// answer type of every connection rule (`FromStore`, `FromHandOff`,
 /// `FromSessions`, `FromMap`). Made once at start; it holds the names, not
 /// the settings.
@@ -267,6 +270,18 @@ fn directory(settings: Settings) -> Directory {
         })
       AskMap(map:, message:) ->
         world_map_registry.find_or_start(maps_name, map, deadline_ms)
+        |> result.try(fn(found) {
+          service.call_subject(found.subject, message, fn(answer) {
+            reply(FromMap(answer))
+          })
+        })
+      AskMapRun(map:, incarnation:, message:) ->
+        world_map_registry.find(
+          maps_name,
+          map,
+          incarnation,
+          deadline_ms - runtime.now().monotonic_ms,
+        )
         |> result.try(fn(found) {
           service.call_subject(found.subject, message, fn(answer) {
             reply(FromMap(answer))

@@ -22,6 +22,7 @@ import genesis_prime/connection/registry
 import genesis_prime/connection/script
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/message/bit_stream.{Endpoint}
@@ -469,11 +470,15 @@ fn login() -> server.Login {
 /// The game server's listener: the client's default port, the realm the auth
 /// server hands clients to, 12 characters in the list's field (a server
 /// choice: the client keeps it in a global no Lua reads, so any value is safe,
-/// opcode.0x117), 2 character slots for an account (the count the client's
-/// tables give an account with no entitlement,
-/// lua.CharacterSelection.OnLoadFromCharacter), the game tables and each ask
+/// opcode.0x117), the game settings from the environment
+/// (genesis_prime/game_settings, which stops the server at start with the
+/// reason when a variable's value is refused), the game tables and each ask
 /// given 5 s. Recording is off; the dev start changes it.
 fn game(tables: store.Tables) -> server.Served(game_connection.Settings) {
+  let game = case game_settings.from_environment(envoy.get) {
+    Ok(game) -> game
+    Error(refusal) -> panic as game_settings.describe(refusal)
+  }
   server.Served(
     listener: process.new_name("game_listener"),
     port: game_port,
@@ -481,7 +486,7 @@ fn game(tables: store.Tables) -> server.Served(game_connection.Settings) {
     settings: game_connection.Settings(
       realm_id:,
       max_characters: 12,
-      character_slots: 2,
+      game:,
       tables:,
       ask_deadline_ms:,
       rate: game_rate(),

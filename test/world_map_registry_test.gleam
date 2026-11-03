@@ -142,7 +142,7 @@ fn joined_as(
 /// The unit id and the incarnation a join of the connection, as the character
 /// 100 more than its id, to the running map was answered with.
 fn joined(found: MapProcess, id: Int) -> #(Int, Int) {
-  let map.Joined(unit:, incarnation:) =
+  let assert map.Joined(unit:, incarnation:) =
     joined_as(
       found:,
       id:,
@@ -251,7 +251,7 @@ pub fn a_map_that_ended_keeps_no_player_so_the_same_connection_joins_the_new_run
   let world = start_world()
   let first = started(world, ship)
   let _connection = connection(world, 1)
-  let map.Joined(unit: before, ..) =
+  let assert map.Joined(unit: before, ..) =
     joined_as(
       found: first,
       id: 1,
@@ -264,7 +264,7 @@ pub fn a_map_that_ended_keeps_no_player_so_the_same_connection_joins_the_new_run
   let _reason = ask_support.ended(ended)
   await_not_found(world:, map: ship, incarnation: first.incarnation)
   let again = started(world, ship)
-  let map.Joined(unit: after, incarnation:) =
+  let assert map.Joined(unit: after, incarnation:) =
     joined_as(
       found: again,
       id: 1,

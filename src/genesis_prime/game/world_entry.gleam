@@ -44,13 +44,15 @@
 ////   sends 0x0162 Failed and the list again, as before world entry
 ////   (opcode.0x162.after_create).
 //// - **An answer that is none of the ask out** (the map's while the store is
-////   asked, or the reverse) is `Error(Nil)`, as character select gives, and the
+////   asked, or the reverse, or the map's `Left`, which answers a leave)
+////   is `Error(Nil)`, as character select gives, and the
 ////   rule treats it as a bug.
 //// - **Instance 0** for every world: open worlds share one instance
 ////   (genesis_prime/world_map/map_id), so an instanced world has no instance
 ////   to ask for.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/camp
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
@@ -110,8 +112,10 @@ pub type Loaded {
 }
 
 /// A player in the world: its character, its map, the run of the map that took
-/// it, which the rule watches as `Map(map, incarnation)`, its unit id and where
-/// it stands (genesis_prime/game/movement), which the rule keeps up to date.
+/// it, which the rule watches as `Map(map, incarnation)`, its unit id, where
+/// it stands (genesis_prime/game/movement) and whether it is camping
+/// (genesis_prime/game/camp), which the rule keeps up to date. A player that has
+/// just entered is not camping.
 pub type Entered {
   Entered(
     character_id: CharacterId,
@@ -119,6 +123,7 @@ pub type Entered {
     incarnation: Int,
     unit_id: Int,
     movement: movement.State,
+    camp: camp.Camp,
   )
 }
 
@@ -229,30 +234,35 @@ pub fn joined(
 ) -> Result(#(Entered, List(Effect)), Nil) {
   case state {
     Joining(character:, place:, session_epoch:, map:) -> {
-      let map.Joined(unit:, incarnation:) = answer
-      let sent = start_place.within_the_worlds_box(place)
-      let unit_id = unit.unit_id
-      Ok(
-        #(
-          Entered(
-            character_id: character.character_id,
-            map:,
-            incarnation:,
-            unit_id:,
-            movement: movement.entered(place:, session_epoch:),
-          ),
-          [
-            enter_world(place: sent),
-            player_created(unit:),
-            unit_is_player(unit_id:),
-            player_path(character:),
-            control_granted(unit_id:),
-            movement_interval(),
-            entered_world(),
-            WatchMap(map:, incarnation:),
-          ],
-        ),
-      )
+      case answer {
+        map.Joined(unit:, incarnation:) -> {
+          let sent = start_place.within_the_worlds_box(place)
+          let unit_id = unit.unit_id
+          Ok(
+            #(
+              Entered(
+                character_id: character.character_id,
+                map:,
+                incarnation:,
+                unit_id:,
+                movement: movement.entered(place:, session_epoch:),
+                camp: camp.none(),
+              ),
+              [
+                enter_world(place: sent),
+                player_created(unit:),
+                unit_is_player(unit_id:),
+                player_path(character:),
+                control_granted(unit_id:),
+                movement_interval(),
+                entered_world(),
+                WatchMap(map:, incarnation:),
+              ],
+            ),
+          )
+        }
+        map.Left -> Error(Nil)
+      }
     }
     Loading(..) -> Error(Nil)
   }
