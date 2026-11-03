@@ -251,7 +251,7 @@ pub fn run_scripted(
 /// login through the STS, auth and game servers, played into the world with a
 /// level-3 Veteran character (`session.sh` of the playing-live skill), with the
 /// server taking the client's movement messages and saving the player's place.
-pub const committed_session = "test/wire_recording/2026-11-03-chat-session"
+pub const committed_session = "test/wire_recording/2026-11-03-zone-session"
 
 /// The folder every recorded session is kept in.
 const recordings_folder = "test/wire_recording"
