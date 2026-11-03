@@ -43,7 +43,7 @@ import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
-  SentBySessions, TellMoved,
+  SentByMap, SentBySessions, TellMoved,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -76,6 +76,7 @@ import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command
+import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_platform.{MovementPlatform}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -84,11 +85,13 @@ import genesis_prime/message/movement_send_interval_answer.{
   MovementSendIntervalAnswer,
 }
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
+import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world
 import genesis_prime/message/player_path.{PlayerPath}
+import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
@@ -98,7 +101,9 @@ import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
+import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
@@ -120,7 +125,7 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
-import genesis_prime/world_map/map.{Join, Leave, Left}
+import genesis_prime/world_map/map.{Join, Leave, Left, MovedUnit, Seen, Unseen}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import gleam/bit_array
 import gleam/int
@@ -3884,4 +3889,190 @@ pub fn an_answer_in_the_camp_save_that_is_not_the_stores_is_a_bug_with_reason_8_
     assert support.asked(taken) == None
       as "the save is over and the camp's leave is not asked: a bug ends the connection without a second save"
   })
+}
+
+// ---- other players' units ----
+//
+// Expected values: 0x262, 0x638 and 0x355 are what the client creates, moves
+// and removes a unit with (opcode.0x262, opcode.0x638, opcode.0x355); the
+// reset bit and the kept bit are 0, the values of a unit the client does not
+// control (opcode.0x638); after the player's own leave the client holds no
+// world, so a send for another unit is dropped and nothing is written
+// (the Design's failure table); an accepted 0x637 tells the map where the
+// movement rule says the player stands, which is `start_place.moved` of the
+// last position in the world's frame (genesis_prime/game/movement).
+
+/// A send of the map to the connection.
+fn sent_by_the_map(
+  message: map.Outgoing,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  OwnEvent(Woken(SentByMap(message)))
+}
+
+/// Another player's unit: the tests' player's own record, as unit 9.
+fn another_unit() -> UnitCreatePlayer {
+  UnitCreatePlayer(..player_in(entered().1), unit_id: 9, name: "Zed Other")
+}
+
+fn moved_unit_commands() -> List(relayed_movement.RelayedMovement) {
+  [
+    relayed_movement.Position(UnitPositionCommand(
+      x: 0x3F800000,
+      y: 0x40000000,
+      z: 0xC0400000,
+      blends: 1,
+    )),
+    relayed_movement.Mode(MovementMode(mode: 3)),
+  ]
+}
+
+pub fn a_seen_in_the_world_is_written_at_once_as_the_0x262_of_its_unit_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    feed(in_world(), sent_by_the_map(Seen(unit: another_unit())))
+  let assert [Frame(message_id: 0x0262, body:)] = heard(taken, keyed())
+    as "opcode.0x262: another player is created with the player's own 0x262"
+  assert unit_create_player.decode(body) == Ok(another_unit())
+}
+
+pub fn a_moved_unit_is_written_as_a_0x638_with_both_bits_0_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    feed(
+      in_world(),
+      sent_by_the_map(MovedUnit(
+        unit_id: 9,
+        server_time_ms: 4321,
+        commands: moved_unit_commands(),
+      )),
+    )
+  let assert [Frame(message_id: 0x0638, body:)] = heard(taken, keyed())
+    as "opcode.0x638"
+  assert unit_movement.decode(body)
+    == Ok(UnitMovement(
+      unit_id: 9,
+      server_time: 4321,
+      reset_movement: 0,
+      kept: 0,
+      commands: moved_unit_commands(),
+    ))
+    as "the reset bit is 0 (the unit's movement is not rebuilt) and the kept bit 0, as the Design says, with the commands in order"
+}
+
+pub fn an_unseen_is_written_as_a_0x355_of_the_unit_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = feed(in_world(), sent_by_the_map(Unseen(unit_id: 9)))
+  let assert [Frame(message_id: 0x0355, body:)] = heard(taken, keyed())
+    as "opcode.0x355"
+  assert unit_destroyed.decode(body)
+    == Ok(UnitDestroyed(unit_id: 9, field_2: 0))
+}
+
+pub fn after_the_players_own_leave_nothing_more_is_written_for_other_units_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = camped_out()
+  list.each(
+    [
+      Seen(unit: another_unit()),
+      MovedUnit(unit_id: 9, server_time_ms: 1, commands: moved_unit_commands()),
+      Unseen(unit_id: 9),
+    ],
+    fn(message) {
+      let #(_, taken) = feed(state, sent_by_the_map(message))
+      assert support.writes(taken) == []
+        as "the player is in character select: the client holds no world to create, move or remove a unit in"
+      assert support.logs_of(step: taken, level: LogError) == []
+        as "a send that was on its way when the player left is no bug"
+    },
+  )
+}
+
+pub fn an_answer_of_the_map_sent_as_a_message_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = feed(in_world(), sent_by_the_map(Left))
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+  assert support.asked(taken) != None
+    as "an end with the player in the world saves its place first, as every end does"
+}
+
+/// The tells of a step: where each goes and what it says.
+fn told_the_map(
+  taken: ConnectionStep(Request),
+) -> List(step.Effect(step.ConnectionEffect(Request))) {
+  list.filter(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(..)) -> True
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> False
+    }
+  })
+}
+
+pub fn an_accepted_0x637_tells_the_map_the_place_the_movement_keeps_and_the_relayed_commands_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let sent = [
+    movement_command.Time(MovementTime(time: 99)),
+    game_client.position_command(x: 1.5, y: 2.5, z: 3.5),
+    movement_command.Mode(MovementMode(mode: 1)),
+  ]
+  let #(_, taken) = read(in_world(), moves_message(sent))
+  assert told_the_map(taken)
+    == [
+      OwnEffect(step.Tell(
+        to: Map(camp_map(), incarnation),
+        request: TellMoved(
+          connection: ConnectionId(1),
+          place: standing_at(x: 1.5, y: 2.5, z: 3.5),
+          commands: [
+            relayed_movement.Position(UnitPositionCommand(
+              x: 0x3FC00000,
+              y: 0x40200000,
+              z: 0x40600000,
+              blends: 0,
+            )),
+            relayed_movement.Mode(MovementMode(mode: 1)),
+          ],
+        ),
+      )),
+    ]
+    as "the place is the movement's (the last position of the world's frame), the commands are the sent ones in order without kind 0, the sender's own clock (movement_command.kind_0); the map is the run the connection watches"
+}
+
+pub fn a_refused_0x637_tells_the_map_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(refused_messages(), fn(refused) {
+    let #(bytes, why) = refused
+    let #(_, taken) = read(in_world(), bytes)
+    assert told_the_map(taken) == [] as why
+  })
+}
+
+pub fn a_0x637_with_nothing_to_relay_tells_the_map_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    read(
+      in_world(),
+      moves_message([movement_command.Time(MovementTime(time: 5))]),
+    )
+  assert told_the_map(taken) == []
+    as "kind 0 alone is the sender's own clock: nothing to relay"
+}
+
+pub fn a_command_kind_that_is_not_relayed_is_named_once_a_connection_and_not_relayed_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let unrelayed = movement_command.Kind26(MovementKind26(field_2: 0))
+  let message =
+    moves_message([
+      unrelayed,
+      game_client.position_command(x: 1.0, y: 1.0, z: 1.0),
+    ])
+  let #(state, first) = read(in_world(), message)
+  let assert [line] = support.logs_of(step: first, level: LogInfo)
+    as "an info line names the kind"
+  assert support.says(line, words: "kind 26")
+  let assert [OwnEffect(step.Tell(request: TellMoved(commands:, ..), ..))] =
+    told_the_map(first)
+  assert list.length(commands) == 1 as "the kind 26 is not relayed"
+  let #(_, second) = read(state, message)
+  assert support.logs_of(step: second, level: LogInfo) == []
+    as "named once on a connection"
 }

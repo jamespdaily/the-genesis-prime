@@ -274,3 +274,21 @@ pub fn insert_jim(started: Started) -> Int {
     game_account_id: support.jim().game_account_id,
   )
 }
+
+/// Inserts another account with the library's vector's password, as the login
+/// name `login_name` and the game account `game_account_id`, and gives its id:
+/// for a test with two players, which logs neither in through the login
+/// servers.
+pub fn insert_other(
+  started started: Started,
+  login_name login_name: String,
+  game_account_id game_account_id: guid.Guid,
+) -> Int {
+  insert_account(
+    pool: pog.named_connection(started.settings.pool.pool_name),
+    login_name:,
+    salt: vector.salt(),
+    verifier: vector.verifier(),
+    game_account_id:,
+  )
+}

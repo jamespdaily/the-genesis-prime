@@ -104,7 +104,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry as world_map_registry
-import gleam/erlang/process.{type Name}
+import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
@@ -338,25 +338,7 @@ fn teller(
           incarnation,
           deadline_ms: runtime.now().monotonic_ms + maps_call_ms,
         )
-        |> result.map(fn(found) {
-          fn(request: Request) {
-            case request {
-              TellMoved(connection:, place:, commands:) -> {
-                let _sent =
-                  service.tell_subject(
-                    found.subject,
-                    map.Moved(connection:, place:, commands:),
-                  )
-                Nil
-              }
-              AskStore(..)
-              | AskHandOff(..)
-              | AskSessions(..)
-              | AskMap(..)
-              | AskMapRun(..) -> Nil
-            }
-          }
-        })
+        |> result.map(fn(found) { tell_the_run(found.subject, _) })
         |> result.replace_error(Nil)
       step.Sessions
       | step.HandOff
@@ -364,6 +346,26 @@ fn teller(
       | step.Maps
       | step.Connection(..) -> Error(Nil)
     }
+  }
+}
+
+/// Tells the run of a map what the request says: that a player moved. Any
+/// other request is an ask, which a tell never carries, and is dropped.
+fn tell_the_run(
+  subject: Subject(Call(map.Message, map.Outgoing)),
+  request: Request,
+) -> Nil {
+  case request {
+    TellMoved(connection:, place:, commands:) -> {
+      let _sent =
+        service.tell_subject(subject, map.Moved(connection:, place:, commands:))
+      Nil
+    }
+    AskStore(..)
+    | AskHandOff(..)
+    | AskSessions(..)
+    | AskMap(..)
+    | AskMapRun(..) -> Nil
   }
 }
 

@@ -948,7 +948,7 @@ fn moving(
 /// The tell to the run of the player's map that the player moved: it names
 /// the player's connection, the place the movement now keeps and the commands
 /// the client sent, and no answer comes (`step.Tell`).
-pub fn tells_the_map_moved(
+fn tells_the_map_moved(
   connection connection: ConnectionId,
   entered entered: world_entry.Entered,
   place place: Place,

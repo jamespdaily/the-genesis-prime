@@ -32,7 +32,7 @@ import ask_support
 import character_support
 import connection_rule_support as support
 import game_client
-import genesis_prime/connection/frame.{Frame}
+import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
@@ -54,11 +54,14 @@ import genesis_prime/message/enter_world
 import genesis_prime/message/float32
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player
+import genesis_prime/message/unit_destroyed
+import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/server
 import genesis_prime/service
@@ -66,6 +69,7 @@ import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import gleam/bool
+import gleam/dict
 import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/list
@@ -932,5 +936,176 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
     )
     as "the place the player camped at, saved before 0x594: the camp's save is done before the client can pick the character again"
   game_client.close(game:)
+  login_support.stop(started)
+}
+
+// ---- two players see each other ----
+
+/// Puts a session key in the hand-off for an account and connects a client with
+/// it, reading its character list: the client is in character select.
+fn connected_as(
+  started started: login_support.Started,
+  port port: Int,
+  account account: AccountId,
+  login_name login_name: String,
+  game_account_id game_account_id: guid.Guid,
+  key key: guid.Guid,
+) -> game_client.Game {
+  let #(_sent, answer) =
+    ask_support.ask_and_wait(send: fn(reply) {
+      service.call(
+        started.settings.hand_off,
+        Put(
+          key: SessionKey(key),
+          holder: Holder(account_id: account, login_name:, game_account_id:),
+          lifetime_ms: 60_000,
+        ),
+        reply,
+      )
+    })
+  assert answer == hand_off.Kept as "the hand-off kept the session key"
+  let game =
+    game_client.connect(
+      port:,
+      session_key: guid.to_wire(key),
+      account_name: login_name,
+    )
+  game_client.send(game:, message_id: 0x07E0, body: <<>>)
+  let assert [_level, _list] = game_client.read(game:, count: 2)
+  game
+}
+
+/// The unit id of a 0x262.
+fn unit_of(frame: Frame) -> Int {
+  assert frame.message_id == 0x0262 as "the frame is a 0x262"
+  let assert Ok(unit) = unit_create_player.decode(frame.body) as "0x262 decodes"
+  unit.unit_id
+}
+
+pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started = login_support.start()
+  let port = login_support.ports(started).game_port
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let first_account = AccountId(login_support.insert_jim(started))
+  let second_account =
+    AccountId(login_support.insert_other(
+      started:,
+      login_name: "second",
+      game_account_id: support.guid_of(0x21),
+    ))
+  let first_character =
+    character_support.insert(
+      pool:,
+      account: first_account,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let second_character =
+    character_support.insert(
+      pool:,
+      account: second_account,
+      name: "Ann Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let first =
+    connected_as(
+      started:,
+      port:,
+      account: first_account,
+      login_name: "jim",
+      game_account_id: support.jim().game_account_id,
+      key: support.guid_of(1),
+    )
+  let second =
+    connected_as(
+      started:,
+      port:,
+      account: second_account,
+      login_name: "second",
+      game_account_id: support.guid_of(0x21),
+      key: support.guid_of(2),
+    )
+  // The first player enters an empty map.
+  send_play(game: first, character_id: first_character)
+  let #(first_burst, first_have) =
+    game_client.read_kept(game: first, have: <<>>, count: 7)
+  assert list.map(first_burst, fn(frame) { frame.message_id })
+    == game_client.world_entry_ids
+  // The second enters: its whole burst is written, then the first player's
+  // 0x262, and the first player is sent the second's.
+  send_play(game: second, character_id: second_character)
+  let #(second_burst, second_have) =
+    game_client.read_kept(game: second, have: <<>>, count: 8)
+  assert list.map(list.take(second_burst, 7), fn(frame) { frame.message_id })
+    == game_client.world_entry_ids
+    as "the second player's whole entry burst comes before the 0x262 of the first: a 0x262 of another unit that landed while the client waits on 0x636 could take control (0x1403d9760)"
+  let assert [_, own, ..] = second_burst
+  assert unit_of(own) == 2 as "the second player's own unit is the map's second"
+  let assert [seen_first] = list.drop(second_burst, 7)
+  assert unit_of(seen_first) == 1
+    as "the first player's unit is created for the second player"
+  let #(seen_second, first_have) =
+    game_client.next(game: first, have: first_have)
+  assert unit_of(seen_second) == 2
+    as "the second player's unit is created for the first player"
+  // The second player moves; only the first sees it.
+  game_client.send_world(
+    game: second,
+    message_id: 0x0637,
+    body: game_client.moves_body(client_clock: 0x1234, commands: [
+      game_client.position_command(x: 100.5, y: 50.25, z: -200.75),
+    ]),
+  )
+  let #(moved, first_have) = game_client.next(game: first, have: first_have)
+  assert moved.message_id == 0x0638 as "opcode.0x638: each move is relayed"
+  let assert Ok(relayed) = unit_movement.decode(moved.body)
+  assert relayed.unit_id == 2
+    && relayed.reset_movement == 0
+    && relayed.kept == 0
+  assert relayed.commands
+    == [
+      relayed_movement.Position(UnitPositionCommand(
+        x: float32.to_bits(100.5),
+        y: float32.to_bits(50.25),
+        z: float32.to_bits(-200.75),
+        blends: 0,
+      )),
+    ]
+    as "the position the player sent, with its bit"
+  // The first player's bot model: the second stands where it moved to.
+  let view = game_client.observe(others: dict.new(), frame: seen_second)
+  let view = game_client.observe(others: view, frame: moved)
+  assert view == dict.from_list([#(2, #(100.5, 50.25, -200.75))])
+  // The second player camps out: the first sees its unit go.
+  game_client.send_world(game: second, message_id: 0x00BF, body: <<1>>)
+  let #(_countdown, second_have) =
+    game_client.next(game: second, have: second_have)
+  game_client.send_world(game: second, message_id: 0x00C0, body: <<>>)
+  let #(left, second_have) = game_client.next(game: second, have: second_have)
+  assert left.message_id == 0x0594
+  let #(gone, first_have) = game_client.next(game: first, have: first_have)
+  assert gone.message_id == 0x0355 as "opcode.0x355: the unit is removed"
+  let assert Ok(destroyed) = unit_destroyed.decode(gone.body)
+  assert destroyed.unit_id == 2
+  assert game_client.observe(others: view, frame: gone) == dict.new()
+  // It plays again as a new unit, which the first sees appear; then it drops.
+  game_client.send(game: second, message_id: 0x07E0, body: <<>>)
+  let #(_list, second_have) =
+    game_client.read_kept(game: second, have: second_have, count: 2)
+  send_play(game: second, character_id: second_character)
+  let #(_again, _second_have) =
+    game_client.read_kept(game: second, have: second_have, count: 8)
+  let #(back, first_have) = game_client.next(game: first, have: first_have)
+  assert unit_of(back) == 3 as "a new unit, never an id given before"
+  game_client.close(game: second)
+  let #(dropped, _first_have) = game_client.next(game: first, have: first_have)
+  assert dropped.message_id == 0x0355
+  let assert Ok(destroyed) = unit_destroyed.decode(dropped.body)
+  assert destroyed.unit_id == 3
+    as "the connection that drops is removed for the first player as the camp's leave was"
+  game_client.close(game: first)
   login_support.stop(started)
 }

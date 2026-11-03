@@ -300,7 +300,7 @@ type Relay {
 /// kinds of the others, each once in the order first sent: kind 0 is the
 /// sender's clock and is never relayed or named, and the kinds
 /// `genesis_prime/message/relayed_movement` does not hold are named.
-pub fn relayed(
+fn relayed(
   commands commands: List(MovementCommand),
 ) -> #(List(RelayedMovement), List(Int)) {
   let relays = list.map(commands, relay)

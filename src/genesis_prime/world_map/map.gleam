@@ -278,7 +278,7 @@ pub fn step(
 /// own clock, which started at 0 when the map started (the monotonic time of
 /// `Started`). A unit's `Seen` and each `MovedUnit` read it, so it never goes
 /// back.
-pub fn server_time(state state: State, now now: Now) -> Int {
+fn server_time(state state: State, now now: Now) -> Int {
   now.monotonic_ms - state.started_ms
 }
 
@@ -308,7 +308,7 @@ fn moved(
     )
     Ok(mover) -> {
       let unit = player_unit.moved(mover.unit, place)
-      let time = server_time(state, now)
+      let time = server_time(state:, now:)
       let unit_id = player_unit.unit_id(unit)
       let relays =
         list.sized_chunk(commands, most_commands_in_a_message)
@@ -330,7 +330,7 @@ fn moved(
                 players,
                 list.append(
                   effects,
-                  list.map(relays, send(other_connection, _)),
+                  list.map(relays, send(to: other_connection, message: _)),
                 ),
               )
               False, True -> #(
@@ -341,10 +341,13 @@ fn moved(
                   Player(..player, sees: set.insert(player.sees, connection)),
                 ),
                 list.append(effects, [
-                  send(other_connection, Seen(unit: seen(state:, time:, unit:))),
                   send(
-                    connection,
-                    Seen(unit: seen(state:, time:, unit: player.unit)),
+                    to: other_connection,
+                    message: Seen(unit: seen(state:, time:, unit:)),
+                  ),
+                  send(
+                    to: connection,
+                    message: Seen(unit: seen(state:, time:, unit: player.unit)),
                   ),
                 ]),
               )
@@ -356,10 +359,10 @@ fn moved(
                   Player(..player, sees: set.delete(player.sees, connection)),
                 ),
                 list.append(effects, [
-                  send(other_connection, Unseen(unit_id:)),
+                  send(to: other_connection, message: Unseen(unit_id:)),
                   send(
-                    connection,
-                    Unseen(unit_id: player_unit.unit_id(player.unit)),
+                    to: connection,
+                    message: Unseen(unit_id: player_unit.unit_id(player.unit)),
                   ),
                 ]),
               )
@@ -432,103 +435,127 @@ fn joined(
   character character: Character,
   place place: Place,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let time = server_time(state, now)
+  let time = server_time(state:, now:)
   case dict.get(state.players, connection) {
-    Ok(player) -> {
-      let CharacterId(second_character_id) = character.character_id
-      #(
-        state,
-        Effects(
-          list.flatten([
-            [
-              log_error(
-                state:,
-                about: step.About(
-                  ..step.no_one,
-                  connection: Some(connection),
-                  character_id: Some(second_character_id),
-                ),
-                text: "the connection joined the map a second time, as character "
-                  <> int.to_string(second_character_id)
-                  <> "; it is already unit "
-                  <> int.to_string(player_unit.unit_id(player.unit))
-                  <> " of character "
-                  <> int.to_string(player_unit.character_id(player.unit)),
-              ),
-              OwnEffect(Reply(caller, answer(state:, unit: player.unit))),
-            ],
-            list.filter_map(others_of(state:, connection:), fn(other) {
-              case set.contains(player.sees, other.0) {
-                True ->
-                  Ok(send(
-                    connection,
-                    Seen(unit: seen(state:, time:, unit: { other.1 }.unit)),
-                  ))
-                False -> Error(Nil)
-              }
-            }),
-          ]),
-        ),
-      )
-    }
-    Error(Nil) -> {
-      let unit_id = state.next_unit_id
-      let watch = WatchId(state.next_watch)
-      let unit =
-        player_unit.new(
-          character:,
-          place:,
-          unit_id:,
-          visuals: appearance.character_body_visuals(
-            index: appearance.index(tables: state.settings.tables),
-            character:,
-          ),
-        )
-      let in_sight =
-        list.filter(others_of(state:, connection:), fn(other) {
-          sight.sees(place, player_unit.place({ other.1 }.unit))
-        })
-      let players =
-        list.fold(in_sight, state.players, fn(players, other) {
-          dict.insert(
-            players,
-            other.0,
-            Player(..other.1, sees: set.insert({ other.1 }.sees, connection)),
-          )
-        })
-      let sees = set.from_list(list.map(in_sight, fn(other) { other.0 }))
-      #(
-        State(
-          ..state,
-          players: dict.insert(
-            players,
-            connection,
-            Player(unit:, watch:, sees:),
-          ),
-          watches: dict.insert(state.watches, watch, connection),
-          next_unit_id: unit_id + 1,
-          next_watch: state.next_watch + 1,
-        ),
-        Effects(
-          list.flatten([
-            [
-              Watch(watch:, target: Connection(connection)),
-              OwnEffect(Reply(caller, answer(state:, unit:))),
-            ],
-            list.flat_map(in_sight, fn(other) {
-              [
-                send(
-                  connection,
-                  Seen(unit: seen(state:, time:, unit: { other.1 }.unit)),
-                ),
-                send(other.0, Seen(unit: seen(state:, time:, unit:))),
-              ]
-            }),
-          ]),
-        ),
-      )
-    }
+    Ok(player) ->
+      joined_again(state:, time:, caller:, connection:, character:, player:)
+    Error(Nil) ->
+      joined_new(state:, time:, caller:, connection:, character:, place:)
   }
+}
+
+/// A second join of a connection in the map: an error line, the answer built
+/// from the unit the map keeps, and a `Seen` for the joiner of each player it
+/// sees.
+fn joined_again(
+  state state: State,
+  time time: Int,
+  caller caller: CallerId,
+  connection connection: ConnectionId,
+  character character: Character,
+  player player: Player,
+) -> #(State, ServiceStep(Outgoing)) {
+  let CharacterId(second_character_id) = character.character_id
+  let seen_again =
+    others_of(state:, connection:)
+    |> list.filter(fn(other) { set.contains(player.sees, other.0) })
+    |> list.map(fn(other) {
+      seen_by(state:, time:, viewer: connection, of: { other.1 }.unit)
+    })
+  #(
+    state,
+    Effects(
+      list.flatten([
+        [
+          log_error(
+            state:,
+            about: step.About(
+              ..step.no_one,
+              connection: Some(connection),
+              character_id: Some(second_character_id),
+            ),
+            text: "the connection joined the map a second time, as character "
+              <> int.to_string(second_character_id)
+              <> "; it is already unit "
+              <> int.to_string(player_unit.unit_id(player.unit))
+              <> " of character "
+              <> int.to_string(player_unit.character_id(player.unit)),
+          ),
+          OwnEffect(Reply(caller, answer(state:, unit: player.unit))),
+        ],
+        seen_again,
+      ]),
+    ),
+  )
+}
+
+/// The first join of a connection: the unit is built, kept and answered, the
+/// connection watched, and each pair with a player in sight made.
+fn joined_new(
+  state state: State,
+  time time: Int,
+  caller caller: CallerId,
+  connection connection: ConnectionId,
+  character character: Character,
+  place place: Place,
+) -> #(State, ServiceStep(Outgoing)) {
+  let unit_id = state.next_unit_id
+  let watch = WatchId(state.next_watch)
+  let unit =
+    player_unit.new(
+      character:,
+      place:,
+      unit_id:,
+      visuals: appearance.character_body_visuals(
+        index: appearance.index(tables: state.settings.tables),
+        character:,
+      ),
+    )
+  let in_sight =
+    list.filter(others_of(state:, connection:), fn(other) {
+      sight.sees(place, player_unit.place({ other.1 }.unit))
+    })
+  let players =
+    list.fold(in_sight, state.players, fn(players, other) {
+      dict.insert(
+        players,
+        other.0,
+        Player(..other.1, sees: set.insert({ other.1 }.sees, connection)),
+      )
+    })
+  let sees = set.from_list(list.map(in_sight, fn(other) { other.0 }))
+  let pairs =
+    list.flat_map(in_sight, fn(other) {
+      [
+        seen_by(state:, time:, viewer: connection, of: { other.1 }.unit),
+        seen_by(state:, time:, viewer: other.0, of: unit),
+      ]
+    })
+  #(
+    State(
+      ..state,
+      players: dict.insert(players, connection, Player(unit:, watch:, sees:)),
+      watches: dict.insert(state.watches, watch, connection),
+      next_unit_id: unit_id + 1,
+      next_watch: state.next_watch + 1,
+    ),
+    Effects([
+      Watch(watch:, target: Connection(connection)),
+      OwnEffect(Reply(caller, answer(state:, unit:))),
+      ..pairs
+    ]),
+  )
+}
+
+/// The send that makes `viewer` see the unit: `Seen` of it as it stands, at the
+/// map's server time `time`.
+fn seen_by(
+  state state: State,
+  time time: Int,
+  viewer viewer: ConnectionId,
+  of unit: PlayerUnit,
+) -> Effect(ServiceEffect(Outgoing)) {
+  send(to: viewer, message: Seen(unit: seen(state:, time:, unit:)))
 }
 
 /// The answer to a join: the unit as message 0x262's record in the map's
@@ -609,7 +636,10 @@ fn without(
   #(
     State(..state, players:, watches: dict.delete(state.watches, player.watch)),
     list.map(viewers, fn(viewer) {
-      send(viewer.0, Unseen(unit_id: player_unit.unit_id(player.unit)))
+      send(
+        to: viewer.0,
+        message: Unseen(unit_id: player_unit.unit_id(player.unit)),
+      )
     }),
   )
 }

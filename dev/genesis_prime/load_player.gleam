@@ -15,6 +15,13 @@
 //// The player holds all three of its connections, the STS and the auth one too,
 //// until it ends, so each listener holds a connection per player.
 ////
+//// With other players in sight (every player starts at the same place) the server
+//// also writes their units' 0x262, 0x638 and 0x355 to the player, which it reads
+//// and drops among the pongs (`game_client.pong_among_messages`). A walking player
+//// (`play`'s `walking`) also sends one 0x0637 every 125 ms, the client's own
+//// movement send interval until the server sets one (opcode.0xf1), moving a few
+//// units along x and back, so every player in the map is relayed it.
+////
 //// The pings are the client's own (SendNetworkPings, opcode.0x0, opcode.0x1):
 //// the first has number 0, each next is sent only after the last is answered,
 //// is the one after it modulo 20, and goes at most once every 500 ms after the
@@ -42,6 +49,7 @@ import genesis_prime/step/runtime
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/string
 import login_client.{type Ports}
 import mug
@@ -174,6 +182,7 @@ pub fn play(
   ports ports: Ports,
   begin_at_ms begin_at_ms: Int,
   until_ms until_ms: Int,
+  walking walking: Bool,
   report report: Subject(Report),
 ) -> Nil {
   process.sleep(int.max(0, begin_at_ms - runtime.now().monotonic_ms))
@@ -209,13 +218,24 @@ pub fn play(
   let mark = reached(CharacterList, mark)
   let character_id = create_character(game:, name: account.character_name)
   let mark = reached(Create, mark)
-  let _burst = enter_world(game:, character_id:)
+  let #(_burst, have) = enter_world(game:, character_id:)
   let mark = reached(EnterWorld, mark)
   let sent_at_ms = runtime.now().monotonic_ms
-  let first = round_trip(game:, number: 0)
+  let #(first, have) = round_trip(game:, have:, number: 0)
   let _mark = reached(FirstPong, mark)
   let trips =
-    keep_pinging(game:, answered: 0, sent_at_ms:, until_ms:, trips: [first])
+    keep_playing(
+      game:,
+      have:,
+      answered: 0,
+      sent_at_ms:,
+      until_ms:,
+      trips: [first],
+      walk: case walking {
+        True -> Some(Walk(last_move_ms: sent_at_ms, moves: 0))
+        False -> None
+      },
+    )
   process.send(report, Finished(player:, round_trips_us: trips))
   game_client.close(game:)
   let _closed = mug.shutdown(auth)
@@ -242,14 +262,14 @@ pub fn moves_and_returns(
   let #(game, auth) = log_in(account:, ports:)
   list_characters(game)
   let character_id = create_character(game:, name: account.character_name)
-  let _burst = enter_world(game:, character_id:)
+  let _burst = enter_world(game:, character_id:).0
   game_client.send_world(game:, message_id: 0x0637, body: move_to(to))
   game_client.close(game:)
   let _closed = mug.shutdown(auth)
   after_the_drop()
   let #(game, auth) = log_in(account:, ports:)
   list_characters(game)
-  let burst = enter_world(game:, character_id:)
+  let burst = enter_world(game:, character_id:).0
   game_client.close(game:)
   let _closed = mug.shutdown(auth)
   placed_at(burst)
@@ -311,19 +331,20 @@ fn create_character(game game: game_client.Game, name name: String) -> Int {
   created.character_id
 }
 
-/// Plays the character into the world, and the messages that put it there.
+/// Plays the character into the world, and the messages that put it there,
+/// with the bytes the server wrote after them.
 fn enter_world(
   game game: game_client.Game,
   character_id character_id: Int,
-) -> List(Frame) {
+) -> #(List(Frame), BitArray) {
   let assert Ok(play_body) = play_character.encode(PlayCharacter(character_id:))
     as "0x07DD encodes"
   game_client.send(game:, message_id: 0x07DD, body: play_body)
-  let burst = game_client.read(game:, count: 7)
+  let #(burst, have) = game_client.read_kept(game:, have: <<>>, count: 7)
   assert list.map(burst, fn(frame) { frame.message_id })
     == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
     as "the player enters the world with 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1 and 0x61"
-  burst
+  #(burst, have)
 }
 
 /// The body of 0x0637 that moves the player to the position: one kind 2 command
@@ -352,38 +373,120 @@ fn finite(number: Int) -> Float {
   value
 }
 
-/// Pings until the step ends, each ping as the client's rule has it.
-fn keep_pinging(
+/// Where a walking player is: when it sent its last 0x0637, and how many it has
+/// sent.
+type Walk {
+  Walk(last_move_ms: Int, moves: Int)
+}
+
+/// How often a walking player sends its movement, in milliseconds: the client's
+/// own movement send interval until the server sets one (opcode.0xf1).
+const move_every_ms = 125
+
+/// How many units a walking player steps along x before it steps back.
+const steps_out = 10
+
+/// Pings until the step ends, each ping as the client's rule has it, and, for a
+/// walking player, sends a 0x0637 every `move_every_ms`; what else the server
+/// writes meanwhile is read and dropped.
+fn keep_playing(
   game game: game_client.Game,
+  have have: BitArray,
   answered answered: Int,
   sent_at_ms sent_at_ms: Int,
   until_ms until_ms: Int,
   trips trips: List(Int),
+  walk walk: Option(Walk),
 ) -> List(Int) {
-  let ping =
-    next_ping(answered:, sent_at_ms:, now_ms: runtime.now().monotonic_ms)
-  case runtime.now().monotonic_ms + ping.wait_ms >= until_ms {
+  let now = runtime.now().monotonic_ms
+  let ping = next_ping(answered:, sent_at_ms:, now_ms: now)
+  let ping_at = now + ping.wait_ms
+  let move_at = case walk {
+    Some(Walk(last_move_ms:, ..)) -> last_move_ms + move_every_ms
+    None -> ping_at
+  }
+  let next_at = int.min(ping_at, move_at)
+  case next_at >= until_ms {
     True -> trips
     False -> {
-      process.sleep(ping.wait_ms)
-      let sent_at_ms = runtime.now().monotonic_ms
-      let trip = round_trip(game:, number: ping.number)
-      keep_pinging(game:, answered: ping.number, sent_at_ms:, until_ms:, trips: [
-        trip,
-        ..trips
-      ])
+      process.sleep(int.max(0, next_at - now))
+      let #(walk, have) = case walk {
+        Some(Walk(moves:, ..)) if move_at <= next_at -> {
+          game_client.send_world(
+            game:,
+            message_id: 0x0637,
+            body: step_of_the_walk(moves),
+          )
+          #(
+            Some(Walk(
+              last_move_ms: runtime.now().monotonic_ms,
+              moves: moves + 1,
+            )),
+            game_client.drain(game:, have:),
+          )
+        }
+        Some(_) | None -> #(walk, have)
+      }
+      case ping_at <= next_at {
+        True -> {
+          let sent_at_ms = runtime.now().monotonic_ms
+          let #(trip, have) = round_trip(game:, have:, number: ping.number)
+          keep_playing(
+            game:,
+            have:,
+            answered: ping.number,
+            sent_at_ms:,
+            until_ms:,
+            trips: [trip, ..trips],
+            walk:,
+          )
+        }
+        False ->
+          keep_playing(
+            game:,
+            have:,
+            answered:,
+            sent_at_ms:,
+            until_ms:,
+            trips:,
+            walk:,
+          )
+      }
     }
   }
 }
 
-/// Sends a ping and waits for its pong, which must carry the ping's number; the
-/// round trip in microseconds.
-fn round_trip(game game: game_client.Game, number number: Int) -> Int {
+/// The 0x0637 of a walking player's `moves`th step: one kind 2 command at a
+/// place a few units along x from where the characters start (World 3460, the
+/// WorldLocation2 row 51596 position), out and back.
+fn step_of_the_walk(moves: Int) -> BitArray {
+  let along = moves % { 2 * steps_out }
+  let offset = case along <= steps_out {
+    True -> along
+    False -> 2 * steps_out - along
+  }
+  game_client.moves_body(client_clock: moves * move_every_ms, commands: [
+    game_client.position_command(
+      x: 29.128599166870117 +. int.to_float(offset),
+      y: -853.87158203125,
+      z: -560.18798828125,
+    ),
+  ])
+}
+
+/// Sends a ping and waits for its pong, which must carry the ping's number, the
+/// other players' messages that come first read and dropped; the round trip in
+/// microseconds and the bytes read beyond the pong.
+fn round_trip(
+  game game: game_client.Game,
+  have have: BitArray,
+  number number: Int,
+) -> #(Int, BitArray) {
   let sent = load_sample.microseconds()
   game_client.send_ping(game:, number:)
-  assert game_client.read_pong(game:) == number
-    as "opcode.0x1: the pong carries the ping's number"
-  load_sample.microseconds() - sent
+  let #(answered, have) = game_client.pong_among_messages(game:, have:)
+  assert answered == number as "opcode.0x1: the pong carries the ping's number"
+  #(load_sample.microseconds() - sent, have)
 }
 
 /// The create request of CharacterCreation row 466 (class 1, race 1, sex 1, a
