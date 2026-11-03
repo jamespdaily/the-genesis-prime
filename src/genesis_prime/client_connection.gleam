@@ -72,11 +72,20 @@ pub type Request {
 }
 
 /// One 0x638 a mover's connection sends the connection of a player who sees
-/// it: the mover's unit, the map's server time at the move (the map's clock,
-/// `world_map/map.server_time`), and at most 31 of its relayed commands in the
-/// order sent, since 0x638's count is 5 bits (opcode.0x638).
+/// it: the run of the map the mover is in (`map` and `incarnation`, as its
+/// connection watches it), the mover's unit in that run, the map's server time
+/// at the move (the map's clock, `world_map/map.server_time`), and at most 31
+/// of its relayed commands in the order sent, since 0x638's count is 5 bits
+/// (opcode.0x638). A viewer that is in another run of the map, or another map,
+/// drops it: the unit id there may name another unit.
 pub type PeerMove {
-  PeerMove(unit_id: Int, server_time_ms: Int, commands: List(RelayedMovement))
+  PeerMove(
+    map: MapId,
+    incarnation: Int,
+    unit_id: Int,
+    server_time_ms: Int,
+    commands: List(RelayedMovement),
+  )
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).
@@ -85,12 +94,16 @@ const most_commands_in_a_message = 31
 /// The 0x638s a move is sent as: its `commands` in order, at most 31 to a
 /// message, and none for no command.
 pub fn peer_moves(
+  map map: MapId,
+  incarnation incarnation: Int,
   unit_id unit_id: Int,
   server_time_ms server_time_ms: Int,
   commands commands: List(RelayedMovement),
 ) -> List(PeerMove) {
   list.sized_chunk(commands, most_commands_in_a_message)
-  |> list.map(fn(chunk) { PeerMove(unit_id:, server_time_ms:, commands: chunk) })
+  |> list.map(fn(chunk) {
+    PeerMove(map:, incarnation:, unit_id:, server_time_ms:, commands: chunk)
+  })
 }
 
 /// What comes back from an ask, by the process asked.

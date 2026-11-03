@@ -111,7 +111,11 @@
 ////   A unit's `Seen` reads it, and `Joined` carries its origin, the monotonic
 ////   time the map started at, so a mover's connection stamps its 0x638s from
 ////   the same clock (`server_time`): a unit's 0x262 and its 0x638s share one
-////   clock, which only goes forward until the map is 49.7 days old, when it
+////   clock, though a 0x638 can carry an earlier time than the 0x262 that reached
+////   a viewer first (a move is stamped when the mover takes it, a 0x262 when the
+////   map sends it), which is no failure: the client ignores a time sample until
+////   the time has passed the last by half the send interval (FitServerTime
+////   0x14079ab90). The clock only goes forward until the map is 49.7 days old, when it
 ////   counts from 0 again: the client takes a time sample only when its signed
 ////   32-bit difference from the last is at least half the send interval, and
 ////   ignores one that is not (FitServerTime 0x14079ab90); its fit across the
@@ -301,8 +305,10 @@ pub fn step(
 /// started at 0 when the map started (the monotonic time of `Started`), taken mod
 /// 2^32 because the client's fields hold 32 bits (opcode.0x638). A unit's `Seen`
 /// reads it, and a mover's connection stamps its 0x638s with it from the
-/// origin `Joined` carries, so a unit's 0x262 and 0x638s share one clock, which
-/// only goes forward until the map is 49.7 days old, when it counts from 0
+/// origin `Joined` carries, so a unit's 0x262 and 0x638s share one clock, though
+/// a 0x638 can carry an earlier time than the 0x262 that reached a viewer first
+/// (FitServerTime 0x14079ab90 ignores a sample until the time has passed the last
+/// by half the send interval). It only goes forward until the map is 49.7 days old, when it counts from 0
 /// again: the client takes a time sample only when its signed 32-bit difference
 /// from the last is at least half the send interval, and ignores one that is not
 /// (FitServerTime 0x14079ab90); its fit across the wrap is not read.

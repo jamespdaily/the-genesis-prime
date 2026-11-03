@@ -262,8 +262,9 @@ pub fn a_seen_record_names_the_place_the_unit_has_moved_to_test() -> Nil {
   let #(state, _) = move(state: state, connection: 1, x: 500.0, elapsed_ms: 300)
   let #(_, joined) =
     join(state: state, connection: 3, place: at(450.0), elapsed_ms: 400)
-  let assert [#(3, Seen(unit: record)), ..] = units(joined)
-    as "the joiner is sent the first player first (the connections go in order)"
+  let assert Ok(#(3, Seen(unit: record))) =
+    list.find(units(joined), fn(sent) { unit_id_of(sent.1) == 1 })
+    as "the joiner is sent a Seen of the first player"
   let assert [start_movement.Position(UnitPositionCommand(x:, ..)), ..] =
     record.movement_commands
   assert x == float32.to_bits(500.0)

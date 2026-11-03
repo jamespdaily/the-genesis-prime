@@ -233,10 +233,19 @@
 ////   say) a send is dropped and nothing is written for other units; a player that
 ////   enters again starts with no viewers, and the map's new join sends it a
 ////   `Watched` for each player in sight.
+//// - **Order.** A move (mover to viewer) and the map's notices travel on two
+////   paths, and the BEAM orders signals only per sender and receiver. So each
+////   `PeerMove` names the run of the map it is for, and a viewer in another run
+////   or map drops it; and on each `Watched(by)` the mover sends `by` its current
+////   place as one 0x638 (kind 2 and kind 14, bits clear), which follows every
+////   move the mover sent `by` earlier, so the viewer ends at the place the mover
+////   is at whatever raced.
 //// - **A mover's 0x638** is stamped with the map's clock: the connection holds
 ////   the origin `Joined` carried and takes the time of the input from it
 ////   (`world_map/map.server_time`, mod 2^32), the clock the map stamps the
-////   unit's 0x262 with. More than 31 commands are sent as several 0x638s in
+////   unit's 0x262 with; a 0x638 can carry an earlier time than the 0x262 that
+////   reached a viewer first, which the client ignores (FitServerTime
+////   0x14079ab90). More than 31 commands are sent as several 0x638s in
 ////   order, each of at most 31 (its count is 5 bits, opcode.0x638). A move with
 ////   no viewer sends none, and one with nothing to relay sends none and tells
 ////   the map nothing. A viewer that has just been `Unwatched`, or gone, may still
@@ -311,6 +320,7 @@ import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
+import genesis_prime/world_map/player_unit
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -1000,6 +1010,8 @@ fn sends_the_move_to_the_viewers(
   use <- bool.guard(when: set.is_empty(entered.viewers), return: [])
   let moves =
     client_connection.peer_moves(
+      map: entered.map,
+      incarnation: entered.incarnation,
       unit_id: entered.unit_id,
       server_time_ms: map.server_time(
         origin_ms: entered.clock_origin_ms,
@@ -1641,17 +1653,20 @@ fn map_sent(
           Continue(session, [to_client(session, other_unit_frame(message))])
         False -> Continue(session, [])
       }
-    map.Watched(by:) ->
-      Continue(
+    map.Watched(by:) -> {
+      let session =
         Session(
           ..session,
           status: viewers_changed(status: session.status, change: set.insert(
             _,
             by,
           )),
-        ),
-        [],
-      )
+        )
+      Continue(session, case entered_of(session.status) {
+        Some(entered) -> [sends_its_place(entered:, now:, viewer: by)]
+        None -> []
+      })
+    }
     map.Unwatched(by:) ->
       Continue(
         Session(
@@ -1667,18 +1682,59 @@ fn map_sent(
 }
 
 /// What another player's connection sent about the player it holds: its move,
-/// written as 0x638 while this player is in the world, and dropped otherwise.
-/// A 0x638 for a unit the client does not have yet, or no longer has, is
-/// written all the same: the client logs it and goes on (opcode.0x638).
+/// written as 0x638 while this player is in the world, in the run of the map the
+/// move names, and dropped otherwise: a move from another run or another map,
+/// which the mover's connection sent before the viewer left it, names a unit id
+/// that may be another unit here. A 0x638 for a unit the client does not have
+/// yet, or no longer has, is written all the same: the client logs it and goes
+/// on (opcode.0x638).
 fn peer_sent(
   session session: Session,
   move move: client_connection.PeerMove,
 ) -> client_connection.Handled(Session) {
+  let in_this_run = case entered_of(session.status) {
+    Some(entered) ->
+      entered.map == move.map && entered.incarnation == move.incarnation
+    None -> False
+  }
   use <- bool.guard(
-    when: !holds_the_world(session.status),
+    when: !holds_the_world(session.status) || !in_this_run,
     return: Continue(session, []),
   )
   Continue(session, [to_client(session, peer_move_frame(move))])
+}
+
+/// The player's current place sent to a connection the map has just told sees it,
+/// as one 0x638 of the kind 2 at the place and the kind 14 at its facing, each
+/// with its bit clear (`player_unit.standing`), stamped from the map's clock.
+/// Every move this connection sent that connection before the map's notice
+/// reaches it first, since the BEAM orders the signals of one sender to one
+/// receiver, so the viewer ends at the place the mover is at whatever raced.
+fn sends_its_place(
+  entered entered: world_entry.Entered,
+  now now: Now,
+  viewer viewer: ConnectionId,
+) -> Effect(ConnectionEffect(Request)) {
+  let #(position, rotation) =
+    player_unit.standing(movement.place(entered.movement))
+  OwnEffect(step.Tell(
+    to: step.Connection(viewer),
+    request: TellPeer(
+      move: client_connection.PeerMove(
+        map: entered.map,
+        incarnation: entered.incarnation,
+        unit_id: entered.unit_id,
+        server_time_ms: map.server_time(
+          origin_ms: entered.clock_origin_ms,
+          monotonic_ms: now.monotonic_ms,
+        ),
+        commands: [
+          relayed_movement.Position(position),
+          relayed_movement.Rotation(rotation),
+        ],
+      ),
+    ),
+  ))
 }
 
 /// The status with the viewers of the player it holds changed by `change`: the

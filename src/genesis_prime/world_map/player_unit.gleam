@@ -30,12 +30,16 @@
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{type ItemVisual}
-import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/movement_rotation.{
+  type MovementRotation, MovementRotation,
+}
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
-import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_position_command.{
+  type UnitPositionCommand, UnitPositionCommand,
+}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/store.{type Character, CharacterId}
@@ -110,6 +114,31 @@ pub fn seen(
   )
 }
 
+/// The movement commands that put a unit at `place` as the client's reader
+/// takes them: the kind 2 at its position and the kind 14 at its facing, each
+/// with its bit clear, which places the unit at once (0x140714120). A 0x262
+/// starts a unit with them, and a mover's connection sends them to a viewer it
+/// has just been told of.
+pub fn standing(
+  place place: Place,
+) -> #(UnitPositionCommand, MovementRotation) {
+  let facing = start_place.facing(place)
+  #(
+    UnitPositionCommand(
+      x: float32.to_bits(start_place.x(place)),
+      y: float32.to_bits(start_place.y(place)),
+      z: float32.to_bits(start_place.z(place)),
+      blends: 0,
+    ),
+    MovementRotation(
+      yaw: float32.to_bits(facing.yaw),
+      pitch: float32.to_bits(facing.pitch),
+      roll: float32.to_bits(facing.roll),
+      blends: 0,
+    ),
+  )
+}
+
 /// The id of the unit's character, for a log line.
 pub fn character_id(unit unit: PlayerUnit) -> Int {
   let CharacterId(character_id) = unit.character.character_id
@@ -124,7 +153,6 @@ pub fn create(
   let PlayerUnit(character:, place:, unit_id:, visuals:) = unit
   let CharacterId(character_id) = character.character_id
   let health = float32.to_bits(int.to_float(stand_in_health))
-  let facing = start_place.facing(place)
   UnitCreatePlayer(
     unit_id:,
     character_id:,
@@ -148,20 +176,10 @@ pub fn create(
       UnitStat(stat_id: level_stat, value: character.level),
     ],
     server_time_estimate_start: 0,
-    movement_commands: [
-      start_movement.Position(UnitPositionCommand(
-        x: float32.to_bits(start_place.x(place)),
-        y: float32.to_bits(start_place.y(place)),
-        z: float32.to_bits(start_place.z(place)),
-        blends: 0,
-      )),
-      start_movement.Rotation(MovementRotation(
-        yaw: float32.to_bits(facing.yaw),
-        pitch: float32.to_bits(facing.pitch),
-        roll: float32.to_bits(facing.roll),
-        blends: 0,
-      )),
-    ],
+    movement_commands: {
+      let #(position, rotation) = standing(place:)
+      [start_movement.Position(position), start_movement.Rotation(rotation)]
+    },
     properties: [
       UnitProperty(
         property_id: base_health_property,

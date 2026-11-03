@@ -150,7 +150,18 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
   let assert Ok(#("error", _text)) =
     process.receive(logged, within: ask_support.event_wait_ms)
     as "a tell that is an ask is a bug in the rule that tells it: an error line"
-  server.tell_the_run(run, TellPeer(PeerMove(9, 1, [])))
+  server.tell_the_run(
+    run,
+    TellPeer(
+      PeerMove(
+        map: MapId(world_id: 3460, instance: 0),
+        incarnation: 1,
+        unit_id: 9,
+        server_time_ms: 1,
+        commands: [],
+      ),
+    ),
+  )
   let assert Ok(#("error", _text)) =
     process.receive(logged, within: ask_support.event_wait_ms)
     as "a tell for a connection is none for a map: an error line too"

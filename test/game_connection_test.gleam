@@ -73,6 +73,7 @@ import genesis_prime/message/disconnect_reason.{
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/fall_value.{FallValue}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
+import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
@@ -130,6 +131,7 @@ import genesis_prime/world_map/map.{
   Join, Leave, Left, Seen, Unseen, Unwatched, Watched,
 }
 import genesis_prime/world_map/map_id.{type MapId, MapId}
+import genesis_prime/world_map/player_unit
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -3939,6 +3941,16 @@ fn sent_by_the_map(
   OwnEvent(Woken(SentByMap(message)))
 }
 
+/// A move of the unit `unit_id` as a mover's connection in the tests' run of the
+/// tests' map sends it.
+fn peer_move(
+  unit_id unit_id: Int,
+  server_time_ms server_time_ms: Int,
+  commands commands: List(relayed_movement.RelayedMovement),
+) -> PeerMove {
+  PeerMove(map: camp_map(), incarnation:, unit_id:, server_time_ms:, commands:)
+}
+
 /// A send of another player's connection to the connection: the move of the
 /// player it holds.
 fn sent_by_a_peer(move: PeerMove) -> Event(ConnectionEvent(Message, Answer)) {
@@ -3976,7 +3988,7 @@ pub fn a_peers_move_is_written_as_a_0x638_with_both_bits_0_test() -> Nil {
   let #(_, taken) =
     feed(
       in_world(),
-      sent_by_a_peer(PeerMove(
+      sent_by_a_peer(peer_move(
         unit_id: 9,
         server_time_ms: 4321,
         commands: moved_unit_commands(),
@@ -4001,7 +4013,14 @@ pub fn a_0x638_for_a_unit_the_client_has_not_yet_or_no_longer_is_written_and_not
   // 0x262 of the unit or after its 0x355. The client logs a 0x638 for a unit it
   // does not have and goes on (opcode.0x638: the null unit is no failure).
   let #(before, taken) =
-    feed(in_world(), sent_by_a_peer(PeerMove(9, 10, moved_unit_commands())))
+    feed(
+      in_world(),
+      sent_by_a_peer(peer_move(
+        unit_id: 9,
+        server_time_ms: 10,
+        commands: moved_unit_commands(),
+      )),
+    )
   assert written_ids(taken) == [0x0638]
     as "before the 0x262 of unit 9: written all the same"
   assert !support.stops(taken) && support.logs(taken) == []
@@ -4010,7 +4029,14 @@ pub fn a_0x638_for_a_unit_the_client_has_not_yet_or_no_longer_is_written_and_not
   assert written_ids(taken) == [0x0262]
   let #(gone, _) = feed(seen, sent_by_the_map(Unseen(unit_id: 9)))
   let #(_, taken) =
-    feed(gone, sent_by_a_peer(PeerMove(9, 20, moved_unit_commands())))
+    feed(
+      gone,
+      sent_by_a_peer(peer_move(
+        unit_id: 9,
+        server_time_ms: 20,
+        commands: moved_unit_commands(),
+      )),
+    )
   assert written_ids(taken) == [0x0638]
     as "after the 0x355 of unit 9: written all the same"
   assert !support.stops(taken) && support.logs(taken) == []
@@ -4031,7 +4057,11 @@ pub fn after_the_players_own_leave_nothing_more_is_written_for_other_units_test(
   list.each(
     [
       sent_by_the_map(Seen(unit: another_unit())),
-      sent_by_a_peer(PeerMove(9, 1, moved_unit_commands())),
+      sent_by_a_peer(peer_move(
+        unit_id: 9,
+        server_time_ms: 1,
+        commands: moved_unit_commands(),
+      )),
       sent_by_the_map(Unseen(unit_id: 9)),
       sent_by_the_map(Watched(by: ConnectionId(2))),
       sent_by_the_map(Unwatched(by: ConnectionId(2))),
@@ -4132,11 +4162,11 @@ pub fn an_accepted_0x637_sends_one_0x638_to_each_viewer_with_the_relayed_command
     == [
       #(
         2,
-        PeerMove(unit_id: own_unit_id, server_time_ms: 1000, commands: relayed),
+        peer_move(unit_id: own_unit_id, server_time_ms: 1000, commands: relayed),
       ),
       #(
         3,
-        PeerMove(unit_id: own_unit_id, server_time_ms: 1000, commands: relayed),
+        peer_move(unit_id: own_unit_id, server_time_ms: 1000, commands: relayed),
       ),
     ]
     as "one 0x638 per viewer, never to the mover itself, the commands in the order sent without kind 0, the sender's own clock (movement_command.kind_0); the time is the input's 1000 ms from the map's origin 0"
@@ -4280,4 +4310,72 @@ pub fn a_command_kind_that_is_not_relayed_is_named_once_a_connection_and_not_rel
   let #(_, second) = read(state, message)
   assert support.logs_of(step: second, level: LogInfo) == []
     as "named once on a connection"
+}
+
+/// What a mover standing at `place` sends a viewer it has just been told of:
+/// the kind 2 at the place and the kind 14 at its facing, each with its bit clear.
+fn current_place_commands(
+  place: Place,
+) -> List(relayed_movement.RelayedMovement) {
+  let #(position, rotation) = player_unit.standing(place)
+  [relayed_movement.Position(position), relayed_movement.Rotation(rotation)]
+}
+
+pub fn a_watched_makes_the_mover_send_the_new_viewer_its_current_place_as_one_0x638_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    feed(in_world(), sent_by_the_map(Watched(by: ConnectionId(2))))
+  assert peer_tells(taken)
+    == [
+      #(
+        2,
+        peer_move(
+          unit_id: own_unit_id,
+          server_time_ms: 1000,
+          commands: current_place_commands(entry_place()),
+        ),
+      ),
+    ]
+    as "the viewer is sent the unit's place at once, stamped from the map's clock: a move the mover sent before the notice reaches the viewer first, so the viewer ends at the true place"
+}
+
+pub fn a_move_the_mover_took_before_a_watched_is_in_the_new_viewers_place_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The mover moves with nobody watching, then the map tells it a player sees it.
+  let #(state, _) =
+    read(
+      in_world(),
+      moves_message([game_client.position_command(x: 1.5, y: 2.5, z: 3.5)]),
+    )
+  let #(_, taken) = feed(state, sent_by_the_map(Watched(by: ConnectionId(2))))
+  let assert [#(2, sent)] = peer_tells(taken)
+  let assert [relayed_movement.Position(at), relayed_movement.Rotation(_)] =
+    sent.commands
+  assert at.x == float32.to_bits(1.5)
+    && at.y == float32.to_bits(2.5)
+    && at.z == float32.to_bits(3.5)
+    as "the place the mover stands at now, not the one it entered at"
+}
+
+pub fn a_move_from_another_run_of_the_map_or_another_map_is_dropped_and_one_from_this_run_is_written_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let moves = fn(map, incarnation) {
+    sent_by_a_peer(PeerMove(
+      map:,
+      incarnation:,
+      unit_id: 9,
+      server_time_ms: 1,
+      commands: moved_unit_commands(),
+    ))
+  }
+  let #(_, taken) = feed(in_world(), moves(camp_map(), incarnation))
+  assert written_ids(taken) == [0x0638] as "the run the viewer is in"
+  let #(_, taken) = feed(in_world(), moves(camp_map(), incarnation + 1))
+  assert support.writes(taken) == []
+    as "another run of the map: the unit id may name another unit there"
+  let #(_, other_map) =
+    feed(in_world(), moves(MapId(world_id: 3461, instance: 0), incarnation))
+  assert support.writes(other_map) == [] as "another map"
+  assert !support.stops(other_map) && support.logs(other_map) == []
+    as "a move that was on its way when the viewer left is no bug"
 }
