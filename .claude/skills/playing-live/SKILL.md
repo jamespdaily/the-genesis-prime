@@ -5,76 +5,17 @@ description: How to run the server for the real client and see the client's scre
 
 # Playing live
 
-The machine's values live in `~/.genesis-prime/env.sh`, never in the repository, which is public: `GENESIS_PLAY_PC` (the ssh login of the PC that runs the client) and `GENESIS_PLAY_ADDRESS` (this machine's address on the PC's network). The commands that drive the client also read `GENESIS_PLAY_CLIENT_DIR` (the client's install folder on the PC, for example `C:\WildStar-HD`) and, to log in from the command line, `GENESIS_PLAY_ACCOUNT` and `GENESIS_PLAY_PASSWORD`. A script that needs one fails naming it when it is missing. The play account's password is used nowhere but the play server: a recording's fixture holds the account's SRP verifier, and recordings are committed to this public repository, which also sees the play address the auth server hands the client (Jim, 2026-11-02). The scripts named below are in this skill's `scripts/` folder.
+This skill runs the server for the real client on Jim's PC, drives the client, and sees its screen without touching Jim's window. The scripts are in this skill's `scripts/` folder; each script's header is its contract.
 
-## Ports
+## Every time
 
-The server listens on 6600 (STS), 23115 (auth) and 24000 (game); a recording relay uses 25000. Before binding any of them, check that no live server holds them:
+- The machine's values live in `~/.genesis-prime/env.sh`, never in the repository, which is public. Each script's header names the values it reads.
+- The play account's password is used nowhere but the play server: a recording's fixture holds the account's SRP verifier, and recordings are committed to this public repository, which also sees the play address the auth server hands the client (Jim, 2026-11-02).
+- The server listens on 6600 (STS), 23115 (auth) and 24000 (game). Before binding them, check that no live server holds them: `lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(6600|23115|24000)'`.
+- Jim may be using the PC. The scripts take no focus, except `scripts/client.sh click`, which brings the client forward and moves the real mouse: run it only when Jim has said the PC is free.
+- The live lock (`~/.genesis-prime/live.lock/`) gives the PC's client to one holder at a time. A lock whose owner is gone is never taken over: `scripts/session.sh --recover` ends what the owner started and releases it.
 
-`lsof -nP -iTCP -sTCP:LISTEN | grep -E ':(6600|23115|24000|25000)'`
+## Which file to read
 
-## The server
-
-From the main checkout, with every new `priv/migrations/*.sql` applied and recorded in the `genesis_play` database first, by the same script `./check` uses: `PGHOST=::1 PGPORT=5433 PGUSER=postgres dev/apply_migrations.sh genesis_play`. A new play database is made empty (`createdb`) and takes that command, which applies and records every file. The server refuses to start on a database that lacks a migration, ran an edited one or has no migration record. A play database made before the record existed gets `dev/apply_migrations.sh --adopt genesis_play` once, which records its first four migrations without running them, and then the command above for the newer files. `scripts/session.sh` copies `genesis_play` as its template, so its run database starts migrated and recorded.
-
-```
-. setup_check/environment.sh
-export PGHOST=::1 PGPORT=5433 PGUSER=postgres PGDATABASE=genesis_play
-export GENESIS_GAME_ADDRESS=$GENESIS_PLAY_ADDRESS GENESIS_REALM_NAME=Genesis
-gleam run
-```
-
-The server reads the table folder from `GENESIS_TABLE_DIR`, which `setup_check/environment.sh` sets.
-
-### In herdr
-
-When the session runs in a herdr pane (`HERDR_ENV=1`), a server for Jim to play on runs in a tab labelled `server` in the session's own workspace, never as a hidden background process, so Jim sees its log and can stop it himself (Jim, 2026-11-02). Read `herdr --skill` first; the binary is the authority for its syntax.
-
-1. `herdr tab list --workspace "$HERDR_WORKSPACE_ID"`: reuse a `server` tab whose pane is at its shell prompt; otherwise `herdr tab create --workspace "$HERDR_WORKSPACE_ID" --label server --cwd <main checkout> --no-focus`, and take the pane id from `.result.root_pane.pane_id`.
-2. `herdr pane run <pane> '<the commands above, joined by &&>'`.
-3. `herdr pane wait-output <pane> --match 'game tables and serves the STS login' --timeout 120000`: the server's ready line (`ready_line` in `src/genesis_prime.gleam`). On a timeout, `herdr pane read <pane> --source recent --lines 80` shows why.
-4. To stop it: SIGTERM to its VM, so the tree stops in order and saves, as `scripts/session.sh` does: the `beam.smp` pid among `herdr pane process-info --pane <pane>`'s `foreground_processes`, then `kill -TERM <pid>`, and check the ports are free (above). Ctrl+C in the pane opens the VM's break menu instead. Leave the tab for the next session.
-
-`scripts/session.sh` starts and stops its own server, so it runs as before.
-
-## The client's log
-
-Start the client with `-logFile -logFlush` on its command line, so it writes a log file. Run `scripts/client-log.sh start <folder>` before a session and `scripts/client-log.sh collect <folder>` after it: the script copies the session's log and error reports back and lists each message the client failed to handle, by id. It needs `GENESIS_PLAY_CLIENT_DIR`, the client's install folder on the PC.
-
-The client uploads its error reports to `crash.na.wildstar-online.com`, which still resolves; the PC's hosts file maps it to `0.0.0.0`. A new play PC needs the same line before its first session.
-
-## Seeing the screen
-
-`scripts/screenshot.sh` captures the client's window on the PC through a scheduled task that runs hidden, copies the picture back and always deletes the task and the files it copied. It captures the client that `client.sh start` recorded, checked by pid and start time, and the first WildStar64 window when none is recorded. It never brings a window forward or moves focus: Jim may be using the PC.
-
-## Driving the client
-
-`scripts/client.sh` starts, types into and closes the client on the PC in the person's session, through hidden scheduled tasks, run by `scripts/pc.sh`, that it always deletes with the files it copied. Except `click` (takeover mode, below), it never takes focus: no SendInput, no SetForegroundWindow, and each start and each typing records the foreground window before and after and fails if it moved.
-
-- `client.sh start` takes the live lock (below) and refuses, changing nothing, when another holder has it and when any WildStar64 process runs (the start script checks, just before it launches): Jim may be playing. Outside a run it keeps the lock until `client.sh stop`. Otherwise it starts the client from `GENESIS_PLAY_CLIENT_DIR` pointed at `GENESIS_PLAY_ADDRESS`, logged in from its command line with the account and password, and prints the pid, the process's start time, the program's SHA-256 and the window's style, and saves the pid and start time in `~/.genesis-prime/client.pid`. Keep the client borderless: started behind the person's window it keeps drawing and takes posted input. The command line begins with `/auth` and the host because the client starts its launcher otherwise (fact 0x14000ae77).
-- `client.sh start --type-login` starts it without an account or password. Then `client.sh type <text>` and `client.sh key tab|enter` post the characters to its window one by one (facts 0x140112a60, 0x140111030, 0x1400e67a0). A Tab or Enter inside the text is posted as that key, so a whole typed login is one call: `client.sh type $'<account>\t<password>\r'`. `type` and `key` refuse when no client is recorded, and act only on the process with the recorded pid, name and start time, never on the person's own client.
-- `client.sh click <x> <y> --pc-free` is takeover mode, for the screens the client reads the real cursor on (fact 0x1403f3790), where a posted click never lands. It runs only with `--pc-free` or `GENESIS_PC_FREE=1`, set only when Jim has said the PC is free, and refuses without it before it touches the PC. Then it brings the recorded client's window forward, moves the real mouse to the client point (x, y) and clicks the left button there (SetForegroundWindow, SetCursorPos, mouse_event, by `genesis-click.ps1`), only for a point inside the window's client rectangle and only when the window under the cursor is the client's, on the recorded pid and start time only, as `type` does. A named target (`client.sh click enter-game --pc-free`) is a point read from screenshots of the 3840x2160 client, listed in the script; for any other point, or a target that misses, read the point from a screenshot (`scripts/screenshot.sh`).
-- `client.sh stop` closes the client that `start` recorded, by pid and start time, and no other, and ends its process. A recorded pid that now belongs to another process is left alone.
-- `scripts/report.sh` brings back what the client's Lua sees of an entry: the player's state and every addon error the client's log file does not record. `install [--with-broken]` runs before the client starts (`--with-broken` adds an addon that fails on load, for the check that errors come back); `collect <folder>` runs about 15 s after entering the world and refuses a stale or unfinished report; `remove` runs after `client.sh stop`. `install` and `remove` refuse while WildStar64 runs. The addon never stays installed, since it reloads the interface once per entry.
-
-A session, in order:
-
-1. Start the server in record mode: `gleam run -m genesis_prime/dev_start -- <folder>`.
-2. `scripts/client-log.sh start <folder>`.
-3. `scripts/report.sh install`, before the client starts: the client reads its addons when the world starts.
-4. `scripts/client.sh start`.
-5. Wait for the auth server's login-accepted log line, or a deadline.
-6. `scripts/screenshot.sh <folder>/screen.jpg`.
-7. When the report is wanted, enter the world from character select: `scripts/client.sh key enter` (a background key; it plays the first character in the list), or, for another character, the takeover click (`scripts/client.sh click enter-game --pc-free`). Wait about 15 s, then `scripts/report.sh collect <folder>`.
-8. `scripts/client-log.sh collect <folder>`.
-9. `scripts/client.sh stop`, then `scripts/report.sh remove`, then stop the server.
-
-Save the `client.sh start` line, with the program's SHA-256, in the session folder.
-
-## A whole session without a person
-
-`scripts/session.sh <folder>` runs the session above, from the server's start to the verdict, into an empty or new `<folder>`. It needs no person and takes no focus. It exits non-zero on any miss and says which. A passing folder holds the recordings (one `.jsonl` per connection and the starting rows as SQL; committed as a dated folder under `test/wire_recording/`, where the replay tests read every folder), `client-start.txt`, `client-end.txt`, `failures.txt`, the report as JSON and `verdict.txt`, ready to replay. A failed folder also keeps `Logs` and `Errors`, which name the PC's machine: delete them before committing it. `session.sh --verdict <folder>` judges a folder with no PC, against `genesis_play`.
-
-The lock is `~/.genesis-prime/live.lock/`. A second `scripts/session.sh`, or a `client.sh start`, `client.sh stop`, `client.sh type`, `client.sh key` or `client.sh click` outside the run, refuses and names the owner. A `client.sh start` outside a run holds the lock until `client.sh stop`. A lock whose owner is gone is stale and is never taken over: `scripts/session.sh --recover` ends what the owner started and releases it. A failed recover exits non-zero and keeps the lock.
-
-A run works on its own database, `genesis_run_<epoch>_<pid>`, copied from `genesis_play` and dropped after the verdict. The copy fails while anything is connected to `genesis_play`, a server of a person's own included.
+- [server.md](server.md): the play database, starting and stopping a server, and a server for Jim in herdr. Read it when Jim asks for a playable server, or before a session by hand.
+- [client.md](client.md): the client's log, its screen, driving it, a session by hand, and `scripts/session.sh`, a whole session with no person. Read it before any session.
