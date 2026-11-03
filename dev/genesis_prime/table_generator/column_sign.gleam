@@ -65,6 +65,12 @@ pub fn all() -> List(ColumnSign) {
       evidence: "0x140029820 compares the experience with the column as signed: cmp ebp, dword ptr [rbx+0x4] then jl, jg",
     ),
     ColumnSign(
+      table: "WorldZone",
+      column: "worldLocation2IdExit",
+      sign: Unread,
+      evidence: "the server reads only ID and parentZoneId of WorldZone (genesis_prime/game/top_zone); two rows hold 0x86000000 here, which no rule of the server reads",
+    ),
+    ColumnSign(
       table: "GameFormula",
       column: "dataint0",
       sign: Unread,
