@@ -6,22 +6,26 @@
 #   dev/card.sh move N --parent P [--after S]
 #   dev/card.sh order N --after S
 #   dev/card.sh block N --by S
+#   dev/card.sh unblock N --by S
 #
 # STATUS is one of: "To do", "In progress", "Waiting on Jim", "Done".
 # N, P and S are issue numbers. For --after, S is the sibling the issue goes right after in its
-# parent's list (without it, last). For block, S is the issue N waits on: a blocked-by link, which
-# sets the steps' order.
+# parent's list (without it, last): `order` and `--after` set only the order the parent shows.
+# The steps' order is set by blocked-by links: block adds the link "N is blocked by S", and
+# unblock removes it.
 # It runs as jamespdaily, the login that can write here, unless GH_TOKEN is already set.
 set -euo pipefail
-export GH_TOKEN=${GH_TOKEN:-$(gh auth token --user jamespdaily)}
+
+fail() { echo "card: $*" >&2; exit 1; }
+
+if [ -z "${GH_TOKEN:-}" ]; then GH_TOKEN=$(gh auth token --user jamespdaily) || fail "no jamespdaily login in gh"; fi
+export GH_TOKEN
 
 owner=jamespdaily
 repo=the-genesis-prime
 project_number=2
 project_id=PVT_kwHOAAdMUc4BopzC
 status_field=PVTSSF_lAHOAAdMUc4BopzCzhnI34c
-
-fail() { echo "card: $*" >&2; exit 1; }
 
 option_of() {
   case "$1" in
@@ -130,8 +134,13 @@ case "$command" in
     blocker=$(gh api "repos/$owner/$repo/issues/$3" --jq .id)
     gh api -X POST "repos/$owner/$repo/issues/$1/dependencies/blocked_by" -F issue_id="$blocker" >/dev/null
     ;;
+  unblock)
+    [ $# -eq 3 ] && [ "$2" = --by ] || fail "usage: card.sh unblock N --by S"
+    blocker=$(gh api "repos/$owner/$repo/issues/$3" --jq .id)
+    gh api -X DELETE "repos/$owner/$repo/issues/$1/dependencies/blocked_by/$blocker" >/dev/null
+    ;;
   *)
-    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac

@@ -33,7 +33,7 @@ Read the client's evidence, CLAUDE.md, then the code the step touches. For a cha
 
 A step's working detail goes in Markdown artifacts on its issue, named "Client trace", "Design" or "Review", each edited in place and kept. Once the step merges they are history, and nothing enforced lives only there.
 
-A step is labelled `ready` when an agent can finish it without inventing requirements: its issue states the outcome, the acceptance checks, the evidence, the scope and what is left out, and the steps it depends on; its trace and design artifacts are written and its test list is posted.
+A step is labelled `ready` when an agent can finish it without inventing requirements: its issue states the outcome, the acceptance checks, the evidence, the scope and what is left out, and the steps it depends on; its trace and design artifacts are written and its test list is posted. Until then it is labelled `investigation`.
 
 Steps that share no files run at once, each with its own builder. At most two agents run tests on one machine at once.
 
@@ -69,15 +69,18 @@ Any other step gets one Claude reviewer for bugs, reuse and the issue check toge
 
 ## The fix round
 
-Check each finding against the code first, then fix what holds in one round. A bug the step caused is fixed before it merges, in this round or another. Anything else follows "Failures" below. Notes that change nothing the step promises go in the closing summary.
+Check each finding against the code first, then fix what holds in one round. A bug the step caused is fixed before it merges, in this round or another. A review's top finding caused by the last round's fix counts as a second failure with one cause (below). Anything else follows "Failures" below. Notes that change nothing the step promises go in the closing summary.
 
 ## Failures, gaps and questions
 
 **Done** means the full check and CI pass with no rerun. A failure met during a step is fixed before the step merges: inside the step when the step caused it; otherwise in its own small pull request, merged first. A fix that touches one area and changes nothing the server does (a test, a typo, a stale line) needs no design or trace: one builder, one reviewer. An issue is filed only for a wrong result found outside any step's work, such as live play or a nightly bot run.
 
 - **Logged as unhandled** is missing, not a bug: the coverage measure lists it, and its area's checklist line gets any new evidence; no issue. Build it in the step only when the step's goal fails without it.
+- **Handled, but the result differs from the evidence, or it crashed:** a bug.
 - **Handled, but no evidence says what is right:** look in the evidence first. Only when it cannot settle it is it a question for Jim, marked Waiting on Jim. A silent wrong result is a bug.
-- **An issue found in play:** before its fix, search the closed issues for the same cause or module. Two with one cause, or three in one module in a milestone, stop the patching: the next step finds the root cause first and states whether a targeted fix, a stronger check or a redesign removes it, and why; the open fixes fold into it. A milestone does not end with one open.
+- **An issue found in play** is the next step in the milestone's order. A milestone does not end with one open.
+
+Before any fix, inside a step or not, search the closed issues and the step's own fixes for the same cause or module. Two failures with one cause, or three in one module in a milestone, stop the patching: the next step finds the root cause first and states whether a targeted fix, a stronger check or a redesign removes it, and why; the open fixes fold into it.
 
 ## The live sitting
 
