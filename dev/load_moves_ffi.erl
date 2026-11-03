@@ -1,128 +1,70 @@
 %% What the movement load run needs of the runtime and no Gleam library exposes
-%% (genesis_prime/load_moves): the time and the number of calls of the map's
-%% move function, which the VM counts for a function it is asked to trace the
-%% calls of (erlang:trace_pattern with call_time, in processes started while
-%% `erlang:trace(new, true, [call, ...])` is on); how long the map's process
-%% ran, from the VM's own trace of when it was scheduled in and out; and the
-%% longest message queue the map showed, sampled by a process of its own.
+%% (genesis_prime/load_moves): the message queue of each map and how often its
+%% process was found running, sampled by a process of its own in the server's
+%% node. Nothing is traced: a call trace on the map's functions and a trace of
+%% when its process is scheduled in and out each made a map that keeps up at 200
+%% players fall behind, so the run samples and does not trace.
 %%
-%% The queue is sampled every 10 ms. That is often enough that a queue that
-%% builds over a second shows in about a hundred samples, and rare enough that
-%% the sampler's own work (one process_info call a tick) is far below the map's:
-%% a shorter period would measure the sampler.
+%% The period is 10 ms. That is often enough that a queue that builds over a
+%% second shows in about a hundred samples, and rare enough that the sampler's
+%% own work (two process_info calls a tick) is far below the map's: a shorter
+%% period would measure the sampler. A sample finds the process running when its
+%% status is running, runnable or garbage_collecting, so the share of such
+%% samples is the share of the time the process wanted a scheduler.
 -module(load_moves_ffi).
--export([start_probe/0, stop_probe/0]).
+-export([start_probe/1, stop_probe/0]).
 
--define(MOVED, {genesis_prime@world_map@map, moved, 5}).
 -define(EVERY_MS, 10).
--define(ANSWER_MS, 5000).
+-define(ANSWER_MS, 30000).
 
-%% Runs in the server's node: counts the calls of the map's `moved` and the
-%% time each takes, from now, and starts sampling the map's message queue and
-%% timing how long the map's process runs.
-start_probe() ->
-    {module, _} = code:ensure_loaded(genesis_prime@world_map@map),
-    erlang:trace_pattern(?MOVED, false, [local, call_time]),
-    1 = erlang:trace_pattern(?MOVED, true, [local, call_time]),
-    Sink = spawn(fun() -> sink(#{}) end),
-    erlang:trace(new, true, [call, {tracer, Sink}]),
-    Probe = spawn(fun() -> probe(Sink, [], undefined, 0, 0, 0) end),
-    persistent_term:put(load_moves_probe, {Probe, Sink}),
+%% Runs in the server's node: starts sampling the maps the map supervisor
+%% (named `Supervisor`) runs.
+start_probe(Supervisor) ->
+    Probe = spawn(fun() -> probe(Supervisor, 0, 0, 0, 0) end),
+    persistent_term:put(load_moves_probe, Probe),
     nil.
 
-%% The VM counts a function's call time only in a process that has the call
-%% trace flag, and sends that process's tracer a message for each call, which
-%% this tracer drops. For a process the probe asked to be told when it runs
-%% (`running`), it adds up the time between each schedule-in and the schedule-out
-%% after it: the time the process was on a scheduler, in microseconds.
-sink(Running) ->
-    receive
-        {trace_ts, Pid, in, _Where, At} ->
-            sink(Running#{Pid => {At, busy(Pid, Running)}});
-        {trace_ts, Pid, out, _Where, At} ->
-            case Running of
-                #{Pid := {In, Busy}} when In =/= undefined ->
-                    sink(Running#{Pid => {undefined, Busy + microseconds(At - In)}});
-                _ ->
-                    sink(Running)
-            end;
-        {busy, From} ->
-            From ! {busy, lists:sum([Busy || {_In, Busy} <- maps:values(Running)])},
-            sink(Running);
-        _ ->
-            sink(Running)
-    end.
-
-busy(Pid, Running) ->
-    case Running of
-        #{Pid := {_In, Busy}} -> Busy;
-        _ -> 0
-    end.
-
-microseconds(Native) ->
-    erlang:convert_time_unit(Native, native, microsecond).
-
-%% Runs in the server's node: stops the sampling and gives the calls counted,
-%% the microseconds they took in all, the longest message queue the map showed,
-%% the sum of the queues seen, how many samples were taken, the microseconds the
-%% map's process ran and the microseconds since the probe first saw it. A probe
-%% or tracer that does not answer within five seconds is an error, never zeros.
+%% Runs in the server's node: stops the sampling and gives the longest message
+%% queue any map showed, the sum of the longest queue of each sample, how many
+%% samples were taken and how many of them found a map running. A probe that
+%% does not answer within thirty seconds (the machine is saturated by the run it
+%% measures) is an error, never zeros.
 stop_probe() ->
-    {Probe, Sink} = persistent_term:get(load_moves_probe),
+    Probe = persistent_term:get(load_moves_probe),
     Probe ! {stop, self()},
-    {Longest, Sum, Samples, Since} =
-        receive {probed, Result} -> Result
-        after ?ANSWER_MS -> error(the_probe_did_not_answer)
-        end,
-    Sink ! {busy, self()},
-    Busy =
-        receive {busy, Microseconds} -> Microseconds
-        after ?ANSWER_MS -> error(the_tracer_did_not_answer)
-        end,
-    {call_time, Times} = erlang:trace_info(?MOVED, call_time),
-    erlang:trace(new, false, [call]),
-    exit(Sink, kill),
-    Calls = lists:sum([Count || {_Pid, Count, _S, _Us} <- Times]),
-    Micros = lists:sum([S * 1000000 + Us || {_Pid, _Count, S, Us} <- Times]),
-    Window = case Since of
-                 undefined -> 0;
-                 _ -> erlang:monotonic_time(microsecond) - Since
-             end,
-    {Calls, Micros, Longest, Sum, Samples, Busy, Window}.
-
-%% Every tick: the longest queue of the processes that ran the traced function,
-%% and, for one the probe has not met, the request to be told when it runs.
-%% `Since` is when the first such process was met.
-probe(Sink, Known, Since, Longest, Sum, Samples) ->
-    receive
-        {stop, From} -> From ! {probed, {Longest, Sum, Samples, Since}}
-    after ?EVERY_MS ->
-        Maps = maps_running(),
-        New = [Pid || Pid <- Maps, not lists:member(Pid, Known)],
-        lists:foreach(fun(Pid) -> watch_running(Pid, Sink) end, New),
-        Queue = lists:max([0 | [queue(Pid) || Pid <- Maps]]),
-        probe(Sink, Maps ++ Known, since(Since, New),
-              max(Longest, Queue), Sum + Queue, Samples + 1)
+    receive {probed, Result} -> Result
+    after ?ANSWER_MS -> error(the_probe_did_not_answer)
     end.
 
-since(undefined, []) -> undefined;
-since(undefined, _New) -> erlang:monotonic_time(microsecond);
-since(Since, _New) -> Since.
+probe(Supervisor, Longest, Sum, Samples, Running) ->
+    receive
+        {stop, From} -> From ! {probed, {Longest, Sum, Samples, Running}}
+    after ?EVERY_MS ->
+        Maps = maps(Supervisor),
+        Queue = lists:max([0 | [queue(Pid) || Pid <- Maps]]),
+        Found = case lists:any(fun running/1, Maps) of
+                    true -> 1;
+                    false -> 0
+                end,
+        probe(Supervisor, max(Longest, Queue), Sum + Queue, Samples + 1, Running + Found)
+    end.
 
-%% Asks the VM to send the sink a message each time the process is scheduled in
-%% or out, with a monotonic timestamp. The sink is the process's tracer already.
-watch_running(Pid, Sink) ->
-    erlang:trace(Pid, true, [running, monotonic_timestamp, {tracer, Sink}]).
-
-%% The processes that ran the traced function.
-maps_running() ->
-    case erlang:trace_info(?MOVED, call_time) of
-        {call_time, Times} when is_list(Times) -> [Pid || {Pid, _, _, _} <- Times];
-        _ -> []
+%% The maps the supervisor runs now: none before the first is started.
+maps(Supervisor) ->
+    try supervisor:which_children(Supervisor) of
+        Children -> [Pid || {_Id, Pid, _Type, _Modules} <- Children, is_pid(Pid)]
+    catch
+        exit:_ -> []
     end.
 
 queue(Pid) ->
     case erlang:process_info(Pid, message_queue_len) of
         {message_queue_len, Length} -> Length;
         undefined -> 0
+    end.
+
+running(Pid) ->
+    case erlang:process_info(Pid, status) of
+        {status, Status} -> lists:member(Status, [running, runnable, garbage_collecting]);
+        undefined -> false
     end.

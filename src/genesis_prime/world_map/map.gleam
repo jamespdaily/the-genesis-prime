@@ -148,6 +148,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
 import genesis_prime/world_map/sight
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -339,12 +340,15 @@ fn moved(
       let time =
         server_time(origin_ms: state.started_ms, monotonic_ms: now.monotonic_ms)
       let #(mover_sees, others, effects) =
-        list.fold(
-          others_of(state:, connection:),
+        dict.fold(
+          state.players,
           #(mover.sees, state.players, []),
-          fn(held, other) {
+          fn(held, other_connection, player) {
+            use <- bool.guard(
+              when: other_connection == connection,
+              return: held,
+            )
             let #(mover_sees, players, effects) = held
-            let #(other_connection, player) = other
             let was = set.contains(mover.sees, other_connection)
             let is = sight.sees(place, player_unit.place(player.unit))
             case was, is {

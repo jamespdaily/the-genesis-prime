@@ -1,4 +1,4 @@
-//// The movement load run: how the map keeps up when many players on one map
+//// The movement load run: how the server keeps up when many players on one map
 //// move at once, on the real protocol path.
 ////
 //// ```
@@ -18,13 +18,16 @@
 //// player's connection.
 ////
 //// The step is printed as the load run prints one (`load_run.describe`, with
-//// its verdict, its ping round trips and the lines the server logged), followed
-//// by what the map did: the calls of its `moved` and the time they take, the
-//// longest and the mean of its message queue, and how much of the time the map's
-//// process was running (`load_moves_ffi`).
+//// its verdict, its ping round trips, its longest mailbox of any process and the
+//// lines the server logged), followed by what the map showed: the longest and
+//// the mean of its message queue, and the share of the samples that found its
+//// process running (`load_moves_ffi`). Nothing is traced: tracing the map's
+//// functions slowed it enough to fall behind at 200 players, where the same run
+//// untraced keeps up.
 ////
 //// The map falls behind when its queue grows with the hold instead of staying
-//// near zero, or when the share of time its process runs approaches all of it.
+//// near zero, or when the share of samples that find its process running
+//// approaches all of them.
 
 import argv
 import genesis_prime
@@ -47,16 +50,14 @@ const arrival_ms = 5000
 
 const hold_ms = 20_000
 
-/// What the map's moves cost, as the server's node counted them: the calls of
-/// the map's move function, the microseconds they took in all, the longest
-/// message queue the map showed, the sum of the queues sampled, how many
-/// samples there were, the microseconds the map's process ran and the
-/// microseconds since the probe first saw the map.
+/// What the map showed, as the server's node sampled it: the longest message
+/// queue, the sum of the queue of each sample, how many samples there were and
+/// how many of them found the map's process running.
 type Probe =
-  #(Int, Int, Int, Int, Int, Int, Int)
+  #(Int, Int, Int, Int)
 
 @external(erlang, "load_moves_ffi", "start_probe")
-fn start_probe() -> Nil
+fn start_probe(supervisor: process_name) -> Nil
 
 @external(erlang, "load_moves_ffi", "stop_probe")
 fn stop_probe() -> Probe
@@ -77,7 +78,7 @@ pub fn main() -> Nil {
     as "the pool for the accounts started"
   let accounts = load_player.accounts(first: 0, count: players)
   load_player.seed(pool: started.data, accounts:)
-  load_run.in_peer(peer, start_probe)
+  load_run.in_peer(peer, fn() { start_probe(settings.world.map_supervisor) })
   let outcome =
     load_run.run_step_walking(
       ports: load_run.ports_of(settings),
@@ -89,8 +90,7 @@ pub fn main() -> Nil {
         load_run.in_peer(peer, fn() { load_sample.take(settings) })
       },
     )
-  let #(moves, micros, longest, queued, samples, busy_micros, window_micros) =
-    load_run.in_peer(peer, stop_probe)
+  let #(longest, queued, samples, running) = load_run.in_peer(peer, stop_probe)
   load_run.stop_peer(peer)
   io.println(load_run.describe(
     players:,
@@ -98,12 +98,6 @@ pub fn main() -> Nil {
     outcome:,
     verdict: load_step.judge(outcome.observation),
   ))
-  io.println("moves the map handled: " <> int.to_string(moves))
-  io.println(
-    "time per move: "
-    <> per(micros, moves)
-    <> " microseconds (the map's own time in its move function)",
-  )
   io.println(
     "the map's message queue: longest "
     <> int.to_string(longest)
@@ -114,9 +108,9 @@ pub fn main() -> Nil {
     <> " samples, one every 10 ms",
   )
   io.println(
-    "the map's process ran "
-    <> percent(busy_micros, window_micros)
-    <> " of the time since the first move (its rule and its shell together)",
+    "the map's process was found running in "
+    <> percent(running, samples)
+    <> " of the samples",
   )
 }
 
