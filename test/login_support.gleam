@@ -17,6 +17,7 @@ import genesis_prime/connection/listener
 import genesis_prime/connection/registry
 import genesis_prime/connection/script
 import genesis_prime/game/connection as game_connection
+import genesis_prime/game_settings
 import genesis_prime/login/auth_connection
 import genesis_prime/login/guid
 import genesis_prime/login/sts_connection
@@ -111,7 +112,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
     settings: game_connection.Settings(
       realm_id: 1,
       max_characters: 12,
-      character_slots: 2,
+      game: game_settings.defaults(),
       tables: character_tables.shared(),
       ask_deadline_ms: 5000,
       rate: support.roomy(),

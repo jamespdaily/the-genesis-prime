@@ -7,6 +7,8 @@
 //// to name it. A number no such message has is reported as unknown.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
+import genesis_prime/message/camp_finished.{type CampFinished}
+import genesis_prime/message/camp_request.{type CampRequest}
 import genesis_prime/message/character_select_start.{type CharacterSelectStart}
 import genesis_prime/message/choose_realm.{type ChooseRealm}
 import genesis_prime/message/client_control_echoed.{type ClientControlEchoed}
@@ -54,6 +56,8 @@ pub type ClientMessage {
   ChooseRealm(message: ChooseRealm)
   ClientControlEchoed(message: ClientControlEchoed)
   TerrainLoaded(message: TerrainLoaded)
+  CampRequest(message: CampRequest)
+  CampFinished(message: CampFinished)
   PlayerMovement(message: PlayerMovement)
   ZoneValueChanged(message: ZoneValueChanged)
   MovementSendIntervalAnswer(message: MovementSendIntervalAnswer)
@@ -116,6 +120,8 @@ pub fn decode(
         ClientControlEchoed,
       )
     0x00F2 -> decoded(body, message_id, terrain_loaded.decode, TerrainLoaded)
+    0x00BF -> decoded(body, message_id, camp_request.decode, CampRequest)
+    0x00C0 -> decoded(body, message_id, camp_finished.decode, CampFinished)
     0x0637 -> decoded(body, message_id, player_movement.decode, PlayerMovement)
     0x063A ->
       decoded(body, message_id, zone_value_changed.decode, ZoneValueChanged)
@@ -154,6 +160,8 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     ChooseRealm(message:) -> choose_realm.encode(message)
     ClientControlEchoed(message:) -> client_control_echoed.encode(message)
     TerrainLoaded(message:) -> terrain_loaded.encode(message)
+    CampRequest(message:) -> camp_request.encode(message)
+    CampFinished(message:) -> camp_finished.encode(message)
     PlayerMovement(message:) -> player_movement.encode(message)
     ZoneValueChanged(message:) -> zone_value_changed.encode(message)
     MovementSendIntervalAnswer(message:) ->
@@ -184,6 +192,8 @@ pub fn message_id(message: ClientMessage) -> Int {
     ChooseRealm(..) -> choose_realm.message_id
     ClientControlEchoed(..) -> client_control_echoed.message_id
     TerrainLoaded(..) -> terrain_loaded.message_id
+    CampRequest(..) -> camp_request.message_id
+    CampFinished(..) -> camp_finished.message_id
     PlayerMovement(..) -> player_movement.message_id
     ZoneValueChanged(..) -> zone_value_changed.message_id
     MovementSendIntervalAnswer(..) -> movement_send_interval_answer.message_id

@@ -165,7 +165,7 @@ pub fn a_query_still_running_at_the_askers_deadline_has_its_worker_ended_and_the
             as "the test monitored the worker"
           Nil
         }
-        service.ToService(..) -> Nil
+        service.ToService(..) | service.NoReplyInTime -> Nil
       }
     })
   let client = ask_support.connect(server)

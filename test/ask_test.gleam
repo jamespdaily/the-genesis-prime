@@ -13,7 +13,11 @@ import asking_rule
 import gate_rule
 import genesis_prime/connection/script
 import genesis_prime/service
+import genesis_prime/step.{ConnectionId}
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
+import genesis_prime/world_map/map
+import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/registry as world_map_registry
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
@@ -425,4 +429,104 @@ fn start_recorded(
       supervisor.add(builder, ask_support.gate(name: gate, shutdown_ms: 1000))
     },
   )
+}
+
+// ---- a leave's ask of a map's run ----
+
+pub fn a_directory_that_got_no_reply_in_time_gives_no_answer_in_time_at_once_and_sends_nothing_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let server =
+    ask_support.start(
+      rule: asking_rule.rule(),
+      directory: fn(_request, _deadline_ms, _reply) {
+        Ok(service.NoReplyInTime)
+      },
+      shutdown_ms: 1000,
+      with: fn(builder) { builder },
+    )
+  let client = ask_support.connect(server)
+  ask_support.command(
+    client,
+    asking_rule.echo_command,
+    1,
+    wait_ms: ask_support.patient,
+  )
+  let asked = ask_support.read_record(client)
+  let outcome = ask_support.read_record(client)
+  assert outcome.letter == asking_rule.outcome
+    && outcome.code == asking_rule.code_no_answer_in_time
+    as "the directory's lookup got no reply by the deadline: the rule is told no answer came, never that the process is not running"
+  assert outcome.milliseconds < asked.milliseconds
+    as "at once: the deadline has passed, so there is nothing to wait for"
+  ask_support.stop(server)
+}
+
+/// A server whose directory asks the run of a map through `maps`, as the
+/// server's directory does for a leave.
+fn start_asking_a_run(
+  maps maps: process.Name(world_map_registry.Message),
+) -> ask_support.Server {
+  ask_support.start(
+    rule: asking_rule.rule(),
+    directory: fn(_request, deadline_ms, _reply) {
+      world_map_registry.ask_run(
+        maps:,
+        map: MapId(world_id: 3460, instance: 0),
+        incarnation: 1,
+        message: map.Leave(connection: ConnectionId(1)),
+        deadline_ms:,
+        reply: fn(_answer) { Nil },
+      )
+    },
+    shutdown_ms: 1000,
+    with: fn(builder) { builder },
+  )
+}
+
+pub fn a_leave_whose_find_maps_never_answers_because_it_exited_after_the_find_gives_no_answer_in_time_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // A stand-in for Maps that takes the find and ends without answering: the
+  // find is sent, so Maps was running, and gone by the deadline.
+  let maps = process.new_name("stand_in_maps")
+  let registered = process.new_subject()
+  let _stand_in =
+    process.spawn_unlinked(fn() {
+      let assert Ok(Nil) = process.register(process.self(), maps)
+        as "the stand-in holds Maps' name"
+      process.send(registered, Nil)
+      let anything =
+        process.new_selector() |> process.select_other(fn(message) { message })
+      let _find = process.selector_receive_forever(anything)
+      Nil
+    })
+  let assert Ok(Nil) = process.receive(registered, within: 5000)
+    as "the stand-in registered"
+  let server = start_asking_a_run(maps:)
+  let client = ask_support.connect(server)
+  ask_support.command(client, asking_rule.echo_command, 1, wait_ms: short)
+  let asked = ask_support.read_record(client)
+  let outcome = ask_support.read_record(client)
+  assert outcome.code == asking_rule.code_no_answer_in_time
+    as "no reply from Maps: a live map may still hold the player, so the rule is told no answer came"
+  assert outcome.milliseconds >= asked.milliseconds
+    as "not before the ask's deadline"
+  ask_support.stop(server)
+}
+
+pub fn a_leave_when_maps_is_not_running_gives_not_running_at_once_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let server = start_asking_a_run(maps: process.new_name("no_maps"))
+  let client = ask_support.connect(server)
+  ask_support.command(
+    client,
+    asking_rule.echo_command,
+    1,
+    wait_ms: ask_support.patient,
+  )
+  let asked = ask_support.read_record(client)
+  let outcome = ask_support.read_record(client)
+  assert outcome.code == asking_rule.code_not_running
+    as "no process holds Maps' name, so no map runs and no player is held"
+  assert outcome.milliseconds < asked.milliseconds
+  ask_support.stop(server)
 }

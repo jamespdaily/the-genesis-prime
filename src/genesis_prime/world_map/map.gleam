@@ -21,6 +21,17 @@
 ////   ◀─ Joined(0x262's record of unit, run) ◀─ OwnEffect(Reply(caller, Joined(..)))
 //// ```
 ////
+//// Leave, from the map's side, for a player whose connection goes on after its
+//// camp (genesis_prime/game/camp):
+////
+//// ```
+//// connection c1                      map                                      shell
+////   Leave(c1)                  ─▶ Asked ─▶ player of c1 removed with its unit
+////                                          its watch w1 forgotten
+////                                          Unwatch(w1)                         ─▶ drops the watch on c1
+////   ◀─ Left                    ◀─ OwnEffect(Reply(caller, Left))
+//// ```
+////
 //// - **The unit** is a game-level value (genesis_prime/world_map/player_unit)
 ////   the map keeps for as long as the player is in it; the answer's 0x262
 ////   record is built from it with the map's realm whenever one is sent. The
@@ -35,6 +46,13 @@
 //// - **A second Join from a connection in the map** answers the record built
 ////   from the unit the map keeps, not from the new Join, changes nothing and
 ////   logs an error: the connection's rule joins once.
+//// - **A Leave** removes the connection's player with its unit and its watch,
+////   and is answered `Left`, so the player's connection, which lives on in
+////   character select, is not watched by a map it has left; a later Join from
+////   it is a new player with a new unit id. A Leave from a connection that is
+////   not in the map (its player already gone, or never there) changes nothing,
+////   logs an error, and is answered `Left`: the connection's rule leaves once,
+////   so the line shows a bug, and the answer lets the connection go on.
 //// - **A player's connection ends.** Its watch comes back as `WatchEnded(w)`;
 ////   the player whose watch is `w` is removed, and its unit with it. A watch
 ////   that names no player is a bug: logged as an error, and nothing changes.
@@ -54,7 +72,7 @@ import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
   Connection, Effects, Log, LogError, LogLine, OwnEffect, OwnEvent, Reply,
-  Started, Stop, Stopping, Watch, WatchEnded, WatchId,
+  Started, Stop, Stopping, Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/loader/store as table_store
@@ -84,6 +102,9 @@ pub type Message {
   /// Put the character in the map as the connection's player, placed at
   /// `place`, the bounded place the client is told.
   Join(connection: ConnectionId, character: Character, place: Place)
+  /// Take the connection's player out of the map, with its unit and the
+  /// watch on the connection; answered `Left`.
+  Leave(connection: ConnectionId)
 }
 
 /// A map's answers.
@@ -91,6 +112,9 @@ pub type Outgoing {
   /// The player is in this run of the map as this unit, which the map keeps;
   /// the joiner watches `Map(map, incarnation)`.
   Joined(unit: UnitCreatePlayer, incarnation: Int)
+  /// The connection's player is not in the map any more, whether it was there
+  /// or not.
+  Left
 }
 
 /// A map's players, their units and what it gives next: the players by their
@@ -149,7 +173,39 @@ pub fn step(
     Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(caller:, message: Join(connection:, character:, place:))) ->
       joined(state:, caller:, connection:, character:, place:)
+    OwnEvent(Asked(caller:, message: Leave(connection:))) ->
+      left(state:, caller:, connection:)
     WatchEnded(watch:) -> ended(state:, watch:)
+  }
+}
+
+/// A connection's leave: its player is removed with its unit and its watch,
+/// and `Left` is answered. A connection that is not in the map is an error
+/// line and the same answer.
+fn left(
+  state state: State,
+  caller caller: CallerId,
+  connection connection: ConnectionId,
+) -> #(State, ServiceStep(Outgoing)) {
+  case dict.get(state.players, connection) {
+    Ok(player) -> #(
+      without(state:, connection:, watch: player.watch),
+      Effects([
+        Unwatch(watch: player.watch),
+        OwnEffect(Reply(caller, Left)),
+      ]),
+    )
+    Error(Nil) -> #(
+      state,
+      Effects([
+        log_error(
+          state:,
+          about: step.About(..step.no_one, connection: Some(connection)),
+          text: "the connection left the map, but it is not in it",
+        ),
+        OwnEffect(Reply(caller, Left)),
+      ]),
+    )
   }
 }
 
@@ -234,14 +290,7 @@ fn ended(
   watch watch: WatchId,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.watches, watch) {
-    Ok(connection) -> #(
-      State(
-        ..state,
-        players: dict.delete(state.players, connection),
-        watches: dict.delete(state.watches, watch),
-      ),
-      Effects([]),
-    )
+    Ok(connection) -> #(without(state:, connection:, watch:), Effects([]))
     Error(Nil) -> #(
       state,
       Effects([
@@ -253,6 +302,19 @@ fn ended(
       ]),
     )
   }
+}
+
+/// The map with the connection's player and the watch on it removed.
+fn without(
+  state state: State,
+  connection connection: ConnectionId,
+  watch watch: WatchId,
+) -> State {
+  State(
+    ..state,
+    players: dict.delete(state.players, connection),
+    watches: dict.delete(state.watches, watch),
+  )
 }
 
 /// An error line about the map, and what `about` adds.

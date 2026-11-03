@@ -40,6 +40,9 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
     |> list.sort(string.compare)
   assert paths
     == [
+      "src/genesis_prime/message/camp_countdown.gleam",
+      "src/genesis_prime/message/camp_finished.gleam",
+      "src/genesis_prime/message/camp_request.gleam",
       "src/genesis_prime/message/character_list.gleam",
       "src/genesis_prime/message/character_list_entry.gleam",
       "src/genesis_prime/message/character_select_start.gleam",
@@ -64,6 +67,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/game_hello_reply.gleam",
       "src/genesis_prime/message/game_server_handoff.gleam",
       "src/genesis_prime/message/item_visual.gleam",
+      "src/genesis_prime/message/leave_world.gleam",
       "src/genesis_prime/message/login_accepted.gleam",
       "src/genesis_prime/message/login_refused.gleam",
       "src/genesis_prime/message/login_request.gleam",

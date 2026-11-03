@@ -41,18 +41,21 @@ import connection_rule_support as support
 import game_client
 import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, AskHandOff, AskMap, AskSessions,
-  AskStore, FromHandOff, FromMap, FromSessions, FromStore, SentBySessions,
+  type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
+  AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
+  SentBySessions,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/coverage/sent_message
 import genesis_prime/game/connection.{Settings} as game_connection
 import genesis_prime/game/start_place.{type Place, Facing}
+import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{
   AlreadyHeld, Holder, Kept, NoHolder, SessionKey, Take, Taken,
 }
 import genesis_prime/login/guid
+import genesis_prime/message/camp_countdown
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
@@ -117,8 +120,8 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
-import genesis_prime/world_map/map.{Join}
-import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/map.{Join, Leave, Left}
+import genesis_prime/world_map/map_id.{type MapId, MapId}
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -133,7 +136,7 @@ fn settings() -> game_connection.Settings {
   Settings(
     realm_id: 5,
     max_characters: 9,
-    character_slots: 3,
+    game: GameSettings(camp_countdown_ms: 12_345, character_slots: 3),
     tables: character_tables.shared(),
     ask_deadline_ms: 4000,
     rate: support.roomy(),
@@ -1190,6 +1193,12 @@ fn joining() -> #(game_connection.State, ConnectionStep(Request)) {
   joining_as(world_character())
 }
 
+/// The tests' map: the world the tests' character is saved in, and its one
+/// open instance.
+fn camp_map() -> MapId {
+  MapId(world_id: 3460, instance: 0)
+}
+
 /// The run of the tests' map.
 const incarnation = 77
 
@@ -1198,7 +1207,7 @@ const incarnation = 77
 fn map_with_four_players() -> map.State {
   let state =
     map.new(map.Settings(
-      map: MapId(world_id: 3460, instance: 0),
+      map: camp_map(),
       incarnation:,
       realm_id: settings().realm_id,
       tables: settings().tables,
@@ -1225,19 +1234,10 @@ fn map_with_four_players() -> map.State {
 }
 
 /// The map's answer to the join the connection asked, which the real map gives:
-/// the ask the connection emitted is stepped through a map of the connection's
-/// realm and tables, and the reply is the answer.
+/// the ask is stepped through a map of the tests' realm and tables with four
+/// other players (`mapped`).
 fn map_answer(taken: ConnectionStep(Request)) -> map.Outgoing {
-  let assert AskMap(message:, ..) = ask_request(taken)
-    as "the connection asked the map to take the player"
-  let #(_, mapped) =
-    map.step(
-      map_with_four_players(),
-      support.input(OwnEvent(step.Asked(caller: CallerId(1), message:))),
-    )
-  let assert [#(CallerId(1), outgoing)] = support.replies(mapped)
-    as "the map answers the join once, to its caller"
-  outgoing
+  mapped(map_state: map_with_four_players(), taken:).1
 }
 
 /// The map's answer to a join of the tests' player, for the tests that need an
@@ -1313,7 +1313,7 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
     )
   assert ask_request(taken)
     == AskMap(
-      MapId(world_id: 3460, instance: 0),
+      camp_map(),
       Join(ConnectionId(1), world_character(), entry_place()),
     )
     as "the saved world of the character, its one open instance, the connection's id, the character and the place the client is told"
@@ -1321,13 +1321,12 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
     as "nothing is written before the map answers"
   let #(_, taken) =
     answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
-  assert list.map(heard(taken, keyed()), fn(frame) { frame.message_id })
-    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
+  assert written_ids(taken) == game_client.world_entry_ids
     as "the order the client needs: 0xAD first; 0x262 before 0x19B; 0x19B before 0x6BC, 0x636 and 0x61 (the client drops 0x6BC until 0x19B has set the player, opcode.0x6bc); 0xF1 after 0xAD (opcode.0xad, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0x61, opcode.0xf1)"
   let after_the_burst = list.drop(support.effects_of(taken), 7)
   assert after_the_burst
     == [
-      Watch(WatchId(2), Map(MapId(3460, 0), incarnation)),
+      Watch(WatchId(2), Map(camp_map(), incarnation)),
       OwnEffect(StartTimer(TimerId(2), 60_000)),
     ]
     as "the connection watches the run of the map that holds its player, after the burst, and the save timer starts"
@@ -1597,7 +1596,7 @@ pub fn a_log_line_in_the_world_is_about_the_players_map_and_character_and_one_in
   use <- owned_test.run(10_000)
   let #(_, taken) = feed(in_world(), WatchEnded(WatchId(2)))
   let assert [line] = support.logs_of(step: taken, level: LogWarning)
-  assert line.about.map == Some(MapId(world_id: 3460, instance: 0))
+  assert line.about.map == Some(camp_map())
     as "every line of a connection in the world says where: the map the player is in"
   assert line.about.character_id == Some(42)
     as "and who: the character the player plays"
@@ -1608,8 +1607,7 @@ pub fn a_log_line_in_the_world_is_about_the_players_map_and_character_and_one_in
     as "in character select the connection is in no map and plays no character"
   let #(_, taken) = read(in_world(), keyed_message(0x0244, <<>>))
   assert list.all(support.logs(taken), fn(line) {
-    line.about.map == Some(MapId(world_id: 3460, instance: 0))
-    && line.about.character_id == Some(42)
+    line.about.map == Some(camp_map()) && line.about.character_id == Some(42)
   })
     as "the lines of the shared connection code, which log a refused frame, carry them too"
 }
@@ -2157,7 +2155,7 @@ pub fn a_60_s_save_the_store_cannot_make_is_a_warning_the_player_goes_on_and_the
       as "an outside failure the server recovered from"
     assert line.about.account_id == Some(7)
       && line.about.character_id == Some(42)
-      && line.about.map == Some(MapId(world_id: 3460, instance: 0))
+      && line.about.map == Some(camp_map())
       as "the line says who and where"
     assert !support.stops(taken) && support.writes(taken) == []
       as "the player stays in the world"
@@ -2313,7 +2311,7 @@ pub fn the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_an
   assert ask_request(taken) == save_asked(1, entry_place())
   assert support.writes(taken) == [] && !support.stops(taken)
   let assert [line] = support.logs_of(step: taken, level: LogWarning)
-  assert line.about.map == Some(MapId(world_id: 3460, instance: 0))
+  assert line.about.map == Some(camp_map())
   let #(_, taken) = answer(state:, taken:, outcome: NoAnswerInTime)
   assert disconnect(taken, keyed()) == LostUserServer
     as "the player is gone from the world with its map: the client is told whether or not the save was answered"
@@ -3285,13 +3283,13 @@ pub fn the_game_rule_names_the_client_messages_it_takes_test() -> Nil {
   let named = list.sort(game_connection.taken_message_ids(), int.compare)
   assert named
     == [
-      0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x025B, 0x025C, 0x0352, 0x038C, 0x058F,
-      0x0637, 0x063A, 0x063B, 0x0786, 0x07DD, 0x07E0,
+      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x025B, 0x025C, 0x0352,
+      0x038C, 0x058F, 0x0637, 0x063A, 0x063B, 0x0786, 0x07DD, 0x07E0,
     ]
-    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB and 0x00FC"
+    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement and camp messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF and 0x00C0"
   assert list.sort(game_connection.carried_message_ids(), int.compare)
-    == [0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x0637, 0x063A, 0x063B]
-    as "the movement messages are taken only with the player in the world"
+    == [0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x0637, 0x063A, 0x063B]
+    as "the movement and camp messages are taken only with the player in the world"
 }
 
 pub fn character_select_takes_exactly_the_ids_the_rule_names_and_logs_every_other_client_id_as_unhandled_test() -> Nil {
@@ -3333,5 +3331,557 @@ pub fn the_create_carrier_takes_only_the_message_the_rule_names_as_carried_test(
         <> int.to_string(id)
         <> " inside 0x025C: opcode.0x25c, 0x025C carries a 0x025B and no other message"
       }
+  })
+}
+
+// ---- the camp ----
+//
+// Expected values come from the Client trace of the camp step and the facts it
+// names: opcode.0xbf and opcode.0xc0 (the client's two camp messages, each
+// inside 0x038C, 0xC0 sent at most once per camp and, for a Quit, at any time
+// after the 0x92), opcode.0x92 and vector.opcode.0x92.body (the countdown, the
+// cancel bit and the signature bonuses, 285 bytes),
+// opcode.0x92.countdown_source and opcode.0x92.countdown_range (the length is
+// the server's, under 60 s), lua.ExitWindow.OnPlayerCampCancel (a cancelling
+// 0x92 is answered with another 0xBF 0, so the server sends none),
+// opcode.0x594 and vector.opcode.0x594.body (the byte 01 is the bit set and
+// reason 0), opcode.0x594.character_select (the client sends 0x7E0 only and the
+// server answers it as at login), opcode.0x594.world_teardown (0x7EA and 0x549
+// may follow) and opcode.0x262 (a unit id the client has seen is refused). The
+// order of the save, the leave and 0x594, what each failure does and the
+// shell's order for a close are the Design artifact's sequence and failure
+// table.
+
+/// 0xBF inside 0x038C: one bit, 1 to start a camp and 0 to cancel it
+/// (opcode.0xbf).
+fn camp_request_message(start: Bool) -> BitArray {
+  world_message(0x00BF, case start {
+    True -> <<1>>
+    False -> <<0>>
+  })
+}
+
+/// 0xC0 inside 0x038C: its body is empty (opcode.0xc0).
+fn camp_finished_message() -> BitArray {
+  world_message(0x00C0, <<>>)
+}
+
+/// The body of the 0x92 for a countdown with the cancel bit clear and every
+/// bonus 0: the countdown in 32 bits, then 2248 zero bits (the cancel bit, the
+/// 32-bit experience and elder points and the 34 amounts of 64 bits), which
+/// pad the 2273 bits to the 285 bytes of vector.opcode.0x92.body.
+fn countdown_body(countdown_ms: Int) -> BitArray {
+  <<countdown_ms:size(32)-little, 0:size(2248)>>
+}
+
+/// The connection with the player's camp running, its 0x92 written.
+fn camping() -> game_connection.State {
+  read(in_world(), camp_request_message(True)).0
+}
+
+/// The connection after 0xC0 of a running camp: the save is asked.
+fn saving_the_camp() -> #(game_connection.State, ConnectionStep(Request)) {
+  read(camping(), camp_finished_message())
+}
+
+/// The connection after the camp's save was answered: the map's run is asked
+/// to let the player leave.
+fn leaving_the_map() -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = saving_the_camp()
+  answer(state:, taken:, outcome: place_saved())
+}
+
+/// The ask of the player's leave: the run of the map that took the player, 77
+/// (`incarnation`), with the connection's id.
+fn leave_asked() -> Request {
+  AskMapRun(
+    map: camp_map(),
+    incarnation:,
+    message: Leave(connection: ConnectionId(1)),
+  )
+}
+
+/// The connection after the map answered `Left`: 0x594 is written and the
+/// client is in character select.
+fn camped_out() -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) = leaving_the_map()
+  answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+}
+
+/// The messages the step writes, as the client reads them.
+fn written_ids(taken: ConnectionStep(Request)) -> List(Int) {
+  list.map(heard(taken, keyed()), fn(frame) { frame.message_id })
+}
+
+pub fn message_0xbf_1_in_the_world_is_answered_with_one_0x92_of_the_settings_countdown_and_every_bonus_0_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = read(in_world(), camp_request_message(True))
+  let assert [Frame(message_id: 0x0092, body:)] = heard(taken, keyed())
+    as "opcode.0xbf: sending 1 starts nothing on the client, which waits for the server's 0x92 (opcode.0x92)"
+  assert body == countdown_body(12_345)
+    as "vector.opcode.0x92.body's layout: the countdown in ms, the cancel bit 0 and the bonuses 0, 285 bytes; the countdown is the settings' 12,345 ms, not the default"
+  assert bit_array.byte_size(body) == 285
+  let assert Ok(decoded) = camp_countdown.decode(body)
+  assert decoded
+    == camp_countdown.CampCountdown(
+      countdown_ms: 12_345,
+      cancel: 0,
+      experience: 0,
+      elder_points: 0,
+      currencies: <<0:size(960)>>,
+      account_currencies: <<0:size(1216)>>,
+    )
+    as "opcode.0x92: 15 currencies and 19 account currencies of 64 bits, none given"
+  assert support.asked(taken) == None && !support.stops(taken)
+  assert support.logs(taken) == []
+    as "the rule takes 0xBF, so it is no unhandled message"
+}
+
+pub fn the_countdown_in_0x92_is_the_one_in_the_game_settings_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each([0, 1, 59_999], fn(countdown_ms) {
+    let game = GameSettings(..settings().game, camp_countdown_ms: countdown_ms)
+    let fresh = accepted(Settings(..settings(), game:)).0
+    let #(state, _) = entered_from(in_select_from(fresh), world_character())
+    let #(_, taken) = read(state, camp_request_message(True))
+    let assert [Frame(message_id: 0x0092, body:)] = heard(taken, keyed())
+    assert body == countdown_body(countdown_ms)
+      as "opcode.0x92.countdown_range: the settings' time in ms, under 60 s, whatever it is"
+  })
+}
+
+pub fn message_0xbf_0_during_a_camp_writes_nothing_and_a_following_0xc0_is_refused_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = read(camping(), camp_request_message(False))
+  assert support.writes(taken) == []
+    as "lua.ExitWindow.OnPlayerCampCancel: the client cleared its own camp, and a cancelling 0x92 would be answered by another 0xBF 0 without end"
+  assert support.asked(taken) == None && !support.stops(taken)
+  assert support.logs(taken) == []
+  let #(state, taken) = read(state, camp_finished_message())
+  let assert [line] = support.logs_of(step: taken, level: LogError)
+    as "opcode.0xc0: the client sends it only for a camp the server started, so it is one the client never sends"
+  assert support.says(line, "0x00C0") && support.says(line, "no camp")
+  assert ask_request(taken) == save_asked(1, entry_place())
+    as "the last good place is saved, as for a refused move"
+  assert support.writes(taken) == []
+  let #(_, taken) = answer(state:, taken:, outcome: place_saved())
+  assert support.effects_of(taken) == [step.Stop]
+    as "nothing is written to a client that is no client"
+}
+
+pub fn message_0xbf_0_with_no_camp_writes_nothing_and_the_connection_goes_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = read(in_world(), camp_request_message(False))
+  assert support.writes(taken) == []
+    as "lua.ExitWindow.OnPlayerCampCancel: the exit window sends it after any cancelling 0x92, with no camp running"
+  assert support.asked(taken) == None && !support.stops(taken)
+  assert support.logs(taken) == []
+    as "it is taken and changes nothing: no unhandled line, no error"
+  let #(_, taken) = read(state, camp_request_message(True))
+  assert written_ids(taken) == [0x0092] as "a camp can still start"
+}
+
+pub fn a_second_0xbf_1_during_a_camp_is_answered_with_a_second_0x92_and_one_0xc0_finishes_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = read(camping(), camp_request_message(True))
+  let assert [Frame(message_id: 0x0092, body:)] = heard(taken, keyed())
+    as "opcode.0xbf: a second 0xBF 1 before the first 0x92 arrives restarts the client's countdown, so each is answered"
+  assert body == countdown_body(12_345)
+  let #(_, taken) = read(state, camp_finished_message())
+  assert ask_request(taken) == save_asked(1, entry_place())
+    as "one camp: one 0xC0 finishes it, and a save is asked once"
+  assert support.logs(taken) == []
+}
+
+pub fn message_0xc0_at_once_after_the_0x92_as_a_quit_sends_it_is_taken_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    read(
+      in_world(),
+      bit_array.concat([camp_request_message(True), camp_finished_message()]),
+    )
+  assert written_ids(taken) == [0x0092]
+    as "opcode.0xc0: a Quit sends 0xC0 at any time after the 0x92, before the countdown ends, and the server cannot tell it from a camp's"
+  assert ask_request(taken) == save_asked(1, entry_place())
+    as "the camp finishes at once: the save is asked"
+  assert support.logs(taken) == []
+}
+
+pub fn message_0xc0_with_no_camp_ends_the_connection_with_an_error_the_last_good_place_saved_and_nothing_written_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state = moved_to(state: in_world(), x: 4.5, y: 5.5, z: 6.5)
+  let #(state, taken) = read(state, camp_finished_message())
+  let assert [line] = support.logs_of(step: taken, level: LogError)
+    as "opcode.0xc0: the client sends it at most once per camp and only while a camp runs"
+  assert support.says(line, "0x00C0")
+  assert line.about.character_id == Some(42)
+  assert ask_request(taken)
+    == save_asked(1, standing_at(x: 4.5, y: 5.5, z: 6.5))
+    as "the last place the player stood at is saved"
+  assert support.writes(taken) == []
+  let #(_, taken) = answer(state:, taken:, outcome: place_saved())
+  assert support.effects_of(taken) == [step.Stop]
+    as "no 0x0594 and no notice: nothing is written"
+}
+
+pub fn message_0xc0_cancels_the_save_timer_saves_the_place_asks_the_map_run_to_let_the_player_leave_then_writes_0x594_with_the_byte_01_in_that_order_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = saving_the_camp()
+  assert support.effects_of(taken) == [OwnEffect(CancelTimer(TimerId(2)))]
+    as "the 60 s save timer is cancelled before the save, so none fires while the player leaves"
+  assert ask_request(taken) == save_asked(1, entry_place())
+    as "the place is saved first"
+  assert support.writes(taken) == []
+  let #(state, taken) = answer(state:, taken:, outcome: place_saved())
+  assert ask_request(taken) == leave_asked()
+    as "then the map's run that took the player is asked to take it out"
+  let assert Some(ask) = support.asked(taken)
+  assert ask.deadline_ms == support.now_ms + 4000
+    as "the settings' ask deadline from the time of the input"
+  assert support.writes(taken) == []
+    as "nothing is written before the leave is answered: the client can pick a character only after 0x594, so a play never meets a save still out"
+  let #(_, taken) = answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+  assert heard(taken, keyed()) == [Frame(message_id: 0x0594, body: <<1>>)]
+    as "vector.opcode.0x594.body: the byte 01 is the bit set and reason 0, which returns to character select"
+  assert support.asked(taken) == None && !support.stops(taken)
+  assert list.first(support.effects_of(taken)) == Ok(Unwatch(WatchId(2)))
+    as "the watch on the map is dropped before 0x0594 is written: the map holds the player no longer"
+  assert support.logs(taken) == []
+}
+
+pub fn after_0x594_a_0x07e0_is_answered_with_0x0036_and_0x0117_as_at_login_with_no_new_claim_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = camped_out()
+  let #(state, taken) = read(state, select_start())
+  assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
+    as "opcode.0x594.character_select: the client's new character select sends 0x7E0 only, and the list is built as at login, from the store"
+  assert support.effects_of(taken) == []
+    as "no claim: the connection holds the account's slot still, and no watch is opened"
+  let #(_, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(ForSelect(Listed([character(id: 5, name: "Eve", seed: 1)]))),
+      ),
+    )
+  let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, body:)] =
+    heard(taken, keyed())
+    as "opcode.0x36 then opcode.0x117, as at login"
+  let assert Ok(sent) = character_list.decode(body)
+  assert list.map(sent.characters, fn(entry) { entry.name }) == ["Eve"]
+}
+
+/// The map's answer to the ask in the step, from the map's rule: `map_state`
+/// takes the ask's message as the map's caller 1 and answers it.
+fn mapped(
+  map_state map_state: map.State,
+  taken taken: ConnectionStep(Request),
+) -> #(map.State, map.Outgoing) {
+  let message = case ask_request(taken) {
+    AskMap(message:, ..) | AskMapRun(message:, ..) -> message
+    AskStore(..) | AskHandOff(..) | AskSessions(..) ->
+      panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask is none"
+  }
+  let #(map_state, mapped) =
+    map.step(
+      map_state,
+      support.input(OwnEvent(step.Asked(caller: CallerId(1), message:))),
+    )
+  let assert [#(CallerId(1), outgoing)] = support.replies(mapped)
+    as "the map answers the ask once, to its caller"
+  #(map_state, outgoing)
+}
+
+pub fn after_a_camp_a_play_request_enters_the_world_again_as_a_new_unit_with_the_map_watched_and_the_save_timer_started_again_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The real map rule answers every ask: the first join, the leave, the second.
+  let #(state, taken) = joining()
+  let #(map_state, joined) = mapped(map_state: map_with_four_players(), taken:)
+  let #(state, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
+  let first_unit = player_in(taken).unit_id
+  let #(state, _) = read(state, camp_request_message(True))
+  let #(state, taken) = read(state, camp_finished_message())
+  let #(state, taken) = answer(state:, taken:, outcome: place_saved())
+  let #(map_state, left) = mapped(map_state:, taken:)
+  assert left == Left as "the map took the player out"
+  let #(state, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromMap(left)))
+  assert written_ids(taken) == [0x0594]
+  let #(state, taken) = read(state, select_start())
+  let #(state, _) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForSelect(Listed([])))),
+    )
+  let #(state, taken) = playing_from(state, 42)
+  let #(state, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForWorld(CharacterLoaded(
+            world_character(),
+            character_support.epoch(1),
+          )),
+        ),
+      ),
+    )
+  let #(_, joined_again) = mapped(map_state:, taken:)
+  let #(state, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromMap(joined_again)))
+  assert written_ids(taken) == game_client.world_entry_ids
+    as "the same seven messages as at the first entry"
+  assert player_in(taken).unit_id != first_unit && player_in(taken).unit_id == 6
+    as "opcode.0x262: the client refuses a unit id it has seen, so the play is a new unit: the map's next id after the five it gave"
+  assert support.watches(taken) == [#(WatchId(2), Map(camp_map(), incarnation))]
+    as "the map is watched again, under the same watch id the leave dropped"
+  assert list.contains(
+    support.effects_of(taken),
+    OwnEffect(StartTimer(TimerId(2), 60_000)),
+  )
+    as "the save timer starts again"
+  let #(_, taken) = read(state, camp_finished_message())
+  assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    as "the new life has no camp: a 0xC0 at once is refused"
+}
+
+pub fn moving_during_a_camp_keeps_the_camp_and_the_place_saved_at_0xc0_is_the_last_one_moved_to_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state = moved_to(state: camping(), x: 1.5, y: 2.5, z: 3.5)
+  let state = moved_to(state:, x: 7.5, y: 8.5, z: 9.5)
+  let #(state, taken) = read(state, camp_finished_message())
+  assert support.logs(taken) == []
+    as "lua.ExitWindow.OnCancel: nothing cancels the camp on the client but its exit window, so moving leaves it, and the finish is taken"
+  assert ask_request(taken)
+    == save_asked(1, standing_at(x: 7.5, y: 8.5, z: 9.5))
+    as "the place saved is the last one the client said the player stood at"
+  let #(_, taken) = answer(state:, taken:, outcome: place_saved())
+  assert ask_request(taken) == leave_asked()
+}
+
+pub fn a_camp_save_the_store_cannot_make_is_a_warning_and_the_leave_goes_on_to_0x594_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(no_answers(), fn(outcome) {
+    let #(state, taken) = saving_the_camp()
+    let #(state, taken) = answer(state:, taken:, outcome:)
+    let assert [line] = support.logs_of(step: taken, level: LogWarning)
+      as "an outside failure the server recovered from"
+    assert support.says(line, "not saved")
+    assert line.about.character_id == Some(42)
+    assert ask_request(taken) == leave_asked()
+      as "the last 60 s save stands: the player leaves all the same"
+    assert !support.stops(taken)
+    let #(_, taken) =
+      answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+    assert written_ids(taken) == [0x0594]
+      as "and the client is returned to character select"
+  })
+}
+
+pub fn a_client_that_closes_after_0xc0_gets_its_save_its_leave_and_0x594_in_that_order_and_the_close_is_taken_after_them_without_a_second_save_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A Quit sends 0xC0 and the client ends itself. The shell takes no other
+  // input while an ask is out, so the close waits: it is the rule's input
+  // only once the 0x594 step is done, in character select.
+  let #(state, taken) = camped_out()
+  assert written_ids(taken) == [0x0594]
+    as "the save, the leave and 0x594 all ran before the close was taken"
+  let #(_, taken) = feed(state, OwnEvent(step.PeerClosed))
+  assert support.effects_of(taken) == [step.Stop]
+    as "the client's close in character select ends the connection"
+  assert support.asked(taken) == None
+    as "no second save: the place was saved at 0xC0"
+  let #(_, taken) =
+    feed(
+      state,
+      OwnEvent(step.WriteFailed(OtherSocketFailure(reason: "closed"))),
+    )
+  assert support.stops(taken) && support.asked(taken) == None
+    as "the write of 0x0594 may have failed because the client is gone: the connection ends, and saves nothing"
+}
+
+pub fn a_leave_answered_not_running_or_ended_before_its_answer_still_writes_0x594_and_returns_to_character_select_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each([NotRunning, EndedBeforeAnswer], fn(outcome) {
+    let #(state, taken) = leaving_the_map()
+    let #(state, taken) = answer(state:, taken:, outcome:)
+    assert written_ids(taken) == [0x0594]
+      as "the map run that held the player is gone, and its player with it: the leave is done"
+    assert list.contains(support.effects_of(taken), Unwatch(WatchId(2)))
+      as "the watch on the map is dropped, with an end already queued behind the ask"
+    assert !support.stops(taken)
+    let #(_, taken) = read(state, select_start())
+    assert ask_request(taken) == AskStore(Select(ListCharacters(AccountId(7))))
+      as "the client is in character select: its 0x07E0 asks the store"
+  })
+}
+
+pub fn the_map_ending_while_the_camp_save_is_out_returns_the_client_to_character_select_not_reason_8_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The map's end waits behind the save, which the shell takes no input
+  // during. When the save is answered the leave finds no run (`NotRunning`),
+  // and its step's `Unwatch` drops the end that waited, so the rule never
+  // takes it.
+  let #(state, taken) = leaving_the_map()
+  assert ask_request(taken) == leave_asked()
+  let #(_, taken) = answer(state:, taken:, outcome: NotRunning)
+  assert written_ids(taken) == [0x0594]
+    as "the client is told to return to character select"
+  assert !support.stops(taken) && !list.contains(written_ids(taken), 0x036A)
+    as "and not told 'Lost connection with user server.' (reason 8)"
+  assert list.contains(support.effects_of(taken), Unwatch(WatchId(2)))
+    as "the queued end of watch 2 is dropped with the watch"
+}
+
+pub fn a_leave_that_gets_no_answer_in_time_tells_the_client_reason_8_and_ends_the_connection_with_no_second_save_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = leaving_the_map()
+  let #(_, taken) = answer(state:, taken:, outcome: NoAnswerInTime)
+  assert disconnect(taken, keyed()) == LostUserServer
+    as "0x1400168a0: 8; the map may still hold the player, and its watch on the connection drops it"
+  assert support.asked(taken) == None
+    as "the place was saved at 0xC0: no second save"
+  let assert [line] = support.logs_of(step: taken, level: LogWarning)
+  assert support.says(line, "the map")
+}
+
+pub fn the_server_stopping_during_the_camp_save_or_the_leave_stops_the_connection_with_no_second_save_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = saving_the_camp()
+  let #(_, taken) = answer(state:, taken:, outcome: StoppedWaiting)
+  assert disconnect(taken, keyed()) == LostUserServer
+    as "the server never ends a connection after the hello without telling the client"
+  assert support.asked(taken) == None && support.logs(taken) == []
+    as "the stop is no failure, and the leave is not asked"
+  let #(state, taken) = leaving_the_map()
+  let #(_, taken) = answer(state:, taken:, outcome: StoppedWaiting)
+  assert disconnect(taken, keyed()) == LostUserServer
+  assert support.asked(taken) == None && support.logs(taken) == []
+    as "no second save, and no 0x594"
+}
+
+/// The answers a leave never gets: those of the store, the hand-off and
+/// Sessions, and the map's join.
+fn answers_to_no_leave() -> List(Outcome(Answer)) {
+  [
+    place_saved(),
+    step.Answer(FromStore(Unavailable)),
+    step.Answer(FromHandOff(NoHolder)),
+    step.Answer(FromSessions(Claimed)),
+    step.Answer(FromMap(a_join_answer())),
+  ]
+}
+
+pub fn an_answer_in_the_leave_that_is_not_the_maps_is_a_bug_with_reason_8_an_error_and_no_save_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(answers_to_no_leave(), fn(outcome) {
+    let #(state, taken) = leaving_the_map()
+    let #(_, taken) = answer(state:, taken:, outcome:)
+    assert disconnect(taken, keyed()) == LostUserServer
+    assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    assert support.asked(taken) == None
+      as "the place was saved at 0xC0: a bug ends the connection without saving again"
+  })
+}
+
+/// The inputs that end a connection, as they reach the rule.
+fn ending_inputs() -> List(Event(ConnectionEvent(Message, Answer))) {
+  [
+    OwnEvent(step.PeerClosed),
+    OwnEvent(step.ReadFailed(OtherSocketFailure(reason: "gone"))),
+    OwnEvent(step.WriteFailed(OtherSocketFailure(reason: "gone"))),
+    step.Stopping(deadline_ms: 9000),
+    taken_over(),
+  ]
+}
+
+pub fn an_end_reached_during_the_leave_saves_nothing_more_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = leaving_the_map()
+  list.each(ending_inputs(), fn(event) {
+    let #(_, taken) = feed(state, event)
+    assert support.asked(taken) == None
+      as "the place was saved at 0xC0: the end of a connection that is leaving its map saves nothing more"
+    assert support.stops(taken)
+  })
+}
+
+pub fn an_end_reached_during_the_camp_save_never_saves_a_second_time_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = saving_the_camp()
+  list.each(ending_inputs(), fn(event) {
+    let #(_, taken) = feed(state, event)
+    assert support.asked(taken) == None
+    assert support.stops(taken)
+  })
+}
+
+pub fn a_takeover_during_the_camp_saves_first_and_one_after_it_is_the_one_of_character_select_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = feed(camping(), taken_over())
+  assert ask_request(taken) == save_asked(1, entry_place())
+    as "as in the world today: the place is saved before the client is told"
+  let #(_, taken) = answer(state:, taken:, outcome: place_saved())
+  assert disconnect(taken, keyed()) == AccountDisconnected
+  let #(state, _) = camped_out()
+  let #(_, taken) = feed(state, taken_over())
+  assert disconnect(taken, keyed()) == AccountDisconnected
+    as "taken after the answers, when the connection is between steps: in character select, with no player to save"
+  assert support.asked(taken) == None
+}
+
+pub fn the_end_of_sessions_during_a_camp_claims_again_with_the_player_in_the_world_and_the_camp_kept_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = claiming_again(camping())
+  let #(state, taken) = claimed(state:, taken:)
+  assert support.writes(taken) == []
+  let #(_, taken) = read(state, camp_finished_message())
+  assert support.logs(taken) == []
+    as "the camp is kept in the player's world state, so the claim again leaves it running and the 0xC0 is taken"
+  assert ask_request(taken) == save_asked(1, entry_place())
+}
+
+pub fn the_end_of_the_map_during_a_camp_saves_the_place_then_tells_the_client_reason_8_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = feed(camping(), WatchEnded(WatchId(2)))
+  assert ask_request(taken) == save_asked(1, entry_place())
+  let #(_, taken) = answer(state:, taken:, outcome: place_saved())
+  assert disconnect(taken, keyed()) == LostUserServer
+    as "a map that ends while the camp counts down takes its player with it: as today, the client is told"
+}
+
+/// The ids of the messages the client's old world and its camp may send in
+/// character select, which the rule does not take there.
+fn world_ids() -> List(Int) {
+  [0x07EA, 0x0549, 0x00BF, 0x00C0]
+}
+
+pub fn a_0x038c_holding_0x7ea_0x549_0xbf_or_0xc0_in_character_select_is_logged_as_unhandled_and_the_connection_goes_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(after_camp, _) = camped_out()
+  list.each([in_select(), after_camp], fn(state) {
+    list.each(world_ids(), fn(id) {
+      let #(_, taken) = read(state, world_message(id, <<1>>))
+      assert support.unhandled_ids(taken) == [Some(#("unhandled", id))]
+        as "opcode.0x594.world_teardown: the client's old world may send 0x7EA and 0x549 around 0x7E0, and the camp messages are taken in the world only; each is logged under its own id"
+      assert !support.stops(taken) && support.writes(taken) == []
+      assert support.asked(taken) == None
+    })
+  })
+}
+
+pub fn an_answer_in_the_camp_save_that_is_not_the_stores_is_a_bug_with_reason_8_an_error_and_no_leave_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(answers_to_other_asks(), fn(outcome) {
+    let #(state, taken) = saving_the_camp()
+    let #(_, taken) = answer(state:, taken:, outcome:)
+    assert disconnect(taken, keyed()) == LostUserServer
+    assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    assert support.asked(taken) == None
+      as "the save is over and the camp's leave is not asked: a bug ends the connection without a second save"
   })
 }

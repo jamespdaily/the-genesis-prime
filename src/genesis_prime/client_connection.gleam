@@ -51,6 +51,10 @@ pub type Request {
   /// Ask the map, which Maps starts when it is not running
   /// (genesis_prime/world_map/registry).
   AskMap(map: MapId, message: map.Message)
+  /// Ask the run of the map with this incarnation, which Maps never starts: a
+  /// map that is not running, or runs as another incarnation, is not running
+  /// for this ask (genesis_prime/world_map/registry).
+  AskMapRun(map: MapId, incarnation: Int, message: map.Message)
 }
 
 /// What comes back from an ask, by the process asked.

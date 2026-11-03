@@ -55,7 +55,7 @@
 ////   neither covers nor causes that noise.
 
 import genesis_prime/migration.{type Migration, type Refusal}
-import genesis_prime/service.{type Sent, ToService, ToWorker}
+import genesis_prime/service.{type Sent, NoReplyInTime, ToService, ToWorker}
 import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Probed, Reached, Unreached}
 import gleam/erlang/process.{type Monitor, type Subject}
@@ -130,9 +130,10 @@ fn attempt(
 ) -> Outcome {
   let answers = process.new_subject()
   case probe(fn(probed) { process.send(answers, probed) }) {
-    Error(Nil) -> retry(probe:, tree:, settings:, files:, deadline_ms:)
-    Ok(sent) -> {
-      let watched = process.monitor(sent.pid)
+    Error(Nil) | Ok(NoReplyInTime) ->
+      retry(probe:, tree:, settings:, files:, deadline_ms:)
+    Ok(ToService(pid:) as sent) | Ok(ToWorker(pid:) as sent) -> {
+      let watched = process.monitor(pid)
       let wait_ms =
         int.min(settings.attempt_ms, remaining_ms(deadline_ms))
         |> int.max(0)
@@ -181,7 +182,7 @@ fn end_attempt(
           |> process.select_specific_monitor(watched, fn(_down) { Nil })
           |> process.selector_receive(within: 1000)
           |> result.unwrap(Nil)
-        ToService(..) -> Nil
+        ToService(..) | NoReplyInTime -> Nil
       }
     }
   }
