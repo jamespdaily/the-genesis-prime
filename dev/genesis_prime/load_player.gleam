@@ -274,7 +274,7 @@ pub fn moves_and_returns(
 
 /// The STS login, the auth login and the game hello of the account's player: its
 /// game connection and its auth connection.
-fn log_in(
+pub fn log_in(
   account account: Account,
   ports ports: Ports,
 ) -> #(game_client.Game, mug.Socket) {
@@ -310,7 +310,7 @@ fn handed_off(auth: mug.Socket) -> game_server_handoff.GameServerHandoff {
 
 /// Asks for the character list, which 0x097F, 0x0968, 0x0036 and 0x0117
 /// answer.
-fn list_characters(game: game_client.Game) -> Nil {
+pub fn list_characters(game: game_client.Game) -> Nil {
   game_client.send(game:, message_id: 0x07E0, body: <<>>)
   let assert [_tier, _entitlements, _level, _list] =
     game_client.read(game:, count: 4)
@@ -332,7 +332,7 @@ fn create_character(game game: game_client.Game, name name: String) -> Int {
 
 /// Plays the character into the world, and the messages that put it there,
 /// with the bytes the server wrote after them.
-fn enter_world(
+pub fn enter_world(
   game game: game_client.Game,
   character_id character_id: Int,
 ) -> #(List(Frame), BitArray) {
