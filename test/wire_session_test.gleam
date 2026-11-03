@@ -195,18 +195,15 @@ pub fn the_replay_logs_the_unhandled_messages_the_live_session_logged_and_nothin
     as "the STS request the rule has no handler for, once: the live session's STS connection holds one such request"
   assert lines_of(logged, "auth_connection") == []
     as "the auth connection logged no warning and no error"
-  assert list.sort(lines_of(logged, "game.connection"), string.compare)
-    == list.sort(
-      list.map(
-        [
-          "0x082D", "0x012B", "0x03EC", "0x03ED", "0x0269", "0x07CC", "0x018F",
-          "0x0635", "0x023C", "0x07EA", "0x023D", "0x0570",
-        ],
-        fn(id) { "unhandled game message " <> id },
-      ),
-      string.compare,
+  assert lines_of(logged, "game.connection")
+    == list.map(
+      [
+        "0x082D", "0x012B", "0x03EC", "0x03ED", "0x0269", "0x07CC", "0x018F",
+        "0x0635", "0x023C", "0x07EA", "0x023D", "0x0570",
+      ],
+      fn(id) { "unhandled game message " <> id },
     )
-    as "the order the live client sent them in varies from session to session, so the lines are compared as a set; each world message the game rule took and did not handle, once, by its id; the movement messages of the player (0x0637, 0x063A, 0x00D5, 0x063B and 0x00F2, which the live client sent) are handled, so none is logged"
+    as "each world message the game rule took and did not handle, once, by its id; the movement messages of the player (0x0637, 0x063A, 0x00D5, 0x063B and 0x00F2, which the live client sent) are handled, so none is logged; the order is this recording's"
 }
 
 pub fn every_message_a_recorded_session_replays_is_handled_or_logged_as_unhandled_by_its_id_test() -> Nil {
