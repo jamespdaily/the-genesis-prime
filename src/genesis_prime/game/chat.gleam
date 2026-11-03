@@ -174,7 +174,7 @@
 //// | Zone and whisper: `pg:join` or `pg:leave` while the registry scope is restarting | the call exits | the connection crashes; the scope's restart already restarts the listener and every connection |
 //// | Zone: report 0, or a zone with no row | as above | no zone: the group left, 0x1da 0; a zone with no row is named for one warning, and the connection goes on |
 //// | Zone: the place's zone is 0 or has no row | server data, not a report | no zone: 0x1da 0, 0x1bc, no group; one warning for no row |
-//// | Whisper: pending when its speaker camps | the camp's leave drops the watch | the camp answers 0x1d9 first, so the whisper keeps its one answer |
+//// | Whisper: pending when its speaker camps | the camp's leave drops the watch | the camp answers 0x1d9 first, so the whisper keeps its one answer; an empty whisper gets none, as when its target is found |
 //// | Zone: enter, change zone, camp, enter again | each step joins and leaves its own groups | exactly one membership per group: `join_group` skips a group the process is in |
 //// | Whisper: pending when Sessions ends and the connection claims again | the player is held in the claim's wait or its ask | the reply, the watch's end and a tell are taken for every status that holds a player, so the speaker still gets 0x1c2 or 0x1d9 |
 //// | Whisper: a reply to a whisper of an earlier stay | the number is not held | dropped; numbers never repeat on one connection |
@@ -966,7 +966,7 @@ fn line_frame(
       unit_id: speaker.unit_id,
       premium_tier: 0,
     ))
-    as "the speaker's realm, character, name and unit and a line of at most 499 units fit the message"
+    as "the speaker's realm, character, name and unit and a line of at most 501 units fit the message"
   Frame(message_id: chat_line.message_id, body:)
 }
 
@@ -1021,7 +1021,7 @@ pub fn told(chat chat: Chat, tell tell: Tell) -> #(Chat, List(Effect)) {
       })
     chat_tell.NotHeard(whisper:) ->
       answered(chat:, whisper:, answer: fn(pending) {
-        [Send(not_delivered_frame(pending))]
+        undelivered(pending:, target_is_missing: True)
       })
   }
 }
@@ -1040,6 +1040,21 @@ fn answered(
       [Unwatch(watch: whisper_watch(whisper)), ..answer(pending)],
     )
     Error(Nil) -> #(chat, [])
+  }
+}
+
+/// What a pending whisper that ends undelivered is answered with: 0x1d9, except
+/// an empty whisper whose target is not known to be missing, which gets no answer
+/// (the client frees the slot silently after 30 s, `0x140405cb0`). The target is
+/// known to be missing when no connection holds its name or it is not in the
+/// world; a camp that drops the whisper knows nothing of it.
+fn undelivered(
+  pending pending: PendingWhisper,
+  target_is_missing target_is_missing: Bool,
+) -> List(Effect) {
+  case pending.with_text || target_is_missing {
+    True -> [Send(not_delivered_frame(pending))]
+    False -> []
   }
 }
 
@@ -1079,11 +1094,10 @@ pub fn watch_ended(
   let whisper = number - first_whisper_watch
   case dict.get(chat.whispers, whisper) {
     Ok(pending) ->
-      Ok(
-        #(Chat(..chat, whispers: dict.delete(chat.whispers, whisper)), [
-          Send(not_delivered_frame(pending)),
-        ]),
-      )
+      Ok(#(
+        Chat(..chat, whispers: dict.delete(chat.whispers, whisper)),
+        undelivered(pending:, target_is_missing: True),
+      ))
     Error(Nil) -> Error(Nil)
   }
 }
@@ -1130,7 +1144,7 @@ pub fn left(chat chat: Chat) -> List(Effect) {
       case dict.get(chat.whispers, whisper) {
         Ok(pending) -> [
           Unwatch(watch: whisper_watch(whisper)),
-          Send(not_delivered_frame(pending)),
+          ..undelivered(pending:, target_is_missing: False)
         ]
         Error(Nil) -> []
       }

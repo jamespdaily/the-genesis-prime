@@ -1996,6 +1996,17 @@ pub fn every_0x1d4_gets_exactly_one_answer_except_an_empty_whisper_to_a_found_ta
         )
         == 1
         as "and so is the end of its watch"
+      assert answers(chat.left(after))
+        == case text {
+          [] -> 0
+          [_, ..] -> 1
+        }
+        as "a camp answers a whisper with text 0x1d9 and an empty one nothing (0x140405cb0), and unwatches either"
+      assert list.contains(
+        chat.left(after),
+        chat.Unwatch(step.WatchId(first_watch + 1)),
+      )
+        as "every pending whisper is unwatched on camp"
       assert answers(
           chat.told(after, chat_tell.Heard(whisper: 1, name: "Cd Ef")).1,
         )
@@ -2013,4 +2024,36 @@ pub fn every_0x1d4_gets_exactly_one_answer_except_an_empty_whisper_to_a_found_ta
         as "every other 0x1d4 gets exactly one of 0x1c2, 0x1d3 or 0x1d9; the one without is an empty whisper to oneself, found"
     }
   }
+}
+
+pub fn a_camp_writes_no_0x1d9_for_an_empty_whisper_pending_and_still_unwatches_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  let empty =
+    whisper_body(
+      target: "Cd Ef",
+      realm: "",
+      text: "",
+      message_id: 4,
+      account: 0,
+    )
+  let #(chat, _) = whisper(chat: a_chat(), body: empty)
+  let #(chat, _) = whisper_to(chat, "Gh Ij")
+  assert chat.left(chat)
+    == [
+      chat.LeaveGroup(step.CharacterNamed("ab cd")),
+      chat.Unwatch(step.WatchId(first_watch + 1)),
+      chat.Unwatch(step.WatchId(first_watch + 2)),
+      chat.Send(failed_frame_of(target: "Gh Ij", message_id: 3)),
+    ]
+    as "the design: an empty whisper is answered 0x1d9 only when its target is not found; a camp does not know, so the client frees its slot silently (0x140405cb0), while a whisper with text is still answered; every pending whisper is unwatched"
+}
+
+fn failed_frame_of(target target: String, message_id message_id: Int) -> Frame {
+  let assert Ok(body) =
+    whisper_failed.encode(WhisperFailed(
+      target_name: bit_stream.utf16_units(target),
+      account: 0,
+      chat_message_id: message_id,
+    ))
+  Frame(message_id: whisper_failed.message_id, body:)
 }
