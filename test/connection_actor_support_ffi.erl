@@ -30,7 +30,7 @@ running(Pid) ->
 %% their target: the Running record's kept dictionary.
 kept_asks(Pid) ->
     {running, _Socket, _Script, _State, _Wire, _At, _TakenMs, _Reading, Kept,
-     _Watches, _Timers, _Stopping, _ClosedBy}
+     _Watches, _Watched, _Tells, _Timers, _Stopping, _ClosedBy}
         = running(Pid),
     maps:size(Kept).
 
@@ -38,7 +38,7 @@ kept_asks(Pid) ->
 %% read of it holds: the Running record's socket.
 socket_buffer(Pid) ->
     {running, Socket, _Script, _State, _Wire, _At, _TakenMs, _Reading, _Kept,
-     _Watches, _Timers, _Stopping, _ClosedBy}
+     _Watches, _Watched, _Tells, _Timers, _Stopping, _ClosedBy}
         = running(Pid),
     {ok, [{buffer, Buffer}]} = inet:getopts(Socket, [buffer]),
     Buffer.
