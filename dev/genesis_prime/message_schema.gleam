@@ -106,6 +106,9 @@ pub type Kind {
   Float32
   /// A wide text with a 7-bit or 15-bit count.
   WideText
+  /// A wide text as its UTF-16 units, each kept as it was read (`List(Int)`),
+  /// for a text the server relays and measures in units.
+  WideUnits
   /// A wide text with a 16-bit count and a terminating zero, of at most
   /// `max_units` units.
   CountedWideText(max_units: Int)
@@ -469,6 +472,7 @@ fn check_counted_by_loop(
         | UnsignedBelow(..)
         | Float32
         | WideText
+        | WideUnits
         | CountedWideText(..)
         | Guid
         | Endpoint
@@ -497,6 +501,7 @@ fn parse_field(
     UnsignedBelow(..)
     | Float32
     | WideText
+    | WideUnits
     | CountedWideText(..)
     | Guid
     | Endpoint
@@ -526,6 +531,7 @@ pub fn named_values(field field: Field) -> Option(NamedValues) {
     UnsignedBelow(..)
     | Float32
     | WideText
+    | WideUnits
     | CountedWideText(..)
     | Guid
     | Endpoint
@@ -673,6 +679,7 @@ fn parse_kind(
     }
     "float32" -> Ok(Float32)
     "wide_text" -> Ok(WideText)
+    "wide_units" -> Ok(WideUnits)
     "counted_wide_text" -> {
       use max_units <- result.try(int_in(
         table:,

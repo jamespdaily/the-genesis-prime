@@ -66,7 +66,7 @@ pub fn a_say_line_is_a_type_an_id_a_text_no_formats_and_a_slot_test() -> Nil {
     value: SendChatLine(
       channel_type: 4,
       channel_id: 0,
-      text: "Hi",
+      text: units("Hi"),
       formats: [],
       chat_message_id: 1,
     ),
@@ -85,7 +85,7 @@ pub fn a_zone_line_names_the_channel_id_the_server_gave_and_holds_an_item_link_t
     value: SendChatLine(
       channel_type: 9,
       channel_id: 0x123456789A,
-      text: "Link",
+      text: units("Link"),
       formats: [
         ItemGuid(ChatFormatItemGuid(
           start: 0,
@@ -110,7 +110,7 @@ pub fn every_format_type_the_clients_reader_takes_has_its_own_data_test() -> Nil
     value: SendChatLine(
       channel_type: 4,
       channel_id: 0,
-      text: "abc",
+      text: units("abc"),
       formats: [
         Kind0(ChatFormatKind0(start: 1, end: 2, field_4: 1)),
         Kind1(ChatFormatKind1(start: 2, end: 3, field_4: 0xA1B2C3D4)),
@@ -177,7 +177,7 @@ pub fn a_format_of_type_8_or_12_to_15_fails_the_read_test() -> Nil {
 
 pub fn a_text_of_more_than_127_characters_takes_the_15_bit_count_test() -> Nil {
   use <- owned_test.run(5000)
-  let text = string.repeat("a", 128)
+  let text = units(string.repeat("a", 128))
   message_support.assert_codec(
     name: "0x140336040: over 127 characters the count is a set bit and 15 bits, so 128 characters are 01 01 then the characters (vector.0x140336040.wide_text)",
     body: message_support.hex(
@@ -207,7 +207,7 @@ pub fn a_whisper_is_a_name_a_realm_a_text_formats_a_slot_and_an_account_bit_test
     value: SendWhisper(
       target_name: "Ab Cd",
       target_realm_name: "",
-      text: "Hi there",
+      text: units("Hi there"),
       formats: [],
       chat_message_id: 3,
       account: 0,
@@ -223,7 +223,7 @@ pub fn a_whisper_is_a_name_a_realm_a_text_formats_a_slot_and_an_account_bit_test
     value: SendWhisper(
       target_name: "Ab Cd",
       target_realm_name: "Realm",
-      text: "",
+      text: units(""),
       formats: [],
       chat_message_id: 0xFFFF,
       account: 1,
@@ -271,7 +271,7 @@ pub fn a_line_to_show_is_the_channel_the_speaker_the_text_and_the_cross_faction_
       sender_name: "Ab Cd",
       sender_realm_name: "",
       presence_state: 0,
-      text: "Hello",
+      text: units("Hello"),
       formats: [Kind0(ChatFormatKind0(start: 0, end: 5, field_4: 0))],
       cross_faction: 1,
       field_14: 0,
@@ -351,4 +351,9 @@ pub fn the_zone_the_channels_are_named_after_is_a_15_bit_world_zone_id_test() ->
     encode: chat_zone_named.encode,
     decode: chat_zone_named.decode,
   )
+}
+
+/// The UTF-16 units of a text of characters below 0x10000.
+fn units(text: String) -> List(Int) {
+  list.map(string.to_utf_codepoints(text), string.utf_codepoint_to_int)
 }

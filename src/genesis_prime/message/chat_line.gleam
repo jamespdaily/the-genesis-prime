@@ -31,7 +31,7 @@ pub type ChatLine {
     sender_name: String,
     sender_realm_name: String,
     presence_state: Int,
-    text: String,
+    text: List(Int),
     formats: List(ChatFormat),
     cross_faction: Int,
     /// Safe by `opcode.0x1c8`: the client's code gives this field no use the
@@ -60,7 +60,7 @@ pub fn encode(message: ChatLine) -> Result(BitArray, EncodeError) {
   |> bit_stream.write_wide_text("sender_name", message.sender_name)
   |> bit_stream.write_wide_text("sender_realm_name", message.sender_realm_name)
   |> bit_stream.write_unsigned("presence_state", message.presence_state, 3)
-  |> bit_stream.write_wide_text("text", message.text)
+  |> bit_stream.write_wide_units("text", message.text)
   |> bit_stream.write_array("formats", message.formats, 5, chat_format.write)
   |> bit_stream.write_unsigned("cross_faction", message.cross_faction, 1)
   |> bit_stream.write_unsigned("field_14", message.field_14, 16)
@@ -93,7 +93,7 @@ pub fn decode(body: BitArray) -> Result(ChatLine, DecodeError) {
     reader,
     3,
   ))
-  use #(text, reader) <- result.try(bit_stream.read_wide_text(reader))
+  use #(text, reader) <- result.try(bit_stream.read_wide_units(reader))
   use #(formats, reader) <- result.try(bit_stream.read_array(
     reader,
     5,

@@ -22,7 +22,7 @@ pub type SendWhisper {
   SendWhisper(
     target_name: String,
     target_realm_name: String,
-    text: String,
+    text: List(Int),
     formats: List(ChatFormat),
     chat_message_id: Int,
     account: Int,
@@ -35,7 +35,7 @@ pub fn encode(message: SendWhisper) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_wide_text("target_name", message.target_name)
   |> bit_stream.write_wide_text("target_realm_name", message.target_realm_name)
-  |> bit_stream.write_wide_text("text", message.text)
+  |> bit_stream.write_wide_units("text", message.text)
   |> bit_stream.write_array("formats", message.formats, 5, chat_format.write)
   |> bit_stream.write_unsigned("chat_message_id", message.chat_message_id, 16)
   |> bit_stream.write_unsigned("account", message.account, 1)
@@ -49,7 +49,7 @@ pub fn decode(body: BitArray) -> Result(SendWhisper, DecodeError) {
   use #(target_realm_name, reader) <- result.try(bit_stream.read_wide_text(
     reader,
   ))
-  use #(text, reader) <- result.try(bit_stream.read_wide_text(reader))
+  use #(text, reader) <- result.try(bit_stream.read_wide_units(reader))
   use #(formats, reader) <- result.try(bit_stream.read_array(
     reader,
     5,

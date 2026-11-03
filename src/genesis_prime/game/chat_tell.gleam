@@ -33,13 +33,14 @@ pub type Speaker {
 }
 
 /// A line as the speaker's client sent it and the rule accepted it: the channel
-/// it was sent on, its text and formats unchanged (the server adds no format
-/// and refuses no line for its words, `0x140c45f50`).
+/// it was sent on, its text, in UTF-16 units as the client sent them, and its
+/// formats unchanged (the server adds no format and refuses no line for its
+/// words, `0x140c45f50`).
 pub type Line {
   Line(
     channel_type: ChannelType,
     channel_id: Int,
-    text: String,
+    text: List(Int),
     formats: List(ChatFormat),
   )
 }

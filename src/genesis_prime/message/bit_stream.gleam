@@ -216,6 +216,35 @@ pub fn write_wide_text(
   put_units(writer: counted, units:)
 }
 
+/// Writes a wide text given as its UTF-16 units, as `write_wide_text` writes a
+/// string's: a unit is taken as it is, so a lone surrogate, which a client's text
+/// can hold, is written as it was read.
+pub fn write_wide_units(
+  writer writer: Writer,
+  field field: String,
+  units units: List(Int),
+) -> Writer {
+  let count = list.length(units)
+  use <- bool.guard(
+    when: count > max_wide_text_units,
+    return: fail(
+      writer:,
+      error: TextTooLong(field:, units: count, limit: max_wide_text_units),
+    ),
+  )
+  case list.find(units, fn(unit) { unit < 0 || unit > 0xFFFF }) {
+    Ok(unit) ->
+      fail(writer:, error: ValueDoesNotFit(field:, bits: 16, value: unit))
+    Error(Nil) -> {
+      let counted = case count > 127 {
+        True -> writer |> put(value: 1, bits: 1) |> put(value: count, bits: 15)
+        False -> writer |> put(value: 0, bits: 1) |> put(value: count, bits: 7)
+      }
+      put_units(writer: counted, units:)
+    }
+  }
+}
+
 /// Writes a counted wide text: the count of units plus one in 16 bits, then the
 /// units and a terminating zero in 16 bits each (WriteCountedWideText
 /// 0x1400c2f70). `max_units` is the most units the message allows.
@@ -472,6 +501,20 @@ pub fn read_wide_text(
   use #(units, reader) <- result.try(read_units(reader:, count:))
   use text <- result.try(from_utf16(units))
   Ok(#(text, reader))
+}
+
+/// Reads a wide text as its UTF-16 units, with no check that they pair: the
+/// count rule of `write_wide_text` (0x140336040), each unit as it comes.
+pub fn read_wide_units(
+  reader: Reader,
+) -> Result(#(List(Int), Reader), DecodeError) {
+  use #(long, reader) <- result.try(read_unsigned(reader:, bits: 1))
+  let count_bits = case long {
+    1 -> 15
+    _ -> 7
+  }
+  use #(count, reader) <- result.try(read_unsigned(reader:, bits: count_bits))
+  read_units(reader:, count:)
 }
 
 /// Reads a counted wide text with at most `max_units` units.

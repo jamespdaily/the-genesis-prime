@@ -1195,7 +1195,7 @@ summary = "the client says a line on a chat channel it holds (Say, Yell, Emote, 
 fields = [
   { name = "channel_type", kind = "unsigned", bits = 14, evidence = "opcode.0x1c3", named_by = "opcode.0x1c3" },
   { name = "channel_id", kind = "unsigned", bits = 64, evidence = "opcode.0x1c3", named_by = "opcode.0x1c3" },
-  { name = "text", kind = "wide_text", evidence = "opcode.0x1c3", named_by = "opcode.0x1c3" },
+  { name = "text", kind = "wide_units", evidence = "opcode.0x1c3", named_by = "opcode.0x1c3" },
   { name = "formats", kind = "array", count_bits = 5, element = "chat_format", evidence = "opcode.0x1c3", named_by = "opcode.0x1c3" },
   { name = "chat_message_id", kind = "unsigned", bits = 16, evidence = "opcode.0x1c3", named_by = "opcode.0x1c3" },
 ]
@@ -1209,7 +1209,7 @@ summary = "the client whispers a line to a character by name (account bit 0) or 
 fields = [
   { name = "target_name", kind = "wide_text", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
   { name = "target_realm_name", kind = "wide_text", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
-  { name = "text", kind = "wide_text", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
+  { name = "text", kind = "wide_units", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
   { name = "formats", kind = "array", count_bits = 5, element = "chat_format", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
   { name = "chat_message_id", kind = "unsigned", bits = 16, evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
   { name = "account", kind = "unsigned", bits = 1, evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
@@ -1248,7 +1248,7 @@ fields = [
   { name = "sender_name", kind = "wide_text", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
   { name = "sender_realm_name", kind = "wide_text", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
   { name = "presence_state", kind = "unsigned", bits = 3, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
-  { name = "text", kind = "wide_text", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "text", kind = "wide_units", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
   { name = "formats", kind = "array", count_bits = 5, element = "chat_format", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
   { name = "cross_faction", kind = "unsigned", bits = 1, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
   { name = "field_14", kind = "unsigned", bits = 16, evidence = "opcode.0x1c8", safe_by = "opcode.0x1c8" },

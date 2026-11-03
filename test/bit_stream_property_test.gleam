@@ -43,6 +43,7 @@ type Field {
   UnsignedBelow(bits: Int, limit: Int, value: Int)
   Float32(bits: Int)
   WideText(text: String)
+  WideUnits(units: List(Int))
   CountedWideText(max_units: Int, text: String)
   Guid(bytes: BitArray)
   Endpoint(endpoint: bit_stream.Endpoint)
@@ -97,6 +98,37 @@ pub fn a_float32_keeps_every_pattern_of_its_32_bits_test() -> Nil {
 pub fn a_wide_text_reads_back_as_written_test() -> Nil {
   use <- owned_test.run(60_000)
   reads_back(wide_text_field())
+}
+
+pub fn wide_units_read_back_as_written_lone_surrogates_included_test() -> Nil {
+  use <- owned_test.run(60_000)
+  reads_back(wide_units_field())
+}
+
+pub fn a_lone_surrogate_is_a_unit_the_text_form_refuses_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(body) =
+    bit_stream.new_writer()
+    |> bit_stream.write_wide_units("f", [0x41, 0xD800, 0x42])
+    |> bit_stream.finish
+  assert result.map(
+      bit_stream.read_wide_units(bit_stream.new_reader(body)),
+      fn(read) { read.0 },
+    )
+    == Ok([0x41, 0xD800, 0x42])
+    as "the units form reads each 16-bit unit as it comes, a lone surrogate included, so a client's text that holds one is not refused by the codec (0x1403e0ae0 lets such a unit through ParseChatText)"
+  assert bit_stream.read_wide_text(bit_stream.new_reader(body))
+    == Error(bit_stream.InvalidText)
+    as "the text form holds well-formed UTF-16 only"
+}
+
+pub fn a_unit_wider_than_16_bits_is_not_written_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert bit_stream.new_writer()
+    |> bit_stream.write_wide_units("f", [0x10000])
+    |> bit_stream.finish
+    == Error(bit_stream.ValueDoesNotFit("f", 16, 0x10000))
+    as "a UTF-16 unit is 16 bits"
 }
 
 pub fn a_counted_wide_text_reads_back_as_written_test() -> Nil {
@@ -433,6 +465,7 @@ fn write(writer: bit_stream.Writer, field: Field) -> bit_stream.Writer {
       bit_stream.write_unsigned_below(writer, "f", value, bits, limit)
     Float32(bits:) -> bit_stream.write_float32_bits(writer, "f", bits)
     WideText(text:) -> bit_stream.write_wide_text(writer, "f", text)
+    WideUnits(units:) -> bit_stream.write_wide_units(writer, "f", units)
     CountedWideText(max_units:, text:) ->
       bit_stream.write_counted_wide_text(writer, "f", text, max_units)
     Guid(bytes:) -> bit_stream.write_guid(writer, "f", bytes)
@@ -552,6 +585,8 @@ fn read(
       bit_stream.read_float32_bits(reader) |> map_field(Float32(bits: _))
     WideText(..) ->
       bit_stream.read_wide_text(reader) |> map_field(WideText(text: _))
+    WideUnits(..) ->
+      bit_stream.read_wide_units(reader) |> map_field(WideUnits(units: _))
     CountedWideText(max_units:, ..) ->
       bit_stream.read_counted_wide_text(reader, max_units)
       |> map_field(CountedWideText(max_units:, text: _))
@@ -605,6 +640,7 @@ fn any_field() -> Generator(Field) {
     unsigned_below_field(),
     float32_field(),
     wide_text_field(),
+    wide_units_field(),
     counted_wide_text_field(),
     guid_field(),
     endpoint_field(),
@@ -696,6 +732,18 @@ fn wide_text_of() -> Generator(String) {
 
 fn wide_text_field() -> Generator(Field) {
   qcheck.map(wide_text_of(), fn(text) { WideText(text:) })
+}
+
+fn wide_units_field() -> Generator(Field) {
+  qcheck.map(
+    qcheck.generic_list(
+      qcheck.bounded_int(from: 0, to: 0xFFFF),
+      qcheck.from_generators(qcheck.bounded_int(from: 0, to: 6), [
+        qcheck.bounded_int(from: 120, to: 135),
+      ]),
+    ),
+    fn(units) { WideUnits(units:) },
+  )
 }
 
 fn counted_wide_text_field() -> Generator(Field) {

@@ -20,6 +20,7 @@ import genesis_prime/message_schema.{
   ArrayOfRecord, ArrayOfRecordCountedBy, ArrayOfUnsigned, ArrayOfWideText,
   ClientToServer, Constant, CountedWideText, Endpoint, Float32, Guid, RawBytes,
   Unsigned, UnsignedArrayCountedBy, UnsignedBelow, WholeFrame, WideText,
+  WideUnits,
 }
 import gleam/list
 import gleam/option.{None, Some}
@@ -118,6 +119,7 @@ fn records_reached(
         | UnsignedBelow(..)
         | Float32
         | WideText
+        | WideUnits
         | CountedWideText(..)
         | Guid
         | Endpoint

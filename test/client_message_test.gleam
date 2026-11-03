@@ -260,7 +260,7 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       client_message.SendChatLine(message: SendChatLine(
         channel_type: 4,
         channel_id: 0,
-        text: "Hello",
+        text: [0x48, 0x65, 0x6C, 0x6C, 0x6F],
         formats: [],
         chat_message_id: 1,
       )),
@@ -270,7 +270,7 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       client_message.SendWhisper(message: SendWhisper(
         target_name: "Ab Cd",
         target_realm_name: "",
-        text: "Hi",
+        text: [0x48, 0x69],
         formats: [],
         chat_message_id: 2,
         account: 0,

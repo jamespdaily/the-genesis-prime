@@ -22,7 +22,7 @@ pub type SendChatLine {
   SendChatLine(
     channel_type: Int,
     channel_id: Int,
-    text: String,
+    text: List(Int),
     formats: List(ChatFormat),
     chat_message_id: Int,
   )
@@ -34,7 +34,7 @@ pub fn encode(message: SendChatLine) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
   |> bit_stream.write_unsigned("channel_type", message.channel_type, 14)
   |> bit_stream.write_unsigned("channel_id", message.channel_id, 64)
-  |> bit_stream.write_wide_text("text", message.text)
+  |> bit_stream.write_wide_units("text", message.text)
   |> bit_stream.write_array("formats", message.formats, 5, chat_format.write)
   |> bit_stream.write_unsigned("chat_message_id", message.chat_message_id, 16)
   |> bit_stream.finish
@@ -45,7 +45,7 @@ pub fn decode(body: BitArray) -> Result(SendChatLine, DecodeError) {
   let reader = bit_stream.new_reader(body)
   use #(channel_type, reader) <- result.try(bit_stream.read_unsigned(reader, 14))
   use #(channel_id, reader) <- result.try(bit_stream.read_unsigned(reader, 64))
-  use #(text, reader) <- result.try(bit_stream.read_wide_text(reader))
+  use #(text, reader) <- result.try(bit_stream.read_wide_units(reader))
   use #(formats, reader) <- result.try(bit_stream.read_array(
     reader,
     5,
