@@ -5,24 +5,24 @@ description: How a client fact is found, graded, saved and named. Use for any qu
 
 # Decoding the client
 
-- A client fact is decoded once and saved as a record in one fact file, `references/client-facts.toml`: keyed by address, opcode, table column, enum or Lua function, with a plain statement, its proof and a grade (sure, fairly sure, guess). `scripts/check_facts.py` names the fields and checks them. A function's name is saved in the Ghidra project too, by `scripts/name_functions.py`.
+A client fact is decoded once and saved as a record in one fact file, `references/client-facts.toml`. Each script's docstring or header is its contract: read it before you run the script.
+
+## Every decode
+
+- Search the fact file first, then the saved C ([decompiled-c.md](decompiled-c.md)), and only then ask the query process ([query-process.md](query-process.md)).
+- A record is keyed by address, opcode, table column, enum or Lua function, with a plain statement, its proof and a grade (sure, fairly sure, guess). `scripts/check_facts.py` names the fields and checks them.
 - A statement says what the client does in the game's or the message's terms: arguments, fields, types, values. Registers, stack and struct offsets and vtables go in the proof.
 - A grade says how the fact was read. Sure: the instructions or rows were read, and the proof names them or the test that checks them. Fairly sure: read, with a named gap. Guess: not read, with what would settle it.
-- Every decode searches the fact file first, then the saved C (below), before it queries the process. Every client address the code or tests cite has a record; an address a test plants on purpose is assigned to a `PLANTED_` name.
-- A client value keeps its number until a decode saves what the client does with it. It is then renamed everywhere in the same change.
-- The client is queried by `scripts/ghidra_query.py`: one Ghidra 12.2 process on a saved, analysed project. Its docstring lists the request kinds; `scripts/ghidra_env.py` names the pinned parts and the environment it reads. The project's first import runs `ghidra_query.py --seed` with a file written by `scripts/seed.py`; `scripts/query.py` opens a project that exists.
-- Reach the query process only with `python3 -I scripts/query.py ask '<one JSON request>'`, or `ask --file requests.jsonl` for one reply line per request line, in order. The first `ask` starts the process and holds it for every later `ask` from any shell, so a request costs one request's time; `status` says whether it runs and where its log is, and `stop` ends it. It ends by itself after 30 minutes with no request (`GENESIS_QUERY_IDLE_S`). The status is 1 when any reply is an error reply (the replies after it are still printed); a process that dies or does not answer ends the holder, the command says why, and the next `ask` starts a new one. A second holder on the project is refused, naming the running one; after a holder was killed, the next `ask` or `stop` clears what it left, query process included.
-- Never write a driver, a FIFO or a start-and-poll loop for the query process, never start `scripts/ghidra_query.py` by hand on an existing project, and never build a scratch Ghidra server or emulator script: decompile, disassemble and run readers with its requests. A request it lacks goes on an issue.
-- The whole client's decompiled C is saved, one file per function, `0x<address>.c`, in `~/.genesis-prime/decompiled/` (`GENESIS_DECOMPILED_DIR` moves it). A search across the client is a grep of that folder: a constant, an opcode, a string's use, a struct offset, a callee's name. Do not decompile function by function to search.
-- Before searching, run `python3 -I scripts/decompiled.py check`. It says current, stale (naming each renamed, new or lost function) or no copy, and exits non-zero unless current. Stale or no copy: run `refresh`. A check takes about 10 seconds; a whole refresh about 7 minutes; after a few renames, seconds.
-- `refresh` redoes the functions whose name changed or that are new, and every file that names a changed function's old name, its address or a pointer to it. It lists any function whose decompile failed (its file holds the error line) and goes on. It writes its state file last: a refresh that stops midway leaves the old state, `check` says so, and the next run does the work again.
-- A file's first line holds its function, its address and the hash it was made under. A proof that cites saved C names the file by address and that hash.
-- Read a game table's rows only with `gleam run -m genesis_prime/table_rows -- <Table> [<id> | <column>=<value> | --columns]`, which prints each row of `DB/<Table>.tbl` as `column = value` lines through the server's own table reader; `--columns` prints the file's record size, row count and each column's type and offset instead. It refuses an unknown table, column or id by name, needs the tables folder `setup_check/extract_tables.py` fills, and does not read en-US.bin. Never write a scratch parser of `.tbl` files.
-- A type-3 column has no sign in the client's loader, so the command prints a value with the top bit set in both readings (`-1 (u32 0xffffffff)`) and a float with its bits (`0.10000000149011612 (f32 0x3dcccccd)`); which reading a column means is decided by the client's reader of that column, which the proof names.
-- A proof that rests on table rows names that command with its arguments, so the read can be rerun.
-- The query process answers what text cannot: references, bytes, switch tables, the emulator.
-- After `scripts/name_functions.py` saves names, run `refresh`. `scripts/name_functions.py` needs the Ghidra project, so it refuses while a holder runs: run `scripts/query.py stop` first. `scripts/decompiled.py` goes through the holder, starts it when none runs, and leaves it up.
-- The copy is the client's code: `scripts/decompiled.py` refuses a folder inside any git working tree, and nothing in it is committed.
-- A script that makes many requests reaches the query process with `query.open_client`, which goes through the holder; none opens a query process of its own.
-- The query process's settings live in `~/.genesis-prime/env.sh`, and `./setup-check` names any that are missing. Ghidra refuses a project path with a folder starting with a dot.
-- A formula's expected values can come from running the client's function with the `emulate` request. Ghidra's p-code wraps an out-of-range float-to-integer conversion where the CPU gives 0x80000000, so a value near that overflow is checked against the CPU's rule.
+- A client address the code or tests cite has a record; an address a test plants on purpose is assigned to a `PLANTED_` name.
+- A client value keeps its number until a decode saves what the client does with it. It is then renamed everywhere in the same change, and the function's name is saved in the Ghidra project too, by `scripts/name_functions.py`.
+- Reach Ghidra only through `scripts/query.py`. When no request or tool answers the question, a scratch script in your scratch folder is allowed: name it in the proof, and add the missing request to issue 312 (the decoder's tools).
+- While other decoders run, return new names to the coordinator, who saves them once all are idle; never stop a holder you did not start.
+
+## Game tables
+
+Read a table's rows with `gleam run -m genesis_prime/table_rows -- <Table> [<id> | <column>=<value> | --columns]`; its module doc (`dev/genesis_prime/table_rows.gleam`) is its contract. It reads rows as the server's own reader does, so a parser of your own can only differ from it. A proof that rests on rows names the command with its arguments, so the read can be rerun. A type-3 column prints a value with the top bit set in both readings; the proof names the client's reader of that column, which decides the reading.
+
+## Which file to read
+
+- [query-process.md](query-process.md): asking Ghidra, saving names, running a client function. Read it before your first request of a session.
+- [decompiled-c.md](decompiled-c.md): searching the whole client's C. Read it before your first search of a session.

@@ -22,5 +22,5 @@ The search fits the size of the need:
 - Our own code needs a need no candidate meets, named in its doc comment.
 - The project is AGPL-3.0, so any open-source licence is accepted; code from another WildStar server is still never copied (CLAUDE.md).
 - Rust only with four numbers on the issue: a deadline a player can feel, cheaper fixes tried, Rust closes the gap, a test compares the two. A package with native code counts as Rust.
-- A broken package is patched in place, each patch marked with its upstream bug, never rewritten.
-- Erlang externals only for runtime APIs Gleam lacks, each with an exact Gleam type, never `Dynamic`, and its module says why no Gleam library covers it.
+- A broken package is patched in place, each patch marked with its upstream bug, rather than rewritten.
+- Each Erlang external has an exact Gleam type, never `Dynamic`, and its module says why no Gleam library covers it.

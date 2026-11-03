@@ -6,7 +6,8 @@ missing function, renames each one and saves the project. Either way it opens
 only the project that exists, and exits naming the folder when there is none:
 the first start of ghidra_query.py makes it. Run with the pinned Python and the
 environment ghidra_env reads, while no query process holds the project open: it refuses to run
-while a holder runs (`python3 -I query.py stop` ends it).
+while a holder runs (`python3 -I query.py stop` ends it). After it saves names, run
+`decompiled.py refresh`: the saved C still carries the old ones.
 
 Usage: python3 -I name_functions.py
 """

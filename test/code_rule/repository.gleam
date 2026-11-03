@@ -67,11 +67,17 @@ pub fn erlang_sources(under directories: List(String)) -> List(SourceFile) {
 }
 
 /// The guidance files as (path, text): CLAUDE.md, every skill's SKILL.md and
+/// the reference files beside it (each `.md` file in the skill's folder), and
 /// every agent file.
 pub fn guidance() -> List(#(String, String)) {
   let skills = directory_entries(".claude/skills")
   let skill_files =
-    list.map(skills, fn(skill) { ".claude/skills/" <> skill <> "/SKILL.md" })
+    list.flat_map(skills, fn(skill) {
+      let folder = ".claude/skills/" <> skill <> "/"
+      directory_entries(folder)
+      |> list.filter(string.ends_with(_, ".md"))
+      |> list.map(fn(file) { folder <> file })
+    })
   let agent_files =
     directory_entries(".claude/agents")
     |> list.filter(string.ends_with(_, ".md"))
