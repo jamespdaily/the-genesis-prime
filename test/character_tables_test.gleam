@@ -17,7 +17,6 @@ import genesis_prime/table/id.{
 import genesis_prime/table/world_location2
 import genesis_prime/table/xp_per_level
 import gleam/list
-import gleam/pair
 import owned_test
 import unitest
 
@@ -94,7 +93,7 @@ pub fn the_planted_start_places_are_the_clients_world_location2_rows_test() -> N
   use <- unitest.guard(client_tables.present())
   let real = client_tables.shared()
   let planted = character_tables.shared()
-  let ids = list.map(character_tables.start_locations(), pair.first)
+  let ids = list.map(character_tables.start_rows(), fn(row) { row.id })
   assert list.length(world_location2.all(planted)) == list.length(ids)
     as "the planted table holds exactly the start places"
   list.each(ids, fn(id) {
@@ -107,12 +106,16 @@ pub fn the_planted_start_places_are_the_clients_world_location2_rows_test() -> N
         row.position0,
         row.position1,
         row.position2,
+        row.facing0,
+        row.facing1,
+        row.facing2,
+        row.facing3,
         row.world_id,
         row.world_zone_id,
       )
     }
     assert get(planted) == get(real)
-      as "WorldLocation2: the planted row has the real row's id, position, world and zone"
+      as "WorldLocation2: the planted row has the real row's id, position, facing, world and zone"
   })
 }
 

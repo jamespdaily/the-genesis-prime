@@ -45,7 +45,6 @@ import gleam/pair
 import gleam/result
 import gleam/string
 import owned_test
-import place_support
 import unitest
 
 /// A request for the creation row with the name.
@@ -83,13 +82,7 @@ pub fn a_valid_request_gives_the_new_character_from_its_creation_row_test() -> N
       faction_id: 167,
       level: 1,
       path: 2,
-      place: place_support.at(
-        world_id: 3460,
-        world_zone_id: 6009,
-        x: 29.128599166870117,
-        y: -853.87158203125,
-        z: -560.18798828125,
-      ),
+      place: character_tables.novice_start_place(),
       look: [
         LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
         LookEntry(label: CharacterCustomizationLabelId(22), value: 1),
@@ -105,15 +98,11 @@ pub fn a_nexus_row_gives_the_character_the_place_of_its_veteran_start_test() -> 
   let assert Ok(character) =
     character_creation.check(tables, request(338, "Ab Cd"))
     as "CharacterCreation row 338 is an enabled Nexus row with no entitlement and no cost"
-  assert character.place
-    == place_support.at(
-      world_id: 426,
-      world_zone_id: 648,
-      x: 4110.7099609375,
-      y: -658.6248779296875,
-      z: -5145.47998046875,
-    )
-    as "row 338 is the Veteran start (3) of Exile (167) Human (1): WorldLocation2 row 1594, World 426, zone 648 (Jim's world database; the client's row)"
+  assert character_tables.is_the_place_of(
+    place: character.place,
+    row: character_tables.start_row(42_074),
+  )
+    as "row 338 is the Veteran start (3) of Exile (167) Human (1): WorldLocation2 row 42074, World 426, zone 648 (Quest2.10528.links, whose text sends the Exile humans and Granok there), facing the client's yaw of the row"
 }
 
 pub fn a_row_that_is_missing_disabled_arkship_costume_only_or_needs_what_the_account_lacks_is_refused_test() -> Nil {
@@ -309,7 +298,7 @@ pub fn a_start_race_or_faction_with_no_start_place_is_refused_and_says_which_tes
       faction_id: 167,
       race_id: 1,
     ))
-    as "no start of Jim's world database is 7 (genesis_prime/game/start_place): a start with no place is refused"
+    as "no start of the start places is 7 (genesis_prime/game/start_place): a start with no place is refused"
   assert check_row(creation_table.CharacterCreation(..row, faction_id: 168))
     == Error(NoStartPlace(
       creation_id: 466,

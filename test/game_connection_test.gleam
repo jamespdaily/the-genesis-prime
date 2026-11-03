@@ -902,13 +902,7 @@ pub fn message_0x025c_with_a_valid_0x025b_asks_the_store_to_make_the_character_a
           faction_id: 167,
           level: 1,
           path: 2,
-          place: place_support.at(
-            world_id: 3460,
-            world_zone_id: 6009,
-            x: 29.128599166870117,
-            y: -853.87158203125,
-            z: -560.18798828125,
-          ),
+          place: character_tables.novice_start_place(),
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
             LookEntry(label: CharacterCustomizationLabelId(22), value: 2),
@@ -1094,13 +1088,7 @@ pub fn a_second_request_waits_for_the_create_answer_and_is_then_taken_test() -> 
           faction_id: 167,
           level: 1,
           path: 2,
-          place: place_support.at(
-            world_id: 3460,
-            world_zone_id: 6009,
-            x: 29.128599166870117,
-            y: -853.87158203125,
-            z: -560.18798828125,
-          ),
+          place: character_tables.novice_start_place(),
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
             LookEntry(label: CharacterCustomizationLabelId(22), value: 2),

@@ -289,6 +289,26 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
     && entered.position_x == entry.position_x
     && entered.position_z == entry.position_z
     as "0xAD carries the place the database saved"
+  assert entered.position_x == 0x41E9075F
+    && entered.position_y == 0xC45577C8
+    && entered.position_z == 0xC40C0C08
+    as "0xAD carries the position of WorldLocation2 row 51596 as 32-bit floats"
+  assert game_client.unit_create_player_in(frames: burst).movement_commands
+    == [
+      start_movement.Position(UnitPositionCommand(
+        x: 0x41E9075F,
+        y: 0xC45577C8,
+        z: 0xC40C0C08,
+        blends: 0,
+      )),
+      start_movement.Rotation(MovementRotation(
+        yaw: 0xC03017E2,
+        pitch: 0x80000000,
+        roll: 0,
+        blends: 0,
+      )),
+    ]
+    as "0x262 places the player at row 51596 facing the yaw the client's QuaternionToEulerAngles (0x1401b2fe0) gives the row's facing, 0xc03017e2, pitch -0.0 (0x80000000) and roll 0"
   let assert Ok(player) = unit_create_player.decode(unit)
   assert player.character_id == created.character_id
     && player.name == "Ab Cd"

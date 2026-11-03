@@ -11,9 +11,9 @@
 //// - CharacterCustomization rows 2, 9 and 10 (race 1, sex 0) and 603 and 604
 ////   (race 1, sex 1) and the labels they use, 2, 21 and 22, with labels 26 and
 ////   27 (CharacterCustomizationLabel), which no row holds.
-//// - WorldLocation2 rows 51596, 1594, 37015, 18987 and 8223,
-////   the start places (genesis_prime/game/start_place), with the world, zone
-////   and position of the client's row.
+//// - WorldLocation2 rows 51596, 42074, 41641, 42148 and 8223,
+////   the start places (genesis_prime/game/start_place), with the world, zone,
+////   position and facing quaternion of the client's row.
 //// - Bone counts: opcode.0x25b.counts gives 46 bone values for race 1, sex 1
 ////   and 48 for race 1, sex 0. The planted maps are that many rows of one
 ////   parameter that sets one part, which carry those counts; the real
@@ -21,7 +21,8 @@
 
 import character_support
 import database_support
-import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/start_place.{type Facing, type Place, Facing}
+import genesis_prime/message/float32
 import genesis_prime/store.{type LookEntry, LookEntry} as _
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
@@ -62,11 +63,17 @@ pub fn shared() -> store.Tables {
 pub fn shared_with_novice_start_in_world_0() -> store.Tables {
   database_support.once("character_tables_novice_world_0", fn() {
     let rows =
-      list.map(start_locations(), fn(location_row) {
-        case location_row.0 {
+      list.map(start_rows(), fn(row) {
+        case row.id {
           51_596 ->
-            location(id: 51_596, world: 0, zone: 0, position: #(0.0, 0.0, 0.0))
-          id -> start_location_row(id:, place: location_row.1)
+            location(
+              id: 51_596,
+              world: 0,
+              zone: 0,
+              position: #(0.0, 0.0, 0.0),
+              quaternion: row.quaternion,
+            )
+          _ -> start_location_row(row)
         }
       })
     load_files(
@@ -392,92 +399,159 @@ fn location(
   world world: Int,
   zone zone: Int,
   position position: #(Float, Float, Float),
+  quaternion quaternion: #(Float, Float, Float, Float),
 ) -> List(Cell) {
   planted_table.row(world_location2.schema, [
     #("ID", Integer(id)),
     #("position0", Float(position.0)),
     #("position1", Float(position.1)),
     #("position2", Float(position.2)),
+    #("facing0", Float(quaternion.0)),
+    #("facing1", Float(quaternion.1)),
+    #("facing2", Float(quaternion.2)),
+    #("facing3", Float(quaternion.3)),
     #("worldId", Integer(world)),
     #("worldZoneId", Integer(zone)),
   ])
 }
 
-/// The start places by their WorldLocation2 row id, each as the client's row
-/// holds its world, zone and position.
-pub fn start_locations() -> List(#(Int, Place)) {
+/// A start place's WorldLocation2 row as the client holds it: its id, the
+/// place it stands at (world, zone and position, facing as a character that has
+/// never turned does), its facing quaternion x, y, z, w (facing0 to facing3)
+/// and the 32 bits of the yaw, pitch and roll the client's
+/// QuaternionToEulerAngles (0x1401b2fe0) makes of it, from the emulator: the
+/// pitch is -0.0 (0x80000000) for a turn about y alone, except 8223's, which is
+/// +0.0.
+pub type StartRow {
+  StartRow(
+    id: Int,
+    place: Place,
+    quaternion: #(Float, Float, Float, Float),
+    facing_bits: #(Int, Int, Int),
+  )
+}
+
+/// The start places' rows: 51596 for the Novice start, 42074 and 41641 for the
+/// Exile Veteran start, 42148 and 8223 for the Dominion Veteran start.
+pub fn start_rows() -> List(StartRow) {
   [
-    #(
-      1594,
-      place_support.at(
+    StartRow(
+      id: 42_074,
+      place: place_support.at(
         world_id: 426,
         world_zone_id: 648,
-        x: 4110.7099609375,
-        y: -658.6248779296875,
-        z: -5145.47998046875,
+        x: 4098.16015625,
+        y: -665.9780883789062,
+        z: -5165.10009765625,
       ),
+      quaternion: #(0.0, 0.9535170197486877, 0.0, -0.3013400137424469),
+      facing_bits: #(0xC021E1A7, 0x80000000, 0),
     ),
-    #(
-      8223,
-      place_support.at(
+    StartRow(
+      id: 41_641,
+      place: place_support.at(
+        world_id: 990,
+        world_zone_id: 1417,
+        x: -768.36572265625,
+        y: -904.805419921875,
+        z: -2275.0791015625,
+      ),
+      quaternion: #(0.0, 0.953717052936554, 0.0, 0.3007054626941681),
+      facing_bits: #(0x4021F773, 0x80000000, 0),
+    ),
+    StartRow(
+      id: 42_148,
+      place: place_support.at(
+        world_id: 1387,
+        world_zone_id: 1411,
+        x: -3835.7451171875,
+        y: -980.21728515625,
+        z: -6053.263671875,
+      ),
+      quaternion: #(0.0, 1.0, 0.0, -4.3711395392165286e-8),
+      facing_bits: #(0xC0490FDA, 0x80000000, 0),
+    ),
+    StartRow(
+      id: 8223,
+      place: place_support.at(
         world_id: 870,
         world_zone_id: 1236,
         x: -8260.708984375,
         y: -995.0770263671875,
         z: -239.0409393310547,
       ),
+      quaternion: #(0.0, -0.7276397347450256, 0.0, 0.6859594583511353),
+      facing_bits: #(0xBFD09BA3, 0, 0),
     ),
-    #(
-      18_987,
-      place_support.at(
-        world_id: 1387,
-        world_zone_id: 1411,
-        x: -3835.3408203125,
-        y: -980.2174072265625,
-        z: -6050.52392578125,
-      ),
-    ),
-    #(
-      37_015,
-      place_support.at(
-        world_id: 990,
-        world_zone_id: 1417,
-        x: -771.822998046875,
-        y: -904.28515625,
-        z: -2269.56005859375,
-      ),
-    ),
-    #(
-      51_596,
-      place_support.at(
+    StartRow(
+      id: 51_596,
+      place: place_support.at(
         world_id: 3460,
         world_zone_id: 6009,
         x: 29.128599166870117,
         y: -853.87158203125,
         z: -560.18798828125,
       ),
+      quaternion: #(0.0, 0.9810349941253662, 0.0, -0.19383299350738525),
+      facing_bits: #(0xC03017E2, 0x80000000, 0),
     ),
   ]
 }
 
+/// The start row with this id.
+pub fn start_row(id: Int) -> StartRow {
+  let assert Ok(row) = list.find(start_rows(), fn(row) { row.id == id })
+    as "the test names a row the planted tables hold"
+  row
+}
+
+/// The yaw of row 51596's facing as the client's QuaternionToEulerAngles
+/// returns it, to the bit: 0xC03017E2 (record 0x1401b2fe0).
+pub const novice_start_yaw = -2.751457691192627
+
+/// The place of the Novice start, WorldLocation2 row 51596: its world, zone and
+/// position, facing as the client's conversion gives it: that yaw, pitch -0.0
+/// (0x80000000) and roll 0.
+pub fn novice_start_place() -> Place {
+  start_place.turned(
+    start_row(51_596).place,
+    Facing(yaw: novice_start_yaw, pitch: -0.0, roll: 0.0),
+  )
+}
+
+/// The 32 bits of a facing's yaw, pitch and roll.
+pub fn facing_bits(facing: Facing) -> #(Int, Int, Int) {
+  #(
+    float32.to_bits(facing.yaw),
+    float32.to_bits(facing.pitch),
+    float32.to_bits(facing.roll),
+  )
+}
+
+/// Whether the place is the row's: the row's world, zone and position, facing
+/// as the client's conversion gives the row's facing, to the bit.
+pub fn is_the_place_of(place place: Place, row row: StartRow) -> Bool {
+  start_place.turned(place, start_place.unturned) == row.place
+  && facing_bits(start_place.facing(place)) == row.facing_bits
+}
+
 /// The planted WorldLocation2 rows of the start places.
 fn start_location_rows() -> List(List(Cell)) {
-  list.map(start_locations(), fn(location_row) {
-    start_location_row(id: location_row.0, place: location_row.1)
-  })
+  list.map(start_rows(), start_location_row)
 }
 
 /// The planted WorldLocation2 row of a start place.
-fn start_location_row(id id: Int, place place: Place) -> List(Cell) {
+fn start_location_row(row: StartRow) -> List(Cell) {
   location(
-    id:,
-    world: start_place.world_id(place),
-    zone: start_place.world_zone_id(place),
+    id: row.id,
+    world: start_place.world_id(row.place),
+    zone: start_place.world_zone_id(row.place),
     position: #(
-      start_place.x(place),
-      start_place.y(place),
-      start_place.z(place),
+      start_place.x(row.place),
+      start_place.y(row.place),
+      start_place.z(row.place),
     ),
+    quaternion: row.quaternion,
   )
 }
 
