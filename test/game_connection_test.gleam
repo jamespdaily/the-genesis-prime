@@ -4101,6 +4101,30 @@ pub fn what_a_viewer_writes_is_the_owners_message_as_the_client_takes_it_test() 
     == Ok(UnitDestroyed(unit_id: 9, field_2: 0))
 }
 
+pub fn a_0x262_or_0x355_naming_the_viewers_own_unit_or_unit_0_is_refused_with_an_error_line_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client makes the controlled unit of a 0x262 with unit id 0 or its own
+  // unit's id (0x1403d9760), and removes a unit with a 0x355 (0x1403d9590): neither
+  // may be written for a unit that is not another player's.
+  list.each([0, own_unit_id], fn(unit_id) {
+    list.each(
+      [Appeared(unit: UnitCreatePlayer(..another_unit(), unit_id:)), Removed],
+      fn(news) {
+        let #(state, taken) =
+          feed(in_world(), sent_by_a_peer(news_of(unit_id:, news:)))
+        assert support.writes(taken) == []
+          as "nothing is written for the viewer's own unit or unit 0"
+        assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+          as "the owner's connection is wrong: an error line"
+        assert !support.stops(taken)
+        let #(_, taken) = feed(state, event_of(Appears))
+        assert written_ids(taken) == [0x0262]
+          as "another player's unit is still written after it"
+      },
+    )
+  })
+}
+
 pub fn news_for_another_run_of_the_map_or_another_map_is_dropped_for_each_kind_and_this_runs_is_written_test() -> Nil {
   use <- owned_test.run(10_000)
   let in_run = fn(map, incarnation, news) {

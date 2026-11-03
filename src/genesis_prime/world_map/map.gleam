@@ -54,8 +54,8 @@
 ////                                           Watched(by: A) ─▶ B      Watched(by: B) ─▶ A
 ////                                         out of sight, in one step:
 ////                                           Unwatched(by: A) ─▶ B    Unwatched(by: B) ─▶ A
-//// A connection's end (its watch's DOWN)   ─▶ to each player c2 who saw it, in one step:
-////                                           Unwatched(by: it) and Gone(its unit) ─▶ c2
+//// A connection's end (its watch's DOWN)   ─▶ to each player c2 who saw it: Unwatched(by: it)
+////                                           to every player in the map: Gone(its unit)
 //// ```
 ////
 //// What a connection does with them is its own (genesis_prime/game/connection):
@@ -91,7 +91,7 @@
 ////   so the line shows a bug, and the answer lets the connection go on.
 //// - **A player's connection ends.** Its watch comes back as `WatchEnded(w)`;
 ////   the player whose watch is `w` is removed, and its unit with it, as a Leave
-////   removes it, and each player that saw it is also sent `Gone(unit)`: the
+////   removes it, and every player in the map is also sent `Gone(unit)`: the
 ////   connection that ended cannot send its 0x355, so this is the one case the
 ////   map speaks of a unit, and only after its owner has ended. A watch that
 ////   names no player is a bug: logged as an error, and nothing changes.
@@ -114,13 +114,10 @@
 ////   started, taken from the monotonic time of the input being handled
 ////   (`server_time`) mod 2^32 (the client's fields hold 32 bits, opcode.0x638).
 ////   `Joined` carries its origin, the monotonic time the map started at, so a
-////   connection stamps its units' 0x262 and 0x638s from the same clock
-////   (`server_time`). A 0x638 can carry an earlier time than the 0x262 that
-////   reached a viewer first (a move is stamped when the mover takes it, a 0x262
-////   when its owner sends it), which is no failure: the client ignores a time
-////   sample until the time has passed the last by half the send interval
-////   (FitServerTime 0x14079ab90). The clock only goes forward until the map is
-////   49.7 days old, when it counts from 0 again: the client takes a sample only
+////   connection stamps its unit's 0x262 and 0x638s from the same clock
+////   (`server_time`). One owner stamps both in the order it takes its inputs, so
+////   for a viewer the times of one unit only go forward. The clock only goes
+////   forward until the map is 49.7 days old, when it counts from 0 again: the client takes a sample only
 ////   when its signed 32-bit difference from the last is at least half the send
 ////   interval, so the wrap is a step forward in that difference; its fit across
 ////   the wrap is not read.
@@ -144,7 +141,7 @@
 //// |---|---|
 //// | the map dies | every connection in it ends (genesis_prime/game/connection), so no one is left seeing a unit with no owner |
 //// | a viewer's connection is gone | an owner's send to it is dropped (the registry finds no process); its watch ends, and the map sends each player who saw it `Unwatched`, so the owner stops sending to it |
-//// | an owner's connection ends (a crash, a close, a takeover) | it sends nothing; the map sends each viewer `Unwatched` and `Gone`, and the viewer writes the 0x355 if its client shows the unit |
+//// | an owner's connection ends (a crash, a close, a takeover) | it sends nothing; the map sends each viewer `Unwatched` and every player in the map `Gone`, and a player writes the 0x355 if its client shows the unit (one that stopped seeing the owner just before may never have been sent it, since an end saves the place first) |
 //// | an owner's 0x262 lands after the map's `Gone` of it | the viewer drops it: the unit is no ghost |
 //// | an owner's 0x638 reaches a viewer before the owner's 0x262 of it, or after its 0x355 | not possible from one sender; one that lands after `Gone` is dropped, since the viewer shows no such unit |
 //// | a 0x262, 0x638 or 0x355 for a unit of another run of the map, or another map | dropped by the viewer's connection |
@@ -228,8 +225,10 @@ pub type Outgoing {
   /// so the connection sends `by` its 0x355 and no more moves.
   Unwatched(by: ConnectionId)
   /// A send: the unit `unit_id` has no owner any more, since its connection
-  /// ended, which sends nothing as it ends. The connection of a player that saw
-  /// the unit removes it from its client if it shows it, and shows it no more.
+  /// ended, which sends nothing as it ends. It goes to every player in the map,
+  /// also one that stopped seeing the unit a moment before. The connection of a
+  /// player removes the unit from its client if it shows it, and shows it no
+  /// more.
   Gone(unit_id: Int)
 }
 
@@ -321,10 +320,9 @@ pub fn step(
 /// started at 0 when the map started (the monotonic time of `Started`), taken mod
 /// 2^32 because the client's fields hold 32 bits (opcode.0x638). A player's
 /// connection stamps its unit's 0x262 and 0x638s with it from the origin
-/// `Joined` carries, so they share one clock, though a 0x638 can carry an
-/// earlier time than the 0x262 that reached a viewer first (FitServerTime
-/// 0x14079ab90 ignores a sample until the time has passed the last by half the
-/// send interval). It only goes forward until the map is 49.7 days old, when it
+/// `Joined` carries, in the order it takes its inputs, so they share one clock
+/// and for a viewer only go forward. It only goes forward until the map is 49.7
+/// days old, when it
 /// counts from 0 again: the client takes a time sample only when its signed
 /// 32-bit difference from the last is at least half the send interval, and
 /// ignores one that is not (FitServerTime 0x14079ab90); its fit across the wrap
@@ -476,8 +474,8 @@ fn joined(
 }
 
 /// A second join of a connection in the map: an error line, the answer built
-/// from the unit the map keeps, and a `Watched` for the joiner of each player it
-/// sees.
+/// from the unit the map keeps, and for each player it sees a `Watched` for the
+/// joiner and one for that player, which sends the joiner its 0x262 again.
 fn joined_again(
   state state: State,
   caller caller: CallerId,
@@ -489,7 +487,12 @@ fn joined_again(
   let watched_again =
     others_of(state:, connection:)
     |> list.filter(fn(other) { set.contains(player.sees, other.0) })
-    |> list.map(fn(other) { watched(to: connection, by: other.0) })
+    |> list.flat_map(fn(other) {
+      [
+        watched(to: connection, by: other.0),
+        watched(to: other.0, by: connection),
+      ]
+    })
   #(
     state,
     Effects(
@@ -654,17 +657,21 @@ fn no_player_for_watch(state: State) -> #(State, ServiceStep(Outgoing)) {
 
 /// The map with the connection's player and its watch removed, the player out of
 /// the `sees` of each player who saw it, and each of them sent `Unwatched` of its
-/// connection and, when the connection ended, `Gone` of its unit.
+/// connection. When the connection ended, every player in the map is sent `Gone`
+/// of its unit, those who saw it as well as those who no longer do: the
+/// connection that ended sent nobody a 0x355, and a player that stopped seeing it
+/// a moment before may not have taken the notice that would have had it sent
+/// (an end saves the place first), so its client may still show the unit. A
+/// connection that does not show the unit ignores it.
 fn without(
   state state: State,
   connection connection: ConnectionId,
   player player: Player,
   why why: Removal,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  let others = others_of(state:, connection:)
   let viewers =
-    list.filter(others_of(state:, connection:), fn(other) {
-      set.contains(player.sees, other.0)
-    })
+    list.filter(others, fn(other) { set.contains(player.sees, other.0) })
   let players =
     list.fold(viewers, dict.delete(state.players, connection), fn(players, v) {
       dict.insert(
@@ -675,18 +682,22 @@ fn without(
     })
   #(
     State(..state, players:, watches: dict.delete(state.watches, player.watch)),
-    list.flat_map(viewers, fn(viewer) {
-      case why {
-        Camped -> [unwatched(to: viewer.0, by: connection)]
-        Ended -> [
-          unwatched(to: viewer.0, by: connection),
-          send(
-            to: viewer.0,
-            message: Gone(unit_id: player_unit.unit_id(player.unit)),
-          ),
-        ]
-      }
-    }),
+    case why {
+      Camped ->
+        list.map(viewers, fn(viewer) { unwatched(to: viewer.0, by: connection) })
+      Ended ->
+        list.flat_map(others, fn(other) {
+          let gone =
+            send(
+              to: other.0,
+              message: Gone(unit_id: player_unit.unit_id(player.unit)),
+            )
+          case set.contains(player.sees, other.0) {
+            True -> [unwatched(to: other.0, by: connection), gone]
+            False -> [gone]
+          }
+        })
+    },
   )
 }
 

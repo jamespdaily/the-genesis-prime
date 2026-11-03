@@ -206,7 +206,7 @@
 ////   (genesis_prime/world_map/map) and tells the connection of each player in
 ////   it, as the message `SentByMap`, who sees its player (`Watched(by)` when a
 ////   player comes to see it, `Unwatched(by)` when one stops), and `Gone(unit)`
-////   when a player that saw it has had its connection end. The connection keeps
+////   when a player's connection has ended. The connection keeps
 ////   the connections that see its player as its viewers, in the player's
 ////   `Entered`, and sends everything about its own unit to them itself, as
 ////   `SentByPeer` through the registry (the same path the map's sends take,
@@ -218,7 +218,7 @@
 ////   0x637 accepted             ─▶ Tell(map, Moved(place)); Tell(each viewer, Moving(0x638)) ─▶ writes 0x638 if shown ─▶ the unit moves
 ////   Unwatched(by v)            ─▶ Tell(v, Removed)                    ─▶ writes 0x355 if shown   ─▶ the unit is removed
 ////   its camp (0xC0)            ─▶ Tell(each viewer, Removed), then Leave
-////   its connection ends        ─▶ nothing: the map sends each viewer Unwatched and Gone(unit)
+////   its connection ends        ─▶ nothing: the map sends each viewer Unwatched, and every player Gone(unit)
 ////                                                                     Gone(unit) ─▶ writes 0x355 if shown, and the unit is gone
 ////   ```
 ////
@@ -251,9 +251,8 @@
 ////   ended, is the viewer's `gone`.
 //// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
 ////   holds the origin `Joined` carried and takes the time of the input from it
-////   (`world_map/map.server_time`, mod 2^32); a 0x638 can carry an earlier time
-////   than the 0x262 that reached a viewer first, which the client ignores
-////   (FitServerTime 0x14079ab90). More than 31 commands are sent as several 0x638s
+////   (`world_map/map.server_time`, mod 2^32), in the order it takes its inputs, so
+////   for a viewer the times of one unit only go forward. More than 31 commands are sent as several 0x638s
 ////   in order, each of at most 31 (its count is 5 bits, opcode.0x638). A move with
 ////   no viewer sends none, and one with nothing to relay sends none and tells the
 ////   map nothing. A viewer that has just been `Unwatched`, or gone, may still be
@@ -1713,7 +1712,11 @@ fn peer_sent(
 /// shown and the ones the map reported gone: a 0x262 for a unit not shown and not
 /// gone, which is then shown (the client keeps one unit per id until its 0x355,
 /// and a unit that is gone would be a ghost); a 0x638 for a shown unit; a 0x355
-/// for a shown unit, which is then no longer shown. Anything else is dropped.
+/// for a shown unit, which is then no longer shown. Anything else is dropped. A
+/// 0x262 or 0x355 that names unit 0 or this player's own unit is refused with an
+/// error line, and writes nothing: the client makes the controlled unit of a
+/// 0x262 with either id (0x1403d9760) and removes a unit with a 0x355
+/// (0x1403d9590).
 fn viewer_takes(
   session session: Session,
   entered entered: world_entry.Entered,
@@ -1721,6 +1724,22 @@ fn viewer_takes(
 ) -> client_connection.Handled(Session) {
   let unit_id = news.unit_id
   let shown = set.contains(entered.shown, unit_id)
+  let creates_or_removes = case news.news {
+    client_connection.Appeared(..) | client_connection.Removed -> True
+    client_connection.Moving(..) -> False
+  }
+  use <- bool.guard(
+    when: creates_or_removes && { unit_id == 0 || unit_id == entered.unit_id },
+    return: Continue(session, [
+      log(
+        session:,
+        level: step.LogError,
+        text: "another player's connection sent a 0x262 or 0x355 naming unit "
+          <> int.to_string(unit_id)
+          <> ", which is this player's own unit or none, so it is refused",
+      ),
+    ]),
+  )
   case news.news {
     client_connection.Appeared(unit:) -> {
       use <- bool.guard(

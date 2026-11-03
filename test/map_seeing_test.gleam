@@ -30,6 +30,7 @@ import genesis_prime/world_map/map.{
 import genesis_prime/world_map/sight
 import gleam/int
 import gleam/list
+import gleam/string
 import map_support
 import owned_test
 import place_support
@@ -290,10 +291,43 @@ pub fn a_connection_ending_tells_each_player_who_saw_it_unwatched_and_gone_once_
   let #(state, _) =
     join(state: state, connection: 3, place: at(90_000.0), elapsed_ms: 30)
   let #(state, ended) = ends(state:, connection: 2, elapsed_ms: 40)
-  assert shape(ended) == [#(1, "Unwatched by 2"), #(1, "Gone 2")]
-    as "a connection that ended sends no 0x355, so the map says the unit is gone, to the players who saw it only"
+  assert list.sort(shape(ended), fn(first, second) {
+      string.compare(
+        int.to_string(first.0) <> first.1,
+        int.to_string(second.0) <> second.1,
+      )
+    })
+    == [#(1, "Gone 2"), #(1, "Unwatched by 2"), #(3, "Gone 2")]
+    as "a connection that ended sends no 0x355, so the map says the unit is gone, to every player: the one that saw it is also told Unwatched"
   let #(_, moved) = move(state: state, connection: 1, x: 50.0, elapsed_ms: 50)
   assert support.sends(moved) == [] as "the player that ended is no longer seen"
+}
+
+pub fn a_connection_ending_tells_gone_to_every_player_in_the_map_even_one_that_no_longer_sees_it_test() -> Nil {
+  use <- owned_test.run(5000)
+  // A (1), V (2) and C (3) are in sight. V moves out of sight: the map drops V
+  // from A's `sees` and tells both Unwatched, so A's connection never sends V
+  // its 0x355 if it ends before it takes the notice (an end runs the save ask
+  // first). V's client still shows A's unit, which only the map's Gone removes.
+  let #(state, _) =
+    join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 10)
+  let #(state, _) =
+    join(state: state, connection: 2, place: at(100.0), elapsed_ms: 20)
+  let #(state, _) =
+    join(state: state, connection: 3, place: at(50.0), elapsed_ms: 30)
+  let #(state, away) =
+    move(state: state, connection: 2, x: 9000.0, elapsed_ms: 40)
+  assert list.length(support.sends(away)) == 4
+    as "V is out of sight of A and of C: both are told, and so is V"
+  let #(_, ended) = ends(state:, connection: 1, elapsed_ms: 50)
+  assert list.sort(shape(ended), fn(first, second) {
+      string.compare(
+        int.to_string(first.0) <> first.1,
+        int.to_string(second.0) <> second.1,
+      )
+    })
+    == [#(2, "Gone 1"), #(3, "Gone 1"), #(3, "Unwatched by 1")]
+    as "C saw A, so it is told Unwatched and Gone; V no longer did, and is told Gone all the same, since A's connection cannot send V its 0x355"
 }
 
 pub fn a_second_join_resends_the_joiner_a_watched_for_each_player_it_sees_test() -> Nil {
@@ -301,8 +335,8 @@ pub fn a_second_join_resends_the_joiner_a_watched_for_each_player_it_sees_test()
   let #(state, _) = two_players(100.0)
   let #(_, again) =
     join(state: state, connection: 2, place: at(100.0), elapsed_ms: 300)
-  assert shape(again) == [#(2, "Watched by 1")]
-    as "the joiner is told the player it sees is its viewer, so one that lost its viewers has them again, as well as the error line"
+  assert shape(again) == [#(2, "Watched by 1"), #(1, "Watched by 2")]
+    as "the joiner is told the player it sees is its viewer, so one that lost its viewers has them again, and that player is told the joiner is its viewer, so it sends its 0x262 again, as well as the error line"
   assert support.logs_of(step: again, level: LogError) != []
 }
 
