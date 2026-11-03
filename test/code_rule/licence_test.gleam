@@ -1,9 +1,11 @@
 //// The licence rule. Expected values are the approved test list on the
-//// licence issue (Apache-2.0 chosen by Jim) and these facts:
+//// licence issue, Jim's change to AGPL-3.0 (#306), and these facts:
 ////
-//// - The accepted list for Apache-2.0 is Apache-2.0, MIT, BSD-2-Clause,
-////   BSD-3-Clause and ISC (SPDX identifiers), under `[tools.licences]` in
-////   the Gleam project file.
+//// - The accepted list for AGPL-3.0 is the permissive licences (Apache-2.0,
+////   MIT, BSD-2-Clause, BSD-3-Clause, ISC) and the copyleft licences the FSF
+////   lists as compatible with it (MPL-2.0, LGPL-2.1-or-later, LGPL-3.0,
+////   GPL-3.0, AGPL-3.0), as SPDX identifiers, under `[tools.licences]` in the
+////   Gleam project file. SSPL-1.0 is not an open-source licence and stays off.
 //// - A Gleam package states its licence in `licences` of its own project
 ////   file (glexer writes `licenses`); an Erlang package states it in the
 ////   `{licenses, [...]}` entry of `src/<name>.app.src`. Both are read from
@@ -26,12 +28,20 @@ const accepted_list = [
   "BSD-2-Clause",
   "BSD-3-Clause",
   "ISC",
+  "MPL-2.0",
+  "LGPL-2.1-or-later",
+  "LGPL-3.0-only",
+  "LGPL-3.0-or-later",
+  "GPL-3.0-only",
+  "GPL-3.0-or-later",
+  "AGPL-3.0-only",
+  "AGPL-3.0-or-later",
 ]
 
-pub fn the_project_file_names_the_apache_licence_test() -> Nil {
+pub fn the_project_file_names_the_agpl_licence_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  assert licence.gleam_licences(source.read("gleam.toml")) == ["Apache-2.0"]
+  assert licence.gleam_licences(source.read("gleam.toml")) == ["AGPL-3.0-only"]
 }
 
 pub fn the_licences_of_a_gleam_package_are_read_under_either_spelling_test() -> Nil {
@@ -94,22 +104,22 @@ pub fn a_package_whose_licences_are_all_off_the_list_is_refused_naming_it_test()
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let packages = [
-    #("planted_server", ["AGPL-3.0"]),
+    #("planted_server", ["SSPL-1.0"]),
     #("planted_codec", ["MIT"]),
   ]
   let refusals = licence.refusals(packages, accepted_list)
-  assert refusals == [Unaccepted("planted_server", ["AGPL-3.0"])]
+  assert refusals == [Unaccepted("planted_server", ["SSPL-1.0"])]
   let assert [refusal] = refusals as "expected exactly one refusal"
   let message = licence.describe(refusal)
   assert string.contains(message, "planted_server")
-  assert string.contains(message, "AGPL-3.0")
+  assert string.contains(message, "SSPL-1.0")
 }
 
 pub fn a_package_with_any_accepted_licence_passes_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let packages = [
-    #("planted_dual", ["AGPL-3.0", "MIT"]),
+    #("planted_dual", ["SSPL-1.0", "MIT"]),
     #("planted_apache", ["Apache-2.0"]),
     #("planted_isc", ["ISC"]),
   ]

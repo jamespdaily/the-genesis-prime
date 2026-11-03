@@ -1,5 +1,5 @@
 //// The licence rule: every package the project uses carries a licence the
-//// project accepts, and the project's own licence is Apache-2.0.
+//// project accepts, and the project's own licence is AGPL-3.0 (#306).
 
 import code_rule/project_file
 import gleam/list
