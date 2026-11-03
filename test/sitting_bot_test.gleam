@@ -43,14 +43,34 @@ import pog
 pub fn the_bot_takes_the_named_character_and_a_default_of_30_minutes_test() -> Nil {
   use <- owned_test.run(5000)
   assert sitting_bot.parse_arguments(["--near", "Zed Qu"])
-    == Ok(Options(near: "Zed Qu", minutes: 30))
-    as "the tool's contract: minutes default to 30"
+    == Ok(Options(near: "Zed Qu", minutes: 30, walk: sitting_bot.client_follow))
+    as "the tool's contract: minutes default to 30 and the walk follows the named character"
+}
+
+pub fn the_bot_walks_a_circle_when_it_is_told_to_and_follows_when_it_is_told_to_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert sitting_bot.parse_arguments(["--near", "Zed Qu", "--walk", "circle"])
+    == Ok(Options(near: "Zed Qu", minutes: 30, walk: sitting_bot.client_circle))
+  assert sitting_bot.parse_arguments(["--walk", "follow", "--near", "Zed Qu"])
+    == Ok(Options(near: "Zed Qu", minutes: 30, walk: sitting_bot.client_follow))
+  assert sitting_bot.parse_arguments(["--near", "Zed Qu", "--walk", "run"])
+    == Error(sitting_bot.NotAWalk(text: "run"))
+  assert sitting_bot.parse_arguments(["--near", "Zed Qu", "--walk"])
+    == Error(sitting_bot.NotAWalk(text: ""))
+}
+
+pub fn the_follow_walk_delays_a_replay_by_2_s_and_the_circle_moves_every_125_ms_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert sitting_bot.client_follow == sitting_bot.Follow(delay_ms: 2000)
+    as "the coordinator's choice for the follow walk: about 2 s"
+  assert sitting_bot.client_circle == sitting_bot.Circle(move_every_ms: 125)
+    as "the client's own movement send interval (opcode.0xf1)"
 }
 
 pub fn the_bot_takes_the_number_of_minutes_it_is_given_in_either_order_test() -> Nil {
   use <- owned_test.run(5000)
   assert sitting_bot.parse_arguments(["--minutes", "5", "--near", "Zed Qu"])
-    == Ok(Options(near: "Zed Qu", minutes: 5))
+    == Ok(Options(near: "Zed Qu", minutes: 5, walk: sitting_bot.client_follow))
 }
 
 pub fn a_missing_name_a_bad_minute_count_and_an_unknown_argument_are_refused_test() -> Nil {
@@ -149,7 +169,8 @@ fn is_move(duty: sitting_bot.Duty) -> Bool {
 
 pub fn the_client_schedule_moves_every_125_ms_says_every_10_s_and_whispers_every_30_s_test() -> Nil {
   use <- owned_test.run(5000)
-  let found = duties(sitting_bot.client_schedule, 30_000)
+  let found =
+    duties(sitting_bot.client_schedule(walk: sitting_bot.client_circle), 30_000)
   assert times(found, is_chat) == [10_000, 20_000, 30_000]
     as "a chat line every 10 s, the first after 10 s"
   assert times(found, is_whisper) == [30_000] as "a whisper every 30 s"
@@ -160,10 +181,24 @@ pub fn the_client_schedule_moves_every_125_ms_says_every_10_s_and_whispers_every
     as "from 0 to 30,000 ms every 125 ms is 241 moves"
 }
 
+pub fn a_follow_walk_has_no_move_duty_of_its_own_test() -> Nil {
+  use <- owned_test.run(5000)
+  let found =
+    duties(sitting_bot.client_schedule(walk: sitting_bot.client_follow), 30_000)
+  assert times(found, is_move) == []
+    as "its moves are replays of the named character's, not duties of a clock"
+  assert times(found, is_chat) == [10_000, 20_000, 30_000]
+  assert times(found, is_whisper) == [30_000]
+}
+
 pub fn duties_due_at_one_time_go_chat_then_whisper_then_move_and_each_kind_in_its_own_order_test() -> Nil {
   use <- owned_test.run(5000)
   let schedule =
-    Schedule(move_every_ms: 100, chat_every_ms: 100, whisper_every_ms: 100)
+    Schedule(
+      walk: sitting_bot.Circle(move_every_ms: 100),
+      chat_every_ms: 100,
+      whisper_every_ms: 100,
+    )
   let found = duties(schedule, 200)
   assert list.map(found, fn(duty) { duty.0 })
     == [0, 100, 100, 100, 200, 200, 200]
@@ -250,7 +285,11 @@ pub fn the_first_move_of_another_unit_and_every_20th_after_it_are_shown_test() -
         let #(held, is_shown) =
           sitting_bot.note(
             tally: held,
-            event: sitting_bot.UnitMoved(unit_id: 7),
+            event: sitting_bot.UnitMoved(
+              unit_id: 7,
+              server_time: 0,
+              commands: [],
+            ),
           )
         #(held, case is_shown {
           True -> [number, ..shown]

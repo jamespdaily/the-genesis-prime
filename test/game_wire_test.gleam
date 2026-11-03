@@ -57,8 +57,12 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
+import genesis_prime/message/movement_command
 import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/movement_state_flags
+import genesis_prime/message/movement_velocity
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
@@ -72,6 +76,7 @@ import genesis_prime/message/whisper_failed
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/sitting_bot
+import genesis_prime/sitting_bot/follow
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
@@ -1763,7 +1768,7 @@ pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lin
           seat:,
           near: "Zed Qu",
           schedule: sitting_bot.Schedule(
-            move_every_ms: 125,
+            walk: sitting_bot.client_circle,
             chat_every_ms: 300,
             whisper_every_ms: 600,
           ),
@@ -1828,4 +1833,94 @@ pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lin
     as "the bot's unit is removed for the player when the bot closes its connection"
   game_client.close(game: zed)
   login_support.stop(started)
+}
+
+pub fn a_sitting_bot_that_follows_replays_the_named_players_moves_a_few_units_to_the_side_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let started = login_support.start()
+  let #(zed, zed_character) =
+    new_player(started:, number: 1, character_name: "Zed Qu")
+  send_play(game: zed, character_id: zed_character)
+  let #(_burst, zed_have) =
+    game_client.read_kept(game: zed, have: <<>>, count: burst_length())
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let assert Ok(seat) = sitting_bot.seat(pool:, near: "Zed Qu")
+  let finished = process.new_subject()
+  let bot =
+    process.spawn_unlinked(fn() {
+      process.send(
+        finished,
+        sitting_bot.sit(
+          ports: login_support.ports(started),
+          seat:,
+          near: "Zed Qu",
+          schedule: sitting_bot.Schedule(
+            walk: sitting_bot.Follow(delay_ms: 200),
+            chat_every_ms: 600_000,
+            whisper_every_ms: 600_000,
+          ),
+          for_ms: 60_000,
+          report: fn(_event) { Nil },
+        ),
+      )
+    })
+  let zed_seat = Seat(game: zed, have: zed_have, zone_channel: 0)
+  let #(appeared, zed_seat) = wait_for_frame(seat: zed_seat, message_id: 0x0262)
+  let bot_unit = unit_of(appeared)
+  // The player walks: a position, a velocity, a rotation and a state, as the
+  // client's own batch holds them (opcode.0x637).
+  let velocity =
+    movement_velocity.MovementVelocity(
+      x: 0x3C00,
+      y: 0x0000,
+      z: 0x4000,
+      blends: 1,
+    )
+  let rotation = MovementRotation(yaw: 0x3F000000, pitch: 0, roll: 0, blends: 0)
+  let flags = movement_state_flags.MovementStateFlags(flags: 0x1)
+  game_client.send_world(
+    game: zed,
+    message_id: 0x0637,
+    body: game_client.moves_body(client_clock: 0x1234, commands: [
+      game_client.position_command(x: 100.5, y: 50.25, z: -200.75),
+      movement_command.Velocity(velocity),
+      movement_command.Rotation(rotation),
+      movement_command.StateFlags(flags),
+    ]),
+  )
+  // The bot's own 0x0637 follows after its delay: the player sees the bot's unit
+  // move with the same commands, its position a few units along x.
+  let #(replayed, _zed_seat) =
+    wait_for_move_of(seat: zed_seat, unit_id: bot_unit)
+  assert replayed
+    == [
+      relayed_movement.Position(UnitPositionCommand(
+        x: float32.to_bits(100.5 +. follow.offset),
+        y: float32.to_bits(50.25),
+        z: float32.to_bits(-200.75),
+        blends: 0,
+      )),
+      relayed_movement.Velocity(velocity),
+      relayed_movement.Rotation(rotation),
+      relayed_movement.StateFlags(flags),
+    ]
+    as "the bot walks as the player did, every command but the position as the client sent it"
+  sitting_bot.request_stop(bot)
+  let assert Ok(_tally) = process.receive(finished, 20_000)
+    as "the bot ended when asked to stop"
+  game_client.close(game: zed)
+  login_support.stop(started)
+}
+
+/// Reads until a 0x638 of the unit and gives its commands.
+fn wait_for_move_of(
+  seat seat: Seat,
+  unit_id unit_id: Int,
+) -> #(List(relayed_movement.RelayedMovement), Seat) {
+  let #(frame, seat) = wait_for_frame(seat:, message_id: 0x0638)
+  let assert Ok(moved) = unit_movement.decode(frame.body) as "0x638 decodes"
+  case moved.unit_id == unit_id {
+    True -> #(moved.commands, seat)
+    False -> wait_for_move_of(seat:, unit_id:)
+  }
 }

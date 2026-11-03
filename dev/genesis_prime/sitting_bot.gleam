@@ -3,14 +3,15 @@
 //// character appear in the same map, move, talk and leave.
 ////
 //// ```
-//// gleam run -m genesis_prime/sitting_bot -- --near "<character name>" [--minutes N]
+//// gleam run -m genesis_prime/sitting_bot -- --near "<character name>" [--minutes N] [--walk follow|circle]
 //// ```
 ////
 //// ```
 ////  the play database ◀── seat ── this tool ── TCP, as a client ──▶ the play server
-////  (the named character's        │  sit: log in, enter, send a move every 125 ms,
-////   place, the bot's own)        │  a chat line every 10 s, a whisper every 30 s,
-////                                ▼  read what the server writes, print one line each
+////  (the named character's        │  sit: log in, enter, walk (follow the named
+////   place, the bot's own)        │  character's moves or a circle), a chat line
+////                                │  every 10 s, a whisper every 30 s, read what
+////                                ▼  the server writes, print one line each
 ////                          stdout, and a summary when it leaves
 //// ```
 ////
@@ -29,9 +30,14 @@
 ////   at the same height.
 //// - It logs in and enters the world as the load player does
 ////   (`genesis_prime/load_player`), reports the zone it stands in (0xF2) as the
-////   client does when its terrain loads, and walks a circle of 3 units through
-////   its place, a move (0x0637) every 125 ms, the client's own send interval
-////   (opcode.0xf1).
+////   client does when its terrain loads, and walks. `--walk follow` (the
+////   default) replays the named character's own movement commands 2 s later, a
+////   few units along x (`genesis_prime/sitting_bot/follow`), so the bot walks on
+////   the ground the real client walked, animated by the commands that client
+////   sent, and stands still while the character does. `--walk circle` walks a
+////   circle of 3 units through its place, a move (0x0637) every 125 ms, the
+////   client's own send interval (opcode.0xf1), for when no one is there to
+////   follow.
 //// - Every 10 s it sends one chat line in turn on Say, Yell, Emote and Zone, each
 ////   text naming the channel and the number of the line ("bot say 1"), and every
 ////   30 s a whisper to the named character ("bot whisper 1"). Its chat message
@@ -60,11 +66,13 @@ import genesis_prime/load_player.{type Account, Account}
 import genesis_prime/message/chat_channel_result
 import genesis_prime/message/chat_line_accepted
 import genesis_prime/message/chat_result
+import genesis_prime/message/relayed_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/whisper_failed
+import genesis_prime/sitting_bot/follow.{type Following}
 import genesis_prime/sitting_bot/sql
 import genesis_prime/step/runtime
 import gleam/erlang/process.{type Pid}
@@ -84,16 +92,33 @@ import pog
 
 // ---- what the bot is run with ----
 
-/// What the tool is given: the name of the character to sit near, and how long
-/// to sit.
+/// What the tool is given: the name of the character to sit near, how long to
+/// sit and how to walk.
 pub type Options {
-  Options(near: String, minutes: Int)
+  Options(near: String, minutes: Int, walk: Walk)
 }
+
+/// How the bot walks.
+pub type Walk {
+  /// Replay the named character's movement commands, offset and delayed by
+  /// `delay_ms` after the server stamped them.
+  Follow(delay_ms: Int)
+  /// A circle through the bot's place, a move every `move_every_ms`.
+  Circle(move_every_ms: Int)
+}
+
+/// The follow walk's own delay: 2 s.
+pub const client_follow = Follow(delay_ms: 2000)
+
+/// The circle walk's own interval: the client's movement send interval, 125 ms
+/// (opcode.0xf1).
+pub const client_circle = Circle(move_every_ms: 125)
 
 /// Why the arguments are not a run.
 pub type Usage {
   MissingNear
   NotMinutes(text: String)
+  NotAWalk(text: String)
   UnknownArgument(text: String)
 }
 
@@ -101,38 +126,47 @@ pub type Usage {
 const default_minutes = 30
 
 /// The options the arguments make: `--near <name>` and, optionally, `--minutes
-/// <N>` for N of 1 or more.
+/// <N>` for N of 1 or more and `--walk follow` or `--walk circle` (follow when
+/// not given).
 pub fn parse_arguments(arguments: List(String)) -> Result(Options, Usage) {
-  parse(arguments:, near: None, minutes: default_minutes)
+  parse(arguments:, near: None, minutes: default_minutes, walk: client_follow)
 }
 
 fn parse(
   arguments arguments: List(String),
   near near: Option(String),
   minutes minutes: Int,
+  walk walk: Walk,
 ) -> Result(Options, Usage) {
   case arguments {
     [] ->
       case near {
-        Some(near) -> Ok(Options(near:, minutes:))
+        Some(near) -> Ok(Options(near:, minutes:, walk:))
         None -> Error(MissingNear)
       }
     ["--near", name, ..rest] if name != "" ->
-      parse(arguments: rest, near: Some(name), minutes:)
+      parse(arguments: rest, near: Some(name), minutes:, walk:)
     ["--near", ..] -> Error(MissingNear)
     ["--minutes", text, ..rest] ->
       case int.parse(text) {
-        Ok(minutes) if minutes >= 1 -> parse(arguments: rest, near:, minutes:)
+        Ok(minutes) if minutes >= 1 ->
+          parse(arguments: rest, near:, minutes:, walk:)
         Ok(_) | Error(Nil) -> Error(NotMinutes(text:))
       }
     ["--minutes"] -> Error(NotMinutes(text: ""))
+    ["--walk", "follow", ..rest] ->
+      parse(arguments: rest, near:, minutes:, walk: client_follow)
+    ["--walk", "circle", ..rest] ->
+      parse(arguments: rest, near:, minutes:, walk: client_circle)
+    ["--walk", text, ..] -> Error(NotAWalk(text:))
+    ["--walk"] -> Error(NotAWalk(text: ""))
     [other, ..] -> Error(UnknownArgument(text: other))
   }
 }
 
 fn describe_usage(usage: Usage) -> String {
   let how =
-    "usage: gleam run -m genesis_prime/sitting_bot -- --near \"<character name>\" [--minutes N]"
+    "usage: gleam run -m genesis_prime/sitting_bot -- --near \"<character name>\" [--minutes N] [--walk follow|circle]"
   case usage {
     MissingNear -> "no character to sit near is named\n" <> how
     NotMinutes(text:) ->
@@ -140,6 +174,8 @@ fn describe_usage(usage: Usage) -> String {
       <> text
       <> "\"\n"
       <> how
+    NotAWalk(text:) ->
+      "--walk takes follow or circle, not \"" <> text <> "\"\n" <> how
     UnknownArgument(text:) ->
       "not an argument of the tool: " <> text <> "\n" <> how
   }
@@ -172,7 +208,7 @@ const character_name = "Sitting Bot"
 
 /// How far along x from the named character the bot is put, in units: close
 /// enough to be in its sight.
-pub const seat_distance = 5.0
+pub const seat_distance = follow.offset
 
 /// The bot's account. Its password is kept in the open: the account exists only
 /// in a developer's database, and the tool is no way to anything else.
@@ -305,15 +341,15 @@ fn bot_account(
 
 // ---- what the bot sends, and when ----
 
-/// How often each kind of duty is done, in milliseconds.
+/// How the bot walks and how often it does each other duty, in milliseconds.
 pub type Schedule {
-  Schedule(move_every_ms: Int, chat_every_ms: Int, whisper_every_ms: Int)
+  Schedule(walk: Walk, chat_every_ms: Int, whisper_every_ms: Int)
 }
 
-/// A move every 125 ms, the client's own movement send interval (opcode.0xf1), a
-/// chat line every 10 s and a whisper every 30 s.
-pub const client_schedule =
-  Schedule(move_every_ms: 125, chat_every_ms: 10_000, whisper_every_ms: 30_000)
+/// The walk, a chat line every 10 s and a whisper every 30 s.
+pub fn client_schedule(walk walk: Walk) -> Schedule {
+  Schedule(walk:, chat_every_ms: 10_000, whisper_every_ms: 30_000)
+}
 
 /// How many of each duty the bot has done.
 pub type Done {
@@ -357,17 +393,24 @@ pub fn chat_line(number: Int) -> Line {
 }
 
 /// The next duty and the time it is due, in milliseconds from the start: the
-/// first move is due at 0, the first chat line and the first whisper after one
-/// of their own intervals. Duties due together go chat, whisper, move.
+/// first move of a circle is due at 0, the first chat line and the first whisper
+/// after one of their own intervals. Duties due together go chat, whisper, move.
+/// A follow walk has no move duty: its moves are replays (`follow`).
 pub fn next_duty(schedule schedule: Schedule, done done: Done) -> #(Int, Duty) {
   let line = done.lines + 1
   let whisper = done.whispers + 1
-  let candidates = [
+  let talks = [
     #(line * schedule.chat_every_ms, Chat(line: chat_line(line))),
     #(whisper * schedule.whisper_every_ms, Whisper(number: whisper)),
-    #(done.moves * schedule.move_every_ms, Move(number: done.moves)),
   ]
-  let assert [first, ..rest] = candidates as "there are three duties"
+  let candidates = case schedule.walk {
+    Circle(move_every_ms:) ->
+      list.append(talks, [
+        #(done.moves * move_every_ms, Move(number: done.moves)),
+      ])
+    Follow(..) -> talks
+  }
+  let assert [first, ..rest] = candidates as "there are duties"
   list.fold(rest, first, fn(earliest, candidate) {
     case candidate.0 < earliest.0 {
       True -> candidate
@@ -418,7 +461,11 @@ pub type Event {
   /// 0x0262: a unit shown to the bot.
   UnitShown(unit_id: Int, name: String)
   /// 0x0638: a unit moved.
-  UnitMoved(unit_id: Int)
+  UnitMoved(
+    unit_id: Int,
+    server_time: Int,
+    commands: List(relayed_movement.RelayedMovement),
+  )
   /// 0x0355: a unit removed.
   UnitRemoved(unit_id: Int)
   /// 0x01C8: a line another player said.
@@ -489,7 +536,7 @@ pub fn describe(event: Event) -> String {
       <> text
     UnitShown(unit_id:, name:) ->
       "shown unit " <> int.to_string(unit_id) <> " " <> name
-    UnitMoved(unit_id:) -> "unit " <> int.to_string(unit_id) <> " moved"
+    UnitMoved(unit_id:, ..) -> "unit " <> int.to_string(unit_id) <> " moved"
     UnitRemoved(unit_id:) -> "unit " <> int.to_string(unit_id) <> " removed"
     LineHeard(line:) ->
       "heard "
@@ -570,7 +617,13 @@ pub fn events_of(frame: Frame) -> List(Event) {
     0x0638 -> {
       let assert Ok(moved) = unit_movement.decode(frame.body)
         as "0x0638 decodes"
-      [UnitMoved(unit_id: moved.unit_id)]
+      [
+        UnitMoved(
+          unit_id: moved.unit_id,
+          server_time: moved.server_time,
+          commands: moved.commands,
+        ),
+      ]
     }
     0x0355 -> {
       let assert Ok(gone) = unit_destroyed.decode(frame.body)
@@ -627,6 +680,7 @@ type Sitting {
     seat: Seat,
     near: String,
     schedule: Schedule,
+    following: Option(Following),
     done: Done,
     tally: Tally,
     started_ms: Int,
@@ -672,6 +726,10 @@ pub fn sit(
       seat:,
       near:,
       schedule:,
+      following: case schedule.walk {
+        Follow(delay_ms:) -> Some(follow.new(near:, delay_ms:))
+        Circle(..) -> None
+      },
       done: Done(moves: 0, lines: 0, whispers: 0),
       tally: nothing_yet(),
       started_ms:,
@@ -688,11 +746,24 @@ fn keep_sitting(sitting: Sitting) -> Tally {
   case stop_requested() || now_ms >= sitting.ends_ms {
     True -> sitting.tally
     False -> {
+      let elapsed_ms = now_ms - sitting.started_ms
       let #(due_ms, duty) =
         next_duty(schedule: sitting.schedule, done: sitting.done)
-      let wait_ms = due_ms - { now_ms - sitting.started_ms }
+      let echo_wait_ms = case sitting.following {
+        Some(following) ->
+          option.map(follow.next_due_ms(following), fn(due_ms) {
+            due_ms - elapsed_ms
+          })
+        None -> None
+      }
+      let wait_ms =
+        int.min(due_ms - elapsed_ms, option.unwrap(echo_wait_ms, stop_check_ms))
       case wait_ms <= 0 {
-        True -> keep_sitting(perform(sitting:, duty:))
+        True ->
+          case due_ms <= elapsed_ms {
+            True -> keep_sitting(perform(sitting:, duty:))
+            False -> keep_sitting(replay(sitting:, elapsed_ms:))
+          }
         False ->
           case
             game_client.poll(
@@ -714,6 +785,25 @@ fn keep_sitting(sitting: Sitting) -> Tally {
   }
 }
 
+/// Sends the follow walk's next replay, which is due, as the bot's own 0x0637
+/// with the bot's clock.
+fn replay(sitting sitting: Sitting, elapsed_ms elapsed_ms: Int) -> Sitting {
+  let assert Some(following) = sitting.following
+    as "a replay is due only in a follow walk"
+  let assert Ok(#(commands, following)) =
+    follow.take_due(following:, elapsed_ms:)
+    as "the replay that was due is waiting"
+  game_client.send_world(
+    game: sitting.game,
+    message_id: 0x0637,
+    body: game_client.moves_body(
+      client_clock: elapsed_ms,
+      commands: follow.stamped(commands:, clock_ms: elapsed_ms),
+    ),
+  )
+  Sitting(..sitting, following: Some(following))
+}
+
 /// Does the duty, which is due.
 fn perform(sitting sitting: Sitting, duty duty: Duty) -> Sitting {
   let sitting = Sitting(..sitting, done: after(done: sitting.done, duty:))
@@ -724,7 +814,7 @@ fn perform(sitting sitting: Sitting, duty duty: Duty) -> Sitting {
         game: sitting.game,
         message_id: 0x0637,
         body: game_client.moves_body(
-          client_clock: number * sitting.schedule.move_every_ms,
+          client_clock: runtime.now().monotonic_ms - sitting.started_ms,
           commands: [game_client.position_command(x:, y:, z:)],
         ),
       )
@@ -784,7 +874,34 @@ fn note_and_report(sitting sitting: Sitting, event event: Event) -> Sitting {
     True -> sitting.report(event)
     False -> Nil
   }
-  Sitting(..sitting, tally:)
+  let elapsed_ms = runtime.now().monotonic_ms - sitting.started_ms
+  Sitting(
+    ..sitting,
+    tally:,
+    following: option.map(sitting.following, followed(_, event:, elapsed_ms:)),
+  )
+}
+
+/// What the follow walk takes from an event: the named character's unit shown,
+/// moving and removed.
+fn followed(
+  following following: Following,
+  event event: Event,
+  elapsed_ms elapsed_ms: Int,
+) -> Following {
+  case event {
+    UnitShown(unit_id:, name:) -> follow.shown(following:, unit_id:, name:)
+    UnitMoved(unit_id:, server_time:, commands:) ->
+      follow.moved(following:, unit_id:, server_time:, commands:, elapsed_ms:)
+    UnitRemoved(unit_id:) -> follow.removed(following:, unit_id:)
+    LineSent(..)
+    | LineHeard(..)
+    | NameLookupNeeded(..)
+    | LineAccepted(..)
+    | LineRefused(..)
+    | WhisperFailed(..)
+    | ServerEnded(..) -> following
+  }
 }
 
 /// Whether a stop was asked of this process, which the server's SIGTERM (after
@@ -854,7 +971,7 @@ fn run() -> Result(String, Failure) {
       ports: local_ports(),
       seat:,
       near: options.near,
-      schedule: client_schedule,
+      schedule: client_schedule(walk: options.walk),
       for_ms: options.minutes * 60_000,
       report: fn(event) { print(describe(event)) },
     )
