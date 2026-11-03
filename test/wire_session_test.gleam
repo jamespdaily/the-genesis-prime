@@ -1,4 +1,4 @@
-//// The session committed on 2026-11-02 (`test/wire_recording/2026-11-02-full-session`)
+//// The session committed on 2026-11-03 (`test/wire_recording/2026-11-03-full-session`)
 //// replayed through the real server tree on a database of its own, with the
 //// recorded seed, times and fixture, and compared byte for byte. Expected
 //// values come from these places.
@@ -15,7 +15,7 @@
 ////   world messages inside 0x038C are logged under their own id), and one for
 ////   each STS request the STS rule has no handler for (`/Auth/PageVerifiedIps`).
 //// - The rows the store answered: the account `genesis` and two characters,
-////   `Tess Renamed` (id 1, level 3) and `Nova Entry` (id 6, level 1).
+////   `Tess Renamed` (id 1, level 3) and `Grozim Vroc` (id 13, level 3).
 //// - The character list (0x0117) carries the FILETIME of the answer that made
 ////   it (character_select.list_effects), so a replay with another time for that
 ////   input writes other bytes.
@@ -139,7 +139,7 @@ pub fn the_committed_session_replays_to_its_recorded_bytes_with_the_recorded_see
     as "the fixture reads"
   assert string.contains(fixture, "'genesis'")
     && string.contains(fixture, "'Tess Renamed'")
-    && string.contains(fixture, "'Nova Entry'")
+    && string.contains(fixture, "'Grozim Vroc'")
     as "the rows the store answered the live session with"
   let #(result, _logged) =
     support.replay_tree(folder: support.committed_session)
@@ -195,15 +195,18 @@ pub fn the_replay_logs_the_unhandled_messages_the_live_session_logged_and_nothin
     as "the STS request the rule has no handler for, once: the live session's STS connection holds one such request"
   assert lines_of(logged, "auth_connection") == []
     as "the auth connection logged no warning and no error"
-  assert lines_of(logged, "game.connection")
-    == list.map(
-      [
-        "0x082D", "0x0635", "0x012B", "0x03EC", "0x03ED", "0x0269", "0x07CC",
-        "0x018F", "0x023C", "0x07EA", "0x023D", "0x0570",
-      ],
-      fn(id) { "unhandled game message " <> id },
+  assert list.sort(lines_of(logged, "game.connection"), string.compare)
+    == list.sort(
+      list.map(
+        [
+          "0x082D", "0x012B", "0x03EC", "0x03ED", "0x0269", "0x07CC", "0x018F",
+          "0x0635", "0x023C", "0x07EA", "0x023D", "0x0570",
+        ],
+        fn(id) { "unhandled game message " <> id },
+      ),
+      string.compare,
     )
-    as "each world message the game rule took and did not handle, once, by its id; the movement messages of the player (0x0637, 0x063A, 0x00D5, 0x063B and 0x00F2, which the live client sent) are handled, so none is logged"
+    as "the order the live client sent them in varies from session to session, so the lines are compared as a set; each world message the game rule took and did not handle, once, by its id; the movement messages of the player (0x0637, 0x063A, 0x00D5, 0x063B and 0x00F2, which the live client sent) are handled, so none is logged"
 }
 
 pub fn every_message_a_recorded_session_replays_is_handled_or_logged_as_unhandled_by_its_id_test() -> Nil {
