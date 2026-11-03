@@ -34,12 +34,17 @@ queued(Pid) ->
 
 %% Whether a gen_server call made by Caller waits in Pid's mailbox: a supervisor
 %% that is stopping its children takes none, so a call made to it stays here
-%% until it ends. A call's message is {'$gen_call', {Caller, Tag}, Request}.
+%% until it ends. A call's message is {'$gen_call', {Caller, Tag}, Request}. A
+%% process that has ended has no mailbox: no call waits in it.
 call_waiting_from(Pid, Caller) ->
-    {messages, Messages} = process_info(Pid, messages),
-    lists:any(fun({'$gen_call', {From, _Tag}, _Request}) -> From =:= Caller;
-                 (_Other) -> false
-              end, Messages).
+    case process_info(Pid, messages) of
+        {messages, Messages} ->
+            lists:any(fun({'$gen_call', {From, _Tag}, _Request}) -> From =:= Caller;
+                         (_Other) -> false
+                      end, Messages);
+        undefined ->
+            false
+    end.
 
 %% The processes a process holds a monitor on, one entry for each monitor.
 %% Monitors of ports and of names are left out.

@@ -11,6 +11,7 @@
 //// returns it (`ChildNotStarted`).
 
 import ask_support
+import event_wait
 import genesis_prime/service
 import genesis_prime/step/runtime.{Shutdown}
 import gleam/dynamic
@@ -185,11 +186,9 @@ pub fn a_supervisor_that_ends_while_the_call_waits_is_a_supervisor_that_is_not_r
         service.start_child(supervisor: name, argument: held),
       )
     })
-  mailbox_support.await_call_from(
-    pid: supervisor,
-    caller:,
-    within_ms: ask_support.event_wait_ms,
-  )
+  event_wait.until("the caller's call waits at the stopping supervisor", fn() {
+    mailbox_support.call_waiting_from(pid: supervisor, caller:)
+  })
   process.send(release, Nil)
   let _reason = ask_support.ended(stopped)
   let assert Ok(result) = process.receive(results, ask_support.event_wait_ms)

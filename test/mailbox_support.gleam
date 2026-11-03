@@ -21,28 +21,13 @@ pub fn drain(messages: Subject(message)) -> List(message) {
   }
 }
 
-/// Waits until a `gen_server` call made by `caller` is in the process's
-/// mailbox: a call made to a process that takes none, because it is suspended
-/// or stopping its children, stays there. The call's own message is what is
-/// waited for, so no other message ends the wait; the wait is bounded, and a
-/// call that never comes fails the test.
-pub fn await_call_from(
-  pid pid: Pid,
-  caller caller: Pid,
-  within_ms within_ms: Int,
-) -> Nil {
-  case call_waiting_from(pid, caller), within_ms > 0 {
-    True, _ -> Nil
-    False, True -> {
-      process.sleep(1)
-      await_call_from(pid:, caller:, within_ms: within_ms - 1)
-    }
-    False, False -> panic as "the caller's call was queued in time"
-  }
-}
-
+/// Whether a `gen_server` call made by `caller` is in the process's mailbox: a
+/// call made to a process that takes none, because it is suspended or stopping
+/// its children, stays there. It is the call's own message that is looked for,
+/// so no other message makes it true, and a process that has ended has none.
+/// Tests wait on it with `event_wait.until`.
 @external(erlang, "mailbox_support_ffi", "call_waiting_from")
-fn call_waiting_from(pid: Pid, caller: Pid) -> Bool
+pub fn call_waiting_from(pid pid: Pid, caller caller: Pid) -> Bool
 
 /// How many messages waiting in the process's mailbox are tuples whose first
 /// element is the atom `tag`. A mailbox's length is no measure of what a

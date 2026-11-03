@@ -7,6 +7,7 @@
 
 import ask_support
 import asking_rule
+import event_wait
 import genesis_prime/connection/closer
 import gleam/erlang/process
 import gleam/list
@@ -71,21 +72,19 @@ pub fn a_listener_whose_supervisor_ends_while_the_close_waits_does_not_stop_the_
         supervisor.add(builder, closer.supervised([first.name, second.name]))
       },
     )
+  let assert [closer, _listener] =
+    supervisor_children.in_start_order(closing.supervisor)
+    as "the closing tree holds the closer, then its own listener"
   // The first listener's supervisor takes no call, so the closer's call to it
   // waits, and the supervisor then ends while the call waits (an exit with the
   // reason `killed`, which the caller of a call sees as `{killed, {gen_server,
   // call, ...}}`).
-  let assert [closer, _listener] =
-    supervisor_children.in_start_order(closing.supervisor)
-    as "the closing tree holds the closer, then its own listener"
   let assert True = ask_support.suspend_process(first_supervisor)
     as "the listener's supervisor was suspended"
   let stopping = ask_support.begin_stop_tree(closing.supervisor)
-  mailbox_support.await_call_from(
-    pid: first_supervisor,
-    caller: closer,
-    within_ms: ask_support.event_wait_ms,
-  )
+  event_wait.until("the closer's call waits at the listener's supervisor", fn() {
+    mailbox_support.call_waiting_from(pid: first_supervisor, caller: closer)
+  })
   process.kill(first_supervisor)
   assert ask_support.ended(stopping) == ask_support.shutdown()
     as "the closing tree stopped as a stop ends it"
