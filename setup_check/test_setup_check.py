@@ -102,7 +102,7 @@ OTP = PINS["erlang"]  # 29.1.2
 REBAR = PINS["rebar"]  # 3.28.0
 TARGET_BUILD = 16042  # client_archive.target_build: GetVersionInfo 0x1406f8360 returns 0x3eaa
 POSTGRES_MAJOR = "18"  # Jim's choice
-PATCH_FILE = "otp-erl-gc-live-hf-end.patch"
+PATCH_FILE = "otp-1b4ac11-clear-live-hf-end.patch"
 MARKER = "GENESIS_PATCHES"
 
 PATCH_SHA256 = hashlib.sha256((HERE / PATCH_FILE).read_bytes()).hexdigest()
