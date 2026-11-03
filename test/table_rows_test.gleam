@@ -257,15 +257,25 @@ pub fn an_id_with_no_row_among_good_ones_fails_naming_it_and_prints_no_row_test(
     as "of two ids with no row, the first one named is refused"
 }
 
-pub fn a_selection_among_ids_that_is_not_an_id_fails_naming_it_test() -> Nil {
+pub fn a_selection_among_several_that_is_not_an_id_fails_naming_it_test() -> Nil {
   use <- owned_test.run(5000)
   use folder <- with_planted
-  assert table_rows.run(arguments: ["Planted", "3", "level=2", "5"], folder:)
-    == Error(table_rows.BadSelection("level=2"))
-    as "several selections are ids only; a column=value among them is refused"
-  assert table_rows.run(arguments: ["Planted", "3", "five"], folder:)
-    == Error(table_rows.BadSelection("five"))
+  assert table_rows.run(arguments: ["Planted", "3", "five", "5"], folder:)
+    == Error(table_rows.NotAnId("five"))
     as "five is not an id"
+  assert table_rows.run(arguments: ["Planted", "3", "--columns"], folder:)
+    == Error(table_rows.NotAnId("--columns"))
+    as "--columns is a valid selection alone, but not among ids"
+  assert table_rows.run(arguments: ["Planted", "level=2", "3"], folder:)
+    == Error(table_rows.NotAnId("level=2"))
+    as "a column=value is a valid selection alone, but not among ids"
+  let assert Error(found) =
+    table_rows.run(arguments: ["Planted", "3", "--columns"], folder:)
+  assert string.contains(
+    table_rows.describe(found),
+    "'--columns' is not an id; several selections must all be ids",
+  )
+    as "the message says why the selection is refused, not that it is neither an id nor a column=value"
 }
 
 pub fn an_unknown_table_fails_naming_it_test() -> Nil {

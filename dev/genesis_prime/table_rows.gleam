@@ -56,7 +56,6 @@ import genesis_prime/table/loader/tbl_file.{type Strings, Column, Field}
 import genesis_prime/table_folder
 import gleam/bit_array
 import gleam/bool
-import gleam/dict
 import gleam/float
 import gleam/int
 import gleam/io
@@ -88,9 +87,14 @@ pub opaque type Row {
   Row(id_column: String, id: Int, others: List(Cell))
 }
 
-/// A table file read: what its header says, and its rows in id order.
+/// A table file read: what its header says, its rows by id, and the same rows
+/// in id order.
 pub type TableRows {
-  TableRows(description: tbl_file.Description, rows: List(Row))
+  TableRows(
+    description: tbl_file.Description,
+    table: tbl_file.Table(Row),
+    rows: List(Row),
+  )
 }
 
 /// What the command is asked to print of a table.
@@ -114,9 +118,10 @@ type Selection {
 pub type RowsError {
   /// Not a table name, or a table name and one selection.
   Usage
-  /// The selection is not an id, a `column=value` or `--columns`, or is one
-  /// of several selections that are not all ids.
+  /// The selection is not an id, a `column=value` or `--columns`.
   BadSelection(selection: String)
+  /// One of several selections is not an id; several selections are all ids.
+  NotAnId(selection: String)
   /// The folder cannot be read.
   UnreadableFolder(folder: String)
   /// The folder holds no file `<table>.tbl`.
@@ -161,8 +166,12 @@ pub fn run(
       render_columns(description, fields)
     }
     Rows(selection) -> {
-      use TableRows(description:, rows:) <- result.try(read(bytes:, table:))
+      use TableRows(description:, table: lookup, rows:) <- result.try(read(
+        bytes:,
+        table:,
+      ))
       use chosen <- result.map(choose(
+        lookup:,
         rows:,
         columns: description.columns,
         selection:,
@@ -225,7 +234,7 @@ pub fn read(
     )
     |> result.map_error(NotATable(table, _)),
   )
-  TableRows(description:, rows: tbl_file.rows(rows))
+  TableRows(description:, table: rows, rows: tbl_file.rows(rows))
 }
 
 /// The cells of a row, the id's first, in the file's column order.
@@ -241,28 +250,32 @@ fn parse(arguments: List(String)) -> Result(#(String, Request), RowsError) {
       case string.split_once(selection, "=") {
         Ok(#("", _)) -> Error(BadSelection(selection))
         Ok(#(column, value)) -> Ok(#(table, Rows(RowsHolding(column:, value:))))
-        Error(Nil) -> parse_ids(table, [selection])
+        Error(Nil) ->
+          int.parse(selection)
+          |> result.map(fn(id) { #(table, Rows(RowsOfIds([id]))) })
+          |> result.replace_error(BadSelection(selection))
       }
     [table, _, _, ..] -> parse_ids(table, list.drop(arguments, 1))
     _ -> Error(Usage)
   }
 }
 
-/// A table's rows by the ids named, each selection an id; the first that is
-/// not one is refused.
+/// A table's rows by several ids named, each selection an id; the first that
+/// is not one is refused.
 fn parse_ids(
   table: String,
   selections: List(String),
 ) -> Result(#(String, Request), RowsError) {
   use ids <- result.map(
     list.try_map(selections, fn(selection) {
-      int.parse(selection) |> result.replace_error(BadSelection(selection))
+      int.parse(selection) |> result.replace_error(NotAnId(selection))
     }),
   )
   #(table, Rows(RowsOfIds(ids)))
 }
 
 fn choose(
+  lookup lookup: tbl_file.Table(Row),
   rows rows: List(Row),
   columns columns: List(tbl_file.Column),
   selection selection: Selection,
@@ -270,12 +283,10 @@ fn choose(
 ) -> Result(List(Row), RowsError) {
   case selection {
     AllRows -> Ok(rows)
-    RowsOfIds(ids:) -> {
-      let by_id = dict.from_list(list.map(rows, fn(row) { #(row.id, row) }))
+    RowsOfIds(ids:) ->
       list.try_map(ids, fn(id) {
-        dict.get(by_id, id) |> result.replace_error(NoRowOfId(table:, id:))
+        tbl_file.row(lookup, id) |> result.replace_error(NoRowOfId(table:, id:))
       })
-    }
     RowsHolding(column: typed, value:) ->
       rows_holding(rows:, columns:, typed:, value:, table:)
   }
@@ -503,6 +514,11 @@ pub fn describe(error: RowsError) -> String {
       <> selection
       <> "' is neither an id, a column=value nor --columns; "
       <> describe(Usage)
+    NotAnId(selection:) ->
+      "'"
+      <> selection
+      <> "' is not an id; several selections must all be ids; "
+      <> describe(Usage)
     UnreadableFolder(folder:) ->
       "the tables folder "
       <> folder
@@ -533,7 +549,7 @@ pub fn main() -> Nil {
     Error(error) -> {
       io.println_error(describe(error))
       case error {
-        Usage | BadSelection(_) -> dev_exit.halt(2)
+        Usage | BadSelection(_) | NotAnId(_) -> dev_exit.halt(2)
         UnreadableFolder(_)
         | UnknownTable(_, _)
         | UnreadableFile(_)
