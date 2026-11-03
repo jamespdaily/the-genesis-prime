@@ -163,7 +163,10 @@ pub type ConnectionEvent(message, answer) {
 
 /// Why a socket operation failed.
 pub type SocketFailure {
-  /// The socket was already closed.
+  /// The socket was already closed: a write to a socket the peer has closed
+  /// fails as closed, and so does arming the read of one (the shell's Erlang
+  /// file reports the `einval` that answers). It ends a connection as the
+  /// peer's close does.
   Closed
   /// The peer reset the connection.
   Reset
@@ -226,9 +229,10 @@ pub type ConnectionEffect(request) {
   /// Cancel a timer. A `TimerFired` for it already waiting is dropped.
   CancelTimer(timer: TimerId)
   /// Tell the process at `to` something and go on at once: nothing waits for
-  /// an answer, no deadline runs and no outcome comes back. The shell resolves
-  /// `to` once and keeps the way to it while the rule's watch on `to` lives; a
-  /// process that is not running drops the tell, and a rule that must know
+  /// an answer, no deadline runs and no outcome comes back. The shell tells
+  /// through the way to `to` that the rule's open watch on `to` found, so the
+  /// rule watches `to` before it tells; a tell with no such watch, or after the
+  /// process has ended, is dropped with a warning, and a rule that must know
   /// watches it. The process takes it as `ServiceEvent`'s `Told`.
   Tell(to: Address, request: request)
 }

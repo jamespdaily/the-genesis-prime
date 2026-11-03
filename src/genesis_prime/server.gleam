@@ -97,12 +97,14 @@ import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/service.{type Call, type Locate, type Reach, type Sent}
 import genesis_prime/service/shell as service_shell
-import genesis_prime/step.{type ConnectionRule}
+import genesis_prime/step.{type ConnectionRule, LogError}
 import genesis_prime/step/runtime
+import genesis_prime/step/watch
 import genesis_prime/store/worker.{type Job}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map
+import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{type Option, None, Some}
@@ -227,7 +229,7 @@ pub fn start(
     name: settings.sessions,
     settings: service_shell.Settings(
       rule: account_session.rule(),
-      reach: sessions_reach(settings),
+      reach: connection_reach(settings, SentBySessions),
       shutdown_ms: settings.sessions_shutdown_ms,
     ),
   ))
@@ -297,61 +299,65 @@ fn locate(settings: Settings) -> Locate {
   let hand_off = settings.hand_off
   let sessions = settings.sessions
   let registry = settings.registry
-  let maps_name = settings.world.maps
-  let maps_call_ms = settings.world.maps_call_ms
   fn(address: step.Address) {
     case address {
       step.Sessions -> process.named(sessions)
       step.HandOff -> process.named(hand_off)
       step.Store -> process.named(store)
       step.Connection(connection:) -> registry.find(registry, connection)
-      step.Maps -> process.named(maps_name)
+      step.Maps -> process.named(settings.world.maps)
       step.Map(map:, incarnation:) ->
-        world_map_registry.find(
-          maps_name,
-          map,
-          incarnation,
-          deadline_ms: runtime.now().monotonic_ms + maps_call_ms,
-        )
+        find_run(settings:, map:, incarnation:)
         |> result.map(fn(found) { found.pid })
-        |> result.replace_error(Nil)
     }
   }
 }
 
-/// How a connection's shell resolves the address of a process its rule tells,
-/// once, into the way to tell it: the run of a map, found through Maps, which
-/// is told that a player moved (`TellMoved`). Any other address, and any other
-/// request, has no process that takes a tell, and the way to it drops what it
-/// is given.
-fn teller(
+/// The run of the map with this incarnation, which Maps finds and never
+/// starts, in the time a watch's call to Maps may take. One lookup serves both
+/// the pid a watch monitors and the subject a tell goes to.
+fn find_run(
+  settings settings: Settings,
+  map map: MapId,
+  incarnation incarnation: Int,
+) -> Result(world_map_registry.MapProcess, Nil) {
+  world_map_registry.find(
+    settings.world.maps,
+    map,
+    incarnation,
+    deadline_ms: runtime.now().monotonic_ms + settings.world.maps_call_ms,
+  )
+  |> result.replace_error(Nil)
+}
+
+/// How a game or login connection's shell finds the process a `Watch` names,
+/// with the way to tell it when the rule tells it: the run of a map is found
+/// once, and the way to tell it (`TellMoved`) comes with the pid the watch
+/// monitors. Any other address has no process that takes a tell.
+fn connection_locate(
   settings: Settings,
-) -> fn(step.Address) -> Result(fn(Request) -> Nil, Nil) {
-  let maps_name = settings.world.maps
-  let maps_call_ms = settings.world.maps_call_ms
+) -> fn(step.Address) -> Result(watch.Found(fn(Request) -> Nil), Nil) {
+  let pids = locate(settings)
   fn(address: step.Address) {
     case address {
       step.Map(map:, incarnation:) ->
-        world_map_registry.find(
-          maps_name,
-          map,
-          incarnation,
-          deadline_ms: runtime.now().monotonic_ms + maps_call_ms,
-        )
-        |> result.map(fn(found) { tell_the_run(found.subject, _) })
-        |> result.replace_error(Nil)
+        find_run(settings:, map:, incarnation:)
+        |> result.map(fn(found) {
+          watch.Tellable(pid: found.pid, sender: tell_the_run(found.subject, _))
+        })
       step.Sessions
       | step.HandOff
       | step.Store
       | step.Maps
-      | step.Connection(..) -> Error(Nil)
+      | step.Connection(..) -> pids(address) |> result.map(watch.Watched)
     }
   }
 }
 
 /// Tells the run of a map what the request says: that a player moved. Any
-/// other request is an ask, which a tell never carries, and is dropped.
-fn tell_the_run(
+/// other request is an ask, which a tell never carries: a rule that tells one
+/// has a bug, logged as an error, and nothing is sent.
+pub fn tell_the_run(
   subject: Subject(Call(map.Message, map.Outgoing)),
   request: Request,
 ) -> Nil {
@@ -365,35 +371,28 @@ fn tell_the_run(
     | AskHandOff(..)
     | AskSessions(..)
     | AskMap(..)
-    | AskMapRun(..) -> Nil
+    | AskMapRun(..) ->
+      runtime.log(
+        LogError,
+        "a rule told a map something other than a move, which a map takes only by an ask",
+        step.no_one,
+      )
   }
 }
 
-/// How Sessions reaches the processes its rule names: the same lookups, and
-/// a send to a connection, which takes what Sessions sends as the message
-/// `SentBySessions`. Only a connection is sent to; any other address has no
-/// process that takes a message from Sessions.
-fn sessions_reach(settings: Settings) -> Reach(account_session.Outgoing) {
+/// How a service reaches the processes its rule names: the same lookups, and
+/// a send to a connection, which takes what the service sends wrapped by
+/// `wrap` (`SentBySessions`, `SentByMap`). Only a connection is sent to; any
+/// other address has no process that takes a message from a service.
+fn connection_reach(
+  settings: Settings,
+  wrap: fn(outgoing) -> Message,
+) -> Reach(outgoing) {
   let registry = settings.registry
   service.Reach(locate: locate(settings), send: fn(to, outgoing) {
     case to {
       step.Connection(connection:) ->
-        registry.deliver(registry, connection, SentBySessions(outgoing))
-      step.Sessions | step.HandOff | step.Store | step.Maps | step.Map(..) ->
-        Error(Nil)
-    }
-  })
-}
-
-/// How a map reaches the processes its rule names: the same lookups, and a
-/// send to a connection, which takes what a map sends as the message
-/// `SentByMap`. Only a connection is sent to.
-fn map_reach(settings: Settings) -> Reach(map.Outgoing) {
-  let registry = settings.registry
-  service.Reach(locate: locate(settings), send: fn(to, outgoing) {
-    case to {
-      step.Connection(connection:) ->
-        registry.deliver(registry, connection, SentByMap(outgoing))
+        registry.deliver(registry, connection, wrap(outgoing))
       step.Sessions | step.HandOff | step.Store | step.Maps | step.Map(..) ->
         Error(Nil)
     }
@@ -411,7 +410,7 @@ fn world(
     world: settings.world,
     realm_id: settings.game.settings.realm_id,
     tables: settings.game.settings.tables,
-    reach: map_reach(settings),
+    reach: connection_reach(settings, SentByMap),
   )
 }
 
@@ -540,8 +539,7 @@ fn serve(
         scripts: served.scripts,
         directory:,
         registry:,
-        teller: teller(settings),
-        locate: locate(settings),
+        locate: connection_locate(settings),
       ),
     )),
   )

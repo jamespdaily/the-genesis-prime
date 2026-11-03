@@ -1100,6 +1100,19 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
     game_client.read_kept(game: second, have: second_have, count: 8)
   let #(back, first_have) = game_client.next(game: first, have: first_have)
   assert unit_of(back) == 3 as "a new unit, never an id given before"
+  game_client.send_world(
+    game: second,
+    message_id: 0x0637,
+    body: game_client.moves_body(client_clock: 0x1235, commands: [
+      game_client.position_command(x: 100.5, y: 50.25, z: -200.75),
+    ]),
+  )
+  let #(moved_again, first_have) =
+    game_client.next(game: first, have: first_have)
+  assert moved_again.message_id == 0x0638
+    as "the rejoined player's moves are told to the run it joined"
+  let assert Ok(relayed_again) = unit_movement.decode(moved_again.body)
+  assert relayed_again.unit_id == 3
   game_client.close(game: second)
   let #(dropped, _first_have) = game_client.next(game: first, have: first_have)
   assert dropped.message_id == 0x0355

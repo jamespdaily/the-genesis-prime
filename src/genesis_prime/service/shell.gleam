@@ -147,7 +147,7 @@ type Running(settings, state, message, outgoing) {
     state: state,
     callers: Dict(Int, fn(outgoing) -> Nil),
     next_caller: Int,
-    watches: Watches,
+    watches: Watches(Nil),
   )
 }
 
@@ -395,7 +395,8 @@ fn open_watch(
     watches: watch.open(
       watches: running.watches,
       watch:,
-      target: running.settings.reach.locate(target),
+      address: target,
+      target: result.map(running.settings.reach.locate(target), watch.Watched),
       shell: "service shell",
     ),
   )

@@ -150,11 +150,11 @@
 ////   past the deadline, the outcome is `NoAnswerInTime` at once.
 //// - **A tell.** A `Tell(to, request)` effect sends the request to the process
 ////   at `to` and the shell goes on at once: nothing waits, no monitor is kept,
-////   and no outcome comes back. The first tell to an address resolves it with
-////   the settings' `teller` (for a map's run, one call to Maps) into a sender
-////   the shell keeps for every later tell, until the rule's watch on that address
-////   ends or is dropped; so a move costs no lookup. A resolve that fails drops the
-////   tell with a warning, and the next tell tries again.
+////   and no outcome comes back. The way to the process is the one the rule's
+////   open watch on `to` found with its lookup (`Tellable`), so a tell makes no
+////   lookup and a move costs none; it goes with the watch, whether the rule
+////   drops it or the process ends. A tell to an address with no such watch is
+////   dropped with a warning.
 //// - **A message delivered.** Another process sends the connection's pid
 ////   `{woken, message}` (`registry.deliver`); the shell takes it between steps
 ////   as `OwnEvent(Woken(message))`, in the order it arrived among the socket's
@@ -163,8 +163,9 @@
 ////   dropped by the VM, and one that arrives after the shell began to stop is
 ////   dropped with the process. A connection with no registry in its settings is
 ////   joined to no group, so no process can send it anything.
-//// - **A watch.** `Watch(id, target)` finds the target's pid with the settings'
-////   `locate`, monitors it and keeps the monitor under `id`
+//// - **A watch.** `Watch(id, target)` finds the target's pid, and the way to
+////   tell it when the rule tells it, with one call of the settings' `locate`,
+////   monitors it and keeps the monitor under `id`
 ////   (genesis_prime/step/watch). Its DOWN is taken between steps as
 ////   `WatchEnded(id)`, once, and the shell forgets the watch. A target no
 ////   process holds is monitored by nothing: the shell holds the id and takes
@@ -206,7 +207,7 @@ import genesis_prime/connection/script.{
   type Cancel, type Elapsed, type Issued, type Script, type Scripts,
 }
 import genesis_prime/seed
-import genesis_prime/service.{type Locate, type Sent}
+import genesis_prime/service.{type Sent}
 import genesis_prime/step.{
   type Ask, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
   type ConnectionRule, type Effect, type Event, type SocketFailure, type TimerId,
@@ -259,14 +260,12 @@ pub type Settings(settings, state, message, answer, request) {
     /// find it by its id; `None` for a connection no process addresses (the
     /// login's).
     registry: Option(Registry(message)),
-    /// How the shell resolves the process a `Tell` names into a way to tell it:
-    /// a function that sends it a request with no answer, or `Error(Nil)` when
-    /// it is not running or the lookup got no reply. Made once at start from the
+    /// How the shell finds the process a `Watch` names, with, for a process a
+    /// rule tells, the way to tell it (`Tellable`: a function that sends it a
+    /// request with no answer), from one lookup; `Error(Nil)` when it is not
+    /// running or the lookup got no reply. Made once at start from the
     /// processes' names; a rule never sees it.
-    teller: fn(step.Address) -> Result(fn(request) -> Nil, Nil),
-    /// How the shell finds the process a `Watch` names. Made once at start
-    /// from the processes' names; a rule never sees it.
-    locate: Locate,
+    locate: fn(step.Address) -> Result(watch.Found(fn(request) -> Nil), Nil),
   )
 }
 
@@ -356,14 +355,9 @@ type Running(state, request) {
     taken_ms: Int,
     reading: Reading,
     kept: Dict(Reference, Kept),
-    watches: Watches,
-    /// The address each open watch names, so a watch's end or drop forgets the
-    /// tell target it resolved.
-    watched: Dict(step.WatchId, step.Address),
-    /// The senders to the processes the rule has told, each resolved once from
-    /// its address by the settings' `teller` and kept until the rule's watch on
-    /// that address ends or is dropped.
-    tells: Dict(step.Address, fn(request) -> Nil),
+    /// The watches the rule has open, which keep the way to tell each process
+    /// a watch found until the watch ends or is dropped.
+    watches: Watches(fn(request) -> Nil),
     timers: Dict(TimerId, Started),
     stopping: Option(Int),
     /// The side the recording's closing line names: the client once the shell
@@ -667,8 +661,6 @@ fn accepted(
       reading: TakeWhatArrives,
       kept: dict.new(),
       watches: watch.new(),
-      watched: dict.new(),
-      tells: dict.new(),
       timers: dict.new(),
       stopping: None,
       closed_by: wire_recording.Server,
@@ -1061,12 +1053,9 @@ fn carry_effect(
     step.Unwatch(watch:) ->
       carry(
         connection:,
-        running: forget_tells(
-          running: Running(
-            ..running,
-            watches: watch.close(watches: running.watches, watch:),
-          ),
-          watch:,
+        running: Running(
+          ..running,
+          watches: watch.close(watches: running.watches, watch:),
         ),
         effects: later,
         then:,
@@ -1081,16 +1070,7 @@ fn carry_effect(
         closing:,
       )
     OwnEffect(step.Tell(to:, request:)) -> {
-      let #(running, sent) = tell(connection:, running:, to:, request:)
-      case sent {
-        True -> Nil
-        False ->
-          runtime.log(
-            LogWarning,
-            "a tell was dropped: no process is running at its address",
-            step.no_one,
-          )
-      }
+      tell(running:, to:, request:)
       carry(connection:, running:, effects: later, then:, closing:)
     }
     OwnEffect(CancelTimer(timer:)) ->
@@ -1104,7 +1084,8 @@ fn carry_effect(
   }
 }
 
-/// Monitors the process the address names under the watch's id.
+/// Monitors the process the address names under the watch's id, with the way
+/// to tell it when the lookup found one.
 fn open_watch(
   connection connection: Connection(settings, state, message, answer, request),
   running running: Running(state, request),
@@ -1116,56 +1097,30 @@ fn open_watch(
     watches: watch.open(
       watches: running.watches,
       watch:,
+      address: target,
       target: connection.settings.locate(target),
       shell: "connection shell",
     ),
-    watched: dict.insert(running.watched, watch, target),
   )
 }
 
-/// Tells the process at the address the request: the sender the settings'
-/// `teller` resolved for the address the first time is kept and used again, so
-/// a move costs no lookup; a failed resolve is not kept, and the tell is
-/// dropped. Whether the tell was sent.
+/// Tells the process at the address the request, through the way the open
+/// watch on that address found, so a move costs no lookup. A tell to an address
+/// no open watch found a process for is dropped with a warning: the watch was
+/// dropped, the process ended, or it was never running.
 fn tell(
-  connection connection: Connection(settings, state, message, answer, request),
   running running: Running(state, request),
   to to: step.Address,
   request request: request,
-) -> #(Running(state, request), Bool) {
-  case dict.get(running.tells, to) {
-    Ok(sender) -> {
-      sender(request)
-      #(running, True)
-    }
+) -> Nil {
+  case watch.sender_at(watches: running.watches, address: to) {
+    Ok(sender) -> sender(request)
     Error(Nil) ->
-      case connection.settings.teller(to) {
-        Ok(sender) -> {
-          sender(request)
-          #(
-            Running(..running, tells: dict.insert(running.tells, to, sender)),
-            True,
-          )
-        }
-        Error(Nil) -> #(running, False)
-      }
-  }
-}
-
-/// The tell target the watch resolved is forgotten: the next tell to its
-/// address, if the rule opens a watch on it again, resolves it again.
-fn forget_tells(
-  running running: Running(state, request),
-  watch watch: step.WatchId,
-) -> Running(state, request) {
-  case dict.get(running.watched, watch) {
-    Ok(address) ->
-      Running(
-        ..running,
-        watched: dict.delete(running.watched, watch),
-        tells: dict.delete(running.tells, address),
+      runtime.log(
+        LogWarning,
+        "a tell was dropped: no open watch holds a process at its address",
+        step.no_one,
       )
-    Error(Nil) -> running
   }
 }
 
@@ -1253,7 +1208,7 @@ fn wait_for_input(
     Ok(#(watch, watches)), _ ->
       take_next(
         connection:,
-        running: forget_tells(running: Running(..running, watches:), watch:),
+        running: Running(..running, watches:),
         event: step.WatchEnded(watch:),
       )
     Error(Nil), Some(deadline_ms) ->

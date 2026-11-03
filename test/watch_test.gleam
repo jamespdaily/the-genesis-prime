@@ -8,8 +8,9 @@
 //// DOWNs arrive in its mailbox.
 
 import ask_support
-import genesis_prime/step.{WatchId}
+import genesis_prime/step.{Map, Sessions, WatchId}
 import genesis_prime/step/watch
+import genesis_prime/world_map/map_id.{MapId}
 import gleam/erlang/process.{type Monitor, type Pid}
 import gleam/list
 import gleam/string
@@ -38,7 +39,8 @@ pub fn a_watched_process_that_ends_gives_its_watchs_id_once_test() -> Nil {
     watch.open(
       watches: watch.new(),
       watch: WatchId(1),
-      target: Ok(target),
+      address: Sessions,
+      target: Ok(watch.Watched(target)),
       shell: "test shell",
     )
   process.kill(target)
@@ -55,6 +57,7 @@ pub fn a_watch_on_no_process_is_held_to_end_once_as_the_shells_next_input_test()
     watch.open(
       watches: watch.new(),
       watch: WatchId(2),
+      address: Sessions,
       target: Error(Nil),
       shell: "test shell",
     )
@@ -69,6 +72,7 @@ pub fn a_watch_on_no_process_that_is_closed_gives_no_end_test() -> Nil {
     watch.open(
       watches: watch.new(),
       watch: WatchId(5),
+      address: Sessions,
       target: Error(Nil),
       shell: "test shell",
     )
@@ -83,7 +87,13 @@ pub fn watches_on_no_process_end_in_the_order_opened_test() -> Nil {
   let watches =
     [WatchId(7), WatchId(3), WatchId(9)]
     |> list.fold(watch.new(), fn(watches, id) {
-      watch.open(watches:, watch: id, target: Error(Nil), shell: "test shell")
+      watch.open(
+        watches:,
+        watch: id,
+        address: Sessions,
+        target: Error(Nil),
+        shell: "test shell",
+      )
     })
   let assert Ok(#(WatchId(7), watches)) = watch.next_unheld_end(watches)
     as "the first opened ends first, whatever its number"
@@ -99,7 +109,8 @@ pub fn a_closed_watch_gives_no_end_and_a_monitor_held_under_no_watch_gives_none_
     watch.open(
       watches: watch.new(),
       watch: WatchId(3),
-      target: Ok(target),
+      address: Sessions,
+      target: Ok(watch.Watched(target)),
       shell: "test shell",
     )
   let watches = watch.close(watches:, watch: WatchId(3))
@@ -118,7 +129,10 @@ pub fn a_closed_watch_gives_no_end_and_a_monitor_held_under_no_watch_gives_none_
 pub fn a_watch_id_already_open_ends_the_process_with_an_error_log_test() -> Nil {
   use <- owned_test.run(30_000)
   let target = a_process()
-  opening_twice_ends_the_process(first: Ok(target), again: Ok(target))
+  opening_twice_ends_the_process(
+    first: Ok(watch.Watched(target)),
+    again: Ok(watch.Watched(target)),
+  )
   process.kill(target)
 }
 
@@ -131,8 +145,8 @@ pub fn a_watch_id_held_to_end_is_open_and_opening_it_again_ends_the_process_test
 /// and checks that the process ended with an error log naming the open id and
 /// the shell.
 fn opening_twice_ends_the_process(
-  first first: Result(Pid, Nil),
-  again again: Result(Pid, Nil),
+  first first: Result(watch.Found(Nil), Nil),
+  again again: Result(watch.Found(Nil), Nil),
 ) -> Nil {
   let ready = process.new_subject()
   let opener =
@@ -144,6 +158,7 @@ fn opening_twice_ends_the_process(
         watch.open(
           watches: watch.new(),
           watch: WatchId(4),
+          address: Sessions,
           target: first,
           shell: "test shell",
         )
@@ -151,6 +166,7 @@ fn opening_twice_ends_the_process(
         watch.open(
           watches:,
           watch: WatchId(4),
+          address: Sessions,
           target: again,
           shell: "test shell",
         )
@@ -171,4 +187,43 @@ fn opening_twice_ends_the_process(
     && string.contains(text, "test shell")
     as "it names the open id and the shell that does not carry it out"
   log_capture.stop(capture)
+}
+
+pub fn a_watch_that_found_a_way_to_tell_gives_it_at_its_address_until_the_watch_is_closed_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let target = a_process()
+  let run = Map(map: MapId(world_id: 3460, instance: 0), incarnation: 5)
+  let watches =
+    watch.open(
+      watches: watch.new(),
+      watch: WatchId(1),
+      address: run,
+      target: Ok(watch.Tellable(pid: target, sender: "the way to run 5")),
+      shell: "test shell",
+    )
+  assert watch.sender_at(watches:, address: run) == Ok("the way to run 5")
+  assert watch.sender_at(watches:, address: Sessions) == Error(Nil)
+    as "another address has none"
+  let watches = watch.close(watches:, watch: WatchId(1))
+  assert watch.sender_at(watches:, address: run) == Error(Nil)
+    as "a closed watch takes its way with it"
+  process.kill(target)
+}
+
+pub fn a_watch_that_found_a_way_to_tell_loses_it_when_the_process_ends_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let target = a_process()
+  let watches =
+    watch.open(
+      watches: watch.new(),
+      watch: WatchId(1),
+      address: Sessions,
+      target: Ok(watch.Tellable(pid: target, sender: "the way")),
+      shell: "test shell",
+    )
+  process.kill(target)
+  let monitor = next_down()
+  let assert Ok(#(WatchId(1), watches)) = watch.ended(watches:, monitor:)
+  assert watch.sender_at(watches:, address: Sessions) == Error(Nil)
+    as "the end of the process takes the way to it with the watch"
 }

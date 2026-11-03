@@ -22,16 +22,33 @@
 ////   forgotten, so a watch ends once; the DOWN of a monitor the shell holds
 ////   under no id (a closed watch's, or a kept ask's) gives none. An id held
 ////   to end is given once by `next_unheld_end` and forgotten.
+//// - **A way to tell.** A target the shell can tell is found with the way to
+////   tell it (`Tellable`), which the watch keeps under its id together with
+////   the address the watch names, so a `Tell` to that address finds it with
+////   `sender_at` and no lookup. Whatever forgets the watch (a close, an end,
+////   an id held to end) forgets the way with it, so a way to a process that
+////   has ended or been left is never used.
 
-import genesis_prime/step.{type WatchId, LogError}
+import genesis_prime/step.{type Address, type WatchId, LogError}
 import genesis_prime/step/runtime
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Monitor, type Pid}
 import gleam/list
 import gleam/result
 
-/// The open watches of one shell.
-pub opaque type Watches {
+/// The process a watch's target is, as the shell's lookup found it: to
+/// monitor, and, for a target the shell can tell, the way to tell it, made
+/// with the same lookup.
+pub type Found(sender) {
+  /// A process to watch, which takes no tell.
+  Watched(pid: Pid)
+  /// A process to watch and to tell through `sender`.
+  Tellable(pid: Pid, sender: sender)
+}
+
+/// The open watches of one shell; `sender` is the way the shell tells a
+/// process it found with `Tellable`.
+pub opaque type Watches(sender) {
   Watches(
     monitors: Dict(WatchId, Monitor),
     /// The same watches by monitor, so a DOWN is one lookup.
@@ -39,35 +56,49 @@ pub opaque type Watches {
     /// The watches of a target no process holds, in the order opened, the
     /// first to end first.
     unheld: List(WatchId),
+    /// The way to tell the target of each watch that found one, with the
+    /// address the watch names.
+    senders: Dict(WatchId, #(Address, sender)),
   )
 }
 
 /// No watch open.
-pub fn new() -> Watches {
-  Watches(monitors: dict.new(), by_monitor: dict.new(), unheld: [])
+pub fn new() -> Watches(sender) {
+  Watches(
+    monitors: dict.new(),
+    by_monitor: dict.new(),
+    unheld: [],
+    senders: dict.new(),
+  )
 }
 
-/// Opens watch `watch` on the process the shell found, or, with none, holds
-/// the watch to end; `shell` names the shell, for the log line of an id
-/// already open.
+/// Opens watch `watch`, which names `address`, on the process the shell
+/// found, or, with none, holds the watch to end; `shell` names the shell, for
+/// the log line of an id already open.
 pub fn open(
-  watches watches: Watches,
+  watches watches: Watches(sender),
   watch watch: WatchId,
-  target target: Result(Pid, Nil),
+  address address: Address,
+  target target: Result(Found(sender), Nil),
   shell shell: String,
-) -> Watches {
+) -> Watches(sender) {
   case
     dict.has_key(watches.monitors, watch),
     list.contains(watches.unheld, watch)
   {
     False, False ->
       case target {
-        Ok(pid) -> {
-          let monitor = process.monitor(pid)
+        Ok(found) -> {
+          let monitor = process.monitor(found.pid)
           Watches(
             ..watches,
             monitors: dict.insert(watches.monitors, watch, monitor),
             by_monitor: dict.insert(watches.by_monitor, monitor, watch),
+            senders: case found {
+              Watched(..) -> watches.senders
+              Tellable(sender:, ..) ->
+                dict.insert(watches.senders, watch, #(address, sender))
+            },
           )
         }
         Error(Nil) ->
@@ -88,7 +119,10 @@ pub fn open(
 
 /// Closes watch `watch`: its monitor is dropped and its DOWN flushed, or, for
 /// a watch held to end, the hold is dropped.
-pub fn close(watches watches: Watches, watch watch: WatchId) -> Watches {
+pub fn close(
+  watches watches: Watches(sender),
+  watch watch: WatchId,
+) -> Watches(sender) {
   case dict.get(watches.monitors, watch) {
     Ok(monitor) -> {
       process.demonitor_process(monitor)
@@ -102,12 +136,27 @@ pub fn close(watches watches: Watches, watch watch: WatchId) -> Watches {
   }
 }
 
+/// The way to tell the process an open watch on `address` found, or
+/// `Error(Nil)` when no open watch on it found a process to tell.
+pub fn sender_at(
+  watches watches: Watches(sender),
+  address address: Address,
+) -> Result(sender, Nil) {
+  dict.values(watches.senders)
+  |> list.find_map(fn(held) {
+    case held.0 == address {
+      True -> Ok(held.1)
+      False -> Error(Nil)
+    }
+  })
+}
+
 /// The watch of a target no process holds that was opened first and has not
 /// ended, which is forgotten, or `Error(Nil)` when none is held. The shell
 /// takes it as `WatchEnded` before it reads its mailbox.
 pub fn next_unheld_end(
-  watches watches: Watches,
-) -> Result(#(WatchId, Watches), Nil) {
+  watches watches: Watches(sender),
+) -> Result(#(WatchId, Watches(sender)), Nil) {
   case watches.unheld {
     [watch, ..later] -> Ok(#(watch, Watches(..watches, unheld: later)))
     [] -> Error(Nil)
@@ -117,21 +166,22 @@ pub fn next_unheld_end(
 /// The watch a DOWN's monitor belongs to, which is forgotten, or `Error(Nil)`
 /// for a monitor held under no watch.
 pub fn ended(
-  watches watches: Watches,
+  watches watches: Watches(sender),
   monitor monitor: Monitor,
-) -> Result(#(WatchId, Watches), Nil) {
+) -> Result(#(WatchId, Watches(sender)), Nil) {
   use watch <- result.map(dict.get(watches.by_monitor, monitor))
   #(watch, forget(watches:, watch:, monitor:))
 }
 
 fn forget(
-  watches watches: Watches,
+  watches watches: Watches(sender),
   watch watch: WatchId,
   monitor monitor: Monitor,
-) -> Watches {
+) -> Watches(sender) {
   Watches(
     ..watches,
     monitors: dict.delete(watches.monitors, watch),
     by_monitor: dict.delete(watches.by_monitor, monitor),
+    senders: dict.delete(watches.senders, watch),
   )
 }

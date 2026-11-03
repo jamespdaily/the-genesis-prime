@@ -10,6 +10,7 @@
 //// ```
 //// 'W' n    watch n on Sessions            'T' n ms start timer n, which fires after ms
 //// 'X' n    cancel timer n                 'P' n    write the record 'p' n
+//// 'U' n    drop watch n                   'Y' n    tell Sessions (no answer)
 //// 'Z' n ms start timer n, which would fire after ms, and cancel it in the
 ////          same step, so no machine's speed decides whether it fired first
 //// 'A' n ms ask the directory with ask n, which has ms before its deadline;
@@ -22,23 +23,26 @@
 ////
 //// ```
 //// 'c' id   the connection was accepted as connection id
-//// 'w' n    the message n was delivered    'e' n    watch n ended
+//// 'w' n    the message n was delivered (0 gives no record and does nothing)
+//// 'e' n    watch n ended
 ////          (a message -n also watches 1 to n on Sessions)
 //// 't' n    timer n fired                  'p' n    the answer to 'P' n
 //// 'r' n    ask n came back, with any outcome, and the step cancels timer n and,
 ////          for ask 2, starts timer 2 again with a minute to run
 //// ```
 ////
-//// The rule stops when the client closes or its socket fails.
+//// The rule stops when the client closes or its socket fails, with a warning
+//// for any failure but a closed socket, which the peer's close gives.
 
 import connection_rule_support
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionInput, type ConnectionRule,
   type ConnectionStep, type Effect, Accepted, Ask, AskId, CancelTimer, Effects,
   EffectsThenAsk, Input, OwnEffect, OwnEvent, PeerClosed, Read, ReadFailed, Rule,
-  Sessions, StartTimer, Stop, TimerFired, TimerId, Watch, WatchEnded, WatchId,
-  Woken, Write, WriteFailed,
+  Sessions, StartTimer, Stop, TimerFired, TimerId, Unwatch, Watch, WatchEnded,
+  WatchId, Woken, Write, WriteFailed,
 }
+import gleam/bool
 import gleam/int
 import gleam/list
 
@@ -55,6 +59,10 @@ pub const timer_command = 0x54
 pub const cancel_command = 0x58
 
 pub const pong_command = 0x50
+
+pub const unwatch_command = 0x55
+
+pub const tell_command = 0x59
 
 pub const start_then_cancel_command = 0x5A
 
@@ -111,6 +119,8 @@ pub fn step(
       Effects([record(timer_fired, n)]),
     )
     OwnEvent(PeerClosed) | step.Stopping(..) -> #(state, Effects([Stop]))
+    OwnEvent(ReadFailed(failure: step.Closed))
+    | OwnEvent(WriteFailed(failure: step.Closed)) -> #(state, Effects([Stop]))
     OwnEvent(ReadFailed(..)) | OwnEvent(WriteFailed(..)) -> #(
       state,
       Effects([connection_rule_support.warn("the socket failed"), Stop]),
@@ -140,6 +150,7 @@ fn restart(n: Int) -> List(Effect(ConnectionEffect(Nil))) {
 /// record, so a test can start watches from a message that waits in the
 /// mailbox.
 fn woken_effects(message: Int) -> List(Effect(ConnectionEffect(Nil))) {
+  use <- bool.guard(when: message == 0, return: [])
   let watches = case message < 0 {
     True ->
       list.repeat(Nil, int.negate(message))
@@ -201,6 +212,9 @@ fn command(
 ) -> Effect(ConnectionEffect(Nil)) {
   case letter {
     _ if letter == watch_command -> Watch(WatchId(n), Sessions)
+    _ if letter == unwatch_command -> Unwatch(WatchId(n))
+    _ if letter == tell_command ->
+      OwnEffect(step.Tell(to: Sessions, request: Nil))
     _ if letter == timer_command ->
       OwnEffect(StartTimer(TimerId(n), milliseconds))
     _ if letter == cancel_command -> OwnEffect(CancelTimer(TimerId(n)))

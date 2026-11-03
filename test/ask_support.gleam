@@ -13,7 +13,10 @@ import genesis_prime/connection/script.{type Scripts}
 import genesis_prime/connection/shell
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
-import genesis_prime/step.{type ConnectionRule, type ServiceRule, Rule}
+import genesis_prime/step.{
+  type Address, type ConnectionRule, type ServiceRule, Rule,
+}
+import genesis_prime/step/watch
 import genesis_prime/store/worker.{type Job}
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import gleam/erlang/atom
@@ -22,6 +25,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor as supervisor
 import gleam/otp/supervision.{type ChildSpecification}
+import gleam/result
 import mug
 
 /// How long one wait for an event may take, in milliseconds. A passing test
@@ -98,6 +102,32 @@ pub fn start_scripted(
   locate locate: service.Locate,
   with with: fn(supervisor.Builder) -> supervisor.Builder,
 ) -> Server {
+  start_telling(
+    rule:,
+    directory:,
+    shutdown_ms:,
+    wire_recorder:,
+    scripts:,
+    registry:,
+    locate: fn(address) { result.map(locate(address), watch.Watched) },
+    with:,
+  )
+}
+
+/// Starts a listener as `start_scripted` does, whose connections find what
+/// their rule watches with `locate`, which also gives the way to tell a
+/// process the rule tells (`Tellable`).
+pub fn start_telling(
+  rule rule: ConnectionRule(settings, state, request, message, answer),
+  directory directory: fn(request, Int, fn(answer) -> Nil) ->
+    Result(service.Sent, Nil),
+  shutdown_ms shutdown_ms: Int,
+  wire_recorder wire_recorder: Option(WireRecorder),
+  scripts scripts: Scripts,
+  registry registry: Option(Registry(message)),
+  locate locate: fn(Address) -> Result(watch.Found(fn(request) -> Nil), Nil),
+  with with: fn(supervisor.Builder) -> supervisor.Builder,
+) -> Server {
   let name = process.new_name("test_listener")
   let connection =
     shell.Settings(
@@ -108,7 +138,6 @@ pub fn start_scripted(
       scripts:,
       directory:,
       registry:,
-      teller: fn(_address) { Error(Nil) },
       locate:,
     )
   let assert Ok(started) =

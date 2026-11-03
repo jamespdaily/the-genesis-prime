@@ -19,13 +19,21 @@
 ////   the running supervisor holds.
 
 import ask_support
+import genesis_prime/client_connection.{AskMap, TellMoved}
+import genesis_prime/server
+import genesis_prime/service
+import genesis_prime/step.{ConnectionId}
+import genesis_prime/world_map/map
+import genesis_prime/world_map/map_id.{MapId}
 import gleam/erlang/process
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/otp/static_supervisor
 import gleam/otp/supervision.{Permanent}
+import log_capture
 import login_support
 import owned_test
+import place_support
 import supervisor_children.{ChildSettings}
 import supervisor_flags.{Flags}
 
@@ -117,4 +125,32 @@ pub fn each_listener_holds_the_connections_its_setting_gives_with_one_acceptor_t
     == #(login_support.game_max_connections, 1)
     as "the game listener: its own setting"
   login_support.stop(started)
+}
+
+// ---- a tell to a map ----
+
+pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent_to_no_one_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let run = process.new_subject()
+  let connection = ConnectionId(7)
+  let place = place_support.live_character_place()
+  server.tell_the_run(run, TellMoved(connection:, place:, commands: []))
+  assert process.receive(run, 0)
+    == Ok(service.TellCall(map.Moved(connection:, place:, commands: [])))
+    as "a move reaches the run as the map's own Moved, told with no reply"
+  let logged = process.new_subject()
+  let capture = log_capture.start(from: process.self(), into: logged)
+  server.tell_the_run(
+    run,
+    AskMap(
+      map: MapId(world_id: 3460, instance: 0),
+      message: map.Leave(connection:),
+    ),
+  )
+  let assert Ok(#("error", _text)) =
+    process.receive(logged, within: ask_support.event_wait_ms)
+    as "a tell that is an ask is a bug in the rule that tells it: an error line"
+  log_capture.stop(capture)
+  assert process.receive(run, 0) == Error(Nil)
+    as "and nothing is sent to the map"
 }
