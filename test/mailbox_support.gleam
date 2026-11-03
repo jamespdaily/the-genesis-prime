@@ -3,7 +3,6 @@
 //// is waiting in one, or that a process holds no monitor it should have
 //// dropped.
 
-import gleam/bool
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/process.{type Pid, type Subject}
 
@@ -22,14 +21,13 @@ pub fn drain(messages: Subject(message)) -> List(message) {
   }
 }
 
-/// Waits until a message is in the process's mailbox: a call made to a process
-/// that takes none, because it is suspended or stopping its children, stays
-/// there.
-pub fn await_queued(pid: Pid) -> Nil {
-  use <- bool.guard(when: queued(pid) > 0, return: Nil)
-  process.sleep(1)
-  await_queued(pid)
-}
+/// Whether a `gen_server` call made by `caller` is in the process's mailbox: a
+/// call made to a process that takes none, because it is suspended or stopping
+/// its children, stays there. It is the call's own message that is looked for,
+/// so no other message makes it true, and a process that has ended has none.
+/// Tests wait on it with `event_wait.until`.
+@external(erlang, "mailbox_support_ffi", "call_waiting_from")
+pub fn call_waiting_from(pid pid: Pid, caller caller: Pid) -> Bool
 
 /// How many messages waiting in the process's mailbox are tuples whose first
 /// element is the atom `tag`. A mailbox's length is no measure of what a
