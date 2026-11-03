@@ -984,6 +984,19 @@ fn named_by_0x1da(effects: List(chat.Effect)) -> List(Int) {
   })
 }
 
+/// The (channel type, channel id) each 0x1bc among the effects gives.
+fn joined_by_0x1bc(effects: List(chat.Effect)) -> List(#(Int, Int)) {
+  list.filter_map(frames_of(effects), fn(frame) {
+    case frame.message_id == chat_channel_joined.message_id {
+      True -> {
+        let assert Ok(joined) = chat_channel_joined.decode(frame.body)
+        Ok(#(joined.channel_type, joined.channel_id))
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
 fn unknown_zones_of(effects: List(chat.Effect)) -> List(Int) {
   list.filter_map(effects, fn(effect) {
     case effect {
@@ -1052,16 +1065,7 @@ pub fn the_entry_burst_names_the_channel_joins_it_and_joins_the_groups_in_order_
 pub fn no_0x1bc_is_written_for_a_channel_the_client_makes_itself_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, effects) = in_zone(speaker(), 6009)
-  let types =
-    list.filter_map(frames_of(effects), fn(frame) {
-      case frame.message_id == chat_channel_joined.message_id {
-        True -> {
-          let assert Ok(joined) = chat_channel_joined.decode(frame.body)
-          Ok(joined.channel_type)
-        }
-        False -> Error(Nil)
-      }
-    })
+  let types = list.map(joined_by_0x1bc(effects), fn(joined) { joined.0 })
   assert types == [9]
     as "0x140404ee0: the client makes Say, Yell, Emote, Whisper and AccountWhisper itself, and a 0x1bc for one only prints a join again; Zone is the one the server joins"
 }
@@ -1074,8 +1078,8 @@ pub fn the_entry_burst_gives_the_zone_channel_id_1_in_every_world_test() -> Nil 
     assert named.message_id == chat_zone_named.message_id
       && frame.message_id == chat_channel_joined.message_id
       as "0x1da comes before 0x1bc"
-    let assert Ok(joined) = chat_channel_joined.decode(frame.body)
-    joined.channel_id
+    let assert [#(9, channel_id)] = joined_by_0x1bc(effects)
+    channel_id
   }
   assert joined_id(speaker()) == 1
     as "chat.zone_channel_id, server choice: the client has no rule on a Zone channel's id, and one id is one ChatLog save key"
@@ -1091,28 +1095,18 @@ pub fn the_entry_burst_gives_the_zone_channel_id_1_in_every_world_test() -> Nil 
 pub fn the_first_0xf2_of_a_stay_writes_0x1bc_for_the_zone_channel_again_and_no_later_one_does_test() -> Nil {
   use <- owned_test.run(5000)
   let #(entered, _) = in_zone(speaker(), 6009)
-  let joins_of = fn(effects) {
-    list.filter_map(frames_of(effects), fn(frame) {
-      case frame.message_id == chat_channel_joined.message_id {
-        True -> {
-          let assert Ok(joined) = chat_channel_joined.decode(frame.body)
-          Ok(#(joined.channel_type, joined.channel_id))
-        }
-        False -> Error(Nil)
-      }
-    })
-  }
   let #(first_stay, first) = terrain_ready(entered, 6009)
-  assert joins_of(first) == [#(9, 1)]
-    as "chat.zone_join_trigger: ChatLog registers ChatJoin after 0xad, so the first 0xf2 of the stay gives the client the Zone channel again, and a 0x1bc for a held channel only raises ChatJoin (chat.zone_view)"
+  assert joined_by_0x1bc(first) == [#(9, 1)]
+    as "chat.zone_join_trigger: ChatLog registers ChatJoin after 0xad, so the first 0xf2 of the stay gives the client the Zone channel again; a 0x1bc for a held channel only raises ChatJoin, which changes no window's channels (OnChatJoin's nil test) but posts the join line and closes the input boxes again (ChatLog.lua 954-959, chat.zone_view)"
   let #(first_stay, second) = terrain_ready(first_stay, 6009)
-  assert joins_of(second) == [] as "a second 0xf2 in the same stay writes none"
+  assert joined_by_0x1bc(second) == []
+    as "a second 0xf2 in the same stay writes none"
   let #(_, third) = terrain_ready(first_stay, 648)
-  assert joins_of(third) == []
+  assert joined_by_0x1bc(third) == []
     as "nor does one that reports another top zone; it only renames the channel"
   let #(new_stay, _) = in_zone(speaker(), 6009)
-  assert joins_of(terrain_ready(new_stay, 6009).1) == [#(9, 1)]
-    as "a new stay (after a camp and an entry) writes it again"
+  assert joined_by_0x1bc(terrain_ready(new_stay, 6009).1) == [#(9, 1)]
+    as "a new Chat (made at each entry, after a camp) writes it again"
 }
 
 pub fn a_place_zone_that_is_0_or_has_no_row_leaves_the_player_in_no_zone_test() -> Nil {
@@ -1339,7 +1333,7 @@ pub fn a_zone_line_on_channel_1_is_taken_and_one_before_its_0x1bc_or_on_the_worl
   assert refuse(a_chat(), 1) == expected(1)
     as "0x140401cb0: the client holds a Zone channel only after the server's 0x1bc"
   assert refuse(run_zone(1411), world_id) == expected(world_id)
-    as "0x140401cb0: (9, the map's world id) is a channel the player does not hold now"
+    as "0x140401cb0: (9, the map's world id) is a channel the player does not hold"
   assert refuse(run_zone(1411), 2) == expected(2)
     as "another id is no channel the player holds"
   assert refuse(run_zone(1411), 0) == expected(0)

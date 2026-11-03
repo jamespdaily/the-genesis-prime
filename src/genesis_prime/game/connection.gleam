@@ -965,13 +965,13 @@ fn movement_message(
   case movement.take(entered.movement, message, inner.body) {
     Ok(movement.Kept(state:)) ->
       Continue(moving(session:, holder:, entered:, state:), [])
-    Ok(movement.Reported(state:, world_zone_id:)) -> {
+    Ok(movement.Reported(state:, world_zone_id:, by:)) -> {
       let session = moving(session:, holder:, entered:, state:)
       let top_zones = top_zone.top_zones(session.settings.tables)
-      let #(updated, effects) = case message == movement.TerrainReady {
-        True ->
+      let #(updated, effects) = case by {
+        movement.ReportedByTerrainReady ->
           chat.terrain_ready(chat: entered.chat, world_zone_id:, top_zones:)
-        False ->
+        movement.ReportedByZoneChanged ->
           chat.world_zone_reported(
             chat: entered.chat,
             world_zone_id:,

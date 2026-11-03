@@ -1259,11 +1259,10 @@ fn four_players() -> #(login_support.Started, List(Seat)) {
         send_play(game:, character_id: character)
         let #(burst, have) =
           game_client.read_kept(game:, have: <<>>, count: burst_length())
-        Seat(
-          game:,
-          have:,
-          zone_channel: game_client.zone_channel_in(frames: burst),
-        )
+        let zone_channel = game_client.zone_channel_in(frames: burst)
+        assert zone_channel == 1
+          as "chat.zone_channel_id: the burst gives Zone the fixed id 1 in every seat"
+        Seat(game:, have:, zone_channel:)
       },
     )
   #(started, seats)

@@ -81,9 +81,12 @@
 ////   burst's ChatJoin can be lost and a character whose saved ChatLog lacks
 ////   Zone would be refused `/z`. 0xF2 is sent once per entry, after the terrain
 ////   near the player loads, and a 0x1bc for a channel the client holds only
-////   raises ChatJoin again, which ChatLog's nil test makes harmless
-////   (`chat.zone_view`, `lua.ChatLog.OnChatJoin`, `0x1400ea400`,
-////   `chat.zone_join_trigger`, a guess).
+////   raises ChatJoin again. ChatLog's nil test keeps a second join from
+////   changing what a window views, but each ChatJoin still posts the "joined
+////   Zone" line on the Command channel and closes every chat window's input
+////   box (ChatLog.lua 954-959), so a player may see that line twice and the
+////   box close once more (`chat.zone_view`, `lua.ChatLog.OnChatJoin`,
+////   `0x1400ea400`, `chat.zone_join_trigger`, a guess).
 //// - **The zone the client reports** (0xF2 once, 0x63A on each change) is the most
 ////   specific WorldZone the terrain names, never a parent; the server rolls it up
 ////   to its top zone (`opcode.0xf2`, `opcode.0x63a`, `0x140403670`,
