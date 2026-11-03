@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
-# Files and moves cards on the project board, so no one looks up the board's ids.
+# Files and moves issues on the project board, so no one looks up the board's ids.
 #
 #   dev/card.sh file --title T --body-file F --milestone M --parent N [--after S] --status STATUS
 #   dev/card.sh status N STATUS
 #   dev/card.sh move N --parent P [--after S]
 #   dev/card.sh order N --after S
+#   dev/card.sh block N --by S
 #
 # STATUS is one of: "To do", "In progress", "Waiting on Jim", "Done".
-# N, P and S are issue numbers; S is the sibling the card goes right after (without it, last).
+# N, P and S are issue numbers. For --after, S is the sibling the issue goes right after in its
+# parent's list (without it, last). For block, S is the issue N waits on: a blocked-by link, which
+# sets the steps' order.
+# It runs as jamespdaily, the login that can write here, unless GH_TOKEN is already set.
 set -euo pipefail
+export GH_TOKEN=${GH_TOKEN:-$(gh auth token --user jamespdaily)}
 
 owner=jamespdaily
 repo=the-genesis-prime
@@ -119,8 +124,14 @@ case "$command" in
     require_sibling "$parent" "$3"
     place_after "$1" "$parent" "$3"
     ;;
+  block)
+    [ $# -eq 3 ] && [ "$2" = --by ] || fail "usage: card.sh block N --by S"
+    [ "$1" != "$3" ] || fail "#$1 cannot block itself"
+    blocker=$(gh api "repos/$owner/$repo/issues/$3" --jq .id)
+    gh api -X POST "repos/$owner/$repo/issues/$1/dependencies/blocked_by" -F issue_id="$blocker" >/dev/null
+    ;;
   *)
-    sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
     ;;
 esac
