@@ -223,6 +223,20 @@ class RefIndex:
                     called.add(imports[self._targets[i]])
         return sorted(internal), sorted(called)
 
+    def sites_from(self, function_start: int, kinds: set[str]) -> list[Ref]:
+        """The code references of the given kinds made from inside the function's .pdata
+        ranges, chained ones included, by site."""
+        wanted = {KIND_CODE[k] for k in kinds}
+        found = []
+        for low, high in self.pe.root_ranges(function_start):
+            first = bisect.bisect_left(self._sources, low, 0, self._code_count)
+            for i in range(first, self._code_count):
+                if self._sources[i] >= high:
+                    break
+                if self._kinds[i] in wanted:
+                    found.append(Ref(self._sources[i], self._targets[i], KINDS[self._kinds[i]]))
+        return sorted(found, key=lambda r: r.source)
+
     def string_refs(self, text: str) -> dict[int, list[tuple[int, int | None]]]:
         """String address -> (site, function start) for each ASCII or UTF-16 copy of text."""
         patterns = [(text.encode("utf-16-le") + b"\0\0", 2)]

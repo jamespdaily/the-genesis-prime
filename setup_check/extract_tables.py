@@ -63,6 +63,7 @@ from pathlib import Path
 from typing import BinaryIO, Callable, Mapping
 
 TABLE_DIRECTORY = "DB"
+INDEX_NAME = "ClientData.index"
 PACK_SIGNATURE = 0x5041434B  # fact file, archive_index.header
 AIDX_SIGNATURE = 0x41494458
 AARC_SIGNATURE = 0x41415243
@@ -130,15 +131,15 @@ class IndexHeader:
     block: Callable[[int], bytes]
 
 
-def read_header(index: bytes) -> IndexHeader:
+def read_header(index: bytes, name: str = INDEX_NAME) -> IndexHeader:
     """The header of an archive index, read as the fact file's
     "archive_index.header" describes: the PACK header of 0x230 bytes (signature
     0x5041434B, version 1, block table offset at 0x218, block count at 0x220,
     root block index at 0x228), and the root block, which holds the AIDX header
     (signature 0x41494458, version 1, build at offset 8, root directory block at
     offset 12). Block 0 is never readable, as the client's reader refuses it
-    (0x1401b8600). Raises Corrupt for anything else."""
-    name = "ClientData.index"
+    (0x1401b8600). Raises Corrupt for anything else; name is the index's file
+    name, for the message."""
     if len(index) < 0x230:
         raise Corrupt(name, "shorter than the 0x230-byte PACK header")
     blocks = _block_table(index, lambda offset, size: index[offset : offset + size], name)
@@ -171,10 +172,10 @@ def build_of_index(index: bytes) -> tuple[int | None, str]:
         return None, corrupt.reason
 
 
-def read_index(index: bytes) -> list[IndexedFile]:
-    """Every file in the index's directory tree."""
-    name = "ClientData.index"
-    header = read_header(index)
+def read_index(index: bytes, name: str = INDEX_NAME) -> list[IndexedFile]:
+    """Every file in the index's directory tree; name is the index's file name,
+    for a message."""
+    header = read_header(index, name)
     block = header.block
     directory_block = header.directory_block
     files: list[IndexedFile] = []
@@ -199,12 +200,12 @@ def read_index(index: bytes) -> list[IndexedFile]:
     return files
 
 
-def require_target_build(index: bytes) -> None:
-    """Raises Corrupt naming the build the index carries unless it is
-    TARGET_BUILD."""
-    build = read_header(index).build
+def require_target_build(index: bytes, name: str = INDEX_NAME) -> None:
+    """Raises Corrupt naming the index (by name, its file name) and the build it
+    carries unless it is TARGET_BUILD."""
+    build = read_header(index, name).build
     if build != TARGET_BUILD:
-        raise Corrupt("ClientData.index", "is build %d, and the server is written for build %d" % (build, TARGET_BUILD))
+        raise Corrupt(name, "is build %d, and the server is written for build %d" % (build, TARGET_BUILD))
 
 
 def tables_of(files: list[IndexedFile]) -> list[IndexedFile]:
@@ -284,15 +285,14 @@ def aside_of(destination: Path) -> Path:
     return destination.with_name(destination.name + ".old")
 
 
-def stage_tables(patch_folder: Path, staging: Path) -> list[IndexedFile]:
-    """Writes every DB/*.tbl of patch_folder's ClientData into the empty folder
-    staging, each checked against the index's SHA-1 before it is written, and
-    returns the tables the index lists. Raises Corrupt naming the file whose
-    block does not match. Touches nothing but staging."""
-    tables = tables_of(read_index((patch_folder / "ClientData.index").read_bytes()))
-    with open(patch_folder / "ClientData.archive", "rb") as archive:
-        blocks, entries = _archive_entries(archive, "ClientData.archive")
-        for file in tables:
+def stage_files(archive_path: Path, files: Mapping[str, IndexedFile], staging: Path) -> None:
+    """Writes each file of files, keyed by its path under staging, from the
+    archive at archive_path, each checked against the index's SHA-1 before it
+    is written, creating the folders a key names. Raises Corrupt naming the file
+    whose block does not match. Touches nothing but staging."""
+    with open(archive_path, "rb") as archive:
+        blocks, entries = _archive_entries(archive, archive_path.name)
+        for relative, file in files.items():
             if file.sha1 not in entries:
                 raise Corrupt(file.path, "the archive holds no block with the index's SHA-1")
             number, size = entries[file.sha1]
@@ -303,7 +303,18 @@ def stage_tables(patch_folder: Path, staging: Path) -> list[IndexedFile]:
             stored = archive.read(size)
             if hashlib.sha1(stored).digest() != file.sha1:
                 raise Corrupt(file.path, "the block's SHA-1 is not the index's")
-            (staging / _file_name(file)).write_bytes(_content(file, stored))
+            target = staging / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(_content(file, stored))
+
+
+def stage_tables(patch_folder: Path, staging: Path) -> list[IndexedFile]:
+    """Writes every DB/*.tbl of patch_folder's ClientData into the empty folder
+    staging (stage_files), each checked against the index's SHA-1 before it is
+    written, and returns the tables the index lists. Raises Corrupt naming the
+    file whose block does not match. Touches nothing but staging."""
+    tables = tables_of(read_index((patch_folder / INDEX_NAME).read_bytes()))
+    stage_files(patch_folder / "ClientData.archive", {_file_name(file): file for file in tables}, staging)
     return tables
 
 
@@ -383,7 +394,7 @@ def extract(patch_folder: Path, destination: Path, expected_count: int | None = 
     folder stays for the next run that is accepted. The whole set replaces
     destination at once: a crash-cut swap is recovered, the set is built and
     verified in a staging folder beside destination, then swapped in whole."""
-    require_target_build((patch_folder / "ClientData.index").read_bytes())
+    require_target_build((patch_folder / INDEX_NAME).read_bytes())
     destination.parent.mkdir(parents=True, exist_ok=True)
     recover(destination)
     staging = staging_of(destination)

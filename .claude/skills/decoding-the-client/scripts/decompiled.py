@@ -103,13 +103,19 @@ def copy_directory(env) -> Path:
         directory = Path(env["GENESIS_DECOMPILED_DIR"])
     else:
         directory = ghidra_env.genesis_home(env) / "decompiled"
+    require_outside_work_trees(directory, "the client's code")
+    return directory
+
+
+def require_outside_work_trees(directory: Path, what: str) -> None:
+    """Raises Refused unless directory is outside this repository and every git working tree; what names its
+    contents (the client's code, the client's files) for the message."""
     repository = check_facts.REPOSITORY.resolve()
     resolved = directory.resolve()
     if resolved == repository or repository in resolved.parents:
-        raise Refused("%s is inside the repository %s; the client's code stays outside it" % (directory, repository))
+        raise Refused("%s is inside the repository %s; %s must stay outside it" % (directory, repository, what))
     if _inside_work_tree(resolved):
-        raise Refused("%s is inside a git working tree; the client's code stays outside every repository" % directory)
-    return directory
+        raise Refused("%s is inside a git working tree; %s must stay outside every repository" % (directory, what))
 
 
 def _inside_work_tree(directory: Path) -> bool:
