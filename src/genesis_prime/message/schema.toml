@@ -853,13 +853,13 @@ fields = [
 [[record]]
 name = "movement_velocity"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 8, the unit's velocity: three 16-bit half floats and one bit"
+summary = "a movement command of kind 8, the unit's velocity: three 16-bit half floats and a bit that starts a new velocity segment when 0 and blends onto the last one when 1"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 8, evidence = "0x140c1f070", named_by = "0x140c1f070" },
   { name = "x", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_8" },
   { name = "y", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_8" },
   { name = "z", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_8" },
-  { name = "field_5", kind = "unsigned", bits = 1, evidence = "0x140c1f070", safe_by = "opcode.0x637" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "0x140714a90" },
 ]
 
 [[record]]
@@ -887,13 +887,13 @@ fields = [
 [[record]]
 name = "movement_move_asked"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 11, the move the player asks for: three 16-bit half floats and one bit"
+summary = "a movement command of kind 11, the move the player asks for: three 16-bit half floats and a bit that starts a new move segment when 0 and blends onto the last one when 1"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 11, evidence = "0x140c1f070", named_by = "0x140c1f070" },
   { name = "x", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_11" },
   { name = "y", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_11" },
   { name = "z", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_11" },
-  { name = "field_5", kind = "unsigned", bits = 1, evidence = "0x140c1f070", safe_by = "opcode.0x637" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "0x140715020" },
 ]
 
 [[record]]
