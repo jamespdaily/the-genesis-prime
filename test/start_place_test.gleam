@@ -428,11 +428,7 @@ fn assert_facing(
   roll roll: Float,
   because why: String,
 ) -> Nil {
-  assert #(
-      float32.to_bits(facing.yaw),
-      float32.to_bits(facing.pitch),
-      float32.to_bits(facing.roll),
-    )
+  assert character_tables.facing_bits(facing)
     == #(float32.to_bits(yaw), float32.to_bits(pitch), float32.to_bits(roll))
     as why
 }
@@ -442,15 +438,16 @@ pub fn a_quaternion_of_no_turn_and_of_a_turn_about_one_axis_gives_the_clients_ya
   let facing_of = fn(x, y, z, w) {
     start_place.facing_of_quaternion(x:, y:, z:, w:)
   }
-  // The pitch is asin(-m21): where m21 is +0 the client's -m21 is -0 and its
-  // asin is -0 (0x80000000), as its emulated pitch is for every start row
-  // that turns about y alone (record 0x1401b2fe0).
+  // The emulator gave these turns' angles to six decimals, not the sign of a
+  // zero. The pitch zeros are -0.0 by the rule the client's start rows show
+  // (record 0x1401b2fe0): where m21 is +0, -m21 is -0 and asinf(-0) is -0
+  // (0x80000000). That sign for these quaternions is not emulated.
   assert_facing(
     facing: facing_of(0.0, 0.0, 0.0, 1.0),
     yaw: 0.0,
     pitch: -0.0,
     roll: 0.0,
-    because: "0x1401b2fe0 emulated: the identity (0, 0, 0, 1) gives (0, 0, 0)",
+    because: "0x1401b2fe0 emulated: the identity (0, 0, 0, 1) gives (0, 0, 0); the pitch zero is -0.0 by the sign rule above",
   )
   // sin(0.25) and cos(0.25): a turn of 0.5 about an axis is (sin t/2, cos t/2).
   let sine = 0.24740395925452294
@@ -460,7 +457,7 @@ pub fn a_quaternion_of_no_turn_and_of_a_turn_about_one_axis_gives_the_clients_ya
     yaw: 0.5,
     pitch: -0.0,
     roll: 0.0,
-    because: "0x1401b2fe0 emulated: (0, sin .25, 0, cos .25), a turn of 0.5 about y, gives (0.5, 0, 0)",
+    because: "0x1401b2fe0 emulated: (0, sin .25, 0, cos .25), a turn of 0.5 about y, gives (0.5, 0, 0); the pitch zero is -0.0 by the sign rule above",
   )
   assert_facing(
     facing: facing_of(sine, 0.0, 0.0, cosine),
@@ -510,7 +507,8 @@ pub fn a_quaternion_with_the_matrix_at_the_poles_gives_pitch_of_a_quarter_turn_r
   )
   // A turn about x of t has m21 = -sin t: 1.56 (sin 0.99994) is inside the
   // threshold and gives pitch 1.56; 1.57 (sin 0.9999997) is beyond it and
-  // gives pi/2, not 1.57, with the yaw atan2(-m02, m00) of m02 = +0: -0.
+  // gives pi/2, not 1.57. Its yaw is atan2(-m02, m00) with m02 = +0, so
+  // atan2(-0, m00) = -0; that sign is the rule's, not emulated.
   assert_facing(
     facing: start_place.facing_of_quaternion(
       x: 0.7032794192004103,
@@ -533,7 +531,7 @@ pub fn a_quaternion_with_the_matrix_at_the_poles_gives_pitch_of_a_quarter_turn_r
     yaw: -0.0,
     pitch: 1.5707963705062866,
     roll: 0.0,
-    because: "0x1401b2ed0: m21 = -0.9999997 is below -0.99999, so pitch is pi/2, not 1.57",
+    because: "0x1401b2ed0: m21 = -0.9999997 is below -0.99999, so pitch is pi/2, not 1.57; the yaw is -0.0 by the sign rule above",
   )
 }
 
@@ -578,7 +576,9 @@ pub fn each_start_rows_facing_gives_the_yaw_pitch_and_roll_the_client_gives_to_t
       as {
         "row "
         <> int.to_string(row.id)
-        <> ": the yaw, pitch and roll bits QuaternionToEulerAngles 0x1401b2fe0 returns in the emulator"
+        <> " ("
+        <> row.record
+        <> "): the yaw, pitch and roll bits QuaternionToEulerAngles 0x1401b2fe0 returns in the emulator"
       }
   })
 }
@@ -602,7 +602,9 @@ pub fn each_start_rows_facing_in_the_clients_tables_gives_the_yaw_pitch_and_roll
       as {
         "row "
         <> int.to_string(expected.id)
-        <> ": the client's own facing gives the bits QuaternionToEulerAngles gives in the emulator"
+        <> " ("
+        <> expected.record
+        <> "): the client's own facing gives the bits QuaternionToEulerAngles 0x1401b2fe0 gives in the emulator"
       }
   })
 }
