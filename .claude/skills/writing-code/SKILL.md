@@ -40,6 +40,7 @@ A name says what the thing does in the game, and every client name is earned by 
 A comment describes the code as it stands, for a person reading it.
 
 - Every public function and type has a doc comment that says what it does and why, in plain words. Inline comments only for a line whose reason the doc comment cannot carry.
+- A module's doc comment holds what the module is for, one diagram of its flow, and one line per rule with its evidence. How each case behaves is a test named for that case, not a paragraph; a paragraph a test's name already says is cut.
 - Client evidence is cited in a comment as a pointer, after the plain sentence: a table, a row or a code address. The fact file holds the fact and its proof, and the fact checker fails a cited address with no record.
 - A gap is stated as what the code does. Change-log words ("now", "no longer", "used to", "not yet", "for now", "so far") and plans stay out.
 - No links to issues, pull requests or decisions in code, and no dates, except a patch marker's link to its upstream bug.
