@@ -88,25 +88,16 @@ def apply_names(program, pairs: list[tuple[int, str]], write: bool) -> list[Outc
 def name_and_save(settings: ghidra_env.Settings, pairs: list[tuple[int, str]], write: bool) -> list[Outcome]:
     """Opens the project that exists, names each pair (see apply_names), saves it when write is set,
     and closes it. Raises ghidra_project.ProjectMissing when there is no project."""
-    opened = ghidra_project.open_existing(settings)
-    try:
-        outcomes = apply_names(opened.program, pairs, write)
-        if write:
-            import pyghidra
-
-            opened.program.save("Names from the fact file", pyghidra.task_monitor())
-    finally:
-        opened.close()
-    return outcomes
+    return ghidra_project.work_on_existing(
+        settings, lambda opened: apply_names(opened.program, pairs, write), "Names from the fact file" if write else None
+    )
 
 
 def main(env=os.environ) -> int:
     try:
-        holder = query.live_holder(query.paths_for(env))
-    except (ghidra_env.WrongVersion, query.BadLock) as error:
+        ghidra_project.refuse_while_held(env)
+    except (ghidra_env.WrongVersion, query.BadLock, ghidra_project.ProjectHeld) as error:
         sys.exit("name_functions: %s" % error)
-    if holder is not None:
-        sys.exit("name_functions: a query process holds the project: pid %d, log %s; run `python3 -I scripts/query.py stop` first" % (holder.pid, holder.log))
     pairs = name_pairs(check_facts.load(check_facts.FACT_FILE))
     write = env.get("GHIDRA_WRITE") == "1"
     try:

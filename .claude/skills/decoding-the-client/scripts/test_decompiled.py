@@ -472,6 +472,82 @@ class KilledRefreshTest(TemporaryDirectoryTest):
         self.assertEqual(decompiled.check(PlantedClient(base_names()), self.directory).status, decompiled.Status.CURRENT)
 
 
+class RecoveredBodyPlantedClient(PlantedClient):
+    """The project after a switch recovery: the bystander's body holds a call it did not, and no name
+    or address has changed."""
+
+    def text(self, address: int) -> str:
+        text = super().text(address)
+        return text.replace("{\n}", "{\n  RecoveredCase();\n}") if address == PLANTED_BYSTANDER else text
+
+
+class RefreshAfterABodyChangeTest(TemporaryDirectoryTest):
+    """Item 3 of the switch recovery's test list: a body change with no new name or address."""
+
+    def setUp(self):
+        super().setUp()
+        decompiled.refresh(PlantedClient(base_names()), self.directory)
+
+    def test_the_premise_a_body_change_alone_leaves_the_copy_current(self):
+        client = RecoveredBodyPlantedClient(base_names())
+        self.assertEqual(decompiled.check(client, self.directory).status, decompiled.Status.CURRENT)
+        self.assertEqual(decompiled.refresh(client, self.directory).decompiled, 0)
+        self.assertNotIn("RecoveredCase", file_of(self.directory, PLANTED_BYSTANDER).read_text())
+
+    def test_a_noted_body_change_makes_check_say_stale_and_name_the_function(self):
+        decompiled.note_changed_bodies(self.directory, [PLANTED_BYSTANDER])
+        report = decompiled.check(PlantedClient(base_names()), self.directory)
+        self.assertEqual(report.status, decompiled.Status.STALE)
+        self.assertEqual(report.body_changed, [PLANTED_BYSTANDER])
+
+    def test_the_next_refresh_rewrites_that_functions_file_and_no_other(self):
+        decompiled.note_changed_bodies(self.directory, [PLANTED_BYSTANDER])
+        client = RecoveredBodyPlantedClient(base_names())
+        decompiled.refresh(client, self.directory)
+        self.assertEqual(client.decompiled, [PLANTED_BYSTANDER])
+        self.assertIn("  RecoveredCase();\n", file_of(self.directory, PLANTED_BYSTANDER).read_text())
+
+    def test_after_that_refresh_the_copy_is_current_and_a_second_refresh_decompiles_nothing(self):
+        decompiled.note_changed_bodies(self.directory, [PLANTED_BYSTANDER])
+        client = RecoveredBodyPlantedClient(base_names())
+        decompiled.refresh(client, self.directory)
+        self.assertEqual(decompiled.check(client, self.directory).status, decompiled.Status.CURRENT)
+        again = RecoveredBodyPlantedClient(base_names())
+        decompiled.refresh(again, self.directory)
+        self.assertEqual(again.decompiled, [])
+
+    def test_a_refresh_that_ends_midway_keeps_the_note_and_the_next_one_still_rewrites_the_function(self):
+        # the failure table's row: killed after the project was saved, before the refresh finished
+        decompiled.note_changed_bodies(self.directory, [PLANTED_BYSTANDER])
+        with self.assertRaises(QueryProcessEnded):
+            decompiled.refresh(RecoveredBodyPlantedClient(base_names(), ends_after=0), self.directory)
+        self.assertEqual(decompiled.check(PlantedClient(base_names()), self.directory).body_changed, [PLANTED_BYSTANDER])
+        client = RecoveredBodyPlantedClient(base_names())
+        decompiled.refresh(client, self.directory)
+        self.assertEqual(client.decompiled, [PLANTED_BYSTANDER])
+
+    def test_two_notes_before_one_refresh_both_stand(self):
+        decompiled.note_changed_bodies(self.directory, [PLANTED_BYSTANDER])
+        decompiled.note_changed_bodies(self.directory, [PLANTED_CALLER])
+        client = PlantedClient(base_names())
+        decompiled.refresh(client, self.directory)
+        self.assertEqual(sorted(client.decompiled), sorted([PLANTED_BYSTANDER, PLANTED_CALLER]))
+
+    def test_a_noted_function_that_is_not_in_the_project_is_ignored_by_the_refresh(self):
+        decompiled.note_changed_bodies(self.directory, [PLANTED_ADDED])
+        client = PlantedClient(base_names())
+        decompiled.refresh(client, self.directory)
+        self.assertEqual(client.decompiled, [])
+        self.assertEqual(decompiled.check(client, self.directory).status, decompiled.Status.CURRENT)
+
+    def test_check_through_the_main_function_names_the_function_and_exits_1(self):
+        decompiled.note_changed_bodies(self.directory, [PLANTED_BYSTANDER])
+        out = io.StringIO()
+        status = decompiled.main(["check"], {"GENESIS_DECOMPILED_DIR": str(self.directory)}, lambda: PlantedClient(base_names()), out)
+        self.assertEqual(status, 1)
+        self.assertIn("0x%x body changed" % PLANTED_BYSTANDER, out.getvalue())
+
+
 class DirectoryTest(unittest.TestCase):
     def test_the_copy_lives_under_the_genesis_home_by_default(self):
         self.assertEqual(

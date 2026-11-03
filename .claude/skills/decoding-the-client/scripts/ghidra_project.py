@@ -3,18 +3,28 @@
 The first open imports the client, applies the seed, runs Ghidra's default
 analysis and saves the project; it needs a seed file, or UNSEEDED said outright,
 and raises SeedRequired with neither, before anything is made. Every later open
-reads the saved project and runs no analysis. open_existing never makes one.
+reads the saved project and runs no analysis. open_existing never makes one. A script that changes
+the saved project does it through work_on_existing, after refuse_while_held.
 """
 
+import os
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import seed
-from ghidra_env import Settings
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import query  # noqa: E402
+import seed  # noqa: E402
+from ghidra_env import Settings  # noqa: E402
 
 PROJECT_NAME = "WildStar"
 PROGRAM_NAME = "WildStar64.exe"
+
+
+class ProjectHeld(Exception):
+    """A query process holds the project; the message names it and says how to end it."""
 
 
 class SeedRequired(Exception):
@@ -59,6 +69,33 @@ class Opened:
     def close(self) -> None:
         self.program.release(self.consumer)
         self.project.close()
+
+
+def refuse_while_held(env) -> None:
+    """Raises ProjectHeld when a query process holds the project, and query.BadLock when its lock is unreadable.
+    A script that writes the project calls it first: the holder and the writer would fight for it."""
+    holder = query.live_holder(query.paths_for(env))
+    if holder is not None:
+        raise ProjectHeld(
+            "a query process holds the project: pid %d, log %s; run `python3 -I scripts/query.py stop` first"
+            % (holder.pid, holder.log)
+        )
+
+
+def work_on_existing(settings: Settings, work, save_message: str | None):
+    """Opens the project that exists, returns work(opened), saves the project when save_message is given
+    and closes it. A work that raises leaves the saved project as it was: nothing is saved.
+    Raises ProjectMissing when there is no project."""
+    opened = open_existing(settings)
+    try:
+        result = work(opened)
+        if save_message is not None:
+            import pyghidra
+
+            opened.program.save(save_message, pyghidra.task_monitor())
+    finally:
+        opened.close()
+    return result
 
 
 def _consume(project):
