@@ -192,6 +192,7 @@ fn scripted(
           process.send(given, #(input, now))
           now
         },
+        node_monotonic_ms: fn(now) { now.monotonic_ms },
         schedule: fn(_subject, _timer, _reference, _after_ms) { fn() { Nil } },
         next_read: fn() { None },
       ),

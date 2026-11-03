@@ -511,6 +511,7 @@ fn scripts(table: Subject(replay_table.Command)) -> Scripts {
       script: Script(
         seed: handed.seed,
         clock: clock(table, handed.name),
+        node_monotonic_ms: fn(_recorded) { runtime.monotonic_ms() },
         schedule: scheduler(table, handed.name),
         next_read: fn() {
           replay_table.next_read(table:, connection: handed.name)
