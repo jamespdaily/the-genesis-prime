@@ -43,7 +43,6 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
-import genesis_prime/message/chat_channel_joined
 import genesis_prime/message/chat_line_accepted
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
@@ -76,7 +75,6 @@ import genesis_prime/message/whisper_failed
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/sitting_bot
-import genesis_prime/sitting_bot/follow
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
@@ -1261,12 +1259,11 @@ fn four_players() -> #(login_support.Started, List(Seat)) {
         send_play(game:, character_id: character)
         let #(burst, have) =
           game_client.read_kept(game:, have: <<>>, count: burst_length())
-        let assert [Frame(body: joined, ..)] =
-          list.filter(burst, fn(frame) { frame.message_id == 0x01BC })
-          as "the burst gives the zone channel"
-        let assert Ok(channel) = chat_channel_joined.decode(joined)
-        assert channel.channel_type == 9
-        Seat(game:, have:, zone_channel: channel.channel_id)
+        Seat(
+          game:,
+          have:,
+          zone_channel: game_client.zone_channel_in(frames: burst),
+        )
       },
     )
   #(started, seats)
@@ -1835,7 +1832,7 @@ pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lin
   login_support.stop(started)
 }
 
-pub fn a_sitting_bot_that_follows_replays_the_named_players_moves_a_few_units_to_the_side_test() -> Nil {
+pub fn a_sitting_bot_that_follows_replays_the_named_players_moves_test() -> Nil {
   use <- owned_test.run(120_000)
   let started = login_support.start()
   let #(zed, zed_character) =
@@ -1889,13 +1886,13 @@ pub fn a_sitting_bot_that_follows_replays_the_named_players_moves_a_few_units_to
     ]),
   )
   // The bot's own 0x0637 follows after its delay: the player sees the bot's unit
-  // move with the same commands, its position a few units along x.
+  // move with the same commands, its position the player's own.
   let #(replayed, _zed_seat) =
     wait_for_move_of(seat: zed_seat, unit_id: bot_unit)
   assert replayed
     == [
       relayed_movement.Position(UnitPositionCommand(
-        x: float32.to_bits(100.5 +. follow.offset),
+        x: float32.to_bits(100.5),
         y: float32.to_bits(50.25),
         z: float32.to_bits(-200.75),
         blends: 0,
@@ -1904,7 +1901,7 @@ pub fn a_sitting_bot_that_follows_replays_the_named_players_moves_a_few_units_to
       relayed_movement.Rotation(rotation),
       relayed_movement.StateFlags(flags),
     ]
-    as "the bot walks as the player did, every command but the position as the client sent it"
+    as "the bot walks as the player did, every command as the client sent it"
   sitting_bot.request_stop(bot)
   let assert Ok(_tally) = process.receive(finished, 20_000)
     as "the bot ended when asked to stop"
@@ -1923,4 +1920,56 @@ fn wait_for_move_of(
     True -> #(moved.commands, seat)
     False -> wait_for_move_of(seat:, unit_id:)
   }
+}
+
+@external(erlang, "sitting_bot_signal_ffi", "send_sigterm")
+fn send_sigterm() -> Nil
+
+@external(erlang, "sitting_bot_signal_ffi", "restore_signal_handler")
+fn restore_signal_handler() -> Nil
+
+pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tally_test() -> Nil {
+  use <- owned_test.run(120_000)
+  // The VM's signal handling is the node's: the bot's handler replaces OTP's
+  // while it sits, so no other test may be running.
+  use <- unitest.tag("serial")
+  let started = login_support.start()
+  let #(zed, zed_character) =
+    new_player(started:, number: 1, character_name: "Zed Qu")
+  send_play(game: zed, character_id: zed_character)
+  let #(_burst, zed_have) =
+    game_client.read_kept(game: zed, have: <<>>, count: burst_length())
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let assert Ok(seat) = sitting_bot.seat(pool:, near: "Zed Qu")
+  let finished = process.new_subject()
+  let _bot =
+    process.spawn_unlinked(fn() {
+      sitting_bot.stop_on_sigterm(process.self())
+      process.send(
+        finished,
+        sitting_bot.sit(
+          ports: login_support.ports(started),
+          seat:,
+          near: "Zed Qu",
+          schedule: sitting_bot.client_schedule(walk: sitting_bot.client_circle),
+          for_ms: 60_000,
+          report: fn(_event) { Nil },
+        ),
+      )
+    })
+  // The bot is in the map once the player is shown its unit; then the node
+  // receives SIGTERM.
+  let zed_seat = Seat(game: zed, have: zed_have, zone_channel: 0)
+  let #(appeared, zed_seat) = wait_for_frame(seat: zed_seat, message_id: 0x0262)
+  send_sigterm()
+  let assert Ok(tally) = process.receive(finished, 20_000)
+    as "the bot ended on SIGTERM, well before its 60 s, and gave its tally"
+  assert tally.units_seen >= 1 as "the tally is what the bot counted"
+  let #(gone, _zed_seat) = wait_for_frame(seat: zed_seat, message_id: 0x0355)
+  let assert Ok(destroyed) = unit_destroyed.decode(gone.body)
+  assert destroyed.unit_id == unit_of(appeared)
+    as "the bot closed its connection, so the player sees its unit go"
+  restore_signal_handler()
+  game_client.close(game: zed)
+  login_support.stop(started)
 }

@@ -6,7 +6,7 @@
 %% by one that sends the bot its stop instead.
 -module(sitting_bot_ffi).
 -behaviour(gen_event).
--export([request_stop/1, stop_requested/0, stop_on_sigterm/1]).
+-export([request_stop/1, stop_requested/0, stop_on_sigterm/1, os_pid/0]).
 -export([init/1, handle_event/2, handle_call/2, handle_info/2]).
 
 %% Asks the process to stop: it finds the request with stop_requested/0.
@@ -27,6 +27,10 @@ stop_on_sigterm(Pid) ->
     _ = gen_event:delete_handler(erl_signal_server, erl_signal_handler, []),
     ok = gen_event:add_handler(erl_signal_server, ?MODULE, Pid),
     nil.
+
+%% The operating system's process id of this node, as text.
+os_pid() ->
+    list_to_binary(os:getpid()).
 
 init(Pid) ->
     {ok, Pid}.

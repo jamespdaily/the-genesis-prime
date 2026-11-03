@@ -25,16 +25,17 @@
 //// - The bot is the account `sitting-bot` with its character `Sitting Bot`, made
 ////   on the first run and used again after it (`genesis_prime/add_account`,
 ////   `genesis_prime/add_character`: race 1, sex 1, class 1 and faction 167 of
-////   CharacterCreation row 466). Before it logs in, its saved place is put 5
-////   units along x from the named character's, in the same world and zone and
-////   at the same height.
+////   CharacterCreation row 466). Before it logs in, its saved place is put at
+////   the named character's own, in the same world and zone. Only a character of
+////   the account `sitting-bot` is taken for the bot's or moved: a character of
+////   that name that another account has refuses the run.
 //// - It logs in and enters the world as the load player does
 ////   (`genesis_prime/load_player`), reports the zone it stands in (0xF2) as the
 ////   client does when its terrain loads, and walks. `--walk follow` (the
-////   default) replays the named character's own movement commands 2 s later, a
-////   few units along x (`genesis_prime/sitting_bot/follow`), so the bot walks on
-////   the ground the real client walked, animated by the commands that client
-////   sent, and stands still while the character does. `--walk circle` walks a
+////   default) replays the named character's own movement commands 2 s later, on
+////   the same path (`genesis_prime/sitting_bot/follow`), so the bot walks on the
+////   ground the real client walked, animated by the commands that client sent,
+////   and stands still while the character does. `--walk circle` walks a
 ////   circle of 3 units through its place, a move (0x0637) every 125 ms, the
 ////   client's own send interval (opcode.0xf1), for when no one is there to
 ////   follow.
@@ -48,9 +49,11 @@
 ////   (0x01C2, 0x01D3, 0x01D9), and each line that shows no sender name, where the
 ////   client would send 0x0597 to ask for it (chat.name_lookup).
 //// - It ends after `--minutes` (30 when not given), on SIGTERM, or when the
-////   server closes its connection: it closes its own, so the player sees its
-////   unit go, and prints how many lines it sent, answers it got, lines it heard
-////   and units it was shown. The Erlang runtime cannot catch Ctrl-C (SIGINT) as
+////   server closes its connection. It prints the node's process id when it starts
+////   (`stop with: kill <pid>`): SIGTERM must go to that pid, since `gleam run`
+////   does not pass a signal on to the node it starts. When it ends it closes its
+////   own connection, so the player sees its unit go, and prints how many lines
+////   it sent, answers it got, lines it heard and units it was shown. The Erlang runtime cannot catch Ctrl-C (SIGINT) as
 ////   a signal: it opens the VM's break menu, whose `a` ends the node with the
 ////   connection closed by the operating system, so the player sees the bot
 ////   leave, and no summary is printed.
@@ -100,8 +103,8 @@ pub type Options {
 
 /// How the bot walks.
 pub type Walk {
-  /// Replay the named character's movement commands, offset and delayed by
-  /// `delay_ms` after the server stamped them.
+  /// Replay the named character's movement commands, delayed by `delay_ms`
+  /// after the server stamped them.
   Follow(delay_ms: Int)
   /// A circle through the bot's place, a move every `move_every_ms`.
   Circle(move_every_ms: Int)
@@ -206,10 +209,6 @@ pub type SeatFailure {
 /// The bot's character's name, which names no other: character names are unique.
 const character_name = "Sitting Bot"
 
-/// How far along x from the named character the bot is put, in units: close
-/// enough to be in its sight.
-pub const seat_distance = follow.offset
-
 /// The bot's account. Its password is kept in the open: the account exists only
 /// in a developer's database, and the tool is no way to anything else.
 fn account() -> Account {
@@ -221,17 +220,16 @@ fn account() -> Account {
   )
 }
 
-/// Puts the bot's character at a place `seat_distance` along x from the named
-/// character's saved place, in its world and zone, and gives the bot's
-/// character and the place. The bot's account and character are made when the
-/// database has none, and used when it has; a name that no character has, or a
-/// character with no saved place, is refused and changes nothing.
+/// Puts the bot's character at the named character's saved place, in its world
+/// and zone, and gives the bot's character and the place. The bot's account and
+/// character are made when the database has none, and used when it has; a name
+/// that no character has, a character with no saved place, or a "Sitting Bot"
+/// that another account has, is refused and changes nothing.
 pub fn seat(
   pool pool: pog.Connection,
   near name: String,
 ) -> Result(Seat, SeatFailure) {
-  use named <- result.try(place_of(pool:, name:))
-  let place = Place(..named, x: named.x +. seat_distance)
+  use place <- result.try(place_of(pool:, name:))
   use character_id <- result.try(bot_character(pool:))
   use rows <- result.try(
     sql.seat_character(
@@ -242,6 +240,7 @@ pub fn seat(
       place.x,
       place.y,
       place.z,
+      account().login_name,
     )
     |> result.map_error(database),
   )
@@ -284,13 +283,14 @@ fn place_of(
 
 /// The id of the bot's character, which the first call makes with its account.
 fn bot_character(pool pool: pog.Connection) -> Result(Int, SeatFailure) {
+  let bot = account()
   use rows <- result.try(
-    sql.character_place(pool, character_name) |> result.map_error(database),
+    sql.account_character(pool, bot.login_name, character_name)
+    |> result.map_error(database),
   )
   case rows.rows {
     [row, ..] -> Ok(row.character_id)
     [] -> {
-      let bot = account()
       use _ <- result.try(bot_account(pool:, bot:))
       use made <- result.try(
         character_sql.insert_character(
@@ -918,7 +918,13 @@ pub fn request_stop(pid: Pid) -> Nil
 /// Makes this node's SIGTERM ask the process for a stop, in place of OTP's
 /// handler, which ends the node at once.
 @external(erlang, "sitting_bot_ffi", "stop_on_sigterm")
-fn stop_on_sigterm(pid: Pid) -> Nil
+pub fn stop_on_sigterm(pid: Pid) -> Nil
+
+/// The operating system's process id of this node, the one SIGTERM must be sent
+/// to: `gleam run` starts the node as a child of its own process, and a signal
+/// sent to `gleam run` does not reach the node.
+@external(erlang, "sitting_bot_ffi", "os_pid")
+fn os_pid() -> String
 
 // ---- the tool ----
 
@@ -966,6 +972,7 @@ fn run() -> Result(String, Failure) {
     <> options.near,
   )
   stop_on_sigterm(process.self())
+  print("stop with: kill " <> os_pid())
   let tally =
     sit(
       ports: local_ports(),

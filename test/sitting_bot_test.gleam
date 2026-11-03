@@ -18,6 +18,7 @@ import database_support
 import game_client.{HeardLine}
 import genesis_prime/add_account
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/dev_database
 import genesis_prime/game/chat_channel
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_channel_result
@@ -517,26 +518,43 @@ fn bot_row(pool: pog.Connection) -> #(String, Int, Int, Float, Float, Float) {
   row
 }
 
-pub fn the_bot_is_seated_a_few_units_from_the_named_character_in_its_world_and_zone_test() -> Nil {
+pub fn the_bot_is_seated_at_the_named_characters_own_place_test() -> Nil {
   use <- owned_test.run(60_000)
   let pool = pool()
   insert_named(pool, "Zed Qu")
   let assert Ok(seat) = sitting_bot.seat(pool:, near: "zed QU")
     as "the named character is found in any case, as names are unique in any case"
-  assert sitting_bot.seat_distance >. 0.0 && sitting_bot.seat_distance <=. 10.0
-    as "a few units, in sight of the named character"
   assert seat.place
-    == Place(
-      world_id: 1387,
-      world_zone_id: 1100,
-      x: 1.5 +. sitting_bot.seat_distance,
-      y: 2.5,
-      z: 3.5,
-    )
-    as "the named character's world and zone, its height, a few units along x"
-  assert bot_row(pool)
-    == #("Sitting Bot", 1387, 1100, 1.5 +. sitting_bot.seat_distance, 2.5, 3.5)
+    == Place(world_id: 1387, world_zone_id: 1100, x: 1.5, y: 2.5, z: 3.5)
+    as "the named character's world, zone and position, which the bot walks from"
+  assert bot_row(pool) == #("Sitting Bot", 1387, 1100, 1.5, 2.5, 3.5)
     as "the bot character's row holds the place it was seated at"
+}
+
+pub fn a_sitting_bot_character_of_another_account_is_refused_and_left_as_it_is_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let pool = pool()
+  insert_named(pool, "Zed Qu")
+  // Another account owns the character named "Sitting Bot", in another case.
+  let #(_game_account_id, query) =
+    add_account.new_account(login_name: "other", password: "other")
+  let assert Ok(pog.Returned(rows: [other], ..)) = query(pool)
+    as "the other account was inserted"
+  let owned =
+    character_support.insert(
+      pool:,
+      account: AccountId(other.account_id),
+      name: "sitting BOT",
+      class_id: 4,
+      path: 2,
+    )
+  let assert Error(sitting_bot.Database(failure: dev_database.Refused(_))) =
+    sitting_bot.seat(pool:, near: "Zed Qu")
+    as "the name is taken by a character of another account, so the bot's is not made"
+  let place = character_support.place_row(pool:, character_id: owned)
+  assert place.position == #(1.5, 2.5, 3.5) && place.world_id == 1387
+    as "the other account's character was not moved"
+  assert count(pool, "character") == 2 as "no character was made for the bot"
 }
 
 pub fn seating_the_bot_again_reuses_its_account_and_character_and_moves_it_to_the_new_place_test() -> Nil {
@@ -553,7 +571,7 @@ pub fn seating_the_bot_again_reuses_its_account_and_character_and_moves_it_to_th
   assert count(pool, "account") == 2
     as "the named character's account and the bot's one"
   assert count(pool, "character") == 2
-  assert bot_row(pool).3 == 100.5 +. sitting_bot.seat_distance
+  assert bot_row(pool).3 == 100.5
     as "the bot is moved to where the named character is now"
 }
 

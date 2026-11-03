@@ -7,6 +7,51 @@
 import gleam/dynamic/decode
 import pog
 
+/// A row you get from running the `account_character` query
+/// defined in `./dev/genesis_prime/sitting_bot/sql/account_character.sql`.
+///
+/// > 🐿️ This type definition was generated automatically using v4.7.0 of the
+/// > [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub type AccountCharacterRow {
+  AccountCharacterRow(character_id: Int)
+}
+
+/// The character with this name ($2, found as the name's unique index finds it:
+/// any case, under the ICU root collation, migration 0005) of the account with
+/// this login name ($1). A character of that name that another account has gives
+/// no row, so it is never taken for this account's.
+///
+/// > 🐿️ This function was generated automatically using v4.7.0 of
+/// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
+///
+pub fn account_character(
+  db: pog.Connection,
+  account_login_name: String,
+  arg_2: String,
+) -> Result(pog.Returned(AccountCharacterRow), pog.QueryError) {
+  let decoder = {
+    use character_id <- decode.field(0, decode.int)
+    decode.success(AccountCharacterRow(character_id:))
+  }
+
+  "-- The character with this name ($2, found as the name's unique index finds it:
+-- any case, under the ICU root collation, migration 0005) of the account with
+-- this login name ($1). A character of that name that another account has gives
+-- no row, so it is never taken for this account's.
+select character_id
+from character
+join account using (account_id)
+where account.login_name = $1
+  and lower(character.name collate \"und-x-icu\") = lower($2 collate \"und-x-icu\");
+"
+  |> pog.query
+  |> pog.parameter(pog.text(account_login_name))
+  |> pog.parameter(pog.text(arg_2))
+  |> pog.returning(decoder)
+  |> pog.execute(db)
+}
+
 /// A row you get from running the `account_with_login_name` query
 /// defined in `./dev/genesis_prime/sitting_bot/sql/account_with_login_name.sql`.
 ///
@@ -115,8 +160,9 @@ pub type SeatCharacterRow {
 /// Puts a character at a place for a developer's database, before the character
 /// logs in: its world, zone and position, facing the way a character never saved
 /// facing a way does (yaw, pitch and roll 0: migration 0007). A login resets the
-/// save sequence, so no save is fenced by this write. No character of that id
-/// gives no row.
+/// save sequence, so no save is fenced by this write. Only a character of the
+/// account with this login name ($7) is moved: no character of that id of that
+/// account gives no row.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
@@ -129,6 +175,7 @@ pub fn seat_character(
   arg_4: Float,
   arg_5: Float,
   arg_6: Float,
+  arg_7: String,
 ) -> Result(pog.Returned(SeatCharacterRow), pog.QueryError) {
   let decoder = {
     use character_id <- decode.field(0, decode.int)
@@ -138,8 +185,9 @@ pub fn seat_character(
   "-- Puts a character at a place for a developer's database, before the character
 -- logs in: its world, zone and position, facing the way a character never saved
 -- facing a way does (yaw, pitch and roll 0: migration 0007). A login resets the
--- save sequence, so no save is fenced by this write. No character of that id
--- gives no row.
+-- save sequence, so no save is fenced by this write. Only a character of the
+-- account with this login name ($7) is moved: no character of that id of that
+-- account gives no row.
 update character
 set
   world_id = $2,
@@ -151,6 +199,7 @@ set
   rotation_pitch = 0,
   rotation_roll = 0
 where character_id = $1
+  and account_id in (select account_id from account where login_name = $7)
 returning character_id;
 "
   |> pog.query
@@ -160,6 +209,7 @@ returning character_id;
   |> pog.parameter(pog.float(arg_4))
   |> pog.parameter(pog.float(arg_5))
   |> pog.parameter(pog.float(arg_6))
+  |> pog.parameter(pog.text(arg_7))
   |> pog.returning(decoder)
   |> pog.execute(db)
 }

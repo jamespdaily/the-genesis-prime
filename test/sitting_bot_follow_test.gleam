@@ -8,9 +8,10 @@
 //// - The client's batch starts with a time command, the clock plus twice the
 ////   movement send interval, 125 ms until the server sets one
 ////   (0x14057a190, opcode.0xf1).
-//// - The tool's contract, its module doc: the position is moved along x by the
-////   offset, the first stamp is due the delay after it was read, and each later
-////   one the stamps' distance after it; a unit that stands still sends nothing.
+//// - The tool's contract, its module doc: a replay is the commands as relayed,
+////   position included; the first stamp is due the delay after it was read, and
+////   each later one the stamps' distance after it; a unit that stands still
+////   sends nothing.
 
 import genesis_prime/message/float32
 import genesis_prime/message/movement_command
@@ -67,16 +68,12 @@ fn relayed() -> List(RelayedMovement) {
   ]
 }
 
-pub fn a_replay_keeps_every_command_as_relayed_and_moves_only_the_position_along_x_test() -> Nil {
+pub fn a_replay_is_every_command_as_relayed_the_position_too_test() -> Nil {
   use <- owned_test.run(5000)
-  assert follow.shifted(relayed())
+  assert follow.replayed(relayed())
     == [
       movement_command.Platform(MovementPlatform(unit_id: 0)),
-      movement_command.Position(position(
-        x: 100.5 +. follow.offset,
-        y: 50.25,
-        z: -200.75,
-      )),
+      movement_command.Position(position(x: 100.5, y: 50.25, z: -200.75)),
       movement_command.Velocity(MovementVelocity(
         x: 0x3C00,
         y: 0x0000,
@@ -98,18 +95,12 @@ pub fn a_replay_keeps_every_command_as_relayed_and_moves_only_the_position_along
       movement_command.StateFlags(MovementStateFlags(flags: 0x3FFFF)),
       movement_command.Mode(MovementMode(mode: 3)),
     ]
-    as "opcode.0x637: the velocity, the move asked, the state, the mode, the rotation and the platform are the real client's; only the position moves"
-}
-
-pub fn the_offset_is_a_few_units_along_x_test() -> Nil {
-  use <- owned_test.run(5000)
-  assert follow.offset >. 0.0 && follow.offset <=. 10.0
-    as "a few units, in sight of the named character"
+    as "opcode.0x637: the position, the velocity, the move asked, the state, the mode, the rotation and the platform are the real client's, so the bot walks the path the client walked"
 }
 
 pub fn a_replay_is_sent_with_a_time_command_twice_the_send_interval_after_the_bots_clock_test() -> Nil {
   use <- owned_test.run(5000)
-  let commands = follow.shifted(relayed())
+  let commands = follow.replayed(relayed())
   assert follow.stamped(commands:, clock_ms: 5000)
     == [movement_command.Time(MovementTime(time: 5250)), ..commands]
     as "0x14057a190: the clock plus twice 125 ms (opcode.0xf1), then the commands"
@@ -128,7 +119,7 @@ fn batch(number: Int) -> List(RelayedMovement) {
 }
 
 fn batch_replayed(number: Int) -> List(movement_command.MovementCommand) {
-  follow.shifted(batch(number))
+  follow.replayed(batch(number))
 }
 
 /// A follow of "Zed Qu", 2 s late, which has been shown his unit 7.

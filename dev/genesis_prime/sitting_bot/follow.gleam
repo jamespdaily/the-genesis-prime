@@ -1,7 +1,7 @@
 //// The sitting bot's follow walk: it keeps the movement commands the server
 //// relays for the named character's unit and sends each back as its own 0x0637
-//// some time later, a few units to one side, so the bot walks on ground the
-//// real client walked and the client animates it from the same velocity, move
+//// some time later, so the bot walks the path the real client walked, on the
+//// ground it walked, and the client animates it from the same velocity, move
 //// and state commands the real client's own player sent.
 ////
 //// ```
@@ -13,11 +13,12 @@
 //// 0x0355 of that unit      ─▶ removed      ─▶ nothing left to replay
 //// ```
 ////
-//// - A replay keeps every command as the server relayed it (the kinds 1, 2, 8,
-////   11, 14, 24 and 27 of `relayed_movement`, the ones the server relays of the
-////   client's own batch, opcode.0x637) and moves only the position of kind 2 by
-////   `offset` along x. The velocity, the move asked, the state flags, the mode
-////   and the rotation are the real client's, so the animation they give is too.
+//// - A replay is every command as the server relayed it (the kinds 1, 2, 8, 11,
+////   14, 24 and 27 of `relayed_movement`, the ones the server relays of the
+////   client's own batch, opcode.0x637), position included: the bot stands where
+////   the named character stood, 2 s later. The velocity, the move asked, the
+////   state flags, the mode and the rotation are the real client's, so the
+////   animation they give is too.
 //// - The spacing is the spacing of the server's stamps (`server_time` of each
 ////   0x0638, opcode.0x638), not of the bytes' arrival, so a burst read at once
 ////   replays as it was walked. The first stamp is due `delay_ms` after the
@@ -29,18 +30,13 @@
 ////   client clock is not read), so the bot's clock only has to be its own.
 //// - A unit that stands still sends no 0x0638, so the bot stands still.
 
-import genesis_prime/message/float32
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
-import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import gleam/bool
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
-
-/// How far along x the bot walks from the named character, in units.
-pub const offset = 5.0
 
 /// The client's movement send interval until the server sets one (opcode.0xf1),
 /// which the time command of a batch is placed twice after the clock.
@@ -124,7 +120,7 @@ pub fn moved(
   let replay =
     Replay(
       due_ms: origin.elapsed_ms + after_ms + following.delay_ms,
-      commands: shifted(commands),
+      commands: replayed(commands),
     )
   Following(
     ..following,
@@ -155,13 +151,12 @@ pub fn take_due(
 }
 
 /// The commands of a 0x0638 as the client's own 0x0637 holds them: each one as
-/// relayed, and the position of kind 2 `offset` along x.
-pub fn shifted(commands: List(RelayedMovement)) -> List(MovementCommand) {
+/// relayed.
+pub fn replayed(commands: List(RelayedMovement)) -> List(MovementCommand) {
   list.map(commands, fn(command) {
     case command {
       relayed_movement.Platform(data) -> movement_command.Platform(data)
-      relayed_movement.Position(data) ->
-        movement_command.Position(moved_along_x(data))
+      relayed_movement.Position(data) -> movement_command.Position(data)
       relayed_movement.Velocity(data) -> movement_command.Velocity(data)
       relayed_movement.MoveAsked(data) -> movement_command.MoveAsked(data)
       relayed_movement.Rotation(data) -> movement_command.Rotation(data)
@@ -169,15 +164,6 @@ pub fn shifted(commands: List(RelayedMovement)) -> List(MovementCommand) {
       relayed_movement.Mode(data) -> movement_command.Mode(data)
     }
   })
-}
-
-fn moved_along_x(
-  position: unit_position_command.UnitPositionCommand,
-) -> unit_position_command.UnitPositionCommand {
-  let assert Ok(bits) = float32.bits(position.x) as "the position is 32 bits"
-  let assert Ok(x) = float32.value(bits)
-    as "the server relays a finite position (a refused one ends the connection)"
-  UnitPositionCommand(..position, x: float32.to_bits(x +. offset))
 }
 
 /// The commands as a batch with the bot's clock: the time command first, the

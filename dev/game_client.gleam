@@ -312,7 +312,8 @@ pub fn drain(game game: Game, have have: BitArray) -> BitArray {
   }
 }
 
-/// Waits up to `wait_ms` for the server to write, and gives each game message
+/// Gives each game message already held whole in `have`, or else waits up to
+/// `wait_ms` for the server to write, and gives each game message
 /// that has arrived whole, opened from its 0x3DC wrapper under the session
 /// cipher, keeping the bytes of one not yet whole. A wait that ends with nothing
 /// written gives no message; the connection ending gives the reason, for a client
@@ -322,16 +323,26 @@ pub fn poll(
   have have: BitArray,
   wait_ms wait_ms: Int,
 ) -> Result(#(List(Frame), BitArray), mug.Error) {
-  case mug.receive(game.socket, timeout_milliseconds: wait_ms) {
-    Ok(more) -> {
-      let assert Ok(#(outers, rest)) =
-        frame_reader.decode(received: <<have:bits, more:bits>>)
-        as "the server wrote bytes that are frames"
-      Ok(#(list.map(outers, in_the_game_wrapper(_, game.cipher)), rest))
-    }
-    Error(mug.Timeout) -> Ok(#([], have))
-    Error(error) -> Error(error)
+  let assert Ok(#(held, rest)) = frame_reader.decode(received: have)
+    as "the server wrote bytes that are frames"
+  case held {
+    [_, ..] -> Ok(#(opened(game:, outers: held), rest))
+    [] ->
+      case mug.receive(game.socket, timeout_milliseconds: wait_ms) {
+        Ok(more) -> {
+          let assert Ok(#(outers, rest)) =
+            frame_reader.decode(received: <<rest:bits, more:bits>>)
+            as "the server wrote bytes that are frames"
+          Ok(#(opened(game:, outers:), rest))
+        }
+        Error(mug.Timeout) -> Ok(#([], rest))
+        Error(error) -> Error(error)
+      }
   }
+}
+
+fn opened(game game: Game, outers outers: List(Frame)) -> List(Frame) {
+  list.map(outers, in_the_game_wrapper(_, game.cipher))
 }
 
 fn whole_messages_dropped(received: BitArray) -> BitArray {
