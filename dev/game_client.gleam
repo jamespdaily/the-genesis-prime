@@ -34,6 +34,7 @@ import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/world_message.{WorldMessage}
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
@@ -548,21 +549,20 @@ pub type HeardLine {
 
 /// The line a 0x1c8 shows, by its channel, strSender and text.
 pub fn heard_line(frame frame: Frame) -> Result(HeardLine, Nil) {
-  case frame.message_id == chat_line.message_id {
-    False -> Error(Nil)
-    True -> {
-      let assert Ok(line) = chat_line.decode(frame.body) as "0x01C8 decodes"
-      Ok(HeardLine(
-        channel_type: line.channel_type,
-        channel_id: line.channel_id,
-        sender: line.sender_name,
-        text: string.from_utf_codepoints(list.filter_map(
-          line.text,
-          string.utf_codepoint,
-        )),
-      ))
-    }
-  }
+  use <- bool.guard(
+    when: frame.message_id != chat_line.message_id,
+    return: Error(Nil),
+  )
+  let assert Ok(line) = chat_line.decode(frame.body) as "0x01C8 decodes"
+  Ok(HeardLine(
+    channel_type: line.channel_type,
+    channel_id: line.channel_id,
+    sender: line.sender_name,
+    text: string.from_utf_codepoints(list.filter_map(
+      line.text,
+      string.utf_codepoint,
+    )),
+  ))
 }
 
 /// Reads until the next 0x1c8 and gives the line it shows, dropping the

@@ -1623,7 +1623,8 @@ pub fn a_speaker_that_ends_before_the_reply_leaves_the_target_with_its_line_and_
   let #(heard, rest) =
     game_client.read_chat(game: target.game, have: target.have)
   assert heard.text == "bye" as "the target's line stands"
-  let _ = settled(seat: Seat(..target, have: rest), number: 2)
+  let #(more, _) = written_to(seat: Seat(..target, have: rest), number: 2)
+  assert chat_lines(more) == [] as "the target was written the line once"
   log_capture.stop(capture)
   assert list.filter(mailbox_support.drain(lines), fn(line) {
       line.0 == "error"
@@ -1638,7 +1639,9 @@ pub fn a_member_whose_connection_crashes_leaves_its_groups_and_later_lines_reach
   use <- owned_test.run(120_000)
   let #(started, seats) = four_players()
   let speaker = reported(seat: seat_at(seats, 0), zone: 6009, number: 1)
-  let _ = reported(seat: seat_at(seats, 1), zone: 6009, number: 1)
+  let doomed = reported(seat: seat_at(seats, 1), zone: 6009, number: 1)
+  assert doomed.zone_channel == speaker.zone_channel
+    as "the member that will crash shares the speaker's zone channel"
   let survivor = reported(seat: seat_at(seats, 2), zone: 6009, number: 1)
   let speaker = settled(seat: speaker, number: 2)
   let survivor = settled(seat: survivor, number: 2)
