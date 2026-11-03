@@ -13,7 +13,7 @@ import asking_rule
 import gate_rule
 import genesis_prime/connection/script
 import genesis_prime/service
-import genesis_prime/step.{ConnectionId}
+import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
@@ -88,6 +88,49 @@ pub fn an_answer_before_the_deadline_comes_back_after_the_steps_effects_and_the_
     as "the answer came before the ask's deadline"
   assert ask_support.read_pong(client) == <<0x70, 7>>
     as "the byte sent during the ask is read after the outcome"
+  ask_support.stop(server)
+}
+
+pub fn the_directory_is_given_the_ask_counted_from_the_nodes_time_the_script_gave_for_the_input_test() -> Nil {
+  use <- owned_test.run(30_000)
+  // The script's clock and the node's time are two numbers of two clocks, as
+  // in a replay: the input's `Now` is a recording's (-1000) and the node's time
+  // for it is 50 000. An ask that allows 1000 ms from its input is due 1000 ms
+  // after the node's time, whatever the `Now` says, and the one value is what
+  // the directory is given: a shell that read the node's clock once more
+  // would give a deadline of its own reading.
+  let assert Ok(issued) = script.operating_system() as "the server's script"
+  let scripts = fn() {
+    Ok(
+      script.Issued(
+        ..issued,
+        script: script.Script(
+          ..issued.script,
+          clock: fn(_taking) { Now(monotonic_ms: -1000, filetime: 5) },
+          node_monotonic_ms: fn(_now) { 50_000 },
+        ),
+      ),
+    )
+  }
+  let given = process.new_subject()
+  let server =
+    ask_support.start_scripted(
+      rule: asking_rule.rule(),
+      directory: fn(_request, deadline_ms, _reply) {
+        process.send(given, deadline_ms)
+        Error(Nil)
+      },
+      shutdown_ms: 1000,
+      wire_recorder: None,
+      scripts:,
+      registry: None,
+      locate: fn(_address) { Error(Nil) },
+      with: fn(builder) { builder },
+    )
+  let client = ask_support.connect(server)
+  ask_support.command(client, asking_rule.echo_command, 1, wait_ms: 1000)
+  assert process.receive(given, within: ask_support.event_wait_ms) == Ok(51_000)
+    as "the node's time for the input (50 000) and the 1000 ms the ask allows"
   ask_support.stop(server)
 }
 
