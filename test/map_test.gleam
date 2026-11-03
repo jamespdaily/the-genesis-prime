@@ -24,11 +24,11 @@ import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, Connection,
   ConnectionId, Effects, LogError, OwnEffect, OwnEvent, Reply, Started, Stop,
-  Stopping, Watch, WatchEnded, WatchId,
+  Stopping, Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{RaceId}
-import genesis_prime/world_map/map.{type State, Join, Joined}
+import genesis_prime/world_map/map.{type State, Join, Joined, Leave, Left}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/player_unit
 import gleam/int
@@ -277,4 +277,66 @@ pub fn a_watch_that_names_no_player_is_an_error_and_changes_nothing_test() -> Ni
   let #(_, second) = join(state:, connection: 7, caller: 2)
   assert unit_of(second, 2) == unit_of(first, 1)
     as "the player of connection 7 is still in the map"
+}
+
+// ---- a player leaves ----
+
+/// A leave of the connection as the map's caller number `caller`.
+fn leave(
+  state state: State,
+  connection connection: Int,
+  caller caller: Int,
+) -> #(State, ServiceStep(map.Outgoing)) {
+  feed(
+    state,
+    OwnEvent(Asked(
+      caller: CallerId(caller),
+      message: Leave(connection: ConnectionId(connection)),
+    )),
+  )
+}
+
+pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_left_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, first) = join(state: started(), connection: 7, caller: 1)
+  let #(state, other) = join(state:, connection: 8, caller: 2)
+  let #(state, left) = leave(state:, connection: 7, caller: 3)
+  assert support.effects_of(left)
+    == [Unwatch(WatchId(1)), OwnEffect(Reply(CallerId(3), Left))]
+    as "the connection's watch, which the join opened as watch 1, is dropped: the connection goes on after its camp, so the map must not hold it as a player; then the leave is answered"
+  assert support.logs(left) == []
+  let #(state, again) = join(state:, connection: 7, caller: 4)
+  assert unit_of(first, 1) == 1 && unit_of(other, 2) == 2
+  assert unit_of(again, 4) == 3
+    as "opcode.0x262: a later play is a new unit with a unit id never given before, the client refuses one it has seen"
+  assert support.logs_of(step: again, level: LogError) == []
+    as "the connection was not in the map any more, so its join is no second join"
+  assert support.watches(again) == [#(WatchId(3), Connection(ConnectionId(7)))]
+    as "and it is watched again, under a new watch id"
+  let #(_, still_there) = join(state:, connection: 8, caller: 5)
+  assert unit_of(still_there, 5) == 2
+    as "the other player, which did not leave, is still unit 2: a second join answers the unit the map keeps"
+}
+
+pub fn a_leave_from_a_connection_not_in_the_map_logs_an_error_changes_nothing_and_is_answered_left_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(state, first) = join(state: started(), connection: 7, caller: 1)
+  let #(state, left) = leave(state:, connection: 9, caller: 2)
+  let assert [line] = support.logs_of(step: left, level: LogError)
+    as "the connection's rule leaves once, so a leave of one that is not here is a bug"
+  assert line.about
+    == step.About(
+      ..step.no_one,
+      connection: Some(ConnectionId(9)),
+      map: Some(MapId(world_id: 3460, instance: 0)),
+    )
+    as "the line is about the connection and the map"
+  assert support.replies(left) == [#(CallerId(2), Left)]
+    as "the answer lets the connection go on"
+  assert support.watches(left) == []
+    && list.length(support.effects_of(left)) == 2
+    as "no watch is dropped: the error and the answer are all the step holds"
+  let #(_, rejoin) = join(state:, connection: 8, caller: 5)
+  assert unit_of(first, 1) == 1 && unit_of(rejoin, 5) == 2
+    as "the stray leave spent no unit id"
 }

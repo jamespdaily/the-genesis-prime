@@ -29,8 +29,11 @@ import character_support
 import connection_rule_support as support
 import game_client
 import genesis_prime/connection/frame.{Frame}
+import genesis_prime/game/connection as game_connection
+import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
 import genesis_prime/login/guid
+import genesis_prime/message/camp_countdown
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
 import genesis_prime/message/create_character.{CreateCharacter}
@@ -53,6 +56,7 @@ import genesis_prime/message/rename_result
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
@@ -829,5 +833,100 @@ pub fn a_connection_that_crashes_saves_nothing_is_not_restarted_and_the_place_sa
     as "a crash runs no save: the row holds the place it had, and no save was made at this login's epoch (the 60 s save would have been the last)"
   assert ask_support.connections_of(started.settings.game.listener) == []
     as "Ranch starts connections as temporary children, so nothing restarts it"
+  login_support.stop(started)
+}
+
+// ---- the camp ----
+
+/// The camp countdown the bot's server is started with, in milliseconds: small,
+/// since the bot sends 0xC0 as soon as it has read the 0x92 and never waits it
+/// out (opcode.0xc0: a Quit does the same).
+const bot_countdown_ms = 1500
+
+pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_again_at_the_place_it_camped_at_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let started =
+    login_support.start_with(change: fn(settings) {
+      let game = settings.game
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..game,
+          settings: game_connection.Settings(
+            ..game.settings,
+            game: GameSettings(
+              ..game.settings.game,
+              camp_countdown_ms: bot_countdown_ms,
+            ),
+          ),
+        ),
+      )
+    })
+  let account = AccountId(login_support.insert_jim(started))
+  let port = login_support.ports(started).game_port
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let character =
+    character_support.insert(
+      pool:,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let game = in_select(started:, port:, account:)
+  send_play(game:, character_id: character)
+  let first_burst = game_client.read(game:, count: 7)
+  let first = game_client.unit_create_player_in(frames: first_burst)
+  assert first.unit_id == 1 as "the first unit of its map"
+  // The player walks to a place of its own, then camps there.
+  game_client.send_world(
+    game:,
+    message_id: 0x0637,
+    body: game_client.moves_body(client_clock: 0x1234, commands: [
+      game_client.position_command(x: 100.5, y: 50.25, z: -200.75),
+    ]),
+  )
+  game_client.send_world(game:, message_id: 0x00BF, body: <<1>>)
+  let assert [Frame(message_id: 0x0092, body: countdown)] =
+    game_client.read(game:, count: 1)
+    as "opcode.0xbf: the server answers a start with the camp's countdown, 0x92"
+  let assert Ok(counting) = camp_countdown.decode(countdown)
+  assert counting.countdown_ms == bot_countdown_ms && counting.cancel == 0
+    as "the settings' countdown, with the cancel bit clear"
+  game_client.send_world(game:, message_id: 0x00C0, body: <<>>)
+  let assert [Frame(message_id: 0x0594, body: leaving)] =
+    game_client.read(game:, count: 1)
+    as "opcode.0xc0: the server saves, takes the player out of its map and answers 0x594"
+  assert leaving == <<1>>
+    as "vector.opcode.0x594.body: the bit set and reason 0 return the client to character select"
+  // The client's new character select sends 0x7E0 and is answered as at login.
+  game_client.send(game:, message_id: 0x07E0, body: <<>>)
+  let assert [level, listed] = game_client.read(game:, count: 2)
+  assert level.message_id == 0x0036 && listed.message_id == 0x0117
+    as "opcode.0x594.character_select: 0x36 then 0x117, as at login, on the same connection"
+  let assert Ok(listing) = character_list.decode(listed.body)
+  assert list.map(listing.characters, fn(entry) { entry.character_id })
+    == [character]
+    as "the account's character is listed, and no longer held in the world"
+  send_play(game:, character_id: character)
+  let second_burst = game_client.read(game:, count: 7)
+  assert list.map(second_burst, fn(frame) { frame.message_id })
+    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
+    as "the play enters the world again as at the first entry"
+  let second = game_client.unit_create_player_in(frames: second_burst)
+  assert second.unit_id == 2
+    as "opcode.0x262: the camp took the first unit out of the map, and the map never gives a unit id twice"
+  let assert Ok(start_movement.Position(position)) =
+    list.first(second.movement_commands)
+    as "0x262 places the unit first"
+  assert position
+    == UnitPositionCommand(
+      x: float32.to_bits(100.5),
+      y: float32.to_bits(50.25),
+      z: float32.to_bits(-200.75),
+      blends: 0,
+    )
+    as "the place the player camped at, saved before 0x594: the camp's save is done before the client can pick the character again"
+  game_client.close(game:)
   login_support.stop(started)
 }

@@ -25,8 +25,9 @@ pub type GameSettings {
 
 /// Why a variable's value is refused.
 pub type SettingRefusal {
-  /// The value is not a whole number.
-  NotAWholeNumber(variable: String, value: String)
+  /// The value is not a whole number; the allowed numbers are `least` to
+  /// `most`, both allowed.
+  NotAWholeNumber(variable: String, value: String, least: Int, most: Int)
   /// The value is a whole number outside `least` to `most`, both allowed.
   OutOfRange(variable: String, value: Int, least: Int, most: Int)
 }

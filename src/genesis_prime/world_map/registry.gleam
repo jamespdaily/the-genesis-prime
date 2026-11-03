@@ -56,7 +56,7 @@
 ////   `NoAnswerInTime`, a watch's end is `WatchEnded`, each ending the
 ////   connection), so the reply goes with it.
 
-import genesis_prime/service.{type Call}
+import genesis_prime/service.{type Call, type Sent}
 import genesis_prime/step/runtime
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
@@ -175,27 +175,46 @@ pub fn find_or_start(
   ask(maps:, map:, lookup: FindOrStart, deadline_ms:)
 }
 
-/// The run of the map with this incarnation, never started: `Error(Nil)`
-/// when it is not running (another incarnation is not it), or Maps does not
-/// answer within `call_ms`. A watch's locate uses it.
+/// Why a find of a running map gave no process.
+pub type FindFailure {
+  /// Maps answered, or is not running: the map is not running, or runs as
+  /// another incarnation. A map that is not running holds no player.
+  NotFound
+  /// Maps gave no answer by the deadline, so whether the map is running is not
+  /// known: a live map may still hold the asker's player.
+  NoReply
+}
+
+/// The run of the map with this incarnation, never started, found by
+/// `deadline_ms` on the monotonic clock (the asker's ask's deadline, as
+/// `find_or_start` takes it): `NotFound` when it is not running (another
+/// incarnation is not it), `NoReply` when Maps does not answer by the
+/// deadline. A watch's locate and the leave's ask use it.
 pub fn find(
-  maps maps: Name(Message),
-  map map: MapId,
-  incarnation incarnation: Int,
-  call_ms call_ms: Int,
-) -> Result(MapProcess, Nil) {
-  ask(
-    maps:,
-    map:,
-    lookup: FindOnly,
-    deadline_ms: runtime.now().monotonic_ms + call_ms,
-  )
-  |> result.try(fn(found) {
-    case found.incarnation == incarnation {
-      True -> Ok(found)
-      False -> Error(Nil)
-    }
-  })
+  maps _maps: Name(Message),
+  map _map: MapId,
+  incarnation _incarnation: Int,
+  deadline_ms _deadline_ms: Int,
+) -> Result(MapProcess, FindFailure) {
+  panic as "built in the next commit: the typed find with the deadline"
+}
+
+/// Serves a connection's ask of the run of a map: the message is sent to the
+/// run `find` finds, which is never started, and its answer goes to `reply`.
+/// `Error(Nil)` when the map is not running (the asker's shell gives its rule
+/// `NotRunning`). When Maps gives no answer by the deadline the result is
+/// `Ok(ToService(Maps))` with nothing sent, so the asker's shell waits out a
+/// deadline that has passed and gives its rule `NoAnswerInTime`, never
+/// `NotRunning`: a live map is never taken for an absent one.
+pub fn ask_run(
+  maps _maps: Name(Message),
+  map _map: MapId,
+  incarnation _incarnation: Int,
+  message _message: map.Message,
+  deadline_ms _deadline_ms: Int,
+  reply _reply: fn(map.Outgoing) -> Nil,
+) -> Result(Sent, Nil) {
+  panic as "built in the next commit: find the run, send the message, and no reply is NoAnswerInTime"
 }
 
 /// Sends Maps the find and waits for its reply until the deadline. An ask

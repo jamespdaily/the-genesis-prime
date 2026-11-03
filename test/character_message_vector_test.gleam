@@ -15,6 +15,9 @@
 //// 0xBF000000 (IEEE 754 binary32).
 
 import genesis_prime/message/bit_stream
+import genesis_prime/message/camp_countdown.{CampCountdown}
+import genesis_prime/message/camp_finished.{CampFinished}
+import genesis_prime/message/camp_request.{CampRequest}
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
 import genesis_prime/message/choose_realm.{ChooseRealm}
@@ -34,6 +37,7 @@ import genesis_prime/message/disconnect_reason.{
   OutOfGameTime,
 }
 import genesis_prime/message/item_visual.{ItemVisual}
+import genesis_prime/message/leave_world.{LeaveWorld}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
@@ -839,4 +843,97 @@ pub fn disconnect_notice_is_the_clients_5_bits_test() -> Nil {
   assert disconnect_notice.decode(message_support.hex("e6"))
     == Ok(DisconnectNotice(reason: LoggedOutByGm))
     as "vector.opcode.0x36a.body: the client reads e6 as reason 6 in 5 bits, its top 3 bits left unread"
+}
+
+// ---- the camp ----
+
+/// `count` amounts of 64 bits, the first `first` and each one more than the
+/// one before, as the client's record holds them: eight bytes each, least
+/// significant first.
+fn amounts(first first: Int, count count: Int) -> BitArray {
+  int.range(from: 0, to: count, with: <<>>, run: fn(bytes, index) {
+    <<bytes:bits, { first + index }:size(64)-little>>
+  })
+}
+
+pub fn camp_countdown_is_a_countdown_a_cancel_bit_and_the_signature_bonuses_test() -> Nil {
+  use <- owned_test.run(10_000)
+  message_support.assert_vector(
+    name: "vector.opcode.0x92.body",
+    body: message_support.hex(
+      "30750000222222224444444402000000000000020400000000000002060000000000000208000000000000020a000000000000020c000000000000020e00000000000002100000000000000212000000000000021400000000000002160000000000000218000000000000021a000000000000021c000000000000021e00000000000002000200000000000402020000000000040402000000000004060200000000000408020000000000040a020000000000040c020000000000040e02000000000004100200000000000412020000000000041402000000000004160200000000000418020000000000041a020000000000041c020000000000041e0200000000000420020000000000042202000000000004240200000000000400",
+    ),
+    value: CampCountdown(
+      countdown_ms: 30_000,
+      cancel: 0,
+      experience: 0x11111111,
+      elder_points: 0x22222222,
+      currencies: amounts(first: 0x0100000000000001, count: 15),
+      account_currencies: amounts(first: 0x0200000000000100, count: 19),
+    ),
+    encode: camp_countdown.encode,
+    decode: camp_countdown.decode,
+  )
+}
+
+pub fn leave_world_is_a_bit_and_a_reason_of_5_bits_test() -> Nil {
+  use <- owned_test.run(10_000)
+  message_support.assert_vector(
+    name: "vector.opcode.0x594.body",
+    body: <<0x01>>,
+    value: LeaveWorld(returning: 1, reason: 0),
+    encode: leave_world.encode,
+    decode: leave_world.decode,
+  )
+  message_support.assert_vector(
+    name: "vector.opcode.0x594.body",
+    body: <<0x1e>>,
+    value: LeaveWorld(returning: 0, reason: 15),
+    encode: leave_world.encode,
+    decode: leave_world.decode,
+  )
+  message_support.assert_vector(
+    name: "vector.opcode.0x594.body",
+    body: <<0x3f>>,
+    value: LeaveWorld(returning: 1, reason: 31),
+    encode: leave_world.encode,
+    decode: leave_world.decode,
+  )
+}
+
+pub fn camp_request_is_one_bit_and_camp_finished_has_an_empty_body_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "opcode.0xbf: one bit, 1 to start and 0 to cancel",
+    body: <<1>>,
+    value: CampRequest(start: 1),
+    encode: camp_request.encode,
+    decode: camp_request.decode,
+  )
+  message_support.assert_codec(
+    name: "opcode.0xbf: one bit, 1 to start and 0 to cancel",
+    body: <<0>>,
+    value: CampRequest(start: 0),
+    encode: camp_request.encode,
+    decode: camp_request.decode,
+  )
+  message_support.assert_vector(
+    name: "opcode.0xc0",
+    body: <<>>,
+    value: CampFinished,
+    encode: camp_finished.encode,
+    decode: camp_finished.decode,
+  )
+}
+
+pub fn the_camp_messages_hold_the_clients_message_numbers_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert camp_request.message_id == 0x00BF
+    as "opcode.0xbf: registered at 0x14006c290, 0x140079d97 mov edx, 0xbf"
+  assert camp_finished.message_id == 0x00C0
+    as "opcode.0xc0: registered at 0x14006c290, 0x140079dce mov edx, 0xc0"
+  assert camp_countdown.message_id == 0x0092
+    as "opcode.0x92: registered at 0x14006c290, 0x140079809 mov edx, 0x92"
+  assert leave_world.message_id == 0x0594
+    as "opcode.0x594: registered at 0x14006c290, 0x14006d858 mov edx, 0x594"
 }

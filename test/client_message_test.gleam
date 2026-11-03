@@ -7,6 +7,8 @@
 ////   bits (opcode.0x592).
 
 import genesis_prime/message/bit_stream
+import genesis_prime/message/camp_finished.{CampFinished}
+import genesis_prime/message/camp_request.{CampRequest}
 import genesis_prime/message/character_select_start.{CharacterSelectStart}
 import genesis_prime/message/choose_realm.{ChooseRealm}
 import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
@@ -210,6 +212,8 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       )),
     ),
     #(0x00F2, client_message.TerrainLoaded(message: TerrainLoaded(field_1: 2))),
+    #(0x00BF, client_message.CampRequest(message: CampRequest(start: 1))),
+    #(0x00C0, client_message.CampFinished(message: CampFinished)),
     #(
       0x0637,
       client_message.PlayerMovement(

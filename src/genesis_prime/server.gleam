@@ -276,17 +276,14 @@ fn directory(settings: Settings) -> Directory {
           })
         })
       AskMapRun(map:, incarnation:, message:) ->
-        world_map_registry.find(
-          maps_name,
-          map,
-          incarnation,
-          deadline_ms - runtime.now().monotonic_ms,
+        world_map_registry.ask_run(
+          maps: maps_name,
+          map:,
+          incarnation:,
+          message:,
+          deadline_ms:,
+          reply: fn(answer) { reply(FromMap(answer)) },
         )
-        |> result.try(fn(found) {
-          service.call_subject(found.subject, message, fn(answer) {
-            reply(FromMap(answer))
-          })
-        })
     }
   }
 }
@@ -309,8 +306,14 @@ fn locate(settings: Settings) -> Locate {
       step.Connection(connection:) -> registry.find(registry, connection)
       step.Maps -> process.named(maps_name)
       step.Map(map:, incarnation:) ->
-        world_map_registry.find(maps_name, map, incarnation, maps_call_ms)
+        world_map_registry.find(
+          maps_name,
+          map,
+          incarnation,
+          deadline_ms: runtime.now().monotonic_ms + maps_call_ms,
+        )
         |> result.map(fn(found) { found.pid })
+        |> result.replace_error(Nil)
     }
   }
 }

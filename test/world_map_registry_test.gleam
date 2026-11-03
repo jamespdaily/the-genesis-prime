@@ -158,9 +158,9 @@ pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test
       world.maps,
       ship,
       incarnation: 1,
-      call_ms: 1000,
+      deadline_ms: deadline(),
     )
-    == Error(Nil)
+    == Error(world_map_registry.NotFound)
     as "find never starts a map: no map is running"
   let first = started(world, ship)
   let second = started(world, ship)
@@ -170,7 +170,7 @@ pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test
       world.maps,
       ship,
       incarnation: first.incarnation,
-      call_ms: 1000,
+      deadline_ms: deadline(),
     )
     == Ok(first)
     as "find with the incarnation of the run that is running answers it"
@@ -178,9 +178,9 @@ pub fn the_first_find_for_a_map_starts_it_and_the_second_finds_the_same_run_test
       world.maps,
       ship,
       incarnation: first.incarnation + 1,
-      call_ms: 1000,
+      deadline_ms: deadline(),
     )
-    == Error(Nil)
+    == Error(world_map_registry.NotFound)
     as "another incarnation is another run: a watch on a run that ended ends at once"
   let other = started(world, nexus)
   assert other.pid != first.pid && other.incarnation != first.incarnation
@@ -233,15 +233,15 @@ pub fn a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_
       world.maps,
       ship,
       incarnation: first.incarnation,
-      call_ms: 1000,
+      deadline_ms: deadline(),
     )
-    == Error(Nil)
+    == Error(world_map_registry.NotFound)
     as "a find with the old incarnation is an error: a player's connection that watches the old run learns it ended"
   assert world_map_registry.find(
       world.maps,
       ship,
       incarnation: again.incarnation,
-      call_ms: 1000,
+      deadline_ms: deadline(),
     )
     == Ok(again)
 }
@@ -283,8 +283,13 @@ fn await_not_found(
   incarnation incarnation: Int,
 ) -> Nil {
   event_wait.until("Maps stops finding a map that ended", fn() {
-    world_map_registry.find(world.maps, map, incarnation:, call_ms: 1000)
-    == Error(Nil)
+    world_map_registry.find(
+      world.maps,
+      map,
+      incarnation:,
+      deadline_ms: deadline(),
+    )
+    == Error(world_map_registry.NotFound)
   })
 }
 
@@ -302,8 +307,13 @@ pub fn an_ask_is_given_up_at_the_askers_deadline_and_maps_not_running_is_an_erro
   assert world_map_registry.find_or_start(nobody, ship, deadline_ms: deadline())
     == Error(Nil)
     as "Maps is not running: no process holds its name"
-  assert world_map_registry.find(nobody, ship, incarnation: 1, call_ms: 1000)
-    == Error(Nil)
+  assert world_map_registry.find(
+      nobody,
+      ship,
+      incarnation: 1,
+      deadline_ms: deadline(),
+    )
+    == Error(world_map_registry.NotFound)
 }
 
 pub fn an_ask_past_its_deadline_is_never_sent_to_maps_test() -> Nil {
@@ -376,4 +386,123 @@ pub fn a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_
   let again = started(world, ship)
   assert again.pid != first.pid && again.incarnation != first.incarnation
     as "rest_for_one: the map supervisor restarted with Maps, so every map ended, and a registry that lost its list never starts a second copy of a running map"
+}
+
+// ---- the typed find and the ask of a run ----
+
+/// A character's join message for the connection, as `joined_as` sends it.
+fn join_message(id: Int) -> map.Message {
+  map.Join(
+    connection: ConnectionId(id),
+    character: character_support.character(number: 100 + id),
+    place: place_support.live_character_place(),
+  )
+}
+
+pub fn a_find_that_maps_does_not_answer_by_its_deadline_is_no_reply_and_not_not_found_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let stand_in = process.new_name("stand_in_maps")
+  let assert Ok(Nil) = process.register(process.self(), stand_in)
+    as "the test process holds the name Maps would and never answers"
+  assert world_map_registry.find(
+      stand_in,
+      ship,
+      incarnation: 1,
+      deadline_ms: ask_support.monotonic_ms() + 50,
+    )
+    == Error(world_map_registry.NoReply)
+    as "Maps was asked and gave no answer: a live map may still hold the player, so the find does not say the map is not running"
+  assert world_map_registry.find(
+      stand_in,
+      ship,
+      incarnation: 1,
+      deadline_ms: ask_support.monotonic_ms() - 1,
+    )
+    == Error(world_map_registry.NoReply)
+    as "a deadline that has passed leaves no time to ask, and says nothing about the map"
+}
+
+pub fn an_ask_of_a_run_that_is_not_the_running_one_or_of_a_map_not_running_is_not_running_and_starts_no_map_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let world = start_world()
+  assert world_map_registry.ask_run(
+      world.maps,
+      ship,
+      incarnation: 1,
+      message: join_message(7),
+      deadline_ms: deadline(),
+      reply: fn(_) { Nil },
+    )
+    == Error(Nil)
+    as "no map is running: the asker's shell gives its rule NotRunning"
+  assert world_map_registry.find(
+      world.maps,
+      ship,
+      incarnation: 1,
+      deadline_ms: deadline(),
+    )
+    == Error(world_map_registry.NotFound)
+    as "the ask started no map, as an ask of find_or_start would"
+  let first = started(world, ship)
+  assert world_map_registry.ask_run(
+      world.maps,
+      ship,
+      incarnation: first.incarnation + 1,
+      message: join_message(7),
+      deadline_ms: deadline(),
+      reply: fn(_) { Nil },
+    )
+    == Error(Nil)
+    as "another incarnation is another run: the player the asker had is not in the running one"
+  assert joined(first, 7) == #(1, first.incarnation)
+    as "the refused ask's join never reached the running map: the next join is its first unit"
+  let nobody = process.new_name("no_maps")
+  assert world_map_registry.ask_run(
+      nobody,
+      ship,
+      incarnation: 1,
+      message: join_message(7),
+      deadline_ms: deadline(),
+      reply: fn(_) { Nil },
+    )
+    == Error(Nil)
+    as "Maps is not running, so no map is"
+}
+
+pub fn an_ask_of_the_running_run_reaches_it_and_its_answer_goes_to_the_reply_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let world = start_world()
+  let first = started(world, ship)
+  let #(sent, answer) =
+    ask_support.ask_and_wait(send: fn(reply) {
+      world_map_registry.ask_run(
+        world.maps,
+        ship,
+        incarnation: first.incarnation,
+        message: join_message(3),
+        deadline_ms: deadline(),
+        reply:,
+      )
+    })
+  assert sent == service.ToService(first.pid)
+    as "the ask went to the run it names, which the asker watches"
+  let assert map.Joined(unit:, incarnation:) = answer
+  assert unit.unit_id == 1 && incarnation == first.incarnation
+}
+
+pub fn an_ask_of_a_run_when_maps_does_not_answer_in_time_is_sent_nowhere_and_left_to_time_out_never_not_running_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let stand_in = process.new_name("stand_in_maps")
+  let assert Ok(Nil) = process.register(process.self(), stand_in)
+    as "the test process holds the name Maps would and never answers"
+  assert world_map_registry.ask_run(
+      stand_in,
+      ship,
+      incarnation: 1,
+      message: join_message(7),
+      deadline_ms: ask_support.monotonic_ms() + 50,
+      reply: fn(_) { Nil },
+    )
+    == Ok(service.ToService(process.self()))
+    as "Maps gave no answer, so the ask is not NotRunning, which would let a live map keep a stale unit: the shell waits on Maps for a deadline that has passed and gives its rule NoAnswerInTime"
 }
