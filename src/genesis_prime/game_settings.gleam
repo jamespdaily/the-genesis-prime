@@ -6,7 +6,7 @@
 //// | Setting | Variable | Default and its source | Allowed |
 //// | --- | --- | --- | --- |
 //// | `camp_countdown_ms` | `GENESIS_CAMP_COUNTDOWN_MS` | 10,000: Jim's choice, 2026-11-03; no retail record, and the client has none (opcode.0x92.countdown_source) | 0 to 59,999: the exit window shows only seconds, as `00:SS`, with no minutes field (opcode.0x92.countdown_range) |
-//// | `character_slots` | none | 2: the client's count for an account with no entitlement (lua.CharacterSelection.OnLoadFromCharacter) | |
+//// | `character_slots` | `GENESIS_CHARACTER_SLOTS` | 2: the client's count for an account with no entitlement (lua.CharacterSelection.OnLoadFromCharacter) | 2 to 14: the client offers at least 2 and counts its most as 14 (RewardPropertyPremiumModifier rows 117 and 118, Entitlement 12's maxCount) |
 ////
 //// - **A variable that is set** replaces its setting's default. A value that
 ////   is not a whole number, or lies outside the allowed range, is refused with
@@ -18,6 +18,17 @@
 
 import gleam/int
 import gleam/result
+
+/// The slots the client offers an account with no BaseCharacterSlots
+/// entitlement under the Hybrid premium system: the CharacterSlots reward
+/// property, RewardPropertyPremiumModifier row 117 (modifierValueInt 2), which
+/// `lua.CharacterSelection.OnLoadFromCharacter` starts its sum from.
+pub const client_base_character_slots = 2
+
+/// The most slots the client counts: the base and Entitlement 12's maxCount
+/// (Entitlement.tbl: 12), which row 118 of RewardPropertyPremiumModifier adds
+/// to the most.
+const client_most_character_slots = 14
 
 /// The game's settings. `camp_countdown_ms` is the countdown the server gives
 /// a camp, in milliseconds; `character_slots` is the number of characters an
@@ -37,7 +48,10 @@ pub type SettingRefusal {
 
 /// The settings with no variable set.
 pub fn defaults() -> GameSettings {
-  GameSettings(camp_countdown_ms: 10_000, character_slots: 2)
+  GameSettings(
+    camp_countdown_ms: 10_000,
+    character_slots: client_base_character_slots,
+  )
 }
 
 /// The defaults, with each variable that `read` finds replacing its setting;
@@ -47,14 +61,21 @@ pub fn from_environment(
   read read: fn(String) -> Result(String, Nil),
 ) -> Result(GameSettings, SettingRefusal) {
   let defaults = defaults()
-  use camp_countdown_ms <- result.map(whole_number(
+  use camp_countdown_ms <- result.try(whole_number(
     read:,
     variable: "GENESIS_CAMP_COUNTDOWN_MS",
     default: defaults.camp_countdown_ms,
     least: 0,
     most: 59_999,
   ))
-  GameSettings(..defaults, camp_countdown_ms:)
+  use character_slots <- result.map(whole_number(
+    read:,
+    variable: "GENESIS_CHARACTER_SLOTS",
+    default: defaults.character_slots,
+    least: client_base_character_slots,
+    most: client_most_character_slots,
+  ))
+  GameSettings(camp_countdown_ms:, character_slots:)
 }
 
 /// The whole number the variable holds, from `least` to `most`, or `default`

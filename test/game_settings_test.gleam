@@ -6,8 +6,10 @@
 ////   seconds as `00:SS` with no minutes field, and a countdown of 0 is a camp
 ////   due at once (opcode.0x92.countdown_range).
 //// - The character slots, 2: the client's count for an account with no
-////   entitlement (lua.CharacterSelection.OnLoadFromCharacter); no variable
-////   sets them yet.
+////   entitlement (lua.CharacterSelection.OnLoadFromCharacter): the reward
+////   property CharacterSlots, row 117 of RewardPropertyPremiumModifier
+////   (Hybrid, tier 0, modifierValueInt 2). Their most, 14: row 118 adds
+////   Entitlement 12's maxCount, 12 (Entitlement.tbl), to the most.
 //// - The module's doc comment: a variable that is set replaces its default, a
 ////   refused value names the variable, the value and the range.
 
@@ -102,10 +104,48 @@ pub fn a_variable_no_setting_reads_changes_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   assert game_settings.from_environment(
       environment([
-        #("GENESIS_CHARACTER_SLOTS", "9"),
+        #("GENESIS_CHARACTER_SLOTS_EXTRA", "9"),
         #("GENESIS_CAMP_COUNTDOWN_MS_EXTRA", "1"),
       ]),
     )
     == Ok(game_settings.defaults())
-    as "the slots have no variable yet, and a variable that only starts with a setting's name is not it"
+    as "a variable that only starts with a setting's name is not it"
+}
+
+pub fn slots_of_2_and_14_are_taken_and_6_gives_6_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each([#("2", 2), #("6", 6), #("14", 14)], fn(case_) {
+    let #(text, slots) = case_
+    assert game_settings.from_environment(
+        environment([#("GENESIS_CHARACTER_SLOTS", text)]),
+      )
+      == Ok(GameSettings(camp_countdown_ms: 10_000, character_slots: slots))
+      as "RewardPropertyPremiumModifier rows 117 and 118: the client offers 2 slots up to 14, its most"
+  })
+}
+
+pub fn slots_below_2_or_above_14_or_not_a_whole_number_are_refused_with_their_variable_value_and_range_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each([#("1", 1), #("0", 0), #("-3", -3), #("15", 15)], fn(case_) {
+    let #(text, number) = case_
+    assert game_settings.from_environment(
+        environment([#("GENESIS_CHARACTER_SLOTS", text)]),
+      )
+      == Error(OutOfRange(
+        variable: "GENESIS_CHARACTER_SLOTS",
+        value: number,
+        least: 2,
+        most: 14,
+      ))
+      as "below 2 the client still offers 2 (its reward property), so a refusal at fewer would disagree with what it shows; above 14 the slots pass the client's own most, which its tooltip and buy-a-slot entry count against"
+  })
+  assert game_settings.from_environment(
+      environment([#("GENESIS_CHARACTER_SLOTS", "six")]),
+    )
+    == Error(NotAWholeNumber(
+      variable: "GENESIS_CHARACTER_SLOTS",
+      value: "six",
+      least: 2,
+      most: 14,
+    ))
 }

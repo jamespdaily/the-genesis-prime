@@ -22,6 +22,7 @@ import character_support
 import character_tables
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/character_select.{Ask, Send, Warn}
+import genesis_prime/message/account_entitlements
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry.{type CharacterListEntry}
 import genesis_prime/message/create_character.{CreateCharacter}
@@ -30,10 +31,12 @@ import genesis_prime/message/create_result
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/delete_result
+import genesis_prime/message/held_entitlement.{type HeldEntitlement}
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
+import genesis_prime/message/premium_tier.{PremiumTier}
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
@@ -45,6 +48,7 @@ import genesis_prime/store.{
   NoSuchCharacter, NotRenamable, RenameCharacter as StoreRename,
 }
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/string
@@ -56,12 +60,21 @@ fn listed(
   state: character_select.State,
   characters: List(Character),
 ) -> Result(#(character_select.State, List(character_select.Effect)), Nil) {
+  listed_with_slots(state:, characters:, character_slots: 2)
+}
+
+fn listed_with_slots(
+  state state: character_select.State,
+  characters characters: List(Character),
+  character_slots character_slots: Int,
+) -> Result(#(character_select.State, List(character_select.Effect)), Nil) {
   character_select.listed(
     state,
     characters,
     filetime:,
     realm_id: 1,
     max_characters: 2,
+    character_slots:,
     tables: character_tables.shared(),
   )
 }
@@ -182,6 +195,8 @@ pub fn a_list_is_0x0036_with_the_accounts_highest_level_and_then_0x0117_test() -
       stored(id: 3, name: "Ij Kl", level: 3),
     ])
   let assert [
+    Frame(message_id: 0x097F, ..),
+    Frame(message_id: 0x0968, ..),
     Frame(message_id: 0x0036, body: level),
     Frame(message_id: 0x0117, ..),
   ] = sent(effects)
@@ -191,6 +206,8 @@ pub fn a_list_is_0x0036_with_the_accounts_highest_level_and_then_0x0117_test() -
   let #(asking, _) = character_select.started(AccountId(7))
   let assert Ok(#(_, effects)) = listed(asking, [])
   let assert [
+    Frame(message_id: 0x097F, ..),
+    Frame(message_id: 0x0968, ..),
     Frame(message_id: 0x0036, body: none),
     Frame(message_id: 0x0117, ..),
   ] = sent(effects)
@@ -510,7 +527,7 @@ pub fn an_entry_carries_the_rename_bit_from_the_characters_naming_and_the_in_wor
   assert list.map(entries(effects), fn(entry) { entry.requires_rename })
     == [1, 0]
     as "lua.CharacterSelection.OnSelectCharacter: bRequiresRename opens the rename form; opcode.0x117 names the entry's bit"
-  let assert [_, Frame(message_id: 0x0117, body:)] = sent(effects)
+  let assert [_, _, _, Frame(message_id: 0x0117, body:)] = sent(effects)
   let assert Ok(list_message) = character_list.decode(body)
   assert list_message.in_world_realm_id == 0
     && list_message.in_world_character_id == 0
@@ -544,9 +561,13 @@ pub fn after_a_refused_play_the_character_it_named_is_selected_by_the_clients_ru
       stored(id: 3, name: "Ij Kl", level: 9),
     ])
   assert !character_select.waiting(state)
-  let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, ..)] =
-    sent(effects)
-    as "opcode.0x36 and opcode.0x117 follow 0x0162, which was sent when the play was refused"
+  let assert [
+    Frame(message_id: 0x097F, ..),
+    Frame(message_id: 0x0968, ..),
+    Frame(message_id: 0x0036, ..),
+    Frame(message_id: 0x0117, ..),
+  ] = sent(effects)
+    as "opcode.0x36 and opcode.0x117 follow 0x0162, which was sent when the play was refused, with the tier and the entitlements the client's list reads"
   let days =
     list.map(entries(effects), fn(entry) { entry.last_logged_out_days })
   let assert [0, chosen, 0] = days
@@ -573,4 +594,91 @@ fn entries(effects: List(character_select.Effect)) -> List(CharacterListEntry) {
     as "the effects send 0x0117"
   let assert Ok(list) = character_list.decode(body) as "0x0117 decodes"
   list.characters
+}
+
+// ---- the account's slots the client shows ----
+
+/// The entries of the 0x0968 in the effects.
+fn entitlements_of(
+  effects: List(character_select.Effect),
+) -> List(HeldEntitlement) {
+  let assert Ok(Frame(body:, ..)) =
+    list.find(sent(effects), fn(frame) { frame.message_id == 0x0968 })
+    as "the effects send 0x0968"
+  let assert Ok(message) = account_entitlements.decode(body) as "0x0968 decodes"
+  message.entitlements
+}
+
+/// The slots the client's character select offers a client of premium system
+/// `base` (2 for Hybrid, 3 for VIP) when it is sent `entitlements`: the base
+/// plus the count of entitlement 12 when the account holds it, the larger of
+/// the base and the characters listed otherwise
+/// (lua.CharacterSelection.OnLoadFromCharacter).
+fn client_slots(
+  base base: Int,
+  entitlements entitlements: List(HeldEntitlement),
+  listed listed: Int,
+) -> Int {
+  case
+    list.find(entitlements, fn(entry) {
+      entry.entitlement_id == 12 && entry.count > 0
+    })
+  {
+    Ok(entry) -> base + entry.count
+    Error(Nil) -> int.max(base, listed)
+  }
+}
+
+pub fn a_list_is_sent_after_the_premium_tier_and_the_entitlements_in_that_order_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(asking, _) = character_select.started(AccountId(7))
+  let assert Ok(#(_, effects)) =
+    listed_with_slots(state: asking, characters: [], character_slots: 6)
+  assert list.map(sent(effects), fn(frame) { frame.message_id })
+    == [0x097F, 0x0968, 0x0036, 0x0117]
+    as "opcode.0x97f before opcode.0x968, since 0x968 refreshes the tier and a tier never sent drops from 255 to 0; both before opcode.0x117, which character select reads them from when it arrives"
+  let assert Ok(Frame(body:, ..)) =
+    list.find(sent(effects), fn(frame) { frame.message_id == 0x097F })
+  assert premium_tier.decode(body) == Ok(PremiumTier(tier: 1))
+    as "lua.AccountItemLib.GetPremiumTier.users: tier 1 is Signature, which the client shows today (255 counts as Signature); tier 0 would show Basic and its upsells"
+}
+
+pub fn with_6_slots_the_entitlements_hold_base_character_slots_4_and_with_2_none_above_0_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(asking, _) = character_select.started(AccountId(7))
+  let assert Ok(#(_, six)) =
+    listed_with_slots(state: asking, characters: [], character_slots: 6)
+  assert entitlements_of(six)
+    == [held_entitlement.HeldEntitlement(entitlement_id: 12, count: 4)]
+    as "lua.CharacterSelection.OnLoadFromCharacter: Hybrid gives 2 slots from the reward property, and the account's BaseCharacterSlots (Entitlement 12) count is added, so 6 slots is a count of 4"
+  assert client_slots(base: 2, entitlements: entitlements_of(six), listed: 0)
+    == 6
+    as "the client's own sum for a Hybrid client"
+  let assert Ok(#(_, two)) =
+    listed_with_slots(state: asking, characters: [], character_slots: 2)
+  assert list.filter(entitlements_of(two), fn(entry) { entry.count > 0 }) == []
+    as "2 slots is the client's own count for an account with no entitlement, and a count of 0 counts as absent (0x1404e4960)"
+  let assert Ok(#(_, fourteen)) =
+    listed_with_slots(state: asking, characters: [], character_slots: 14)
+  assert entitlements_of(fourteen)
+    == [held_entitlement.HeldEntitlement(entitlement_id: 12, count: 12)]
+    as "Entitlement 12's maxCount is 12, so 14 slots, the client's most, is the largest count it has"
+}
+
+pub fn a_client_of_the_vip_system_offers_one_slot_more_than_a_create_is_allowed_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let server_slots = 6
+  let #(asking, _) = character_select.started(AccountId(7))
+  let assert Ok(#(_, effects)) =
+    listed_with_slots(
+      state: asking,
+      characters: [],
+      character_slots: server_slots,
+    )
+  let vip_slots =
+    client_slots(base: 3, entitlements: entitlements_of(effects), listed: 0)
+  assert vip_slots == 7
+    as "RewardPropertyPremiumModifier row 119: a client started with gmode 1 (VIP) gets 3 slots from the reward property, and the entitlement's 4 is added to it"
+  assert vip_slots == server_slots + 1
+    as "the gap: the server sends the same entitlements to every client and never reads the gmode the client sends in 0x0592, so a VIP client offers one slot more than the server's refusal of a create allows (CreateFailed_AccountFull)"
 }
