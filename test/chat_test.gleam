@@ -25,6 +25,8 @@ import genesis_prime/message/chat_line_accepted.{ChatLineAccepted}
 import genesis_prime/message/chat_result.{ChatResult}
 import genesis_prime/message/chat_zone_named.{ChatZoneNamed}
 import genesis_prime/message/send_chat_line.{SendChatLine}
+import genesis_prime/message/send_whisper.{SendWhisper}
+import genesis_prime/message/whisper_failed.{type WhisperFailed, WhisperFailed}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/chat_channel as chat_channel_table
 import genesis_prime/table/id.{ChatChannelId}
@@ -107,6 +109,7 @@ fn take(
       body:,
       viewers: set.from_list(list.map(viewers, ConnectionId)),
       realm_name: "Test Realm",
+      connection: ConnectionId(1),
       tables: character_tables.shared(),
     )
     as "the body decodes"
@@ -1214,4 +1217,369 @@ pub fn the_memberships_one_player_holds_after_entering_changing_zone_camping_and
 fn same_groups(held: List(step.Address), expected: List(step.Address)) -> Bool {
   list.length(held) == list.length(expected)
   && list.all(expected, fn(group) { list.contains(held, group) })
+}
+
+// ---- whisper ----
+
+const first_watch = 100
+
+fn whisper_body(
+  target target: String,
+  realm realm: String,
+  text text: String,
+  message_id message_id: Int,
+  account account: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    send_whisper.encode(SendWhisper(
+      target_name: target,
+      target_realm_name: realm,
+      text: units(text),
+      formats: [],
+      chat_message_id: message_id,
+      account:,
+    ))
+    as "the whisper fits its fields"
+  body
+}
+
+fn whisper(chat chat: Chat, body body: BitArray) -> #(Chat, List(chat.Effect)) {
+  let assert Ok(taken) =
+    chat.take(
+      chat:,
+      message: chat.WhisperSent,
+      body:,
+      viewers: set.new(),
+      realm_name: "Test Realm",
+      connection: ConnectionId(1),
+      tables: character_tables.shared(),
+    )
+    as "the body decodes"
+  taken
+}
+
+/// A whisper "Hi" to the target, with slot 3.
+fn whisper_to(chat: Chat, target: String) -> #(Chat, List(chat.Effect)) {
+  whisper(
+    chat:,
+    body: whisper_body(
+      target:,
+      realm: "",
+      text: "Hi",
+      message_id: 3,
+      account: 0,
+    ),
+  )
+}
+
+fn failed(effects: List(chat.Effect)) -> WhisperFailed {
+  let frame = only_frame(effects)
+  assert frame.message_id == whisper_failed.message_id
+    as "opcode.0x1d9: the answer to a whisper that was not delivered"
+  let assert Ok(failure) = whisper_failed.decode(frame.body)
+  failure
+}
+
+fn target_player() -> chat_tell.Speaker {
+  Speaker(
+    ..speaker(),
+    character_id: 9,
+    name: "Cd Ef",
+    faction_id: 166,
+    unit_id: 6,
+  )
+}
+
+fn the_whisper(effects: List(chat.Effect)) -> chat_tell.Tell {
+  let assert [chat.Watch(..), chat.TellWatched(tell:, ..)] = effects
+    as "a watch of the target's name, then a tell through it"
+  tell
+}
+
+pub fn a_whisper_to_an_online_character_watches_its_name_tells_through_the_watch_and_waits_for_the_reply_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) = whisper_to(a_chat(), "Cd Ef")
+  assert effects
+    == [
+      chat.Watch(
+        watch: step.WatchId(first_watch + 1),
+        target: step.CharacterNamed("cd ef"),
+      ),
+      chat.TellWatched(
+        watch: step.WatchId(first_watch + 1),
+        tell: chat_tell.Whisper(
+          whisper: 1,
+          speaker: speaker(),
+          from: ConnectionId(1),
+          line: Line(
+            channel_type: chat_channel.Whisper,
+            channel_id: 0,
+            text: units("Hi"),
+            formats: [],
+          ),
+        ),
+      ),
+    ]
+    as "the design's sequence: Watch(w, CharacterNamed(folded name)), then the tell through that watch; nothing is written until the reply"
+}
+
+pub fn the_target_writes_one_0x1c8_on_the_whisper_channel_and_tells_the_speaker_heard_test() -> Nil {
+  use <- owned_test.run(5000)
+  let tell = the_whisper(whisper_to(a_chat(), "Cd Ef").1)
+  let #(_, effects) = chat.told(chat_of(target_player()), tell)
+  let assert [chat.Send(frame), chat.Tell(to:, tell: heard)] = effects
+  let assert Ok(line) = chat_line.decode(frame.body)
+  assert line.channel_type == 6
+    && line.channel_id == 0
+    && line.sender_name == "Ab Cd"
+    && line.text == units("Hi")
+    && line.cross_faction == 0
+    as "opcode.0x1d4, opcode.0x1c8: the target gets one 0x1c8 on (6, 0) with the speaker's name"
+  assert to == step.Connection(ConnectionId(1))
+  assert heard == chat_tell.Heard(whisper: 1, name: "Cd Ef")
+}
+
+pub fn the_speaker_gets_one_0x1c2_with_the_targets_name_when_heard_and_forgets_the_whisper_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(chat, _) = whisper_to(a_chat(), "Cd Ef")
+  let #(chat, effects) =
+    chat.told(chat, chat_tell.Heard(whisper: 1, name: "Cd Ef"))
+  let assert [chat.Unwatch(watch:), chat.Send(frame)] = effects
+  assert watch == step.WatchId(first_watch + 1)
+  let assert Ok(accept) = chat_line_accepted.decode(frame.body)
+  assert accept.chat_message_id == 3 && accept.name == "Cd Ef"
+    as "opcode.0x1c2: the speaker sees 'To <target>', so the name is the target's"
+  assert chat.told(chat, chat_tell.Heard(whisper: 1, name: "Cd Ef")).1 == []
+    as "a doubled reply finds no whisper number and is dropped"
+}
+
+pub fn a_whisper_to_a_target_of_the_other_faction_is_delivered_with_bcrossfaction_1_test() -> Nil {
+  use <- owned_test.run(5000)
+  let tell = the_whisper(whisper_to(a_chat(), "Cd Ef").1)
+  let other_faction = chat_of(Speaker(..target_player(), faction_id: 167))
+  let assert [chat.Send(frame), chat.Tell(..)] =
+    chat.told(other_faction, tell).1
+  let assert Ok(line) = chat_line.decode(frame.body)
+  assert line.cross_faction == 1
+    as "chat.cross_faction: the client never refuses a whisper to the other faction; the flag only colours the name (Jim, 2026-11-03; retail opened cross-faction chat on 2016-04-13, MMOBomb, a retail record)"
+}
+
+pub fn the_targets_name_matches_without_case_by_the_fold_of_the_unique_index_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert [chat.Watch(target:, ..), ..] = whisper_to(a_chat(), "cD eF").1
+  assert target == step.CharacterNamed("cd ef")
+    as "server choice (the CreateCharacter record's gap): the name is matched as the database's unique index folds it"
+}
+
+pub fn an_empty_whisper_is_answered_only_when_the_target_is_not_found_test() -> Nil {
+  use <- owned_test.run(5000)
+  let empty =
+    whisper_body(
+      target: "Cd Ef",
+      realm: "",
+      text: "",
+      message_id: 4,
+      account: 0,
+    )
+  let #(chat, effects) = whisper(chat: a_chat(), body: empty)
+  let tell = the_whisper(effects)
+  assert chat.told(chat_of(target_player()), tell).1
+    == [
+      chat.Tell(
+        to: step.Connection(ConnectionId(1)),
+        tell: chat_tell.Heard(whisper: 1, name: "Cd Ef"),
+      ),
+    ]
+    as "the target writes nothing for an empty whisper but tells the speaker it was found"
+  let #(_, found) = chat.told(chat, chat_tell.Heard(whisper: 1, name: "Cd Ef"))
+  assert found == [chat.Unwatch(watch: step.WatchId(first_watch + 1))]
+    as "the trace's recommendation: nothing to anyone when the target is found; the client frees the slot silently after 30 s (0x140405cb0)"
+  assert failed(
+      chat.told(chat, chat_tell.NotHeard(whisper: 1)).1 |> drop_unwatch,
+    )
+    == WhisperFailed(target_name: "Cd Ef", account: 0, chat_message_id: 4)
+    as "0x1d9 when the target is not in the world"
+  assert failed(
+      chat.watch_ended(chat, step.WatchId(first_watch + 1))
+      |> unwrap_ok
+      |> drop_unwatch,
+    )
+    == WhisperFailed(target_name: "Cd Ef", account: 0, chat_message_id: 4)
+    as "0x1d9 when no connection holds the name"
+}
+
+fn unwrap_ok(
+  result: Result(#(Chat, List(chat.Effect)), Nil),
+) -> List(chat.Effect) {
+  let assert Ok(#(_, effects)) = result as "the watch is a whisper's"
+  effects
+}
+
+/// The effects without the `Unwatch` of a reply.
+fn drop_unwatch(effects: List(chat.Effect)) -> List(chat.Effect) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      chat.Unwatch(..) -> False
+      chat.Send(..)
+      | chat.Tell(..)
+      | chat.TellWatched(..)
+      | chat.Warning(..)
+      | chat.Watch(..)
+      | chat.JoinGroup(..)
+      | chat.LeaveGroup(..)
+      | chat.Unhandled(..) -> True
+    }
+  })
+}
+
+pub fn the_realm_name_of_the_server_in_any_case_or_none_is_the_same_realm_and_any_other_is_not_delivered_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(["", "Test Realm", "tEST rEALM"], fn(realm) {
+    let body =
+      whisper_body(
+        target: "Cd Ef",
+        realm:,
+        text: "Hi",
+        message_id: 3,
+        account: 0,
+      )
+    let assert [chat.Watch(..), chat.TellWatched(..)] =
+      whisper(chat: a_chat(), body:).1
+      as "opcode.0x1d4: the same realm is delivered"
+  })
+  let body =
+    whisper_body(
+      target: "Cd Ef",
+      realm: "Other Realm",
+      text: "Hi",
+      message_id: 3,
+      account: 0,
+    )
+  assert failed(whisper(chat: a_chat(), body:).1)
+    == WhisperFailed(target_name: "Cd Ef", account: 0, chat_message_id: 3)
+    as "opcode.0x1d4: any other realm gets 0x1d9, with no watch"
+}
+
+pub fn no_online_character_gives_0x1d9_with_the_name_as_sent_bit_0_and_the_slot_and_no_0x1c2_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(chat, _) = whisper_to(a_chat(), "cD eF")
+  let #(chat, effects) = case
+    chat.watch_ended(chat, step.WatchId(first_watch + 1))
+  {
+    Ok(taken) -> taken
+    Error(Nil) -> panic as "the watch is a whisper's"
+  }
+  assert failed(effects)
+    == WhisperFailed(target_name: "cD eF", account: 0, chat_message_id: 3)
+    as "opcode.0x1d9: the name as sent, bit 0 and the id"
+  assert chat.watch_ended(chat, step.WatchId(first_watch + 1)) == Error(Nil)
+    as "the whisper is forgotten, so its watch's end is taken once"
+}
+
+pub fn a_name_that_fails_rule_0_gets_0x1d9_at_once_with_no_watch_test() -> Nil {
+  use <- owned_test.run(5000)
+  list.each(["Abc", "Ab1 Cd", "Ab  Cd", " Ab Cd", "A B C"], fn(target) {
+    let #(chat, effects) = whisper_to(a_chat(), target)
+    assert failed(effects)
+      == WhisperFailed(target_name: target, account: 0, chat_message_id: 3)
+      as "no character can have a name rule 0 refuses, so no watch is made"
+    assert chat == a_chat()
+  })
+}
+
+pub fn an_account_whisper_gets_0x1d9_with_bit_1_test() -> Nil {
+  use <- owned_test.run(5000)
+  let body =
+    whisper_body(
+      target: "Cd Ef",
+      realm: "",
+      text: "Hi",
+      message_id: 3,
+      account: 1,
+    )
+  assert failed(whisper(chat: a_chat(), body:).1)
+    == WhisperFailed(target_name: "Cd Ef", account: 1, chat_message_id: 3)
+    as "opcode.0x1d4: there are no account friends, so the answer is always not delivered"
+}
+
+pub fn a_whisper_to_oneself_writes_0x1c8_and_0x1c2_in_one_step_with_no_watch_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) = whisper_to(a_chat(), "ab cd")
+  let assert [chat.Send(line_frame), chat.Send(accept_frame)] = effects
+    as "server choice: no watch and no tell on one's own process"
+  assert line_frame.message_id == chat_line.message_id
+  let assert Ok(accept) = chat_line_accepted.decode(accept_frame.body)
+  assert accept.name == "Ab Cd" && accept.chat_message_id == 3
+}
+
+pub fn a_whisper_that_fails_the_line_rules_is_refused_with_0x1d3_on_the_whisper_channel_test() -> Nil {
+  use <- owned_test.run(5000)
+  let refuse = fn(text, message_id) {
+    let body =
+      whisper_body(target: "Cd Ef", realm: "", text:, message_id:, account: 0)
+    refused(whisper(chat: a_chat(), body:).1)
+  }
+  assert refuse(string.repeat("a", 500), 3)
+    == ChatResult(
+      channel_type: 6,
+      channel_id: 0,
+      result: InvalidMessageText,
+      chat_message_id: 3,
+    )
+    as "vector.0x140402720.lines: 500 characters; the refusal is on (6, 0) with the line's id"
+  assert refuse("a\u{0001}", 4).result == InvalidMessageText
+  assert refuse("Hi", 0).chat_message_id == 0
+    as "0x140405cb0: slot 0 is refused"
+}
+
+pub fn a_late_or_doubled_reply_for_a_finished_whisper_is_dropped_and_numbers_never_repeat_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(chat, _) = whisper_to(a_chat(), "Cd Ef")
+  let #(chat, _) = chat.told(chat, chat_tell.NotHeard(whisper: 1))
+  assert chat.told(chat, chat_tell.NotHeard(whisper: 1)).1 == []
+    as "a second reply for whisper 1 finds nothing"
+  assert chat.told(chat, chat_tell.Heard(whisper: 7, name: "Zed Other")).1 == []
+    as "a reply for a number never made is dropped"
+  let #(chat, second) = whisper_to(chat, "Cd Ef")
+  assert chat.next_whisper(chat) == 3
+    as "the number counts on: 1 and 2 are used"
+  let assert [chat.Watch(watch:, ..), ..] = second
+  assert watch == step.WatchId(first_watch + 2)
+  let kept =
+    chat.new(speaker: speaker(), zone_channel_id: world_id, next_whisper: 3)
+  assert chat.next_whisper(kept) == 3
+    as "a new stay in the world starts from the connection's number, so a stale reply never meets a new whisper"
+}
+
+pub fn the_first_reply_for_a_whisper_is_the_only_answer_when_a_takeover_gives_two_replies_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(chat, _) = whisper_to(a_chat(), "Cd Ef")
+  let #(chat, first) =
+    chat.told(chat, chat_tell.Heard(whisper: 1, name: "Cd Ef"))
+  assert list.length(frames_of(first)) == 1
+  assert chat.watch_ended(chat, step.WatchId(first_watch + 1)) == Error(Nil)
+    as "the design's failure table: whichever of the two is found, the speaker gets exactly one answer; the second input finds no whisper"
+  let #(chat, _) = whisper_to(a_chat(), "Cd Ef")
+  let #(chat, ended) = case
+    chat.watch_ended(chat, step.WatchId(first_watch + 1))
+  {
+    Ok(taken) -> taken
+    Error(Nil) -> panic as "the watch is a whisper's"
+  }
+  assert list.length(frames_of(ended)) == 1
+  assert chat.told(chat, chat_tell.Heard(whisper: 1, name: "Cd Ef")).1 == []
+    as "target ended after writing 0x1c8, before Heard: WatchEnded gave 0x1d9 and a Heard that comes after is dropped (the accepted gap, the target's client showed the line)"
+}
+
+pub fn a_camp_stops_watching_each_pending_whisper_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(chat, _) = whisper_to(a_chat(), "Cd Ef")
+  let #(chat, _) = whisper_to(chat, "Gh Ij")
+  assert chat.left(chat)
+    == [
+      chat.LeaveGroup(step.CharacterNamed("ab cd")),
+      chat.Unwatch(step.WatchId(first_watch + 1)),
+      chat.Unwatch(step.WatchId(first_watch + 2)),
+    ]
+    as "the whispers the speaker waits on are dropped with its stay; a later reply finds no number"
 }

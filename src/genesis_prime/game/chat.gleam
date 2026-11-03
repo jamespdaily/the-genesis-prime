@@ -169,6 +169,7 @@
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/game/character_name
 import genesis_prime/game/chat_channel.{type ChannelType}
 import genesis_prime/game/chat_tell.{type Line, type Speaker, type Tell, Line}
 import genesis_prime/game/top_zone.{type TopZones}
@@ -183,6 +184,8 @@ import genesis_prime/message/chat_line_accepted.{ChatLineAccepted}
 import genesis_prime/message/chat_result.{ChatResult}
 import genesis_prime/message/chat_zone_named.{ChatZoneNamed}
 import genesis_prime/message/send_chat_line.{type SendChatLine}
+import genesis_prime/message/send_whisper.{type SendWhisper}
+import genesis_prime/message/whisper_failed.{WhisperFailed}
 import genesis_prime/step.{type Address, type ConnectionId, type WatchId}
 import genesis_prime/table/chat_channel.{type ChatChannel} as chat_channel_table
 import genesis_prime/table/id.{ChatChannelId}
@@ -248,10 +251,11 @@ pub type Zone {
 }
 
 /// A whisper sent and not yet answered, by the speaker's own number: the slot
-/// the client keeps the line in, and the target's name as sent, which 0x1d9
-/// names.
+/// the client keeps the line in, the target's name as sent, which 0x1d9 names,
+/// and whether it has a text: an empty whisper is answered only when its target
+/// is not found.
 pub type PendingWhisper {
-  PendingWhisper(chat_message_id: Int, target_name: String)
+  PendingWhisper(chat_message_id: Int, target_name: String, with_text: Bool)
 }
 
 /// One player's chat while in the world: who speaks, the id of its zone channel
@@ -338,7 +342,7 @@ pub fn entered_world(
 /// The player's name folded as the database's unique index folds it
 /// (migration 0005): the key of the group a whisper finds the player by.
 fn folded(chat: Chat) -> String {
-  string.lowercase(chat.speaker.name)
+  character_name.fold(name: chat.speaker.name)
 }
 
 /// The group of the player's run and top zone, which the player joins; none when
@@ -407,13 +411,166 @@ pub fn take(
   message message: Message,
   body body: BitArray,
   viewers viewers: Set(ConnectionId),
-  realm_name _realm_name: String,
+  realm_name realm_name: String,
+  connection connection: ConnectionId,
   tables tables: table_store.Tables,
 ) -> Result(#(Chat, List(Effect)), Refusal) {
   case message {
     LineSent -> line_sent(chat:, body:, viewers:, tables:)
-    WhisperSent -> panic as "built in the whisper step"
+    WhisperSent -> whisper_sent(chat:, body:, realm_name:, connection:)
   }
+}
+
+/// The first watch id a whisper uses; the connection's own watches are below it.
+const first_whisper_watch = 100
+
+/// The watch that waits on whisper `whisper`'s target.
+fn whisper_watch(whisper: Int) -> WatchId {
+  step.WatchId(first_whisper_watch + whisper)
+}
+
+/// What a 0x1d4 is answered with and told to: refused as a line, delivered at
+/// once to the speaker itself, or sent to the target by its name through a watch.
+fn whisper_sent(
+  chat chat: Chat,
+  body body: BitArray,
+  realm_name realm_name: String,
+  connection connection: ConnectionId,
+) -> Result(#(Chat, List(Effect)), Refusal) {
+  use sent <- result.map(
+    send_whisper.decode(body)
+    |> client_connection.decoded(message_id: send_whisper.message_id)
+    |> result.map_error(NotDecoded),
+  )
+  let channel_type = case sent.account {
+    1 -> chat_channel.AccountWhisper
+    _ -> chat_channel.Whisper
+  }
+  use <- bool.lazy_guard(
+    when: sent.chat_message_id == 0
+      || !is_a_line(text: sent.text, formats: sent.formats, empty_allowed: True),
+    return: fn() {
+      #(chat, [
+        Send(chat_result_frame(
+          channel_type: chat_channel.id(channel_type),
+          channel_id: 0,
+          chat_message_id: sent.chat_message_id,
+          result: InvalidMessageText,
+        )),
+      ])
+    },
+  )
+  use <- bool.guard(
+    when: sent.account == 1
+      || !character_name.is_valid(sent.target_name)
+      || !is_the_realm(named: sent.target_realm_name, own: realm_name),
+    return: #(chat, [Send(whisper_failed_frame(sent:))]),
+  )
+  let line =
+    Line(
+      channel_type: chat_channel.Whisper,
+      channel_id: 0,
+      text: sent.text,
+      formats: sent.formats,
+    )
+  let folded_target = character_name.fold(sent.target_name)
+  case folded_target == folded(chat) {
+    True -> #(chat, whisper_to_oneself(chat:, sent:, line:))
+    False ->
+      whisper_to_another(chat:, sent:, line:, folded_target:, connection:)
+  }
+}
+
+/// A whisper to another character: it is kept by the speaker's next number,
+/// whose watch waits on the target's name, and told to the target through that
+/// watch. Nothing is written until the reply.
+fn whisper_to_another(
+  chat chat: Chat,
+  sent sent: SendWhisper,
+  line line: Line,
+  folded_target folded_target: String,
+  connection connection: ConnectionId,
+) -> #(Chat, List(Effect)) {
+  let whisper = chat.next_whisper
+  let watch = whisper_watch(whisper)
+  #(
+    Chat(
+      ..chat,
+      next_whisper: whisper + 1,
+      whispers: dict.insert(
+        chat.whispers,
+        whisper,
+        PendingWhisper(
+          chat_message_id: sent.chat_message_id,
+          target_name: sent.target_name,
+          with_text: sent.text != [],
+        ),
+      ),
+    ),
+    [
+      Watch(watch:, target: step.CharacterNamed(folded_name: folded_target)),
+      TellWatched(
+        watch:,
+        tell: chat_tell.Whisper(
+          whisper:,
+          speaker: chat.speaker,
+          from: connection,
+          line:,
+        ),
+      ),
+    ],
+  )
+}
+
+/// A whisper to the speaker's own name, which is shown and answered in the
+/// speaker's own step with no watch (server choice); an empty one shows nothing.
+fn whisper_to_oneself(
+  chat chat: Chat,
+  sent sent: SendWhisper,
+  line line: Line,
+) -> List(Effect) {
+  case sent.text {
+    [] -> []
+    [_, ..] -> [
+      Send(line_frame(chat:, speaker: chat.speaker, line:)),
+      Send(accepted_as(
+        name: chat.speaker.name,
+        chat:,
+        chat_message_id: sent.chat_message_id,
+      )),
+    ]
+  }
+}
+
+/// Whether the realm name a whisper names is this realm: empty, or the server's
+/// own, compared without case (opcode.0x1d4).
+fn is_the_realm(named named: String, own own: String) -> Bool {
+  named == "" || string.lowercase(named) == string.lowercase(own)
+}
+
+/// 0x1d9 for a whisper that was not delivered: the target's name as sent, the
+/// account bit and the slot (opcode.0x1d9).
+fn whisper_failed_frame(sent sent: SendWhisper) -> Frame {
+  failed_frame(
+    target_name: sent.target_name,
+    account: sent.account,
+    chat_message_id: sent.chat_message_id,
+  )
+}
+
+fn failed_frame(
+  target_name target_name: String,
+  account account: Int,
+  chat_message_id chat_message_id: Int,
+) -> Frame {
+  let assert Ok(body) =
+    whisper_failed.encode(WhisperFailed(
+      target_name:,
+      account:,
+      chat_message_id:,
+    ))
+    as "a name the client sent and a slot of 16 bits fit the message"
+  Frame(message_id: whisper_failed.message_id, body:)
 }
 
 /// The most characters the client sends in one line: ParseChatText keeps at most
@@ -435,7 +592,12 @@ fn line_sent(
   let channel_type = chat_channel.from_id(id: sent.channel_type)
   case checked(chat:, sent:, channel_type:, tables:) {
     Error(Refused(result:, unhandled:)) -> #(chat, [
-      Send(chat_result_frame(sent:, result:)),
+      Send(chat_result_frame(
+        channel_type: sent.channel_type,
+        channel_id: sent.channel_id,
+        chat_message_id: sent.chat_message_id,
+        result:,
+      )),
       ..case unhandled {
         True -> [Unhandled(channel_type:)]
         False -> []
@@ -508,7 +670,11 @@ fn checked(
   let invalid = Refused(result: InvalidMessageText, unhandled: False)
   use <- bool.guard(when: sent.chat_message_id == 0, return: Error(invalid))
   use <- bool.guard(
-    when: !is_a_line_the_client_sends(sent),
+    when: !is_a_line(
+      text: sent.text,
+      formats: sent.formats,
+      empty_allowed: False,
+    ),
     return: Error(invalid),
   )
   let refused = fn(result) { Error(Refused(result:, unhandled: False)) }
@@ -577,15 +743,20 @@ fn is_held(
   }
 }
 
-/// Whether the text and formats are ones the client's own code sends: from 1 to
+/// Whether the text and formats are ones the client's own code sends: from 1
+/// (a whisper may be empty: the client sends one for a picked target) to
 /// 499 UTF-16 units with no character ParseChatText drops (`0x140402720`), and
 /// each format over a range of the text (`0x140085ca0`).
-fn is_a_line_the_client_sends(sent: SendChatLine) -> Bool {
-  let length = list.length(sent.text)
-  length >= 1
+fn is_a_line(
+  text text: List(Int),
+  formats formats: List(ChatFormat),
+  empty_allowed empty_allowed: Bool,
+) -> Bool {
+  let length = list.length(text)
+  { length >= 1 || empty_allowed }
   && length <= longest_line
-  && !list.any(sent.text, is_dropped)
-  && list.all(sent.formats, fn(format) {
+  && !list.any(text, is_dropped)
+  && list.all(formats, fn(format) {
     let #(start, end) = format_range(format)
     start <= end && end <= length
   })
@@ -625,15 +796,17 @@ fn format_range(format: ChatFormat) -> #(Int, Int) {
 
 /// 0x1d3 for the line, with the result and the line's own channel and slot.
 fn chat_result_frame(
-  sent sent: SendChatLine,
+  channel_type channel_type: Int,
+  channel_id channel_id: Int,
+  chat_message_id chat_message_id: Int,
   result result: ChatChannelResult,
 ) -> Frame {
   let assert Ok(body) =
     chat_result.encode(ChatResult(
-      channel_type: sent.channel_type,
-      channel_id: sent.channel_id,
+      channel_type:,
+      channel_id:,
       result:,
-      chat_message_id: sent.chat_message_id,
+      chat_message_id:,
     ))
     as "the line's own channel and slot fit the fields they came from"
   Frame(message_id: chat_result.message_id, body:)
@@ -723,9 +896,64 @@ pub fn told(chat chat: Chat, tell tell: Tell) -> #(Chat, List(Effect)) {
         True -> #(chat, [Send(line_frame(chat:, speaker:, line:))])
         False -> #(chat, [])
       }
-    chat_tell.Whisper(..) | chat_tell.Heard(..) | chat_tell.NotHeard(..) ->
-      panic as "built in the zone and whisper steps"
+    chat_tell.Whisper(whisper:, speaker:, from:, line:) -> #(
+      chat,
+      list.append(
+        case line.text {
+          [] -> []
+          [_, ..] -> [Send(line_frame(chat:, speaker:, line:))]
+        },
+        [
+          Tell(
+            to: step.Connection(from),
+            tell: chat_tell.Heard(whisper:, name: chat.speaker.name),
+          ),
+        ],
+      ),
+    )
+    chat_tell.Heard(whisper:, name:) ->
+      answered(chat:, whisper:, answer: fn(pending) {
+        case pending.with_text {
+          True -> [
+            Send(accepted_as(
+              name:,
+              chat:,
+              chat_message_id: pending.chat_message_id,
+            )),
+          ]
+          False -> []
+        }
+      })
+    chat_tell.NotHeard(whisper:) ->
+      answered(chat:, whisper:, answer: fn(pending) {
+        [Send(not_delivered_frame(pending))]
+      })
   }
+}
+
+/// The reply to whisper number `whisper`: its watch is dropped, it is forgotten,
+/// and `answer` says what the speaker is written. A number not held is a late or
+/// doubled reply, which is dropped.
+fn answered(
+  chat chat: Chat,
+  whisper whisper: Int,
+  answer answer: fn(PendingWhisper) -> List(Effect),
+) -> #(Chat, List(Effect)) {
+  case dict.get(chat.whispers, whisper) {
+    Ok(pending) -> #(
+      Chat(..chat, whispers: dict.delete(chat.whispers, whisper)),
+      [Unwatch(watch: whisper_watch(whisper)), ..answer(pending)],
+    )
+    Error(Nil) -> #(chat, [])
+  }
+}
+
+fn not_delivered_frame(pending: PendingWhisper) -> Frame {
+  failed_frame(
+    target_name: pending.target_name,
+    account: 0,
+    chat_message_id: pending.chat_message_id,
+  )
 }
 
 /// Whether this player is in the zone channel of this top zone now: it may have
@@ -749,10 +977,20 @@ fn is_in_my_run(chat chat: Chat, speaker speaker: Speaker) -> Bool {
 /// is answered 0x1d9 and the whisper forgotten. `Error(Nil)` when the watch is
 /// none of this chat's whispers.
 pub fn watch_ended(
-  chat _chat: Chat,
-  watch _watch: WatchId,
+  chat chat: Chat,
+  watch watch: WatchId,
 ) -> Result(#(Chat, List(Effect)), Nil) {
-  panic as "built in the whisper step"
+  let step.WatchId(number) = watch
+  let whisper = number - first_whisper_watch
+  case dict.get(chat.whispers, whisper) {
+    Ok(pending) ->
+      Ok(
+        #(Chat(..chat, whispers: dict.delete(chat.whispers, whisper)), [
+          Send(not_delivered_frame(pending)),
+        ]),
+      )
+    Error(Nil) -> Error(Nil)
+  }
 }
 
 /// The client reported that the player stands in WorldZone `world_zone_id`
@@ -807,10 +1045,13 @@ fn group_of(chat chat: Chat, zone zone: Zone) -> Address {
 /// zone channel and stops watching each pending whisper, so nothing reaches it
 /// after the leave.
 pub fn left(chat chat: Chat) -> List(Effect) {
-  [
-    LeaveGroup(address: step.CharacterNamed(folded_name: folded(chat))),
-    ..leave_zone(chat:)
-  ]
+  list.flatten([
+    [LeaveGroup(address: step.CharacterNamed(folded_name: folded(chat)))],
+    leave_zone(chat:),
+    list.map(list.sort(dict.keys(chat.whispers), int.compare), fn(whisper) {
+      Unwatch(watch: whisper_watch(whisper))
+    }),
+  ])
 }
 
 /// A sentence that says why a chat message is refused, for the log.

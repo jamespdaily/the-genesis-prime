@@ -1135,6 +1135,7 @@ fn chat_message(
       body: inner.body,
       viewers: entered.viewers,
       realm_name: session.settings.realm_name,
+      connection: client_connection.connection(session.link),
       tables: session.settings.tables,
     )
   {
@@ -1478,7 +1479,10 @@ fn carry_out(
       case holds_a_player(session.status) {
         Some(#(holder, entered)) ->
           saving(
-            session:,
+            session: Session(
+              ..session,
+              next_whisper: chat.next_whisper(chat: entered.chat),
+            ),
             now:,
             holder:,
             entered:,
@@ -2204,6 +2208,23 @@ fn unit_removed_frame(unit_id unit_id: Int) -> Frame {
 /// server failed (0x036A reason 8) and the connection ends. A watch this rule
 /// did not open, or one that ends where the connection holds none, is a bug.
 fn watch_ended(
+  session session: Session,
+  now now: Now,
+  watch watch: WatchId,
+) -> client_connection.Handled(Session) {
+  case chat_holder(session.status) {
+    Some(entered) ->
+      case chat.watch_ended(chat: entered.chat, watch:) {
+        Ok(#(updated, effects)) ->
+          carry_chat(session: with_chat(session:, chat: updated), effects:)
+        Error(Nil) -> own_watch_ended(session:, now:, watch:)
+      }
+    None -> own_watch_ended(session:, now:, watch:)
+  }
+}
+
+/// The end of a watch the connection's own rule opened: Sessions or the map.
+fn own_watch_ended(
   session session: Session,
   now now: Now,
   watch watch: WatchId,

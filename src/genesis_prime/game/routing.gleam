@@ -43,6 +43,7 @@ import genesis_prime/message/play_character
 import genesis_prime/message/player_movement
 import genesis_prime/message/rename_character
 import genesis_prime/message/send_chat_line
+import genesis_prime/message/send_whisper
 import genesis_prime/message/terrain_loaded
 import genesis_prime/message/world_message
 import genesis_prime/message/world_zone_changed
@@ -181,6 +182,12 @@ const table = [
     send_chat_line.message_id,
     InsideWorldMessage,
     Chat(chat.LineSent),
+    [AtWorld],
+  ),
+  Row(
+    send_whisper.message_id,
+    InsideWorldMessage,
+    Chat(chat.WhisperSent),
     [AtWorld],
   ),
   Row(
