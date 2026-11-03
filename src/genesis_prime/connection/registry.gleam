@@ -52,6 +52,7 @@
 import genesis_prime/step.{type Address, type ConnectionId, Connection}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Name, type Pid, type Selector}
+import gleam/list
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 
@@ -104,40 +105,49 @@ pub fn join(
 /// one, so a group holds it once. The connection shell calls it for the rule's
 /// `JoinGroup`.
 pub fn join_group(
-  registry _registry: Registry(message),
-  address _address: Address,
+  registry registry: Registry(message),
+  address address: Address,
 ) -> Nil {
-  panic as "carried out by the build step: pg:join in the scope"
+  pg_join_once(registry.scope, address)
 }
 
 /// Removes the calling process from the group at `address`; nothing happens
 /// when it is not a member. The connection shell calls it for the rule's
 /// `LeaveGroup`.
 pub fn leave_group(
-  registry _registry: Registry(message),
-  address _address: Address,
+  registry registry: Registry(message),
+  address address: Address,
 ) -> Nil {
-  panic as "carried out by the build step: pg:leave in the scope"
+  pg_leave(registry.scope, address)
 }
 
 /// The process of the connection whose player is in the world under the folded
 /// name: the newest member of the group, or `Error(Nil)` when none is.
 pub fn find_named(
-  registry _registry: Registry(message),
-  folded_name _folded_name: String,
+  registry registry: Registry(message),
+  folded_name folded_name: String,
 ) -> Result(Pid, Nil) {
-  panic as "carried out by the build step: pg:get_local_members of CharacterNamed"
+  case members(registry.scope, step.CharacterNamed(folded_name:)) {
+    [pid, ..] -> Ok(pid)
+    [] -> Error(Nil)
+  }
 }
 
 /// Sends every member of the group at `address` the message, each as a
 /// `Woken` input of its shell; `Error(Nil)` when the group has no member, and
 /// nothing is sent.
 pub fn deliver_group(
-  registry _registry: Registry(message),
-  address _address: Address,
-  message _message: message,
+  registry registry: Registry(message),
+  address address: Address,
+  message message: message,
 ) -> Result(Nil, Nil) {
-  panic as "carried out by the build step: pg:get_local_members of the group"
+  case members(registry.scope, address) {
+    [] -> Error(Nil)
+    pids -> {
+      list.each(pids, send_woken(_, message))
+      Ok(Nil)
+    }
+  }
 }
 
 /// Sends the process `message` as `deliver` does, for a process `find_named`
@@ -201,6 +211,12 @@ fn start_scope(scope: Name(Nil)) -> Result(Pid, StartFailure)
 
 @external(erlang, "genesis_prime_connection_registry_ffi", "join_group")
 fn pg_join(scope: Name(Nil), group: step.Address) -> Nil
+
+@external(erlang, "genesis_prime_connection_registry_ffi", "join_once")
+fn pg_join_once(scope: Name(Nil), group: step.Address) -> Nil
+
+@external(erlang, "genesis_prime_connection_registry_ffi", "leave_group")
+fn pg_leave(scope: Name(Nil), group: step.Address) -> Nil
 
 @external(erlang, "genesis_prime_connection_registry_ffi", "members")
 fn members(scope: Name(Nil), group: step.Address) -> List(Pid)

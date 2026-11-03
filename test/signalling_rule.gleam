@@ -12,6 +12,10 @@
 //// 'X' n    cancel timer n                 'P' n    write the record 'p' n
 //// 'U' n    drop watch n                   'Y' n    tell Sessions (no answer)
 //// 'C' n    tell connection n (no answer)
+//// 'J' n    join the group of the character named "n"
+//// 'L' n    leave the group of the character named "n"
+//// 'V' n    tell the process watch n found, through the watch (no answer)
+//// 'H' n    tell the zone channel of top zone n in run 1 of map 1 (no answer)
 //// 'Z' n ms start timer n, which would fire after ms, and cancel it in the
 ////          same step, so no machine's speed decides whether it fired first
 //// 'A' n ms ask the directory with ask n, which has ms before its deadline;
@@ -43,6 +47,7 @@ import genesis_prime/step.{
   Sessions, StartTimer, Stop, TimerFired, TimerId, Unwatch, Watch, WatchEnded,
   WatchId, Woken, Write, WriteFailed,
 }
+import genesis_prime/world_map/map_id
 import gleam/bool
 import gleam/int
 import gleam/list
@@ -70,6 +75,14 @@ pub const tell_connection_command = 0x43
 pub const start_then_cancel_command = 0x5A
 
 pub const ask_command = 0x41
+
+pub const join_command = 0x4A
+
+pub const leave_command = 0x4C
+
+pub const tell_watched_command = 0x56
+
+pub const tell_zone_command = 0x48
 
 /// The letters that start a record.
 pub const accepted = 0x63
@@ -223,6 +236,21 @@ fn command(
       ))
     _ if letter == tell_command ->
       OwnEffect(step.Tell(to: Sessions, request: Nil))
+    _ if letter == join_command ->
+      OwnEffect(step.JoinGroup(step.CharacterNamed(int.to_string(n))))
+    _ if letter == leave_command ->
+      OwnEffect(step.LeaveGroup(step.CharacterNamed(int.to_string(n))))
+    _ if letter == tell_watched_command ->
+      OwnEffect(step.TellWatched(watch: WatchId(n), request: Nil))
+    _ if letter == tell_zone_command ->
+      OwnEffect(step.Tell(
+        to: step.ZoneChannel(
+          map: map_id.MapId(world_id: 1, instance: 0),
+          incarnation: 1,
+          top_zone_id: n,
+        ),
+        request: Nil,
+      ))
     _ if letter == timer_command ->
       OwnEffect(StartTimer(TimerId(n), milliseconds))
     _ if letter == cancel_command -> OwnEffect(CancelTimer(TimerId(n)))
