@@ -26,6 +26,17 @@ gleam run
 
 The server reads the table folder from `GENESIS_TABLE_DIR`, which `setup_check/environment.sh` sets.
 
+### In herdr
+
+When the session runs in a herdr pane (`HERDR_ENV=1`), a server for Jim to play on runs in a tab labelled `server` in the session's own workspace, never as a hidden background process, so Jim sees its log and can stop it himself (Jim, 2026-11-02). Read `herdr --skill` first; the binary is the authority for its syntax.
+
+1. `herdr tab list --workspace "$HERDR_WORKSPACE_ID"`: reuse a `server` tab whose pane is at its shell prompt; otherwise `herdr tab create --workspace "$HERDR_WORKSPACE_ID" --label server --cwd <main checkout> --no-focus`, and take the pane id from `.result.root_pane.pane_id`.
+2. `herdr pane run <pane> '<the commands above, joined by &&>'`.
+3. `herdr pane wait-output <pane> --match 'game tables and serves the STS login' --timeout 120000`: the server's ready line (`ready_line` in `src/genesis_prime.gleam`). On a timeout, `herdr pane read <pane> --source recent --lines 80` shows why.
+4. To stop it: SIGTERM to its VM, so the tree stops in order and saves, as `scripts/session.sh` does: the `beam.smp` pid among `herdr pane process-info --pane <pane>`'s `foreground_processes`, then `kill -TERM <pid>`, and check the ports are free (above). Ctrl+C in the pane opens the VM's break menu instead. Leave the tab for the next session.
+
+`scripts/session.sh` starts and stops its own server, so it runs as before.
+
 ## The client's log
 
 Start the client with `-logFile -logFlush` on its command line, so it writes a log file. Run `scripts/client-log.sh start <folder>` before a session and `scripts/client-log.sh collect <folder>` after it: the script copies the session's log and error reports back and lists each message the client failed to handle, by id. It needs `GENESIS_PLAY_CLIENT_DIR`, the client's install folder on the PC.
