@@ -19,7 +19,9 @@
 ////   the running supervisor holds.
 
 import ask_support
-import genesis_prime/client_connection.{AskMap, PeerMove, TellMoved, TellPeer}
+import genesis_prime/client_connection.{
+  AskMap, PeerNews, Removed, TellMoved, TellPeer,
+}
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
@@ -152,15 +154,12 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
     as "a tell that is an ask is a bug in the rule that tells it: an error line"
   server.tell_the_run(
     run,
-    TellPeer(
-      PeerMove(
-        map: MapId(world_id: 3460, instance: 0),
-        incarnation: 1,
-        unit_id: 9,
-        server_time_ms: 1,
-        commands: [],
-      ),
-    ),
+    TellPeer(PeerNews(
+      map: MapId(world_id: 3460, instance: 0),
+      incarnation: 1,
+      unit_id: 9,
+      news: Removed,
+    )),
   )
   let assert Ok(#("error", _text)) =
     process.receive(logged, within: ask_support.event_wait_ms)

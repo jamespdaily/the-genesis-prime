@@ -122,21 +122,27 @@ pub type Loaded {
 
 /// A player in the world: its character, its map, the run of the map that took
 /// it, which the rule watches as `Map(map, incarnation)`, its unit id, the
-/// origin of the map's clock (`Joined` carries it), who sees it, where it
-/// stands (genesis_prime/game/movement) and whether it is camping
+/// origin of the map's clock (`Joined` carries it), its own 0x262 record
+/// (`Joined`'s unit, which the connection sends the players who see it), who
+/// sees it, the units its own client shows, where it stands
+/// (genesis_prime/game/movement) and whether it is camping
 /// (genesis_prime/game/camp), which the rule keeps up to date. A player that has
-/// just entered is not camping and has no viewers: the map's `Watched` and
-/// `Unwatched` keep `viewers`, the connections whose players see this one, and
-/// the connection sends each move of the player to them
-/// (genesis_prime/game/connection).
+/// just entered is not camping, has no viewers and shows no unit: the map's
+/// `Watched` and `Unwatched` keep `viewers`, the connections whose players see
+/// this one, the connection sends everything about the player's own unit to them,
+/// and `shown` and `gone` are the units its client holds and the ones the map
+/// reported gone (genesis_prime/game/connection).
 pub type Entered {
   Entered(
     character_id: CharacterId,
     map: MapId,
     incarnation: Int,
     unit_id: Int,
+    unit: UnitCreatePlayer,
     clock_origin_ms: Int,
     viewers: Set(ConnectionId),
+    shown: Set(Int),
+    gone: Set(Int),
     movement: movement.State,
     camp: camp.Camp,
   )
@@ -278,8 +284,11 @@ pub fn joined(
                 map:,
                 incarnation:,
                 unit_id:,
+                unit:,
                 clock_origin_ms:,
                 viewers: set.new(),
+                shown: set.new(),
+                gone: set.new(),
                 movement: movement.entered(place:, session_epoch:),
                 camp: camp.none(),
               ),
@@ -296,11 +305,8 @@ pub fn joined(
             ),
           )
         }
-        map.Left
-        | map.Seen(..)
-        | map.Unseen(..)
-        | map.Watched(..)
-        | map.Unwatched(..) -> Error(Nil)
+        map.Left | map.Watched(..) | map.Unwatched(..) | map.Gone(..) ->
+          Error(Nil)
       }
     }
     Loading(..) -> Error(Nil)

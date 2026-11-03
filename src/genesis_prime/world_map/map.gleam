@@ -156,7 +156,7 @@ import genesis_prime/game/appearance
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/step.{
-  type CallerId, type ConnectionId, type Effect, type Now, type ServiceEffect,
+  type CallerId, type ConnectionId, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
   Connection, Effects, Log, LogError, LogLine, OwnEffect, OwnEvent, Reply, Send,
   Started, Stop, Stopping, Told, Unwatch, Watch, WatchEnded, WatchId,
@@ -211,31 +211,26 @@ pub type Message {
 /// What a map answers and sends.
 pub type Outgoing {
   /// The player is in this run of the map as this unit, which the map keeps;
-  /// the joiner watches `Map(map, incarnation)`. `clock_origin_ms` is the
-  /// monotonic time the map started at, from which the joiner's connection
-  /// stamps its 0x638s with the map's clock (`server_time`).
+  /// the joiner watches `Map(map, incarnation)`. `unit` is the player's own
+  /// 0x262, which its connection sends the players who see it, at its place and
+  /// stamped from the map's clock; `clock_origin_ms` is the monotonic time the
+  /// map started at, from which the connection stamps (`server_time`).
   Joined(unit: UnitCreatePlayer, incarnation: Int, clock_origin_ms: Int)
   /// The connection's player is not in the map any more, whether it was there
   /// or not.
   Left
-  /// A send, never an answer: another player's unit has come into sight of the
-  /// connection's player. The connection writes it as 0x262, once its player
-  /// is in the world. It names the unit by its own id (never 0), built as that
-  /// player's own 0x262 is, at the unit's current place and with the map's
-  /// server time.
-  Seen(unit: UnitCreatePlayer)
-  /// A send: the unit `unit_id` has left the connection's player's sight, by
-  /// distance, by leaving the map or by its connection ending. The connection
-  /// writes it as 0x355.
-  Unseen(unit_id: Int)
-  /// A send, with each `Seen` of the connection's own player's unit: the player
-  /// of connection `by` sees it, so the connection sends its moves to `by`.
+  /// A send, never an answer: the player of connection `by` sees the
+  /// connection's own player's unit, so the connection sends `by` its 0x262 at
+  /// its place and then its moves.
   Watched(by: ConnectionId)
-  /// A send, with each `Unseen` of the connection's own player's unit: the
-  /// player of connection `by` no longer sees it, by distance, by leaving the
-  /// map or by its connection ending, so the connection stops sending its moves
-  /// to `by`.
+  /// A send: the player of connection `by` no longer sees the connection's own
+  /// player's unit, by distance, by leaving the map or by its connection ending,
+  /// so the connection sends `by` its 0x355 and no more moves.
   Unwatched(by: ConnectionId)
+  /// A send: the unit `unit_id` has no owner any more, since its connection
+  /// ended, which sends nothing as it ends. The connection of a player that saw
+  /// the unit removes it from its client if it shows it, and shows it no more.
+  Gone(unit_id: Int)
 }
 
 /// A map's players, their units and what it gives next: the players by their
@@ -258,6 +253,13 @@ pub opaque type State {
 /// player's `sees` exactly when it is in the other's.
 type Player {
   Player(unit: PlayerUnit, watch: WatchId, sees: Set(ConnectionId))
+}
+
+/// Why a player is removed: it left, and its connection said so itself, or its
+/// connection ended, and said nothing.
+type Removal {
+  Camped
+  Ended
 }
 
 /// The map's rule, as its service shell runs it.
@@ -301,11 +303,11 @@ pub fn step(
     )
     Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(caller:, message: Join(connection:, character:, place:))) ->
-      joined(state:, now: input.now, caller:, connection:, character:, place:)
+      joined(state:, caller:, connection:, character:, place:)
     OwnEvent(Asked(caller:, message: Leave(connection:))) ->
       left(state:, caller:, connection:)
     OwnEvent(Told(message: Moved(connection:, place:))) ->
-      moved(state:, now: input.now, connection:, place:)
+      moved(state:, connection:, place:)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Told(message: Join(..)))
     | OwnEvent(Told(message: Leave(..))) ->
@@ -317,15 +319,16 @@ pub fn step(
 /// The map's server time at monotonic time `monotonic_ms`, for a map started at
 /// `origin_ms` on the same clock: milliseconds on the map's own clock, which
 /// started at 0 when the map started (the monotonic time of `Started`), taken mod
-/// 2^32 because the client's fields hold 32 bits (opcode.0x638). A unit's `Seen`
-/// reads it, and a mover's connection stamps its 0x638s with it from the
-/// origin `Joined` carries, so a unit's 0x262 and 0x638s share one clock, though
-/// a 0x638 can carry an earlier time than the 0x262 that reached a viewer first
-/// (FitServerTime 0x14079ab90 ignores a sample until the time has passed the last
-/// by half the send interval). It only goes forward until the map is 49.7 days old, when it counts from 0
-/// again: the client takes a time sample only when its signed 32-bit difference
-/// from the last is at least half the send interval, and ignores one that is not
-/// (FitServerTime 0x14079ab90); its fit across the wrap is not read.
+/// 2^32 because the client's fields hold 32 bits (opcode.0x638). A player's
+/// connection stamps its unit's 0x262 and 0x638s with it from the origin
+/// `Joined` carries, so they share one clock, though a 0x638 can carry an
+/// earlier time than the 0x262 that reached a viewer first (FitServerTime
+/// 0x14079ab90 ignores a sample until the time has passed the last by half the
+/// send interval). It only goes forward until the map is 49.7 days old, when it
+/// counts from 0 again: the client takes a time sample only when its signed
+/// 32-bit difference from the last is at least half the send interval, and
+/// ignores one that is not (FitServerTime 0x14079ab90); its fit across the wrap
+/// is not read.
 pub fn server_time(
   origin_ms origin_ms: Int,
   monotonic_ms monotonic_ms: Int,
@@ -334,13 +337,12 @@ pub fn server_time(
 }
 
 /// A connection's move: its unit is placed at `place`, and each pair it makes
-/// or breaks with a player, by the place it ends at, is told: `Seen` and
-/// `Watched` both ways for a pair that comes into sight, `Unseen` and
-/// `Unwatched` both ways for one that leaves it, each in one step. The map sends
-/// no move. A connection not in the map is an error line and changes nothing.
+/// or breaks with a player, by the place it ends at, is told: `Watched` both ways
+/// for a pair that comes into sight, `Unwatched` both ways for one that leaves
+/// it, each in one step. The map sends no unit and no move. A connection not in
+/// the map is an error line and changes nothing.
 fn moved(
   state state: State,
-  now now: Now,
   connection connection: ConnectionId,
   place place: Place,
 ) -> #(State, ServiceStep(Outgoing)) {
@@ -357,8 +359,6 @@ fn moved(
     )
     Ok(mover) -> {
       let unit = player_unit.moved(mover.unit, place)
-      let time =
-        server_time(origin_ms: state.started_ms, monotonic_ms: now.monotonic_ms)
       let #(mover_sees, others, effects) =
         dict.fold(
           state.players,
@@ -382,10 +382,8 @@ fn moved(
                 list.append(
                   effects,
                   comes_into_sight(
-                    state:,
-                    time:,
-                    newcomer: #(connection, unit),
-                    other: #(other_connection, player.unit),
+                    newcomer: connection,
+                    other: other_connection,
                   ),
                 ),
               )
@@ -398,10 +396,7 @@ fn moved(
                 ),
                 list.append(
                   effects,
-                  goes_out_of_sight(first: #(connection, unit), second: #(
-                    other_connection,
-                    player.unit,
-                  )),
+                  goes_out_of_sight(first: connection, second: other_connection),
                 ),
               )
               True, True | False, False -> held
@@ -424,8 +419,9 @@ fn moved(
 }
 
 /// A connection's leave: its player is removed with its unit and its watch,
-/// each player who saw it is sent `Unseen`, and `Left` is answered. A
-/// connection that is not in the map is an error line and the same answer.
+/// each player who saw it is sent `Unwatched` (the connection sent their clients
+/// its 0x355 itself), and `Left` is answered. A connection that is not in the
+/// map is an error line and the same answer.
 fn left(
   state state: State,
   caller caller: CallerId,
@@ -433,13 +429,13 @@ fn left(
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
     Ok(player) -> {
-      let #(state, unseen) = without(state:, connection:, player:)
+      let #(state, told) = without(state:, connection:, player:, why: Camped)
       #(
         state,
         Effects(
           list.flatten([
             [Unwatch(watch: player.watch)],
-            unseen,
+            told,
             [OwnEffect(Reply(caller, Left))],
           ]),
         ),
@@ -461,49 +457,39 @@ fn left(
 
 /// A connection's join: its player's unit is built with the next unit id and
 /// the body of the character's look, kept, and answered as 0x262's record, and
-/// the connection is watched. The joiner is then sent a `Seen` of each player
-/// in sight, and each of them a `Seen` of the joiner. A connection already in
+/// the connection is watched. The joiner is then sent a `Watched` for each player
+/// in sight, and each of them a `Watched` of the joiner. A connection already in
 /// the map is answered with the record built from the unit the map keeps for
-/// it, and sent a `Seen` of each player it sees.
+/// it, and sent a `Watched` for each player it sees.
 fn joined(
   state state: State,
-  now now: Now,
   caller caller: CallerId,
   connection connection: ConnectionId,
   character character: Character,
   place place: Place,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let time =
-    server_time(origin_ms: state.started_ms, monotonic_ms: now.monotonic_ms)
   case dict.get(state.players, connection) {
     Ok(player) ->
-      joined_again(state:, time:, caller:, connection:, character:, player:)
-    Error(Nil) ->
-      joined_new(state:, time:, caller:, connection:, character:, place:)
+      joined_again(state:, caller:, connection:, character:, player:)
+    Error(Nil) -> joined_new(state:, caller:, connection:, character:, place:)
   }
 }
 
 /// A second join of a connection in the map: an error line, the answer built
-/// from the unit the map keeps, and a `Seen` and a `Watched` for the joiner of
-/// each player it sees.
+/// from the unit the map keeps, and a `Watched` for the joiner of each player it
+/// sees.
 fn joined_again(
   state state: State,
-  time time: Int,
   caller caller: CallerId,
   connection connection: ConnectionId,
   character character: Character,
   player player: Player,
 ) -> #(State, ServiceStep(Outgoing)) {
   let CharacterId(second_character_id) = character.character_id
-  let seen_again =
+  let watched_again =
     others_of(state:, connection:)
     |> list.filter(fn(other) { set.contains(player.sees, other.0) })
-    |> list.flat_map(fn(other) {
-      [
-        seen_by(state:, time:, viewer: connection, of: { other.1 }.unit),
-        watched(to: connection, by: other.0),
-      ]
-    })
+    |> list.map(fn(other) { watched(to: connection, by: other.0) })
   #(
     state,
     Effects(
@@ -525,18 +511,17 @@ fn joined_again(
           ),
           OwnEffect(Reply(caller, answer(state:, unit: player.unit))),
         ],
-        seen_again,
+        watched_again,
       ]),
     ),
   )
 }
 
 /// The first join of a connection: the unit is built, kept and answered, the
-/// connection watched, and each pair with a player in sight made: `Seen` and
-/// `Watched` both ways.
+/// connection watched, and each pair with a player in sight made: `Watched`
+/// both ways.
 fn joined_new(
   state state: State,
-  time time: Int,
   caller caller: CallerId,
   connection connection: ConnectionId,
   character character: Character,
@@ -569,10 +554,7 @@ fn joined_new(
   let sees = set.from_list(list.map(in_sight, fn(other) { other.0 }))
   let pairs =
     list.flat_map(in_sight, fn(other) {
-      comes_into_sight(state:, time:, newcomer: #(connection, unit), other: #(
-        other.0,
-        { other.1 }.unit,
-      ))
+      comes_into_sight(newcomer: connection, other: other.0)
     })
   #(
     State(
@@ -588,17 +570,6 @@ fn joined_new(
       ..pairs
     ]),
   )
-}
-
-/// The send that makes `viewer` see the unit: `Seen` of it as it stands, at the
-/// map's server time `time`.
-fn seen_by(
-  state state: State,
-  time time: Int,
-  viewer viewer: ConnectionId,
-  of unit: PlayerUnit,
-) -> Effect(ServiceEffect(Outgoing)) {
-  send(to: viewer, message: Seen(unit: seen(state:, time:, unit:)))
 }
 
 /// The send that tells the connection `to` that the player of connection `by`
@@ -619,39 +590,22 @@ fn unwatched(
   send(to:, message: Unwatched(by:))
 }
 
-/// The sends of a pair that comes into sight, in one step: the newcomer sees
-/// the other (`Seen` to it, `Watched` to the other), then the other sees the
-/// newcomer (`Watched` to the newcomer, `Seen` to the other). A joiner and a
-/// mover are the newcomer. Each `Watched` is sent before the `Seen` of the same
-/// unit's viewer that follows it where there is one, so a player that has been
-/// shown a unit has had its own viewer sent already.
+/// The sends of a pair that comes into sight, in one step: each of the two is
+/// told the other sees it. A joiner and a mover are the newcomer.
 fn comes_into_sight(
-  state state: State,
-  time time: Int,
-  newcomer newcomer: #(ConnectionId, PlayerUnit),
-  other other: #(ConnectionId, PlayerUnit),
+  newcomer newcomer: ConnectionId,
+  other other: ConnectionId,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
-  [
-    seen_by(state:, time:, viewer: newcomer.0, of: other.1),
-    watched(to: other.0, by: newcomer.0),
-    watched(to: newcomer.0, by: other.0),
-    seen_by(state:, time:, viewer: other.0, of: newcomer.1),
-  ]
+  [watched(to: other, by: newcomer), watched(to: newcomer, by: other)]
 }
 
-/// The sends of a pair that leaves sight, in one step: the first no longer sees
-/// the second (`Unseen` to it, `Unwatched` to the second), then the second no
-/// longer sees the first.
+/// The sends of a pair that leaves sight, in one step: each of the two is told
+/// the other no longer sees it.
 fn goes_out_of_sight(
-  first first: #(ConnectionId, PlayerUnit),
-  second second: #(ConnectionId, PlayerUnit),
+  first first: ConnectionId,
+  second second: ConnectionId,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
-  [
-    send(to: first.0, message: Unseen(unit_id: player_unit.unit_id(second.1))),
-    unwatched(to: second.0, by: first.0),
-    send(to: second.0, message: Unseen(unit_id: player_unit.unit_id(first.1))),
-    unwatched(to: first.0, by: second.0),
-  ]
+  [unwatched(to: second, by: first), unwatched(to: first, by: second)]
 }
 
 /// The answer to a join: the unit as message 0x262's record in the map's
@@ -664,21 +618,9 @@ fn answer(state state: State, unit unit: PlayerUnit) -> Outgoing {
   )
 }
 
-/// The unit as another player is sent it, at the map's server time `time`.
-fn seen(
-  state state: State,
-  time time: Int,
-  unit unit: PlayerUnit,
-) -> UnitCreatePlayer {
-  player_unit.seen(
-    unit:,
-    realm_id: state.settings.realm_id,
-    server_time_ms: time,
-  )
-}
-
 /// The end of a player's connection: its player is removed, as a leave removes
-/// it, and each player who saw it is sent `Unseen`. A watch that names no
+/// it, and each player who saw it is sent `Unwatched` and `Gone`, since the
+/// connection that ended sent their clients nothing. A watch that names no
 /// player is a bug: an error log line, and nothing changes.
 fn ended(
   state state: State,
@@ -688,8 +630,8 @@ fn ended(
     Ok(connection) ->
       case dict.get(state.players, connection) {
         Ok(player) -> {
-          let #(state, unseen) = without(state:, connection:, player:)
-          #(state, Effects(unseen))
+          let #(state, told) = without(state:, connection:, player:, why: Ended)
+          #(state, Effects(told))
         }
         Error(Nil) -> no_player_for_watch(state)
       }
@@ -710,13 +652,14 @@ fn no_player_for_watch(state: State) -> #(State, ServiceStep(Outgoing)) {
   )
 }
 
-/// The map with the connection's player and its watch removed, the player
-/// out of the `sees` of each player who saw it, and the `Unseen` of its unit and
-/// the `Unwatched` of its connection sent to each of them.
+/// The map with the connection's player and its watch removed, the player out of
+/// the `sees` of each player who saw it, and each of them sent `Unwatched` of its
+/// connection and, when the connection ended, `Gone` of its unit.
 fn without(
   state state: State,
   connection connection: ConnectionId,
   player player: Player,
+  why why: Removal,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
   let viewers =
     list.filter(others_of(state:, connection:), fn(other) {
@@ -733,13 +676,16 @@ fn without(
   #(
     State(..state, players:, watches: dict.delete(state.watches, player.watch)),
     list.flat_map(viewers, fn(viewer) {
-      [
-        send(
-          to: viewer.0,
-          message: Unseen(unit_id: player_unit.unit_id(player.unit)),
-        ),
-        unwatched(to: viewer.0, by: connection),
-      ]
+      case why {
+        Camped -> [unwatched(to: viewer.0, by: connection)]
+        Ended -> [
+          unwatched(to: viewer.0, by: connection),
+          send(
+            to: viewer.0,
+            message: Gone(unit_id: player_unit.unit_id(player.unit)),
+          ),
+        ]
+      }
     }),
   )
 }

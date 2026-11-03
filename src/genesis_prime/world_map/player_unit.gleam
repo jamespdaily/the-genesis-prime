@@ -99,21 +99,6 @@ pub fn moved(unit unit: PlayerUnit, place place: Place) -> PlayerUnit {
   PlayerUnit(..unit, place:)
 }
 
-/// Message 0x262 for the unit as another player is sent it: `create`, with the
-/// map's server time in milliseconds as the first sample of the unit's time
-/// estimate (opcode.0x262), and the unit's current place as its kind 2 with the
-/// bit clear, then its kind 14.
-pub fn seen(
-  unit unit: PlayerUnit,
-  realm_id realm_id: Int,
-  server_time_ms server_time_ms: Int,
-) -> UnitCreatePlayer {
-  UnitCreatePlayer(
-    ..create(unit:, realm_id:),
-    server_time_estimate_start: server_time_ms,
-  )
-}
-
 /// The movement commands that put a unit at `place` as the client's reader
 /// takes them: the kind 2 at its position and the kind 14 at its facing, each
 /// with its bit clear, which places the unit at once (0x140714120). A 0x262

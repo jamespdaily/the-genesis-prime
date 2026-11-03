@@ -384,8 +384,8 @@ pub fn tell_the_run(
 }
 
 /// How a connection's shell sends a request to another connection by address
-/// (`Tell` to a `Connection`): a move of a player (`TellPeer`) goes through the
-/// registry as `SentByPeer`, by the same reach the services' sends take
+/// (`Tell` to a `Connection`): news of a player's unit (`TellPeer`) goes through
+/// the registry as `SentByPeer`, by the same reach the services' sends take
 /// (`connection_reach`). Any other request is no tell to a connection: a rule
 /// that sends one has a bug, logged as an error, and nothing is sent.
 fn connection_deliver(
@@ -394,7 +394,7 @@ fn connection_deliver(
   let reach = connection_reach(settings, SentByPeer)
   fn(to: step.Address, request: Request) {
     case request {
-      TellPeer(move:) -> reach.send(to, move)
+      TellPeer(news:) -> reach.send(to, news)
       TellMoved(..)
       | AskStore(..)
       | AskHandOff(..)
@@ -403,7 +403,7 @@ fn connection_deliver(
       | AskMapRun(..) -> {
         runtime.log(
           LogError,
-          "a rule sent a connection something other than a player's move",
+          "a rule sent a connection something other than news of a player's unit",
           step.no_one,
         )
         Error(Nil)

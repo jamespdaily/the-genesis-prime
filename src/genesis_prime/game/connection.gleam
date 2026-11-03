@@ -311,6 +311,10 @@ import genesis_prime/message/disconnect_reason.{
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/leave_world.{LeaveWorld}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
+import genesis_prime/message/start_movement
+import genesis_prime/message/unit_create_player.{
+  type UnitCreatePlayer, UnitCreatePlayer,
+}
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/world_message
@@ -549,8 +553,8 @@ fn connected(
       settled(handled: sessions_sent(session:, now:, message:), now:)
     OwnEvent(Woken(message: SentByMap(message:))) ->
       settled(handled: map_sent(session:, now:, message:), now:)
-    OwnEvent(Woken(message: SentByPeer(move:))) ->
-      settled(handled: peer_sent(session:, move:), now:)
+    OwnEvent(Woken(message: SentByPeer(news:))) ->
+      settled(handled: peer_sent(session:, news:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
@@ -1003,9 +1007,9 @@ fn tells_the_map_moved(
   ))
 }
 
-/// The move sent to each connection that sees the player, as 0x638s of at most
-/// 31 relayed commands each, in order, stamped with the map's clock at the time
-/// of the input (`map.server_time`, from the origin `Joined` carried): a send
+/// The move sent to each connection that sees the player, as news of 0x638s of
+/// at most 31 relayed commands each, in order, stamped with the map's clock at the
+/// time of the input (`map.server_time`, from the origin `Joined` carried): a send
 /// through the registry that the shell makes with no answer. None when no
 /// player sees this one.
 fn sends_the_move_to_the_viewers(
@@ -1026,8 +1030,8 @@ fn sends_the_move_to_the_viewers(
       commands:,
     )
   list.flat_map(set.to_list(entered.viewers), fn(viewer) {
-    list.map(moves, fn(move) {
-      OwnEffect(step.Tell(to: step.Connection(viewer), request: TellPeer(move:)))
+    list.map(moves, fn(news) {
+      OwnEffect(step.Tell(to: step.Connection(viewer), request: TellPeer(news:)))
     })
   })
 }
@@ -1634,132 +1638,222 @@ fn sessions_sent(
   }
 }
 
-/// What the map sent the connection about another player's unit: `Seen` is
-/// written as 0x262, `MovedUnit` as 0x638 (reset bit 0, kept bit 0) and `Unseen`
-/// as 0x355, each at once, while the player is in the world or its claim is made
-/// again with the player in it. The shell takes a send between steps, after the
-/// ask's outcome and the step it starts are done (genesis_prime/connection/shell),
-/// and world entry writes its whole burst in the one step that takes the map's
-/// `Joined`, so a send of the map, which comes after its answer, is always taken
-/// after the burst: no status holds sends during entry. With no player in the
-/// world (the player left the map, or never joined) the send is dropped and
-/// nothing is written, since the client holds no world. `Joined` and `Left` are
+/// What the map sent the connection, while its player is in the world or its
+/// claim is made again with the player in it: who sees its player (`Watched`,
+/// `Unwatched`), and a unit whose owner's connection ended (`Gone`). A connection
+/// sends everything about its own unit itself: told `Watched(by)` it sends `by` its
+/// 0x262 at its current place, told `Unwatched(by)` its 0x355. The shell takes a
+/// send between steps, after the ask's outcome and the step it starts are done
+/// (genesis_prime/connection/shell), and world entry writes its whole burst in the
+/// one step that takes the map's `Joined`, so a send of the map, which comes after
+/// its answer, is always taken after the burst: no status holds sends during
+/// entry. With no player in the world (the player left the map, or never joined)
+/// the send is dropped, since the client holds no world. `Joined` and `Left` are
 /// answers, never sends, and are a bug.
 fn map_sent(
   session session: Session,
   now now: Now,
   message message: map.Outgoing,
 ) -> client_connection.Handled(Session) {
-  case message {
-    map.Joined(..) | map.Left ->
+  case message, held_in_the_world(session.status) {
+    map.Joined(..), _ | map.Left, _ ->
       end_for(session:, now:, text: "the map sent an answer as a message")
-    map.Seen(..) | map.Unseen(..) ->
-      case holds_the_world(session.status) {
-        True ->
-          Continue(session, [to_client(session, other_unit_frame(message))])
-        False -> Continue(session, [])
-      }
-    map.Watched(by:) -> {
-      let session =
-        Session(
-          ..session,
-          status: viewers_changed(status: session.status, change: set.insert(
-            _,
-            by,
-          )),
-        )
-      Continue(session, case entered_of(session.status) {
-        Some(entered) -> [sends_its_place(entered:, now:, viewer: by)]
-        None -> []
-      })
-    }
-    map.Unwatched(by:) ->
-      Continue(
-        Session(
-          ..session,
-          status: viewers_changed(status: session.status, change: set.delete(
-            _,
-            by,
-          )),
+    map.Watched(..), None | map.Unwatched(..), None | map.Gone(..), None ->
+      Continue(session, [])
+    map.Watched(by:), Some(entered) ->
+      Continue(viewers_changed(session:, change: set.insert(_, by)), [
+        news_to(
+          entered:,
+          viewer: by,
+          news: client_connection.Appeared(unit: appearance(entered:, now:)),
         ),
-        [],
+      ])
+    map.Unwatched(by:), Some(entered) ->
+      Continue(
+        viewers_changed(session:, change: set.delete(_, by)),
+        case set.contains(entered.viewers, by) {
+          True -> [
+            news_to(entered:, viewer: by, news: client_connection.Removed),
+          ]
+          False -> []
+        },
       )
+    map.Gone(unit_id:), Some(entered) -> {
+      let session = marked_gone(session:, unit_id:)
+      use <- bool.guard(
+        when: !set.contains(entered.shown, unit_id),
+        return: Continue(session, []),
+      )
+      Continue(session, [to_client(session, unit_removed_frame(unit_id:))])
+    }
   }
 }
 
-/// What another player's connection sent about the player it holds: its move,
-/// written as 0x638 while this player is in the world, in the run of the map the
-/// move names, and dropped otherwise: a move from another run or another map,
-/// which the mover's connection sent before the viewer left it, names a unit id
-/// that may be another unit here. A 0x638 for a unit the client does not have
-/// yet, or no longer has, is written all the same: the client logs it and goes
-/// on (opcode.0x638).
+/// What another player's connection sent about the unit it owns, written while
+/// this player is in the world, in the run of the map the news names, and only
+/// as the client can take it (`viewer_takes`). News from another run or another
+/// map is dropped: it names a unit id that may be another unit here.
 fn peer_sent(
   session session: Session,
-  move move: client_connection.PeerMove,
+  news news: client_connection.PeerNews,
 ) -> client_connection.Handled(Session) {
-  let in_this_run = case entered_of(session.status) {
-    Some(entered) ->
-      entered.map == move.map && entered.incarnation == move.incarnation
-    None -> False
+  case held_in_the_world(session.status) {
+    None -> Continue(session, [])
+    Some(entered) -> {
+      use <- bool.guard(
+        when: entered.map != news.map || entered.incarnation != news.incarnation,
+        return: Continue(session, []),
+      )
+      viewer_takes(session:, entered:, news:)
+    }
   }
-  use <- bool.guard(
-    when: !holds_the_world(session.status) || !in_this_run,
-    return: Continue(session, []),
-  )
-  Continue(session, [to_client(session, peer_move_frame(move))])
 }
 
-/// The player's current place sent to a connection the map has just told sees it,
-/// as one 0x638 of the kind 2 at the place and the kind 14 at its facing, each
-/// with its bit clear (`player_unit.standing`), stamped from the map's clock.
-/// Every move this connection sent that connection before the map's notice
-/// reaches it first, since the BEAM orders the signals of one sender to one
-/// receiver, so the viewer ends at the place the mover is at whatever raced.
-fn sends_its_place(
+/// What a viewer writes of news of a unit, from the units this connection has
+/// shown and the ones the map reported gone: a 0x262 for a unit not shown and not
+/// gone, which is then shown (the client keeps one unit per id until its 0x355,
+/// and a unit that is gone would be a ghost); a 0x638 for a shown unit; a 0x355
+/// for a shown unit, which is then no longer shown. Anything else is dropped.
+fn viewer_takes(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  news news: client_connection.PeerNews,
+) -> client_connection.Handled(Session) {
+  let unit_id = news.unit_id
+  let shown = set.contains(entered.shown, unit_id)
+  case news.news {
+    client_connection.Appeared(unit:) -> {
+      use <- bool.guard(
+        when: shown || set.contains(entered.gone, unit_id),
+        return: Continue(session, []),
+      )
+      Continue(shown_changed(session:, change: set.insert(_, unit_id)), [
+        to_client(session, world_entry.unit_created_frame(unit:)),
+      ])
+    }
+    client_connection.Moving(server_time_ms:, commands:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        to_client(
+          session,
+          unit_moved_frame(unit_id:, server_time_ms:, commands:),
+        ),
+      ])
+    }
+    client_connection.Removed -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(shown_changed(session:, change: set.delete(_, unit_id)), [
+        to_client(session, unit_removed_frame(unit_id:)),
+      ])
+    }
+  }
+}
+
+/// The player the client holds in this connection's world, while it holds one:
+/// the player in the world, or in the world and waiting to claim again, where a
+/// send is taken.
+fn held_in_the_world(status: Status) -> Option(world_entry.Entered) {
+  use <- bool.guard(when: !holds_the_world(status), return: None)
+  entered_of(status)
+}
+
+/// The unit of the player's own record as another player is created with it: at
+/// the place the player stands at now and stamped from the map's clock, from the
+/// origin `Joined` carried (`map.server_time`).
+fn appearance(
   entered entered: world_entry.Entered,
   now now: Now,
-  viewer viewer: ConnectionId,
-) -> Effect(ConnectionEffect(Request)) {
+) -> UnitCreatePlayer {
   let #(position, rotation) =
-    player_unit.standing(movement.place(entered.movement))
+    player_unit.standing(place: movement.place(entered.movement))
+  UnitCreatePlayer(
+    ..entered.unit,
+    movement_commands: [
+      start_movement.Position(position),
+      start_movement.Rotation(rotation),
+    ],
+    server_time_estimate_start: map.server_time(
+      origin_ms: entered.clock_origin_ms,
+      monotonic_ms: now.monotonic_ms,
+    ),
+  )
+}
+
+/// The tell of news about the player's own unit to the connection of a player
+/// who sees it, in the run of the map the player is in.
+fn news_to(
+  entered entered: world_entry.Entered,
+  viewer viewer: ConnectionId,
+  news news: client_connection.News,
+) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(step.Tell(
     to: step.Connection(viewer),
-    request: TellPeer(
-      move: client_connection.PeerMove(
-        map: entered.map,
-        incarnation: entered.incarnation,
-        unit_id: entered.unit_id,
-        server_time_ms: map.server_time(
-          origin_ms: entered.clock_origin_ms,
-          monotonic_ms: now.monotonic_ms,
-        ),
-        commands: [
-          relayed_movement.Position(position),
-          relayed_movement.Rotation(rotation),
-        ],
-      ),
-    ),
+    request: TellPeer(news: client_connection.PeerNews(
+      map: entered.map,
+      incarnation: entered.incarnation,
+      unit_id: entered.unit_id,
+      news:,
+    )),
   ))
 }
 
-/// The status with the viewers of the player it holds changed by `change`: the
-/// player in the world, or in the world and waiting to claim again, where a
-/// send is taken. A status that takes no send, since the shell takes none while
-/// an ask is out, or that holds no player in the world, is as it was.
+/// The tells that remove the player's own unit from the client of each player who
+/// sees it, for its camp, which sends them before its leave is asked: the map's
+/// `Unwatched` after the leave would be a second sender of news of the unit.
+fn removes_its_unit_from_the_viewers(
+  entered entered: world_entry.Entered,
+) -> List(Effect(ConnectionEffect(Request))) {
+  list.map(set.to_list(entered.viewers), fn(viewer) {
+    news_to(entered:, viewer:, news: client_connection.Removed)
+  })
+}
+
+/// The session with the player's viewers changed by `change`.
 fn viewers_changed(
-  status status: Status,
+  session session: Session,
   change change: fn(Set(ConnectionId)) -> Set(ConnectionId),
-) -> Status {
-  let viewed = fn(entered: world_entry.Entered) {
+) -> Session {
+  with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, viewers: change(entered.viewers))
-  }
-  case status {
-    InWorld(holder:, entered:) -> InWorld(holder:, entered: viewed(entered))
+  })
+}
+
+/// The session with the units its client shows changed by `change`.
+fn shown_changed(
+  session session: Session,
+  change change: fn(Set(Int)) -> Set(Int),
+) -> Session {
+  with_entered(session:, change: fn(entered) {
+    world_entry.Entered(..entered, shown: change(entered.shown))
+  })
+}
+
+/// The session with the unit marked gone, so it is shown no more, and no longer
+/// shown.
+fn marked_gone(session session: Session, unit_id unit_id: Int) -> Session {
+  with_entered(session:, change: fn(entered) {
+    world_entry.Entered(
+      ..entered,
+      shown: set.delete(entered.shown, unit_id),
+      gone: set.insert(entered.gone, unit_id),
+    )
+  })
+}
+
+/// The session with the player it holds in the world changed by `change`: the
+/// player in the world, or in the world and waiting to claim again, where a send
+/// is taken. A status that takes no send, since the shell takes none while an ask
+/// is out, or that holds no player in the world, is as it was.
+fn with_entered(
+  session session: Session,
+  change change: fn(world_entry.Entered) -> world_entry.Entered,
+) -> Session {
+  let status = case session.status {
+    InWorld(holder:, entered:) -> InWorld(holder:, entered: change(entered))
     WaitingToClaim(holder:, resume: ResumeWorld(entered:), retries:) ->
       WaitingToClaim(
         holder:,
-        resume: ResumeWorld(entered: viewed(entered)),
+        resume: ResumeWorld(entered: change(entered)),
         retries:,
       )
     WaitingToClaim(resume: ResumeSelect, ..)
@@ -1769,8 +1863,9 @@ fn viewers_changed(
     | SavingPlace(..)
     | LeavingMap(..)
     | AwaitingHelloReply
-    | TakingSessionKey -> status
+    | TakingSessionKey -> session.status
   }
+  Session(..session, status:)
 }
 
 /// Whether the client holds the player in its world, so another unit's message
@@ -1790,36 +1885,31 @@ fn holds_the_world(status: Status) -> Bool {
   }
 }
 
-/// The message to write for what the map sent about another player's unit:
-/// 0x262 for `Seen` and 0x355 with its one bit 0 for `Unseen` (opcode.0x262,
-/// opcode.0x355).
-fn other_unit_frame(message: map.Outgoing) -> Frame {
-  case message {
-    map.Seen(unit:) -> world_entry.unit_created_frame(unit:)
-    map.Unseen(unit_id:) -> {
-      let assert Ok(body) =
-        unit_destroyed.encode(UnitDestroyed(unit_id:, field_2: 0))
-        as "a unit id of 32 bits fits the message"
-      Frame(message_id: unit_destroyed.message_id, body:)
-    }
-    map.Joined(..) | map.Left | map.Watched(..) | map.Unwatched(..) ->
-      panic as "only a unit seen or gone is a message about another unit"
-  }
-}
-
 /// 0x638 for a move of another player's unit, with the reset bit 0 (the unit's
 /// movement is not rebuilt) and the kept bit 0 (opcode.0x638).
-fn peer_move_frame(move: client_connection.PeerMove) -> Frame {
+fn unit_moved_frame(
+  unit_id unit_id: Int,
+  server_time_ms server_time_ms: Int,
+  commands commands: List(RelayedMovement),
+) -> Frame {
   let assert Ok(body) =
     unit_movement.encode(UnitMovement(
-      unit_id: move.unit_id,
-      server_time: move.server_time_ms,
+      unit_id:,
+      server_time: server_time_ms,
       reset_movement: 0,
       kept: 0,
-      commands: move.commands,
+      commands:,
     ))
     as "a mover sends at most 31 commands and a time of 32 bits"
   Frame(message_id: unit_movement.message_id, body:)
+}
+
+/// 0x355 for another player's unit, with its one bit 0 (opcode.0x355).
+fn unit_removed_frame(unit_id unit_id: Int) -> Frame {
+  let assert Ok(body) =
+    unit_destroyed.encode(UnitDestroyed(unit_id:, field_2: 0))
+    as "a unit id of 32 bits fits the message"
+  Frame(message_id: unit_destroyed.message_id, body:)
 }
 
 /// The end of a watch the rule opened. Sessions' (`sessions_watch`): the
@@ -2079,6 +2169,7 @@ fn leaving_the_map(
   entered entered: world_entry.Entered,
   before before: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
+  let before = list.append(before, removes_its_unit_from_the_viewers(entered:))
   ask(
     session: Session(..session, status: LeavingMap(holder:, entered:)),
     now:,
@@ -2124,10 +2215,9 @@ fn leave_answered(
       )
     step.StoppedWaiting -> stopped(session, now)
     step.Answer(FromMap(map.Joined(..)))
-    | step.Answer(FromMap(map.Seen(..)))
     | step.Answer(FromMap(map.Watched(..)))
     | step.Answer(FromMap(map.Unwatched(..)))
-    | step.Answer(FromMap(map.Unseen(..)))
+    | step.Answer(FromMap(map.Gone(..)))
     | step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromSessions(..)) ->

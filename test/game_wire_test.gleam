@@ -54,7 +54,6 @@ import genesis_prime/message/enter_world
 import genesis_prime/message/float32
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/play_character.{PlayCharacter}
-import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
@@ -72,8 +71,8 @@ import gleam/bool
 import gleam/dict
 import gleam/dynamic/decode
 import gleam/erlang/process
-import gleam/int
 import gleam/list
+import gleam/result
 import login_client
 import login_support
 import owned_test
@@ -1095,40 +1094,28 @@ pub fn a_player_entering_is_written_its_whole_burst_before_the_0x262_of_a_player
   login_support.stop(started)
 }
 
-/// The client's next message that is not a 0x638: a player who sees another is
-/// sent that player's place when the map says so, at a time of its own.
-fn next_skipping_moves(
-  game game: game_client.Game,
-  have have: BitArray,
-) -> #(Frame, BitArray) {
-  let #(frame, have) = game_client.next(game:, have:)
-  case frame.message_id {
-    0x0638 -> next_skipping_moves(game:, have:)
-    _ -> #(frame, have)
-  }
+/// The position a 0x638 of the unit `unit_id` ends at, which is the position of
+/// its last kind 2 command.
+fn moved_to(frame: Frame, unit_id: Int) -> #(Float, Float, Float) {
+  assert frame.message_id == 0x0638 as "the frame is a 0x638"
+  let assert Ok(relayed) = unit_movement.decode(frame.body) as "0x638 decodes"
+  assert relayed.unit_id == unit_id
+    && relayed.reset_movement == 0
+    && relayed.kept == 0
+  game_client.observe(
+    others: dict.from_list([#(unit_id, #(0.0, 0.0, 0.0))]),
+    frame:,
+  )
+  |> dict.get(unit_id)
+  |> result.unwrap(#(0.0, 0.0, 0.0))
 }
 
-/// Reads the client's messages until a 0x355 comes: the 0x638s before it, in
-/// the order they came, and the 0x355.
-fn read_until_gone(
-  game game: game_client.Game,
-  have have: BitArray,
-) -> #(List(Frame), Frame, BitArray) {
-  let #(frame, have) = game_client.next(game:, have:)
-  case frame.message_id {
-    0x0355 -> #([], frame, have)
-    0x0638 -> {
-      let #(moves, gone, have) = read_until_gone(game:, have:)
-      #([frame, ..moves], gone, have)
-    }
-    other ->
-      panic as {
-        "the viewer was sent a message that is none of its unit's moves: 0x"
-        <> int.to_base16(other)
-      }
-  }
-}
-
+// Every frame the first client reads about the second player's unit comes from
+// the second player's own connection, one sender, so its order is the BEAM's
+// promise; the second's connection sends a move only to a player it has been
+// told sees it, which the first's 0x262 of it shows it has. The only frame
+// from another sender is the map's `Gone` when the second's connection ends, and
+// the first's connection writes a move that lands after it as nothing.
 pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil {
   use <- owned_test.run(60_000)
   let TwoEntered(
@@ -1141,6 +1128,8 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
     second_have:,
     ..,
   ) = two_players_enter_one_map()
+  assert unit_of(seen_second) == 2
+    as "the second player's unit is created for the first, by the second's own connection"
   // The second player moves five times at once; only the first sees it, each
   // move as the second's own connection sent it, in the order sent.
   list.each([0.0, 1.0, 2.0, 3.0, 4.0], fn(step) {
@@ -1152,82 +1141,58 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
       ]),
     )
   })
-  // The second player camps out at once: the first sees its unit go. The moves
-  // come from the second's connection and the 0x355 from the map, two senders,
-  // and the BEAM orders signals only per sender; this test relies on what one
-  // node does besides (a local send is queued when it returns, and the map sends
-  // the 0x355 after the second's connection has sent its moves), and asserts no
-  // order between the moves and the 0x355 beyond reading up to it.
+  let #(moves, first_have) =
+    game_client.read_kept(game: first, have: first_have, count: 5)
+  assert list.map(moves, fn(frame) { moved_to(frame, 2) })
+    == [
+      #(100.5, 50.25, -200.75),
+      #(101.5, 50.25, -200.75),
+      #(102.5, 50.25, -200.75),
+      #(103.5, 50.25, -200.75),
+      #(104.5, 50.25, -200.75),
+    ]
+    as "opcode.0x638: each move is sent to the viewer, in the order sent"
+  // The second player camps out: the first sees its unit go, after its moves.
   game_client.send_world(game: second, message_id: 0x00BF, body: <<1>>)
   let #(_countdown, second_have) =
-    next_skipping_moves(game: second, have: second_have)
+    game_client.next(game: second, have: second_have)
   game_client.send_world(game: second, message_id: 0x00C0, body: <<>>)
-  let #(left, second_have) =
-    next_skipping_moves(game: second, have: second_have)
+  let #(left, second_have) = game_client.next(game: second, have: second_have)
   assert left.message_id == 0x0594
-  // The first player is sent the second's place when the map says it sees it,
-  // and each move after: how many frames come depends on which of the map's
-  // notice and the second's first move reached its connection first, and the
-  // order of the frames among themselves is one sender's.
-  let #(moves, gone, first_have) =
-    read_until_gone(game: first, have: first_have)
-  assert moves != [] as "opcode.0x638: the viewer is sent the unit's moves"
+  let #(gone, first_have) = game_client.next(game: first, have: first_have)
+  assert gone.message_id == 0x0355 as "opcode.0x355: the unit is removed"
   let assert Ok(destroyed) = unit_destroyed.decode(gone.body)
-  assert destroyed.unit_id == 2 as "opcode.0x355: the unit is removed"
-  let assert [moved, ..] = list.reverse(moves)
-  let assert Ok(relayed) = unit_movement.decode(moved.body)
-  assert relayed.unit_id == 2
-    && relayed.reset_movement == 0
-    && relayed.kept == 0
-  assert relayed.commands
-    == [
-      relayed_movement.Position(UnitPositionCommand(
-        x: float32.to_bits(104.5),
-        y: float32.to_bits(50.25),
-        z: float32.to_bits(-200.75),
-        blends: 0,
-      )),
-    ]
-    as "the last frame is the last move the player sent, with its bit"
-  // The first player's bot model: the second stands where its last move put it.
-  let view = game_client.observe(others: dict.new(), frame: seen_second)
-  let view =
-    list.fold(moves, view, fn(view, frame) {
-      game_client.observe(others: view, frame:)
-    })
-  assert view == dict.from_list([#(2, #(104.5, 50.25, -200.75))])
-    as "whatever the frames that came, the viewer ends at the place of the last move"
-  assert game_client.observe(others: view, frame: gone) == dict.new()
-  // It plays again as a new unit, which the first sees appear; then it drops.
+  assert destroyed.unit_id == 2
+  // It plays again as a new unit, which the first sees appear.
   game_client.send(game: second, message_id: 0x07E0, body: <<>>)
-  let #(_level, second_have) =
-    next_skipping_moves(game: second, have: second_have)
   let #(_list, second_have) =
-    next_skipping_moves(game: second, have: second_have)
+    game_client.read_kept(game: second, have: second_have, count: 2)
   send_play(game: second, character_id: second_character)
   let #(_again, _second_have) =
     game_client.read_kept(game: second, have: second_have, count: 8)
   let #(back, first_have) = game_client.next(game: first, have: first_have)
   assert unit_of(back) == 3 as "a new unit, never an id given before"
+  // The first's 0x262 of it shows the second's connection knows the first sees
+  // it, so this move is sent to the first.
   game_client.send_world(
     game: second,
     message_id: 0x0637,
     body: game_client.moves_body(client_clock: 0x1235, commands: [
-      game_client.position_command(x: 100.5, y: 50.25, z: -200.75),
+      game_client.position_command(x: 7.5, y: 8.5, z: 9.5),
     ]),
   )
+  let #(moved_again, first_have) =
+    game_client.next(game: first, have: first_have)
+  assert moved_to(moved_again, 3) == #(7.5, 8.5, 9.5)
+    as "the rejoined player's moves are sent to the run it joined"
+  // The second player's client drops: its connection ends, sends nothing, and
+  // the map tells the first's connection the unit is gone.
   game_client.close(game: second)
-  let #(moves_again, dropped, _first_have) =
-    read_until_gone(game: first, have: first_have)
-  assert moves_again != []
-    as "the rejoined player's place and moves are told to the run it joined"
-  assert list.all(moves_again, fn(frame) {
-    let assert Ok(relayed) = unit_movement.decode(frame.body)
-    relayed.unit_id == 3
-  })
+  let #(dropped, _first_have) = game_client.next(game: first, have: first_have)
+  assert dropped.message_id == 0x0355
   let assert Ok(destroyed) = unit_destroyed.decode(dropped.body)
   assert destroyed.unit_id == 3
-    as "the connection that drops is removed for the first player as the camp's leave was"
+    as "the connection that drops is removed for the first player by the map's Gone"
   game_client.close(game: first)
   login_support.stop(started)
 }

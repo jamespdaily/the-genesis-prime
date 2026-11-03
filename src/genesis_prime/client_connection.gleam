@@ -28,6 +28,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
+import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/random.{type Random}
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
@@ -66,43 +67,56 @@ pub type Request {
   /// no process running.
   TellMoved(connection: ConnectionId, place: Place)
   /// What a `Tell` effect sends the connection of a player who sees this one
-  /// (genesis_prime/step `Connection`): a move of this player, which that
-  /// connection writes as 0x638. Never asked, and never told to a map.
-  TellPeer(move: PeerMove)
+  /// (genesis_prime/step `Connection`): news of this player's unit, which that
+  /// connection writes as 0x262, 0x638 or 0x355 when its client can take it.
+  /// Never asked, and never told to a map.
+  TellPeer(news: PeerNews)
 }
 
-/// One 0x638 a mover's connection sends the connection of a player who sees
-/// it: the run of the map the mover is in (`map` and `incarnation`, as its
-/// connection watches it), the mover's unit in that run, the map's server time
-/// at the move (the map's clock, `world_map/map.server_time`), and at most 31
-/// of its relayed commands in the order sent, since 0x638's count is 5 bits
-/// (opcode.0x638). A viewer that is in another run of the map, or another map,
-/// drops it: the unit id there may name another unit.
-pub type PeerMove {
-  PeerMove(
-    map: MapId,
-    incarnation: Int,
-    unit_id: Int,
-    server_time_ms: Int,
-    commands: List(RelayedMovement),
-  )
+/// News of one unit from its owner's connection to the connection of a player
+/// who sees it: the run of the map the owner is in (`map` and `incarnation`, as
+/// its connection watches it), the owner's unit in that run, and what happened
+/// to it. A viewer that is in another run of the map, or another map, drops it:
+/// the unit id there may name another unit.
+pub type PeerNews {
+  PeerNews(map: MapId, incarnation: Int, unit_id: Int, news: News)
+}
+
+/// What an owner's connection tells the connections that see its unit, which
+/// they write as the message the client creates, moves and removes a unit with.
+pub type News {
+  /// The unit as the client creates it, at the owner's current place and stamped
+  /// from the map's clock: 0x262 (opcode.0x262).
+  Appeared(unit: UnitCreatePlayer)
+  /// The unit moved: the map's server time at the move (the map's clock,
+  /// `world_map/map.server_time`) and at most 31 of its relayed commands in the
+  /// order sent, since 0x638's count is 5 bits (opcode.0x638).
+  Moving(server_time_ms: Int, commands: List(RelayedMovement))
+  /// The unit is gone from the viewer's sight, or its owner camped: 0x355
+  /// (opcode.0x355).
+  Removed
 }
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).
 const most_commands_in_a_message = 31
 
-/// The 0x638s a move is sent as: its `commands` in order, at most 31 to a
-/// message, and none for no command.
+/// The news a move is sent as: its `commands` in order, at most 31 to a message,
+/// and none for no command.
 pub fn peer_moves(
   map map: MapId,
   incarnation incarnation: Int,
   unit_id unit_id: Int,
   server_time_ms server_time_ms: Int,
   commands commands: List(RelayedMovement),
-) -> List(PeerMove) {
+) -> List(PeerNews) {
   list.sized_chunk(commands, most_commands_in_a_message)
   |> list.map(fn(chunk) {
-    PeerMove(map:, incarnation:, unit_id:, server_time_ms:, commands: chunk)
+    PeerNews(
+      map:,
+      incarnation:,
+      unit_id:,
+      news: Moving(server_time_ms:, commands: chunk),
+    )
   })
 }
 
@@ -118,15 +132,15 @@ pub type Answer {
 /// it. Only the game rule is sent anything; the login's rules take `Nil`.
 pub type Message {
   SentBySessions(message: account_session.Outgoing)
-  /// What a map sends the connection of a player in it without waiting:
-  /// another player's unit seen or gone (`Seen`, `Unseen`), and who sees this
-  /// connection's player (`Watched`, `Unwatched`). A map's answers (`Joined`,
-  /// `Left`) come as an ask's outcome, never as this.
+  /// What a map sends the connection of a player in it without waiting: who
+  /// sees this connection's player (`Watched`, `Unwatched`), and a unit whose
+  /// owner's connection ended (`Gone`). A map's answers (`Joined`, `Left`) come
+  /// as an ask's outcome, never as this.
   SentByMap(message: map.Outgoing)
-  /// What the connection of a player who is seen by this one's player sends it
-  /// without waiting: that player's move, written as 0x638 while this player is
-  /// in the world (genesis_prime/game/connection).
-  SentByPeer(move: PeerMove)
+  /// What the connection of another player sends it without waiting: news of
+  /// that player's unit, written while this player is in the world
+  /// (genesis_prime/game/connection).
+  SentByPeer(news: PeerNews)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who
