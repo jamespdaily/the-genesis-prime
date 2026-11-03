@@ -71,6 +71,7 @@ import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/whisper_failed
 import genesis_prime/server
 import genesis_prime/service
+import genesis_prime/sitting_bot
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
@@ -1717,5 +1718,114 @@ pub fn the_bot_numbers_its_chat_message_ids_from_1_and_each_is_answered_test() -
   assert accept.name == "Ann Qu"
     as "each line is answered under its own id, the whisper with the target's name"
   list.each(seats, fn(seat) { game_client.close(game: seat.game) })
+  login_support.stop(started)
+}
+
+// ---- the sitting bot on the whole server ----
+
+/// Every event the bot reports, in order, up to and including the first for
+/// which `done` holds of what has been seen so far; the test fails when the bot
+/// reports no more within the event deadline.
+fn events_until(
+  events events: process.Subject(sitting_bot.Event),
+  seen seen: List(sitting_bot.Event),
+  done done: fn(List(sitting_bot.Event)) -> Bool,
+) -> List(sitting_bot.Event) {
+  case done(seen) {
+    True -> list.reverse(seen)
+    False -> {
+      let assert Ok(event) = process.receive(events, 20_000)
+        as "the bot reported what the test waits for"
+      events_until(events:, seen: [event, ..seen], done:)
+    }
+  }
+}
+
+pub fn a_sitting_bot_and_a_player_see_each_other_appear_hear_each_others_say_lines_and_the_player_sees_the_bot_leave_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let started = login_support.start()
+  let #(zed, zed_character) =
+    new_player(started:, number: 1, character_name: "Zed Qu")
+  send_play(game: zed, character_id: zed_character)
+  let #(_burst, zed_have) =
+    game_client.read_kept(game: zed, have: <<>>, count: burst_length())
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let assert Ok(seat) = sitting_bot.seat(pool:, near: "Zed Qu")
+    as "the bot is seated near the player"
+  let events = process.new_subject()
+  let finished = process.new_subject()
+  let bot =
+    process.spawn_unlinked(fn() {
+      process.send(
+        finished,
+        sitting_bot.sit(
+          ports: login_support.ports(started),
+          seat:,
+          near: "Zed Qu",
+          schedule: sitting_bot.Schedule(
+            move_every_ms: 125,
+            chat_every_ms: 300,
+            whisper_every_ms: 600,
+          ),
+          for_ms: 60_000,
+          report: fn(event) { process.send(events, event) },
+        ),
+      )
+    })
+  // The player sees the bot appear, then says a line the bot can hear.
+  let zed_seat = Seat(game: zed, have: zed_have, zone_channel: 0)
+  let #(appeared, zed_seat) = wait_for_frame(seat: zed_seat, message_id: 0x0262)
+  let assert Ok(bot_unit) = unit_create_player.decode(appeared.body)
+  assert bot_unit.name == "Sitting Bot"
+    as "the player sees the bot's unit appear"
+  game_client.say(game: zed, text: "hello bot", chat_message_id: 1)
+  // The bot's own say reaches the player on Say, from the bot's name.
+  let #(heard_by_player, have) =
+    game_client.read_chat(game: zed, have: zed_seat.have)
+  let zed_seat = Seat(..zed_seat, have:)
+  assert heard_by_player
+    == game_client.HeardLine(
+      channel_type: 4,
+      channel_id: 0,
+      sender: "Sitting Bot",
+      text: "bot say 1",
+    )
+    as "the sitting bot's first line is a say with the counter 1, and the player reads it"
+  // The bot saw the player appear and heard the player's say.
+  let heard_by_bot =
+    sitting_bot.LineHeard(line: game_client.HeardLine(
+      channel_type: 4,
+      channel_id: 0,
+      sender: "Zed Qu",
+      text: "hello bot",
+    ))
+  let accepted_for_bot =
+    sitting_bot.LineAccepted(chat_message_id: 1, name: "Sitting Bot")
+  let seen_by_bot =
+    events_until(events:, seen: [], done: fn(seen) {
+      list.contains(seen, heard_by_bot) && list.contains(seen, accepted_for_bot)
+    })
+  assert list.contains(
+    seen_by_bot,
+    sitting_bot.UnitShown(unit_id: 1, name: "Zed Qu"),
+  )
+    as "the bot is shown the player's unit, the map's first, with its name"
+  assert list.contains(seen_by_bot, heard_by_bot)
+    as "the bot hears the player's say"
+  assert list.contains(seen_by_bot, accepted_for_bot)
+    as "the bot's first line, numbered 1 as the client numbers, is answered with its accept"
+  // The bot stops and leaves: the player sees its unit go.
+  sitting_bot.request_stop(bot)
+  let assert Ok(tally) = process.receive(finished, 20_000)
+    as "the bot ended when asked to stop"
+  assert tally.lines_heard >= 1
+    && tally.units_seen >= 1
+    && tally.lines_sent >= 1
+    as "the summary counts what the bot sent, was shown and heard"
+  let #(gone, _zed_seat) = wait_for_frame(seat: zed_seat, message_id: 0x0355)
+  let assert Ok(destroyed) = unit_destroyed.decode(gone.body)
+  assert destroyed.unit_id == bot_unit.unit_id
+    as "the bot's unit is removed for the player when the bot closes its connection"
+  game_client.close(game: zed)
   login_support.stop(started)
 }

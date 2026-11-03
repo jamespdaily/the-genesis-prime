@@ -70,9 +70,6 @@ fn attempt(
 ) -> Result(List(row), Failure) {
   case query(pool) {
     Ok(pog.Returned(rows:, ..)) -> Ok(rows)
-    Error(pog.ConstraintViolated(constraint:, ..)) ->
-      Error(Refused(constraint:))
-    Error(pog.QueryTimeout) -> Error(TimedOut)
     Error(pog.ConnectionUnavailable) ->
       case attempts > 1 {
         True -> {
@@ -81,12 +78,23 @@ fn attempt(
         }
         False -> Error(DatabaseDown)
       }
-    Error(pog.PostgresqlError(name:, message:, ..)) ->
-      Error(NotChanged(name <> ": " <> message))
-    Error(pog.UnexpectedArgumentCount(..))
-    | Error(pog.UnexpectedArgumentType(..))
-    | Error(pog.UnexpectedResultType(..)) ->
-      Error(NotChanged("the query and the table do not match"))
+    Error(error) -> Error(failure_of(error:))
+  }
+}
+
+/// The failure a query's error is, for a tool that runs its queries on a pool
+/// of its own (`connect`).
+pub fn failure_of(error error: pog.QueryError) -> Failure {
+  case error {
+    pog.ConstraintViolated(constraint:, ..) -> Refused(constraint:)
+    pog.QueryTimeout -> TimedOut
+    pog.ConnectionUnavailable -> DatabaseDown
+    pog.PostgresqlError(name:, message:, ..) ->
+      NotChanged(name <> ": " <> message)
+    pog.UnexpectedArgumentCount(..)
+    | pog.UnexpectedArgumentType(..)
+    | pog.UnexpectedResultType(..) ->
+      NotChanged("the query and the table do not match")
   }
 }
 
