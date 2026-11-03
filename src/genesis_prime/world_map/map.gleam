@@ -189,11 +189,7 @@ fn left(
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
     Ok(player) -> #(
-      State(
-        ..state,
-        players: dict.delete(state.players, connection),
-        watches: dict.delete(state.watches, player.watch),
-      ),
+      without(state:, connection:, watch: player.watch),
       Effects([
         Unwatch(watch: player.watch),
         OwnEffect(Reply(caller, Left)),
@@ -294,14 +290,7 @@ fn ended(
   watch watch: WatchId,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.watches, watch) {
-    Ok(connection) -> #(
-      State(
-        ..state,
-        players: dict.delete(state.players, connection),
-        watches: dict.delete(state.watches, watch),
-      ),
-      Effects([]),
-    )
+    Ok(connection) -> #(without(state:, connection:, watch:), Effects([]))
     Error(Nil) -> #(
       state,
       Effects([
@@ -313,6 +302,19 @@ fn ended(
       ]),
     )
   }
+}
+
+/// The map with the connection's player and the watch on it removed.
+fn without(
+  state state: State,
+  connection connection: ConnectionId,
+  watch watch: WatchId,
+) -> State {
+  State(
+    ..state,
+    players: dict.delete(state.players, connection),
+    watches: dict.delete(state.watches, watch),
+  )
 }
 
 /// An error line about the map, and what `about` adds.

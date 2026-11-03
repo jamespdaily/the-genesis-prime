@@ -242,6 +242,20 @@ pub fn read(game game: Game, count count: Int) -> List(Frame) {
   list.map(outers, in_the_game_wrapper(_, game.cipher))
 }
 
+/// The ids of the messages that put a player in the world, in the order the
+/// client needs (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc,
+/// opcode.0x636, opcode.0xf1, opcode.0x61): 0xAD first; 0x262 before 0x19B; 0x19B
+/// before 0x6BC, 0x636 and 0x61.
+pub const world_entry_ids = [
+  0x00AD,
+  0x0262,
+  0x019B,
+  0x06BC,
+  0x0636,
+  0x00F1,
+  0x0061,
+]
+
 /// The 0x262 among the messages of an entry, decoded: the player the burst
 /// creates.
 pub fn unit_create_player_in(frames frames: List(Frame)) -> UnitCreatePlayer {

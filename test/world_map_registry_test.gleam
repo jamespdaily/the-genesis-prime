@@ -121,6 +121,15 @@ fn deadline() -> Int {
   ask_support.monotonic_ms() + ask_support.event_wait_ms
 }
 
+/// The join of the connection as `character`, at the live character's place.
+fn join_of(id id: Int, character character: Character) -> map.Message {
+  map.Join(
+    connection: ConnectionId(id),
+    character:,
+    place: place_support.live_character_place(),
+  )
+}
+
 /// What a join of the connection, as `character`, to the running map was
 /// answered with.
 fn joined_as(
@@ -130,15 +139,7 @@ fn joined_as(
 ) -> map.Outgoing {
   let #(_, answer) =
     ask_support.ask_and_wait(send: fn(reply) {
-      service.call_subject(
-        found.subject,
-        map.Join(
-          connection: ConnectionId(id),
-          character:,
-          place: place_support.live_character_place(),
-        ),
-        reply,
-      )
+      service.call_subject(found.subject, join_of(id:, character:), reply)
     })
   answer
 }
@@ -394,13 +395,10 @@ pub fn a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_
 
 // ---- the typed find and the ask of a run ----
 
-/// A character's join message for the connection, as `joined_as` sends it.
+/// The join of the connection as the character 100 more than its id, as
+/// `joined` sends it.
 fn join_message(id: Int) -> map.Message {
-  map.Join(
-    connection: ConnectionId(id),
-    character: character_support.character(number: 100 + id),
-    place: place_support.live_character_place(),
-  )
+  join_of(id:, character: character_support.character(number: 100 + id))
 }
 
 pub fn a_find_that_maps_does_not_answer_by_its_deadline_is_no_reply_and_not_not_found_test() -> Nil {

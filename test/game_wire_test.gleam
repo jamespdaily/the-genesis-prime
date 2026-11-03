@@ -289,7 +289,7 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
   send_play(game:, character_id: created.character_id)
   let burst = game_client.read(game:, count: 7)
   assert list.map(burst, fn(frame) { frame.message_id })
-    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
+    == game_client.world_entry_ids
     as "the player enters the world: the messages in the client's order (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0xf1, opcode.0x61)"
   let assert [Frame(body: world, ..), Frame(body: unit, ..), ..] = burst
   let assert Ok(entered) = enter_world.decode(world)
@@ -915,7 +915,7 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
   send_play(game:, character_id: character)
   let second_burst = game_client.read(game:, count: 7)
   assert list.map(second_burst, fn(frame) { frame.message_id })
-    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
+    == game_client.world_entry_ids
     as "the play enters the world again as at the first entry"
   let second = game_client.unit_create_player_in(frames: second_burst)
   assert second.unit_id == 2

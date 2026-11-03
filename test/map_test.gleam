@@ -7,6 +7,9 @@
 ////   watch on the player's connection; a connection's end removes its player;
 ////   a second join answers the unit the map keeps and logs an error; a watch
 ////   that names no player is an error and changes nothing; a leave removes the
+////   connection's player with its unit, drops its watch and is answered `Left`,
+////   and a leave of a connection that is not in the map is an error and the
+////   same answer.
 //// - The body: CharacterCustomization row 10 of the planted tables (race 1,
 ////   sex 0; labels 21 = 2 and 2 = 1) shows display 137 on slot 25
 ////   (`character_tables`), and the tables hold no row of race 3, so a look of
@@ -16,10 +19,6 @@
 //// - The client: it refuses a 0x262 whose unit id it has already seen
 ////   (opcode.0x262), so no unit id is given twice in a map's life, whoever
 ////   leaves.
-
-//   connection's player with its unit, drops its watch and is answered `Left`,
-//   and a leave of a connection that is not in the map is an error and the
-//   same answer.
 
 import character_support
 import character_tables

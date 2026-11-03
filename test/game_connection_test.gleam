@@ -1193,6 +1193,12 @@ fn joining() -> #(game_connection.State, ConnectionStep(Request)) {
   joining_as(world_character())
 }
 
+/// The tests' map: the world the tests' character is saved in, and its one
+/// open instance.
+fn camp_map() -> MapId {
+  MapId(world_id: 3460, instance: 0)
+}
+
 /// The run of the tests' map.
 const incarnation = 77
 
@@ -1201,7 +1207,7 @@ const incarnation = 77
 fn map_with_four_players() -> map.State {
   let state =
     map.new(map.Settings(
-      map: MapId(world_id: 3460, instance: 0),
+      map: camp_map(),
       incarnation:,
       realm_id: settings().realm_id,
       tables: settings().tables,
@@ -1228,19 +1234,10 @@ fn map_with_four_players() -> map.State {
 }
 
 /// The map's answer to the join the connection asked, which the real map gives:
-/// the ask the connection emitted is stepped through a map of the connection's
-/// realm and tables, and the reply is the answer.
+/// the ask is stepped through a map of the tests' realm and tables with four
+/// other players (`mapped`).
 fn map_answer(taken: ConnectionStep(Request)) -> map.Outgoing {
-  let assert AskMap(message:, ..) = ask_request(taken)
-    as "the connection asked the map to take the player"
-  let #(_, mapped) =
-    map.step(
-      map_with_four_players(),
-      support.input(OwnEvent(step.Asked(caller: CallerId(1), message:))),
-    )
-  let assert [#(CallerId(1), outgoing)] = support.replies(mapped)
-    as "the map answers the join once, to its caller"
-  outgoing
+  mapped(map_state: map_with_four_players(), taken:).1
 }
 
 /// The map's answer to a join of the tests' player, for the tests that need an
@@ -1316,7 +1313,7 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
     )
   assert ask_request(taken)
     == AskMap(
-      MapId(world_id: 3460, instance: 0),
+      camp_map(),
       Join(ConnectionId(1), world_character(), entry_place()),
     )
     as "the saved world of the character, its one open instance, the connection's id, the character and the place the client is told"
@@ -1324,13 +1321,12 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
     as "nothing is written before the map answers"
   let #(_, taken) =
     answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
-  assert list.map(heard(taken, keyed()), fn(frame) { frame.message_id })
-    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
+  assert written_ids(taken) == game_client.world_entry_ids
     as "the order the client needs: 0xAD first; 0x262 before 0x19B; 0x19B before 0x6BC, 0x636 and 0x61 (the client drops 0x6BC until 0x19B has set the player, opcode.0x6bc); 0xF1 after 0xAD (opcode.0xad, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0x61, opcode.0xf1)"
   let after_the_burst = list.drop(support.effects_of(taken), 7)
   assert after_the_burst
     == [
-      Watch(WatchId(2), Map(MapId(3460, 0), incarnation)),
+      Watch(WatchId(2), Map(camp_map(), incarnation)),
       OwnEffect(StartTimer(TimerId(2), 60_000)),
     ]
     as "the connection watches the run of the map that holds its player, after the burst, and the save timer starts"
@@ -1600,7 +1596,7 @@ pub fn a_log_line_in_the_world_is_about_the_players_map_and_character_and_one_in
   use <- owned_test.run(10_000)
   let #(_, taken) = feed(in_world(), WatchEnded(WatchId(2)))
   let assert [line] = support.logs_of(step: taken, level: LogWarning)
-  assert line.about.map == Some(MapId(world_id: 3460, instance: 0))
+  assert line.about.map == Some(camp_map())
     as "every line of a connection in the world says where: the map the player is in"
   assert line.about.character_id == Some(42)
     as "and who: the character the player plays"
@@ -1611,8 +1607,7 @@ pub fn a_log_line_in_the_world_is_about_the_players_map_and_character_and_one_in
     as "in character select the connection is in no map and plays no character"
   let #(_, taken) = read(in_world(), keyed_message(0x0244, <<>>))
   assert list.all(support.logs(taken), fn(line) {
-    line.about.map == Some(MapId(world_id: 3460, instance: 0))
-    && line.about.character_id == Some(42)
+    line.about.map == Some(camp_map()) && line.about.character_id == Some(42)
   })
     as "the lines of the shared connection code, which log a refused frame, carry them too"
 }
@@ -2160,7 +2155,7 @@ pub fn a_60_s_save_the_store_cannot_make_is_a_warning_the_player_goes_on_and_the
       as "an outside failure the server recovered from"
     assert line.about.account_id == Some(7)
       && line.about.character_id == Some(42)
-      && line.about.map == Some(MapId(world_id: 3460, instance: 0))
+      && line.about.map == Some(camp_map())
       as "the line says who and where"
     assert !support.stops(taken) && support.writes(taken) == []
       as "the player stays in the world"
@@ -2316,7 +2311,7 @@ pub fn the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_an
   assert ask_request(taken) == save_asked(1, entry_place())
   assert support.writes(taken) == [] && !support.stops(taken)
   let assert [line] = support.logs_of(step: taken, level: LogWarning)
-  assert line.about.map == Some(MapId(world_id: 3460, instance: 0))
+  assert line.about.map == Some(camp_map())
   let #(_, taken) = answer(state:, taken:, outcome: NoAnswerInTime)
   assert disconnect(taken, keyed()) == LostUserServer
     as "the player is gone from the world with its map: the client is told whether or not the save was answered"
@@ -3357,11 +3352,6 @@ pub fn the_create_carrier_takes_only_the_message_the_rule_names_as_carried_test(
 // shell's order for a close are the Design artifact's sequence and failure
 // table.
 
-/// The id of the camp's map, as the tests' character is placed.
-fn camp_map() -> MapId {
-  MapId(world_id: 3460, instance: 0)
-}
-
 /// 0xBF inside 0x038C: one bit, 1 to start a camp and 0 to cancel it
 /// (opcode.0xbf).
 fn camp_request_message(start: Bool) -> BitArray {
@@ -3591,7 +3581,7 @@ fn mapped(
   let message = case ask_request(taken) {
     AskMap(message:, ..) | AskMapRun(message:, ..) -> message
     AskStore(..) | AskHandOff(..) | AskSessions(..) ->
-      panic as "the connection asked the map"
+      panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask is none"
   }
   let #(map_state, mapped) =
     map.step(
@@ -3643,8 +3633,7 @@ pub fn after_a_camp_a_play_request_enters_the_world_again_as_a_new_unit_with_the
   let #(_, joined_again) = mapped(map_state:, taken:)
   let #(state, taken) =
     answer(state:, taken:, outcome: step.Answer(FromMap(joined_again)))
-  assert written_ids(taken)
-    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
+  assert written_ids(taken) == game_client.world_entry_ids
     as "the same seven messages as at the first entry"
   assert player_in(taken).unit_id != first_unit && player_in(taken).unit_id == 6
     as "opcode.0x262: the client refuses a unit id it has seen, so the play is a new unit: the map's next id after the five it gave"
