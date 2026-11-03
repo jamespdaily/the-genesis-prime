@@ -119,7 +119,11 @@ fn deadline() -> Int {
 
 /// What a join of the connection, as `character`, to the running map was
 /// answered with.
-fn joined_as(found: MapProcess, id: Int, character: Character) -> map.Outgoing {
+fn joined_as(
+  found found: MapProcess,
+  id id: Int,
+  character character: Character,
+) -> map.Outgoing {
   let #(_, answer) =
     ask_support.ask_and_wait(send: fn(reply) {
       service.call_subject(
@@ -139,7 +143,11 @@ fn joined_as(found: MapProcess, id: Int, character: Character) -> map.Outgoing {
 /// 100 more than its id, to the running map was answered with.
 fn joined(found: MapProcess, id: Int) -> #(Int, Int) {
   let map.Joined(unit:, incarnation:) =
-    joined_as(found, id, character_support.character(number: 100 + id))
+    joined_as(
+      found:,
+      id:,
+      character: character_support.character(number: 100 + id),
+    )
   #(unit.unit_id, incarnation)
 }
 
@@ -244,7 +252,11 @@ pub fn a_map_that_ended_keeps_no_player_so_the_same_connection_joins_the_new_run
   let first = started(world, ship)
   let _connection = connection(world, 1)
   let map.Joined(unit: before, ..) =
-    joined_as(first, 1, character_support.character(number: 101))
+    joined_as(
+      found: first,
+      id: 1,
+      character: character_support.character(number: 101),
+    )
   assert before.unit_id == 1 && before.character_id == 101
     as "the connection is unit 1 of the first run, as character 101"
   let ended = process.monitor(first.pid)
@@ -253,7 +265,11 @@ pub fn a_map_that_ended_keeps_no_player_so_the_same_connection_joins_the_new_run
   await_not_found(world:, map: ship, incarnation: first.incarnation)
   let again = started(world, ship)
   let map.Joined(unit: after, incarnation:) =
-    joined_as(again, 1, character_support.character(number: 900))
+    joined_as(
+      found: again,
+      id: 1,
+      character: character_support.character(number: 900),
+    )
   assert after.unit_id == 1 && after.character_id == 900
     as "the new run holds no player of the old one: the same connection joins it as a new player, unit 1, built from the new Join, where a kept player would answer the old unit of character 101"
   assert incarnation == again.incarnation
