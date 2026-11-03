@@ -82,16 +82,20 @@
 ////   every store ask shares fails (the store unavailable, not running, ended
 ////   or silent); this module is given only the answers its asks get.
 
-import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/client_connection
+import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
 import genesis_prime/game/character_name
 import genesis_prime/game/start_place
+import genesis_prime/message/bit_stream
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{
   type CharacterListEntry, CharacterListEntry,
 }
+import genesis_prime/message/character_select_start
 import genesis_prime/message/create_character.{type CreateCharacter}
+import genesis_prime/message/create_character_carrier
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
 import genesis_prime/message/create_result.{type CreateResult}
 import genesis_prime/message/delete_character.{type DeleteCharacter}
@@ -113,12 +117,37 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 
 /// The last logout, in days from now, of the character the client should
 /// select: a moment ago, which is not 0 (0 is none) and is above every logout
 /// further back (lua.CharacterSelection.OnLoadFromCharacter.preselect,
 /// 0x1401e83a0: negative for a past time).
 const just_now_days = -0.000001
+
+/// The client's messages character select takes, in the client's wrapper
+/// (genesis_prime/game/routing's table says which id is which).
+pub type Message {
+  /// 0x07E0: the client starts character select and asks for its list.
+  Started
+  /// 0x025C, which carries a 0x025B create request.
+  CreateAsked
+  /// 0x0352, the request to delete a character.
+  DeleteAsked
+  /// 0x0786, the request to rename a character.
+  RenameAsked
+}
+
+/// Why a message is refused: the client's own reader would refuse it, or the
+/// client never writes it. The connection ends.
+pub type Refusal {
+  /// A body the client's reader would refuse.
+  Undecoded(message_id: Int, error: bit_stream.DecodeError)
+  /// A 0x025C that holds no whole frame.
+  CarrierHoldsNoFrame(error: FrameError)
+  /// A 0x025C that holds another message than 0x025B.
+  CarrierHolds(message_id: Int)
+}
 
 /// What a character select asks or sends; the game connection's rule turns
 /// each into its own effect.
@@ -158,6 +187,81 @@ pub fn waiting(state state: State) -> Bool {
   case state {
     Listing(..) | Creating | Deleting(..) | Renaming(..) -> True
     Resting -> False
+  }
+}
+
+/// What one message of the client's does, for this account: its body is
+/// decoded and the function of that request decides. 0x025C holds the whole
+/// frame of a 0x025B (opcode.0x25c). A body the client's reader would refuse, or
+/// a 0x025C with no 0x025B in it, is the refusal that ends the connection.
+pub fn take(
+  message message: Message,
+  account_id account_id: AccountId,
+  body body: BitArray,
+  tables tables: table_store.Tables,
+  character_slots character_slots: Int,
+) -> Result(#(State, List(Effect)), Refusal) {
+  case message {
+    Started ->
+      character_select_start.decode(body)
+      |> result.map_error(Undecoded(
+        message_id: character_select_start.message_id,
+        error: _,
+      ))
+      |> result.map(fn(_) { started(account_id:) })
+    CreateAsked -> {
+      use carrier <- result.try(
+        create_character_carrier.decode(body)
+        |> result.map_error(Undecoded(
+          message_id: create_character_carrier.message_id,
+          error: _,
+        )),
+      )
+      use whole <- result.try(
+        frame.parse(carrier.inner_frame)
+        |> result.map_error(CarrierHoldsNoFrame),
+      )
+      use <- bool.guard(
+        whole.message_id != create_character.message_id,
+        Error(CarrierHolds(message_id: whole.message_id)),
+      )
+      use request <- result.map(
+        create_character.decode(whole.body)
+        |> result.map_error(Undecoded(
+          message_id: create_character.message_id,
+          error: _,
+        )),
+      )
+      create_requested(account_id:, request:, tables:, character_slots:)
+    }
+    DeleteAsked ->
+      delete_character.decode(body)
+      |> result.map_error(Undecoded(
+        message_id: delete_character.message_id,
+        error: _,
+      ))
+      |> result.map(fn(request) { delete_requested(account_id:, request:) })
+    RenameAsked ->
+      rename_character.decode(body)
+      |> result.map_error(Undecoded(
+        message_id: rename_character.message_id,
+        error: _,
+      ))
+      |> result.map(fn(request) { rename_requested(account_id:, request:) })
+  }
+}
+
+/// A sentence that says what the client sent that is refused, for the log.
+pub fn describe(refusal refusal: Refusal) -> String {
+  case refusal {
+    Undecoded(message_id:, error:) ->
+      client_connection.decode_failed_text(message_id:, error:)
+    CarrierHoldsNoFrame(error:) ->
+      "0x025C holds no whole frame: " <> frame.describe(error)
+    CarrierHolds(message_id:) ->
+      "0x025C holds "
+      <> client_connection.message_text(message_id:)
+      <> ", not 0x025B"
   }
 }
 

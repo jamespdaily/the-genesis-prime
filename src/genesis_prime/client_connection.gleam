@@ -25,6 +25,7 @@ import genesis_prime/connection/encrypted_frame.{type Wrapper, ClientWrapper}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
 import genesis_prime/hand_off
+import genesis_prime/message/bit_stream
 import genesis_prime/random.{type Random}
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
@@ -381,6 +382,16 @@ pub fn accepted_again(
 /// A message id as the log writes it: four hex digits, as in `0x0244`.
 pub fn message_text(message_id message_id: Int) -> String {
   "0x" <> string.pad_start(string.uppercase(int.to_base16(message_id)), 4, "0")
+}
+
+/// The sentence a body the client's own reader would refuse is logged with.
+pub fn decode_failed_text(
+  message_id message_id: Int,
+  error error: bit_stream.DecodeError,
+) -> String {
+  message_text(message_id:)
+  <> " does not decode: "
+  <> bit_stream.describe_decode(error:)
 }
 
 /// What an input is to a connection rule.

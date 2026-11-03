@@ -5,6 +5,8 @@
 //// turns its effects into the store's ask and log lines.
 ////
 //// ```
+//// 0x637, 0x63A, 0xD5, 0x63B, 0xF2, 0xFB, 0xFC, inside 0x38C
+////                         ─▶ take         ─▶ the new state, or a refusal that ends the connection
 //// 0x637, decoded          ─▶ moves, moved ─▶ the place kept, or a refusal that ends the connection
 //// the 60 s timer          ─▶ save         ─▶ Ask store SavePlace(account, character, epoch, sequence, place)
 //// the store's answer      ─▶ saved        ─▶ a log line when nothing was saved
@@ -44,15 +46,23 @@
 ////   save changes nothing, and the older login loses at most the movement since
 ////   its last save, within `save_period_ms`.
 
+import genesis_prime/client_connection
 import genesis_prime/game/start_place.{type Facing, type Place, Facing}
+import genesis_prime/message/bit_stream
+import genesis_prime/message/fall_value
+import genesis_prime/message/fell_below_floor
 import genesis_prime/message/float32.{type Bits}
+import genesis_prime/message/move_speed_setting
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_platform.{MovementPlatform}
 import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/movement_send_interval_answer
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/player_movement.{type PlayerMovement}
+import genesis_prime/message/terrain_loaded
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/zone_value_changed
 import genesis_prime/store.{
   type AccountId, type CharacterId, type MoveAnswer, type MoveRequest,
   type SessionEpoch, NothingSaved, PlaceRefused, PlaceSaved, SavePlace,
@@ -62,6 +72,25 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/result
+
+/// The movement messages of the player in the world, which the client sends
+/// inside 0x038C (genesis_prime/game/routing's table says which id is which).
+pub type Message {
+  /// 0x0637, the player's movement commands.
+  PlayerMoved
+  /// 0x063A, the player unit's value changing.
+  ZoneChanged
+  /// 0x00D5, the answer to the world's settings.
+  IntervalAnswered
+  /// 0x063B, the move speed setting.
+  SpeedChosen
+  /// 0x00F2, the terrain near the player ready.
+  TerrainReady
+  /// 0x00FB, a fall's value.
+  Fell
+  /// 0x00FC, a fall below the floor.
+  FellBelowFloor
+}
 
 /// What the store's answer to a save says, for the game connection's rule to
 /// write as a log line.
@@ -144,6 +173,8 @@ pub type Refusal {
   UnknownMode(mode: Int)
   /// A move speed setting above 2 (0x140c45dd0).
   UnknownSpeedSetting(setting: Int)
+  /// A body the client's own reader would refuse.
+  Undecoded(message_id: Int, error: bit_stream.DecodeError)
 }
 
 /// How long after the player enters the world, and after each save, the
@@ -232,6 +263,61 @@ fn single(number: Int) -> Bits {
   bits
 }
 
+/// What one movement message does to where the player stands: the body is
+/// decoded and 0x0637 and 0x063B are checked as `moved` and `speed_setting`
+/// say; the others are decoded and nothing more, since what their values mean
+/// is not read (the client trace's unknowns: 0x63A's and 0xF2's value is likely
+/// the zone, 0xD5's three values are not read, 0xFB is a fall's value and 0xFC
+/// the fall below the floor). A body the client's reader would refuse, or a
+/// refused command, is the refusal that ends the connection.
+pub fn take(
+  state state: State,
+  message message: Message,
+  body body: BitArray,
+) -> Result(State, Refusal) {
+  case message {
+    PlayerMoved ->
+      player_movement.decode(body)
+      |> undecoded(player_movement.message_id)
+      |> result.try(fn(decoded) {
+        moved(state:, moves: moves(message: decoded))
+      })
+    SpeedChosen ->
+      move_speed_setting.decode(body)
+      |> undecoded(move_speed_setting.message_id)
+      |> result.try(fn(decoded) { speed_setting(setting: decoded.move_speed) })
+      |> result.replace(state)
+    ZoneChanged ->
+      zone_value_changed.decode(body)
+      |> undecoded(zone_value_changed.message_id)
+      |> result.replace(state)
+    IntervalAnswered ->
+      movement_send_interval_answer.decode(body)
+      |> undecoded(movement_send_interval_answer.message_id)
+      |> result.replace(state)
+    TerrainReady ->
+      terrain_loaded.decode(body)
+      |> undecoded(terrain_loaded.message_id)
+      |> result.replace(state)
+    Fell ->
+      fall_value.decode(body)
+      |> undecoded(fall_value.message_id)
+      |> result.replace(state)
+    FellBelowFloor ->
+      fell_below_floor.decode(body)
+      |> undecoded(fell_below_floor.message_id)
+      |> result.replace(state)
+  }
+}
+
+/// A decode that failed, as the refusal for the message it was read for.
+fn undecoded(
+  decoded: Result(message, bit_stream.DecodeError),
+  message_id: Int,
+) -> Result(message, Refusal) {
+  result.map_error(decoded, fn(error) { Undecoded(message_id:, error:) })
+}
+
 /// What a 0x637 does to where the player stands, command by command in the
 /// order sent: the frame of kind 1 holds for the commands after it and for later
 /// messages; a position or rotation in the world's frame is kept; a command
@@ -316,6 +402,8 @@ pub fn describe(refusal refusal: Refusal) -> String {
       "0x063B holds the move speed setting "
       <> int.to_string(setting)
       <> ", above 2"
+    Undecoded(message_id:, error:) ->
+      client_connection.decode_failed_text(message_id:, error:)
   }
 }
 

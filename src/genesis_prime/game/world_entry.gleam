@@ -51,10 +51,12 @@
 ////   (genesis_prime/world_map/map_id), so an instanced world has no instance
 ////   to ask for.
 
+import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/camp
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/float32
@@ -73,6 +75,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import gleam/int
 import gleam/option.{None, Some}
+import gleam/result
 
 /// What world entry asks or sends; the game connection's rule turns each into
 /// its own effect.
@@ -87,6 +90,12 @@ pub type Effect {
   /// Watch the run of the map that took the player: its end comes back to the
   /// connection's rule.
   WatchMap(map: MapId, incarnation: Int)
+}
+
+/// Why the client's request to play is refused: its body is one the client's
+/// own reader would refuse. The connection ends.
+pub type Refusal {
+  Undecoded(error: bit_stream.DecodeError)
 }
 
 /// Where world entry is.
@@ -151,9 +160,29 @@ const path_change_days = -1.0
 /// The instance every world is entered at: open worlds share one.
 const open_world_instance = 0
 
+/// The client's 0x07DD, whose body is decoded for this account: the store is
+/// asked for the character, or the body is refused.
+pub fn take(
+  account_id account_id: AccountId,
+  body body: BitArray,
+) -> Result(#(State, List(Effect)), Refusal) {
+  play_character.decode(body)
+  |> result.map_error(Undecoded)
+  |> result.map(fn(request) { play_requested(account_id:, request:) })
+}
+
+/// A sentence that says what the client sent that is refused, for the log.
+pub fn describe(refusal refusal: Refusal) -> String {
+  let Undecoded(error:) = refusal
+  client_connection.decode_failed_text(
+    message_id: play_character.message_id,
+    error:,
+  )
+}
+
 /// The client's 0x07DD, read for this account: the store is asked for the
 /// character.
-pub fn play_requested(
+fn play_requested(
   account_id account_id: AccountId,
   request request: PlayCharacter,
 ) -> #(State, List(Effect)) {
