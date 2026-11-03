@@ -67,7 +67,7 @@ fn speaker() -> chat_tell.Speaker {
 }
 
 fn chat_of(speaker: chat_tell.Speaker) -> Chat {
-  chat.new(speaker:, zone_channel_id: world_id, next_whisper: 1)
+  chat.new(speaker:, next_whisper: 1)
 }
 
 fn a_chat() -> Chat {
@@ -932,7 +932,9 @@ pub fn the_planted_chat_channel_rows_and_the_channel_types_are_the_clients_test(
 
 // ---- zone ----
 
-const zone_channel_id = 3460
+/// The zone channel's id: one for every world (the coordinator's design on
+/// the zone chat step; the client has no rule on it, `chat.zone_channel_id`).
+const zone_channel_id = 1
 
 fn top_zones() -> top_zone.TopZones {
   top_zone.top_zones(character_tables.shared())
@@ -964,6 +966,10 @@ fn zone_channel(top_zone_id: Int) -> step.Address {
 
 fn reported(chat: Chat, world_zone_id: Int) -> #(Chat, List(chat.Effect)) {
   chat.world_zone_reported(chat:, world_zone_id:, top_zones: top_zones())
+}
+
+fn terrain_ready(chat: Chat, world_zone_id: Int) -> #(Chat, List(chat.Effect)) {
+  chat.terrain_ready(chat:, world_zone_id:, top_zones: top_zones())
 }
 
 fn named_by_0x1da(effects: List(chat.Effect)) -> List(Int) {
@@ -1039,7 +1045,7 @@ pub fn the_entry_burst_names_the_channel_joins_it_and_joins_the_groups_in_order_
       field_5: 0,
       field_6: 0,
     ))
-    as "opcode.0x1bc: type 9, the map's world id as the id, an empty name and three zeros; the order lets the flag 0x400 row take the name 0x1da last gave"
+    as "opcode.0x1bc: type 9, the fixed id 1, an empty name and three zeros; the order lets the flag 0x400 row take the name 0x1da last gave"
   assert zone == zone_channel(4961)
 }
 
@@ -1060,17 +1066,53 @@ pub fn no_0x1bc_is_written_for_a_channel_the_client_makes_itself_test() -> Nil {
     as "0x140404ee0: the client makes Say, Yell, Emote, Whisper and AccountWhisper itself, and a 0x1bc for one only prints a join again; Zone is the one the server joins"
 }
 
-pub fn entering_the_same_map_again_sends_the_same_channel_id_test() -> Nil {
+pub fn the_entry_burst_gives_the_zone_channel_id_1_in_every_world_test() -> Nil {
   use <- owned_test.run(5000)
   let joined_id = fn(speaker) {
     let #(_, effects) = in_zone(speaker, 6009)
-    let assert [_, _, chat.Send(frame), _] = effects
+    let assert [_, chat.Send(named), chat.Send(frame), _] = effects
+    assert named.message_id == chat_zone_named.message_id
+      && frame.message_id == chat_channel_joined.message_id
+      as "0x1da comes before 0x1bc"
     let assert Ok(joined) = chat_channel_joined.decode(frame.body)
     joined.channel_id
   }
-  assert joined_id(speaker())
-    == joined_id(Speaker(..speaker(), incarnation: run + 5))
-    as "server choice: the id is the map's world id in every run, so a new entry joins the one channel and does not make a second"
+  assert joined_id(speaker()) == 1
+    as "chat.zone_channel_id, server choice: the client has no rule on a Zone channel's id, and one id is one ChatLog save key"
+  assert joined_id(
+      Speaker(..speaker(), map: MapId(world_id: 1387, instance: 0)),
+    )
+    == 1
+    as "the same id in another world, so a caught Zone stays viewed there"
+  assert joined_id(Speaker(..speaker(), incarnation: run + 5)) == 1
+    as "and in another run of the map"
+}
+
+pub fn the_first_0xf2_of_a_stay_writes_0x1bc_for_the_zone_channel_again_and_no_later_one_does_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(entered, _) = in_zone(speaker(), 6009)
+  let joins_of = fn(effects) {
+    list.filter_map(frames_of(effects), fn(frame) {
+      case frame.message_id == chat_channel_joined.message_id {
+        True -> {
+          let assert Ok(joined) = chat_channel_joined.decode(frame.body)
+          Ok(#(joined.channel_type, joined.channel_id))
+        }
+        False -> Error(Nil)
+      }
+    })
+  }
+  let #(first_stay, first) = terrain_ready(entered, 6009)
+  assert joins_of(first) == [#(9, 1)]
+    as "chat.zone_join_trigger: ChatLog registers ChatJoin after 0xad, so the first 0xf2 of the stay gives the client the Zone channel again, and a 0x1bc for a held channel only raises ChatJoin (chat.zone_view)"
+  let #(first_stay, second) = terrain_ready(first_stay, 6009)
+  assert joins_of(second) == [] as "a second 0xf2 in the same stay writes none"
+  let #(_, third) = terrain_ready(first_stay, 648)
+  assert joins_of(third) == []
+    as "nor does one that reports another top zone; it only renames the channel"
+  let #(new_stay, _) = in_zone(speaker(), 6009)
+  assert joins_of(terrain_ready(new_stay, 6009).1) == [#(9, 1)]
+    as "a new stay (after a camp and an entry) writes it again"
 }
 
 pub fn a_place_zone_that_is_0_or_has_no_row_leaves_the_player_in_no_zone_test() -> Nil {
@@ -1115,11 +1157,11 @@ pub fn a_report_under_another_top_zone_changes_the_group_and_renames_the_channel
       chat.JoinGroup(zone_channel(35)),
       chat.Send(zone_named_frame(35)),
     ]
-    as "0x140403670: the client only renames the channel, so the id Z stays: leave the old group, join the new, write 0x1da with the new top zone"
+    as "0x140403670: the client only renames the channel, so the id 1 stays: leave the old group, join the new, write 0x1da with the new top zone"
   let #(_, line) = zone_line(chat, 3)
   let assert [#(address, chat_tell.ZoneLine(line: told, ..))] = tells_of(line)
   assert address == zone_channel(35)
-  assert told.channel_id == zone_channel_id as "the channel is still the one Z"
+  assert told.channel_id == zone_channel_id as "the channel is still (9, 1)"
 }
 
 pub fn a_report_of_zone_0_leaves_the_group_and_names_no_zone_and_a_zone_line_reaches_no_one_test() -> Nil {
@@ -1205,7 +1247,7 @@ pub fn a_member_of_the_group_writes_the_line_on_the_zone_channel_and_the_speaker
   assert line.channel_type == 9
     && line.channel_id == zone_channel_id
     && line.sender_name == "Ab Cd"
-    as "opcode.0x1c8: one 0x1c8 on (9, Z)"
+    as "opcode.0x1c8: one 0x1c8 on (9, 1)"
   assert member_hears(
       member: run_zone(1411),
       zone_line_from: speaker(),
@@ -1267,24 +1309,23 @@ pub fn a_speaker_that_camps_after_speaking_has_told_the_group_and_leaves_its_gro
     as "the camp's leave: no zone line reaches the player after it, and a new entry joins again"
 }
 
-pub fn a_zone_line_before_its_0x1bc_or_on_another_id_is_refused_with_result_1_test() -> Nil {
+pub fn a_zone_line_on_channel_1_is_taken_and_one_before_its_0x1bc_or_on_the_worlds_id_is_refused_with_result_1_test() -> Nil {
   use <- owned_test.run(5000)
-  let refuse = fn(chat, channel_id) {
-    let #(_, effects) =
-      take(
-        message: chat.LineSent,
-        chat:,
-        body: body(
-          type_id: 9,
-          channel_id:,
-          text: bit_stream.utf16_units("Hi"),
-          formats: [],
-          message_id: 8,
-        ),
-        viewers: [],
-      )
-    refused(effects)
+  let send = fn(chat, channel_id) {
+    take(
+      message: chat.LineSent,
+      chat:,
+      body: body(
+        type_id: 9,
+        channel_id:,
+        text: bit_stream.utf16_units("Hi"),
+        formats: [],
+        message_id: 8,
+      ),
+      viewers: [],
+    ).1
   }
+  let refuse = fn(chat, channel_id) { refused(send(chat, channel_id)) }
   let expected = fn(channel_id) {
     ChatResult(
       channel_type: 9,
@@ -1293,10 +1334,13 @@ pub fn a_zone_line_before_its_0x1bc_or_on_another_id_is_refused_with_result_1_te
       chat_message_id: 8,
     )
   }
-  assert refuse(a_chat(), zone_channel_id) == expected(zone_channel_id)
+  assert accepted(send(run_zone(1411), 1)).chat_message_id == 8
+    as "chat.zone_channel_id: the held Zone channel's id is 1, so a line on (9, 1) is taken"
+  assert refuse(a_chat(), 1) == expected(1)
     as "0x140401cb0: the client holds a Zone channel only after the server's 0x1bc"
-  assert refuse(run_zone(1411), zone_channel_id + 1)
-    == expected(zone_channel_id + 1)
+  assert refuse(run_zone(1411), world_id) == expected(world_id)
+    as "0x140401cb0: (9, the map's world id) is a channel the player does not hold now"
+  assert refuse(run_zone(1411), 2) == expected(2)
     as "another id is no channel the player holds"
   assert refuse(run_zone(1411), 0) == expected(0)
     as "Zone is never made by the client with id 0"
@@ -1687,8 +1731,7 @@ pub fn a_late_or_doubled_reply_for_a_finished_whisper_is_dropped_and_numbers_nev
     as "the number counts on: 1 and 2 are used"
   let assert [chat.Watch(watch:, ..), ..] = second
   assert watch == step.WatchId(first_watch + 2)
-  let kept =
-    chat.new(speaker: speaker(), zone_channel_id: world_id, next_whisper: 3)
+  let kept = chat.new(speaker: speaker(), next_whisper: 3)
   assert chat.next_whisper(kept) == 3
     as "a new stay in the world starts from the connection's number, so a stale reply never meets a new whisper"
 }

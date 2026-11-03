@@ -1999,8 +1999,6 @@ fn decoded_and_dropped() -> List(#(Int, BitArray)) {
     ))
   let assert Ok(speed) =
     move_speed_setting.encode(MoveSpeedSetting(move_speed: 2))
-  let assert Ok(terrain) =
-    terrain_loaded.encode(TerrainLoaded(world_zone_id: 6009))
   let assert Ok(fall) = fall_value.encode(FallValue(field_1: 0x40490FDB))
   let assert Ok(floor) =
     fell_below_floor.encode(FellBelowFloor(
@@ -2013,19 +2011,18 @@ fn decoded_and_dropped() -> List(#(Int, BitArray)) {
     #(0x063A, zone),
     #(0x00D5, interval),
     #(0x063B, speed),
-    #(0x00F2, terrain),
     #(0x00FB, fall),
     #(0x00FC, floor),
   ]
 }
 
-pub fn the_clients_0x063a_0x00d5_0x063b_0x00f2_0x00fb_and_0x00fc_are_decoded_and_the_connection_goes_on_test() -> Nil {
+pub fn the_clients_0x063a_0x00d5_0x063b_0x00fb_and_0x00fc_are_decoded_and_the_connection_goes_on_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(decoded_and_dropped(), fn(message) {
     let #(message_id, body) = message
     let #(state, taken) = read(in_world(), world_message(message_id, body))
     assert support.logs(taken) == []
-      as "opcode.0x63a, opcode.0xd5, opcode.0x63b, opcode.0xf2, opcode.0xfb and opcode.0xfc: the rule takes each, so none is logged as unhandled"
+      as "opcode.0x63a, opcode.0xd5, opcode.0x63b, opcode.0xfb and opcode.0xfc: the rule takes each, so none is logged as unhandled"
     assert support.writes(taken) == [] && support.asked(taken) == None
     assert !support.stops(taken) as "none ends the connection"
     let #(_, taken) = read(state, support.ping(1))
@@ -4833,14 +4830,18 @@ pub fn the_entry_burst_ends_with_0x1da_and_0x1bc_and_joins_the_name_and_the_zone
     as "the player joins its folded name and the zone channel of its run and the top zone 4961 of its place's zone 6009, in the step that takes the map's Joined"
 }
 
-pub fn a_report_under_the_same_top_zone_writes_and_joins_nothing_for_0x63a_and_0xf2_test() -> Nil {
+pub fn a_report_under_the_same_top_zone_writes_and_joins_nothing_for_0x63a_and_only_the_0x1bc_for_0xf2_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(
-    [zone_changed_message(old: 6009, new: 4962), terrain_loaded_message(4962)],
-    fn(bytes) {
+    [
+      #(zone_changed_message(old: 6009, new: 4962), []),
+      #(terrain_loaded_message(4962), [0x01BC]),
+    ],
+    fn(sent) {
+      let #(bytes, expected) = sent
       let #(_, taken) = read(in_world(), bytes)
-      assert written_ids(taken) == [] && group_effects(taken) == []
-        as "chat.zone_reach: 4962 is under the top zone 4961 of the place's zone"
+      assert written_ids(taken) == expected && group_effects(taken) == []
+        as "chat.zone_reach: 4962 is under the top zone 4961 of the place's zone, so no 0x1da and no group; the first 0xf2 of the stay writes the zone channel's 0x1bc (chat.zone_join_trigger)"
       assert support.logs(taken) == [] && !support.stops(taken)
     },
   )
@@ -4849,11 +4850,15 @@ pub fn a_report_under_the_same_top_zone_writes_and_joins_nothing_for_0x63a_and_0
 pub fn a_report_under_another_top_zone_renames_the_channel_and_changes_the_group_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(
-    [zone_changed_message(old: 6009, new: 648), terrain_loaded_message(648)],
-    fn(bytes) {
+    [
+      #(zone_changed_message(old: 6009, new: 648), [0x01DA]),
+      #(terrain_loaded_message(648), [0x01DA, 0x01BC]),
+    ],
+    fn(sent) {
+      let #(bytes, expected) = sent
       let #(_, taken) = read(in_world(), bytes)
-      assert written_ids(taken) == [0x01DA]
-        as "0x140403670: the client only renames the zone channel"
+      assert written_ids(taken) == expected
+        as "0x140403670: the client only renames the zone channel; the first 0xf2 of the stay then writes the channel's 0x1bc (chat.zone_join_trigger)"
       assert group_effects(taken)
         == [
           step.LeaveGroup(zone_group(4961)),
@@ -4873,14 +4878,14 @@ pub fn a_0x63a_whose_old_value_is_not_the_one_the_server_holds_is_taken_all_the_
 pub fn a_report_of_zone_0_leaves_the_group_and_writes_0x1da_with_no_zone_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) = read(in_world(), terrain_loaded_message(0))
-  assert written_ids(taken) == [0x01DA]
+  assert written_ids(taken) == [0x01DA, 0x01BC]
   assert group_effects(taken) == [step.LeaveGroup(zone_group(4961))]
 }
 
 pub fn a_report_of_a_zone_with_no_row_is_no_zone_with_one_warning_for_each_such_zone_and_the_connection_goes_on_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = read(in_world(), terrain_loaded_message(1132))
-  assert written_ids(taken) == [0x01DA]
+  assert written_ids(taken) == [0x01DA, 0x01BC]
     && group_effects(taken) == [step.LeaveGroup(zone_group(4961))]
     && !support.stops(taken)
     as "0x140403670: the client accepts a zone with no row (0x1da names no channel then), so the connection goes on: the player is in no zone"
@@ -4896,6 +4901,31 @@ pub fn a_report_of_a_zone_with_no_row_is_no_zone_with_one_warning_for_each_such_
   let #(_, other) = read(state, terrain_loaded_message(1133))
   assert list.length(warnings(other)) == 1
     as "another such zone is another line"
+}
+
+pub fn the_first_0xf2_of_a_stay_writes_0x1bc_and_a_second_does_not_and_a_new_stay_writes_it_again_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, first) = read(in_world(), terrain_loaded_message(6009))
+  assert written_ids(first) == [0x01BC]
+    as "chat.zone_join_trigger: ChatLog registers ChatJoin after 0xad, so the first 0xf2 gives the client the Zone channel again"
+  let #(_, second) = read(state, terrain_loaded_message(6009))
+  assert written_ids(second) == []
+    as "a second 0xf2 in the same stay writes none"
+  let #(camped, _) = camped_out()
+  let #(again, _) = entered_from(camped, world_character())
+  let #(_, new_stay) = read(again, terrain_loaded_message(6009))
+  assert written_ids(new_stay) == [0x01BC]
+    as "after a camp and a new entry the first 0xf2 writes it again"
+}
+
+pub fn a_0x63a_before_the_first_0xf2_does_not_write_0x1bc_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, changed) =
+    read(in_world(), zone_changed_message(old: 6009, new: 4962))
+  assert written_ids(changed) == []
+    as "only 0xf2 is the trigger: 0x63a is sent on a change, which a player standing still never makes (chat.zone_join_trigger)"
+  let #(_, first) = read(state, terrain_loaded_message(6009))
+  assert written_ids(first) == [0x01BC] as "and the first 0xf2 still writes it"
 }
 
 pub fn a_camp_answers_each_pending_whisper_0x1d9_before_it_saves_test() -> Nil {
@@ -4935,7 +4965,7 @@ pub fn a_zone_line_told_to_a_connection_after_its_camp_writes_nothing_test() -> 
       top_zone_id: 4961,
       line: chat_tell.Line(
         channel_type: chat_channel.Zone,
-        channel_id: 3460,
+        channel_id: 1,
         text: [0x48, 0x69],
         formats: [],
       ),

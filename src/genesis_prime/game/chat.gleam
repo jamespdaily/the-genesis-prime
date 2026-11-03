@@ -27,20 +27,23 @@
 //// Zone:
 ////
 //// ```
-//// entry burst, after 0x61:   0x1da top(place zone),  0x1bc (9, Z, "", 0, 0, 0),  JoinGroup(ZoneChannel(run, top))
-////                            Z = the map's world id; it is the same in every run, so a new entry joins the same channel
+//// entry burst, after 0x61:   0x1da top(place zone),  0x1bc (9, 1, "", 0, 0, 0),  JoinGroup(ZoneChannel(run, top))
+////                            the id is 1 in every world and run, so a new entry joins the same channel
+////
+//// first 0xF2 of the stay:    0x1bc (9, 1, "", 0, 0, 0) again, after what the zone report below writes
+////                            ChatLog registers for ChatJoin only after 0xAD, so the burst's ChatJoin may reach no handler
 ////
 //// 0xF2 or 0x63A, new zone r:
 ////   same top as before   ─▶ keep r; nothing written
-////   another top t2       ─▶ LeaveGroup(old), JoinGroup(ZoneChannel(run, t2)), write 0x1da t2   (Z stays: the client only renames)
+////   another top t2       ─▶ LeaveGroup(old), JoinGroup(ZoneChannel(run, t2)), write 0x1da t2   (the id stays: the client only renames)
 ////   r = 0                ─▶ LeaveGroup(old), write 0x1da 0
 ////   r has no row         ─▶ as r = 0, and the zone is named once in a warning
 ////
 //// speaker client        speaker conn                                     each member conn
-//// 0x1c3 (9,Z) id k   ─▶ checks pass
+//// 0x1c3 (9,1) id k   ─▶ checks pass
 ////                       Tell(ZoneChannel(run, top), ZoneLine(line))   ─▶ from itself? drop
 ////                                                                        another run or top than its own now? drop
-////                                                                        else write 0x1c8 (9,Z)
+////                                                                        else write 0x1c8 (9,1)
 ////                   ◀── 0x1c2 id k
 //// ```
 ////
@@ -68,6 +71,19 @@
 ////   again (`opcode.0x1bc`, `0x140404ee0`).
 //// - **The zone channel's name** is the top zone 0x1da last gave, set before
 ////   0x1bc, so the new channel takes it (`opcode.0x1da`, `opcode.0x1bc`).
+//// - **The zone channel's id is 1 in every world**: the client sets no rule on
+////   it, and ChatLog saves a viewed channel by its id and type, so one id is one
+////   save entry and a Zone viewed once stays viewed in every world and session
+////   (`chat.zone_channel_id`, a server choice).
+//// - **0x1bc is written again on the first 0xF2 of each stay.** ChatLog
+////   registers for ChatJoin in OnDocumentReady, which runs after 0xAD's
+////   handling, and the client drops a UI event no handler waits for, so the
+////   burst's ChatJoin can be lost and a character whose saved ChatLog lacks
+////   Zone would be refused `/z`. 0xF2 is sent once per entry, after the terrain
+////   near the player loads, and a 0x1bc for a channel the client holds only
+////   raises ChatJoin again, which ChatLog's nil test makes harmless
+////   (`chat.zone_view`, `lua.ChatLog.OnChatJoin`, `0x1400ea400`,
+////   `chat.zone_join_trigger`, a guess).
 //// - **The zone the client reports** (0xF2 once, 0x63A on each change) is the most
 ////   specific WorldZone the terrain names, never a parent; the server rolls it up
 ////   to its top zone (`opcode.0xf2`, `opcode.0x63a`, `0x140403670`,
@@ -258,6 +274,11 @@ pub type Refusal {
   NotDecoded(undecoded: client_connection.Undecoded)
 }
 
+/// The id of the zone channel in every world and run: the client has no rule
+/// on it, and one id is one ChatLog save entry (`chat.zone_channel_id`, a server
+/// choice).
+const zone_channel_id = 1
+
 /// The zone the client reported and the top zone it falls under.
 pub type Zone {
   /// Zone 0, or the player has reported none: in no zone channel.
@@ -273,16 +294,16 @@ pub type PendingWhisper {
   PendingWhisper(chat_message_id: Int, target_name: List(Int), with_text: Bool)
 }
 
-/// One player's chat while in the world: who speaks, the id of its zone channel
-/// (the map's world id, the same in every run), where it stands in zones, the
+/// One player's chat while in the world: who speaks, where it stands in zones,
+/// whether the first 0xF2 of the stay has written the zone channel again, the
 /// number of its next whisper and the whispers waiting for a reply. Each whisper
 /// is watched under a `WatchId` of its own, above the connection's own watches,
 /// made from its number.
 pub opaque type Chat {
   Chat(
     speaker: Speaker,
-    zone_channel_id: Int,
     zone_channel_joined: Bool,
+    zone_channel_rejoined: Bool,
     zone: Zone,
     next_whisper: Int,
     whispers: Dict(Int, PendingWhisper),
@@ -290,18 +311,14 @@ pub opaque type Chat {
 }
 
 /// The chat of a player that has just entered the world: in no zone, with no
-/// whisper waiting. `zone_channel_id` is the map's world id, and `next_whisper`
-/// the number of the connection's next whisper, which counts for the
-/// connection's life (`next_whisper` gives it back).
-pub fn new(
-  speaker speaker: Speaker,
-  zone_channel_id zone_channel_id: Int,
-  next_whisper next_whisper: Int,
-) -> Chat {
+/// whisper waiting. `next_whisper` is the number of the connection's next
+/// whisper, which counts for the connection's life (`next_whisper` gives it
+/// back).
+pub fn new(speaker speaker: Speaker, next_whisper next_whisper: Int) -> Chat {
   Chat(
     speaker:,
-    zone_channel_id:,
     zone_channel_joined: False,
+    zone_channel_rejoined: False,
     zone: NoZone,
     next_whisper:,
     whispers: dict.new(),
@@ -335,7 +352,7 @@ pub fn entered_world(
       warning,
       [
         Send(zone_named_frame(zone)),
-        Send(zone_joined_frame(chat)),
+        Send(zone_joined_frame()),
         ..join_zone(chat:, zone:)
       ],
     ]),
@@ -405,19 +422,19 @@ fn zone_named_frame(zone: Zone) -> Frame {
   Frame(message_id: chat_zone_named.message_id, body:)
 }
 
-/// 0x1bc giving the client the zone channel: type 9, the id the server picks, an
-/// empty name and three zeros (opcode.0x1bc).
-fn zone_joined_frame(chat: Chat) -> Frame {
+/// 0x1bc giving the client the zone channel: type 9, id 1, an empty name and
+/// three zeros (opcode.0x1bc).
+fn zone_joined_frame() -> Frame {
   let assert Ok(body) =
     chat_channel_joined.encode(ChatChannelJoined(
       channel_type: chat_channel.id(chat_channel.Zone),
-      channel_id: chat.zone_channel_id,
+      channel_id: zone_channel_id,
       name: "",
       field_4: 0,
       field_5: 0,
       field_6: 0,
     ))
-    as "the map's world id of 15 bits fits the channel id"
+    as "the channel id 1 fits the field"
   Frame(message_id: chat_channel_joined.message_id, body:)
 }
 
@@ -769,8 +786,8 @@ fn channel_row(
 
 /// Whether the client holds a channel of this row with this id: one it makes
 /// itself has id 0, and the only one the server joins is the zone channel, held
-/// once its 0x1bc is written, under the id that message gave (`0x140404ee0`,
-/// `0x1404039f0`).
+/// once its 0x1bc is written, under the id that message gave, which is always 1
+/// (`0x140404ee0`, `0x1404039f0`).
 fn is_held(
   chat chat: Chat,
   row row: ChatChannel,
@@ -784,7 +801,7 @@ fn is_held(
     True, _ ->
       channel_type == chat_channel.Zone
       && chat.zone_channel_joined
-      && channel_id == chat.zone_channel_id
+      && channel_id == zone_channel_id
     False, True -> channel_id == 0
     False, False -> False
   }
@@ -1130,6 +1147,28 @@ pub fn world_zone_reported(
         ])
     }),
   )
+}
+
+/// What the client's 0xF2 does: the zone it reports is taken as
+/// `world_zone_reported` takes it, and the first 0xF2 of the stay writes the
+/// zone channel's 0x1bc again, after the zone's own writes. ChatLog registers
+/// for ChatJoin after the burst's 0x1bc, which then reaches no handler; 0xF2 is
+/// sent once the interface has started (`chat.zone_join_trigger`). Later 0xF2s
+/// write no 0x1bc.
+pub fn terrain_ready(
+  chat chat: Chat,
+  world_zone_id world_zone_id: Int,
+  top_zones top_zones: TopZones,
+) -> #(Chat, List(Effect)) {
+  let #(reported, effects) =
+    world_zone_reported(chat:, world_zone_id:, top_zones:)
+  case reported.zone_channel_rejoined {
+    True -> #(reported, effects)
+    False -> #(
+      Chat(..reported, zone_channel_rejoined: True),
+      list.append(effects, [Send(zone_joined_frame())]),
+    )
+  }
 }
 
 /// What the player's camp does to its chat: it leaves `CharacterNamed` and the

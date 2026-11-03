@@ -261,7 +261,8 @@
 //// - **Chat** is a feature of its own (genesis_prime/game/chat): the player's
 ////   `Entered` keeps its chat, the routing table sends 0x1c3 and 0x1d4 to it from
 ////   inside 0x038C with the player in the world, and 0xF2 and 0x63A give it the
-////   WorldZone id the client reports. The rule turns its effects into writes,
+////   WorldZone id the client reports (the first 0xF2 of a stay also writes the
+////   zone channel's 0x1BC again). The rule turns its effects into writes,
 ////   tells (`TellChat`, to a viewer's `Connection`, to a `ZoneChannel` and to a
 ////   whisper's `CharacterNamed`), the watch on a whisper's target and the
 ////   `JoinGroup` and `LeaveGroup` of the player's groups. What other
@@ -966,12 +967,17 @@ fn movement_message(
       Continue(moving(session:, holder:, entered:, state:), [])
     Ok(movement.Reported(state:, world_zone_id:)) -> {
       let session = moving(session:, holder:, entered:, state:)
-      let #(updated, effects) =
-        chat.world_zone_reported(
-          chat: entered.chat,
-          world_zone_id:,
-          top_zones: top_zone.top_zones(session.settings.tables),
-        )
+      let top_zones = top_zone.top_zones(session.settings.tables)
+      let #(updated, effects) = case message == movement.TerrainReady {
+        True ->
+          chat.terrain_ready(chat: entered.chat, world_zone_id:, top_zones:)
+        False ->
+          chat.world_zone_reported(
+            chat: entered.chat,
+            world_zone_id:,
+            top_zones:,
+          )
+      }
       carry_chat(session: with_chat(session:, chat: updated), effects:)
     }
     Ok(movement.Relayed(state:, place:, commands:, unrelayed:)) -> {
