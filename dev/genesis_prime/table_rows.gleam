@@ -2,14 +2,18 @@
 //// own table reader (`genesis_prime/table/loader/tbl_file`), for the decoders
 //// that need to see what a table holds.
 ////
-//// `gleam run -m genesis_prime/table_rows -- <Table> [<id> | <column>=<value> |
+//// `gleam run -m genesis_prime/table_rows -- <Table> [<id>... | <column>=<value> |
 //// --columns]` reads `<Table>.tbl` from the extracted tables folder
 //// (`GENESIS_TABLE_DIR`, else `GENESIS_HOME`/tables, else
 //// `~/.genesis-prime/tables`).
 ////
 //// - With no selection it prints every row in id order (`no rows` for a table
-////   that has none); with an id, that row; with `column=value`, the rows whose
-////   column holds the value.
+////   that has none); with an id, that row; with several ids, each named row in
+////   the order given, a row printing again each time its id is repeated; with
+////   `column=value`, the rows whose column holds the value.
+//// - The table file is read and parsed once however many ids are named. When
+////   any id has no row, nothing is printed: the first such id in the order
+////   given is refused, so the output is never partial.
 //// - A row is one `column = value` line per column in the file's column order,
 ////   and a blank line stands between rows.
 //// - `--columns` prints instead what the file's header says: the table's name,
@@ -41,10 +45,10 @@
 //// therefore prints in both forms, and the proof of a fact names the form its
 //// column means.
 ////
-//// It exits with status 1 when the table, the column, the id or the file's
+//// It exits with status 1 when the table, the column, an id or the file's
 //// layout is refused, when no row holds a filter's value, or when the table
 //// cannot be read; and with 2 when the arguments are not a table's name with
-//// an id, a `column=value` or `--columns`.
+//// one or more ids, a `column=value` or `--columns`.
 
 import argv
 import genesis_prime/dev_exit
@@ -52,6 +56,7 @@ import genesis_prime/table/loader/tbl_file.{type Strings, Column, Field}
 import genesis_prime/table_folder
 import gleam/bit_array
 import gleam/bool
+import gleam/dict
 import gleam/float
 import gleam/int
 import gleam/io
@@ -99,7 +104,8 @@ type Request {
 /// Which rows to print.
 type Selection {
   AllRows
-  RowOfId(id: Int)
+  /// The rows of these ids, in the order given; a repeated id repeats its row.
+  RowsOfIds(ids: List(Int))
   /// The rows whose column, as the person typed its name, holds the value.
   RowsHolding(column: String, value: String)
 }
@@ -108,7 +114,8 @@ type Selection {
 pub type RowsError {
   /// Not a table name, or a table name and one selection.
   Usage
-  /// The selection is not an id, a `column=value` or `--columns`.
+  /// The selection is not an id, a `column=value` or `--columns`, or is one
+  /// of several selections that are not all ids.
   BadSelection(selection: String)
   /// The folder cannot be read.
   UnreadableFolder(folder: String)
@@ -234,14 +241,25 @@ fn parse(arguments: List(String)) -> Result(#(String, Request), RowsError) {
       case string.split_once(selection, "=") {
         Ok(#("", _)) -> Error(BadSelection(selection))
         Ok(#(column, value)) -> Ok(#(table, Rows(RowsHolding(column:, value:))))
-        Error(Nil) ->
-          case int.parse(selection) {
-            Ok(id) -> Ok(#(table, Rows(RowOfId(id))))
-            Error(Nil) -> Error(BadSelection(selection))
-          }
+        Error(Nil) -> parse_ids(table, [selection])
       }
+    [table, _, _, ..] -> parse_ids(table, list.drop(arguments, 1))
     _ -> Error(Usage)
   }
+}
+
+/// A table's rows by the ids named, each selection an id; the first that is
+/// not one is refused.
+fn parse_ids(
+  table: String,
+  selections: List(String),
+) -> Result(#(String, Request), RowsError) {
+  use ids <- result.map(
+    list.try_map(selections, fn(selection) {
+      int.parse(selection) |> result.replace_error(BadSelection(selection))
+    }),
+  )
+  #(table, Rows(RowsOfIds(ids)))
 }
 
 fn choose(
@@ -252,11 +270,12 @@ fn choose(
 ) -> Result(List(Row), RowsError) {
   case selection {
     AllRows -> Ok(rows)
-    RowOfId(id:) ->
-      case list.filter(rows, fn(row) { row.id == id }) {
-        [] -> Error(NoRowOfId(table:, id:))
-        found -> Ok(found)
-      }
+    RowsOfIds(ids:) -> {
+      let by_id = dict.from_list(list.map(rows, fn(row) { #(row.id, row) }))
+      list.try_map(ids, fn(id) {
+        dict.get(by_id, id) |> result.replace_error(NoRowOfId(table:, id:))
+      })
+    }
     RowsHolding(column: typed, value:) ->
       rows_holding(rows:, columns:, typed:, value:, table:)
   }
@@ -478,7 +497,7 @@ const largest_float32 = 3.4028234663852886e38
 pub fn describe(error: RowsError) -> String {
   case error {
     Usage ->
-      "usage: gleam run -m genesis_prime/table_rows -- <Table> [<id> | <column>=<value> | --columns]"
+      "usage: gleam run -m genesis_prime/table_rows -- <Table> [<id>... | <column>=<value> | --columns]"
     BadSelection(selection:) ->
       "'"
       <> selection
