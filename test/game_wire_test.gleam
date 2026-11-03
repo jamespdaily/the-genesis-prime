@@ -31,8 +31,10 @@
 import ask_support
 import character_support
 import connection_rule_support as support
+import event_wait
 import game_client
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/connection/registry
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
@@ -40,6 +42,8 @@ import genesis_prime/login/guid
 import genesis_prime/message/camp_countdown
 import genesis_prime/message/character_list
 import genesis_prime/message/character_list_entry
+import genesis_prime/message/chat_channel_joined
+import genesis_prime/message/chat_line_accepted
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
@@ -58,10 +62,12 @@ import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
 import genesis_prime/message/start_movement
+import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/whisper_failed
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/store.{type AccountId, AccountId}
@@ -73,10 +79,13 @@ import gleam/dynamic/decode
 import gleam/erlang/process
 import gleam/list
 import gleam/result
+import log_capture
 import login_client
 import login_support
+import mailbox_support
 import owned_test
 import pog
+import unitest
 
 /// The 16 bytes the client shows as its session key: the wire bytes of the
 /// GUID the hand-off holds.
@@ -1195,4 +1204,507 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
     as "the connection that drops is removed for the first player by the map's Gone"
   game_client.close(game: first)
   login_support.stop(started)
+}
+
+// ---- chat on the whole server ----
+
+/// One scripted client at the table: its connection, the bytes read beyond what
+/// it has used, and the id of its zone channel as its own 0x1bc gave it.
+type Seat {
+  Seat(game: game_client.Game, have: BitArray, zone_channel: Int)
+}
+
+/// Four players of four accounts enter one map, each reports the zone the
+/// client's own terrain gives (0xF2 once, as the client does while the world
+/// loads): the first three stand in zone 6009, the fourth in zone 648. The
+/// zones are the planted WorldZone rows, whose top zones are 4961 and 35.
+fn four_players() -> #(login_support.Started, List(Seat)) {
+  let started = login_support.start()
+  let port = login_support.ports(started).game_port
+  let pool = pog.named_connection(started.settings.pool.pool_name)
+  let seats =
+    list.map(
+      [
+        #(1, "jim", "Zed Qu"),
+        #(2, "two", "Ann Qu"),
+        #(3, "three", "Bob Qu"),
+        #(4, "four", "Cat Qu"),
+      ],
+      fn(player) {
+        let #(number, login_name, character_name) = player
+        let #(account, game_account_id) = case number {
+          1 -> #(
+            AccountId(login_support.insert_jim(started)),
+            support.jim().game_account_id,
+          )
+          _ -> {
+            let id = support.guid_of(0x20 + number)
+            #(
+              AccountId(login_support.insert_other(
+                started:,
+                login_name:,
+                game_account_id: id,
+              )),
+              id,
+            )
+          }
+        }
+        let character =
+          character_support.insert(
+            pool:,
+            account:,
+            name: character_name,
+            class_id: 4,
+            path: 2,
+          )
+        let game =
+          connected_as(
+            started:,
+            port:,
+            account:,
+            login_name:,
+            game_account_id:,
+            key: support.guid_of(number),
+          )
+        send_play(game:, character_id: character)
+        let #(burst, have) = game_client.read_kept(game:, have: <<>>, count: 9)
+        let assert [Frame(body: joined, ..)] =
+          list.filter(burst, fn(frame) { frame.message_id == 0x01BC })
+          as "the burst gives the zone channel"
+        let assert Ok(channel) = chat_channel_joined.decode(joined)
+        assert channel.channel_type == 9
+        Seat(game:, have:, zone_channel: channel.channel_id)
+      },
+    )
+  #(started, seats)
+}
+
+/// Sends the zone the client's terrain gives (0xF2) and settles the seat: every
+/// message the server wrote so far is read, so the next read starts after it.
+fn reported(seat seat: Seat, zone zone: Int, number number: Int) -> Seat {
+  let assert Ok(body) =
+    terrain_loaded.encode(TerrainLoaded(world_zone_id: zone))
+  game_client.send_world(game: seat.game, message_id: 0x00F2, body:)
+  settled(seat:, number:)
+}
+
+/// Reads every message the server wrote up to its answer to a ping, dropping
+/// them.
+fn settled(seat seat: Seat, number number: Int) -> Seat {
+  let #(_, have) =
+    game_client.read_until_pong(game: seat.game, have: seat.have, number:)
+  Seat(..seat, have:)
+}
+
+/// The frames the server wrote to the seat up to its answer to a ping.
+fn written_to(seat seat: Seat, number number: Int) -> #(List(Frame), Seat) {
+  let #(frames, have) =
+    game_client.read_until_pong(game: seat.game, have: seat.have, number:)
+  #(frames, Seat(..seat, have:))
+}
+
+fn seat_at(seats: List(Seat), index: Int) -> Seat {
+  let assert Ok(seat) = list.first(list.drop(seats, index))
+    as "the seat is at the table"
+  seat
+}
+
+fn chat_lines(frames: List(Frame)) -> List(game_client.HeardLine) {
+  list.filter_map(frames, fn(frame) { game_client.heard_line(frame:) })
+}
+
+pub fn say_yell_emote_whisper_and_zone_reach_the_right_players_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let #(started, seats) = four_players()
+  let speaker = seat_at(seats, 0)
+  let neighbour = seat_at(seats, 1)
+  let far = seat_at(seats, 2)
+  let other_zone = seat_at(seats, 3)
+  // Each client reports its zone, the third walks out of sight, which the
+  // speaker learns by the unit's removal.
+  let speaker = reported(seat: speaker, zone: 6009, number: 1)
+  let neighbour = reported(seat: neighbour, zone: 6009, number: 1)
+  let far = reported(seat: far, zone: 6009, number: 1)
+  let other_zone = reported(seat: other_zone, zone: 648, number: 1)
+  let away =
+    game_client.moves_body(client_clock: 0, commands: [
+      game_client.position_command(x: 5000.0, y: 0.0, z: 0.0),
+    ])
+  game_client.send_world(game: far.game, message_id: 0x0637, body: away)
+  let speaker = wait_for_message(seat: speaker, message_id: 0x0355)
+  let speaker = settled(seat: speaker, number: 2)
+  let neighbour = settled(seat: neighbour, number: 2)
+  let far = settled(seat: far, number: 2)
+  let other_zone = settled(seat: other_zone, number: 2)
+
+  // Say, yell and emote reach the player in sight and no one else.
+  let speaker =
+    list.fold(
+      [#(4, "says"), #(5, "yells"), #(8, "emotes")],
+      speaker,
+      fn(speaker, line) {
+        let #(channel_type, text) = line
+        game_client.send_line(
+          game: speaker.game,
+          channel_type:,
+          channel_id: 0,
+          text:,
+          chat_message_id: channel_type,
+        )
+        let #(accept, have) =
+          game_client.read_accepted(
+            game: speaker.game,
+            have: speaker.have,
+            chat_message_id: channel_type,
+          )
+        assert accept.name == "Zed Qu"
+          as "the speaker sees its own line by the accept"
+        Seat(..speaker, have:)
+      },
+    )
+  let speaker = settled(seat: speaker, number: 3)
+  let #(heard, neighbour) = written_to(seat: neighbour, number: 3)
+  assert chat_lines(heard)
+    == [
+      game_client.HeardLine(
+        channel_type: 4,
+        channel_id: 0,
+        sender: "Zed Qu",
+        text: "says",
+      ),
+      game_client.HeardLine(
+        channel_type: 5,
+        channel_id: 0,
+        sender: "Zed Qu",
+        text: "yells",
+      ),
+      game_client.HeardLine(
+        channel_type: 8,
+        channel_id: 0,
+        sender: "Zed Qu",
+        text: "emotes",
+      ),
+    ]
+    as "the player in sight reads the say, the yell and the emote, each on its own channel (Jim, 2026-11-03)"
+  let #(far_heard, far) = written_to(seat: far, number: 3)
+  assert chat_lines(far_heard) == []
+    as "a player out of sight, under the same top zone, hears no say"
+  let #(other_heard, other_zone) = written_to(seat: other_zone, number: 3)
+  assert game_client.name_lookups_needed(chat_lines(other_heard)) == 0
+
+  // A whisper reaches the character named, wherever it stands.
+  game_client.whisper(
+    game: speaker.game,
+    target: "bOb qU",
+    text: "psst",
+    chat_message_id: 6,
+  )
+  let #(accept, speaker_have) =
+    game_client.read_accepted(
+      game: speaker.game,
+      have: speaker.have,
+      chat_message_id: 6,
+    )
+  let speaker = Seat(..speaker, have: speaker_have)
+  assert accept.name == "Bob Qu"
+    as "the speaker sees 'To Bob Qu', the target's own name, though it typed another case"
+  let #(far_heard, far) = written_to(seat: far, number: 4)
+  assert chat_lines(far_heard)
+    == [
+      game_client.HeardLine(
+        channel_type: 6,
+        channel_id: 0,
+        sender: "Zed Qu",
+        text: "psst",
+      ),
+    ]
+    as "the target reads one whisper on (6, 0), though it is out of sight"
+  game_client.whisper(
+    game: speaker.game,
+    target: "No One",
+    text: "hello?",
+    chat_message_id: 7,
+  )
+  let #(failed, speaker) = wait_for_frame(seat: speaker, message_id: 0x01D9)
+  let assert Ok(failure) = whisper_failed.decode(failed.body)
+  assert failure.target_name == "No One" && failure.chat_message_id == 7
+
+  // A zone line reaches every player under the speaker's top zone in its run,
+  // in sight or not, and no one under another top zone.
+  game_client.send_line(
+    game: speaker.game,
+    channel_type: 9,
+    channel_id: speaker.zone_channel,
+    text: "zone",
+    chat_message_id: 8,
+  )
+  let #(_, speaker_have) =
+    game_client.read_accepted(
+      game: speaker.game,
+      have: speaker.have,
+      chat_message_id: 8,
+    )
+  let speaker = Seat(..speaker, have: speaker_have)
+  let speaker = settled(seat: speaker, number: 5)
+  let #(neighbour_heard, _) = written_to(seat: neighbour, number: 5)
+  let #(far_heard, _) = written_to(seat: far, number: 5)
+  let zone_line = fn(frames) {
+    list.filter(chat_lines(frames), fn(line) { line.channel_type == 9 })
+  }
+  let expected = [
+    game_client.HeardLine(
+      channel_type: 9,
+      channel_id: speaker.zone_channel,
+      sender: "Zed Qu",
+      text: "zone",
+    ),
+  ]
+  assert zone_line(neighbour_heard) == expected
+    as "Jim 2026-11-03: the player in sight under the same top zone hears the zone line"
+  assert zone_line(far_heard) == expected
+    as "and so does the one out of sight: zone reach is the top zone, not sight"
+  let #(other_heard, _) = written_to(seat: other_zone, number: 5)
+  assert chat_lines(other_heard) == []
+    as "a player under another top zone hears neither the zone line nor the say"
+  list.each(seats, fn(seat) { game_client.close(game: seat.game) })
+  login_support.stop(started)
+}
+
+/// Reads until the server writes a message with this id, dropping what comes
+/// before.
+fn wait_for_message(seat seat: Seat, message_id message_id: Int) -> Seat {
+  let #(frame, have) = game_client.next(game: seat.game, have: seat.have)
+  case frame.message_id == message_id {
+    True -> Seat(..seat, have:)
+    False -> wait_for_message(seat: Seat(..seat, have:), message_id:)
+  }
+}
+
+fn all_ids(frames: List(Frame)) -> List(Int) {
+  list.map(frames, fn(frame) { frame.message_id })
+}
+
+pub fn no_chat_flow_writes_player_info_and_0x597_stays_unhandled_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let #(started, seats) = four_players()
+  let speaker = reported(seat: seat_at(seats, 0), zone: 6009, number: 1)
+  let neighbour = reported(seat: seat_at(seats, 1), zone: 6009, number: 1)
+  let speaker = settled(seat: speaker, number: 2)
+  let neighbour = settled(seat: neighbour, number: 2)
+  game_client.say(game: speaker.game, text: "hi", chat_message_id: 1)
+  game_client.whisper(
+    game: speaker.game,
+    target: "Ann Qu",
+    text: "psst",
+    chat_message_id: 2,
+  )
+  game_client.send_line(
+    game: speaker.game,
+    channel_type: 9,
+    channel_id: speaker.zone_channel,
+    text: "zone",
+    chat_message_id: 3,
+  )
+  let #(spoken, _) = written_to(seat: speaker, number: 3)
+  let #(heard, _) = written_to(seat: neighbour, number: 3)
+  assert list.length(chat_lines(heard)) == 3
+    as "the neighbour read the say, the whisper and the zone line"
+  list.each(list.append(spoken, heard), fn(frame) {
+    assert frame.message_id != 0x0598 && frame.message_id != 0x0599
+      as "chat.name_lookup: every 0x1c8 carries its speaker's name, so no chat flow writes player info (0x598 or 0x599)"
+  })
+  assert list.contains(all_ids(heard), 0x01C8)
+  list.each(seats, fn(seat) { game_client.close(game: seat.game) })
+  login_support.stop(started)
+}
+
+pub fn two_players_whispering_each_other_at_once_both_get_their_answer_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let #(started, seats) = four_players()
+  let first = settled(seat: seat_at(seats, 0), number: 1)
+  let second = settled(seat: seat_at(seats, 1), number: 1)
+  game_client.whisper(
+    game: first.game,
+    target: "Ann Qu",
+    text: "one",
+    chat_message_id: 1,
+  )
+  game_client.whisper(
+    game: second.game,
+    target: "Zed Qu",
+    text: "two",
+    chat_message_id: 1,
+  )
+  let #(first_frames, _) =
+    frames_with(seat: first, message_ids: [0x01C2, 0x01C8])
+  let #(second_frames, _) =
+    frames_with(seat: second, message_ids: [0x01C2, 0x01C8])
+  let accepted_name = fn(frames: List(Frame)) {
+    let assert [frame] =
+      list.filter(frames, fn(frame) { frame.message_id == 0x01C2 })
+    let assert Ok(accept) = chat_line_accepted.decode(frame.body)
+    accept.name
+  }
+  assert accepted_name(first_frames) == "Ann Qu"
+    && accepted_name(second_frames) == "Zed Qu"
+    as "the design: every send is a tell and none asks, so two whispers at once never wait on each other"
+  assert list.map(chat_lines(first_frames), fn(line) { line.text }) == ["two"]
+  assert list.map(chat_lines(second_frames), fn(line) { line.text }) == ["one"]
+  list.each(seats, fn(seat) { game_client.close(game: seat.game) })
+  login_support.stop(started)
+}
+
+pub fn a_target_that_camped_is_not_found_and_is_found_again_after_it_enters_again_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let #(started, seats) = four_players()
+  let speaker = settled(seat: seat_at(seats, 0), number: 1)
+  let target = settled(seat: seat_at(seats, 1), number: 1)
+  game_client.send_world(game: target.game, message_id: 0x00BF, body: <<1>>)
+  let #(_, have) =
+    game_client.read_kept(game: target.game, have: target.have, count: 1)
+  game_client.send_world(game: target.game, message_id: 0x00C0, body: <<>>)
+  let #(frame, have) = game_client.next(game: target.game, have:)
+  assert frame.message_id == 0x0594
+    as "the camp returns the client to character select"
+  game_client.whisper(
+    game: speaker.game,
+    target: "Ann Qu",
+    text: "hi",
+    chat_message_id: 1,
+  )
+  let #(failed, speaker) = wait_for_frame(seat: speaker, message_id: 0x01D9)
+  assert failed.message_id == 0x01D9
+    as "the design's failure table: after the camp's leave the name group is left, so the whisper gets 0x1d9"
+  game_client.send(game: target.game, message_id: 0x07E0, body: <<>>)
+  let #(listed, have) =
+    game_client.read_kept(game: target.game, have:, count: 2)
+  let assert [_, Frame(body: list_body, ..)] = listed
+  let assert Ok(listing) = character_list.decode(list_body)
+  let assert [entry] = listing.characters
+  send_play(game: target.game, character_id: entry.character_id)
+  let #(_, have) = game_client.read_kept(game: target.game, have:, count: 9)
+  let target = Seat(..target, have:)
+  let target = settled(seat: target, number: 3)
+  game_client.whisper(
+    game: speaker.game,
+    target: "Ann Qu",
+    text: "again",
+    chat_message_id: 2,
+  )
+  let #(accept, _) =
+    game_client.read_accepted(
+      game: speaker.game,
+      have: speaker.have,
+      chat_message_id: 2,
+    )
+  assert accept.name == "Ann Qu" as "a new entry joins the name group again"
+  let #(target_frames, _) = written_to(seat: target, number: 4)
+  assert list.map(chat_lines(target_frames), fn(line) { line.text })
+    == ["again"]
+  list.each(seats, fn(seat) { game_client.close(game: seat.game) })
+  login_support.stop(started)
+}
+
+pub fn a_speaker_that_ends_before_the_reply_leaves_the_target_with_its_line_and_no_error_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("serial")
+  let #(started, seats) = four_players()
+  let speaker = settled(seat: seat_at(seats, 0), number: 1)
+  let target = settled(seat: seat_at(seats, 1), number: 1)
+  let lines = process.new_subject()
+  let capture = log_capture.start_all(into: lines)
+  game_client.whisper(
+    game: speaker.game,
+    target: "Ann Qu",
+    text: "bye",
+    chat_message_id: 1,
+  )
+  game_client.close(game: speaker.game)
+  let #(heard, rest) =
+    game_client.read_chat(game: target.game, have: target.have)
+  assert heard.text == "bye" as "the target's line stands"
+  let _ = settled(seat: Seat(..target, have: rest), number: 2)
+  log_capture.stop(capture)
+  assert list.filter(mailbox_support.drain(lines), fn(line) {
+      line.0 == "error"
+    })
+    == []
+    as "the design's failure table: the reply to a dead process is dropped, nothing logged as an error"
+  list.each(seats, fn(seat) { game_client.close(game: seat.game) })
+  login_support.stop(started)
+}
+
+pub fn a_member_whose_connection_crashes_leaves_its_groups_and_later_lines_reach_the_others_test() -> Nil {
+  use <- owned_test.run(120_000)
+  let #(started, seats) = four_players()
+  let speaker = reported(seat: seat_at(seats, 0), zone: 6009, number: 1)
+  let _ = reported(seat: seat_at(seats, 1), zone: 6009, number: 1)
+  let survivor = reported(seat: seat_at(seats, 2), zone: 6009, number: 1)
+  let speaker = settled(seat: speaker, number: 2)
+  let survivor = settled(seat: survivor, number: 2)
+  let assert Ok(pid) = registry.find_named(started.settings.registry, "ann qu")
+    as "the member is in its name group"
+  let gone = process.monitor(pid)
+  process.kill(pid)
+  let _reason = ask_support.ended(gone)
+  event_wait.until("the scope noticed the crash by itself", fn() {
+    registry.find_named(started.settings.registry, "ann qu") == Error(Nil)
+  })
+  game_client.send_line(
+    game: speaker.game,
+    channel_type: 9,
+    channel_id: speaker.zone_channel,
+    text: "still here",
+    chat_message_id: 1,
+  )
+  let #(_, _) =
+    game_client.read_accepted(
+      game: speaker.game,
+      have: speaker.have,
+      chat_message_id: 1,
+    )
+  let #(heard, _) = written_to(seat: survivor, number: 3)
+  assert list.map(chat_lines(heard), fn(line) { line.text }) == ["still here"]
+    as "the design's failure table: a later line goes to the others, and the dead member is no longer in the group"
+  list.each(seats, fn(seat) { game_client.close(game: seat.game) })
+  login_support.stop(started)
+}
+
+/// Reads until the server writes a message with this id, and gives it.
+fn wait_for_frame(
+  seat seat: Seat,
+  message_id message_id: Int,
+) -> #(Frame, Seat) {
+  let #(frame, have) = game_client.next(game: seat.game, have: seat.have)
+  case frame.message_id == message_id {
+    True -> #(frame, Seat(..seat, have:))
+    False -> wait_for_frame(seat: Seat(..seat, have:), message_id:)
+  }
+}
+
+/// Reads until the server has written a message of each id, and gives every
+/// message read.
+fn frames_with(
+  seat seat: Seat,
+  message_ids message_ids: List(Int),
+) -> #(List(Frame), Seat) {
+  collect_frames(seat:, wanted: message_ids, found: [])
+}
+
+fn collect_frames(
+  seat seat: Seat,
+  wanted wanted: List(Int),
+  found found: List(Frame),
+) -> #(List(Frame), Seat) {
+  case wanted {
+    [] -> #(list.reverse(found), seat)
+    [_, ..] -> {
+      let #(frame, have) = game_client.next(game: seat.game, have: seat.have)
+      collect_frames(
+        seat: Seat(..seat, have:),
+        wanted: list.filter(wanted, fn(id) { id != frame.message_id }),
+        found: [frame, ..found],
+      )
+    }
+  }
 }

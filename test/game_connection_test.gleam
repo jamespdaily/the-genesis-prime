@@ -5088,3 +5088,11 @@ pub fn a_whisper_to_an_offline_name_gives_0x1d9_when_its_watch_ends_test() -> Ni
   assert frame.message_id == whisper_failed.message_id
   assert support.logs(taken) == []
 }
+
+pub fn a_0x597_name_lookup_is_logged_as_unhandled_and_no_player_info_is_written_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = read(in_world(), world_message(0x0597, <<>>))
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x0597))]
+    as "chat.name_lookup: no chat line makes the client ask for a name, so the player info of the mail step is not built and 0x597 stays unhandled"
+  assert written_ids(taken) == [] as "no 0x598 or 0x599 is written"
+}
