@@ -31,7 +31,7 @@ The builder hands back once, with: each function it added, the closest existing 
 
 ## Reviews
 
-A step that changes no process and under about 300 lines gets one Claude reviewer for bugs, reuse and the card check together, beside the main session's own read; a larger step, or one that changes processes, gets all of the reviews below. When Codex cannot run (out of credits or down), a Claude Opus reviewer takes its place for the shape and bug reviews, with the same brief.
+A step that changes no process gets one Claude reviewer for bugs, reuse and the card check together, beside the main session's own read, at any size; a step that changes processes gets all of the reviews below. When Codex cannot run (out of credits or down), a Claude Opus reviewer takes its place for the shape and bug reviews, with the same brief.
 
 On the fixed commit the builder pushed, side by side:
 - **Codex's bug review** (`dev/codex_review.sh code BASE HEAD "..."`): correctness, evidence, failure paths, restarts, concurrency, and OTP fit when the diff touches processes; bug reviewers are also asked whether any new test depends on timing, a session's length, read boundaries or a mailbox's length.
@@ -43,7 +43,7 @@ Check each finding against the code first. One fix round. After it, a P1 (a brea
 
 ## Live check and merge
 
-A live session runs when the client sees or sends something new (the `playing-live` skill): an agent drives what the client driver reaches, and Jim plays the rest. A replay that differs after a change meant to alter what the client receives: the session is recorded again live (the `designing-processes` skill). Merge on green; Jim's global file holds how the pull request body is written.
+A live session runs when the client sees or sends something new (the `playing-live` skill): an agent drives what the client driver reaches, and Jim plays the rest. The steps of one goal share one sitting: each merges on green, the sitting runs once the goal's last step merges, a failure in it is a bug and the next step, and the goal stays open until the sitting passes. A replay that differs after a change meant to alter what the client receives: the session is recorded again live (the `designing-processes` skill). Merge on green; Jim's global file holds how the pull request body is written.
 
 ## Progress and resuming
 
