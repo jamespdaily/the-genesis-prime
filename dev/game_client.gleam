@@ -18,6 +18,7 @@ import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/message/bit_stream
+import genesis_prime/message/chat_channel_joined
 import genesis_prime/message/chat_line
 import genesis_prime/message/chat_line_accepted.{type ChatLineAccepted}
 import genesis_prime/message/float32
@@ -311,6 +312,39 @@ pub fn drain(game game: Game, have have: BitArray) -> BitArray {
   }
 }
 
+/// Gives each game message already held whole in `have`, or else waits up to
+/// `wait_ms` for the server to write, and gives each game message
+/// that has arrived whole, opened from its 0x3DC wrapper under the session
+/// cipher, keeping the bytes of one not yet whole. A wait that ends with nothing
+/// written gives no message; the connection ending gives the reason, for a client
+/// that stays on it for long and ends cleanly when the server closes it.
+pub fn poll(
+  game game: Game,
+  have have: BitArray,
+  wait_ms wait_ms: Int,
+) -> Result(#(List(Frame), BitArray), mug.Error) {
+  let assert Ok(#(held, rest)) = frame_reader.decode(received: have)
+    as "the server wrote bytes that are frames"
+  case held {
+    [_, ..] -> Ok(#(opened(game:, outers: held), rest))
+    [] ->
+      case mug.receive(game.socket, timeout_milliseconds: wait_ms) {
+        Ok(more) -> {
+          let assert Ok(#(outers, rest)) =
+            frame_reader.decode(received: <<rest:bits, more:bits>>)
+            as "the server wrote bytes that are frames"
+          Ok(#(opened(game:, outers:), rest))
+        }
+        Error(mug.Timeout) -> Ok(#([], rest))
+        Error(error) -> Error(error)
+      }
+  }
+}
+
+fn opened(game game: Game, outers outers: List(Frame)) -> List(Frame) {
+  list.map(outers, in_the_game_wrapper(_, game.cipher))
+}
+
 fn whole_messages_dropped(received: BitArray) -> BitArray {
   let assert Ok(#(_frames, rest)) = frame_reader.decode(received:)
     as "the server wrote bytes that are frames"
@@ -437,6 +471,17 @@ pub fn unit_create_player_in(frames frames: List(Frame)) -> UnitCreatePlayer {
     as "the burst holds 0x0262"
   let assert Ok(player) = unit_create_player.decode(body) as "0x0262 decodes"
   player
+}
+
+/// The id of the zone channel the entry's burst joins the player to: the channel
+/// of the 0x1bc among the messages of an entry (opcode.0x1bc), whose type is 9.
+pub fn zone_channel_in(frames frames: List(Frame)) -> Int {
+  let assert Ok(Frame(body:, ..)) =
+    list.find(frames, fn(frame) { frame.message_id == 0x01BC })
+    as "the burst holds 0x01BC"
+  let assert Ok(joined) = chat_channel_joined.decode(body) as "0x01BC decodes"
+  assert joined.channel_type == 9 as "the burst's channel is the zone channel"
+  joined.channel_id
 }
 
 /// Sends the network layer's ping with the number, bare: never wrapped and
@@ -639,7 +684,7 @@ pub fn name_lookups_needed(lines lines: List(HeardLine)) -> Int {
 
 /// The text of a line's UTF-16 units, with a unit that pairs with no other shown
 /// as the replacement character, as a client's text box would show it.
-fn from_units(units: List(Int)) -> String {
+pub fn from_units(units: List(Int)) -> String {
   bit_stream.from_utf16(units) |> result.unwrap(or: "\u{FFFD}")
 }
 
@@ -654,14 +699,30 @@ pub fn chatter(game game: Game) -> Chatter {
   Chatter(game:, next_id: 1)
 }
 
-/// Says a line on Say, with the chatter's next id, which is given back with the
-/// chatter that holds the one after it.
+/// Sends a line on the channel with the chatter's next id, which is given back
+/// with the chatter that holds the one after it.
+pub fn line_next(
+  chatter chatter: Chatter,
+  channel_type channel_type: Int,
+  channel_id channel_id: Int,
+  text text: String,
+) -> #(Chatter, Int) {
+  send_line(
+    game: chatter.game,
+    channel_type:,
+    channel_id:,
+    text:,
+    chat_message_id: chatter.next_id,
+  )
+  #(Chatter(..chatter, next_id: chatter.next_id + 1), chatter.next_id)
+}
+
+/// Says a line on Say, with the chatter's next id, as `line_next` sends one.
 pub fn say_next(
   chatter chatter: Chatter,
   text text: String,
 ) -> #(Chatter, Int) {
-  say(game: chatter.game, text:, chat_message_id: chatter.next_id)
-  #(Chatter(..chatter, next_id: chatter.next_id + 1), chatter.next_id)
+  line_next(chatter:, channel_type: 4, channel_id: 0, text:)
 }
 
 /// Whispers a line with the chatter's next id, as `say_next` says one.
