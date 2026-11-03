@@ -1,6 +1,6 @@
 ---
 name: writing-code
-description: Conventions for code in any language here - Gleam, Erlang, Python, shell, PowerShell - reuse before writing, modules and files, naming, comments, errors. Use for any code change, written or reviewed; Gleam code also follows writing-gleam.
+description: Conventions for code in any language here - Gleam, Erlang, Elixir (for a tool or a package the package rule chose), Python, shell, PowerShell - reuse before writing, modules and files, naming, comments, errors. Use for any code change, written or reviewed; Gleam code also follows writing-gleam.
 ---
 
 # Writing code
