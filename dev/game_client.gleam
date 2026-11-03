@@ -410,7 +410,7 @@ fn standing(
 /// The ids of the messages that put a player in the world, in the order the
 /// client needs (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc,
 /// opcode.0x636, opcode.0xf1, opcode.0x61): 0xAD first; 0x262 before 0x19B; 0x19B
-/// before 0x6BC, 0x636 and 0x61.
+/// before 0x6BC, 0x636 and 0x61; then the zone channel (opcode.0x1da, opcode.0x1bc).
 pub const world_entry_ids = [
   0x00AD,
   0x0262,
@@ -419,6 +419,8 @@ pub const world_entry_ids = [
   0x0636,
   0x00F1,
   0x0061,
+  0x01DA,
+  0x01BC,
 ]
 
 /// The 0x262 among the messages of an entry, decoded: the player the burst

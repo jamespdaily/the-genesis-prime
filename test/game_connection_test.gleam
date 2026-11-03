@@ -1339,13 +1339,22 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
     answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
   assert written_ids(taken) == game_client.world_entry_ids
     as "the order the client needs: 0xAD first; 0x262 before 0x19B; 0x19B before 0x6BC, 0x636 and 0x61 (the client drops 0x6BC until 0x19B has set the player, opcode.0x6bc); 0xF1 after 0xAD (opcode.0xad, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0x61, opcode.0xf1)"
-  let after_the_burst = list.drop(support.effects_of(taken), 7)
+  let after_the_burst =
+    list.filter(list.drop(support.effects_of(taken), 7), fn(effect) {
+      case effect {
+        OwnEffect(step.Write(..)) -> False
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          True
+      }
+    })
   assert after_the_burst
     == [
       Watch(WatchId(2), Map(camp_map(), incarnation)),
+      OwnEffect(step.JoinGroup(step.CharacterNamed("ab cd"))),
+      OwnEffect(step.JoinGroup(zone_group(4961))),
       OwnEffect(StartTimer(TimerId(2), 60_000)),
     ]
-    as "the connection watches the run of the map that holds its player, after the burst, and the save timer starts"
+    as "the connection watches the run of the map that holds its player, after the burst, joins its groups and the save timer starts"
   assert support.asked(taken) == None
   assert !support.stops(taken)
 }
@@ -1439,6 +1448,8 @@ pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_
     Frame(message_id: 0x0636, body: control),
     Frame(message_id: 0x00F1, body: interval),
     Frame(message_id: 0x0061, body: entered_world),
+    Frame(message_id: 0x01DA, ..),
+    Frame(message_id: 0x01BC, ..),
   ] = heard(entered().1, keyed())
   assert unit_is_player.decode(is_player)
     == Ok(UnitIsPlayer(unit_id: 5, field_2: 0))
@@ -1946,7 +1957,7 @@ fn decoded_and_dropped() -> List(#(Int, BitArray)) {
   let assert Ok(zone) =
     world_zone_changed.encode(WorldZoneChanged(
       old_world_zone_id: 6009,
-      new_world_zone_id: 6010,
+      new_world_zone_id: 4962,
     ))
   let assert Ok(interval) =
     movement_send_interval_answer.encode(MovementSendIntervalAnswer(
@@ -3572,8 +3583,13 @@ pub fn message_0xc0_with_no_camp_ends_the_connection_with_an_error_the_last_good
 pub fn message_0xc0_cancels_the_save_timer_saves_the_place_asks_the_map_run_to_let_the_player_leave_then_writes_0x594_with_the_byte_01_in_that_order_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = saving_the_camp()
-  assert support.effects_of(taken) == [OwnEffect(CancelTimer(TimerId(2)))]
-    as "the 60 s save timer is cancelled before the save, so none fires while the player leaves"
+  assert support.effects_of(taken)
+    == [
+      OwnEffect(step.LeaveGroup(step.CharacterNamed("ab cd"))),
+      OwnEffect(step.LeaveGroup(zone_group(4961))),
+      OwnEffect(CancelTimer(TimerId(2))),
+    ]
+    as "the player leaves its chat groups, and the 60 s save timer is cancelled before the save, so none fires while the player leaves"
   assert ask_request(taken) == save_asked(1, entry_place())
     as "the place is saved first"
   assert support.writes(taken) == []
@@ -3684,7 +3700,7 @@ pub fn after_a_camp_a_play_request_enters_the_world_again_as_a_new_unit_with_the
   let #(state, taken) =
     answer(state:, taken:, outcome: step.Answer(FromMap(joined_again)))
   assert written_ids(taken) == game_client.world_entry_ids
-    as "the same seven messages as at the first entry"
+    as "the same nine messages as at the first entry"
   assert player_in(taken).unit_id != first_unit && player_in(taken).unit_id == 6
     as "opcode.0x262: the client refuses a unit id it has seen, so the play is a new unit: the map's next id after the five it gave"
   assert support.watches(taken) == [#(WatchId(2), Map(camp_map(), incarnation))]
@@ -4734,4 +4750,141 @@ pub fn support_and_instance_are_logged_as_unhandled_once_for_each_channel_on_a_c
     as "another channel is another line"
   assert written_ids(second) == [0x01D3]
     as "each line still gets its one answer"
+}
+
+// ---- chat: the zone ----
+
+/// The groups a step joins and leaves, in the order of its effects.
+fn group_effects(
+  taken: ConnectionStep(Request),
+) -> List(step.ConnectionEffect(Request)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.JoinGroup(address:)) -> Ok(step.JoinGroup(address:))
+      OwnEffect(step.LeaveGroup(address:)) -> Ok(step.LeaveGroup(address:))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+fn zone_group(top_zone_id: Int) -> step.Address {
+  step.ZoneChannel(map: camp_map(), incarnation:, top_zone_id:)
+}
+
+fn zone_changed_message(old old: Int, new new: Int) -> BitArray {
+  let assert Ok(body) =
+    world_zone_changed.encode(WorldZoneChanged(
+      old_world_zone_id: old,
+      new_world_zone_id: new,
+    ))
+  world_message(world_zone_changed.message_id, body)
+}
+
+fn terrain_loaded_message(world_zone_id: Int) -> BitArray {
+  let assert Ok(body) = terrain_loaded.encode(TerrainLoaded(world_zone_id:))
+  world_message(terrain_loaded.message_id, body)
+}
+
+pub fn the_entry_burst_ends_with_0x1da_and_0x1bc_and_joins_the_name_and_the_zone_channel_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = entered()
+  assert written_ids(taken)
+    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061, 0x01DA, 0x01BC]
+    as "opcode.0x1da, opcode.0x1bc: after 0x61, 0x1da names the channel and 0x1bc gives it, in that order"
+  assert group_effects(taken)
+    == [
+      step.JoinGroup(step.CharacterNamed("ab cd")),
+      step.JoinGroup(zone_group(4961)),
+    ]
+    as "the player joins its folded name and the zone channel of its run and the top zone 4961 of its place's zone 6009, in the step that takes the map's Joined"
+}
+
+pub fn a_report_under_the_same_top_zone_writes_and_joins_nothing_for_0x63a_and_0xf2_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [zone_changed_message(old: 6009, new: 4962), terrain_loaded_message(4962)],
+    fn(bytes) {
+      let #(_, taken) = read(in_world(), bytes)
+      assert written_ids(taken) == [] && group_effects(taken) == []
+        as "chat.zone_reach: 4962 is under the top zone 4961 of the place's zone"
+      assert support.logs(taken) == [] && !support.stops(taken)
+    },
+  )
+}
+
+pub fn a_report_under_another_top_zone_renames_the_channel_and_changes_the_group_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [zone_changed_message(old: 6009, new: 648), terrain_loaded_message(648)],
+    fn(bytes) {
+      let #(_, taken) = read(in_world(), bytes)
+      assert written_ids(taken) == [0x01DA]
+        as "0x140403670: the client only renames the zone channel"
+      assert group_effects(taken)
+        == [
+          step.LeaveGroup(zone_group(4961)),
+          step.JoinGroup(zone_group(35)),
+        ]
+    },
+  )
+}
+
+pub fn a_0x63a_whose_old_value_is_not_the_one_the_server_holds_is_taken_all_the_same_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = read(in_world(), zone_changed_message(old: 1, new: 648))
+  assert written_ids(taken) == [0x01DA]
+    as "server choice: whether the client's kept value outlives a camp is not read (opcode.0x63a), so the old value is not checked and a sound client is not dropped"
+}
+
+pub fn a_report_of_zone_0_leaves_the_group_and_writes_0x1da_with_no_zone_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = read(in_world(), terrain_loaded_message(0))
+  assert written_ids(taken) == [0x01DA]
+  assert group_effects(taken) == [step.LeaveGroup(zone_group(4961))]
+}
+
+pub fn a_report_of_a_zone_with_no_row_ends_the_connection_after_the_save_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(refusing, taken) = read(in_world(), terrain_loaded_message(1132))
+  assert list.any(support.logs(taken), fn(line) { line.level == step.LogError })
+    as "CLAUDE.md: the client's own table has no WorldZone 1132, so the report is refused with an error line"
+  assert support.writes(taken) == []
+  let #(_, taken) = answer(state: refusing, taken:, outcome: place_saved())
+  assert support.effects_of(taken) == [step.Stop]
+}
+
+pub fn messages_0xf2_and_0x63a_outside_the_world_are_unhandled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      #(0x00F2, terrain_loaded_message(4962)),
+      #(0x063A, zone_changed_message(old: 6009, new: 4962)),
+    ],
+    fn(sent) {
+      let #(_, taken) = read(in_select(), sent.1)
+      assert support.unhandled_ids(taken) == [Some(#("unhandled", sent.0))]
+        as "the routing table takes them inside 0x38C with the player in the world only (opcode.0xf2, opcode.0x63a); elsewhere they are logged as unhandled, as before"
+      assert group_effects(taken) == [] && !support.stops(taken)
+    },
+  )
+}
+
+pub fn a_camp_leaves_the_name_and_zone_groups_before_it_saves_and_a_new_entry_joins_again_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = saving_the_camp()
+  assert group_effects(taken)
+    == [
+      step.LeaveGroup(step.CharacterNamed("ab cd")),
+      step.LeaveGroup(zone_group(4961)),
+    ]
+    as "the design's failure table: LeaveGroup in the step that starts the camp's leave, so no zone line reaches it after the leave"
+  let #(again, _) = camped_out()
+  let #(_, entered_again) = entered_from(again, world_character())
+  assert group_effects(entered_again)
+    == [
+      step.JoinGroup(step.CharacterNamed("ab cd")),
+      step.JoinGroup(zone_group(4961)),
+    ]
+    as "a new entry joins again"
 }

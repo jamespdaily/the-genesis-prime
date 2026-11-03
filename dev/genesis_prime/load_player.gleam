@@ -337,10 +337,15 @@ fn enter_world(
   let assert Ok(play_body) = play_character.encode(PlayCharacter(character_id:))
     as "0x07DD encodes"
   game_client.send(game:, message_id: 0x07DD, body: play_body)
-  let #(burst, have) = game_client.read_kept(game:, have: <<>>, count: 7)
+  let #(burst, have) =
+    game_client.read_kept(
+      game:,
+      have: <<>>,
+      count: list.length(game_client.world_entry_ids),
+    )
   assert list.map(burst, fn(frame) { frame.message_id })
-    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061]
-    as "the player enters the world with 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1 and 0x61"
+    == game_client.world_entry_ids
+    as "the player enters the world with 0xAD, 0x262, 0x19B, 0x6BC, 0x636, 0xF1, 0x61, 0x1DA and 0x1BC"
   #(burst, have)
 }
 

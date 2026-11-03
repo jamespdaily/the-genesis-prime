@@ -314,6 +314,7 @@ import genesis_prime/game/chat_tell
 import genesis_prime/game/movement
 import genesis_prime/game/routing
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/top_zone
 import genesis_prime/game/world_entry
 import genesis_prime/game_settings.{type GameSettings}
 import genesis_prime/hand_off.{type Holder, SessionKey, Take}
@@ -958,8 +959,22 @@ fn movement_message(
   message message: movement.Message,
 ) -> client_connection.Handled(Session) {
   case movement.take(entered.movement, message, inner.body) {
-    Ok(movement.Kept(state:)) | Ok(movement.Reported(state:, ..)) ->
+    Ok(movement.Kept(state:)) ->
       Continue(moving(session:, holder:, entered:, state:), [])
+    Ok(movement.Reported(state:, world_zone_id:)) -> {
+      let session = moving(session:, holder:, entered:, state:)
+      case
+        chat.world_zone_reported(
+          chat: entered.chat,
+          world_zone_id:,
+          top_zones: top_zone.top_zones(session.settings.tables),
+        )
+      {
+        Ok(#(updated, effects)) ->
+          carry_chat(session: with_chat(session:, chat: updated), effects:)
+        Error(refusal) -> end_for(session:, now:, text: chat.describe(refusal))
+      }
+    }
     Ok(movement.Relayed(state:, place:, commands:, unrelayed:)) -> {
       let new_kinds =
         list.filter(unrelayed, fn(kind) {
@@ -1385,6 +1400,8 @@ type Decided {
   WatchesMap(map: MapId, incarnation: Int)
   /// Start the timer that saves the player's place (`save_timer`).
   StartsSaveTimer
+  /// What the chat decided: writes, tells, watches and group joins.
+  Chats(effects: List(chat.Effect))
   /// The player leaves the world for character select: the save timer is
   /// cancelled and the place saved, the map's run is asked to take the player
   /// out, and 0x0594 is written (the camp's finish).
@@ -1443,6 +1460,15 @@ fn carry_out(
         Watch(watch: map_watch, target: step.Map(map:, incarnation:)),
         ..written
       ])
+    [Chats(effects: chat_decided), ..rest] -> {
+      let #(session, converted) = chat_effects(session:, effects: chat_decided)
+      carry_out(
+        session:,
+        now:,
+        effects: rest,
+        written: list.append(list.reverse(converted), written),
+      )
+    }
     [StartsSaveTimer, ..rest] ->
       carry_out(session:, now:, effects: rest, written: [
         start_save_timer(),
@@ -1457,8 +1483,10 @@ fn carry_out(
             holder:,
             entered:,
             then: Camped,
-            before: list.append(list.reverse(written), [
-              OwnEffect(CancelTimer(timer: save_timer)),
+            before: list.flatten([
+              list.reverse(written),
+              chat_effects(session:, effects: chat.left(entered.chat)).1,
+              [OwnEffect(CancelTimer(timer: save_timer))],
             ]),
             within_ms: session.settings.ask_deadline_ms,
           )
@@ -1856,6 +1884,16 @@ fn carry_chat(
   session session: Session,
   effects effects: List(chat.Effect),
 ) -> client_connection.Handled(Session) {
+  let #(session, written) = chat_effects(session:, effects:)
+  Continue(session, written)
+}
+
+/// The connection's effects for what the chat decided, in order, and the session
+/// with the channels it logged as unhandled.
+fn chat_effects(
+  session session: Session,
+  effects effects: List(chat.Effect),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   let #(session, written) =
     list.fold(effects, #(session, []), fn(so_far, effect) {
       let #(session, written) = so_far
@@ -1913,7 +1951,7 @@ fn carry_chat(
         }
       }
     })
-  Continue(session, list.reverse(written))
+  #(session, list.reverse(written))
 }
 
 /// What another player's connection sent about the unit it owns, written while
@@ -2729,10 +2767,25 @@ fn in_the_world(
   entered entered: world_entry.Entered,
   effects effects: List(world_entry.Effect),
 ) -> client_connection.Handled(Session) {
+  let #(updated, burst) =
+    chat.entered_world(
+      chat: entered.chat,
+      world_zone_id: start_place.world_zone_id(movement.place(entered.movement)),
+      top_zones: top_zone.top_zones(session.settings.tables),
+    )
   carry_out(
-    session: Session(..session, status: InWorld(holder:, entered:)),
+    session: Session(
+      ..session,
+      status: InWorld(
+        holder:,
+        entered: world_entry.Entered(..entered, chat: updated),
+      ),
+    ),
     now:,
-    effects: list.append(list.map(effects, from_entry), [StartsSaveTimer]),
+    effects: list.flatten([
+      list.map(effects, from_entry),
+      [Chats(effects: burst), StartsSaveTimer],
+    ]),
     written: [],
   )
 }

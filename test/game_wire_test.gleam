@@ -306,7 +306,7 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
     && entry.position_z == 0xC40C0C08
     as "row 466 is a PreTutorial start, WorldLocation2 row 51596: World 3460, zone 6009, and its position as 32-bit floats; the database kept them"
   send_play(game:, character_id: created.character_id)
-  let burst = game_client.read(game:, count: 7)
+  let burst = game_client.read(game:, count: 9)
   assert list.map(burst, fn(frame) { frame.message_id })
     == game_client.world_entry_ids
     as "the player enters the world: the messages in the client's order (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0xf1, opcode.0x61)"
@@ -367,7 +367,7 @@ pub fn a_created_dominion_cassian_veteran_is_played_into_the_world_at_row_42148_
   assert created.result == create_result.CreateOk
     as "opcode.0xdc: a valid request is created"
   send_play(game:, character_id: created.character_id)
-  let burst = game_client.read(game:, count: 7)
+  let burst = game_client.read(game:, count: 9)
   let assert [Frame(body: world, ..), ..] = burst
   let assert Ok(entered) = enter_world.decode(world)
   assert entered.world_id == 1387
@@ -443,7 +443,7 @@ pub fn the_end_of_the_players_map_tells_the_client_reason_8_and_ends_the_connect
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let assert [_, _, _, _, _, _, _] = game_client.read(game:, count: 7)
+  let assert [_, _, _, _, _, _, _, _, _] = game_client.read(game:, count: 9)
     as "the player entered the world"
   // The player's map is the run the real Maps holds for the character's world.
   let assert Ok(found) =
@@ -700,7 +700,7 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let first = game_client.read(game:, count: 7)
+  let first = game_client.read(game:, count: 9)
   assert game_client.unit_create_player_in(frames: first).movement_commands
     == [
       start_movement.Position(UnitPositionCommand(
@@ -736,7 +736,7 @@ pub fn a_player_who_moves_and_drops_is_saved_and_stands_where_it_left_at_the_nex
     as "the drop saved the place the client last sent, at the epoch its login raised and as its first save"
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let second = game_client.read(game:, count: 7)
+  let second = game_client.read(game:, count: 9)
   let assert [Frame(body: world, ..), ..] = second
   let assert Ok(entered) = enter_world.decode(world)
   assert entered.position_x == float32.to_bits(100.5)
@@ -777,7 +777,7 @@ pub fn a_stop_with_a_player_in_the_world_saves_the_place_it_last_stood_at_before
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let _burst = game_client.read(game:, count: 7)
+  let _burst = game_client.read(game:, count: 9)
   send_move(game:, position: #(100.5, -20.25, 300.125), rotation: #(
     1.5,
     -0.25,
@@ -828,7 +828,7 @@ pub fn a_connection_that_crashes_saves_nothing_is_not_restarted_and_the_place_sa
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let _burst = game_client.read(game:, count: 7)
+  let _burst = game_client.read(game:, count: 9)
   send_move(game:, position: #(100.5, -20.25, 300.125), rotation: #(
     1.5,
     -0.25,
@@ -898,7 +898,7 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
     )
   let game = in_select(started:, port:, account:)
   send_play(game:, character_id: character)
-  let first_burst = game_client.read(game:, count: 7)
+  let first_burst = game_client.read(game:, count: 9)
   let first = game_client.unit_create_player_in(frames: first_burst)
   assert first.unit_id == 1 as "the first unit of its map"
   // The player walks to a place of its own, then camps there.
@@ -932,7 +932,7 @@ pub fn a_player_camps_returns_to_character_select_and_plays_the_same_character_a
     == [character]
     as "the account's character is listed, and no longer held in the world"
   send_play(game:, character_id: character)
-  let second_burst = game_client.read(game:, count: 7)
+  let second_burst = game_client.read(game:, count: 9)
   assert list.map(second_burst, fn(frame) { frame.message_id })
     == game_client.world_entry_ids
     as "the play enters the world again as at the first entry"
@@ -1053,10 +1053,10 @@ fn two_players_enter_one_map() -> TwoEntered {
     )
   send_play(game: first, character_id: first_character)
   let #(first_burst, first_have) =
-    game_client.read_kept(game: first, have: <<>>, count: 7)
+    game_client.read_kept(game: first, have: <<>>, count: 9)
   send_play(game: second, character_id: second_character)
   let #(second_burst, second_have) =
-    game_client.read_kept(game: second, have: <<>>, count: 8)
+    game_client.read_kept(game: second, have: <<>>, count: 10)
   let #(seen_second, first_have) =
     game_client.next(game: first, have: first_have)
   TwoEntered(
@@ -1079,12 +1079,12 @@ pub fn a_player_entering_is_written_its_whole_burst_before_the_0x262_of_a_player
   assert list.map(first_burst, fn(frame) { frame.message_id })
     == game_client.world_entry_ids
     as "the first player enters an empty map: its burst only"
-  assert list.map(list.take(second_burst, 7), fn(frame) { frame.message_id })
+  assert list.map(list.take(second_burst, 9), fn(frame) { frame.message_id })
     == game_client.world_entry_ids
     as "the second player's whole entry burst comes before the 0x262 of the first: a 0x262 of another unit that landed while the client waits on 0x636 could take control (0x1403d9760)"
   let assert [_, own, ..] = second_burst
   assert unit_of(own) == 2 as "the second player's own unit is the map's second"
-  let assert [seen_first] = list.drop(second_burst, 7)
+  let assert [seen_first] = list.drop(second_burst, 9)
   assert unit_of(seen_first) == 1
     as "the first player's unit is created for the second player"
   assert unit_of(entered.seen_second) == 2

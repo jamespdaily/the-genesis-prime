@@ -172,6 +172,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/chat_channel.{type ChannelType}
 import genesis_prime/game/chat_tell.{type Line, type Speaker, type Tell, Line}
 import genesis_prime/game/top_zone.{type TopZones}
+import genesis_prime/message/chat_channel_joined.{ChatChannelJoined}
 import genesis_prime/message/chat_channel_result.{
   type ChatChannelResult, DoesntExist, InvalidMessageText, NoPermissions,
   NotInGroup,
@@ -180,6 +181,7 @@ import genesis_prime/message/chat_format.{type ChatFormat}
 import genesis_prime/message/chat_line.{ChatLine}
 import genesis_prime/message/chat_line_accepted.{ChatLineAccepted}
 import genesis_prime/message/chat_result.{ChatResult}
+import genesis_prime/message/chat_zone_named.{ChatZoneNamed}
 import genesis_prime/message/send_chat_line.{type SendChatLine}
 import genesis_prime/step.{type Address, type ConnectionId, type WatchId}
 import genesis_prime/table/chat_channel.{type ChatChannel} as chat_channel_table
@@ -191,6 +193,7 @@ import gleam/int
 import gleam/list
 import gleam/result
 import gleam/set.{type Set}
+import gleam/string
 
 /// The chat messages of the player in the world, which the client sends inside
 /// 0x038C (genesis_prime/game/routing's table says which id is which).
@@ -260,6 +263,7 @@ pub opaque type Chat {
   Chat(
     speaker: Speaker,
     zone_channel_id: Int,
+    zone_channel_joined: Bool,
     zone: Zone,
     next_whisper: Int,
     whispers: Dict(Int, PendingWhisper),
@@ -278,6 +282,7 @@ pub fn new(
   Chat(
     speaker:,
     zone_channel_id:,
+    zone_channel_joined: False,
     zone: NoZone,
     next_whisper:,
     whispers: dict.new(),
@@ -298,11 +303,98 @@ pub fn next_whisper(chat chat: Chat) -> Int {
 /// zone: 0x1da with 0, 0x1bc still written, no zone group, and a warning for a
 /// zone with no row.
 pub fn entered_world(
-  chat _chat: Chat,
-  world_zone_id _world_zone_id: Int,
-  top_zones _top_zones: TopZones,
+  chat chat: Chat,
+  world_zone_id world_zone_id: Int,
+  top_zones top_zones: TopZones,
 ) -> #(Chat, List(Effect)) {
-  panic as "built in the zone step: the entry burst"
+  let #(zone, warning) = case top_zone.of(top_zones, world_zone_id) {
+    Ok(top_zone_id) -> #(InZone(world_zone_id:, top_zone_id:), [])
+    Error(Nil) -> #(NoZone, case world_zone_id {
+      0 -> []
+      _ -> [
+        Warning(
+          text: "the place's WorldZone "
+          <> int.to_string(world_zone_id)
+          <> " has no row, so the player is in no zone channel",
+        ),
+      ]
+    })
+  }
+  let chat = Chat(..chat, zone_channel_joined: True, zone:)
+  #(
+    chat,
+    list.flatten([
+      [JoinGroup(address: step.CharacterNamed(folded_name: folded(chat)))],
+      warning,
+      [
+        Send(zone_named_frame(zone)),
+        Send(zone_joined_frame(chat)),
+        ..join_zone(chat:, zone:)
+      ],
+    ]),
+  )
+}
+
+/// The player's name folded as the database's unique index folds it
+/// (migration 0005): the key of the group a whisper finds the player by.
+fn folded(chat: Chat) -> String {
+  string.lowercase(chat.speaker.name)
+}
+
+/// The group of the player's run and top zone, which the player joins; none when
+/// it is in no zone.
+fn zone_group(chat chat: Chat, zone zone: Zone) -> Result(Address, Nil) {
+  case zone {
+    NoZone -> Error(Nil)
+    InZone(top_zone_id:, ..) ->
+      Ok(step.ZoneChannel(
+        map: chat.speaker.map,
+        incarnation: chat.speaker.incarnation,
+        top_zone_id:,
+      ))
+  }
+}
+
+fn join_zone(chat chat: Chat, zone zone: Zone) -> List(Effect) {
+  case zone_group(chat:, zone:) {
+    Ok(address) -> [JoinGroup(address:)]
+    Error(Nil) -> []
+  }
+}
+
+fn leave_zone(chat chat: Chat) -> List(Effect) {
+  case zone_group(chat:, zone: chat.zone) {
+    Ok(address) -> [LeaveGroup(address:)]
+    Error(Nil) -> []
+  }
+}
+
+/// 0x1da naming the zone channel after the zone's top zone, or after none (0), so
+/// the client shows the channel with an empty name (opcode.0x1da, 0x140403670).
+fn zone_named_frame(zone: Zone) -> Frame {
+  let world_zone_id = case zone {
+    NoZone -> 0
+    InZone(top_zone_id:, ..) -> top_zone_id
+  }
+  let assert Ok(body) = chat_zone_named.encode(ChatZoneNamed(world_zone_id:))
+    as "a WorldZone id of the table's 15 bits fits the message"
+  Frame(message_id: chat_zone_named.message_id, body:)
+}
+
+/// 0x1bc giving the client the zone channel: type 9, the id the server picks, an
+/// empty name and three zeros (opcode.0x1bc).
+fn zone_joined_frame(chat: Chat) -> Frame {
+  let assert Ok(body) =
+    chat_channel_joined.encode(ChatChannelJoined(
+      channel_type: chat_channel.id(chat_channel.Zone),
+      channel_id: chat.zone_channel_id,
+      name: "",
+      field_4: 0,
+      field_5: 0,
+      field_6: 0,
+    ))
+    as "the map's world id of 15 bits fits the channel id"
+  Frame(message_id: chat_channel_joined.message_id, body:)
 }
 
 /// What one chat message of the client does: its body is decoded and the line or
@@ -349,7 +441,7 @@ fn line_sent(
         False -> []
       }
     ])
-    Ok(Say) -> {
+    Ok(reach) -> {
       let line =
         Line(
           channel_type:,
@@ -359,12 +451,33 @@ fn line_sent(
         )
       #(chat, [
         Send(accepted_frame(chat:, chat_message_id: sent.chat_message_id)),
-        ..list.map(set.to_list(viewers), fn(viewer) {
-          Tell(
-            to: step.Connection(viewer),
-            tell: chat_tell.Said(speaker: chat.speaker, line:),
-          )
-        })
+        ..case reach {
+          Say ->
+            list.map(set.to_list(viewers), fn(viewer) {
+              Tell(
+                to: step.Connection(viewer),
+                tell: chat_tell.Said(speaker: chat.speaker, line:),
+              )
+            })
+          Zone ->
+            case chat.zone {
+              NoZone -> []
+              InZone(top_zone_id:, ..) -> [
+                Tell(
+                  to: step.ZoneChannel(
+                    map: chat.speaker.map,
+                    incarnation: chat.speaker.incarnation,
+                    top_zone_id:,
+                  ),
+                  tell: chat_tell.ZoneLine(
+                    speaker: chat.speaker,
+                    top_zone_id:,
+                    line:,
+                  ),
+                ),
+              ]
+            }
+        }
       ])
     }
   }
@@ -380,12 +493,14 @@ type Refused {
 type Reach {
   /// To the players who see the speaker.
   Say
+  /// To the players of the speaker's run under its top zone.
+  Zone
 }
 
 /// Whether a line is one the client would send and the player may send on its
 /// channel, in the order the design's table gives its answers.
 fn checked(
-  chat _chat: Chat,
+  chat chat: Chat,
   sent sent: SendChatLine,
   channel_type channel_type: ChannelType,
   tables tables: table_store.Tables,
@@ -401,7 +516,7 @@ fn checked(
     Error(Nil) -> refused(DoesntExist)
     Ok(row) -> {
       use <- bool.guard(
-        when: !is_held(row:, channel_id: sent.channel_id),
+        when: !is_held(chat:, row:, channel_type:, channel_id: sent.channel_id),
         return: refused(DoesntExist),
       )
       use <- bool.guard(
@@ -415,7 +530,8 @@ fn checked(
         chat_channel.Party -> refused(NotInGroup)
         chat_channel.Support | chat_channel.Instance ->
           Error(Refused(result: NoPermissions, unhandled: True))
-        chat_channel.Zone | chat_channel.Other(..) -> refused(NoPermissions)
+        chat_channel.Zone -> Ok(Zone)
+        chat_channel.Other(..) -> refused(NoPermissions)
       }
     }
   }
@@ -439,14 +555,23 @@ fn channel_row(
 }
 
 /// Whether the client holds a channel of this row with this id: one it makes
-/// itself has id 0, and one only the server joins is held by no line the server
-/// has not joined it to (`0x140404ee0`, `0x1404039f0`).
-fn is_held(row row: ChatChannel, channel_id channel_id: Int) -> Bool {
+/// itself has id 0, and the only one the server joins is the zone channel, held
+/// once its 0x1bc is written, under the id that message gave (`0x140404ee0`,
+/// `0x1404039f0`).
+fn is_held(
+  chat chat: Chat,
+  row row: ChatChannel,
+  channel_type channel_type: ChannelType,
+  channel_id channel_id: Int,
+) -> Bool {
   case
     int.bitwise_and(row.flags, joined_by_the_server) != 0,
     int.bitwise_and(row.flags, made_by_the_client) != 0
   {
-    True, _ -> False
+    True, _ ->
+      channel_type == chat_channel.Zone
+      && chat.zone_channel_joined
+      && channel_id == chat.zone_channel_id
     False, True -> channel_id == 0
     False, False -> False
   }
@@ -589,10 +714,26 @@ pub fn told(chat chat: Chat, tell tell: Tell) -> #(Chat, List(Effect)) {
         True -> #(chat, [Send(line_frame(chat:, speaker:, line:))])
         False -> #(chat, [])
       }
-    chat_tell.ZoneLine(..)
-    | chat_tell.Whisper(..)
-    | chat_tell.Heard(..)
-    | chat_tell.NotHeard(..) -> panic as "built in the zone and whisper steps"
+    chat_tell.ZoneLine(speaker:, top_zone_id:, line:) ->
+      case
+        speaker.character_id != chat.speaker.character_id
+        && is_in_my_run(chat:, speaker:)
+        && is_in_my_top_zone(chat:, top_zone_id:)
+      {
+        True -> #(chat, [Send(line_frame(chat:, speaker:, line:))])
+        False -> #(chat, [])
+      }
+    chat_tell.Whisper(..) | chat_tell.Heard(..) | chat_tell.NotHeard(..) ->
+      panic as "built in the zone and whisper steps"
+  }
+}
+
+/// Whether this player is in the zone channel of this top zone now: it may have
+/// changed zone since the speaker read the group's members.
+fn is_in_my_top_zone(chat chat: Chat, top_zone_id top_zone_id: Int) -> Bool {
+  case chat.zone {
+    NoZone -> False
+    InZone(top_zone_id: mine, ..) -> mine == top_zone_id
   }
 }
 
@@ -619,18 +760,57 @@ pub fn watch_ended(
 /// group changed and 0x1da written for another top zone, the group left and 0x1da
 /// with 0 for zone 0, and the refusal for an id with no row.
 pub fn world_zone_reported(
-  chat _chat: Chat,
-  world_zone_id _world_zone_id: Int,
-  top_zones _top_zones: TopZones,
+  chat chat: Chat,
+  world_zone_id world_zone_id: Int,
+  top_zones top_zones: TopZones,
 ) -> Result(#(Chat, List(Effect)), Refusal) {
-  panic as "built in the zone step"
+  use <- bool.guard(
+    when: world_zone_id == 0,
+    return: Ok(case chat.zone {
+      NoZone -> #(chat, [])
+      InZone(..) -> #(Chat(..chat, zone: NoZone), [
+        LeaveGroup(address: group_of(chat:, zone: chat.zone)),
+        Send(zone_named_frame(NoZone)),
+      ])
+    }),
+  )
+  use top_zone_id <- result.map(
+    top_zone.of(top_zones, world_zone_id)
+    |> result.replace_error(ZoneWithNoRow(world_zone_id:)),
+  )
+  let zone = InZone(world_zone_id:, top_zone_id:)
+  case chat.zone {
+    InZone(top_zone_id: held, ..) if held == top_zone_id -> #(
+      Chat(..chat, zone:),
+      [],
+    )
+    NoZone -> #(Chat(..chat, zone:), [
+      JoinGroup(address: group_of(chat:, zone:)),
+      Send(zone_named_frame(zone)),
+    ])
+    InZone(..) -> #(Chat(..chat, zone:), [
+      LeaveGroup(address: group_of(chat:, zone: chat.zone)),
+      JoinGroup(address: group_of(chat:, zone:)),
+      Send(zone_named_frame(zone)),
+    ])
+  }
+}
+
+/// The group of a zone the player is in: its run and the zone's top zone.
+fn group_of(chat chat: Chat, zone zone: Zone) -> Address {
+  let assert Ok(address) = zone_group(chat:, zone:)
+    as "a zone the player is in has a group"
+  address
 }
 
 /// What the player's camp does to its chat: it leaves `CharacterNamed` and the
 /// zone channel and stops watching each pending whisper, so nothing reaches it
 /// after the leave.
-pub fn left(chat _chat: Chat) -> List(Effect) {
-  panic as "built in the zone and whisper steps"
+pub fn left(chat chat: Chat) -> List(Effect) {
+  [
+    LeaveGroup(address: step.CharacterNamed(folded_name: folded(chat))),
+    ..leave_zone(chat:)
+  ]
 }
 
 /// A sentence that says why a chat message is refused, for the log.

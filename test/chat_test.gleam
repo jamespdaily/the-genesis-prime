@@ -8,10 +8,12 @@
 
 import character_tables
 import client_tables
-import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/chat.{type Chat}
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell.{Line, Said, Speaker}
+import genesis_prime/game/top_zone
+import genesis_prime/message/chat_channel_joined.{ChatChannelJoined}
 import genesis_prime/message/chat_channel_result.{
   DoesntExist, InvalidMessageText, NoPermissions, NotInGroup,
 }
@@ -21,6 +23,7 @@ import genesis_prime/message/chat_format_kind_1.{ChatFormatKind1}
 import genesis_prime/message/chat_line.{ChatLine}
 import genesis_prime/message/chat_line_accepted.{ChatLineAccepted}
 import genesis_prime/message/chat_result.{ChatResult}
+import genesis_prime/message/chat_zone_named.{ChatZoneNamed}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/chat_channel as chat_channel_table
@@ -799,4 +802,416 @@ pub fn the_planted_chat_channel_rows_and_the_channel_types_are_the_clients_test(
       assert chat_channel.from_id(row.id) == channel.0
     },
   )
+}
+
+// ---- zone ----
+
+const zone_channel_id = 3460
+
+fn top_zones() -> top_zone.TopZones {
+  top_zone.top_zones(character_tables.shared())
+}
+
+/// A chat that has entered the world with its place in `world_zone_id`.
+fn in_zone(
+  speaker: chat_tell.Speaker,
+  world_zone_id: Int,
+) -> #(Chat, List(chat.Effect)) {
+  chat.entered_world(
+    chat: chat_of(speaker),
+    world_zone_id:,
+    top_zones: top_zones(),
+  )
+}
+
+fn run_zone(world_zone_id: Int) -> Chat {
+  in_zone(speaker(), world_zone_id).0
+}
+
+fn zone_channel(top_zone_id: Int) -> step.Address {
+  step.ZoneChannel(
+    map: MapId(world_id:, instance: 0),
+    incarnation: run,
+    top_zone_id:,
+  )
+}
+
+fn reported(chat: Chat, world_zone_id: Int) -> #(Chat, List(chat.Effect)) {
+  let assert Ok(taken) =
+    chat.world_zone_reported(chat:, world_zone_id:, top_zones: top_zones())
+    as "the zone has a row or is 0"
+  taken
+}
+
+fn named_by_0x1da(effects: List(chat.Effect)) -> List(Int) {
+  list.filter_map(frames_of(effects), fn(frame) {
+    case frame.message_id == chat_zone_named.message_id {
+      True -> {
+        let assert Ok(named) = chat_zone_named.decode(frame.body)
+        Ok(named.world_zone_id)
+      }
+      False -> Error(Nil)
+    }
+  })
+}
+
+fn warnings_of(effects: List(chat.Effect)) -> List(String) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      chat.Warning(text:) -> Ok(text)
+      chat.Send(..)
+      | chat.Tell(..)
+      | chat.TellWatched(..)
+      | chat.Watch(..)
+      | chat.Unwatch(..)
+      | chat.JoinGroup(..)
+      | chat.LeaveGroup(..)
+      | chat.Unhandled(..) -> Error(Nil)
+    }
+  })
+}
+
+fn zone_line(chat: Chat, message_id: Int) -> #(Chat, List(chat.Effect)) {
+  take(
+    chat:,
+    body: body(
+      type_id: 9,
+      channel_id: zone_channel_id,
+      text: units("Hello"),
+      formats: [],
+      message_id:,
+    ),
+    viewers: [7],
+  )
+}
+
+fn zone_named_frame(world_zone_id: Int) -> Frame {
+  let assert Ok(body) = chat_zone_named.encode(ChatZoneNamed(world_zone_id:))
+  Frame(message_id: chat_zone_named.message_id, body:)
+}
+
+pub fn the_entry_burst_names_the_channel_joins_it_and_joins_the_groups_in_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) = in_zone(speaker(), 6009)
+  let assert [
+    chat.JoinGroup(named),
+    chat.Send(named_zone),
+    chat.Send(joined),
+    chat.JoinGroup(zone),
+  ] = effects
+    as "after 0x61: the name group, 0x1da, 0x1bc and the zone channel's group"
+  assert named == step.CharacterNamed("ab cd")
+    as "the folded name (design: string.lowercase)"
+  assert chat_zone_named.decode(named_zone.body)
+    == Ok(ChatZoneNamed(world_zone_id: 4961))
+    as "opcode.0x1da: the channel is named after the top zone 4961 of the place's zone 6009 (6009 -> 4962 -> 4961)"
+  assert joined.message_id == chat_channel_joined.message_id
+  assert chat_channel_joined.decode(joined.body)
+    == Ok(ChatChannelJoined(
+      channel_type: 9,
+      channel_id: zone_channel_id,
+      name: "",
+      field_4: 0,
+      field_5: 0,
+      field_6: 0,
+    ))
+    as "opcode.0x1bc: type 9, the map's world id as the id, an empty name and three zeros; the order lets the flag 0x400 row take the name 0x1da last gave"
+  assert zone == zone_channel(4961)
+}
+
+pub fn no_0x1bc_is_written_for_a_channel_the_client_makes_itself_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) = in_zone(speaker(), 6009)
+  let types =
+    list.filter_map(frames_of(effects), fn(frame) {
+      case frame.message_id == chat_channel_joined.message_id {
+        True -> {
+          let assert Ok(joined) = chat_channel_joined.decode(frame.body)
+          Ok(joined.channel_type)
+        }
+        False -> Error(Nil)
+      }
+    })
+  assert types == [9]
+    as "0x140404ee0: the client makes Say, Yell, Emote, Whisper and AccountWhisper itself, and a 0x1bc for one only prints a join again; Zone is the one the server joins"
+}
+
+pub fn entering_the_same_map_again_sends_the_same_channel_id_test() -> Nil {
+  use <- owned_test.run(5000)
+  let joined_id = fn(speaker) {
+    let #(_, effects) = in_zone(speaker, 6009)
+    let assert [_, _, chat.Send(frame), _] = effects
+    let assert Ok(joined) = chat_channel_joined.decode(frame.body)
+    joined.channel_id
+  }
+  assert joined_id(speaker())
+    == joined_id(Speaker(..speaker(), incarnation: run + 5))
+    as "server choice: the id is the map's world id in every run, so a new entry joins the one channel and does not make a second"
+}
+
+pub fn a_place_zone_that_is_0_or_has_no_row_leaves_the_player_in_no_zone_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(chat_in_0, in_0) = in_zone(speaker(), 0)
+  assert named_by_0x1da(in_0) == [0]
+    as "0x140403670: 0x1da with 0 shows the channel with an empty name"
+  assert list.length(frames_of(in_0)) == 2
+    as "0x1bc is still written: the client makes the zone channel from it"
+  assert list.filter(in_0, fn(effect) {
+      effect == chat.JoinGroup(zone_channel(0))
+    })
+    == []
+  assert warnings_of(in_0) == []
+    as "zone 0 is the table's own no-zone value, so no warning"
+  let #(_, no_row) = in_zone(speaker(), 1132)
+  assert named_by_0x1da(no_row) == [0]
+  assert list.length(warnings_of(no_row)) == 1
+    as "a place zone with no WorldZone row is server data gone wrong: a warning, and the connection does not end"
+  let #(_, line) = zone_line(chat_in_0, 1)
+  assert accepted(line).chat_message_id == 1
+    as "a zone line of a player in no zone is accepted"
+  assert tells_of(line) == [] as "and reaches no one"
+}
+
+pub fn a_report_under_the_same_top_zone_writes_nothing_and_keeps_the_group_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(chat, effects) = reported(run_zone(1411), 1305)
+  assert effects == []
+    as "chat.zone_reach: 1411 and 1305 are both under the top zone 1304, so nothing changes"
+  let #(_, line) = zone_line(chat, 2)
+  assert list.map(tells_of(line), fn(told) { told.0 }) == [zone_channel(1304)]
+    as "the group is kept"
+}
+
+pub fn a_report_under_another_top_zone_changes_the_group_and_renames_the_channel_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(chat, effects) = reported(run_zone(1411), 648)
+  assert effects
+    == [
+      chat.LeaveGroup(zone_channel(1304)),
+      chat.JoinGroup(zone_channel(35)),
+      chat.Send(zone_named_frame(35)),
+    ]
+    as "0x140403670: the client only renames the channel, so the id Z stays: leave the old group, join the new, write 0x1da with the new top zone"
+  let #(_, line) = zone_line(chat, 3)
+  let assert [#(address, chat_tell.ZoneLine(line: told, ..))] = tells_of(line)
+  assert address == zone_channel(35)
+  assert told.channel_id == zone_channel_id as "the channel is still the one Z"
+}
+
+pub fn a_report_of_zone_0_leaves_the_group_and_names_no_zone_and_a_zone_line_reaches_no_one_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(chat, effects) = reported(run_zone(1411), 0)
+  assert effects
+    == [chat.LeaveGroup(zone_channel(1304)), chat.Send(zone_named_frame(0))]
+    as "0x14036d040: the client reports 0 before any probe answer; 0x140403670: 0x1da with 0 shows the empty name"
+  let #(_, line) = zone_line(chat, 4)
+  assert accepted(line).chat_message_id == 4
+    as "a zone line from that player is accepted"
+  assert tells_of(line) == [] as "and reaches no one"
+  let #(_, again) = reported(chat, 0)
+  assert again == [] as "a second report of 0 writes nothing"
+  let #(_, back) = reported(chat, 1411)
+  assert back
+    == [chat.JoinGroup(zone_channel(1304)), chat.Send(zone_named_frame(1304))]
+    as "a zone after zone 0 joins its group and names the channel"
+}
+
+pub fn a_report_of_a_zone_with_no_row_ends_the_connection_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert chat.world_zone_reported(
+      chat: run_zone(1411),
+      world_zone_id: 1132,
+      top_zones: top_zones(),
+    )
+    == Error(chat.ZoneWithNoRow(world_zone_id: 1132))
+    as "CLAUDE.md: refuse a value the client's tables would not allow; WorldZone has no row 1132"
+}
+
+pub fn a_zone_line_is_accepted_and_told_to_the_group_of_the_speakers_run_and_top_zone_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(_, effects) = zone_line(run_zone(1411), 5)
+  assert accepted(effects).chat_message_id == 5
+  let assert [
+    #(address, chat_tell.ZoneLine(speaker: told, top_zone_id:, line:)),
+  ] = tells_of(effects)
+  assert address == zone_channel(1304) && top_zone_id == 1304
+    as "Jim, 2026-11-03: the reach is the top zone of the zone the client reports, in the same map run"
+  assert told == speaker()
+  assert line.channel_type == chat_channel.Zone
+    && line.channel_id == zone_channel_id
+}
+
+fn member_hears(
+  member member: Chat,
+  zone_line_from speaker: chat_tell.Speaker,
+  top top_zone_id: Int,
+) -> List(chat.Effect) {
+  chat.told(
+    member,
+    chat_tell.ZoneLine(
+      speaker:,
+      top_zone_id:,
+      line: Line(
+        channel_type: chat_channel.Zone,
+        channel_id: zone_channel_id,
+        text: units("Hi"),
+        formats: [],
+      ),
+    ),
+  ).1
+}
+
+fn other_player() -> chat_tell.Speaker {
+  Speaker(..speaker(), character_id: 9, name: "Zed Other", unit_id: 6)
+}
+
+pub fn a_member_of_the_group_writes_the_line_on_the_zone_channel_and_the_speaker_drops_its_own_test() -> Nil {
+  use <- owned_test.run(5000)
+  let member = in_zone(other_player(), 1305).0
+  let effects =
+    member_hears(member: member, zone_line_from: speaker(), top: 1304)
+  let assert Ok(line) = chat_line.decode(only_frame(effects).body)
+  assert line.channel_type == 9
+    && line.channel_id == zone_channel_id
+    && line.sender_name == "Ab Cd"
+    as "opcode.0x1c8: one 0x1c8 on (9, Z)"
+  assert member_hears(
+      member: run_zone(1411),
+      zone_line_from: speaker(),
+      top: 1304,
+    )
+    == []
+    as "a zone line from the player's own character is dropped: the accept shows it"
+}
+
+pub fn two_players_in_different_sub_zones_of_one_top_zone_share_the_group_and_others_do_not_test() -> Nil {
+  use <- owned_test.run(5000)
+  let address_of = fn(speaker, zone) {
+    let #(_, effects) = zone_line(in_zone(speaker, zone).0, 6)
+    let assert [#(address, _)] = tells_of(effects)
+    address
+  }
+  assert address_of(speaker(), 1411) == address_of(other_player(), 1305)
+    as "chat.zone_reach: the client reports the leaf, 1411 and 1305 are leaves of the top zone 1304: both hear each other"
+  assert address_of(speaker(), 1411) != address_of(other_player(), 648)
+    as "a player in the same map under another top zone gets nothing (Jim, 2026-11-03)"
+  assert address_of(speaker(), 1411)
+    != address_of(
+      Speaker(..other_player(), map: MapId(world_id: 1387, instance: 0)),
+      1305,
+    )
+    as "a player in another map gets nothing"
+  assert address_of(speaker(), 1411)
+    != address_of(Speaker(..other_player(), incarnation: run + 1), 1305)
+    as "a player in another run of the map gets nothing"
+}
+
+pub fn a_member_that_changed_top_zone_or_run_drops_a_line_told_to_the_old_group_test() -> Nil {
+  use <- owned_test.run(5000)
+  let moved = reported(in_zone(other_player(), 1305).0, 648).0
+  assert member_hears(member: moved, zone_line_from: speaker(), top: 1304) == []
+    as "the design's failure table: it left the group but was still listed when the speaker told it, so it drops the line as being for another top zone"
+  let other_run =
+    in_zone(Speaker(..other_player(), incarnation: run + 1), 1305).0
+  assert member_hears(member: other_run, zone_line_from: speaker(), top: 1304)
+    == []
+    as "or for another run"
+  let no_zone = reported(in_zone(other_player(), 1305).0, 0).0
+  assert member_hears(member: no_zone, zone_line_from: speaker(), top: 1304)
+    == []
+    as "a player in no zone takes no zone line"
+}
+
+pub fn a_speaker_that_camps_after_speaking_has_told_the_group_and_leaves_its_groups_test() -> Nil {
+  use <- owned_test.run(5000)
+  let chat = run_zone(1411)
+  let #(_, line) = zone_line(chat, 7)
+  assert list.length(tells_of(line)) == 1
+    as "the line was told in the step that took it, so the others still get it"
+  assert chat.left(chat)
+    == [
+      chat.LeaveGroup(step.CharacterNamed("ab cd")),
+      chat.LeaveGroup(zone_channel(1304)),
+    ]
+    as "the camp's leave: no zone line reaches the player after it, and a new entry joins again"
+}
+
+pub fn a_zone_line_before_its_0x1bc_or_on_another_id_is_refused_with_result_1_test() -> Nil {
+  use <- owned_test.run(5000)
+  let refuse = fn(chat, channel_id) {
+    let #(_, effects) =
+      take(
+        chat:,
+        body: body(
+          type_id: 9,
+          channel_id:,
+          text: units("Hi"),
+          formats: [],
+          message_id: 8,
+        ),
+        viewers: [],
+      )
+    refused(effects)
+  }
+  let expected = fn(channel_id) {
+    ChatResult(
+      channel_type: 9,
+      channel_id:,
+      result: DoesntExist,
+      chat_message_id: 8,
+    )
+  }
+  assert refuse(a_chat(), zone_channel_id) == expected(zone_channel_id)
+    as "0x140401cb0: the client holds a Zone channel only after the server's 0x1bc"
+  assert refuse(run_zone(1411), zone_channel_id + 1)
+    == expected(zone_channel_id + 1)
+    as "another id is no channel the player holds"
+  assert refuse(run_zone(1411), 0) == expected(0)
+    as "Zone is never made by the client with id 0"
+}
+
+pub fn the_memberships_one_player_holds_after_entering_changing_zone_camping_and_entering_again_are_one_for_each_group_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The groups the effects leave a connection in, with a join of a group already
+  // held keeping one membership, as the registry does (`registry_group_test`).
+  let apply = fn(groups: List(step.Address), effects: List(chat.Effect)) {
+    list.fold(effects, groups, fn(groups, effect) {
+      case effect {
+        chat.JoinGroup(address:) ->
+          case list.contains(groups, address) {
+            True -> groups
+            False -> [address, ..groups]
+          }
+        chat.LeaveGroup(address:) ->
+          list.filter(groups, fn(held) { held != address })
+        chat.Send(..)
+        | chat.Tell(..)
+        | chat.TellWatched(..)
+        | chat.Warning(..)
+        | chat.Watch(..)
+        | chat.Unwatch(..)
+        | chat.Unhandled(..) -> groups
+      }
+    })
+  }
+  let name = step.CharacterNamed("ab cd")
+  let #(chat, entered) = in_zone(speaker(), 1411)
+  let groups = apply([], entered)
+  assert same_groups(groups, [name, zone_channel(1304)])
+  let #(chat, changed) = reported(chat, 648)
+  let groups = apply(groups, changed)
+  assert same_groups(groups, [name, zone_channel(35)])
+    as "a change of top zone leaves the old group and joins the new one"
+  let groups = apply(groups, chat.left(chat))
+  assert groups == [] as "the camp leaves every group"
+  let #(_, again) = in_zone(speaker(), 1411)
+  let groups = apply(groups, again)
+  assert same_groups(groups, [name, zone_channel(1304)])
+    as "a new entry joins again: exactly one membership for each group"
+}
+
+/// Whether the groups held are exactly these, each once.
+fn same_groups(held: List(step.Address), expected: List(step.Address)) -> Bool {
+  list.length(held) == list.length(expected)
+  && list.all(expected, fn(group) { list.contains(held, group) })
 }
