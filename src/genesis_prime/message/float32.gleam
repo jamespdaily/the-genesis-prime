@@ -22,6 +22,15 @@ pub fn to_bits(value value: Float) -> Int {
   bits
 }
 
+/// The float the 32-bit float nearest to `value` holds, as the VM's own float:
+/// what a value is after the client holds it in 32 bits. It rounds as
+/// `to_bits` does, so it is always finite.
+pub fn rounded(value value: Float) -> Float {
+  let assert <<narrow:float-size(32)>> = <<to_bits(value:):size(32)>>
+    as "the bits of a finite 32-bit float are a finite 32-bit float"
+  narrow
+}
+
 /// The 32 bits a message carries a float in: 0 to 0xFFFFFFFF, so a value wider
 /// than 32 bits is never held. Any pattern is held, a float that is infinite or
 /// not a number among them, so a rule that takes a client's float can refuse it.

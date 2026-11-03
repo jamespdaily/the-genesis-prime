@@ -31,6 +31,16 @@ pub fn a_float_that_a_single_cannot_hold_is_rounded_to_the_nearest_single_test()
     as "IEEE 754 binary32: 2^24 + 1 is a tie between 2^24 and 2^24 + 2, and rounds to even, 2^24 = 0x4B800000"
 }
 
+pub fn a_float_rounded_to_a_single_is_the_float_of_the_singles_bits_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert float32.rounded(0.1) == 0.10000000149011612
+    as "IEEE 754 binary32: 0.1 rounds to 0x3DCCCCCD, 0.10000000149011612"
+  assert float32.rounded(-2.5) == -2.5
+    as "vector.opcode.0xad.body: -2.5 is a 32-bit float, so it stays"
+  assert float32.rounded(1.0e300) == 3.4028234663852886e38
+    as "a value beyond the largest single is the largest single, as to_bits has it"
+}
+
 pub fn the_bits_of_a_float_the_client_sent_hold_the_float_it_sent_test() -> Nil {
   use <- owned_test.run(5000)
   let assert Ok(one) = float32.bits(0x3F800000)

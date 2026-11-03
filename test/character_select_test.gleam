@@ -49,7 +49,6 @@ import gleam/list
 import gleam/option.{None}
 import gleam/string
 import owned_test
-import place_support
 
 const filetime = 133_900_000_000_000_000
 
@@ -270,13 +269,7 @@ pub fn a_valid_request_asks_the_store_to_make_the_character_with_the_slot_count_
           faction_id: 167,
           level: 1,
           path: 1,
-          place: place_support.at(
-            world_id: 3460,
-            world_zone_id: 6009,
-            x: 29.128599166870117,
-            y: -853.87158203125,
-            z: -560.18798828125,
-          ),
+          place: character_tables.novice_start_place(),
           look: [
             LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
             LookEntry(label: CharacterCustomizationLabelId(22), value: 1),

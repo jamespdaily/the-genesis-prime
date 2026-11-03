@@ -1,34 +1,53 @@
 //// Where a new character starts: the WorldLocation2 row of each start of
-//// each race and faction. The client holds every start place as a
-//// WorldLocation2 row, but no client table links a start to its row
-//// (CharacterCreation.characterCreationStartEnum, WorldLocation2.50230). The
-//// links are Jim's world database's (wildstar-knowledge,
-//// world-data/start_location.tsv, its 24 rows), which was converted from
-//// another server project and is used under Jim's one-time exception: each of
-//// its places is a WorldLocation2 row's to the unit, except
-//// Draken and Chua Veteran, 3.4 units from row 8223, which is used. The place
-//// itself, world, zone and position, is always the client's row.
+//// each race and faction, and the way the row faces. The client holds every
+//// start place as a WorldLocation2 row, but no client table, code or Lua links
+//// a start to its row (CharacterCreation.characterCreationStartEnum), so the
+//// rows are chosen by the client's own tutorial text, and the place is always
+//// the client's row: its world, zone, position and facing.
 ////
 //// - Novice (characterCreationStartEnum 4, PreTutorial), every race and
-////   faction: row 51596, World 3460 (Map\NewPlayerExperience).
-//// - Veteran (3, Nexus): Exile Human and Granok 1594, Aurin and Mordesh 37015;
-////   Dominion Cassian and Mechari 18987, Draken and Chua 8223.
+////   faction: row 51596, World 3460 (Map\NewPlayerExperience, the training
+////   simulation of World.3460). No table names it: it stands 15.7 units from
+////   the first quest circle (row 51735) and faces it (Quest2.10513, a guess).
+//// - Veteran (3, Nexus): the row the last quest of that simulation, 'Bon
+////   Voyage', links in its completion text for each landing. Exile Human and
+////   Granok 42074 (Landing Site, Northern Wilds); Aurin and Mordesh 41641
+////   (Greenleaf Glade, Everstar Grove), the race groups being those of the
+////   quest's text (Quest2.10528, Quest2.10528.links). Dominion 42148
+////   (Stormcaller Landing, Levian Bay) and 8223 (Mondo's Beachhead, Crimson
+////   Isle) (Quest2.10530, Quest2.10530.links, WorldLocation2.8223). The client
+////   does not say which Dominion races go to which landing; that is a retail
+////   record (wildstaronline-archive, read through the Wayback Machine, 2020
+////   snapshots; the page "Destiny",
+////   https://wildstaronline-archive.fandom.com/wiki/Destiny: "The Chua and the
+////   Draken are expected to go to Crimson Isle and the Cassian and Mechari are
+////   generally sent to Levian Bay", and the page "Levian Bay",
+////   https://wildstaronline-archive.fandom.com/wiki/Levian_Bay: "default
+////   starter zone for Cassian and Mechari players"): Cassian and Mechari
+////   42148, Draken and Chua 8223.
 ////
 //// Level 50 (5) has no place: every Level 50 CharacterCreation row costs
-//// account currency, which a create refuses first (`CostsCurrency`), so its
-//// two rows of the database, Exile 53050 and Dominion 53051, are not kept.
+//// account currency, which a create refuses first (`CostsCurrency`).
+////
+//// A row's facing0 to facing3 is a quaternion (WorldLocation2.facing0), which
+//// the place turns into yaw, pitch and roll as the client's own
+//// QuaternionToEulerAngles does (`facing_of_quaternion`). The client never
+//// applies a row's facing to a unit, so that a character given this yaw faces
+//// the way the row means is read from the data (WorldLocation2.facing0).
 ////
 //// A start, race or faction that no row above names has no place, so a
 //// create for it is refused (genesis_prime/game/character_creation). The
 //// table load fails when a row above is not a WorldLocation2 row
 //// (`requirement`).
 
+import genesis_prime/message/float32
 import genesis_prime/table/id.{type RaceId, RaceId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/world_location2
 import gleam/float
 import gleam/list
 import gleam/result
+import gleam_community/maths
 
 /// The way a character faces: yaw, pitch and roll in radians, as the movement
 /// command of kind 14 carries them (0x140715350). A float here is always
@@ -38,10 +57,69 @@ pub type Facing {
 }
 
 /// The facing of a character that has never turned: 0, 0, 0, which is what a
-/// character's row holds until its first save, and what a new character starts
-/// with. The start's WorldLocation2 row holds a facing (facing0 to facing3) that
-/// is not converted to yaw, pitch and roll.
+/// character's row holds until its first save.
 pub const unturned = Facing(yaw: 0.0, pitch: 0.0, roll: 0.0)
+
+/// RotationMatrixToEulerAngles' threshold on the matrix's m21: a value beyond
+/// it, either way, gives a pitch of a quarter turn (0x1401b2ed0, the bytes at
+/// 0x140b79ecc, the 32-bit float 0.99999).
+const pole = 0.9999899864196777
+
+/// The same threshold below zero (the bytes at 0x140b7a238).
+const negative_pole = -0.9999899864196777
+
+/// The yaw, pitch and roll that the client's QuaternionToEulerAngles
+/// (0x1401b2fe0) makes of the rotation quaternion x, y, z, w, which is what a
+/// WorldLocation2 row's facing0 to facing3 hold. It builds the quaternion's
+/// rotation matrix and turns it as RotationMatrixToEulerAngles (0x1401b2ed0)
+/// does: yaw atan2(m20, m22), pitch asin(-m21) and roll atan2(m01, m11); when
+/// m21 is beyond `pole` either way, the pitch is a quarter turn (up for m21
+/// below -0.99999), the roll 0 and the yaw atan2(-m02, m00).
+///
+/// The client computes in 32-bit floats, so each angle is the nearest 32-bit
+/// float, which is also what a save and a load give back, and m21 is compared
+/// with `pole` as a 32-bit float. The arithmetic is done in the VM's own floats
+/// and gives the client's value to the bit, the sign of a zero included (a
+/// pitch of -0.0 for a turn about y alone), for each of the five start rows.
+pub fn facing_of_quaternion(
+  x x: Float,
+  y y: Float,
+  z z: Float,
+  w w: Float,
+) -> Facing {
+  let m00 = 1.0 -. 2.0 *. y *. y -. 2.0 *. z *. z
+  let m01 = 2.0 *. { x *. y +. w *. z }
+  let m02 = 2.0 *. { x *. z -. w *. y }
+  let m11 = 1.0 -. 2.0 *. x *. x -. 2.0 *. z *. z
+  let m20 = 2.0 *. { x *. z +. w *. y }
+  let m21 = 2.0 *. { y *. z -. w *. x }
+  let m22 = 1.0 -. 2.0 *. x *. x -. 2.0 *. y *. y
+  let quarter_turn = maths.pi() /. 2.0
+  let held_m21 = float32.rounded(m21)
+  let #(yaw, pitch, roll) = case held_m21 {
+    _ if held_m21 <. negative_pole -> #(
+      maths.atan2(float.negate(m02), m00),
+      quarter_turn,
+      0.0,
+    )
+    _ if held_m21 >. pole -> #(
+      maths.atan2(float.negate(m02), m00),
+      float.negate(quarter_turn),
+      0.0,
+    )
+    _ -> {
+      let assert Ok(pitch) =
+        maths.asin(float.clamp(float.negate(m21), min: -1.0, max: 1.0))
+        as "the clamp to -1 and 1, as the client does, keeps asin's argument in its range"
+      #(maths.atan2(m20, m22), pitch, maths.atan2(m01, m11))
+    }
+  }
+  Facing(
+    yaw: float32.rounded(yaw),
+    pitch: float32.rounded(pitch),
+    roll: float32.rounded(roll),
+  )
+}
 
 /// A character's place in the world: the World row, the WorldZone row, the
 /// position and the way it faces. It is always in a world: `place` refuses
@@ -193,19 +271,19 @@ const starts = [
     start: Veteran,
     faction_id: exile,
     race_ids: [RaceId(1), RaceId(3)],
-    location_id: 1594,
+    location_id: 42_074,
   ),
   StartGroup(
     start: Veteran,
     faction_id: exile,
     race_ids: [RaceId(4), RaceId(16)],
-    location_id: 37_015,
+    location_id: 41_641,
   ),
   StartGroup(
     start: Veteran,
     faction_id: dominion,
     race_ids: [RaceId(1), RaceId(12)],
-    location_id: 18_987,
+    location_id: 42_148,
   ),
   StartGroup(
     start: Veteran,
@@ -216,9 +294,9 @@ const starts = [
 ]
 
 /// The place a character of this faction and race starts at for a
-/// CharacterCreation row's start, from the client's WorldLocation2 row.
-/// `Error(Nil)` for a start, race or faction with no row above, and for a row
-/// in world 0.
+/// CharacterCreation row's start, from the client's WorldLocation2 row: its
+/// world, zone, position and facing. `Error(Nil)` for a start, race or faction
+/// with no row above, and for a row in world 0.
 pub fn of(
   tables tables: table_store.Tables,
   faction_id faction_id: Int,
@@ -242,7 +320,12 @@ pub fn of(
     x: row.position0,
     y: row.position1,
     z: row.position2,
-    facing: unturned,
+    facing: facing_of_quaternion(
+      x: row.facing0,
+      y: row.facing1,
+      z: row.facing2,
+      w: row.facing3,
+    ),
   )
 }
 
