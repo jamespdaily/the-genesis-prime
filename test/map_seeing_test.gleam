@@ -466,6 +466,37 @@ pub fn a_units_seen_and_moved_unit_read_the_maps_one_clock_and_it_never_goes_bac
     as "the clock only goes forward with the monotonic time"
 }
 
+pub fn a_clock_past_2_to_the_32_ms_is_written_mod_2_to_the_32_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x638's server time and 0x262's estimate start are 32 bits
+  // (opcode.0x638, schema.toml); a map 2^32 ms old is 49.7 days of one map's
+  // life, and its clock then counts from 0 again.
+  let wrap_ms = 4_294_967_296
+  let #(state, _) =
+    join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 100)
+  let #(state, joined) =
+    join(
+      state: state,
+      connection: 2,
+      place: at(10.0),
+      elapsed_ms: wrap_ms + 250,
+    )
+  let assert [#(2, Seen(unit: seen)), _] = sends(joined)
+  assert seen.server_time_estimate_start == 250
+    as "a Seen 2^32 + 250 ms into the map's life says 250"
+  let #(_, moved) =
+    move(
+      state: state,
+      connection: 2,
+      x: 20.0,
+      commands: [position(20.0)],
+      elapsed_ms: wrap_ms + 900,
+    )
+  let assert [#(1, MovedUnit(server_time_ms:, ..))] = sends(moved)
+  assert server_time_ms == 900
+    as "a MovedUnit 2^32 + 900 ms into the map's life says 900"
+}
+
 pub fn a_move_that_takes_a_player_out_of_sight_is_unseen_both_ways_and_into_sight_seen_both_ways_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =

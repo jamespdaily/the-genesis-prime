@@ -101,8 +101,8 @@
 //// - **Server time** is the map's one clock, in milliseconds since the map
 ////   started, taken from the monotonic time of the input being handled
 ////   (`server_time`); a unit's `Seen` and each `MovedUnit` read the same clock,
-////   so it never goes back. The 32-bit field wraps after 49 days of one map's
-////   life: that is not handled.
+////   so it never goes back before the 32-bit field wraps. The clock is taken
+////   mod 2^32 (`server_time`), so a map 49.7 days old counts from 0 again.
 //// - **A `Moved` from a connection not in the map** changes nothing and is
 ////   logged as an error: the connection's rule tells only while joined. A
 ////   tell in the form of an ask, or an ask in the form of a tell, is a bug and
@@ -143,6 +143,10 @@ import gleam/set.{type Set}
 
 /// The rule's name: its module path.
 const rule_name = "genesis_prime/world_map/map"
+
+/// The clock's 32 bits: the server time of 0x638 and the estimate start of
+/// 0x262 are 32 bits wide (opcode.0x638).
+const server_time_modulus = 4_294_967_296
 
 /// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).
 const most_commands_in_a_message = 31
@@ -276,10 +280,14 @@ pub fn step(
 
 /// The map's server time at the time of an input: milliseconds on the map's
 /// own clock, which started at 0 when the map started (the monotonic time of
-/// `Started`). A unit's `Seen` and each `MovedUnit` read it, so it never goes
-/// back.
+/// `Started`), taken mod 2^32 because the client's fields hold 32 bits
+/// (opcode.0x638). A unit's `Seen` and each `MovedUnit` read it, so it only
+/// goes forward until the map is 49.7 days old, when it counts from 0 again:
+/// the client takes a time sample only when its signed 32-bit difference from
+/// the last is at least half the send interval, and ignores one that is not
+/// (FitServerTime 0x14079ab90); its fit across the wrap is not read.
 fn server_time(state state: State, now now: Now) -> Int {
-  now.monotonic_ms - state.started_ms
+  { now.monotonic_ms - state.started_ms } % server_time_modulus
 }
 
 /// A connection's move: its unit is placed at `place`, and each pair it makes
