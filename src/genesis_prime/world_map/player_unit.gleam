@@ -84,6 +84,32 @@ pub fn unit_id(unit unit: PlayerUnit) -> Int {
   unit.unit_id
 }
 
+/// Where the unit stands: the place it joined at, then the one each move gave
+/// it.
+pub fn place(unit unit: PlayerUnit) -> Place {
+  unit.place
+}
+
+/// The unit standing at `place`, in the same map with the same body.
+pub fn moved(unit unit: PlayerUnit, place place: Place) -> PlayerUnit {
+  PlayerUnit(..unit, place:)
+}
+
+/// Message 0x262 for the unit as another player is sent it: `create`, with the
+/// map's server time in milliseconds as the first sample of the unit's time
+/// estimate (opcode.0x262), and the unit's current place as its kind 2 with the
+/// bit clear, then its kind 14.
+pub fn seen(
+  unit unit: PlayerUnit,
+  realm_id realm_id: Int,
+  server_time_ms server_time_ms: Int,
+) -> UnitCreatePlayer {
+  UnitCreatePlayer(
+    ..create(unit:, realm_id:),
+    server_time_estimate_start: server_time_ms,
+  )
+}
+
 /// The id of the unit's character, for a log line.
 pub fn character_id(unit unit: PlayerUnit) -> Int {
   let CharacterId(character_id) = unit.character.character_id

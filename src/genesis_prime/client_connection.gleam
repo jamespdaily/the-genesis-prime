@@ -56,6 +56,11 @@ pub type Request {
   /// map that is not running, or runs as another incarnation, is not running
   /// for this ask (genesis_prime/world_map/registry).
   AskMapRun(map: MapId, incarnation: Int, message: map.Message)
+  /// Tell the run of the map with this incarnation, which Maps never starts,
+  /// and go on: nothing waits for an answer, and a run that is not running
+  /// drops the tell. It is made only by a `Tell` effect (genesis_prime/step);
+  /// as an ask it would wait for an answer that never comes.
+  TellMapRun(map: MapId, incarnation: Int, message: map.Message)
 }
 
 /// What comes back from an ask, by the process asked.
@@ -70,6 +75,11 @@ pub type Answer {
 /// it. Only the game rule is sent anything; the login's rules take `Nil`.
 pub type Message {
   SentBySessions(message: account_session.Outgoing)
+  /// What a map sends the connection of a player in it without waiting:
+  /// another player's unit seen, moved or gone (`Seen`, `MovedUnit`,
+  /// `Unseen`). A map's answers (`Joined`, `Left`) come as an ask's outcome,
+  /// never as this.
+  SentByMap(message: map.Outgoing)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who
@@ -314,7 +324,7 @@ pub fn log(
   about about: About,
   level level: step.LogLevel,
   text text: String,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Request)) {
   Log(LogLine(level:, text:, about:))
 }
 
@@ -419,7 +429,7 @@ pub type Heard {
 pub fn hear(
   event event: Event(ConnectionEvent(message, Answer)),
   about about: About,
-  stopping stopping: fn() -> List(Effect(ConnectionEffect)),
+  stopping stopping: fn() -> List(Effect(ConnectionEffect(Request))),
 ) -> Heard {
   let ends = fn(level, text) {
     Otherwise(Effects([Log(LogLine(level:, text:, about:)), Stop]))
@@ -446,17 +456,17 @@ pub fn socket_failed_text(failure failure: step.SocketFailure) -> String {
 /// What taking one request or frame, or one answer, decided.
 pub type Handled(session) {
   /// Go on to the next request or frame in the bytes.
-  Continue(session: session, effects: List(Effect(ConnectionEffect)))
+  Continue(session: session, effects: List(Effect(ConnectionEffect(Request))))
   /// Carry out the effects, then ask; what follows in the bytes waits.
   Asking(
     session: session,
-    effects: List(Effect(ConnectionEffect)),
+    effects: List(Effect(ConnectionEffect(Request))),
     ask: step.Ask(Request),
   )
   /// Carry out the effects, then take no frame until another input. The
   /// effects of a rule that ends the connection hold `Stop`; one that waits for
   /// a timer or a process holds none.
-  Done(session: session, effects: List(Effect(ConnectionEffect)))
+  Done(session: session, effects: List(Effect(ConnectionEffect(Request))))
 }
 
 /// How a rule takes what the client sent: the callbacks `drive` and `settle`
@@ -490,7 +500,7 @@ pub type Flow(session, item, error, state) {
 pub fn drive(
   session session: session,
   flow flow: Flow(session, item, error, state),
-  carried carried: List(Effect(ConnectionEffect)),
+  carried carried: List(Effect(ConnectionEffect(Request))),
 ) -> #(state, ConnectionStep(Request)) {
   case flow.take(flow.pending(session)) {
     Error(error) ->
@@ -512,7 +522,7 @@ pub fn drive(
 pub fn settle(
   handled handled: Handled(session),
   flow flow: Flow(session, item, error, state),
-  carried carried: List(Effect(ConnectionEffect)),
+  carried carried: List(Effect(ConnectionEffect(Request))),
 ) -> #(state, ConnectionStep(Request)) {
   case handled {
     Continue(session:, effects:) ->
@@ -529,9 +539,9 @@ pub fn settle(
 }
 
 fn in_order(
-  carried carried: List(Effect(ConnectionEffect)),
-  then effects: List(Effect(ConnectionEffect)),
-) -> List(Effect(ConnectionEffect)) {
+  carried carried: List(Effect(ConnectionEffect(Request))),
+  then effects: List(Effect(ConnectionEffect(Request))),
+) -> List(Effect(ConnectionEffect(Request))) {
   list.append(list.reverse(carried), effects)
 }
 

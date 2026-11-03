@@ -472,6 +472,20 @@ fields = [
 ]
 
 [[message]]
+id = 0x0638
+name = "unit_movement"
+direction = "server_to_client"
+evidence = "opcode.0x638"
+summary = "movement commands for a unit the server moves: the unit, the server's time, a bit that resets the unit's movement, a bit the unit keeps, and at most 31 commands in the layout of 0x637's"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x638", named_by = "opcode.0x638" },
+  { name = "server_time", kind = "unsigned", bits = 32, evidence = "opcode.0x638", named_by = "opcode.0x638" },
+  { name = "reset_movement", kind = "unsigned", bits = 1, evidence = "opcode.0x638", named_by = "opcode.0x638" },
+  { name = "kept", kind = "unsigned", bits = 1, evidence = "opcode.0x638", named_by = "opcode.0x638" },
+  { name = "commands", kind = "array", count_bits = 5, element = "movement_command", evidence = "opcode.0x638", named_by = "opcode.0x638" },
+]
+
+[[message]]
 id = 0x0635
 name = "client_control_echoed"
 direction = "client_to_server"

@@ -84,7 +84,7 @@ import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
-  SentBySessions,
+  SentByMap, SentBySessions, TellMapRun,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -284,6 +284,14 @@ fn directory(settings: Settings) -> Directory {
           deadline_ms:,
           reply: fn(answer) { reply(FromMap(answer)) },
         )
+      TellMapRun(map:, incarnation:, message:) ->
+        world_map_registry.tell_run(
+          maps: maps_name,
+          map:,
+          incarnation:,
+          message:,
+          deadline_ms:,
+        )
     }
   }
 }
@@ -334,6 +342,21 @@ fn sessions_reach(settings: Settings) -> Reach(account_session.Outgoing) {
   })
 }
 
+/// How a map reaches the processes its rule names: the same lookups, and a
+/// send to a connection, which takes what a map sends as the message
+/// `SentByMap`. Only a connection is sent to.
+fn map_reach(settings: Settings) -> Reach(map.Outgoing) {
+  let registry = settings.registry
+  service.Reach(locate: locate(settings), send: fn(to, outgoing) {
+    case to {
+      step.Connection(connection:) ->
+        registry.deliver(registry, connection, SentByMap(outgoing))
+      step.Sessions | step.HandOff | step.Store | step.Maps | step.Map(..) ->
+        Error(Nil)
+    }
+  })
+}
+
 /// The world subtree: Maps, then the map supervisor, under a `rest_for_one`
 /// supervisor of their own, a permanent child of the server's.
 fn world(
@@ -345,7 +368,7 @@ fn world(
     world: settings.world,
     realm_id: settings.game.settings.realm_id,
     tables: settings.game.settings.tables,
-    locate: locate(settings),
+    reach: map_reach(settings),
   )
 }
 
@@ -353,15 +376,15 @@ fn world(
 /// order: Maps' restart restarts the map supervisor, so every map ends with
 /// the registry that knew them. A map is started by the map supervisor with
 /// the rule of its id and incarnation, the realm and game tables its players'
-/// units are built from, no name, and a reach that finds what it watches with
-/// `locate`. The server's tree and the tests start the world with this
-/// function.
+/// units are built from, no name, and `reach`, which finds what it watches and
+/// sends to its players' connections. The server's tree and the tests start
+/// the world with this function.
 pub fn add_world(
   tree tree: supervisor.Builder,
   world world: World,
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
-  locate locate: Locate,
+  reach reach: Reach(map.Outgoing),
 ) -> supervisor.Builder {
   tree
   |> supervisor.add(world_map_registry.supervised(
@@ -380,7 +403,7 @@ pub fn add_world(
             realm_id:,
             tables:,
           ),
-          reach: service.watch_only(locate:),
+          reach:,
           shutdown_ms: world.map_shutdown_ms,
         ))
       },

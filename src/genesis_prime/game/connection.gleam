@@ -199,6 +199,28 @@
 ////   routed by the table, and logged as unhandled under its own id when it has
 ////   no row at the stage. A body that holds no whole frame, or
 ////   bytes after it, is one the client never writes, and ends the connection.
+//// - **Other players' units.** The map tells the connection of each player in
+////   it when another player's unit comes into sight, moves and goes
+////   (genesis_prime/world_map/map), as the message `SentByMap`, and the
+////   connection writes each at once while its player is in the world:
+////
+////   ```
+////   map                                connection (player in the world)         client
+////   Seen(unit)               ─▶ Woken ─▶ map_sent ─▶ Write(0x262)                ─▶ the unit is created
+////   MovedUnit(id, time, commands) ─▶ Woken ─▶ map_sent ─▶ Write(0x638)           ─▶ the unit moves
+////   Unseen(id)               ─▶ Woken ─▶ map_sent ─▶ Write(0x355)                ─▶ the unit is removed
+////   0x637 accepted (inside 0x038C) ─▶ movement keeps the place
+////                                      ─▶ Tell(TellMapRun(map, run, Moved(connection, place, commands)))
+////   ```
+////
+////   The shell takes a send between steps, after an ask's outcome and the step it
+////   starts, and entering the world writes its whole burst in the one step that
+////   takes the map's `Joined`, so no send reaches the connection between the
+////   answer and the end of the burst: no status holds sends during entry. With
+////   no player in the world (after the camp's leave, say) a send is dropped and
+////   nothing is written for other units. A 0x638 for a unit the client has
+////   already removed is dropped by the client and the connection goes on
+////   (opcode.0x638), so the server needs no guard for it.
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
@@ -227,7 +249,7 @@ import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
   AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
   Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Inside,
-  Otherwise, SentBySessions, Settled,
+  Otherwise, SentByMap, SentBySessions, Settled, TellMapRun,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -237,6 +259,7 @@ import genesis_prime/game/camp
 import genesis_prime/game/character_select
 import genesis_prime/game/movement
 import genesis_prime/game/routing
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
 import genesis_prime/game_settings.{type GameSettings}
 import genesis_prime/hand_off.{type Holder, SessionKey, Take}
@@ -249,14 +272,15 @@ import genesis_prime/message/disconnect_reason.{
 }
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/leave_world.{LeaveWorld}
+import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/world_message
 import genesis_prime/step.{
-  type About, type ConnectionEffect, type ConnectionEvent, type ConnectionInput,
-  type ConnectionRule, type ConnectionStep, type Effect, type Event, type Now,
-  type Outcome, type TimerId, type WatchId, About, CancelTimer, Effects,
-  LogDebug, LogInfo, LogWarning, OwnEffect, OwnEvent, Sessions, StartTimer, Stop,
-  Stopping, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
-  Write,
+  type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
+  type ConnectionInput, type ConnectionRule, type ConnectionStep, type Effect,
+  type Event, type Now, type Outcome, type TimerId, type WatchId, About,
+  CancelTimer, Effects, LogDebug, LogInfo, LogWarning, OwnEffect, OwnEvent,
+  Sessions, StartTimer, Stop, Stopping, TimerFired, TimerId, Unwatch, Watch,
+  WatchEnded, WatchId, Woken, Write,
 }
 import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
@@ -477,6 +501,8 @@ fn connected(
   case event {
     OwnEvent(Woken(message: SentBySessions(message:))) ->
       settled(handled: sessions_sent(session:, now:, message:), now:)
+    OwnEvent(Woken(message: SentByMap(message:))) ->
+      settled(handled: map_sent(session:, now:, message:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
@@ -643,7 +669,10 @@ fn hello_bytes(settings: Settings) -> BitArray {
 }
 
 /// A message in the game wrapper under the cipher the connection holds.
-fn to_client(session: Session, inner: Frame) -> Effect(ConnectionEffect) {
+fn to_client(
+  session: Session,
+  inner: Frame,
+) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(
     Write(client_connection.wrapped(GameWrapper, inner, session.cipher)),
   )
@@ -654,7 +683,7 @@ fn to_client(session: Session, inner: Frame) -> Effect(ConnectionEffect) {
 fn notice(
   session session: Session,
   reason reason: DisconnectReason,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Request)) {
   let assert Ok(body) = disconnect_notice.encode(DisconnectNotice(reason:))
     as "a reason is within 5 bits"
   to_client(session, Frame(disconnect_notice.message_id, body))
@@ -663,7 +692,9 @@ fn notice(
 /// What a connection writes before it ends when the server stops: the notice
 /// that the server failed, so the client leaves its prompt. A stop is no
 /// failure, so no log line comes with it.
-fn server_stopping(session: Session) -> List(Effect(ConnectionEffect)) {
+fn server_stopping(
+  session: Session,
+) -> List(Effect(ConnectionEffect(Request))) {
   [notice(session:, reason: LostUserServer)]
 }
 
@@ -843,19 +874,46 @@ fn movement_message(
   message message: movement.Message,
 ) -> client_connection.Handled(Session) {
   case movement.take(entered.movement, message, inner.body) {
-    Ok(state) ->
-      Continue(
-        Session(
-          ..session,
-          status: InWorld(
-            holder:,
-            entered: world_entry.Entered(..entered, movement: state),
-          ),
-        ),
-        [],
-      )
+    Ok(movement.Kept(state:)) ->
+      Continue(moving(session:, holder:, entered:, state:), [])
+    Ok(movement.Relayed(state:, ..)) ->
+      Continue(moving(session:, holder:, entered:, state:), [])
     Error(refusal) -> end_for(session:, now:, text: movement.describe(refusal))
   }
+}
+
+/// The session with the player's movement replaced.
+fn moving(
+  session session: Session,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  state state: movement.State,
+) -> Session {
+  Session(
+    ..session,
+    status: InWorld(
+      holder:,
+      entered: world_entry.Entered(..entered, movement: state),
+    ),
+  )
+}
+
+/// The tell to the run of the player's map that the player moved: it names
+/// the player's connection, the place the movement now keeps and the commands
+/// the client sent, and no answer comes (`step.Tell`).
+pub fn tells_the_map_moved(
+  connection connection: ConnectionId,
+  entered entered: world_entry.Entered,
+  place place: Place,
+  commands commands: List(MovementCommand),
+) -> Effect(ConnectionEffect(Request)) {
+  OwnEffect(
+    step.Tell(TellMapRun(
+      map: entered.map,
+      incarnation: entered.incarnation,
+      message: map.Moved(connection:, place:, commands:),
+    )),
+  )
 }
 
 /// What the camp messages do, taken from inside 0x038C, in the world
@@ -1168,7 +1226,7 @@ fn carry_out(
   session session: Session,
   now now: Now,
   effects effects: List(Decided),
-  written written: List(Effect(ConnectionEffect)),
+  written written: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
   case effects {
     [] -> Continue(session, list.reverse(written))
@@ -1219,7 +1277,7 @@ fn carry_out(
 }
 
 /// Starts the timer that saves the player's place every `movement.save_period_ms`.
-fn start_save_timer() -> Effect(ConnectionEffect) {
+fn start_save_timer() -> Effect(ConnectionEffect(Request)) {
   OwnEffect(StartTimer(timer: save_timer, after_ms: movement.save_period_ms))
 }
 
@@ -1229,7 +1287,7 @@ fn ask(
   session session: Session,
   now now: Now,
   request request: Request,
-  before before: List(Effect(ConnectionEffect)),
+  before before: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
   ask_within(
     session:,
@@ -1246,7 +1304,7 @@ fn ask_within(
   session session: Session,
   now now: Now,
   request request: Request,
-  before before: List(Effect(ConnectionEffect)),
+  before before: List(Effect(ConnectionEffect(Request))),
   within_ms within_ms: Int,
 ) -> client_connection.Handled(Session) {
   let #(link, made) =
@@ -1457,6 +1515,25 @@ fn sessions_sent(
   }
 }
 
+/// What the map sent the connection about another player's unit: `Seen` is
+/// written as 0x262, `MovedUnit` as 0x638 (reset bit 0, kept bit 0) and `Unseen`
+/// as 0x355, each at once, while the player is in the world or its claim is made
+/// again with the player in it. The shell takes a send between steps, after the
+/// ask's outcome and the step it starts are done (genesis_prime/connection/shell),
+/// and world entry writes its whole burst in the one step that takes the map's
+/// `Joined`, so a send of the map, which comes after its answer, is always taken
+/// after the burst: no status holds sends during entry. With no player in the
+/// world (the player left the map, or never joined) the send is dropped and
+/// nothing is written, since the client holds no world. `Joined` and `Left` are
+/// answers, never sends, and are a bug.
+fn map_sent(
+  session session: Session,
+  now now: Now,
+  message message: map.Outgoing,
+) -> client_connection.Handled(Session) {
+  todo as "write 0x262, 0x638 or 0x355 for the player in the world; drop the send otherwise; Joined and Left are a bug"
+}
+
 /// The end of a watch the rule opened. Sessions' (`sessions_watch`): the
 /// connection waits on the claim timer, then claims its account again from
 /// where it is, in character select or in the world. The player's map
@@ -1583,7 +1660,7 @@ fn saving(
   holder holder: Holder,
   entered entered: world_entry.Entered,
   then then: AfterSave,
-  before before: List(Effect(ConnectionEffect)),
+  before before: List(Effect(ConnectionEffect(Request))),
   within_ms within_ms: Int,
 ) -> client_connection.Handled(Session) {
   let #(state, request) =
@@ -1712,7 +1789,7 @@ fn leaving_the_map(
   now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
-  before before: List(Effect(ConnectionEffect)),
+  before before: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
   ask(
     session: Session(..session, status: LeavingMap(holder:, entered:)),
@@ -1759,6 +1836,9 @@ fn leave_answered(
       )
     step.StoppedWaiting -> stopped(session, now)
     step.Answer(FromMap(map.Joined(..)))
+    | step.Answer(FromMap(map.Seen(..)))
+    | step.Answer(FromMap(map.MovedUnit(..)))
+    | step.Answer(FromMap(map.Unseen(..)))
     | step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromSessions(..)) ->
@@ -1776,7 +1856,7 @@ fn leave_answered(
 /// then the notice when there is one, then the end.
 fn left(
   session session: Session,
-  lines lines: List(Effect(ConnectionEffect)),
+  lines lines: List(Effect(ConnectionEffect(Request))),
   notice told: Option(DisconnectReason),
 ) -> client_connection.Handled(Session) {
   Done(
@@ -1797,7 +1877,7 @@ fn left(
 fn movement_line(
   session: Session,
   effect: movement.Effect,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Request)) {
   case effect {
     movement.Fault(text:) -> log(session:, level: step.LogError, text:)
     movement.Note(text:) -> log(session:, level: LogInfo, text:)
@@ -2149,7 +2229,7 @@ fn log(
   session session: Session,
   level level: step.LogLevel,
   text text: String,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Request)) {
   client_connection.log(about: about_of(session), level:, text:)
 }
 

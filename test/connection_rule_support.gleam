@@ -156,6 +156,7 @@ pub fn writes(step: ConnectionStep(request)) -> List(BitArray) {
       OwnEffect(Write(bytes:)) -> Ok(bytes)
       OwnEffect(StartTimer(..))
       | OwnEffect(CancelTimer(..))
+      | OwnEffect(step.Tell(..))
       | Watch(..)
       | Unwatch(..)
       | Log(..)
@@ -241,6 +242,6 @@ pub fn says(line line: LogLine, words words: String) -> Bool {
 
 /// A step's effect that logs `text` as a warning, as every test rule does when
 /// it refuses an input.
-pub fn warn(text: String) -> Effect(step.ConnectionEffect) {
+pub fn warn(text: String) -> Effect(step.ConnectionEffect(request)) {
   Log(step.LogLine(level: step.LogWarning, text:, about: step.no_one))
 }

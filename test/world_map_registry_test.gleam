@@ -69,7 +69,7 @@ fn start_world() -> World {
       world:,
       realm_id: 1,
       tables: character_tables.shared(),
-      locate: locate(scope, _),
+      reach: service.watch_only(locate: locate(scope, _)),
     )
     |> supervisor.start
     as "the world tree started"

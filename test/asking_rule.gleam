@@ -178,7 +178,7 @@ pub fn step(
 fn run(
   state state: State,
   now now: step.Now,
-  written written: List(Effect(ConnectionEffect)),
+  written written: List(Effect(ConnectionEffect(Request))),
 ) -> #(State, ConnectionStep(Request)) {
   case state.pending {
     <<letter, n, wait:16, rest:bytes>> ->
@@ -250,7 +250,7 @@ fn request_for(letter: Int, n: Int) -> Result(Request, Nil) {
 fn ask(
   state state: State,
   now now: step.Now,
-  written written: List(Effect(ConnectionEffect)),
+  written written: List(Effect(ConnectionEffect(Request))),
   rest rest: BitArray,
   request request: Request,
   wait wait: Int,

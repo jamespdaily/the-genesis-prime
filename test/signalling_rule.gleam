@@ -128,7 +128,7 @@ pub fn step(
 
 /// The effects that start timer `n` again with a minute to run, for the
 /// restarting ask.
-fn restart(n: Int) -> List(Effect(ConnectionEffect)) {
+fn restart(n: Int) -> List(Effect(ConnectionEffect(Nil))) {
   case n == restarting_ask {
     True -> [OwnEffect(StartTimer(TimerId(n), 60_000))]
     False -> []
@@ -139,7 +139,7 @@ fn restart(n: Int) -> List(Effect(ConnectionEffect)) {
 /// message `-n`, the watches 1 to `n` on Sessions in that order after the
 /// record, so a test can start watches from a message that waits in the
 /// mailbox.
-fn woken_effects(message: Int) -> List(Effect(ConnectionEffect)) {
+fn woken_effects(message: Int) -> List(Effect(ConnectionEffect(Nil))) {
   let watches = case message < 0 {
     True ->
       list.repeat(Nil, int.negate(message))
@@ -155,7 +155,7 @@ fn woken_effects(message: Int) -> List(Effect(ConnectionEffect)) {
 /// so far, the last first.
 fn run(
   state state: State,
-  effects effects: List(Effect(ConnectionEffect)),
+  effects effects: List(Effect(ConnectionEffect(Nil))),
   now_ms now_ms: Int,
 ) -> #(State, ConnectionStep(Nil)) {
   case state.pending {
@@ -184,7 +184,7 @@ fn commands(
   letter letter: Int,
   n n: Int,
   milliseconds milliseconds: Int,
-) -> List(Effect(ConnectionEffect)) {
+) -> List(Effect(ConnectionEffect(Nil))) {
   case letter {
     _ if letter == start_then_cancel_command -> [
       command(letter: timer_command, n:, milliseconds:),
@@ -198,7 +198,7 @@ fn command(
   letter letter: Int,
   n n: Int,
   milliseconds milliseconds: Int,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Nil)) {
   case letter {
     _ if letter == watch_command -> Watch(WatchId(n), Sessions)
     _ if letter == timer_command ->
@@ -209,6 +209,6 @@ fn command(
   }
 }
 
-fn record(letter: Int, number: Int) -> Effect(ConnectionEffect) {
+fn record(letter: Int, number: Int) -> Effect(ConnectionEffect(Nil)) {
   OwnEffect(Write(<<letter, number:64>>))
 }

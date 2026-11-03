@@ -16,7 +16,7 @@
 import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
   type ServiceInput, type ServiceRule, type ServiceStep, Asked, Effects,
-  OwnEffect, OwnEvent, Reply, Rule, Started, Stop, Stopping, WatchEnded,
+  OwnEffect, OwnEvent, Reply, Rule, Started, Stop, Stopping, Told, WatchEnded,
 }
 import genesis_prime/store.{type AccountId}
 import gleam/dict.{type Dict}
@@ -99,6 +99,8 @@ pub fn step(
       let #(state, answer) = answer(state:, now:, message:)
       #(state, Effects([OwnEffect(Reply(caller, answer))]))
     }
+    OwnEvent(Told(..)) ->
+      panic as "the hand-off takes Started, Asked and Stopping only; nothing tells it"
     WatchEnded(..) ->
       panic as "the hand-off takes Started, Asked and Stopping only; it watches no process"
   }

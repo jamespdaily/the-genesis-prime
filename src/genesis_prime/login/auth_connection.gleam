@@ -419,7 +419,7 @@ fn ask(
 fn refuse(
   session session: Session,
   reason reason: Int,
-  before before: List(Effect(ConnectionEffect)),
+  before before: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
   let assert Ok(body) =
     login_refused.encode(LoginRefused(reason:, value: 0, field_3: 0))
@@ -608,7 +608,7 @@ fn log(
   session session: Session,
   level level: step.LogLevel,
   text text: String,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Request)) {
   client_connection.log(about: about_of(session), level:, text:)
 }
 

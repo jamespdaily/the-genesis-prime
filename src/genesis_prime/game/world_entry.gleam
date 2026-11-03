@@ -290,7 +290,8 @@ pub fn joined(
             ),
           )
         }
-        map.Left -> Error(Nil)
+        map.Left | map.Seen(..) | map.MovedUnit(..) | map.Unseen(..) ->
+          Error(Nil)
       }
     }
     Loading(..) -> Error(Nil)

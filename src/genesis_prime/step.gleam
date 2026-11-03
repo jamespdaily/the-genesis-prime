@@ -15,7 +15,7 @@
 //// in that kind's own type, which comes in through `OwnEvent` and `OwnEffect`:
 //// - a connection: `ConnectionEvent(message, answer)` in (its socket, a
 ////   message sent to it, a timer, the outcome of its ask) and
-////   `ConnectionEffect` out (a write, a timer);
+////   `ConnectionEffect` out (a write, a timer, a tell);
 //// - a service: `ServiceEvent(message)` in (its start, an ask) and
 ////   `ServiceEffect(outgoing)` out (a reply, a send).
 //// A shell is handed only its kind's types, so a rule that returns an effect
@@ -60,7 +60,7 @@ pub type ConnectionRule(settings, state, request, message, answer) =
     state,
     request,
     ConnectionEvent(message, answer),
-    ConnectionEffect,
+    ConnectionEffect(request),
   )
 
 /// An input to a connection's rule.
@@ -69,7 +69,7 @@ pub type ConnectionInput(message, answer) =
 
 /// What a connection's rule returns.
 pub type ConnectionStep(request) =
-  Step(request, ConnectionEffect)
+  Step(request, ConnectionEffect(request))
 
 /// A service's rule: the one kind other processes ask. It makes no ask, so its
 /// request type is `NoAsk`. The service shell runs only this kind.
@@ -128,6 +128,10 @@ pub type ServiceEvent(message) {
   /// Another process asked the process something; the rule answers it once,
   /// with `Reply`.
   Asked(caller: CallerId, message: message)
+  /// Another process told the process something with no answer expected
+  /// (`Tell`); the rule replies to no one, and a rule that gets a message in
+  /// the form it takes only as an ask, or the reverse, has a bug.
+  Told(message: message)
 }
 
 /// What only a connection takes: what happened to its socket, what reached it
@@ -210,8 +214,9 @@ pub type Effect(own) {
   Stop
 }
 
-/// What only a connection carries out.
-pub type ConnectionEffect {
+/// What only a connection carries out. `request` is what the rule asks or
+/// tells another process (the rule's request type).
+pub type ConnectionEffect(request) {
   /// Write bytes to the connection's socket. A failed write stops the step's
   /// remaining effects and comes back as `WriteFailed`.
   Write(bytes: BitArray)
@@ -219,6 +224,12 @@ pub type ConnectionEffect {
   StartTimer(timer: TimerId, after_ms: Int)
   /// Cancel a timer. A `TimerFired` for it already waiting is dropped.
   CancelTimer(timer: TimerId)
+  /// Tell another process something and go on at once: the request goes to the
+  /// process it names as an ask does (the shell's directory), but nothing waits
+  /// for an answer, no deadline runs and no outcome comes back. A process that
+  /// is not running drops it, and a rule that must know watches that process.
+  /// The service takes it as `Told`.
+  Tell(request: request)
 }
 
 /// What only a service carries out.

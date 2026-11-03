@@ -263,6 +263,18 @@ fn single(number: Int) -> Bits {
   bits
 }
 
+/// What a movement message made of the player's movement.
+pub type Taken {
+  /// The message changes what the rule keeps, or nothing, and has nothing to
+  /// relay: the state it leaves.
+  Kept(state: State)
+  /// An accepted 0x0637: the state it leaves, the place the player now stands
+  /// at in the world's frame (`place`), and the commands it sent, in the order
+  /// sent with their bits. The game connection tells the map, which relays them
+  /// to the players who see this one (genesis_prime/world_map/map `Moved`).
+  Relayed(state: State, place: Place, commands: List(MovementCommand))
+}
+
 /// What one movement message does to where the player stands: the body is
 /// decoded and 0x0637 and 0x063B are checked as `moved` and `speed_setting`
 /// say; the others are decoded and nothing more, since what their values mean
@@ -274,39 +286,40 @@ pub fn take(
   state state: State,
   message message: Message,
   body body: BitArray,
-) -> Result(State, Refusal) {
+) -> Result(Taken, Refusal) {
   case message {
     PlayerMoved ->
       player_movement.decode(body)
       |> undecoded(player_movement.message_id)
       |> result.try(fn(decoded) {
-        moved(state:, moves: moves(message: decoded))
+        use state <- result.map(moved(state:, moves: moves(message: decoded)))
+        Relayed(state:, place: place(state:), commands: decoded.commands)
       })
     SpeedChosen ->
       move_speed_setting.decode(body)
       |> undecoded(move_speed_setting.message_id)
       |> result.try(fn(decoded) { speed_setting(setting: decoded.move_speed) })
-      |> result.replace(state)
+      |> result.replace(Kept(state))
     ZoneChanged ->
       zone_value_changed.decode(body)
       |> undecoded(zone_value_changed.message_id)
-      |> result.replace(state)
+      |> result.replace(Kept(state))
     IntervalAnswered ->
       movement_send_interval_answer.decode(body)
       |> undecoded(movement_send_interval_answer.message_id)
-      |> result.replace(state)
+      |> result.replace(Kept(state))
     TerrainReady ->
       terrain_loaded.decode(body)
       |> undecoded(terrain_loaded.message_id)
-      |> result.replace(state)
+      |> result.replace(Kept(state))
     Fell ->
       fall_value.decode(body)
       |> undecoded(fall_value.message_id)
-      |> result.replace(state)
+      |> result.replace(Kept(state))
     FellBelowFloor ->
       fell_below_floor.decode(body)
       |> undecoded(fell_below_floor.message_id)
-      |> result.replace(state)
+      |> result.replace(Kept(state))
   }
 }
 

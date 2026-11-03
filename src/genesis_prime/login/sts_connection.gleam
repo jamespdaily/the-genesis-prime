@@ -805,7 +805,7 @@ fn log(
   session session: Session,
   level level: step.LogLevel,
   text text: String,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Request)) {
   client_connection.log(about: about_of(session), level:, text:)
 }
 

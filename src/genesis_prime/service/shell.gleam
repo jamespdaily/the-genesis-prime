@@ -18,6 +18,7 @@
 ////     a watch of a target no process holds ─▶ WatchEnded(id) ─▶ step ─▶ effects
 ////   loop:
 ////     Call(message, reply)  ─▶ OwnEvent(Asked(CallerId(n), message)) ─▶ step ─▶ effects
+////     Tell(message)         ─▶ OwnEvent(Told(message))                 ─▶ step ─▶ effects
 ////     a watched process's DOWN ─▶ WatchEnded(id)           ─▶ step ─▶ effects
 ////     the parent's exit     ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
 ////   Reply(CallerId(n), answer): the shell calls that call's reply with the
@@ -38,6 +39,8 @@
 ////
 //// - **CallerId.** The shell numbers the calls it takes from 1, in the order
 ////   they arrive, so a recording names each caller with no process id.
+//// - **A tell** has no caller and no reply: the shell numbers none for it. It
+////   comes from a connection's `Tell` effect (genesis_prime/step).
 //// - **A reply nobody waits for.** An answer after the asker's deadline
 ////   reaches the asker's shell, which drops it with no input to the asker's
 ////   rule (genesis_prime/connection/shell); one to an asker that has ended is
@@ -92,11 +95,11 @@
 ////   has no values, so no rule can build a step that ends in one; the shell's
 ////   case for such a step is unreachable.
 
-import genesis_prime/service.{type Call, type Reach, Call}
+import genesis_prime/service.{type Call, type Reach, Call, Tell}
 import genesis_prime/step.{
   type Effect, type Event, type ServiceEffect, type ServiceEvent,
   type ServiceRule, type WatchId, Asked, CallerId, Effects, EffectsThenAsk,
-  Input, OwnEffect, OwnEvent, Reply, Send, Started, Stopping, WatchEnded,
+  Input, OwnEffect, OwnEvent, Reply, Send, Started, Stopping, Told, WatchEnded,
 }
 import genesis_prime/step/runtime.{Shutdown}
 import genesis_prime/step/watch.{type Watches}
@@ -259,6 +262,12 @@ fn handle(
         event: OwnEvent(Asked(caller: CallerId(number), message:)),
       ))
     }
+    Called(Tell(message:)) ->
+      actor.continue(take(
+        running:,
+        now: runtime.now(),
+        event: OwnEvent(Told(message:)),
+      ))
     Ended(down:) -> actor.continue(watch_ended(running:, down:))
     Stray(message:) -> {
       runtime.log_stray(message:, shell: "service shell")

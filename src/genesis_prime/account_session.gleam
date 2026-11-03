@@ -87,7 +87,7 @@
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type ServiceInput, type ServiceRule,
   type ServiceStep, type WatchId, Asked, Connection, ConnectionId, Effects,
-  OwnEffect, OwnEvent, Reply, Rule, Send, Started, Stop, Stopping, Watch,
+  OwnEffect, OwnEvent, Reply, Rule, Send, Started, Stop, Stopping, Told, Watch,
   WatchEnded, WatchId,
 }
 import genesis_prime/store.{type AccountId}
@@ -158,6 +158,8 @@ pub fn step(
     Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(caller:, message: Claim(account:, connection:))) ->
       claimed(state:, caller:, account:, connection:)
+    OwnEvent(Told(..)) ->
+      panic as "Sessions takes Started, Asked and Stopping only; nothing tells it"
     WatchEnded(watch:) -> ended(state:, watch:)
   }
 }

@@ -148,6 +148,11 @@
 ////   supervisor that has stopped exits the call with `noproc`, which
 ////   `store/worker.ask` turns into `Error(Nil)`. When the directory returns
 ////   past the deadline, the outcome is `NoAnswerInTime` at once.
+//// - **A tell.** A `Tell` effect hands the request to the directory like an
+////   ask, with a reply that drops any answer and a lookup deadline of
+////   `send_deadline_ms` from now, and the shell goes on at once: nothing waits,
+////   no monitor is kept, and no outcome comes back. A process that is not
+////   running drops the tell.
 //// - **A message delivered.** Another process sends the connection's pid
 ////   `{woken, message}` (`registry.deliver`); the shell takes it between steps
 ////   as `OwnEvent(Woken(message))`, in the order it arrived among the socket's
@@ -959,7 +964,7 @@ type Then(request) {
 fn carry(
   connection connection: Connection(settings, state, message, answer, request),
   running running: Running(state),
-  effects effects: List(Effect(ConnectionEffect)),
+  effects effects: List(Effect(ConnectionEffect(request))),
   then then: Then(request),
   closing closing: Side,
 ) -> actor.Next(
@@ -981,8 +986,8 @@ fn carry(
 fn carry_effect(
   connection connection: Connection(settings, state, message, answer, request),
   running running: Running(state),
-  effect effect: Effect(ConnectionEffect),
-  later later: List(Effect(ConnectionEffect)),
+  effect effect: Effect(ConnectionEffect(request)),
+  later later: List(Effect(ConnectionEffect(request))),
   then then: Then(request),
   closing closing: Side,
 ) -> actor.Next(
@@ -1056,6 +1061,15 @@ fn carry_effect(
         then:,
         closing:,
       )
+    OwnEffect(step.Tell(request:)) -> {
+      let _where_it_went =
+        connection.settings.directory(
+          request,
+          runtime.now().monotonic_ms + connection.settings.send_deadline_ms,
+          fn(_answer) { Nil },
+        )
+      carry(connection:, running:, effects: later, then:, closing:)
+    }
     OwnEffect(CancelTimer(timer:)) ->
       carry(
         connection:,
