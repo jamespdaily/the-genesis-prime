@@ -1584,7 +1584,15 @@ pub fn a_speaker_that_ends_before_the_reply_leaves_the_target_with_its_line_and_
   let speaker = written_to(seat: seat_at(seats, 0), number: 1).1
   let target = written_to(seat: seat_at(seats, 1), number: 1).1
   let lines = process.new_subject()
-  let capture = log_capture.start_all(into: lines)
+  // Only the two connections of this test are read: another test's connection
+  // or listener logging at the same time is no line of this one.
+  let assert Ok(speaker_pid) =
+    registry.find_named(started.settings.registry, "zed qu")
+  let assert Ok(target_pid) =
+    registry.find_named(started.settings.registry, "ann qu")
+  let speaker_capture =
+    log_capture.start_with_metadata(from: speaker_pid, into: lines)
+  let capture = log_capture.start_with_metadata(from: target_pid, into: lines)
   game_client.whisper(
     game: speaker.game,
     target: "Ann Qu",
@@ -1598,6 +1606,7 @@ pub fn a_speaker_that_ends_before_the_reply_leaves_the_target_with_its_line_and_
   let #(more, _) = written_to(seat: Seat(..target, have: rest), number: 2)
   assert chat_lines(more) == [] as "the target was written the line once"
   log_capture.stop(capture)
+  log_capture.stop(speaker_capture)
   assert list.filter(mailbox_support.drain(lines), fn(line) {
       line.0 == "error"
     })

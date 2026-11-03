@@ -797,13 +797,13 @@ pub fn a_read_that_cannot_be_armed_because_the_peer_closed_reaches_the_rule_as_a
   use <- owned_test.run(30_000)
   use <- unitest.tag("serial")
   let lines = process.new_subject()
-  let capture = log_capture.start_all(into: lines)
   let scope = registry.new()
   let server = start(registry: Some(scope), sessions: Ok(a_sessions()))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
+  let capture = log_capture.start_with_metadata(from: connection, into: lines)
   let gone = process.monitor(connection)
   // The message 0 gives the rule nothing to write, so the step ends in arming
   // the socket's read. The client's close is queued behind the message, and
@@ -830,7 +830,6 @@ pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is
   use <- owned_test.run(30_000)
   use <- unitest.tag("serial")
   let lines = process.new_subject()
-  let capture = log_capture.start_all(into: lines)
   let delivered = process.new_subject()
   let server =
     start_telling(
@@ -852,6 +851,11 @@ pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is
     )
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
+  // Only this test's connection is read: another test's connection or Ranch
+  // listener logging at the same time is no line of this one.
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let capture = log_capture.start_with_metadata(from: connection, into: lines)
   command_then_pong(
     client:,
     letter: signalling_rule.tell_connection_command,
@@ -932,7 +936,6 @@ pub fn a_tell_to_a_zone_channel_is_delivered_with_no_watch_test() -> Nil {
   use <- owned_test.run(30_000)
   use <- unitest.tag("serial")
   let lines = process.new_subject()
-  let capture = log_capture.start_all(into: lines)
   let delivered = process.new_subject()
   let server =
     start_telling(
@@ -944,6 +947,11 @@ pub fn a_tell_to_a_zone_channel_is_delivered_with_no_watch_test() -> Nil {
     )
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
+  // Only this test's connection is read: another test's connection or Ranch
+  // listener logging at the same time is no line of this one.
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let capture = log_capture.start_with_metadata(from: connection, into: lines)
   command_then_pong(
     client:,
     letter: signalling_rule.tell_zone_command,
@@ -972,7 +980,6 @@ pub fn a_tell_through_a_watch_goes_through_that_watchs_target_only_and_one_throu
   use <- owned_test.run(30_000)
   use <- unitest.tag("serial")
   let lines = process.new_subject()
-  let capture = log_capture.start_all(into: lines)
   let lookups = process.new_subject()
   let told = process.new_subject()
   let found = counting_lookup(sessions: a_sessions(), lookups:, told:)
@@ -995,6 +1002,11 @@ pub fn a_tell_through_a_watch_goes_through_that_watchs_target_only_and_one_throu
     )
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
+  // Only this test's connection is read: another test's connection or Ranch
+  // listener logging at the same time is no line of this one.
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let capture = log_capture.start_with_metadata(from: connection, into: lines)
   // Watch 1 is on Sessions, which this lookup holds no process for, so it found
   // none; the tell through it is dropped without a line.
   ask_support.command(
