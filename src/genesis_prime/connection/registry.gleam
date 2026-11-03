@@ -33,8 +33,9 @@
 //// - **A connection ending.** The scope monitors each member and drops it from
 ////   its groups; a `find` just after the end may still give the pid, and a
 ////   `deliver` to it is then dropped like any message to a process that ended.
-//// - **A group of a name or a zone channel.** `find_named` gives the first
-////   member the scope lists, none when no connection holds the name. A takeover
+//// - **A group of a name or a zone channel.** `find_named` gives the newest
+////   member (`pg` lists the latest join first), none when no connection holds the
+////   name. A takeover
 ////   can leave two members of one name for a moment, since the older login
 ////   leaves its group only as it ends; either may be found, and the older
 ////   one's end is its watcher's. `deliver_group` sends each member the message,
@@ -99,8 +100,9 @@ pub fn join(
 }
 
 /// Makes the calling process a member of the group at `address`, a
-/// `CharacterNamed` or a `ZoneChannel`, once; the connection shell calls it for
-/// the rule's `JoinGroup`.
+/// `CharacterNamed` or a `ZoneChannel`; a process that is a member already stays
+/// one, so a group holds it once. The connection shell calls it for the rule's
+/// `JoinGroup`.
 pub fn join_group(
   registry _registry: Registry(message),
   address _address: Address,
@@ -119,7 +121,7 @@ pub fn leave_group(
 }
 
 /// The process of the connection whose player is in the world under the folded
-/// name: the first member of the group, or `Error(Nil)` when none is.
+/// name: the newest member of the group, or `Error(Nil)` when none is.
 pub fn find_named(
   registry _registry: Registry(message),
   folded_name _folded_name: String,

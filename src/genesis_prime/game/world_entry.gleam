@@ -275,6 +275,7 @@ pub fn joined(
   state state: State,
   answer answer: map.Outgoing,
   realm_id realm_id: Int,
+  next_whisper next_whisper: Int,
 ) -> Result(#(Entered, List(Effect)), Nil) {
   case state {
     Joining(character:, place:, session_epoch:, map:) -> {
@@ -308,6 +309,7 @@ pub fn joined(
                     incarnation:,
                   ),
                   zone_channel_id: map.world_id,
+                  next_whisper:,
                 ),
               ),
               [

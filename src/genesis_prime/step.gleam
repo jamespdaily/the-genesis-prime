@@ -237,6 +237,13 @@ pub type ConnectionEffect(request) {
   /// sends the tell through the registry, to the connection or to every member
   /// of the group. The process takes it as `ServiceEvent`'s `Told`.
   Tell(to: Address, request: request)
+  /// Tell the process that the open watch `watch` found, through that watch's
+  /// own way to tell it (`Tellable`), and go on at once, as `Tell` does. It is
+  /// dropped with no line when the watch found no process or is no longer open:
+  /// the rule learns that from the watch's end, so a whisper to an offline name
+  /// logs nothing. A tell by address would use any open watch on the address,
+  /// which can be a watch on a connection that is ending.
+  TellWatched(watch: WatchId, request: request)
   /// Make this connection's process a member of the registry's group at
   /// `address`, which only a `CharacterNamed` or a `ZoneChannel` names. The
   /// group holds the process until it leaves it or ends: the registry notices

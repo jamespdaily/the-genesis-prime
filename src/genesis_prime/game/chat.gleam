@@ -103,7 +103,20 @@
 //// - **A pending whisper is kept by the speaker's own number `w`**, not by the
 ////   client's chat message id; a late or doubled reply finds no `w` and is
 ////   dropped. The client ignores an answer for an id it does not hold
-////   (`0x140405e00`).
+////   (`0x140405e00`). The numbers count for the connection's life, not for one
+////   stay in the world, so a reply to a whisper of an earlier stay never meets a
+////   new whisper's number.
+//// - **A whisper is told through its own watch** (`TellWatched`), not by the
+////   address: two whispers to one name, one made before the target logged in
+////   again and one after, each reach the process their own watch found.
+//// - **A text is relayed as the client sent it**, in UTF-16 units: a format's
+////   range is checked against the unit count, and a lone surrogate, which the
+////   client's own check lets through (`0x1403e0ae0`), is neither dropped nor
+////   refused.
+//// - **The place's zone is server data, not a client report.** A place zone that
+////   is 0 or has no WorldZone row leaves the player in no zone (0x1da with 0,
+////   0x1bc still written, no zone group), with a warning for a missing row; the
+////   connection does not end for it.
 //// - **No timer.** Every whisper path ends in `Heard`, `NotHeard` or `WatchEnded`;
 ////   a target busy on an ask takes the whisper after the ask's outcome, which has
 ////   a deadline.
@@ -147,6 +160,12 @@
 //// | Zone: a crash of a member's connection | `pg` drops its memberships when the process ends | later lines skip it; a line sent before is dropped by the VM |
 //// | Zone and whisper: `pg:join` or `pg:leave` while the registry scope is restarting | the call exits | the connection crashes; the scope's restart already restarts the listener and every connection |
 //// | Zone: report 0, or a zone with no row | as above | 0: no group, 0x1da 0; no row: the connection ends |
+//// | Zone: the place's zone is 0 or has no row | server data, not a report | no zone: 0x1da 0, 0x1bc, no group; a warning for no row |
+//// | Zone: enter, change zone, camp, enter again | each step joins and leaves its own groups | exactly one membership per group: `join_group` skips a group the process is in |
+//// | Whisper: pending when Sessions ends and the connection claims again | the player is held in the claim's wait or its ask | the reply, the watch's end and a tell are taken for every status that holds a player, so the speaker still gets 0x1c2 or 0x1d9 |
+//// | Whisper: a reply to a whisper of an earlier stay | the number is not held | dropped; numbers never repeat on one connection |
+//// | Whisper: two whispers to one name across the target's relog | each is told through its own watch | each reaches the process its watch found; a watch on the ending login ends and gives 0x1d9 |
+//// | Whisper: `find_named` with two members | the newest member is found | pinned: the older login's end is its watcher's |
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
@@ -174,6 +193,11 @@ pub type Effect {
   Send(frame: Frame)
   /// Tell the process at `to` a chat tell (genesis_prime/step `Tell`).
   Tell(to: Address, tell: Tell)
+  /// Tell the process the open watch `watch` found, through that watch
+  /// (genesis_prime/step `TellWatched`): a whisper to its target.
+  TellWatched(watch: WatchId, tell: Tell)
+  /// A line for the log at warning level.
+  Warning(text: String)
   /// Watch the process at `target`, a whisper's target; its end or absence comes
   /// back as `WatchEnded` (genesis_prime/step `Watch`).
   Watch(watch: WatchId, target: Address)
@@ -228,30 +252,41 @@ pub opaque type Chat {
 }
 
 /// The chat of a player that has just entered the world: in no zone, with no
-/// whisper waiting. `zone_channel_id` is the map's world id.
+/// whisper waiting. `zone_channel_id` is the map's world id, and `next_whisper`
+/// the number of the connection's next whisper, which counts for the
+/// connection's life (`next_whisper` gives it back).
 pub fn new(
   speaker speaker: Speaker,
   zone_channel_id zone_channel_id: Int,
+  next_whisper next_whisper: Int,
 ) -> Chat {
   Chat(
     speaker:,
     zone_channel_id:,
     zone: NoZone,
-    next_whisper: 1,
+    next_whisper:,
     whispers: dict.new(),
   )
+}
+
+/// The number of the connection's next whisper, which the connection keeps when
+/// the player leaves the world so the next stay's numbers go on from it.
+pub fn next_whisper(chat chat: Chat) -> Int {
+  chat.next_whisper
 }
 
 /// What the entry burst adds once 0x61 is written: the player joins
 /// `CharacterNamed(its folded name)`, 0x1da names the zone channel after the top
 /// zone of the place's zone `world_zone_id`, 0x1bc gives the client the zone
 /// channel and the player joins `ZoneChannel(its run, that top zone)`. A place
-/// zone the table holds no row for is the refusal.
+/// zone that is 0 or that the table holds no row for leaves the player in no
+/// zone: 0x1da with 0, 0x1bc still written, no zone group, and a warning for a
+/// zone with no row.
 pub fn entered_world(
   chat _chat: Chat,
   world_zone_id _world_zone_id: Int,
   top_zones _top_zones: TopZones,
-) -> Result(#(Chat, List(Effect)), Refusal) {
+) -> #(Chat, List(Effect)) {
   panic as "built in the zone step: the entry burst"
 }
 

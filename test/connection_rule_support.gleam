@@ -158,6 +158,7 @@ pub fn writes(step: ConnectionStep(request)) -> List(BitArray) {
       OwnEffect(StartTimer(..))
       | OwnEffect(CancelTimer(..))
       | OwnEffect(step.Tell(..))
+      | OwnEffect(step.TellWatched(..))
       | OwnEffect(step.JoinGroup(..))
       | OwnEffect(step.LeaveGroup(..))
       | Watch(..)

@@ -409,6 +409,10 @@ type Session {
     /// The ids of the chat channel types already logged as unhandled on this
     /// connection (`chat.Unhandled`): once for each.
     unhandled_channels_logged: Set(Int),
+    /// The number of the next whisper the connection's players make: it counts
+    /// for the connection's life, so a reply to a whisper of an earlier stay in
+    /// the world never meets a new whisper (genesis_prime/game/chat).
+    next_whisper: Int,
     status: Status,
   )
 }
@@ -550,6 +554,7 @@ pub fn step(
             unhandled_logged: set.new(),
             unrelayed_logged: set.new(),
             unhandled_channels_logged: set.new(),
+            next_whisper: 1,
             status: AwaitingHelloReply,
           )),
           Effects([OwnEffect(Write(hello_bytes(settings)))]),
@@ -2491,7 +2496,12 @@ fn entry_answered(
       }
     step.Answer(FromMap(answer)) ->
       case
-        world_entry.joined(entry, answer:, realm_id: session.settings.realm_id)
+        world_entry.joined(
+          entry,
+          answer:,
+          realm_id: session.settings.realm_id,
+          next_whisper: session.next_whisper,
+        )
       {
         Ok(#(entered, effects)) ->
           in_the_world(session:, now:, holder:, entered:, effects:)

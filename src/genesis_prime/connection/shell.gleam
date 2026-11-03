@@ -162,6 +162,10 @@
 ////   `CharacterNamed` goes through a watch, as a tell to a map run does: the
 ////   lookup finds the one connection that holds the name, and a name no
 ////   connection holds ends the watch as any target no process holds.
+//// - **A tell through a watch.** `TellWatched(watch, request)` tells the process
+////   that watch found, through that watch's own way to tell it, and drops the
+////   tell with no line when the watch found none or is closed: a whisper to a
+////   name no connection holds ends its watch instead of logging a warning.
 //// - **A group.** `JoinGroup(address)` makes the connection's process a member
 ////   of the registry's group at `address` (a `CharacterNamed` or a
 ////   `ZoneChannel`) and `LeaveGroup(address)` removes it
@@ -1099,6 +1103,13 @@ fn carry_effect(
         then:,
         closing:,
       )
+    OwnEffect(step.TellWatched(watch:, request:)) -> {
+      case watch.sender_of(watches: running.watches, watch:) {
+        Ok(sender) -> sender(request)
+        Error(Nil) -> Nil
+      }
+      carry(connection:, running:, effects: later, then:, closing:)
+    }
     OwnEffect(step.JoinGroup(address:)) -> {
       join_group(connection:, address:)
       carry(connection:, running:, effects: later, then:, closing:)

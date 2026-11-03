@@ -136,6 +136,15 @@ pub fn close(
   }
 }
 
+/// The way to tell the process the open watch `watch` found, or `Error(Nil)`
+/// when it found none or is not open.
+pub fn sender_of(
+  watches watches: Watches(sender),
+  watch watch: WatchId,
+) -> Result(sender, Nil) {
+  dict.get(watches.senders, watch) |> result.map(fn(held) { held.1 })
+}
+
 /// The way to tell the process an open watch on `address` found, or
 /// `Error(Nil)` when no open watch on it found a process to tell.
 pub fn sender_at(
