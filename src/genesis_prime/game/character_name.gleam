@@ -17,7 +17,15 @@ const longest = 30
 
 /// The Latin-1 and Latin Extended letters of the client's list, beyond A to Z
 /// and a to z (IsTextRuleLetter 0x1403e09d0).
-const listed_letters = "ÀÁÂÄÆÇÈÉÊËÌÍÎÏÑÒÓÔÖÙÚÛÜÝßàáâäæçèéêëìíîïñòóôöùúûüýÿŒœŸ"
+pub const listed_letters =
+  "ÀÁÂÄÆÇÈÉÊËÌÍÎÏÑÒÓÔÖÙÚÛÜÝßàáâäæçèéêëìíîïñòóôöùúûüýÿŒœŸ"
+
+/// The name folded as the database's unique index folds it (migration 0005,
+/// ICU's `lower`), which is how two names that differ only in case are one name.
+/// A test compares it with the database's fold for every letter the rule takes.
+pub fn fold(name name: String) -> String {
+  string.lowercase(name)
+}
 
 /// Whether the text is a character's full name by rule 0.
 pub fn is_valid(name: String) -> Bool {

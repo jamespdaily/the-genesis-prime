@@ -1,4 +1,4 @@
-//// The session committed on 2026-11-03 (`test/wire_recording/2026-11-03-full-session`)
+//// The session committed on 2026-11-03 (`test/wire_recording/2026-11-03-chat-session`)
 //// replayed through the real server tree on a database of its own, with the
 //// recorded seed, times and fixture, and compared byte for byte. Expected
 //// values come from these places.
@@ -191,15 +191,18 @@ pub fn the_replay_logs_the_unhandled_messages_the_live_session_logged_and_nothin
   let #(result, logged) = support.replay_tree(folder: support.committed_session)
   assert result == Ok(Nil)
   assert lines_of(logged, "sts_connection")
-    == ["unhandled STS request /Auth/PageVerifiedIps"]
-    as "the STS request the rule has no handler for, once: the live session's STS connection holds one such request"
+    == [
+      "unhandled STS request /Auth/PageVerifiedIps",
+      "unhandled STS request /Auth/PageVerifiedIps",
+    ]
+    as "the STS request the rule has no handler for, once for each time the live session's STS connection holds one: this recording holds two"
   assert lines_of(logged, "auth_connection") == []
     as "the auth connection logged no warning and no error"
   assert lines_of(logged, "game.connection")
     == list.map(
       [
-        "0x082D", "0x012B", "0x03EC", "0x03ED", "0x0269", "0x07CC", "0x018F",
-        "0x0635", "0x023C", "0x07EA", "0x023D", "0x0570",
+        "0x082D", "0x0635", "0x012B", "0x03EC", "0x03ED", "0x0269", "0x07CC",
+        "0x018F", "0x023C", "0x07EA", "0x023D", "0x0570",
       ],
       fn(id) { "unhandled game message " <> id },
     )

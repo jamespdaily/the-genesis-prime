@@ -412,6 +412,16 @@ fn rate(
 /// the client's default.
 const game_port = 24_000
 
+/// The realm's name, GENESIS_REALM_NAME: the one the auth server hands each
+/// client to and a whisper's realm name must equal.
+fn realm_name() -> String {
+  case envoy.get("GENESIS_REALM_NAME") {
+    Ok(name) -> name
+    Error(Nil) ->
+      panic as "GENESIS_REALM_NAME is not set; it names the realm the auth server hands each client to"
+  }
+}
+
 /// The login's listeners from the environment: GENESIS_GAME_ADDRESS, the IPv4
 /// address the client reaches the game server at, and GENESIS_REALM_NAME; the
 /// ports are the client's defaults (6600, 23115), each key good for 60 s and
@@ -428,11 +438,7 @@ fn login() -> server.Login {
     Error(Nil) ->
       panic as "GENESIS_GAME_ADDRESS is not set; the auth server hands each client to the game server at this IPv4 address"
   }
-  let realm_name = case envoy.get("GENESIS_REALM_NAME") {
-    Ok(name) -> name
-    Error(Nil) ->
-      panic as "GENESIS_REALM_NAME is not set; it names the realm the auth server hands each client to"
-  }
+  let realm_name = realm_name()
   server.Login(
     sts: server.Served(
       listener: process.new_name("sts_listener"),
@@ -487,6 +493,7 @@ fn game(tables: store.Tables) -> server.Served(game_connection.Settings) {
       realm_id:,
       max_characters: 12,
       game:,
+      realm_name: realm_name(),
       tables:,
       ask_deadline_ms:,
       rate: game_rate(),

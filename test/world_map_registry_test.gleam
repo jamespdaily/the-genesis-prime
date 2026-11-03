@@ -86,8 +86,13 @@ fn start_world() -> World {
 fn locate(scope: Registry(Nil), address: Address) -> Result(Pid, Nil) {
   case address {
     Connection(connection:) -> registry.find(scope, connection)
-    step.Sessions | step.HandOff | step.Store | step.Maps | step.Map(..) ->
-      Error(Nil)
+    step.Sessions
+    | step.HandOff
+    | step.Store
+    | step.Maps
+    | step.Map(..)
+    | step.CharacterNamed(..)
+    | step.ZoneChannel(..) -> Error(Nil)
   }
 }
 

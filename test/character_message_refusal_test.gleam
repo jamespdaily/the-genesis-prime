@@ -114,8 +114,8 @@ pub fn a_result_wider_than_6_bits_is_refused_test() -> Nil {
 
 pub fn a_terrain_loaded_value_wider_than_15_bits_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
-  assert terrain_loaded.encode(TerrainLoaded(field_1: 0x8000))
-    == Error(bit_stream.ValueDoesNotFit("field_1", 15, 0x8000))
+  assert terrain_loaded.encode(TerrainLoaded(world_zone_id: 0x8000))
+    == Error(bit_stream.ValueDoesNotFit("world_zone_id", 15, 0x8000))
     as "vector.opcode.0xf2.body: the client writes the low 15 bits of its value (0xFFFF1234 as 0x1234); the server refuses a value that does not fit rather than mask it"
 }
 

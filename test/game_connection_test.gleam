@@ -44,11 +44,13 @@ import genesis_prime/client_connection.{
   type Answer, type Message, type News, type PeerNews, type Request, Appeared,
   AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, FromHandOff, FromMap,
   FromSessions, FromStore, Moving, PeerNews, Removed, SentByMap, SentByPeer,
-  SentBySessions, TellMoved, TellPeer,
+  SentBySessions, TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/coverage/sent_message
+import genesis_prime/game/chat_channel
+import genesis_prime/game/chat_tell
 import genesis_prime/game/connection.{Settings} as game_connection
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game_settings.{GameSettings}
@@ -57,9 +59,11 @@ import genesis_prime/hand_off.{
 }
 import genesis_prime/login/guid
 import genesis_prime/message/account_entitlements.{AccountEntitlements}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
+import genesis_prime/message/chat_line
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
@@ -100,6 +104,8 @@ import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
+import genesis_prime/message/send_chat_line.{SendChatLine}
+import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
@@ -112,7 +118,8 @@ import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
-import genesis_prime/message/zone_value_changed.{ZoneValueChanged}
+import genesis_prime/message/whisper_failed
+import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome, CallerId,
   CancelTimer, ConnectionId, EndedBeforeAnswer, LogError, LogInfo, LogWarning,
@@ -138,6 +145,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import message_support
 import owned_test
 import place_support
 
@@ -149,6 +157,7 @@ fn settings() -> game_connection.Settings {
     realm_id: 5,
     max_characters: 9,
     game: GameSettings(camp_countdown_ms: 12_345, character_slots: 3),
+    realm_name: "Test Realm",
     tables: character_tables.shared(),
     ask_deadline_ms: 4000,
     rate: support.roomy(),
@@ -1362,13 +1371,22 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
     answer(state:, taken:, outcome: step.Answer(FromMap(map_answer(taken))))
   assert written_ids(taken) == game_client.world_entry_ids
     as "the order the client needs: 0xAD first; 0x262 before 0x19B; 0x19B before 0x6BC, 0x636 and 0x61 (the client drops 0x6BC until 0x19B has set the player, opcode.0x6bc); 0xF1 after 0xAD (opcode.0xad, opcode.0x19b, opcode.0x6bc, opcode.0x636, opcode.0x61, opcode.0xf1)"
-  let after_the_burst = list.drop(support.effects_of(taken), 7)
+  let after_the_burst =
+    list.filter(list.drop(support.effects_of(taken), 7), fn(effect) {
+      case effect {
+        OwnEffect(step.Write(..)) -> False
+        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+          True
+      }
+    })
   assert after_the_burst
     == [
       Watch(WatchId(2), Map(camp_map(), incarnation)),
+      OwnEffect(step.JoinGroup(step.CharacterNamed("ab cd"))),
+      OwnEffect(step.JoinGroup(zone_group(4961))),
       OwnEffect(StartTimer(TimerId(2), 60_000)),
     ]
-    as "the connection watches the run of the map that holds its player, after the burst, and the save timer starts"
+    as "the connection watches the run of the map that holds its player, after the burst, joins its groups and the save timer starts"
   assert support.asked(taken) == None
   assert !support.stops(taken)
 }
@@ -1462,6 +1480,8 @@ pub fn message_0x19b_names_the_unit_0x6bc_gives_the_path_0x636_gives_control_of_
     Frame(message_id: 0x0636, body: control),
     Frame(message_id: 0x00F1, body: interval),
     Frame(message_id: 0x0061, body: entered_world),
+    Frame(message_id: 0x01DA, ..),
+    Frame(message_id: 0x01BC, ..),
   ] = heard(entered().1, keyed())
   assert unit_is_player.decode(is_player)
     == Ok(UnitIsPlayer(unit_id: 5, field_2: 0))
@@ -1967,7 +1987,10 @@ pub fn a_command_the_clients_code_never_sends_ends_the_connection_after_saving_t
 /// The bodies of the messages the rule decodes and keeps nothing of.
 fn decoded_and_dropped() -> List(#(Int, BitArray)) {
   let assert Ok(zone) =
-    zone_value_changed.encode(ZoneValueChanged(old_value: 6009, new_value: 6010))
+    world_zone_changed.encode(WorldZoneChanged(
+      old_world_zone_id: 6009,
+      new_world_zone_id: 4962,
+    ))
   let assert Ok(interval) =
     movement_send_interval_answer.encode(MovementSendIntervalAnswer(
       field_1: 4,
@@ -1976,7 +1999,8 @@ fn decoded_and_dropped() -> List(#(Int, BitArray)) {
     ))
   let assert Ok(speed) =
     move_speed_setting.encode(MoveSpeedSetting(move_speed: 2))
-  let assert Ok(terrain) = terrain_loaded.encode(TerrainLoaded(field_1: 6009))
+  let assert Ok(terrain) =
+    terrain_loaded.encode(TerrainLoaded(world_zone_id: 6009))
   let assert Ok(fall) = fall_value.encode(FallValue(field_1: 0x40490FDB))
   let assert Ok(floor) =
     fell_below_floor.encode(FellBelowFloor(
@@ -3344,13 +3368,17 @@ pub fn the_game_rule_names_the_client_messages_it_takes_test() -> Nil {
   let named = list.sort(game_connection.taken_message_ids(), int.compare)
   assert named
     == [
-      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x025B, 0x025C, 0x0352,
-      0x038C, 0x058F, 0x0637, 0x063A, 0x063B, 0x0786, 0x07DD, 0x07E0,
+      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4, 0x025B,
+      0x025C, 0x0352, 0x038C, 0x058F, 0x0637, 0x063A, 0x063B, 0x0786, 0x07DD,
+      0x07E0,
     ]
-    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement and camp messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF and 0x00C0"
+    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0, 0x01C3 and 0x01D4"
   assert list.sort(game_connection.carried_message_ids(), int.compare)
-    == [0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x0637, 0x063A, 0x063B]
-    as "the movement and camp messages are taken only with the player in the world"
+    == [
+      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x01D4, 0x0637,
+      0x063A, 0x063B,
+    ]
+    as "the movement, camp and chat messages are taken only with the player in the world"
 }
 
 pub fn character_select_takes_exactly_the_ids_the_rule_names_and_logs_every_other_client_id_as_unhandled_test() -> Nil {
@@ -3588,8 +3616,13 @@ pub fn message_0xc0_with_no_camp_ends_the_connection_with_an_error_the_last_good
 pub fn message_0xc0_cancels_the_save_timer_saves_the_place_asks_the_map_run_to_let_the_player_leave_then_writes_0x594_with_the_byte_01_in_that_order_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = saving_the_camp()
-  assert support.effects_of(taken) == [OwnEffect(CancelTimer(TimerId(2)))]
-    as "the 60 s save timer is cancelled before the save, so none fires while the player leaves"
+  assert support.effects_of(taken)
+    == [
+      OwnEffect(step.LeaveGroup(step.CharacterNamed("ab cd"))),
+      OwnEffect(step.LeaveGroup(zone_group(4961))),
+      OwnEffect(CancelTimer(TimerId(2))),
+    ]
+    as "the player leaves its chat groups, and the 60 s save timer is cancelled before the save, so none fires while the player leaves"
   assert ask_request(taken) == save_asked(1, entry_place())
     as "the place is saved first"
   assert support.writes(taken) == []
@@ -3649,7 +3682,8 @@ fn mapped(
     | AskHandOff(..)
     | AskSessions(..)
     | TellMoved(..)
-    | TellPeer(..) ->
+    | TellPeer(..)
+    | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
   let #(map_state, mapped) =
@@ -3703,7 +3737,7 @@ pub fn after_a_camp_a_play_request_enters_the_world_again_as_a_new_unit_with_the
   let #(state, taken) =
     answer(state:, taken:, outcome: step.Answer(FromMap(joined_again)))
   assert written_ids(taken) == game_client.world_entry_ids
-    as "the same seven messages as at the first entry"
+    as "the same nine messages as at the first entry"
   assert player_in(taken).unit_id != first_unit && player_in(taken).unit_id == 6
     as "opcode.0x262: the client refuses a unit id it has seen, so the play is a new unit: the map's next id after the five it gave"
   assert support.watches(taken) == [#(WatchId(2), Map(camp_map(), incarnation))]
@@ -4563,4 +4597,591 @@ pub fn a_command_kind_that_is_not_relayed_is_named_once_a_connection_and_not_rel
   let #(_, second) = read(state, message)
   assert support.logs_of(step: second, level: LogInfo) == []
     as "named once on a connection"
+}
+
+// ---- chat: the speaker, the reader and the routing ----
+
+/// A 0x1c3 on (type, 0) inside 0x038C, as the client sends it, with slot 1.
+fn chat_line_message(type_id: Int, text: String) -> BitArray {
+  chat_line_with(type_id:, text:, message_id: 1)
+}
+
+fn chat_line_with(
+  type_id type_id: Int,
+  text text: String,
+  message_id message_id: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    send_chat_line.encode(SendChatLine(
+      channel_type: type_id,
+      channel_id: 0,
+      text: bit_stream.utf16_units(text),
+      formats: [],
+      chat_message_id: message_id,
+    ))
+  world_message(send_chat_line.message_id, body)
+}
+
+/// The chat tells of a step: the address each goes to and what it says, in the
+/// order of the step's effects.
+fn chat_tells(
+  taken: ConnectionStep(Request),
+) -> List(#(step.Address, chat_tell.Tell)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(to:, request: client_connection.TellChat(tell:))) ->
+        Ok(#(to, tell))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+fn peer_tell_kinds(taken: ConnectionStep(Request)) -> List(String) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(request: TellPeer(..), ..)) -> Ok("unit news")
+      OwnEffect(step.Tell(request: client_connection.TellChat(..), ..)) ->
+        Ok("chat")
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+pub fn a_say_line_in_the_world_writes_the_accept_and_tells_each_viewer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state = watched_by(in_world(), [2, 3])
+  let #(_, taken) = read(state, chat_line_message(4, "Hello"))
+  assert written_ids(taken) == [0x01C2]
+    as "opcode.0x1c2: the speaker's own line is shown by the accept alone"
+  let tells = chat_tells(taken)
+  assert list.map(tells, fn(told) { told.0 })
+    == [step.Connection(ConnectionId(2)), step.Connection(ConnectionId(3))]
+    as "one tell to each viewer, which the shell sends with no answer"
+  let assert [#(_, chat_tell.Said(speaker:, line:)), ..] = tells
+  assert speaker.name == "Ab Cd" && speaker.character_id == 42
+  assert line.channel_type == chat_channel.Say && line.channel_id == 0
+  assert support.logs(taken) == [] && !support.stops(taken)
+}
+
+pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the_order_of_watched_and_the_line_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The line first: the player 2 is no viewer yet, so it gets no line.
+  let #(state, line_first) = read(in_world(), chat_line_message(4, "Hello"))
+  let #(_, appears) = feed(state, sent_by_the_map(Watched(by: ConnectionId(2))))
+  assert peer_tell_kinds(line_first) == []
+    as "a player that does not see the speaker yet is told nothing"
+  assert peer_tell_kinds(appears) == ["unit news"]
+    as "design C: the speaker's connection sends its 0x262 as the map says the player sees it"
+  // Watched first: the 0x262 is told in the step before the line, by the same
+  // sender, so the viewer's connection takes them in that order.
+  let #(state, appears) =
+    feed(in_world(), sent_by_the_map(Watched(by: ConnectionId(2))))
+  let #(_, line) = read(state, chat_line_message(4, "Hello"))
+  assert list.append(peer_tell_kinds(appears), peer_tell_kinds(line))
+    == ["unit news", "chat"]
+    as "the 0x262 comes before the first line: one sender for each pair, and a sender's messages arrive in the order sent, so the bubble finds the unit"
+}
+
+pub fn a_said_tell_writes_a_0x1c8_with_the_player_in_the_world_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tell =
+    chat_tell.Said(
+      speaker: chat_tell.Speaker(
+        realm_id: 1,
+        character_id: 7,
+        name: "Zed Other",
+        faction_id: 167,
+        unit_id: 9,
+        map: camp_map(),
+        incarnation:,
+      ),
+      line: chat_tell.Line(
+        channel_type: chat_channel.Say,
+        channel_id: 0,
+        text: [0x48, 0x69],
+        formats: [],
+      ),
+    )
+  let #(_, taken) =
+    feed(in_world(), OwnEvent(Woken(client_connection.SentByChat(tell))))
+  assert written_ids(taken) == [0x01C8]
+  let assert [Frame(body:, ..)] = heard(taken, keyed())
+  let assert Ok(line) = chat_line.decode(body)
+  assert line.sender_name == "Zed Other" && line.unit_id == 9
+  assert line.cross_faction == 1
+    as "chat.cross_faction: the tests' player is faction 166, the speaker 167"
+}
+
+pub fn a_chat_tell_with_no_player_in_the_world_is_dropped_and_the_connection_goes_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tell =
+    chat_tell.Said(
+      speaker: chat_tell.Speaker(
+        realm_id: 1,
+        character_id: 7,
+        name: "Zed Other",
+        faction_id: 167,
+        unit_id: 9,
+        map: camp_map(),
+        incarnation:,
+      ),
+      line: chat_tell.Line(
+        channel_type: chat_channel.Say,
+        channel_id: 0,
+        text: [0x48, 0x69],
+        formats: [],
+      ),
+    )
+  let #(_, taken) =
+    feed(in_select(), OwnEvent(Woken(client_connection.SentByChat(tell))))
+  assert written_ids(taken) == []
+    && support.logs(taken) == []
+    && !support.stops(taken)
+    as "a player in character select has no chat: the line is dropped"
+}
+
+pub fn a_0x1c3_outside_the_world_is_logged_as_unhandled_and_the_connection_goes_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = read(in_select(), chat_line_message(4, "Hello"))
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x01C3))]
+    as "the routing table takes 0x1c3 with the player in the world only"
+  assert !support.stops(taken)
+}
+
+pub fn a_format_of_type_12_ends_the_connection_with_nothing_written_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let body =
+    message_support.hex(
+      "04 00 00 00 00 00 00 00 00 80 00 1e 40 60 00 80 00 00 00 00 00 00 00 00 00 80 00 00",
+    )
+  let #(refusing, taken) =
+    read(in_world(), world_message(send_chat_line.message_id, body))
+  assert list.any(support.logs(taken), fn(line) { line.level == step.LogError })
+    as "0x140085ca0: the client's reader refuses a format of type 12 to 15, so the frame is one the client never writes: an error line says so"
+  assert support.writes(taken) == [] as "nothing is written to such a client"
+  let #(_, taken) = answer(state: refusing, taken:, outcome: place_saved())
+  assert support.effects_of(taken) == [step.Stop]
+    as "the last good place is saved and the connection ends (CLAUDE.md: bytes the client's reader refuses end the connection)"
+}
+
+pub fn support_and_instance_are_logged_as_unhandled_once_for_each_channel_on_a_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, first) =
+    read(in_world(), chat_line_with(type_id: 19, text: "Hi", message_id: 1))
+  let #(state, second) =
+    read(state, chat_line_with(type_id: 19, text: "Hi", message_id: 2))
+  let #(_, instance) =
+    read(state, chat_line_with(type_id: 32, text: "Hi", message_id: 3))
+  let warnings = fn(taken) {
+    list.filter(support.logs(taken), fn(line) { line.level == step.LogWarning })
+  }
+  assert list.length(warnings(first)) == 1
+    as "Jim, 2026-11-03: the channel is named in a warning"
+  assert warnings(second) == [] as "once for each channel on a connection"
+  assert list.length(warnings(instance)) == 1
+    as "another channel is another line"
+  assert written_ids(second) == [0x01D3]
+    as "each line still gets its one answer"
+}
+
+// ---- chat: the zone ----
+
+/// The groups a step joins and leaves, in the order of its effects.
+fn group_effects(
+  taken: ConnectionStep(Request),
+) -> List(step.ConnectionEffect(Request)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.JoinGroup(address:)) -> Ok(step.JoinGroup(address:))
+      OwnEffect(step.LeaveGroup(address:)) -> Ok(step.LeaveGroup(address:))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+fn zone_group(top_zone_id: Int) -> step.Address {
+  step.ZoneChannel(map: camp_map(), incarnation:, top_zone_id:)
+}
+
+fn zone_changed_message(old old: Int, new new: Int) -> BitArray {
+  let assert Ok(body) =
+    world_zone_changed.encode(WorldZoneChanged(
+      old_world_zone_id: old,
+      new_world_zone_id: new,
+    ))
+  world_message(world_zone_changed.message_id, body)
+}
+
+fn terrain_loaded_message(world_zone_id: Int) -> BitArray {
+  let assert Ok(body) = terrain_loaded.encode(TerrainLoaded(world_zone_id:))
+  world_message(terrain_loaded.message_id, body)
+}
+
+pub fn the_entry_burst_ends_with_0x1da_and_0x1bc_and_joins_the_name_and_the_zone_channel_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = entered()
+  assert written_ids(taken) == game_client.world_entry_ids
+    as "opcode.0x1da, opcode.0x1bc: after 0x61, 0x1da names the channel and 0x1bc gives it, in that order"
+  assert group_effects(taken)
+    == [
+      step.JoinGroup(step.CharacterNamed("ab cd")),
+      step.JoinGroup(zone_group(4961)),
+    ]
+    as "the player joins its folded name and the zone channel of its run and the top zone 4961 of its place's zone 6009, in the step that takes the map's Joined"
+}
+
+pub fn a_report_under_the_same_top_zone_writes_and_joins_nothing_for_0x63a_and_0xf2_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [zone_changed_message(old: 6009, new: 4962), terrain_loaded_message(4962)],
+    fn(bytes) {
+      let #(_, taken) = read(in_world(), bytes)
+      assert written_ids(taken) == [] && group_effects(taken) == []
+        as "chat.zone_reach: 4962 is under the top zone 4961 of the place's zone"
+      assert support.logs(taken) == [] && !support.stops(taken)
+    },
+  )
+}
+
+pub fn a_report_under_another_top_zone_renames_the_channel_and_changes_the_group_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [zone_changed_message(old: 6009, new: 648), terrain_loaded_message(648)],
+    fn(bytes) {
+      let #(_, taken) = read(in_world(), bytes)
+      assert written_ids(taken) == [0x01DA]
+        as "0x140403670: the client only renames the zone channel"
+      assert group_effects(taken)
+        == [
+          step.LeaveGroup(zone_group(4961)),
+          step.JoinGroup(zone_group(35)),
+        ]
+    },
+  )
+}
+
+pub fn a_0x63a_whose_old_value_is_not_the_one_the_server_holds_is_taken_all_the_same_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = read(in_world(), zone_changed_message(old: 1, new: 648))
+  assert written_ids(taken) == [0x01DA]
+    as "server choice: whether the client's kept value outlives a camp is not read (opcode.0x63a), so the old value is not checked and a sound client is not dropped"
+}
+
+pub fn a_report_of_zone_0_leaves_the_group_and_writes_0x1da_with_no_zone_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = read(in_world(), terrain_loaded_message(0))
+  assert written_ids(taken) == [0x01DA]
+  assert group_effects(taken) == [step.LeaveGroup(zone_group(4961))]
+}
+
+pub fn a_report_of_a_zone_with_no_row_is_no_zone_with_one_warning_for_each_such_zone_and_the_connection_goes_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = read(in_world(), terrain_loaded_message(1132))
+  assert written_ids(taken) == [0x01DA]
+    && group_effects(taken) == [step.LeaveGroup(zone_group(4961))]
+    && !support.stops(taken)
+    as "0x140403670: the client accepts a zone with no row (0x1da names no channel then), so the connection goes on: the player is in no zone"
+  let warnings = fn(taken) {
+    list.filter(support.logs(taken), fn(line) { line.level == step.LogWarning })
+  }
+  assert list.length(warnings(taken)) == 1
+    && support.logs_of(step: taken, level: LogError) == []
+    as "one warning names the zone, and no error"
+  let #(state, again) = read(state, terrain_loaded_message(1132))
+  assert warnings(again) == []
+    as "the same zone is logged once for each connection"
+  let #(_, other) = read(state, terrain_loaded_message(1133))
+  assert list.length(warnings(other)) == 1
+    as "another such zone is another line"
+}
+
+pub fn a_camp_answers_each_pending_whisper_0x1d9_before_it_saves_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    read(
+      in_world(),
+      whisper_message(target: "Cd Ef", text: "Hi", message_id: 3),
+    )
+  let #(state, _) = read(state, camp_request_message(True))
+  let #(_, taken) = read(state, camp_finished_message())
+  assert written_ids(taken) == [0x01D9]
+    as "the design: every 0x1d4 keeps exactly one answer, so the whisper the camp drops is answered before the save"
+  assert list.any(support.effects_of(taken), fn(effect) {
+    case effect {
+      Unwatch(WatchId(101)) -> True
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> False
+    }
+  })
+    as "and its watch is dropped"
+}
+
+pub fn a_zone_line_told_to_a_connection_after_its_camp_writes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(left, _) = camped_out()
+  let tell =
+    chat_tell.ZoneLine(
+      speaker: chat_tell.Speaker(
+        realm_id: 1,
+        character_id: 7,
+        name: "Zed Other",
+        faction_id: 167,
+        unit_id: 9,
+        map: camp_map(),
+        incarnation:,
+      ),
+      top_zone_id: 4961,
+      line: chat_tell.Line(
+        channel_type: chat_channel.Zone,
+        channel_id: 3460,
+        text: [0x48, 0x69],
+        formats: [],
+      ),
+    )
+  let #(_, taken) =
+    feed(left, OwnEvent(Woken(client_connection.SentByChat(tell))))
+  assert written_ids(taken) == []
+    && chat_tells(taken) == []
+    && support.logs(taken) == []
+    && !support.stops(taken)
+    as "the design's failure table: after the camp's leave no zone line reaches the player, though the speaker's tell was already sent"
+}
+
+pub fn messages_0xf2_and_0x63a_outside_the_world_are_unhandled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(
+    [
+      #(0x00F2, terrain_loaded_message(4962)),
+      #(0x063A, zone_changed_message(old: 6009, new: 4962)),
+    ],
+    fn(sent) {
+      let #(_, taken) = read(in_select(), sent.1)
+      assert support.unhandled_ids(taken) == [Some(#("unhandled", sent.0))]
+        as "the routing table takes them inside 0x38C with the player in the world only (opcode.0xf2, opcode.0x63a); elsewhere they are logged as unhandled, as before"
+      assert group_effects(taken) == [] && !support.stops(taken)
+    },
+  )
+}
+
+pub fn a_camp_leaves_the_name_and_zone_groups_before_it_saves_and_a_new_entry_joins_again_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = saving_the_camp()
+  assert group_effects(taken)
+    == [
+      step.LeaveGroup(step.CharacterNamed("ab cd")),
+      step.LeaveGroup(zone_group(4961)),
+    ]
+    as "the design's failure table: LeaveGroup in the step that starts the camp's leave, so no zone line reaches it after the leave"
+  let #(again, _) = camped_out()
+  let #(_, entered_again) = entered_from(again, world_character())
+  assert group_effects(entered_again)
+    == [
+      step.JoinGroup(step.CharacterNamed("ab cd")),
+      step.JoinGroup(zone_group(4961)),
+    ]
+    as "a new entry joins again"
+}
+
+// ---- chat: the whisper ----
+
+fn whisper_message(
+  target target: String,
+  text text: String,
+  message_id message_id: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    send_whisper.encode(SendWhisper(
+      target_name: bit_stream.utf16_units(target),
+      target_realm_name: [],
+      text: bit_stream.utf16_units(text),
+      formats: [],
+      chat_message_id: message_id,
+      account: 0,
+    ))
+  world_message(send_whisper.message_id, body)
+}
+
+fn incoming_whisper(whisper: Int) -> Event(ConnectionEvent(Message, Answer)) {
+  OwnEvent(
+    Woken(
+      client_connection.SentByChat(chat_tell.Whisper(
+        whisper:,
+        speaker: chat_tell.Speaker(
+          realm_id: 1,
+          character_id: 7,
+          name: "Zed Other",
+          faction_id: 167,
+          unit_id: 9,
+          map: camp_map(),
+          incarnation:,
+        ),
+        from: ConnectionId(8),
+        line: chat_tell.Line(
+          channel_type: chat_channel.Whisper,
+          channel_id: 0,
+          text: [0x48, 0x69],
+          formats: [],
+        ),
+      )),
+    ),
+  )
+}
+
+fn whisper_watch_effects(
+  taken: ConnectionStep(Request),
+) -> List(step.Effect(step.ConnectionEffect(Request))) {
+  list.filter(support.effects_of(taken), fn(effect) {
+    case effect {
+      Watch(..) | OwnEffect(step.TellWatched(..)) -> True
+      OwnEffect(_) | Unwatch(..) | step.Log(..) | step.Stop -> False
+    }
+  })
+}
+
+pub fn a_0x1d4_in_the_world_watches_the_targets_name_and_tells_through_that_watch_and_writes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    read(
+      in_world(),
+      whisper_message(target: "Cd Ef", text: "Hi", message_id: 3),
+    )
+  assert written_ids(taken) == []
+    as "nothing is written until the target answers"
+  let assert [
+    Watch(watch, target),
+    OwnEffect(step.TellWatched(
+      watch: told_through,
+      request: client_connection.TellChat(chat_tell.Whisper(
+        whisper: 1,
+        from: ConnectionId(1),
+        ..,
+      )),
+    )),
+  ] = whisper_watch_effects(taken)
+  assert target == step.CharacterNamed("cd ef")
+  assert told_through == watch
+  assert watch == WatchId(101)
+}
+
+pub fn a_whisper_tell_in_the_world_writes_0x1c8_and_tells_the_speaker_heard_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = feed(in_world(), incoming_whisper(5))
+  assert written_ids(taken) == [0x01C8]
+  assert chat_tells(taken)
+    == [
+      #(
+        step.Connection(ConnectionId(8)),
+        chat_tell.Heard(whisper: 5, name: "Ab Cd"),
+      ),
+    ]
+}
+
+pub fn a_whisper_tell_with_no_player_in_the_world_is_answered_not_heard_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = feed(in_select(), incoming_whisper(5))
+  assert written_ids(taken) == []
+  assert chat_tells(taken)
+    == [#(step.Connection(ConnectionId(8)), chat_tell.NotHeard(whisper: 5))]
+    as "the design's failure table: a target in character select or in the camp's leave is not in the world"
+  let #(left, _) = camped_out()
+  let #(_, taken) = feed(left, incoming_whisper(6))
+  assert chat_tells(taken)
+    == [#(step.Connection(ConnectionId(8)), chat_tell.NotHeard(whisper: 6))]
+    as "and after the camp's leave"
+}
+
+pub fn a_pending_whisper_and_a_whisper_to_the_player_are_taken_while_the_connection_claims_again_after_sessions_ended_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    read(
+      in_world(),
+      whisper_message(target: "Cd Ef", text: "Hi", message_id: 3),
+    )
+  let #(state, waiting) = feed(state, WatchEnded(WatchId(1)))
+  assert !support.stops(waiting)
+    as "Sessions ended: the connection waits to claim again"
+  let #(state, taken) = feed(state, WatchEnded(WatchId(101)))
+  assert written_ids(taken) == [0x01D9]
+    && !support.stops(taken)
+    && support.logs(taken) == []
+    as "the finding: the end of a whisper's watch is taken in the wait, the speaker still gets its 0x1d9, and the connection goes on"
+  let #(_, taken) = feed(state, incoming_whisper(5))
+  assert written_ids(taken) == [0x01C8]
+    as "a whisper to the player is written while it waits to claim, since its client holds the world"
+}
+
+pub fn the_whisper_numbers_count_for_the_connections_life_across_a_camp_and_a_new_entry_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, first) =
+    read(
+      in_world(),
+      whisper_message(target: "Cd Ef", text: "Hi", message_id: 3),
+    )
+  let #(state, _) = read(state, camp_request_message(True))
+  let #(state, taken) = read(state, camp_finished_message())
+  let #(state, taken) = answer(state:, taken:, outcome: place_saved())
+  let #(state, _) = answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+  let #(state, taken) = read(state, select_start())
+  let #(state, _) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForSelect(Listed([])))),
+    )
+  let #(state, taken) = playing_from(state, 42)
+  let #(state, taken) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromStore(
+          ForWorld(CharacterLoaded(
+            world_character(),
+            character_support.epoch(1),
+          )),
+        ),
+      ),
+    )
+  let #(_, joined) = mapped(map_state: map_with_four_players(), taken:)
+  let #(state, _) =
+    answer(state:, taken:, outcome: step.Answer(FromMap(joined)))
+  let #(_, second) =
+    read(state, whisper_message(target: "Cd Ef", text: "Hi", message_id: 3))
+  let assert [Watch(watch, _), ..] = whisper_watch_effects(second)
+  assert watch == WatchId(102)
+    as "the design's finding: a reply to a whisper of the first stay never meets the second stay's first whisper"
+  assert list.length(whisper_watch_effects(first)) == 2
+}
+
+pub fn a_0x1d4_outside_the_world_is_logged_as_unhandled_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    read(
+      in_select(),
+      whisper_message(target: "Cd Ef", text: "Hi", message_id: 3),
+    )
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x01D4))]
+}
+
+pub fn a_whisper_to_an_offline_name_gives_0x1d9_when_its_watch_ends_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    read(
+      in_world(),
+      whisper_message(target: "Cd Ef", text: "Hi", message_id: 3),
+    )
+  let #(_, taken) = feed(state, WatchEnded(WatchId(101)))
+  let assert [frame] = heard(taken, keyed())
+  assert frame.message_id == whisper_failed.message_id
+  assert support.logs(taken) == []
+}
+
+pub fn a_0x597_name_lookup_is_logged_as_unhandled_and_no_player_info_is_written_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = read(in_world(), world_message(0x0597, <<>>))
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x0597))]
+    as "chat.name_lookup: no chat line makes the client ask for a name, so the player info of the mail step is not built and 0x597 stays unhandled"
+  assert written_ids(taken) == [] as "no 0x598 or 0x599 is written"
 }

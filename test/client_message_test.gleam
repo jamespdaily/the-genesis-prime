@@ -35,9 +35,11 @@ import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/pong.{Pong}
 import genesis_prime/message/realm_select_start.{RealmSelectStart}
 import genesis_prime/message/rename_character.{RenameCharacter}
+import genesis_prime/message/send_chat_line.{SendChatLine}
+import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/world_message.{WorldMessage}
-import genesis_prime/message/zone_value_changed.{ZoneValueChanged}
+import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/message_schema
 import gleam/int
 import gleam/list
@@ -211,7 +213,10 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         echo_value: 8,
       )),
     ),
-    #(0x00F2, client_message.TerrainLoaded(message: TerrainLoaded(field_1: 2))),
+    #(
+      0x00F2,
+      client_message.TerrainLoaded(message: TerrainLoaded(world_zone_id: 2)),
+    ),
     #(0x00BF, client_message.CampRequest(message: CampRequest(start: 1))),
     #(0x00C0, client_message.CampFinished(message: CampFinished)),
     #(
@@ -225,9 +230,9 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
     ),
     #(
       0x063A,
-      client_message.ZoneValueChanged(message: ZoneValueChanged(
-        old_value: 1,
-        new_value: 2,
+      client_message.WorldZoneChanged(message: WorldZoneChanged(
+        old_world_zone_id: 1,
+        new_world_zone_id: 2,
       )),
     ),
     #(
@@ -248,6 +253,27 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
         camera_x: 0x3F800000,
         camera_y: 0x40000000,
         camera_z: 0xC0400000,
+      )),
+    ),
+    #(
+      0x01C3,
+      client_message.SendChatLine(message: SendChatLine(
+        channel_type: 4,
+        channel_id: 0,
+        text: [0x48, 0x65, 0x6C, 0x6C, 0x6F],
+        formats: [],
+        chat_message_id: 1,
+      )),
+    ),
+    #(
+      0x01D4,
+      client_message.SendWhisper(message: SendWhisper(
+        target_name: bit_stream.utf16_units("Ab Cd"),
+        target_realm_name: [],
+        text: [0x48, 0x69],
+        formats: [],
+        chat_message_id: 2,
+        account: 0,
       )),
     ),
   ]

@@ -84,7 +84,8 @@ import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
-  SentByMap, SentByPeer, SentBySessions, TellMoved, TellPeer,
+  SentByChat, SentByMap, SentByPeer, SentBySessions, TellChat, TellMoved,
+  TellPeer,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -286,7 +287,7 @@ fn directory(settings: Settings) -> Directory {
           deadline_ms:,
           reply: fn(answer) { reply(FromMap(answer)) },
         )
-      TellMoved(..) | TellPeer(..) -> Error(Nil)
+      TellMoved(..) | TellPeer(..) | TellChat(..) -> Error(Nil)
     }
   }
 }
@@ -305,6 +306,9 @@ fn locate(settings: Settings) -> Locate {
       step.HandOff -> process.named(hand_off)
       step.Store -> process.named(store)
       step.Connection(connection:) -> registry.find(registry, connection)
+      step.CharacterNamed(folded_name:) ->
+        registry.find_named(registry, folded_name)
+      step.ZoneChannel(..) -> Error(Nil)
       step.Maps -> process.named(settings.world.maps)
       step.Map(map:, incarnation:) ->
         find_run(settings:, map:, incarnation:)
@@ -333,7 +337,9 @@ fn find_run(
 /// How a game or login connection's shell finds the process a `Watch` names,
 /// with the way to tell it when the rule tells it: the run of a map is found
 /// once, and the way to tell it (`TellMoved`) comes with the pid the watch
-/// monitors. Any other address has no process that takes a tell.
+/// monitors; the connection that holds a character's name is found in the
+/// registry, and told a chat tell (`TellChat`) through it. A zone channel is
+/// never watched, and any other address has no process that takes a tell.
 fn connection_locate(
   settings: Settings,
 ) -> fn(step.Address) -> Result(watch.Found(fn(Request) -> Nil), Nil) {
@@ -348,12 +354,40 @@ fn connection_locate(
             request: _,
           ))
         })
+      step.CharacterNamed(folded_name:) ->
+        registry.find_named(settings.registry, folded_name)
+        |> result.map(fn(pid) {
+          watch.Tellable(pid:, sender: tell_the_connection(pid:, request: _))
+        })
       step.Sessions
       | step.HandOff
       | step.Store
       | step.Maps
+      | step.ZoneChannel(..)
       | step.Connection(..) -> pids(address) |> result.map(watch.Watched)
     }
+  }
+}
+
+/// Tells the connection a watch on a character's name found what the request
+/// says, a chat tell, which its shell takes as a `SentByChat` message. Any other
+/// request is no tell to a connection by name: a rule that tells one has a bug,
+/// logged as an error, and nothing is sent.
+fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
+  case request {
+    TellChat(tell:) -> registry.deliver_to(pid, SentByChat(tell:))
+    TellMoved(..)
+    | TellPeer(..)
+    | AskStore(..)
+    | AskHandOff(..)
+    | AskSessions(..)
+    | AskMap(..)
+    | AskMapRun(..) ->
+      runtime.log(
+        LogError,
+        "a rule told a connection by name something other than a chat tell",
+        step.no_one,
+      )
   }
 }
 
@@ -370,6 +404,7 @@ pub fn tell_the_run(
       Nil
     }
     TellPeer(..)
+    | TellChat(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -384,17 +419,21 @@ pub fn tell_the_run(
 }
 
 /// How a connection's shell sends a request to another connection by address
-/// (`Tell` to a `Connection`): news of a player's unit (`TellPeer`) goes through
-/// the registry as `SentByPeer`, by the same reach the services' sends take
-/// (`connection_reach`). Any other request is no tell to a connection: a rule
-/// that sends one has a bug, logged as an error, and nothing is sent.
+/// (`Tell` to a `Connection`) or to every connection of a zone channel (`Tell` to
+/// a `ZoneChannel`): news of a player's unit (`TellPeer`) goes through the
+/// registry as `SentByPeer`, and a chat tell (`TellChat`) as `SentByChat`, by the
+/// same reach the services' sends take (`connection_reach`). Any other request is
+/// no tell to a connection: a rule that sends one has a bug, logged as an error,
+/// and nothing is sent.
 fn connection_deliver(
   settings: Settings,
 ) -> fn(step.Address, Request) -> Result(Nil, Nil) {
   let reach = connection_reach(settings, SentByPeer)
+  let chat_reach = connection_reach(settings, SentByChat)
   fn(to: step.Address, request: Request) {
     case request {
       TellPeer(news:) -> reach.send(to, news)
+      TellChat(tell:) -> chat_reach.send(to, tell)
       TellMoved(..)
       | AskStore(..)
       | AskHandOff(..)
@@ -425,8 +464,14 @@ fn connection_reach(
     case to {
       step.Connection(connection:) ->
         registry.deliver(registry, connection, wrap(outgoing))
-      step.Sessions | step.HandOff | step.Store | step.Maps | step.Map(..) ->
-        Error(Nil)
+      step.ZoneChannel(..) ->
+        registry.deliver_group(registry, to, wrap(outgoing))
+      step.Sessions
+      | step.HandOff
+      | step.Store
+      | step.Maps
+      | step.Map(..)
+      | step.CharacterNamed(..) -> Error(Nil)
     }
   })
 }

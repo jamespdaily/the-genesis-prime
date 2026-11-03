@@ -258,6 +258,19 @@
 ////   map nothing. A viewer that has just been `Unwatched`, or gone, may still be
 ////   sent one: a send to a process that has ended is dropped, and one for a unit
 ////   the viewer does not show is dropped by it.
+//// - **Chat** is a feature of its own (genesis_prime/game/chat): the player's
+////   `Entered` keeps its chat, the routing table sends 0x1c3 and 0x1d4 to it from
+////   inside 0x038C with the player in the world, and 0xF2 and 0x63A give it the
+////   WorldZone id the client reports. The rule turns its effects into writes,
+////   tells (`TellChat`, to a viewer's `Connection`, to a `ZoneChannel` and to a
+////   whisper's `CharacterNamed`), the watch on a whisper's target and the
+////   `JoinGroup` and `LeaveGroup` of the player's groups. What other
+////   connections tell it (`SentByChat`) is taken by the chat with the player in
+////   the world: a whisper that finds none is answered `NotHeard`, and any other
+////   tell is dropped. The player joins its groups as the entry burst is written
+////   and leaves them in the step that starts the camp's leave, so a new entry
+////   joins again (genesis_prime/game/chat has the sequences, the refusals and
+////   the failure table).
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
@@ -286,7 +299,8 @@ import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
   AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
   Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Inside,
-  Otherwise, SentByMap, SentByPeer, SentBySessions, Settled, TellMoved, TellPeer,
+  Otherwise, SentByChat, SentByMap, SentByPeer, SentBySessions, Settled,
+  TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -294,9 +308,13 @@ import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
 import genesis_prime/game/camp
 import genesis_prime/game/character_select
+import genesis_prime/game/chat
+import genesis_prime/game/chat_channel
+import genesis_prime/game/chat_tell
 import genesis_prime/game/movement
 import genesis_prime/game/routing
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/game/top_zone
 import genesis_prime/game/world_entry
 import genesis_prime/game_settings.{type GameSettings}
 import genesis_prime/hand_off.{type Holder, SessionKey, Take}
@@ -352,6 +370,9 @@ pub type Settings {
     /// The game's own settings: the characters an account may have and the
     /// camp's countdown (genesis_prime/game_settings).
     game: GameSettings,
+    /// The realm's name, the one a whisper's realm name must equal, compared
+    /// without case, for the whisper to be for this realm (opcode.0x1d4).
+    realm_name: String,
     /// The client's game tables, which a create request and the list's body
     /// visuals are read from.
     tables: table_store.Tables,
@@ -387,6 +408,15 @@ type Session {
     /// The kinds of movement command already named in a log line as not
     /// relayed to other players on this connection.
     unrelayed_logged: Set(Int),
+    /// The ids of the chat channel types already logged as unhandled on this
+    /// connection (`chat.Unhandled`): once for each.
+    unhandled_channels_logged: Set(Int),
+    /// The WorldZone ids already logged as having no row on this connection.
+    unknown_zones_logged: Set(Int),
+    /// The number of the next whisper the connection's players make: it counts
+    /// for the connection's life, so a reply to a whisper of an earlier stay in
+    /// the world never meets a new whisper (genesis_prime/game/chat).
+    next_whisper: Int,
     status: Status,
   )
 }
@@ -527,6 +557,9 @@ pub fn step(
             cipher: cipher.base(),
             unhandled_logged: set.new(),
             unrelayed_logged: set.new(),
+            unhandled_channels_logged: set.new(),
+            unknown_zones_logged: set.new(),
+            next_whisper: 1,
             status: AwaitingHelloReply,
           )),
           Effects([OwnEffect(Write(hello_bytes(settings)))]),
@@ -554,6 +587,8 @@ fn connected(
       settled(handled: map_sent(session:, now:, message:), now:)
     OwnEvent(Woken(message: SentByPeer(news:))) ->
       settled(handled: peer_sent(session:, news:), now:)
+    OwnEvent(Woken(message: SentByChat(tell:))) ->
+      settled(handled: chat_sent(session:, tell:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
@@ -840,7 +875,7 @@ fn routed(
       select_message(session:, now:, inner:, message:)
     Ok(routing.WorldEntry) -> play_requested(session:, now:, inner:)
     Ok(routing.WorldMessage) -> world_carried(session:, now:, inner:)
-    Ok(routing.Movement(..)) | Ok(routing.Camp(..)) ->
+    Ok(routing.Movement(..)) | Ok(routing.Camp(..)) | Ok(routing.Chat(..)) ->
       misrouted(session:, now:, inner:)
     Error(Nil) ->
       case stage {
@@ -929,6 +964,16 @@ fn movement_message(
   case movement.take(entered.movement, message, inner.body) {
     Ok(movement.Kept(state:)) ->
       Continue(moving(session:, holder:, entered:, state:), [])
+    Ok(movement.Reported(state:, world_zone_id:)) -> {
+      let session = moving(session:, holder:, entered:, state:)
+      let #(updated, effects) =
+        chat.world_zone_reported(
+          chat: entered.chat,
+          world_zone_id:,
+          top_zones: top_zone.top_zones(session.settings.tables),
+        )
+      carry_chat(session: with_chat(session:, chat: updated), effects:)
+    }
     Ok(movement.Relayed(state:, place:, commands:, unrelayed:)) -> {
       let new_kinds =
         list.filter(unrelayed, fn(kind) {
@@ -1071,6 +1116,33 @@ fn camp_message(
   }
 }
 
+/// What the chat messages do, taken from inside 0x038C, in the world
+/// (genesis_prime/game/chat): the line or whisper is answered, told or refused,
+/// the effects are carried out, and a refusal ends the connection.
+fn chat_message(
+  session session: Session,
+  now now: Now,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+  message message: chat.Message,
+) -> client_connection.Handled(Session) {
+  case
+    chat.take(
+      chat: entered.chat,
+      message:,
+      body: inner.body,
+      viewers: entered.viewers,
+      realm_name: session.settings.realm_name,
+      connection: client_connection.connection(session.link),
+      tables: session.settings.tables,
+    )
+  {
+    Ok(#(updated, effects)) ->
+      carry_chat(session: with_chat(session:, chat: updated), effects:)
+    Error(refusal) -> end_for(session:, now:, text: chat.describe(refusal))
+  }
+}
+
 /// 0x0594 with the bit set and reason 0: the client leaves the world and
 /// starts character select on the same connection (opcode.0x594).
 fn leave_world_frame() -> Frame {
@@ -1161,6 +1233,8 @@ fn world_carried(
                     inner: whole,
                     message:,
                   )
+                Ok(routing.Chat(message:)) ->
+                  chat_message(session:, now:, entered:, inner: whole, message:)
                 Ok(routing.Hello)
                 | Ok(routing.CharacterSelect(..))
                 | Ok(routing.WorldEntry)
@@ -1309,6 +1383,8 @@ type Decided {
   WatchesMap(map: MapId, incarnation: Int)
   /// Start the timer that saves the player's place (`save_timer`).
   StartsSaveTimer
+  /// What the chat decided: writes, tells, watches and group joins.
+  Chats(effects: List(chat.Effect))
   /// The player leaves the world for character select: the save timer is
   /// cancelled and the place saved, the map's run is asked to take the player
   /// out, and 0x0594 is written (the camp's finish).
@@ -1367,6 +1443,15 @@ fn carry_out(
         Watch(watch: map_watch, target: step.Map(map:, incarnation:)),
         ..written
       ])
+    [Chats(effects: chat_decided), ..rest] -> {
+      let #(session, converted) = chat_effects(session:, effects: chat_decided)
+      carry_out(
+        session:,
+        now:,
+        effects: rest,
+        written: list.append(list.reverse(converted), written),
+      )
+    }
     [StartsSaveTimer, ..rest] ->
       carry_out(session:, now:, effects: rest, written: [
         start_save_timer(),
@@ -1376,13 +1461,18 @@ fn carry_out(
       case holds_a_player(session.status) {
         Some(#(holder, entered)) ->
           saving(
-            session:,
+            session: Session(
+              ..session,
+              next_whisper: chat.next_whisper(chat: entered.chat),
+            ),
             now:,
             holder:,
             entered:,
             then: Camped,
-            before: list.append(list.reverse(written), [
-              OwnEffect(CancelTimer(timer: save_timer)),
+            before: list.flatten([
+              list.reverse(written),
+              chat_effects(session:, effects: chat.left(entered.chat)).1,
+              [OwnEffect(CancelTimer(timer: save_timer))],
             ]),
             within_ms: session.settings.ask_deadline_ms,
           )
@@ -1688,6 +1778,139 @@ fn map_sent(
   }
 }
 
+/// What another player's connection told this one about chat
+/// (genesis_prime/game/chat_tell): taken with the player in the world, and by
+/// `chat.told`. A whisper that finds no player in the world is answered
+/// `NotHeard`; any other tell is dropped.
+fn chat_sent(
+  session session: Session,
+  tell tell: chat_tell.Tell,
+) -> client_connection.Handled(Session) {
+  case held_in_the_world(session.status) {
+    Some(entered) -> {
+      let #(updated, effects) = chat.told(chat: entered.chat, tell:)
+      carry_chat(session: with_chat(session:, chat: updated), effects:)
+    }
+    None ->
+      case tell {
+        chat_tell.Whisper(whisper:, from:, ..) ->
+          Continue(session, [
+            OwnEffect(step.Tell(
+              to: step.Connection(from),
+              request: TellChat(chat_tell.NotHeard(whisper:)),
+            )),
+          ])
+        chat_tell.Said(..)
+        | chat_tell.ZoneLine(..)
+        | chat_tell.Heard(..)
+        | chat_tell.NotHeard(..) -> Continue(session, [])
+      }
+  }
+}
+
+/// The session with the chat of the player in the world replaced.
+fn with_chat(session session: Session, chat chat: chat.Chat) -> Session {
+  with_entered(session:, change: fn(entered) {
+    world_entry.Entered(..entered, chat:)
+  })
+}
+
+/// Turns what the chat decided into writes, tells, watches, group joins and log
+/// lines. A channel the server does not build is logged as unhandled once for
+/// each channel on the connection.
+fn carry_chat(
+  session session: Session,
+  effects effects: List(chat.Effect),
+) -> client_connection.Handled(Session) {
+  let #(session, written) = chat_effects(session:, effects:)
+  Continue(session, written)
+}
+
+/// The connection's effects for what the chat decided, in order, and the session
+/// with the channels it logged as unhandled.
+fn chat_effects(
+  session session: Session,
+  effects effects: List(chat.Effect),
+) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
+  let #(session, written) =
+    list.fold(effects, #(session, []), fn(so_far, effect) {
+      let #(session, written) = so_far
+      case effect {
+        chat.Send(frame:) -> #(session, [to_client(session, frame), ..written])
+        chat.Tell(to:, tell:) -> #(session, [
+          OwnEffect(step.Tell(to:, request: TellChat(tell))),
+          ..written
+        ])
+        chat.TellWatched(watch:, tell:) -> #(session, [
+          OwnEffect(step.TellWatched(watch:, request: TellChat(tell))),
+          ..written
+        ])
+        chat.Watch(watch:, target:) -> #(session, [
+          Watch(watch:, target:),
+          ..written
+        ])
+        chat.Unwatch(watch:) -> #(session, [Unwatch(watch:), ..written])
+        chat.JoinGroup(address:) -> #(session, [
+          OwnEffect(step.JoinGroup(address:)),
+          ..written
+        ])
+        chat.LeaveGroup(address:) -> #(session, [
+          OwnEffect(step.LeaveGroup(address:)),
+          ..written
+        ])
+        chat.UnknownZone(world_zone_id:) ->
+          case set.contains(session.unknown_zones_logged, world_zone_id) {
+            True -> #(session, written)
+            False -> #(
+              Session(
+                ..session,
+                unknown_zones_logged: set.insert(
+                  session.unknown_zones_logged,
+                  world_zone_id,
+                ),
+              ),
+              [
+                log(
+                  session:,
+                  level: LogWarning,
+                  text: "WorldZone "
+                    <> int.to_string(world_zone_id)
+                    <> " has no row in the client's table, so the player is in no zone channel",
+                ),
+                ..written
+              ],
+            )
+          }
+        chat.Unhandled(channel_type:) -> {
+          let id = chat_channel.id(channel_type)
+          case set.contains(session.unhandled_channels_logged, id) {
+            True -> #(session, written)
+            False -> #(
+              Session(
+                ..session,
+                unhandled_channels_logged: set.insert(
+                  session.unhandled_channels_logged,
+                  id,
+                ),
+              ),
+              [
+                log(
+                  session:,
+                  level: LogWarning,
+                  text: "chat channel "
+                    <> int.to_string(id)
+                    <> " is not built: a line on it is refused with result 3",
+                ),
+                ..written
+              ],
+            )
+          }
+        }
+      }
+    })
+  #(session, list.reverse(written))
+}
+
 /// What another player's connection sent about the unit it owns, written while
 /// this player is in the world, in the run of the map the news names, and only
 /// as the client can take it (`viewer_takes`). News from another run or another
@@ -1938,6 +2161,23 @@ fn unit_removed_frame(unit_id unit_id: Int) -> Frame {
 /// server failed (0x036A reason 8) and the connection ends. A watch this rule
 /// did not open, or one that ends where the connection holds none, is a bug.
 fn watch_ended(
+  session session: Session,
+  now now: Now,
+  watch watch: WatchId,
+) -> client_connection.Handled(Session) {
+  case held_in_the_world(session.status) {
+    Some(entered) ->
+      case chat.watch_ended(chat: entered.chat, watch:) {
+        Ok(#(updated, effects)) ->
+          carry_chat(session: with_chat(session:, chat: updated), effects:)
+        Error(Nil) -> own_watch_ended(session:, now:, watch:)
+      }
+    None -> own_watch_ended(session:, now:, watch:)
+  }
+}
+
+/// The end of a watch the connection's own rule opened: Sessions or the map.
+fn own_watch_ended(
   session session: Session,
   now now: Now,
   watch watch: WatchId,
@@ -2431,7 +2671,14 @@ fn entry_answered(
         Error(Nil) -> entry_unasked(session, now)
       }
     step.Answer(FromMap(answer)) ->
-      case world_entry.joined(entry, answer:) {
+      case
+        world_entry.joined(
+          entry,
+          answer:,
+          realm_id: session.settings.realm_id,
+          next_whisper: session.next_whisper,
+        )
+      {
         Ok(#(entered, effects)) ->
           in_the_world(session:, now:, holder:, entered:, effects:)
         Error(Nil) -> entry_unasked(session, now)
@@ -2495,10 +2742,25 @@ fn in_the_world(
   entered entered: world_entry.Entered,
   effects effects: List(world_entry.Effect),
 ) -> client_connection.Handled(Session) {
+  let #(updated, burst) =
+    chat.entered_world(
+      chat: entered.chat,
+      world_zone_id: start_place.world_zone_id(movement.place(entered.movement)),
+      top_zones: top_zone.top_zones(session.settings.tables),
+    )
   carry_out(
-    session: Session(..session, status: InWorld(holder:, entered:)),
+    session: Session(
+      ..session,
+      status: InWorld(
+        holder:,
+        entered: world_entry.Entered(..entered, chat: updated),
+      ),
+    ),
     now:,
-    effects: list.append(list.map(effects, from_entry), [StartsSaveTimer]),
+    effects: list.flatten([
+      list.map(effects, from_entry),
+      [Chats(effects: burst), StartsSaveTimer],
+    ]),
     written: [],
   )
 }

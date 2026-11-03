@@ -26,7 +26,7 @@ import gleam/string
 import owned_test
 import planted_table
 
-pub fn the_servers_tables_are_the_eight_its_rules_read_test() -> Nil {
+pub fn the_servers_tables_are_the_ten_its_rules_read_test() -> Nil {
   use <- owned_test.run(5000)
   assert list.map(server_table.entries(), fn(entry) {
       table_store.schema(entry).table
@@ -36,13 +36,15 @@ pub fn the_servers_tables_are_the_eight_its_rules_read_test() -> Nil {
       "CharacterCreation",
       "CharacterCustomization",
       "CharacterCustomizationLabel",
+      "ChatChannel",
       "CustomizationParameter",
       "CustomizationParameterMap",
       "GameFormula",
       "WorldLocation2",
+      "WorldZone",
       "XpPerLevel",
     ]
-    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places and the starting level"
+    as "the tables the server's rules read: the create request's row, the look, the bone counts, the start places, the zones' top zones and the starting level"
 }
 
 /// Runs a function of this module in a fresh node, which must return.

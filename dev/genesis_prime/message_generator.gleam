@@ -745,6 +745,7 @@ fn kind_type(kind: Kind) -> String {
     | message_schema.UnsignedBelow(..)
     | message_schema.Float32 -> "Int"
     message_schema.WideText | message_schema.CountedWideText(..) -> "String"
+    message_schema.WideUnits -> "List(Int)"
     message_schema.Guid
     | message_schema.RawBytes(..)
     | message_schema.WholeFrame -> "BitArray"
@@ -798,6 +799,7 @@ fn write_step(field: Field, owner: String) -> List(String) {
     ])
     message_schema.Float32 -> #("write_float32_bits", [name, value])
     message_schema.WideText -> #("write_wide_text", [name, value])
+    message_schema.WideUnits -> #("write_wide_units", [name, value])
     message_schema.CountedWideText(max_units:) -> #("write_counted_wide_text", [
       name,
       value,
@@ -863,6 +865,7 @@ fn read_step(field: Field) -> List(String) {
     ])
     message_schema.Float32 -> #("read_float32_bits", ["reader"])
     message_schema.WideText -> #("read_wide_text", ["reader"])
+    message_schema.WideUnits -> #("read_wide_units", ["reader"])
     message_schema.CountedWideText(max_units:) -> #("read_counted_wide_text", [
       "reader",
       int.to_string(max_units),
@@ -948,11 +951,12 @@ fn decode_body(fields: List(Field), type_name: String) -> List(String) {
   }
 }
 
-/// `Ok(Name(field:, ..))`, on one line when it fits.
+/// `Ok(Name(field:, ..))`, on one line when it fits. `gleam format` keeps a
+/// line of this shape whole at 81 characters, one over the width.
 fn construct(fields: List(Field), type_name: String) -> List(String) {
   let labels = list.map(held(fields), fn(field) { field.name <> ":" })
   let one = "  Ok(" <> type_name <> "(" <> string.join(labels, ", ") <> "))"
-  case string.length(one) <= width {
+  case string.length(one) <= width + 1 {
     True -> [one]
     False ->
       list.flatten([

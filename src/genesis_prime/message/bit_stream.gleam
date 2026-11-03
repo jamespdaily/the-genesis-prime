@@ -200,7 +200,17 @@ pub fn write_wide_text(
   field field: String,
   text text: String,
 ) -> Writer {
-  let units = utf16_units(text)
+  write_wide_units(writer:, field:, units: utf16_units(text))
+}
+
+/// Writes a wide text given as its UTF-16 units, as `write_wide_text` writes a
+/// string's: a unit is taken as it is, so a lone surrogate, which a client's text
+/// can hold, is written as it was read.
+pub fn write_wide_units(
+  writer writer: Writer,
+  field field: String,
+  units units: List(Int),
+) -> Writer {
   let count = list.length(units)
   use <- bool.guard(
     when: count > max_wide_text_units,
@@ -209,11 +219,17 @@ pub fn write_wide_text(
       error: TextTooLong(field:, units: count, limit: max_wide_text_units),
     ),
   )
-  let counted = case count > 127 {
-    True -> writer |> put(value: 1, bits: 1) |> put(value: count, bits: 15)
-    False -> writer |> put(value: 0, bits: 1) |> put(value: count, bits: 7)
+  case list.find(units, fn(unit) { unit < 0 || unit > 0xFFFF }) {
+    Ok(unit) ->
+      fail(writer:, error: ValueDoesNotFit(field:, bits: 16, value: unit))
+    Error(Nil) -> {
+      let counted = case count > 127 {
+        True -> writer |> put(value: 1, bits: 1) |> put(value: count, bits: 15)
+        False -> writer |> put(value: 0, bits: 1) |> put(value: count, bits: 7)
+      }
+      put_units(writer: counted, units:)
+    }
   }
-  put_units(writer: counted, units:)
 }
 
 /// Writes a counted wide text: the count of units plus one in 16 bits, then the
@@ -463,15 +479,23 @@ pub fn read_float32_bits(
 pub fn read_wide_text(
   reader: Reader,
 ) -> Result(#(String, Reader), DecodeError) {
+  use #(units, reader) <- result.try(read_wide_units(reader))
+  use text <- result.try(from_utf16(units))
+  Ok(#(text, reader))
+}
+
+/// Reads a wide text as its UTF-16 units, with no check that they pair: the
+/// count rule of `write_wide_text` (0x140336040), each unit as it comes.
+pub fn read_wide_units(
+  reader: Reader,
+) -> Result(#(List(Int), Reader), DecodeError) {
   use #(long, reader) <- result.try(read_unsigned(reader:, bits: 1))
   let count_bits = case long {
     1 -> 15
     _ -> 7
   }
   use #(count, reader) <- result.try(read_unsigned(reader:, bits: count_bits))
-  use #(units, reader) <- result.try(read_units(reader:, count:))
-  use text <- result.try(from_utf16(units))
-  Ok(#(text, reader))
+  read_units(reader:, count:)
 }
 
 /// Reads a counted wide text with at most `max_units` units.
@@ -688,7 +712,7 @@ fn align(writer: Writer) -> Writer {
 
 /// A text as UTF-16 units: a character above U+FFFF is a high and a low
 /// surrogate.
-fn utf16_units(text: String) -> List(Int) {
+pub fn utf16_units(text: String) -> List(Int) {
   string.to_utf_codepoints(text)
   |> list.flat_map(fn(codepoint) {
     let value = string.utf_codepoint_to_int(codepoint)
@@ -741,7 +765,7 @@ fn from_counted_units(units: List(Int)) -> Result(String, DecodeError) {
 
 /// A text from UTF-16 units; a surrogate that is not half of a pair is not a
 /// character a string holds.
-fn from_utf16(units: List(Int)) -> Result(String, DecodeError) {
+pub fn from_utf16(units: List(Int)) -> Result(String, DecodeError) {
   from_utf16_loop(units:, built: [])
 }
 

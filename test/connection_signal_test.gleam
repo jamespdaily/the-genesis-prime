@@ -27,6 +27,7 @@ import genesis_prime/service
 import genesis_prime/step.{type Address, ConnectionId, Sessions}
 import genesis_prime/step/runtime
 import genesis_prime/step/watch
+import genesis_prime/world_map/map_id
 import gleam/erlang/atom
 import gleam/erlang/process.{type Pid}
 import gleam/int
@@ -75,6 +76,8 @@ fn start_asking(
         | step.Store
         | step.Maps
         | step.Map(..)
+        | step.CharacterNamed(..)
+        | step.ZoneChannel(..)
         | step.Connection(..) -> Error(Nil)
       }
     },
@@ -794,13 +797,13 @@ pub fn a_read_that_cannot_be_armed_because_the_peer_closed_reaches_the_rule_as_a
   use <- owned_test.run(30_000)
   use <- unitest.tag("serial")
   let lines = process.new_subject()
-  let capture = log_capture.start_all(into: lines)
   let scope = registry.new()
   let server = start(registry: Some(scope), sessions: Ok(a_sessions()))
   let client = ask_support.connect(server)
   let id = accepted_id(client)
   let assert [connection] = ask_support.connections(server)
     as "one connection process"
+  let capture = log_capture.start_with_metadata(from: connection, into: lines)
   let gone = process.monitor(connection)
   // The message 0 gives the rule nothing to write, so the step ends in arming
   // the socket's read. The client's close is queued behind the message, and
@@ -827,7 +830,6 @@ pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is
   use <- owned_test.run(30_000)
   use <- unitest.tag("serial")
   let lines = process.new_subject()
-  let capture = log_capture.start_all(into: lines)
   let delivered = process.new_subject()
   let server =
     start_telling(
@@ -841,12 +843,19 @@ pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is
           | step.HandOff
           | step.Store
           | step.Maps
+          | step.CharacterNamed(..)
+          | step.ZoneChannel(..)
           | step.Map(..) -> Ok(Nil)
         }
       },
     )
   let client = ask_support.connect(server)
   let _id = accepted_id(client)
+  // Only this test's connection is read: another test's connection or Ranch
+  // listener logging at the same time is no line of this one.
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let capture = log_capture.start_with_metadata(from: connection, into: lines)
   command_then_pong(
     client:,
     letter: signalling_rule.tell_connection_command,
@@ -869,4 +878,200 @@ pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is
     })
     == []
     as "a connection that is gone is no warning: a player's viewers end all the time"
+}
+
+pub fn a_join_makes_the_connection_a_member_of_the_group_and_a_leave_or_its_end_removes_it_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let scope = registry.new()
+  let server = start(registry: Some(scope), sessions: Ok(a_sessions()))
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  let assert [connection] = ask_support.connections(server)
+  command_then_pong(
+    client:,
+    letter: signalling_rule.join_command,
+    n: 5,
+    pong: 1,
+  )
+  assert registry.find_named(scope, "5") == Ok(connection)
+    as "JoinGroup(CharacterNamed) made the connection the group's member, once its step's effects were carried out"
+  command_then_pong(
+    client:,
+    letter: signalling_rule.join_command,
+    n: 5,
+    pong: 2,
+  )
+  assert registry.find_named(scope, "5") == Ok(connection)
+    as "a second JoinGroup of the same group leaves the connection a member"
+  command_then_pong(
+    client:,
+    letter: signalling_rule.leave_command,
+    n: 5,
+    pong: 3,
+  )
+  assert registry.find_named(scope, "5") == Error(Nil)
+    as "LeaveGroup removed it: one leave is enough after two joins, since a group holds a process once"
+  command_then_pong(
+    client:,
+    letter: signalling_rule.leave_command,
+    n: 5,
+    pong: 4,
+  )
+  command_then_pong(
+    client:,
+    letter: signalling_rule.join_command,
+    n: 6,
+    pong: 5,
+  )
+  let gone = process.monitor(connection)
+  let assert Ok(Nil) = mug.shutdown(client) as "the client closed"
+  let _reason = ask_support.ended(gone)
+  event_wait.until("the scope noticed the end by itself", fn() {
+    registry.find_named(scope, "6") == Error(Nil)
+  })
+  ask_support.stop(server)
+}
+
+pub fn a_tell_to_a_zone_channel_is_delivered_with_no_watch_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use <- unitest.tag("serial")
+  let lines = process.new_subject()
+  let delivered = process.new_subject()
+  let server =
+    start_telling(
+      locate: fn(_address) { Error(Nil) },
+      deliver: fn(address, _request) {
+        process.send(delivered, address)
+        Ok(Nil)
+      },
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  // Only this test's connection is read: another test's connection or Ranch
+  // listener logging at the same time is no line of this one.
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let capture = log_capture.start_with_metadata(from: connection, into: lines)
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_zone_command,
+    n: 9,
+    pong: 1,
+  )
+  assert mailbox_support.drain(delivered)
+    == [
+      step.ZoneChannel(
+        map: map_id.MapId(world_id: 1, instance: 0),
+        incarnation: 1,
+        top_zone_id: 9,
+      ),
+    ]
+    as "the tell reached the settings' deliver by the zone channel's address, with no watch opened"
+  ask_support.stop(server)
+  log_capture.stop(capture)
+  assert list.filter(mailbox_support.drain(lines), fn(line) {
+      line.0 == "warning" || line.0 == "error"
+    })
+    == []
+    as "a tell to a zone channel needs no watch and warns of none"
+}
+
+pub fn a_tell_through_a_watch_goes_through_that_watchs_target_only_and_one_through_a_watch_that_found_none_logs_nothing_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use <- unitest.tag("serial")
+  let lines = process.new_subject()
+  let lookups = process.new_subject()
+  let told = process.new_subject()
+  let found = counting_lookup(sessions: a_sessions(), lookups:, told:)
+  let server =
+    start_telling(
+      locate: fn(address) {
+        case address {
+          step.CharacterNamed("held") -> found(address)
+          step.CharacterNamed(..)
+          | step.Sessions
+          | step.HandOff
+          | step.Store
+          | step.Maps
+          | step.Map(..)
+          | step.ZoneChannel(..)
+          | step.Connection(..) -> Error(Nil)
+        }
+      },
+      deliver: fn(_address, _request) { Error(Nil) },
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  // Only this test's connection is read: another test's connection or Ranch
+  // listener logging at the same time is no line of this one.
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let capture = log_capture.start_with_metadata(from: connection, into: lines)
+  // Watch 1 is on Sessions, which this lookup holds no process for, so it found
+  // none; the tell through it is dropped without a line.
+  ask_support.command(
+    client:,
+    letter: signalling_rule.watch_command,
+    n: 1,
+    wait_ms: 0,
+  )
+  assert read_record(client) == Record(signalling_rule.watch_ended, 1)
+    as "a watch of a target no process holds ends"
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_watched_command,
+    n: 1,
+    pong: 2,
+  )
+  assert mailbox_support.drain(told) == []
+    as "the watch that found no process has no way to tell, so the tell goes nowhere"
+  ask_support.stop(server)
+  log_capture.stop(capture)
+  assert list.filter(mailbox_support.drain(lines), fn(line) {
+      line.0 == "warning" || line.0 == "error"
+    })
+    == []
+    as "a tell through a watch that found none is no warning: an offline whisper's target ends its watch instead"
+}
+
+pub fn a_tell_through_a_watch_reaches_the_process_its_own_watch_found_and_not_another_watchs_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let lookups = process.new_subject()
+  let told = process.new_subject()
+  let server =
+    start_telling(
+      locate: counting_lookup(sessions: a_sessions(), lookups:, told:),
+      deliver: fn(_address, _request) { Error(Nil) },
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  command_then_pong(
+    client:,
+    letter: signalling_rule.watch_command,
+    n: 1,
+    pong: 1,
+  )
+  command_then_pong(
+    client:,
+    letter: signalling_rule.watch_command,
+    n: 2,
+    pong: 2,
+  )
+  let assert [first, second] = mailbox_support.drain(lookups)
+    as "each watch resolved its target once"
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_watched_command,
+    n: 2,
+    pong: 3,
+  )
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_watched_command,
+    n: 1,
+    pong: 4,
+  )
+  assert mailbox_support.drain(told) == [second, first]
+    as "each tell went through the way its own watch found, whichever watch was opened first"
+  ask_support.stop(server)
 }

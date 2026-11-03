@@ -265,6 +265,33 @@ pub fn a_failed_load_leaves_no_persistent_term_behind_test() -> Nil {
     as "the load erased LocalizedText's term, written before Creature2 failed"
 }
 
+pub fn a_derivation_that_fails_fails_the_load_and_leaves_no_persistent_term_behind_test() -> Nil {
+  use <- owned_test.run(5000)
+  let file = localized_text_file([localized_text_row(1, 7)])
+  use folder <- planted_table.in_folder([#("LocalizedText", file)])
+  let key = reference.new()
+  let loaded =
+    store.load(
+      under: key,
+      from: folder,
+      entries: [localized_text.entry()],
+      requirements: [],
+      derivations: [
+        store.derivation(key: store.DerivedKey("Succeeds"), build: fn(_tables) {
+          Ok(1)
+        }),
+        store.derivation(key: store.DerivedKey("Fails"), build: fn(_tables) {
+          Error("a cycle")
+        }),
+      ],
+    )
+  assert loaded
+    == Error(store.DerivationFailed(name: "Fails", reason: "a cycle"))
+    as "CLAUDE.md: a table the server cannot read fails the load; a derivation that cannot be built is the same"
+  assert planted_table.persistent_terms_under(key) == 0
+    as "the load erased the table's term and the derivation that was built"
+}
+
 fn creature2_file(
   localized_text_id_name: Int,
   more: List(#(String, planted_table.Cell)),
@@ -636,7 +663,7 @@ const ids_key: store.DerivedKey(List(Int)) = store.DerivedKey("LocalizedTextIds"
 fn ids_derivation(built: process.Subject(Nil)) -> store.Derivation {
   store.derivation(key: ids_key, build: fn(tables) {
     process.send(built, Nil)
-    store.ids(localized_text.entry(), tables)
+    Ok(store.ids(localized_text.entry(), tables))
   })
 }
 
@@ -689,7 +716,7 @@ pub fn a_derived_value_named_like_a_table_neither_reads_nor_overwrites_the_table
       requirements: [],
       derivations: [
         store.derivation(key: creature2_named_derived_key, build: fn(_tables) {
-          ["a derived value"]
+          Ok(["a derived value"])
         }),
       ],
     )

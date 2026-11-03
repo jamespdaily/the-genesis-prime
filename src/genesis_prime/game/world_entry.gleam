@@ -54,6 +54,8 @@
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/camp
+import genesis_prime/game/chat
+import genesis_prime/game/chat_tell
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
@@ -126,7 +128,8 @@ pub type Loaded {
 /// (`Joined`'s unit, which the connection sends the players who see it), who
 /// sees it, the units its own client shows, where it stands
 /// (genesis_prime/game/movement) and whether it is camping
-/// (genesis_prime/game/camp), which the rule keeps up to date. A player that has
+/// (genesis_prime/game/camp), and its chat (genesis_prime/game/chat), which the
+/// rule keeps up to date. A player that has
 /// just entered is not camping, has no viewers and shows no unit: the map's
 /// `Watched` and `Unwatched` keep `viewers`, the connections whose players see
 /// this one, the connection sends everything about the player's own unit to them,
@@ -145,6 +148,7 @@ pub type Entered {
     gone: Set(Int),
     movement: movement.State,
     camp: camp.Camp,
+    chat: chat.Chat,
   )
 }
 
@@ -270,6 +274,8 @@ pub fn loaded(
 pub fn joined(
   state state: State,
   answer answer: map.Outgoing,
+  realm_id realm_id: Int,
+  next_whisper next_whisper: Int,
 ) -> Result(#(Entered, List(Effect)), Nil) {
   case state {
     Joining(character:, place:, session_epoch:, map:) -> {
@@ -277,6 +283,7 @@ pub fn joined(
         map.Joined(unit:, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
           let unit_id = unit.unit_id
+          let CharacterId(character_id_number) = character.character_id
           Ok(
             #(
               Entered(
@@ -291,6 +298,19 @@ pub fn joined(
                 gone: set.new(),
                 movement: movement.entered(place:, session_epoch:),
                 camp: camp.none(),
+                chat: chat.new(
+                  speaker: chat_tell.Speaker(
+                    realm_id:,
+                    character_id: character_id_number,
+                    name: character.name,
+                    faction_id: character.faction_id,
+                    unit_id:,
+                    map:,
+                    incarnation:,
+                  ),
+                  zone_channel_id: map.world_id,
+                  next_whisper:,
+                ),
               ),
               [
                 enter_world(place: sent),

@@ -17,12 +17,17 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/message/bit_stream
+import genesis_prime/message/chat_line
+import genesis_prime/message/chat_line_accepted.{type ChatLineAccepted}
 import genesis_prime/message/float32
 import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/send_chat_line.{SendChatLine}
+import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello
 import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
@@ -30,6 +35,7 @@ import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/world_message.{WorldMessage}
+import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
@@ -410,7 +416,7 @@ fn standing(
 /// The ids of the messages that put a player in the world, in the order the
 /// client needs (opcode.0xad, opcode.0x262, opcode.0x19b, opcode.0x6bc,
 /// opcode.0x636, opcode.0xf1, opcode.0x61): 0xAD first; 0x262 before 0x19B; 0x19B
-/// before 0x6BC, 0x636 and 0x61.
+/// before 0x6BC, 0x636 and 0x61; then the zone channel (opcode.0x1da, opcode.0x1bc).
 pub const world_entry_ids = [
   0x00AD,
   0x0262,
@@ -419,6 +425,8 @@ pub const world_entry_ids = [
   0x0636,
   0x00F1,
   0x0061,
+  0x01DA,
+  0x01BC,
 ]
 
 /// The 0x262 among the messages of an entry, decoded: the player the burst
@@ -472,4 +480,196 @@ pub fn closed(game game: Game) -> Bool {
 /// close is no failure of the test.
 pub fn close(game game: Game) -> Nil {
   mug.shutdown(game.socket) |> result.unwrap(Nil)
+}
+
+// ---- chat: what the client sends and reads ----
+
+/// A line the client's chat sends: the channel's type and id, the text (as its
+/// UTF-16 units, of characters below 0x10000) and the slot the client keeps it
+/// in until the server answers (opcode.0x1c3). The client's ids start at 1
+/// (0x140405cb0).
+pub fn send_line(
+  game game: Game,
+  channel_type channel_type: Int,
+  channel_id channel_id: Int,
+  text text: String,
+  chat_message_id chat_message_id: Int,
+) -> Nil {
+  let assert Ok(body) =
+    send_chat_line.encode(SendChatLine(
+      channel_type:,
+      channel_id:,
+      text: bit_stream.utf16_units(text),
+      formats: [],
+      chat_message_id:,
+    ))
+    as "a line of the bot's text fits its fields"
+  send_world(game:, message_id: send_chat_line.message_id, body:)
+}
+
+/// Says a line on Say, channel (4, 0), which the client makes itself.
+pub fn say(
+  game game: Game,
+  text text: String,
+  chat_message_id chat_message_id: Int,
+) -> Nil {
+  send_line(game:, channel_type: 4, channel_id: 0, text:, chat_message_id:)
+}
+
+/// Whispers a line to a character by name, with an empty realm name and the
+/// account bit clear, as the client's whisper does (opcode.0x1d4).
+pub fn whisper(
+  game game: Game,
+  target target: String,
+  text text: String,
+  chat_message_id chat_message_id: Int,
+) -> Nil {
+  let assert Ok(body) =
+    send_whisper.encode(SendWhisper(
+      target_name: bit_stream.utf16_units(target),
+      target_realm_name: [],
+      text: bit_stream.utf16_units(text),
+      formats: [],
+      chat_message_id:,
+      account: 0,
+    ))
+    as "a whisper of the bot's text fits its fields"
+  send_world(game:, message_id: send_whisper.message_id, body:)
+}
+
+/// A line as the client's chat shows another player's: the channel it arrived
+/// on, the sender's name and the text (opcode.0x1c8).
+pub type HeardLine {
+  HeardLine(channel_type: Int, channel_id: Int, sender: String, text: String)
+}
+
+/// The line a 0x1c8 shows, by its channel, strSender and text.
+pub fn heard_line(frame frame: Frame) -> Result(HeardLine, Nil) {
+  use <- bool.guard(
+    when: frame.message_id != chat_line.message_id,
+    return: Error(Nil),
+  )
+  let assert Ok(line) = chat_line.decode(frame.body) as "0x01C8 decodes"
+  Ok(HeardLine(
+    channel_type: line.channel_type,
+    channel_id: line.channel_id,
+    sender: line.sender_name,
+    text: from_units(line.text),
+  ))
+}
+
+/// Reads until the next 0x1c8 and gives the line it shows, dropping the
+/// messages before it and keeping the bytes beyond it.
+pub fn read_chat(
+  game game: Game,
+  have have: BitArray,
+) -> #(HeardLine, BitArray) {
+  let #(frame, rest) = next(game:, have:)
+  case heard_line(frame:) {
+    Ok(line) -> #(line, rest)
+    Error(Nil) -> read_chat(game:, have: rest)
+  }
+}
+
+/// Reads until the server answers the line sent with `chat_message_id`: the 0x1c2
+/// it gives, dropping the messages before it. An answer that is a refusal (0x1d3)
+/// or a failed whisper (0x1d9) for that slot stops the caller with its message.
+pub fn read_accepted(
+  game game: Game,
+  have have: BitArray,
+  chat_message_id chat_message_id: Int,
+) -> #(ChatLineAccepted, BitArray) {
+  let #(frame, rest) = next(game:, have:)
+  case frame.message_id {
+    0x01C2 -> {
+      let assert Ok(accept) = chat_line_accepted.decode(frame.body)
+        as "0x01C2 decodes"
+      case accept.chat_message_id == chat_message_id {
+        True -> #(accept, rest)
+        False -> read_accepted(game:, have: rest, chat_message_id:)
+      }
+    }
+    0x01D3 | 0x01D9 ->
+      panic as "the server refused the bot's line instead of accepting it"
+    _ -> read_accepted(game:, have: rest, chat_message_id:)
+  }
+}
+
+/// Pings and reads every message the server wrote up to its pong, which is all
+/// that it wrote before it took the ping: the messages come back in order, and
+/// the bytes beyond the pong are kept. After a ping and pong of another
+/// connection that took its steps first, it holds all that they told this one.
+pub fn read_until_pong(
+  game game: Game,
+  have have: BitArray,
+  number number: Int,
+) -> #(List(Frame), BitArray) {
+  send_ping(game:, number:)
+  collect_until_pong(game:, have:, number:, found: [])
+}
+
+fn collect_until_pong(
+  game game: Game,
+  have have: BitArray,
+  number number: Int,
+  found found: List(Frame),
+) -> #(List(Frame), BitArray) {
+  let #(outer, rest) = next_outer(game:, have:)
+  case outer {
+    Frame(message_id: 0x0001, body: <<answered:size(8)>>)
+      if answered == number
+    -> #(list.reverse(found), rest)
+    Frame(message_id: 0x0001, ..) ->
+      collect_until_pong(game:, have: rest, number:, found:)
+    Frame(..) ->
+      collect_until_pong(game:, have: rest, number:, found: [
+        in_the_game_wrapper(outer:, cipher: game.cipher),
+        ..found
+      ])
+  }
+}
+
+/// How many of the lines show no sender name, which is where the client would
+/// have no name to show: a count of the lookups of a name (0x597) it would have
+/// to ask for, which is none while every line carries its sender's name
+/// (chat.name_lookup).
+pub fn name_lookups_needed(lines lines: List(HeardLine)) -> Int {
+  list.count(lines, fn(line) { line.sender == "" })
+}
+
+/// The text of a line's UTF-16 units, with a unit that pairs with no other shown
+/// as the replacement character, as a client's text box would show it.
+fn from_units(units: List(Int)) -> String {
+  bit_stream.from_utf16(units) |> result.unwrap(or: "\u{FFFD}")
+}
+
+/// A scripted client's chat: its connection and the chat message id of its next
+/// line. The client's ids start at 1 (0x140405cb0), and each line takes the next.
+pub type Chatter {
+  Chatter(game: Game, next_id: Int)
+}
+
+/// A chatter that has sent no line.
+pub fn chatter(game game: Game) -> Chatter {
+  Chatter(game:, next_id: 1)
+}
+
+/// Says a line on Say, with the chatter's next id, which is given back with the
+/// chatter that holds the one after it.
+pub fn say_next(
+  chatter chatter: Chatter,
+  text text: String,
+) -> #(Chatter, Int) {
+  say(game: chatter.game, text:, chat_message_id: chatter.next_id)
+  #(Chatter(..chatter, next_id: chatter.next_id + 1), chatter.next_id)
+}
+
+/// Whispers a line with the chatter's next id, as `say_next` says one.
+pub fn whisper_next(
+  chatter chatter: Chatter,
+  target target: String,
+  text text: String,
+) -> #(Chatter, Int) {
+  whisper(game: chatter.game, target:, text:, chat_message_id: chatter.next_id)
+  #(Chatter(..chatter, next_id: chatter.next_id + 1), chatter.next_id)
 }

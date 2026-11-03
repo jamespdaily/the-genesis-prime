@@ -310,6 +310,8 @@ fn start_signalling(
         | step.Store
         | step.Maps
         | step.Map(..)
+        | step.CharacterNamed(..)
+        | step.ZoneChannel(..)
         | step.Connection(..) -> Error(Nil)
       }
     },

@@ -8,6 +8,7 @@
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
+import genesis_prime/table/chat_channel
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
@@ -15,27 +16,32 @@ import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/world_location2
+import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
 import gleam/erlang/reference.{type Reference}
 
 /// The entry of each table the server loads, in file-name order.
 /// - CharacterCreation: the row a create request names
 ///   (genesis_prime/game/character_creation).
+/// - ChatChannel: the flags of each chat channel (genesis_prime/game/chat).
 /// - CharacterCustomization and CharacterCustomizationLabel: the rows and
 ///   labels of a character's look (genesis_prime/game/appearance).
 /// - CustomizationParameter and CustomizationParameterMap: the bone values a
 ///   create request carries (genesis_prime/game/appearance).
 /// - GameFormula and XpPerLevel: the starting level (genesis_prime/game/level).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
+/// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
   [
     character_creation.entry(),
+    chat_channel.entry(),
     character_customization.entry(),
     character_customization_label.entry(),
     customization_parameter.entry(),
     customization_parameter_map.entry(),
     game_formula.entry(),
     world_location2.entry(),
+    world_zone.entry(),
     xp_per_level.entry(),
   ]
 }
