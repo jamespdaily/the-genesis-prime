@@ -175,7 +175,7 @@ pub type Refusal {
   /// A move speed setting above 2 (0x140c45dd0).
   UnknownSpeedSetting(setting: Int)
   /// A body the client's own reader would refuse.
-  Undecoded(message_id: Int, error: bit_stream.DecodeError)
+  NotDecoded(undecoded: client_connection.Undecoded)
 }
 
 /// How long after the player enters the world, and after each save, the
@@ -410,7 +410,8 @@ fn undecoded(
   decoded: Result(message, bit_stream.DecodeError),
   message_id: Int,
 ) -> Result(message, Refusal) {
-  result.map_error(decoded, fn(error) { Undecoded(message_id:, error:) })
+  client_connection.decoded(decoded, message_id:)
+  |> result.map_error(NotDecoded)
 }
 
 /// What a 0x637 does to where the player stands, command by command in the
@@ -497,8 +498,7 @@ pub fn describe(refusal refusal: Refusal) -> String {
       "0x063B holds the move speed setting "
       <> int.to_string(setting)
       <> ", above 2"
-    Undecoded(message_id:, error:) ->
-      client_connection.decode_failed_text(message_id:, error:)
+    NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
   }
 }
 

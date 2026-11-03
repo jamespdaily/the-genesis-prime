@@ -56,7 +56,6 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/camp
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/float32
@@ -95,7 +94,7 @@ pub type Effect {
 /// Why the client's request to play is refused: its body is one the client's
 /// own reader would refuse. The connection ends.
 pub type Refusal {
-  Undecoded(error: bit_stream.DecodeError)
+  NotDecoded(undecoded: client_connection.Undecoded)
 }
 
 /// Where world entry is.
@@ -167,17 +166,15 @@ pub fn take(
   body body: BitArray,
 ) -> Result(#(State, List(Effect)), Refusal) {
   play_character.decode(body)
-  |> result.map_error(Undecoded)
+  |> client_connection.decoded(message_id: play_character.message_id)
+  |> result.map_error(NotDecoded)
   |> result.map(fn(request) { play_requested(account_id:, request:) })
 }
 
 /// A sentence that says what the client sent that is refused, for the log.
 pub fn describe(refusal refusal: Refusal) -> String {
-  let Undecoded(error:) = refusal
-  client_connection.decode_failed_text(
-    message_id: play_character.message_id,
-    error:,
-  )
+  let NotDecoded(undecoded:) = refusal
+  client_connection.describe_undecoded(undecoded:)
 }
 
 /// The client's 0x07DD, read for this account: the store is asked for the
@@ -313,11 +310,17 @@ fn enter_world(place place: Place) -> Effect {
   Send(Frame(message_id: enter_world.message_id, body:))
 }
 
-/// 0x262 for the player, as the map built its unit.
-fn player_created(unit unit: UnitCreatePlayer) -> Effect {
+/// 0x262 for a unit, as the map built it: the entry burst's own player and
+/// another player's unit that comes into sight are written the same way.
+pub fn unit_created_frame(unit unit: UnitCreatePlayer) -> Frame {
   let assert Ok(body) = unit_create_player.encode(unit)
     as "a stored character's values fit the message's fields: the table's checks hold each"
-  Send(Frame(message_id: unit_create_player.message_id, body:))
+  Frame(message_id: unit_create_player.message_id, body:)
+}
+
+/// 0x262 for the player, as the map built its unit.
+fn player_created(unit unit: UnitCreatePlayer) -> Effect {
+  Send(unit_created_frame(unit:))
 }
 
 /// 0x19B with the player's unit id and 0, which the client never reads

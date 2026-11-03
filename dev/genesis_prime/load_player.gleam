@@ -40,11 +40,8 @@ import genesis_prime/load_sample
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result
 import genesis_prime/message/create_result
-import genesis_prime/message/float32
 import genesis_prime/message/game_server_handoff
 import genesis_prime/message/play_character.{PlayCharacter}
-import genesis_prime/message/start_movement
-import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/step/runtime
 import gleam/erlang/process.{type Subject}
 import gleam/int
@@ -358,19 +355,9 @@ fn move_to(position: Position) -> BitArray {
 /// The position the burst of an entry places the player at: the kind 2 command
 /// of 0x262, which the server writes first (0x1404586e0).
 fn placed_at(burst: List(Frame)) -> Position {
-  let unit = game_client.unit_create_player_in(frames: burst)
-  let assert [start_movement.Position(UnitPositionCommand(x:, y:, z:, ..)), ..] =
-    unit.movement_commands
-    as "0x0262 places the unit with a kind 2 command, the first of its commands"
-  Position(x: finite(x), y: finite(y), z: finite(z))
-}
-
-/// The float a position's 32 bits hold: the server writes a finite one.
-fn finite(number: Int) -> Float {
-  let assert Ok(bits) = float32.bits(number) as "the codec reads 32 bits"
-  let assert Ok(value) = float32.value(bits)
-    as "the server places the player at a finite position"
-  value
+  let #(x, y, z) =
+    game_client.placed_at(unit: game_client.unit_create_player_in(frames: burst))
+  Position(x:, y:, z:)
 }
 
 /// Where a walking player is: when it sent its last 0x0637, and how many it has

@@ -49,7 +49,6 @@
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown.{CampCountdown}
 import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
@@ -98,7 +97,7 @@ pub type Refusal {
   /// 0xC0 with no camp running (opcode.0xc0).
   FinishedWithNoCamp
   /// A body the client's own reader would refuse.
-  Undecoded(message_id: Int, error: bit_stream.DecodeError)
+  NotDecoded(undecoded: client_connection.Undecoded)
 }
 
 /// No camp: the state of a player who has just entered the world.
@@ -141,10 +140,8 @@ pub fn take(
   case message {
     CampAsked ->
       camp_request.decode(body)
-      |> result.map_error(Undecoded(
-        message_id: camp_request.message_id,
-        error: _,
-      ))
+      |> client_connection.decoded(message_id: camp_request.message_id)
+      |> result.map_error(NotDecoded)
       |> result.map(fn(decoded) {
         let #(running, decision) =
           requested(camp:, start: decoded.start == 1, countdown_ms:)
@@ -158,10 +155,8 @@ pub fn take(
       })
     CampOver ->
       camp_finished.decode(body)
-      |> result.map_error(Undecoded(
-        message_id: camp_finished.message_id,
-        error: _,
-      ))
+      |> client_connection.decoded(message_id: camp_finished.message_id)
+      |> result.map_error(NotDecoded)
       |> result.try(fn(_message) { finished(camp:) })
       |> result.map(fn(decision) {
         case decision {
@@ -199,7 +194,6 @@ pub fn describe(refusal refusal: Refusal) -> String {
   case refusal {
     FinishedWithNoCamp ->
       "0x00C0 holds a finished camp, but no camp is running: the client sends it only for a camp the server started"
-    Undecoded(message_id:, error:) ->
-      client_connection.decode_failed_text(message_id:, error:)
+    NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
   }
 }

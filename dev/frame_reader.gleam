@@ -17,6 +17,48 @@ pub fn read(
   read_until(have:, done: fn(found) { list.length(found) >= count }, next:)
 }
 
+/// Reads until `count` frames have arrived, whole and in order, and keeps the
+/// bytes that came after them: `have` is what was read before and `next` reads
+/// more, whose error ends the wait and is the error given. The next call is
+/// given the bytes returned, so a read that held several frames loses none.
+pub fn read_kept(
+  have have: BitArray,
+  count count: Int,
+  next next: fn() -> Result(BitArray, error),
+) -> Result(#(List(Frame), BitArray), error) {
+  keep(have:, found: [], remaining: count, next:)
+}
+
+fn keep(
+  have have: BitArray,
+  found found: List(Frame),
+  remaining remaining: Int,
+  next next: fn() -> Result(BitArray, error),
+) -> Result(#(List(Frame), BitArray), error) {
+  case remaining {
+    0 -> Ok(#(list.reverse(found), have))
+    _ -> {
+      let assert Ok(taken) = frame.take(have)
+        as "the server wrote bytes that are frames"
+      case taken {
+        Some(#(whole, rest)) ->
+          keep(
+            have: rest,
+            found: [whole, ..found],
+            remaining: remaining - 1,
+            next:,
+          )
+        None ->
+          case next() {
+            Ok(bytes) ->
+              keep(have: <<have:bits, bytes:bits>>, found:, remaining:, next:)
+            Error(error) -> Error(error)
+          }
+      }
+    }
+  }
+}
+
 /// Reads until `done` says the frames found so far, whole and in order, are
 /// the ones wanted; `next` reads more, and its error ends the wait and is the error given.
 pub fn read_until(

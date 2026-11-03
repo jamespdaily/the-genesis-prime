@@ -266,11 +266,9 @@ pub fn insert_account(
 
 /// Inserts the account of the library's vector, `jim`, and gives its id.
 pub fn insert_jim(started: Started) -> Int {
-  insert_account(
-    pool: pog.named_connection(started.settings.pool.pool_name),
+  insert_other(
+    started:,
     login_name: vector.name,
-    salt: vector.salt(),
-    verifier: vector.verifier(),
     game_account_id: support.jim().game_account_id,
   )
 }

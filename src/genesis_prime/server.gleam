@@ -343,7 +343,10 @@ fn connection_locate(
       step.Map(map:, incarnation:) ->
         find_run(settings:, map:, incarnation:)
         |> result.map(fn(found) {
-          watch.Tellable(pid: found.pid, sender: tell_the_run(found.subject, _))
+          watch.Tellable(pid: found.pid, sender: tell_the_run(
+            subject: found.subject,
+            request: _,
+          ))
         })
       step.Sessions
       | step.HandOff
@@ -358,8 +361,8 @@ fn connection_locate(
 /// other request is an ask, which a tell never carries: a rule that tells one
 /// has a bug, logged as an error, and nothing is sent.
 pub fn tell_the_run(
-  subject: Subject(Call(map.Message, map.Outgoing)),
-  request: Request,
+  subject subject: Subject(Call(map.Message, map.Outgoing)),
+  request request: Request,
 ) -> Nil {
   case request {
     TellMoved(connection:, place:, commands:) -> {

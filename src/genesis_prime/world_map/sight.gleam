@@ -11,8 +11,13 @@
 ////   client's draw distance, so a crossing is not seen as flicker. A server
 ////   choice.
 //// - **The distance helper is our own,** a squared distance on the x, y and z a
-////   place already holds: a package such as `vec` brings a dependency and a
-////   type conversion for three subtractions.
+////   place already holds, compared with the squared range. The manifest's
+////   `gleam_community_maths.euclidean_distance` takes the two points as a list of
+////   coordinate pairs and gives a `Result` of the root through
+////   `minkowski_distance`'s float power, so each pair of players would build a
+////   list, take a root and unwrap a result for a comparison that three
+////   subtractions answer; a package such as `vec` adds a dependency and a type
+////   conversion for the same three subtractions.
 
 import genesis_prime/game/start_place.{type Place}
 

@@ -93,17 +93,30 @@ fn start() -> #(login_support.Started, Int, AccountId) {
 
 /// Puts the session key in the tree's hand-off, held for the account.
 fn put_session_key(started: login_support.Started, account: AccountId) -> Nil {
+  hold_session_key(
+    started:,
+    account:,
+    login_name: "jim",
+    game_account_id: support.jim().game_account_id,
+    key: support.guid_of(1),
+  )
+}
+
+/// Puts `key` in the tree's hand-off, held for the account.
+fn hold_session_key(
+  started started: login_support.Started,
+  account account: AccountId,
+  login_name login_name: String,
+  game_account_id game_account_id: guid.Guid,
+  key key: guid.Guid,
+) -> Nil {
   let #(_sent, answer) =
     ask_support.ask_and_wait(send: fn(reply) {
       service.call(
         started.settings.hand_off,
         Put(
-          key: SessionKey(support.guid_of(1)),
-          holder: Holder(
-            account_id: account,
-            login_name: "jim",
-            game_account_id: support.jim().game_account_id,
-          ),
+          key: SessionKey(key),
+          holder: Holder(account_id: account, login_name:, game_account_id:),
           lifetime_ms: 60_000,
         ),
         reply,
@@ -244,12 +257,14 @@ fn in_select(
   port port: Int,
   account account: AccountId,
 ) -> game_client.Game {
-  put_session_key(started, account)
-  let game =
-    game_client.connect(port:, session_key: session_key(), account_name: "jim")
-  game_client.send(game:, message_id: 0x07E0, body: <<>>)
-  let assert [_level, _list] = game_client.read(game:, count: 2)
-  game
+  connected_as(
+    started:,
+    port:,
+    account:,
+    login_name: "jim",
+    game_account_id: support.jim().game_account_id,
+    key: support.guid_of(1),
+  )
 }
 
 fn names_of(pool: pog.Connection) -> List(String) {
@@ -951,19 +966,7 @@ fn connected_as(
   game_account_id game_account_id: guid.Guid,
   key key: guid.Guid,
 ) -> game_client.Game {
-  let #(_sent, answer) =
-    ask_support.ask_and_wait(send: fn(reply) {
-      service.call(
-        started.settings.hand_off,
-        Put(
-          key: SessionKey(key),
-          holder: Holder(account_id: account, login_name:, game_account_id:),
-          lifetime_ms: 60_000,
-        ),
-        reply,
-      )
-    })
-  assert answer == hand_off.Kept as "the hand-off kept the session key"
+  hold_session_key(started:, account:, login_name:, game_account_id:, key:)
   let game =
     game_client.connect(
       port:,
@@ -982,8 +985,28 @@ fn unit_of(frame: Frame) -> Int {
   unit.unit_id
 }
 
-pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil {
-  use <- owned_test.run(60_000)
+/// Two clients of two accounts, each with a character, connected in character
+/// select; the first plays its character into an empty map, then the second
+/// plays its own into the same map. What each read of the entry is.
+type TwoEntered {
+  TwoEntered(
+    started: login_support.Started,
+    first: game_client.Game,
+    second: game_client.Game,
+    second_character: Int,
+    /// The first client's whole entry burst.
+    first_burst: List(Frame),
+    /// The second client's whole entry burst and, after it, the 0x262 of the
+    /// first player.
+    second_burst: List(Frame),
+    /// The 0x262 of the second player the first client was sent.
+    seen_second: Frame,
+    first_have: BitArray,
+    second_have: BitArray,
+  )
+}
+
+fn two_players_enter_one_map() -> TwoEntered {
   let started = login_support.start()
   let port = login_support.ports(started).game_port
   let pool = pog.named_connection(started.settings.pool.pool_name)
@@ -1028,17 +1051,34 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
       game_account_id: support.guid_of(0x21),
       key: support.guid_of(2),
     )
-  // The first player enters an empty map.
   send_play(game: first, character_id: first_character)
   let #(first_burst, first_have) =
     game_client.read_kept(game: first, have: <<>>, count: 7)
-  assert list.map(first_burst, fn(frame) { frame.message_id })
-    == game_client.world_entry_ids
-  // The second enters: its whole burst is written, then the first player's
-  // 0x262, and the first player is sent the second's.
   send_play(game: second, character_id: second_character)
   let #(second_burst, second_have) =
     game_client.read_kept(game: second, have: <<>>, count: 8)
+  let #(seen_second, first_have) =
+    game_client.next(game: first, have: first_have)
+  TwoEntered(
+    started:,
+    first:,
+    second:,
+    second_character:,
+    first_burst:,
+    second_burst:,
+    seen_second:,
+    first_have:,
+    second_have:,
+  )
+}
+
+pub fn a_player_entering_is_written_its_whole_burst_before_the_0x262_of_a_player_in_sight_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let TwoEntered(started:, first:, second:, first_burst:, second_burst:, ..) as entered =
+    two_players_enter_one_map()
+  assert list.map(first_burst, fn(frame) { frame.message_id })
+    == game_client.world_entry_ids
+    as "the first player enters an empty map: its burst only"
   assert list.map(list.take(second_burst, 7), fn(frame) { frame.message_id })
     == game_client.world_entry_ids
     as "the second player's whole entry burst comes before the 0x262 of the first: a 0x262 of another unit that landed while the client waits on 0x636 could take control (0x1403d9760)"
@@ -1047,10 +1087,25 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
   let assert [seen_first] = list.drop(second_burst, 7)
   assert unit_of(seen_first) == 1
     as "the first player's unit is created for the second player"
-  let #(seen_second, first_have) =
-    game_client.next(game: first, have: first_have)
-  assert unit_of(seen_second) == 2
+  assert unit_of(entered.seen_second) == 2
     as "the second player's unit is created for the first player"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let TwoEntered(
+    started:,
+    first:,
+    second:,
+    second_character:,
+    seen_second:,
+    first_have:,
+    second_have:,
+    ..,
+  ) = two_players_enter_one_map()
   // The second player moves; only the first sees it.
   game_client.send_world(
     game: second,

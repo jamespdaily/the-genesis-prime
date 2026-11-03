@@ -349,14 +349,8 @@ fn moved(
                   Player(..player, sees: set.insert(player.sees, connection)),
                 ),
                 list.append(effects, [
-                  send(
-                    to: other_connection,
-                    message: Seen(unit: seen(state:, time:, unit:)),
-                  ),
-                  send(
-                    to: connection,
-                    message: Seen(unit: seen(state:, time:, unit: player.unit)),
-                  ),
+                  seen_by(state:, time:, viewer: other_connection, of: unit),
+                  seen_by(state:, time:, viewer: connection, of: player.unit),
                 ]),
               )
               True, False -> #(

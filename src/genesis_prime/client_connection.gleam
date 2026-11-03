@@ -44,6 +44,7 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 
 /// What a connection rule asks.
@@ -401,14 +402,26 @@ pub fn message_text(message_id message_id: Int) -> String {
   "0x" <> string.pad_start(string.uppercase(int.to_base16(message_id)), 4, "0")
 }
 
-/// The sentence a body the client's own reader would refuse is logged with.
-pub fn decode_failed_text(
+/// A body the client's own reader would refuse, as the message it was read for
+/// and why it was refused: the refusal every feature that decodes a client
+/// message has.
+pub type Undecoded {
+  Undecoded(message_id: Int, error: bit_stream.DecodeError)
+}
+
+/// A decode that failed, as the refusal for the message it was read for.
+pub fn decoded(
+  result result: Result(message, bit_stream.DecodeError),
   message_id message_id: Int,
-  error error: bit_stream.DecodeError,
-) -> String {
-  message_text(message_id:)
+) -> Result(message, Undecoded) {
+  result.map_error(result, fn(error) { Undecoded(message_id:, error:) })
+}
+
+/// The sentence a body the client's own reader would refuse is logged with.
+pub fn describe_undecoded(undecoded undecoded: Undecoded) -> String {
+  message_text(message_id: undecoded.message_id)
   <> " does not decode: "
-  <> bit_stream.describe_decode(error:)
+  <> bit_stream.describe_decode(error: undecoded.error)
 }
 
 /// What an input is to a connection rule.

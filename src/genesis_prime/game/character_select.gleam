@@ -88,7 +88,6 @@ import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
 import genesis_prime/game/character_name
 import genesis_prime/game/start_place
-import genesis_prime/message/bit_stream
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{
   type CharacterListEntry, CharacterListEntry,
@@ -142,7 +141,7 @@ pub type Message {
 /// client never writes it. The connection ends.
 pub type Refusal {
   /// A body the client's reader would refuse.
-  Undecoded(message_id: Int, error: bit_stream.DecodeError)
+  NotDecoded(undecoded: client_connection.Undecoded)
   /// A 0x025C that holds no whole frame.
   CarrierHoldsNoFrame(error: FrameError)
   /// A 0x025C that holds another message than 0x025B.
@@ -204,18 +203,18 @@ pub fn take(
   case message {
     Started ->
       character_select_start.decode(body)
-      |> result.map_error(Undecoded(
+      |> client_connection.decoded(
         message_id: character_select_start.message_id,
-        error: _,
-      ))
+      )
+      |> result.map_error(NotDecoded)
       |> result.map(fn(_) { started(account_id:) })
     CreateAsked -> {
       use carrier <- result.try(
         create_character_carrier.decode(body)
-        |> result.map_error(Undecoded(
+        |> client_connection.decoded(
           message_id: create_character_carrier.message_id,
-          error: _,
-        )),
+        )
+        |> result.map_error(NotDecoded),
       )
       use whole <- result.try(
         frame.parse(carrier.inner_frame)
@@ -227,26 +226,20 @@ pub fn take(
       )
       use request <- result.map(
         create_character.decode(whole.body)
-        |> result.map_error(Undecoded(
-          message_id: create_character.message_id,
-          error: _,
-        )),
+        |> client_connection.decoded(message_id: create_character.message_id)
+        |> result.map_error(NotDecoded),
       )
       create_requested(account_id:, request:, tables:, character_slots:)
     }
     DeleteAsked ->
       delete_character.decode(body)
-      |> result.map_error(Undecoded(
-        message_id: delete_character.message_id,
-        error: _,
-      ))
+      |> client_connection.decoded(message_id: delete_character.message_id)
+      |> result.map_error(NotDecoded)
       |> result.map(fn(request) { delete_requested(account_id:, request:) })
     RenameAsked ->
       rename_character.decode(body)
-      |> result.map_error(Undecoded(
-        message_id: rename_character.message_id,
-        error: _,
-      ))
+      |> client_connection.decoded(message_id: rename_character.message_id)
+      |> result.map_error(NotDecoded)
       |> result.map(fn(request) { rename_requested(account_id:, request:) })
   }
 }
@@ -254,8 +247,7 @@ pub fn take(
 /// A sentence that says what the client sent that is refused, for the log.
 pub fn describe(refusal refusal: Refusal) -> String {
   case refusal {
-    Undecoded(message_id:, error:) ->
-      client_connection.decode_failed_text(message_id:, error:)
+    NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
     CarrierHoldsNoFrame(error:) ->
       "0x025C holds no whole frame: " <> frame.describe(error)
     CarrierHolds(message_id:) ->

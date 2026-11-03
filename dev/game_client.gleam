@@ -32,7 +32,6 @@ import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/world_message.{WorldMessage}
 import gleam/dict.{type Dict}
 import gleam/list
-import gleam/option.{None, Some}
 import gleam/result
 import login_client
 import mug
@@ -253,17 +252,23 @@ pub fn read(game game: Game, count count: Int) -> List(Frame) {
 /// that held several messages loses none. The next call is given the bytes
 /// returned.
 fn next_outer(game game: Game, have have: BitArray) -> #(Frame, BitArray) {
-  let assert Ok(taken) = frame.take(have)
-    as "the game server wrote bytes that are frames"
-  case taken {
-    Some(#(whole, rest)) -> #(whole, rest)
-    None -> {
-      let assert Ok(more) =
-        mug.receive(game.socket, timeout_milliseconds: wait_ms)
-        as "the game server did not write the message"
-      next_outer(game:, have: <<have:bits, more:bits>>)
-    }
-  }
+  let assert #([outer], rest) = outers_kept(game:, have:, count: 1)
+  #(outer, rest)
+}
+
+/// Reads `count` messages as the server wrote them, keeping the bytes beyond
+/// them.
+fn outers_kept(
+  game game: Game,
+  have have: BitArray,
+  count count: Int,
+) -> #(List(Frame), BitArray) {
+  let assert Ok(kept) =
+    frame_reader.read_kept(have:, count:, next: fn() {
+      mug.receive(game.socket, timeout_milliseconds: wait_ms)
+    })
+    as "the game server did not write the messages"
+  kept
 }
 
 /// Reads the next game message, opened from its 0x3DC wrapper under the session
@@ -279,14 +284,8 @@ pub fn read_kept(
   have have: BitArray,
   count count: Int,
 ) -> #(List(Frame), BitArray) {
-  case count {
-    0 -> #([], have)
-    _ -> {
-      let #(first, have) = next(game:, have:)
-      let #(rest, have) = read_kept(game:, have:, count: count - 1)
-      #([first, ..rest], have)
-    }
-  }
+  let #(outers, rest) = outers_kept(game:, have:, count:)
+  #(list.map(outers, in_the_game_wrapper(_, game.cipher)), rest)
 }
 
 /// Takes what the server has already written, without waiting for more, and
@@ -350,9 +349,15 @@ pub fn observe(others others: Others, frame frame: Frame) -> Others {
 
 fn created(others others: Others, body body: BitArray) -> Others {
   let assert Ok(unit) = unit_create_player.decode(body) as "0x0262 decodes"
+  dict.insert(others, unit.unit_id, placed_at(unit:))
+}
+
+/// Where a 0x262 places its unit: the kind 2 command that is the first of its
+/// commands (0x1404586e0).
+pub fn placed_at(unit unit: UnitCreatePlayer) -> #(Float, Float, Float) {
   let assert [start_movement.Position(placed), ..] = unit.movement_commands
     as "0x0262 places the unit with a kind 2 command first"
-  dict.insert(others, unit.unit_id, standing(placed))
+  standing(placed)
 }
 
 fn moved(others others: Others, body body: BitArray) -> Others {

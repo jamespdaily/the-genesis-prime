@@ -212,7 +212,7 @@
 ////   MovedUnit(id, time, commands) ─▶ Woken ─▶ map_sent ─▶ Write(0x638)           ─▶ the unit moves
 ////   Unseen(id)               ─▶ Woken ─▶ map_sent ─▶ Write(0x355)                ─▶ the unit is removed
 ////   0x637 accepted (inside 0x038C) ─▶ movement keeps the place
-////                                      ─▶ Tell(TellMapRun(map, run, Moved(connection, place, commands)))
+////                                      ─▶ Tell(Map(map, run), TellMoved(connection, place, commands))
 ////   ```
 ////
 ////   The shell takes a send between steps, after an ask's outcome and the step it
@@ -275,7 +275,6 @@ import genesis_prime/message/disconnect_reason.{
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/leave_world.{LeaveWorld}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
-import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/world_message
@@ -1047,7 +1046,10 @@ fn world_carried(
       end_for(
         session:,
         now:,
-        text: "0x038C does not decode: " <> bit_stream.describe_decode(error:),
+        text: client_connection.describe_undecoded(client_connection.Undecoded(
+          message_id: world_message.message_id,
+          error:,
+        )),
       )
     Ok(carried) ->
       case frame.parse(carried.inner_frame) {
@@ -1612,11 +1614,7 @@ fn holds_the_world(status: Status) -> Bool {
 /// (opcode.0x262, opcode.0x638, opcode.0x355).
 fn other_unit_frame(message: map.Outgoing) -> Frame {
   case message {
-    map.Seen(unit:) -> {
-      let assert Ok(body) = unit_create_player.encode(unit)
-        as "a stored character's values fit the message's fields: the table's checks hold each"
-      Frame(message_id: unit_create_player.message_id, body:)
-    }
+    map.Seen(unit:) -> world_entry.unit_created_frame(unit:)
     map.MovedUnit(unit_id:, server_time_ms:, commands:) -> {
       let assert Ok(body) =
         unit_movement.encode(UnitMovement(
