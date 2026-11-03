@@ -201,28 +201,49 @@
 ////   routed by the table, and logged as unhandled under its own id when it has
 ////   no row at the stage. A body that holds no whole frame, or
 ////   bytes after it, is one the client never writes, and ends the connection.
-//// - **Other players' units.** The map tells the connection of each player in
-////   it when another player's unit comes into sight, moves and goes
-////   (genesis_prime/world_map/map), as the message `SentByMap`, and the
-////   connection writes each at once while its player is in the world:
+//// - **Other players' units.** The map decides who sees whom
+////   (genesis_prime/world_map/map) and tells the connection of each player in
+////   it, as the message `SentByMap`, when another player's unit comes into sight
+////   (`Seen`) and goes (`Unseen`), and who sees this player (`Watched(by)` with
+////   each `Seen` it makes of this player's unit, `Unwatched(by)` with each
+////   `Unseen`, sent in the same step). The connection keeps the connections that
+////   see its player as its viewers, in the player's `Entered`, and sends each
+////   move of its own player to them itself, as `SentByPeer` through the registry
+////   (the same path the map's sends take, `genesis_prime/server`'s
+////   `connection_reach`), so the map carries no move:
 ////
 ////   ```
 ////   map                                connection (player in the world)         client
 ////   Seen(unit)               ─▶ Woken ─▶ map_sent ─▶ Write(0x262)                ─▶ the unit is created
-////   MovedUnit(id, time, commands) ─▶ Woken ─▶ map_sent ─▶ Write(0x638)           ─▶ the unit moves
 ////   Unseen(id)               ─▶ Woken ─▶ map_sent ─▶ Write(0x355)                ─▶ the unit is removed
+////   Watched(by) / Unwatched(by) ─▶ Woken ─▶ map_sent ─▶ the viewer is kept / dropped
 ////   0x637 accepted (inside 0x038C) ─▶ movement keeps the place
-////                                      ─▶ Tell(Map(map, run), TellMoved(connection, place, commands))
+////                                      ─▶ Tell(Map(map, run), TellMoved(connection, place))
+////                                      ─▶ for each viewer, one Tell(Connection(viewer),
+////                                         TellPeer(unit id, server time, at most 31 commands))
+////   a viewer's connection:  SentByPeer ─▶ Woken ─▶ map_sent ─▶ Write(0x638)      ─▶ the unit moves
 ////   ```
 ////
 ////   The shell takes a send between steps, after an ask's outcome and the step it
 ////   starts, and entering the world writes its whole burst in the one step that
 ////   takes the map's `Joined`, so no send reaches the connection between the
-////   answer and the end of the burst: no status holds sends during entry. With
-////   no player in the world (after the camp's leave, say) a send is dropped and
-////   nothing is written for other units. A 0x638 for a unit the client has
-////   already removed is dropped by the client and the connection goes on
-////   (opcode.0x638), so the server needs no guard for it.
+////   answer and the end of the burst: no status holds sends during entry. A
+////   player whose place is being saved by the 60 s timer is still in the world,
+////   and its sends are taken. With no player in the world (after the camp's leave,
+////   say) a send is dropped and nothing is written for other units; a player that
+////   enters again starts with no viewers, and the map's new join sends it a
+////   `Watched` for each player in sight.
+//// - **A mover's 0x638** is stamped with the map's clock: the connection holds
+////   the origin `Joined` carried and takes the time of the input from it
+////   (`world_map/map.server_time`, mod 2^32), the clock the map stamps the
+////   unit's 0x262 with. More than 31 commands are sent as several 0x638s in
+////   order, each of at most 31 (its count is 5 bits, opcode.0x638). A move with
+////   no viewer sends none, and one with nothing to relay sends none and tells
+////   the map nothing. A viewer that has just been `Unwatched`, or gone, may still
+////   be sent one: a send to a process that has ended is dropped. A 0x638 that
+////   reaches a viewer before its map's 0x262 of the unit or after its 0x355 is
+////   written, and the client logs it and goes on (opcode.0x638: a unit it does
+////   not have is not a failure), so the server needs no guard for it.
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
