@@ -1548,8 +1548,8 @@ pub fn a_target_that_camped_is_not_found_and_is_found_again_after_it_enters_agai
     as "the design's failure table: after the camp's leave the name group is left, so the whisper gets 0x1d9"
   game_client.send(game: target.game, message_id: 0x07E0, body: <<>>)
   let #(listed, have) =
-    game_client.read_kept(game: target.game, have:, count: 2)
-  let assert [_, Frame(body: list_body, ..)] = listed
+    game_client.read_kept(game: target.game, have:, count: 4)
+  let assert [_, _, _, Frame(body: list_body, ..)] = listed
   let assert Ok(listing) = character_list.decode(list_body)
   let assert [entry] = listing.characters
   send_play(game: target.game, character_id: entry.character_id)
