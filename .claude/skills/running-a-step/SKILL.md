@@ -22,12 +22,16 @@ One fresh implementer per step, in its own worktree (the Agent tool's worktree i
 - **Failure table,** for a step with processes, locks, timers or remote steps: each step of the flow, and what happens if it is killed there, run twice at once, or times out. Each row becomes a test, and Codex reviews the table with the shape before the build.
 - **Escalation:** what comes back to Jim instead of being chosen.
 - **Checks:** `gleam build`, the tests the builder touches, `./check fast`, then `./check` once on the commit it hands back, with their whole output kept; CI runs the no-client variant.
+- **Scratch and logs:** each agent gets its own scratch subfolder, `<step>-<role>`; a builder keeps each command's output in a log file there and reads only the failing lines.
+- **Push as you go:** a builder pushes its branch after every commit, so its work survives a lost session.
 
 ## The hand-back
 
 The builder hands back once, with: each function it added, the closest existing function or library call, and why that one is not used; each failure-table row's test; the check results. Skill or script text it writes holds only what an operator runs, when, and what it refuses.
 
 ## Reviews
+
+A step that changes no process and under about 300 lines gets one Claude reviewer for bugs, reuse and the card check together, beside the main session's own read; a larger step, or one that changes processes, gets all of the reviews below. When Codex cannot run (out of credits or down), a Claude Opus reviewer takes its place for the shape and bug reviews, with the same brief.
 
 On the fixed commit the builder pushed, side by side:
 - **Codex's bug review** (`dev/codex_review.sh code BASE HEAD "..."`): correctness, evidence, failure paths, restarts, concurrency, and OTP fit when the diff touches processes; bug reviewers are also asked whether any new test depends on timing, a session's length, read boundaries or a mailbox's length.
@@ -40,6 +44,14 @@ Check each finding against the code first. One fix round. After it, a P1 (a brea
 ## Live check and merge
 
 A live session runs when the client sees or sends something new (the `playing-live` skill): an agent drives what the client driver reaches, and Jim plays the rest. A replay that differs after a change meant to alter what the client receives: the session is recorded again live (the `designing-processes` skill). Merge on green; Jim's global file holds how the pull request body is written.
+
+## Progress and resuming
+
+- The step's issue gets one progress line at each change of phase (design posted, shape pushed, build pushed, reviews in, fix round pushed, live check, merged), naming the commit.
+- Each closing summary carries the step's wall time, its agents' tool calls (unique tool_use ids in their transcripts) and its fix rounds, with `python3 -I dev/step_measure.py N` for the cost.
+- A closing summary's notes are sorted: a bug follows the bug rule; a missing tool or feature gets its own issue; a small repeat or a stale line goes on the milestone's standing cleanups issue's checklist, and a step that touches its file fixes it; anything else stays in the summary.
+- A change to guidance (CLAUDE.md, a skill, an agent) needs no issue: its pull request names the milestone's parent issue. Cleanups and dev tools sit after the milestone's goal steps.
+- The session is cleared at each merge with no builder mid-work. A new session resumes from the parent issue, the board and the progress lines; a hand-off names only what is in flight outside GitHub.
 
 ## Bugs and the closing summary
 
