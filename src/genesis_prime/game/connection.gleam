@@ -141,27 +141,23 @@
 ////   client is: character select, or the player in the world, whose save timer
 ////   is cancelled while the claim waits and started again when it is answered.
 //// - **The player camps** (genesis_prime/game/camp). 0xBF and 0xC0, which the
-////   client sends inside 0x038C, are decoded and taken with the player in the
-////   world: the camp's rule decides, and nothing is written for a 0xBF 0 or for
-////   a 0xC0 the rule refuses, which ends the connection. A 0xC0 saves the place
-////   (`SavingPlace` with `Camped`), asks the map's run to take the player out
-////   (`LeavingMap`) and writes 0x0594 with the bit set and reason 0
-////   (opcode.0x594), then the connection is in character select again, on the
-////   same connection and the same claim, and the client's 0x07E0 is answered as at
-////   login (opcode.0x594.character_select). The order is the client's:
-////   it can pick a character only after 0x0594, so a play never meets a save
-////   still out. A camp's save that gets no answer is a warning, and the leave
-////   goes on; a leave whose map is not running, ended before its answer or
-////   answers `Left` is the same, the player is no longer in a map. A leave with
-////   no answer in time, or whose find of the run Maps does not answer in time
+////   client sends inside 0x038C, are taken with the player in the world; the
+////   camp's rule decides, and a 0xC0 it refuses ends the connection.
+//// - **A 0xC0 leaves the world in this order**: the save timer is cancelled and
+////   the place saved (`SavingPlace` with `Camped`), the map's run is asked to
+////   take the player out (`LeavingMap`), the watch on the map is dropped and
+////   0x0594 is written with the bit set and reason 0 (opcode.0x594). The client
+////   can pick a character only after 0x0594, so a play never meets a save still
+////   out. The client's 0x07E0 is then answered as at login, on the same
+////   connection and claim (opcode.0x594.character_select).
+//// - **A save or a leave that fails goes on** when the player is no longer in a
+////   map: a save with no answer is a warning, and a leave answered `Left`, to a
+////   map that is not running or that ended before its answer is done. A leave
+////   with no answer in time, or whose find Maps does not answer in time
 ////   (genesis_prime/world_map/registry `ask_run`), ends the connection with
-////   0x036A reason 8, and the map, which may still hold the player, drops it by
-////   its watch on the connection. The server stopping during the save or the
-////   leave ends the connection with reason 8 and no second save; an answer that
-////   is none the ask's is a bug, with reason 8 and an error line. The map
-////   ending while the camp's save is out is the same as a leave of a map that
-////   is not running: the leave's step drops the watch and the queued end with it,
-////   so the client is returned to character select and not told reason 8.
+////   0x036A reason 8: the map may still hold the player, and drops it by its
+////   watch on the connection. The server stopping, and an answer that is none
+////   the ask's, end it too, with no second save.
 //// - **The connection stays the player's process** through a camp: the client
 ////   asks for nothing that needs a character to outlive its connection, and
 ////   no text says how long one stays (`LocalizedEnum.8879`). The camp is the
