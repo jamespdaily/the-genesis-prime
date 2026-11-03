@@ -548,7 +548,7 @@ id = 0x0594
 name = "leave_world"
 direction = "server_to_client"
 evidence = "opcode.0x594"
-summary = "tells the client to leave the world: with the bit set and a reason of 0 it returns to character select on the same connection, sending 0x7E0; otherwise it shows the error screen with the reason's text"
+summary = "tells the client to leave the world: with the bit set and a reason that is none of 6, 7, 8, 12, 15, 16, 19 and 20 it returns to character select on the same connection, sending 0x7E0; with the bit clear, or one of those reasons, it shows the error screen with the reason's text"
 fields = [
   { name = "returning", kind = "unsigned", bits = 1, evidence = "opcode.0x594", named_by = "opcode.0x594" },
   { name = "reason", kind = "unsigned", bits = 5, evidence = "opcode.0x594", named_by = "opcode.0x594" },

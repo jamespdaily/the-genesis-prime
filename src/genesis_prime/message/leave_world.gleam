@@ -2,10 +2,11 @@
 //// never edited by hand.
 ////
 //// Message 0x0594 (leave_world), server to client: tells the client to leave
-//// the world: with the bit set and a reason of 0 it returns to character
-//// select on the same connection, sending 0x7E0; otherwise it shows the error
-//// screen with the reason's text. Its fields are listed in `schema.toml` with
-//// the client's evidence, and the fact file's `opcode.0x594` names the
+//// the world: with the bit set and a reason that is none of 6, 7, 8, 12, 15,
+//// 16, 19 and 20 it returns to character select on the same connection,
+//// sending 0x7E0; with the bit clear, or one of those reasons, it shows the
+//// error screen with the reason's text. Its fields are listed in `schema.toml`
+//// with the client's evidence, and the fact file's `opcode.0x594` names the
 //// message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
