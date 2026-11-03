@@ -24,11 +24,20 @@
 //// ```
 ////
 //// - **The call is timed**: a call up the tree to a registry (the
-////   designing-processes skill). For an ask it ends at the ask's own
-////   deadline, which the directory is given, so the lookup never holds the
-////   asker past it; a watch's lookup takes `call_ms`. No answer in time, Maps
-////   not running, or a start that fails is `Error(Nil)`, which the asker's
-////   shell gives its rule as `NotRunning`.
+////   designing-processes skill). It ends at the asker's deadline: an ask's
+////   own, which the directory is given, so the lookup never holds the asker
+////   past it, and a watch's, which the server's locate makes from the time a
+////   watch's call may take. `find_or_start` answers `Error(Nil)` for no answer
+////   in time, Maps not running or a start that fails, which the asker's shell
+////   gives its rule as `NotRunning`.
+//// - **A find says why it found nothing** (`FindFailure`): `NotFound` when Maps
+////   answered that the map is not running as that run, or is not running
+////   itself, and `NoReply` when it gave no answer by the deadline. A leave's
+////   ask (`ask_run`) tells them apart: a map that is not running holds no
+////   player, so the asker goes on (`NotRunning`); a Maps that did not answer
+////   may have a live map holding the player, so the ask is left to time out
+////   (`NoAnswerInTime`) and the asker's connection ends, which drops the player
+////   by the map's watch on it.
 //// - **Incarnations.** Each start gets a new incarnation, unique in the
 ////   node's life, and the map answers it with every `Joined`; `find` takes
 ////   it, so a joiner watches the run that holds its player, and a watch on a
@@ -38,7 +47,8 @@
 ////   supervisor, which are OTP processes with no rule. It holds process
 ////   handles, which a rule may not, and makes no game decision to replay.
 //// - **`find`** answers only a running map and never starts one; a watch
-////   uses it, so watching a map that is not running ends the watch at once.
+////   uses it, so watching a map that is not running ends the watch at once, and
+////   so does `ask_run`.
 //// - **A map ends.** Maps' monitor drops it, so the next find starts it
 ////   again, empty. Its players' connections watch it and end.
 //// - **Maps restarts.** It is the first child under `rest_for_one`, so the
@@ -56,7 +66,7 @@
 ////   `NoAnswerInTime`, a watch's end is `WatchEnded`, each ending the
 ////   connection), so the reply goes with it.
 
-import genesis_prime/service.{type Call, type Sent}
+import genesis_prime/service.{type Call, type Sent, ToService}
 import genesis_prime/step/runtime
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
@@ -173,6 +183,7 @@ pub fn find_or_start(
   deadline_ms deadline_ms: Int,
 ) -> Result(MapProcess, Nil) {
   ask(maps:, map:, lookup: FindOrStart, deadline_ms:)
+  |> result.replace_error(Nil)
 }
 
 /// Why a find of a running map gave no process.
@@ -191,12 +202,16 @@ pub type FindFailure {
 /// incarnation is not it), `NoReply` when Maps does not answer by the
 /// deadline. A watch's locate and the leave's ask use it.
 pub fn find(
-  maps _maps: Name(Message),
-  map _map: MapId,
-  incarnation _incarnation: Int,
-  deadline_ms _deadline_ms: Int,
+  maps maps: Name(Message),
+  map map: MapId,
+  incarnation incarnation: Int,
+  deadline_ms deadline_ms: Int,
 ) -> Result(MapProcess, FindFailure) {
-  panic as "built in the next commit: the typed find with the deadline"
+  use found <- result.try(ask(maps:, map:, lookup: FindOnly, deadline_ms:))
+  case found.incarnation == incarnation {
+    True -> Ok(found)
+    False -> Error(NotFound)
+  }
 }
 
 /// Serves a connection's ask of the run of a map: the message is sent to the
@@ -207,14 +222,18 @@ pub fn find(
 /// deadline that has passed and gives its rule `NoAnswerInTime`, never
 /// `NotRunning`: a live map is never taken for an absent one.
 pub fn ask_run(
-  maps _maps: Name(Message),
-  map _map: MapId,
-  incarnation _incarnation: Int,
-  message _message: map.Message,
-  deadline_ms _deadline_ms: Int,
-  reply _reply: fn(map.Outgoing) -> Nil,
+  maps maps: Name(Message),
+  map map: MapId,
+  incarnation incarnation: Int,
+  message message: map.Message,
+  deadline_ms deadline_ms: Int,
+  reply reply: fn(map.Outgoing) -> Nil,
 ) -> Result(Sent, Nil) {
-  panic as "built in the next commit: find the run, send the message, and no reply is NoAnswerInTime"
+  case find(maps:, map:, incarnation:, deadline_ms:) {
+    Ok(found) -> service.call_subject(found.subject, message, reply)
+    Error(NotFound) -> Error(Nil)
+    Error(NoReply) -> process.named(maps) |> result.map(ToService)
+  }
 }
 
 /// Sends Maps the find and waits for its reply until the deadline. An ask
@@ -225,12 +244,22 @@ fn ask(
   map map: MapId,
   lookup lookup: Lookup,
   deadline_ms deadline_ms: Int,
-) -> Result(MapProcess, Nil) {
-  use _left <- result.try(time_left(deadline_ms))
+) -> Result(MapProcess, FindFailure) {
+  use _left <- result.try(
+    time_left(deadline_ms) |> result.replace_error(NoReply),
+  )
   let reply = process.new_subject()
-  use _pid <- result.try(service.send_by_name(maps, Find(map:, lookup:, reply:)))
-  use left <- result.try(time_left(deadline_ms))
-  process.receive(reply, within: left) |> result.flatten
+  use _pid <- result.try(
+    service.send_by_name(maps, Find(map:, lookup:, reply:))
+    |> result.replace_error(NotFound),
+  )
+  use left <- result.try(
+    time_left(deadline_ms) |> result.replace_error(NoReply),
+  )
+  case process.receive(reply, within: left) {
+    Ok(found) -> result.replace_error(found, NotFound)
+    Error(Nil) -> Error(NoReply)
+  }
 }
 
 /// The time left until the deadline on the monotonic clock, or `Error(Nil)`

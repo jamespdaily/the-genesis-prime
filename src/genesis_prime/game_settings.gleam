@@ -16,6 +16,9 @@
 //// - **A countdown of 0** is allowed: the client then runs a camp that is due
 ////   at once, with no window (opcode.0x92.countdown_range).
 
+import gleam/int
+import gleam/result
+
 /// The game's settings. `camp_countdown_ms` is the countdown the server gives
 /// a camp, in milliseconds; `character_slots` is the number of characters an
 /// account may have.
@@ -41,13 +44,60 @@ pub fn defaults() -> GameSettings {
 /// `read` gives a variable's text, or `Error(Nil)` when it is not set. The
 /// first variable whose value is refused is the `Error`.
 pub fn from_environment(
-  read _read: fn(String) -> Result(String, Nil),
+  read read: fn(String) -> Result(String, Nil),
 ) -> Result(GameSettings, SettingRefusal) {
-  panic as "built in the next commit: each GENESIS_ variable that is set replaces its default, a refused value is an Error"
+  let defaults = defaults()
+  use camp_countdown_ms <- result.map(whole_number(
+    read:,
+    variable: "GENESIS_CAMP_COUNTDOWN_MS",
+    default: defaults.camp_countdown_ms,
+    least: 0,
+    most: 59_999,
+  ))
+  GameSettings(..defaults, camp_countdown_ms:)
+}
+
+/// The whole number the variable holds, from `least` to `most`, or `default`
+/// when it is not set.
+fn whole_number(
+  read read: fn(String) -> Result(String, Nil),
+  variable variable: String,
+  default default: Int,
+  least least: Int,
+  most most: Int,
+) -> Result(Int, SettingRefusal) {
+  case read(variable) {
+    Error(Nil) -> Ok(default)
+    Ok(text) ->
+      case int.parse(text) {
+        Error(Nil) ->
+          Error(NotAWholeNumber(variable:, value: text, least:, most:))
+        Ok(value) if value < least || value > most ->
+          Error(OutOfRange(variable:, value:, least:, most:))
+        Ok(value) -> Ok(value)
+      }
+  }
 }
 
 /// A sentence that says which variable was refused, its value and what it may
 /// be, for the log and the stop at start.
-pub fn describe(refusal _refusal: SettingRefusal) -> String {
-  panic as "built in the next commit: the variable, the value and the allowed range"
+pub fn describe(refusal refusal: SettingRefusal) -> String {
+  case refusal {
+    NotAWholeNumber(variable:, value:, least:, most:) ->
+      variable
+      <> " is \""
+      <> value
+      <> "\", which is not a whole number from "
+      <> int.to_string(least)
+      <> " to "
+      <> int.to_string(most)
+    OutOfRange(variable:, value:, least:, most:) ->
+      variable
+      <> " is "
+      <> int.to_string(value)
+      <> ", which is outside "
+      <> int.to_string(least)
+      <> " to "
+      <> int.to_string(most)
+  }
 }

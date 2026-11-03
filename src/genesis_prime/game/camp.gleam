@@ -46,6 +46,8 @@
 //// - **Nothing is stored.** A crash of the connection ends the camp with the
 ////   connection.
 
+import gleam/bool
+
 /// Whether the player's camp is running.
 pub opaque type Camp {
   Camp(running: Bool)
@@ -77,20 +79,26 @@ pub fn none() -> Camp {
 /// The client's 0xBF: `start` is its bit. A start makes a camp run and is
 /// answered with `countdown_ms`, the setting's; a cancel clears the camp.
 pub fn requested(
-  camp _camp: Camp,
-  start _start: Bool,
-  countdown_ms _countdown_ms: Int,
+  camp camp: Camp,
+  start start: Bool,
+  countdown_ms countdown_ms: Int,
 ) -> #(Camp, Decision) {
-  panic as "built in the next commit: a start runs a camp and is answered, a cancel clears it and is never answered"
+  case start, camp.running {
+    True, _ -> #(Camp(running: True), Answer(countdown_ms:))
+    False, True -> #(none(), Cancelled)
+    False, False -> #(none(), Ignored)
+  }
 }
 
 /// The client's 0xC0: `Finished` while a camp runs, and the refusal when none
 /// does.
-pub fn finished(camp _camp: Camp) -> Result(Decision, Refusal) {
-  panic as "built in the next commit: finished with a camp running is Finished, with none the refusal"
+pub fn finished(camp camp: Camp) -> Result(Decision, Refusal) {
+  use <- bool.guard(when: !camp.running, return: Error(FinishedWithNoCamp))
+  Ok(Finished)
 }
 
 /// A sentence that says what the client sent that is refused, for the log.
-pub fn describe(refusal _refusal: Refusal) -> String {
-  panic as "built in the next commit: the sentence for each refusal"
+pub fn describe(refusal refusal: Refusal) -> String {
+  let FinishedWithNoCamp = refusal
+  "0x00C0 holds a finished camp, but no camp is running: the client sends it only for a camp the server started"
 }

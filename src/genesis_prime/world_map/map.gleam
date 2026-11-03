@@ -72,7 +72,7 @@ import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceRule, type ServiceStep, type WatchId, Asked,
   Connection, Effects, Log, LogError, LogLine, OwnEffect, OwnEvent, Reply,
-  Started, Stop, Stopping, Watch, WatchEnded, WatchId,
+  Started, Stop, Stopping, Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/loader/store as table_store
@@ -183,11 +183,34 @@ pub fn step(
 /// and `Left` is answered. A connection that is not in the map is an error
 /// line and the same answer.
 fn left(
-  state _state: State,
-  caller _caller: CallerId,
-  connection _connection: ConnectionId,
+  state state: State,
+  caller caller: CallerId,
+  connection connection: ConnectionId,
 ) -> #(State, ServiceStep(Outgoing)) {
-  panic as "built in the next commit: the player removed with its unit and its Unwatch, Left answered; a connection not in the map an error line and Left"
+  case dict.get(state.players, connection) {
+    Ok(player) -> #(
+      State(
+        ..state,
+        players: dict.delete(state.players, connection),
+        watches: dict.delete(state.watches, player.watch),
+      ),
+      Effects([
+        Unwatch(watch: player.watch),
+        OwnEffect(Reply(caller, Left)),
+      ]),
+    )
+    Error(Nil) -> #(
+      state,
+      Effects([
+        log_error(
+          state:,
+          about: step.About(..step.no_one, connection: Some(connection)),
+          text: "the connection left the map, but it is not in it",
+        ),
+        OwnEffect(Reply(caller, Left)),
+      ]),
+    )
+  }
 }
 
 /// A connection's join: its player's unit is built with the next unit id and

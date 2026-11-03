@@ -21,6 +21,10 @@
 ////   rename path: 0x0786 is answered with 0x014B for a character the entry's
 ////   rename bit marks (opcode.0x786, opcode.0x14b,
 ////   lua.CharacterSelection.OnCharacterRenameResult).
+//// - The camp: 0xBF 1 is answered with 0x92, 0xC0 with 0x594 once the place is
+////   saved and the player is out of its map, and the client's 0x07E0 on the
+////   same connection with the list as at login (opcode.0xbf, opcode.0xc0,
+////   opcode.0x92, opcode.0x594, opcode.0x594.character_select).
 //// Every wait is for bytes the server writes, with a deadline a passing test
 //// never reaches.
 

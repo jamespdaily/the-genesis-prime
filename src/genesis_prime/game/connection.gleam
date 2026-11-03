@@ -153,8 +153,15 @@
 ////   still out. A camp's save that gets no answer is a warning, and the leave
 ////   goes on; a leave whose map is not running, ended before its answer or
 ////   answers `Left` is the same, the player is no longer in a map. A leave with
-////   no answer in time ends the connection with 0x036A reason 8, and the map,
-////   which may still hold the player, drops it by its watch on the connection.
+////   no answer in time, or whose find of the run Maps does not answer in time
+////   (genesis_prime/world_map/registry `ask_run`), ends the connection with
+////   0x036A reason 8, and the map, which may still hold the player, drops it by
+////   its watch on the connection. The server stopping during the save or the
+////   leave ends the connection with reason 8 and no second save; an answer that
+////   is none the ask's is a bug, with reason 8 and an error line. The map
+////   ending while the camp's save is out is the same as a leave of a map that
+////   is not running: the leave's step drops the watch and the queued end with it,
+////   so the client is returned to character select and not told reason 8.
 //// - **The connection stays the player's process** through a camp: the client
 ////   asks for nothing that needs a character to outlive its connection, and
 ////   no text says how long one stays (`LocalizedEnum.8879`). The camp is the
@@ -218,14 +225,15 @@
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
-  AskMap, AskSessions, AskStore, Asking, Broken, Bytes, Connect, Continue, Done,
-  FromHandOff, FromMap, FromSessions, FromStore, Inside, Otherwise,
-  SentBySessions, Settled,
+  AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
+  Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Inside,
+  Otherwise, SentBySessions, Settled,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
+import genesis_prime/game/camp
 import genesis_prime/game/character_select
 import genesis_prime/game/movement
 import genesis_prime/game/world_entry
@@ -233,6 +241,7 @@ import genesis_prime/game_settings.{type GameSettings}
 import genesis_prime/hand_off.{type Holder, SessionKey, Take}
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
+import genesis_prime/message/camp_countdown.{CampCountdown}
 import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
 import genesis_prime/message/character_select_start
@@ -246,6 +255,7 @@ import genesis_prime/message/disconnect_reason.{
 import genesis_prime/message/fall_value
 import genesis_prime/message/fell_below_floor
 import genesis_prime/message/game_hello_reply
+import genesis_prime/message/leave_world.{LeaveWorld}
 import genesis_prime/message/move_speed_setting
 import genesis_prime/message/movement_send_interval_answer
 import genesis_prime/message/play_character
@@ -264,6 +274,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/int
 import gleam/list
@@ -910,14 +921,101 @@ fn movement_message(
 /// place and leaves the map (genesis_prime/game/camp). A body the client's
 /// reader would refuse, or a 0xC0 with no camp, ends the connection.
 fn camp_message(
-  session _session: Session,
-  now _now: Now,
-  holder _holder: Holder,
-  entered _entered: world_entry.Entered,
-  inner _inner: Frame,
-  kind _kind: CampMessage,
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+  kind kind: CampMessage,
 ) -> client_connection.Handled(Session) {
-  panic as "built in the next commit: 0xBF 1 answered with 0x92, 0xBF 0 clears the camp, 0xC0 cancels the save timer and saves with Camped"
+  case kind {
+    CampAsked ->
+      decoded_step(
+        session:,
+        now:,
+        inner:,
+        decode: camp_request.decode,
+        then: fn(message) {
+          let #(running, decision) =
+            camp.requested(
+              entered.camp,
+              start: message.start == 1,
+              countdown_ms: session.settings.game.camp_countdown_ms,
+            )
+          let session =
+            Session(
+              ..session,
+              status: InWorld(
+                holder:,
+                entered: world_entry.Entered(..entered, camp: running),
+              ),
+            )
+          case decision {
+            camp.Answer(countdown_ms:) ->
+              Continue(session, [
+                to_client(session, camp_countdown_frame(countdown_ms)),
+              ])
+            camp.Cancelled | camp.Ignored -> Continue(session, [])
+            camp.Finished ->
+              panic as "the camp's rule answers a request with no finish"
+          }
+        },
+      )
+    CampOver ->
+      decoded_step(
+        session:,
+        now:,
+        inner:,
+        decode: camp_finished.decode,
+        then: fn(_message) {
+          case camp.finished(entered.camp) {
+            Ok(camp.Finished) ->
+              saving(
+                session:,
+                now:,
+                holder:,
+                entered:,
+                then: Camped,
+                before: [OwnEffect(CancelTimer(timer: save_timer))],
+                within_ms: session.settings.ask_deadline_ms,
+              )
+            Ok(camp.Answer(..)) | Ok(camp.Cancelled) | Ok(camp.Ignored) ->
+              panic as "the camp's rule answers a finish with no request's decision"
+            Error(refusal) ->
+              end_for(session:, now:, text: camp.describe(refusal))
+          }
+        },
+      )
+  }
+}
+
+/// 0x0092 for a camp: the countdown and the cancel bit clear. The signature
+/// bonuses the exit window shows (experience, elder points, 15 currencies and 19
+/// account currencies) are 0, since the server has no source for them yet; the
+/// currencies are the 120 and 152 bytes of 64-bit amounts the client reads
+/// (opcode.0x92).
+fn camp_countdown_frame(countdown_ms: Int) -> Frame {
+  let assert Ok(body) =
+    camp_countdown.encode(
+      CampCountdown(
+        countdown_ms:,
+        cancel: 0,
+        experience: 0,
+        elder_points: 0,
+        currencies: <<0:size(960)>>,
+        account_currencies: <<0:size(1216)>>,
+      ),
+    )
+    as "a countdown below 60 s fits the message's 32 bits"
+  Frame(message_id: camp_countdown.message_id, body:)
+}
+
+/// 0x0594 with the bit set and reason 0: the client leaves the world and
+/// starts character select on the same connection (opcode.0x594).
+fn leave_world_frame() -> Frame {
+  let assert Ok(body) = leave_world.encode(LeaveWorld(returning: 1, reason: 0))
+    as "a bit and a reason of 0 fit the message"
+  Frame(message_id: leave_world.message_id, body:)
 }
 
 /// A whole frame of a message the rule does not take, logged as unhandled:
@@ -1427,8 +1525,7 @@ fn answered(
       entry_answered(session:, now:, holder:, entry:, outcome:)
     SavingPlace(holder:, entered:, then:) ->
       save_answered(session:, now:, holder:, entered:, then:, outcome:)
-    LeavingMap(holder:, entered:) ->
-      leave_answered(session:, now:, holder:, entered:, outcome:)
+    LeavingMap(holder:, ..) -> leave_answered(session:, now:, holder:, outcome:)
     AwaitingHelloReply | WaitingToClaim(..) | InWorld(..) ->
       end_for(session:, now:, text: "an answer came when no ask was out")
   }
@@ -1842,9 +1939,46 @@ fn save_answered(
         ],
         notice:,
       )
-    Camped, _ ->
-      panic as "built in the next commit: the save's lines, then the Leave ask (LeavingMap); a stop or a failed write ends the connection with no ask"
+    Camped, Ok(lines) ->
+      case outcome {
+        step.StoppedWaiting -> stopped(session, now)
+        step.Answer(..)
+        | step.NotRunning
+        | step.NoAnswerInTime
+        | step.EndedBeforeAnswer ->
+          leaving_the_map(session:, now:, holder:, entered:, before: lines)
+      }
+    Camped, Error(Nil) ->
+      told(
+        session:,
+        now:,
+        reason: LostUserServer,
+        level: step.LogError,
+        text: "the answer is none a save of the player's place asked for",
+      )
   }
+}
+
+/// The camp's save is answered: the map's run that took the player is asked to
+/// take it out, after the effects `before`, and the connection waits in
+/// `LeavingMap`.
+fn leaving_the_map(
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  before before: List(Effect(ConnectionEffect)),
+) -> client_connection.Handled(Session) {
+  ask(
+    session: Session(..session, status: LeavingMap(holder:, entered:)),
+    now:,
+    request: AskMapRun(
+      map: entered.map,
+      incarnation: entered.incarnation,
+      message: map.Leave(connection: client_connection.connection(session.link)),
+    ),
+    before:,
+  )
 }
 
 /// The map's answer to the camp's leave ask: `Left`, a map that is not running
@@ -1853,13 +1987,44 @@ fn save_answered(
 /// answer in time ends the connection with 0x036A reason 8, with no second
 /// save; the server stopping ends it without one.
 fn leave_answered(
-  session _session: Session,
-  now _now: Now,
-  holder _holder: Holder,
-  entered _entered: world_entry.Entered,
-  outcome _outcome: Outcome(Answer),
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
-  panic as "built in the next commit: Unwatch the map, write 0x0594 (1, 0), InCharacterSelect with a new character select"
+  case outcome {
+    step.Answer(FromMap(map.Left)) | step.NotRunning | step.EndedBeforeAnswer ->
+      Continue(
+        Session(
+          ..session,
+          status: InCharacterSelect(holder:, select: character_select.new()),
+        ),
+        [
+          Unwatch(watch: map_watch),
+          to_client(session, leave_world_frame()),
+        ],
+      )
+    step.NoAnswerInTime ->
+      told(
+        session:,
+        now:,
+        reason: LostUserServer,
+        level: LogWarning,
+        text: client_connection.without_answer(who: "the map", outcome:),
+      )
+    step.StoppedWaiting -> stopped(session, now)
+    step.Answer(FromMap(map.Joined(..)))
+    | step.Answer(FromStore(..))
+    | step.Answer(FromHandOff(..))
+    | step.Answer(FromSessions(..)) ->
+      told(
+        session:,
+        now:,
+        reason: LostUserServer,
+        level: step.LogError,
+        text: "the answer is none the leave of the map asked for",
+      )
+  }
 }
 
 /// The connection ends after the save it waited for: the lines the answer made,

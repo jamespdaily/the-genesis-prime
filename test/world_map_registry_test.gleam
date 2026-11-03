@@ -7,7 +7,11 @@
 ////   the incarnation it is given and never starts a map; a map that ended is
 ////   started again, with a new incarnation, by the next `find_or_start`; the
 ////   deadline of a find is the asker's, and Maps not running, or a start that
-////   fails, is `Error(Nil)`.
+////   fails, is `Error(Nil)` for `find_or_start`; `find` says `NotFound` for a
+////   map that is not running as that run (or Maps not running) and `NoReply`
+////   for a Maps that gives no answer by the deadline, and `ask_run` sends only
+////   to the run `find` finds: a map not running is `Error(Nil)`, and a Maps
+////   that gives no answer is left to time out and never `NotRunning`.
 //// - The map's doc comment (`genesis_prime/world_map/map`): a player's
 ////   connection is watched, and its end removes the player.
 //// - OTP's supervisor: a child exits with `shutdown` when told to, and a

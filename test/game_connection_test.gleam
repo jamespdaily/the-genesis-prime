@@ -3884,3 +3884,15 @@ pub fn a_0x038c_holding_0x7ea_0x549_0xbf_or_0xc0_in_character_select_is_logged_a
     })
   })
 }
+
+pub fn an_answer_in_the_camp_save_that_is_not_the_stores_is_a_bug_with_reason_8_an_error_and_no_leave_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(answers_to_other_asks(), fn(outcome) {
+    let #(state, taken) = saving_the_camp()
+    let #(_, taken) = answer(state:, taken:, outcome:)
+    assert disconnect(taken, keyed()) == LostUserServer
+    assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+    assert support.asked(taken) == None
+      as "the save is over and the camp's leave is not asked: a bug ends the connection without a second save"
+  })
+}
