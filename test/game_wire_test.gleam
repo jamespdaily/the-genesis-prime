@@ -13,7 +13,7 @@
 ////   the WorldLocation2 row of its start (`character_tables`).
 //// - World entry: the client's 0x07DD is answered with 0xAD, 0x262, 0x19B,
 ////   0x6BC, 0x636, 0xF1 and 0x61 (opcode.0xad and the others), the refusal of
-////   a play of a character the account does not have with 0x0162, 0x0036 and 0x0117
+////   a play of a character the account does not have with 0x0162, 0x097F, 0x0968, 0x0036 and 0x0117
 ////   (opcode.0x162.after_create, opcode.0x36), and the end of the player's map
 ////   with 0x036A reason 8 (0x1400168a0).
 //// - The delete path: 0x0352 is answered with 0x00E6 (opcode.0x352,
@@ -139,7 +139,7 @@ pub fn a_client_with_a_held_session_key_gets_the_hello_and_then_the_list_of_its_
   let assert [_tier, _entitlements, _level, listed] =
     game_client.read(game:, count: 4)
   assert listed.message_id == 0x0117
-    as "opcode.0x36 and opcode.0x117 follow 0x058F and 0x07E0"
+    as "opcode.0x97f, opcode.0x968, opcode.0x36 and opcode.0x117 follow 0x058F and 0x07E0"
   let assert Ok(list) = character_list.decode(listed.body)
   assert list.realm_id == 1 && list.max_characters == 12
     as "the realm's id and the character limit of the tree's game settings"
@@ -421,7 +421,7 @@ pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_and_th
   send_play(game:, character_id: theirs)
   let assert [refused, _tier, _entitlements, level, listed] =
     game_client.read(game:, count: 5)
-    as "opcode.0x162.after_create: 0x0162, then 0x0036 and 0x0117"
+    as "opcode.0x162.after_create: 0x0162, then 0x097F, 0x0968, 0x0036 and 0x0117"
   assert refused.message_id == 0x0162
   assert level.message_id == 0x0036
   assert listed.message_id == 0x0117

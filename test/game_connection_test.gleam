@@ -3632,7 +3632,7 @@ pub fn after_0x594_a_0x07e0_is_answered_with_0x0036_and_0x0117_as_at_login_with_
     Frame(message_id: 0x0036, ..),
     Frame(message_id: 0x0117, body:),
   ] = heard(taken, keyed())
-    as "opcode.0x36 then opcode.0x117, as at login"
+    as "opcode.0x97f, opcode.0x968, opcode.0x36 then opcode.0x117, as at login"
   let assert Ok(sent) = character_list.decode(body)
   assert list.map(sent.characters, fn(entry) { entry.name }) == ["Eve"]
 }

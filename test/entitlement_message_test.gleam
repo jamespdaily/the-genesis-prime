@@ -65,7 +65,7 @@ pub fn the_premium_tier_is_one_value_of_5_bits_and_a_wider_one_is_refused_test()
   )
   assert premium_tier.encode(PremiumTier(tier: 32))
     == Error(bit_stream.ValueDoesNotFit("tier", 5, 32))
-    as "opcode.0x97f: the client's writer would mask 32 to 0, a tier of Basic, so a tier the field cannot hold is refused"
+    as "opcode.0x97f: a tier of 32 does not fit the client's 5-bit reader (0x140080920)"
 }
 
 pub fn the_two_messages_hold_the_clients_message_numbers_test() -> Nil {

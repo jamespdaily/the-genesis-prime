@@ -7,7 +7,8 @@
 ////   6 name unavailable, 9 account full, 10 name length, anything else "due to
 ////   an error").
 //// - The play path after a create: 0x07DD gets 0x0162 Failed, then the list
-////   again with 0x0036 before 0x0117 (opcode.0x162.after_create, opcode.0x36).
+////   again, after 0x097F and 0x0968, with 0x0036 before 0x0117
+////   (opcode.0x162.after_create, opcode.0x36, opcode.0x968, opcode.0x97f).
 //// - The list: the character the client's own rule selects is the one with
 ////   the largest last-logout float among those that have one
 ////   (lua.CharacterSelection.OnLoadFromCharacter.preselect); 0 is none.
@@ -643,7 +644,7 @@ pub fn a_list_is_sent_after_the_premium_tier_and_the_entitlements_in_that_order_
     as "lua.AccountItemLib.GetPremiumTier.users: tier 1 is Signature, which the client shows today (255 counts as Signature); tier 0 would show Basic and its upsells"
 }
 
-pub fn with_6_slots_the_entitlements_hold_base_character_slots_4_and_with_2_none_above_0_test() -> Nil {
+pub fn with_6_slots_the_entitlements_hold_base_character_slots_4_and_with_2_they_hold_0_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(asking, _) = character_select.started(AccountId(7))
   let assert Ok(#(_, six)) =
@@ -656,8 +657,9 @@ pub fn with_6_slots_the_entitlements_hold_base_character_slots_4_and_with_2_none
     as "the client's own sum for a Hybrid client"
   let assert Ok(#(_, two)) =
     listed_with_slots(state: asking, characters: [], character_slots: 2)
-  assert list.filter(entitlements_of(two), fn(entry) { entry.count > 0 }) == []
-    as "2 slots is the client's own count for an account with no entitlement, and a count of 0 counts as absent (0x1404e4960)"
+  assert entitlements_of(two)
+    == [held_entitlement.HeldEntitlement(entitlement_id: 12, count: 0)]
+    as "2 slots is the client's own count for an account with no entitlement, and a count of 0 counts as absent (0x1404e4960); the entry is sent so a count the client holds from an earlier list is overwritten, since 0x968 sets only the entries it lists (SetAccountEntitlement 0x1400062c0)"
   let assert Ok(#(_, fourteen)) =
     listed_with_slots(state: asking, characters: [], character_slots: 14)
   assert entitlements_of(fourteen)

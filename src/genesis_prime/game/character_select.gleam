@@ -40,7 +40,7 @@
 ////   entitlement (12) when it holds one
 ////   (lua.CharacterSelection.OnLoadFromCharacter). So the list is preceded by
 ////   0x097F with the premium tier 1 and 0x0968 with the one entry
-////   (12, `character_slots` - 2), or none for 2 slots. The tier goes first:
+////   (12, `character_slots` - 2), a count of 0 at 2 slots. The tier goes first:
 ////   0x0968 makes the client refresh its tier, which drops from 255 to 0
 ////   (Basic) unless 0x097F set it, and tier 1 keeps the Signature the client
 ////   shows today (opcode.0x968, opcode.0x97f,
@@ -566,23 +566,22 @@ fn rename_result(
 }
 
 /// 0x097F with the premium tier and 0x0968 with the BaseCharacterSlots
-/// entitlement that raises the client's own 2 slots to `character_slots`; at 2
-/// the list holds no entry, as the client counts an account with none.
+/// entitlement that raises the client's own 2 slots to `character_slots`. The
+/// entry is sent at 2 slots too, with a count of 0, which the client counts as
+/// absent (0x1404e4960): 0x0968 sets only the entries it lists, so a count
+/// the client still holds from an earlier list is overwritten
+/// (SetAccountEntitlement 0x1400062c0).
 fn slot_effects(character_slots character_slots: Int) -> List(Effect) {
   let assert Ok(tier) = premium_tier.encode(PremiumTier(tier: signature_tier))
     as "a tier of 1 fits its 5 bits"
-  let extra_slots = character_slots - game_settings.client_base_character_slots
   let assert Ok(entitlements) =
     account_entitlements.encode(
-      AccountEntitlements(entitlements: case extra_slots > 0 {
-        True -> [
-          HeldEntitlement(
-            entitlement_id: base_character_slots_entitlement_id,
-            count: extra_slots,
-          ),
-        ]
-        False -> []
-      }),
+      AccountEntitlements(entitlements: [
+        HeldEntitlement(
+          entitlement_id: base_character_slots_entitlement_id,
+          count: character_slots - game_settings.client_base_character_slots,
+        ),
+      ]),
     )
     as "an entitlement id and a count of the settings' range fit their 32 bits"
   [
