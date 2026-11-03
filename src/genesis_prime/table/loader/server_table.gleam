@@ -15,6 +15,7 @@ import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement
 import genesis_prime/table/loader/store
 import genesis_prime/table/world_location2
+import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
 import gleam/erlang/reference.{type Reference}
 
@@ -27,6 +28,7 @@ import gleam/erlang/reference.{type Reference}
 ///   create request carries (genesis_prime/game/appearance).
 /// - GameFormula and XpPerLevel: the starting level (genesis_prime/game/level).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
+/// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
 pub fn entries() -> List(store.Entry) {
   [
     character_creation.entry(),
@@ -36,6 +38,7 @@ pub fn entries() -> List(store.Entry) {
     customization_parameter_map.entry(),
     game_formula.entry(),
     world_location2.entry(),
+    world_zone.entry(),
     xp_per_level.entry(),
   ]
 }

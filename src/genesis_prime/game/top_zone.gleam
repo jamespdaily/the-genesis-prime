@@ -20,7 +20,13 @@
 ////   as one record from zone id to top zone id.
 
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/table/world_zone
+import gleam/bool
 import gleam/dict.{type Dict}
+import gleam/int
+import gleam/list
+import gleam/result
+import gleam/set.{type Set}
 
 /// Each WorldZone id with its top zone's id.
 pub opaque type TopZones {
@@ -34,11 +40,41 @@ pub type TopZoneError {
 }
 
 /// The top zones of the zones given as pairs of a zone's id and its
-/// `parentZoneId`, or the zone whose parent chain is a cycle.
+/// `parentZoneId`, or the first zone, in the order given, whose parent chain is a
+/// cycle.
 pub fn from_parents(
-  parents _parents: List(#(Int, Int)),
+  parents parents: List(#(Int, Int)),
 ) -> Result(TopZones, TopZoneError) {
-  panic as "built in the top zone step"
+  let parent_of = dict.from_list(parents)
+  list.try_map(parents, fn(pair) {
+    walk(parent_of:, start: pair.0, zone: pair.0, seen: set.new())
+    |> result.map(fn(top) { #(pair.0, top) })
+  })
+  |> result.map(fn(tops) { TopZones(top_of: dict.from_list(tops)) })
+}
+
+/// The top zone of the walk from `start`, which is at `zone`: the zone itself
+/// when its parent is 0 or has no row, else the top of its parent. A zone met
+/// twice is the cycle.
+fn walk(
+  parent_of parent_of: Dict(Int, Int),
+  start start: Int,
+  zone zone: Int,
+  seen seen: Set(Int),
+) -> Result(Int, TopZoneError) {
+  use <- bool.guard(
+    when: set.contains(seen, zone),
+    return: Error(ParentCycle(zone_id: start)),
+  )
+  case dict.get(parent_of, zone) {
+    Ok(parent) if parent != 0 ->
+      case dict.has_key(parent_of, parent) {
+        True ->
+          walk(parent_of:, start:, zone: parent, seen: set.insert(seen, zone))
+        False -> Ok(zone)
+      }
+    Ok(_) | Error(Nil) -> Ok(zone)
+  }
 }
 
 /// The top zone of the zone, or `Error(Nil)` when the table holds no row for
@@ -54,10 +90,24 @@ pub fn of(
 /// The top zones as a value the tables' load builds once, under the tables' key
 /// (genesis_prime/table/loader/store `derived`); a cycle fails the load.
 pub fn derivation() -> table_store.Derivation {
-  panic as "built in the top zone step"
+  table_store.derivation(key: top_zones_key, build: fn(tables) {
+    world_zone.all(tables)
+    |> list.map(fn(row) { #(row.id, row.parent_zone_id) })
+    |> from_parents
+    |> result.map_error(fn(error) {
+      let ParentCycle(zone_id:) = error
+      "the parent chain of WorldZone "
+      <> int.to_string(zone_id)
+      <> " is a cycle"
+    })
+  })
 }
 
+/// The key of the top zones in the tables' store.
+const top_zones_key: table_store.DerivedKey(TopZones) =
+  table_store.DerivedKey("TopZones")
+
 /// The top zones the tables' load built.
-pub fn top_zones(tables _tables: table_store.Tables) -> TopZones {
-  panic as "built in the top zone step"
+pub fn top_zones(tables tables: table_store.Tables) -> TopZones {
+  table_store.derived(tables:, key: top_zones_key)
 }

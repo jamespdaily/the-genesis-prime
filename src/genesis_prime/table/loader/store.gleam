@@ -92,7 +92,7 @@ pub opaque type Entry {
 /// A value a rule reads of the loaded tables, built once when they load, from
 /// its key and the function that builds it from the tables.
 pub opaque type Derivation {
-  Derivation(name: String, put: fn(Tables) -> Nil)
+  Derivation(name: String, put: fn(Tables) -> Result(Nil, LoadError))
 }
 
 /// A column whose every id must have a row in another table. `missing` gives
@@ -115,6 +115,9 @@ pub type LoadError {
   /// A required row is missing: a column of one table names an id the other
   /// table has no row for.
   RowMissing(from_table: String, column: String, to_table: String, id: Int)
+  /// A derived value could not be built from the loaded tables, for the reason
+  /// its build gave.
+  DerivationFailed(name: String, reason: String)
 }
 
 /// A sentence that says why a load failed, naming the tables, for the message
@@ -141,6 +144,8 @@ pub fn describe(error: LoadError) -> String {
       <> ", which the table "
       <> to_table
       <> " has no row for"
+    DerivationFailed(name:, reason:) ->
+      "the value " <> name <> " could not be built from the tables: " <> reason
   }
 }
 
@@ -171,13 +176,20 @@ pub fn entry(
 
 /// A derived value of the tables under a key of its own, which is not the
 /// name of a table of the client. `build` reads the loaded tables once, when
-/// they load; `derived` then gives its result.
+/// they load, and gives the value or the reason it cannot be built, which fails
+/// the load; `derived` then gives the value.
 pub fn derivation(
   key key: DerivedKey(value),
-  build build: fn(Tables) -> value,
+  build build: fn(Tables) -> Result(value, String),
 ) -> Derivation {
   Derivation(name: key.name, put: fn(tables) {
-    put_term(load: tables.key, name: DerivedTerm(key.name), term: build(tables))
+    case build(tables) {
+      Ok(value) -> {
+        put_term(load: tables.key, name: DerivedTerm(key.name), term: value)
+        Ok(Nil)
+      }
+      Error(reason) -> Error(DerivationFailed(name: key.name, reason:))
+    }
   })
 }
 
@@ -276,10 +288,16 @@ fn check_and_derive(
   derivations derivations: List(Derivation),
 ) -> Result(Tables, LoadError) {
   case first_missing_row(tables, requirements) {
-    Ok(Nil) -> {
-      list.each(derivations, fn(derivation) { derivation.put(tables) })
-      Ok(tables)
-    }
+    Ok(Nil) ->
+      case
+        list.try_each(derivations, fn(derivation) { derivation.put(tables) })
+      {
+        Ok(Nil) -> Ok(tables)
+        Error(error) -> {
+          unload(tables)
+          Error(error)
+        }
+      }
     Error(error) -> {
       unload(tables)
       Error(error)

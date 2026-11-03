@@ -85,10 +85,10 @@ const index_key: table_store.DerivedKey(Index) =
 /// from the rows of CharacterCustomization and CharacterCustomizationLabel.
 pub fn derivation() -> table_store.Derivation {
   table_store.derivation(key: index_key, build: fn(tables) {
-    index_from_rows(
+    Ok(index_from_rows(
       rows: character_customization.all(tables),
       labels: character_customization_label.all(tables),
-    )
+    ))
   })
 }
 

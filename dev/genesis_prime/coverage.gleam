@@ -85,5 +85,7 @@ fn describe(error: store.LoadError) -> String {
       <> " id "
       <> int.to_string(id)
       <> ", which has no row"
+    store.DerivationFailed(name:, reason:) ->
+      name <> " cannot be built: " <> reason
   }
 }

@@ -34,6 +34,7 @@ import genesis_prime/table/id.{CharacterCustomizationLabelId}
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/world_location2
+import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
 import gleam/erlang/reference
 import gleam/int
@@ -94,6 +95,64 @@ pub fn files() -> List(#(String, BitArray)) {
   files_with_looks(customization: customization_rows(), labels: label_rows())
 }
 
+/// The planted files with the WorldZone file holding these zones, each a pair of
+/// its id and its parentZoneId, in place of `world_zones`.
+pub fn files_with_zones(
+  zones zones: List(#(Int, Int)),
+) -> List(#(String, BitArray)) {
+  list.map(files(), fn(file) {
+    case file.0 == world_zone.schema.file {
+      True -> world_zone_file(zones)
+      False -> file
+    }
+  })
+}
+
+/// The planted WorldZone rows, each a pair of the row's ID and parentZoneId from
+/// the client's own table (`top_zone_test` compares each with the real row): the
+/// chains of the start places' zones 648, 1417, 1411, 1236 and 6009 up to their
+/// top zones, 1411 and 1305 sharing the top zone 1304; the chain of zone 1755,
+/// the deepest, 7 parents above it, to its top zone 248; and zone 147, whose
+/// parent 1132 has no row.
+pub fn world_zones() -> List(#(Int, Int)) {
+  [
+    #(648, 35),
+    #(35, 0),
+    #(1417, 1414),
+    #(1414, 0),
+    #(1411, 1305),
+    #(1305, 1304),
+    #(1304, 0),
+    #(1236, 623),
+    #(623, 622),
+    #(622, 0),
+    #(6009, 4962),
+    #(4962, 4961),
+    #(4961, 0),
+    #(1755, 378),
+    #(378, 1777),
+    #(1777, 382),
+    #(382, 1778),
+    #(1778, 1738),
+    #(1738, 1580),
+    #(1580, 248),
+    #(248, 0),
+    #(147, 1132),
+  ]
+}
+
+fn world_zone_file(zones: List(#(Int, Int))) -> #(String, BitArray) {
+  planted_table.file(
+    world_zone.schema,
+    list.map(zones, fn(zone) {
+      planted_table.row(world_zone.schema, [
+        #("ID", Integer(zone.0)),
+        #("parentZoneId", Integer(zone.1)),
+      ])
+    }),
+  )
+}
+
 /// The planted tables with a look that has `count` labels: labels 1 to
 /// `count`, each for every faction and each held at the value 1 by one row of
 /// race 1, sex 1, in place of the planted look rows. Loaded once per count
@@ -130,6 +189,7 @@ fn files_with_looks(
     planted_table.file(customization_parameter.schema, parameter_rows()),
     planted_table.file(customization_parameter_map.schema, map_rows()),
     planted_table.file(world_location2.schema, planted_start_rows()),
+    world_zone_file(world_zones()),
     planted_table.file(
       game_formula.schema,
       game_formula_rows(ids: [highest_level_formula], highest: 50),
