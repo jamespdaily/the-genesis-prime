@@ -325,10 +325,10 @@ pub fn each_seen_of_a_join_is_sent_with_a_watched_to_the_seen_players_connection
     == [
       #(2, "Seen 1"),
       #(1, "Watched by 2"),
-      #(1, "Seen 2"),
       #(2, "Watched by 1"),
+      #(1, "Seen 2"),
     ]
-    as "player 1 is seen by the joiner, so it is told its viewer is 2; the joiner is seen by player 1, so it is told its viewer is 1: all four in the join's one step"
+    as "player 1 is seen by the joiner, so it is told its viewer is 2; the joiner is seen by player 1, so it is told its viewer is 1: all four in the join's one step, the joiner's own viewer before the Seen that lets the other player see it"
 }
 
 pub fn each_unseen_of_a_move_out_of_sight_is_sent_with_an_unwatched_in_the_same_step_test() -> Nil {

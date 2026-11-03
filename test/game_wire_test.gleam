@@ -1107,8 +1107,7 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
     ..,
   ) = two_players_enter_one_map()
   // The second player moves five times at once; only the first sees it, each
-  // move as the second's own connection sent it, in the order sent, and all
-  // before the map's 0x355 of the unit that follows.
+  // move as the second's own connection sent it, in the order sent.
   list.each([0.0, 1.0, 2.0, 3.0, 4.0], fn(step) {
     game_client.send_world(
       game: second,
@@ -1118,11 +1117,25 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
       ]),
     )
   })
-  let #(moves, first_have) =
-    game_client.read_kept(game: first, have: first_have, count: 5)
-  assert list.map(moves, fn(frame) { frame.message_id })
-    == [0x0638, 0x0638, 0x0638, 0x0638, 0x0638]
+  // The second player camps out at once: the first sees its unit go. The five
+  // moves come from the second's connection and the 0x355 from the map, two
+  // senders, so no order is asserted between them; the moves are in order among
+  // themselves, the one sender.
+  game_client.send_world(game: second, message_id: 0x00BF, body: <<1>>)
+  let #(_countdown, second_have) =
+    game_client.next(game: second, have: second_have)
+  game_client.send_world(game: second, message_id: 0x00C0, body: <<>>)
+  let #(left, second_have) = game_client.next(game: second, have: second_have)
+  assert left.message_id == 0x0594
+  let #(six, first_have) =
+    game_client.read_kept(game: first, have: first_have, count: 6)
+  let moves = list.filter(six, fn(frame) { frame.message_id == 0x0638 })
+  let gone = list.filter(six, fn(frame) { frame.message_id == 0x0355 })
+  assert list.length(moves) == 5
     as "opcode.0x638: each move is sent to the viewer"
+  let assert [gone] = gone as "opcode.0x355: the unit is removed, once"
+  let assert Ok(destroyed) = unit_destroyed.decode(gone.body)
+  assert destroyed.unit_id == 2
   let assert [moved, ..] = moves
   let assert Ok(relayed) = unit_movement.decode(moved.body)
   assert relayed.unit_id == 2
@@ -1146,17 +1159,6 @@ pub fn two_players_on_one_map_see_each_other_appear_move_and_leave_test() -> Nil
     })
   assert view == dict.from_list([#(2, #(104.5, 50.25, -200.75))])
     as "the moves arrive in the order sent"
-  // The second player camps out: the first sees its unit go.
-  game_client.send_world(game: second, message_id: 0x00BF, body: <<1>>)
-  let #(_countdown, second_have) =
-    game_client.next(game: second, have: second_have)
-  game_client.send_world(game: second, message_id: 0x00C0, body: <<>>)
-  let #(left, second_have) = game_client.next(game: second, have: second_have)
-  assert left.message_id == 0x0594
-  let #(gone, first_have) = game_client.next(game: first, have: first_have)
-  assert gone.message_id == 0x0355 as "opcode.0x355: the unit is removed"
-  let assert Ok(destroyed) = unit_destroyed.decode(gone.body)
-  assert destroyed.unit_id == 2
   assert game_client.observe(others: view, frame: gone) == dict.new()
   // It plays again as a new unit, which the first sees appear; then it drops.
   game_client.send(game: second, message_id: 0x07E0, body: <<>>)

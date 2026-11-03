@@ -601,8 +601,10 @@ fn unwatched(
 
 /// The sends of a pair that comes into sight, in one step: the newcomer sees
 /// the other (`Seen` to it, `Watched` to the other), then the other sees the
-/// newcomer (`Seen` to it, `Watched` to the newcomer). A joiner and a mover are
-/// the newcomer.
+/// newcomer (`Watched` to the newcomer, `Seen` to the other). A joiner and a
+/// mover are the newcomer. Each `Watched` is sent before the `Seen` of the same
+/// unit's viewer that follows it where there is one, so a player that has been
+/// shown a unit has had its own viewer sent already.
 fn comes_into_sight(
   state state: State,
   time time: Int,
@@ -612,8 +614,8 @@ fn comes_into_sight(
   [
     seen_by(state:, time:, viewer: newcomer.0, of: other.1),
     watched(to: other.0, by: newcomer.0),
-    seen_by(state:, time:, viewer: other.0, of: newcomer.1),
     watched(to: newcomer.0, by: other.0),
+    seen_by(state:, time:, viewer: other.0, of: newcomer.1),
   ]
 }
 
