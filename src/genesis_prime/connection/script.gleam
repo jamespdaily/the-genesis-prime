@@ -7,7 +7,7 @@
 //// ```
 //// the shell, after the handshake:   scripts() ─▶ Issued(ordinal, script)
 //// each input the shell takes:       script.clock(Input) ─▶ the input's Now, once
-////                                   script.node_monotonic_ms(Now) ─▶ the node's own time
+////                                   script.node_monotonic_ms(Now) ─▶ the node's time
 //// StartTimer(id, ms):               script.schedule(its subject, id, reference, ms)
 ////                                     ─▶ Cancel
 //// ```
@@ -16,7 +16,8 @@
 ////   the operating system's strong random source, the clock is the node's
 ////   (`runtime.now`), the node's own time for an input is that `Now`'s own
 ////   monotonic reading (the one read serves both, so an ask's deadline the
-////   rule writes and the deadline the shell counts are one number) and a timer is the operating system's (`process.send_after`).
+////   rule writes and the deadline the shell counts are one number) and a
+////   timer is the operating system's (`process.send_after`).
 ////   Its ordinal is a number that grows with each call, so the order of
 ////   accepts is recorded and never inferred from times.
 //// - **A replay's script** (genesis_prime/wire_replay): the seed is the
@@ -29,8 +30,8 @@
 ////   a read takes the `Now` of the recorded read line in which its last byte
 ////   falls; any other input takes the next recorded input, and one of another
 ////   kind than the recording's next is an ordering failure of the replay.
-//// - **A replay's node time** is a read of the node's own monotonic clock, since
-////   the recording's monotonic times are of another run.
+//// - **A replay's node time** is a read of the node's own monotonic clock,
+////   since the recording's monotonic times are of another run.
 //// - **A script is used once.** `Scripts` is called once for each accepted
 ////   connection. A listener that restarts keeps its `Scripts` (the value is
 ////   made before the tree, not by the listener), so a connection accepted after
@@ -83,9 +84,11 @@ pub type NextRead =
 
 /// The node's own monotonic time, in milliseconds, at the input whose `Now` the
 /// clock has just given: what the shell counts an ask's wait from. The server's
-/// is that `Now`'s own monotonic reading, so no second read of the clock can
-/// differ from it; a replay's reads the node's clock, since a recording's
-/// monotonic times are of another run.
+/// is that `Now`'s own monotonic reading, so it is exact: no second read of the
+/// clock can differ from it. A replay's reads the node's clock, since a
+/// recording's monotonic times are of another run, and it reads it after the
+/// rule's step for the input has run, so a replay counts an ask's wait from a
+/// little after the input.
 pub type NodeClock =
   fn(Now) -> Int
 

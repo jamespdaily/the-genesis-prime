@@ -94,7 +94,7 @@ fn fixed(now: Now) -> Scripts {
       script: Script(
         seed: counting_seed(),
         clock: fn(_input) { now },
-        node_monotonic_ms: fn(now) { now.monotonic_ms },
+        node_monotonic_ms: fn(_now) { runtime.monotonic_ms() },
         schedule: fn(_subject, _timer, _reference, _after_ms) { fn() { Nil } },
         next_read: fn() { None },
       ),

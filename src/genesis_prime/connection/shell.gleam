@@ -362,8 +362,8 @@ type Kept {
 
 /// A connection that has taken its socket: the socket, its script, the rule's
 /// state, the recording files when there are any, the `Now` of the input whose
-/// step is being carried out and the node's own monotonic time for it (the two an
-/// ask's wait counts its deadline from), whether it is
+/// step is being carried out and the node's own monotonic time for it (the two
+/// an ask's wait counts its deadline from), whether it is
 /// taking what the socket delivers or putting one recorded read together, the
 /// asks kept by their tags, the monitor of each watch the rule has open, each
 /// timer it has running and the stop deadline of a stop that arrived during an
@@ -1355,8 +1355,9 @@ fn make_ask(
 /// the `Now` of the input whose step made it (the ask's deadline less that
 /// input's monotonic time), counted from the node's time for the input
 /// (`taken_ms`). In the server the two clocks are one reading and this is the
-/// ask's own deadline; in a replay the input's `Now` comes from the recording, whose
-/// monotonic times are of another run, so only the time allowed carries over.
+/// ask's own deadline; in a replay the input's `Now` comes from the recording,
+/// whose monotonic times are of another run, so only the time allowed carries
+/// over.
 fn real_deadline_ms(
   running running: Running(state, request),
   ask ask: Ask(request),
