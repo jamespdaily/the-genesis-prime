@@ -56,6 +56,7 @@ import genesis_prime/hand_off.{
   AlreadyHeld, Holder, Kept, NoHolder, SessionKey, Take, Taken,
 }
 import genesis_prime/login/guid
+import genesis_prime/message/account_entitlements.{AccountEntitlements}
 import genesis_prime/message/camp_countdown
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
@@ -74,6 +75,7 @@ import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/fall_value.{FallValue}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
 import genesis_prime/message/float32
+import genesis_prime/message/held_entitlement.{HeldEntitlement}
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
@@ -93,6 +95,7 @@ import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world
 import genesis_prime/message/player_path.{PlayerPath}
+import genesis_prime/message/premium_tier.{PremiumTier}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
@@ -454,9 +457,22 @@ pub fn message_0x07e0_in_the_same_read_as_0x058f_waits_until_the_hand_off_answer
 pub fn the_stores_rows_become_0x0117_under_the_session_key_with_no_characters_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) = listed(characters: [])
-  let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, body:)] =
-    heard(taken, keyed())
-    as "opcode.0x36 and opcode.0x117 inside 0x3DC under the session key"
+  let assert [
+    Frame(message_id: 0x097F, body: tier),
+    Frame(message_id: 0x0968, body: entitlements),
+    Frame(message_id: 0x0036, ..),
+    Frame(message_id: 0x0117, body:),
+  ] = heard(taken, keyed())
+    as "opcode.0x97f, opcode.0x968, opcode.0x36 and opcode.0x117 inside 0x3DC under the session key"
+  assert premium_tier.decode(tier) == Ok(PremiumTier(tier: 1))
+    as "the premium tier first, so 0x968's refresh keeps the player Signature (lua.AccountItemLib.GetPremiumTier.users)"
+  assert account_entitlements.decode(entitlements)
+    == Ok(
+      AccountEntitlements(entitlements: [
+        HeldEntitlement(entitlement_id: 12, count: 1),
+      ]),
+    )
+    as "the settings' 3 slots are the client's 2 and an entitlement 12 of 1 (lua.CharacterSelection.OnLoadFromCharacter)"
   assert character_list.decode(body)
     == Ok(CharacterList(
       server_time: filetime,
@@ -488,8 +504,12 @@ pub fn the_stores_rows_become_one_entry_each_in_the_order_given_with_every_field
     fn(row) { row.gender < 2 },
   )
     as "no CharacterCustomization row is for gender 2 or 3 (character_tables_test: the client's table has rows for genders 0 and 1 only), so a character of gender 2 or 3 has no body visual"
-  let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, body:)] =
-    heard(taken, keyed())
+  let assert [
+    Frame(message_id: 0x097F, ..),
+    Frame(message_id: 0x0968, ..),
+    Frame(message_id: 0x0036, ..),
+    Frame(message_id: 0x0117, body:),
+  ] = heard(taken, keyed())
   let assert Ok(sent) = character_list.decode(body)
   assert sent.characters
     == [
@@ -746,8 +766,12 @@ pub fn frames_after_the_one_that_asked_wait_for_its_answer_and_are_then_taken_in
       taken:,
       outcome: step.Answer(FromStore(ForSelect(Listed(characters: [])))),
     )
-  let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, ..)] =
-    heard(taken, keyed())
+  let assert [
+    Frame(message_id: 0x097F, ..),
+    Frame(message_id: 0x0968, ..),
+    Frame(message_id: 0x0036, ..),
+    Frame(message_id: 0x0117, ..),
+  ] = heard(taken, keyed())
     as "the list first"
   assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x082D))]
     as "then the frame that waited, whose inner message 0x082D is logged under its own id (opcode.0x38c)"
@@ -850,8 +874,12 @@ pub fn a_second_0x07e0_asks_the_store_again_and_sends_a_new_list_test() -> Nil {
         FromStore(ForSelect(Listed([character(id: 5, name: "Eve", seed: 1)]))),
       ),
     )
-  let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, body:)] =
-    heard(taken, keyed())
+  let assert [
+    Frame(message_id: 0x097F, ..),
+    Frame(message_id: 0x0968, ..),
+    Frame(message_id: 0x0036, ..),
+    Frame(message_id: 0x0117, body:),
+  ] = heard(taken, keyed())
   let assert Ok(sent) = character_list.decode(body)
   assert list.map(sent.characters, fn(entry) { entry.name }) == ["Eve"]
     as "the new list holds what the store gave this time"
@@ -1043,10 +1071,12 @@ pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_then_0
       ),
     )
   let assert [
+    Frame(message_id: 0x097F, ..),
+    Frame(message_id: 0x0968, ..),
     Frame(message_id: 0x0036, body: level),
     Frame(message_id: 0x0117, body: list_body),
   ] = heard(taken, keyed())
-    as "opcode.0x36 then opcode.0x117"
+    as "opcode.0x36 then opcode.0x117, after the tier and the entitlements"
   assert max_character_level.decode(level) == Ok(MaxCharacterLevel(12))
     as "opcode.0x36: the highest level of the account's characters (Eve's 12; the new character's is 1)"
   let assert Ok(sent) = character_list.decode(list_body)
@@ -3596,9 +3626,13 @@ pub fn after_0x594_a_0x07e0_is_answered_with_0x0036_and_0x0117_as_at_login_with_
         FromStore(ForSelect(Listed([character(id: 5, name: "Eve", seed: 1)]))),
       ),
     )
-  let assert [Frame(message_id: 0x0036, ..), Frame(message_id: 0x0117, body:)] =
-    heard(taken, keyed())
-    as "opcode.0x36 then opcode.0x117, as at login"
+  let assert [
+    Frame(message_id: 0x097F, ..),
+    Frame(message_id: 0x0968, ..),
+    Frame(message_id: 0x0036, ..),
+    Frame(message_id: 0x0117, body:),
+  ] = heard(taken, keyed())
+    as "opcode.0x97f, opcode.0x968, opcode.0x36 then opcode.0x117, as at login"
   let assert Ok(sent) = character_list.decode(body)
   assert list.map(sent.characters, fn(entry) { entry.name }) == ["Eve"]
 }

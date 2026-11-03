@@ -253,6 +253,35 @@ fields = [
 ]
 
 [[message]]
+id = 0x097F
+name = "premium_tier"
+direction = "server_to_client"
+evidence = "opcode.0x97f"
+summary = "the account's premium tier, which the client keeps as the tier AccountItemLib.GetPremiumTier gives from then on; sent before the entitlements, since 0x968 refreshes the tier and an unset one drops from 255 to 0 (Basic)"
+fields = [
+  { name = "tier", kind = "unsigned", bits = 5, evidence = "opcode.0x97f", named_by = "opcode.0x97f" },
+]
+
+[[message]]
+id = 0x0968
+name = "account_entitlements"
+direction = "server_to_client"
+evidence = "opcode.0x968"
+summary = "the entitlements the account holds, each with its count; character select adds the BaseCharacterSlots (12) count to its slots"
+fields = [
+  { name = "entitlements", kind = "array", count_bits = 32, element = "held_entitlement", evidence = "0x140080710", named_by = "opcode.0x968" },
+]
+
+[[record]]
+name = "held_entitlement"
+evidence = "0x140080710"
+summary = "one entitlement of the account's list: the Entitlement row's id and the count the account holds"
+fields = [
+  { name = "entitlement_id", kind = "unsigned", bits = 32, evidence = "0x140080710", named_by = "opcode.0x968" },
+  { name = "count", kind = "unsigned", bits = 32, evidence = "0x140080710", named_by = "opcode.0x968" },
+]
+
+[[message]]
 id = 0x025B
 name = "create_character"
 direction = "client_to_server"

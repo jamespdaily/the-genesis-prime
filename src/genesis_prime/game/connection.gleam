@@ -2311,6 +2311,7 @@ fn select_answered(
             filetime: now.filetime,
             realm_id: session.settings.realm_id,
             max_characters: session.settings.max_characters,
+            character_slots: session.settings.game.character_slots,
             tables: session.settings.tables,
           )
         store.Created(answer:) -> character_select.created(select, answer)

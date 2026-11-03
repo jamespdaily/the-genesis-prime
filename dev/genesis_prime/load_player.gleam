@@ -308,11 +308,13 @@ fn handed_off(auth: mug.Socket) -> game_server_handoff.GameServerHandoff {
   handed
 }
 
-/// Asks for the character list, which 0x0036 and 0x0117 answer.
+/// Asks for the character list, which 0x097F, 0x0968, 0x0036 and 0x0117
+/// answer.
 fn list_characters(game: game_client.Game) -> Nil {
   game_client.send(game:, message_id: 0x07E0, body: <<>>)
-  let assert [_level, _list] = game_client.read(game:, count: 2)
-    as "0x0036 and 0x0117 answer 0x07E0"
+  let assert [_tier, _entitlements, _level, _list] =
+    game_client.read(game:, count: 4)
+    as "0x097F, 0x0968, 0x0036 and 0x0117 answer 0x07E0"
   Nil
 }
 

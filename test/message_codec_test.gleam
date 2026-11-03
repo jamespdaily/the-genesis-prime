@@ -40,6 +40,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
     |> list.sort(string.compare)
   assert paths
     == [
+      "src/genesis_prime/message/account_entitlements.gleam",
       "src/genesis_prime/message/camp_countdown.gleam",
       "src/genesis_prime/message/camp_finished.gleam",
       "src/genesis_prime/message/camp_request.gleam",
@@ -66,6 +67,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/fell_below_floor.gleam",
       "src/genesis_prime/message/game_hello_reply.gleam",
       "src/genesis_prime/message/game_server_handoff.gleam",
+      "src/genesis_prime/message/held_entitlement.gleam",
       "src/genesis_prime/message/item_visual.gleam",
       "src/genesis_prime/message/leave_world.gleam",
       "src/genesis_prime/message/login_accepted.gleam",
@@ -115,6 +117,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/player_movement.gleam",
       "src/genesis_prime/message/player_path.gleam",
       "src/genesis_prime/message/pong.gleam",
+      "src/genesis_prime/message/premium_tier.gleam",
       "src/genesis_prime/message/realm_entry.gleam",
       "src/genesis_prime/message/realm_handoff.gleam",
       "src/genesis_prime/message/realm_list.gleam",
@@ -137,7 +140,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/world_message.gleam",
       "src/genesis_prime/message/zone_value_changed.gleam",
     ]
-    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list, the 21 messages and 5 records of character select and entering the world, the network layer's 3 messages (ping, pong and close notice), the auth server's login refusal 0x63d, the 5 modules of the named values (the disconnect reasons, the create results, the play refusals, the delete results and the rename results), the 6 messages of the player moving that the client sends (0x637, 0x63a, 0xd5, 0x63b, 0xfb and 0xfc) with the union of the 30 movement commands, the 29 records its kinds read (kind 2 is the unit position command of 0x262) and the 2 records of their lists of vectors, the union of the two movement commands the server writes in 0x262 (kinds 2 and 14), and the client message module that decodes every message the client sends by its number"
+    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list, the 21 messages and 5 records of character select and entering the world, the network layer's 3 messages (ping, pong and close notice), the auth server's login refusal 0x63d, the 5 modules of the named values (the disconnect reasons, the create results, the play refusals, the delete results and the rename results), the 6 messages of the player moving that the client sends (0x637, 0x63a, 0xd5, 0x63b, 0xfb and 0xfc) with the union of the 30 movement commands, the 29 records its kinds read (kind 2 is the unit position command of 0x262) and the 2 records of their lists of vectors, the union of the two movement commands the server writes in 0x262 (kinds 2 and 14), the account's premium tier 0x97f and entitlements 0x968 with the record of one held entitlement, and the client message module that decodes every message the client sends by its number"
 }
 
 pub fn the_committed_codec_is_what_the_schema_generates_test() -> Nil {

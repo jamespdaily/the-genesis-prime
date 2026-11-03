@@ -19,7 +19,7 @@
 //// world entry refuses a play        ─▶ play_refused(..)
 ////                                                                   ─▶ Send(0x0162), Ask(ListCharacters(account))
 //// the store's answer                  ─▶ listed(..), created(..), deleted(..) or renamed(..)
-////                                                                   ─▶ Send(0x0036), Send(0x0117)
+////                                                                   ─▶ Send(0x097F), Send(0x0968), Send(0x0036), Send(0x0117)
 ////                                                                      or Send(0x00DC), Send(0x00E6) or Send(0x014B)
 //// ```
 ////
@@ -35,6 +35,19 @@
 ////   bone values as sent. Its worn visuals and costume are empty or 0: the
 ////   client never builds worn visuals from a creation row, and gear is the
 ////   inventory's (0x14004adb0, 0x140027380).
+//// - **The slots.** The client counts its own slots: 2 from its reward
+////   property, plus the count of the account's BaseCharacterSlots
+////   entitlement (12) when it holds one
+////   (lua.CharacterSelection.OnLoadFromCharacter). So the list is preceded by
+////   0x097F with the premium tier 1 and 0x0968 with the one entry
+////   (12, `character_slots` - 2), a count of 0 at 2 slots. The tier goes first:
+////   0x0968 makes the client refresh its tier, which drops from 255 to 0
+////   (Basic) unless 0x097F set it, and tier 1 keeps the Signature the client
+////   shows today (opcode.0x968, opcode.0x97f,
+////   lua.AccountItemLib.GetPremiumTier.users). The server never reads the
+////   gmode the client sends in 0x0592, so it sends the same to a client of the
+////   VIP system, whose base is 3: that client offers one slot more than the
+////   refusal of a create allows.
 //// - **What the client does with it.** It shows each character's name, level,
 ////   the Dominion frame for faction 166 and the Exile frame for any other, the
 ////   class icon for class 1 to 20 and the path icon for path 0 to 3, and
@@ -88,6 +101,8 @@ import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
 import genesis_prime/game/character_name
 import genesis_prime/game/start_place
+import genesis_prime/game_settings
+import genesis_prime/message/account_entitlements.{AccountEntitlements}
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{
   type CharacterListEntry, CharacterListEntry,
@@ -101,9 +116,11 @@ import genesis_prime/message/delete_character.{type DeleteCharacter}
 import genesis_prime/message/delete_character_result.{DeleteCharacterResult}
 import genesis_prime/message/delete_result.{type DeleteResult}
 import genesis_prime/message/float32
+import genesis_prime/message/held_entitlement.{HeldEntitlement}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
+import genesis_prime/message/premium_tier.{PremiumTier}
 import genesis_prime/message/rename_character.{type RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result.{type RenameResult}
@@ -123,6 +140,16 @@ import gleam/result
 /// further back (lua.CharacterSelection.OnLoadFromCharacter.preselect,
 /// 0x1401e83a0: negative for a past time).
 const just_now_days = -0.000001
+
+/// The premium tier sent to the client: 1, which the client shows as Signature
+/// under the Hybrid system, as it shows its start-up tier 255
+/// (lua.AccountItemLib.GetPremiumTier.users).
+const signature_tier = 1
+
+/// The Entitlement row of BaseCharacterSlots, whose count character select
+/// adds to its slots (Entitlement.tbl row 12;
+/// lua.CharacterSelection.OnLoadFromCharacter).
+const base_character_slots_entitlement_id = 12
 
 /// The client's messages character select takes, in the client's wrapper
 /// (genesis_prime/game/routing's table says which id is which).
@@ -360,8 +387,10 @@ pub fn rename_requested(
   ])
 }
 
-/// The store's answer to the ask for the characters: sends 0x0036 and 0x0117
-/// with one entry per character, in the order given. With no list asked for,
+/// The store's answer to the ask for the characters: sends 0x097F and 0x0968,
+/// which give the client `character_slots` slots as its sum of 2 and an
+/// entitlement count, then 0x0036 and 0x0117 with one entry per character, in
+/// the order given. With no list asked for,
 /// it is none this module asked for and gives an `Error`. `filetime` is the
 /// system time of the input as a Windows FILETIME (genesis_prime/step), the
 /// server's time the client keeps the difference from.
@@ -371,19 +400,23 @@ pub fn listed(
   filetime filetime: Int,
   realm_id realm_id: Int,
   max_characters max_characters: Int,
+  character_slots character_slots: Int,
   tables tables: table_store.Tables,
 ) -> Result(#(State, List(Effect)), Nil) {
   case state {
     Listing(selected:) ->
       Ok(#(
         Resting,
-        list_effects(
-          characters:,
-          selected:,
-          filetime:,
-          realm_id:,
-          max_characters:,
-          tables:,
+        list.append(
+          slot_effects(character_slots:),
+          list_effects(
+            characters:,
+            selected:,
+            filetime:,
+            realm_id:,
+            max_characters:,
+            tables:,
+          ),
         ),
       ))
     Resting | Creating | Deleting(..) | Renaming(..) -> Error(Nil)
@@ -530,6 +563,34 @@ fn rename_result(
     ))
     as "an id of 64 bits, a result of 6 bits and a name the client or the store gave fit their fields"
   Send(frame: Frame(message_id: rename_character_result.message_id, body:))
+}
+
+/// 0x097F with the premium tier and 0x0968 with the BaseCharacterSlots
+/// entitlement that raises the client's own 2 slots to `character_slots`. The
+/// entry is sent at 2 slots too, with a count of 0, which the client counts as
+/// absent (0x1404e4960): 0x0968 sets only the entries it lists, so a count
+/// the client still holds from an earlier list is overwritten
+/// (SetAccountEntitlement 0x1400062c0).
+fn slot_effects(character_slots character_slots: Int) -> List(Effect) {
+  let assert Ok(tier) = premium_tier.encode(PremiumTier(tier: signature_tier))
+    as "a tier of 1 fits its 5 bits"
+  let assert Ok(entitlements) =
+    account_entitlements.encode(
+      AccountEntitlements(entitlements: [
+        HeldEntitlement(
+          entitlement_id: base_character_slots_entitlement_id,
+          count: character_slots - game_settings.client_base_character_slots,
+        ),
+      ]),
+    )
+    as "an entitlement id and a count of the settings' range fit their 32 bits"
+  [
+    Send(frame: Frame(message_id: premium_tier.message_id, body: tier)),
+    Send(frame: Frame(
+      message_id: account_entitlements.message_id,
+      body: entitlements,
+    )),
+  ]
 }
 
 /// 0x0036 with the highest level and 0x0117 with the list.
