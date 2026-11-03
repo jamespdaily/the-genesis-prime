@@ -11,7 +11,8 @@ in and one reply line out, so a later `ask` from any shell costs one request's t
 runs on one project (GENESIS_GHIDRA_PROJECT_DIR) and holds an flock on a lock file beside its
 socket for its whole life, with a record of itself in the file. A second holder on that project is
 refused, naming the running one; the kernel frees the lock when the holder dies however it dies,
-and the next start clears what it left, ending a query process the dead holder had not. It ends on
+and the next start, or a `stop` with no holder, clears what it left, ending a query process the dead
+holder had not. It ends on
 `stop`, or after GENESIS_QUERY_IDLE_S seconds (default 1800) with no connection and no request,
 and removes its socket and lock. Scripts that make many requests (decompiled.py) reach the same
 holder through open_client, so every opener of the project goes through the one lock. Its log is
@@ -22,6 +23,9 @@ reply, and the replies after one are still printed. A query process that ends or
 ends the holder and the command, which says why on stderr; the next `ask` starts a new one.
 The requests are those ghidra_query.py documents. The settings are the ones ghidra_env reads and
 GENESIS_PYGHIDRA_PYTHON, from ~/.genesis-prime/env.sh.
+
+It opens only a project that exists. The project's first import is a start of ghidra_query.py by
+hand with `--seed`, naming a file seed.py writes; it imports, seeds, analyses and saves once.
 """
 
 import argparse

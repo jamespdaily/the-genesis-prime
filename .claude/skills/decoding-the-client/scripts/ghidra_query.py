@@ -76,6 +76,8 @@ Kinds and their arguments (addresses are 0x-prefixed lower-case hex):
                 request, "calls out at <address>".
     max_steps   instructions before the run fails; default 100000, at most 100000000.
     Any load or store outside mapped memory fails the request as unmapped memory.
+    Ghidra's p-code wraps an out-of-range float-to-integer conversion where the CPU gives
+    0x80000000, so a result near that overflow is checked against the CPU's rule.
 """
 
 import argparse

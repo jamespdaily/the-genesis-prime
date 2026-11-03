@@ -24,8 +24,10 @@ repository or in any git working tree is refused.
 
 Usage, with ~/.genesis-prime/env.sh read. It reaches the query process through query.py's holder, which
 it starts when none runs, and which stays up after it (`query.py stop` ends it):
-    python3 -I decompiled.py check      exit 0 when current; 1 and the changes when stale or no copy
-    python3 -I decompiled.py refresh    a whole client takes about 7 minutes; failures are listed, exit 0
+    python3 -I decompiled.py check      about 10 seconds; exit 0 when current; 1 and the changes when
+                                        stale or no copy
+    python3 -I decompiled.py refresh    a whole client takes about 7 minutes, a few renames seconds;
+                                        failures are listed, exit 0
 """
 
 import argparse

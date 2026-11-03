@@ -1,7 +1,10 @@
 """The pinned parts of the client query process, and where they live.
 
 Every path comes from the environment, so nothing machine-specific is in the
-repository. A wrong Ghidra version stops the process before it opens anything.
+repository: the settings live in ~/.genesis-prime/env.sh, and ./setup-check
+names any that are missing. A wrong Ghidra version stops the process before it
+opens anything. Ghidra refuses a project path with a folder whose name starts
+with a dot.
 """
 
 import hashlib

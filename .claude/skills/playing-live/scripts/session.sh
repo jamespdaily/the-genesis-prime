@@ -245,7 +245,7 @@ stop_server() {
 }
 
 # The listeners on the server's ports, printed; fails when there are none.
-ports_held() { lsof -nP -iTCP:6600,23115,24000,25000 -sTCP:LISTEN; }
+ports_held() { lsof -nP -iTCP:6600,23115,24000 -sTCP:LISTEN; }
 
 # Closes the client that client.sh start recorded and notes in the folder how it was found: closed,
 # or gone when it was no longer running (client.sh stop says "was not running"). A recovery leaves
