@@ -7,9 +7,8 @@
 ////
 //// - Novice (characterCreationStartEnum 4, PreTutorial), every race and
 ////   faction: row 51596, World 3460 (Map\NewPlayerExperience, the training
-////   simulation of World.3460). No table names it: it is the row of the
-////   simulation's first area that stands nearest the first quest circle and
-////   faces it (Quest2.10513, a guess).
+////   simulation of World.3460). No table names it: it stands 15.7 units from
+////   the first quest circle (row 51735) and faces it (Quest2.10513, a guess).
 //// - Veteran (3, Nexus): the row the last quest of that simulation, 'Bon
 ////   Voyage', links in its completion text for each landing. Exile Human and
 ////   Granok 42074 (Landing Site, Northern Wilds); Aurin and Mordesh 41641
@@ -18,11 +17,14 @@
 ////   (Stormcaller Landing, Levian Bay) and 8223 (Mondo's Beachhead, Crimson
 ////   Isle) (Quest2.10530, Quest2.10530.links, WorldLocation2.8223). The client
 ////   does not say which Dominion races go to which landing; that is a retail
-////   record (wildstaronline-archive, the pages "Destiny": "The Chua and the
+////   record (wildstaronline-archive, read through the Wayback Machine, 2020
+////   snapshots; the page "Destiny",
+////   https://wildstaronline-archive.fandom.com/wiki/Destiny: "The Chua and the
 ////   Draken are expected to go to Crimson Isle and the Cassian and Mechari are
-////   generally sent to Levian Bay", and "Levian Bay": "default starter zone for
-////   Cassian and Mechari players"): Cassian and Mechari 42148, Draken and Chua
-////   8223.
+////   generally sent to Levian Bay", and the page "Levian Bay",
+////   https://wildstaronline-archive.fandom.com/wiki/Levian_Bay: "default
+////   starter zone for Cassian and Mechari players"): Cassian and Mechari
+////   42148, Draken and Chua 8223.
 ////
 //// Level 50 (5) has no place: every Level 50 CharacterCreation row costs
 //// account currency, which a create refuses first (`CostsCurrency`).
@@ -75,10 +77,10 @@ const negative_pole = -0.9999899864196777
 /// below -0.99999), the roll 0 and the yaw atan2(-m02, m00).
 ///
 /// The client computes in 32-bit floats, so each angle is the nearest 32-bit
-/// float, which is also what a save and a load give back. The arithmetic is
-/// done in the VM's own floats and gives the client's value to the bit, the
-/// sign of a zero included (a pitch of -0.0 for a turn about y alone), for
-/// every start row.
+/// float, which is also what a save and a load give back, and m21 is compared
+/// with `pole` as a 32-bit float. The arithmetic is done in the VM's own floats
+/// and gives the client's value to the bit, the sign of a zero included (a
+/// pitch of -0.0 for a turn about y alone), for each of the five start rows.
 pub fn facing_of_quaternion(
   x x: Float,
   y y: Float,
@@ -93,13 +95,14 @@ pub fn facing_of_quaternion(
   let m21 = 2.0 *. { y *. z -. w *. x }
   let m22 = 1.0 -. 2.0 *. x *. x -. 2.0 *. y *. y
   let quarter_turn = maths.pi() /. 2.0
-  let #(yaw, pitch, roll) = case m21 {
-    _ if m21 <. negative_pole -> #(
+  let held_m21 = float32.rounded(m21)
+  let #(yaw, pitch, roll) = case held_m21 {
+    _ if held_m21 <. negative_pole -> #(
       maths.atan2(float.negate(m02), m00),
       quarter_turn,
       0.0,
     )
-    _ if m21 >. pole -> #(
+    _ if held_m21 >. pole -> #(
       maths.atan2(float.negate(m02), m00),
       float.negate(quarter_turn),
       0.0,
@@ -292,8 +295,8 @@ const starts = [
 
 /// The place a character of this faction and race starts at for a
 /// CharacterCreation row's start, from the client's WorldLocation2 row: its
-/// world, zone, position and facing. `Error(Nil)` for a start, race or faction with no row above, and for a row
-/// in world 0.
+/// world, zone, position and facing. `Error(Nil)` for a start, race or faction
+/// with no row above, and for a row in world 0.
 pub fn of(
   tables tables: table_store.Tables,
   faction_id faction_id: Int,

@@ -35,6 +35,7 @@ import genesis_prime/table/id.{RaceId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/world_location2
 import gleam/erlang/reference
+import gleam/float
 import gleam/int
 import gleam/list
 import owned_test
@@ -534,6 +535,33 @@ pub fn a_quaternion_with_the_matrix_at_the_poles_gives_pitch_of_a_quarter_turn_r
     roll: 0.0,
     because: "0x1401b2ed0: m21 = -0.9999997 is below -0.99999, so pitch is pi/2, not 1.57",
   )
+}
+
+pub fn the_pole_threshold_is_compared_with_the_matrix_entry_as_the_32_bit_float_the_client_holds_test() -> Nil {
+  use <- owned_test.run(5000)
+  // 0x1401b2ed0 compares a 32-bit m21 with -0.99999 (0xbf7fff58, as a 32-bit
+  // float -0.9999899864196777). These turns about x have m21 = -0.99998999642
+  // and its mirror, 1e-8 beyond the threshold as 64-bit floats and within half a
+  // 32-bit step (3e-8) of it, so as 32-bit floats m21 equals the threshold,
+  // which is not beyond it: the pitch is asin(-m21), +-1.5663, not +-pi/2.
+  let below =
+    start_place.facing_of_quaternion(
+      x: 0.7055235909303883,
+      y: 0.0,
+      z: 0.0,
+      w: 0.7086864346385432,
+    )
+  let above =
+    start_place.facing_of_quaternion(
+      x: -0.7055235909303883,
+      y: 0.0,
+      z: 0.0,
+      w: 0.7086864346385432,
+    )
+  assert float.absolute_value(below.pitch -. 1.5663232) <. 1.0e-4
+    as "0x1401b2ed0: a 32-bit m21 equal to -0.99999 is not below it, so the pitch is asin(-m21), 1.5663, not pi/2"
+  assert float.absolute_value(above.pitch +. 1.5663232) <. 1.0e-4
+    as "0x1401b2ed0: a 32-bit m21 equal to 0.99999 is not above it, so the pitch is asin(-m21), -1.5663, not -pi/2"
 }
 
 pub fn each_start_rows_facing_gives_the_yaw_pitch_and_roll_the_client_gives_to_the_bit_test() -> Nil {
