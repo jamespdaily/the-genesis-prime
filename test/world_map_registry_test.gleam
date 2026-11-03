@@ -11,7 +11,7 @@
 ////   map that is not running as that run (or Maps not running) and `NoReply`
 ////   for a Maps that gives no answer by the deadline, and `ask_run` sends only
 ////   to the run `find` finds: a map not running is `Error(Nil)`, and a Maps
-////   that gives no answer is left to time out and never `NotRunning`.
+////   that gives no answer is `NoReplyInTime` and never `NotRunning`.
 //// - The map's doc comment (`genesis_prime/world_map/map`): a player's
 ////   connection is watched, and its end removes the player.
 //// - OTP's supervisor: a child exits with `shutdown` when told to, and a
@@ -507,6 +507,6 @@ pub fn an_ask_of_a_run_when_maps_does_not_answer_in_time_is_sent_nowhere_and_lef
       deadline_ms: ask_support.monotonic_ms() + 50,
       reply: fn(_) { Nil },
     )
-    == Ok(service.ToService(process.self()))
-    as "Maps gave no answer, so the ask is not NotRunning, which would let a live map keep a stale unit: the shell waits on Maps for a deadline that has passed and gives its rule NoAnswerInTime"
+    == Ok(service.NoReplyInTime)
+    as "Maps gave no answer, so the ask is not NotRunning, which would let a live map keep a stale unit: the directory says so, and the shell gives its rule NoAnswerInTime"
 }

@@ -37,6 +37,11 @@ pub type Sent {
   /// it, so no work goes on for an asker that gave up, and no answer comes
   /// late.
   ToWorker(pid: Pid)
+  /// Nothing was sent: the lookup that finds the process to ask got no reply
+  /// by the ask's deadline, so whether the process runs is not known. The
+  /// asker's shell gives its rule `NoAnswerInTime` at once, never
+  /// `NotRunning`, which says the process is not there.
+  NoReplyInTime
 }
 
 /// Ends the worker an ask went to, so no work goes on for an asker that gave
@@ -44,7 +49,7 @@ pub type Sent {
 pub fn end_worker(sent: Sent) -> Nil {
   case sent {
     ToWorker(pid:) -> process.send_abnormal_exit(pid, runtime.Shutdown)
-    ToService(..) -> Nil
+    ToService(..) | NoReplyInTime -> Nil
   }
 }
 

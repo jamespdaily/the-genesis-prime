@@ -35,9 +35,9 @@
 ////   itself, and `NoReply` when it gave no answer by the deadline. A leave's
 ////   ask (`ask_run`) tells them apart: a map that is not running holds no
 ////   player, so the asker goes on (`NotRunning`); a Maps that did not answer
-////   may have a live map holding the player, so the ask is left to time out
-////   (`NoAnswerInTime`) and the asker's connection ends, which drops the player
-////   by the map's watch on it.
+////   may have a live map holding the player, so the directory says no reply
+////   came (`NoReplyInTime`), the asker's rule gets `NoAnswerInTime` and its
+////   connection ends, which drops the player by the map's watch on it.
 //// - **Incarnations.** Each start gets a new incarnation, unique in the
 ////   node's life, and the map answers it with every `Joined`; `find` takes
 ////   it, so a joiner watches the run that holds its player, and a watch on a
@@ -66,7 +66,7 @@
 ////   `NoAnswerInTime`, a watch's end is `WatchEnded`, each ending the
 ////   connection), so the reply goes with it.
 
-import genesis_prime/service.{type Call, type Sent, ToService}
+import genesis_prime/service.{type Call, type Sent, NoReplyInTime}
 import genesis_prime/step/runtime
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
@@ -218,9 +218,9 @@ pub fn find(
 /// run `find` finds, which is never started, and its answer goes to `reply`.
 /// `Error(Nil)` when the map is not running (the asker's shell gives its rule
 /// `NotRunning`). When Maps gives no answer by the deadline the result is
-/// `Ok(ToService(Maps))` with nothing sent, so the asker's shell waits out a
-/// deadline that has passed and gives its rule `NoAnswerInTime`, never
-/// `NotRunning`: a live map is never taken for an absent one.
+/// `Ok(NoReplyInTime)` with nothing sent, and the asker's shell gives its rule
+/// `NoAnswerInTime` at once, never `NotRunning`: a live map is never taken for
+/// an absent one.
 pub fn ask_run(
   maps maps: Name(Message),
   map map: MapId,
@@ -232,7 +232,7 @@ pub fn ask_run(
   case find(maps:, map:, incarnation:, deadline_ms:) {
     Ok(found) -> service.call_subject(found.subject, message, reply)
     Error(NotFound) -> Error(Nil)
-    Error(NoReply) -> process.named(maps) |> result.map(ToService)
+    Error(NoReply) -> Ok(NoReplyInTime)
   }
 }
 

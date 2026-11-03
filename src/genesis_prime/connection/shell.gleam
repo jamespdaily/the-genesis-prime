@@ -100,6 +100,7 @@
 //// ```
 //// directory(request, the ask's deadline on the node's clock, reply)
 ////   Error(Nil)              ─▶ Answered(ask, NotRunning), nothing sent
+////   Ok(NoReplyInTime)       ─▶ Answered(ask, NoAnswerInTime), nothing sent
 ////   Ok(ToService(pid))      ─▶ monitor pid, wait until the ask's deadline
 ////   Ok(ToWorker(pid))       ─▶ monitor pid, wait until the ask's deadline
 //// waiting:
@@ -1212,8 +1213,22 @@ fn make_ask(
         running:,
         event: OwnEvent(Answered(ask: ask.ask, outcome: NotRunning)),
       )
-    Ok(sent) ->
-      wait_for_answer(connection:, running:, ask:, tag:, sent:, deadline_ms:)
+    Ok(service.NoReplyInTime) ->
+      take_next(
+        connection:,
+        running:,
+        event: OwnEvent(Answered(ask: ask.ask, outcome: NoAnswerInTime)),
+      )
+    Ok(service.ToService(pid:) as sent) | Ok(service.ToWorker(pid:) as sent) ->
+      wait_for_answer(
+        connection:,
+        running:,
+        ask:,
+        tag:,
+        sent:,
+        pid:,
+        deadline_ms:,
+      )
   }
 }
 
@@ -1241,12 +1256,13 @@ fn wait_for_answer(
   ask ask: Ask(request),
   tag tag: Reference,
   sent sent: Sent,
+  pid pid: Pid,
   deadline_ms deadline_ms: Int,
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
 ) {
-  let monitor = process.monitor(sent.pid)
+  let monitor = process.monitor(pid)
   let #(waited, kept) =
     await_answer(
       answers: connection.answers,
