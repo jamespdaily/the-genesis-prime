@@ -258,6 +258,19 @@
 ////   map nothing. A viewer that has just been `Unwatched`, or gone, may still be
 ////   sent one: a send to a process that has ended is dropped, and one for a unit
 ////   the viewer does not show is dropped by it.
+//// - **Chat** is a feature of its own (genesis_prime/game/chat): the player's
+////   `Entered` keeps its chat, the routing table sends 0x1c3 and 0x1d4 to it from
+////   inside 0x038C with the player in the world, and 0xF2 and 0x63A give it the
+////   WorldZone id the client reports. The rule turns its effects into writes,
+////   tells (`TellChat`, to a viewer's `Connection`, to a `ZoneChannel` and to a
+////   whisper's `CharacterNamed`), the watch on a whisper's target and the
+////   `JoinGroup` and `LeaveGroup` of the player's groups. What other
+////   connections tell it (`SentByChat`) is taken by the chat with the player in
+////   the world: a whisper that finds none is answered `NotHeard`, and any other
+////   tell is dropped. The player joins its groups as the entry burst is written
+////   and leaves them in the step that starts the camp's leave, so a new entry
+////   joins again (genesis_prime/game/chat has the sequences, the refusals and
+////   the failure table).
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
@@ -286,7 +299,8 @@ import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
   AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
   Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Inside,
-  Otherwise, SentByMap, SentByPeer, SentBySessions, Settled, TellMoved, TellPeer,
+  Otherwise, SentByChat, SentByMap, SentByPeer, SentBySessions, Settled,
+  TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -294,6 +308,8 @@ import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
 import genesis_prime/connection/hello
 import genesis_prime/game/camp
 import genesis_prime/game/character_select
+import genesis_prime/game/chat
+import genesis_prime/game/chat_tell
 import genesis_prime/game/movement
 import genesis_prime/game/routing
 import genesis_prime/game/start_place.{type Place}
@@ -352,6 +368,9 @@ pub type Settings {
     /// The game's own settings: the characters an account may have and the
     /// camp's countdown (genesis_prime/game_settings).
     game: GameSettings,
+    /// The realm's name, the one a whisper's realm name must equal, compared
+    /// without case, for the whisper to be for this realm (opcode.0x1d4).
+    realm_name: String,
     /// The client's game tables, which a create request and the list's body
     /// visuals are read from.
     tables: table_store.Tables,
@@ -387,6 +406,9 @@ type Session {
     /// The kinds of movement command already named in a log line as not
     /// relayed to other players on this connection.
     unrelayed_logged: Set(Int),
+    /// The ids of the chat channel types already logged as unhandled on this
+    /// connection (`chat.Unhandled`): once for each.
+    unhandled_channels_logged: Set(Int),
     status: Status,
   )
 }
@@ -527,6 +549,7 @@ pub fn step(
             cipher: cipher.base(),
             unhandled_logged: set.new(),
             unrelayed_logged: set.new(),
+            unhandled_channels_logged: set.new(),
             status: AwaitingHelloReply,
           )),
           Effects([OwnEffect(Write(hello_bytes(settings)))]),
@@ -554,6 +577,8 @@ fn connected(
       settled(handled: map_sent(session:, now:, message:), now:)
     OwnEvent(Woken(message: SentByPeer(news:))) ->
       settled(handled: peer_sent(session:, news:), now:)
+    OwnEvent(Woken(message: SentByChat(tell:))) ->
+      settled(handled: chat_sent(session:, now:, tell:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
@@ -840,7 +865,7 @@ fn routed(
       select_message(session:, now:, inner:, message:)
     Ok(routing.WorldEntry) -> play_requested(session:, now:, inner:)
     Ok(routing.WorldMessage) -> world_carried(session:, now:, inner:)
-    Ok(routing.Movement(..)) | Ok(routing.Camp(..)) ->
+    Ok(routing.Movement(..)) | Ok(routing.Camp(..)) | Ok(routing.Chat(..)) ->
       misrouted(session:, now:, inner:)
     Error(Nil) ->
       case stage {
@@ -927,7 +952,7 @@ fn movement_message(
   message message: movement.Message,
 ) -> client_connection.Handled(Session) {
   case movement.take(entered.movement, message, inner.body) {
-    Ok(movement.Kept(state:)) ->
+    Ok(movement.Kept(state:)) | Ok(movement.Reported(state:, ..)) ->
       Continue(moving(session:, holder:, entered:, state:), [])
     Ok(movement.Relayed(state:, place:, commands:, unrelayed:)) -> {
       let new_kinds =
@@ -1071,6 +1096,20 @@ fn camp_message(
   }
 }
 
+/// What the chat messages do, taken from inside 0x038C, in the world
+/// (genesis_prime/game/chat): the line or whisper is answered, told or refused,
+/// the effects are carried out, and a refusal ends the connection.
+fn chat_message(
+  session _session: Session,
+  now _now: Now,
+  holder _holder: Holder,
+  entered _entered: world_entry.Entered,
+  inner _inner: Frame,
+  message _message: chat.Message,
+) -> client_connection.Handled(Session) {
+  panic as "built in the say and whisper steps"
+}
+
 /// 0x0594 with the bit set and reason 0: the client leaves the world and
 /// starts character select on the same connection (opcode.0x594).
 fn leave_world_frame() -> Frame {
@@ -1154,6 +1193,15 @@ fn world_carried(
                   )
                 Ok(routing.Camp(message:)) ->
                   camp_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    inner: whole,
+                    message:,
+                  )
+                Ok(routing.Chat(message:)) ->
+                  chat_message(
                     session:,
                     now:,
                     holder:,
@@ -1686,6 +1734,18 @@ fn map_sent(
       Continue(session, [to_client(session, unit_removed_frame(unit_id:))])
     }
   }
+}
+
+/// What another player's connection told this one about chat
+/// (genesis_prime/game/chat_tell): taken with the player in the world, and by
+/// `chat.told`. A whisper that finds no player in the world is answered
+/// `NotHeard`; any other tell is dropped.
+fn chat_sent(
+  session _session: Session,
+  now _now: Now,
+  tell _tell: chat_tell.Tell,
+) -> client_connection.Handled(Session) {
+  panic as "built in the say, zone and whisper steps"
 }
 
 /// What another player's connection sent about the unit it owns, written while
@@ -2430,7 +2490,9 @@ fn entry_answered(
         Error(Nil) -> entry_unasked(session, now)
       }
     step.Answer(FromMap(answer)) ->
-      case world_entry.joined(entry, answer:) {
+      case
+        world_entry.joined(entry, answer:, realm_id: session.settings.realm_id)
+      {
         Ok(#(entered, effects)) ->
           in_the_world(session:, now:, holder:, entered:, effects:)
         Error(Nil) -> entry_unasked(session, now)

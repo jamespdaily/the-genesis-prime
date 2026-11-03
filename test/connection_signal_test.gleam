@@ -75,6 +75,8 @@ fn start_asking(
         | step.Store
         | step.Maps
         | step.Map(..)
+        | step.CharacterNamed(..)
+        | step.ZoneChannel(..)
         | step.Connection(..) -> Error(Nil)
       }
     },
@@ -841,6 +843,8 @@ pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is
           | step.HandOff
           | step.Store
           | step.Maps
+          | step.CharacterNamed(..)
+          | step.ZoneChannel(..)
           | step.Map(..) -> Ok(Nil)
         }
       },

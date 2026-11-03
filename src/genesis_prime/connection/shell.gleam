@@ -157,7 +157,17 @@
 ////   dropped with a warning. A tell to a `Connection` needs no watch: the
 ////   settings' `deliver` sends it through the registry, one lookup of the
 ////   group of the connection's id as any service's send makes, and a connection
-////   that is gone drops it with no line.
+////   that is gone drops it with no line. A tell to a `ZoneChannel` needs no watch
+////   either: `deliver` sends it to every member of the group. A tell to a
+////   `CharacterNamed` goes through a watch, as a tell to a map run does: the
+////   lookup finds the one connection that holds the name, and a name no
+////   connection holds ends the watch as any target no process holds.
+//// - **A group.** `JoinGroup(address)` makes the connection's process a member
+////   of the registry's group at `address` (a `CharacterNamed` or a
+////   `ZoneChannel`) and `LeaveGroup(address)` removes it
+////   (`registry.join_group`, `registry.leave_group`), each in the order of the
+////   step's effects; a connection that ends leaves its groups by itself, since
+////   the registry notices it.
 //// - **A message delivered.** Another process sends the connection's pid
 ////   `{woken, message}` (`registry.deliver`); the shell takes it between steps
 ////   as `OwnEvent(Woken(message))`, in the order it arrived among the socket's
@@ -1089,6 +1099,39 @@ fn carry_effect(
         then:,
         closing:,
       )
+    OwnEffect(step.JoinGroup(address:)) -> {
+      join_group(connection:, address:)
+      carry(connection:, running:, effects: later, then:, closing:)
+    }
+    OwnEffect(step.LeaveGroup(address:)) -> {
+      leave_group(connection:, address:)
+      carry(connection:, running:, effects: later, then:, closing:)
+    }
+  }
+}
+
+/// Makes the connection's process a member of the registry's group at
+/// `address` (`registry.join_group`); a connection with no registry in its
+/// settings has no group to join, which is a bug of the rule that asked.
+fn join_group(
+  connection connection: Connection(settings, state, message, answer, request),
+  address address: step.Address,
+) -> Nil {
+  case connection.settings.registry {
+    Some(registry) -> registry.join_group(registry:, address:)
+    None -> panic as "a rule joined a group on a connection with no registry"
+  }
+}
+
+/// Removes the connection's process from the registry's group at `address`
+/// (`registry.leave_group`).
+fn leave_group(
+  connection connection: Connection(settings, state, message, answer, request),
+  address address: step.Address,
+) -> Nil {
+  case connection.settings.registry {
+    Some(registry) -> registry.leave_group(registry:, address:)
+    None -> panic as "a rule left a group on a connection with no registry"
   }
 }
 
@@ -1126,11 +1169,16 @@ fn tell(
   request request: request,
 ) -> Nil {
   case to {
-    step.Connection(..) -> {
+    step.Connection(..) | step.ZoneChannel(..) -> {
       let _delivered = connection.settings.deliver(to, request)
       Nil
     }
-    step.Sessions | step.HandOff | step.Store | step.Maps | step.Map(..) ->
+    step.Sessions
+    | step.HandOff
+    | step.Store
+    | step.Maps
+    | step.Map(..)
+    | step.CharacterNamed(..) ->
       case watch.sender_at(watches: running.watches, address: to) {
         Ok(sender) -> sender(request)
         Error(Nil) ->

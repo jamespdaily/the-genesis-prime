@@ -3,8 +3,9 @@
 ////
 //// Message 0x00F2 (terrain_loaded), client to server: sent once while the
 //// world loads, when the terrain near the player is ready and the world has
-//// had message 0xF1. Its fields are listed in `schema.toml` with the client's
-//// evidence, and the fact file's `opcode.0xf2` names the message.
+//// had message 0xF1, with the WorldZone id the player unit stands in. Its
+//// fields are listed in `schema.toml` with the client's evidence, and the fact
+//// file's `opcode.0xf2` names the message.
 
 import genesis_prime/message/bit_stream.{type DecodeError, type EncodeError}
 import gleam/result
@@ -16,21 +17,24 @@ pub const message_id = 0x00F2
 /// `field_N` is the Nth of the body: its own doc names the fact that shows its
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type TerrainLoaded {
-  TerrainLoaded(field_1: Int)
+  TerrainLoaded(world_zone_id: Int)
 }
 
 /// The message as the bytes of its body, or the first field that cannot be
 /// written.
 pub fn encode(message: TerrainLoaded) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
-  |> bit_stream.write_unsigned("field_1", message.field_1, 15)
+  |> bit_stream.write_unsigned("world_zone_id", message.world_zone_id, 15)
   |> bit_stream.finish
 }
 
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(TerrainLoaded, DecodeError) {
   let reader = bit_stream.new_reader(body)
-  use #(field_1, reader) <- result.try(bit_stream.read_unsigned(reader, 15))
+  use #(world_zone_id, reader) <- result.try(bit_stream.read_unsigned(
+    reader,
+    15,
+  ))
   use Nil <- result.try(bit_stream.finish_reading(reader))
-  Ok(TerrainLoaded(field_1:))
+  Ok(TerrainLoaded(world_zone_id:))
 }

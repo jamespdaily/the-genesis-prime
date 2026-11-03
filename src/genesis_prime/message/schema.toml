@@ -500,9 +500,9 @@ id = 0x00F2
 name = "terrain_loaded"
 direction = "client_to_server"
 evidence = "opcode.0xf2"
-summary = "sent once while the world loads, when the terrain near the player is ready and the world has had message 0xF1"
+summary = "sent once while the world loads, when the terrain near the player is ready and the world has had message 0xF1, with the WorldZone id the player unit stands in"
 fields = [
-  { name = "field_1", kind = "unsigned", bits = 15, evidence = "0x14007eea0" },
+  { name = "world_zone_id", kind = "unsigned", bits = 15, evidence = "0x14007eea0", named_by = "opcode.0xf2" },
 ]
 
 [[message]]
@@ -689,13 +689,13 @@ fields = [
 
 [[message]]
 id = 0x063A
-name = "zone_value_changed"
+name = "world_zone_changed"
 direction = "client_to_server"
 evidence = "opcode.0x63a"
-summary = "the value of the player unit's that 0xF2 also carries, likely its zone, has changed: the old and the new value"
+summary = "the WorldZone id the player unit stands in has changed, the most specific zone the terrain names, not rolled up to a parent: the old and the new id"
 fields = [
-  { name = "old_value", kind = "unsigned", bits = 15, evidence = "opcode.0x63a", named_by = "opcode.0x63a" },
-  { name = "new_value", kind = "unsigned", bits = 15, evidence = "opcode.0x63a", named_by = "opcode.0x63a" },
+  { name = "old_world_zone_id", kind = "unsigned", bits = 15, evidence = "opcode.0x63a", named_by = "opcode.0x63a" },
+  { name = "new_world_zone_id", kind = "unsigned", bits = 15, evidence = "opcode.0x63a", named_by = "opcode.0x63a" },
 ]
 
 [[message]]
@@ -1185,3 +1185,265 @@ variants = [
   { tag = 14, name = "rotation", record = "movement_rotation", named_by = "0x140715350" },
 ]
 
+
+[[message]]
+id = 0x01C3
+name = "send_chat_line"
+direction = "client_to_server"
+evidence = "opcode.0x1c3"
+summary = "the client says a line on a chat channel it holds (Say, Yell, Emote, Zone and the others except a slash command and the two whispers): the channel's type and id, the text, its formats and the slot the client keeps the line in until the server answers"
+fields = [
+  { name = "channel_type", kind = "unsigned", bits = 14, evidence = "opcode.0x1c3", named_by = "opcode.0x1c3" },
+  { name = "channel_id", kind = "unsigned", bits = 64, evidence = "opcode.0x1c3", named_by = "opcode.0x1c3" },
+  { name = "text", kind = "wide_text", evidence = "opcode.0x1c3", named_by = "opcode.0x1c3" },
+  { name = "formats", kind = "array", count_bits = 5, element = "chat_format", evidence = "opcode.0x1c3", named_by = "opcode.0x1c3" },
+  { name = "chat_message_id", kind = "unsigned", bits = 16, evidence = "opcode.0x1c3", named_by = "opcode.0x1c3" },
+]
+
+[[message]]
+id = 0x01D4
+name = "send_whisper"
+direction = "client_to_server"
+evidence = "opcode.0x1d4"
+summary = "the client whispers a line to a character by name (account bit 0) or to an account friend (account bit 1): the target's name and realm name as typed, the line as in 0x1c3, and the slot the client keeps the line in"
+fields = [
+  { name = "target_name", kind = "wide_text", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
+  { name = "target_realm_name", kind = "wide_text", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
+  { name = "text", kind = "wide_text", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
+  { name = "formats", kind = "array", count_bits = 5, element = "chat_format", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
+  { name = "chat_message_id", kind = "unsigned", bits = 16, evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
+  { name = "account", kind = "unsigned", bits = 1, evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
+]
+
+[[message]]
+id = 0x01C2
+name = "chat_line_accepted"
+direction = "server_to_client"
+evidence = "opcode.0x1c2"
+summary = "the answer that shows the speaker its own line: the slot's id, the name to show (the speaker's, or the target's for a whisper), its realm name and the speaker's unit id; the server writes no item record (the item count is 0), so a line's item links are shown as the client's own type 9 links"
+fields = [
+  { name = "chat_message_id", kind = "unsigned", bits = 16, evidence = "opcode.0x1c2", named_by = "opcode.0x1c2" },
+  { name = "gm", kind = "unsigned", bits = 1, evidence = "opcode.0x1c2", named_by = "opcode.0x1c2" },
+  { name = "item_count", kind = "constant", bits = 5, value = 0, evidence = "opcode.0x1c2", named_by = "opcode.0x1c2" },
+  { name = "name", kind = "wide_text", evidence = "opcode.0x1c2", named_by = "opcode.0x1c2" },
+  { name = "realm_name", kind = "wide_text", evidence = "opcode.0x1c2", named_by = "opcode.0x1c2" },
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x1c2", named_by = "opcode.0x1c2" },
+  { name = "premium_tier", kind = "unsigned", bits = 8, evidence = "opcode.0x1c2", named_by = "opcode.0x1c2" },
+]
+
+[[message]]
+id = 0x01C8
+name = "chat_line"
+direction = "server_to_client"
+evidence = "opcode.0x1c8"
+summary = "a chat line to show, which the client raises only for a channel it holds with that type and id: the speaker's realm and character id, name and realm name, the text and formats as sent, a bit that colours the name hostile for another faction, and the speaker's unit id, over which a chat bubble shows on a channel whose row has flag 0x10"
+fields = [
+  { name = "channel_type", kind = "unsigned", bits = 14, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "channel_id", kind = "unsigned", bits = 64, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "gm", kind = "unsigned", bits = 1, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "from_self", kind = "unsigned", bits = 1, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "auto_response", kind = "unsigned", bits = 1, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "sender_realm_id", kind = "unsigned", bits = 14, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "sender_character_id", kind = "unsigned", bits = 64, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "sender_name", kind = "wide_text", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "sender_realm_name", kind = "wide_text", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "presence_state", kind = "unsigned", bits = 3, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "text", kind = "wide_text", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "formats", kind = "array", count_bits = 5, element = "chat_format", evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "cross_faction", kind = "unsigned", bits = 1, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "field_14", kind = "unsigned", bits = 16, evidence = "opcode.0x1c8", safe_by = "opcode.0x1c8" },
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+  { name = "premium_tier", kind = "unsigned", bits = 8, evidence = "opcode.0x1c8", named_by = "opcode.0x1c8" },
+]
+
+[[message]]
+id = 0x01D3
+name = "chat_result"
+direction = "server_to_client"
+evidence = "opcode.0x1d3"
+summary = "the server's refusal or report on a line the client sent, on the line's channel, with the result and the slot's id; the client prints the result's text and frees the slot"
+fields = [
+  { name = "channel_type", kind = "unsigned", bits = 14, evidence = "opcode.0x1d3", named_by = "opcode.0x1d3" },
+  { name = "channel_id", kind = "unsigned", bits = 64, evidence = "opcode.0x1d3", named_by = "opcode.0x1d3" },
+  { name = "result", kind = "unsigned", bits = 5, evidence = "opcode.0x1d3", named_by = "opcode.0x1d3", values_type = "ChatChannelResult", values = [ { value = 1, name = "doesnt_exist", evidence = "lua.ChatSystemLib.ChatChannelResult" }, { value = 3, name = "no_permissions", evidence = "lua.ChatSystemLib.ChatChannelResult" }, { value = 8, name = "not_in_group", evidence = "lua.ChatSystemLib.ChatChannelResult" }, { value = 17, name = "invalid_message_text", evidence = "lua.ChatSystemLib.ChatChannelResult" } ] },
+  { name = "chat_message_id", kind = "unsigned", bits = 16, evidence = "opcode.0x1d3", named_by = "opcode.0x1d3" },
+]
+
+[[message]]
+id = 0x01D9
+name = "whisper_failed"
+direction = "server_to_client"
+evidence = "opcode.0x1d9"
+summary = "a whisper could not be delivered: the target's name as sent, the account bit of the whisper and the slot's id; the client prints a whisper error naming the target and frees the slot"
+fields = [
+  { name = "target_name", kind = "wide_text", evidence = "opcode.0x1d9", named_by = "opcode.0x1d9" },
+  { name = "account", kind = "unsigned", bits = 1, evidence = "opcode.0x1d9", named_by = "opcode.0x1d9" },
+  { name = "chat_message_id", kind = "unsigned", bits = 16, evidence = "opcode.0x1d9", named_by = "opcode.0x1d9" },
+]
+
+[[message]]
+id = 0x01BC
+name = "chat_channel_joined"
+direction = "server_to_client"
+evidence = "opcode.0x1bc"
+summary = "joins a chat channel the client does not make itself (a channel type whose ChatChannel row has flag 0x80, such as Zone): the channel's type and id, a name the client uses only for type 18 and three values the client does not read on this path"
+fields = [
+  { name = "channel_type", kind = "unsigned", bits = 14, evidence = "opcode.0x1bc", named_by = "opcode.0x1bc" },
+  { name = "channel_id", kind = "unsigned", bits = 64, evidence = "opcode.0x1bc", named_by = "opcode.0x1bc" },
+  { name = "name", kind = "wide_text", evidence = "opcode.0x1bc", named_by = "opcode.0x1bc" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "opcode.0x1bc", safe_by = "opcode.0x1bc" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "opcode.0x1bc", safe_by = "opcode.0x1bc" },
+  { name = "field_6", kind = "unsigned", bits = 32, evidence = "opcode.0x1bc", safe_by = "opcode.0x1bc" },
+]
+
+[[message]]
+id = 0x01DA
+name = "chat_zone_named"
+direction = "server_to_client"
+evidence = "opcode.0x1da"
+summary = "the WorldZone id every zone-named chat channel is named after: the client keeps it and renames those channels, with no walk to a parent zone"
+fields = [
+  { name = "world_zone_id", kind = "unsigned", bits = 15, evidence = "opcode.0x1da", named_by = "opcode.0x1da" },
+]
+
+[[union]]
+name = "chat_format"
+evidence = "0x140085ca0"
+summary = "one format of a chat line: the type in 4 bits picks the layout of its data, and the client's reader refuses a type of 12 to 15. Gap: type 8, a full item record, has no variant, since its layout is not described (0x140085790), so a line holding one is read as a failure"
+tag_bits = 4
+variants = [
+  { tag = 0, name = "kind_0", record = "chat_format_kind_0" },
+  { tag = 1, name = "kind_1", record = "chat_format_kind_1" },
+  { tag = 2, name = "kind_2", record = "chat_format_kind_2" },
+  { tag = 3, name = "kind_3", record = "chat_format_kind_3" },
+  { tag = 4, name = "item_id", record = "chat_format_item_id", named_by = "0x140085ca0" },
+  { tag = 5, name = "quest_id", record = "chat_format_quest_id", named_by = "0x140085ca0" },
+  { tag = 6, name = "article_id", record = "chat_format_article_id", named_by = "0x140085ca0" },
+  { tag = 7, name = "filter_mask", record = "chat_format_filter_mask", named_by = "0x140085ca0" },
+  { tag = 9, name = "item_guid", record = "chat_format_item_guid", named_by = "0x140085ca0" },
+  { tag = 10, name = "navigation_point", record = "chat_format_navigation_point", named_by = "0x140085ca0" },
+  { tag = 11, name = "kind_11", record = "chat_format_kind_11" },
+]
+
+[[record]]
+name = "chat_format_kind_0"
+evidence = "0x140085ca0"
+summary = "a chat format of type 0, whose meaning the client's code does not show: its range and one bit"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 0, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "field_4", kind = "unsigned", bits = 1, evidence = "0x140085ca0", safe_by = "0x140085ca0" },
+]
+
+[[record]]
+name = "chat_format_kind_1"
+evidence = "0x140085ca0"
+summary = "a chat format of type 1, whose meaning the client's code does not show: its range and 32 bits"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 1, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140085ca0", safe_by = "0x140085ca0" },
+]
+
+[[record]]
+name = "chat_format_kind_2"
+evidence = "0x140085ca0"
+summary = "a chat format of type 2, whose meaning the client's code does not show: its range and one bit"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 2, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "field_4", kind = "unsigned", bits = 1, evidence = "0x140085ca0", safe_by = "0x140085ca0" },
+]
+
+[[record]]
+name = "chat_format_kind_3"
+evidence = "0x140085ca0"
+summary = "a chat format of type 3, whose meaning the client's code does not show: its range and one bit"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 3, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "field_4", kind = "unsigned", bits = 1, evidence = "0x140085ca0", safe_by = "0x140085ca0" },
+]
+
+[[record]]
+name = "chat_format_item_id"
+evidence = "0x140085ca0"
+summary = "a chat format of type 4, a link to an item by its id"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 4, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "item_id", kind = "unsigned", bits = 18, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+]
+
+[[record]]
+name = "chat_format_quest_id"
+evidence = "0x140085ca0"
+summary = "a chat format of type 5, a link to a quest by its id"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 5, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "quest_id", kind = "unsigned", bits = 15, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+]
+
+[[record]]
+name = "chat_format_article_id"
+evidence = "0x140085ca0"
+summary = "a chat format of type 6, a link to an archive article by its id"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 6, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "article_id", kind = "unsigned", bits = 14, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+]
+
+[[record]]
+name = "chat_format_filter_mask"
+evidence = "0x140085ca0"
+summary = "a chat format of type 7, the mask the receiving client adds over a word its filter matches, whose value seeds the scramble of its letters"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 7, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "seed", kind = "unsigned", bits = 32, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+]
+
+[[record]]
+name = "chat_format_item_guid"
+evidence = "0x140085ca0"
+summary = "a chat format of type 9, a link to an item by its GUID"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 9, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+]
+
+[[record]]
+name = "chat_format_navigation_point"
+evidence = "0x140085ca0"
+summary = "a chat format of type 10, a navigation point: a zone id of 14 bits and two floats"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 10, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "zone_id", kind = "unsigned", bits = 14, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "x", kind = "float32", evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "y", kind = "float32", evidence = "0x140085ca0", named_by = "0x140085ca0" },
+]
+
+[[record]]
+name = "chat_format_kind_11"
+evidence = "0x140085ca0"
+summary = "a chat format of type 11, whose meaning the client's code does not show: its range and 32 bits"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 11, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140085ca0", safe_by = "0x140085ca0" },
+]

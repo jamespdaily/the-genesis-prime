@@ -7,7 +7,7 @@
 //// whole frame in the client's wrapper 0x0244 ─▶ route(stage, OnItsOwn, id)
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
-////                                                 ─▶ Movement(message) or Camp(message)
+////                                                 ─▶ Movement(message), Camp(message) or Chat(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
 ////
@@ -27,6 +27,7 @@
 
 import genesis_prime/game/camp
 import genesis_prime/game/character_select
+import genesis_prime/game/chat
 import genesis_prime/game/movement
 import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
@@ -43,7 +44,7 @@ import genesis_prime/message/player_movement
 import genesis_prime/message/rename_character
 import genesis_prime/message/terrain_loaded
 import genesis_prime/message/world_message
-import genesis_prime/message/zone_value_changed
+import genesis_prime/message/world_zone_changed
 import gleam/list
 import gleam/result
 
@@ -60,6 +61,8 @@ pub type Feature {
   WorldMessage
   Movement(message: movement.Message)
   Camp(message: camp.Message)
+  /// A chat line or a whisper (genesis_prime/game/chat).
+  Chat(message: chat.Message)
 }
 
 /// Where the connection is when it takes a message.
@@ -138,7 +141,7 @@ const table = [
     [AtWorld],
   ),
   Row(
-    zone_value_changed.message_id,
+    world_zone_changed.message_id,
     InsideWorldMessage,
     Movement(movement.ZoneChanged),
     [AtWorld],

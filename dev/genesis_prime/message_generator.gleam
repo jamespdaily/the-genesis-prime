@@ -948,11 +948,12 @@ fn decode_body(fields: List(Field), type_name: String) -> List(String) {
   }
 }
 
-/// `Ok(Name(field:, ..))`, on one line when it fits.
+/// `Ok(Name(field:, ..))`, on one line when it fits. `gleam format` keeps a
+/// line of this shape whole at 81 characters, one over the width.
 fn construct(fields: List(Field), type_name: String) -> List(String) {
   let labels = list.map(held(fields), fn(field) { field.name <> ":" })
   let one = "  Ok(" <> type_name <> "(" <> string.join(labels, ", ") <> "))"
-  case string.length(one) <= width {
+  case string.length(one) <= width + 1 {
     True -> [one]
     False ->
       list.flatten([

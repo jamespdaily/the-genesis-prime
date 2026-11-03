@@ -113,6 +113,7 @@ pub fn game() -> server.Served(game_connection.Settings) {
       realm_id: 1,
       max_characters: 12,
       game: game_settings.defaults(),
+      realm_name: realm().name,
       tables: character_tables.shared(),
       ask_deadline_ms: 5000,
       rate: support.roomy(),

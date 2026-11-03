@@ -256,12 +256,12 @@ pub fn the_recorded_movement_holds_what_the_clients_per_frame_update_sends_test(
     as "opcode.0x637: the clock is the client's own millisecond clock, so a later message is not earlier"
 }
 
-pub fn the_recorded_zone_value_and_move_speed_are_what_the_client_keeps_test() -> Nil {
+pub fn the_recorded_world_zone_and_move_speed_are_what_the_client_keeps_test() -> Nil {
   use <- owned_test.run(30_000)
-  let assert [client_message.ZoneValueChanged(message: first), ..] =
+  let assert [client_message.WorldZoneChanged(message: first), ..] =
     recorded_of(0x063A)
     as "the committed session holds a 0x63A"
-  assert first.old_value == first.new_value
+  assert first.old_world_zone_id == first.new_world_zone_id
     as "opcode.0x63a: after 0x636 the client sends the value it keeps as both the old and the new"
   let assert [_, ..] = recorded_of(0x063B)
     as "the committed session holds a 0x63B"

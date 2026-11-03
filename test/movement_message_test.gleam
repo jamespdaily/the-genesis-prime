@@ -65,7 +65,7 @@ import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_velocity.{MovementVelocity}
 import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
-import genesis_prime/message/zone_value_changed.{ZoneValueChanged}
+import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import gleam/int
 import gleam/list
 import gleam/result
@@ -598,14 +598,17 @@ pub fn kinds_8_and_11_hold_half_floats_test() -> Nil {
 
 // ---- the five small messages ----
 
-pub fn zone_value_changed_is_two_values_of_15_bits_test() -> Nil {
+pub fn world_zone_changed_is_two_values_of_15_bits_test() -> Nil {
   use <- owned_test.run(5000)
   message_support.assert_codec(
     name: "opcode.0x63a: the old value and the new value, 15 bits each",
     body: packed([#(15, 0x1234), #(15, 0x7FFF)]),
-    value: ZoneValueChanged(old_value: 0x1234, new_value: 0x7FFF),
-    encode: zone_value_changed.encode,
-    decode: zone_value_changed.decode,
+    value: WorldZoneChanged(
+      old_world_zone_id: 0x1234,
+      new_world_zone_id: 0x7FFF,
+    ),
+    encode: world_zone_changed.encode,
+    decode: world_zone_changed.decode,
   )
 }
 

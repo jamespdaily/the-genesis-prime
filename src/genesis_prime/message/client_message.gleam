@@ -33,9 +33,11 @@ import genesis_prime/message/player_movement.{type PlayerMovement}
 import genesis_prime/message/pong.{type Pong}
 import genesis_prime/message/realm_select_start.{type RealmSelectStart}
 import genesis_prime/message/rename_character.{type RenameCharacter}
+import genesis_prime/message/send_chat_line.{type SendChatLine}
+import genesis_prime/message/send_whisper.{type SendWhisper}
 import genesis_prime/message/terrain_loaded.{type TerrainLoaded}
 import genesis_prime/message/world_message.{type WorldMessage}
-import genesis_prime/message/zone_value_changed.{type ZoneValueChanged}
+import genesis_prime/message/world_zone_changed.{type WorldZoneChanged}
 
 /// A message the client sends, decoded: one variant for each message.
 pub type ClientMessage {
@@ -59,11 +61,13 @@ pub type ClientMessage {
   CampRequest(message: CampRequest)
   CampFinished(message: CampFinished)
   PlayerMovement(message: PlayerMovement)
-  ZoneValueChanged(message: ZoneValueChanged)
+  WorldZoneChanged(message: WorldZoneChanged)
   MovementSendIntervalAnswer(message: MovementSendIntervalAnswer)
   MoveSpeedSetting(message: MoveSpeedSetting)
   FallValue(message: FallValue)
   FellBelowFloor(message: FellBelowFloor)
+  SendChatLine(message: SendChatLine)
+  SendWhisper(message: SendWhisper)
 }
 
 /// Why a body is not a message the client sends.
@@ -124,7 +128,7 @@ pub fn decode(
     0x00C0 -> decoded(body, message_id, camp_finished.decode, CampFinished)
     0x0637 -> decoded(body, message_id, player_movement.decode, PlayerMovement)
     0x063A ->
-      decoded(body, message_id, zone_value_changed.decode, ZoneValueChanged)
+      decoded(body, message_id, world_zone_changed.decode, WorldZoneChanged)
     0x00D5 ->
       decoded(
         body,
@@ -136,6 +140,8 @@ pub fn decode(
       decoded(body, message_id, move_speed_setting.decode, MoveSpeedSetting)
     0x00FB -> decoded(body, message_id, fall_value.decode, FallValue)
     0x00FC -> decoded(body, message_id, fell_below_floor.decode, FellBelowFloor)
+    0x01C3 -> decoded(body, message_id, send_chat_line.decode, SendChatLine)
+    0x01D4 -> decoded(body, message_id, send_whisper.decode, SendWhisper)
     _ -> Error(UnknownMessage(message_id:))
   }
 }
@@ -163,12 +169,14 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     CampRequest(message:) -> camp_request.encode(message)
     CampFinished(message:) -> camp_finished.encode(message)
     PlayerMovement(message:) -> player_movement.encode(message)
-    ZoneValueChanged(message:) -> zone_value_changed.encode(message)
+    WorldZoneChanged(message:) -> world_zone_changed.encode(message)
     MovementSendIntervalAnswer(message:) ->
       movement_send_interval_answer.encode(message)
     MoveSpeedSetting(message:) -> move_speed_setting.encode(message)
     FallValue(message:) -> fall_value.encode(message)
     FellBelowFloor(message:) -> fell_below_floor.encode(message)
+    SendChatLine(message:) -> send_chat_line.encode(message)
+    SendWhisper(message:) -> send_whisper.encode(message)
   }
 }
 
@@ -195,11 +203,13 @@ pub fn message_id(message: ClientMessage) -> Int {
     CampRequest(..) -> camp_request.message_id
     CampFinished(..) -> camp_finished.message_id
     PlayerMovement(..) -> player_movement.message_id
-    ZoneValueChanged(..) -> zone_value_changed.message_id
+    WorldZoneChanged(..) -> world_zone_changed.message_id
     MovementSendIntervalAnswer(..) -> movement_send_interval_answer.message_id
     MoveSpeedSetting(..) -> move_speed_setting.message_id
     FallValue(..) -> fall_value.message_id
     FellBelowFloor(..) -> fell_below_floor.message_id
+    SendChatLine(..) -> send_chat_line.message_id
+    SendWhisper(..) -> send_whisper.message_id
   }
 }
 

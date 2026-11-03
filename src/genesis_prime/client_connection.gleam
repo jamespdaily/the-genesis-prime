@@ -24,6 +24,7 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{type Wrapper, ClientWrapper}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
+import genesis_prime/game/chat_tell.{type Tell as ChatTell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
@@ -71,6 +72,12 @@ pub type Request {
   /// connection writes as 0x262, 0x638 or 0x355 when its client can take it.
   /// Never asked, and never told to a map.
   TellPeer(news: PeerNews)
+  /// What a `Tell` effect sends the connection of another player, or every
+  /// connection of a zone channel, or the connection that holds a character's
+  /// name (genesis_prime/step `Connection`, `ZoneChannel`, `CharacterNamed`): a
+  /// chat line or a whisper's reply (genesis_prime/game/chat_tell). Never asked,
+  /// and never told to a map.
+  TellChat(tell: ChatTell)
 }
 
 /// News of one unit from its owner's connection to the connection of a player
@@ -141,6 +148,10 @@ pub type Message {
   /// that player's unit, written while this player is in the world
   /// (genesis_prime/game/connection).
   SentByPeer(news: PeerNews)
+  /// What the connection of another player sent it without waiting: a chat line
+  /// or a whisper's reply, written while this player is in the world
+  /// (genesis_prime/game/chat).
+  SentByChat(tell: ChatTell)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who

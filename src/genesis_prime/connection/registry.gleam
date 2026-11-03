@@ -1,8 +1,16 @@
-//// Where the connections are found: OTP's `pg` (process groups), one group
-//// per connection, named by the address `Connection(id)`. A connection joins
-//// its group as the shell accepts it, and leaves it by ending, which `pg`
-//// notices by itself; no process keeps a list of connections and no atom is
-//// made per connection.
+//// Where the connections are found: OTP's `pg` (process groups). A group is
+//// named by an address (genesis_prime/step `Address`), and there are three
+//// kinds, each joined by connections only:
+//// - `Connection(id)`: one member, the connection, joined as the shell accepts
+////   it;
+//// - `CharacterNamed(folded name)`: one member, the connection whose player
+////   is in the world under that name, joined and left by the rule's
+////   `JoinGroup` and `LeaveGroup` effects;
+//// - `ZoneChannel(map, incarnation, top zone)`: every connection in that run
+////   of the map whose player stands under that top zone, joined and left the
+////   same way.
+//// A member leaves a group by ending, which `pg` notices by itself; no process
+//// keeps a list of connections and no atom is made per connection.
 ////
 //// ```
 //// game supervisor (rest_for_one, 3 restarts in 10 s)
@@ -13,6 +21,10 @@
 ////   join(Connection(id)) ─▶ member of the group
 ////                          find(Connection(id)) ◀─ the group's one member
 ////                          deliver(.., message)    ─▶ {woken, message} to it
+////   join_group(CharacterNamed(n)) ─▶ member of the group
+////                          find_named(n)       ◀─ the group's first member
+////   join_group(ZoneChannel(..)) ─▶ member of the group
+////                          deliver_group(..)   ─▶ {woken, message} to each member
 //// ```
 ////
 //// - **Lookup.** `find` reads the scope's local members of the group: none
@@ -21,6 +33,13 @@
 //// - **A connection ending.** The scope monitors each member and drops it from
 ////   its groups; a `find` just after the end may still give the pid, and a
 ////   `deliver` to it is then dropped like any message to a process that ended.
+//// - **A group of a name or a zone channel.** `find_named` gives the first
+////   member the scope lists, none when no connection holds the name. A takeover
+////   can leave two members of one name for a moment, since the older login
+////   leaves its group only as it ends; either may be found, and the older
+////   one's end is its watcher's. `deliver_group` sends each member the message,
+////   and none when the group is empty. A `leave_group` of a group the process
+////   is not in does nothing.
 //// - **The scope restarting.** The restarted scope has no members, so no
 ////   connection could be found. The supervisor is `rest_for_one`, with the
 ////   scope first, so the game listener restarts with it and every game client
@@ -29,7 +48,7 @@
 //// - **The name.** The scope is named by an atom made once at start with
 ////   `process.new_name`, so each tree has its own scope and none is shared.
 
-import genesis_prime/step.{type ConnectionId, Connection}
+import genesis_prime/step.{type Address, type ConnectionId, Connection}
 import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Name, type Pid, type Selector}
 import gleam/otp/actor
@@ -76,7 +95,53 @@ pub fn join(
   registry registry: Registry(message),
   connection connection: ConnectionId,
 ) -> Nil {
-  join_group(registry.scope, Connection(connection:))
+  pg_join(registry.scope, Connection(connection:))
+}
+
+/// Makes the calling process a member of the group at `address`, a
+/// `CharacterNamed` or a `ZoneChannel`, once; the connection shell calls it for
+/// the rule's `JoinGroup`.
+pub fn join_group(
+  registry _registry: Registry(message),
+  address _address: Address,
+) -> Nil {
+  panic as "carried out by the build step: pg:join in the scope"
+}
+
+/// Removes the calling process from the group at `address`; nothing happens
+/// when it is not a member. The connection shell calls it for the rule's
+/// `LeaveGroup`.
+pub fn leave_group(
+  registry _registry: Registry(message),
+  address _address: Address,
+) -> Nil {
+  panic as "carried out by the build step: pg:leave in the scope"
+}
+
+/// The process of the connection whose player is in the world under the folded
+/// name: the first member of the group, or `Error(Nil)` when none is.
+pub fn find_named(
+  registry _registry: Registry(message),
+  folded_name _folded_name: String,
+) -> Result(Pid, Nil) {
+  panic as "carried out by the build step: pg:get_local_members of CharacterNamed"
+}
+
+/// Sends every member of the group at `address` the message, each as a
+/// `Woken` input of its shell; `Error(Nil)` when the group has no member, and
+/// nothing is sent.
+pub fn deliver_group(
+  registry _registry: Registry(message),
+  address _address: Address,
+  message _message: message,
+) -> Result(Nil, Nil) {
+  panic as "carried out by the build step: pg:get_local_members of the group"
+}
+
+/// Sends the process `message` as `deliver` does, for a process `find_named`
+/// gave.
+pub fn deliver_to(pid pid: Pid, message message: message) -> Nil {
+  send_woken(pid, message)
 }
 
 /// The process of a connection, or `Error(Nil)` when none is a member.
@@ -133,7 +198,7 @@ type DeliveryTag {
 fn start_scope(scope: Name(Nil)) -> Result(Pid, StartFailure)
 
 @external(erlang, "genesis_prime_connection_registry_ffi", "join_group")
-fn join_group(scope: Name(Nil), group: step.Address) -> Nil
+fn pg_join(scope: Name(Nil), group: step.Address) -> Nil
 
 @external(erlang, "genesis_prime_connection_registry_ffi", "members")
 fn members(scope: Name(Nil), group: step.Address) -> List(Pid)

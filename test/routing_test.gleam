@@ -118,7 +118,7 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
     syntax.imported_modules(SourceFile(path:, text: source.read(path)))
   list.each(
     [
-      "player_movement", "zone_value_changed", "movement_send_interval_answer",
+      "player_movement", "world_zone_changed", "movement_send_interval_answer",
       "move_speed_setting", "terrain_loaded", "fall_value", "fell_below_floor",
       "camp_request", "camp_finished", "camp_countdown",
       "character_select_start", "create_character_carrier", "delete_character",

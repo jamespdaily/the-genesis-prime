@@ -233,8 +233,19 @@ pub type ConnectionEffect(request) {
   /// through the way to `to` that the rule's open watch on `to` found, so the
   /// rule watches `to` before it tells; a tell with no such watch, or after the
   /// process has ended, is dropped with a warning, and a rule that must know
-  /// watches it. The process takes it as `ServiceEvent`'s `Told`.
+  /// watches it. A `Connection` and a `ZoneChannel` need no watch: the shell
+  /// sends the tell through the registry, to the connection or to every member
+  /// of the group. The process takes it as `ServiceEvent`'s `Told`.
   Tell(to: Address, request: request)
+  /// Make this connection's process a member of the registry's group at
+  /// `address`, which only a `CharacterNamed` or a `ZoneChannel` names. The
+  /// group holds the process until it leaves it or ends: the registry notices
+  /// an end by itself, so a connection that crashes leaves every group it
+  /// joined.
+  JoinGroup(address: Address)
+  /// Remove this connection's process from the group at `address`; nothing
+  /// happens when it is not a member.
+  LeaveGroup(address: Address)
 }
 
 /// What only a service carries out.
@@ -294,6 +305,18 @@ pub type Address {
   Map(map: MapId, incarnation: Int)
   /// One connection.
   Connection(connection: ConnectionId)
+  /// The one connection whose player is in the world under this name, folded
+  /// to lower case (genesis_prime/game/chat): a group of the connections'
+  /// registry (genesis_prime/connection/registry) that the connection joins as
+  /// its player enters the world and leaves as it camps. A whisper is told to
+  /// it through a watch, as a tell to a map run is, so a name no connection
+  /// holds ends the watch.
+  CharacterNamed(folded_name: String)
+  /// The connections whose players are in this run of this map under this top
+  /// zone (genesis_prime/game/top_zone): a group of the connections' registry
+  /// that each connection joins and leaves by its own effects. A tell to it
+  /// goes to every member, and needs no watch.
+  ZoneChannel(map: MapId, incarnation: Int, top_zone_id: Int)
 }
 
 /// One connection, unique for the node's life; the shell picks it when it

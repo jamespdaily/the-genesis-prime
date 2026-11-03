@@ -472,7 +472,7 @@ pub fn terrain_loaded_is_the_clients_15_bits_test() -> Nil {
   message_support.assert_vector(
     name: "vector.opcode.0xf2.body",
     body: message_support.hex("3412"),
-    value: TerrainLoaded(field_1: 0x1234),
+    value: TerrainLoaded(world_zone_id: 0x1234),
     encode: terrain_loaded.encode,
     decode: terrain_loaded.decode,
   )

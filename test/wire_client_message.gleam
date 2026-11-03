@@ -421,10 +421,12 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.CampRequest(..)
     | client_message.CampFinished(..)
     | client_message.PlayerMovement(..)
-    | client_message.ZoneValueChanged(..)
+    | client_message.WorldZoneChanged(..)
     | client_message.MovementSendIntervalAnswer(..)
     | client_message.MoveSpeedSetting(..)
     | client_message.FallValue(..)
-    | client_message.FellBelowFloor(..) -> Plain
+    | client_message.FellBelowFloor(..)
+    | client_message.SendChatLine(..)
+    | client_message.SendWhisper(..) -> Plain
   }
 }

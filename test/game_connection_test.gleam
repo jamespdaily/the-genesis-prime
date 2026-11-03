@@ -44,7 +44,7 @@ import genesis_prime/client_connection.{
   type Answer, type Message, type News, type PeerNews, type Request, Appeared,
   AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, FromHandOff, FromMap,
   FromSessions, FromStore, Moving, PeerNews, Removed, SentByMap, SentByPeer,
-  SentBySessions, TellMoved, TellPeer,
+  SentBySessions, TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -109,7 +109,7 @@ import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
-import genesis_prime/message/zone_value_changed.{ZoneValueChanged}
+import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome, CallerId,
   CancelTimer, ConnectionId, EndedBeforeAnswer, LogError, LogInfo, LogWarning,
@@ -146,6 +146,7 @@ fn settings() -> game_connection.Settings {
     realm_id: 5,
     max_characters: 9,
     game: GameSettings(camp_countdown_ms: 12_345, character_slots: 3),
+    realm_name: "Test Realm",
     tables: character_tables.shared(),
     ask_deadline_ms: 4000,
     rate: support.roomy(),
@@ -1937,7 +1938,10 @@ pub fn a_command_the_clients_code_never_sends_ends_the_connection_after_saving_t
 /// The bodies of the messages the rule decodes and keeps nothing of.
 fn decoded_and_dropped() -> List(#(Int, BitArray)) {
   let assert Ok(zone) =
-    zone_value_changed.encode(ZoneValueChanged(old_value: 6009, new_value: 6010))
+    world_zone_changed.encode(WorldZoneChanged(
+      old_world_zone_id: 6009,
+      new_world_zone_id: 6010,
+    ))
   let assert Ok(interval) =
     movement_send_interval_answer.encode(MovementSendIntervalAnswer(
       field_1: 4,
@@ -1946,7 +1950,8 @@ fn decoded_and_dropped() -> List(#(Int, BitArray)) {
     ))
   let assert Ok(speed) =
     move_speed_setting.encode(MoveSpeedSetting(move_speed: 2))
-  let assert Ok(terrain) = terrain_loaded.encode(TerrainLoaded(field_1: 6009))
+  let assert Ok(terrain) =
+    terrain_loaded.encode(TerrainLoaded(world_zone_id: 6009))
   let assert Ok(fall) = fall_value.encode(FallValue(field_1: 0x40490FDB))
   let assert Ok(floor) =
     fell_below_floor.encode(FellBelowFloor(
@@ -3615,7 +3620,8 @@ fn mapped(
     | AskHandOff(..)
     | AskSessions(..)
     | TellMoved(..)
-    | TellPeer(..) ->
+    | TellPeer(..)
+    | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
   let #(map_state, mapped) =

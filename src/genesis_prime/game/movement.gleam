@@ -32,9 +32,10 @@
 ////   (0x140c3a004, 0x14057a190); nothing here reads them or compares them with
 ////   the server's clock.
 //// - **The place** is `genesis_prime/game/start_place`'s, so the world and the
-////   zone never change here and a moved place is never in world 0. The zone
-////   the player crosses into (0x63A) is not read, so the saved zone is the one
-////   the player entered with.
+////   zone never change here and a moved place is never in world 0. The WorldZone
+////   id the client reports (0xF2, and 0x63A's new id) is not kept here, so the
+////   saved zone is the one the player entered with; zone chat takes it
+////   (genesis_prime/game/chat `world_zone_reported`).
 //// - **The epoch and the sequence** name the login's saves. The epoch is the
 ////   one the login was told when it loaded the character
 ////   (genesis_prime/store `SessionEpoch`); the sequence numbers the saves the
@@ -63,7 +64,7 @@ import genesis_prime/message/player_movement.{type PlayerMovement}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/message/terrain_loaded
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
-import genesis_prime/message/zone_value_changed
+import genesis_prime/message/world_zone_changed
 import genesis_prime/store.{
   type AccountId, type CharacterId, type MoveAnswer, type MoveRequest,
   type SessionEpoch, NothingSaved, PlaceRefused, PlaceSaved, SavePlace,
@@ -79,13 +80,14 @@ import gleam/result
 pub type Message {
   /// 0x0637, the player's movement commands.
   PlayerMoved
-  /// 0x063A, the player unit's value changing.
+  /// 0x063A, the WorldZone id the player stands in changing.
   ZoneChanged
   /// 0x00D5, the answer to the world's settings.
   IntervalAnswered
   /// 0x063B, the move speed setting.
   SpeedChosen
-  /// 0x00F2, the terrain near the player ready.
+  /// 0x00F2, the terrain near the player ready, with the WorldZone id the player
+  /// stands in.
   TerrainReady
   /// 0x00FB, a fall's value.
   Fell
@@ -269,6 +271,12 @@ pub type Taken {
   /// The message changes what the rule keeps, or nothing, and has nothing to
   /// relay: the state it leaves.
   Kept(state: State)
+  /// An accepted 0xF2 or 0x63A: the state it leaves, which it does not change,
+  /// and the WorldZone id the client reports the player stands in (0xF2's, or
+  /// 0x63A's new id; opcode.0xf2, opcode.0x63a), which zone chat takes
+  /// (genesis_prime/game/chat `world_zone_reported`). The 0x63A's old id is not
+  /// read.
+  Reported(state: State, world_zone_id: Int)
   /// An accepted 0x0637: the state it leaves, the place the player now stands
   /// at in the world's frame (`place`), the commands it sent that are relayed,
   /// in the order sent with their bits, and the kinds of those that are not
@@ -359,11 +367,11 @@ fn relay(command: MovementCommand) -> Relay {
 
 /// What one movement message does to where the player stands: the body is
 /// decoded and 0x0637 and 0x063B are checked as `moved` and `speed_setting`
-/// say; the others are decoded and nothing more, since what their values mean
-/// is not read (the client trace's unknowns: 0x63A's and 0xF2's value is likely
-/// the zone, 0xD5's three values are not read, 0xFB is a fall's value and 0xFC
-/// the fall below the floor). A body the client's reader would refuse, or a
-/// refused command, is the refusal that ends the connection.
+/// say; 0x063A and 0x00F2 give the WorldZone id they report; the others are
+/// decoded and nothing more, since what their values mean is not read (0xD5's
+/// three values are not read, 0xFB is a fall's value and 0xFC the fall below the
+/// floor). A body the client's reader would refuse, or a refused command, is the
+/// refusal that ends the connection.
 pub fn take(
   state state: State,
   message message: Message,
@@ -384,9 +392,11 @@ pub fn take(
       |> result.try(fn(decoded) { speed_setting(setting: decoded.move_speed) })
       |> result.replace(Kept(state))
     ZoneChanged ->
-      zone_value_changed.decode(body)
-      |> undecoded(zone_value_changed.message_id)
-      |> result.replace(Kept(state))
+      world_zone_changed.decode(body)
+      |> undecoded(world_zone_changed.message_id)
+      |> result.map(fn(decoded) {
+        Reported(state:, world_zone_id: decoded.new_world_zone_id)
+      })
     IntervalAnswered ->
       movement_send_interval_answer.decode(body)
       |> undecoded(movement_send_interval_answer.message_id)
@@ -394,7 +404,9 @@ pub fn take(
     TerrainReady ->
       terrain_loaded.decode(body)
       |> undecoded(terrain_loaded.message_id)
-      |> result.replace(Kept(state))
+      |> result.map(fn(decoded) {
+        Reported(state:, world_zone_id: decoded.world_zone_id)
+      })
     Fell ->
       fall_value.decode(body)
       |> undecoded(fall_value.message_id)
