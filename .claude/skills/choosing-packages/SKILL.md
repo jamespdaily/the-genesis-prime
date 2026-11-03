@@ -5,7 +5,14 @@ description: How a package, an Erlang external or our own helper is chosen - the
 
 # Choosing packages
 
-Before writing a helper that is not game logic, look for a base, in this order: Gleam's own libraries (`gleam_stdlib`, `gleam_otp`, `gleam_erlang`), then a vetted Gleam package, then an Erlang package or OTP through an external, only for what no Gleam library exposes.
+Before writing a helper that is not game logic, look for a base, in this order:
+1. Gleam's own libraries (`gleam_stdlib`, `gleam_otp`, `gleam_erlang`).
+2. A vetted Gleam package.
+3. OTP or an Erlang package, through a typed external.
+4. An Elixir package, when it does the job clearly better or nothing earlier does; it brings the Elixir toolchain into the setup check and CI, which the step adds.
+5. A Rust NIF, by the four-numbers rule below.
+
+Each step is taken only when the ones before it fall short, and the search on the step's issue says why.
 
 The search fits the size of the need:
 - **An existing helper or installed library does the job:** read its contract and use it.
@@ -14,6 +21,6 @@ The search fits the size of the need:
 - Each candidate passes a trust filter (an accepted licence, its source read, maintained, its dependencies, the Erlang target), then a fit test in a scratch project when compatibility or speed is uncertain. The best fit wins; on a tie, the one with fewer moving parts.
 - Our own code needs a need no candidate meets, named in its doc comment.
 - The project is AGPL-3.0, so any open-source licence is accepted; code from another WildStar server is still never copied (CLAUDE.md).
-- Rust only with four numbers on the issue: a deadline a player can feel, cheaper fixes tried, Rust closes the gap, a test compares the two. A package with native code counts as Rust; an Elixir package needs a named reason.
+- Rust only with four numbers on the issue: a deadline a player can feel, cheaper fixes tried, Rust closes the gap, a test compares the two. A package with native code counts as Rust.
 - A broken package is patched in place, each patch marked with its upstream bug, never rewritten.
 - Erlang externals only for runtime APIs Gleam lacks, each with an exact Gleam type, never `Dynamic`, and its module says why no Gleam library covers it.
