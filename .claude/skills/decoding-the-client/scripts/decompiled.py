@@ -99,16 +99,20 @@ class RefreshReport:
 
 def copy_directory(env) -> Path:
     """Where the copy lives; raises Refused for a folder inside this repository or any git working tree."""
-    if env.get("GENESIS_DECOMPILED_DIR"):
-        directory = Path(env["GENESIS_DECOMPILED_DIR"])
-    else:
-        directory = ghidra_env.genesis_home(env) / "decompiled"
+    return outside_work_tree_folder(env, "GENESIS_DECOMPILED_DIR", "decompiled", "the client's code")
+
+
+def outside_work_tree_folder(env, variable: str, subfolder: str, what: str) -> Path:
+    """The folder a script keeps the client's data in: the environment's `variable`, else `subfolder` of
+    GENESIS_HOME (genesis_home). Raises Refused unless it is outside this repository and every git working
+    tree; what names its contents (the client's code, the client's files) for the message."""
+    directory = Path(env[variable]) if env.get(variable) else ghidra_env.genesis_home(env) / subfolder
     repository = check_facts.REPOSITORY.resolve()
     resolved = directory.resolve()
     if resolved == repository or repository in resolved.parents:
-        raise Refused("%s is inside the repository %s; the client's code stays outside it" % (directory, repository))
+        raise Refused("%s is inside the repository %s; %s must stay outside it" % (directory, repository, what))
     if _inside_work_tree(resolved):
-        raise Refused("%s is inside a git working tree; the client's code stays outside every repository" % directory)
+        raise Refused("%s is inside a git working tree; %s must stay outside every repository" % (directory, what))
     return directory
 
 
