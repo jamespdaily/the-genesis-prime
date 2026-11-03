@@ -439,7 +439,7 @@ pub fn in_peer(peer: Peer, run: fn() -> a) -> a
 fn log_to_null() -> Nil
 
 @external(erlang, "load_run_ffi", "silence_crash_reports")
-pub fn silence_crash_reports() -> Nil
+fn silence_crash_reports() -> Nil
 
 /// The atom `schedulers_online`, which `system_flag` takes to change how many
 /// schedulers run.
@@ -459,7 +459,11 @@ fn describe_exit(reason: process.ExitReason) -> String
 @external(erlang, "load_run_ffi", "no_local_port")
 pub fn no_local_port(reason: process.ExitReason) -> Bool
 
-pub fn main() -> Nil {
+/// Makes this node the load clients' node: limited to `client_schedulers`
+/// schedulers, since macOS cannot pin cores and the clients share the machine
+/// with the server, with the crash reports of the players silenced and the
+/// sampler started. Prints what the node is. Every load run starts with it.
+pub fn start_clients() -> Nil {
   let _online = system_flag(SchedulersOnline, client_schedulers)
   silence_crash_reports()
   load_sample.start()
@@ -468,6 +472,10 @@ pub fn main() -> Nil {
     <> int.to_string(client_schedulers)
     <> " schedulers; the server: all cores of this machine",
   )
+}
+
+pub fn main() -> Nil {
+  start_clients()
   let maxima = list.map([1, 2], ramp)
   let assert Ok(lowest) = list.reduce(maxima, int.min)
     as "two ramps made two maxima"
@@ -542,7 +550,7 @@ fn climb(
 /// One step as the lines the run prints: its players, its verdict, its numbers,
 /// the processes whose mailbox never emptied, and how many players ended with
 /// each reason and at which stage.
-fn describe(
+pub fn describe(
   players players: Int,
   arrival_ms arrival_ms: Int,
   outcome outcome: Outcome,

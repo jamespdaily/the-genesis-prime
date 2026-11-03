@@ -2,28 +2,30 @@
 //// move at once, on the real protocol path.
 ////
 //// ```
-//// gleam run -m genesis_prime/load_moves
+//// gleam run -m genesis_prime/load_moves            50 players
+//// gleam run -m genesis_prime/load_moves -- 200     200 players
 //// ```
 ////
-//// The environment is the load run's (`genesis_prime/load_run`): a migrated
-//// database empty of accounts (the run seeds `load-0`, `load-1`, ...), the
-//// client's tables, and the server's ports, so no server may be running.
+//// The environment, the two nodes and the step are the load run's
+//// (`genesis_prime/load_run`): a migrated database empty of accounts (the run
+//// seeds `load-0`, `load-1`, ...), the client's tables, the server's ports (so
+//// no server may be running), the server in a node of its own and the players
+//// in this one, limited to the clients' schedulers (`load_run.start_clients`).
+//// All the players log in, create a character and enter the same map, where
+//// every character starts at the same place, so each is in sight of every other;
+//// each then sends a 0x0637 every 125 ms (`genesis_prime/load_player`, walking)
+//// for `hold_ms`, so the map relays each move to every other player.
 ////
-//// The server runs in a node of its own and the players in this one. All the
-//// players log in, create a character and enter the same map, where every
-//// character starts at the same place, so each is in sight of every other; each
-//// then sends a 0x0637 every 125 ms (`genesis_prime/load_player`, walking) for
-//// `hold_ms`, so the map relays each move to every other player. The VM counts
-//// the calls of the map's `moved` and the time they take, and a process of its
-//// own samples the map's message queue every 10 ms
-//// (`load_moves_ffi`). The run prints the moves counted, the time per move, the
-//// longest and the mean queue, the ping round trips the players saw and how
-//// many players failed.
+//// The step is printed as the load run prints one (`load_run.describe`, with
+//// its verdict, its ping round trips and the lines the server logged), followed
+//// by what the map did: the calls of its `moved` and the time they take, the
+//// longest and the mean of its message queue, and how much of the time the map's
+//// process was running (`load_moves_ffi`).
 ////
 //// The map falls behind when its queue grows with the hold instead of staying
-//// near zero, or when the time per move times the moves a second approaches a
-//// second.
+//// near zero, or when the share of time its process runs approaches all of it.
 
+import argv
 import genesis_prime
 import genesis_prime/load_player
 import genesis_prime/load_run
@@ -32,11 +34,11 @@ import genesis_prime/load_step
 import gleam/float
 import gleam/int
 import gleam/io
-import gleam/list
+import gleam/result
 import pog
 
-/// How many players walk on the one map: the issue's load target.
-const players = 50
+/// How many players walk on the one map when the run is given no number.
+const default_players = 50
 
 /// How long the players take to arrive, and how long they walk after the last
 /// has, in milliseconds.
@@ -46,10 +48,11 @@ const hold_ms = 20_000
 
 /// What the map's moves cost, as the server's node counted them: the calls of
 /// the map's move function, the microseconds they took in all, the longest
-/// message queue the map showed, the sum of the queues sampled and how many
-/// samples there were.
+/// message queue the map showed, the sum of the queues sampled, how many
+/// samples there were, the microseconds the map's process ran and the
+/// microseconds since the probe first saw the map.
 type Probe =
-  #(Int, Int, Int, Int, Int)
+  #(Int, Int, Int, Int, Int, Int, Int)
 
 @external(erlang, "load_moves_ffi", "start_probe")
 fn start_probe() -> Nil
@@ -58,8 +61,15 @@ fn start_probe() -> Nil
 fn stop_probe() -> Probe
 
 pub fn main() -> Nil {
-  load_run.silence_crash_reports()
-  load_sample.start()
+  let players = case argv.load().arguments {
+    [number, ..] ->
+      int.parse(number)
+      |> result.lazy_unwrap(fn() {
+        panic as "the number of players is a whole number"
+      })
+    [] -> default_players
+  }
+  load_run.start_clients()
   let peer = load_run.start_peer()
   let settings = load_run.in_peer(peer, load_run.start_server)
   let assert Ok(started) = pog.start(genesis_prime.pool())
@@ -78,17 +88,15 @@ pub fn main() -> Nil {
         load_run.in_peer(peer, fn() { load_sample.take(settings) })
       },
     )
-  let #(moves, micros, longest, queued, samples) =
+  let #(moves, micros, longest, queued, samples, busy_micros, window_micros) =
     load_run.in_peer(peer, stop_probe)
   load_run.stop_peer(peer)
-  io.println(
-    int.to_string(players)
-    <> " walking players, "
-    <> int.to_string(arrival_ms / 1000)
-    <> " s arriving and "
-    <> int.to_string(hold_ms / 1000)
-    <> " s walking",
-  )
+  io.println(load_run.describe(
+    players:,
+    arrival_ms:,
+    outcome:,
+    verdict: load_step.judge(outcome.observation),
+  ))
   io.println("moves the map handled: " <> int.to_string(moves))
   io.println(
     "time per move: "
@@ -105,15 +113,9 @@ pub fn main() -> Nil {
     <> " samples, one every 10 ms",
   )
   io.println(
-    "players that failed: "
-    <> int.to_string(list.length(outcome.failures))
-    <> "; ping round trip p99: "
-    <> int.to_string(load_step.percentile(
-      values: outcome.observation.ping_round_trip_us,
-      percent: 99,
-    ))
-    <> " microseconds; verdict: "
-    <> load_step.describe(load_step.judge(outcome.observation)),
+    "the map's process ran "
+    <> percent(busy_micros, window_micros)
+    <> " of the time since the first move (its rule and its shell together)",
   )
 }
 
@@ -126,5 +128,18 @@ fn per(total: Int, count: Int) -> String {
         int.to_float(total) /. int.to_float(count),
         1,
       ))
+  }
+}
+
+/// `part` of `whole` as a percentage to one decimal, or a dash for no whole.
+fn percent(part: Int, whole: Int) -> String {
+  case whole {
+    0 -> "-"
+    _ ->
+      float.to_string(float.to_precision(
+        100.0 *. int.to_float(part) /. int.to_float(whole),
+        1,
+      ))
+      <> "%"
   }
 }
