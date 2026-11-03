@@ -308,7 +308,6 @@ pub fn joined(
                     map:,
                     incarnation:,
                   ),
-                  zone_channel_id: map.world_id,
                   next_whisper:,
                 ),
               ),

@@ -6,7 +6,7 @@ ok   the player's unit is controlled: bControlled = True
 ok   the player's model is loaded: bModelLoaded = True
 ok   the level is the saved level: nLevel = 3, saved 3
 ok   the path is the saved path: ePath = 0, saved 0
-ok   the position is the saved place: 0.000 units from the saved place (at most 1.0); saved at (4126.562, -695.1943, -5280.4097)
+ok   the position is the saved place: 0.000 units from the saved place (at most 1.0); saved at (4092.2737, -679.7122, -5209.433)
 ok   no addon raised an error: tAddonErrors is empty
 ok   no Lua error event was raised: tLuaErrorEvents is empty
 ok   the client logged no failure: 0 failure line(s)

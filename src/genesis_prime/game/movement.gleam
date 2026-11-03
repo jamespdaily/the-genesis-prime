@@ -266,6 +266,12 @@ fn single(number: Int) -> Bits {
   bits
 }
 
+/// The message a `Reported` zone came in: 0xF2 or 0x63A.
+pub type ReportedBy {
+  ReportedByTerrainReady
+  ReportedByZoneChanged
+}
+
 /// What a movement message made of the player's movement.
 pub type Taken {
   /// The message changes what the rule keeps, or nothing, and has nothing to
@@ -274,9 +280,9 @@ pub type Taken {
   /// An accepted 0xF2 or 0x63A: the state it leaves, which it does not change,
   /// and the WorldZone id the client reports the player stands in (0xF2's, or
   /// 0x63A's new id; opcode.0xf2, opcode.0x63a), which zone chat takes
-  /// (genesis_prime/game/chat `world_zone_reported`). The 0x63A's old id is not
-  /// read.
-  Reported(state: State, world_zone_id: Int)
+  /// (genesis_prime/game/chat `world_zone_reported`, `terrain_ready`). `by` says
+  /// which message it was. The 0x63A's old id is not read.
+  Reported(state: State, world_zone_id: Int, by: ReportedBy)
   /// An accepted 0x0637: the state it leaves, the place the player now stands
   /// at in the world's frame (`place`), the commands it sent that are relayed,
   /// in the order sent with their bits, and the kinds of those that are not
@@ -395,7 +401,11 @@ pub fn take(
       world_zone_changed.decode(body)
       |> undecoded(world_zone_changed.message_id)
       |> result.map(fn(decoded) {
-        Reported(state:, world_zone_id: decoded.new_world_zone_id)
+        Reported(
+          state:,
+          world_zone_id: decoded.new_world_zone_id,
+          by: ReportedByZoneChanged,
+        )
       })
     IntervalAnswered ->
       movement_send_interval_answer.decode(body)
@@ -405,7 +415,11 @@ pub fn take(
       terrain_loaded.decode(body)
       |> undecoded(terrain_loaded.message_id)
       |> result.map(fn(decoded) {
-        Reported(state:, world_zone_id: decoded.world_zone_id)
+        Reported(
+          state:,
+          world_zone_id: decoded.world_zone_id,
+          by: ReportedByTerrainReady,
+        )
       })
     Fell ->
       fall_value.decode(body)
