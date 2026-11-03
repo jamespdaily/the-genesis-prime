@@ -34,7 +34,7 @@
 ////   same top as before   ─▶ keep r; nothing written
 ////   another top t2       ─▶ LeaveGroup(old), JoinGroup(ZoneChannel(run, t2)), write 0x1da t2   (Z stays: the client only renames)
 ////   r = 0                ─▶ LeaveGroup(old), write 0x1da 0
-////   r has no row         ─▶ the connection ends
+////   r has no row         ─▶ as r = 0, and the zone is named once in a warning
 ////
 //// speaker client        speaker conn                                     each member conn
 //// 0x1c3 (9,Z) id k   ─▶ checks pass
@@ -72,8 +72,12 @@
 ////   specific WorldZone the terrain names, never a parent; the server rolls it up
 ////   to its top zone (`opcode.0xf2`, `opcode.0x63a`, `0x140403670`,
 ////   `chat.zone_reach`: Jim, 2026-11-03). Zone 0 means no zone: no group, 0x1da
-////   with 0 (`0x14036d040`, `0x140403670`). A zone with no row ends the
-////   connection (CLAUDE.md: refuse what the client's tables would not allow).
+////   with 0 (`0x14036d040`, `0x140403670`). A zone with no row is
+////   no zone either, with a warning once for each such zone on a connection: the
+////   client accepts it, since 0x1da names the channel with an empty name when
+////   the table has no row (`0x140403670`), so it is no value its code refuses,
+////   and an area file that names a zone the table lacks must not disconnect the
+////   players who walk there (the coordinator's decision).
 //// - **The old value of 0x63A is not checked**: whether the client's kept value
 ////   outlives a camp is not read (`opcode.0x63a`); a server choice.
 //// - **The speaker gets 0x1c2 and never a 0x1c8 of its own line**
@@ -88,6 +92,10 @@
 ////   realm); bCrossFaction 1 only when the speaker's and the reader's
 ////   `faction_id` differ, on every channel; the speaker's unit id
 ////   (`opcode.0x1c8`, `chat.cross_faction`: Jim, 2026-11-03).
+//// - **A line has at most 501 UTF-16 units**: a link or waypoint at 498 units adds
+////   three characters in the same pass as the cut (`chat.sent_text_length`). A
+////   line with more than 31 formats misframes the client's own message, which no
+////   server check can tell from its bytes (`chat.format_count`).
 //// - **Text and formats are relayed as sent**: no format is added and no line is
 ////   refused for its words (`0x140c45f50`). Item links are relayed unchanged;
 ////   0x1c2 carries no item record (`opcode.0x1c2`), so a type 9 link, which a
@@ -134,14 +142,15 @@
 ////
 //// | Case | Answer | Evidence |
 //// |---|---|---|
-//// | Text over 499 characters, a character ParseChatText drops, or an empty 0x1c3 | 0x1d3 result 17 | `0x140402720`, `vector.0x140402720.lines` |
-//// | A format whose start is past its end, or past the text's end | 0x1d3 result 17 | `0x140085ca0` |
+//// | Text over 501 UTF-16 units, a character ParseChatText drops, or an empty 0x1c3 | 0x1d3 result 17 | `0x140402720`, `chat.sent_text_length`, `vector.0x140402720.lines` |
+//// | A format whose start is past its end or past the text's end, or whose end is past the text's end (an unclosed type 1 or 2, end 65535, is the client's own) | 0x1d3 result 17 | `0x140085ca0`, `chat.format_bounds` |
+//// | A format of a type the client's text never makes (0, 3, 7, 8) | 0x1d3 result 17 | `0x140402720` |
 //// | A format of type 12 to 15 | the frame is unreadable: the connection ends | `0x140085ca0`; CLAUDE.md |
 //// | Chat message id 0 | 0x1d3 result 17 | `0x140405cb0`: ids start at 1 |
 //// | A channel the player does not hold (a wrong id, Zone before its 0x1bc, Guild) | 0x1d3 result 1 (DoesntExist) | `0x140401cb0`, `ChatChannel.flags` |
 //// | A row without flag 4, or type 6 or 34 in a 0x1c3 | 0x1d3 result 3 (NoPermissions) | `ChatChannel.flags` |
 //// | Party (7): the client holds it, but no group exists | 0x1d3 result 8 (NotInGroup) | `lua.ChatSystemLib.ChatChannelResult`; server choice |
-//// | Support (19), Instance (32): the client holds them, the server builds none | 0x1d3 result 3, and the channel logged as unhandled once per connection | Jim, 2026-11-03 |
+//// | Support (19), Instance (32): the client holds them, the server builds none | 0x1d3 result 3, and a warning naming the channel once per connection | Jim, 2026-11-03 |
 //// | Account whisper (bit 1) | 0x1d9 with bit 1 | `opcode.0x1d4` |
 //// | A whisper with an empty text | 0x1d9 when the target is not found; otherwise no answer | `0x140405cb0` |
 ////
@@ -163,8 +172,9 @@
 //// | Zone: camp | `LeaveGroup` in the step that starts the camp's leave | no zone line reaches it after the leave; a new entry joins again |
 //// | Zone: a crash of a member's connection | `pg` drops its memberships when the process ends | later lines skip it; a line sent before is dropped by the VM |
 //// | Zone and whisper: `pg:join` or `pg:leave` while the registry scope is restarting | the call exits | the connection crashes; the scope's restart already restarts the listener and every connection |
-//// | Zone: report 0, or a zone with no row | as above | 0: no group, 0x1da 0; no row: the connection ends |
-//// | Zone: the place's zone is 0 or has no row | server data, not a report | no zone: 0x1da 0, 0x1bc, no group; a warning for no row |
+//// | Zone: report 0, or a zone with no row | as above | no zone: the group left, 0x1da 0; a zone with no row is named for one warning, and the connection goes on |
+//// | Zone: the place's zone is 0 or has no row | server data, not a report | no zone: 0x1da 0, 0x1bc, no group; one warning for no row |
+//// | Whisper: pending when its speaker camps | the camp's leave drops the watch | the camp answers 0x1d9 first, so the whisper keeps its one answer |
 //// | Zone: enter, change zone, camp, enter again | each step joins and leaves its own groups | exactly one membership per group: `join_group` skips a group the process is in |
 //// | Whisper: pending when Sessions ends and the connection claims again | the player is held in the claim's wait or its ask | the reply, the watch's end and a tell are taken for every status that holds a player, so the speaker still gets 0x1c2 or 0x1d9 |
 //// | Whisper: a reply to a whisper of an earlier stay | the number is not held | dropped; numbers never repeat on one connection |
@@ -177,6 +187,7 @@ import genesis_prime/game/character_name
 import genesis_prime/game/chat_channel.{type ChannelType}
 import genesis_prime/game/chat_tell.{type Line, type Speaker, type Tell, Line}
 import genesis_prime/game/top_zone.{type TopZones}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_channel_joined.{ChatChannelJoined}
 import genesis_prime/message/chat_channel_result.{
   type ChatChannelResult, DoesntExist, InvalidMessageText, NoPermissions,
@@ -221,8 +232,10 @@ pub type Effect {
   /// Tell the process the open watch `watch` found, through that watch
   /// (genesis_prime/step `TellWatched`): a whisper to its target.
   TellWatched(watch: WatchId, tell: Tell)
-  /// A line for the log at warning level.
-  Warning(text: String)
+  /// The WorldZone id is one the table holds no row for, which the client
+  /// accepts (0x1da names no channel then, `0x140403670`): the rule logs a warning,
+  /// once for each zone on a connection.
+  UnknownZone(world_zone_id: Int)
   /// Watch the process at `target`, a whisper's target; its end or absence comes
   /// back as `WatchEnded` (genesis_prime/step `Watch`).
   Watch(watch: WatchId, target: Address)
@@ -238,13 +251,11 @@ pub type Effect {
 }
 
 /// Why a chat message is refused so that the connection ends: the client's own
-/// code never sends it, or the client's tables hold no such zone.
+/// reader would refuse its body.
 pub type Refusal {
   /// A body the client's own reader would refuse, a format of type 12 to 15
   /// among them.
   NotDecoded(undecoded: client_connection.Undecoded)
-  /// A reported zone other than 0 that the WorldZone table holds no row for.
-  ZoneWithNoRow(world_zone_id: Int)
 }
 
 /// The zone the client reported and the top zone it falls under.
@@ -259,7 +270,7 @@ pub type Zone {
 /// and whether it has a text: an empty whisper is answered only when its target
 /// is not found.
 pub type PendingWhisper {
-  PendingWhisper(chat_message_id: Int, target_name: String, with_text: Bool)
+  PendingWhisper(chat_message_id: Int, target_name: List(Int), with_text: Bool)
 }
 
 /// One player's chat while in the world: who speaks, the id of its zone channel
@@ -308,26 +319,14 @@ pub fn next_whisper(chat chat: Chat) -> Int {
 /// zone of the place's zone `world_zone_id`, 0x1bc gives the client the zone
 /// channel and the player joins `ZoneChannel(its run, that top zone)`. A place
 /// zone that is 0 or that the table holds no row for leaves the player in no
-/// zone: 0x1da with 0, 0x1bc still written, no zone group, and a warning for a
-/// zone with no row.
+/// zone: 0x1da with 0, 0x1bc still written, no zone group, and the `UnknownZone`
+/// effect for a zone with no row.
 pub fn entered_world(
   chat chat: Chat,
   world_zone_id world_zone_id: Int,
   top_zones top_zones: TopZones,
 ) -> #(Chat, List(Effect)) {
-  let #(zone, warning) = case top_zone.of(top_zones, world_zone_id) {
-    Ok(top_zone_id) -> #(InZone(world_zone_id:, top_zone_id:), [])
-    Error(Nil) -> #(NoZone, case world_zone_id {
-      0 -> []
-      _ -> [
-        Warning(
-          text: "the place's WorldZone "
-          <> int.to_string(world_zone_id)
-          <> " has no row, so the player is in no zone channel",
-        ),
-      ]
-    })
-  }
+  let #(zone, warning) = zone_of(world_zone_id:, top_zones:)
   let chat = Chat(..chat, zone_channel_joined: True, zone:)
   #(
     chat,
@@ -341,6 +340,23 @@ pub fn entered_world(
       ],
     ]),
   )
+}
+
+/// The zone a WorldZone id puts a player in, and the effect that says the id has
+/// no row: zone 0 and a zone with no row are no zone, and only the second is
+/// named.
+fn zone_of(
+  world_zone_id world_zone_id: Int,
+  top_zones top_zones: TopZones,
+) -> #(Zone, List(Effect)) {
+  case top_zone.of(top_zones, world_zone_id) {
+    Ok(top_zone_id) -> #(InZone(world_zone_id:, top_zone_id:), [])
+    Error(Nil) ->
+      case world_zone_id {
+        0 -> #(NoZone, [])
+        _ -> #(NoZone, [UnknownZone(world_zone_id:)])
+      }
+  }
 }
 
 /// The player's name folded as the database's unique index folds it
@@ -466,7 +482,7 @@ fn whisper_sent(
   )
   use <- bool.guard(
     when: sent.account == 1
-      || !character_name.is_valid(sent.target_name)
+      || !is_a_valid_name(sent.target_name)
       || !is_the_realm(named: sent.target_realm_name, own: realm_name),
     return: #(chat, [Send(whisper_failed_frame(sent:))]),
   )
@@ -477,7 +493,7 @@ fn whisper_sent(
       text: sent.text,
       formats: sent.formats,
     )
-  let folded_target = character_name.fold(sent.target_name)
+  let folded_target = character_name.fold(name: text_of(sent.target_name))
   case folded_target == folded(chat) {
     True -> #(chat, whisper_to_oneself(chat:, sent:, line:))
     False ->
@@ -546,10 +562,31 @@ fn whisper_to_oneself(
   }
 }
 
+/// Whether the name a whisper names is a full name by rule 0: a text that is not
+/// valid UTF-16 is no character's name (`character_name`).
+fn is_a_valid_name(units: List(Int)) -> Bool {
+  bit_stream.from_utf16(units)
+  |> result.map(character_name.is_valid)
+  |> result.unwrap(or: False)
+}
+
+/// The text of units that are valid UTF-16, which `is_a_valid_name` has shown.
+fn text_of(units: List(Int)) -> String {
+  let assert Ok(text) = bit_stream.from_utf16(units)
+    as "a name that passed rule 0 is valid UTF-16"
+  text
+}
+
 /// Whether the realm name a whisper names is this realm: empty, or the server's
-/// own, compared without case (opcode.0x1d4).
-fn is_the_realm(named named: String, own own: String) -> Bool {
-  named == "" || string.lowercase(named) == string.lowercase(own)
+/// own, compared without case (opcode.0x1d4). A name that is not valid UTF-16 is
+/// no realm's.
+fn is_the_realm(named named: List(Int), own own: String) -> Bool {
+  named == []
+  || {
+    bit_stream.from_utf16(named)
+    |> result.map(fn(realm) { string.lowercase(realm) == string.lowercase(own) })
+    |> result.unwrap(or: False)
+  }
 }
 
 /// 0x1d9 for a whisper that was not delivered: the target's name as sent, the
@@ -563,7 +600,7 @@ fn whisper_failed_frame(sent sent: SendWhisper) -> Frame {
 }
 
 fn failed_frame(
-  target_name target_name: String,
+  target_name target_name: List(Int),
   account account: Int,
   chat_message_id chat_message_id: Int,
 ) -> Frame {
@@ -577,9 +614,15 @@ fn failed_frame(
   Frame(message_id: whisper_failed.message_id, body:)
 }
 
-/// The most characters the client sends in one line: ParseChatText keeps at most
-/// 499 (0x140402720, vector.0x140402720.lines).
-const longest_line = 499
+/// The most UTF-16 units the client sends in one line: ParseChatText cuts at 499
+/// once for each pass, so a link or waypoint tag at 498 units adds its three
+/// characters and the sent text reaches 501 (`chat.sent_text_length`,
+/// `0x140402720`, `vector.0x140402720.lines`).
+const longest_line = 501
+
+/// The end an unclosed type 1 or 2 format goes on the wire with: nothing closes
+/// it (`chat.format_bounds`).
+const unclosed_end = 65_535
 
 /// What a 0x1c3 is answered with and told to.
 fn line_sent(
@@ -749,7 +792,7 @@ fn is_held(
 
 /// Whether the text and formats are ones the client's own code sends: from 1
 /// (a whisper may be empty: the client sends one for a picked target) to
-/// 499 UTF-16 units with no character ParseChatText drops (`0x140402720`), and
+/// 501 UTF-16 units with no character ParseChatText drops (`0x140402720`), and
 /// each format over a range of the text (`0x140085ca0`).
 fn is_a_line(
   text text: List(Int),
@@ -761,8 +804,7 @@ fn is_a_line(
   && length <= longest_line
   && !list.any(text, is_dropped)
   && list.all(formats, fn(format) {
-    let #(start, end) = format_range(format)
-    is_made_by_the_clients_text(format) && start <= end && end <= length
+    is_made_by_the_clients_text(format) && is_in_the_text(format:, length:)
   })
 }
 
@@ -796,6 +838,34 @@ fn format_range(format: ChatFormat) -> #(Int, Int) {
     chat_format.NavigationPoint(format) -> #(format.start, format.end)
     chat_format.Kind11(format) -> #(format.start, format.end)
     chat_format.ItemRecord(format) -> #(format.start, format.end)
+  }
+}
+
+/// Whether the format's range is one the client sends for a text of `length`
+/// units: it starts within the text, and ends at or after its start and within
+/// the text, but an unclosed type 1 or 2 ends at 65535 (`chat.format_bounds`). A
+/// note on `chat.format_count`: a line with more than 31 formats misframes the
+/// client's own message (the count is 5 bits and every format is written), which
+/// no server check can tell from the bytes.
+fn is_in_the_text(format format: ChatFormat, length length: Int) -> Bool {
+  let #(start, end) = format_range(format)
+  let can_be_unclosed = case format {
+    chat_format.Kind1(..) | chat_format.Kind2(..) -> True
+    chat_format.Kind0(..)
+    | chat_format.Kind3(..)
+    | chat_format.ItemId(..)
+    | chat_format.QuestId(..)
+    | chat_format.ArticleId(..)
+    | chat_format.FilterMask(..)
+    | chat_format.ItemRecord(..)
+    | chat_format.ItemGuid(..)
+    | chat_format.NavigationPoint(..)
+    | chat_format.Kind11(..) -> False
+  }
+  start <= length
+  && {
+    { can_be_unclosed && end == unclosed_end }
+    || { start <= end && end <= length }
   }
 }
 
@@ -1020,72 +1090,56 @@ pub fn watch_ended(
 
 /// The client reported that the player stands in WorldZone `world_zone_id`
 /// (0xF2, or 0x63A's new id): nothing for a zone under the same top zone, the
-/// group changed and 0x1da written for another top zone, the group left and 0x1da
-/// with 0 for zone 0, and the refusal for an id with no row.
+/// group changed and 0x1da written for another top zone, and the group left and
+/// 0x1da with 0 for zone 0 or for a zone the table holds no row for. The client
+/// accepts such a zone (0x1da names no channel for it, `0x140403670`), so it is
+/// no refusal: it is no zone, and an `UnknownZone` effect says so.
 pub fn world_zone_reported(
   chat chat: Chat,
   world_zone_id world_zone_id: Int,
   top_zones top_zones: TopZones,
-) -> Result(#(Chat, List(Effect)), Refusal) {
-  use <- bool.guard(
-    when: world_zone_id == 0,
-    return: Ok(case chat.zone {
-      NoZone -> #(chat, [])
-      InZone(..) -> #(Chat(..chat, zone: NoZone), [
-        LeaveGroup(address: group_of(chat:, zone: chat.zone)),
-        Send(zone_named_frame(NoZone)),
-      ])
+) -> #(Chat, List(Effect)) {
+  let #(zone, unknown) = zone_of(world_zone_id:, top_zones:)
+  let moved = Chat(..chat, zone:)
+  #(
+    moved,
+    list.append(unknown, case chat.zone, zone {
+      NoZone, NoZone -> []
+      InZone(top_zone_id: held, ..), InZone(top_zone_id: now, ..)
+        if held == now
+      -> []
+      InZone(..), _ | NoZone, InZone(..) ->
+        list.flatten([
+          leave_zone(chat:),
+          join_zone(chat: moved, zone:),
+          [Send(zone_named_frame(zone))],
+        ])
     }),
   )
-  use top_zone_id <- result.map(
-    top_zone.of(top_zones, world_zone_id)
-    |> result.replace_error(ZoneWithNoRow(world_zone_id:)),
-  )
-  let zone = InZone(world_zone_id:, top_zone_id:)
-  case chat.zone {
-    InZone(top_zone_id: held, ..) if held == top_zone_id -> #(
-      Chat(..chat, zone:),
-      [],
-    )
-    NoZone -> #(Chat(..chat, zone:), [
-      JoinGroup(address: group_of(chat:, zone:)),
-      Send(zone_named_frame(zone)),
-    ])
-    InZone(..) -> #(Chat(..chat, zone:), [
-      LeaveGroup(address: group_of(chat:, zone: chat.zone)),
-      JoinGroup(address: group_of(chat:, zone:)),
-      Send(zone_named_frame(zone)),
-    ])
-  }
-}
-
-/// The group of a zone the player is in: its run and the zone's top zone.
-fn group_of(chat chat: Chat, zone zone: Zone) -> Address {
-  let assert Ok(address) = zone_group(chat:, zone:)
-    as "a zone the player is in has a group"
-  address
 }
 
 /// What the player's camp does to its chat: it leaves `CharacterNamed` and the
-/// zone channel and stops watching each pending whisper, so nothing reaches it
-/// after the leave.
+/// zone channel, and stops watching each pending whisper and answers it 0x1d9, so
+/// every whisper keeps its one answer and nothing reaches the player after the
+/// leave.
 pub fn left(chat chat: Chat) -> List(Effect) {
   list.flatten([
     [LeaveGroup(address: step.CharacterNamed(folded_name: folded(chat)))],
     leave_zone(chat:),
-    list.map(list.sort(dict.keys(chat.whispers), int.compare), fn(whisper) {
-      Unwatch(watch: whisper_watch(whisper))
+    list.flat_map(list.sort(dict.keys(chat.whispers), int.compare), fn(whisper) {
+      case dict.get(chat.whispers, whisper) {
+        Ok(pending) -> [
+          Unwatch(watch: whisper_watch(whisper)),
+          Send(not_delivered_frame(pending)),
+        ]
+        Error(Nil) -> []
+      }
     }),
   ])
 }
 
 /// A sentence that says why a chat message is refused, for the log.
 pub fn describe(refusal refusal: Refusal) -> String {
-  case refusal {
-    NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
-    ZoneWithNoRow(world_zone_id:) ->
-      "the client reported WorldZone "
-      <> int.to_string(world_zone_id)
-      <> ", which the table has no row for"
-  }
+  let NotDecoded(undecoded:) = refusal
+  client_connection.describe_undecoded(undecoded:)
 }

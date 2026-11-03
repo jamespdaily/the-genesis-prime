@@ -17,6 +17,7 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_line
 import genesis_prime/message/chat_line_accepted.{type ChatLineAccepted}
 import genesis_prime/message/float32
@@ -38,7 +39,6 @@ import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
-import gleam/string
 import login_client
 import mug
 
@@ -499,7 +499,7 @@ pub fn send_line(
     send_chat_line.encode(SendChatLine(
       channel_type:,
       channel_id:,
-      text: units_of(text),
+      text: bit_stream.utf16_units(text),
       formats: [],
       chat_message_id:,
     ))
@@ -526,19 +526,15 @@ pub fn whisper(
 ) -> Nil {
   let assert Ok(body) =
     send_whisper.encode(SendWhisper(
-      target_name: target,
-      target_realm_name: "",
-      text: units_of(text),
+      target_name: bit_stream.utf16_units(target),
+      target_realm_name: [],
+      text: bit_stream.utf16_units(text),
       formats: [],
       chat_message_id:,
       account: 0,
     ))
     as "a whisper of the bot's text fits its fields"
   send_world(game:, message_id: send_whisper.message_id, body:)
-}
-
-fn units_of(text: String) -> List(Int) {
-  list.map(string.to_utf_codepoints(text), string.utf_codepoint_to_int)
 }
 
 /// A line as the client's chat shows another player's: the channel it arrived
@@ -558,10 +554,7 @@ pub fn heard_line(frame frame: Frame) -> Result(HeardLine, Nil) {
     channel_type: line.channel_type,
     channel_id: line.channel_id,
     sender: line.sender_name,
-    text: string.from_utf_codepoints(list.filter_map(
-      line.text,
-      string.utf_codepoint,
-    )),
+    text: from_units(line.text),
   ))
 }
 
@@ -642,4 +635,41 @@ fn collect_until_pong(
 /// (chat.name_lookup).
 pub fn name_lookups_needed(lines lines: List(HeardLine)) -> Int {
   list.count(lines, fn(line) { line.sender == "" })
+}
+
+/// The text of a line's UTF-16 units, with a unit that pairs with no other shown
+/// as the replacement character, as a client's text box would show it.
+fn from_units(units: List(Int)) -> String {
+  bit_stream.from_utf16(units) |> result.unwrap(or: "\u{FFFD}")
+}
+
+/// A scripted client's chat: its connection and the chat message id of its next
+/// line. The client's ids start at 1 (0x140405cb0), and each line takes the next.
+pub type Chatter {
+  Chatter(game: Game, next_id: Int)
+}
+
+/// A chatter that has sent no line.
+pub fn chatter(game game: Game) -> Chatter {
+  Chatter(game:, next_id: 1)
+}
+
+/// Says a line on Say, with the chatter's next id, which is given back with the
+/// chatter that holds the one after it.
+pub fn say_next(
+  chatter chatter: Chatter,
+  text text: String,
+) -> #(Chatter, Int) {
+  say(game: chatter.game, text:, chat_message_id: chatter.next_id)
+  #(Chatter(..chatter, next_id: chatter.next_id + 1), chatter.next_id)
+}
+
+/// Whispers a line with the chatter's next id, as `say_next` says one.
+pub fn whisper_next(
+  chatter chatter: Chatter,
+  target target: String,
+  text text: String,
+) -> #(Chatter, Int) {
+  whisper(game: chatter.game, target:, text:, chat_message_id: chatter.next_id)
+  #(Chatter(..chatter, next_id: chatter.next_id + 1), chatter.next_id)
 }

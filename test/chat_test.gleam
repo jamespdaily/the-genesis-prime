@@ -13,6 +13,7 @@ import genesis_prime/game/chat.{type Chat}
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell.{Line, Said, Speaker}
 import genesis_prime/game/top_zone
+import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_channel_joined.{ChatChannelJoined}
 import genesis_prime/message/chat_channel_result.{
   DoesntExist, InvalidMessageText, NoPermissions, NotInGroup,
@@ -73,10 +74,6 @@ fn a_chat() -> Chat {
   chat_of(speaker())
 }
 
-fn units(text: String) -> List(Int) {
-  list.map(string.to_utf_codepoints(text), string.utf_codepoint_to_int)
-}
-
 fn body(
   type_id type_id: Int,
   channel_id channel_id: Int,
@@ -101,13 +98,14 @@ fn hello(type_id: Int) -> BitArray {
   body(
     type_id:,
     channel_id: 0,
-    text: units("Hello"),
+    text: bit_stream.utf16_units("Hello"),
     formats: [],
     message_id: 1,
   )
 }
 
 fn take(
+  message message: chat.Message,
   chat chat: Chat,
   body body: BitArray,
   viewers viewers: List(Int),
@@ -115,7 +113,7 @@ fn take(
   let assert Ok(taken) =
     chat.take(
       chat:,
-      message: chat.LineSent,
+      message:,
       body:,
       viewers: set.from_list(list.map(viewers, ConnectionId)),
       realm_name: "Test Realm",
@@ -132,7 +130,7 @@ fn frames_of(effects: List(chat.Effect)) -> List(Frame) {
       chat.Send(frame:) -> Ok(frame)
       chat.Tell(..)
       | chat.TellWatched(..)
-      | chat.Warning(..)
+      | chat.UnknownZone(..)
       | chat.Watch(..)
       | chat.Unwatch(..)
       | chat.JoinGroup(..)
@@ -151,7 +149,7 @@ fn tells_of(
       chat.Tell(to:, tell:) -> Ok(#(to, tell))
       chat.Send(..)
       | chat.TellWatched(..)
-      | chat.Warning(..)
+      | chat.UnknownZone(..)
       | chat.Watch(..)
       | chat.Unwatch(..)
       | chat.JoinGroup(..)
@@ -205,7 +203,7 @@ fn reader_of(speaker: chat_tell.Speaker) -> List(chat.Effect) {
       line: Line(
         channel_type: chat_channel.Say,
         channel_id: 0,
-        text: units("Hi"),
+        text: bit_stream.utf16_units("Hi"),
         formats: [],
       ),
     ),
@@ -217,7 +215,13 @@ fn reader_of(speaker: chat_tell.Speaker) -> List(chat.Effect) {
 pub fn an_accepted_say_yell_or_emote_gets_one_0x1c2_with_the_slot_the_name_the_unit_and_no_item_record_test() -> Nil {
   use <- owned_test.run(5000)
   list.each([4, 5, 8], fn(type_id) {
-    let #(_, effects) = take(chat: a_chat(), body: hello(type_id), viewers: [])
+    let #(_, effects) =
+      take(
+        message: chat.LineSent,
+        chat: a_chat(),
+        body: hello(type_id),
+        viewers: [],
+      )
     assert accepted(effects)
       == ChatLineAccepted(
         chat_message_id: 1,
@@ -233,7 +237,8 @@ pub fn an_accepted_say_yell_or_emote_gets_one_0x1c2_with_the_slot_the_name_the_u
 
 pub fn the_speaker_gets_no_0x1c8_for_its_own_line_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(_, effects) = take(chat: a_chat(), body: hello(4), viewers: [7, 8])
+  let #(_, effects) =
+    take(message: chat.LineSent, chat: a_chat(), body: hello(4), viewers: [7, 8])
   assert list.filter(frames_of(effects), fn(frame) {
       frame.message_id == chat_line.message_id
     })
@@ -245,7 +250,12 @@ pub fn each_viewer_is_told_the_line_on_its_own_channel_type_test() -> Nil {
   use <- owned_test.run(5000)
   list.each([4, 5, 8], fn(type_id) {
     let #(_, effects) =
-      take(chat: a_chat(), body: hello(type_id), viewers: [7, 8])
+      take(
+        message: chat.LineSent,
+        chat: a_chat(),
+        body: hello(type_id),
+        viewers: [7, 8],
+      )
     assert list.sort(said_to(effects), int.compare) == [7, 8]
       as "the speaker's viewers are the players it sees: one tell to each (design C: one sender for each pair)"
     let assert [#(_, Said(speaker: told, line:)), ..] = tells_of(effects)
@@ -254,7 +264,7 @@ pub fn each_viewer_is_told_the_line_on_its_own_channel_type_test() -> Nil {
       == Line(
         channel_type: chat_channel.from_id(type_id),
         channel_id: 0,
-        text: units("Hello"),
+        text: bit_stream.utf16_units("Hello"),
         formats: [],
       )
       as "the line keeps its channel, text and formats as sent"
@@ -263,7 +273,8 @@ pub fn each_viewer_is_told_the_line_on_its_own_channel_type_test() -> Nil {
 
 pub fn a_player_out_of_sight_is_told_nothing_test() -> Nil {
   use <- owned_test.run(5000)
-  let #(_, effects) = take(chat: a_chat(), body: hello(4), viewers: [])
+  let #(_, effects) =
+    take(message: chat.LineSent, chat: a_chat(), body: hello(4), viewers: [])
   assert said_to(effects) == []
     as "chat.range: the line reaches the players who see the speaker, and with none it reaches no one"
   assert nothing_told(effects)
@@ -291,7 +302,7 @@ pub fn a_viewer_writes_one_0x1c8_with_every_field_the_design_lists_test() -> Nil
         line: Line(
           channel_type: chat_channel.Yell,
           channel_id: 0,
-          text: units("Hello"),
+          text: bit_stream.utf16_units("Hello"),
           formats: [Kind1(ChatFormatKind1(start: 0, end: 5, field_4: 0xA1B2))],
         ),
       ),
@@ -311,7 +322,7 @@ pub fn a_viewer_writes_one_0x1c8_with_every_field_the_design_lists_test() -> Nil
       sender_name: "Ab Cd",
       sender_realm_name: "",
       presence_state: 0,
-      text: units("Hello"),
+      text: bit_stream.utf16_units("Hello"),
       formats: [Kind1(ChatFormatKind1(start: 0, end: 5, field_4: 0xA1B2))],
       cross_faction: 0,
       field_14: 0,
@@ -339,7 +350,7 @@ pub fn bcrossfaction_is_1_only_when_the_factions_differ_on_every_channel_test() 
               line: Line(
                 channel_type: channel,
                 channel_id: 0,
-                text: units("Hi"),
+                text: bit_stream.utf16_units("Hi"),
                 formats: [],
               ),
             ),
@@ -361,7 +372,7 @@ pub fn a_viewer_drops_a_line_naming_another_map_or_another_run_of_the_map_test()
     Line(
       channel_type: chat_channel.Say,
       channel_id: 0,
-      text: units("Hi"),
+      text: bit_stream.utf16_units("Hi"),
       formats: [],
     )
   list.each(
@@ -392,7 +403,8 @@ fn assert_refused(
   message_id message_id: Int,
   because because: String,
 ) -> Nil {
-  let #(after, effects) = take(chat: a_chat(), body: bytes, viewers: [7])
+  let #(after, effects) =
+    take(message: chat.LineSent, chat: a_chat(), body: bytes, viewers: [7])
   assert refused(effects)
     == ChatResult(
       channel_type: type_id,
@@ -405,7 +417,7 @@ fn assert_refused(
   assert after == a_chat() as "a refused line changes nothing"
 }
 
-pub fn more_than_499_characters_is_refused_with_result_17_and_499_is_taken_test() -> Nil {
+pub fn a_line_of_501_units_is_taken_and_502_is_refused_with_result_17_test() -> Nil {
   use <- owned_test.run(5000)
   let long = fn(count) {
     body(
@@ -416,17 +428,107 @@ pub fn more_than_499_characters_is_refused_with_result_17_and_499_is_taken_test(
       message_id: 3,
     )
   }
+  list.each([499, 500, 501], fn(count) {
+    let #(_, effects) =
+      take(
+        message: chat.LineSent,
+        chat: a_chat(),
+        body: long(count),
+        viewers: [],
+      )
+    assert accepted(effects).chat_message_id == 3
+      as "chat.sent_text_length: the cut at 499 runs once for each pass, so a link or waypoint tag at 498 units sends a text of 500 or 501 units"
+  })
   assert_refused(
-    bytes: long(500),
+    bytes: long(502),
     type_id: 4,
     channel_id: 0,
     result: InvalidMessageText,
     message_id: 3,
-    because: "vector.0x140402720.lines: ParseChatText keeps at most 499, so 500 is a line the client never sends",
+    because: "chat.sent_text_length: no pass of ParseChatText sends more than 501 units",
   )
-  let #(_, effects) = take(chat: a_chat(), body: long(499), viewers: [])
-  assert accepted(effects).chat_message_id == 3
-    as "vector.0x140402720.lines: 499 characters are kept whole"
+}
+
+pub fn an_unclosed_type_1_or_2_format_goes_with_end_65535_and_other_ranges_are_checked_test() -> Nil {
+  use <- owned_test.run(5000)
+  let unclosed_1 =
+    chat_format.Kind1(chat_format_kind_1.ChatFormatKind1(
+      start: 2,
+      end: 65_535,
+      field_4: 9,
+    ))
+  let unclosed_2 =
+    chat_format.Kind2(chat_format_kind_2.ChatFormatKind2(
+      start: 0,
+      end: 65_535,
+      field_4: 0,
+    ))
+  let closed_empty =
+    chat_format.Kind1(chat_format_kind_1.ChatFormatKind1(
+      start: 3,
+      end: 3,
+      field_4: 9,
+    ))
+  list.each([unclosed_1, unclosed_2, closed_empty], fn(format) {
+    let #(_, effects) =
+      take(
+        message: chat.LineSent,
+        chat: a_chat(),
+        body: body(
+          type_id: 4,
+          channel_id: 0,
+          text: bit_stream.utf16_units("Hello"),
+          formats: [format],
+          message_id: 5,
+        ),
+        viewers: [7],
+      )
+    assert accepted(effects).chat_message_id == 5
+      as "chat.format_bounds: an unclosed <#> or <*> is sent with end 65535, and a closed type 1 or 2 can have start = end"
+    let assert [#(_, Said(line:, ..))] = tells_of(effects)
+    assert line.formats == [format]
+      as "it is relayed as sent, end 65535 included"
+  })
+  let past_the_text =
+    chat_format.ItemId(chat_format_item_id.ChatFormatItemId(
+      start: 0,
+      end: 65_535,
+      item_id: 1,
+    ))
+  assert_refused(
+    bytes: body(
+      type_id: 4,
+      channel_id: 0,
+      text: bit_stream.utf16_units("Hello"),
+      formats: [past_the_text],
+      message_id: 5,
+    ),
+    type_id: 4,
+    channel_id: 0,
+    result: InvalidMessageText,
+    message_id: 5,
+    because: "chat.format_bounds: only types 1 and 2 go unclosed; a link with its end past the text's units is refused",
+  )
+  let start_past_text =
+    chat_format.Kind1(chat_format_kind_1.ChatFormatKind1(
+      start: 6,
+      end: 65_535,
+      field_4: 9,
+    ))
+  assert_refused(
+    bytes: body(
+      type_id: 4,
+      channel_id: 0,
+      text: bit_stream.utf16_units("Hello"),
+      formats: [start_past_text],
+      message_id: 5,
+    ),
+    type_id: 4,
+    channel_id: 0,
+    result: InvalidMessageText,
+    message_id: 5,
+    because: "chat.format_bounds: every format starts within the text, an unclosed one too",
+  )
 }
 
 pub fn a_character_parsechattext_drops_is_refused_and_0xa0_is_taken_test() -> Nil {
@@ -469,6 +571,7 @@ pub fn a_character_parsechattext_drops_is_refused_and_0xa0_is_taken_test() -> Ni
   )
   let #(_, effects) =
     take(
+      message: chat.LineSent,
       chat: a_chat(),
       body: body(
         type_id: 4,
@@ -504,7 +607,7 @@ pub fn a_format_whose_start_is_past_its_end_or_whose_end_is_past_the_text_is_ref
     bytes: body(
       type_id: 4,
       channel_id: 0,
-      text: units("Hello"),
+      text: bit_stream.utf16_units("Hello"),
       formats: [guid(3, 2)],
       message_id: 5,
     ),
@@ -518,7 +621,7 @@ pub fn a_format_whose_start_is_past_its_end_or_whose_end_is_past_the_text_is_ref
     bytes: body(
       type_id: 4,
       channel_id: 0,
-      text: units("Hello"),
+      text: bit_stream.utf16_units("Hello"),
       formats: [guid(0, 6)],
       message_id: 5,
     ),
@@ -530,11 +633,12 @@ pub fn a_format_whose_start_is_past_its_end_or_whose_end_is_past_the_text_is_ref
   )
   let #(_, effects) =
     take(
+      message: chat.LineSent,
       chat: a_chat(),
       body: body(
         type_id: 4,
         channel_id: 0,
-        text: units("Hello"),
+        text: bit_stream.utf16_units("Hello"),
         formats: [guid(0, 5)],
         message_id: 5,
       ),
@@ -553,6 +657,7 @@ pub fn a_format_range_counts_utf_16_units_not_characters_test() -> Nil {
   }
   let #(_, effects) =
     take(
+      message: chat.LineSent,
       chat: a_chat(),
       body: body(
         type_id: 4,
@@ -586,6 +691,7 @@ pub fn a_lone_surrogate_is_relayed_as_the_client_sent_it_test() -> Nil {
   let text = [0x61, 0xD800, 0x62]
   let #(_, effects) =
     take(
+      message: chat.LineSent,
       chat: a_chat(),
       body: body(type_id: 4, channel_id: 0, text:, formats: [], message_id: 7),
       viewers: [9],
@@ -602,7 +708,7 @@ pub fn chat_message_id_0_is_refused_with_result_17_test() -> Nil {
     bytes: body(
       type_id: 4,
       channel_id: 0,
-      text: units("Hi"),
+      text: bit_stream.utf16_units("Hi"),
       formats: [],
       message_id: 0,
     ),
@@ -621,7 +727,7 @@ pub fn a_channel_the_player_does_not_hold_is_refused_with_result_1_test() -> Nil
       bytes: body(
         type_id: channel.0,
         channel_id: channel.1,
-        text: units("Hi"),
+        text: bit_stream.utf16_units("Hi"),
         formats: [],
         message_id: 8,
       ),
@@ -641,7 +747,7 @@ pub fn a_row_without_flag_4_is_refused_with_result_3_test() -> Nil {
       bytes: body(
         type_id:,
         channel_id: 0,
-        text: units("Hi"),
+        text: bit_stream.utf16_units("Hi"),
         formats: [],
         message_id: 9,
       ),
@@ -661,7 +767,7 @@ pub fn type_6_or_34_in_a_0x1c3_is_refused_with_result_3_test() -> Nil {
       bytes: body(
         type_id:,
         channel_id: 0,
-        text: units("Hi"),
+        text: bit_stream.utf16_units("Hi"),
         formats: [],
         message_id: 9,
       ),
@@ -692,7 +798,12 @@ pub fn support_and_instance_are_refused_with_result_3_and_named_as_unhandled_tes
     [#(19, chat_channel.Support), #(32, chat_channel.Instance)],
     fn(channel) {
       let #(_, effects) =
-        take(chat: a_chat(), body: hello(channel.0), viewers: [7])
+        take(
+          message: chat.LineSent,
+          chat: a_chat(),
+          body: hello(channel.0),
+          viewers: [7],
+        )
       assert refused(effects)
         == ChatResult(
           channel_type: channel.0,
@@ -702,7 +813,7 @@ pub fn support_and_instance_are_refused_with_result_3_and_named_as_unhandled_tes
         )
         as "Jim, 2026-11-03: Support and Instance are refused with result 3"
       assert list.contains(effects, chat.Unhandled(channel_type: channel.1))
-        as "the coverage measure sees the gap: the channel is logged as unhandled"
+        as "the channel is logged as unhandled"
       assert said_to(effects) == [] as "nobody else gets anything"
     },
   )
@@ -710,13 +821,14 @@ pub fn support_and_instance_are_refused_with_result_3_and_named_as_unhandled_tes
 
 pub fn text_and_formats_reach_readers_as_sent_with_no_format_added_and_no_word_refused_test() -> Nil {
   use <- owned_test.run(5000)
-  let text = units("damn <b>word</b> fuck")
+  let text = bit_stream.utf16_units("damn <b>word</b> fuck")
   let formats = [
     Kind1(ChatFormatKind1(start: 1, end: 2, field_4: 3)),
     ItemGuid(ChatFormatItemGuid(start: 0, end: 4, item_guid: 9)),
   ]
   let #(_, effects) =
     take(
+      message: chat.LineSent,
       chat: a_chat(),
       body: body(type_id: 4, channel_id: 0, text:, formats:, message_id: 1),
       viewers: [7],
@@ -762,6 +874,7 @@ pub fn every_0x1c3_gets_exactly_one_answer_test() -> Nil {
   use #(type_id, channel_id, text, message_id) <- qcheck.given(generator)
   let #(_, effects) =
     take(
+      message: chat.LineSent,
       chat: a_chat(),
       body: body(type_id:, channel_id:, text:, formats: [], message_id:),
       viewers: [7],
@@ -850,10 +963,7 @@ fn zone_channel(top_zone_id: Int) -> step.Address {
 }
 
 fn reported(chat: Chat, world_zone_id: Int) -> #(Chat, List(chat.Effect)) {
-  let assert Ok(taken) =
-    chat.world_zone_reported(chat:, world_zone_id:, top_zones: top_zones())
-    as "the zone has a row or is 0"
-  taken
+  chat.world_zone_reported(chat:, world_zone_id:, top_zones: top_zones())
 }
 
 fn named_by_0x1da(effects: List(chat.Effect)) -> List(Int) {
@@ -868,10 +978,10 @@ fn named_by_0x1da(effects: List(chat.Effect)) -> List(Int) {
   })
 }
 
-fn warnings_of(effects: List(chat.Effect)) -> List(String) {
+fn unknown_zones_of(effects: List(chat.Effect)) -> List(Int) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      chat.Warning(text:) -> Ok(text)
+      chat.UnknownZone(world_zone_id:) -> Ok(world_zone_id)
       chat.Send(..)
       | chat.Tell(..)
       | chat.TellWatched(..)
@@ -886,11 +996,12 @@ fn warnings_of(effects: List(chat.Effect)) -> List(String) {
 
 fn zone_line(chat: Chat, message_id: Int) -> #(Chat, List(chat.Effect)) {
   take(
+    message: chat.LineSent,
     chat:,
     body: body(
       type_id: 9,
       channel_id: zone_channel_id,
-      text: units("Hello"),
+      text: bit_stream.utf16_units("Hello"),
       formats: [],
       message_id:,
     ),
@@ -973,12 +1084,12 @@ pub fn a_place_zone_that_is_0_or_has_no_row_leaves_the_player_in_no_zone_test() 
       effect == chat.JoinGroup(zone_channel(0))
     })
     == []
-  assert warnings_of(in_0) == []
-    as "zone 0 is the table's own no-zone value, so no warning"
+  assert unknown_zones_of(in_0) == []
+    as "zone 0 is the table's own no-zone value, so nothing is named"
   let #(_, no_row) = in_zone(speaker(), 1132)
   assert named_by_0x1da(no_row) == [0]
-  assert list.length(warnings_of(no_row)) == 1
-    as "a place zone with no WorldZone row is server data gone wrong: a warning, and the connection does not end"
+  assert unknown_zones_of(no_row) == [1132]
+    as "a place zone with no WorldZone row is server data gone wrong: the zone is named for a warning, and the connection does not end"
   let #(_, line) = zone_line(chat_in_0, 1)
   assert accepted(line).chat_message_id == 1
     as "a zone line of a player in no zone is accepted"
@@ -1029,15 +1140,22 @@ pub fn a_report_of_zone_0_leaves_the_group_and_names_no_zone_and_a_zone_line_rea
     as "a zone after zone 0 joins its group and names the channel"
 }
 
-pub fn a_report_of_a_zone_with_no_row_ends_the_connection_test() -> Nil {
+pub fn a_report_of_a_zone_with_no_row_is_no_zone_and_is_named_not_refused_test() -> Nil {
   use <- owned_test.run(5000)
-  assert chat.world_zone_reported(
-      chat: run_zone(1411),
-      world_zone_id: 1132,
-      top_zones: top_zones(),
-    )
-    == Error(chat.ZoneWithNoRow(world_zone_id: 1132))
-    as "CLAUDE.md: refuse a value the client's tables would not allow; WorldZone has no row 1132"
+  let #(chat, effects) = reported(run_zone(1411), 1132)
+  assert effects
+    == [
+      chat.UnknownZone(world_zone_id: 1132),
+      chat.LeaveGroup(zone_channel(1304)),
+      chat.Send(zone_named_frame(0)),
+    ]
+    as "0x140403670: the client accepts a zone with no row and names the channel with an empty name, so the report is no refusal (the coordinator's decision): the player leaves its group, 0x1da gives 0, and the zone is named for one warning"
+  let #(_, line) = zone_line(chat, 4)
+  assert accepted(line).chat_message_id == 4 && tells_of(line) == []
+    as "a zone line of that player is accepted and reaches no one"
+  let #(_, again) = reported(chat, 1132)
+  assert again == [chat.UnknownZone(world_zone_id: 1132)]
+    as "a second report of the same zone writes nothing more; the rule names it again and the connection logs it once"
 }
 
 pub fn a_zone_line_is_accepted_and_told_to_the_group_of_the_speakers_run_and_top_zone_test() -> Nil {
@@ -1067,7 +1185,7 @@ fn member_hears(
       line: Line(
         channel_type: chat_channel.Zone,
         channel_id: zone_channel_id,
-        text: units("Hi"),
+        text: bit_stream.utf16_units("Hi"),
         formats: [],
       ),
     ),
@@ -1154,11 +1272,12 @@ pub fn a_zone_line_before_its_0x1bc_or_on_another_id_is_refused_with_result_1_te
   let refuse = fn(chat, channel_id) {
     let #(_, effects) =
       take(
+        message: chat.LineSent,
         chat:,
         body: body(
           type_id: 9,
           channel_id:,
-          text: units("Hi"),
+          text: bit_stream.utf16_units("Hi"),
           formats: [],
           message_id: 8,
         ),
@@ -1200,7 +1319,7 @@ pub fn the_memberships_one_player_holds_after_entering_changing_zone_camping_and
         chat.Send(..)
         | chat.Tell(..)
         | chat.TellWatched(..)
-        | chat.Warning(..)
+        | chat.UnknownZone(..)
         | chat.Watch(..)
         | chat.Unwatch(..)
         | chat.Unhandled(..) -> groups
@@ -1242,9 +1361,9 @@ fn whisper_body(
 ) -> BitArray {
   let assert Ok(body) =
     send_whisper.encode(SendWhisper(
-      target_name: target,
-      target_realm_name: realm,
-      text: units(text),
+      target_name: bit_stream.utf16_units(target),
+      target_realm_name: bit_stream.utf16_units(realm),
+      text: bit_stream.utf16_units(text),
       formats: [],
       chat_message_id: message_id,
       account:,
@@ -1254,18 +1373,7 @@ fn whisper_body(
 }
 
 fn whisper(chat chat: Chat, body body: BitArray) -> #(Chat, List(chat.Effect)) {
-  let assert Ok(taken) =
-    chat.take(
-      chat:,
-      message: chat.WhisperSent,
-      body:,
-      viewers: set.new(),
-      realm_name: "Test Realm",
-      connection: ConnectionId(1),
-      tables: character_tables.shared(),
-    )
-    as "the body decodes"
-  taken
+  take(message: chat.WhisperSent, chat:, body:, viewers: [])
 }
 
 /// A whisper "Hi" to the target, with slot 3.
@@ -1324,7 +1432,7 @@ pub fn a_whisper_to_an_online_character_watches_its_name_tells_through_the_watch
           line: Line(
             channel_type: chat_channel.Whisper,
             channel_id: 0,
-            text: units("Hi"),
+            text: bit_stream.utf16_units("Hi"),
             formats: [],
           ),
         ),
@@ -1342,7 +1450,7 @@ pub fn the_target_writes_one_0x1c8_on_the_whisper_channel_and_tells_the_speaker_
   assert line.channel_type == 6
     && line.channel_id == 0
     && line.sender_name == "Ab Cd"
-    && line.text == units("Hi")
+    && line.text == bit_stream.utf16_units("Hi")
     && line.cross_faction == 0
     as "opcode.0x1d4, opcode.0x1c8: the target gets one 0x1c8 on (6, 0) with the speaker's name"
   assert to == step.Connection(ConnectionId(1))
@@ -1407,14 +1515,22 @@ pub fn an_empty_whisper_is_answered_only_when_the_target_is_not_found_test() -> 
   assert failed(
       chat.told(chat, chat_tell.NotHeard(whisper: 1)).1 |> drop_unwatch,
     )
-    == WhisperFailed(target_name: "Cd Ef", account: 0, chat_message_id: 4)
+    == WhisperFailed(
+      target_name: bit_stream.utf16_units("Cd Ef"),
+      account: 0,
+      chat_message_id: 4,
+    )
     as "0x1d9 when the target is not in the world"
   assert failed(
       chat.watch_ended(chat, step.WatchId(first_watch + 1))
       |> unwrap_ok
       |> drop_unwatch,
     )
-    == WhisperFailed(target_name: "Cd Ef", account: 0, chat_message_id: 4)
+    == WhisperFailed(
+      target_name: bit_stream.utf16_units("Cd Ef"),
+      account: 0,
+      chat_message_id: 4,
+    )
     as "0x1d9 when no connection holds the name"
 }
 
@@ -1433,7 +1549,7 @@ fn drop_unwatch(effects: List(chat.Effect)) -> List(chat.Effect) {
       chat.Send(..)
       | chat.Tell(..)
       | chat.TellWatched(..)
-      | chat.Warning(..)
+      | chat.UnknownZone(..)
       | chat.Watch(..)
       | chat.JoinGroup(..)
       | chat.LeaveGroup(..)
@@ -1466,7 +1582,11 @@ pub fn the_realm_name_of_the_server_in_any_case_or_none_is_the_same_realm_and_an
       account: 0,
     )
   assert failed(whisper(chat: a_chat(), body:).1)
-    == WhisperFailed(target_name: "Cd Ef", account: 0, chat_message_id: 3)
+    == WhisperFailed(
+      target_name: bit_stream.utf16_units("Cd Ef"),
+      account: 0,
+      chat_message_id: 3,
+    )
     as "opcode.0x1d4: any other realm gets 0x1d9, with no watch"
 }
 
@@ -1480,7 +1600,11 @@ pub fn no_online_character_gives_0x1d9_with_the_name_as_sent_bit_0_and_the_slot_
     Error(Nil) -> panic as "the watch is a whisper's"
   }
   assert failed(effects)
-    == WhisperFailed(target_name: "cD eF", account: 0, chat_message_id: 3)
+    == WhisperFailed(
+      target_name: bit_stream.utf16_units("cD eF"),
+      account: 0,
+      chat_message_id: 3,
+    )
     as "opcode.0x1d9: the name as sent, bit 0 and the id"
   assert chat.watch_ended(chat, step.WatchId(first_watch + 1)) == Error(Nil)
     as "the whisper is forgotten, so its watch's end is taken once"
@@ -1491,7 +1615,11 @@ pub fn a_name_that_fails_rule_0_gets_0x1d9_at_once_with_no_watch_test() -> Nil {
   list.each(["Abc", "Ab1 Cd", "Ab  Cd", " Ab Cd", "A B C"], fn(target) {
     let #(chat, effects) = whisper_to(a_chat(), target)
     assert failed(effects)
-      == WhisperFailed(target_name: target, account: 0, chat_message_id: 3)
+      == WhisperFailed(
+        target_name: bit_stream.utf16_units(target),
+        account: 0,
+        chat_message_id: 3,
+      )
       as "no character can have a name rule 0 refuses, so no watch is made"
     assert chat == a_chat()
   })
@@ -1508,7 +1636,11 @@ pub fn an_account_whisper_gets_0x1d9_with_bit_1_test() -> Nil {
       account: 1,
     )
   assert failed(whisper(chat: a_chat(), body:).1)
-    == WhisperFailed(target_name: "Cd Ef", account: 1, chat_message_id: 3)
+    == WhisperFailed(
+      target_name: bit_stream.utf16_units("Cd Ef"),
+      account: 1,
+      chat_message_id: 3,
+    )
     as "opcode.0x1d4: there are no account friends, so the answer is always not delivered"
 }
 
@@ -1529,14 +1661,14 @@ pub fn a_whisper_that_fails_the_line_rules_is_refused_with_0x1d3_on_the_whisper_
       whisper_body(target: "Cd Ef", realm: "", text:, message_id:, account: 0)
     refused(whisper(chat: a_chat(), body:).1)
   }
-  assert refuse(string.repeat("a", 500), 3)
+  assert refuse(string.repeat("a", 502), 3)
     == ChatResult(
       channel_type: 6,
       channel_id: 0,
       result: InvalidMessageText,
       chat_message_id: 3,
     )
-    as "vector.0x140402720.lines: 500 characters; the refusal is on (6, 0) with the line's id"
+    as "chat.sent_text_length: 502 units; the refusal is on (6, 0) with the line's id"
   assert refuse("a\u{0001}", 4).result == InvalidMessageText
   assert refuse("Hi", 0).chat_message_id == 0
     as "0x140405cb0: slot 0 is refused"
@@ -1581,17 +1713,31 @@ pub fn the_first_reply_for_a_whisper_is_the_only_answer_when_a_takeover_gives_tw
     as "target ended after writing 0x1c8, before Heard: WatchEnded gave 0x1d9 and a Heard that comes after is dropped (the accepted gap, the target's client showed the line)"
 }
 
-pub fn a_camp_stops_watching_each_pending_whisper_test() -> Nil {
+pub fn a_camp_answers_each_pending_whisper_0x1d9_and_stops_watching_it_test() -> Nil {
   use <- owned_test.run(5000)
   let #(chat, _) = whisper_to(a_chat(), "Cd Ef")
-  let #(chat, _) = whisper_to(chat, "Gh Ij")
-  assert chat.left(chat)
-    == [
-      chat.LeaveGroup(step.CharacterNamed("ab cd")),
-      chat.Unwatch(step.WatchId(first_watch + 1)),
-      chat.Unwatch(step.WatchId(first_watch + 2)),
-    ]
-    as "the whispers the speaker waits on are dropped with its stay; a later reply finds no number"
+  let #(chat, _) = whisper_to(chat, "gH iJ")
+  let left = chat.left(chat)
+  let assert [
+    chat.LeaveGroup(name),
+    chat.Unwatch(first),
+    chat.Send(first_frame),
+    chat.Unwatch(second),
+    chat.Send(second_frame),
+  ] = left
+    as "the camp leaves the name group, then drops each whisper's watch and answers it"
+  assert name == step.CharacterNamed("ab cd")
+  assert first == step.WatchId(first_watch + 1)
+    && second == step.WatchId(first_watch + 2)
+  assert failed([chat.Send(first_frame)])
+    == WhisperFailed(
+      target_name: bit_stream.utf16_units("Cd Ef"),
+      account: 0,
+      chat_message_id: 3,
+    )
+    as "the design: every 0x1d4 keeps exactly one answer, so a whisper the speaker's camp drops is answered 0x1d9"
+  assert failed([chat.Send(second_frame)]).target_name
+    == bit_stream.utf16_units("gH iJ")
 }
 
 pub fn a_format_of_a_type_the_clients_text_never_makes_is_refused_with_result_17_in_a_line_and_a_whisper_test() -> Nil {
@@ -1648,7 +1794,7 @@ pub fn a_format_of_a_type_the_clients_text_never_makes_is_refused_with_result_17
       bytes: body(
         type_id: 4,
         channel_id: 0,
-        text: units("Hi"),
+        text: bit_stream.utf16_units("Hi"),
         formats: [format],
         message_id: 3,
       ),
@@ -1673,9 +1819,9 @@ fn whisper_formats_body(
 ) -> BitArray {
   let assert Ok(body) =
     send_whisper.encode(SendWhisper(
-      target_name: "Cd Ef",
-      target_realm_name: "",
-      text: units("Hi"),
+      target_name: bit_stream.utf16_units("Cd Ef"),
+      target_realm_name: [],
+      text: bit_stream.utf16_units("Hi"),
       formats:,
       chat_message_id: message_id,
       account: 0,
@@ -1730,11 +1876,12 @@ pub fn the_formats_the_clients_text_makes_are_taken_test() -> Nil {
   list.each(made, fn(format) {
     let #(_, effects) =
       take(
+        message: chat.LineSent,
         chat: a_chat(),
         body: body(
           type_id: 4,
           channel_id: 0,
-          text: units("Hi"),
+          text: bit_stream.utf16_units("Hi"),
           formats: [format],
           message_id: 3,
         ),
@@ -1743,4 +1890,127 @@ pub fn the_formats_the_clients_text_makes_are_taken_test() -> Nil {
     assert accepted(effects).chat_message_id == 3
       as "0x140402720: ParseChatText makes types 1, 2, 4, 5, 6, 9, 10 and 11, so a line with one is taken and relayed"
   })
+}
+
+pub fn a_target_name_or_realm_that_is_not_valid_utf_16_gets_0x1d9_with_the_name_as_sent_test() -> Nil {
+  use <- owned_test.run(5000)
+  let encoded = fn(target: List(Int), realm: List(Int)) {
+    let assert Ok(body) =
+      send_whisper.encode(SendWhisper(
+        target_name: target,
+        target_realm_name: realm,
+        text: bit_stream.utf16_units("Hi"),
+        formats: [],
+        chat_message_id: 3,
+        account: 0,
+      ))
+    body
+  }
+  let lone = [0x41, 0x62, 0x20, 0xD800, 0x64]
+  assert failed(whisper(chat: a_chat(), body: encoded(lone, [])).1)
+    == WhisperFailed(target_name: lone, account: 0, chat_message_id: 3)
+    as "a name that is not valid UTF-16 is no character's name (rule 0), so the whisper is answered 0x1d9 with the name as sent, and the connection does not end"
+  assert failed(
+      whisper(
+        chat: a_chat(),
+        body: encoded(bit_stream.utf16_units("Cd Ef"), [0xDC00]),
+      ).1,
+    ).target_name
+    == bit_stream.utf16_units("Cd Ef")
+    as "a realm name that is not valid UTF-16 is no realm's"
+}
+
+pub fn every_0x1d4_gets_exactly_one_answer_except_an_empty_whisper_to_a_found_target_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let generator =
+    qcheck.tuple4(
+      qcheck.from_generators(qcheck.return("Cd Ef"), [
+        qcheck.return("cD eF"),
+        qcheck.return("Ab Cd"),
+        qcheck.return("abc"),
+        qcheck.return("Ab1 Cd"),
+        qcheck.return(""),
+        qcheck.return("A  B"),
+      ]),
+      qcheck.from_generators(qcheck.return(""), [
+        qcheck.return("Test Realm"),
+        qcheck.return("tEsT rEaLm"),
+        qcheck.return("Other"),
+      ]),
+      qcheck.generic_list(
+        qcheck.from_generators(qcheck.bounded_int(from: 0x20, to: 0x7E), [
+          qcheck.bounded_int(from: 0, to: 0x30),
+          qcheck.bounded_int(from: 0xD7F0, to: 0xE010),
+        ]),
+        qcheck.from_generators(qcheck.bounded_int(from: 0, to: 5), [
+          qcheck.bounded_int(from: 498, to: 503),
+        ]),
+      ),
+      qcheck.tuple2(
+        qcheck.bounded_int(from: 0, to: 2),
+        qcheck.bounded_int(from: 0, to: 1),
+      ),
+    )
+  use #(target, realm, text, #(message_id, account)) <- qcheck.given(generator)
+  let assert Ok(body) =
+    send_whisper.encode(SendWhisper(
+      target_name: bit_stream.utf16_units(target),
+      target_realm_name: bit_stream.utf16_units(realm),
+      text:,
+      formats: [],
+      chat_message_id: message_id,
+      account:,
+    ))
+  let #(after, effects) = whisper(chat: a_chat(), body:)
+  let answers = fn(effects: List(chat.Effect)) {
+    list.length(
+      list.filter(frames_of(effects), fn(frame) {
+        frame.message_id == chat_line_accepted.message_id
+        || frame.message_id == chat_result.message_id
+        || frame.message_id == whisper_failed.message_id
+      }),
+    )
+  }
+  let waits_on_a_target =
+    list.any(effects, fn(effect) {
+      case effect {
+        chat.Watch(..) -> True
+        chat.Send(..)
+        | chat.Tell(..)
+        | chat.TellWatched(..)
+        | chat.UnknownZone(..)
+        | chat.Unwatch(..)
+        | chat.JoinGroup(..)
+        | chat.LeaveGroup(..)
+        | chat.Unhandled(..) -> False
+      }
+    })
+  case waits_on_a_target {
+    True -> {
+      assert answers(effects) == 0
+        as "a whisper that waits on its target is answered by the reply"
+      assert answers(chat.told(after, chat_tell.NotHeard(whisper: 1)).1) == 1
+        as "opcode.0x1d9: NotHeard is its one answer"
+      assert answers(
+          unwrap_ok(chat.watch_ended(after, step.WatchId(first_watch + 1))),
+        )
+        == 1
+        as "and so is the end of its watch"
+      assert answers(
+          chat.told(after, chat_tell.Heard(whisper: 1, name: "Cd Ef")).1,
+        )
+        == case text {
+          [] -> 0
+          [_, ..] -> 1
+        }
+        as "and Heard is 0x1c2, except for an empty whisper, which is silent when its target is found (0x140405cb0)"
+    }
+    False -> {
+      assert answers(effects) == 1
+        || {
+          answers(effects) == 0 && text == [] && account == 0 && message_id != 0
+        }
+        as "every other 0x1d4 gets exactly one of 0x1c2, 0x1d3 or 0x1d9; the one without is an empty whisper to oneself, found"
+    }
+  }
 }

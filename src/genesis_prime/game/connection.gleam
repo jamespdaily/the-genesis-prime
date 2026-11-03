@@ -411,6 +411,8 @@ type Session {
     /// The ids of the chat channel types already logged as unhandled on this
     /// connection (`chat.Unhandled`): once for each.
     unhandled_channels_logged: Set(Int),
+    /// The WorldZone ids already logged as having no row on this connection.
+    unknown_zones_logged: Set(Int),
     /// The number of the next whisper the connection's players make: it counts
     /// for the connection's life, so a reply to a whisper of an earlier stay in
     /// the world never meets a new whisper (genesis_prime/game/chat).
@@ -556,6 +558,7 @@ pub fn step(
             unhandled_logged: set.new(),
             unrelayed_logged: set.new(),
             unhandled_channels_logged: set.new(),
+            unknown_zones_logged: set.new(),
             next_whisper: 1,
             status: AwaitingHelloReply,
           )),
@@ -963,17 +966,13 @@ fn movement_message(
       Continue(moving(session:, holder:, entered:, state:), [])
     Ok(movement.Reported(state:, world_zone_id:)) -> {
       let session = moving(session:, holder:, entered:, state:)
-      case
+      let #(updated, effects) =
         chat.world_zone_reported(
           chat: entered.chat,
           world_zone_id:,
           top_zones: top_zone.top_zones(session.settings.tables),
         )
-      {
-        Ok(#(updated, effects)) ->
-          carry_chat(session: with_chat(session:, chat: updated), effects:)
-        Error(refusal) -> end_for(session:, now:, text: chat.describe(refusal))
-      }
+      carry_chat(session: with_chat(session:, chat: updated), effects:)
     }
     Ok(movement.Relayed(state:, place:, commands:, unrelayed:)) -> {
       let new_kinds =
@@ -1123,7 +1122,6 @@ fn camp_message(
 fn chat_message(
   session session: Session,
   now now: Now,
-  holder holder: Holder,
   entered entered: world_entry.Entered,
   inner inner: Frame,
   message message: chat.Message,
@@ -1140,16 +1138,7 @@ fn chat_message(
     )
   {
     Ok(#(updated, effects)) ->
-      carry_chat(
-        session: Session(
-          ..session,
-          status: InWorld(
-            holder:,
-            entered: world_entry.Entered(..entered, chat: updated),
-          ),
-        ),
-        effects:,
-      )
+      carry_chat(session: with_chat(session:, chat: updated), effects:)
     Error(refusal) -> end_for(session:, now:, text: chat.describe(refusal))
   }
 }
@@ -1245,14 +1234,7 @@ fn world_carried(
                     message:,
                   )
                 Ok(routing.Chat(message:)) ->
-                  chat_message(
-                    session:,
-                    now:,
-                    holder:,
-                    entered:,
-                    inner: whole,
-                    message:,
-                  )
+                  chat_message(session:, now:, entered:, inner: whole, message:)
                 Ok(routing.Hello)
                 | Ok(routing.CharacterSelect(..))
                 | Ok(routing.WorldEntry)
@@ -1804,7 +1786,7 @@ fn chat_sent(
   session session: Session,
   tell tell: chat_tell.Tell,
 ) -> client_connection.Handled(Session) {
-  case chat_holder(session.status) {
+  case held_in_the_world(session.status) {
     Some(entered) -> {
       let #(updated, effects) = chat.told(chat: entered.chat, tell:)
       carry_chat(session: with_chat(session:, chat: updated), effects:)
@@ -1826,59 +1808,11 @@ fn chat_sent(
   }
 }
 
-/// The player whose chat takes tells and watch ends: the player in the world, in
-/// a 60 s save, or in the world and waiting to claim again or claiming. A player
-/// whose camp has begun its leave has left its chat groups (`chat.left`) and is
-/// none.
-fn chat_holder(status: Status) -> Option(world_entry.Entered) {
-  case status {
-    InWorld(entered:, ..)
-    | SavingPlace(entered:, then: Playing, ..)
-    | WaitingToClaim(resume: ResumeWorld(entered:), ..)
-    | ClaimingSession(resume: ResumeWorld(entered:), ..) -> Some(entered)
-    SavingPlace(then: Camped, ..)
-    | SavingPlace(then: Leaving(..), ..)
-    | LeavingMap(..)
-    | WaitingToClaim(resume: ResumeSelect, ..)
-    | ClaimingSession(resume: ResumeSelect, ..)
-    | InCharacterSelect(..)
-    | EnteringWorld(..)
-    | AwaitingHelloReply
-    | TakingSessionKey -> None
-  }
-}
-
-/// The session with the chat of the player `chat_holder` names replaced.
+/// The session with the chat of the player in the world replaced.
 fn with_chat(session session: Session, chat chat: chat.Chat) -> Session {
-  let change = fn(entered: world_entry.Entered) {
+  with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, chat:)
-  }
-  let status = case session.status {
-    InWorld(holder:, entered:) -> InWorld(holder:, entered: change(entered))
-    SavingPlace(holder:, entered:, then: Playing) ->
-      SavingPlace(holder:, entered: change(entered), then: Playing)
-    WaitingToClaim(holder:, resume: ResumeWorld(entered:), retries:) ->
-      WaitingToClaim(
-        holder:,
-        resume: ResumeWorld(entered: change(entered)),
-        retries:,
-      )
-    ClaimingSession(holder:, resume: ResumeWorld(entered:), retries:) ->
-      ClaimingSession(
-        holder:,
-        resume: ResumeWorld(entered: change(entered)),
-        retries:,
-      )
-    SavingPlace(..)
-    | LeavingMap(..)
-    | WaitingToClaim(resume: ResumeSelect, ..)
-    | ClaimingSession(resume: ResumeSelect, ..)
-    | InCharacterSelect(..)
-    | EnteringWorld(..)
-    | AwaitingHelloReply
-    | TakingSessionKey -> session.status
-  }
-  Session(..session, status:)
+  })
 }
 
 /// Turns what the chat decided into writes, tells, watches, group joins and log
@@ -1924,10 +1858,29 @@ fn chat_effects(
           OwnEffect(step.LeaveGroup(address:)),
           ..written
         ])
-        chat.Warning(text:) -> #(session, [
-          log(session:, level: LogWarning, text:),
-          ..written
-        ])
+        chat.UnknownZone(world_zone_id:) ->
+          case set.contains(session.unknown_zones_logged, world_zone_id) {
+            True -> #(session, written)
+            False -> #(
+              Session(
+                ..session,
+                unknown_zones_logged: set.insert(
+                  session.unknown_zones_logged,
+                  world_zone_id,
+                ),
+              ),
+              [
+                log(
+                  session:,
+                  level: LogWarning,
+                  text: "WorldZone "
+                    <> int.to_string(world_zone_id)
+                    <> " has no row in the client's table, so the player is in no zone channel",
+                ),
+                ..written
+              ],
+            )
+          }
         chat.Unhandled(channel_type:) -> {
           let id = chat_channel.id(channel_type)
           case set.contains(session.unhandled_channels_logged, id) {
@@ -2212,7 +2165,7 @@ fn watch_ended(
   now now: Now,
   watch watch: WatchId,
 ) -> client_connection.Handled(Session) {
-  case chat_holder(session.status) {
+  case held_in_the_world(session.status) {
     Some(entered) ->
       case chat.watch_ended(chat: entered.chat, watch:) {
         Ok(#(updated, effects)) ->

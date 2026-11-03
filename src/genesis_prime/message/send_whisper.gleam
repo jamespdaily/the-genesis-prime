@@ -20,8 +20,8 @@ pub const message_id = 0x01D4
 /// value is safe, and one with no such doc has no use the client's code shows.
 pub type SendWhisper {
   SendWhisper(
-    target_name: String,
-    target_realm_name: String,
+    target_name: List(Int),
+    target_realm_name: List(Int),
     text: List(Int),
     formats: List(ChatFormat),
     chat_message_id: Int,
@@ -33,8 +33,8 @@ pub type SendWhisper {
 /// written.
 pub fn encode(message: SendWhisper) -> Result(BitArray, EncodeError) {
   bit_stream.new_writer()
-  |> bit_stream.write_wide_text("target_name", message.target_name)
-  |> bit_stream.write_wide_text("target_realm_name", message.target_realm_name)
+  |> bit_stream.write_wide_units("target_name", message.target_name)
+  |> bit_stream.write_wide_units("target_realm_name", message.target_realm_name)
   |> bit_stream.write_wide_units("text", message.text)
   |> bit_stream.write_array("formats", message.formats, 5, chat_format.write)
   |> bit_stream.write_unsigned("chat_message_id", message.chat_message_id, 16)
@@ -45,8 +45,8 @@ pub fn encode(message: SendWhisper) -> Result(BitArray, EncodeError) {
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(SendWhisper, DecodeError) {
   let reader = bit_stream.new_reader(body)
-  use #(target_name, reader) <- result.try(bit_stream.read_wide_text(reader))
-  use #(target_realm_name, reader) <- result.try(bit_stream.read_wide_text(
+  use #(target_name, reader) <- result.try(bit_stream.read_wide_units(reader))
+  use #(target_realm_name, reader) <- result.try(bit_stream.read_wide_units(
     reader,
   ))
   use #(text, reader) <- result.try(bit_stream.read_wide_units(reader))

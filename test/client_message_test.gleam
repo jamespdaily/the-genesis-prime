@@ -268,8 +268,8 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
     #(
       0x01D4,
       client_message.SendWhisper(message: SendWhisper(
-        target_name: "Ab Cd",
-        target_realm_name: "",
+        target_name: bit_stream.utf16_units("Ab Cd"),
+        target_realm_name: [],
         text: [0x48, 0x69],
         formats: [],
         chat_message_id: 2,

@@ -58,6 +58,7 @@ import genesis_prime/hand_off.{
   AlreadyHeld, Holder, Kept, NoHolder, SessionKey, Take, Taken,
 }
 import genesis_prime/login/guid
+import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
@@ -141,7 +142,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
-import gleam/string
 import message_support
 import owned_test
 import place_support
@@ -4581,10 +4581,7 @@ fn chat_line_with(
     send_chat_line.encode(SendChatLine(
       channel_type: type_id,
       channel_id: 0,
-      text: list.map(
-        string.to_utf_codepoints(text),
-        string.utf_codepoint_to_int,
-      ),
+      text: bit_stream.utf16_units(text),
       formats: [],
       chat_message_id: message_id,
     ))
@@ -4747,7 +4744,7 @@ pub fn support_and_instance_are_logged_as_unhandled_once_for_each_channel_on_a_c
     list.filter(support.logs(taken), fn(line) { line.level == step.LogWarning })
   }
   assert list.length(warnings(first)) == 1
-    as "Jim, 2026-11-03: the channel is logged as unhandled, so the coverage measure sees the gap"
+    as "Jim, 2026-11-03: the channel is named in a warning"
   assert warnings(second) == [] as "once for each channel on a connection"
   assert list.length(warnings(instance)) == 1
     as "another channel is another line"
@@ -4792,8 +4789,7 @@ fn terrain_loaded_message(world_zone_id: Int) -> BitArray {
 pub fn the_entry_burst_ends_with_0x1da_and_0x1bc_and_joins_the_name_and_the_zone_channel_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) = entered()
-  assert written_ids(taken)
-    == [0x00AD, 0x0262, 0x019B, 0x06BC, 0x0636, 0x00F1, 0x0061, 0x01DA, 0x01BC]
+  assert written_ids(taken) == game_client.world_entry_ids
     as "opcode.0x1da, opcode.0x1bc: after 0x61, 0x1da names the channel and 0x1bc gives it, in that order"
   assert group_effects(taken)
     == [
@@ -4847,14 +4843,76 @@ pub fn a_report_of_zone_0_leaves_the_group_and_writes_0x1da_with_no_zone_test() 
   assert group_effects(taken) == [step.LeaveGroup(zone_group(4961))]
 }
 
-pub fn a_report_of_a_zone_with_no_row_ends_the_connection_after_the_save_test() -> Nil {
+pub fn a_report_of_a_zone_with_no_row_is_no_zone_with_one_warning_for_each_such_zone_and_the_connection_goes_on_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(refusing, taken) = read(in_world(), terrain_loaded_message(1132))
-  assert list.any(support.logs(taken), fn(line) { line.level == step.LogError })
-    as "CLAUDE.md: the client's own table has no WorldZone 1132, so the report is refused with an error line"
-  assert support.writes(taken) == []
-  let #(_, taken) = answer(state: refusing, taken:, outcome: place_saved())
-  assert support.effects_of(taken) == [step.Stop]
+  let #(state, taken) = read(in_world(), terrain_loaded_message(1132))
+  assert written_ids(taken) == [0x01DA]
+    && group_effects(taken) == [step.LeaveGroup(zone_group(4961))]
+    && !support.stops(taken)
+    as "0x140403670: the client accepts a zone with no row (0x1da names no channel then), so the connection goes on: the player is in no zone"
+  let warnings = fn(taken) {
+    list.filter(support.logs(taken), fn(line) { line.level == step.LogWarning })
+  }
+  assert list.length(warnings(taken)) == 1
+    && support.logs_of(step: taken, level: LogError) == []
+    as "one warning names the zone, and no error"
+  let #(state, again) = read(state, terrain_loaded_message(1132))
+  assert warnings(again) == []
+    as "the same zone is logged once for each connection"
+  let #(_, other) = read(state, terrain_loaded_message(1133))
+  assert list.length(warnings(other)) == 1
+    as "another such zone is another line"
+}
+
+pub fn a_camp_answers_each_pending_whisper_0x1d9_before_it_saves_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    read(
+      in_world(),
+      whisper_message(target: "Cd Ef", text: "Hi", message_id: 3),
+    )
+  let #(state, _) = read(state, camp_request_message(True))
+  let #(_, taken) = read(state, camp_finished_message())
+  assert written_ids(taken) == [0x01D9]
+    as "the design: every 0x1d4 keeps exactly one answer, so the whisper the camp drops is answered before the save"
+  assert list.any(support.effects_of(taken), fn(effect) {
+    case effect {
+      Unwatch(WatchId(101)) -> True
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> False
+    }
+  })
+    as "and its watch is dropped"
+}
+
+pub fn a_zone_line_told_to_a_connection_after_its_camp_writes_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(left, _) = camped_out()
+  let tell =
+    chat_tell.ZoneLine(
+      speaker: chat_tell.Speaker(
+        realm_id: 1,
+        character_id: 7,
+        name: "Zed Other",
+        faction_id: 167,
+        unit_id: 9,
+        map: camp_map(),
+        incarnation:,
+      ),
+      top_zone_id: 4961,
+      line: chat_tell.Line(
+        channel_type: chat_channel.Zone,
+        channel_id: 3460,
+        text: [0x48, 0x69],
+        formats: [],
+      ),
+    )
+  let #(_, taken) =
+    feed(left, OwnEvent(Woken(client_connection.SentByChat(tell))))
+  assert written_ids(taken) == []
+    && chat_tells(taken) == []
+    && support.logs(taken) == []
+    && !support.stops(taken)
+    as "the design's failure table: after the camp's leave no zone line reaches the player, though the speaker's tell was already sent"
 }
 
 pub fn messages_0xf2_and_0x63a_outside_the_world_are_unhandled_test() -> Nil {
@@ -4901,12 +4959,9 @@ fn whisper_message(
 ) -> BitArray {
   let assert Ok(body) =
     send_whisper.encode(SendWhisper(
-      target_name: target,
-      target_realm_name: "",
-      text: list.map(
-        string.to_utf_codepoints(text),
-        string.utf_codepoint_to_int,
-      ),
+      target_name: bit_stream.utf16_units(target),
+      target_realm_name: [],
+      text: bit_stream.utf16_units(text),
       formats: [],
       chat_message_id: message_id,
       account: 0,

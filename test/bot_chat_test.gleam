@@ -7,9 +7,8 @@
 
 import game_client.{HeardLine}
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_line
-import gleam/list
-import gleam/string
 import owned_test
 
 fn line_frame(sender sender: String, text text: String) -> Frame {
@@ -25,7 +24,7 @@ fn line_frame(sender sender: String, text text: String) -> Frame {
       sender_name: sender,
       sender_realm_name: "",
       presence_state: 0,
-      text: list_of(text),
+      text: bit_stream.utf16_units(text),
       formats: [],
       cross_faction: 0,
       field_14: 0,
@@ -33,10 +32,6 @@ fn line_frame(sender sender: String, text text: String) -> Frame {
       premium_tier: 0,
     ))
   Frame(message_id: chat_line.message_id, body:)
-}
-
-fn list_of(text: String) -> List(Int) {
-  list.map(string.to_utf_codepoints(text), string.utf_codepoint_to_int)
 }
 
 pub fn the_bot_reads_a_0x1c8_by_its_channel_sender_and_text_test() -> Nil {

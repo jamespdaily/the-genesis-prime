@@ -1207,8 +1207,8 @@ direction = "client_to_server"
 evidence = "opcode.0x1d4"
 summary = "the client whispers a line to a character by name (account bit 0) or to an account friend (account bit 1): the target's name and realm name as typed, the line as in 0x1c3, and the slot the client keeps the line in"
 fields = [
-  { name = "target_name", kind = "wide_text", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
-  { name = "target_realm_name", kind = "wide_text", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
+  { name = "target_name", kind = "wide_units", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
+  { name = "target_realm_name", kind = "wide_units", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
   { name = "text", kind = "wide_units", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
   { name = "formats", kind = "array", count_bits = 5, element = "chat_format", evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
   { name = "chat_message_id", kind = "unsigned", bits = 16, evidence = "opcode.0x1d4", named_by = "opcode.0x1d4" },
@@ -1276,7 +1276,7 @@ direction = "server_to_client"
 evidence = "opcode.0x1d9"
 summary = "a whisper could not be delivered: the target's name as sent, the account bit of the whisper and the slot's id; the client prints a whisper error naming the target and frees the slot"
 fields = [
-  { name = "target_name", kind = "wide_text", evidence = "opcode.0x1d9", named_by = "opcode.0x1d9" },
+  { name = "target_name", kind = "wide_units", evidence = "opcode.0x1d9", named_by = "opcode.0x1d9" },
   { name = "account", kind = "unsigned", bits = 1, evidence = "opcode.0x1d9", named_by = "opcode.0x1d9" },
   { name = "chat_message_id", kind = "unsigned", bits = 16, evidence = "opcode.0x1d9", named_by = "opcode.0x1d9" },
 ]
