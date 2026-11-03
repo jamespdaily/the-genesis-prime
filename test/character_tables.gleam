@@ -4,7 +4,7 @@
 //// columns the server reads (`character_tables_test` compares each with the
 //// real row where the client is present); every other column is 0.
 ////
-//// - CharacterCreation rows 21, 338, 339, 466, 530, 536 and 539, with their xp.
+//// - CharacterCreation rows 21, 338, 339, 359, 466, 530, 536 and 539, with their xp.
 //// - GameFormula row 145 (its dataint0, the highest level) and XpPerLevel
 ////   records 1 to 51 with their minXpForLevel, which GetLevelForExperience
 ////   0x140029820 reads.
@@ -73,7 +73,7 @@ pub fn shared_with_novice_start_in_world_0() -> store.Tables {
               position: #(0.0, 0.0, 0.0),
               quaternion: row.quaternion,
             )
-          _ -> start_location_row(row)
+          _ -> planted_start_row(row)
         }
       })
     load_files(
@@ -129,7 +129,7 @@ fn files_with_looks(
     planted_table.file(character_customization_label.schema, labels),
     planted_table.file(customization_parameter.schema, parameter_rows()),
     planted_table.file(customization_parameter_map.schema, map_rows()),
-    planted_table.file(world_location2.schema, start_location_rows()),
+    planted_table.file(world_location2.schema, planted_start_rows()),
     planted_table.file(
       game_formula.schema,
       game_formula_rows(ids: [highest_level_formula], highest: 50),
@@ -230,6 +230,21 @@ fn creation_rows() -> List(List(Cell)) {
       race_id: 1,
       sex: 0,
       faction_id: 167,
+      costume_only: False,
+      enabled: True,
+      start: 3,
+      xp: 1710,
+      currency_type: 0,
+      currency_amount: 0,
+      entitlement: 0,
+    ),
+    // 359: a Nexus row, class 1, race 1 (Cassian), sex 0, faction 166.
+    creation(
+      id: 359,
+      class_id: 1,
+      race_id: 1,
+      sex: 0,
+      faction_id: 166,
       costume_only: False,
       enabled: True,
       start: 3,
@@ -419,15 +434,17 @@ fn location(
 /// place it stands at (world, zone and position, facing as a character that has
 /// never turned does), its facing quaternion x, y, z, w (facing0 to facing3)
 /// and the 32 bits of the yaw, pitch and roll the client's
-/// QuaternionToEulerAngles (0x1401b2fe0) makes of it, from the emulator: the
-/// pitch is -0.0 (0x80000000) for a turn about y alone, except 8223's, which is
-/// +0.0.
+/// QuaternionToEulerAngles (0x1401b2fe0) makes of it, from the emulator, and
+/// the fact record that names the row. For a turn about y alone, m21 =
+/// 2(y*z - w*x) is a zero and the pitch asin(-m21) is -0.0 (0x80000000), except
+/// where y < 0 and w > 0 (8223): m21 is -0 and the pitch +0.0.
 pub type StartRow {
   StartRow(
     id: Int,
     place: Place,
     quaternion: #(Float, Float, Float, Float),
     facing_bits: #(Int, Int, Int),
+    record: String,
   )
 }
 
@@ -446,6 +463,7 @@ pub fn start_rows() -> List(StartRow) {
       ),
       quaternion: #(0.0, 0.9535170197486877, 0.0, -0.3013400137424469),
       facing_bits: #(0xC021E1A7, 0x80000000, 0),
+      record: "Quest2.10528.links",
     ),
     StartRow(
       id: 41_641,
@@ -458,6 +476,7 @@ pub fn start_rows() -> List(StartRow) {
       ),
       quaternion: #(0.0, 0.953717052936554, 0.0, 0.3007054626941681),
       facing_bits: #(0x4021F773, 0x80000000, 0),
+      record: "Quest2.10528.links",
     ),
     StartRow(
       id: 42_148,
@@ -470,6 +489,7 @@ pub fn start_rows() -> List(StartRow) {
       ),
       quaternion: #(0.0, 1.0, 0.0, -4.3711395392165286e-8),
       facing_bits: #(0xC0490FDA, 0x80000000, 0),
+      record: "Quest2.10530.links",
     ),
     StartRow(
       id: 8223,
@@ -482,6 +502,7 @@ pub fn start_rows() -> List(StartRow) {
       ),
       quaternion: #(0.0, -0.7276397347450256, 0.0, 0.6859594583511353),
       facing_bits: #(0xBFD09BA3, 0, 0),
+      record: "Quest2.10530.links",
     ),
     StartRow(
       id: 51_596,
@@ -494,6 +515,7 @@ pub fn start_rows() -> List(StartRow) {
       ),
       quaternion: #(0.0, 0.9810349941253662, 0.0, -0.19383299350738525),
       facing_bits: #(0xC03017E2, 0x80000000, 0),
+      record: "Quest2.10513 (a guess)",
     ),
   ]
 }
@@ -505,18 +527,26 @@ pub fn start_row(id: Int) -> StartRow {
   row
 }
 
-/// The yaw of row 51596's facing as the client's QuaternionToEulerAngles
-/// returns it, to the bit: 0xC03017E2 (record 0x1401b2fe0).
-pub const novice_start_yaw = -2.751457691192627
-
 /// The place of the Novice start, WorldLocation2 row 51596: its world, zone and
-/// position, facing as the client's conversion gives it: that yaw, pitch -0.0
-/// (0x80000000) and roll 0.
+/// position, facing as the client's conversion gives the row's facing, from the
+/// bits the emulator returned for it (record 0x1401b2fe0).
 pub fn novice_start_place() -> Place {
+  let row = start_row(51_596)
   start_place.turned(
-    start_row(51_596).place,
-    Facing(yaw: novice_start_yaw, pitch: -0.0, roll: 0.0),
+    row.place,
+    Facing(
+      yaw: float_of_bits(row.facing_bits.0),
+      pitch: float_of_bits(row.facing_bits.1),
+      roll: float_of_bits(row.facing_bits.2),
+    ),
   )
+}
+
+/// The 32-bit float with these bits.
+fn float_of_bits(number: Int) -> Float {
+  let assert Ok(bits) = float32.bits(number) as "the bits are 32 bits"
+  let assert Ok(value) = float32.value(bits) as "the bits are a finite float"
+  value
 }
 
 /// The 32 bits of a facing's yaw, pitch and roll.
@@ -536,12 +566,12 @@ pub fn is_the_place_of(place place: Place, row row: StartRow) -> Bool {
 }
 
 /// The planted WorldLocation2 rows of the start places.
-fn start_location_rows() -> List(List(Cell)) {
-  list.map(start_rows(), start_location_row)
+fn planted_start_rows() -> List(List(Cell)) {
+  list.map(start_rows(), planted_start_row)
 }
 
 /// The planted WorldLocation2 row of a start place.
-fn start_location_row(row: StartRow) -> List(Cell) {
+fn planted_start_row(row: StartRow) -> List(Cell) {
   location(
     id: row.id,
     world: start_place.world_id(row.place),

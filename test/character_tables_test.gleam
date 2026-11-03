@@ -25,7 +25,7 @@ pub fn the_planted_character_creation_rows_are_the_clients_rows_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let real = client_tables.shared()
   let planted = character_tables.shared()
-  let ids = [21, 338, 339, 466, 530, 536, 539]
+  let ids = [21, 338, 339, 359, 466, 530, 536, 539]
   assert list.length(character_creation.all(planted)) == list.length(ids)
     as "the planted table holds exactly the rows the tests use"
   list.each(ids, fn(id) {

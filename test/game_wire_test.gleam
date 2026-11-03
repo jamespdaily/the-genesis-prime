@@ -319,6 +319,55 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
   login_support.stop(started)
 }
 
+pub fn a_created_dominion_cassian_veteran_is_played_into_the_world_at_row_42148_facing_the_clients_yaw_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let #(started, port, account) = start()
+  let game = in_select(started:, port:, account:)
+  let assert Ok(body) =
+    create_character.encode(
+      CreateCharacter(
+        ..character_support.create_request("Ab Cd"),
+        creation_id: 359,
+        path: 1,
+        customisation_labels: [2, 21],
+        customisation_values: [1, 2],
+        bone_values: character_support.bones(48),
+      ),
+    )
+    as "the request encodes"
+  game_client.send_create(game:, body:)
+  let created = created_result(game)
+  assert created.result == create_result.CreateOk
+    as "opcode.0xdc: a valid request is created"
+  send_play(game:, character_id: created.character_id)
+  let burst = game_client.read(game:, count: 7)
+  let assert [Frame(body: world, ..), ..] = burst
+  let assert Ok(entered) = enter_world.decode(world)
+  assert entered.world_id == 1387
+    && entered.position_x == 0xC56FBBEC
+    && entered.position_y == 0xC4750DE8
+    && entered.position_z == 0xC5BD2A1C
+    as "row 359 is a Nexus start of Dominion (166) Cassian (race 1): WorldLocation2 row 42148 (Quest2.10530.links, the retail race split), World 1387 and its position as 32-bit floats"
+  assert game_client.unit_create_player_in(frames: burst).movement_commands
+    == [
+      start_movement.Position(UnitPositionCommand(
+        x: 0xC56FBBEC,
+        y: 0xC4750DE8,
+        z: 0xC5BD2A1C,
+        blends: 0,
+      )),
+      start_movement.Rotation(MovementRotation(
+        yaw: 0xC0490FDA,
+        pitch: 0x80000000,
+        roll: 0,
+        blends: 0,
+      )),
+    ]
+    as "0x262 places the player at row 42148 facing the yaw QuaternionToEulerAngles (0x1401b2fe0) gives its facing in the emulator: 0xc0490fda, pitch 0x80000000, roll 0"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
 pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_and_the_list_again_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(started, port, account) = start()
