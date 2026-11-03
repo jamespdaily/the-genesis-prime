@@ -2277,6 +2277,28 @@ pub fn a_client_close_or_a_failed_read_or_write_saves_the_last_place_then_ends_w
   })
 }
 
+pub fn a_socket_that_fails_as_closed_ends_as_a_peer_close_saves_and_logs_no_warning_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A write to a socket the peer has closed fails as closed, and so does
+  // arming the read of one (`inet:setopts` answers einval, which the shell's
+  // Erlang file reports as closed): the client's own close may be waiting in
+  // the mailbox behind the step that finds it out.
+  list.each([step.WriteFailed, step.ReadFailed], fn(failed) {
+    let state = moved_to(state: in_world(), x: 7.5, y: 8.5, z: 9.5)
+    let #(state, taken) = feed(state, OwnEvent(failed(step.Closed)))
+    assert ask_request(taken)
+      == save_asked(1, standing_at(x: 7.5, y: 8.5, z: 9.5))
+      as "the place the player last stood at is saved, as for a peer close"
+    assert support.logs_of(step: taken, level: LogWarning) == []
+      as "a socket the peer closed is no warning, whichever call found it out"
+    let #(_, taken) = answer(state:, taken:, outcome: place_saved())
+    assert support.effects_of(taken) == [step.Stop]
+    let #(_, taken) = feed(connected(), OwnEvent(failed(step.Closed)))
+    assert support.effects_of(taken) == [step.Stop]
+      as "before the world the same close ends the connection with nothing logged"
+  })
+}
+
 pub fn a_drop_the_store_cannot_save_is_a_warning_and_the_connection_ends_anyway_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(no_answers(), fn(outcome) {

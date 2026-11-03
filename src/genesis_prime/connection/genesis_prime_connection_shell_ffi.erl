@@ -123,7 +123,10 @@ peer(Socket) ->
         {error, _} -> {peer, <<"unknown">>, 0}
     end.
 
+%% A socket the peer has closed fails a write as closed and the arming of its
+%% read (inet:setopts) as einval, which says the same: the socket is closed.
 failure(closed) -> closed;
+failure(einval) -> closed;
 failure(econnreset) -> reset;
 failure(timeout) -> send_timed_out;
 failure(Reason) -> {other_socket_failure, genesis_prime_step_runtime_ffi:term_text(Reason)}.

@@ -425,7 +425,9 @@ pub type Heard {
 }
 
 /// Sorts an input: what the client closing and a failed socket do is the same
-/// in every rule, so it is decided here; `about` says who a log
+/// in every rule, so it is decided here (a socket that fails as closed is the
+/// client's close and ends the connection with no log line; any other failure
+/// is a warning); `about` says who a log
 /// line is about. The server stopping ends the connection after the effects
 /// `stopping` gives, which the rule writes first: none for a connection with
 /// no one to tell, a notice for one whose client waits for the server's next
@@ -446,7 +448,9 @@ pub fn hear(
       Connect(connection:, peer:, seed:)
     OwnEvent(step.Read(bytes:)) -> Bytes(bytes:)
     OwnEvent(Answered(outcome:, ..)) -> Outcome(outcome:)
-    OwnEvent(PeerClosed) -> Otherwise(Effects([Stop]))
+    OwnEvent(PeerClosed)
+    | OwnEvent(ReadFailed(failure: step.Closed))
+    | OwnEvent(WriteFailed(failure: step.Closed)) -> Otherwise(Effects([Stop]))
     Stopping(..) -> Otherwise(Effects(list.append(stopping(), [Stop])))
     OwnEvent(ReadFailed(failure:)) | OwnEvent(WriteFailed(failure:)) ->
       ends(LogWarning, socket_failed_text(failure:))

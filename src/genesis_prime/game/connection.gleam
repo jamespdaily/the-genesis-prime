@@ -518,7 +518,9 @@ fn connected(
       settled(handled: save_due(session:, now:), now:)
     OwnEvent(TimerFired(timer:)) ->
       settled(handled: claim_wait_over(session:, now:, timer:), now:)
-    OwnEvent(step.PeerClosed) ->
+    OwnEvent(step.PeerClosed)
+    | OwnEvent(step.ReadFailed(failure: step.Closed))
+    | OwnEvent(step.WriteFailed(failure: step.Closed)) ->
       leaves_or_hears(
         session:,
         now:,
