@@ -11,7 +11,8 @@ lists (its `functions` and `function_at` requests), first 16 hex digits: a renam
 function change it. It cannot see a change that is not a name or an address, such as a type edit.
 A script that changes functions' bodies (recover_switches.py) says so through note_changed_bodies,
 which keeps their addresses in `changed_bodies.json` until a refresh has redone them: `check` then says
-stale and names them, and `refresh` decompiles them whether or not their names changed.
+stale and names them, and `refresh` decompiles them whether or not their names changed. A refresh limited
+to a scope keeps the addresses the scope left out.
 
 A refresh with no copy decompiles every function. With a copy it decompiles the functions whose name
 changed or that are new, the ones that failed last time, the ones whose file is missing, and every saved
@@ -180,7 +181,10 @@ def note_changed_bodies(directory: Path, addresses) -> None:
     """Records that these functions' bodies changed with no new name or address, so that the next refresh
     redoes them; what an earlier note recorded stays. Whole or not at all."""
     directory.mkdir(parents=True, exist_ok=True)
-    functions = load_changed_bodies(directory) | set(addresses)
+    _write_changed_bodies(directory, load_changed_bodies(directory) | set(addresses))
+
+
+def _write_changed_bodies(directory: Path, functions: set[int]) -> None:
     text = json.dumps({"functions": ["0x%x" % a for a in sorted(functions)]}, indent=0) + "\n"
     _write(directory / CHANGED_BODIES_FILE, text)
 
@@ -278,6 +282,7 @@ def refresh(client, directory: Path, scope: set[int] | None = None, timeout_s: f
     directory.mkdir(parents=True, exist_ok=True)
     for leftover in directory.glob("*.tmp"):
         leftover.unlink()
+    noted = load_changed_bodies(directory)
     redo, gone = _addresses_to_redo(client, directory, load_state(directory), load_pending(directory), names)
     intended = {"hash": digest, "names": {"0x%x" % a: names[a] for a in sorted(names)}}
     _write(directory / PENDING_FILE, json.dumps(intended, indent=0) + "\n")
@@ -301,7 +306,11 @@ def refresh(client, directory: Path, scope: set[int] | None = None, timeout_s: f
         "failed": {"0x%x" % a: failed[a] for a in sorted(failed)},
     }
     _write(directory / STATE_FILE, json.dumps(state, indent=0) + "\n")
-    (directory / CHANGED_BODIES_FILE).unlink(missing_ok=True)
+    left_out = noted - set(names)  # a scope kept these out of the refresh: their bodies are still not redone
+    if left_out:
+        _write_changed_bodies(directory, left_out)
+    else:
+        (directory / CHANGED_BODIES_FILE).unlink(missing_ok=True)
     (directory / PENDING_FILE).unlink()
     return RefreshReport(digest, len(redo) - len(failed), len(gone), failed)
 

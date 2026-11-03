@@ -13,8 +13,10 @@ instruction at, references Ghidra holds that the table does not, and a jump thro
 Ghidra holds with no destination and read_function found no jmp for (what FindUnrecoveredSwitchesScript
 lists, less the jumps through memory).
 With GHIDRA_WRITE=1 it makes every change in one transaction and saves the project: a run that ends
-before the save leaves the project as it was. A table whose target Ghidra cannot disassemble is
-reported as failed and not written; any other error ends the run with nothing saved. Before the save it
+before the save leaves the project as it was. A table with a target that holds no instruction after
+disassembly is reported as failed and gets no reference (the instructions made at its other targets
+stay and are saved); a table whose targets are not all in the function's body once the body is
+recomputed ends the run with nothing saved, as does any other error. Before the save it
 tells decompiled.py which functions' bodies changed (decompiled.note_changed_bodies), so the next
 `decompiled.py refresh` redoes them: run it after a write. A second write run recovers nothing.
 
@@ -40,6 +42,10 @@ from jump_tables import JumpTable, read_function  # noqa: E402
 
 SAVE_MESSAGE = "Recover the switches Ghidra missed"
 SHOWN_TARGETS = 3
+
+
+class RecoveryFailed(Exception):
+    """A change left a target of its switch outside the function's body; the message names it."""
 
 
 @dataclass(frozen=True)
@@ -158,8 +164,13 @@ def computed_jumps_without_destination(program) -> list[int]:
 def apply_changes(program, changes: list[Change]) -> tuple[list[Change], list[tuple[Change, str]]]:
     """Makes each change in one transaction, by Ghidra's own switch override (see the module's
     description). Returns the changes made, each with the function whose body now holds the cases, and
-    the ones not made with the reason. A change whose target cannot be disassembled is skipped before
-    anything of it is written; any other error rolls the whole transaction back and propagates."""
+    the ones not made with the reason.
+
+    Ghidra's commands answer true for an aligned, executable address even when they made nothing, so each
+    result is read back from the program. A change with a target that holds no instruction after
+    disassembly is skipped before any reference of it is written (the instructions made at its other
+    targets stay). A change whose targets are not all in the function's body after the body is
+    recomputed raises RecoveryFailed, and the whole transaction is rolled back."""
     import pyghidra
     from ghidra.app.cmd.disassemble import DisassembleCommand
     from ghidra.app.cmd.function import CreateFunctionCmd
@@ -180,20 +191,24 @@ def apply_changes(program, changes: list[Change]) -> tuple[list[Change], list[tu
                 failed.append((change, "Ghidra holds no instruction or no function at the jmp"))
                 continue
             targets = [space.getAddress(t) for t in change.targets]
-            unmade = [
-                t for t in targets
-                if listing.getInstructionAt(t) is None and not DisassembleCommand(t, None, True).applyTo(program)
-            ]
+            for target in targets:
+                if listing.getInstructionAt(target) is None:
+                    DisassembleCommand(target, None, True).applyTo(program)
+            unmade = [t for t in targets if listing.getInstructionAt(t) is None]
             if unmade:
                 failed.append((change, "no instruction could be made at 0x%x" % unmade[0].getOffset()))
                 continue
             for target in targets:
                 instruction.addOperandReference(0, target, RefType.COMPUTED_JUMP, SourceType.USER_DEFINED)
-            destinations = ArrayList()
-            for target in targets:
-                destinations.add(target)
-            SwitchOverride(jmp, destinations, True, 0).writeOverride(function)
+            SwitchOverride(jmp, ArrayList(targets), True, 0).writeOverride(function)
             CreateFunctionCmd.fixupFunctionBody(program, function, pyghidra.task_monitor())
+            body = function.getBody()
+            outside = [t for t in targets if not body.contains(t)]
+            if outside:
+                raise RecoveryFailed(
+                    "the body of 0x%x does not hold 0x%x, a target of the switch at 0x%x, after its body was recomputed"
+                    % (function.getEntryPoint().getOffset(), outside[0].getOffset(), change.jmp)
+                )
             recovered.append(replace(change, function=function.getEntryPoint().getOffset()))
     return recovered, failed
 
@@ -201,7 +216,8 @@ def apply_changes(program, changes: list[Change]) -> tuple[list[Change], list[tu
 def run(env, write: bool, scope: set[int] | None = None) -> Report:
     """Reads the project and the client, and with write makes the changes (see the module's description).
     scope limits the functions read; only the tests pass one. Raises ghidra_env.WrongVersion,
-    query.BadLock, ghidra_project.ProjectHeld, ghidra_project.ProjectMissing and decompiled.Refused."""
+    query.BadLock, ghidra_project.ProjectHeld, ghidra_project.ProjectMissing, decompiled.Refused and
+    RecoveryFailed."""
     settings = ghidra_env.settings_from_env(env)
     directory = decompiled.copy_directory(env) if write else None
     ghidra_project.refuse_while_held(env)
@@ -266,7 +282,12 @@ def main(env=os.environ) -> int:
     try:
         report = run(env, write)
     except (
-        ghidra_env.WrongVersion, query.BadLock, ghidra_project.ProjectHeld, ghidra_project.ProjectMissing, decompiled.Refused
+        ghidra_env.WrongVersion,
+        query.BadLock,
+        ghidra_project.ProjectHeld,
+        ghidra_project.ProjectMissing,
+        decompiled.Refused,
+        RecoveryFailed,
     ) as error:
         sys.exit("recover_switches: %s" % error)
     print(format_report(report, write))

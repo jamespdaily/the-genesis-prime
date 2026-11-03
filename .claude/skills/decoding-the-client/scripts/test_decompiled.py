@@ -526,6 +526,17 @@ class RefreshAfterABodyChangeTest(TemporaryDirectoryTest):
         decompiled.refresh(client, self.directory)
         self.assertEqual(client.decompiled, [PLANTED_BYSTANDER])
 
+    def test_a_refresh_limited_to_a_scope_keeps_the_notes_of_the_functions_the_scope_left_out(self):
+        decompiled.note_changed_bodies(self.directory, [PLANTED_BYSTANDER])
+        decompiled.note_changed_bodies(self.directory, [PLANTED_CALLER])
+        client = PlantedClient(base_names())
+        decompiled.refresh(client, self.directory, scope={PLANTED_BYSTANDER})
+        self.assertEqual(client.decompiled, [PLANTED_BYSTANDER])
+        self.assertEqual(decompiled.load_changed_bodies(self.directory), {PLANTED_CALLER})
+        self.assertEqual(decompiled.check(client, self.directory, scope={PLANTED_CALLER}).body_changed, [PLANTED_CALLER])
+        decompiled.refresh(client, self.directory, scope={PLANTED_CALLER})
+        self.assertEqual(decompiled.load_changed_bodies(self.directory), set())
+
     def test_two_notes_before_one_refresh_both_stand(self):
         decompiled.note_changed_bodies(self.directory, [PLANTED_BYSTANDER])
         decompiled.note_changed_bodies(self.directory, [PLANTED_CALLER])
@@ -755,13 +766,7 @@ assert not [o for o in outcomes if o.failed], outcomes
 
 def rename_in_project(project_dir: Path, address: int, name: str) -> None:
     code = RENAME_SCRIPT % {"scripts": str(cs.SCRIPTS), "address": address, "name": name}
-    done = subprocess.run(
-        [cs.require_env("GENESIS_PYGHIDRA_PYTHON"), "-I", "-c", code],
-        env=cs.query_environment(project_dir),
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
+    done = cs.run_in_ghidra(project_dir, code, timeout=600)
     assert done.returncode == 0, done.stderr
 
 

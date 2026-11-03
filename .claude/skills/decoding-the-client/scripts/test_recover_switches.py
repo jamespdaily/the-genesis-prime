@@ -194,8 +194,8 @@ print(json.dumps({
 }))
 """
 
-# opens the project as the real run does, makes the whole change inside its transaction, then ends the
-# process as a kill would, before the save
+# opens the project as the real run does, makes the whole change in its transaction, then ends the
+# process as a kill would, after the transaction and before the save
 KILLED_SCRIPT = r"""
 import os, sys
 sys.path.insert(0, %(scripts)r)
@@ -211,14 +211,46 @@ ghidra_project.work_on_existing(settings, work, "never saved")
 """
 
 
+# opens the project as the real run does and applies one change made by hand, to the world switch's jmp
+# with the targets given; reports what apply_changes returned or raised and whether the jmp's references
+# and the functions' bodies are as they were, all in the same open program
+CHANGE_SCRIPT = r"""
+import json, os, sys
+sys.path.insert(0, %(scripts)r)
+import ghidra_env, ghidra_project, recover_switches
+from recover_switches import Change
+settings = ghidra_env.settings_from_env(os.environ)
+def work(opened):
+    program = opened.program
+    space = program.getAddressFactory().getDefaultAddressSpace()
+    instruction = program.getListing().getInstructionAt(space.getAddress(%(jmp)d))
+    functions = program.getFunctionManager()
+    def state():
+        references = sorted(str(r.getToAddress()) for r in instruction.getReferencesFrom())
+        bodies = [str(f.getBody()) for f in functions.getFunctions(True)]
+        return references, bodies
+    before = state()
+    change = Change(%(function)d, %(jmp)d, %(targets)r, %(targets)r)
+    recovered, failed, raised = [], [], None
+    try:
+        recovered, failed = recover_switches.apply_changes(program, [change])
+    except recover_switches.RecoveryFailed as error:
+        raised = str(error)
+    return {
+        "recovered": [c.jmp for c in recovered],
+        "failed": [[c.jmp, reason] for c, reason in failed],
+        "raised": raised,
+        "unchanged": state() == before,
+    }
+print(json.dumps(ghidra_project.work_on_existing(settings, work, None)))
+"""
+
+
 def run_in_ghidra(project_dir: Path, decompiled_dir: Path, code: str, write: bool = True) -> subprocess.CompletedProcess:
-    env = cs.query_environment(project_dir)
-    env["GENESIS_DECOMPILED_DIR"] = str(decompiled_dir)
+    extra = {"GENESIS_DECOMPILED_DIR": str(decompiled_dir)}
     if write:
-        env["GHIDRA_WRITE"] = "1"
-    return subprocess.run(
-        [cs.require_env("GENESIS_PYGHIDRA_PYTHON"), "-I", "-c", code], env=env, capture_output=True, text=True, timeout=1800
-    )
+        extra["GHIDRA_WRITE"] = "1"
+    return cs.run_in_ghidra(project_dir, code, extra)
 
 
 def recover(project_dir: Path, decompiled_dir: Path, write: bool = True) -> dict:
@@ -295,15 +327,57 @@ class RealRecoveryTest(unittest.TestCase):
         noted = json.loads((self.decompiled_dir / "changed_bodies.json").read_text())["functions"]
         self.assertEqual(noted, [cs.hx(cs.FN_BIG_SWITCH)])
 
-    def test_a_run_killed_in_its_transaction_leaves_the_project_unchanged_and_the_next_run_recovers_the_switch(self):
+    def test_a_run_killed_after_the_changes_and_before_the_save_leaves_the_saved_project_unchanged_and_the_next_run_recovers_the_switch(self):
+        # the transaction has committed in the open program when the process ends; only the save is missing
         before = project_digest(self.killed_dir)
         decompiled_dir = self.root / "killed-decompiled"
         code = KILLED_SCRIPT % {"scripts": str(cs.SCRIPTS), "scope": SCOPE}
         done = run_in_ghidra(self.killed_dir, decompiled_dir, code)
         self.assertEqual(done.returncode, 9, done.stderr)
         self.assertEqual(project_digest(self.killed_dir), before)
-        self.assertFalse(decompiled_dir.exists())
         self.assertEqual(recover(self.killed_dir, decompiled_dir)["recovered"], [cs.JMP_BIG_SWITCH])
+
+
+def apply_by_hand(project_dir: Path, targets: list[int]) -> dict:
+    code = CHANGE_SCRIPT % {
+        "scripts": str(cs.SCRIPTS), "function": cs.FN_BIG_SWITCH, "jmp": cs.JMP_BIG_SWITCH, "targets": targets
+    }
+    done = cs.run_in_ghidra(project_dir, code)
+    assert done.returncode == 0, done.stderr
+    return json.loads(done.stdout.strip().splitlines()[-1])
+
+
+@cs.integration_only
+class RealRefusedChangeTest(unittest.TestCase):
+    """The failure table's rows for a change Ghidra cannot make, each on its own copy of the shared project."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = Path(tempfile.mkdtemp(prefix="genesis-recover-refused-"))
+        cls.addClassCleanup(shutil.rmtree, cls.root, True)
+        cls.inside = cls.root / "inside"
+        cls.other = cls.root / "other"
+        shutil.copytree(cs.seeded_project().project_dir, cls.inside)
+        shutil.copytree(cs.seeded_project().project_dir, cls.other)
+        # the byte after the jmp's first is inside the jmp instruction: aligned, executable, and no
+        # instruction can start there, though DisassembleCommand.applyTo answers true for it
+        cls.inside_result = apply_by_hand(cls.inside, [cs.JMP_BIG_SWITCH + 1])
+        # the entry of another function holds an instruction, but the function's body cannot join this one's
+        cls.other_result = apply_by_hand(cls.other, [cs.FN_CONTROL_SWITCH])
+
+    def test_a_target_inside_an_existing_instruction_is_reported_failed_with_nothing_recovered_and_no_reference_written(self):
+        self.assertEqual(self.inside_result["recovered"], [])
+        ((jmp, reason),) = self.inside_result["failed"]
+        self.assertEqual(jmp, cs.JMP_BIG_SWITCH)
+        self.assertIn("0x%x" % (cs.JMP_BIG_SWITCH + 1), reason)
+        self.assertIsNone(self.inside_result["raised"])
+        self.assertTrue(self.inside_result["unchanged"])
+
+    def test_a_target_the_functions_body_cannot_hold_raises_and_the_transaction_leaves_the_program_as_it_was(self):
+        self.assertEqual(self.other_result["recovered"], [])
+        self.assertEqual(self.other_result["failed"], [])
+        self.assertIn("0x%x" % cs.FN_CONTROL_SWITCH, self.other_result["raised"])
+        self.assertTrue(self.other_result["unchanged"])
 
 
 if __name__ == "__main__":
