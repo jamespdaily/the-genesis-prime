@@ -9,6 +9,10 @@ name and the failures. `check` says whether the copy is current and changes noth
 The hash is the sha256 of the sorted lines `<address> <name>` of every function the query process
 lists (its `functions` and `function_at` requests), first 16 hex digits: a rename and a new or lost
 function change it. It cannot see a change that is not a name or an address, such as a type edit.
+A script that changes functions' bodies (recover_switches.py) says so through note_changed_bodies,
+which keeps their addresses in `changed_bodies.json` until a refresh has redone them: `check` then says
+stale and names them, and `refresh` decompiles them whether or not their names changed. A refresh limited
+to a scope keeps the addresses the scope left out.
 
 A refresh with no copy decompiles every function. With a copy it decompiles the functions whose name
 changed or that are new, the ones that failed last time, the ones whose file is missing, and every saved
@@ -39,7 +43,7 @@ import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -51,6 +55,7 @@ from query_client import NotConfigured, QueryFailed, QueryProcessEnded, QueryTim
 
 STATE_FILE = "state.json"
 PENDING_FILE = "pending.json"
+CHANGED_BODIES_FILE = "changed_bodies.json"
 HASH_DIGITS = 16
 DECOMPILE_TIMEOUT_S = 60
 PROGRESS_EVERY = 1000
@@ -87,6 +92,7 @@ class CheckReport:
     failed: dict[int, str]  # functions of the copy with no C
     missing: list[int]  # functions of the project whose file is not in the copy
     unfinished: bool  # an earlier refresh ended before it finished
+    body_changed: list[int] = field(default_factory=list)  # functions a script changed and no refresh has redone
 
 
 @dataclass(frozen=True)
@@ -163,6 +169,26 @@ def load_pending(directory: Path) -> dict[int, str] | None:
     return {int(a, 16): n for a, n in json.loads(path.read_text())["names"].items()}
 
 
+def load_changed_bodies(directory: Path) -> set[int]:
+    """The functions whose bodies a script changed and no refresh has redone yet."""
+    path = directory / CHANGED_BODIES_FILE
+    if not path.is_file():
+        return set()
+    return {int(a, 16) for a in json.loads(path.read_text())["functions"]}
+
+
+def note_changed_bodies(directory: Path, addresses) -> None:
+    """Records that these functions' bodies changed with no new name or address, so that the next refresh
+    redoes them; what an earlier note recorded stays. Whole or not at all."""
+    directory.mkdir(parents=True, exist_ok=True)
+    _write_changed_bodies(directory, load_changed_bodies(directory) | set(addresses))
+
+
+def _write_changed_bodies(directory: Path, functions: set[int]) -> None:
+    text = json.dumps({"functions": ["0x%x" % a for a in sorted(functions)]}, indent=0) + "\n"
+    _write(directory / CHANGED_BODIES_FILE, text)
+
+
 def _write(path: Path, text: str) -> None:
     """Whole or not at all: written beside the file, then moved over it."""
     temporary = path.with_name(path.name + ".tmp")
@@ -192,13 +218,14 @@ def check(client, directory: Path, scope: set[int] | None = None) -> CheckReport
     digest = names_hash(names)
     state = load_state(directory)
     if state is None:
-        return CheckReport(Status.NO_COPY, digest, len(names), [], [], [], {}, [], False)
+        return CheckReport(Status.NO_COPY, digest, len(names), [], [], [], {}, [], False, [])
     renamed, added, removed = _compare(state.names, names)
     missing = sorted(set(names) - _saved_addresses(directory))
     unfinished = (directory / PENDING_FILE).exists()
-    current = state.hash == digest and not missing and not unfinished
+    body_changed = sorted(load_changed_bodies(directory) & set(names))
+    current = state.hash == digest and not missing and not unfinished and not body_changed
     status = Status.CURRENT if current else Status.STALE
-    return CheckReport(status, digest, len(names), renamed, added, removed, state.failed, missing, unfinished)
+    return CheckReport(status, digest, len(names), renamed, added, removed, state.failed, missing, unfinished, body_changed)
 
 
 def _mentioning(directory: Path, candidates: set[int], needles: set[str]) -> set[int]:
@@ -228,7 +255,7 @@ def _addresses_to_redo(
     saved = _saved_addresses(directory)
     if state is None:
         return set(names), saved - set(names)
-    redo = (set(state.failed) & set(names)) | (set(names) - saved)
+    redo = (set(state.failed) & set(names)) | (set(names) - saved) | (load_changed_bodies(directory) & set(names))
     needles: set[str] = set()
     changed: set[int] = set()
     for baseline in [state.names] + ([pending] if pending is not None else []):
@@ -255,6 +282,7 @@ def refresh(client, directory: Path, scope: set[int] | None = None, timeout_s: f
     directory.mkdir(parents=True, exist_ok=True)
     for leftover in directory.glob("*.tmp"):
         leftover.unlink()
+    noted = load_changed_bodies(directory)
     redo, gone = _addresses_to_redo(client, directory, load_state(directory), load_pending(directory), names)
     intended = {"hash": digest, "names": {"0x%x" % a: names[a] for a in sorted(names)}}
     _write(directory / PENDING_FILE, json.dumps(intended, indent=0) + "\n")
@@ -278,6 +306,11 @@ def refresh(client, directory: Path, scope: set[int] | None = None, timeout_s: f
         "failed": {"0x%x" % a: failed[a] for a in sorted(failed)},
     }
     _write(directory / STATE_FILE, json.dumps(state, indent=0) + "\n")
+    left_out = noted - set(names)  # a scope kept these out of the refresh: their bodies are still not redone
+    if left_out:
+        _write_changed_bodies(directory, left_out)
+    else:
+        (directory / CHANGED_BODIES_FILE).unlink(missing_ok=True)
     (directory / PENDING_FILE).unlink()
     return RefreshReport(digest, len(redo) - len(failed), len(gone), failed)
 
@@ -298,6 +331,8 @@ def _report_check(report: CheckReport, directory: Path, out) -> int:
             print("0x%x gone %s" % (address, name), file=out)
     for address in report.missing:
         print("0x%x missing: no file in the copy" % address, file=out)
+    for address in report.body_changed:
+        print("0x%x body changed: a script recovered it; run refresh" % address, file=out)
     if report.unfinished:
         print("an earlier refresh did not finish; run refresh", file=out)
     for address in sorted(report.failed):

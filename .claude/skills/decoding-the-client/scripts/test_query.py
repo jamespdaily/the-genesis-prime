@@ -27,8 +27,10 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import check_support as cs  # noqa: E402
+import ghidra_project  # noqa: E402
 import name_functions  # noqa: E402
 import query  # noqa: E402
+import recover_switches  # noqa: E402
 from query_client import QueryClient, QueryFailed, QueryProcessEnded, QueryTimeout  # noqa: E402
 
 # kind "who" answers the process's pid and how many requests it has answered; "echo" answers the
@@ -781,6 +783,19 @@ class NameFunctionsTest(HolderTest):
         with unittest.mock.patch.object(name_functions, "name_and_save", return_value=[]), unittest.mock.patch("sys.stdout", out):
             self.assertEqual(name_functions.main(self.env), 0)
         self.assertIn("would name 0", out.getvalue())
+
+
+class RecoverSwitchesTest(HolderTest):
+    """recover_switches opens the project itself, which a held query process has open."""
+
+    def test_it_refuses_while_a_query_process_holds_the_project_and_says_how_to_stop_it_with_and_without_write(self):
+        self.ask({"id": 1, "kind": "who"})
+        for write in (False, True):
+            with self.subTest(write=write):
+                env = dict(self.env, GENESIS_DECOMPILED_DIR=str(self.home / "decompiled"))
+                with self.assertRaisesRegex(ghidra_project.ProjectHeld, "pid %d.*query.py stop" % os.getpid()):
+                    recover_switches.run(env, write)
+        self.assertFalse((self.home / "decompiled").exists())
 
 
 class SpawnedHolderTest(HolderTest):

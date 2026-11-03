@@ -501,6 +501,17 @@ def query_environment(project_dir: Path, ghidra_dir: Path | None = None) -> dict
 query_command = query_client.query_command
 
 
+def run_in_ghidra(project_dir: Path, code: str, extra_environment: dict | None = None, timeout: float = 1800) -> subprocess.CompletedProcess:
+    """Runs code in a pinned-Python subprocess on the project, as a script that writes the project runs
+    (it opens the project itself, so no query process may hold it); extra_environment is added to the
+    query environment."""
+    env = query_environment(project_dir)
+    env.update(extra_environment or {})
+    return subprocess.run(
+        [require_env("GENESIS_PYGHIDRA_PYTHON"), "-I", "-c", code], env=env, capture_output=True, text=True, timeout=timeout
+    )
+
+
 @dataclass(frozen=True)
 class Reply:
     body: dict
