@@ -8,6 +8,7 @@
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
+import genesis_prime/table/chat_channel
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
@@ -22,6 +23,7 @@ import gleam/erlang/reference.{type Reference}
 /// The entry of each table the server loads, in file-name order.
 /// - CharacterCreation: the row a create request names
 ///   (genesis_prime/game/character_creation).
+/// - ChatChannel: the flags of each chat channel (genesis_prime/game/chat).
 /// - CharacterCustomization and CharacterCustomizationLabel: the rows and
 ///   labels of a character's look (genesis_prime/game/appearance).
 /// - CustomizationParameter and CustomizationParameterMap: the bone values a
@@ -32,6 +34,7 @@ import gleam/erlang/reference.{type Reference}
 pub fn entries() -> List(store.Entry) {
   [
     character_creation.entry(),
+    chat_channel.entry(),
     character_customization.entry(),
     character_customization_label.entry(),
     customization_parameter.entry(),

@@ -300,7 +300,7 @@ import genesis_prime/client_connection.{
   AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
   Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Inside,
   Otherwise, SentByChat, SentByMap, SentByPeer, SentBySessions, Settled,
-  TellMoved, TellPeer,
+  TellChat, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -309,6 +309,7 @@ import genesis_prime/connection/hello
 import genesis_prime/game/camp
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
+import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell
 import genesis_prime/game/movement
 import genesis_prime/game/routing
@@ -583,7 +584,7 @@ fn connected(
     OwnEvent(Woken(message: SentByPeer(news:))) ->
       settled(handled: peer_sent(session:, news:), now:)
     OwnEvent(Woken(message: SentByChat(tell:))) ->
-      settled(handled: chat_sent(session:, now:, tell:), now:)
+      settled(handled: chat_sent(session:, tell:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
@@ -1105,14 +1106,36 @@ fn camp_message(
 /// (genesis_prime/game/chat): the line or whisper is answered, told or refused,
 /// the effects are carried out, and a refusal ends the connection.
 fn chat_message(
-  session _session: Session,
-  now _now: Now,
-  holder _holder: Holder,
-  entered _entered: world_entry.Entered,
-  inner _inner: Frame,
-  message _message: chat.Message,
+  session session: Session,
+  now now: Now,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  inner inner: Frame,
+  message message: chat.Message,
 ) -> client_connection.Handled(Session) {
-  panic as "built in the say and whisper steps"
+  case
+    chat.take(
+      chat: entered.chat,
+      message:,
+      body: inner.body,
+      viewers: entered.viewers,
+      realm_name: session.settings.realm_name,
+      tables: session.settings.tables,
+    )
+  {
+    Ok(#(updated, effects)) ->
+      carry_chat(
+        session: Session(
+          ..session,
+          status: InWorld(
+            holder:,
+            entered: world_entry.Entered(..entered, chat: updated),
+          ),
+        ),
+        effects:,
+      )
+    Error(refusal) -> end_for(session:, now:, text: chat.describe(refusal))
+  }
 }
 
 /// 0x0594 with the bit set and reason 0: the client leaves the world and
@@ -1746,11 +1769,151 @@ fn map_sent(
 /// `chat.told`. A whisper that finds no player in the world is answered
 /// `NotHeard`; any other tell is dropped.
 fn chat_sent(
-  session _session: Session,
-  now _now: Now,
-  tell _tell: chat_tell.Tell,
+  session session: Session,
+  tell tell: chat_tell.Tell,
 ) -> client_connection.Handled(Session) {
-  panic as "built in the say, zone and whisper steps"
+  case chat_holder(session.status) {
+    Some(entered) -> {
+      let #(updated, effects) = chat.told(chat: entered.chat, tell:)
+      carry_chat(session: with_chat(session:, chat: updated), effects:)
+    }
+    None ->
+      case tell {
+        chat_tell.Whisper(whisper:, from:, ..) ->
+          Continue(session, [
+            OwnEffect(step.Tell(
+              to: step.Connection(from),
+              request: TellChat(chat_tell.NotHeard(whisper:)),
+            )),
+          ])
+        chat_tell.Said(..)
+        | chat_tell.ZoneLine(..)
+        | chat_tell.Heard(..)
+        | chat_tell.NotHeard(..) -> Continue(session, [])
+      }
+  }
+}
+
+/// The player whose chat takes tells and watch ends: the player in the world, in
+/// a 60 s save, or in the world and waiting to claim again or claiming. A player
+/// whose camp has begun its leave has left its chat groups (`chat.left`) and is
+/// none.
+fn chat_holder(status: Status) -> Option(world_entry.Entered) {
+  case status {
+    InWorld(entered:, ..)
+    | SavingPlace(entered:, then: Playing, ..)
+    | WaitingToClaim(resume: ResumeWorld(entered:), ..)
+    | ClaimingSession(resume: ResumeWorld(entered:), ..) -> Some(entered)
+    SavingPlace(then: Camped, ..)
+    | SavingPlace(then: Leaving(..), ..)
+    | LeavingMap(..)
+    | WaitingToClaim(resume: ResumeSelect, ..)
+    | ClaimingSession(resume: ResumeSelect, ..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> None
+  }
+}
+
+/// The session with the chat of the player `chat_holder` names replaced.
+fn with_chat(session session: Session, chat chat: chat.Chat) -> Session {
+  let change = fn(entered: world_entry.Entered) {
+    world_entry.Entered(..entered, chat:)
+  }
+  let status = case session.status {
+    InWorld(holder:, entered:) -> InWorld(holder:, entered: change(entered))
+    SavingPlace(holder:, entered:, then: Playing) ->
+      SavingPlace(holder:, entered: change(entered), then: Playing)
+    WaitingToClaim(holder:, resume: ResumeWorld(entered:), retries:) ->
+      WaitingToClaim(
+        holder:,
+        resume: ResumeWorld(entered: change(entered)),
+        retries:,
+      )
+    ClaimingSession(holder:, resume: ResumeWorld(entered:), retries:) ->
+      ClaimingSession(
+        holder:,
+        resume: ResumeWorld(entered: change(entered)),
+        retries:,
+      )
+    SavingPlace(..)
+    | LeavingMap(..)
+    | WaitingToClaim(resume: ResumeSelect, ..)
+    | ClaimingSession(resume: ResumeSelect, ..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> session.status
+  }
+  Session(..session, status:)
+}
+
+/// Turns what the chat decided into writes, tells, watches, group joins and log
+/// lines. A channel the server does not build is logged as unhandled once for
+/// each channel on the connection.
+fn carry_chat(
+  session session: Session,
+  effects effects: List(chat.Effect),
+) -> client_connection.Handled(Session) {
+  let #(session, written) =
+    list.fold(effects, #(session, []), fn(so_far, effect) {
+      let #(session, written) = so_far
+      case effect {
+        chat.Send(frame:) -> #(session, [to_client(session, frame), ..written])
+        chat.Tell(to:, tell:) -> #(session, [
+          OwnEffect(step.Tell(to:, request: TellChat(tell))),
+          ..written
+        ])
+        chat.TellWatched(watch:, tell:) -> #(session, [
+          OwnEffect(step.TellWatched(watch:, request: TellChat(tell))),
+          ..written
+        ])
+        chat.Watch(watch:, target:) -> #(session, [
+          Watch(watch:, target:),
+          ..written
+        ])
+        chat.Unwatch(watch:) -> #(session, [Unwatch(watch:), ..written])
+        chat.JoinGroup(address:) -> #(session, [
+          OwnEffect(step.JoinGroup(address:)),
+          ..written
+        ])
+        chat.LeaveGroup(address:) -> #(session, [
+          OwnEffect(step.LeaveGroup(address:)),
+          ..written
+        ])
+        chat.Warning(text:) -> #(session, [
+          log(session:, level: LogWarning, text:),
+          ..written
+        ])
+        chat.Unhandled(channel_type:) -> {
+          let id = chat_channel.id(channel_type)
+          case set.contains(session.unhandled_channels_logged, id) {
+            True -> #(session, written)
+            False -> #(
+              Session(
+                ..session,
+                unhandled_channels_logged: set.insert(
+                  session.unhandled_channels_logged,
+                  id,
+                ),
+              ),
+              [
+                log(
+                  session:,
+                  level: LogWarning,
+                  text: "chat channel "
+                    <> int.to_string(id)
+                    <> " is not built: a line on it is refused with result 3",
+                ),
+                ..written
+              ],
+            )
+          }
+        }
+      }
+    })
+  Continue(session, list.reverse(written))
 }
 
 /// What another player's connection sent about the unit it owns, written while

@@ -981,7 +981,14 @@ pub fn a_tell_through_a_watch_goes_through_that_watchs_target_only_and_one_throu
       locate: fn(address) {
         case address {
           step.CharacterNamed("held") -> found(address)
-          _ -> Error(Nil)
+          step.CharacterNamed(..)
+          | step.Sessions
+          | step.HandOff
+          | step.Store
+          | step.Maps
+          | step.Map(..)
+          | step.ZoneChannel(..)
+          | step.Connection(..) -> Error(Nil)
         }
       },
       deliver: fn(_address, _request) { Error(Nil) },

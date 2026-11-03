@@ -168,13 +168,28 @@
 //// | Whisper: `find_named` with two members | the newest member is found | pinned: the older login's end is its watcher's |
 
 import genesis_prime/client_connection
-import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/chat_channel.{type ChannelType}
-import genesis_prime/game/chat_tell.{type Speaker, type Tell}
+import genesis_prime/game/chat_tell.{type Line, type Speaker, type Tell, Line}
 import genesis_prime/game/top_zone.{type TopZones}
+import genesis_prime/message/chat_channel_result.{
+  type ChatChannelResult, DoesntExist, InvalidMessageText, NoPermissions,
+  NotInGroup,
+}
+import genesis_prime/message/chat_format.{type ChatFormat}
+import genesis_prime/message/chat_line.{ChatLine}
+import genesis_prime/message/chat_line_accepted.{ChatLineAccepted}
+import genesis_prime/message/chat_result.{ChatResult}
+import genesis_prime/message/send_chat_line.{type SendChatLine}
 import genesis_prime/step.{type Address, type ConnectionId, type WatchId}
+import genesis_prime/table/chat_channel.{type ChatChannel} as chat_channel_table
+import genesis_prime/table/id.{ChatChannelId}
 import genesis_prime/table/loader/store as table_store
+import gleam/bool
 import gleam/dict.{type Dict}
+import gleam/int
+import gleam/list
+import gleam/result
 import gleam/set.{type Set}
 
 /// The chat messages of the player in the world, which the client sends inside
@@ -296,14 +311,270 @@ pub fn entered_world(
 /// `tables` the client's ChatChannel rows. A body the client's reader would
 /// refuse is the refusal that ends the connection.
 pub fn take(
-  chat _chat: Chat,
-  message _message: Message,
-  body _body: BitArray,
-  viewers _viewers: Set(ConnectionId),
+  chat chat: Chat,
+  message message: Message,
+  body body: BitArray,
+  viewers viewers: Set(ConnectionId),
   realm_name _realm_name: String,
-  tables _tables: table_store.Tables,
+  tables tables: table_store.Tables,
 ) -> Result(#(Chat, List(Effect)), Refusal) {
-  panic as "built in the say and whisper steps"
+  case message {
+    LineSent -> line_sent(chat:, body:, viewers:, tables:)
+    WhisperSent -> panic as "built in the whisper step"
+  }
+}
+
+/// The most characters the client sends in one line: ParseChatText keeps at most
+/// 499 (0x140402720, vector.0x140402720.lines).
+const longest_line = 499
+
+/// What a 0x1c3 is answered with and told to.
+fn line_sent(
+  chat chat: Chat,
+  body body: BitArray,
+  viewers viewers: Set(ConnectionId),
+  tables tables: table_store.Tables,
+) -> Result(#(Chat, List(Effect)), Refusal) {
+  use sent <- result.map(
+    send_chat_line.decode(body)
+    |> client_connection.decoded(message_id: send_chat_line.message_id)
+    |> result.map_error(NotDecoded),
+  )
+  let channel_type = chat_channel.from_id(id: sent.channel_type)
+  case checked(chat:, sent:, channel_type:, tables:) {
+    Error(Refused(result:, unhandled:)) -> #(chat, [
+      Send(chat_result_frame(sent:, result:)),
+      ..case unhandled {
+        True -> [Unhandled(channel_type:)]
+        False -> []
+      }
+    ])
+    Ok(Say) -> {
+      let line =
+        Line(
+          channel_type:,
+          channel_id: sent.channel_id,
+          text: sent.text,
+          formats: sent.formats,
+        )
+      #(chat, [
+        Send(accepted_frame(chat:, chat_message_id: sent.chat_message_id)),
+        ..list.map(set.to_list(viewers), fn(viewer) {
+          Tell(
+            to: step.Connection(viewer),
+            tell: chat_tell.Said(speaker: chat.speaker, line:),
+          )
+        })
+      ])
+    }
+  }
+}
+
+/// A line the rule refuses, with the result the client is answered with, and
+/// whether the channel is one the server does not build.
+type Refused {
+  Refused(result: ChatChannelResult, unhandled: Bool)
+}
+
+/// Where an accepted line goes.
+type Reach {
+  /// To the players who see the speaker.
+  Say
+}
+
+/// Whether a line is one the client would send and the player may send on its
+/// channel, in the order the design's table gives its answers.
+fn checked(
+  chat _chat: Chat,
+  sent sent: SendChatLine,
+  channel_type channel_type: ChannelType,
+  tables tables: table_store.Tables,
+) -> Result(Reach, Refused) {
+  let invalid = Refused(result: InvalidMessageText, unhandled: False)
+  use <- bool.guard(when: sent.chat_message_id == 0, return: Error(invalid))
+  use <- bool.guard(
+    when: !is_a_line_the_client_sends(sent),
+    return: Error(invalid),
+  )
+  let refused = fn(result) { Error(Refused(result:, unhandled: False)) }
+  case channel_row(tables:, channel_type:) {
+    Error(Nil) -> refused(DoesntExist)
+    Ok(row) -> {
+      use <- bool.guard(
+        when: !is_held(row:, channel_id: sent.channel_id),
+        return: refused(DoesntExist),
+      )
+      use <- bool.guard(
+        when: int.bitwise_and(row.flags, may_send) == 0,
+        return: refused(NoPermissions),
+      )
+      case channel_type {
+        chat_channel.Say | chat_channel.Yell | chat_channel.Emote -> Ok(Say)
+        chat_channel.Whisper | chat_channel.AccountWhisper ->
+          refused(NoPermissions)
+        chat_channel.Party -> refused(NotInGroup)
+        chat_channel.Support | chat_channel.Instance ->
+          Error(Refused(result: NoPermissions, unhandled: True))
+        chat_channel.Zone | chat_channel.Other(..) -> refused(NoPermissions)
+      }
+    }
+  }
+}
+
+/// The ChatChannel row flags the chat rule reads (`ChatChannel.flags`).
+const may_send = 4
+
+const made_by_the_client = 8
+
+const joined_by_the_server = 0x80
+
+fn channel_row(
+  tables tables: table_store.Tables,
+  channel_type channel_type: ChannelType,
+) -> Result(ChatChannel, Nil) {
+  chat_channel_table.get(
+    tables:,
+    id: ChatChannelId(chat_channel.id(channel_type)),
+  )
+}
+
+/// Whether the client holds a channel of this row with this id: one it makes
+/// itself has id 0, and one only the server joins is held by no line the server
+/// has not joined it to (`0x140404ee0`, `0x1404039f0`).
+fn is_held(row row: ChatChannel, channel_id channel_id: Int) -> Bool {
+  case
+    int.bitwise_and(row.flags, joined_by_the_server) != 0,
+    int.bitwise_and(row.flags, made_by_the_client) != 0
+  {
+    True, _ -> False
+    False, True -> channel_id == 0
+    False, False -> False
+  }
+}
+
+/// Whether the text and formats are ones the client's own code sends: from 1 to
+/// 499 UTF-16 units with no character ParseChatText drops (`0x140402720`), and
+/// each format over a range of the text (`0x140085ca0`).
+fn is_a_line_the_client_sends(sent: SendChatLine) -> Bool {
+  let length = list.length(sent.text)
+  length >= 1
+  && length <= longest_line
+  && !list.any(sent.text, is_dropped)
+  && list.all(sent.formats, fn(format) {
+    let #(start, end) = format_range(format)
+    start <= end && end <= length
+  })
+}
+
+/// Whether ParseChatText drops the UTF-16 unit: IsTextRuleCharacterAllowed
+/// refuses it (`0x1403e0ae0`) and it is not the no-break space 0xa0, which
+/// ParseChatText keeps (`0x140402720`).
+fn is_dropped(unit: Int) -> Bool {
+  unit < 0x1f
+  || { unit >= 0x7f && unit <= 0x9f }
+  || unit == 0xad
+  || unit == 0x2028
+  || unit == 0x2029
+  || unit == 0xd0a
+  || unit == 0xfeff
+  || { unit >= 0xfdd0 && unit <= 0xfdef }
+  || unit >= 0xfffe
+}
+
+/// The start and end of a format's range in the text (`0x140085ca0`).
+fn format_range(format: ChatFormat) -> #(Int, Int) {
+  case format {
+    chat_format.Kind0(format) -> #(format.start, format.end)
+    chat_format.Kind1(format) -> #(format.start, format.end)
+    chat_format.Kind2(format) -> #(format.start, format.end)
+    chat_format.Kind3(format) -> #(format.start, format.end)
+    chat_format.ItemId(format) -> #(format.start, format.end)
+    chat_format.QuestId(format) -> #(format.start, format.end)
+    chat_format.ArticleId(format) -> #(format.start, format.end)
+    chat_format.FilterMask(format) -> #(format.start, format.end)
+    chat_format.ItemGuid(format) -> #(format.start, format.end)
+    chat_format.NavigationPoint(format) -> #(format.start, format.end)
+    chat_format.Kind11(format) -> #(format.start, format.end)
+  }
+}
+
+/// 0x1d3 for the line, with the result and the line's own channel and slot.
+fn chat_result_frame(
+  sent sent: SendChatLine,
+  result result: ChatChannelResult,
+) -> Frame {
+  let assert Ok(body) =
+    chat_result.encode(ChatResult(
+      channel_type: sent.channel_type,
+      channel_id: sent.channel_id,
+      result:,
+      chat_message_id: sent.chat_message_id,
+    ))
+    as "the line's own channel and slot fit the fields they came from"
+  Frame(message_id: chat_result.message_id, body:)
+}
+
+/// 0x1c2 for the speaker's own line: the slot, the speaker's name, an empty realm
+/// name and its unit, with no item record (opcode.0x1c2).
+fn accepted_frame(
+  chat chat: Chat,
+  chat_message_id chat_message_id: Int,
+) -> Frame {
+  accepted_as(name: chat.speaker.name, chat:, chat_message_id:)
+}
+
+/// 0x1c2 showing `name` as the line's author: the speaker's own for a line, the
+/// target's for a whisper (opcode.0x1c2).
+fn accepted_as(
+  name name: String,
+  chat chat: Chat,
+  chat_message_id chat_message_id: Int,
+) -> Frame {
+  let assert Ok(body) =
+    chat_line_accepted.encode(ChatLineAccepted(
+      chat_message_id:,
+      gm: 0,
+      name:,
+      realm_name: "",
+      unit_id: chat.speaker.unit_id,
+      premium_tier: 0,
+    ))
+    as "a slot of 16 bits, a name of a character and a unit of 32 bits fit the message"
+  Frame(message_id: chat_line_accepted.message_id, body:)
+}
+
+/// 0x1c8 for a line of another player, as this player's client shows it: the
+/// design's fields, with bCrossFaction 1 when the factions differ
+/// (opcode.0x1c8, chat.cross_faction).
+fn line_frame(
+  chat chat: Chat,
+  speaker speaker: Speaker,
+  line line: Line,
+) -> Frame {
+  let assert Ok(body) =
+    chat_line.encode(ChatLine(
+      channel_type: chat_channel.id(line.channel_type),
+      channel_id: line.channel_id,
+      gm: 0,
+      from_self: 0,
+      auto_response: 0,
+      sender_realm_id: speaker.realm_id,
+      sender_character_id: speaker.character_id,
+      sender_name: speaker.name,
+      sender_realm_name: "",
+      presence_state: 0,
+      text: line.text,
+      formats: line.formats,
+      cross_faction: case speaker.faction_id == chat.speaker.faction_id {
+        True -> 0
+        False -> 1
+      },
+      field_14: 0,
+      unit_id: speaker.unit_id,
+      premium_tier: 0,
+    ))
+    as "the speaker's realm, character, name and unit and a line of at most 499 units fit the message"
+  Frame(message_id: chat_line.message_id, body:)
 }
 
 /// What a tell from another connection does here, while the player is in the
@@ -311,8 +582,26 @@ pub fn take(
 /// faction, a whisper written and answered with `Heard`, and a reply to this
 /// player's own whisper written as 0x1c2 or 0x1d9, whose number is then
 /// forgotten. A reply for a number not held is dropped.
-pub fn told(chat _chat: Chat, tell _tell: Tell) -> #(Chat, List(Effect)) {
-  panic as "built in the say, zone and whisper steps"
+pub fn told(chat chat: Chat, tell tell: Tell) -> #(Chat, List(Effect)) {
+  case tell {
+    chat_tell.Said(speaker:, line:) ->
+      case is_in_my_run(chat:, speaker:) {
+        True -> #(chat, [Send(line_frame(chat:, speaker:, line:))])
+        False -> #(chat, [])
+      }
+    chat_tell.ZoneLine(..)
+    | chat_tell.Whisper(..)
+    | chat_tell.Heard(..)
+    | chat_tell.NotHeard(..) -> panic as "built in the zone and whisper steps"
+  }
+}
+
+/// Whether the speaker is in the run of the map this player is in: a line from
+/// another run or map is dropped, as unit news is, since a unit id there may name
+/// another unit.
+fn is_in_my_run(chat chat: Chat, speaker speaker: Speaker) -> Bool {
+  speaker.map == chat.speaker.map
+  && speaker.incarnation == chat.speaker.incarnation
 }
 
 /// A watch ended: a whisper's target ended or was never there, so the speaker
@@ -345,6 +634,12 @@ pub fn left(chat _chat: Chat) -> List(Effect) {
 }
 
 /// A sentence that says why a chat message is refused, for the log.
-pub fn describe(refusal _refusal: Refusal) -> String {
-  panic as "built in the say step"
+pub fn describe(refusal refusal: Refusal) -> String {
+  case refusal {
+    NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
+    ZoneWithNoRow(world_zone_id:) ->
+      "the client reported WorldZone "
+      <> int.to_string(world_zone_id)
+      <> ", which the table has no row for"
+  }
 }

@@ -29,3 +29,35 @@ pub type ChannelType {
   /// Any other row, by its id.
   Other(id: Int)
 }
+
+/// The channel type of a ChatChannel row id.
+pub fn from_id(id id: Int) -> ChannelType {
+  case id {
+    4 -> Say
+    5 -> Yell
+    6 -> Whisper
+    7 -> Party
+    8 -> Emote
+    9 -> Zone
+    19 -> Support
+    32 -> Instance
+    34 -> AccountWhisper
+    other -> Other(id: other)
+  }
+}
+
+/// The ChatChannel row id of a channel type, which is its type on the wire.
+pub fn id(channel_type channel_type: ChannelType) -> Int {
+  case channel_type {
+    Say -> 4
+    Yell -> 5
+    Whisper -> 6
+    Party -> 7
+    Emote -> 8
+    Zone -> 9
+    Support -> 19
+    Instance -> 32
+    AccountWhisper -> 34
+    Other(id:) -> id
+  }
+}

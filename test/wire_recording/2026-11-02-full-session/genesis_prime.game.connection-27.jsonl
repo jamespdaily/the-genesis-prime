@@ -1,4 +1,4 @@
-{"format":1,"rule":"genesis_prime/game/connection","client_build":16042,"tables_digest":"CD69E40FA66CD2A00D3EF5AFD2CAA6B2B58B47D363ADFBEC484C554A7EE766FC","seed":"b258053fca7388d48ae7037914cca406b9e9c76d5430e9d03ff988ea559500c4","accept_ordinal":26,"realm":null}
+{"format":1,"rule":"genesis_prime/game/connection","client_build":16042,"tables_digest":"1D93694CAA95FD3EF07249B979C3AB9D2218F21E0E95D870CD57E870115EED3F","seed":"b258053fca7388d48ae7037914cca406b9e9c76d5430e9d03ff988ea559500c4","accept_ordinal":26,"realm":null}
 {"sequence":28,"monotonic_ms":-576460743757,"filetime":134381271142855149,"in":"accepted"}
 {"sequence":29,"out":"3b000000dc03350000001a57c0cbff79ba9c87081649bf63806df50034ea5e4a2918faa351ca8e401d094f69fd8d7c62748aee1583679be91be068"}
 {"sequence":30,"monotonic_ms":-576460743568,"filetime":134381271144748394,"in":"read","bytes":"3b00000044023500000096526bf5ff79c82c623a906b1585734beffa1aff986fda3ee0597fdf4871d36754f6d3f6ba36ba97f5e3ad6f5dbed5fd730c00000044020600000056b81500000044020f0000007e9712f23698f9e4876303"}

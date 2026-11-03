@@ -121,7 +121,7 @@ fn zone(top_zone_id: Int) -> step.Address {
 pub fn a_joined_character_name_finds_its_member_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = started()
-  let one = member(scope)
+  let one = member(scope:)
   assert registry.find_named(scope, "ab cd") == Error(Nil)
     as "no connection holds the name"
   told(one, Join(step.CharacterNamed("ab cd")))
@@ -133,8 +133,8 @@ pub fn a_joined_character_name_finds_its_member_test() -> Nil {
 pub fn a_second_member_of_a_name_is_the_one_found_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = started()
-  let older = member(scope)
-  let newer = member(scope)
+  let older = member(scope:)
+  let newer = member(scope:)
   let name = step.CharacterNamed("ab cd")
   told(older, Join(name))
   let assert Ok(older_pid) = registry.find_named(scope, "ab cd")
@@ -150,7 +150,7 @@ pub fn a_second_member_of_a_name_is_the_one_found_test() -> Nil {
 pub fn a_process_that_joins_a_group_twice_is_one_member_and_one_leave_removes_it_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = started()
-  let one = member(scope)
+  let one = member(scope:)
   told(one, Join(zone(7)))
   told(one, Join(zone(7)))
   assert registry.deliver_group(scope, zone(7), 1) == Ok(Nil)
@@ -165,19 +165,19 @@ pub fn a_process_that_joins_a_group_twice_is_one_member_and_one_leave_removes_it
 pub fn a_message_to_a_zone_channel_reaches_each_member_once_and_an_empty_group_gets_none_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = started()
-  let a = member(scope)
-  let b = member(scope)
-  let other = member(scope)
+  let first = member(scope:)
+  let second = member(scope:)
+  let other = member(scope:)
   assert registry.deliver_group(scope, zone(7), 1) == Error(Nil)
     as "nothing is sent to a group with no member"
-  told(a, Join(zone(7)))
-  told(b, Join(zone(7)))
+  told(first, Join(zone(7)))
+  told(second, Join(zone(7)))
   told(other, Join(zone(8)))
   assert registry.deliver_group(scope, zone(7), 42) == Ok(Nil)
   assert registry.deliver_group(scope, zone(7), last) == Ok(Nil)
   assert registry.deliver_group(scope, zone(8), last) == Ok(Nil)
-  assert got_before_last(a) == [42] as "each member got it once"
-  assert got_before_last(b) == [42] as "each member got it once"
+  assert got_before_last(first) == [42] as "each member got it once"
+  assert got_before_last(second) == [42] as "each member got it once"
   assert got_before_last(other) == []
     as "a member of another top zone's group got nothing"
 }
@@ -185,24 +185,25 @@ pub fn a_message_to_a_zone_channel_reaches_each_member_once_and_an_empty_group_g
 pub fn a_member_that_ends_is_no_longer_in_its_groups_and_later_messages_go_to_the_others_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = started()
-  let a = member(scope)
-  let b = member(scope)
-  told(a, Join(zone(7)))
-  told(b, Join(zone(7)))
-  told(a, Join(step.CharacterNamed("ab cd")))
-  process.send(a.commands, Stop)
+  let first = member(scope:)
+  let second = member(scope:)
+  told(first, Join(zone(7)))
+  told(second, Join(zone(7)))
+  told(first, Join(step.CharacterNamed("ab cd")))
+  process.send(first.commands, Stop)
   event_wait.until("the scope noticed the end by itself", fn() {
     registry.find_named(scope, "ab cd") == Error(Nil)
   })
   assert registry.deliver_group(scope, zone(7), 5) == Ok(Nil)
   assert registry.deliver_group(scope, zone(7), last) == Ok(Nil)
-  assert got_before_last(b) == [5] as "the member that is left got the line"
+  assert got_before_last(second) == [5]
+    as "the member that is left got the line"
 }
 
 pub fn a_leave_of_a_group_the_process_is_not_in_does_nothing_test() -> Nil {
   use <- owned_test.run(30_000)
   let scope = started()
-  let one = member(scope)
+  let one = member(scope:)
   told(one, Leave(zone(3)))
   assert registry.deliver_group(scope, zone(3), 1) == Error(Nil)
     as "the group is still empty"

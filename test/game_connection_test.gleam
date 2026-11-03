@@ -49,6 +49,8 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/coverage/sent_message
+import genesis_prime/game/chat_channel
+import genesis_prime/game/chat_tell
 import genesis_prime/game/connection.{Settings} as game_connection
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game_settings.{GameSettings}
@@ -59,6 +61,7 @@ import genesis_prime/login/guid
 import genesis_prime/message/camp_countdown
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{CharacterListEntry}
+import genesis_prime/message/chat_line
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
@@ -97,6 +100,7 @@ import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
+import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/server_hello.{ServerHello}
 import genesis_prime/message/start_movement
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
@@ -135,6 +139,8 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/string
+import message_support
 import owned_test
 import place_support
 
@@ -3319,13 +3325,16 @@ pub fn the_game_rule_names_the_client_messages_it_takes_test() -> Nil {
   let named = list.sort(game_connection.taken_message_ids(), int.compare)
   assert named
     == [
-      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x025B, 0x025C, 0x0352,
-      0x038C, 0x058F, 0x0637, 0x063A, 0x063B, 0x0786, 0x07DD, 0x07E0,
+      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x025B, 0x025C,
+      0x0352, 0x038C, 0x058F, 0x0637, 0x063A, 0x063B, 0x0786, 0x07DD, 0x07E0,
     ]
-    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement and camp messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF and 0x00C0"
+    as "the ids the rule's doc comment lists: 0x058F, 0x07E0, 0x07DD, 0x025C with the 0x025B it carries, 0x0352, 0x0786, the world carrier 0x038C (the direct ids of sent_message, fact 0x140332920, and 0x038C, fact 0x1403f4900), and the movement, camp and chat messages of the player in the world, 0x0637, 0x063A, 0x00D5, 0x063B, 0x00F2, 0x00FB, 0x00FC, 0x00BF, 0x00C0 and 0x01C3"
   assert list.sort(game_connection.carried_message_ids(), int.compare)
-    == [0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x0637, 0x063A, 0x063B]
-    as "the movement and camp messages are taken only with the player in the world"
+    == [
+      0x00BF, 0x00C0, 0x00D5, 0x00F2, 0x00FB, 0x00FC, 0x01C3, 0x0637, 0x063A,
+      0x063B,
+    ]
+    as "the movement, camp and chat messages are taken only with the player in the world"
 }
 
 pub fn character_select_takes_exactly_the_ids_the_rule_names_and_logs_every_other_client_id_as_unhandled_test() -> Nil {
@@ -4535,4 +4544,194 @@ pub fn a_command_kind_that_is_not_relayed_is_named_once_a_connection_and_not_rel
   let #(_, second) = read(state, message)
   assert support.logs_of(step: second, level: LogInfo) == []
     as "named once on a connection"
+}
+
+// ---- chat: the speaker, the reader and the routing ----
+
+/// A 0x1c3 on (type, 0) inside 0x038C, as the client sends it, with slot 1.
+fn chat_line_message(type_id: Int, text: String) -> BitArray {
+  chat_line_with(type_id:, text:, message_id: 1)
+}
+
+fn chat_line_with(
+  type_id type_id: Int,
+  text text: String,
+  message_id message_id: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    send_chat_line.encode(SendChatLine(
+      channel_type: type_id,
+      channel_id: 0,
+      text: list.map(
+        string.to_utf_codepoints(text),
+        string.utf_codepoint_to_int,
+      ),
+      formats: [],
+      chat_message_id: message_id,
+    ))
+  world_message(send_chat_line.message_id, body)
+}
+
+/// The chat tells of a step: the address each goes to and what it says, in the
+/// order of the step's effects.
+fn chat_tells(
+  taken: ConnectionStep(Request),
+) -> List(#(step.Address, chat_tell.Tell)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(to:, request: client_connection.TellChat(tell:))) ->
+        Ok(#(to, tell))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+fn peer_tell_kinds(taken: ConnectionStep(Request)) -> List(String) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(request: TellPeer(..), ..)) -> Ok("unit news")
+      OwnEffect(step.Tell(request: client_connection.TellChat(..), ..)) ->
+        Ok("chat")
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+pub fn a_say_line_in_the_world_writes_the_accept_and_tells_each_viewer_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let state = watched_by(in_world(), [2, 3])
+  let #(_, taken) = read(state, chat_line_message(4, "Hello"))
+  assert written_ids(taken) == [0x01C2]
+    as "opcode.0x1c2: the speaker's own line is shown by the accept alone"
+  let tells = chat_tells(taken)
+  assert list.map(tells, fn(told) { told.0 })
+    == [step.Connection(ConnectionId(2)), step.Connection(ConnectionId(3))]
+    as "one tell to each viewer, which the shell sends with no answer"
+  let assert [#(_, chat_tell.Said(speaker:, line:)), ..] = tells
+  assert speaker.name == "Ab Cd" && speaker.character_id == 42
+  assert line.channel_type == chat_channel.Say && line.channel_id == 0
+  assert support.logs(taken) == [] && !support.stops(taken)
+}
+
+pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the_order_of_watched_and_the_line_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The line first: the player 2 is no viewer yet, so it gets no line.
+  let #(state, line_first) = read(in_world(), chat_line_message(4, "Hello"))
+  let #(_, appears) = feed(state, sent_by_the_map(Watched(by: ConnectionId(2))))
+  assert peer_tell_kinds(line_first) == []
+    as "a player that does not see the speaker yet is told nothing"
+  assert peer_tell_kinds(appears) == ["unit news"]
+    as "design C: the speaker's connection sends its 0x262 as the map says the player sees it"
+  // Watched first: the 0x262 is told in the step before the line, by the same
+  // sender, so the viewer's connection takes them in that order.
+  let #(state, appears) =
+    feed(in_world(), sent_by_the_map(Watched(by: ConnectionId(2))))
+  let #(_, line) = read(state, chat_line_message(4, "Hello"))
+  assert list.append(peer_tell_kinds(appears), peer_tell_kinds(line))
+    == ["unit news", "chat"]
+    as "the 0x262 comes before the first line: one sender for each pair, and a sender's messages arrive in the order sent, so the bubble finds the unit"
+}
+
+pub fn a_said_tell_writes_a_0x1c8_with_the_player_in_the_world_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tell =
+    chat_tell.Said(
+      speaker: chat_tell.Speaker(
+        realm_id: 1,
+        character_id: 7,
+        name: "Zed Other",
+        faction_id: 167,
+        unit_id: 9,
+        map: camp_map(),
+        incarnation:,
+      ),
+      line: chat_tell.Line(
+        channel_type: chat_channel.Say,
+        channel_id: 0,
+        text: [0x48, 0x69],
+        formats: [],
+      ),
+    )
+  let #(_, taken) =
+    feed(in_world(), OwnEvent(Woken(client_connection.SentByChat(tell))))
+  assert written_ids(taken) == [0x01C8]
+  let assert [Frame(body:, ..)] = heard(taken, keyed())
+  let assert Ok(line) = chat_line.decode(body)
+  assert line.sender_name == "Zed Other" && line.unit_id == 9
+  assert line.cross_faction == 1
+    as "chat.cross_faction: the tests' player is faction 166, the speaker 167"
+}
+
+pub fn a_chat_tell_with_no_player_in_the_world_is_dropped_and_the_connection_goes_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tell =
+    chat_tell.Said(
+      speaker: chat_tell.Speaker(
+        realm_id: 1,
+        character_id: 7,
+        name: "Zed Other",
+        faction_id: 167,
+        unit_id: 9,
+        map: camp_map(),
+        incarnation:,
+      ),
+      line: chat_tell.Line(
+        channel_type: chat_channel.Say,
+        channel_id: 0,
+        text: [0x48, 0x69],
+        formats: [],
+      ),
+    )
+  let #(_, taken) =
+    feed(in_select(), OwnEvent(Woken(client_connection.SentByChat(tell))))
+  assert written_ids(taken) == []
+    && support.logs(taken) == []
+    && !support.stops(taken)
+    as "a player in character select has no chat: the line is dropped"
+}
+
+pub fn a_0x1c3_outside_the_world_is_logged_as_unhandled_and_the_connection_goes_on_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = read(in_select(), chat_line_message(4, "Hello"))
+  assert support.unhandled_ids(taken) == [Some(#("unhandled", 0x01C3))]
+    as "the routing table takes 0x1c3 with the player in the world only"
+  assert !support.stops(taken)
+}
+
+pub fn a_format_of_type_12_ends_the_connection_with_nothing_written_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let body =
+    message_support.hex(
+      "04 00 00 00 00 00 00 00 00 80 00 1e 40 60 00 80 00 00 00 00 00 00 00 00 00 80 00 00",
+    )
+  let #(refusing, taken) =
+    read(in_world(), world_message(send_chat_line.message_id, body))
+  assert list.any(support.logs(taken), fn(line) { line.level == step.LogError })
+    as "0x140085ca0: the client's reader refuses a format of type 12 to 15, so the frame is one the client never writes: an error line says so"
+  assert support.writes(taken) == [] as "nothing is written to such a client"
+  let #(_, taken) = answer(state: refusing, taken:, outcome: place_saved())
+  assert support.effects_of(taken) == [step.Stop]
+    as "the last good place is saved and the connection ends (CLAUDE.md: bytes the client's reader refuses end the connection)"
+}
+
+pub fn support_and_instance_are_logged_as_unhandled_once_for_each_channel_on_a_connection_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, first) =
+    read(in_world(), chat_line_with(type_id: 19, text: "Hi", message_id: 1))
+  let #(state, second) =
+    read(state, chat_line_with(type_id: 19, text: "Hi", message_id: 2))
+  let #(_, instance) =
+    read(state, chat_line_with(type_id: 32, text: "Hi", message_id: 3))
+  let warnings = fn(taken) {
+    list.filter(support.logs(taken), fn(line) { line.level == step.LogWarning })
+  }
+  assert list.length(warnings(first)) == 1
+    as "Jim, 2026-11-03: the channel is logged as unhandled, so the coverage measure sees the gap"
+  assert warnings(second) == [] as "once for each channel on a connection"
+  assert list.length(warnings(instance)) == 1
+    as "another channel is another line"
+  assert written_ids(second) == [0x01D3]
+    as "each line still gets its one answer"
 }

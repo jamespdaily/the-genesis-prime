@@ -27,6 +27,7 @@ import genesis_prime/store.{type LookEntry, LookEntry} as _
 import genesis_prime/table/character_creation
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
+import genesis_prime/table/chat_channel
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
 import genesis_prime/table/game_formula
@@ -141,6 +142,42 @@ pub fn world_zones() -> List(#(Int, Int)) {
   ]
 }
 
+/// The planted ChatChannel rows: the ID, enumName and flags of the client's own
+/// rows (`chat_test` compares each with the real row) for the channels the chat
+/// rule tells apart: Command, System, Say, Yell, Whisper, Party, Emote, Zone,
+/// Trade, Guild, Support, NPCSay, Instance and AccountWhisper.
+pub fn chat_channels() -> List(#(Int, String, Int)) {
+  [
+    #(1, "Command", 8),
+    #(2, "System", 8),
+    #(4, "Say", 29),
+    #(5, "Yell", 30),
+    #(6, "Whisper", 12),
+    #(7, "Party", 28),
+    #(8, "Emote", 13),
+    #(9, "Zone", 1676),
+    #(11, "Trade", 1676),
+    #(15, "Guild", 4),
+    #(19, "Support", 268),
+    #(20, "NPCSay", 24),
+    #(32, "Instance", 28),
+    #(34, "AccountWhisper", 44),
+  ]
+}
+
+fn chat_channel_file() -> #(String, BitArray) {
+  planted_table.file(
+    chat_channel.schema,
+    list.map(chat_channels(), fn(channel) {
+      planted_table.row(chat_channel.schema, [
+        #("ID", Integer(channel.0)),
+        #("enumName", planted_table.Text(channel.1)),
+        #("flags", Integer(channel.2)),
+      ])
+    }),
+  )
+}
+
 fn world_zone_file(zones: List(#(Int, Int))) -> #(String, BitArray) {
   planted_table.file(
     world_zone.schema,
@@ -190,6 +227,7 @@ fn files_with_looks(
     planted_table.file(customization_parameter_map.schema, map_rows()),
     planted_table.file(world_location2.schema, planted_start_rows()),
     world_zone_file(world_zones()),
+    chat_channel_file(),
     planted_table.file(
       game_formula.schema,
       game_formula_rows(ids: [highest_level_formula], highest: 50),
