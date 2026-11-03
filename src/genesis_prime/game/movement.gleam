@@ -5,6 +5,8 @@
 //// turns its effects into the store's ask and log lines.
 ////
 //// ```
+//// 0x637, 0x63A, 0xD5, 0x63B, 0xF2, 0xFB, 0xFC, inside 0x38C
+////                         ─▶ take         ─▶ the new state, or a refusal that ends the connection
 //// 0x637, decoded          ─▶ moves, moved ─▶ the place kept, or a refusal that ends the connection
 //// the 60 s timer          ─▶ save         ─▶ Ask store SavePlace(account, character, epoch, sequence, place)
 //// the store's answer      ─▶ saved        ─▶ a log line when nothing was saved
@@ -44,15 +46,24 @@
 ////   save changes nothing, and the older login loses at most the movement since
 ////   its last save, within `save_period_ms`.
 
+import genesis_prime/client_connection
 import genesis_prime/game/start_place.{type Facing, type Place, Facing}
+import genesis_prime/message/bit_stream
+import genesis_prime/message/fall_value
+import genesis_prime/message/fell_below_floor
 import genesis_prime/message/float32.{type Bits}
+import genesis_prime/message/move_speed_setting
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_platform.{MovementPlatform}
 import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/movement_send_interval_answer
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/player_movement.{type PlayerMovement}
+import genesis_prime/message/relayed_movement.{type RelayedMovement}
+import genesis_prime/message/terrain_loaded
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/zone_value_changed
 import genesis_prime/store.{
   type AccountId, type CharacterId, type MoveAnswer, type MoveRequest,
   type SessionEpoch, NothingSaved, PlaceRefused, PlaceSaved, SavePlace,
@@ -62,6 +73,25 @@ import gleam/float
 import gleam/int
 import gleam/list
 import gleam/result
+
+/// The movement messages of the player in the world, which the client sends
+/// inside 0x038C (genesis_prime/game/routing's table says which id is which).
+pub type Message {
+  /// 0x0637, the player's movement commands.
+  PlayerMoved
+  /// 0x063A, the player unit's value changing.
+  ZoneChanged
+  /// 0x00D5, the answer to the world's settings.
+  IntervalAnswered
+  /// 0x063B, the move speed setting.
+  SpeedChosen
+  /// 0x00F2, the terrain near the player ready.
+  TerrainReady
+  /// 0x00FB, a fall's value.
+  Fell
+  /// 0x00FC, a fall below the floor.
+  FellBelowFloor
+}
 
 /// What the store's answer to a save says, for the game connection's rule to
 /// write as a log line.
@@ -144,6 +174,8 @@ pub type Refusal {
   UnknownMode(mode: Int)
   /// A move speed setting above 2 (0x140c45dd0).
   UnknownSpeedSetting(setting: Int)
+  /// A body the client's own reader would refuse.
+  NotDecoded(undecoded: client_connection.Undecoded)
 }
 
 /// How long after the player enters the world, and after each save, the
@@ -232,6 +264,157 @@ fn single(number: Int) -> Bits {
   bits
 }
 
+/// What a movement message made of the player's movement.
+pub type Taken {
+  /// The message changes what the rule keeps, or nothing, and has nothing to
+  /// relay: the state it leaves.
+  Kept(state: State)
+  /// An accepted 0x0637: the state it leaves, the place the player now stands
+  /// at in the world's frame (`place`), the commands it sent that are relayed,
+  /// in the order sent with their bits, and the kinds of those that are not
+  /// (`unrelayed`, once each, in the order sent). The game connection tells the
+  /// map, which decides who sees this player, and sends the commands to the
+  /// connections of the players who see this one
+  /// (genesis_prime/world_map/map `Moved`).
+  Relayed(
+    state: State,
+    place: Place,
+    commands: List(RelayedMovement),
+    unrelayed: List(Int),
+  )
+}
+
+/// What a command of a 0x0637 is to the players who see the sender.
+type Relay {
+  /// A kind the server relays, with its data.
+  Sent(command: RelayedMovement)
+  /// Kind 0, the sender's own client clock, which is no one else's
+  /// (movement_command.kind_0): dropped.
+  Clock
+  /// Any other kind: dropped, and named once per connection in a log line,
+  /// since the client's writer may send it and `opcode.0x637` does not say
+  /// what it means for another player.
+  Unrelayed(kind: Int)
+}
+
+/// The commands of a 0x0637 that other players are sent, in order, and the
+/// kinds of the others, each once in the order first sent: kind 0 is the
+/// sender's clock and is never relayed or named, and the kinds
+/// `genesis_prime/message/relayed_movement` does not hold are named.
+fn relayed(
+  commands commands: List(MovementCommand),
+) -> #(List(RelayedMovement), List(Int)) {
+  let relays = list.map(commands, relay)
+  #(
+    list.filter_map(relays, fn(relay) {
+      case relay {
+        Sent(command:) -> Ok(command)
+        Clock | Unrelayed(..) -> Error(Nil)
+      }
+    }),
+    list.filter_map(relays, fn(relay) {
+      case relay {
+        Unrelayed(kind:) -> Ok(kind)
+        Sent(..) | Clock -> Error(Nil)
+      }
+    })
+      |> list.unique,
+  )
+}
+
+fn relay(command: MovementCommand) -> Relay {
+  case command {
+    movement_command.Platform(data) -> Sent(relayed_movement.Platform(data))
+    movement_command.Position(data) -> Sent(relayed_movement.Position(data))
+    movement_command.Velocity(data) -> Sent(relayed_movement.Velocity(data))
+    movement_command.MoveAsked(data) -> Sent(relayed_movement.MoveAsked(data))
+    movement_command.Rotation(data) -> Sent(relayed_movement.Rotation(data))
+    movement_command.StateFlags(data) -> Sent(relayed_movement.StateFlags(data))
+    movement_command.Mode(data) -> Sent(relayed_movement.Mode(data))
+    movement_command.Time(_) -> Clock
+    movement_command.Kind3(_) -> Unrelayed(3)
+    movement_command.Kind4(_) -> Unrelayed(4)
+    movement_command.Kind5(_) -> Unrelayed(5)
+    movement_command.Kind6(_) -> Unrelayed(6)
+    movement_command.Kind7(_) -> Unrelayed(7)
+    movement_command.Kind9(_) -> Unrelayed(9)
+    movement_command.Kind10(_) -> Unrelayed(10)
+    movement_command.Kind12(_) -> Unrelayed(12)
+    movement_command.Kind13(_) -> Unrelayed(13)
+    movement_command.Kind15(_) -> Unrelayed(15)
+    movement_command.Kind16(_) -> Unrelayed(16)
+    movement_command.Kind17(_) -> Unrelayed(17)
+    movement_command.Kind18(_) -> Unrelayed(18)
+    movement_command.Kind19(_) -> Unrelayed(19)
+    movement_command.Kind20(_) -> Unrelayed(20)
+    movement_command.Kind21(_) -> Unrelayed(21)
+    movement_command.Kind22(_) -> Unrelayed(22)
+    movement_command.Kind23(_) -> Unrelayed(23)
+    movement_command.Kind25(_) -> Unrelayed(25)
+    movement_command.Kind26(_) -> Unrelayed(26)
+    movement_command.Kind28(_) -> Unrelayed(28)
+    movement_command.Kind29(_) -> Unrelayed(29)
+  }
+}
+
+/// What one movement message does to where the player stands: the body is
+/// decoded and 0x0637 and 0x063B are checked as `moved` and `speed_setting`
+/// say; the others are decoded and nothing more, since what their values mean
+/// is not read (the client trace's unknowns: 0x63A's and 0xF2's value is likely
+/// the zone, 0xD5's three values are not read, 0xFB is a fall's value and 0xFC
+/// the fall below the floor). A body the client's reader would refuse, or a
+/// refused command, is the refusal that ends the connection.
+pub fn take(
+  state state: State,
+  message message: Message,
+  body body: BitArray,
+) -> Result(Taken, Refusal) {
+  case message {
+    PlayerMoved ->
+      player_movement.decode(body)
+      |> undecoded(player_movement.message_id)
+      |> result.try(fn(decoded) {
+        use state <- result.map(moved(state:, moves: moves(message: decoded)))
+        let #(commands, unrelayed) = relayed(commands: decoded.commands)
+        Relayed(state:, place: place(state:), commands:, unrelayed:)
+      })
+    SpeedChosen ->
+      move_speed_setting.decode(body)
+      |> undecoded(move_speed_setting.message_id)
+      |> result.try(fn(decoded) { speed_setting(setting: decoded.move_speed) })
+      |> result.replace(Kept(state))
+    ZoneChanged ->
+      zone_value_changed.decode(body)
+      |> undecoded(zone_value_changed.message_id)
+      |> result.replace(Kept(state))
+    IntervalAnswered ->
+      movement_send_interval_answer.decode(body)
+      |> undecoded(movement_send_interval_answer.message_id)
+      |> result.replace(Kept(state))
+    TerrainReady ->
+      terrain_loaded.decode(body)
+      |> undecoded(terrain_loaded.message_id)
+      |> result.replace(Kept(state))
+    Fell ->
+      fall_value.decode(body)
+      |> undecoded(fall_value.message_id)
+      |> result.replace(Kept(state))
+    FellBelowFloor ->
+      fell_below_floor.decode(body)
+      |> undecoded(fell_below_floor.message_id)
+      |> result.replace(Kept(state))
+  }
+}
+
+/// A decode that failed, as the refusal for the message it was read for.
+fn undecoded(
+  decoded: Result(message, bit_stream.DecodeError),
+  message_id: Int,
+) -> Result(message, Refusal) {
+  client_connection.decoded(decoded, message_id:)
+  |> result.map_error(NotDecoded)
+}
+
 /// What a 0x637 does to where the player stands, command by command in the
 /// order sent: the frame of kind 1 holds for the commands after it and for later
 /// messages; a position or rotation in the world's frame is kept; a command
@@ -316,6 +499,7 @@ pub fn describe(refusal refusal: Refusal) -> String {
       "0x063B holds the move speed setting "
       <> int.to_string(setting)
       <> ", above 2"
+    NotDecoded(undecoded:) -> client_connection.describe_undecoded(undecoded:)
   }
 }
 

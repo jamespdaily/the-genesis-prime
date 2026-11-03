@@ -84,7 +84,7 @@ import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
-  SentBySessions,
+  SentByMap, SentByPeer, SentBySessions, TellMoved, TellPeer,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -97,14 +97,16 @@ import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
 import genesis_prime/service.{type Call, type Locate, type Reach, type Sent}
 import genesis_prime/service/shell as service_shell
-import genesis_prime/step.{type ConnectionRule}
+import genesis_prime/step.{type ConnectionRule, LogError}
 import genesis_prime/step/runtime
+import genesis_prime/step/watch
 import genesis_prime/store/worker.{type Job}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map
+import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/registry as world_map_registry
-import gleam/erlang/process.{type Name}
+import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
@@ -227,7 +229,7 @@ pub fn start(
     name: settings.sessions,
     settings: service_shell.Settings(
       rule: account_session.rule(),
-      reach: sessions_reach(settings),
+      reach: connection_reach(settings, SentBySessions),
       shutdown_ms: settings.sessions_shutdown_ms,
     ),
   ))
@@ -284,6 +286,7 @@ fn directory(settings: Settings) -> Directory {
           deadline_ms:,
           reply: fn(answer) { reply(FromMap(answer)) },
         )
+      TellMoved(..) | TellPeer(..) -> Error(Nil)
     }
   }
 }
@@ -296,38 +299,132 @@ fn locate(settings: Settings) -> Locate {
   let hand_off = settings.hand_off
   let sessions = settings.sessions
   let registry = settings.registry
-  let maps_name = settings.world.maps
-  let maps_call_ms = settings.world.maps_call_ms
   fn(address: step.Address) {
     case address {
       step.Sessions -> process.named(sessions)
       step.HandOff -> process.named(hand_off)
       step.Store -> process.named(store)
       step.Connection(connection:) -> registry.find(registry, connection)
-      step.Maps -> process.named(maps_name)
+      step.Maps -> process.named(settings.world.maps)
       step.Map(map:, incarnation:) ->
-        world_map_registry.find(
-          maps_name,
-          map,
-          incarnation,
-          deadline_ms: runtime.now().monotonic_ms + maps_call_ms,
-        )
+        find_run(settings:, map:, incarnation:)
         |> result.map(fn(found) { found.pid })
-        |> result.replace_error(Nil)
     }
   }
 }
 
-/// How Sessions reaches the processes its rule names: the same lookups, and
-/// a send to a connection, which takes what Sessions sends as the message
-/// `SentBySessions`. Only a connection is sent to; any other address has no
-/// process that takes a message from Sessions.
-fn sessions_reach(settings: Settings) -> Reach(account_session.Outgoing) {
+/// The run of the map with this incarnation, which Maps finds and never
+/// starts, in the time a watch's call to Maps may take. One lookup serves both
+/// the pid a watch monitors and the subject a tell goes to.
+fn find_run(
+  settings settings: Settings,
+  map map: MapId,
+  incarnation incarnation: Int,
+) -> Result(world_map_registry.MapProcess, Nil) {
+  world_map_registry.find(
+    settings.world.maps,
+    map,
+    incarnation,
+    deadline_ms: runtime.now().monotonic_ms + settings.world.maps_call_ms,
+  )
+  |> result.replace_error(Nil)
+}
+
+/// How a game or login connection's shell finds the process a `Watch` names,
+/// with the way to tell it when the rule tells it: the run of a map is found
+/// once, and the way to tell it (`TellMoved`) comes with the pid the watch
+/// monitors. Any other address has no process that takes a tell.
+fn connection_locate(
+  settings: Settings,
+) -> fn(step.Address) -> Result(watch.Found(fn(Request) -> Nil), Nil) {
+  let pids = locate(settings)
+  fn(address: step.Address) {
+    case address {
+      step.Map(map:, incarnation:) ->
+        find_run(settings:, map:, incarnation:)
+        |> result.map(fn(found) {
+          watch.Tellable(pid: found.pid, sender: tell_the_run(
+            subject: found.subject,
+            request: _,
+          ))
+        })
+      step.Sessions
+      | step.HandOff
+      | step.Store
+      | step.Maps
+      | step.Connection(..) -> pids(address) |> result.map(watch.Watched)
+    }
+  }
+}
+
+/// Tells the run of a map what the request says: that a player moved. Any
+/// other request is an ask, which a tell never carries: a rule that tells one
+/// has a bug, logged as an error, and nothing is sent.
+pub fn tell_the_run(
+  subject subject: Subject(Call(map.Message, map.Outgoing)),
+  request request: Request,
+) -> Nil {
+  case request {
+    TellMoved(connection:, place:) -> {
+      let _sent = service.tell_subject(subject, map.Moved(connection:, place:))
+      Nil
+    }
+    TellPeer(..)
+    | AskStore(..)
+    | AskHandOff(..)
+    | AskSessions(..)
+    | AskMap(..)
+    | AskMapRun(..) ->
+      runtime.log(
+        LogError,
+        "a rule told a map something other than a move, which a map takes only by an ask",
+        step.no_one,
+      )
+  }
+}
+
+/// How a connection's shell sends a request to another connection by address
+/// (`Tell` to a `Connection`): news of a player's unit (`TellPeer`) goes through
+/// the registry as `SentByPeer`, by the same reach the services' sends take
+/// (`connection_reach`). Any other request is no tell to a connection: a rule
+/// that sends one has a bug, logged as an error, and nothing is sent.
+fn connection_deliver(
+  settings: Settings,
+) -> fn(step.Address, Request) -> Result(Nil, Nil) {
+  let reach = connection_reach(settings, SentByPeer)
+  fn(to: step.Address, request: Request) {
+    case request {
+      TellPeer(news:) -> reach.send(to, news)
+      TellMoved(..)
+      | AskStore(..)
+      | AskHandOff(..)
+      | AskSessions(..)
+      | AskMap(..)
+      | AskMapRun(..) -> {
+        runtime.log(
+          LogError,
+          "a rule sent a connection something other than news of a player's unit",
+          step.no_one,
+        )
+        Error(Nil)
+      }
+    }
+  }
+}
+
+/// How a service reaches the processes its rule names: the same lookups, and
+/// a send to a connection, which takes what the service sends wrapped by
+/// `wrap` (`SentBySessions`, `SentByMap`). Only a connection is sent to; any
+/// other address has no process that takes a message from a service.
+fn connection_reach(
+  settings: Settings,
+  wrap: fn(outgoing) -> Message,
+) -> Reach(outgoing) {
   let registry = settings.registry
   service.Reach(locate: locate(settings), send: fn(to, outgoing) {
     case to {
       step.Connection(connection:) ->
-        registry.deliver(registry, connection, SentBySessions(outgoing))
+        registry.deliver(registry, connection, wrap(outgoing))
       step.Sessions | step.HandOff | step.Store | step.Maps | step.Map(..) ->
         Error(Nil)
     }
@@ -345,7 +442,7 @@ fn world(
     world: settings.world,
     realm_id: settings.game.settings.realm_id,
     tables: settings.game.settings.tables,
-    locate: locate(settings),
+    reach: connection_reach(settings, SentByMap),
   )
 }
 
@@ -353,15 +450,15 @@ fn world(
 /// order: Maps' restart restarts the map supervisor, so every map ends with
 /// the registry that knew them. A map is started by the map supervisor with
 /// the rule of its id and incarnation, the realm and game tables its players'
-/// units are built from, no name, and a reach that finds what it watches with
-/// `locate`. The server's tree and the tests start the world with this
-/// function.
+/// units are built from, no name, and `reach`, which finds what it watches and
+/// sends to its players' connections. The server's tree and the tests start
+/// the world with this function.
 pub fn add_world(
   tree tree: supervisor.Builder,
   world world: World,
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
-  locate locate: Locate,
+  reach reach: Reach(map.Outgoing),
 ) -> supervisor.Builder {
   tree
   |> supervisor.add(world_map_registry.supervised(
@@ -380,7 +477,7 @@ pub fn add_world(
             realm_id:,
             tables:,
           ),
-          reach: service.watch_only(locate:),
+          reach:,
           shutdown_ms: world.map_shutdown_ms,
         ))
       },
@@ -474,7 +571,8 @@ fn serve(
         scripts: served.scripts,
         directory:,
         registry:,
-        locate: locate(settings),
+        locate: connection_locate(settings),
+        deliver: connection_deliver(settings),
       ),
     )),
   )

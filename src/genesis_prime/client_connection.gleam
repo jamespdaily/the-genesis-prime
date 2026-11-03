@@ -24,7 +24,11 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{type Wrapper, ClientWrapper}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/hand_off
+import genesis_prime/message/bit_stream
+import genesis_prime/message/relayed_movement.{type RelayedMovement}
+import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/random.{type Random}
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
@@ -41,6 +45,7 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/string
 
 /// What a connection rule asks.
@@ -55,6 +60,64 @@ pub type Request {
   /// map that is not running, or runs as another incarnation, is not running
   /// for this ask (genesis_prime/world_map/registry).
   AskMapRun(map: MapId, incarnation: Int, message: map.Message)
+  /// What a `Tell` effect sends the run of a map (genesis_prime/step): that the
+  /// player of `connection` moved to `place` (genesis_prime/world_map/map
+  /// `Moved`), for the map to decide who sees whom. A tell of a join or a leave
+  /// cannot be built. It is never asked: the directory answers an ask of it as
+  /// no process running.
+  TellMoved(connection: ConnectionId, place: Place)
+  /// What a `Tell` effect sends the connection of a player who sees this one
+  /// (genesis_prime/step `Connection`): news of this player's unit, which that
+  /// connection writes as 0x262, 0x638 or 0x355 when its client can take it.
+  /// Never asked, and never told to a map.
+  TellPeer(news: PeerNews)
+}
+
+/// News of one unit from its owner's connection to the connection of a player
+/// who sees it: the run of the map the owner is in (`map` and `incarnation`, as
+/// its connection watches it), the owner's unit in that run, and what happened
+/// to it. A viewer that is in another run of the map, or another map, drops it:
+/// the unit id there may name another unit.
+pub type PeerNews {
+  PeerNews(map: MapId, incarnation: Int, unit_id: Int, news: News)
+}
+
+/// What an owner's connection tells the connections that see its unit, which
+/// they write as the message the client creates, moves and removes a unit with.
+pub type News {
+  /// The unit as the client creates it, at the owner's current place and stamped
+  /// from the map's clock: 0x262 (opcode.0x262).
+  Appeared(unit: UnitCreatePlayer)
+  /// The unit moved: the map's server time at the move (the map's clock,
+  /// `world_map/map.server_time`) and at most 31 of its relayed commands in the
+  /// order sent, since 0x638's count is 5 bits (opcode.0x638).
+  Moving(server_time_ms: Int, commands: List(RelayedMovement))
+  /// The unit is gone from the viewer's sight, or its owner camped: 0x355
+  /// (opcode.0x355).
+  Removed
+}
+
+/// The most commands one 0x638 holds: its count is 5 bits (opcode.0x638).
+const most_commands_in_a_message = 31
+
+/// The news a move is sent as: its `commands` in order, at most 31 to a message,
+/// and none for no command.
+pub fn peer_moves(
+  map map: MapId,
+  incarnation incarnation: Int,
+  unit_id unit_id: Int,
+  server_time_ms server_time_ms: Int,
+  commands commands: List(RelayedMovement),
+) -> List(PeerNews) {
+  list.sized_chunk(commands, most_commands_in_a_message)
+  |> list.map(fn(chunk) {
+    PeerNews(
+      map:,
+      incarnation:,
+      unit_id:,
+      news: Moving(server_time_ms:, commands: chunk),
+    )
+  })
 }
 
 /// What comes back from an ask, by the process asked.
@@ -69,6 +132,15 @@ pub type Answer {
 /// it. Only the game rule is sent anything; the login's rules take `Nil`.
 pub type Message {
   SentBySessions(message: account_session.Outgoing)
+  /// What a map sends the connection of a player in it without waiting: who
+  /// sees this connection's player (`Watched`, `Unwatched`), and a unit whose
+  /// owner's connection ended (`Gone`). A map's answers (`Joined`, `Left`) come
+  /// as an ask's outcome, never as this.
+  SentByMap(message: map.Outgoing)
+  /// What the connection of another player sends it without waiting: news of
+  /// that player's unit, written while this player is in the world
+  /// (genesis_prime/game/connection).
+  SentByPeer(news: PeerNews)
 }
 
 /// What an accepted connection keeps beside its rule's own state: who
@@ -313,7 +385,7 @@ pub fn log(
   about about: About,
   level level: step.LogLevel,
   text text: String,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Request)) {
   Log(LogLine(level:, text:, about:))
 }
 
@@ -383,6 +455,28 @@ pub fn message_text(message_id message_id: Int) -> String {
   "0x" <> string.pad_start(string.uppercase(int.to_base16(message_id)), 4, "0")
 }
 
+/// A body the client's own reader would refuse, as the message it was read for
+/// and why it was refused: the refusal every feature that decodes a client
+/// message has.
+pub type Undecoded {
+  Undecoded(message_id: Int, error: bit_stream.DecodeError)
+}
+
+/// A decode that failed, as the refusal for the message it was read for.
+pub fn decoded(
+  result result: Result(message, bit_stream.DecodeError),
+  message_id message_id: Int,
+) -> Result(message, Undecoded) {
+  result.map_error(result, fn(error) { Undecoded(message_id:, error:) })
+}
+
+/// The sentence a body the client's own reader would refuse is logged with.
+pub fn describe_undecoded(undecoded undecoded: Undecoded) -> String {
+  message_text(message_id: undecoded.message_id)
+  <> " does not decode: "
+  <> bit_stream.describe_decode(error: undecoded.error)
+}
+
 /// What an input is to a connection rule.
 pub type Heard {
   /// The connection was accepted.
@@ -397,7 +491,9 @@ pub type Heard {
 }
 
 /// Sorts an input: what the client closing and a failed socket do is the same
-/// in every rule, so it is decided here; `about` says who a log
+/// in every rule, so it is decided here (a socket that fails as closed is the
+/// client's close and ends the connection with no log line; any other failure
+/// is a warning); `about` says who a log
 /// line is about. The server stopping ends the connection after the effects
 /// `stopping` gives, which the rule writes first: none for a connection with
 /// no one to tell, a notice for one whose client waits for the server's next
@@ -408,7 +504,7 @@ pub type Heard {
 pub fn hear(
   event event: Event(ConnectionEvent(message, Answer)),
   about about: About,
-  stopping stopping: fn() -> List(Effect(ConnectionEffect)),
+  stopping stopping: fn() -> List(Effect(ConnectionEffect(Request))),
 ) -> Heard {
   let ends = fn(level, text) {
     Otherwise(Effects([Log(LogLine(level:, text:, about:)), Stop]))
@@ -418,7 +514,9 @@ pub fn hear(
       Connect(connection:, peer:, seed:)
     OwnEvent(step.Read(bytes:)) -> Bytes(bytes:)
     OwnEvent(Answered(outcome:, ..)) -> Outcome(outcome:)
-    OwnEvent(PeerClosed) -> Otherwise(Effects([Stop]))
+    OwnEvent(PeerClosed)
+    | OwnEvent(ReadFailed(failure: step.Closed))
+    | OwnEvent(WriteFailed(failure: step.Closed)) -> Otherwise(Effects([Stop]))
     Stopping(..) -> Otherwise(Effects(list.append(stopping(), [Stop])))
     OwnEvent(ReadFailed(failure:)) | OwnEvent(WriteFailed(failure:)) ->
       ends(LogWarning, socket_failed_text(failure:))
@@ -435,17 +533,17 @@ pub fn socket_failed_text(failure failure: step.SocketFailure) -> String {
 /// What taking one request or frame, or one answer, decided.
 pub type Handled(session) {
   /// Go on to the next request or frame in the bytes.
-  Continue(session: session, effects: List(Effect(ConnectionEffect)))
+  Continue(session: session, effects: List(Effect(ConnectionEffect(Request))))
   /// Carry out the effects, then ask; what follows in the bytes waits.
   Asking(
     session: session,
-    effects: List(Effect(ConnectionEffect)),
+    effects: List(Effect(ConnectionEffect(Request))),
     ask: step.Ask(Request),
   )
   /// Carry out the effects, then take no frame until another input. The
   /// effects of a rule that ends the connection hold `Stop`; one that waits for
   /// a timer or a process holds none.
-  Done(session: session, effects: List(Effect(ConnectionEffect)))
+  Done(session: session, effects: List(Effect(ConnectionEffect(Request))))
 }
 
 /// How a rule takes what the client sent: the callbacks `drive` and `settle`
@@ -479,7 +577,7 @@ pub type Flow(session, item, error, state) {
 pub fn drive(
   session session: session,
   flow flow: Flow(session, item, error, state),
-  carried carried: List(Effect(ConnectionEffect)),
+  carried carried: List(Effect(ConnectionEffect(Request))),
 ) -> #(state, ConnectionStep(Request)) {
   case flow.take(flow.pending(session)) {
     Error(error) ->
@@ -501,7 +599,7 @@ pub fn drive(
 pub fn settle(
   handled handled: Handled(session),
   flow flow: Flow(session, item, error, state),
-  carried carried: List(Effect(ConnectionEffect)),
+  carried carried: List(Effect(ConnectionEffect(Request))),
 ) -> #(state, ConnectionStep(Request)) {
   case handled {
     Continue(session:, effects:) ->
@@ -518,9 +616,9 @@ pub fn settle(
 }
 
 fn in_order(
-  carried carried: List(Effect(ConnectionEffect)),
-  then effects: List(Effect(ConnectionEffect)),
-) -> List(Effect(ConnectionEffect)) {
+  carried carried: List(Effect(ConnectionEffect(Request))),
+  then effects: List(Effect(ConnectionEffect(Request))),
+) -> List(Effect(ConnectionEffect(Request))) {
   list.append(list.reverse(carried), effects)
 }
 

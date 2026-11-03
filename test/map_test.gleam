@@ -20,8 +20,6 @@
 ////   (opcode.0x262), so no unit id is given twice in a map's life, whoever
 ////   leaves.
 
-import character_support
-import character_tables
 import connection_rule_support as support
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/step.{
@@ -37,31 +35,16 @@ import genesis_prime/world_map/player_unit
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
+import map_support
 import owned_test
 import place_support
 
 const incarnation = 31
 
-/// The map's realm: not 1, so a unit built with a fixed realm fails.
-const realm_id = 7
+const realm_id = map_support.realm_id
 
 fn started() -> State {
-  map.new(map.Settings(
-    map: MapId(world_id: 3460, instance: 0),
-    incarnation:,
-    realm_id:,
-    tables: character_tables.shared(),
-  ))
-}
-
-/// A Dominion human male whose id is `number`, with the look of
-/// CharacterCustomization row 10. Its saved place is not the place the Join
-/// carries, which is the place the unit is made at.
-fn character(number: Int) -> Character {
-  Character(
-    ..character_support.character(number:),
-    look: character_tables.row_10_look(),
-  )
+  map_support.empty(incarnation:)
 }
 
 /// The body of that look: display 137 on slot 25.
@@ -87,6 +70,7 @@ fn answer_of(
       realm_id:,
     ),
     incarnation:,
+    clock_origin_ms: 0,
   )
 }
 
@@ -125,12 +109,34 @@ fn join(
   connection connection: Int,
   caller caller: Int,
 ) -> #(State, ServiceStep(map.Outgoing)) {
-  join_as(state:, connection:, caller:, character: character(100 + connection))
+  join_as(
+    state:,
+    connection:,
+    caller:,
+    character: map_support.character(100 + connection),
+  )
+}
+
+/// The effects that are not sends to a connection: a join of two players at
+/// one place also sends each a `Seen` of the other.
+fn without_sends(
+  effects: List(step.Effect(step.ServiceEffect(map.Outgoing))),
+) -> List(step.Effect(step.ServiceEffect(map.Outgoing))) {
+  list.filter(effects, fn(effect) {
+    case effect {
+      OwnEffect(step.Send(..)) -> False
+      OwnEffect(Reply(..))
+      | step.Watch(..)
+      | step.Unwatch(..)
+      | step.Log(..)
+      | Stop -> True
+    }
+  })
 }
 
 /// The unit id a join was answered with.
 fn unit_of(taken: ServiceStep(map.Outgoing), caller: Int) -> Int {
-  let assert [#(CallerId(number), Joined(unit:, incarnation: given))] =
+  let assert [#(CallerId(number), Joined(unit:, incarnation: given, ..))] =
     support.replies(taken)
     as "one reply answers the join"
   assert number == caller as "the reply is for the caller that joined"
@@ -147,7 +153,11 @@ pub fn the_first_join_is_unit_1_with_a_watch_on_the_connection_and_the_maps_inca
       Watch(WatchId(1), Connection(ConnectionId(7))),
       OwnEffect(Reply(
         CallerId(1),
-        answer_of(character: character(107), unit_id: 1, visuals: row_10_body()),
+        answer_of(
+          character: map_support.character(107),
+          unit_id: 1,
+          visuals: row_10_body(),
+        ),
       )),
     ]
     as "the player's connection is watched, then the join is answered with the unit of the Join's character at the Join's place, in the map's realm, with the body of its look: unit ids start at 1"
@@ -167,15 +177,19 @@ pub fn each_join_gets_the_next_unit_id_and_its_own_watch_test() -> Nil {
   let #(_, second) = join(state:, connection: 8, caller: 2)
   assert unit_of(first, 1) == 1
   assert unit_of(second, 2) == 2
-  assert support.effects_of(second)
+  assert without_sends(support.effects_of(second))
     == [
       Watch(WatchId(2), Connection(ConnectionId(8))),
       OwnEffect(Reply(
         CallerId(2),
-        answer_of(character: character(108), unit_id: 2, visuals: row_10_body()),
+        answer_of(
+          character: map_support.character(108),
+          unit_id: 2,
+          visuals: row_10_body(),
+        ),
       )),
     ]
-    as "the watch ids go up too, so a watch is never taken for an older one"
+    as "the watch ids go up too, so a watch is never taken for an older one; the two players stand at one place, so the join also sends their `Seen`s, which the seeing tests below check"
 }
 
 pub fn a_unit_id_is_never_given_twice_across_leaves_and_rejoins_test() -> Nil {
@@ -221,14 +235,23 @@ pub fn a_second_join_from_a_connection_in_the_map_answers_the_unit_it_keeps_and_
   use <- owned_test.run(5000)
   let #(state, first) = join(state: started(), connection: 7, caller: 1)
   let #(state, second) =
-    join_as(state:, connection: 7, caller: 2, character: character(900))
+    join_as(
+      state:,
+      connection: 7,
+      caller: 2,
+      character: map_support.character(900),
+    )
   assert unit_of(second, 2) == unit_of(first, 1)
     as "the join is answered with the unit id the connection has"
   assert support.replies(second)
     == [
       #(
         CallerId(2),
-        answer_of(character: character(107), unit_id: 1, visuals: row_10_body()),
+        answer_of(
+          character: map_support.character(107),
+          unit_id: 1,
+          visuals: row_10_body(),
+        ),
       ),
     ]
     as "the answer is the record of the unit the map keeps, character 107, not one built from the second Join's character 900"
@@ -255,7 +278,7 @@ pub fn a_second_join_from_a_connection_in_the_map_answers_the_unit_it_keeps_and_
 
 pub fn a_character_whose_look_the_tables_lack_is_answered_with_fewer_visuals_test() -> Nil {
   use <- owned_test.run(5000)
-  let unknown = Character(..character(107), race_id: RaceId(3))
+  let unknown = Character(..map_support.character(107), race_id: RaceId(3))
   let #(_, taken) =
     join_as(state: started(), connection: 7, caller: 1, character: unknown)
   assert support.replies(taken)
@@ -305,8 +328,15 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
   let #(state, other) = join(state:, connection: 8, caller: 2)
   let #(state, left) = leave(state:, connection: 7, caller: 3)
   assert support.effects_of(left)
-    == [Unwatch(WatchId(1)), OwnEffect(Reply(CallerId(3), Left))]
-    as "the connection's watch, which the join opened as watch 1, is dropped: the connection goes on after its camp, so the map must not hold it as a player; then the leave is answered"
+    == [
+      Unwatch(WatchId(1)),
+      OwnEffect(step.Send(
+        Connection(ConnectionId(8)),
+        map.Unwatched(by: ConnectionId(7)),
+      )),
+      OwnEffect(Reply(CallerId(3), Left)),
+    ]
+    as "the connection's watch, which the join opened as watch 1, is dropped: the connection goes on after its camp, so the map must not hold it as a player; the other player, who saw it, is told its viewer 7 is gone (the connection sent its clients the 0x355 itself, so no Unseen); then the leave is answered"
   assert support.logs(left) == []
   let #(state, again) = join(state:, connection: 7, caller: 4)
   assert unit_of(first, 1) == 1 && unit_of(other, 2) == 2

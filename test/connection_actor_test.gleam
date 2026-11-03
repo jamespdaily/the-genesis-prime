@@ -137,6 +137,7 @@ fn settings(
     directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
     registry: None,
     locate: fn(_address) { Error(Nil) },
+    deliver: fn(_address, _request) { Error(Nil) },
   )
 }
 

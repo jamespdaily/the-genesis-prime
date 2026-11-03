@@ -472,6 +472,20 @@ fields = [
 ]
 
 [[message]]
+id = 0x0638
+name = "unit_movement"
+direction = "server_to_client"
+evidence = "opcode.0x638"
+summary = "movement commands for a unit the server moves: the unit, the server's time, a bit that resets the unit's movement, a bit the unit keeps, and at most 31 relayed commands in the layout of 0x637's"
+fields = [
+  { name = "unit_id", kind = "unsigned", bits = 32, evidence = "opcode.0x638", named_by = "opcode.0x638" },
+  { name = "server_time", kind = "unsigned", bits = 32, evidence = "opcode.0x638", named_by = "opcode.0x638" },
+  { name = "reset_movement", kind = "unsigned", bits = 1, evidence = "opcode.0x638", named_by = "opcode.0x638" },
+  { name = "kept", kind = "unsigned", bits = 1, evidence = "opcode.0x638", named_by = "opcode.0x638" },
+  { name = "commands", kind = "array", count_bits = 5, element = "relayed_movement", evidence = "opcode.0x638", named_by = "opcode.0x638" },
+]
+
+[[message]]
 id = 0x0635
 name = "client_control_echoed"
 direction = "client_to_server"
@@ -839,13 +853,13 @@ fields = [
 [[record]]
 name = "movement_velocity"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 8, the unit's velocity: three 16-bit half floats and one bit"
+summary = "a movement command of kind 8, the unit's velocity: three 16-bit half floats and a bit that starts a new velocity segment when 0 and blends onto the last one when 1"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 8, evidence = "0x140c1f070", named_by = "0x140c1f070" },
   { name = "x", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_8" },
   { name = "y", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_8" },
   { name = "z", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_8" },
-  { name = "field_5", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "0x140714a90" },
 ]
 
 [[record]]
@@ -873,13 +887,13 @@ fields = [
 [[record]]
 name = "movement_move_asked"
 evidence = "0x140c1f070"
-summary = "a movement command of kind 11, the move the player asks for: three 16-bit half floats and one bit"
+summary = "a movement command of kind 11, the move the player asks for: three 16-bit half floats and a bit that starts a new move segment when 0 and blends onto the last one when 1"
 fields = [
   { name = "kind", kind = "constant", bits = 5, value = 11, evidence = "0x140c1f070", named_by = "0x140c1f070" },
   { name = "x", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_11" },
   { name = "y", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_11" },
   { name = "z", kind = "unsigned", bits = 16, evidence = "0x140c1f070", named_by = "movement_command.kind_11" },
-  { name = "field_5", kind = "unsigned", bits = 1, evidence = "0x140c1f070" },
+  { name = "blends", kind = "unsigned", bits = 1, evidence = "0x140c1f070", named_by = "0x140715020" },
 ]
 
 [[record]]
@@ -1144,6 +1158,21 @@ variants = [
   { tag = 27, name = "mode", record = "movement_mode", named_by = "movement_command.kind_27" },
   { tag = 28, name = "kind_28", record = "movement_kind_28" },
   { tag = 29, name = "kind_29", record = "movement_kind_29" },
+]
+
+[[union]]
+name = "relayed_movement"
+evidence = "opcode.0x637"
+summary = "one movement command the server relays to the players who see a unit: the kinds of the per-frame batch the client's writer builds after the time command (1 platform, 2 position, 8 velocity, 11 move asked, 14 rotation, 24 state flags, 27 mode), every field named, and no kind 0, the sender's own clock. Gap: the other kinds, which game moves queue and the client's writer may send, are not relayed, since opcode.0x637 does not say which queuers exist or what they mean"
+tag_bits = 5
+variants = [
+  { tag = 1, name = "platform", record = "movement_platform", named_by = "opcode.0x637" },
+  { tag = 2, name = "position", record = "unit_position_command", named_by = "0x1400ad350" },
+  { tag = 8, name = "velocity", record = "movement_velocity", named_by = "movement_command.kind_8" },
+  { tag = 11, name = "move_asked", record = "movement_move_asked", named_by = "movement_command.kind_11" },
+  { tag = 14, name = "rotation", record = "movement_rotation", named_by = "0x140715350" },
+  { tag = 24, name = "state_flags", record = "movement_state_flags", named_by = "movement_command.kind_24" },
+  { tag = 27, name = "mode", record = "movement_mode", named_by = "movement_command.kind_27" },
 ]
 
 [[union]]

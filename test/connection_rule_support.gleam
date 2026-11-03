@@ -12,8 +12,9 @@ import genesis_prime/login/guid.{type Guid}
 import genesis_prime/step.{
   type Address, type Ask, type CallerId, type ConnectionStep, type Effect,
   type Event, type Input, type LogLevel, type LogLine, type ServiceStep,
-  type Step, type WatchId, CancelTimer, Effects, EffectsThenAsk, Input, Log, Now,
-  OwnEffect, Peer, Reply, Send, StartTimer, Stop, Unwatch, Watch, Write,
+  type Step, type WatchId, CancelTimer, Connection, ConnectionId, Effects,
+  EffectsThenAsk, Input, Log, Now, OwnEffect, Peer, Reply, Send, StartTimer,
+  Stop, Unwatch, Watch, Write,
 }
 import genesis_prime/store.{type Account, Account, AccountId}
 import gleam/bit_array
@@ -156,6 +157,7 @@ pub fn writes(step: ConnectionStep(request)) -> List(BitArray) {
       OwnEffect(Write(bytes:)) -> Ok(bytes)
       OwnEffect(StartTimer(..))
       | OwnEffect(CancelTimer(..))
+      | OwnEffect(step.Tell(..))
       | Watch(..)
       | Unwatch(..)
       | Log(..)
@@ -181,6 +183,23 @@ pub fn replies(step: ServiceStep(outgoing)) -> List(#(CallerId, outgoing)) {
       OwnEffect(Reply(caller:, answer:)) -> Ok(#(caller, answer))
       OwnEffect(Send(..)) | Watch(..) | Unwatch(..) | Log(..) | Stop ->
         Error(Nil)
+    }
+  })
+}
+
+/// What the step sends to connections without waiting: the connection's number
+/// and the message, in order.
+pub fn sends(step: ServiceStep(outgoing)) -> List(#(Int, outgoing)) {
+  list.filter_map(effects_of(step), fn(effect) {
+    case effect {
+      OwnEffect(Send(to: Connection(ConnectionId(number)), message:)) ->
+        Ok(#(number, message))
+      OwnEffect(Send(..))
+      | OwnEffect(Reply(..))
+      | Watch(..)
+      | Unwatch(..)
+      | Log(..)
+      | Stop -> Error(Nil)
     }
   })
 }
@@ -241,6 +260,6 @@ pub fn says(line line: LogLine, words words: String) -> Bool {
 
 /// A step's effect that logs `text` as a warning, as every test rule does when
 /// it refuses an input.
-pub fn warn(text: String) -> Effect(step.ConnectionEffect) {
+pub fn warn(text: String) -> Effect(step.ConnectionEffect(request)) {
   Log(step.LogLine(level: step.LogWarning, text:, about: step.no_one))
 }

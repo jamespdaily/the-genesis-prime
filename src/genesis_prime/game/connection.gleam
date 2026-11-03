@@ -140,12 +140,23 @@
 //// - **Sessions ending in the world.** The claim again keeps where the
 ////   client is: character select, or the player in the world, whose save timer
 ////   is cancelled while the claim waits and started again when it is answered.
-//// - **The player camps** (genesis_prime/game/camp). 0xBF and 0xC0, which the
-////   client sends inside 0x038C, are taken with the player in the world; the
-////   camp's rule decides, and a 0xC0 it refuses ends the connection.
+//// - **Which feature takes a message** is the routing table's row
+////   (genesis_prime/game/routing): the id, how it arrives, the stage it is taken
+////   in and the feature's own kind of message. The connection keeps the shared
+////   part (the hello, the re-key, the claim, the asks, the saves and every
+////   ending); each feature decodes its messages and returns its decisions as
+////   effects the connection carries out: a write, a warning, an ask of the
+////   store or the map, the watch on the map, the save timer, and the leave of
+////   the world (`Decided`), or the refusal that ends the connection; an accepted
+////   0x0637 also tells the map that the player moved (`Tell`, which the shell
+////   sends with no answer). The player
+////   camps (genesis_prime/game/camp), moves (genesis_prime/game/movement), picks
+////   a character (genesis_prime/game/character_select) and plays one
+////   (genesis_prime/game/world_entry) by those rows.
 //// - **A 0xC0 leaves the world in this order**: the save timer is cancelled and
 ////   the place saved (`SavingPlace` with `Camped`), the map's run is asked to
-////   take the player out (`LeavingMap`), the watch on the map is dropped and
+////   take the player out (`LeavingMap`; the 0x355 of its unit is sent to each
+////   viewer in the step that asks), the watch on the map is dropped and
 ////   0x0594 is written with the bit set and reason 0 (opcode.0x594). The client
 ////   can pick a character only after 0x0594, so a play never meets a save still
 ////   out. The client's 0x07E0 is then answered as at login, on the same
@@ -163,14 +174,9 @@
 ////   no text says how long one stays (`LocalizedEnum.8879`). The camp is the
 ////   connection's own state, so a character is in the world only while its
 ////   connection is.
-//// - **The player moves** (genesis_prime/game/movement). 0x637, which the client
-////   sends inside 0x038C, is decoded into
-////   the commands the movement takes; the place it keeps is the last world
-////   position and rotation the client sent, and nothing is written in answer
-////   (opcode.0x637: no echo). A command the client's own code never sends, a
-////   move speed setting above 2 or a body the client's reader would refuse ends
-////   the connection: an error line, the last good place saved, nothing written.
-////   0x63A, 0xD5, 0xF2, 0xFB and 0xFC are decoded and nothing more.
+//// - **A refused message** (a command the client's own code never sends, a move
+////   speed setting above 2, or a body the client's reader would refuse) ends the
+////   connection: an error line, the last good place saved, nothing written.
 //// - **Saving the place.** The connection is the player's own process, so it
 ////   keeps the place and saves it: every `movement.save_period_ms`, and when
 ////   any end reaches a connection that holds a player in the world or claims
@@ -193,16 +199,73 @@
 //// - **0x038C** carries a 5-bit kind in its first byte, then exactly one whole
 ////   frame (0x14007e180, opcode.0x38c): every message the client sends in the
 ////   world is inside one (0x1403f4900 nests 0x637 in it). The inner message is
-////   logged as unhandled under its own id, except the player's movement and
-////   camp messages with the player in the world. A body that holds no whole frame, or
+////   routed by the table, and logged as unhandled under its own id when it has
+////   no row at the stage. A body that holds no whole frame, or
 ////   bytes after it, is one the client never writes, and ends the connection.
+//// - **Other players' units.** The map decides who sees whom
+////   (genesis_prime/world_map/map) and tells the connection of each player in
+////   it, as the message `SentByMap`, who sees its player (`Watched(by)` when a
+////   player comes to see it, `Unwatched(by)` when one stops), and `Gone(unit)`
+////   when a player's connection has ended. The connection keeps
+////   the connections that see its player as its viewers, in the player's
+////   `Entered`, and sends everything about its own unit to them itself, as
+////   `SentByPeer` through the registry (the same path the map's sends take,
+////   `genesis_prime/server`'s `connection_reach`); the map sends no unit:
+////
+////   ```
+////   owner's connection (player in the world)                       viewer's connection             client
+////   Watched(by v) from the map ─▶ Tell(v, Appeared(0x262 at its place))  ─▶ writes 0x262 if not shown ─▶ the unit is created
+////   0x637 accepted             ─▶ Tell(map, Moved(place)); Tell(each viewer, Moving(0x638)) ─▶ writes 0x638 if shown ─▶ the unit moves
+////   Unwatched(by v)            ─▶ Tell(v, Removed)                    ─▶ writes 0x355 if shown   ─▶ the unit is removed
+////   its camp (0xC0)            ─▶ Tell(each viewer, Removed), then Leave
+////   its connection ends        ─▶ nothing: the map sends each viewer Unwatched, and every player Gone(unit)
+////                                                                     Gone(unit) ─▶ writes 0x355 if shown, and the unit is gone
+////   ```
+////
+////   The shell takes a send between steps, after an ask's outcome and the step it
+////   starts, and entering the world writes its whole burst in the one step that
+////   takes the map's `Joined`, so no send reaches the connection between the
+////   answer and the end of the burst: no status holds sends during entry, and a
+////   0x262 of another unit never lands while the client waits on 0x636 (0x1403d9760).
+////   A send that arrives while any ask is out, a save among them, waits for its
+////   outcome. With no player in the world (after the camp's leave, say) a send is
+////   dropped and nothing is written for other units; a player that enters again
+////   starts with no viewers and no units shown, and the map's new join sends it a
+////   `Watched` for each player in sight, whose owners then send it their 0x262s.
+//// - **What a viewer writes** is what its client can take, kept by the player's
+////   `Entered` for the current run of the map: `shown`, the units it has written
+////   a 0x262 of and not a 0x355, and `gone`, the units the map reported `Gone`. A
+////   0x262 is written for a unit not shown and not gone, and it is then shown (the
+////   client keeps one unit per id until its 0x355, and a unit id 0 would be the
+////   controlled unit, 0x1403d9760); a 0x638 and a 0x355 are written for a shown
+////   unit only, a 0x355 ends it; `Gone` writes a 0x355 for a shown unit and marks
+////   the unit gone, so a 0x262 from the owner that ended, which lands after it,
+////   shows no ghost. A message names the map and the run of the map it is about,
+////   and one for another run or map is dropped: the unit id there may name
+////   another unit.
+//// - **Order.** For one viewer, an owner's 0x262, 0x638s and 0x355 are that
+////   owner's messages only, which the BEAM delivers in the order sent (it orders
+////   the signals of one sender to one receiver); the map's `Watched` and
+////   `Unwatched` to one owner are the map's only, so the owner's viewers change in
+////   order. The one case two senders speak of a unit, `Gone` after the owner has
+////   ended, is the viewer's `gone`.
+//// - **A unit's 0x638 and 0x262** are stamped with the map's clock: the connection
+////   holds the origin `Joined` carried and takes the time of the input from it
+////   (`world_map/map.server_time`, mod 2^32), in the order it takes its inputs, so
+////   for a viewer the times of one unit only go forward. More than 31 commands are sent as several 0x638s
+////   in order, each of at most 31 (its count is 5 bits, opcode.0x638). A move with
+////   no viewer sends none, and one with nothing to relay sends none and tells the
+////   map nothing. A viewer that has just been `Unwatched`, or gone, may still be
+////   sent one: a send to a process that has ended is dropped, and one for a unit
+////   the viewer does not show is dropped by it.
 //// - **Network messages** are answered before any wrapper is read: a ping 0
 ////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
 ////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
 //// - **Unhandled messages** are logged as a warning the first time an id comes
 ////   on the connection, and at debug for each repeat of it, since the client
-////   sends some of them again and again. The movement and camp messages are taken
-////   only with the player in the world; in any other state they are unhandled.
+////   sends some of them again and again. A message with no row at the stage is
+////   unhandled: the movement and camp messages are taken only with the player in
+////   the world, and in any other state they are.
 //// - **Log lines** carry the connection, the peer and the account once the
 ////   hand-off has named it, and in the world the map and the character.
 //// - **Limits.** Each ends the connection with nothing written, since a
@@ -223,7 +286,7 @@ import genesis_prime/client_connection.{
   type Answer, type Bucket, type Link, type Message, type Request, AskHandOff,
   AskMap, AskMapRun, AskSessions, AskStore, Asking, Broken, Bytes, Connect,
   Continue, Done, FromHandOff, FromMap, FromSessions, FromStore, Inside,
-  Otherwise, SentBySessions, Settled,
+  Otherwise, SentByMap, SentByPeer, SentBySessions, Settled, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -232,50 +295,45 @@ import genesis_prime/connection/hello
 import genesis_prime/game/camp
 import genesis_prime/game/character_select
 import genesis_prime/game/movement
+import genesis_prime/game/routing
+import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
 import genesis_prime/game_settings.{type GameSettings}
 import genesis_prime/hand_off.{type Holder, SessionKey, Take}
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
-import genesis_prime/message/camp_countdown.{CampCountdown}
-import genesis_prime/message/camp_finished
-import genesis_prime/message/camp_request
-import genesis_prime/message/character_select_start
 import genesis_prime/message/create_character
-import genesis_prime/message/create_character_carrier
-import genesis_prime/message/delete_character
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, LostUserServer,
 }
-import genesis_prime/message/fall_value
-import genesis_prime/message/fell_below_floor
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/leave_world.{LeaveWorld}
-import genesis_prime/message/move_speed_setting
-import genesis_prime/message/movement_send_interval_answer
-import genesis_prime/message/play_character
-import genesis_prime/message/player_movement
-import genesis_prime/message/rename_character
-import genesis_prime/message/terrain_loaded
+import genesis_prime/message/relayed_movement.{type RelayedMovement}
+import genesis_prime/message/start_movement
+import genesis_prime/message/unit_create_player.{
+  type UnitCreatePlayer, UnitCreatePlayer,
+}
+import genesis_prime/message/unit_destroyed.{UnitDestroyed}
+import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/world_message
-import genesis_prime/message/zone_value_changed
 import genesis_prime/step.{
-  type About, type ConnectionEffect, type ConnectionEvent, type ConnectionInput,
-  type ConnectionRule, type ConnectionStep, type Effect, type Event, type Now,
-  type Outcome, type TimerId, type WatchId, About, CancelTimer, Effects,
-  LogDebug, LogInfo, LogWarning, OwnEffect, OwnEvent, Sessions, StartTimer, Stop,
-  Stopping, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
-  Write,
+  type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
+  type ConnectionInput, type ConnectionRule, type ConnectionStep, type Effect,
+  type Event, type Now, type Outcome, type TimerId, type WatchId, About,
+  CancelTimer, Effects, LogDebug, LogInfo, LogWarning, OwnEffect, OwnEvent,
+  Sessions, StartTimer, Stop, Stopping, TimerFired, TimerId, Unwatch, Watch,
+  WatchEnded, WatchId, Woken, Write,
 }
 import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
+import genesis_prime/world_map/player_unit
+import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/pair
 import gleam/result
 import gleam/set.{type Set}
 
@@ -326,6 +384,9 @@ type Session {
     /// The ids of the messages already logged as unhandled on this
     /// connection: the first of an id is a warning, a repeat a debug line.
     unhandled_logged: Set(Int),
+    /// The kinds of movement command already named in a log line as not
+    /// relayed to other players on this connection.
+    unrelayed_logged: Set(Int),
     status: Status,
   )
 }
@@ -465,6 +526,7 @@ pub fn step(
             pending: <<>>,
             cipher: cipher.base(),
             unhandled_logged: set.new(),
+            unrelayed_logged: set.new(),
             status: AwaitingHelloReply,
           )),
           Effects([OwnEffect(Write(hello_bytes(settings)))]),
@@ -488,13 +550,19 @@ fn connected(
   case event {
     OwnEvent(Woken(message: SentBySessions(message:))) ->
       settled(handled: sessions_sent(session:, now:, message:), now:)
+    OwnEvent(Woken(message: SentByMap(message:))) ->
+      settled(handled: map_sent(session:, now:, message:), now:)
+    OwnEvent(Woken(message: SentByPeer(news:))) ->
+      settled(handled: peer_sent(session:, news:), now:)
     WatchEnded(watch:) ->
       settled(handled: watch_ended(session:, now:, watch:), now:)
     OwnEvent(TimerFired(timer:)) if timer == save_timer ->
       settled(handled: save_due(session:, now:), now:)
     OwnEvent(TimerFired(timer:)) ->
       settled(handled: claim_wait_over(session:, now:, timer:), now:)
-    OwnEvent(step.PeerClosed) ->
+    OwnEvent(step.PeerClosed)
+    | OwnEvent(step.ReadFailed(failure: step.Closed))
+    | OwnEvent(step.WriteFailed(failure: step.Closed)) ->
       leaves_or_hears(
         session:,
         now:,
@@ -654,7 +722,10 @@ fn hello_bytes(settings: Settings) -> BitArray {
 }
 
 /// A message in the game wrapper under the cipher the connection holds.
-fn to_client(session: Session, inner: Frame) -> Effect(ConnectionEffect) {
+fn to_client(
+  session: Session,
+  inner: Frame,
+) -> Effect(ConnectionEffect(Request)) {
   OwnEffect(
     Write(client_connection.wrapped(GameWrapper, inner, session.cipher)),
   )
@@ -665,7 +736,7 @@ fn to_client(session: Session, inner: Frame) -> Effect(ConnectionEffect) {
 fn notice(
   session session: Session,
   reason reason: DisconnectReason,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Request)) {
   let assert Ok(body) = disconnect_notice.encode(DisconnectNotice(reason:))
     as "a reason is within 5 bits"
   to_client(session, Frame(disconnect_notice.message_id, body))
@@ -674,7 +745,9 @@ fn notice(
 /// What a connection writes before it ends when the server stops: the notice
 /// that the server failed, so the client leaves its prompt. A stop is no
 /// failure, so no log line comes with it.
-fn server_stopping(session: Session) -> List(Effect(ConnectionEffect)) {
+fn server_stopping(
+  session: Session,
+) -> List(Effect(ConnectionEffect(Request))) {
   [notice(session:, reason: LostUserServer)]
 }
 
@@ -700,310 +773,302 @@ fn handle(
   }
 }
 
-/// What the message in the client's wrapper does, by where the connection is:
-/// the first must be 0x058F and only one is taken, 0x07E0 starts character
-/// select, and any other whole message is logged as unhandled.
+/// Where the connection stands when a message of the client's reaches it:
+/// what the message's feature needs of the status.
+type Standing {
+  /// The hello is sent; 0x058F is awaited.
+  Greeting
+  /// The client is in character select, for `holder`'s account.
+  Selecting(holder: Holder)
+  /// The player is in the world.
+  Present(holder: Holder, entered: world_entry.Entered)
+  /// An ask is out or the claim waits, so no frame is taken: `text` is why
+  /// that frame ends the connection.
+  Busy(text: String)
+}
+
+fn standing(status: Status) -> Standing {
+  case status {
+    AwaitingHelloReply -> Greeting
+    InCharacterSelect(holder:, ..) -> Selecting(holder:)
+    InWorld(holder:, entered:) -> Present(holder:, entered:)
+    TakingSessionKey
+    | ClaimingSession(..)
+    | EnteringWorld(..)
+    | SavingPlace(..)
+    | LeavingMap(..) -> Busy(text: "a frame was taken while an ask was out")
+    WaitingToClaim(..) ->
+      Busy(text: "a frame was taken while the claim waited on its timer")
+  }
+}
+
+/// What the message in the client's wrapper does: the routing table says
+/// which feature takes it at the connection's stage (genesis_prime/game/routing),
+/// and the feature decides. Before the hello reply any other message ends the
+/// connection; at any later stage a message with no row is logged as unhandled.
 fn inner_message(
   session session: Session,
   now now: Now,
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
-  let taken = message_taken(inner.message_id)
-  case session.status {
-    AwaitingHelloReply ->
-      case taken {
-        HelloReplyAgain -> hello_replied(session:, now:, inner:)
-        SelectStart
-        | CreateRequest
-        | PlayRequest
-        | DeleteRequest
-        | RenameRequest
-        | WorldCarrier
-        | NotTaken ->
+  case standing(session.status) {
+    Busy(text:) -> end_for(session:, now:, text:)
+    Greeting -> routed(session:, now:, inner:, stage: routing.BeforeHelloReply)
+    Selecting(..) ->
+      routed(session:, now:, inner:, stage: routing.AtCharacterSelect)
+    Present(..) -> routed(session:, now:, inner:, stage: routing.AtWorld)
+  }
+}
+
+/// A message in the client's wrapper at a stage, given to the feature the
+/// table names, or logged as unhandled when it has no row there.
+fn routed(
+  session session: Session,
+  now now: Now,
+  inner inner: Frame,
+  stage stage: routing.Stage,
+) -> client_connection.Handled(Session) {
+  case
+    routing.route(
+      stage:,
+      arrival: routing.OnItsOwn,
+      message_id: inner.message_id,
+    )
+  {
+    Ok(routing.Hello) -> hello_message(session:, now:, inner:)
+    Ok(routing.CharacterSelect(message:)) ->
+      select_message(session:, now:, inner:, message:)
+    Ok(routing.WorldEntry) -> play_requested(session:, now:, inner:)
+    Ok(routing.WorldMessage) -> world_carried(session:, now:, inner:)
+    Ok(routing.Movement(..)) | Ok(routing.Camp(..)) ->
+      misrouted(session:, now:, inner:)
+    Error(Nil) ->
+      case stage {
+        routing.BeforeHelloReply ->
           end_for(
             session:,
             now:,
             text: "the first message of a game connection is 0x058F, not "
               <> client_connection.message_text(inner.message_id),
           )
+        routing.AtCharacterSelect | routing.AtWorld ->
+          unhandled(session:, message_id: inner.message_id)
       }
-    InCharacterSelect(holder:, ..) ->
-      case taken {
-        HelloReplyAgain ->
-          end_for(session:, now:, text: "0x058F was sent a second time")
-        SelectStart ->
-          decoded_step(
-            session:,
-            now:,
-            inner:,
-            decode: character_select_start.decode,
-            then: fn(_) {
-              select_step(
-                session:,
-                now:,
-                holder:,
-                step: character_select.started(holder.account_id),
-              )
-            },
-          )
-        CreateRequest -> create_requested(session:, now:, holder:, inner:)
-        PlayRequest -> play_requested(session:, now:, holder:, inner:)
-        DeleteRequest ->
-          decoded_step(
-            session:,
-            now:,
-            inner:,
-            decode: delete_character.decode,
-            then: fn(request) {
-              select_step(
-                session:,
-                now:,
-                holder:,
-                step: character_select.delete_requested(
-                  account_id: holder.account_id,
-                  request:,
-                ),
-              )
-            },
-          )
-        RenameRequest ->
-          decoded_step(
-            session:,
-            now:,
-            inner:,
-            decode: rename_character.decode,
-            then: fn(request) {
-              select_step(
-                session:,
-                now:,
-                holder:,
-                step: character_select.rename_requested(
-                  account_id: holder.account_id,
-                  request:,
-                ),
-              )
-            },
-          )
-        WorldCarrier -> world_carried(session:, now:, inner:)
-        NotTaken -> unhandled(session:, message_id: inner.message_id)
+  }
+}
+
+/// A message the table routes to a feature at a stage that feature cannot
+/// take it in: a bug of the table, so the connection ends.
+fn misrouted(
+  session session: Session,
+  now now: Now,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  end_for(
+    session:,
+    now:,
+    text: "the routing table sent "
+      <> client_connection.message_text(inner.message_id)
+      <> " to a feature that does not take it here",
+  )
+}
+
+/// The client's 0x058F: the first one is the hello's reply, and a second ends
+/// the connection.
+fn hello_message(
+  session session: Session,
+  now now: Now,
+  inner inner: Frame,
+) -> client_connection.Handled(Session) {
+  case standing(session.status) {
+    Greeting -> hello_replied(session:, now:, inner:)
+    Selecting(..) | Present(..) | Busy(..) ->
+      end_for(session:, now:, text: "0x058F was sent a second time")
+  }
+}
+
+/// What a message of character select's does (genesis_prime/game/character_select):
+/// its effects are carried out, and a body the client's reader would refuse
+/// ends the connection.
+fn select_message(
+  session session: Session,
+  now now: Now,
+  inner inner: Frame,
+  message message: character_select.Message,
+) -> client_connection.Handled(Session) {
+  case standing(session.status) {
+    Selecting(holder:) ->
+      case
+        character_select.take(
+          message:,
+          account_id: holder.account_id,
+          body: inner.body,
+          tables: session.settings.tables,
+          character_slots: session.settings.game.character_slots,
+        )
+      {
+        Ok(step) -> select_step(session:, now:, holder:, step:)
+        Error(refusal) ->
+          end_for(session:, now:, text: character_select.describe(refusal))
       }
-    InWorld(..) ->
-      case taken {
-        HelloReplyAgain ->
-          end_for(session:, now:, text: "0x058F was sent a second time")
-        WorldCarrier -> world_carried(session:, now:, inner:)
-        SelectStart
-        | CreateRequest
-        | PlayRequest
-        | DeleteRequest
-        | RenameRequest
-        | NotTaken -> unhandled(session:, message_id: inner.message_id)
-      }
-    TakingSessionKey
-    | ClaimingSession(..)
-    | EnteringWorld(..)
-    | SavingPlace(..)
-    | LeavingMap(..) ->
-      end_for(session:, now:, text: "a frame was taken while an ask was out")
-    WaitingToClaim(..) ->
-      end_for(
-        session:,
-        now:,
-        text: "a frame was taken while the claim waited on its timer",
-      )
+    Greeting | Present(..) | Busy(..) -> misrouted(session:, now:, inner:)
   }
 }
 
 /// What the player's movement messages do, taken from inside 0x038C, in the
-/// world: 0x637 is what the
-/// movement keeps or refuses (genesis_prime/game/movement), 0x63B is checked
-/// against the settings the client has, and the others are decoded and nothing
-/// more, since what their values mean is not read (the client trace's unknowns:
-/// 0x63A's and 0xF2's value is likely the zone, 0xD5's three values are not
-/// read, 0xFB is a fall's value and 0xFC the fall below the floor). A body the
-/// client's reader would refuse, or a refused command, ends the connection.
+/// world (genesis_prime/game/movement): the movement keeps the place or
+/// refuses, and a refusal ends the connection.
 fn movement_message(
   session session: Session,
   now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
   inner inner: Frame,
-  kind kind: MovementMessage,
+  message message: movement.Message,
 ) -> client_connection.Handled(Session) {
-  case kind {
-    PlayerMoved ->
-      decoded_step(
-        session:,
-        now:,
-        inner:,
-        decode: player_movement.decode,
-        then: fn(message) {
-          case movement.moved(entered.movement, movement.moves(message)) {
-            Ok(state) ->
-              Continue(
-                Session(
-                  ..session,
-                  status: InWorld(
-                    holder:,
-                    entered: world_entry.Entered(..entered, movement: state),
+  case movement.take(entered.movement, message, inner.body) {
+    Ok(movement.Kept(state:)) ->
+      Continue(moving(session:, holder:, entered:, state:), [])
+    Ok(movement.Relayed(state:, place:, commands:, unrelayed:)) -> {
+      let new_kinds =
+        list.filter(unrelayed, fn(kind) {
+          !set.contains(session.unrelayed_logged, kind)
+        })
+      let session =
+        Session(
+          ..moving(session:, holder:, entered:, state:),
+          unrelayed_logged: list.fold(
+            new_kinds,
+            session.unrelayed_logged,
+            set.insert,
+          ),
+        )
+      Continue(
+        session,
+        list.flatten([
+          list.map(new_kinds, fn(kind) {
+            log(
+              session:,
+              level: LogInfo,
+              text: "kind "
+                <> int.to_string(kind)
+                <> " of 0x0637 is not relayed to the players who see this one",
+            )
+          }),
+          case commands {
+            [] -> []
+            [_, ..] ->
+              list.append(
+                [
+                  tells_the_map_moved(
+                    connection: client_connection.connection(session.link),
+                    entered:,
+                    place:,
                   ),
-                ),
-                [],
+                ],
+                sends_the_move_to_the_viewers(entered:, now:, commands:),
               )
-            Error(refusal) ->
-              end_for(session:, now:, text: movement.describe(refusal))
-          }
-        },
+          },
+        ]),
       )
-    SpeedChosen ->
-      decoded_step(
-        session:,
-        now:,
-        inner:,
-        decode: move_speed_setting.decode,
-        then: fn(message) {
-          case movement.speed_setting(message.move_speed) {
-            Ok(Nil) -> Continue(session, [])
-            Error(refusal) ->
-              end_for(session:, now:, text: movement.describe(refusal))
-          }
-        },
-      )
-    ZoneChanged ->
-      decoded_step(
-        session:,
-        now:,
-        inner:,
-        decode: zone_value_changed.decode,
-        then: carry_on(session),
-      )
-    IntervalAnswered ->
-      decoded_step(
-        session:,
-        now:,
-        inner:,
-        decode: movement_send_interval_answer.decode,
-        then: carry_on(session),
-      )
-    TerrainReady ->
-      decoded_step(
-        session:,
-        now:,
-        inner:,
-        decode: terrain_loaded.decode,
-        then: carry_on(session),
-      )
-    Fell ->
-      decoded_step(
-        session:,
-        now:,
-        inner:,
-        decode: fall_value.decode,
-        then: carry_on(session),
-      )
-    FellBelowFloor ->
-      decoded_step(
-        session:,
-        now:,
-        inner:,
-        decode: fell_below_floor.decode,
-        then: carry_on(session),
-      )
+    }
+    Error(refusal) -> end_for(session:, now:, text: movement.describe(refusal))
   }
 }
 
-/// What the camp messages do, taken from inside 0x038C, in the world: 0xBF is
-/// what the camp's rule starts, answers with 0x92 or clears, and 0xC0 saves the
-/// place and leaves the map (genesis_prime/game/camp). A body the client's
-/// reader would refuse, or a 0xC0 with no camp, ends the connection.
+/// The session with the player's movement replaced.
+fn moving(
+  session session: Session,
+  holder holder: Holder,
+  entered entered: world_entry.Entered,
+  state state: movement.State,
+) -> Session {
+  Session(
+    ..session,
+    status: InWorld(
+      holder:,
+      entered: world_entry.Entered(..entered, movement: state),
+    ),
+  )
+}
+
+/// The tell to the run of the player's map that the player moved: it names
+/// the player's connection and the place the movement now keeps, for the map
+/// to decide who sees whom, and no answer comes (`step.Tell`).
+fn tells_the_map_moved(
+  connection connection: ConnectionId,
+  entered entered: world_entry.Entered,
+  place place: Place,
+) -> Effect(ConnectionEffect(Request)) {
+  OwnEffect(step.Tell(
+    to: step.Map(map: entered.map, incarnation: entered.incarnation),
+    request: TellMoved(connection:, place:),
+  ))
+}
+
+/// The move sent to each connection that sees the player, as news of 0x638s of
+/// at most 31 relayed commands each, in order, stamped with the map's clock at the
+/// time of the input (`map.server_time`, from the origin `Joined` carried): a send
+/// through the registry that the shell makes with no answer. None when no
+/// player sees this one.
+fn sends_the_move_to_the_viewers(
+  entered entered: world_entry.Entered,
+  now now: Now,
+  commands commands: List(RelayedMovement),
+) -> List(Effect(ConnectionEffect(Request))) {
+  use <- bool.guard(when: set.is_empty(entered.viewers), return: [])
+  let moves =
+    client_connection.peer_moves(
+      map: entered.map,
+      incarnation: entered.incarnation,
+      unit_id: entered.unit_id,
+      server_time_ms: map.server_time(
+        origin_ms: entered.clock_origin_ms,
+        monotonic_ms: now.monotonic_ms,
+      ),
+      commands:,
+    )
+  list.flat_map(set.to_list(entered.viewers), fn(viewer) {
+    list.map(moves, fn(news) {
+      OwnEffect(step.Tell(to: step.Connection(viewer), request: TellPeer(news:)))
+    })
+  })
+}
+
+/// What the camp messages do, taken from inside 0x038C, in the world
+/// (genesis_prime/game/camp): the camp is kept, its effects are carried out,
+/// and a refusal ends the connection.
 fn camp_message(
   session session: Session,
   now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
   inner inner: Frame,
-  kind kind: CampMessage,
+  message message: camp.Message,
 ) -> client_connection.Handled(Session) {
-  case kind {
-    CampAsked ->
-      decoded_step(
-        session:,
-        now:,
-        inner:,
-        decode: camp_request.decode,
-        then: fn(message) {
-          let #(running, decision) =
-            camp.requested(
-              entered.camp,
-              start: message.start == 1,
-              countdown_ms: session.settings.game.camp_countdown_ms,
-            )
-          let session =
-            Session(
-              ..session,
-              status: InWorld(
-                holder:,
-                entered: world_entry.Entered(..entered, camp: running),
-              ),
-            )
-          case decision {
-            camp.Answer(countdown_ms:) ->
-              Continue(session, [
-                to_client(session, camp_countdown_frame(countdown_ms)),
-              ])
-            camp.Cancelled | camp.Ignored -> Continue(session, [])
-            camp.Finished ->
-              panic as "the camp's rule answers a request with no finish"
-          }
-        },
-      )
-    CampOver ->
-      decoded_step(
-        session:,
-        now:,
-        inner:,
-        decode: camp_finished.decode,
-        then: fn(_message) {
-          case camp.finished(entered.camp) {
-            Ok(camp.Finished) ->
-              saving(
-                session:,
-                now:,
-                holder:,
-                entered:,
-                then: Camped,
-                before: [OwnEffect(CancelTimer(timer: save_timer))],
-                within_ms: session.settings.ask_deadline_ms,
-              )
-            Ok(camp.Answer(..)) | Ok(camp.Cancelled) | Ok(camp.Ignored) ->
-              panic as "the camp's rule answers a finish with no request's decision"
-            Error(refusal) ->
-              end_for(session:, now:, text: camp.describe(refusal))
-          }
-        },
-      )
-  }
-}
-
-/// 0x0092 for a camp: the countdown and the cancel bit clear. The signature
-/// bonuses the exit window shows (experience, elder points, 15 currencies and 19
-/// account currencies) are 0, since the server has no source for them yet; the
-/// currencies are the 120 and 152 bytes of 64-bit amounts the client reads
-/// (opcode.0x92).
-fn camp_countdown_frame(countdown_ms: Int) -> Frame {
-  let assert Ok(body) =
-    camp_countdown.encode(
-      CampCountdown(
-        countdown_ms:,
-        cancel: 0,
-        experience: 0,
-        elder_points: 0,
-        currencies: <<0:size(960)>>,
-        account_currencies: <<0:size(1216)>>,
-      ),
+  case
+    camp.take(
+      camp: entered.camp,
+      message:,
+      body: inner.body,
+      countdown_ms: session.settings.game.camp_countdown_ms,
     )
-    as "a countdown below 60 s fits the message's 32 bits"
-  Frame(message_id: camp_countdown.message_id, body:)
+  {
+    Ok(#(running, effects)) ->
+      carry_out(
+        session: Session(
+          ..session,
+          status: InWorld(
+            holder:,
+            entered: world_entry.Entered(..entered, camp: running),
+          ),
+        ),
+        now:,
+        effects: list.map(effects, from_camp),
+        written: [],
+      )
+    Error(refusal) -> end_for(session:, now:, text: camp.describe(refusal))
+  }
 }
 
 /// 0x0594 with the bit set and reason 0: the client leaves the world and
@@ -1040,11 +1105,11 @@ fn unhandled(
 }
 
 /// The client's 0x038C: a 5-bit kind and one whole inner frame
-/// (opcode.0x38c), which is every message the client sends in the world: the
-/// player's movement and camp messages are taken from it with the player in the
-/// world (`movement_message`, `camp_message`), and any other is logged as unhandled under its own id.
-/// A body that holds no whole frame, or bytes after it, is one the client never
-/// writes, and ends the connection.
+/// (opcode.0x38c), which is every message the client sends in the world. The
+/// routing table says which feature takes the inner message with the player in
+/// the world (genesis_prime/game/routing), and any other is logged as unhandled
+/// under its own id. A body that holds no whole frame, or bytes after it, is
+/// one the client never writes, and ends the connection.
 fn world_carried(
   session session: Session,
   now now: Now,
@@ -1055,7 +1120,10 @@ fn world_carried(
       end_for(
         session:,
         now:,
-        text: "0x038C does not decode: " <> bit_stream.describe_decode(error:),
+        text: client_connection.describe_undecoded(client_connection.Undecoded(
+          message_id: world_message.message_id,
+          error:,
+        )),
       )
     Ok(carried) ->
       case frame.parse(carried.inner_frame) {
@@ -1066,38 +1134,42 @@ fn world_carried(
             text: "0x038C holds no whole frame: " <> frame.describe(error),
           )
         Ok(whole) ->
-          case
-            session.status,
-            list.key_find(carried_messages, whole.message_id)
-          {
-            InWorld(holder:, entered:), Ok(Movement(kind)) ->
-              movement_message(
-                session:,
-                now:,
-                holder:,
-                entered:,
-                inner: whole,
-                kind:,
-              )
-            InWorld(holder:, entered:), Ok(Camp(kind)) ->
-              camp_message(
-                session:,
-                now:,
-                holder:,
-                entered:,
-                inner: whole,
-                kind:,
-              )
-            InWorld(..), Error(Nil)
-            | InCharacterSelect(..), _
-            | AwaitingHelloReply, _
-            | TakingSessionKey, _
-            | ClaimingSession(..), _
-            | WaitingToClaim(..), _
-            | EnteringWorld(..), _
-            | SavingPlace(..), _
-            | LeavingMap(..), _
-            -> unhandled(session:, message_id: whole.message_id)
+          case standing(session.status) {
+            Present(holder:, entered:) ->
+              case
+                routing.route(
+                  stage: routing.AtWorld,
+                  arrival: routing.InsideWorldMessage,
+                  message_id: whole.message_id,
+                )
+              {
+                Ok(routing.Movement(message:)) ->
+                  movement_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    inner: whole,
+                    message:,
+                  )
+                Ok(routing.Camp(message:)) ->
+                  camp_message(
+                    session:,
+                    now:,
+                    holder:,
+                    entered:,
+                    inner: whole,
+                    message:,
+                  )
+                Ok(routing.Hello)
+                | Ok(routing.CharacterSelect(..))
+                | Ok(routing.WorldEntry)
+                | Ok(routing.WorldMessage) ->
+                  misrouted(session:, now:, inner: whole)
+                Error(Nil) -> unhandled(session:, message_id: whole.message_id)
+              }
+            Greeting | Selecting(..) | Busy(..) ->
+              unhandled(session:, message_id: whole.message_id)
           }
       }
   }
@@ -1161,103 +1233,15 @@ fn describe_key_error(error: cipher.KeyError) -> String {
   }
 }
 
-/// Which of the client's messages in its wrapper the rule takes a message is.
-type TakenMessage {
-  /// A second 0x058F.
-  HelloReplyAgain
-  /// 0x07E0.
-  SelectStart
-  /// 0x025C, which carries a create request.
-  CreateRequest
-  /// 0x07DD, the request to play a character.
-  PlayRequest
-  /// 0x0352, the request to delete a character.
-  DeleteRequest
-  /// 0x0786, the request to rename a character.
-  RenameRequest
-  /// 0x038C, which carries a world message.
-  WorldCarrier
-  /// Any other message.
-  NotTaken
-}
-
-/// The messages of the player in the world that the rule takes from inside
-/// 0x038C: the movement messages and the camp's.
-type CarriedMessage {
-  Movement(kind: MovementMessage)
-  Camp(kind: CampMessage)
-}
-
-/// The camp messages of the player in the world, which the client sends inside
-/// 0x038C.
-type CampMessage {
-  /// 0x00BF, the request to start or cancel the camp.
-  CampAsked
-  /// 0x00C0, the camp is finished.
-  CampOver
-}
-
-/// The movement messages of the player in the world, which the client sends
-/// inside 0x038C.
-type MovementMessage {
-  /// 0x0637, the player's movement commands.
-  PlayerMoved
-  /// 0x063A, the player unit's value changing.
-  ZoneChanged
-  /// 0x00D5, the answer to the world's settings.
-  IntervalAnswered
-  /// 0x063B, the move speed setting.
-  SpeedChosen
-  /// 0x00F2, the terrain near the player ready.
-  TerrainReady
-  /// 0x00FB, a fall's value.
-  Fell
-  /// 0x00FC, a fall below the floor.
-  FellBelowFloor
-}
-
-/// The one table of the messages in the client's wrapper the rule takes:
-/// `message_taken` looks an id up here and `taken_message_ids` lists these ids.
-const taken_messages = [
-  #(game_hello_reply.message_id, HelloReplyAgain),
-  #(character_select_start.message_id, SelectStart),
-  #(create_character_carrier.message_id, CreateRequest),
-  #(play_character.message_id, PlayRequest),
-  #(delete_character.message_id, DeleteRequest),
-  #(rename_character.message_id, RenameRequest),
-  #(world_message.message_id, WorldCarrier),
-]
-
-/// The one table of the world messages the rule takes from inside 0x038C, with
-/// the player in the world: `world_carried` looks an id up here and
-/// `carried_message_ids` lists these ids.
-const carried_messages = [
-  #(player_movement.message_id, Movement(PlayerMoved)),
-  #(zone_value_changed.message_id, Movement(ZoneChanged)),
-  #(movement_send_interval_answer.message_id, Movement(IntervalAnswered)),
-  #(move_speed_setting.message_id, Movement(SpeedChosen)),
-  #(terrain_loaded.message_id, Movement(TerrainReady)),
-  #(fall_value.message_id, Movement(Fell)),
-  #(fell_below_floor.message_id, Movement(FellBelowFloor)),
-  #(camp_request.message_id, Camp(CampAsked)),
-  #(camp_finished.message_id, Camp(CampOver)),
-]
-
-/// The message a message id is to the rule, by the table of the messages it
-/// takes.
-fn message_taken(message_id: Int) -> TakenMessage {
-  list.key_find(taken_messages, message_id) |> result.unwrap(NotTaken)
-}
-
-/// The ids of the client's messages the rule takes: each in its table, 0x025B,
-/// the create request that 0x025C carries, and the movement and camp messages
-/// that 0x038C carries. A state takes some of them: before the hello reply only
+/// The ids of the client's messages the rule takes: each row of the routing
+/// table (genesis_prime/game/routing), and 0x025B, the create request that
+/// 0x025C carries. A stage takes some of them: before the hello reply only
 /// 0x058F, in the world 0x038C and, from inside it, the movement and camp
 /// messages. The coverage measure counts all of them as handled.
 pub fn taken_message_ids() -> List(Int) {
   list.flatten([
     [create_character.message_id],
-    list.map(taken_messages, pair.first),
+    routing.message_ids(arrival: routing.OnItsOwn),
     carried_message_ids(),
   ])
 }
@@ -1267,94 +1251,7 @@ pub fn taken_message_ids() -> List(Int) {
 /// as the client never does, or with no player in the world, they are logged as
 /// unhandled.
 pub fn carried_message_ids() -> List(Int) {
-  list.map(carried_messages, pair.first)
-}
-
-/// The client's 0x025C: the whole frame of a 0x025B create request, which
-/// character select checks and asks the store to make.
-fn create_requested(
-  session session: Session,
-  now now: Now,
-  holder holder: Holder,
-  inner inner: Frame,
-) -> client_connection.Handled(Session) {
-  case create_character_carrier.decode(inner.body) {
-    Error(error) ->
-      end_for(
-        session:,
-        now:,
-        text: "0x025C does not decode: " <> bit_stream.describe_decode(error:),
-      )
-    Ok(carrier) ->
-      case frame.parse(carrier.inner_frame) {
-        Error(error) ->
-          end_for(
-            session:,
-            now:,
-            text: "0x025C holds no whole frame: " <> frame.describe(error),
-          )
-        Ok(whole) if whole.message_id != create_character.message_id ->
-          end_for(
-            session:,
-            now:,
-            text: "0x025C holds "
-              <> client_connection.message_text(whole.message_id)
-              <> ", not 0x025B",
-          )
-        Ok(whole) ->
-          case create_character.decode(whole.body) {
-            Error(error) ->
-              end_for(
-                session:,
-                now:,
-                text: "0x025B does not decode: "
-                  <> bit_stream.describe_decode(error:),
-              )
-            Ok(request) ->
-              select_step(
-                session:,
-                now:,
-                holder:,
-                step: character_select.create_requested(
-                  account_id: holder.account_id,
-                  request:,
-                  tables: session.settings.tables,
-                  character_slots: session.settings.game.character_slots,
-                ),
-              )
-          }
-      }
-  }
-}
-
-/// What a decoded message the rule keeps nothing of does: the connection goes
-/// on with the next frame.
-fn carry_on(
-  session: Session,
-) -> fn(message) -> client_connection.Handled(Session) {
-  fn(_message) { Continue(session, []) }
-}
-
-/// A message of the client's whose body is decoded: `then` takes it. A body
-/// the client's reader would refuse ends the connection.
-fn decoded_step(
-  session session: Session,
-  now now: Now,
-  inner inner: Frame,
-  decode decode: fn(BitArray) -> Result(message, bit_stream.DecodeError),
-  then then: fn(message) -> client_connection.Handled(Session),
-) -> client_connection.Handled(Session) {
-  case decode(inner.body) {
-    Error(error) ->
-      end_for(
-        session:,
-        now:,
-        text: client_connection.message_text(inner.message_id)
-          <> " does not decode: "
-          <> bit_stream.describe_decode(error:),
-      )
-    Ok(message) -> then(message)
-  }
+  routing.message_ids(arrival: routing.InsideWorldMessage)
 }
 
 /// Character select's new state and what it decided, carried out.
@@ -1380,23 +1277,23 @@ fn select_step(
 fn play_requested(
   session session: Session,
   now now: Now,
-  holder holder: Holder,
   inner inner: Frame,
 ) -> client_connection.Handled(Session) {
-  use request <- decoded_step(
-    session:,
-    now:,
-    inner:,
-    decode: play_character.decode,
-  )
-  let #(entry, effects) =
-    world_entry.play_requested(account_id: holder.account_id, request:)
-  carry_out(
-    session: Session(..session, status: EnteringWorld(holder:, entry:)),
-    now:,
-    effects: list.map(effects, from_entry),
-    written: [],
-  )
+  case standing(session.status) {
+    Selecting(holder:) ->
+      case world_entry.take(account_id: holder.account_id, body: inner.body) {
+        Ok(#(entry, effects)) ->
+          carry_out(
+            session: Session(..session, status: EnteringWorld(holder:, entry:)),
+            now:,
+            effects: list.map(effects, from_entry),
+            written: [],
+          )
+        Error(refusal) ->
+          end_for(session:, now:, text: world_entry.describe(refusal))
+      }
+    Greeting | Present(..) | Busy(..) -> misrouted(session:, now:, inner:)
+  }
 }
 
 /// What a feature of the rule decided that the rule carries out, in order.
@@ -1412,6 +1309,10 @@ type Decided {
   WatchesMap(map: MapId, incarnation: Int)
   /// Start the timer that saves the player's place (`save_timer`).
   StartsSaveTimer
+  /// The player leaves the world for character select: the save timer is
+  /// cancelled and the place saved, the map's run is asked to take the player
+  /// out, and 0x0594 is written (the camp's finish).
+  LeavesWorld
 }
 
 fn from_select(effect: character_select.Effect) -> Decided {
@@ -1420,6 +1321,13 @@ fn from_select(effect: character_select.Effect) -> Decided {
     character_select.Warn(text:) -> Warning(text:)
     character_select.Ask(request:) ->
       Asks(request: AskStore(store.Select(request)))
+  }
+}
+
+fn from_camp(effect: camp.Effect) -> Decided {
+  case effect {
+    camp.Write(frame:) -> ToClient(frame:)
+    camp.LeaveWorld -> LeavesWorld
   }
 }
 
@@ -1440,7 +1348,7 @@ fn carry_out(
   session session: Session,
   now now: Now,
   effects effects: List(Decided),
-  written written: List(Effect(ConnectionEffect)),
+  written written: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
   case effects {
     [] -> Continue(session, list.reverse(written))
@@ -1464,13 +1372,34 @@ fn carry_out(
         start_save_timer(),
         ..written
       ])
+    [LeavesWorld, ..] ->
+      case holds_a_player(session.status) {
+        Some(#(holder, entered)) ->
+          saving(
+            session:,
+            now:,
+            holder:,
+            entered:,
+            then: Camped,
+            before: list.append(list.reverse(written), [
+              OwnEffect(CancelTimer(timer: save_timer)),
+            ]),
+            within_ms: session.settings.ask_deadline_ms,
+          )
+        None ->
+          end_for(
+            session:,
+            now:,
+            text: "a feature left the world with no player in it",
+          )
+      }
     [Asks(request:), ..] ->
       ask(session:, now:, request:, before: list.reverse(written))
   }
 }
 
 /// Starts the timer that saves the player's place every `movement.save_period_ms`.
-fn start_save_timer() -> Effect(ConnectionEffect) {
+fn start_save_timer() -> Effect(ConnectionEffect(Request)) {
   OwnEffect(StartTimer(timer: save_timer, after_ms: movement.save_period_ms))
 }
 
@@ -1480,7 +1409,7 @@ fn ask(
   session session: Session,
   now now: Now,
   request request: Request,
-  before before: List(Effect(ConnectionEffect)),
+  before before: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
   ask_within(
     session:,
@@ -1497,7 +1426,7 @@ fn ask_within(
   session session: Session,
   now now: Now,
   request request: Request,
-  before before: List(Effect(ConnectionEffect)),
+  before before: List(Effect(ConnectionEffect(Request))),
   within_ms within_ms: Int,
 ) -> client_connection.Handled(Session) {
   let #(link, made) =
@@ -1708,6 +1637,300 @@ fn sessions_sent(
   }
 }
 
+/// What the map sent the connection, while its player is in the world or its
+/// claim is made again with the player in it: who sees its player (`Watched`,
+/// `Unwatched`), and a unit whose owner's connection ended (`Gone`). A connection
+/// sends everything about its own unit itself: told `Watched(by)` it sends `by` its
+/// 0x262 at its current place, told `Unwatched(by)` its 0x355. The shell takes a
+/// send between steps, after the ask's outcome and the step it starts are done
+/// (genesis_prime/connection/shell), and world entry writes its whole burst in the
+/// one step that takes the map's `Joined`, so a send of the map, which comes after
+/// its answer, is always taken after the burst: no status holds sends during
+/// entry. With no player in the world (the player left the map, or never joined)
+/// the send is dropped, since the client holds no world. `Joined` and `Left` are
+/// answers, never sends, and are a bug.
+fn map_sent(
+  session session: Session,
+  now now: Now,
+  message message: map.Outgoing,
+) -> client_connection.Handled(Session) {
+  case message, held_in_the_world(session.status) {
+    map.Joined(..), _ | map.Left, _ ->
+      end_for(session:, now:, text: "the map sent an answer as a message")
+    map.Watched(..), None | map.Unwatched(..), None | map.Gone(..), None ->
+      Continue(session, [])
+    map.Watched(by:), Some(entered) ->
+      Continue(viewers_changed(session:, change: set.insert(_, by)), [
+        news_to(
+          entered:,
+          viewer: by,
+          news: client_connection.Appeared(unit: appearance(entered:, now:)),
+        ),
+      ])
+    map.Unwatched(by:), Some(entered) ->
+      Continue(
+        viewers_changed(session:, change: set.delete(_, by)),
+        case set.contains(entered.viewers, by) {
+          True -> [
+            news_to(entered:, viewer: by, news: client_connection.Removed),
+          ]
+          False -> []
+        },
+      )
+    map.Gone(unit_id:), Some(entered) -> {
+      let session = marked_gone(session:, unit_id:)
+      use <- bool.guard(
+        when: !set.contains(entered.shown, unit_id),
+        return: Continue(session, []),
+      )
+      Continue(session, [to_client(session, unit_removed_frame(unit_id:))])
+    }
+  }
+}
+
+/// What another player's connection sent about the unit it owns, written while
+/// this player is in the world, in the run of the map the news names, and only
+/// as the client can take it (`viewer_takes`). News from another run or another
+/// map is dropped: it names a unit id that may be another unit here.
+fn peer_sent(
+  session session: Session,
+  news news: client_connection.PeerNews,
+) -> client_connection.Handled(Session) {
+  case held_in_the_world(session.status) {
+    None -> Continue(session, [])
+    Some(entered) -> {
+      use <- bool.guard(
+        when: entered.map != news.map || entered.incarnation != news.incarnation,
+        return: Continue(session, []),
+      )
+      viewer_takes(session:, entered:, news:)
+    }
+  }
+}
+
+/// What a viewer writes of news of a unit, from the units this connection has
+/// shown and the ones the map reported gone: a 0x262 for a unit not shown and not
+/// gone, which is then shown (the client keeps one unit per id until its 0x355,
+/// and a unit that is gone would be a ghost); a 0x638 for a shown unit; a 0x355
+/// for a shown unit, which is then no longer shown. Anything else is dropped. A
+/// 0x262 or 0x355 that names unit 0 or this player's own unit is refused with an
+/// error line, and writes nothing: the client makes the controlled unit of a
+/// 0x262 with either id (0x1403d9760) and removes a unit with a 0x355
+/// (0x1403d9590).
+fn viewer_takes(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  news news: client_connection.PeerNews,
+) -> client_connection.Handled(Session) {
+  let unit_id = news.unit_id
+  let shown = set.contains(entered.shown, unit_id)
+  let creates_or_removes = case news.news {
+    client_connection.Appeared(..) | client_connection.Removed -> True
+    client_connection.Moving(..) -> False
+  }
+  use <- bool.guard(
+    when: creates_or_removes && { unit_id == 0 || unit_id == entered.unit_id },
+    return: Continue(session, [
+      log(
+        session:,
+        level: step.LogError,
+        text: "another player's connection sent a 0x262 or 0x355 naming unit "
+          <> int.to_string(unit_id)
+          <> ", which is this player's own unit or none, so it is refused",
+      ),
+    ]),
+  )
+  case news.news {
+    client_connection.Appeared(unit:) -> {
+      use <- bool.guard(
+        when: shown || set.contains(entered.gone, unit_id),
+        return: Continue(session, []),
+      )
+      Continue(shown_changed(session:, change: set.insert(_, unit_id)), [
+        to_client(session, world_entry.unit_created_frame(unit:)),
+      ])
+    }
+    client_connection.Moving(server_time_ms:, commands:) -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(session, [
+        to_client(
+          session,
+          unit_moved_frame(unit_id:, server_time_ms:, commands:),
+        ),
+      ])
+    }
+    client_connection.Removed -> {
+      use <- bool.guard(when: !shown, return: Continue(session, []))
+      Continue(shown_changed(session:, change: set.delete(_, unit_id)), [
+        to_client(session, unit_removed_frame(unit_id:)),
+      ])
+    }
+  }
+}
+
+/// The player the client holds in this connection's world, while it holds one:
+/// the player in the world, or in the world and waiting to claim again, where a
+/// send is taken.
+fn held_in_the_world(status: Status) -> Option(world_entry.Entered) {
+  use <- bool.guard(when: !holds_the_world(status), return: None)
+  entered_of(status)
+}
+
+/// The unit of the player's own record as another player is created with it: at
+/// the place the player stands at now and stamped from the map's clock, from the
+/// origin `Joined` carried (`map.server_time`).
+fn appearance(
+  entered entered: world_entry.Entered,
+  now now: Now,
+) -> UnitCreatePlayer {
+  let #(position, rotation) =
+    player_unit.standing(place: movement.place(entered.movement))
+  UnitCreatePlayer(
+    ..entered.unit,
+    movement_commands: [
+      start_movement.Position(position),
+      start_movement.Rotation(rotation),
+    ],
+    server_time_estimate_start: map.server_time(
+      origin_ms: entered.clock_origin_ms,
+      monotonic_ms: now.monotonic_ms,
+    ),
+  )
+}
+
+/// The tell of news about the player's own unit to the connection of a player
+/// who sees it, in the run of the map the player is in.
+fn news_to(
+  entered entered: world_entry.Entered,
+  viewer viewer: ConnectionId,
+  news news: client_connection.News,
+) -> Effect(ConnectionEffect(Request)) {
+  OwnEffect(step.Tell(
+    to: step.Connection(viewer),
+    request: TellPeer(news: client_connection.PeerNews(
+      map: entered.map,
+      incarnation: entered.incarnation,
+      unit_id: entered.unit_id,
+      news:,
+    )),
+  ))
+}
+
+/// The tells that remove the player's own unit from the client of each player who
+/// sees it, for its camp, which sends them before its leave is asked: the map's
+/// `Unwatched` after the leave would be a second sender of news of the unit.
+fn removes_its_unit_from_the_viewers(
+  entered entered: world_entry.Entered,
+) -> List(Effect(ConnectionEffect(Request))) {
+  list.map(set.to_list(entered.viewers), fn(viewer) {
+    news_to(entered:, viewer:, news: client_connection.Removed)
+  })
+}
+
+/// The session with the player's viewers changed by `change`.
+fn viewers_changed(
+  session session: Session,
+  change change: fn(Set(ConnectionId)) -> Set(ConnectionId),
+) -> Session {
+  with_entered(session:, change: fn(entered) {
+    world_entry.Entered(..entered, viewers: change(entered.viewers))
+  })
+}
+
+/// The session with the units its client shows changed by `change`.
+fn shown_changed(
+  session session: Session,
+  change change: fn(Set(Int)) -> Set(Int),
+) -> Session {
+  with_entered(session:, change: fn(entered) {
+    world_entry.Entered(..entered, shown: change(entered.shown))
+  })
+}
+
+/// The session with the unit marked gone, so it is shown no more, and no longer
+/// shown.
+fn marked_gone(session session: Session, unit_id unit_id: Int) -> Session {
+  with_entered(session:, change: fn(entered) {
+    world_entry.Entered(
+      ..entered,
+      shown: set.delete(entered.shown, unit_id),
+      gone: set.insert(entered.gone, unit_id),
+    )
+  })
+}
+
+/// The session with the player it holds in the world changed by `change`: the
+/// player in the world, or in the world and waiting to claim again, where a send
+/// is taken. A status that takes no send, since the shell takes none while an ask
+/// is out, or that holds no player in the world, is as it was.
+fn with_entered(
+  session session: Session,
+  change change: fn(world_entry.Entered) -> world_entry.Entered,
+) -> Session {
+  let status = case session.status {
+    InWorld(holder:, entered:) -> InWorld(holder:, entered: change(entered))
+    WaitingToClaim(holder:, resume: ResumeWorld(entered:), retries:) ->
+      WaitingToClaim(
+        holder:,
+        resume: ResumeWorld(entered: change(entered)),
+        retries:,
+      )
+    WaitingToClaim(resume: ResumeSelect, ..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> session.status
+  }
+  Session(..session, status:)
+}
+
+/// Whether the client holds the player in its world, so another unit's message
+/// is written: the player is in the world, or its claim is made again with the
+/// player in it. A claim with its ask out, a save and a leave take no send.
+fn holds_the_world(status: Status) -> Bool {
+  case status {
+    InWorld(..) | WaitingToClaim(resume: ResumeWorld(..), ..) -> True
+    WaitingToClaim(resume: ResumeSelect, ..)
+    | ClaimingSession(..)
+    | InCharacterSelect(..)
+    | EnteringWorld(..)
+    | SavingPlace(..)
+    | LeavingMap(..)
+    | AwaitingHelloReply
+    | TakingSessionKey -> False
+  }
+}
+
+/// 0x638 for a move of another player's unit, with the reset bit 0 (the unit's
+/// movement is not rebuilt) and the kept bit 0 (opcode.0x638).
+fn unit_moved_frame(
+  unit_id unit_id: Int,
+  server_time_ms server_time_ms: Int,
+  commands commands: List(RelayedMovement),
+) -> Frame {
+  let assert Ok(body) =
+    unit_movement.encode(UnitMovement(
+      unit_id:,
+      server_time: server_time_ms,
+      reset_movement: 0,
+      kept: 0,
+      commands:,
+    ))
+    as "a mover sends at most 31 commands and a time of 32 bits"
+  Frame(message_id: unit_movement.message_id, body:)
+}
+
+/// 0x355 for another player's unit, with its one bit 0 (opcode.0x355).
+fn unit_removed_frame(unit_id unit_id: Int) -> Frame {
+  let assert Ok(body) =
+    unit_destroyed.encode(UnitDestroyed(unit_id:, field_2: 0))
+    as "a unit id of 32 bits fits the message"
+  Frame(message_id: unit_destroyed.message_id, body:)
+}
+
 /// The end of a watch the rule opened. Sessions' (`sessions_watch`): the
 /// connection waits on the claim timer, then claims its account again from
 /// where it is, in character select or in the world. The player's map
@@ -1834,7 +2057,7 @@ fn saving(
   holder holder: Holder,
   entered entered: world_entry.Entered,
   then then: AfterSave,
-  before before: List(Effect(ConnectionEffect)),
+  before before: List(Effect(ConnectionEffect(Request))),
   within_ms within_ms: Int,
 ) -> client_connection.Handled(Session) {
   let #(state, request) =
@@ -1963,8 +2186,9 @@ fn leaving_the_map(
   now now: Now,
   holder holder: Holder,
   entered entered: world_entry.Entered,
-  before before: List(Effect(ConnectionEffect)),
+  before before: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
+  let before = list.append(before, removes_its_unit_from_the_viewers(entered:))
   ask(
     session: Session(..session, status: LeavingMap(holder:, entered:)),
     now:,
@@ -2010,6 +2234,9 @@ fn leave_answered(
       )
     step.StoppedWaiting -> stopped(session, now)
     step.Answer(FromMap(map.Joined(..)))
+    | step.Answer(FromMap(map.Watched(..)))
+    | step.Answer(FromMap(map.Unwatched(..)))
+    | step.Answer(FromMap(map.Gone(..)))
     | step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromSessions(..)) ->
@@ -2027,7 +2254,7 @@ fn leave_answered(
 /// then the notice when there is one, then the end.
 fn left(
   session session: Session,
-  lines lines: List(Effect(ConnectionEffect)),
+  lines lines: List(Effect(ConnectionEffect(Request))),
   notice told: Option(DisconnectReason),
 ) -> client_connection.Handled(Session) {
   Done(
@@ -2048,7 +2275,7 @@ fn left(
 fn movement_line(
   session: Session,
   effect: movement.Effect,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Request)) {
   case effect {
     movement.Fault(text:) -> log(session:, level: step.LogError, text:)
     movement.Note(text:) -> log(session:, level: LogInfo, text:)
@@ -2400,7 +2627,7 @@ fn log(
   session session: Session,
   level level: step.LogLevel,
   text text: String,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Request)) {
   client_connection.log(about: about_of(session), level:, text:)
 }
 

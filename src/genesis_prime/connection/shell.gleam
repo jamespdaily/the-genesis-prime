@@ -148,6 +148,16 @@
 ////   supervisor that has stopped exits the call with `noproc`, which
 ////   `store/worker.ask` turns into `Error(Nil)`. When the directory returns
 ////   past the deadline, the outcome is `NoAnswerInTime` at once.
+//// - **A tell.** A `Tell(to, request)` effect sends the request to the process
+////   at `to` and the shell goes on at once: nothing waits, no monitor is kept,
+////   and no outcome comes back. The way to the process is the one the rule's
+////   open watch on `to` found with its lookup (`Tellable`), so a tell makes no
+////   lookup and a move costs none; it goes with the watch, whether the rule
+////   drops it or the process ends. A tell to an address with no such watch is
+////   dropped with a warning. A tell to a `Connection` needs no watch: the
+////   settings' `deliver` sends it through the registry, one lookup of the
+////   group of the connection's id as any service's send makes, and a connection
+////   that is gone drops it with no line.
 //// - **A message delivered.** Another process sends the connection's pid
 ////   `{woken, message}` (`registry.deliver`); the shell takes it between steps
 ////   as `OwnEvent(Woken(message))`, in the order it arrived among the socket's
@@ -156,8 +166,9 @@
 ////   dropped by the VM, and one that arrives after the shell began to stop is
 ////   dropped with the process. A connection with no registry in its settings is
 ////   joined to no group, so no process can send it anything.
-//// - **A watch.** `Watch(id, target)` finds the target's pid with the settings'
-////   `locate`, monitors it and keeps the monitor under `id`
+//// - **A watch.** `Watch(id, target)` finds the target's pid, and the way to
+////   tell it when the rule tells it, with one call of the settings' `locate`,
+////   monitors it and keeps the monitor under `id`
 ////   (genesis_prime/step/watch). Its DOWN is taken between steps as
 ////   `WatchEnded(id)`, once, and the shell forgets the watch. A target no
 ////   process holds is monitored by nothing: the shell holds the id and takes
@@ -187,7 +198,7 @@
 ////   as the scope lives; the tree restarts the game listener with the scope, so
 ////   no connection outlives it (genesis_prime/connection/registry).
 //// - **Effects and inputs of the other kind.** A connection's own effects are
-////   `Write`, `StartTimer` and `CancelTimer`, and its own inputs are the
+////   `Write`, `StartTimer`, `CancelTimer` and `Tell`, and its own inputs are the
 ////   socket's, `Woken`, `TimerFired` and `Answered` (`ConnectionEffect` and
 ////   `ConnectionEvent`). It has no `Reply`, `Send` or `Started`, so a rule that
 ////   answers a caller, sends, or takes a service's input does not compile
@@ -199,7 +210,7 @@ import genesis_prime/connection/script.{
   type Cancel, type Elapsed, type Issued, type Script, type Scripts,
 }
 import genesis_prime/seed
-import genesis_prime/service.{type Locate, type Sent}
+import genesis_prime/service.{type Sent}
 import genesis_prime/step.{
   type Ask, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
   type ConnectionRule, type Effect, type Event, type SocketFailure, type TimerId,
@@ -252,9 +263,17 @@ pub type Settings(settings, state, message, answer, request) {
     /// find it by its id; `None` for a connection no process addresses (the
     /// login's).
     registry: Option(Registry(message)),
-    /// How the shell finds the process a `Watch` names. Made once at start
-    /// from the processes' names; a rule never sees it.
-    locate: Locate,
+    /// How the shell finds the process a `Watch` names, with, for a process a
+    /// rule tells, the way to tell it (`Tellable`: a function that sends it a
+    /// request with no answer), from one lookup; `Error(Nil)` when it is not
+    /// running or the lookup got no reply. Made once at start from the
+    /// processes' names; a rule never sees it.
+    locate: fn(step.Address) -> Result(watch.Found(fn(request) -> Nil), Nil),
+    /// How the shell sends a request to the connection a `Connection` address
+    /// names, which needs no watch: through the registry, as the services'
+    /// sends are made; `Error(Nil)` when no connection is there, and the request
+    /// is dropped. Made once at start; a rule never sees it.
+    deliver: fn(step.Address, request) -> Result(Nil, Nil),
   )
 }
 
@@ -334,7 +353,7 @@ type Kept {
 /// asks kept by their tags, the monitor of each watch the rule has open, each
 /// timer it has running and the stop deadline of a stop that arrived during an
 /// ask.
-type Running(state) {
+type Running(state, request) {
   Running(
     socket: ClientSocket,
     script: Script,
@@ -344,7 +363,9 @@ type Running(state) {
     taken_ms: Int,
     reading: Reading,
     kept: Dict(Reference, Kept),
-    watches: Watches,
+    /// The watches the rule has open, which keep the way to tell each process
+    /// a watch found until the watch ends or is dropped.
+    watches: Watches(fn(request) -> Nil),
     timers: Dict(TimerId, Started),
     stopping: Option(Int),
     /// The side the recording's closing line names: the client once the shell
@@ -370,10 +391,10 @@ type Reading {
 }
 
 /// Where the connection is: waiting to take its socket from Ranch, or open.
-type Status(state) {
+type Status(state, request) {
   /// Started by Ranch and holding its reference; `Begin` takes the socket.
   AwaitingHandshake(ranch_ref: RanchRef)
-  Open(running: Running(state))
+  Open(running: Running(state, request))
 }
 
 /// The actor's state: what it is started with and keeps for its life (the
@@ -385,7 +406,7 @@ type Connection(settings, state, message, answer, request) {
     parent: Pid,
     timers: Subject(Elapsed),
     answers: Subject(#(Reference, answer)),
-    status: Status(state),
+    status: Status(state, request),
   )
 }
 
@@ -688,7 +709,7 @@ fn join_registry(
 /// clock's one call for the input.
 fn take_next(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   event event: Event(ConnectionEvent(message, answer)),
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
@@ -710,7 +731,7 @@ fn take_next(
 /// nothing the shell drops.
 fn take(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   now now: step.Now,
   event event: Event(ConnectionEvent(message, answer)),
 ) -> actor.Next(
@@ -769,7 +790,7 @@ fn take(
 /// socket takes the held bytes with it.
 fn read_arrived(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   bytes bytes: BitArray,
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
@@ -831,7 +852,7 @@ const held_read_wait_ms = 5000
 /// and the actor takes the next message of the mailbox, the bytes still held.
 fn wait_for_rest(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   deadline_ms deadline_ms: Int,
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
@@ -958,8 +979,8 @@ type Then(request) {
 /// with no `WriteFailed` input.
 fn carry(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
-  effects effects: List(Effect(ConnectionEffect)),
+  running running: Running(state, request),
+  effects effects: List(Effect(ConnectionEffect(request))),
   then then: Then(request),
   closing closing: Side,
 ) -> actor.Next(
@@ -980,9 +1001,9 @@ fn carry(
 /// subject, or cancelled.
 fn carry_effect(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
-  effect effect: Effect(ConnectionEffect),
-  later later: List(Effect(ConnectionEffect)),
+  running running: Running(state, request),
+  effect effect: Effect(ConnectionEffect(request)),
+  later later: List(Effect(ConnectionEffect(request))),
   then then: Then(request),
   closing closing: Side,
 ) -> actor.Next(
@@ -1056,6 +1077,10 @@ fn carry_effect(
         then:,
         closing:,
       )
+    OwnEffect(step.Tell(to:, request:)) -> {
+      tell(connection:, running:, to:, request:)
+      carry(connection:, running:, effects: later, then:, closing:)
+    }
     OwnEffect(CancelTimer(timer:)) ->
       carry(
         connection:,
@@ -1067,32 +1092,65 @@ fn carry_effect(
   }
 }
 
-/// Monitors the process the address names under the watch's id.
+/// Monitors the process the address names under the watch's id, with the way
+/// to tell it when the lookup found one.
 fn open_watch(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   watch watch: step.WatchId,
   target target: step.Address,
-) -> Running(state) {
+) -> Running(state, request) {
   Running(
     ..running,
     watches: watch.open(
       watches: running.watches,
       watch:,
+      address: target,
       target: connection.settings.locate(target),
       shell: "connection shell",
     ),
   )
 }
 
+/// Tells the process at the address the request. A connection is sent it
+/// through the settings' `deliver`, which finds it in the registry; one that
+/// has ended drops it, as a send to a gone process is dropped, with no line
+/// since a player's viewers end all the time. Any other process is told through
+/// the way the open watch on that address found, so a move costs no lookup, and
+/// a tell to an address no open watch found a process for is dropped with a
+/// warning: the watch was dropped, the process ended, or it was never running.
+fn tell(
+  connection connection: Connection(settings, state, message, answer, request),
+  running running: Running(state, request),
+  to to: step.Address,
+  request request: request,
+) -> Nil {
+  case to {
+    step.Connection(..) -> {
+      let _delivered = connection.settings.deliver(to, request)
+      Nil
+    }
+    step.Sessions | step.HandOff | step.Store | step.Maps | step.Map(..) ->
+      case watch.sender_at(watches: running.watches, address: to) {
+        Ok(sender) -> sender(request)
+        Error(Nil) ->
+          runtime.log(
+            LogWarning,
+            "a tell was dropped: no open watch holds a process at its address",
+            step.no_one,
+          )
+      }
+  }
+}
+
 /// Starts the timer the rule named, with a reference of its own that its
 /// timeout carries; an id already running ends the connection.
 fn start_timer(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   timer timer: TimerId,
   after_ms after_ms: Int,
-) -> Running(state) {
+) -> Running(state, request) {
   case dict.has_key(running.timers, timer) {
     True -> {
       runtime.log(
@@ -1118,9 +1176,9 @@ fn start_timer(
 /// Cancels the timer the rule named and forgets it. A timeout already sent is
 /// discarded when it arrives, since no timer holds its reference.
 fn cancel_timer(
-  running running: Running(state),
+  running running: Running(state, request),
   timer timer: TimerId,
-) -> Running(state) {
+) -> Running(state, request) {
   case dict.get(running.timers, timer) {
     Ok(Started(cancel:, ..)) -> {
       cancel()
@@ -1135,7 +1193,7 @@ fn cancel_timer(
 /// at once, with no call to the directory.
 fn finish(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   then then: Then(request),
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
@@ -1160,7 +1218,7 @@ fn finish(
 /// asked for and the actor takes its next message.
 fn wait_for_input(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
@@ -1196,7 +1254,7 @@ fn wait_for_input(
 /// waits for its outcome.
 fn make_ask(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   ask ask: Ask(request),
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
@@ -1240,7 +1298,7 @@ fn make_ask(
 /// deadline; in a replay the input's `Now` comes from the recording, whose
 /// monotonic times are of another run, so only the time allowed carries over.
 fn real_deadline_ms(
-  running running: Running(state),
+  running running: Running(state, request),
   ask ask: Ask(request),
 ) -> Int {
   running.taken_ms + ask.deadline_ms - running.at.monotonic_ms
@@ -1252,7 +1310,7 @@ fn real_deadline_ms(
 /// answers or ends.
 fn wait_for_answer(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   ask ask: Ask(request),
   tag tag: Reference,
   sent sent: Sent,
@@ -1385,10 +1443,10 @@ fn wait_until(
 
 /// Keeps an ask's tag and monitor until its target answers or ends.
 fn keep(
-  running running: Running(state),
+  running running: Running(state, request),
   tag tag: Reference,
   monitor monitor: Monitor,
-) -> Running(state) {
+) -> Running(state, request) {
   Running(..running, kept: dict.insert(running.kept, tag, Kept(monitor:)))
 }
 
@@ -1400,7 +1458,7 @@ fn keep(
 /// failed. A crash does not: the process ends with its reason, the socket
 /// closes with it, and the recording has no closing line, so it never replays.
 fn stop(
-  running running: Running(state),
+  running running: Running(state, request),
   by by: Side,
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
@@ -1422,7 +1480,7 @@ fn wire_recording_failed(socket: ClientSocket, error: WriteError) -> a {
 /// Continues with the connection open.
 fn keep_open(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
   Mail(message, answer),
@@ -1434,7 +1492,7 @@ fn keep_open(
 /// start's of that id, and forgets the timer; a stale one is dropped.
 fn timer_elapsed(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   timer timer: TimerId,
   reference reference: Reference,
 ) -> actor.Next(
@@ -1457,7 +1515,7 @@ fn timer_elapsed(
 /// monitor the shell holds under neither is dropped.
 fn ended(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   down down: process.Down,
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),
@@ -1497,7 +1555,7 @@ fn kept_with_monitor(
 /// ask's monitor; the answer of no kept ask is dropped as it is.
 fn late_answer(
   connection connection: Connection(settings, state, message, answer, request),
-  running running: Running(state),
+  running running: Running(state, request),
   tag tag: Reference,
 ) -> actor.Next(
   Connection(settings, state, message, answer, request),

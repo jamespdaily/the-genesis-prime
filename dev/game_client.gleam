@@ -22,10 +22,15 @@ import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_rotation.{MovementRotation}
 import genesis_prime/message/player_movement.{PlayerMovement}
+import genesis_prime/message/relayed_movement
 import genesis_prime/message/server_hello
+import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
+import genesis_prime/message/unit_destroyed
+import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/world_message.{WorldMessage}
+import gleam/dict.{type Dict}
 import gleam/list
 import gleam/result
 import login_client
@@ -240,6 +245,166 @@ pub fn read(game game: Game, count count: Int) -> List(Frame) {
   assert list.length(outers) == count
     as "the game server wrote no more messages than the test reads"
   list.map(outers, in_the_game_wrapper(_, game.cipher))
+}
+
+/// Reads the next message the server wrote, still inside its 0x3DC wrapper (or
+/// bare, like a pong), keeping the bytes read beyond it in `have`, so a read
+/// that held several messages loses none. The next call is given the bytes
+/// returned.
+fn next_outer(game game: Game, have have: BitArray) -> #(Frame, BitArray) {
+  let assert #([outer], rest) = outers_kept(game:, have:, count: 1)
+  #(outer, rest)
+}
+
+/// Reads `count` messages as the server wrote them, keeping the bytes beyond
+/// them.
+fn outers_kept(
+  game game: Game,
+  have have: BitArray,
+  count count: Int,
+) -> #(List(Frame), BitArray) {
+  let assert Ok(kept) =
+    frame_reader.read_kept(have:, count:, next: fn() {
+      mug.receive(game.socket, timeout_milliseconds: wait_ms)
+    })
+    as "the game server did not write the messages"
+  kept
+}
+
+/// Reads the next game message, opened from its 0x3DC wrapper under the session
+/// cipher, keeping the bytes beyond it.
+pub fn next(game game: Game, have have: BitArray) -> #(Frame, BitArray) {
+  let #(outer, rest) = next_outer(game:, have:)
+  #(in_the_game_wrapper(outer:, cipher: game.cipher), rest)
+}
+
+/// Reads `count` game messages in order, keeping the bytes beyond them.
+pub fn read_kept(
+  game game: Game,
+  have have: BitArray,
+  count count: Int,
+) -> #(List(Frame), BitArray) {
+  let #(outers, rest) = outers_kept(game:, have:, count:)
+  #(list.map(outers, in_the_game_wrapper(_, game.cipher)), rest)
+}
+
+/// Takes what the server has already written, without waiting for more, and
+/// drops the whole messages in it: the bytes of a message not yet whole are
+/// kept, so the next read starts where the stream is. For a client that walks
+/// among other players and does not read what it is sent.
+pub fn drain(game game: Game, have have: BitArray) -> BitArray {
+  case mug.receive(game.socket, timeout_milliseconds: 0) {
+    Ok(more) ->
+      drain(game:, have: whole_messages_dropped(<<have:bits, more:bits>>))
+    Error(mug.Timeout) -> whole_messages_dropped(have)
+    Error(error) ->
+      panic as {
+        "the game server's connection failed while a client drained it: "
+        <> mug.describe_error(error)
+      }
+  }
+}
+
+fn whole_messages_dropped(received: BitArray) -> BitArray {
+  let assert Ok(#(_frames, rest)) = frame_reader.decode(received:)
+    as "the server wrote bytes that are frames"
+  rest
+}
+
+/// Reads until the server's answer to a ping, the bare pong, and gives its
+/// number: the game messages that come first, other players' units among them,
+/// are dropped. The bytes beyond the pong are kept.
+pub fn pong_among_messages(
+  game game: Game,
+  have have: BitArray,
+) -> #(Int, BitArray) {
+  let #(outer, rest) = next_outer(game:, have:)
+  case outer {
+    Frame(message_id: 0x0001, body: <<number:size(8)>>) -> #(number, rest)
+    Frame(..) -> pong_among_messages(game:, have: rest)
+  }
+}
+
+/// Where another player's unit stands, as the client's unit would: the last
+/// kind 2 position it was given.
+pub type Others =
+  Dict(Int, #(Float, Float, Float))
+
+/// What the client's view of other players holds after a message of the server:
+/// 0x262 creates a unit at its first kind 2 position (0x1404586e0), 0x638 moves
+/// the unit it names to each kind 2 position it carries, in order, so the last
+/// is where it stands (0x140787150), a 0x638 for a unit the client does not hold
+/// is dropped, as the client logs it and goes on (opcode.0x638), and 0x355
+/// removes the unit (0x1403d98f0). Any other message changes nothing. The first
+/// 0x262 of a connection is the player's own, so a caller keeps its model from
+/// the messages after the entry's burst.
+pub fn observe(others others: Others, frame frame: Frame) -> Others {
+  case frame.message_id {
+    0x0262 -> created(others:, body: frame.body)
+    0x0638 -> moved(others:, body: frame.body)
+    0x0355 -> removed(others:, body: frame.body)
+    _ -> others
+  }
+}
+
+fn created(others others: Others, body body: BitArray) -> Others {
+  let assert Ok(unit) = unit_create_player.decode(body) as "0x0262 decodes"
+  dict.insert(others, unit.unit_id, placed_at(unit:))
+}
+
+/// Where a 0x262 places its unit: the kind 2 command that is the first of its
+/// commands (0x1404586e0).
+pub fn placed_at(unit unit: UnitCreatePlayer) -> #(Float, Float, Float) {
+  let assert [start_movement.Position(placed), ..] = unit.movement_commands
+    as "0x0262 places the unit with a kind 2 command first"
+  standing(placed)
+}
+
+fn moved(others others: Others, body body: BitArray) -> Others {
+  let assert Ok(moved) = unit_movement.decode(body) as "0x0638 decodes"
+  case dict.get(others, moved.unit_id) {
+    Error(Nil) -> others
+    Ok(held) ->
+      dict.insert(
+        others,
+        moved.unit_id,
+        list.fold(moved.commands, held, last_position),
+      )
+  }
+}
+
+/// Where a unit stands after one more command: a kind 2 puts it there, any
+/// other kind leaves it.
+fn last_position(
+  at: #(Float, Float, Float),
+  command: relayed_movement.RelayedMovement,
+) -> #(Float, Float, Float) {
+  case command {
+    relayed_movement.Position(placed) -> standing(placed)
+    relayed_movement.Platform(_)
+    | relayed_movement.Velocity(_)
+    | relayed_movement.MoveAsked(_)
+    | relayed_movement.Rotation(_)
+    | relayed_movement.StateFlags(_)
+    | relayed_movement.Mode(_) -> at
+  }
+}
+
+fn removed(others others: Others, body body: BitArray) -> Others {
+  let assert Ok(gone) = unit_destroyed.decode(body) as "0x0355 decodes"
+  dict.delete(others, gone.unit_id)
+}
+
+fn standing(
+  placed: unit_position_command.UnitPositionCommand,
+) -> #(Float, Float, Float) {
+  let value = fn(bits) {
+    let assert Ok(bits) = float32.bits(bits) as "the codec reads 32 bits"
+    let assert Ok(value) = float32.value(bits)
+      as "the server places a unit at a finite position"
+    value
+  }
+  #(value(placed.x), value(placed.y), value(placed.z))
 }
 
 /// The ids of the messages that put a player in the world, in the order the

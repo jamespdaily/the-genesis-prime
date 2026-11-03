@@ -41,9 +41,10 @@ import connection_rule_support as support
 import game_client
 import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
-  AskSessions, AskStore, FromHandOff, FromMap, FromSessions, FromStore,
-  SentBySessions,
+  type Answer, type Message, type News, type PeerNews, type Request, Appeared,
+  AskHandOff, AskMap, AskMapRun, AskSessions, AskStore, FromHandOff, FromMap,
+  FromSessions, FromStore, Moving, PeerNews, Removed, SentByMap, SentByPeer,
+  SentBySessions, TellMoved, TellPeer,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -72,10 +73,12 @@ import genesis_prime/message/disconnect_reason.{
 import genesis_prime/message/enter_world.{EnterWorld}
 import genesis_prime/message/fall_value.{FallValue}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
+import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/max_character_level.{MaxCharacterLevel}
 import genesis_prime/message/move_speed_setting.{MoveSpeedSetting}
 import genesis_prime/message/movement_command
+import genesis_prime/message/movement_kind_26.{MovementKind26}
 import genesis_prime/message/movement_mode.{MovementMode}
 import genesis_prime/message/movement_platform.{MovementPlatform}
 import genesis_prime/message/movement_rotation.{MovementRotation}
@@ -84,11 +87,13 @@ import genesis_prime/message/movement_send_interval_answer.{
   MovementSendIntervalAnswer,
 }
 import genesis_prime/message/movement_state_flags.{MovementStateFlags}
+import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/message/play_character_refused.{PlayCharacterRefused}
 import genesis_prime/message/play_refusal
 import genesis_prime/message/player_entered_world
 import genesis_prime/message/player_path.{PlayerPath}
+import genesis_prime/message/relayed_movement
 import genesis_prime/message/rename_character.{RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result
@@ -98,7 +103,9 @@ import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_player.{
   type UnitCreatePlayer, UnitCreatePlayer,
 }
+import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
+import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
@@ -120,12 +127,14 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/character_customization
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
-import genesis_prime/world_map/map.{Join, Leave, Left}
+import genesis_prime/world_map/map.{Join, Leave, Left, Unwatched, Watched}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
+import genesis_prime/world_map/player_unit
 import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import owned_test
 import place_support
 
@@ -2272,6 +2281,28 @@ pub fn a_client_close_or_a_failed_read_or_write_saves_the_last_place_then_ends_w
   })
 }
 
+pub fn a_socket_that_fails_as_closed_ends_as_a_peer_close_saves_and_logs_no_warning_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A write to a socket the peer has closed fails as closed, and so does
+  // arming the read of one (`inet:setopts` answers einval, which the shell's
+  // Erlang file reports as closed): the client's own close may be waiting in
+  // the mailbox behind the step that finds it out.
+  list.each([step.WriteFailed, step.ReadFailed], fn(failed) {
+    let state = moved_to(state: in_world(), x: 7.5, y: 8.5, z: 9.5)
+    let #(state, taken) = feed(state, OwnEvent(failed(step.Closed)))
+    assert ask_request(taken)
+      == save_asked(1, standing_at(x: 7.5, y: 8.5, z: 9.5))
+      as "the place the player last stood at is saved, as for a peer close"
+    assert support.logs_of(step: taken, level: LogWarning) == []
+      as "a socket the peer closed is no warning, whichever call found it out"
+    let #(_, taken) = answer(state:, taken:, outcome: place_saved())
+    assert support.effects_of(taken) == [step.Stop]
+    let #(_, taken) = feed(connected(), OwnEvent(failed(step.Closed)))
+    assert support.effects_of(taken) == [step.Stop]
+      as "before the world the same close ends the connection with nothing logged"
+  })
+}
+
 pub fn a_drop_the_store_cannot_save_is_a_warning_and_the_connection_ends_anyway_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(no_answers(), fn(outcome) {
@@ -3580,8 +3611,12 @@ fn mapped(
 ) -> #(map.State, map.Outgoing) {
   let message = case ask_request(taken) {
     AskMap(message:, ..) | AskMapRun(message:, ..) -> message
-    AskStore(..) | AskHandOff(..) | AskSessions(..) ->
-      panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask is none"
+    AskStore(..)
+    | AskHandOff(..)
+    | AskSessions(..)
+    | TellMoved(..)
+    | TellPeer(..) ->
+      panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
   let #(map_state, mapped) =
     map.step(
@@ -3884,4 +3919,614 @@ pub fn an_answer_in_the_camp_save_that_is_not_the_stores_is_a_bug_with_reason_8_
     assert support.asked(taken) == None
       as "the save is over and the camp's leave is not asked: a bug ends the connection without a second save"
   })
+}
+
+// ---- other players' units ----
+//
+// Expected values: 0x262, 0x638 and 0x355 are what the client creates, moves
+// and removes a unit with (opcode.0x262, opcode.0x638, opcode.0x355); the
+// reset bit and the kept bit are 0, the values of a unit the client does not
+// control (opcode.0x638); the client keeps one unit per id from its 0x262 to
+// its 0x355 and a 0x262 for a unit it has does nothing (0x1403d9760), so a
+// viewer writes a 0x262 only for a unit its client does not hold, and a 0x638
+// or 0x355 only for one it holds; after the player's own leave the client holds
+// no world, so a send for another unit is dropped and nothing is written; an
+// accepted 0x637 tells the map where the movement rule says the player stands,
+// which is `start_place.moved` of the last position in the world's frame
+// (genesis_prime/game/movement).
+
+/// A send of the map to the connection.
+fn sent_by_the_map(
+  message: map.Outgoing,
+) -> Event(ConnectionEvent(Message, Answer)) {
+  OwnEvent(Woken(SentByMap(message)))
+}
+
+/// News of the unit `unit_id` as its owner's connection in the tests' run of the
+/// tests' map sends it.
+fn news_of(unit_id unit_id: Int, news news: News) -> PeerNews {
+  PeerNews(map: camp_map(), incarnation:, unit_id:, news:)
+}
+
+/// A move of the unit `unit_id`, stamped `server_time_ms`.
+fn moving(
+  unit_id unit_id: Int,
+  server_time_ms server_time_ms: Int,
+  commands commands: List(relayed_movement.RelayedMovement),
+) -> PeerNews {
+  news_of(unit_id:, news: Moving(server_time_ms:, commands:))
+}
+
+/// A send of another player's connection to the connection.
+fn sent_by_a_peer(news: PeerNews) -> Event(ConnectionEvent(Message, Answer)) {
+  OwnEvent(Woken(SentByPeer(news)))
+}
+
+/// Another player's unit: the tests' player's own record, as unit 9.
+fn another_unit() -> UnitCreatePlayer {
+  UnitCreatePlayer(..player_in(entered().1), unit_id: 9, name: "Zed Other")
+}
+
+fn moved_unit_commands() -> List(relayed_movement.RelayedMovement) {
+  [
+    relayed_movement.Position(UnitPositionCommand(
+      x: 0x3F800000,
+      y: 0x40000000,
+      z: 0xC0400000,
+      blends: 1,
+    )),
+    relayed_movement.Mode(MovementMode(mode: 3)),
+  ]
+}
+
+// ---- the viewer: what it writes ----
+
+/// What can reach a viewer about the unit 9, from the unit's owner or the map.
+type Step {
+  Appears
+  Moves
+  Removes
+  MapSaysGone
+}
+
+fn event_of(step: Step) -> Event(ConnectionEvent(Message, Answer)) {
+  case step {
+    Appears ->
+      sent_by_a_peer(news_of(unit_id: 9, news: Appeared(unit: another_unit())))
+    Moves ->
+      sent_by_a_peer(moving(
+        unit_id: 9,
+        server_time_ms: 7,
+        commands: moved_unit_commands(),
+      ))
+    Removes -> sent_by_a_peer(news_of(unit_id: 9, news: Removed))
+    MapSaysGone -> sent_by_the_map(map.Gone(unit_id: 9))
+  }
+}
+
+/// The messages written for each step, in order, when a viewer in the world is
+/// fed the steps one after another.
+fn written_by(steps: List(Step)) -> List(List(Int)) {
+  let #(_, written) =
+    list.fold(steps, #(in_world(), []), fn(held, step) {
+      let #(state, written) = held
+      let #(state, taken) = feed(state, event_of(step))
+      assert !support.stops(taken) && support.logs(taken) == []
+        as "a message that lands in any order is no bug"
+      #(state, list.append(written, [written_ids(taken)]))
+    })
+  written
+}
+
+pub fn a_viewer_writes_a_0x262_only_for_a_unit_its_client_does_not_hold_and_a_0x638_or_0x355_only_for_one_it_holds_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let none = []
+  let create = [0x0262]
+  let move = [0x0638]
+  let remove = [0x0355]
+  // Each sequence is what two senders can produce for one unit: the owner's
+  // messages in the order it sent them, and the map's Gone after the owner's
+  // end, anywhere among them.
+  list.each(
+    [
+      #([Appears], [create]),
+      #([Appears, Appears], [create, none]),
+      #([Moves], [none]),
+      #([Moves, Appears], [none, create]),
+      #([Removes], [none]),
+      #([Removes, Appears], [none, create]),
+      #([Appears, Moves], [create, move]),
+      #([Appears, Removes], [create, remove]),
+      #([Appears, Removes, Moves], [create, remove, none]),
+      #([Appears, Removes, Removes], [create, remove, none]),
+      #([Appears, Removes, Appears], [create, remove, create]),
+      #([Appears, Moves, Removes, Appears, Moves], [
+        create,
+        move,
+        remove,
+        create,
+        move,
+      ]),
+      #([MapSaysGone], [none]),
+      #([MapSaysGone, MapSaysGone], [none, none]),
+      #([Appears, MapSaysGone], [create, remove]),
+      #([Appears, Moves, MapSaysGone, Moves], [create, move, remove, none]),
+      #([Appears, MapSaysGone, Removes], [create, remove, none]),
+      #([Appears, MapSaysGone, Appears], [create, remove, none]),
+      #([MapSaysGone, Appears], [none, none]),
+      #([MapSaysGone, Moves], [none, none]),
+      #([MapSaysGone, Removes], [none, none]),
+      #([MapSaysGone, Appears, Moves], [none, none, none]),
+      #([Appears, Removes, MapSaysGone, Appears], [
+        create,
+        remove,
+        none,
+        none,
+      ]),
+    ],
+    fn(case_) {
+      assert written_by(case_.0) == case_.1
+    },
+  )
+}
+
+pub fn what_a_viewer_writes_is_the_owners_message_as_the_client_takes_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = feed(in_world(), event_of(Appears))
+  let assert [Frame(message_id: 0x0262, body:)] = heard(taken, keyed())
+    as "opcode.0x262: another player is created with the player's own 0x262"
+  assert unit_create_player.decode(body) == Ok(another_unit())
+  let #(state, taken) = feed(state, event_of(Moves))
+  let assert [Frame(message_id: 0x0638, body:)] = heard(taken, keyed())
+    as "opcode.0x638"
+  assert unit_movement.decode(body)
+    == Ok(UnitMovement(
+      unit_id: 9,
+      server_time: 7,
+      reset_movement: 0,
+      kept: 0,
+      commands: moved_unit_commands(),
+    ))
+    as "the reset bit is 0 (the unit's movement is not rebuilt) and the kept bit 0, with the commands in order"
+  let #(_, taken) = feed(state, event_of(Removes))
+  let assert [Frame(message_id: 0x0355, body:)] = heard(taken, keyed())
+    as "opcode.0x355"
+  assert unit_destroyed.decode(body)
+    == Ok(UnitDestroyed(unit_id: 9, field_2: 0))
+  let #(state, _) = feed(in_world(), event_of(Appears))
+  let #(_, taken) = feed(state, event_of(MapSaysGone))
+  let assert [Frame(message_id: 0x0355, body:)] = heard(taken, keyed())
+    as "a unit the map reports gone is removed from the client"
+  assert unit_destroyed.decode(body)
+    == Ok(UnitDestroyed(unit_id: 9, field_2: 0))
+}
+
+pub fn a_0x262_or_0x355_naming_the_viewers_own_unit_or_unit_0_is_refused_with_an_error_line_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The client makes the controlled unit of a 0x262 with unit id 0 or its own
+  // unit's id (0x1403d9760), and removes a unit with a 0x355 (0x1403d9590): neither
+  // may be written for a unit that is not another player's.
+  list.each([0, own_unit_id], fn(unit_id) {
+    list.each(
+      [Appeared(unit: UnitCreatePlayer(..another_unit(), unit_id:)), Removed],
+      fn(news) {
+        let #(state, taken) =
+          feed(in_world(), sent_by_a_peer(news_of(unit_id:, news:)))
+        assert support.writes(taken) == []
+          as "nothing is written for the viewer's own unit or unit 0"
+        assert list.length(support.logs_of(step: taken, level: LogError)) == 1
+          as "the owner's connection is wrong: an error line"
+        assert !support.stops(taken)
+        let #(_, taken) = feed(state, event_of(Appears))
+        assert written_ids(taken) == [0x0262]
+          as "another player's unit is still written after it"
+      },
+    )
+  })
+}
+
+pub fn news_for_another_run_of_the_map_or_another_map_is_dropped_for_each_kind_and_this_runs_is_written_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let in_run = fn(map, incarnation, news) {
+    sent_by_a_peer(PeerNews(map:, incarnation:, unit_id: 9, news:))
+  }
+  let kinds = [
+    Appeared(unit: another_unit()),
+    Moving(server_time_ms: 1, commands: moved_unit_commands()),
+    Removed,
+  ]
+  // The unit is shown first, so that every kind would be written but for its run.
+  let #(shown, _) = feed(in_world(), event_of(Appears))
+  list.each(kinds, fn(news) {
+    let #(_, taken) = feed(shown, in_run(camp_map(), incarnation + 1, news))
+    assert support.writes(taken) == []
+      as "another run of the map: the unit id may name another unit there"
+    let #(_, taken) =
+      feed(shown, in_run(MapId(world_id: 3461, instance: 0), incarnation, news))
+    assert support.writes(taken) == [] as "another map"
+    assert !support.stops(taken) && support.logs(taken) == []
+      as "news that was on its way when the viewer left is no bug"
+  })
+  let #(_, taken) = feed(shown, in_run(camp_map(), incarnation, Removed))
+  assert written_ids(taken) == [0x0355] as "the run the viewer is in"
+}
+
+pub fn after_the_players_own_leave_nothing_more_is_written_for_other_units_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) = camped_out()
+  list.each(
+    [
+      event_of(Appears),
+      event_of(Moves),
+      event_of(Removes),
+      event_of(MapSaysGone),
+    ],
+    fn(event) {
+      let #(_, taken) = feed(state, event)
+      assert support.writes(taken) == []
+        as "the player is in character select: the client holds no world to create, move or remove a unit in"
+      assert support.logs_of(step: taken, level: LogError) == []
+        as "a send that was on its way when the player left is no bug"
+    },
+  )
+  list.each(
+    [
+      sent_by_the_map(Watched(by: ConnectionId(2))),
+      sent_by_the_map(Unwatched(by: ConnectionId(2))),
+    ],
+    fn(event) {
+      let #(_, taken) = feed(state, event)
+      assert support.effects_of(taken) == []
+        as "a notice for a player that is not in the world changes nothing and sends nothing"
+    },
+  )
+}
+
+pub fn a_player_that_enters_again_shows_no_unit_and_has_none_gone_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Unit 9 is shown, camped away from, and the player enters the same map again:
+  // the client holds no unit, so the unit is created once more.
+  let #(shown, _) = feed(in_world(), event_of(Appears))
+  let #(state, _) = read(shown, camp_request_message(True))
+  let #(state, taken) = read(state, camp_finished_message())
+  let #(state, taken) = answer(state:, taken:, outcome: place_saved())
+  let #(state, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+  assert written_ids(taken) == [0x0594]
+  let #(state, taken) = read(state, select_start())
+  let #(state, _) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForSelect(Listed([])))),
+    )
+  let #(again, _) = entered_from(state, world_character())
+  let #(_, taken) = feed(again, event_of(Appears))
+  assert written_ids(taken) == [0x0262]
+    as "what the player's client held before its camp is not held now"
+}
+
+// ---- the owner: what it sends ----
+
+/// The tells of a step to the connections of other players: the viewer's
+/// number and the news, in the order of the viewers' numbers.
+fn peer_tells(taken: ConnectionStep(Request)) -> List(#(Int, PeerNews)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Connection(ConnectionId(viewer)),
+        request: TellPeer(news:),
+      )) -> Ok(#(viewer, news))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+}
+
+/// The tells of a step to the map: where each goes and what it says.
+fn told_the_map(
+  taken: ConnectionStep(Request),
+) -> List(step.Effect(step.ConnectionEffect(Request))) {
+  list.filter(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(to: Map(..), ..)) -> True
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> False
+    }
+  })
+}
+
+/// The state after the map told the connection that these connections see its
+/// player.
+fn watched_by(
+  state: game_connection.State,
+  viewers: List(Int),
+) -> game_connection.State {
+  list.fold(viewers, state, fn(state, viewer) {
+    feed(state, sent_by_the_map(Watched(by: ConnectionId(viewer)))).0
+  })
+}
+
+/// The tests' player's unit id: the map's fifth.
+const own_unit_id = 5
+
+/// What an owner standing at `place` sends a viewer: the record it was entered
+/// with (the client's own 0x262 of it, `player_in`) at that place, stamped
+/// `time_ms` on the map's clock.
+fn appearance_at(place: Place, time_ms: Int) -> UnitCreatePlayer {
+  let #(position, rotation) = player_unit.standing(place)
+  UnitCreatePlayer(
+    ..player_in(entered().1),
+    movement_commands: [
+      start_movement.Position(position),
+      start_movement.Rotation(rotation),
+    ],
+    server_time_estimate_start: time_ms,
+  )
+}
+
+pub fn a_watched_makes_the_owner_send_the_viewer_its_0x262_at_its_current_place_stamped_from_the_maps_clock_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    feed(in_world(), sent_by_the_map(Watched(by: ConnectionId(2))))
+  assert peer_tells(taken)
+    == [
+      #(
+        2,
+        news_of(
+          unit_id: own_unit_id,
+          news: Appeared(unit: appearance_at(entry_place(), 1000)),
+        ),
+      ),
+    ]
+    as "the viewer is sent the unit at once, from the origin the map's Joined carried: the map sends the client no unit"
+  assert support.writes(taken) == []
+}
+
+pub fn a_move_the_owner_took_before_a_watched_is_in_the_0x262_the_new_viewer_is_sent_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The owner moves with nobody watching, then the map tells it a player sees it.
+  let #(state, _) =
+    read(
+      in_world(),
+      moves_message([game_client.position_command(x: 1.5, y: 2.5, z: 3.5)]),
+    )
+  let #(_, taken) = feed(state, sent_by_the_map(Watched(by: ConnectionId(2))))
+  let assert [#(2, PeerNews(news: Appeared(unit:), ..))] = peer_tells(taken)
+  let assert [start_movement.Position(at), start_movement.Rotation(_)] =
+    unit.movement_commands
+  assert at.x == float32.to_bits(1.5)
+    && at.y == float32.to_bits(2.5)
+    && at.z == float32.to_bits(3.5)
+    as "the place the owner stands at now, not the one it entered at"
+}
+
+pub fn an_unwatched_makes_the_owner_send_that_viewer_its_0x355_and_no_more_moves_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let moves =
+    moves_message([game_client.position_command(x: 1.0, y: 2.0, z: 3.0)])
+  let state = watched_by(in_world(), [2, 3])
+  let #(state, taken) =
+    feed(state, sent_by_the_map(Unwatched(by: ConnectionId(2))))
+  assert peer_tells(taken)
+    == [#(2, news_of(unit_id: own_unit_id, news: Removed))]
+    as "the viewer that stops seeing the unit is sent its removal, and only that one"
+  assert list.map(peer_tells(read(state, moves).1), fn(sent) { sent.0 }) == [3]
+    as "a viewer the map took back is sent no more moves"
+  let #(_, taken) = feed(state, sent_by_the_map(Unwatched(by: ConnectionId(8))))
+  assert peer_tells(taken) == [] && support.logs(taken) == []
+    as "an Unwatched for a connection that is no viewer changes nothing and is no bug"
+}
+
+pub fn a_watched_twice_sends_the_0x262_twice_and_is_one_viewer_for_the_moves_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let moves =
+    moves_message([game_client.position_command(x: 1.0, y: 2.0, z: 3.0)])
+  let state = watched_by(in_world(), [2, 2])
+  assert list.map(peer_tells(read(state, moves).1), fn(sent) { sent.0 }) == [2]
+    as "a viewer the map named twice is sent one move: the viewer's own record drops the second 0x262"
+}
+
+pub fn the_owners_camp_sends_each_viewer_its_0x355_before_the_leave_is_asked_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, _) =
+    read(watched_by(in_world(), [3, 2]), camp_request_message(True))
+  let #(state, taken) = read(state, camp_finished_message())
+  let #(_, taken) = answer(state:, taken:, outcome: place_saved())
+  assert peer_tells(taken)
+    == [
+      #(2, news_of(unit_id: own_unit_id, news: Removed)),
+      #(3, news_of(unit_id: own_unit_id, news: Removed)),
+    ]
+    as "its 0x355 to every viewer: the map's Unwatched after the leave would be a second sender"
+  assert ask_request(taken) == leave_asked()
+    as "and the leave of the map is asked in the same step, after the tells"
+}
+
+pub fn an_accepted_0x637_tells_the_map_the_place_the_movement_keeps_and_nothing_else_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let sent = [
+    movement_command.Time(MovementTime(time: 99)),
+    game_client.position_command(x: 1.5, y: 2.5, z: 3.5),
+    movement_command.Mode(MovementMode(mode: 1)),
+  ]
+  let #(_, taken) = read(in_world(), moves_message(sent))
+  assert told_the_map(taken)
+    == [
+      OwnEffect(step.Tell(
+        to: Map(camp_map(), incarnation),
+        request: TellMoved(
+          connection: ConnectionId(1),
+          place: standing_at(x: 1.5, y: 2.5, z: 3.5),
+        ),
+      )),
+    ]
+    as "the place is the movement's (the last position of the world's frame); the map decides sight and carries no move; the map is the run the connection watches"
+  assert peer_tells(taken) == [] as "no viewer: no 0x638 is sent"
+}
+
+pub fn an_accepted_0x637_sends_one_0x638_to_each_viewer_with_the_relayed_commands_in_order_stamped_from_the_maps_clock_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let sent = [
+    movement_command.Time(MovementTime(time: 99)),
+    game_client.position_command(x: 1.5, y: 2.5, z: 3.5),
+    movement_command.Mode(MovementMode(mode: 1)),
+  ]
+  let relayed = [
+    relayed_movement.Position(UnitPositionCommand(
+      x: 0x3FC00000,
+      y: 0x40200000,
+      z: 0x40600000,
+      blends: 0,
+    )),
+    relayed_movement.Mode(MovementMode(mode: 1)),
+  ]
+  let #(_, taken) = read(watched_by(in_world(), [3, 2]), moves_message(sent))
+  assert peer_tells(taken)
+    == [
+      #(
+        2,
+        moving(unit_id: own_unit_id, server_time_ms: 1000, commands: relayed),
+      ),
+      #(
+        3,
+        moving(unit_id: own_unit_id, server_time_ms: 1000, commands: relayed),
+      ),
+    ]
+    as "one 0x638 per viewer, never to the mover itself, the commands in the order sent without kind 0, the sender's own clock (movement_command.kind_0); the time is the input's 1000 ms from the map's origin 0"
+}
+
+pub fn a_move_of_40_commands_is_sent_to_each_viewer_as_31_and_9_in_order_and_the_encoder_refuses_32_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let commands =
+    list.index_map(list.repeat(Nil, 40), fn(_, n) {
+      game_client.position_command(x: int.to_float(n), y: 0.0, z: 0.0)
+    })
+  let #(_, taken) = read(watched_by(in_world(), [2]), moves_message(commands))
+  let assert [
+    #(2, PeerNews(news: Moving(commands: first, ..), ..)),
+    #(2, PeerNews(news: Moving(commands: second, ..), ..)),
+  ] = peer_tells(taken)
+    as "opcode.0x638: the count is 5 bits, so 40 commands are two messages"
+  assert list.length(first) == 31 && list.length(second) == 9
+  assert unit_movement.encode(UnitMovement(
+      unit_id: own_unit_id,
+      server_time: 1,
+      reset_movement: 0,
+      kept: 0,
+      commands: list.append(first, [
+        relayed_movement.Mode(MovementMode(mode: 0)),
+      ]),
+    ))
+    |> result.is_error
+    as "32 commands do not fit the 5-bit count"
+}
+
+pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x638_and_its_0x262_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(state, taken) = joining()
+  let assert map.Joined(unit:, incarnation:, ..) = map_answer(taken)
+  let #(state, _) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(
+        FromMap(map.Joined(unit:, incarnation:, clock_origin_ms: 600)),
+      ),
+    )
+  let moves =
+    moves_message([game_client.position_command(x: 1.0, y: 2.0, z: 3.0)])
+  let at = fn(monotonic_ms, event) {
+    game_connection.step(state, support.input_at_ms(ms: monotonic_ms, event:)).1
+  }
+  let move_time = fn(monotonic_ms) {
+    let state = watched_by(state, [2])
+    let taken =
+      game_connection.step(
+        state,
+        support.input_at_ms(ms: monotonic_ms, event: OwnEvent(step.Read(moves))),
+      ).1
+    let assert [#(2, PeerNews(news: Moving(server_time_ms:, ..), ..))] =
+      peer_tells(taken)
+    server_time_ms
+  }
+  let create_time = fn(monotonic_ms) {
+    let assert [#(2, PeerNews(news: Appeared(unit:), ..))] =
+      peer_tells(at(monotonic_ms, sent_by_the_map(Watched(by: ConnectionId(2)))))
+    unit.server_time_estimate_start
+  }
+  assert move_time(600 + 250) == 250
+    as "the map started at 600 ms on the monotonic clock, so 850 is 250 ms into its life"
+  assert move_time(600 + 4_294_967_296 + 900) == 900
+    as "the 32-bit field wraps after 49.7 days of one map's life, as the map's own clock does"
+  assert create_time(600 + 400) == 400
+  assert create_time(600 + 4_294_967_296 + 100) == 100
+}
+
+pub fn a_viewer_set_is_empty_after_a_camp_and_a_new_join_and_comes_back_only_by_the_maps_new_notices_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let moves =
+    moves_message([game_client.position_command(x: 1.0, y: 2.0, z: 3.0)])
+  // The player has viewers, camps out, picks its character again and enters.
+  let #(state, _) =
+    read(watched_by(in_world(), [2]), camp_request_message(True))
+  let #(state, taken) = read(state, camp_finished_message())
+  let #(state, taken) = answer(state:, taken:, outcome: place_saved())
+  let #(state, taken) =
+    answer(state:, taken:, outcome: step.Answer(FromMap(Left)))
+  assert written_ids(taken) == [0x0594]
+  let #(state, taken) = read(state, select_start())
+  let #(state, _) =
+    answer(
+      state:,
+      taken:,
+      outcome: step.Answer(FromStore(ForSelect(Listed([])))),
+    )
+  let #(again, _) = entered_from(state, world_character())
+  assert peer_tells(read(again, moves).1) == []
+    as "the player that camped and entered again starts with no viewers, whoever saw the first one"
+  let again = watched_by(again, [4])
+  assert list.map(peer_tells(read(again, moves).1), fn(sent) { sent.0 }) == [4]
+    as "the map's join sends the new notices"
+}
+
+pub fn a_refused_0x637_tells_the_map_and_the_viewers_nothing_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(refused_messages(), fn(refused) {
+    let #(bytes, why) = refused
+    let #(_, taken) = read(watched_by(in_world(), [2]), bytes)
+    assert told_the_map(taken) == [] as why
+    assert peer_tells(taken) == [] as why
+  })
+}
+
+pub fn a_0x637_with_nothing_to_relay_tells_nobody_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    read(
+      watched_by(in_world(), [2]),
+      moves_message([movement_command.Time(MovementTime(time: 5))]),
+    )
+  assert told_the_map(taken) == [] && peer_tells(taken) == []
+    as "kind 0 alone is the sender's own clock: nothing to relay"
+}
+
+pub fn a_command_kind_that_is_not_relayed_is_named_once_a_connection_and_not_relayed_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let unrelayed = movement_command.Kind26(MovementKind26(field_2: 0))
+  let message =
+    moves_message([
+      unrelayed,
+      game_client.position_command(x: 1.0, y: 1.0, z: 1.0),
+    ])
+  let #(state, first) = read(watched_by(in_world(), [2]), message)
+  let assert [line] = support.logs_of(step: first, level: LogInfo)
+    as "an info line names the kind"
+  assert support.says(line, words: "kind 26")
+  let assert [#(2, PeerNews(news: Moving(commands:, ..), ..))] =
+    peer_tells(first)
+  assert list.length(commands) == 1 as "the kind 26 is not relayed"
+  let #(_, second) = read(state, message)
+  assert support.logs_of(step: second, level: LogInfo) == []
+    as "named once on a connection"
 }

@@ -8,7 +8,8 @@
 import genesis_prime/step.{
   type Address, type CallerId, type Effect, type ServiceEffect,
   type ServiceInput, type ServiceStep, Asked, Effects, Input, OwnEffect,
-  OwnEvent, Reply, Send, Started, Stop, Stopping, Watch, WatchEnded, WatchId,
+  OwnEvent, Reply, Send, Started, Stop, Stopping, Told, Watch, WatchEnded,
+  WatchId,
 }
 import gleam/dict.{type Dict}
 import gleam/list
@@ -66,6 +67,8 @@ pub fn step(
     OwnEvent(Started) -> #(state, Effects([]))
     Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(Asked(caller:, message:)) -> asked(state:, caller:, message:)
+    OwnEvent(Told(..)) ->
+      panic as "the gate takes Started, Asked and Stopping only; nothing tells it"
     WatchEnded(watch: WatchId(key)) -> opened(state:, key:)
   }
 }

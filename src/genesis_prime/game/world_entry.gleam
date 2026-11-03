@@ -51,6 +51,7 @@
 ////   (genesis_prime/world_map/map_id), so an instanced world has no instance
 ////   to ask for.
 
+import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/camp
 import genesis_prime/game/movement
@@ -73,6 +74,8 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import gleam/int
 import gleam/option.{None, Some}
+import gleam/result
+import gleam/set.{type Set}
 
 /// What world entry asks or sends; the game connection's rule turns each into
 /// its own effect.
@@ -87,6 +90,12 @@ pub type Effect {
   /// Watch the run of the map that took the player: its end comes back to the
   /// connection's rule.
   WatchMap(map: MapId, incarnation: Int)
+}
+
+/// Why the client's request to play is refused: its body is one the client's
+/// own reader would refuse. The connection ends.
+pub type Refusal {
+  NotDecoded(undecoded: client_connection.Undecoded)
 }
 
 /// Where world entry is.
@@ -112,16 +121,28 @@ pub type Loaded {
 }
 
 /// A player in the world: its character, its map, the run of the map that took
-/// it, which the rule watches as `Map(map, incarnation)`, its unit id, where
-/// it stands (genesis_prime/game/movement) and whether it is camping
+/// it, which the rule watches as `Map(map, incarnation)`, its unit id, the
+/// origin of the map's clock (`Joined` carries it), its own 0x262 record
+/// (`Joined`'s unit, which the connection sends the players who see it), who
+/// sees it, the units its own client shows, where it stands
+/// (genesis_prime/game/movement) and whether it is camping
 /// (genesis_prime/game/camp), which the rule keeps up to date. A player that has
-/// just entered is not camping.
+/// just entered is not camping, has no viewers and shows no unit: the map's
+/// `Watched` and `Unwatched` keep `viewers`, the connections whose players see
+/// this one, the connection sends everything about the player's own unit to them,
+/// and `shown` and `gone` are the units its client holds and the ones the map
+/// reported gone (genesis_prime/game/connection).
 pub type Entered {
   Entered(
     character_id: CharacterId,
     map: MapId,
     incarnation: Int,
     unit_id: Int,
+    unit: UnitCreatePlayer,
+    clock_origin_ms: Int,
+    viewers: Set(ConnectionId),
+    shown: Set(Int),
+    gone: Set(Int),
     movement: movement.State,
     camp: camp.Camp,
   )
@@ -151,9 +172,27 @@ const path_change_days = -1.0
 /// The instance every world is entered at: open worlds share one.
 const open_world_instance = 0
 
+/// The client's 0x07DD, whose body is decoded for this account: the store is
+/// asked for the character, or the body is refused.
+pub fn take(
+  account_id account_id: AccountId,
+  body body: BitArray,
+) -> Result(#(State, List(Effect)), Refusal) {
+  play_character.decode(body)
+  |> client_connection.decoded(message_id: play_character.message_id)
+  |> result.map_error(NotDecoded)
+  |> result.map(fn(request) { play_requested(account_id:, request:) })
+}
+
+/// A sentence that says what the client sent that is refused, for the log.
+pub fn describe(refusal refusal: Refusal) -> String {
+  let NotDecoded(undecoded:) = refusal
+  client_connection.describe_undecoded(undecoded:)
+}
+
 /// The client's 0x07DD, read for this account: the store is asked for the
 /// character.
-pub fn play_requested(
+fn play_requested(
   account_id account_id: AccountId,
   request request: PlayCharacter,
 ) -> #(State, List(Effect)) {
@@ -235,7 +274,7 @@ pub fn joined(
   case state {
     Joining(character:, place:, session_epoch:, map:) -> {
       case answer {
-        map.Joined(unit:, incarnation:) -> {
+        map.Joined(unit:, incarnation:, clock_origin_ms:) -> {
           let sent = start_place.within_the_worlds_box(place)
           let unit_id = unit.unit_id
           Ok(
@@ -245,6 +284,11 @@ pub fn joined(
                 map:,
                 incarnation:,
                 unit_id:,
+                unit:,
+                clock_origin_ms:,
+                viewers: set.new(),
+                shown: set.new(),
+                gone: set.new(),
                 movement: movement.entered(place:, session_epoch:),
                 camp: camp.none(),
               ),
@@ -261,7 +305,8 @@ pub fn joined(
             ),
           )
         }
-        map.Left -> Error(Nil)
+        map.Left | map.Watched(..) | map.Unwatched(..) | map.Gone(..) ->
+          Error(Nil)
       }
     }
     Loading(..) -> Error(Nil)
@@ -283,11 +328,17 @@ fn enter_world(place place: Place) -> Effect {
   Send(Frame(message_id: enter_world.message_id, body:))
 }
 
-/// 0x262 for the player, as the map built its unit.
-fn player_created(unit unit: UnitCreatePlayer) -> Effect {
+/// 0x262 for a unit, as the map built it: the entry burst's own player and
+/// another player's unit that comes into sight are written the same way.
+pub fn unit_created_frame(unit unit: UnitCreatePlayer) -> Frame {
   let assert Ok(body) = unit_create_player.encode(unit)
     as "a stored character's values fit the message's fields: the table's checks hold each"
-  Send(Frame(message_id: unit_create_player.message_id, body:))
+  Frame(message_id: unit_create_player.message_id, body:)
+}
+
+/// 0x262 for the player, as the map built its unit.
+fn player_created(unit unit: UnitCreatePlayer) -> Effect {
+  Send(unit_created_frame(unit:))
 }
 
 /// 0x19B with the player's unit id and 0, which the client never reads

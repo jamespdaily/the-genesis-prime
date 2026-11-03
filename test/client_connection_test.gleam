@@ -115,7 +115,7 @@ fn byte_flow() -> client_connection.Flow(BitArray, Int, Nil, Nil) {
   )
 }
 
-fn a_line(text: String) -> Effect(ConnectionEffect) {
+fn a_line(text: String) -> Effect(ConnectionEffect(client_connection.Request)) {
   Log(LogLine(level: LogInfo, text:, about: step.no_one))
 }
 

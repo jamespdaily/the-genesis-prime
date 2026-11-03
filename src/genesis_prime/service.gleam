@@ -19,12 +19,14 @@ import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/result
 
-/// What reaches a service when another process asks it: the message, and
-/// how to answer it. `reply` sends the answer to the asker, tagged with the
-/// ask, and never fails, so an answer to an asker that has gone is dropped.
-/// It holds a function, so it is a shell's type, never a rule's.
+/// What reaches a service when another process asks it or tells it: the
+/// message, and for an ask how to answer it. `reply` sends the answer to the
+/// asker, tagged with the ask, and never fails, so an answer to an asker that
+/// has gone is dropped. A tell has no reply and gets none. It holds a function,
+/// so it is a shell's type, never a rule's.
 pub type Call(message, answer) {
   Call(message: message, reply: fn(answer) -> Nil)
+  TellCall(message: message)
 }
 
 /// Where an asker's request went, so the asker knows what to watch and what
@@ -102,6 +104,18 @@ pub fn call_subject(
 ) -> Result(Sent, Nil) {
   use pid <- result.map(process.subject_owner(subject))
   process.send(subject, Call(message:, reply:))
+  ToService(pid:)
+}
+
+/// Tells a service the message through the subject its start returned, for a
+/// telling asker's directory: `ToService` with the subject's owner, and no reply
+/// asked. A service that has ended drops the message.
+pub fn tell_subject(
+  subject subject: Subject(Call(message, answer)),
+  message message: message,
+) -> Result(Sent, Nil) {
+  use pid <- result.map(process.subject_owner(subject))
+  process.send(subject, TellCall(message:))
   ToService(pid:)
 }
 

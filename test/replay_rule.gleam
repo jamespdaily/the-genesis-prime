@@ -103,7 +103,7 @@ pub fn step(
 /// not run.
 fn run(
   state: State,
-  effects: List(Effect(ConnectionEffect)),
+  effects: List(Effect(ConnectionEffect(Nil))),
 ) -> #(State, ConnectionStep(Nil)) {
   case state.pending {
     <<letter, n, _:16, rest:bytes>> if letter == refuse_command -> #(
@@ -122,7 +122,7 @@ fn command(
   letter letter: Int,
   n n: Int,
   milliseconds milliseconds: Int,
-) -> Effect(ConnectionEffect) {
+) -> Effect(ConnectionEffect(Nil)) {
   case letter {
     _ if letter == echo_command -> record(echoed, n)
     _ if letter == timer_command ->
@@ -133,6 +133,6 @@ fn command(
   }
 }
 
-fn record(letter: Int, number: Int) -> Effect(ConnectionEffect) {
+fn record(letter: Int, number: Int) -> Effect(ConnectionEffect(Nil)) {
   OwnEffect(Write(<<letter, number:64>>))
 }

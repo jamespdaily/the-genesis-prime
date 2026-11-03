@@ -22,8 +22,11 @@
 import ask_support
 import event_wait
 import genesis_prime/connection/registry
+import genesis_prime/connection/script
 import genesis_prime/service
 import genesis_prime/step.{type Address, ConnectionId, Sessions}
+import genesis_prime/step/runtime
+import genesis_prime/step/watch
 import gleam/erlang/atom
 import gleam/erlang/process.{type Pid}
 import gleam/int
@@ -36,6 +39,7 @@ import mailbox_support
 import mug
 import owned_test
 import signalling_rule
+import unitest
 
 /// One record the signalling rule wrote.
 type Record {
@@ -607,4 +611,262 @@ pub fn the_end_of_a_kept_asks_target_gives_the_rule_no_input_and_drops_the_kept_
   assert read_record(client) == Record(signalling_rule.pong, 9)
     as "the end gave the rule no input: the next record is the pong"
   ask_support.stop(server)
+}
+
+// ---- a tell ----
+
+/// A lookup of the process `sessions` that logs each call to `lookups` with a
+/// generation number of its own, and gives a way to tell it that sends the
+/// same number to `told` each time it is used, so a test reads which lookup
+/// each tell went through.
+fn counting_lookup(
+  sessions sessions: Pid,
+  lookups lookups: process.Subject(Int),
+  told told: process.Subject(Int),
+) -> fn(Address) -> Result(watch.Found(fn(Nil) -> Nil), Nil) {
+  fn(_address) {
+    let generation = runtime.unique_id()
+    process.send(lookups, generation)
+    Ok(
+      watch.Tellable(pid: sessions, sender: fn(_request) {
+        process.send(told, generation)
+      }),
+    )
+  }
+}
+
+fn start_telling(
+  locate locate: fn(Address) -> Result(watch.Found(fn(Nil) -> Nil), Nil),
+  deliver deliver: fn(Address, Nil) -> Result(Nil, Nil),
+) -> ask_support.Server {
+  ask_support.start_telling(
+    rule: signalling_rule.rule(),
+    directory: fn(_request, _deadline_ms, _reply) { Error(Nil) },
+    shutdown_ms: 1000,
+    wire_recorder: None,
+    scripts: script.operating_system,
+    registry: None,
+    locate:,
+    deliver:,
+    with: fn(builder) { builder },
+  )
+}
+
+/// Sends the rule's command and reads the pong that follows it, so every
+/// effect of the commands before has been carried out.
+fn command_then_pong(
+  client client: mug.Socket,
+  letter letter: Int,
+  n n: Int,
+  pong pong: Int,
+) -> Nil {
+  ask_support.command(client:, letter:, n:, wait_ms: 0)
+  ask_support.command(
+    client:,
+    letter: signalling_rule.pong_command,
+    n: pong,
+    wait_ms: 0,
+  )
+  assert read_record(client) == Record(signalling_rule.pong, pong)
+  Nil
+}
+
+pub fn a_tell_goes_through_the_target_resolved_when_the_watch_opened_and_looks_nothing_up_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let lookups = process.new_subject()
+  let told = process.new_subject()
+  let server =
+    start_telling(
+      locate: counting_lookup(sessions: a_sessions(), lookups:, told:),
+      deliver: fn(_address, _request) { Error(Nil) },
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  command_then_pong(
+    client:,
+    letter: signalling_rule.watch_command,
+    n: 1,
+    pong: 1,
+  )
+  let assert [generation] = mailbox_support.drain(lookups)
+    as "the watch's open resolved the target once, before any tell"
+  list.each([2, 3, 4], fn(pong) {
+    command_then_pong(
+      client:,
+      letter: signalling_rule.tell_command,
+      n: 0,
+      pong:,
+    )
+  })
+  assert mailbox_support.drain(lookups) == [] as "a tell looks nothing up"
+  assert mailbox_support.drain(told) == [generation, generation, generation]
+    as "each tell went through the resolve the watch's open made"
+  ask_support.stop(server)
+}
+
+pub fn a_tell_after_the_watch_is_dropped_goes_nowhere_and_one_after_a_watch_opened_again_goes_through_the_new_resolve_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let lookups = process.new_subject()
+  let told = process.new_subject()
+  let server =
+    start_telling(
+      locate: counting_lookup(sessions: a_sessions(), lookups:, told:),
+      deliver: fn(_address, _request) { Error(Nil) },
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  command_then_pong(
+    client:,
+    letter: signalling_rule.watch_command,
+    n: 1,
+    pong: 1,
+  )
+  let assert [first] = mailbox_support.drain(lookups)
+  command_then_pong(
+    client:,
+    letter: signalling_rule.unwatch_command,
+    n: 1,
+    pong: 2,
+  )
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_command,
+    n: 0,
+    pong: 3,
+  )
+  assert mailbox_support.drain(told) == []
+    as "the watch was dropped: the tell has no target and is dropped"
+  command_then_pong(
+    client:,
+    letter: signalling_rule.watch_command,
+    n: 1,
+    pong: 4,
+  )
+  let assert [second] = mailbox_support.drain(lookups)
+  assert second != first
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_command,
+    n: 0,
+    pong: 5,
+  )
+  assert mailbox_support.drain(told) == [second]
+    as "a rejoin tells the run it joined, never the one it left"
+  ask_support.stop(server)
+}
+
+pub fn a_tell_after_the_watched_process_ended_goes_nowhere_test() -> Nil {
+  use <- owned_test.run(30_000)
+  let lookups = process.new_subject()
+  let told = process.new_subject()
+  let sessions = a_sessions()
+  let server =
+    start_telling(
+      locate: counting_lookup(sessions:, lookups:, told:),
+      deliver: fn(_address, _request) { Error(Nil) },
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  command_then_pong(
+    client:,
+    letter: signalling_rule.watch_command,
+    n: 1,
+    pong: 1,
+  )
+  let ended = process.monitor(sessions)
+  process.kill(sessions)
+  let _reason = ask_support.ended(ended)
+  assert read_record(client) == Record(signalling_rule.watch_ended, 1)
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_command,
+    n: 0,
+    pong: 2,
+  )
+  assert mailbox_support.drain(told) == []
+    as "the process the tell would reach is gone: its end forgot the way to it"
+  ask_support.stop(server)
+}
+
+// ---- a socket closed by the peer ----
+
+pub fn a_read_that_cannot_be_armed_because_the_peer_closed_reaches_the_rule_as_a_closed_socket_with_no_warning_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use <- unitest.tag("serial")
+  let lines = process.new_subject()
+  let capture = log_capture.start_all(into: lines)
+  let scope = registry.new()
+  let server = start(registry: Some(scope), sessions: Ok(a_sessions()))
+  let client = ask_support.connect(server)
+  let id = accepted_id(client)
+  let assert [connection] = ask_support.connections(server)
+    as "one connection process"
+  let gone = process.monitor(connection)
+  // The message 0 gives the rule nothing to write, so the step ends in arming
+  // the socket's read. The client's close is queued behind the message, and
+  // the shell's own port has closed itself by the time it is armed: the arm
+  // fails (einval) while the close waits in the mailbox.
+  ask_support.while_suspended(connection, fn() {
+    assert registry.deliver(scope, ConnectionId(id), 0) == Ok(Nil)
+    let assert Ok(Nil) = mug.shutdown(client) as "the client closed"
+    event_wait.until("the close reached the connection's mailbox", fn() {
+      mailbox_support.queued(connection) >= 2
+    })
+  })
+  let _reason = ask_support.ended(gone)
+  ask_support.stop(server)
+  log_capture.stop(capture)
+  assert list.filter(mailbox_support.drain(lines), fn(line) {
+      line.0 == "warning" || line.0 == "error"
+    })
+    == []
+    as "a socket the peer closed is no warning, whichever call found it out"
+}
+
+pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is_dropped_with_no_warning_test() -> Nil {
+  use <- owned_test.run(30_000)
+  use <- unitest.tag("serial")
+  let lines = process.new_subject()
+  let capture = log_capture.start_all(into: lines)
+  let delivered = process.new_subject()
+  let server =
+    start_telling(
+      locate: fn(_address) { Error(Nil) },
+      deliver: fn(address, _request) {
+        process.send(delivered, address)
+        case address {
+          step.Connection(ConnectionId(99)) -> Error(Nil)
+          step.Connection(..)
+          | step.Sessions
+          | step.HandOff
+          | step.Store
+          | step.Maps
+          | step.Map(..) -> Ok(Nil)
+        }
+      },
+    )
+  let client = ask_support.connect(server)
+  let _id = accepted_id(client)
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_connection_command,
+    n: 7,
+    pong: 1,
+  )
+  command_then_pong(
+    client:,
+    letter: signalling_rule.tell_connection_command,
+    n: 99,
+    pong: 2,
+  )
+  assert mailbox_support.drain(delivered)
+    == [step.Connection(ConnectionId(7)), step.Connection(ConnectionId(99))]
+    as "each tell reached the settings' deliver by the connection's address, with no watch opened"
+  ask_support.stop(server)
+  log_capture.stop(capture)
+  assert list.filter(mailbox_support.drain(lines), fn(line) {
+      line.0 == "warning" || line.0 == "error"
+    })
+    == []
+    as "a connection that is gone is no warning: a player's viewers end all the time"
 }

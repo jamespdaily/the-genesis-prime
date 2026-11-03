@@ -157,6 +157,27 @@ pub fn run_step(
   hold_ms hold_ms: Int,
   sample_server sample_server: fn() -> Sample,
 ) -> Outcome {
+  run_step_walking(
+    ports:,
+    accounts:,
+    arrival_ms:,
+    hold_ms:,
+    walking: False,
+    sample_server:,
+  )
+}
+
+/// `run_step` with the players walking as well when `walking` is true: each
+/// sends a movement message every 125 ms until the step ends
+/// (`genesis_prime/load_player`).
+pub fn run_step_walking(
+  ports ports: Ports,
+  accounts accounts: List(Account),
+  arrival_ms arrival_ms: Int,
+  hold_ms hold_ms: Int,
+  walking walking: Bool,
+  sample_server sample_server: fn() -> Sample,
+) -> Outcome {
   let report = process.new_subject()
   let count = list.length(accounts)
   let started_ms = runtime.now().monotonic_ms
@@ -171,6 +192,7 @@ pub fn run_step(
             ports:,
             begin_at_ms: started_ms + player * arrival_ms / int.max(count, 1),
             until_ms: held_ms,
+            walking:,
             report:,
           )
         })
@@ -357,7 +379,7 @@ pub fn maximum(history: List(#(Int, Verdict))) -> Int {
 /// the database the environment names, with every listener's cap raised for the
 /// run, waits until the database answers and its migrations are the files', and
 /// gives the settings it started with.
-fn start_server() -> Settings {
+pub fn start_server() -> Settings {
   log_to_null()
   runtime.show_info_lines()
   runtime.keep_mailboxes_out_of_crash_reports()
@@ -392,7 +414,7 @@ fn start_server() -> Settings {
 }
 
 /// The ports the settings' listeners listen on.
-fn ports_of(settings: Settings) -> Ports {
+pub fn ports_of(settings: Settings) -> Ports {
   Ports(
     sts_port: settings.login.sts.port,
     auth_port: settings.login.auth.port,
@@ -401,17 +423,17 @@ fn ports_of(settings: Settings) -> Ports {
 }
 
 /// The server's node, started by `start_peer`.
-type Peer
+pub type Peer
 
 @external(erlang, "load_run_ffi", "start_peer")
-fn start_peer() -> Peer
+pub fn start_peer() -> Peer
 
 @external(erlang, "load_run_ffi", "stop_peer")
-fn stop_peer(peer: Peer) -> Nil
+pub fn stop_peer(peer: Peer) -> Nil
 
 /// Runs the function in the peer and gives what it returns.
 @external(erlang, "load_run_ffi", "in_peer")
-fn in_peer(peer: Peer, run: fn() -> a) -> a
+pub fn in_peer(peer: Peer, run: fn() -> a) -> a
 
 @external(erlang, "load_run_ffi", "log_to_null")
 fn log_to_null() -> Nil
@@ -437,7 +459,11 @@ fn describe_exit(reason: process.ExitReason) -> String
 @external(erlang, "load_run_ffi", "no_local_port")
 pub fn no_local_port(reason: process.ExitReason) -> Bool
 
-pub fn main() -> Nil {
+/// Makes this node the load clients' node: limited to `client_schedulers`
+/// schedulers, since macOS cannot pin cores and the clients share the machine
+/// with the server, with the crash reports of the players silenced and the
+/// sampler started. Prints what the node is. Every load run starts with it.
+pub fn start_clients() -> Nil {
   let _online = system_flag(SchedulersOnline, client_schedulers)
   silence_crash_reports()
   load_sample.start()
@@ -446,6 +472,10 @@ pub fn main() -> Nil {
     <> int.to_string(client_schedulers)
     <> " schedulers; the server: all cores of this machine",
   )
+}
+
+pub fn main() -> Nil {
+  start_clients()
   let maxima = list.map([1, 2], ramp)
   let assert Ok(lowest) = list.reduce(maxima, int.min)
     as "two ramps made two maxima"
@@ -520,7 +550,7 @@ fn climb(
 /// One step as the lines the run prints: its players, its verdict, its numbers,
 /// the processes whose mailbox never emptied, and how many players ended with
 /// each reason and at which stage.
-fn describe(
+pub fn describe(
   players players: Int,
   arrival_ms arrival_ms: Int,
   outcome outcome: Outcome,

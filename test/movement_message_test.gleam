@@ -133,7 +133,7 @@ pub fn the_clients_0x637_vector_is_a_clock_and_three_commands_test() -> Nil {
         z: 0xC0400000,
         blends: 1,
       )),
-      Velocity(MovementVelocity(x: 0x3C00, y: 0, z: 0xBC00, field_5: 1)),
+      Velocity(MovementVelocity(x: 0x3C00, y: 0, z: 0xBC00, blends: 1)),
     ]),
     encode: player_movement.encode,
     decode: player_movement.decode,
@@ -310,7 +310,7 @@ fn kinds() -> List(Kind) {
     Kind(
       8,
       [half(0x3C00), half(0), half(0xBC00), bit(1)],
-      Velocity(MovementVelocity(x: 0x3C00, y: 0, z: 0xBC00, field_5: 1)),
+      Velocity(MovementVelocity(x: 0x3C00, y: 0, z: 0xBC00, blends: 1)),
     ),
     Kind(
       9,
@@ -331,7 +331,7 @@ fn kinds() -> List(Kind) {
     Kind(
       11,
       [half(0x3C00), half(0xBC00), half(0x7C00), bit(0)],
-      MoveAsked(MovementMoveAsked(x: 0x3C00, y: 0xBC00, z: 0x7C00, field_5: 0)),
+      MoveAsked(MovementMoveAsked(x: 0x3C00, y: 0xBC00, z: 0x7C00, blends: 0)),
     ),
     Kind(
       12,
