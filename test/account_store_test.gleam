@@ -991,6 +991,28 @@ pub fn an_account_at_its_slot_count_gets_no_free_slot_and_nothing_is_stored_test
   stop(store)
 }
 
+pub fn with_6_slots_an_account_with_6_characters_gets_no_free_slot_and_with_5_gets_one_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = start_store(pool_size: 2)
+  let account = insert_account(store, "login-1")
+  let names = ["Ab Cd", "Ef Gh", "Ij Kl", "Mn Op", "Qr St", "Uv Wx"]
+  list.each(list.take(names, 5), fn(name) {
+    let assert CharacterCreated(_) =
+      create(store:, account: account, name: name, slots: 6)
+      as "5 characters are below 6 slots, so the create is accepted"
+  })
+  let assert CharacterCreated(_) =
+    create(store:, account: account, name: "Uv Wx", slots: 6)
+    as "with 5 characters and 6 slots the sixth is accepted"
+  assert create(store:, account: account, name: "Yz Ab", slots: 6) == NoFreeSlot
+    as "lua.CharacterSelection.OnLoadFromCharacter: 2 slots and an entitlement 12 of 4 are 6; the client shows no create entry at 6 of 6, and the server's refusal is account full (9)"
+  let assert ForSelect(Listed(six)) =
+    ask(store, Select(ListCharacters(account)))
+    as "the characters are listed"
+  assert list.length(six) == 6 as "nothing was stored for the refused create"
+  stop(store)
+}
+
 pub fn two_creates_at_once_for_an_account_with_one_slot_make_one_character_test() -> Nil {
   use <- owned_test.run(60_000)
   let store = start_store(pool_size: 4)

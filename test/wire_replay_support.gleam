@@ -247,11 +247,11 @@ pub fn run_scripted(
   #(result, wire_replay.finish(replay))
 }
 
-/// The folder of the session recorded live on 2026-11-02: the real client's
+/// The folder of the session recorded live on 2026-11-03: the real client's
 /// login through the STS, auth and game servers, played into the world with a
 /// level-3 Veteran character (`session.sh` of the playing-live skill), with the
 /// server taking the client's movement messages and saving the player's place.
-pub const committed_session = "test/wire_recording/2026-11-02-full-session"
+pub const committed_session = "test/wire_recording/2026-11-03-full-session"
 
 /// The folder every recorded session is kept in.
 const recordings_folder = "test/wire_recording"
