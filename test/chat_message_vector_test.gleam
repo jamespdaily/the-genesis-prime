@@ -13,13 +13,14 @@ import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_channel_joined.{ChatChannelJoined}
 import genesis_prime/message/chat_channel_result
 import genesis_prime/message/chat_format.{
-  ArticleId, FilterMask, ItemGuid, ItemId, Kind0, Kind1, Kind11, Kind2, Kind3,
-  NavigationPoint, QuestId,
+  ArticleId, FilterMask, ItemGuid, ItemId, ItemRecord, Kind0, Kind1, Kind11,
+  Kind2, Kind3, NavigationPoint, QuestId,
 }
 import genesis_prime/message/chat_format_article_id.{ChatFormatArticleId}
 import genesis_prime/message/chat_format_filter_mask.{ChatFormatFilterMask}
 import genesis_prime/message/chat_format_item_guid.{ChatFormatItemGuid}
 import genesis_prime/message/chat_format_item_id.{ChatFormatItemId}
+import genesis_prime/message/chat_format_item_record.{ChatFormatItemRecord}
 import genesis_prime/message/chat_format_kind_0.{ChatFormatKind0}
 import genesis_prime/message/chat_format_kind_1.{ChatFormatKind1}
 import genesis_prime/message/chat_format_kind_11.{ChatFormatKind11}
@@ -141,14 +142,10 @@ pub fn every_format_type_the_clients_reader_takes_has_its_own_data_test() -> Nil
   )
 }
 
-pub fn a_format_of_type_8_or_12_to_15_fails_the_read_test() -> Nil {
+pub fn a_format_of_type_12_to_15_fails_the_read_test() -> Nil {
   use <- owned_test.run(5000)
   list.each(
     [
-      #(
-        8,
-        "04 00 00 00 00 00 00 00 00 80 00 1e 40 40 00 80 00 00 00 00 00 00 00 00 00 80 00 00",
-      ),
       #(
         12,
         "04 00 00 00 00 00 00 00 00 80 00 1e 40 60 00 80 00 00 00 00 00 00 00 00 00 80 00 00",
@@ -170,7 +167,7 @@ pub fn a_format_of_type_8_or_12_to_15_fails_the_read_test() -> Nil {
       let #(tag, hex) = vector
       assert send_chat_line.decode(message_support.hex(hex))
         == Error(bit_stream.UnexpectedValue(field: "chat_format", value: tag))
-        as "0x140085ca0: a type above 11 fails the client's read (cmp rax, 0xc; jnc), so the frame ends the connection; type 8's item record has no layout the schema holds"
+        as "0x140085ca0: a type above 11 fails the client's read (cmp rax, 0xc; jnc), so the frame ends the connection"
     },
   )
 }
@@ -356,4 +353,42 @@ pub fn the_zone_the_channels_are_named_after_is_a_15_bit_world_zone_id_test() ->
 /// The UTF-16 units of a text of characters below 0x10000.
 fn units(text: String) -> List(Int) {
   list.map(string.to_utf_codepoints(text), string.utf_codepoint_to_int)
+}
+
+pub fn a_format_of_type_8_holds_the_item_record_the_clients_reader_takes_test() -> Nil {
+  use <- owned_test.run(5000)
+  message_support.assert_codec(
+    name: "0x140085ca0 and vector.0x140085510.record: type 8 in 4 bits, a range, then the record packed as ReadChatItemRecord reads it: GUID 0x1122334455667788, item id 0x2abcd, character id 0x0102030405060708, fields 4 to 10 as the vector gives them, list A 0x11111111, 0x22222222 and list B 0x33333333, 0x44444444, 0x55555555",
+    body: message_support.hex(
+      "04 00 00 00 00 00 00 00 00 00 41 18 80 18 40 40 00 00 01 00 c4 3b b3 2a a2 19 91 88 e6 55 11 0e 0c 0a 08 06 04 02 fe dd bb 99 77 55 33 11 f1 ac 68 24 42 86 ca 0e 53 97 db 1f e0 bd 79 35 bf 37 af 26 4a bd 81 57 44 44 44 84 88 88 88 c8 cc cc cc cc 10 11 11 11 55 55 55 55 05 00 00",
+    ),
+    value: SendChatLine(
+      channel_type: 4,
+      channel_id: 0,
+      text: units("ab"),
+      formats: [
+        ItemRecord(
+          ChatFormatItemRecord(
+            start: 0,
+            end: 2,
+            item_guid: 0x1122334455667788,
+            item_id: 0x2ABCD,
+            character_id: 0x0102030405060708,
+            field_4: 0x8899AABBCCDDEEFF,
+            field_5: 0x12345678,
+            field_6: 0x0FEDCBA987654321,
+            field_7: 0x9ABCDEF0,
+            field_8: 0x13579BDF,
+            field_9: 0xA5,
+            field_10: 0x3C0DE,
+            list_a: [0x11111111, 0x22222222],
+            list_b: [0x33333333, 0x44444444, 0x55555555],
+          ),
+        ),
+      ],
+      chat_message_id: 1,
+    ),
+    encode: send_chat_line.encode,
+    decode: send_chat_line.decode,
+  )
 }

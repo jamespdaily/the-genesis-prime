@@ -18,8 +18,18 @@ import genesis_prime/message/chat_channel_result.{
   DoesntExist, InvalidMessageText, NoPermissions, NotInGroup,
 }
 import genesis_prime/message/chat_format.{type ChatFormat, ItemGuid, Kind1}
+import genesis_prime/message/chat_format_article_id
+import genesis_prime/message/chat_format_filter_mask
 import genesis_prime/message/chat_format_item_guid.{ChatFormatItemGuid}
+import genesis_prime/message/chat_format_item_id
+import genesis_prime/message/chat_format_item_record
+import genesis_prime/message/chat_format_kind_0
 import genesis_prime/message/chat_format_kind_1.{ChatFormatKind1}
+import genesis_prime/message/chat_format_kind_11
+import genesis_prime/message/chat_format_kind_2
+import genesis_prime/message/chat_format_kind_3
+import genesis_prime/message/chat_format_navigation_point
+import genesis_prime/message/chat_format_quest_id
 import genesis_prime/message/chat_line.{ChatLine}
 import genesis_prime/message/chat_line_accepted.{ChatLineAccepted}
 import genesis_prime/message/chat_result.{ChatResult}
@@ -1582,4 +1592,155 @@ pub fn a_camp_stops_watching_each_pending_whisper_test() -> Nil {
       chat.Unwatch(step.WatchId(first_watch + 2)),
     ]
     as "the whispers the speaker waits on are dropped with its stay; a later reply finds no number"
+}
+
+pub fn a_format_of_a_type_the_clients_text_never_makes_is_refused_with_result_17_in_a_line_and_a_whisper_test() -> Nil {
+  use <- owned_test.run(5000)
+  let record =
+    chat_format.ItemRecord(
+      chat_format_item_record.ChatFormatItemRecord(
+        start: 0,
+        end: 2,
+        item_guid: 1,
+        item_id: 2,
+        character_id: 3,
+        field_4: 0,
+        field_5: 0,
+        field_6: 0,
+        field_7: 0,
+        field_8: 0,
+        field_9: 0,
+        field_10: 0,
+        list_a: [],
+        list_b: [],
+      ),
+    )
+  let never_made = [
+    #(
+      0,
+      chat_format.Kind0(chat_format_kind_0.ChatFormatKind0(
+        start: 0,
+        end: 2,
+        field_4: 0,
+      )),
+    ),
+    #(
+      3,
+      chat_format.Kind3(chat_format_kind_3.ChatFormatKind3(
+        start: 0,
+        end: 2,
+        field_4: 0,
+      )),
+    ),
+    #(
+      7,
+      chat_format.FilterMask(chat_format_filter_mask.ChatFormatFilterMask(
+        start: 0,
+        end: 2,
+        seed: 5,
+      )),
+    ),
+    #(8, record),
+  ]
+  list.each(never_made, fn(made) {
+    let #(type_id, format) = made
+    assert_refused(
+      bytes: body(
+        type_id: 4,
+        channel_id: 0,
+        text: units("Hi"),
+        formats: [format],
+        message_id: 3,
+      ),
+      type_id: 4,
+      channel_id: 0,
+      result: InvalidMessageText,
+      message_id: 3,
+      because: "0x140402720: no tag of ParseChatText makes a format of type "
+        <> int.to_string(type_id)
+        <> ", so the client never sends one; the reader accepts it, so it is refused with 17, not a connection end",
+    )
+    let whisper_body = whisper_formats_body(formats: [format], message_id: 3)
+    assert refused(whisper(chat: a_chat(), body: whisper_body).1).result
+      == InvalidMessageText
+      as "the same in a whisper"
+  })
+}
+
+fn whisper_formats_body(
+  formats formats: List(ChatFormat),
+  message_id message_id: Int,
+) -> BitArray {
+  let assert Ok(body) =
+    send_whisper.encode(SendWhisper(
+      target_name: "Cd Ef",
+      target_realm_name: "",
+      text: units("Hi"),
+      formats:,
+      chat_message_id: message_id,
+      account: 0,
+    ))
+  body
+}
+
+pub fn the_formats_the_clients_text_makes_are_taken_test() -> Nil {
+  use <- owned_test.run(5000)
+  let made = [
+    chat_format.Kind1(chat_format_kind_1.ChatFormatKind1(
+      start: 0,
+      end: 2,
+      field_4: 5,
+    )),
+    chat_format.Kind2(chat_format_kind_2.ChatFormatKind2(
+      start: 0,
+      end: 2,
+      field_4: 0,
+    )),
+    chat_format.ItemId(chat_format_item_id.ChatFormatItemId(
+      start: 0,
+      end: 2,
+      item_id: 1,
+    )),
+    chat_format.QuestId(chat_format_quest_id.ChatFormatQuestId(
+      start: 0,
+      end: 2,
+      quest_id: 1,
+    )),
+    chat_format.ArticleId(chat_format_article_id.ChatFormatArticleId(
+      start: 0,
+      end: 2,
+      article_id: 1,
+    )),
+    chat_format.ItemGuid(ChatFormatItemGuid(start: 0, end: 2, item_guid: 9)),
+    chat_format.NavigationPoint(
+      chat_format_navigation_point.ChatFormatNavigationPoint(
+        start: 0,
+        end: 2,
+        zone_id: 1,
+        x: 0,
+        y: 0,
+      ),
+    ),
+    chat_format.Kind11(chat_format_kind_11.ChatFormatKind11(
+      start: 0,
+      end: 2,
+      field_4: 0,
+    )),
+  ]
+  list.each(made, fn(format) {
+    let #(_, effects) =
+      take(
+        chat: a_chat(),
+        body: body(
+          type_id: 4,
+          channel_id: 0,
+          text: units("Hi"),
+          formats: [format],
+          message_id: 3,
+        ),
+        viewers: [],
+      )
+    assert accepted(effects).chat_message_id == 3
+      as "0x140402720: ParseChatText makes types 1, 2, 4, 5, 6, 9, 10 and 11, so a line with one is taken and relayed"
+  })
 }

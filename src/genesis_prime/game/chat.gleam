@@ -90,7 +90,11 @@
 ////   (`opcode.0x1c8`, `chat.cross_faction`: Jim, 2026-11-03).
 //// - **Text and formats are relayed as sent**: no format is added and no line is
 ////   refused for its words (`0x140c45f50`). Item links are relayed unchanged;
-////   0x1c2 carries no item record (`opcode.0x1c2`).
+////   0x1c2 carries no item record (`opcode.0x1c2`), so a type 9 link, which a
+////   client resolves only for an item it holds (FindHeldItemByGuid
+////   `0x1403acbb0`), shows no item to the other players. A format of a type the
+////   client's text never makes (0, 3, 7 or 8, `0x140402720`) is refused with
+////   result 17: the client's reader takes it, but its own code does not send it.
 //// - **The target's name is folded** with `string.lowercase`, the fold of the
 ////   database's unique index (migration 0005); a name that is not a full name by
 ////   rule 0 gets 0x1d9 at once with no watch (`opcode.0x1d4`,
@@ -758,7 +762,7 @@ fn is_a_line(
   && !list.any(text, is_dropped)
   && list.all(formats, fn(format) {
     let #(start, end) = format_range(format)
-    start <= end && end <= length
+    is_made_by_the_clients_text(format) && start <= end && end <= length
   })
 }
 
@@ -791,6 +795,27 @@ fn format_range(format: ChatFormat) -> #(Int, Int) {
     chat_format.ItemGuid(format) -> #(format.start, format.end)
     chat_format.NavigationPoint(format) -> #(format.start, format.end)
     chat_format.Kind11(format) -> #(format.start, format.end)
+    chat_format.ItemRecord(format) -> #(format.start, format.end)
+  }
+}
+
+/// Whether ParseChatText makes a format of this type: it makes 1, 2, 4, 5, 6, 9,
+/// 10 and 11, and no tag makes 0, 3, 7 or 8 (`0x140402720`), so the client never
+/// sends those, though its reader accepts them.
+fn is_made_by_the_clients_text(format: ChatFormat) -> Bool {
+  case format {
+    chat_format.Kind1(..)
+    | chat_format.Kind2(..)
+    | chat_format.ItemId(..)
+    | chat_format.QuestId(..)
+    | chat_format.ArticleId(..)
+    | chat_format.ItemGuid(..)
+    | chat_format.NavigationPoint(..)
+    | chat_format.Kind11(..) -> True
+    chat_format.Kind0(..)
+    | chat_format.Kind3(..)
+    | chat_format.FilterMask(..)
+    | chat_format.ItemRecord(..) -> False
   }
 }
 

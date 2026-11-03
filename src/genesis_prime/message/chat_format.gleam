@@ -3,10 +3,9 @@
 ////
 //// A union inside a message body: one format of a chat line: the type in 4
 //// bits picks the layout of its data, and the client's reader refuses a type
-//// of 12 to 15. Gap: type 8, a full item record, has no variant, since its
-//// layout is not described (0x140085790), so a line holding one is read as a
-//// failure. Its variants are listed in `schema.toml` with the client's
-//// evidence, and the fact file's `0x140085ca0` names the union.
+//// of 12 to 15. Type 8 carries a full item record (0x140085790). Its variants
+//// are listed in `schema.toml` with the client's evidence, and the fact file's
+//// `0x140085ca0` names the union.
 
 import genesis_prime/message/bit_stream.{
   type DecodeError, type Reader, type Writer,
@@ -15,6 +14,7 @@ import genesis_prime/message/chat_format_article_id.{type ChatFormatArticleId}
 import genesis_prime/message/chat_format_filter_mask.{type ChatFormatFilterMask}
 import genesis_prime/message/chat_format_item_guid.{type ChatFormatItemGuid}
 import genesis_prime/message/chat_format_item_id.{type ChatFormatItemId}
+import genesis_prime/message/chat_format_item_record.{type ChatFormatItemRecord}
 import genesis_prime/message/chat_format_kind_0.{type ChatFormatKind0}
 import genesis_prime/message/chat_format_kind_1.{type ChatFormatKind1}
 import genesis_prime/message/chat_format_kind_11.{type ChatFormatKind11}
@@ -51,6 +51,9 @@ pub type ChatFormat {
   /// Kind 7, read by `chat_format_filter_mask`. The fact file's `0x140085ca0`
   /// names the kind.
   FilterMask(ChatFormatFilterMask)
+  /// Kind 8, read by `chat_format_item_record`. The fact file's `0x140085ca0`
+  /// names the kind.
+  ItemRecord(ChatFormatItemRecord)
   /// Kind 9, read by `chat_format_item_guid`. The fact file's `0x140085ca0`
   /// names the kind.
   ItemGuid(ChatFormatItemGuid)
@@ -72,6 +75,7 @@ pub fn write(writer writer: Writer, record record: ChatFormat) -> Writer {
     QuestId(variant) -> chat_format_quest_id.write(writer, variant)
     ArticleId(variant) -> chat_format_article_id.write(writer, variant)
     FilterMask(variant) -> chat_format_filter_mask.write(writer, variant)
+    ItemRecord(variant) -> chat_format_item_record.write(writer, variant)
     ItemGuid(variant) -> chat_format_item_guid.write(writer, variant)
     NavigationPoint(variant) ->
       chat_format_navigation_point.write(writer, variant)
@@ -115,6 +119,10 @@ pub fn read(reader: Reader) -> Result(#(ChatFormat, Reader), DecodeError) {
       reader
       |> chat_format_filter_mask.read
       |> result.map(pair.map_first(_, FilterMask))
+    8 ->
+      reader
+      |> chat_format_item_record.read
+      |> result.map(pair.map_first(_, ItemRecord))
     9 ->
       reader
       |> chat_format_item_guid.read

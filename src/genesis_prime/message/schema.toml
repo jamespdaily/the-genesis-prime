@@ -1309,7 +1309,7 @@ fields = [
 [[union]]
 name = "chat_format"
 evidence = "0x140085ca0"
-summary = "one format of a chat line: the type in 4 bits picks the layout of its data, and the client's reader refuses a type of 12 to 15. Gap: type 8, a full item record, has no variant, since its layout is not described (0x140085790), so a line holding one is read as a failure"
+summary = "one format of a chat line: the type in 4 bits picks the layout of its data, and the client's reader refuses a type of 12 to 15. Type 8 carries a full item record (0x140085790)"
 tag_bits = 4
 variants = [
   { tag = 0, name = "kind_0", record = "chat_format_kind_0" },
@@ -1320,6 +1320,7 @@ variants = [
   { tag = 5, name = "quest_id", record = "chat_format_quest_id", named_by = "0x140085ca0" },
   { tag = 6, name = "article_id", record = "chat_format_article_id", named_by = "0x140085ca0" },
   { tag = 7, name = "filter_mask", record = "chat_format_filter_mask", named_by = "0x140085ca0" },
+  { tag = 8, name = "item_record", record = "chat_format_item_record", named_by = "0x140085ca0" },
   { tag = 9, name = "item_guid", record = "chat_format_item_guid", named_by = "0x140085ca0" },
   { tag = 10, name = "navigation_point", record = "chat_format_navigation_point", named_by = "0x140085ca0" },
   { tag = 11, name = "kind_11", record = "chat_format_kind_11" },
@@ -1446,4 +1447,26 @@ fields = [
   { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
   { name = "field_4", kind = "unsigned", bits = 32, evidence = "0x140085ca0", safe_by = "0x140085ca0" },
+]
+
+[[record]]
+name = "chat_format_item_record"
+evidence = "0x140085ca0"
+summary = "a chat format of type 8, a link that carries a full item record (ReadChatItemRecord 0x140085790): the item's GUID and id, a character id, nine values the client's code names only by width and position, and two counted lists of 32-bit values; the client's own text never makes one (0x140402720)"
+fields = [
+  { name = "kind", kind = "constant", bits = 4, value = 8, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "start", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "end", kind = "unsigned", bits = 16, evidence = "0x140085ca0", named_by = "0x140085ca0" },
+  { name = "item_guid", kind = "unsigned", bits = 64, evidence = "0x140085790", named_by = "0x140085790" },
+  { name = "item_id", kind = "unsigned", bits = 18, evidence = "0x140085790", named_by = "0x140085790" },
+  { name = "character_id", kind = "unsigned", bits = 64, evidence = "0x140085790", named_by = "0x140085790" },
+  { name = "field_4", kind = "unsigned", bits = 64, evidence = "0x140085790", safe_by = "0x140085790" },
+  { name = "field_5", kind = "unsigned", bits = 32, evidence = "0x140085790", safe_by = "0x140085790" },
+  { name = "field_6", kind = "unsigned", bits = 64, evidence = "0x140085790", safe_by = "0x140085790" },
+  { name = "field_7", kind = "unsigned", bits = 32, evidence = "0x140085790", safe_by = "0x140085790" },
+  { name = "field_8", kind = "unsigned", bits = 32, evidence = "0x140085790", safe_by = "0x140085790" },
+  { name = "field_9", kind = "unsigned", bits = 8, evidence = "0x140085790", safe_by = "0x140085790" },
+  { name = "field_10", kind = "unsigned", bits = 18, evidence = "0x140085790", safe_by = "0x140085790" },
+  { name = "list_a", kind = "array", count_bits = 3, element = "unsigned", element_bits = 32, evidence = "0x140085790", named_by = "0x140085790" },
+  { name = "list_b", kind = "array", count_bits = 4, element = "unsigned", element_bits = 32, evidence = "0x140085790", named_by = "0x140085790" },
 ]

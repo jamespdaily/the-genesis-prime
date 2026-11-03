@@ -53,6 +53,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/chat_format_filter_mask.gleam",
       "src/genesis_prime/message/chat_format_item_guid.gleam",
       "src/genesis_prime/message/chat_format_item_id.gleam",
+      "src/genesis_prime/message/chat_format_item_record.gleam",
       "src/genesis_prime/message/chat_format_kind_0.gleam",
       "src/genesis_prime/message/chat_format_kind_1.gleam",
       "src/genesis_prime/message/chat_format_kind_11.gleam",
@@ -158,7 +159,7 @@ pub fn the_schema_generates_one_module_for_each_message_and_record_and_the_clien
       "src/genesis_prime/message/world_message.gleam",
       "src/genesis_prime/message/world_zone_changed.gleam",
     ]
-    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list, the 21 messages and 5 records of character select and entering the world, the network layer's 3 messages (ping, pong and close notice), the auth server's login refusal 0x63d, the 5 modules of the named values (the disconnect reasons, the create results, the play refusals, the delete results and the rename results), the 6 messages of the player moving that the client sends (0x637, 0x63a, 0xd5, 0x63b, 0xfb and 0xfc) with the union of the 30 movement commands, the 29 records its kinds read (kind 2 is the unit position command of 0x262) and the 2 records of their lists of vectors, the union of the two movement commands the server writes in 0x262 (kinds 2 and 14), the 8 chat messages (0x1c3, 0x1d4, 0x1c2, 0x1c8, 0x1d3, 0x1d9, 0x1bc and 0x1da) with the union of the chat formats the client's reader takes (the 11 of the 12 types, with the 11 records of their data) and the module of the chat results' named values, and the client message module that decodes every message the client sends by its number"
+    as "the schema holds the 13 Milestone 1 messages of the issue and the 2 records inside the realm list, the 21 messages and 5 records of character select and entering the world, the network layer's 3 messages (ping, pong and close notice), the auth server's login refusal 0x63d, the 5 modules of the named values (the disconnect reasons, the create results, the play refusals, the delete results and the rename results), the 6 messages of the player moving that the client sends (0x637, 0x63a, 0xd5, 0x63b, 0xfb and 0xfc) with the union of the 30 movement commands, the 29 records its kinds read (kind 2 is the unit position command of 0x262) and the 2 records of their lists of vectors, the union of the two movement commands the server writes in 0x262 (kinds 2 and 14), the 8 chat messages (0x1c3, 0x1d4, 0x1c2, 0x1c8, 0x1d3, 0x1d9, 0x1bc and 0x1da) with the union of the chat formats the client's reader takes (the 12 types the client's reader takes, with the 12 records of their data) and the module of the chat results' named values, and the client message module that decodes every message the client sends by its number"
 }
 
 pub fn the_committed_codec_is_what_the_schema_generates_test() -> Nil {
