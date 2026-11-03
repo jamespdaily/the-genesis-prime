@@ -5613,3 +5613,1066 @@ statement = "Message 0x25e (606), game server to client: the player character's 
 proof = "Registered in 0x14006c290 (saved C, made under 13906f95d07bb7f9): id 0x25e, record size 0x508, reader 0x14008cee0, no writer. HandleWorldMessage's jump table (bytes at 0x1403f1344, entry 0x25e - 0x61) gives 0x1403ec91d, which calls 0x1403b5f80: 0x1403b5f94 cmp qword ptr [rcx+0x78], 0x0 (the player's unit), the error report at 0x1403b6013 call 0x1401971e0; 0x1403b6062 mov eax, dword ptr [rdx+0x90]; 0x1403b6068 mov dword ptr [rcx+0x1678], eax; 0x1403b60b8 call 0x1403c6d80. The server's schema (src/genesis_prime/message/schema.toml) has no 0x25e."
 grade = "fairly sure"
 gap = "The reader 0x14008cee0 is not read, so where the experience sits on the wire and what the record's other words are is unknown; the handler's other stores (record words at 0x88, 0x94, 0x9c, 0xa0, 0xa4, 0xa6, 0xa8) are read from Ghidra's decompile without names."
+
+["opcode.0x9a"]
+statement = "Message 0x9a (154), client to world server: cast the spell of an ability bag slot (ClientCastSpell). Body in wire order: the client's id for the cast (32 bits), the ability bag index (16 bits), the target unit id (32 bits, 0 for none), and one bit, 1 for a press. The cast id is the client's own cast counter (0x140c1e71c), never 0. The bag index is the slot the spell's ability item was added at (ServerItemAdd 0x111 with location 4); the client sends no Spell4 or Spell4Base id. The target is the unit the client chose for the cast before sending, usually the player's target. The press bit is 0 only when a console setting (likely hold-to-cast) is on and the client's held-spell value is 0; otherwise it is 1. The client sends 0x9b instead for a spell whose targeting is ground-placed, with the placed position."
+proof = "Registered in 0x14006c290 (saved C line 643, hash 8eb22adb6de47956): id 0x9a, record 0x10, sizer 0x140093350, writer 0x140093360. Writer 0x140093360 (saved C, same hash): WriteBitsSlow 0x20 of the record's first word, 0x10 of its second (as a 16-bit value), 0x20 of its third, then 0x1400a7250 with one bit of whether the fourth word is non-zero. Sender CastAbilityBagSpell 0x14039a040 (saved C, same hash): local_148 = the local cast's id (cast object offset 0x60) and the 16-bit bag index; local_140 = the cast's primary target (offset 0x158) with 1 in its upper word unless the setting at 0x140c45e90 is on and game state 0x6364 is 0; SendWorldMessage(game, 0x9a or 0x9b). 0x9b is chosen when the spell record's targeting word (offset 0x7c) is 4, with the position at game state 0x6d10."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the bytes were not written on the emulator. The setting at 0x140c45e90 is not named (likely the hold-to-cast option ClientCombatOptions value 8 sets), and 0x9b's layout is not read."
+
+["0x140c1e71c"]
+statement = "The client's cast counter. Each cast object the client makes, its own pending casts and every cast a server message creates, takes the counter's next value as its client cast id. It starts at 1, so the first cast is 2; it is never reset during a session. ClientCastSpell (0x9a) carries this id, and ServerSpellCastResult (0x7fc) and ServerSpellConfirmCast (0x7fd) name the pending cast by it."
+proof = "Bytes at 0x140c1e71c: 01000000. Ghidra refs_to: 0x14053c519 READ and 0x14053c584 WRITE, both in ConstructCast 0x14053c500, whose saved C (hash 8eb22adb6de47956) does DAT_140c1e71c = DAT_140c1e71c + 1 then stores it at the cast's offset 0x60. ConstructCast is called by CreateCast 0x140561780 for every cast."
+grade = "fairly sure"
+gap = "The increment is read from the decompile, not run; whether a wrap past 2^32 to 0 can happen in a session was not considered."
+
+["0x14039a040"]
+statement = "Casts the spell held in an ability bag slot, as an action bar press does. It refuses, without sending, when: there is no player (30 CasterUnknown); the bag index is past the bag's size or names no spell (4 SpellUnknown, 22); the ability book has no spell for the slot's Spell4Base at the active action set (4); a spell that needs a target has none (91 NoTarget); a cooldown is running (14 global, 15 the spell's own, 16 a group's), except that with 500 ms or less left it is queued (317) and still sent; or the caster or target checks fail (CheckCastCaster, CheckCastTarget: among them 13 SpellAlreadyCasting, 105 TargetRangeMax, 183 TargetRangeVertical, 166 Caster_Needs_LoS and 169 WeaponSlot). RapidTap, PressHold and ChargeRelease spells first go through the threshold step. When the checks pass it makes a pending cast with a new client cast id and sends 0x9a (or 0x9b for a ground-placed spell). It starts no cooldown itself for 0x9a. A refused press is reported to the player as a cast failure."
+proof = "Saved C 0x14039a040.c (hash 8eb22adb6de47956): returns 0x1e with no player at game state 0x78; 4 when the index is not below the bag count at game state 0xa98; 0x16 when the slot is empty; 0x11d for item kind 0x1c; GetAbilityItemSpell 0x1405a4b80 null -> 4; castMethods 2, 6, 7 (test (m - 2) & ~5 == 0, m != 3) through 0x1403bfd60; 0xb6 from 0x1405a7020/0x1405a6c30; StartLocalCast 0x1403988d0, then on 0 or 0x13d SendWorldMessage(game, 0x9a or 0x9b, record); otherwise 0x1403b5250 and a report. StartLocalCast calls ValidateCast 0x140398800 -> CheckCast 0x1403ae8c0, which gives 0x5b with no target for targeting kinds 1, 3, 5, 8 (bit mask 0x12a) and then calls CheckCastCaster 0x1403afb10 and CheckCastTarget 0x1403b0880 and CheckSpellCooldowns 0x1403b14c0. Callers include 0x1403bd6d0 and 0x1405c9900 (shortcut presses) with the ability item's bag index (item offset 0x24). Result names from Spell.CodeEnumCastResult."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile. The bodies of CheckCastCaster and CheckCastTarget were searched only for the result codes they give, not read through; the facing check (101 TargetOrientation) was not found in either and is not settled. The threshold step 0x1403bfd60 is not read."
+name = "CastAbilityBagSpell"
+
+["0x1403988d0"]
+statement = "Prepares a cast the player asked for: picks its target (the player's target, or the one the spell's rules choose), runs the client's cast checks, and when they pass (or give 317 Queued) makes a pending cast with no server id, kept in the world's pending list under its client cast id. A pending cast shows nothing: no cast bar and no cooldown, until the server confirms or starts it."
+proof = "Saved C 0x1403988d0.c (hash 8eb22adb6de47956): FindUnit of the caster, the target by 0x14055bdc0 when none is given, ValidateCast 0x140398800 (twice when the caster is controlled), then on 0 or 0x13d CreateCast 0x140561780 with cast id 0. CreateCast with cast id 0 links the new cast into the list at cast system 0x7c8 (0x140561a4b..0x140561a71) and calls neither StartCast 0x14053dd00 nor StartGlobalCooldown 0x14046afc0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; four blocks Ghidra marks unreachable (0x140398c61 to 0x140398ca2) were not read from the listing."
+name = "StartLocalCast"
+
+["0x140561780"]
+statement = "Makes a cast. It refuses with 4 when the spell id names no Spell4 row the client holds (or the spell is in the client's blocked set). With cast id 0 it makes a pending cast of the player's and lists it in the pending list; nothing removes a pending cast but ServerSpellCastResult, ServerSpellConfirmCast, a newer confirmed cast of the same spell, or leaving the world, so pending casts the server never answers stay without limit. With a new non-zero cast id it makes the cast and files it under that id in the world's one cast table. With a cast id already filed, it restarts that cast instead of making a second one."
+proof = "Saved C 0x140561780.c (hash 8eb22adb6de47956): the set at cast system 0x570 searched first (found -> 4); a filed id (FindCast 0x140561c30) -> 0x14053fbf0 and 0x14053d850; else the spell record by 0x1407a0fd0 or 0x1403acd90, null -> 4; AllocMemory 0x390, ConstructCast 0x14053c500, InitCast 0x14053d1f0; cast id 0 -> the list at 0x7c8, else 0x1400b6080 into the map at 0x7a0. Listing 0x140561a86..0x140561a9d counts pending casts of the same spell up to 5 and does nothing with the count. Removals of the pending list: 0x1405a5010 (0x7fc), ConfirmLocalCast 0x14055de80 (0x7fd, which also removes older pending casts of the same spell), 0x14055e0e0 (clears all)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what the set at 0x570 holds is not read."
+name = "CreateCast"
+
+["0x140561c30"]
+statement = "Finds a live cast by its 32-bit cast id in the one table the world keeps for every caster, so a cast id must be unique across all the units a client sees, not only per caster. Every server spell message that names a cast (Go 0x7f4, Finish 0x7fe, and 0x7f5, 0x7f8, 0x7fb, 0x812, 0x813, 0x818, 0x819) finds it here, and one naming an unknown id is dropped with nothing shown."
+proof = "HandleWorldMessage cases (decoded with the query process): 0x1403ee1c9 mov edx, dword ptr [rdi]; 0x1403ee1cb mov rcx, qword ptr [0x140c65b70]; 0x1403ee1d2 call 0x140561c30; 0x1403ee1da test rax, rax; 0x1403ee1dd jz 0x1403ec71b (the shared do-nothing case, return 0). The same pattern opens the cases for 0x7fe (0x1403ee438), 0x7f5 (0x1403ee277), 0x7f8 (0x1403ee233), 0x7fb (0x1403ee1fe), 0x812 (0x1403ee2f6), 0x813 (0x1403ee349), 0x818 (0x1403ee403) and 0x819 (0x1403ee3af, field 2). The table is the hash map at cast system 0x7a0 that CreateCast 0x140561780 files into."
+grade = "sure"
+name = "FindCast"
+
+["opcode.0x7ff"]
+statement = "Message 0x7ff (2047), world server to client: a unit starts a cast (ServerSpellStart). Body in wire order: cast id (32 bits), Spell4 id (18), root Spell4 id (18), parent Spell4 id (18), caster unit id (32), a 16-bit value, primary target unit id (32), the field position (three floats), yaw (float), a count (8 bits) and that many initial positions, a count (8 bits) and that many telegraph positions, then two single bits. The client makes the cast under the cast id and starts it: when the caster is a unit it has, it shows the caster's cast bar for a spell with a cast bar and turns the caster to face the target when the spell says so. When the caster is the player's own unit it also starts the player's global cooldown from the spell. A cast id of 0 makes only a stray pending cast: the client reports an error and shows nothing. A cast id already live restarts that cast. An unknown Spell4 id makes nothing."
+proof = "Registered in 0x14006c290 (saved C line 659, hash 8eb22adb6de47956): id 0x7ff, record 0x50, reader 0x140095110. Reader (saved C): ReadBits32 0x20 at 0, 0x12 at 4, 8 and 0xc, 0x20 at 0x10, ReadBits16 0x10 at 0x14, ReadBits32 0x20 at 0x18, ReadVector3 0x1400a8a30 (three ReadFloat), ReadFloat at 0x28, ReadBits8 8 then that many 0x1c-byte ReadSpellInitialPosition 0x140094970, ReadBits8 8 then that many 0x20-byte ReadSpellTelegraphPosition 0x140094a00, ReadBits32 1 at 0x48 and at 0x4c. Case 0x1403ee1b7 calls HandleSpellStart 0x1405a51a0 (saved C): CreateCast 0x140561780 with the fields, FindCast of the id (null -> ReportError, return 0x80004005), position and yaw stored, 0x14053d890 the positions, StartCast 0x14053dd00; then, only when field 4 equals the player unit's id (game state 0x6490), StartGlobalCooldown 0x14046afc0. StartCast: FindUnit of the caster (none -> return), SetUnitCast 0x1404697a0 with the cast id, facing by 0x14046bb00 when the spell's flags word (offset 0x108) has 1."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. The 16-bit value, the two closing bits, and the root and parent ids' uses are not read. Initial position: unit id (32), 8 bits, position (three floats), float, 32 bits; telegraph position: 16 bits, unit id (32), 8 bits, position, float, 32 bits; their meanings are not read."
+
+["opcode.0x7fd"]
+statement = "Message 0x7fd (2045), world server to client: the server accepts the player's pending cast and gives it its cast id (ServerSpellConfirmCast). Body in wire order: the client's cast id (32 bits), the server's cast id (32), the primary target unit id (32), the field position (three floats), yaw (float), a count (8 bits) and that many initial positions, a count (8 bits) and that many telegraph positions. The client finds the pending cast by its client id, files it under the server's id, removes older pending casts of the same spell, and starts it as 0x7ff does, starting the player's global cooldown. With no pending cast of that client id it reports an error and does nothing."
+proof = "Registered in 0x14006c290 (saved C line 655, hash 8eb22adb6de47956): id 0x7fd, record 0x38, reader 0x140094e10. Reader (saved C): ReadBits32 0x20 at 0, 4, 8; ReadVector3 0x1400a8a30; ReadFloat at 0x18; ReadBits8 at 0x1c and 0x140094970 entries; ReadBits8 at 0x28 and 0x140094a00 entries. Case 0x1403ee16f calls HandleSpellConfirmCast 0x1405a4e60 (saved C): ConfirmLocalCast 0x14055de80(game, field 0, field 1) (null -> return 0); position, yaw and positions stored; field 2 to the cast's primary target (offset 0x158); StartCast 0x14053dd00; StartGlobalCooldown 0x14046afc0 when there is a player. ConfirmLocalCast (saved C): searches the pending list at cast system 0x7c8 by client id (offset 0x60), not found -> ReportError and null; else unlinks it, stores the server id at 0x5c, files it in the map at 0x7a0, and removes each pending cast of the same spell with a lower client id (0x140561ad0)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. Unlike 0x7ff it does not check that the caster is the player before starting the global cooldown; that the client only ever holds its own player's pending casts makes this the same."
+
+["opcode.0x7f4"]
+statement = "Message 0x7f4 (2036), world server to client: a cast goes off (ServerSpellGo). Body in wire order: cast id (32 bits), one bit (ignore cooldown), the primary destination (three floats), a count (8 bits) and that many target infos, a count (8 bits) and that many initial positions, a count (8 bits) and that many telegraph positions, a count (8 bits) and that many missile infos, and the phase (8 bits). A target info is a unit id (32), an index (8), target flags (8), an instance count (16), a combat result (4), a count (8) and that many effect infos. An effect info is a Spell4Effects id (19), three 32-bit values and a 2-bit tag (0 or 1; 2 and 3 fail the read): tag 0 is followed by one bit, tag 1 by the effect's result data; what these mean is in the damage trace's records for 0x140094890 and 0x1400946c0. A missile info is a position (three floats), two 32-bit values, a position and one bit. The client finds the cast by id (an unknown id is dropped), counts the go, keeps the phase and the positions, and builds a target node for each target unit it has; a target it does not have is skipped. Unless the ignore-cooldown bit is set, the first go of a Normal cast starts the caster's own cooldowns from the spell (its Spell4 cooldown and its group cooldowns); RapidTap and PressHold casts start none here."
+proof = "Registered in 0x14006c290 (saved C line 660, hash 8eb22adb6de47956): id 0x7f4, record 0x58, reader 0x1400953f0. Reader (saved C): ReadBits32 0x20, ReadBits32 1 at 4, ReadVector3, ReadBits8 at 0x14 and 0x18-byte ReadSpellTargetInfo 0x140094aa0 entries, ReadBits8 at 0x20 and 0x140094970 entries, ReadBits8 at 0x30 and 0x140094a00 entries, ReadBits8 at 0x40 and 0x24-byte ReadSpellMissileInfo 0x140095340 entries, ReadBits8 at 0x50. 0x140094aa0: ReadBits32 0x20, ReadBits8 8 twice, ReadBits16 0x10, ReadBits32 4, ReadBits8 8 and 0x50-byte ReadSpellEffectInfo 0x140094890 entries. 0x140094890: ReadBits32 0x13, 0x20 three times, 2 (tag), tag below 2 to the table at 0x140c1eb88 (bytes f053084001000000 c046094001000000: 0x1400853f0 one bit, 0x1400946c0 the result data), else 0x80004005. Case 0x1403ee1c9 (decoded): FindCast 0x140561c30, jz 0x1403ec71b, then ApplySpellGo 0x14053e5a0 (saved C): cast offset 400 incremented, state 3, phase from the record, ignore bit to offset 0x144; for go count 1 and castMethod 0 with the bit clear, StartSpellCooldowns 0x14046b1e0 on the caster unit; castMethods 2 and 6 skip; each target by FindUnit, found -> 0x14053d680."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. The effect result data (0x1400946c0: seven 32-bit values, one bit, 4 bits, 3 bits, a count (8) and 32-byte entries) belongs to the damage trace and is not read here, nor what the phase, the missile info and the instance count do."
+
+["opcode.0x7fc"]
+statement = "Message 0x7fc (2044), world server to client: the server refuses the player's cast (ServerSpellCastResult). Body in wire order: the client's cast id (32 bits), the Spell4 id (18 bits) and the result (9 bits, a Spell.CodeEnumCastResult). The client removes the pending cast with that client id, shows the result to the player as a cast failure for that spell, and clears the player's global cooldown, except for result 13 (SpellAlreadyCasting) while the hold-to-cast setting is on. A spell id of 0 with no pending cast of that id does nothing. A wrong client id still shows the failure and clears the global cooldown."
+proof = "Registered in 0x14006c290 (saved C line 656, hash 8eb22adb6de47956): id 0x7fc, record 0xc, reader 0x140094fb0 (saved C: ReadBits32 0x20, 0x12, 9). Case 0x1403ee1a5 calls HandleSpellCastResult 0x1405a5010 (saved C): the pending list at cast system 0x7c8 searched by client id (cast offset 0x60); the spell record from field 1 (0 -> none); a text for results below 0x14c; 0x1403a12a0(game, result, spell, 1); 0x14046aa00(player, 0, 0) unless the setting at 0x140c45e50 is on and the result is 0xd; RemoveCast 0x140561ad0 of the pending cast. With no spell and no pending cast it returns before the report."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. 0x1403a12a0 (the failure report: Lua SpellCastFailed, a floater) and 0x14046aa00 (taken to clear the global cooldown) are not read here."
+
+["opcode.0x7fe"]
+statement = "Message 0x7fe (2046), world server to client: a cast ends (ServerSpellFinish). Body: the cast id (32 bits). The client finds the cast (an unknown id is dropped), moves it to its finished state, which starts a Channeled cast's cooldowns, and removes it from its table, so the caster no longer counts as casting it."
+proof = "Registered in 0x14006c290 (saved C line 666, hash 8eb22adb6de47956): id 0x7fe, record 4, reader ReadMessage0591Body 0x14007ab50 (one 32-bit value). Case decoded with the query process: 0x1403ee438 mov edx, dword ptr [rdi]; 0x1403ee43a mov rcx, qword ptr [0x140c65b70]; 0x1403ee441 call 0x140561c30; 0x1403ee44c jz 0x1403ec71b; 0x1403ee45b xor r9d, r9d; 0x1403ee45e xor r8d, r8d; 0x1403ee461 lea edx, [r9 + 0x8]; 0x1403ee468 call 0x14053e1b0; 0x1403ee480 call 0x140561ad0. 0x14053e1b0 (saved C) calls StartSpellCooldowns 0x14046b1e0 for castMethod 1 (and 2) when the ignore bit is clear."
+grade = "sure"
+
+["opcode.0x804"]
+statement = "Message 0x804 (2052), world server to client: set one of the player's cooldowns (ServerSpellCooldownStart). Body in wire order: type (3 bits: 0 the global cooldown, 1 a spell's own, 2 a cooldown group), Spell4 id (18 bits), the type's id (32 bits: for type 0 the SpellCoolDown row, for type 1 the Spell4 id, for type 2 the group's SpellCoolDown id), and the time left (32 bits, milliseconds). An existing cooldown of the same type and id (any for type 0) is replaced; a time of 0 ends it; a global cooldown is never shortened this way. A new cooldown is made only with a time above 0, and its time is put through the player's cooldown modifiers."
+proof = "Registered in 0x14006c290 (saved C line 661, hash 8eb22adb6de47956): id 0x804, record 0x10, reader 0x140095660 (saved C: ReadBits32 3, 0x12, 0x20, 0x20). Case decoded: 0x1403ee4e6 mov rcx, qword ptr [rsi + 0x78]; 0x1403ee4ed jz 0x1403ec71b; 0x1403ee4f3..0x1403ee4fe the four fields; 0x1403ee504 call 0x14046a3d0. SetSpellCooldown 0x14046a3d0 (saved C): the list at player 0x1608 matched on type and (id or type 0); time 0 -> 0x1407a0390; type 0 with a longer time left returns; new -> 0x1407a01c0 and 0x14046a810, 0x14046a890 (the modifiers)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. What the 18-bit Spell4 id is used for in a type 2 or type 0 entry is not read."
+
+["0x14046afc0"]
+statement = "Starts the player's global cooldown for a spell the server started or confirmed: only for a spell whose global cooldown kind is 0 or 1, using the spell's global SpellCoolDown row for the time. The client calls it for its own player's casts on 0x7ff and 0x7fd, and when it sends 0xe3, 0xe4, 0xde or 0x15c; never when it sends 0x9a."
+proof = "Saved C 0x14046afc0.c (hash 8eb22adb6de47956): spell record word at offset 0x24 below 2 and word at 0x28 non-zero -> 0x14023dc80 (the SpellCoolDown row; null -> ReportError) -> 0x14046a760 -> SetSpellCooldown 0x14046a3d0(player, 0, 0, row id, time). Callers (grep of the saved C): HandleSpellStart 0x1405a51a0, HandleSpellConfirmCast 0x1405a4e60, 0x1403980a0, 0x140397ce0 (0xe4), 0x140397850 (0xe3), 0x14039eff0 (0xde), 0x14039f600 (0x15c); CastAbilityBagSpell 0x14039a040 does not call it."
+grade = "fairly sure"
+gap = "That the spell record's words at 0x24 and 0x28 are Spell4.globalCooldownEnum and Spell4.spellCoolDownIdGlobal is matched by meaning, not by reading the record's loader."
+name = "StartGlobalCooldown"
+
+["0x14046b1e0"]
+statement = "Starts a unit's own cooldowns for a spell that went off: the spell's cooldown (type 1, keyed by the Spell4 id, its time scaled by the unit's cooldown rate when the spell allows) and each of its cooldown groups (type 2). It does nothing when the unit already has a cooldown on that spell. ApplySpellGo calls it at a Normal cast's first go and ServerSpellFinish's state change for a Channeled cast; so the server need not send 0x804 for a spell's ordinary cooldown."
+proof = "Saved C 0x14046b1e0.c (hash 8eb22adb6de47956): returns when an entry of the list at unit 0x1608 has the spell id; SetSpellCooldown 0x14046a3d0(unit, 1, spell, spell, time) with time from the spell's cooldown array (offset 0x38) times unit 0xa04 when 0x1404823c0 holds; then for each non-zero group id 0x14023dc80 and SetSpellCooldown(unit, 2, ...). Callers: ApplySpellGo 0x14053e5a0, 0x14053e1b0, 0x14053df40, 0x1403bea90, 0x1403bf4e0, 0x1403bf2c0."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; a live cast of a spell with a cooldown (Stalker Stagger, 25 s) would show whether the client's own cooldown and a server 0x804 agree."
+name = "StartSpellCooldowns"
+
+["0x1403b14c0"]
+statement = "The client's cooldown check on a press. A spell whose global cooldown kind is 0 or 2 is refused with 14 (SpellGlobalCooldown) while the global cooldown runs; any spell with 15 (SpellCooldown) while its own cooldown runs, and 16 (SpellGroupCooldown) while one of its groups does. When the longest of those has no more than the ability queue window left (player.abilityQueueMax, 500 ms), it gives 317 (Queued) instead, and the press is still sent."
+proof = "Saved C 0x1403b14c0.c (hash 8eb22adb6de47956): the record word at 0x24 tested against 0xfffffffd (0 or 2) before the type 0 entries; type 1 entries compared with the spell id; type 2 with the three ids at the spell's offset 0x38; codes 0xe, 0xf, 0x10; the window from the caller's slot 0x78; 0x13d when every running one is within it."
+grade = "fairly sure"
+gap = "The 500 ms default of player.abilityQueueMax is the earlier server's reading, not read here."
+name = "CheckSpellCooldowns"
+
+["0x1403afb10"]
+statement = "The client's checks of the caster before a cast is sent. Among its refusals: 13 SpellAlreadyCasting while the caster's current cast is live; the caster state checks (57 to 72: dead, in combat, moving, stealth, piloting, embarked, taxi), 279/280 swimming, 313/314 sprinting, 170/171 jumping; 23/26 item use; and 169 WeaponSlot: a spell whose weapon slot is 1 needs an item in the player's equipped slot 16 (the weapon), and one whose weapon slot is 2 is always refused. Most starting abilities have weapon slot 1, so the player must hold its weapon for them to be sent at all."
+proof = "Saved C 0x1403afb10.c (hash 8eb22adb6de47956), 700 lines: codes given include 0xd, 0x17, 0x1a, 0x39..0x48, 0xa9, 0xaa, 0xab, 0x117, 0x118, 0x135, 0x136, 0x13a. Lines 664-689: with a player, the record word at offset 0x100 equal to 1 looks up the key 0x1000000000 (location 0, index 16) in the player's held items (game state 0xa0, 0x1403ac780); not found, or the word equal to 2, gives 0xa9. Line 38: FindCast of the unit's current cast (unit 0x1600); a live cast without the spell flags 0x20, 8 or 4 gives 0xd unless the queue path is allowed. Spell4Base rows (gleam run -m genesis_prime/table_rows -- Spell4Base 23148): weaponSlot 1 for Shred."
+grade = "fairly sure"
+gap = "Only the result codes and the weapon and casting blocks were read. That the record word at 0x100 is Spell4Base.weaponSlot is matched by name and values, and that location 0 is the equipped location by the Lua's GetSlot() == 16 test, not by reading the loaders."
+name = "CheckCastCaster"
+
+["0x1403b0880"]
+statement = "The client's checks of the target before a cast is sent. Among its refusals: 105 TargetRangeMax and 183 TargetRangeVertical (the spell's range from its Spell4 row), 166 Caster_Needs_LoS, 32 CasterCannotBePrimaryTarget, 17 SpellPreRequisites, 274, 286 and 304 for structured-plug, group and vehicle targets. A target out of range is therefore never sent; the server need not expect a press beyond the spell's range from a client that agrees with it on positions."
+proof = "Saved C 0x1403b0880.c (hash 8eb22adb6de47956), 425 lines: codes given 0x11, 0x20, 0x69, 0xa6, 0xb7, 0x112, 0x11e, 0x130, and 0x13d passed through. Names from Spell.CodeEnumCastResult."
+grade = "fairly sure"
+gap = "Only the result codes were read, not how range is measured (which positions, whether the units' radii count); a press at the edge of range in a live run would settle the margin the server should allow."
+name = "CheckCastTarget"
+
+["Spell.CodeEnumCastResult"]
+statement = "The Lua enum of cast results, 327 values, the result a 0x7fc carries and the client's own checks give. Among them: 0 Ok, 1 UnableToCreateSpell, 4 SpellUnknown, 5 SpellBad, 13 SpellAlreadyCasting, 14 SpellGlobalCooldown, 15 SpellCooldown, 16 SpellGroupCooldown, 17 SpellPreRequisites, 30 CasterUnknown, 31 CasterMustHaveTarget, 33 CasterNotIncontrolOfSelf, 34 CasterMovement, 36 to 43 crowd control (CCStun, CCSleep, CCRoot, CCDisarm, CCSilence, CCPolymorph, CCFear, CCHold), 57 Caster_CannotBeDead, 90 TargetUnknown, 91 NoTarget, 99 TargetFaction, 101 TargetOrientation, 104 TargetRangeMin, 105 TargetRangeMax, 106 Target_CannotBeDead, 166 Caster_Needs_LoS, 169 WeaponSlot, 182 SpellNoCharges, 183 TargetRangeVertical, 285 IllegalSpellCast and 317 Queued. A value at or above 332 shows no text."
+proof = "Registration 0x1405e8230: 0x1405e83ab lea rdx, [0x140b233f8] ('CodeEnumCastResult'); 0x1405e83ec mov ebp, 0x147; 0x1405e83fc lea rbx, [0x140c2f290]. Bytes at 0x140c2f290: 327 entries of 16 bytes (a wide-text name pointer and a 32-bit value), read with the client file reader (scratch tools/lua_enum_table.py in the trace folder). HandleSpellCastResult 0x1405a5010 looks a text up only below 0x14c."
+grade = "sure"
+
+["Spell.CodeEnumCastMethod"]
+statement = "The Lua enum of a spell's cast method (Spell4Base.castMethod): 0 Normal, 1 Channeled, 2 PressHold, 3 ChanneledField, 4 UNUSED04, 5 ClientSideInteraction, 6 RapidTap, 7 ChargeRelease, 8 Multiphase, 9 Transactional. The client branches on it: 2, 6 and 7 pass the threshold step before a cast is sent; a go starts a Normal cast's cooldowns and skips 2 and 6; 8 sums its phase times into the cast's duration."
+proof = "Registration 0x1405e8230 (listing): 0x1405e86d4 lea rdx, [0x140b23368] ('CodeEnumCastMethod'), then the names in order at 0x1405e870d ('Normal', value from rbp, 0), 0x1405e8766 'Channeled', 0x1405e87b7 'PressHold', 0x1405e8808 'ChanneledField', 0x1405e8863 'UNUSED04', 0x1405e88be 'ClientSideInteraction', 0x1405e8919 'RapidTap', 0x1405e8974 'ChargeRelease', 0x1405e89cf 'Multiphase', 0x1405e8a2a 'Transactional'. Branches: CastAbilityBagSpell 0x14039a040, ApplySpellGo 0x14053e5a0, InitCast 0x14053d1f0."
+grade = "fairly sure"
+gap = "Only 0 (rbp, which 0x1405e86d0 lea r8d, [rbp + 0x12] shows is 0) was read as a value; the rest are taken from their order. The registers holding 1 to 9 were not traced."
+
+["SpellLevel.spell4Id"]
+statement = "The class ability table: each SpellLevel row gives a class (classId), a character level, a prerequisite and a Spell4 id. The client keeps the rows per class (classes below 23, levels below 100) with their Spell4 rows, but nothing in the client grants them: which abilities a character has is the server's to send. At level 1 with no prerequisite each class has three rows: Warrior (1) 32078 Relentless Strikes, 58524 Rampage, 58591 Kick; Engineer (2) 42276 Pulse Blast, 41276 Electrocute, 41438 Zap; Esper (3) 32893 Telekinetic Strike, 32809 Mind Burst, 32812 Crush; Medic (4) 58832 Discharge, 29874 Gamma Rays, 42352 Paralytic Surge; Stalker (5) 38765 Shred, 38779 Impale, 38791 Stagger; Spellslinger (7) 43468 Quick Draw, 34718 Charged Shot, 34355 Gate. Each is tier 1 of its Spell4Base (Shred: base 23148)."
+proof = "gleam run -m genesis_prime/table_rows -- SpellLevel characterLevel=1: 18 rows, IDs 919, 920, 925, 1111, 1185, 1188, 647, 766, 1239, 631, 1086, 1089, 780, 807, 808, 1011, 1036, 1236, all prerequisiteId 0. gleam run -m genesis_prime/table_rows -- Spell4 <id> for each: description, spell4BaseIdBaseSpell, tierIndex 1. Client reader: 0x140560b20 (saved C, hash 8eb22adb6de47956) reads every SpellLevel row, keeps those with classId below 0x17 and characterLevel below 100 whose Spell4 row exists, in per-class lists of (spell, level, cost multiplier, prerequisite) at spell system 0x58 + class × 0x10."
+grade = "fairly sure"
+gap = "Who reads the per-class lists (the ability builder's Lua, level-up unlocks) is not read, so that the client never grants from them is from finding no sender, not a full search. Rows above level 1 and rows with a prerequisite were not listed."
+
+["opcode.0x111.ability_bag"]
+statement = "How the client takes an ability through message 0x111 (ServerItemAdd): an item whose location is 4 is an ability, not an inventory item. Its item id is the Spell4Base id and its bag index is the ability bag slot that ClientCastSpell later names. The client puts it in that slot (replacing one already there), adds the Spell4Base to the ability book when absent, and raises AbilityBookChange unless the add's reason is 49. The 0x111 body is a shared item record then the reason (6 bits). The record in wire order: guid (64 bits), a 64-bit value, item id (18), location (9) and bag index (32), stack count (32), charges (32), 64 bits, 32 bits, 64 bits, durability (float), 32 bits, 8 bits, three 32-bit values, two entries of 3, 32 and 32 bits, 18 bits, a 3-bit count of 32-bit values, a 4-bit count of 32-bit values, a 6-bit count of realm-and-character ids, and 32 bits."
+proof = "Registered in 0x14006c290 (saved C line 437, hash 8eb22adb6de47956): id 0x111, record 0xb0, reader 0x14008cda0 (saved C: ReadSharedItem 0x14008c0d0 then ReadBits32 6 at 0xa8). 0x14008c0d0 (saved C): ReadUint64 at 0 and 8, ReadBits32 0x12 at 0x10, ReadItemLocation 0x14008da10 (ReadBits32 9, ReadBits32 0x20), the fields as listed. Case 0x1403eeef2 calls HandleItemAdd 0x1403b8380 (saved C): location (record 0x14) equal to 4 -> an occupied slot is removed (0x1403b7e80), then AddHeldItem 0x1403b77d0, which for location 4 grows the vector at game state 0xa90 to the bag index, makes the ability item with item id at its offset 0x40 and reason at 0x44, calls AddAbilityBookEntry 0x1403ba550 with the item id, and raises AbilityBookChange when the reason is not 0x31."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. What the shared item's unnamed values mean is the items trace's to settle; for an ability item the earlier server sent zeros there."
+
+["opcode.0x1a0"]
+statement = "Message 0x1a0 (416), world server to client: the ability book's tiers (ServerAbilities). Body: a count (32 bits) and that many entries of a Spell4Base id (18 bits), a tier (4 bits) and an action set index (3 bits). For each, the client adds the base to the book when absent, then, for that action set, keeps the tier and the Spell4 id of that tier (tier 0 counts as tier 1 for the spell). It raises AbilityBookChange once. The book's spell for the active action set is what a press of that ability casts."
+proof = "Registered in 0x14006c290 (saved C line 534, hash 8eb22adb6de47956): id 0x1a0, record 0x10, reader 0x14008eda0 (saved C: ReadBits32 0x20, then per entry ReadBits32 0x12, ReadBits8 4, ReadBits8 3). Case 0x1403ef702 calls HandleAbilities 0x1403b92a0 (saved C): the map at game state 0xaa8 by base id, AddAbilityBookEntry 0x1403ba550 when absent; for an action set below the entry's set count, byte 8 = tier, word 4 = GetSpellIdForTier 0x1407a1440(tier or 1, base); 'AbilityBookChange'. GetAbilityBookSpell 0x1403bad30 reads that word for the active set (game state 0x6dec), clamped to the entry's last set; GetAbilityItemSpell 0x1405a4b80 uses it for a press."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. AddAbilityBookEntry's own default tier (from the level and the Spell4TierRequirements rows) was not read through, so whether an item alone, with no 0x1a0, leaves a castable spell is not settled; an entry has four action sets, or one when one of the spell's five type words is 6."
+
+["opcode.0x19d"]
+statement = "Message 0x19d (413), world server to client: one action set (ServerActionSet). Body in wire order: the action set index (3 bits; above 3 refuses the whole message), a 2-bit value kept per set, the result (6 bits), a count (6 bits) and that many shortcuts of a shortcut type (4 bits), an item location (9 bits) and bag index (32 bits), and an object id (32 bits). The bag index is the action bar slot, 0 to 47; a slot above 47 refuses the whole message. Each shortcut replaces that slot's: type 4 with an object id is an ability by its Spell4Base id, shown with its tier 1 spell; type 0 empties the slot. A result other than 1 raises ActionSetError. The client shows the active set's slots on the action bar (slots 0 to 7 the large buttons); the active set is 0 until a message changes it."
+proof = "Registered in 0x14006c290 (saved C line 468, hash 8eb22adb6de47956): id 0x19d, record 0x18, reader 0x14008da70 (saved C: ReadBits8 3, ReadBits8 2, ReadBits32 6, ReadBits32 6 count, per shortcut ReadBits32 4, ReadItemLocation 0x14008da10, ReadBits32 0x20). Case 0x1403ef01b calls HandleActionSet 0x1403b97a0 (saved C): index above 3 -> 0x80004005; a slot above 0x2f -> 0x80004005; MakeShortcut 0x1403c1bf0(game, 9, type, object id, location) stored at game state 0xac0 + (set × 48 + slot) × 8; the 2-bit value to 0x1448 + set × 4; result not 1 -> 'ActionSetError'. MakeShortcut type 0 -> none; type 4 -> 0x1405c79c0, GetSpellIdForTier 0x1407a1440(base, tier 1) and the spell record. Active set at game state 0x6dec, zeroed in 0x1403e1400 and set only by 0x25e (0x1403b5f80) and 0x175 (0x1403cd930). ActionBarFrame.lua lines 186-196: the large buttons are LASBar content ids 0 to 7."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. The 2-bit value's meaning, the shortcut types other than 0 and 4, and the location field's use for type 4 are not read; the earlier server sent location 4 and the slot as bag index for abilities."
+
+["lua.ActionBarFrame.InitializeBars"]
+statement = "The ActionBarFrame addon hides the ability bar unless the console setting hud.skillsBarDisplay is 1 (always), 3 (in combat) or 4 (out of combat). For a setting below 1, as on a new install, it sets it to 1 when the player has an equipped item in slot 16 (the weapon) and otherwise waits for PlayerEquippedItemChanged, setting it when a weapon is equipped. So on a fresh client a character with no weapon sees no ability bar at all."
+proof = "ActionBarFrame.lua (client UI files): IsWeaponEquipped lines 136-147 (GetEquippedItems, GetSlot() == 16); InitializeBars lines 157-173; OnPlayerEquippedItemChanged lines 129-134 fires OptionsUpdated_HUDTriggerTutorial 'skillsBarDisplay', which OptionsInterface.lua OnTriggerTutorial (lines 342-346) turns into Apollo.SetConsoleVariable('hud.skillsBarDisplay', 1); RedrawBarVisibility lines 258-277. The setting is registered at 0x140942420 (saved C, hash 8eb22adb6de47956)."
+grade = "fairly sure"
+gap = "The setting's default value was not read from its registration (static bytes at 0x140c4a3d0 hold 4 and 2 in two words whose meaning is unread); the Lua's own comments and nil-or-below-1 test imply 0. A setting saved as 1 by an earlier run on Jim's PC would hide this on his client."
+
+["lua.Unit.ShouldShowCastBar"]
+statement = "A unit's cast bar shows while its current cast is in the client's cast table, the spell has a cast bar, and the cast's start time plus its duration is still ahead. So a cast bar ends on its own when the cast's time passes, with or without ServerSpellFinish; there is no stuck cast bar. A spell with no cast bar (Shred, castBarType 0) never shows one."
+proof = "Lua method name at 0x140b2afa0, method table entry bytes at 0x140c5b300: a0afb24001000000 8043654001000000 (0x140654380). 0x140654380 (saved C, hash 8eb22adb6de47956) calls IsUnitCastBarShown 0x140469530: FindCast 0x140561c30 of the unit's current cast (unit 0x1600, set by SetUnitCast 0x1404697a0); the spell record word at 0x2c non-zero; cast start (0x194) + duration (0x50) − now above 0. CastBar.lua lines 132-159 show the player's bar only when ShouldShowCastBar holds. Spell4Base 23148 castBarType 0 (gleam run -m genesis_prime/table_rows -- Spell4Base 23148)."
+grade = "fairly sure"
+gap = "That the record word at 0x2c is Spell4Base.castBarType is matched by meaning. The cast kept in the table after its time (no 0x7fe) still counts in CheckCastCaster's SpellAlreadyCasting test; see cast.no_answer."
+
+["cast.no_answer"]
+statement = "What the client does with no answer, or a wrong one, to its cast. No answer to 0x9a: the pending cast stays in its list, nothing shows (no cast bar, no global cooldown, no failure), and the button can be pressed again, each press making another pending cast; the client has no timer for them. No ServerSpellFinish after a start: the cast bar ends when its time passes, but the cast stays live in the table, and the caster check gives 13 SpellAlreadyCasting while the player's current cast is live, so the player's next cast is likely refused on the client. A start, go or finish with an unknown cast id is dropped. A cast result with a wrong client id still shows the failure and clears the global cooldown."
+proof = "StartLocalCast 0x1403988d0 and CreateCast 0x140561780 (pending list, no timer, removal only by 0x7fc, 0x7fd, a confirmed later cast or leaving the world); FindCast 0x140561c30 (the cases' jz 0x1403ec71b); IsUnitCastBarShown 0x140469530 (time bound); CheckCastCaster 0x1403afb10 line 38 onward (FindCast of unit 0x1600, live -> 0xd unless the spell flags 0x20, 8 or 4 or the queue path); HandleSpellCastResult 0x1405a5010."
+grade = "guess"
+gap = "The SpellAlreadyCasting block's conditions (the caller's flag param_10 and the cast-info word at 0x14) were not read through. A live run that starts a cast with 0x7ff and 0x7f4 but sends no 0x7fe, then presses again, settles whether the second press is refused."
+
+["0x140758020"]
+statement = "ActionSetLib.IsSlotUnlocked(slot): with no player it gives 23; for a slot the client has a prerequisite for, 1 when the slot has none or the player passes it and 2 when the player fails it; for a slot past the list, 24. The Lua treats only CodeEnumLimitedActionSetResult.Ok as unlocked and draws a lock over the large buttons otherwise."
+proof = "Lua name 'IsSlotUnlocked' at 0x140b4c7f8, method entry bytes at 0x140b758f8: f8c7b44001000000 2080754001000000 (0x140758020). Saved C 0x140758020.c (hash 8eb22adb6de47956): the slot's word in the array at 0x140c659c0; 0 -> 1; else the prerequisite object's slot 0x18 -> 1 or 2; past the count -> 0x18; no player -> 23.0. ActionBarFrame.lua lines 201-209."
+grade = "fairly sure"
+gap = "Where the per-slot prerequisite array comes from, and which slots a level 1 character has unlocked, are not read; that Ok is 1 is assumed from 0x19d's result test, not read from the enum."
+name = "LuaActionSetLibIsSlotUnlocked"
+
+["opcode.0x801"]
+statement = "Message 0x801 (2049), client to world server: the client cancels one of its player's casts (ClientSpellStopCast). Body in wire order: the cast id (32 bits), the reason (9 bits, a Spell.CodeEnumCastResult) and one bit, which this sender always sets. The client sends it when a unit dies while the player's current cast targets it, with reason 6 (SpellCancelled), after logging the reason's text and ending the cast on its side."
+proof = "Registered in 0x14006c290 (saved C line 652, hash 8eb22adb6de47956): id 0x801, record 0xc, sizer 0x140094190, writer 0x1400941a0 (saved C: WriteBitsSlow 0x20 of the first word, 9 of the second, 1 of whether the third is non-zero). Sender 0x14039cce0 (saved C): returns with no player; the reason's text for values below 0x14c; 0x1404698a0 on the player unit; SendWorldMessage(game, 0x801, {cast id, reason, 1}). The caller on a death, SetUnitDeathState 0x14045e740 with reason 6, is from the death trace."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; not run. Other senders of 0x801 (a player pressing escape or moving during a cast) and whether the cast id is the server's or the client's id were not read; 0x1404698a0 is not read."
+
+["opcode.0x37e"]
+statement = "Message 0x37e (894), client to world server, sent from the ability press: when the player presses an ability while a unit value of its own (set from unit stat 12 in message 0x262) is non-zero, the client clears that state, sends 0x37e with every field 0, holds the press for a retry and reports 2 (MovingToCast) instead of sending 0x9a. Body in wire order: 14 bits, 32 bits, 32 bits, 1 bit, 1 bit."
+proof = "Registered in 0x14006c290 (saved C line 308, hash 8eb22adb6de47956): id 0x37e, record 0x14, writer 0x140087270 (saved C: WriteBitsSlow 0xe, 0x20, 0x20, then 0x1400a7250 one bit twice). Sender 0x1403a2550 (saved C): when the player unit's word at 0x1cc is non-zero, 0x1404739b0(player, 0, 0, 0, 0, 0) and SendWorldMessage(game, 0x37e, zeros). Caller CastAbilityBagSpell 0x14039a040: when that word is non-zero it stores the press (game state 0x6648 = 4, 0x664c target, 0x66a0 bag index), starts a timer at 0x6658 and returns 2. SetUnitStatsFromCreate 0x140458140 case 0xc stores stat 12's second value at that word."
+grade = "guess"
+gap = "What unit stat 12 and 0x37e mean is not read (a seat or a carried state are candidates); 0x1404739b0 and the timer's retry are not read. Reading 0x1404739b0 and the Lua names of unit stat 12 would settle it. A new character created with stat 12 absent or 0 never sends it."
+
+["opcode.0x937"]
+statement = "Message 0x937 (2359), game server to client: a unit's health. Body: the unit id (32 bits), the health (32 bits), a dead bit (1 bit). The client finds the unit and, unless it is the player's own unit, sets its health to the value as sent; when the dead bit is set and the health is 0 it also marks the unit dead; then it raises RefreshHealthShieldBar. A 0x937 for the player's own unit, or for an id the client lacks, does nothing. It is the only way to change another unit's health after its create."
+proof = "Registered in 0x14006c290 with size 0xc and reader 0x14007ea30 (decompiled: ReadBits32 32, 32, then 1). HandleWorldMessage's jump table entry (0x1403f1344 + 4 x (0x937 - 97)) is 0x1403ed45c: 0x1403ed462 call 0x1403da270. 0x1403da270 decompiled: FindUnit, skips the unit whose id equals the player unit's (world 0x78), calls the unit's slot 0x50 (0x1404602e0, which stores health at 0x40 unless flag 0x100 at 0x28 is set) with the second field, SetUnitDead(unit, 1) when the third field is non-zero and the second is 0, then raises 'RefreshHealthShieldBar'."
+grade = "fairly sure"
+gap = "Read from the decompile; no client vector built. Whether a unit marked dead this way also needs 0x88c is the death trace's question."
+
+["0x14007ea30"]
+statement = "Reads message 0x937's body: the unit id (32 bits), the health (32 bits) and the dead bit (1 bit)."
+proof = "Decompiled: ReadBits32(record, 0x20), ReadBits32(record + 4, 0x20), ReadBits32(record + 8, 1). Registered as 0x937's reader in 0x14006c290."
+grade = "fairly sure"
+gap = "Read from the decompile; not emulated."
+name = "ReadMessage0937Body"
+
+["0x1403da270"]
+statement = "Handles message 0x937: sets the health of any unit but the player's own, marks it dead when the dead bit is set and the health is 0, and raises RefreshHealthShieldBar."
+proof = "See opcode.0x937; called from HandleWorldMessage at 0x1403ed462."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "HandleEntityHealthUpdate"
+
+["0x1404602e0"]
+statement = "Sets a unit's health (the value Unit:GetHealth returns) to the value given, with no bound to its maximum; a unit with a certain flag keeps its health."
+proof = "Decompiled seed_1404602e0: if (flags at 0x28 & 0x100) == 0, store the value at 0x40. Slot 0x50 of the unit class table 0x140b66fd0 (bytes at 0x140b67020)."
+grade = "fairly sure"
+gap = "What sets flag 0x100 is not read."
+name = "SetUnitHealth"
+
+["opcode.0x92f"]
+statement = "Message 0x92f (2351), game server to client: the player's own health. Body: the unit id (32 bits), the health (32 bits), a reason mask (18 bits). Only for the player's own unit (any other id does nothing): it raises UI_HealthChanged with the new health and the maximum, sets the health as sent, and when the mask has 0x40 (falling) or 0x200 (breath) and health fell it raises DamageOrHealingDone with no caster, damage type 6 (Fall) or, for 0x200, 7 (Suffocate), and the loss; 0x200 also raises Breath_FlashEvent with health over maximum. Then RefreshHealthShieldBar. It never marks the player dead."
+proof = "Registered in 0x14006c290 with size 0xc and reader 0x1400974d0 (decompiled: ReadBits32 32, 32, 0x12). Jump table entry 0x1403ed44a: 0x1403ed450 call 0x1403da0b0. 0x1403da0b0 decompiled: requires the unit id to equal the player unit's (world 0x78); 'UI_HealthChanged' with the new value and the maximum (slot 0x48); old = slot 0x40; slot 0x50 sets; (mask & 0x200) -> 'Breath_FlashEvent'; ((mask & 0x40) or (mask & 0x200)) and old - new > 0 -> 'DamageOrHealingDone' ('UUiiibS', 0, unit, 6 or 7, old - new, 0, 0, empty). Damage types from GameLib.CodeEnumDamageType."
+grade = "fairly sure"
+gap = "The other 16 mask bits are not read by this handler; whether anything else reads them is not searched."
+
+["0x1400974d0"]
+statement = "Reads message 0x92f's body: the unit id (32 bits), the health (32 bits) and an 18-bit reason mask."
+proof = "Decompiled: ReadBits32 0x20, 0x20, 0x12 at record 0, 4, 8."
+grade = "fairly sure"
+gap = "Not emulated."
+name = "ReadMessage092FBody"
+
+["0x1403da0b0"]
+statement = "Handles message 0x92f, the player's own health (see opcode.0x92f)."
+proof = "Called from HandleWorldMessage at 0x1403ed450; decompiled as in opcode.0x92f."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "HandlePlayerHealthUpdate"
+
+["opcode.0x938"]
+statement = "Message 0x938 (2360), game server to client: a unit's stat changed, as an integer. Body: the unit id (32 bits), the stat (5 bits), the value (32 bits). The client applies it with the integer and a float of 0 (ApplyUnitStat). Stat 20 sets the unit's shield (what Unit:GetShieldCapacity returns) and, for the player, raises RefreshHealthShieldBar; stat 22 sets its absorption (Unit:GetAbsorptionValue); stat 10 raises the level. Stat 0 (health) is not handled by ApplyUnitStat, so health cannot be sent this way. Because 0x935 passes an integer of 0, a 0x935 carrying stat 20 or 22 sets it to 0."
+proof = "Registered in 0x14006c290 with size 0xc and reader 0x140097620 (decompiled: ReadBits32 0x20, 5, 0x20). Jump table entry 0x1403ed54e: 0x1403ed553 call 0x1403d90d0 (FindUnit); 0x1403ed561 mov r9d, dword ptr [rdi+0x8]; 0x1403ed565 xorps xmm0, xmm0; 0x1403ed568 jmp 0x1403ed532 (the 0x935 path: 0x1403ed532 mov r8d, dword ptr [rdi+0x4]; 0x1403ed542 call 0x1403d9a60). ApplyUnitStat decompiled: case 0x14 calls slot 0x80 (0x140482210, stores at 0x48, which slot 0x70 0x1402e41d0 returns) then 'RefreshHealthShieldBar' for the player; case 0x16 calls slot 0x98 (0x140482200, stores at 0x4c, read by slot 0x88 0x140482430); no case 0."
+grade = "fairly sure"
+gap = "Whether the client also has a writer for it is not checked."
+
+["0x140097620"]
+statement = "Reads message 0x938's body: the unit id (32 bits), the stat (5 bits) and the value (32 bits)."
+proof = "Decompiled: ReadBits32 0x20, 5, 0x20 at record 0, 4, 8."
+grade = "fairly sure"
+gap = "Not emulated."
+name = "ReadMessage0938Body"
+
+["opcode.0x93a"]
+statement = "Message 0x93a (2362), game server to client: set some of a unit's properties. Body: the unit id (32 bits), a count (8 bits), and that many entries of a UnitProperty2 id (8 bits), its base value and its value (floats). It is the way to change a unit's maximum health (property 7) or maximum shield (property 41) after its create."
+proof = "Reader 0x140097710 (decompiled: ReadBits32 0x20, ReadBits8 8, then count x 12-byte entries by 0x1400961d0); registered in 0x14006c290 with size 0x10. Jump table entry 0x1403ed63a: 0x1403ed640 call 0x1403da360. Handler as the earlier health decode read it: a check over the player's 197 properties first, then each entry set as in SetUnitPropertiesFromCreate."
+grade = "fairly sure"
+gap = "The handler 0x1403da360 was read by the earlier decode, not again here; the property entry reader 0x1400961d0's widths are taken from that decode."
+
+["0x140080bf0"]
+statement = "Reads a body of three 32-bit values; the reader of messages 0x7f5, 0x7f7, 0x908 and 0x90a."
+proof = "Decompiled: ReadBits32 0x20 at record 0, 4 and 8. Registered for 0x7f5, 0x7f7, 0x908 and 0x90a in 0x14006c290."
+grade = "fairly sure"
+gap = "Not emulated."
+name = "ReadThreeUint32Body"
+
+["0x1403db7f0"]
+statement = "Handles message 0x908, a unit's target (see opcode.0x908)."
+proof = "Called from HandleWorldMessage at 0x1403ed68c; decompiled as in opcode.0x908."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "HandleEntityTargetUnit"
+
+["0x14045bdc0"]
+statement = "Sets one entry of a unit's threat table: the other unit's threat, or erases it when the threat is 0; raises TargetedByUnit or UnTargetedByUnit when the player gains or loses the unit's attention."
+proof = "Decompiled; called from 0x1403db7f0 (message 0x908) and HandleWorldMessage at 0x1403ed6b5 (message 0x90a)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "SetUnitThreat"
+
+["opcode.0x909"]
+statement = "Message 0x909 (2313), game server to client: a unit's threat list. Body: the unit id (32 bits), five unit ids (32 bits each), five threat values (32 bits each). The client uses it only when the unit is the current target of the unit the player controls: it builds a list with the unit's own target first and then the other non-zero ids in order, each with its threat, and raises TargetThreatListUpdated. A zero id ends the list. No addon in the client's UI handles that event."
+proof = "Registered in 0x14006c290 with size 0x2c and reader 0x140098080 (decompiled: ReadBits32 0x20, then ReadBytesAsBits 0x14 bytes twice). Jump table entry 0x1403ed6c1: FindUnit; 0x1403ed6d6 mov rax, qword ptr [rsi+0x6490]; 0x1403ed6e6 mov eax, dword ptr [rax+0x108]; 0x1403ed6ec cmp eax, dword ptr [rdi]; 0x1403ed6ee jne (skip); 0x1403ed6fa call 0x14055c0f0. 0x14055c0f0 decompiled: list at world 0x66e8; the event raised by 0x14042e1f0 ('TargetThreatListUpdated'). A search of the UI folder finds the event only in LuaDocData/data.xml."
+grade = "fairly sure"
+gap = "Read from the decompile; no vector."
+
+["0x140098080"]
+statement = "Reads message 0x909's body: the unit id (32 bits), then five 32-bit unit ids and five 32-bit threat values, read as raw bytes."
+proof = "Decompiled: ReadBits32(record, 0x20), ReadBytesAsBits(record + 4, 0x14), ReadBytesAsBits(record + 0x18, 0x14)."
+grade = "fairly sure"
+gap = "Not emulated; byte order of the raw reads is the bit reader's, as 0x140337160 reads."
+name = "ReadMessage0909Body"
+
+["0x14055c0f0"]
+statement = "Handles message 0x909 for the player's target: builds the target's threat list (its own target first) and raises TargetThreatListUpdated."
+proof = "See opcode.0x909."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "HandleThreatListUpdate"
+
+["opcode.0x89a"]
+statement = "Message 0x89a (2202), game server to client: a unit enters or leaves combat. Body: the unit id (32 bits), the in-combat bit (1 bit). The client stores the flag (what Unit:IsInCombat returns) and, when it changed, plays the unit's combat stance and voice and raises UnitEnteredCombat(unit, flag). When the unit is the one the player controls and the flag is 1, it may also stop a state of the player's and send message 0x37e. It is the only setter of the flag: a unit is created out of combat and stays in combat until a 0x89a with 0."
+proof = "Registered in 0x14006c290 with size 8 and reader ReadUint32AndBitBody. Jump table entry 0x1403ed716: 0x1403ed71b call 0x1403d90d0; 0x1403ed72e call 0x14045c500; 0x1403ed733 cmp rbx, qword ptr [rsi+0x6490]; 0x1403ed740 cmp dword ptr [rdi+0x4], 0x0; 0x1403ed74d call 0x1403a2550 (decompiled: when the controlled unit's 0x1cc is set, 0x1404739b0 then SendWorldMessage 0x37e). 0x14045c500 decompiled: returns when 0x2ac equals the flag, else stores it. call_paths.py 0x14045c500 --up: only HandleWorldMessage at 0x1403ed72e; call_paths.py 0x14042e120 --up: only 0x14045c500 at 0x14045cf53 ('UnitEnteredCombat'). Writers of the unit's 0x2ac in the saved C: 0x14045c500 and the unit constructor 0x140454380 (stores 0); the other files that write a 0x2ac are other objects. Unit:IsInCombat 0x140653ed0 returns 0x2ac != 0."
+grade = "fairly sure"
+gap = "0x37e and the state it tests (the player unit's stat-12 value) are trace-cast's record opcode.0x37e. The other writers of a 0x2ac were judged other objects by their code, not by tracing their types."
+
+["0x14045c500"]
+statement = "Sets a unit's in-combat flag from message 0x89a; on a change it updates the unit's stance and voice and raises UnitEnteredCombat."
+proof = "See opcode.0x89a."
+grade = "fairly sure"
+gap = "The stance and voice code is not read."
+name = "SetUnitInCombat"
+
+["0x14042e120"]
+statement = "Raises the Lua event UnitEnteredCombat with a unit and its in-combat flag."
+proof = "Decompiled: 0x1400ea3e0(ui, 'UnitEnteredCombat', ..., unit, flag). Its only caller is 0x14045c500 (call_paths.py --up)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "RaiseUnitEnteredCombat"
+
+["0x140653ed0"]
+statement = "Unit:IsInCombat() in the UI's Lua: true when the unit's in-combat flag (set only by message 0x89a) is set; false for an unknown unit."
+proof = "Binding pair at 0x140c5b1d0 (the name 'IsInCombat' at 0x140b2aea8, the function 0x140653ed0). Decompiled: FindUnit, then pushes (0x2ac != 0)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "LuaUnitIsInCombat"
+
+["opcode.0x247"]
+statement = "Message 0x247 (583), game server to client: a combat log entry. Body: a type (6 bits; above 35 fails the read) and the type's body. Types: 0 Absorption, 1 CCState, 2 CCStateBreak, 3 Damage, 4 DamageShields, 5 Reflect, 6 MultiHit, 7 MultiHitShields, 8 FallingDamage, 9 LifeSteal, 17 Deflect, 18 Immunity, 19 Interrupted, 22 Death, 23 Resurrect, among others. Type 3's body: damage (32), raw damage (32), shield (32), absorption (32), overkill (32), glance amount (32), target vulnerable (1), target killed (1), periodic (1), damage type (3), effect type (8), then the cast data: caster unit id (32), target unit id (32), Spell4 id (18), combat result (4). The client raises CombatLogDamage with nDamageAmount, nRawDamage, nShield, nAbsorption, nOverkill, nGlanceAmount, bTargetVulnerable, bTargetKilled, bPeriodic, eDamageType, eEffectType, unitCaster, unitTarget, splCallingSpell and eCombatResult, if the player's combat log options show the type and a player is caster or target, and not when the combat result is 0. A spell hit's line is already made by the client from the damage description, so a server that also sends type 3 for it logs the hit twice."
+proof = "Registered in 0x14006c290 with size 0x48 and reader 0x14009fac0 (decompiled: ReadBits32 6, refuses above 0x23, then the reader table 0x140c1e870; bytes at 0x140c1e870 give 0x14009f280 for types 3, 4, 6, 7). 0x14009f280 decompiled: six ReadBits32 0x20, three of 1, 3, 8, then 0x14009f0a0 (0x20, 0x20, 0x12, 4). Jump table entry 0x1403ee510: 0x1403ee513 call 0x1403c3190, a switch on the type; case 3 copies the fields to the CombatLogDamage object (class table 0x140b6f970) and calls 0x14060bd50. Type names from the 'CombatLog...' string each case's raiser uses. The field names from 0x14060bd50's disassembly (0x14060be12 lea r8, [0x140b265e0] 'nDamageAmount' with r9d from object 0x20, then 'nRawDamage' 0x24, 'eDamageType' 0x44, 'nShield' 0x28, 'nAbsorption' 0x2c, 'nOverkill' 0x30, 'nGlanceAmount' 0x34, 'bTargetVulnerable' 0x38, 'bTargetKilled' 0x3c, 'bPeriodic' 0x40, 'eEffectType' 0x48) and 0x14060b380 (unitCaster 0x8, unitTarget 0x10, eCombatResult 0x18, splCallingSpell 0x14). The double logging: 0x140563dc0 builds the same CombatLogDamage object from a spell result."
+grade = "fairly sure"
+gap = "Only type 3's body is read in full; the other readers are named, not read. The filter 0x1403c2ee0's options are named by their bits, not by the option names."
+
+["0x14009f280"]
+statement = "Reads the body of combat log types 3, 4, 6 and 7: six 32-bit amounts (damage, raw damage, shield, absorption, overkill, glance amount), three bits (vulnerable, killed, periodic), the damage type (3 bits), the effect type (8 bits) and the cast data."
+proof = "Decompiled as in opcode.0x247; the table entries at 0x140c1e888, 0x140c1e890, 0x140c1e8a0 and 0x140c1e8a8."
+grade = "fairly sure"
+gap = "Not emulated."
+name = "ReadCombatLogDamageBody"
+
+["0x14009f0a0"]
+statement = "Reads a combat log entry's cast data: the caster unit id (32 bits), the target unit id (32 bits), the Spell4 id (18 bits) and the combat result (4 bits)."
+proof = "Decompiled: ReadBits32 0x20, 0x20, 0x12, 4; 0x14060b380 names the four as unitCaster, unitTarget, splCallingSpell (through 0x1403d3470) and eCombatResult."
+grade = "fairly sure"
+gap = "Not emulated."
+name = "ReadCombatLogCastData"
+
+["0x14060bd50"]
+statement = "Raises the Lua event CombatLogDamage with a table of nDamageAmount, nRawDamage, eDamageType, nShield, nAbsorption, nOverkill, nGlanceAmount, bTargetVulnerable, bTargetKilled, bPeriodic, eEffectType and the common fields (unitCaster, unitCasterOwner, unitTarget, unitTargetOwner, eCombatResult, splCallingSpell); nothing when the combat result is 0."
+proof = "Disassembly as in opcode.0x247; 0x14060bd58 cmp dword ptr [rcx+0x18], 0x0 (the combat result) / 0x14060bd5f jz (return). Raised as 'CombatLogDamage'."
+grade = "sure"
+name = "RaiseCombatLogDamage"
+
+["0x140094890"]
+statement = "Reads one effect info of message 0x7f4's target info: the Spell4Effects id (19 bits), an effect instance id (32 bits), a delay in milliseconds (32 bits), a 32-bit value, and a tag (2 bits): 0 is followed by one bit, 1 by a damage description; 2 and 3 fail the read."
+proof = "Decompiled: ReadBits32 0x13, 0x20, 0x20, 0x20, 2; tag below 2 calls the table 0x140c1eb88 (bytes at 0x140c1eb88: 0x1400853f0, one bit; 0x1400946c0, the damage description), else 0x80004005. The first field is looked up as a Spell4Effects row (0x1404e1c50); the third is added to the delay before a damage result is applied (0x1405d77a0: slot 8 called with the description and the animation delay plus that field)."
+grade = "fairly sure"
+gap = "The fourth field is not read; the second is the id message 0x7f5 matches (the casting trace's fact)."
+name = "ReadEffectInfo"
+
+["0x1400946c0"]
+statement = "Reads a damage description, in 0x7f4's effect info (tag 1) and in 0x7f8: raw damage, scaled raw damage, absorbed, shield absorbed, health damage including overkill, overkill and glance amount (32 bits each), a killed bit (1), the combat result (4 bits), the damage type (3 bits), a count (8 bits) and that many 32-byte hit entries."
+proof = "Decompiled: seven ReadBits32 0x20, ReadBits32 1, 4, 3, ReadBits8 8, then count x 0x1400945e0 into 32-byte entries. Field meanings from their uses: 0x140563dc0 makes CombatLogDamage's nRawDamage from the first, nAbsorption from the third, nShield from the fourth, nDamageAmount from the fifth minus the sixth, nOverkill from the sixth, nGlanceAmount from the seventh, bTargetKilled from the bit, eDamageType from the 3 bits, eCombatResult from the 4 bits; 0x140429630 passes the fifth, fourth and third to DamageOrHealingDone as the health change, shield and absorption; 0x140563ad0 rescales the third to fifth by first / second for a unit with a display flag."
+grade = "fairly sure"
+gap = "That the second is a level-scaled raw damage is inferred from the rescale only. The hit entries' fields are not read beyond their kind (the last 3 bits): 2 and 3 make a multi-hit line, others a deflect line."
+name = "ReadDamageDescription"
+
+["0x1400945e0"]
+statement = "Reads one hit entry of a damage description: seven 32-bit values and a 3-bit kind."
+proof = "Decompiled: seven ReadBits32 0x20 and ReadBits32 3."
+grade = "fairly sure"
+gap = "The values' meanings are not read (multi-hit, out of scope)."
+name = "ReadDamageHitEntry"
+
+["opcode.0x7f8"]
+statement = "Message 0x7f8 (2040), game server to client: results of an effect already sent in a cast. Body: the cast id (32 bits), the Spell4Effects id (19 bits), the target unit id (32 bits), a count (8 bits) and that many damage descriptions. The client finds the cast, then the target in it, then the effect with that Spell4Effects id, and applies each description as a 0x7f4 effect info's would be (floater, hit reaction, combat log). Any of the three not found drops the message without a word. It never changes health."
+proof = "Registered in 0x14006c290 with size 0x18 and reader 0x140095810 (decompiled: ReadBits32 0x20, 0x13, 0x20, ReadBits8 8, then count x 0x1400946c0 at stride 0x38). Jump table entry 0x1403ee233: 0x1403ee23c call 0x140561c30 (the cast lookup), 0x1403ee25c call 0x14053f340. 0x14053f340 decompiled: walks the cast's targets for the unit id, then the target's effects comparing slot 0x30 (0x1405da910, which returns the Spell4Effects row's id), then calls slot 8 per description with no delay."
+grade = "fairly sure"
+gap = "Read from the decompile; whether a cast that ended is still found is the casting trace's question."
+
+["0x14053f340"]
+statement = "Applies message 0x7f8's damage descriptions to the effect they name in a known cast."
+proof = "See opcode.0x7f8."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "ApplyEffectResults"
+
+["0x1405d77a0"]
+statement = "Builds the client's object for a damage-like effect of a cast (types 8 Damage, 12 DistanceDependentDamage, 33 DistributedDamage, 138 DamageShields): when its effect info carries a damage description it applies it after the cast's animation delay plus the effect info's delay."
+proof = "Called from 0x140718120's cases 8, 0xc, 0x21, 0x8a (class table 0x140b73de0). Decompiled: computes a delay from the caster's animation, then when the tag is 1 calls slot 8 (0x1405d79f0) with the description and that delay plus the effect info's third field."
+grade = "fairly sure"
+gap = "The animation delay's parts are not read."
+name = "InitDamageEffect"
+
+["0x1405d79f0"]
+statement = "Applies one damage description to its target, after the given delay: a hit reaction on the target; the DamageOrHealingDone floater, only when the player or the unit it controls is caster or target, or the caster or target is in the player's list of related units; and the combat log line. On a killing blow it may play the caster's kill speech, and with a critical result and health damage above GameFormula 487's share of maximum health (5%) it may gib the target. It never changes health."
+proof = "Decompiled; slot 8 of the damage effect class table 0x140b73de0 (bytes at 0x140b73de8). The kill speech tests the killed bit; the gib tests the killed bit, combat result 1, the target type and (health damage / maximum health) > GameFormula 0x1e7 datafloat0 (row 487: 0.05). Queues 0x1405642c0 (hit reaction), 0x140563930 (only when involved) and 0x140563a00 with a copy of the result made by 0x140567380. No call stores a unit's health."
+grade = "fairly sure"
+gap = "The list of related units (player unit 0x2b8) is not read."
+name = "ApplyDamageResult"
+
+["0x140429630"]
+statement = "Raises DamageOrHealingDone(caster, target, damage type, health change, shield absorbed, absorbed, critical, spell name) for a damage or heal result, when its combat result is not 0 (Avoid); critical is combat result 1. For Heal (10) and HealShields (118) effects the damage type is 4 or 5."
+proof = "Decompiled; registered on world 0x6cb8 and 0x6cc0 by 0x1404218a0. Arguments: event 1, 0, (type 10 or 0x76 ? 4 or 5 : event 13), event 8, 7, 6, (event 12 == 1), the name at event 0x50. FloatText.lua 726: OnDamageOrHealing(unitCaster, unitTarget, eDamageType, nDamage, nShieldDamaged, nAbsorptionAmount, bCritical)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "RaiseDamageOrHealingDone"
+
+["0x140563dc0"]
+statement = "Makes the combat log line for a spell result: for damage, CombatLogDamage with damage = health damage minus overkill, raw damage, shield, absorption, overkill, glance, vulnerable (the target's own state), killed, periodic (the effect row has a tick time), damage type and the effect type; DamageShields effects make CombatLogDamageShields; a non-empty hit list adds a multi-hit or deflect line."
+proof = "Decompiled: case 3 object (class table 0x140b6f970) with 0x38 = event 8 - event 9, 0x24 = event 4, and so on; then 0x14060b2b0, which logs only through 0x14060b170 (a player, a ghost or a unit owned by one is caster or target) and 0x14060b250 (0x1403c2ee0, the player's combat log options)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "LogEffectResult"
+
+["0x14045e9e0"]
+statement = "Plays a unit's hit reaction for damage taken: its size is the raw damage over (maximum health x GameFormula 954's first value / 100), scaled by its second value / 100 and raised to at least its third value / 100 when below 1, and capped at 1."
+proof = "Decompiled: GameFormula 0x3ba (row 954: 6, 100, 40) each times 0.01 (bytes at 0x140b79d3c); raw damage from the result's first field (0x1405643c0 passes event 4)."
+grade = "fairly sure"
+gap = "The animation it drives is not read."
+name = "PlayHitReaction"
+
+# Formulas
+
+["0x140565600"]
+statement = "The value of a damage-like effect for a caster and a target, as the spell tooltip shows it. Stat part S = the sum of each parameter value times the caster's stat for parameter types 1 to 5 (Strength to Wisdom), 11 (Stamina), 12 (Assault Power) and 13 (Support Power), rounded half away from zero. Flat part F = the sum of each parameter value times the value its type names (7 target maximum health, 8 caster maximum health, 10 caster level, 14 caster shield, 15 target shield, 16 caster maximum shield, 17 target maximum shield, 18 a value passed in, 19 target health, 21 target missing health, 22 target missing shield, 23 caster health, 25 caster missing health, 26 caster missing shield). Row part R = (dataBits01 as an integer + F) x dataBits00 as a float, for effect types 8, 10, 12, 33, 118 and 138 (type 5 uses dataBits02 and 03). For a player caster the value is M x (S + R). For a creature caster, with c = (level x GameFormula 712's first value + its second) x the mean of its stat-type parameter values, S becomes S when S is at most c, else ((1 - e^(-(S - c) / c)) x 712's third value + 1) x c, and both S and R are divided by 712's fourth value. M is the larger of the caster's DamageDealtMultiplier for the row's damage type (property 140 + damage type) and 0 for types 5, 8 and 138, 1 for the others."
+proof = "Decompiled. Effect row fields read as in EvaluateEffectToken: type at row 0x10, damage type 0x14, dataBits00.. at 0x40, parameter types at 0x88, values at 0x98. Calls 0x140566ad0 (F) and 0x140566d40 (S); the 1.0 at 0x140b79ed0, 0.5 at 0x140b79e48; GameFormula 0x2c8 (row 712: 70, 100, 1, 1); 0x1408fc7f0 is expf (emulated); property 0x8c + damage type read at 0x5c4 + 8 x id. Its only caller is 0x1405654a0, whose only caller is 0x1404de8d0 (query callers)."
+grade = "fairly sure"
+gap = "Not emulated as a whole; the creature path's c uses the unit's level from 0x1403b5030. Whether the server's retail damage used this value as the base of a hit is not in the client."
+name = "ComputeEffectValue"
+
+["0x140566ad0"]
+statement = "The flat part of an effect's value: the sum of each parameter value times the unit value its type names (see ComputeEffectValue)."
+proof = "Decompiled switch on each of the four parameter types: 7 target slot 0x48, 8 caster slot 0x48, 10 caster level 0x1403b5030, 0xe caster slot 0x70, 0xf target slot 0x70, 0x10 caster slot 0x78, 0x11 target slot 0x78, 0x12 the float argument, 0x13 target slot 0x40, 0x15 target slot 0x48 - 0x40, 0x16 target slot 0x78 - 0x70, 0x17 caster slot 0x40, 0x19 caster 0x48 - 0x40, 0x1a caster 0x78 - 0x70."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "SumFlatEffectParameters"
+
+["0x140566d40"]
+statement = "The stat part of an effect's value: the sum of each parameter value times the caster's stat for types 1 to 5 (properties 0 to 4), 11 (property 40, Stamina), 12 (Assault Power) and 13 (Support Power), rounded half away from zero to a whole number; 0 with no caster."
+proof = "Decompiled: 0x140466a70(unit, 0..4 or 0x28), 0x140462930, 0x140462980; rounding by adding or subtracting 0.5 (0x140b79e48) before the cut."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "SumStatEffectParameters"
+
+["0x140462930"]
+statement = "A unit's Assault Power: its AssaultRating (property 35) times GameFormula 1266's first value (0.25)."
+proof = "Decompiled: property value at 0x6dc (0x5c4 + 8 x 35) times GameFormula 0x4f2's 0x18, or 0.25 (bytes at 0x140b79df8) without the row. GameFormula 1266: datafloat0 0.25, datafloat01 0.25."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "GetAssaultPower"
+
+["0x140462980"]
+statement = "A unit's Support Power: its SupportRating (property 36) times GameFormula 1266's second value (0.25)."
+proof = "Decompiled: property value at 0x6e4 times GameFormula 0x4f2's 0x1c."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "GetSupportPower"
+
+["0x1403b5030"]
+statement = "A unit's level for formulas: its stat 11 value when non-zero, else its level (stat 10)."
+proof = "Decompiled: returns 0x3c, or 0x38 when 0x3c is 0. SetUnitStatsFromCreate stores stat 10 at 0x38 and stat 11 at 0x3c."
+grade = "fairly sure"
+gap = "What stat 11 means (a scaled or mentored level) is not read."
+name = "GetUnitFormulaLevel"
+
+["0x1404de8d0"]
+statement = "Evaluates one spell effect token of a tooltip text, such as $(eff=83788.input0pct): input, data, tickTimeMS, durationMS, durationM, durationH, delayMS and threat, with the modifiers pct, pctAdd, pctSub, rawInt and actual. An input token shows, by a client option or the actual modifier, either the effect's computed value (ComputeEffectValue for the player) or the parameter as '[x% stat name]'."
+proof = "Decompiled: the token names as wide strings; the input branch reads the parameter type at row 0x88 + 4i and value at 0x98 + 4i and formats '[%.*f%% %s]', or calls 0x1405654a0. Reached only through a class table (query callers: none)."
+grade = "fairly sure"
+gap = "The option's name is not read."
+name = "EvaluateEffectToken"
+
+["0x140453b60"]
+statement = "Turns a rating into a percentage (as a fraction), shared by every rating. Given a GameFormula row (f0, f01, f02, f03, int0, int01), a level L, a base B and a rating R: per = f0 / L x f01; knee = (f02 - int0) / per; when R is below the knee, p = per x R + int0; otherwise p = f02 + per x (R - knee) x cos(pi / 2 x (R - knee) / (R - knee + f03)); the result is the smaller of p / 100 + B and int01 / 100."
+proof = "0x140453bb1 comiss xmm7, xmm0 / 0x140453bb4 jnc 0x140453bc0 (rating at least the knee); 0x140453bc0 movss xmm2, dword ptr [0x140c45858] (pi, bytes at 0x140c45858 db0f4940); 0x140453bcc mulss xmm2, dword ptr [0x140b79e48] (0.5); 0x140453beb call 0x1408fc950 (cosf, emulated: 0 -> 1, 1 -> 0.5403, pi/2 -> 0); 0x140453c07 mulss xmm6, dword ptr [0x140b79d3c] (0.01). Emulated with planted stack arguments (scratch script rating_emulate.py in the trace folder) for row 1231: level 1 rating 0, 100, 300 -> 0, 0.125, 0.374993; level 8 base 0.05 rating 50 -> 0.0578125; level 50 rating 2000 -> 0.05; each equal to the formula above."
+grade = "sure"
+name = "RatingToPercent"
+
+["0x1408fc950"]
+statement = "The single-precision cosine."
+proof = "Emulated: 0.0 -> 1.0, 1.0 -> 0.5403023, 1.5707963 -> 7.5e-08."
+grade = "fairly sure"
+gap = "Emulated at three points only."
+name = "CosF"
+
+["0x1408fc7f0"]
+statement = "The single-precision exponential."
+proof = "Emulated: 1.0 -> 2.7182817, -1.0 -> 0.36787945, 0.5 -> 1.6487212."
+grade = "fairly sure"
+gap = "Emulated at three points only."
+name = "ExpF"
+
+["0x140463700"]
+statement = "A unit's critical hit chance: RatingToPercent with GameFormula 1231 (50, 0.0025, 30, 7000, 0, cap 100), its level, BaseCritChance (property 102) and Rating_CritChanceIncrease (property 34)."
+proof = "0x14046386b mov r8d, dword ptr [rdi+0x3c] / 0x140463874 mov r8d, dword ptr [rdi+0x38] (the level); GameFormula 0x4cf; the base at 0x8f4 (0x5c4 + 8 x 102) and rating at 0x6d4 (0x5c4 + 8 x 34); 0x1404638b9 call 0x140453b60. GameFormula 1231: dataint01 100, datafloat0 50, datafloat01 0.0025, datafloat02 30, datafloat03 7000."
+grade = "fairly sure"
+gap = "The argument order is read from the decompile and the call's last instructions."
+name = "GetCritChance"
+
+["0x140463e80"]
+statement = "A unit's critical hit severity: RatingToPercent with GameFormula 1232 (50, 0.01, 250, 5500, 0, cap 300), its level, CriticalHitSeverityMultiplier (property 127, default 1.5) and RatingCritSeverityIncrease (property 47)."
+proof = "Disassembly: GameFormula 0x4d0; reads of 0x5c4 + 8 x 127 and 0x5c4 + 8 x 47 (scratch scan rating_dis.jsonl). GameFormula 1232 row; UnitProperty2 127 defaultValue 1.5."
+grade = "fairly sure"
+gap = "Which of the two properties is the base and which the rating is read from their names."
+name = "GetCritSeverity"
+
+["0x140463340"]
+statement = "A unit's deflect chance: RatingToPercent with GameFormula 1235 (50, 0.0015, 30, 7000, 0, cap 100), its level, BaseAvoidChance (property 101) and Rating_AvoidIncrease (property 33). The character sheet shows it as Deflect Chance."
+proof = "Disassembly scan: GameFormula 0x4d3, properties 101 and 33. Character.lua 860: GetDeflectChance with Rating_AvoidIncrease and BaseAvoidChance."
+grade = "fairly sure"
+gap = "Base and rating roles from the names; the Lua binding GetDeflectChance's function is not tied to this address."
+name = "GetDeflectChance"
+
+["0x140462ef0"]
+statement = "A unit's strikethrough (deflect reduction) chance: RatingToPercent with GameFormula 1230 (50, 0.003, 30, 5000, 0, cap 100), BaseAvoidReduceChance (property 104) and Rating_AvoidReduce (property 32)."
+proof = "Disassembly scan: GameFormula 0x4ce, properties 104 and 32."
+grade = "fairly sure"
+gap = "Roles from the names."
+name = "GetStrikethroughChance"
+
+["0x140463ac0"]
+statement = "A unit's critical deflect chance: RatingToPercent with GameFormula 1236 (50, 0.0025, 100, 778, 0, cap 100), BaseAvoidCritChance (property 105) and Rating_CritChanceDecrease (property 43)."
+proof = "Disassembly scan: GameFormula 0x4d4, properties 105 and 43."
+grade = "fairly sure"
+gap = "Roles from the names."
+name = "GetDeflectCritChance"
+
+["0x140461a30"]
+statement = "A unit's glance chance: RatingToPercent with GameFormula 1245 (50, 0.005792, 60, 4000, 0, cap 100), BaseGlanceChance (property 164) and RatingGlanceChance (property 58)."
+proof = "Disassembly scan: GameFormula 0x4dd, properties 164 and 58."
+grade = "fairly sure"
+gap = "Roles from the names."
+name = "GetGlanceChance"
+
+["0x1404615f0"]
+statement = "A unit's glance amount: RatingToPercent with GameFormula 1271 (50, 0.0055, 75, 4000, 0, cap 100), BaseGlanceAmount (property 195) and RatingGlanceAmount (property 61)."
+proof = "Disassembly scan: GameFormula 0x4f7, properties 61 and 195."
+grade = "fairly sure"
+gap = "Roles from the names."
+name = "GetGlanceAmount"
+
+["0x140461df0"]
+statement = "A unit's armor pierce: RatingToPercent with GameFormula 1269 (50, 0.00325, 100, 3000, 0, cap 100), IgnoreArmorBase (property 122) and RatingArmorPierce (property 59)."
+proof = "Disassembly scan: GameFormula 0x4f5, properties 122 and 59."
+grade = "fairly sure"
+gap = "Roles from the names."
+name = "GetArmorPierce"
+
+["0x140464240"]
+statement = "A mitigation percentage from a rating and a base: RatingToPercent with GameFormula 1234 (50, 0.008, knee 0, 7250, 0, cap 75) and the unit's level, never below 0."
+proof = "Decompiled: GameFormula 0x4d2; returns max(0, result). Its callers are the Lua functions GetPhysicalMitigation 0x14064d9b0, GetPhysicalMitigationRatingPercent 0x14064dc30, GetTechMitigation 0x14064dcc0, GetTechMitigationRatingPercent 0x14064df40, GetMagicMitigation 0x14064dfd0, GetMagicMitigationRatingPercent 0x14064e250 (names from their binding entries)."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "GetMitigationPercent"
+
+["0x14064d9b0"]
+statement = "Unit:GetPhysicalMitigation() in the UI's Lua: a table whose nAmount is 100 x the mitigation percentage with rating = Armor (property 42) + ResistPhysical (26) and base = DamageMitigationPctOffset (103) + DamageMitigationPctOffsetPhysical (144)."
+proof = "Binding entry at 0x140c5abd8 ('GetPhysicalMitigation'). Decompiled: 0x140464240(unit, value at 0x714 + 0x694, value at 0x8fc + 0xa44) times 100 (bytes at 0x140b7a0dc)."
+grade = "fairly sure"
+gap = "The tech and magic twins are named from their binding entries, not read."
+name = "LuaUnitGetPhysicalMitigation"
+
+["0x140453b60.callers"]
+statement = "Every rating the client turns into a percentage, as (GameFormula row: base property, rating property): 1230 (104, 32) strikethrough; 1231 (102, 34) crit chance; 1232 (127, 47) crit severity; 1233 (137, 25) lifesteal; 1234 mitigation (passed in); 1235 (101, 33) deflect; 1236 (105, 43) crit deflect; 1238 and 1239 (48, 49) PvP; 1240 (154, 29) multi-hit chance; 1241 (156, 63) reflect chance; 1242 (157, 37) critical mitigation; 1243 (158, 56) intensity; 1244 (196, 57) vigor; 1245 (164, 58) glance chance; 1269 (122, 59) armor pierce; 1270 (112, 60) multi-hit amount; 1271 (195, 61) glance amount; 1272 (155, 62) reflect amount; 2378 to 2380 (147 to 149, 168 to 170) tenacity, hope, toughness."
+proof = "Query callers of 0x140453b60: 21 functions. A scan of each one's disassembly for mov ecx, <row> before the GameFormula lookup and for reads at 0x5c4 + 8 x id (scratch file rating_dis.jsonl in the trace folder). Roles named by UnitProperty2 enumName (Base... or ...Rating...)."
+grade = "fairly sure"
+gap = "Each function's argument order is read only for crit chance; the others take base and rating roles from the property names."
+
+# Vitals in Lua and regeneration
+
+["0x14064fa00"]
+statement = "Unit:GetShieldCapacity() in the UI's Lua: the unit's shield, stat 20 of messages 0x262 and 0x938."
+proof = "Binding entry 0x140c5ae40 ('GetShieldCapacity' at 0x140b2a910). Decompiled: slot 0x70 (0x1402e41d0 returns 0x48, which stat 20 sets: SetUnitStatsFromCreate case 0x14 and ApplyUnitStat case 0x14 through slot 0x80 0x140482210)."
+grade = "fairly sure"
+gap = "Units of type 0x1e and 0x17 take other paths in the binding, not read."
+name = "LuaUnitGetShieldCapacity"
+
+["0x14064faa0"]
+statement = "Unit:GetShieldCapacityMax() in the UI's Lua: the unit's ShieldCapacityMax property (UnitProperty2 41), cut to a whole number."
+proof = "Binding entry 0x140c5ae50. Decompiled: slot 0x78 (0x140482420 returns the float at 0x70c = 0x5c4 + 8 x 41). UnitProperty2 41 enumName ShieldCapacityMax, defaultValue 0."
+grade = "fairly sure"
+gap = "As GetShieldCapacity."
+name = "LuaUnitGetShieldCapacityMax"
+
+["0x14064fb40"]
+statement = "Unit:GetAbsorptionValue() in the UI's Lua: the unit's absorption, stat 22 of messages 0x262 and 0x938."
+proof = "Binding entry 0x140c5ae60. Decompiled: slot 0x88 (0x140482430 returns 0x4c, which stat 22 sets)."
+grade = "fairly sure"
+gap = "As GetShieldCapacity."
+name = "LuaUnitGetAbsorptionValue"
+
+["0x14064f610"]
+statement = "Unit:GetShieldRegenPct() in the UI's Lua: the unit's ShieldRegenPct property (UnitProperty2 176, default 0.25). The character sheet shows it."
+proof = "Binding entry 0x140c5ade0 ('GetShieldRegenPct' at 0x140b2a9a0). Decompiled: the float at 0xb44 = 0x5c4 + 8 x 176. Character.lua 882."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "LuaUnitGetShieldRegenPct"
+
+["0x14064f6d0"]
+statement = "Unit:GetShieldTickTime() in the UI's Lua: the unit's ShieldTickTime property (UnitProperty2 177, default 500)."
+proof = "Binding entry 0x140c5ae00. Decompiled: the float at 0xb4c = 0x5c4 + 8 x 177. Character.lua 892."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "LuaUnitGetShieldTickTime"
+
+["0x14064f670"]
+statement = "Unit:GetShieldRebootTime() in the UI's Lua: the unit's ShieldRebootTime property (UnitProperty2 178, default 2500)."
+proof = "Binding entry 0x140c5adf0. Decompiled: the float at 0xb54 = 0x5c4 + 8 x 178. Character.lua 887."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "LuaUnitGetShieldRebootTime"
+
+["UnitProperty2.176"]
+statement = "The shield regeneration properties' defaults: ShieldMitigationMax (175) 0, ShieldRegenPct (176) 0.25, ShieldTickTime (177) 500, ShieldRebootTime (178) 2500, ShieldDamageTypes (179) 0; health has only HealthRegenMultiplier (8), default 1.0, and no base rate property."
+proof = "`gleam run -m genesis_prime/table_rows -- UnitProperty2` rows 8 and 175 to 179 (enumName, defaultValue); a player has these defaults until 0x262 or 0x93a sets them (SetUnitPropertiesFromCreate 0x1404584b0)."
+grade = "fairly sure"
+gap = "Read by the server's table reader only; how retail set these for a player is not in the client."
+
+["regen.client"]
+statement = "The client does not regenerate health or shield on its own: health changes only by messages 0x262, 0x937 and 0x92f, shield and absorption only by 0x262 and 0x938. The regeneration properties are only shown (character sheet); the rule that uses them, and any health regeneration rate, is the server's."
+proof = "Health: SetUnitHealth 0x1404602e0 is a class-table slot; its callers through the slot found are 0x1403da270 and 0x1403da0b0, and the create path stores health directly (0x140458140 case 0). Shield: the stores at 0x48 and 0x4c are 0x140482210 and 0x140482200, reached from ApplyUnitStat (0x938, 0x935) and the create stats. A grep of the saved C for the regeneration properties' offsets (0x604, 0xb44, 0xb4c, 0xb54) finds only the Lua getters and code of other objects (0x14035ce90 geometry, 0x1407c8af0 another structure)."
+grade = "fairly sure"
+gap = "Calls through the class table (slot 0x50, 0x80, 0x98) are not indexed; a call through a register from elsewhere would not be found. A recording of a fight with the client idle would settle it."
+
+["CreatureLevel.101"]
+statement = "CreatureLevel has rows 1 to 101: row L holds properties 0 to 99 of a creature of level L, and the last row (101) holds properties 100 to 196 for every level (for example BaseCritChance 0.05, CriticalHitSeverityMultiplier 1.5, DamageDealtMultiplierPhysical 1.0), each then multiplied by the creature's archetype, difficulty and tier rows as for the others."
+proof = "GetCreatureProperty 0x1404585c0 decompiled: for a property above 99 the row is 0x1401f9bd0() (the CreatureLevel table's count through its slot 0x28) and the column the property minus 100. `gleam run -m genesis_prime/table_rows -- CreatureLevel`: ids 1 to 101; row 101 unitPropertyValue02 0.05, 27 1.5, 41 1.0."
+grade = "fairly sure"
+gap = "That 0x1401f9bd0 returns the row count is inferred from the table (101 rows, last id 101), not read in the table class."
+
+["Creature2.creature2ArcheTypeId"]
+statement = "A creature's properties use three multiplier rows, looked up by the creature's archetype (Creature2ArcheType, unitPropertyMultiplier at the property id, for properties below 197), difficulty (Creature2Difficulty) and tier (Creature2Tier). For example Creature2 73464 (Virtual Battle Beast: archetype 1, difficulty 1, tier 1) at level 1 has Base Health 135.97028 x 1.0 x 0.387 x 1.0 = 52.6205 (float32 at each step)."
+proof = "GetCreatureProperty 0x1404585c0 decompiled: 0x1401f60a0 ('Creature2ArcheType', multiplier at row 0x10 + 4 x id), 0x1401f64e0 ('Creature2Difficulty', 0x18 + 4 x id), 0x1401f6920 ('Creature2Tier', 4 + 4 x id), matching each table's column offsets in `table_rows -- <Table> --columns`. Rows: `table_rows -- Creature2 73464`, `Creature2ArcheType 1`, `Creature2Difficulty 1`, `Creature2Tier 1`, `CreatureLevel 1`."
+grade = "fairly sure"
+gap = "The creature record that holds the three ids (from 0x1404835c0) is not tied to Creature2's columns by reading its builder; the names match the three tables."
+
+# Enums
+
+["GameLib.CodeEnumDamageType"]
+statement = "The Lua enum of damage types: Physical 1, Tech 2, Magic 3, Heal 4, HealShields 5, Fall 6, Suffocate 7."
+proof = "Registration in 0x140709460: 0x14070adc1 lea rdx, [0x140b43b78] ('CodeEnumDamageType'); 0x14070ae04 lea r8, [0x140b43b68] ('Physical') / 0x14070ae13 mov r9d, 0x1; 0x14070ae28 mov r9d, 0x2; 0x14070ae36 lea r8, [0x140b43d44] ('Magic') / 0x14070ae3d mov r9d, 0x3; 0x14070ae52 mov r9d, 0x4; 0x14070ae60 lea r8, [0x140b43d30] ('HealShields') / 0x14070ae67 mov r9d, 0x5; 0x14070ae7c mov r9d, 0x6; 0x14070ae8a lea r8, [0x140b43d18] ('Suffocate') / 0x14070ae91 mov r9d, 0x7. Tech, Heal and Fall are the names at 0x140b43d4c, 0x140b43d3c and 0x140b43d24 by LuaDocData's list."
+grade = "fairly sure"
+gap = "The three short names were not read from their bytes."
+
+["GameLib.CodeEnumCombatResult"]
+statement = "The Lua enum of combat results, the 4-bit result of a damage description and of a combat log entry: Avoid 0, Critical 1, Hit 2, NeedsTelegraphEvaluation 3, OutsideTelegraph 4, OutsideTelegraphInvalid 5, InsideTelegraph 6, NeedsHitResultCalc 7."
+proof = "Registration in 0x140709460: 0x14070af36 lea rdx, [0x140b43ce0] ('CodeEnumCombatResult'); 0x14070af79 lea r8, [0x140b43cd4] ('Avoid') / 0x14070af88 xor r9d, r9d; 0x14070af93 lea r8, [0x140b43cc8] ('Critical') / 0x14070af9a mov r9d, 0x1; 0x14070afaf mov r9d, 0x2 (0x1409f894c, 'Hit' by LuaDocData); 0x14070afc4 mov r9d, 0x3 ('NeedsTelegraphEvaluation'); 0x14070afd9 mov r9d, 0x4; 0x14070afee mov r9d, 0x5; 0x14070b003 mov r9d, 0x6; 0x14070b018 mov r9d, 0x7 ('NeedsHitResultCalc')."
+grade = "sure"
+
+["Spell.CodeEnumSpellEffectType.damage"]
+statement = "The effect types the client treats as damage or heal results: 5 Transference, 8 Damage, 10 Heal, 12 DistanceDependentDamage, 29 Absorption, 33 DistributedDamage, 118 HealShields, 138 DamageShields. Types 8, 12, 33 and 138 share the damage effect class; 10 and 118 a heal class."
+proof = "Bytes at 0x140c34140 (the enum's 16-byte entries), names read as UTF-16 at their pointers. Classes: 0x140718120's switch, cases 8, 0xc, 0x21, 0x8a -> class table 0x140b73de0, cases 10, 0x76 -> 0x140b73d90."
+grade = "sure"
+
+# Player health from gear (re-checked here; first read by the health record step's decode)
+
+["0x14041e450"]
+statement = "GameFormula 67's curve at a power level n: datafloat0 x e^(datafloat01 x (n - dataint0)) + datafloat02 x (n - dataint0)^datafloat03; with row 67 (0, 0, 60, 1) it is 60 x n."
+proof = "Emulated with GameFormula lookup 0x140200220 answered by a planted row 67 (dataint0 0, datafloat0 0, datafloat01 0, datafloat02 60, datafloat03 1): n 1, 2, 5, 10, 50 give 60, 120, 300, 600, 3000. Slot 1 of the curve class table 0x140b66a68 (bytes at 0x140b66a70)."
+grade = "fairly sure"
+gap = "The formula's shape is the earlier decode's reading; only the row-67 values were re-run here."
+name = "GameFormula67Curve"
+
+["0x14040e3d0"]
+statement = "Adds an item's innate Base Health (property 7) to its display properties: for armor (item family 1) only, GameFormula67Curve at the item's power level times the item slot's armor modifier."
+proof = "Decompiled: family test (item row 0x140 == 1); the curve 0x14041e450 through class table 0x140b66a68 at the item's power level (0xc); times the builder's 0xc8 (ItemSlot armorModifier); 0x14040e610(…, 7, value). Called only from 0x14040c310 at 0x14040c4a6 (query callers)."
+grade = "fairly sure"
+gap = "The effective power level for level-scaled items is not read."
+name = "AddItemInnateBaseHealth"
+
+["0x14040e340"]
+statement = "Adds an item's innate Armor (property 42) to its display properties: for armor (item family 1) only, another curve at the item's power level times a slot modifier."
+proof = "Decompiled: family test (0x140 == 1); curve class table 0x140b66a78; times the builder's 0xc4; 0x14040e610(…, 0x2a, value). Called from 0x14040c310 before 0x14040e3d0."
+grade = "fairly sure"
+gap = "The curve and the modifier's column are not read."
+name = "AddItemInnateArmor"
+
+["0x14040c310"]
+statement = "Builds an item's display properties (innate health, armor and weapon values, then its other stats); the client never sums items into a unit's properties."
+proof = "Decompiled: clears the 15-entry property list (id 0xc5 = empty), then 0x14040c610, 0x14040df10, 0x14040e340, 0x14040e3d0. Indexed writes to a unit's 0x5c0 + 8 x id are only in 0x140466a90 (the earlier decode's search)."
+grade = "fairly sure"
+gap = "Its callers beyond the item record builder and two Lua functions are not read."
+name = "BuildItemProperties"
+
+["CharacterCreation.itemId0"]
+statement = "The Novice (PreTutorial) CharacterCreation rows give every class armor at power level 2 in chest, legs, feet, hands and shoulder, plus a shield and a weapon; by AddItemInnateBaseHealth the armor gives 150 + 150 + 90 + 90 + 120 = 600 Base Health (ItemSlot armorModifier 1.25 for chest and legs, 0.75 for feet and hands, 1.0 for shoulder)."
+proof = "As the earlier decode read it: `gleam run -m genesis_prime/table_rows -- CharacterCreation` with characterCreationStartEnum 4 and enabled true (67 rows), their itemId columns in Item2 (power level 2, family 1), and ItemSlot armorModifier. The curve gives 120 at power level 2 (0x14041e450, re-run here)."
+grade = "fairly sure"
+gap = "The item rows were not re-read here."
+
+["player.level1_base_health"]
+statement = "A level-1 player's Base Health and health by the server's rule: CreatureLevel row 1's Base Health (135.97, rounded to 136; the server's rule, since the client reads CreatureLevel only for creatures) plus the equipped armor's innate Base Health (600 for the Novice set), 736, sent as 0x262 stat 0 and property 7."
+proof = "0x1404585c0 (CreatureLevel for creatures only); CharacterCreation.itemId0; Jim's rule of 2026-11-03 for the fight step."
+grade = "guess"
+gap = "The client holds no player health rule; a retail 0x262 or 0x93a for a new character would settle it."
+
+["0x140095fb0"]
+statement = "Reads the type data of message 0x262 for unit types 0 (NonPlayer), 8 (Collectible), 10 (Simple), 11 (Platform), 13 (Turret) and 32 (SimpleCollidable): the unit's Creature2 id (18 bits), then an 8-bit value, the quest checklist index, which the unit keeps as a signed byte."
+proof = "Entries 0, 8, 10, 11, 13 and 32 of the type reader table at 0x140c1ea30 (bytes at 0x140c1ea30 read through the query process: entry k is the 8-byte pointer at 0x140c1ea30 + 8k). Decompiled 0x140095fb0: ReadBits32(stream, record, 0x12), then 0x14006bec0, which reads 8 bits (ReadBitsFromWord 8) into one byte at record 4. InitUnitFromCreate 0x140456960: 0x140457247 movsx eax, byte ptr [rbx+0xc] / 0x14045724b mov r12d, dword ptr [rbx+0x8] (the creature id kept for the lookup) / 0x14045724f mov dword ptr [rdi+0x35f8], eax. Type names from LuaUnitGetType 0x140649e20."
+grade = "fairly sure"
+gap = "The reader is read from Ghidra's decompile, not run in the emulator; what the checklist index does for a type 0 unit (it marks a used collectable for type 32) is not read. An emulate request of ReadMessage0262Body on a planted type 0 body would settle the widths."
+name = "ReadUnitCreateCreatureData"
+
+["0x140649e20"]
+statement = "The Lua method Unit:GetType(): the unit's type as a name, from a list of 37: 0 NonPlayer, 1 Chest, 2 Destructible, 3 Vehicle, 5 Harvest, 6 Corpse, 7 Mount, 8 Collectible, 10 Simple, 11 Platform, 12 Mailbox, 13 Turret, 14 InstancePortal, 16 Residence, 17 StructuredPlug, 18 PinataLoot, 19 BindPoint, 20 Player, 21 HiddenSpell, 22 Trigger, 23 Ghost, 25 Esper Pet, 26 World object, 27 Scanner, 28 Camera, 30 DestructibleDoor, 31 Pickup, 32 SimpleCollidable, 33 HousingMannequin, 34 HousingHarvestPlug, 35 HousingPlant, 36 Lockbox; types 4, 9, 15, 24 and 29 name short strings not read here; a type of 37 or more gives 'Unknown', and a unit it cannot find gives ''."
+proof = "Decompiled 0x140649e20: a 37-entry table of string pointers on the stack, indexed by the unit's type word (the same word InitUnitFromCreate 0x140456960 sets from 0x262's 6-bit type), 'Unknown' (7 characters) for 0x25 or more. Entries 4, 9, 15, 24 and 29 point at 0x140b2bbd8, 0x140b2bba8, 0x140b2bb64, 0x1409f42e4 and 0x140b2bc0c."
+grade = "fairly sure"
+gap = "The five short strings are not read; that this is the Lua method GetType is from its argument handling (0x1406622c0 with 1, the unit) and its place among the Unit methods, whose pair table is not cited here."
+name = "LuaUnitGetType"
+
+["opcode.0x262.creature"]
+statement = "What message 0x262 must hold to show a creature (unit type 0, NonPlayer), and what the client refuses. Type data: the Creature2 id (18 bits) and the checklist index (8 bits, 0 for a creature). The id must be a creature the client loaded at start (FindCreatureInfo): an id it does not hold is reported as 'NonPlayer unit created with unknown creatureId %d' and the unit is not built; id 0 builds a unit with no creature. The client takes the creature's name, level range, race, faction id, flags, archetype, difficulty, tier and quest links from its own Creature2 row; the message carries none of them. The message must carry: stat 0 (health; a type 0 unit with health 0 is created dead) and stat 10 (the level; Creature2 minLevel to maxLevel), a kind 2 position and a kind 14 rotation, both faction fields (the client keeps the message's factions, not Creature2.factionId; the world database sends Creature2.factionId in both for every creature of world 3460), and the 17-bit Creature2DisplayInfo id: with 0 the unit gets no display and no model is described for it, so the server picks one from the creature's Creature2DisplayGroupEntry rows (73464's group 28793 holds only 26565). Properties may be left out: each starts at the creature's own value (GetCreatureProperty), so Base Health (property 7) is the client's own number unless the message sets it. Every other field is the no-value case of opcode.0x262.unit_fields: flags 0, no cast, untagged, tags 0, minimap marker 0, outfit 0."
+proof = "InitUnitFromCreate 0x140456960 (listing and decompile): 0x14045724b mov r12d, dword ptr [rbx+0x8] (the creature id); 0x140457928 mov rcx, qword ptr [0x140c65918] / 0x140457932 call 0x1404835c0 (FindCreatureInfo) / 0x14045793a jnz 0x1404579e2; on null 0x14045797c lea rax, [0x141e02568] (text at 0x140b07f28, read as bytes: 'NonPlayer unit created with unknown creatureId %d'), ReportError and return 0x80004005, which HandleMessage0262 0x1403d9760 treats as a build failure; found: 0x1404579ef and r14d, 0x80000 / 0x1404579fd call 0x140458a40 (SetUnitCreature). With id 0 the decompile takes the branch that builds the actor and world unit directly. Dead check: 0x140457a53 mov rcx, 0x1042ce5d12 / 0x140457a5d bt rcx, rax (type 0 is not in the set, so the 0x140457bc5 health test applies). Factions: opcode.0x262 (SetUnitBaseFaction, SetUnitFaction from the message). Display: SetUnitDisplayInfo 0x14047c210 sets nothing for 0; DescribeUnitModel 0x140466ec0 with no display info and a type other than 18 fills only the race and gender words (for a creature 0 and 2, from SetUnitCreature 0x140458a40) and sets a model path only for a unit id with the 0x40000000 bit under the world's 0x7198 object, so a creature gets no model path. Properties: SetUnitPropertiesFromCreate 0x1404584b0 calls GetCreatureProperty 0x1404585c0 for a unit with a creature. `gleam run -m genesis_prime/table_rows -- Creature2DisplayGroupEntry creature2DisplayGroupId=28793` (one row, display 26565, weight 1). World database (wildstar-knowledge world-data spawn.tsv, Jim's data): faction1 = faction2 = Creature2.factionId for every type 0 spawn of world 3460."
+grade = "fairly sure"
+gap = "Read from the decompile and the lookup's listing, not run, and not seen live. Whether anything after the build gives a creature with display 0 a model from its display group is not read (only client-side spawn paths 0x1403dab40 and 0x14047f770 call the group pick 0x1404846c0). Whether the client compares stat 10 with the row's level range is not read. A live create of 73464 with display 26565, then with 0, settles both."
+
+["0x1404835c0"]
+statement = "Finds the client's record of a creature by its Creature2 id; 0, or an id it did not load at start, gives nothing."
+proof = "Decompiled: returns 0 for id 0; otherwise hashes the id with the map's hash routine and walks the bucket list of the creature registry (the registry at 0x140c65918, its map at 0x18), comparing with the map's compare routine, and returns the node's value. Called by InitUnitFromCreate at 0x140457932 and 0x1404575de and 0x140456b67, and by the display pick path 0x1403dab40."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; that the map holds exactly the rows ValidateCreatureRows passes (and that FillCreatureInfo succeeded for) is from 0x1404836c0's decompile."
+name = "FindCreatureInfo"
+
+["0x140485790"]
+statement = "Chooses, at start, which Creature2 rows the client loads as creatures: a row is kept only when its modelScale is above 0, its CreationTypeEnum is below 26, its creature2ArcheTypeId names a Creature2ArcheType row, its creature2DifficultyId is 0 or names a row, its creature2ResistId is 0 or names a row, and its creature2DisplayGroupId is not 0. Each failure is listed as an error and the row is left out, so a 0x262 naming it is refused. An item2IdMTXKey that names no Item2 row is listed but does not drop the row."
+proof = "Decompiled: a loop over every Creature2 row (descriptor 0x140a69c60, count through the table slot, row by record number); 0.0 < (float)row[0xe] (modelScale, offset 56); row[1] < 0x1a (CreationTypeEnum); row[8] looked up in 'Creature2ArcheType' (0x140a69bb8) else error 5; row[7] non-zero looked up by 0x1401f64e0 ('Creature2Difficulty') else error 6; row[0xab] (offset 684, creature2ResistId) by 0x1401f71a0 else error 7; row[0xb] (offset 44, creature2DisplayGroupId) zero goes to the error list; rows 0x5a and 0x5b (item2IdMTXKey00, 01) each checked with 0x1402096e0, error 8 only. Passing rows are appended to a list handed to the registry's slot 8 (LoadCreatureInfos 0x1404836c0). Called from 0x140482ea0 (the registry build, after the display and outfit group maps)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the exclusion set the zero-display branch first consults is not read, nor how many of the 56,369 rows pass. A scan of Creature2 with these rules, compared with the ids the client accepts live, would settle it."
+name = "ValidateCreatureRows"
+
+["0x1404836c0"]
+statement = "Loads the creatures the client keeps: for each Creature2 row that passed ValidateCreatureRows it fills one creature record (FillCreatureInfo) and, when that succeeds, files it by its id for FindCreatureInfo; it also loads Creature2Action. After this the Creature2 table itself is released."
+proof = "Decompiled: per row, the registry's slot 0x10 (0x140483d20) into a 0x1e0-byte record from 0x140482720; on success a node {hash, id, record} added to the map at the registry's 0x18; then the table release call for 'Creature2' (0x140a69c60) and 'Creature2ModelInfo'. Registry class 0x140b67130: slot 0 0x140482cb0, slot 8 0x1404836c0, slot 0x10 0x140483d20 (bytes at 0x140b67130 read through the query process)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; the second loop over quest-given and quest-received lists is not read."
+name = "LoadCreatureInfos"
+
+["0x140483d20"]
+statement = "Fills one creature record from its Creature2 row beyond the base fields: greeting and goodbye text lines, quest giver and receiver lists, voice, gossip, visuals, action set, instance portal and soldier mission (a missing instance portal or soldier mission fails the record, so the creature is not loaded), and the display group and outfit group, each of which must have entries when non-zero."
+proof = "Decompiled: first FillCreatureInfoBase through 0x140485490; GetLocalizedText for the greeting columns; 0x140483e7b onward the quest lists (10 each); row[0x9b] (pathMissionIdSoldier, offset 620) through 0x14021f3c0 and row[0x9c] (instancePortalId, offset 624) through 0x1402092a0, each returning 0x80004005 when missing; the display and outfit group maps at the registry's 0x58 and 0x78 searched for the group id, 0x80004005 when absent."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; most of the filled fields are named from the Creature2 column at the row index, not traced to their readers."
+name = "FillCreatureInfo"
+
+["0x1404852b0"]
+statement = "Copies a creature's base values from its Creature2 row into the client's creature record: id, CreationTypeEnum, the name text (localizedTextIdName), creature2AoiSizeEnum, archetype, tier, unitRaceId, difficulty (and a rank from it), family and tract, resist, the model scale (and the difficulty's scale), flags, uiFlags and activationFlags, the quest animation state, bind point, resource conversion group, taxi node, scientist experimentation, datacube, datacube volume, factionId, harvesting info, crowd-control immunities, the level range (minLevel and maxLevel, each kept up to 65535) and the rescan cooldown."
+proof = "Decompiled: the row from 0x1401f6d60 (Creature2 by id); record words 0 <- row 0, 1 <- 1, 2 <- 4 (localizedTextIdName), 3 <- 5, 4 <- 8 (archetype), 5 <- 7 (difficulty), 6 <- 9 (tier), 7 <- 6 (unitRaceId), 8, 9 <- 0x5c, 0x5d (family, tract), 10 <- 0xab, 0x1a <- 0xe (modelScale), 0x24..0x26 <- 0x54..0x56 (flags, uiFlags, activationFlags at offsets 336, 340, 344), 0x1b..0x21 <- 0x5e..0x64 (bindPointId to factionId at offset 400), 0x2a, 0x2b <- 0xa9, 0xaa, the two 16-bit level words <- 0x65, 0x66 (minLevel, maxLevel) capped at 0xffff, 0x2d, 0x2e <- 0x67, 0x68. Row indexes against `gleam run -m genesis_prime/table_rows -- Creature2 --columns` (offset = 4 x index)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; which code reads the kept factionId (if any) is not read: InitUnitFromCreate uses the message's factions."
+name = "FillCreatureInfoBase"
+
+["0x140458a40"]
+statement = "Gives a new unit its creature: keeps the creature record and id, the creature's difficulty and its Creature2 flags, uiFlags and activationFlags; then, unless the unit is linked to another's world unit or is of type 22 or 15, builds its actor and its world unit ('Failed to create world unit' on failure), the world unit's mode being 0 when uiFlags bit 13 is set and 3 otherwise, with uiFlags bit 19 passed along; it then sets the unit's name and marks it changed, and for a unit of type 10 also keeps a 16-bit value of the creature."
+proof = "Decompiled: unit words from the record (the record's words 0x24, 0x25, 0x26 into the unit's 0x24, 0x28, 0x2c); 0x1401f64e0 (Creature2Difficulty) of the record's word 5; FUN_1404674c0 (actor), then the world object's slot 0xb8 with mode (uiFlags >> 0xd & 1 ? 0 : 3) and uiFlags >> 0x13 & 1; texts 0x141e02698 and 0x141e02660; 0x140247e00 of the record's word 7 (unitRaceId) to the unit's 0xd0; the type switch at the end. Called by InitUnitFromCreate at 0x1404579fd."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what world unit modes 0 and 3 and uiFlags bit 19 mean are not read."
+name = "SetUnitCreature"
+
+["0x1404846c0"]
+statement = "Picks one entry of a creature display group at random, weighted: a number from 1 to the group's total weight, then the first entry whose running total reaches it."
+proof = "Decompiled: 0x1401ae6f0(1, the last entry's running total), then a binary search over 16-byte entries {running total, display}; the running totals are made at start by 0x140482ea0 from Creature2DisplayGroupEntry (weight at row word 3, display at word 2, looked up in Creature2DisplayInfo). Callers: 0x1403dab40 and 0x14047f770 (client-side spawn paths), not InitUnitFromCreate."
+grade = "fairly sure"
+gap = "That 0x1401ae6f0 is a uniform random integer in the closed range is inferred from its use; it is not read."
+name = "PickCreatureDisplay"
+
+# The creatures of the Novice training simulation
+
+["Quest2.10518"]
+statement = "'The Face of the Enemy', the Exile Novice's first fight (questPlayerFactionEnum 0, world 3460, Warfare Woods, zone 5967): kill five Virtual Battle Beasts (Creature2 73464) inside a circle of radius 55 centred on (-131.135, -875.235, 333.318) (WorldLocation2 51739); defuse an Explosive Sim-Mine (73463); interrupt and destroy two Sim-Turrets (73494) standing exactly at (-112.690, -864.714, 470.817) (51671) and (-105.661, -865.014, 502.462) (52753); kill three of target group 14356 (Virtual Legionnaires 73492 and 73567) inside a circle of radius 38 centred on (-142.066, -860.464, 556.809) (51740). 'Deconstruct the Construct' (10520) follows with the Virtual Eldan Defense Construct (73499) at (429.295, -388.883, 253.776), radius 27 (51744, zone 5968)."
+proof = "`gleam run -m genesis_prime/table_rows -- Quest2 10518` (objectives 21286, 21287, 21340, 21318, 21288, 21290; questPlayerFactionEnum 0, as Quest2 10528, the Exile 'Bon Voyage'), `-- QuestObjective 21286` (type 2, data 73464, count 5, indicator 51739), 21288 (type 2, 73494, count 2, indicators 51671, 52753), 21290 (type 8, 14356, count 3, indicator 51740), `-- TargetGroup 14356` (type 1, data0 73492, data1 73567), `-- WorldLocation2 51739` and the others named, `-- WorldZone 5967` (text 748006 'Warfare Woods'); texts 748098, 748109, 748114, 748397, 748099, 748369, 748292 through client_files.py text."
+grade = "fairly sure"
+gap = "The circles are the quest's indicators, where the client draws the objective area; that the creatures stand inside them, and how many, is not in the client. Objective types 2 (kill a creature) and 8 (kill a target group) are named from their texts, not from the client's objective code."
+
+["Quest2.10524"]
+statement = "'The Face of the Enemy' for the Dominion Novice (questPlayerFactionEnum 1, world 3460, zone 5967): kill five Virtual Defense Daguns (Creature2 73465) inside a circle of radius 55 centred on (37.853, -875.490, 289.113) (WorldLocation2 52898); interrupt and destroy two Sim-Turrets (74862) standing exactly at (80.834, -864.214, 426.115) (52902) and (114.160, -864.214, 428.627) (52903); kill three of target group 14402 (Virtual Elite Exiles 73473 and 73566) inside a circle of radius 38 centred on (143.449, -854.964, 496.925) (53015)."
+proof = "`gleam run -m genesis_prime/table_rows -- Quest2 10524` (objectives 21312 to 21317), `-- QuestObjective 21312` (type 2, 73465, count 5, indicator 52898), 21316 (type 2, 74862, count 2, indicators 52902, 52903), 21317 (type 8, 14402, count 3, indicator 53015), `-- TargetGroup 14402` (73473, 73566), `-- WorldLocation2 52898` and the others named; texts 749058, 749066, 749068, 748100, 753633, 748108 through client_files.py text."
+grade = "fairly sure"
+gap = "As Quest2.10518: the circles are objective areas, not spawn points."
+
+["Creature2.73464"]
+statement = "Virtual Battle Beast, the Exile Novice's first enemy: CreationTypeEnum 0 (a NonPlayer unit), level 1 to 1, faction 1441 ('Dominion'), archetype 1 (Bruiser), difficulty 1, tier 1, display group 28793 (one display, 26565: hitRadius 3.0, walkLand 2.5, runLand 10.0). It is hostile to Exile characters (Faction2Relationship 1441-167 level 0) and friendly to Dominion characters (1441-166 level 10). Its default Base Health, by the client's own creature formula, is 135.97028 x 1.0 x 0.387 x 1.0 = 52.6205 (float32 at each step), and its MoveSpeedMultiplier 1.0, so it runs on land at 10.0 units a second. It has two property overrides, Stamina (40) 1.0 and Armor (42) 0.0. No client table names its attacks."
+proof = "`gleam run -m genesis_prime/table_rows -- Creature2 73464` (CreationTypeEnum 0, localizedTextIdName 748099, creature2DifficultyId 1, creature2ArcheTypeId 1, creature2TierId 1, creature2DisplayGroupId 28793, modelScale 1.0, factionId 1441, minLevel 1, maxLevel 1); `-- Creature2DisplayGroupEntry creature2DisplayGroupId=28793`; `-- Creature2DisplayInfo 26565`; `-- Faction2Relationship` rows 2943 (1441, 167, 0) and 2944 (1441, 166, 10); `-- CreatureLevel 1` (unitPropertyValue07 135.97027587890625), `-- CreatureLevel 101` (unitPropertyValue00 1.0), `-- Creature2ArcheType 1`, `-- Creature2Difficulty 1` (unitPropertyMultiplier007 0.3869999945163727), `-- Creature2Tier 1`, `-- Creature2OverrideProperties creature2Id=73464`, `-- UnitProperty2 7` (flags 52, bit 0 clear) and 100. Formula: GetCreatureProperty 0x1404585c0; speed: GetUnitMoveSpeed 0x1405b45e0. Product computed in float32 by a scratch Python line (struct pack 'f')."
+grade = "fairly sure"
+gap = "The health product follows GetCreatureProperty's decompiled order, not an emulator run; whether Unit:GetMaxHealth shows property 7's value for a creature unchanged is in vector.opcode.0x262.health for a player only. An emulate request of GetCreatureProperty on this creature's record settles the number."
+
+["Creature2.73465"]
+statement = "Virtual Defense Dagun, the Dominion Novice's first enemy: level 1, faction 1442 ('Exile'), archetype 10 (MeleeDPS), difficulty 1, tier 1, display group 28431 (one display, 26578: hitRadius 2.0, walkLand 3.0, runLand 10.0). Hostile to Dominion characters (1442-166 level 0), friendly to Exile characters (1442-167 level 10). Default Base Health 135.97028 x 0.96 x 0.387 = 50.5157; runs on land at 10.0 units a second."
+proof = "`gleam run -m genesis_prime/table_rows -- Creature2 73465`, `-- Creature2DisplayGroupEntry creature2DisplayGroupId=28431` (display 26578, weight 1), `-- Creature2DisplayInfo 26578`, `-- Faction2Relationship` rows 2946 and 2947, `-- Creature2ArcheType 10` (unitPropertyMultiplier007 0.9599999785423279); product in float32 as Creature2.73464."
+grade = "fairly sure"
+gap = "As Creature2.73464."
+
+["creature.training_placement"]
+statement = "Where the training simulation's first enemies stand. The client holds the objective circles and the turrets' exact points (Quest2.10518, Quest2.10524) but no creature spawn. The world database (Jim's world-data, spawn.tsv, world 3460) holds the Exile side only: 27 Virtual Battle Beasts (73464, display 26565, faction 1441), every one inside the client's circle 51739 (x -177.98 to -84.16, y -878.15 to -872.08, z 296.26 to 373.94), and 2 Sim-Turrets (73494, unit type 13, display 23584, faction 219) at the client's own two turret points. It also holds 6 target dummies (75108, faction 1277; four at x -196 to -157.7, y -881.4, z 244 to 282 in Warfare Woods). It holds no Virtual Legionnaires (73492, 73567), no Construct (73499) and none of the Dominion side's (73465, 74862, 73473, 73566). Jabbithole (the retail record) has none of these creatures."
+proof = "World database: `awk -F'\\t' '$4==3460 && $3==73464' ~/Coding/wildstar/world-data/spawn.tsv` (rows 29113 to 29139) and the same for 73494 (rows 29178, 29179: (-105.661, -864.7596, 502.462) and (-112.69, -864.691, 470.817)), 75108 (rows 29107 to 29112), and none for the others named; 431 rows for world 3460 in all. Jabbithole: ~/Projects/reference/jabbithole/json/npcs.jsonl searched for the names 'Virtual Battle Beast', 'Virtual Defense Dagun', 'Sim-Turret', 'Virtual Legionnaire', 'Virtual Elite Exile', 'Virtual Eldan Defense Construct': no record. Client: WorldLocation2 51739 (radius 55), 51671, 52753."
+grade = "fairly sure"
+gap = "The world database's source is not the client and is not a retail record by itself; its heights are not checked against the terrain. A retail recording of the training simulation would settle spawn points and counts for both sides."
+
+["creature.ai_data"]
+statement = "The client holds no aggro range, awareness range, leash or evade distance, chase rule, respawn time or attack list for a creature. Creature2 links a creature only to sounds for these moments (soundEventIdAggro, soundEventIdAware); no Creature2 column, Creature2ArcheType, Creature2Difficulty, Creature2Tier, Creature2Action or UnitProperty2 row names an attack spell or a distance for them. When a creature attacks, what it casts, how often and from how far are the server's choices."
+proof = "`gleam run -m genesis_prime/table_rows -- Creature2 --columns` (173 columns: none for range, speed, attack or leash; soundEventIdAggro at offset 428, soundEventIdAware at 432), `-- Creature2ArcheType --columns`, `-- Creature2Difficulty --columns`, `-- Creature2Tier --columns` (only unitPropertyMultiplier000..199), `-- Creature2Action --columns` (state, event, action, actionData, visualEffectId: client visuals), UnitProperty2 rows (no aggro or range property; MaxThreatVsCreature 124 and ThreatMultiplier 132 exist). The client's strings (UTF-8 and UTF-16, scratch scan of WildStar64.exe) name no aggro, leash or awareness range: the hits are soundEventIdAware, soundEventIdAggro, AggroImmune, AiThreat, ThreatModification, ThreatTransfer, the Lua events UnitEvaded and TargetThreatListUpdated."
+grade = "guess"
+gap = "A search that found nothing settles nothing: the client's spell targeting and Spell4 rows are not searched for a creature's attacks, and no client code was traced for an aggro test. A retail recording of a creature noticing a player would show the distances the server used."
+
+["Spell4.5649"]
+statement = "'[AUTO-ATTACK](ct) Humanoid Shared Unarmed - Auto Attack' number 1, the lead's creature auto-attack: no cast time, range 5.0 (targetMaxRange), base spell 4947; 5652 is number 2 with the same range. No client table links any creature to it. The client has auto-attacks named by creature family, among them Dagun (372, 1616), Guard Dagun (44274, 44275) and Battlebot (4535 to 4537), 5,014 auto-attack spells in all."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 5649` and 5652; the Spell4 descriptions scanned for '[AUTO-ATTACK]' (5,014 rows) and for Dagun, Beast and Battle."
+grade = "fairly sure"
+gap = "Which auto-attack a training creature used is not in the client; a family name in a description is a hint, not a link. A retail recording of a Virtual Battle Beast's 0x7ff would name its spell."
+
+["Spell4.41368"]
+statement = "'Generic - Choose Color of Awareness Eye - Tier 1', the lead's awareness spell: no range, no cast time column set, base spell 25565, in global cooldown group 100 and spell group list 637. No client table links a creature to it."
+proof = "`gleam run -m genesis_prime/table_rows -- Spell4 41368` (description, spell4BaseIdBaseSpell 25565, spellCoolDownIdGlobal 100, spell4GroupListId 637, propertyFlags 1048576, uiFlags 6)."
+grade = "fairly sure"
+gap = "What the client shows when a creature casts it (an eye over the creature's head is the description's word) is not read; the cast decoder's trace of 0x7ff covers how it is shown."
+
+# Hostile, neutral or friendly
+
+["lua.Unit.CodeEnumDisposition"]
+statement = "Unit.CodeEnumDisposition: Hostile 0, Neutral 1, Friendly 2, Unknown 3. Unit:GetDispositionTo answers Unknown when either unit is missing."
+proof = "Decompiled 0x1406481d0: 'CodeEnumDisposition' then 'Hostile' 0.0, 'Neutral' 1.0 (0x3ff0000000000000), 'Friendly' 2.0 (0x4000000000000000), 'Unknown' 3.0 (0x4008000000000000) stored as numbers in the table. LuaUnitGetDispositionTo 0x140654830 starts from 3."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+
+["0x140654830"]
+statement = "The Lua method Unit:GetDispositionTo(unitOther): when the other unit is the player it asks the player's disposition toward this unit, otherwise this unit's toward the other (GetUnitDispositionTo); Unknown (3) when either unit is missing."
+proof = "Name pair at 0x140c5b480 (bytes: 'GetDispositionTo' 0x140b2b310, 0x140654830). Decompiled: two FindUnit calls on Lua arguments 1 and 2; the swap when the second is the world's player (game 0x78); 0x14045a950 with the unit and the other's id."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile."
+name = "LuaUnitGetDispositionTo"
+
+["0x14045a950"]
+statement = "A unit's disposition toward another unit (Hostile 0, Neutral 1, Friendly 2). Pets and other owned units answer as their owning player. In order: a missing other unit is Neutral; the player and its duel opponent are Hostile to each other while a duel is on; when the other unit holds this unit on its threat list with a non-zero threat, Hostile; a unit with no faction is Neutral; the player toward a unit the cast registry names Friendly; otherwise the faction's level toward the other's faction (FactionDispositionFromLevel). So a creature that the server has given the player as a threat entry (message 0x908 or 0x90a) shows hostile to the player whatever their factions."
+proof = "Decompiled: FindUnit of the other id; owner lookups for units not of type 20 or 23 (the unit's owner id, kept from creation); the duel test on game 0x6ee4 == 3 and 0x6ee0; the other unit's map at 0x148 (header at 0x150) searched for this unit's id, its value at node 0x24 non-zero returns 0; the PvP-flag branch; no faction returns 1; the cast registry 0x140c65b70 slot 0x48 returns 2; else the faction object's slot 0x30 with the other's faction id. The map is the threat map SetUnitThreat 0x14045bdc0 writes."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what the cast registry's friendly test is, and the PvP branch, are not read."
+name = "GetUnitDispositionTo"
+
+["0x140787760"]
+statement = "A faction's level, 0 to 10, toward another faction: first a reputation the faction may carry (for a player's faction) mapped to a level; otherwise the first Faction2Relationship found between this faction and the other faction or, failing that, each of the other faction's parents in turn; with none, 10 when the other is this faction itself and 5 otherwise. Relationships are filed under both factions, so each row works both ways."
+proof = "Decompiled: 0x140717160 finds the other faction's registry entry; the chain is walked through each entry's parent link (set by BuildFactionRegistry 0x140716ac0 from faction2IdParent); 0x140717560 looks up this faction's relationship map, the level at node 0xc; the reputation hook at the object's words 3 and 4 with 0x1407a2a00; the fallback 5 or 10 against the object's slot 0x18 (its own id). BuildFactionRegistry calls 0x1407171f0 for factionId0's entry and, when they differ, factionId1's. Faction object class 0x140b77da0 (bytes read: slot 0x28 0x140787760, slot 0x30 0x140787830)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; whether this faction's own parents are also searched (0x140717560 walks something at its words 0 and 3) and the reputation mapping 0x1407a2a00 are not read."
+name = "GetFactionLevelTo"
+
+["0x140787830"]
+statement = "A faction's disposition toward another faction from its level (GetFactionLevelTo): levels 0, 1 and 2 are Hostile, 8, 9 and 10 Friendly, every other level Neutral."
+proof = "Decompiled: calls the object's slot 0x28 (0x140787760), switch: cases 0, 1, 2 return 0; 8, 9, 10 return 2; default 1."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile, not run."
+name = "FactionDispositionFromLevel"
+
+["Faction2Relationship.factionLevel"]
+statement = "The level, 0 to 10, between the two factions of a row, both ways (GetFactionLevelTo). The training simulation's: Dominion player 166 and Exile player 167, 0 (hostile); 166 with Dominion NPC 170, 10, with Exile NPC 171, 0; 167 with 171, 10, with 170, 0; the training enemies 1441 ('Dominion': Battle Beast) 0 with 167 and 10 with 166, 1442 ('Exile': Defense Dagun) 0 with 166 and 10 with 167; 'Friendly To All' 219 is 10 with both 164 and 165 (the parents of the NPC and player factions). Of 1,964 rows: 995 at 0, 505 at 10, 388 at 5."
+proof = "`gleam run -m genesis_prime/table_rows -- Faction2Relationship` rows 684, 685, 686, 687, 726, 770, 771, 944, 2943, 2944, 2946, 2947; `-- Faction2 166` (parent 165) and 167, 170, 171 (parent 164), 219 (no parent), 1441, 1442 (parent 164); names 15765, 15767, 15773, 15776, 15878, 749757, 754070 through client_files.py text."
+grade = "fairly sure"
+gap = "The value counts are from a scratch count of the dumped rows. The Sim-Turrets carry 219 (friendly to all) in the world database: by the client's rule they show friendly until they hold the player as a threat entry, and how the server lets a player attack them is not read."
+
+# Target, threat, combat and evade messages
+
+["opcode.0x908"]
+statement = "Message 0x908 (2312), game server to client: a unit's target and threat. Body: the unit id (32 bits), the target's unit id (32 bits), a threat value (32 bits). The client sets the unit's threat entry for that target (a threat of 0 removes it) and raises TargetedByUnit when the target is the player, the threat is not 0 and the unit is not the player's own target, or UnTargetedByUnit when the unit stops targeting the player; then, unless the unit is the controlled unit, the unit's target becomes that id and its disposition is recomputed. An unknown unit id does nothing and the message succeeds."
+proof = "Registered at 0x14006c290 with 0x908, record size 0xc, reader 0x140080bf0 (decompiled: ReadBits32 0x20 three times at record 0, 4, 8). HandleWorldMessage case 0x1403ed686 call 0x1403db7f0. Decompiled 0x1403db7f0: FindUnit; 0x14045bdc0 with words 1 and 2; the controlled unit test on game 0x6490; the unit's 0x108 set to word 1 and 0x10c to GetUnitDispositionTo. 0x14045bdc0: threat 0 erases the id from the map at 0x148 (0x140481460), else inserts it with the value; 'TargetedByUnit' and 'UnTargetedByUnit'. Jump table at 0x1403f1344 read as bytes (entry 0x908 - 0x61)."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile and the case's listing; the TargetedByUnit conditions' exact test against the controlled unit's own target is read from the decompile only."
+
+["opcode.0x90a"]
+statement = "Message 0x90a (2314), game server to client: a unit's threat toward another unit, without changing its target. Body: the unit id (32 bits), the other unit's id (32 bits), the threat value (32 bits); 0 removes the entry. It raises TargetedByUnit or UnTargetedByUnit as 0x908 does. An unknown unit id does nothing."
+proof = "Registered with 0x90a, record size 0xc, reader 0x140080bf0. HandleWorldMessage case 0x1403ed698: 0x1403ed69d call FindUnit / 0x1403ed6a5 jz (nothing) / 0x1403ed6ab mov r8d, dword ptr [rdi+0x8] / 0x1403ed6af mov edx, dword ptr [rdi+0x4] / 0x1403ed6b5 call 0x14045bdc0 / 0x1403ed6ba xor ebx, ebx."
+grade = "sure"
+
+["opcode.0x897"]
+statement = "Message 0x897 (2199), game server to client: a unit evaded. Body: the unit id (32 bits) and a reason (32 bits). Only reason 4 shows anything: the client raises UnitEvaded with the unit, the player, the reason and text 391517 'OUT OF RANGE', which FloatText shows over the unit. Any other reason, or an unknown unit, does nothing. The client's Lua documentation says the event does not fire for a creature's natural tether, so a creature that leashes back needs no 0x897."
+proof = "Registered with 0x897, record size 8, reader ReadTwoUint32Body. HandleWorldMessage case 0x1403ed759 call 0x1403db920. 0x1403db920: 0x1403db932 call FindUnit; 0x1403db93a jz; 0x1403db93c cmp dword ptr [rbx+0x4], 0x4; 0x1403db940 jnz; 0x1403db942 mov edx, 0x5f95d; 0x1403db947 call GetLocalizedText; 0x1403db967 lea rdx, [0x140afb890] ('UnitEvaded'); 0x1403db987 call 0x1400ea3e0. Text 391517 through client_files.py text. UI/FloatText/FloatText.lua lines 43 and 260-282; UI/LuaDocData/data.xml line 2002."
+grade = "sure"
+
+["0x1403db920"]
+statement = "Handles message 0x897: when the reason is 4, raises UnitEvaded with text 391517 'OUT OF RANGE' over the unit; otherwise does nothing."
+proof = "See opcode.0x897: HandleWorldMessage case 0x1403ed759 call 0x1403db920; 0x1403db93c cmp dword ptr [rbx+0x4], 0x4; 0x1403db987 call 0x1400ea3e0."
+grade = "sure"
+name = "HandleMessage0897"
+
+# Moving a creature
+
+["0x1405b45e0"]
+statement = "A unit's move speed for a surface (0 land, 1 water, 2 hover, 3 air) and a pace: its base speed (GetUnitBaseMoveSpeed) times its MoveSpeedMultiplier (property 100). A pet with an owner uses the owner's speed times a GameFormula 0x4ff factor; a unit whose creature has CreationTypeEnum 7 uses a linked unit's speed factor; pace 5 is taken as 4."
+proof = "Decompiled: the result is multiplied by the float at the unit's 0x8e4 (property 100's value word, 0x5c0 + 8 x 100 + 4); the owner branch for types 24 and 25; the CreationTypeEnum 7 branch through the creature record's word 1."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; which pace values the movement code passes for walking and running is not read."
+name = "GetUnitMoveSpeed"
+
+["0x1405b4780"]
+statement = "A unit's base move speed. A unit with a Creature2DisplayInfo (every creature) takes it from that row: walk and run per surface (walkLand and runLand on land, walkWater and runWater in water, walkHover and runHover hovering, walkAir and runAir in the air). Pace 1 or 3 gives the walk speed; pace 0 gives half the run speed but never below walk; pace 4 the run speed but never below walk; pace 5 one and a half times the run speed. A unit with no display info (a player) takes fixed speeds by surface, scaled by a GameFormula 0x2eb factor, with walk speeds from its Race row."
+proof = "Decompiled: unit 0xd08 (the display info SetUnitDisplayInfo 0x14047c210 sets) row words 0x90..0xac, which are walkLand 144, walkAir 148, walkWater 152, walkHover 156, runLand 160, runAir 164, runWater 168, runHover 172 in `gleam run -m genesis_prime/table_rows -- Creature2DisplayInfo --columns`; the pace tests with 0x140b79e48 (bytes 0000003f, 0.5) and 0x140b79f20 (bytes 0000c03f, 1.5); the no-display branch with 0x140b21328, 0x140b21338, 0x14022d500 ('Race') and 0x140200220(0x2eb) ('GameFormula')."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; that the surface index 1 is water and 3 is air is read from which columns each index takes, and the pace names (walk, run) from the same."
+name = "GetUnitBaseMoveSpeed"
+
+["movement_command.kind_4"]
+statement = "Movement command kind 4 (position path) in messages 0x262 and 0x638 moves the unit along a list of points at a fixed speed. Its data: the point count (10 bits), the points (three floats each), the speed (16 bits, a half-precision float in units per second), the path type (2 bits: 0 straight lines through the points, at least one point; 1 a curve, at least three points, of which the first and last only shape the ends; 2 and 3 are refused), a 4-bit mode, a 32-bit value and one bit. A speed below 0.00001 or an invalid type fails the command, which stops the message's later commands. It replaces the unit's position movement from the command's time."
+proof = "Reader 0x1400adc00 (decompiled, record 0x140c1f070). Apply: ApplyMovementCommand 0x1405b4ab0 case 4 calls 0x140713c00 on the unit's position movement (0xf60), which allocates a path object (class 0x140b73ce8) and inits it with 0x140781300: 0x1401c9770 turns the 16 bits into a float (half to single), compared with 0x140b79cc4 (bytes acc52737, 1e-05), below it 0x80004005; then 0x140783910 with the count, no times, the points, the type, the mode and the 32-bit value: type 0 needs a count above 0, type 1 a count of 3 or more (count - 2 segments), any other type 0x80070057; the speed kept at the object's 0x70. On success the object is linked at the movement's 0x88."
+grade = "fairly sure"
+gap = "Read from Ghidra's decompile; what the 4-bit mode (likely once, back and forth or looping) and the 32-bit value (likely the distance already travelled) and the last bit do is not read, nor how the position is evaluated along the path each frame. A live 0x638 with a two-point kind 4 path, mode 0 and value 0, settles the basic chase."
+
+["opcode.0x1b3"]
+statement = "Message 0x1b3 (435), game server to client: the player's death state and the resurrection window's choices. Body in wire order: the unit to control while dead (32 bits, the ghost's unit id), the Wake Here cost in credits (32 bits), the death penalty in milliseconds (32 bits), dead (1 bit), the offered choices (8 bits, GameLib.RezType flags: 1 Wake Here, 2 Holocrypt, 4 a caster's resurrection, 32 Exit Instance, 64 Wake Here for service tokens), a caster has asked to resurrect the player (1 bit), the Wake Here cooldown in milliseconds (32 bits) and the forced-release countdown in milliseconds (32 bits). The client stores dead, the choices, the cost and the caster bit every time. With dead 1 it needs the world's player (otherwise it reports an error and stops), makes the named unit the controlled unit when it has that unit (an unknown id leaves control unchanged), and starts the three countdowns from the local clock. With dead 0 it gives control back to the player and keeps the old countdowns. Either way it then raises ShowResurrectDialog with the death-state table (BuildPlayerDeathStateTable). The window's choices, cost and timers come only from this message."
+proof = "Registered in 0x14006c290 (saved C line 478): id 0x1b3, record 0x20, reader 0x14008def0. Reader: 0x14008df15 mov r8d, 0x20 (+0); 0x14008df2f mov r8d, 0x20 (+4); 0x14008df49 mov r8d, 0x20 (+8); 0x14008df5f mov r8d, 0x1 (+0xc); 0x14008df75 mov r8d, 0x8 / 0x14008df7e call 0x14006be30 (ReadBits8, +0x10); 0x14008df8b mov r8d, 0x1 (+0x14); 0x14008dfa1 mov r8d, 0x20 (+0x18); 0x14008dfb7 mov r8d, 0x20 (+0x1c). HandleWorldMessage case 0x1b3 at 0x1403ee10a calls 0x1403c1080 (0x1403ee110). Handler 0x1403c1080: 0x1403c115a mov [rcx+0x1b68], eax (dead); 0x1403c1164 mov [rcx+0x1b6c], al (choices); 0x1403c116d mov [rcx+0x1b70], eax (cost); 0x1403c1176 mov [rcx+0x1b88], eax (caster bit); dead: 0x1403c1186 cmp qword [rcx+0x78], 0 (ReportError when no player), 0x1403c1231 call 0x1403d90d0 (FindUnit) then 0x1403c123e call 0x1403968b0 (SetControlledUnit), 0x1403c127e imul rax, rax, 0x2710 (ms to 100 ns) for 0x1b50, 0x1b60 and 0x1b78; alive: 0x1403c12d0 mov [rcx+0x6490], rax (the player, game 0x78), 0x1403c12f6 call 0x14055b0e0; both: 0x1403c1310 call 0x140425850 (raises 'ShowResurrectDialog' with the table of 0x14050e830). The flag meanings: lua.GameLib.RezType and the bit tests in 0x14050e830."
+grade = "fairly sure"
+gap = "What 0x14055b0e0 and 0x1405f9e30 (both called on every 0x1b3) do is not read. Whether the ghost needs message 0x636 to move after this message makes it the controlled unit is not read; a live check settles it."
+
+["0x1403c1080"]
+statement = "Handles message 0x1b3: stores the player's death state (dead, offered choices, Wake Here cost, caster request), hands control to the named unit while dead or back to the player when alive, starts the death penalty, Wake Here cooldown and forced-release countdowns, and raises ShowResurrectDialog."
+proof = "See opcode.0x1b3: the stores at 0x1403c115a..0x1403c1176, the countdowns at 0x1403c127e..0x1403c12ba, 0x1403c1310 call 0x140425850."
+grade = "fairly sure"
+gap = "Read from the decompile and the store instructions; 0x14055b0e0 and 0x1405f9e30 are not read."
+name = "HandleResurrectionShow"
+
+["0x14008def0"]
+statement = "Reads message 0x1b3's body: three 32-bit values, one bit, 8 bits, one bit and two 32-bit values."
+proof = "0x14008df15 mov r8d, 0x20; 0x14008df2f mov r8d, 0x20; 0x14008df49 mov r8d, 0x20; 0x14008df5f mov r8d, 0x1; 0x14008df75 mov r8d, 0x8; 0x14008df8b mov r8d, 0x1; 0x14008dfa1 mov r8d, 0x20; 0x14008dfb7 mov r8d, 0x20; each followed by a call to 0x14006c090 (ReadBits32) or, for the 8 bits, 0x14006be30 (ReadBits8)."
+grade = "sure"
+name = "ReadMessage01B3Body"
+
+["0x14050e830"]
+statement = "Builds the table GameLib.GetPlayerDeathState returns and ShowResurrectDialog and UpdateResurrectDialog carry: bIsDead and bHasCasterRezRequest from message 0x1b3 (the caster bit also from 0x1ab and 0x15b); fDeathPenalty, fWakeHereCooldown and fForceRezTimer, each the seconds left on its 0x1b3 countdown (0 once it has passed); monRezCost, 0x1b3's cost as credits; monRezServiceTokenCost, GameFormula 1315's dataint0 (10) as service tokens; and from the offered choices: bWakeHere (flag 1), bHolocrypt (2), bAcceptCasterRez (4), bExitInstance (32) and bWakeHereServiceToken (64)."
+proof = "Saved C 0x14050e830.c: 'bIsDead' from game 0x1b68, 'bHasCasterRezRequest' from 0x1b88; 'fDeathPenalty' = 0x1403c9740() x [0x140b79d04] (the float 0.001, read from the file's bytes), 'fWakeHereCooldown' = 0x1403c9800() x 0.001, 'fForceRezTimer' = 0x1403c98c0() x 0.001 (each: deadline less the local clock in 100 ns, divided by 10000, 0 and cleared when not positive); 'monRezCost' Game.Money of currency 1 and 0x1b70; 'monRezServiceTokenCost' from 0x140200220(0x523), dataint0; byte 0x1b6c: bit 0 'bWakeHere', bit 1 'bHolocrypt', bit 5 'bExitInstance', bit 2 'bAcceptCasterRez', bit 6 'bWakeHereServiceToken'. GameFormula 1315: `gleam run -m genesis_prime/table_rows -- GameFormula 1315` (dataint0 = 10)."
+grade = "fairly sure"
+gap = "Read from the decompile; the money object's currency for the service token cost (0xf with 9 in its second word) is not decoded."
+name = "BuildPlayerDeathStateTable"
+
+["lua.GameLib.RezType"]
+statement = "GameLib.RezType in the UI's Lua: WakeHere 1, Holocrypt 2, SpellCasterLocation 4, ExitInstance 32, WakeHereServiceToken 64. The same numbers are the choice flags of messages 0x1b3, 0x1ab and 0x100."
+proof = "Saved C 0x140709460.c: the 'RezType' table, then 'WakeHere' with the double 0x3ff0000000000000 (1), 'Holocrypt' 0x4000000000000000 (2), 'ExitInstance' 0x4040000000000000 (32), 'SpellCasterLocation' 0x4010000000000000 (4), 'WakeHereServiceToken' 0x4050000000000000 (64). The flag bits are tested in 0x14050e830 (bits 0, 1, 5, 2, 6)."
+grade = "fairly sure"
+gap = "Read from the decompile of the enum registration."
+
+["opcode.0x15a"]
+statement = "Message 0x15a (346), client to server: the player chose how to come back. Body in wire order: a unit id (32 bits; the Death addon passes the world's player unit, not the ghost), the choice (7 bits, a GameLib.RezType value) and a 32-bit value (the Death addon always sends 0). The client sends it from Unit:Resurrect for any choice but 64, without checking that the choice was offered; the Death addon sends 1 (Wake Here), 2 (Holocrypt), 4 (a caster's resurrection) or 32 (Exit Instance), only from a button that 0x1b3's flags showed. Nothing in the client waits for an answer: the addon closes its window and raises PlayerResurrected at once."
+proof = "Registered in 0x14006c290 (saved C line 331): id 0x15a, record 0xc, writer 0x1400885c0. Writer (decompiled): the word at +0 in 32 bits, the byte at +4 masked to 7 bits (bVar1 & 0x7f, WriteBitsSlow 7), the word at +8 in 32 bits. Unit:Resurrect 0x140659070: FindUnit on the Lua unit, the second and third arguments, 'if (iVar1 != 0x40)' then SendWorldMessage(game, 0x15a, ...). UI/Death/death.lua lines 354-425: Resurrect(GameLib.RezType.WakeHere, 0) on GameLib.GetPlayerUnit() (the world's player, record 0x1406f6560), Holocrypt, SpellCasterLocation, ExitInstance; each then closes the window and fires PlayerResurrected."
+grade = "fairly sure"
+gap = "The writer is read from the decompile. What retail did with the third value is not known; the Death addon's comment says it should carry the caster's unit id."
+
+["0x1400885c0"]
+statement = "Writes message 0x15a's body: a 32-bit unit id, a 7-bit choice and a 32-bit value."
+proof = "Registered as 0x15a's writer in 0x14006c290 (saved C line 331). Decompiled: WriteBitsSlow(..., 0x20), then the byte masked by 0x7f with WriteBitsSlow(..., 7), then WriteBitsSlow(..., 0x20), with the matching fast paths."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "WriteMessage015ABody"
+
+["0x140659070"]
+statement = "Unit:Resurrect(eRezType, n) in the UI's Lua: sends message 0x15a with the unit's id, eRezType and n, unless eRezType is 64 (WakeHereServiceToken), which sends nothing. It fails with 'invalid unit' when the unit is gone."
+proof = "Saved C 0x140659070.c: FUN_1406622c0 and FindUnit, else 'invalid unit'; arguments 2 and 3 by 0x1400f26a0; 'if (iVar1 != 0x40)' SendWorldMessage(DAT_140c65898, 0x15a, &local_18) with the unit id (unit word 8) and the type."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "LuaUnitResurrect"
+
+["opcode.0x88c"]
+statement = "Message 0x88c (2188), game server to client: a unit died or came back. Body in wire order: the unit id (32 bits), dead (1 bit), a 5-bit value and a 32-bit value. The client sets or clears the unit's dead flag (a unit whose type cannot die ignores dead 1), which ends its current activity and draws it dead, for any unit it has, creature or player. For the player it does more: dead 0 re-arms the fell-through-world report and gives control back to the player; dead 1 keeps control on the player (only 0x1b3 hands it to a ghost). The 5-bit value is read but not used by the handler. The 32-bit value is used only when a unit under client control comes back with it nonzero. The message sets no health, opens no window and changes no combat state."
+proof = "Registered in 0x14006c290 (saved C line 711): id 0x88c, record 0x10, reader 0x140097a60. Reader: 0x140097a85 mov r8d, 0x20 (+0); 0x140097a9b mov r8d, 0x1 (+4); 0x140097ab1 mov r8d, 0x5 (+8); 0x140097ac7 mov r8d, 0x20 (+0xc). HandleWorldMessage case 0x88c at 0x1403ed704 calls 0x1403db870 (0x1403ed70a). Handler: 0x1403db89a cmp dword [rbx+0x4], 0 / 0x1403db8a9 mov [rsi+0x1b80], ecx for the player and dead 0; 0x1403db8b8 call 0x14045e740 with the dead bit; 0x1403db8bd cmp dword [rdi+0xd50], 0 / 0x1403db8cc mov edx, [rbx+0xc] / 0x1403db8e4 call [rax+0x50] on the controlled unit when alive and nonzero; 0x1403db903 call 0x1406015c0 when alive. No instruction reads +8. call_paths.py 0x1403db870 --to 0x14045c500 --depth 5: no path (the combat flag setter)."
+grade = "fairly sure"
+gap = "What the controlled unit's method 0x50 does with the 32-bit value, and what 0x1406015c0 does for a unit that comes back, are not read. The two call sites through 0x140b6f468 and 0x140b6f498 in 0x14045e740 are not followed by call_paths."
+
+["0x1403db870"]
+statement = "Handles message 0x88c: finds the unit, re-arms the player's fell-through-world report when the player comes back, sets the unit's death state (SetUnitDeathState), and for a unit that comes back calls on with the 32-bit value (client-controlled units only) and 0x1406015c0."
+proof = "See opcode.0x88c: 0x1403db8a9, 0x1403db8b8 call 0x14045e740, 0x1403db8e4, 0x1403db903."
+grade = "fairly sure"
+gap = "0x1406015c0 and the controlled unit's method 0x50 are not read."
+name = "HandleEntityDeathState"
+
+["0x14045e740"]
+statement = "Sets a unit's death state: sets or clears its dead flag (SetUnitDead). When the player's current cast targets the unit, the client cancels that cast and tells the server (message 0x801 with result 6, SpellCancelled). For the world's player: coming back raises a resurrect event, gives control back to the player when a ghost held it and ends the dead state of the screen; dying raises a death event and two more effects not read. A unit under client control reads GameFormula 322 (3000)."
+proof = "Saved C 0x14045e740.c: 0x140579860, SetUnitDead 0x14045ec90; the controlled unit's cast found by 0x140561c30 (or the player's by 0x14039df50 / 0x1404695e0): when its target (word 0x158) is this unit, 0x14039cce0(game, cast id, 6), which sends 0x801 (SendWorldMessage(param_1, 0x801, ...) in 0x14039cce0.c); 0x140200220(0x142) (GameFormula 322: `gleam run -m genesis_prime/table_rows -- GameFormula 322`, dataint0 3000) when the unit's 0xd50 is set; for the player, alive: the check through 0x140b6f498 with 0x17 (the combat log's resurrect type), game 0x6490 set to game 0x78, 0x14055b0e0(game, 0); dead: the check through 0x140b6f468 with 0x16 (the combat log's death type), 0x140437a10(.., 0x121, ..), 0x1403a71f0(game, 0, 0x65, 1); then 0x1405f9e30 with the flag. Spell4CastResult 6: `gleam run -m genesis_prime/table_rows -- Spell4CastResult 6` (SpellCancelled)."
+grade = "fairly sure"
+gap = "Read from the decompile. 0x140437a10, 0x1403a71f0, 0x14055b0e0, 0x1405f9e30 and 0x1403eac90 (with GameFormula 322) are not read; the cast decoder owns 0x801."
+name = "SetUnitDeathState"
+
+["0x14039cce0"]
+statement = "Cancels one of the player's casts with a Spell4CastResult: logs the result's text and sends message 0x801 with the cast id, the result and 1. The death path uses result 6 (SpellCancelled) when a cast's target dies."
+proof = "Saved C 0x14039cce0.c: returns without a world player; the result below 0x14c looked up by 0x140237240; 0x1400035b0(0x18, 3, 0, cast id, text); 0x1404698a0 on the player; SendWorldMessage(param_1, 0x801, {cast id, result, 1})."
+grade = "fairly sure"
+gap = "Read from the decompile; 0x801's layout belongs to the cast trace."
+name = "CancelCastWithResult"
+
+["opcode.0x1ab"]
+statement = "Message 0x1ab (427), game server to client: change the resurrection window's choices while the player is dead. Body: the offered choices (8 bits, GameLib.RezType flags) and the caster-request bit (1 bit). The client stores both and, when the player is dead, raises UpdateResurrectDialog. It is ignored when the client has no world player."
+proof = "Registered in 0x14006c290 (saved C line 479): id 0x1ab, record 8, reader 0x14008dfd0 (0x14008dff5 mov r8d, 0x8 / ReadBits8; 0x14008e00b mov r8d, 0x1). HandleWorldMessage case 0x1ab at 0x1403ee11c: 0x1403ee12a mov rcx, [rsi+0x78] (the player, else not handled); 0x1403ee137 movzx eax, byte [rdi]; 0x1403ee13a mov [rsi+0x1b6c], al; 0x1403ee140 mov eax, [rdi+0x4]; 0x1403ee143 mov [rsi+0x1b88], eax; 0x1403ee149 cmp dword [rcx+0x250], 0 (the dead flag); 0x1403ee159 call 0x140425910 ('UpdateResurrectDialog')."
+grade = "sure"
+
+["opcode.0x15b"]
+statement = "Message 0x15b (347), game server to client: a caster asks to resurrect the player. Body: the caster's unit id (32 bits), a spell id (18 bits), a 32-bit value, five floats and one bit. The client uses only the unit id: when it has that unit it sets the caster-request flag and raises CasterResurrectedPlayer with the caster's name; the Death addon then shows the caster choice if flag 4 was offered."
+proof = "Registered in 0x14006c290 (saved C line 481): id 0x15b, record 0x24, reader 0x14008e090 (ReadBits32 0x20, 0x12, 0x20, ReadFloat x5, ReadBits32 1, decompiled). HandleWorldMessage case 0x15b at 0x1403ecb4e (saved C 0x1403ec6a0.c lines 285-297): FindUnit, game 0x1b88 = 1, 'CasterResurrectedPlayer' with the unit's name. UI/Death/death.lua 350-352 and 271."
+grade = "fairly sure"
+gap = "Read from the decompile. Out of this step's scope (no class resurrection spells yet)."
+
+["opcode.0x101"]
+statement = "Message 0x101 (257), game server to client, empty body: raises ForceResurrect, on which the Death addon closes its windows and raises PlayerResurrected. It changes no death state and no control."
+proof = "Registered in 0x14006c290 (saved C line 483): id 0x101, record 1, ReadEmptyBody. HandleWorldMessage case 0x101 at 0x1403ecba2 (saved C 0x1403ec6a0.c line 299): 'ForceResurrect'. UI/Death/death.lua 70 and 433-440."
+grade = "fairly sure"
+gap = "Read from the decompile."
+
+["opcode.0x160"]
+statement = "Message 0x160 (352), game server to client, empty body: raises ScriptResurrect, on which the Death addon closes its windows and raises PlayerResurrected. It changes no death state and no control."
+proof = "Registered in 0x14006c290 (saved C line 484): id 0x160, record 1, ReadEmptyBody. HandleWorldMessage case 0x160 at 0x1403ecbc3 (saved C 0x1403ec6a0.c line 303): 'ScriptResurrect'. UI/Death/death.lua 71 and 443-450."
+grade = "fairly sure"
+gap = "Read from the decompile."
+
+["opcode.0x100"]
+statement = "Message 0x100 (256), game server to client: enter or leave a forbidden zone. Body: one bit and the offered resurrection choices (8 bits, GameLib.RezType flags). With the bit set the client starts a countdown of GameFormula 183's dataint0 (10000 ms) labelled 'Forbidden Zone' (text 626090); with it clear it removes that countdown. Either way it stores the choices."
+proof = "Registered in 0x14006c290 (saved C line 507): id 0x100, record 8, reader 0x14008e6d0 (0x14008e6f5 mov r8d, 0x1; 0x14008e70b mov r8d, 0x8 / 0x14008e714 call 0x14006be30). HandleWorldMessage case 0x100 at 0x1403ed2ad calls 0x1403cb990. Handler (decompiled): bit clear: 0x1403b7290 on game 0x7078; bit set: 0x140200220(0xb7) dataint0 (default 10000), 0x1406077d0(object, 10000, .., 0x98daa); game 0x1b6c = the byte. `gleam run -m genesis_prime/table_rows -- GameFormula 183` (dataint0 10000); client_files.py text 626090 ('Forbidden Zone')."
+grade = "fairly sure"
+gap = "The countdown object 0x1406077d0 is not read; that the bit means 'in a forbidden zone' rests on the text it shows. Not needed for this step."
+
+["0x1403cb990"]
+statement = "Handles message 0x100: starts or removes the forbidden-zone countdown and stores the resurrection choices."
+proof = "See opcode.0x100."
+grade = "fairly sure"
+gap = "Read from the decompile."
+name = "HandleForbiddenZone"
+
+["0x140096970"]
+statement = "Reads unit type 23's data in message 0x262, a ghost: the same fields as a player character's data without the 8-bit-count list and the path, 8-bit and last 14-bit values: the character id (64 bits), the realm id (14 bits), the name (wide text), race (5 bits), class (5 bits), gender (2 bits), a 64-bit value, a wide text, a 4-bit value, a count (5 bits) and that many 64-bit values, a count (6 bits) and that many 32-bit values, and a 14-bit value. The client builds the ghost as it builds a player: race at most 17, a class it can look up and gender at most 3, else the create fails; the last value is the title."
+proof = "Entry 23 of the type table at 0x140c1ea30 (bytes at 0x140c1eae8 read with client_pe: 0x140096970). Saved C 0x140096970.c: ReadUint64; ReadBits32 0xe; ReadWideText; ReadBits32 5, 5, 2; ReadUint64; ReadWideText; ReadBits32 4; ReadBits8 5 and count x 8 bytes; ReadBits16 6 and count x 4 bytes; ReadBits32 0xe. InitUnitFromCreate 0x140456960 case 0x17 (saved C lines 494-591): race (word 8) above 0x11 reported, class through 0x14045a8b0, gender (word 10) above 3 reported, SetUnitGuildName, SetUnitTitle with word 0x18. Compare ReadUnitCreatePlayerData 0x1400962d0."
+grade = "fairly sure"
+gap = "Meanings follow the player reader's record; the 64-bit value, the 4-bit value and the two lists are not read. Unit type 23 is in the never-dead set (record 0x140457bc5), and Unit:GetHealth returns nil for it (record 0x14064a4e0)."
+name = "ReadUnitCreateGhostData"
+
+["opcode.0x247.death"]
+statement = "Message 0x247 (583), game server to client, the combat log: a 6-bit entry type (0 to 35) and the type's data. Type 22 (death) and type 23 (resurrect) carry one unit id (32 bits). The client raises CombatLogDeath or CombatLogResurrect (with unitCaster and, for an owned unit, unitCasterOwner) only when the unit is a player or a ghost, or is owned by one, and the combat log filter allows it; for a creature it raises nothing."
+proof = "Registered in 0x14006c290 (saved C line 927): id 0x247, record 0x48, reader 0x14009fac0 (ReadBits32 6, above 0x23 fails, then the entry of the table at 0x140c1e870; entries 22 and 23 are 0x14007ab50, one ReadBits32 0x20, bytes read with client_pe). HandleWorldMessage case 0x247 at 0x1403ee510 calls 0x1403c3190 (0x1403ee513). 0x1403c3190 (saved C lines 532-561): cases 0x16 and 0x17, 0x1403c2ee0 (the filter), FindUnit, type 0x14 or 0x17 (or the owner at word 0x2b0 of type 0x14 or 0x17), then 0x14060fa40 ('CombatLogDeath') or 0x14060fb80 ('CombatLogResurrect')."
+grade = "fairly sure"
+gap = "Read from the decompile; the filter 0x1403c2ee0 is not read. The other 34 entry types belong to the damage trace."
+
+["0x1403c3190"]
+statement = "Handles message 0x247, the combat log: switches on the entry type (0 to 35) and raises the matching CombatLog event."
+proof = "Saved C 0x1403c3190.c: type above 0x23 returns 0x80004005; the 36-case switch; cases 0x16 and 0x17 call 0x14060fa40 and 0x14060fb80."
+grade = "fairly sure"
+gap = "Only cases 22 and 23 are read here."
+name = "HandleCombatLog"
+
+["death.window"]
+statement = "What the Death addon shows a dead player, from the death-state table: while fDeathPenalty is above 0, only that countdown and no choice. Otherwise: Wake Here when bWakeHere, enabled once fWakeHereCooldown is 0 and the player's credits cover monRezCost (the cost is shown; a cooldown shows instead as 'Death_CooldownTimer'); the Holocrypt frame when bHolocrypt or bExitInstance, its button enabled only with bHolocrypt; Exit Instance when bExitInstance; the caster choice when bAcceptCasterRez and a caster has asked; the service-token Wake Here only while fWakeHereCooldown is above 0. While fForceRezTimer is above 0 it shows 'Death_AutoRelease' with that countdown; at 0 the client does nothing itself. A player created dead (health 0) gets the window on CharacterCreated from the stored state, so 0x1b3 must come before the player's create for that to show the choices. The addon refreshes every 0.12 s."
+proof = "UI/Death/death.lua (client_files.py extract): 65-74 events; 106 ApolloTimer 0.12; 156-166 OnCharacterCreated (IsDead, GetPlayerDeathState); 212-346 OnTenthSecTimer (fDeathPenalty 222-232; bWakeHere 265, 289-318 with monRezCost against GameLib.GetPlayerCurrency and fWakeHereCooldown; bHolocrypt or bExitInstance 268-270; caster 271; service token 266-267, 320-338; fForceRezTimer 264, 341-344). The table: record 0x14050e830."
+grade = "fairly sure"
+gap = "Lua read, not run; a live sitting shows the window. Where GameLib.GetPlayerCurrency's credits come from is not traced (no currency is sent yet, so any nonzero cost leaves Wake Here disabled)."
+
+["death.server_choices"]
+statement = "The client holds none of these, so each is the server's choice: the Wake Here cost (only 0x1b3's cost field), the death penalty, the Wake Here cooldown and the forced-release countdown (only 0x1b3's three millisecond fields), the health a player comes back with (0x88c sets none, 0x15a carries none, and no table row names one), and the place a Holocrypt choice sends the player to."
+proof = "opcode.0x1b3 and 0x14050e830 (the only sources of cost and timers); opcode.0x88c (no health store in 0x1403db870 or 0x14045e740); opcode.0x15a (unit, choice, 0). Tables: a scan of all 384 extracted tables' text for 'respawn', 'bindpoint', 'holocrypt', 'resurrect', 'rez', 'death', 'dead', 'corpse', 'wakehere', 'ghost' found no column for a cost, a timer or a health (hits were row texts: BindPoint and Creature2 bindPointId are the only columns); GameFormula rows read by the death code are 183, 322 and 1315 only (`gleam run -m genesis_prime/table_rows -- GameFormula 183|322|1315`). BindPoint columns: ID, bindPointFactionEnum, localizedTextId (`-- BindPoint --columns`), no place. Creature2 rows with bindPointId set are all Transmat Terminals and Bind Stones (`-- Creature2`, filtered on bindPointId), none a Holocrypt. Retail: ~/Projects/reference/jabbithole/json has no Holocrypt npc or place (grep -i holocrypt npcs.jsonl: 0)."
+grade = "fairly sure"
+gap = "The scan reads table text, not each header with table_rows; a scan of every header by table_rows --columns would make it sure. A Spell4Effects resurrect effect's percentages (class resurrection spells) were not read; they apply to caster resurrection only."
+
+["death.creature_respawn"]
+statement = "The client holds no creature respawn time: no table column names one, and a creature comes back only as the server sends it (a new 0x262 after 0x355, which may reuse the id, or 0x88c with dead 0 on the same unit)."
+proof = "The table scan of death.server_choices: 'respawn' appears only in HousingPlugItem (an icon name, Icon_Warplots_Warplots_Respawn_01) and LuaEvent (event names PvP_HTL_Respawn), never a column. Creature2 columns (`gleam run -m genesis_prime/table_rows -- Creature2 --columns`) hold no respawn or timer column. RemoveUnit 0x1403d9590 (a later 0x262 may reuse the id); SetUnitDead 0x14045ec90 accepts dead 0 for any unit. Retail: npcs.jsonl (23,966 rows) has no respawn time."
+grade = "fairly sure"
+gap = "Header-by-header proof as in death.server_choices. Retail respawn times are not recorded anywhere found, so the 60 s stand-in stays the server's marked choice."
+
+["death.corpse"]
+statement = "A creature that dies stays in the client as the same unit, drawn dead, until the server removes it with 0x355: no client timer removes a dead creature. The only client-made removal of a dying unit is for loot pinatas (unit type 18), through its own death callback."
+proof = "RemoveUnit 0x1403d9590 and its seven callers (its record). The death callback 0x14045ef50 is set only at 0x14045f409 in 0x14045f080 under 'if (*(int *)(param_1 + 0x80) == 0x12)' (saved C 0x14045f080.c lines 192-198). SetUnitDead 0x14045ec90 and SetUnitDeathState 0x14045e740 call no removal."
+grade = "fairly sure"
+gap = "0x1403db050's trigger (a kill with a killer id, reached through a pointer) is not traced; it is not on the 0x88c path."
+
+["death.combat_flag"]
+statement = "Death does not take a unit out of combat in the client: neither 0x88c nor 0x1b3 reaches the combat-flag setter, so the server sends 0x89a with 0 for a unit that dies."
+proof = "call_paths.py 0x1403db870 --to 0x14045c500 --depth 5: no path (211 functions walked); call_paths.py 0x1403c1080 --to 0x14045c500 --depth 5: no path. 0x14045c500 is the setter 0x89a's case calls (0x1403ed72e)."
+grade = "fairly sure"
+gap = "Two calls through pointers in 0x14045e740 (0x14045e88a through 0x140b6f468, 0x14045e92b through 0x140b6f498) and those in 0x1403c1080's callees are not followed; a live check settles it."
+
+["opcode.0xe4"]
+statement = "Message 0xe4 (228), client to server, empty body: the player asks to resurrect its target. The client sends it only when the target is a dead player character and the player's class resurrection spell can be cast at it."
+proof = "Registered in 0x14006c290 (saved C line 356): id 0xe4, record 1, SizeEmptyBody, WriteEmptyBody. Sent from 0x140397ce0 (saved C line 142) after: the controlled unit's target (word 0x108) found, its type 0x14, its dead flag (0x250) set, 0x14045a950, the class row's spell (word 0x54) found by 0x1403acd90 and a cast check."
+grade = "fairly sure"
+gap = "Read from the decompile; out of this step's scope."
