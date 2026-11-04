@@ -29,6 +29,7 @@ import genesis_prime/table/creature2_outfit_group_entry
 import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/instance_portal
 import genesis_prime/table/loader/server_table
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
 import genesis_prime/world_map/spawn.{
@@ -36,11 +37,11 @@ import genesis_prime/world_map/spawn.{
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
 import gleam/string
+import owned_key
 import owned_test
 import planted_table
 import rating_support
@@ -65,12 +66,16 @@ fn selected_with(
     character_tables.content_files(),
   ))
   let assert Ok(server) =
-    server_table.load_under(under: reference.new(), from: folder)
+    server_table.load_under(under: owned_key.new(), from: folder)
     as "the planted files load as the server's tables"
   let assert Ok(more) =
     server_table.load_content_tables(over: server, from: folder)
     as "the planted files load as the content-only tables"
-  spawn.select(rows:, tables: more, formulas: rating_support.formulas())
+  let selection =
+    spawn.select(rows:, tables: more, formulas: rating_support.formulas())
+  table_store.unload(more)
+  table_store.unload(server)
+  selection
 }
 
 /// The ids of the spawns that start, in id order.

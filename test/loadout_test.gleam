@@ -65,13 +65,13 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/spell4
 import genesis_prime/table/spell_level
-import gleam/erlang/reference
 import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import novice_tables
+import owned_key
 import owned_test
 import planted_table
 import unitest
@@ -330,7 +330,7 @@ fn loaded(
   files files: List(#(String, BitArray)),
 ) -> Result(table_store.Tables, table_store.LoadError) {
   use folder <- planted_table.in_folder(files)
-  server_table.load_under(under: reference.new(), from: folder)
+  server_table.load_under(under: owned_key.new(), from: folder)
 }
 
 /// The Warrior of faction 166's loadout in tables loaded from the files, which

@@ -34,10 +34,10 @@ import genesis_prime/table/game_formula
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/player_unit
-import gleam/erlang/reference
 import gleam/list
 import gleam/option.{None, Some}
 import novice_tables
+import owned_key
 import owned_test
 import place_support
 import planted_table
@@ -239,7 +239,7 @@ pub fn the_sheets_power_factors_are_game_formula_1266s_two_values_test() -> Nil 
     })
   use folder <- planted_table.in_folder(files)
   let assert Ok(tables) =
-    server_table.load_under(under: reference.new(), from: folder)
+    server_table.load_under(under: owned_key.new(), from: folder)
     as "the planted tables with a changed GameFormula 1266 load"
   assert game_client.sheet(
       unit: unit_with(properties: [#(35, 100.0), #(36, 41.0)]),

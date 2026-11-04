@@ -25,6 +25,7 @@
 //// The child spells' bases are the client's (`table_rows -- Spell4 30900 34775 35886 38781`),
 //// each of cast method 0 but 38780's.
 
+import database_support
 import genesis_prime/game/spell_plan
 import genesis_prime/table/class
 import genesis_prime/table/loader/store as table_store
@@ -34,10 +35,10 @@ import genesis_prime/table/spell4_effects
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
-import gleam/erlang/reference
 import gleam/int
 import gleam/list
 import gleam/order
+import owned_key
 import planted_table.{type Cell, Float, Integer}
 
 /// The planted rows of each table the plan reads.
@@ -557,7 +558,7 @@ pub fn derivation_result(
   use folder <- planted_table.in_folder(files)
   case
     table_store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: entries(),
       requirements: [],
@@ -606,7 +607,7 @@ pub fn with_loaded(
   use folder <- planted_table.in_folder(files)
   let assert Ok(tables) =
     table_store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: entries(),
       requirements: [],
@@ -616,4 +617,17 @@ pub fn with_loaded(
   let result = body(tables)
   table_store.unload(tables)
   result
+}
+
+/// The plans the planted rows build, built once per run from one load of the
+/// planted tables that is erased after the build; every test that reads the
+/// plans of the unchanged rows takes them from here, so it puts no terms of its
+/// own. A test that changes a row loads its own (`with_loaded`).
+pub fn default_plans() -> spell_plan.Plans {
+  database_support.once("spell_tables_default_plans", fn() {
+    let assert Ok(plans) =
+      with_loaded(rows: rows(), body: fn(tables) { spell_plan.build(tables:) })
+      as "the planted spell rows build"
+    plans
+  })
 }

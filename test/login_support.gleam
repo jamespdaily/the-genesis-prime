@@ -106,7 +106,7 @@ pub fn world() -> server.World {
     creature_shutdown_ms: 1000,
     idle_stop_ms: 60_000,
     sweep_ms: 10_000,
-    spawns: spawn_support.key_with(spawns: [], respawn_ms: 60_000),
+    spawns: spawn_support.key_without_spawns(),
   )
 }
 
@@ -162,7 +162,7 @@ pub fn servers_settings() -> server.Settings {
   envoy.set("GENESIS_REALM_NAME", "Test")
   genesis_prime.settings(
     tables: character_tables.shared(),
-    spawns: spawn_support.key_with(spawns: [], respawn_ms: 60_000),
+    spawns: spawn_support.key_without_spawns(),
   )
 }
 

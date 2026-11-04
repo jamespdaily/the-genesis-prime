@@ -5,6 +5,7 @@
 //// truncated to 52), so a test of the rule reads what the real spawn would carry
 //// without the client's tables.
 
+import database_support
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/hit.{Defence}
@@ -18,6 +19,7 @@ import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list
 import gleam/option
+import owned_key
 import place_support
 
 /// Warfare Woods, WorldZone 5967 (Quest2.10518).
@@ -101,7 +103,9 @@ pub fn beast_row(number number: Int) -> Row {
 const worlds = [22, 51, 426, 870, 990, 1061, 1387, 3460, 3461, 6009]
 
 /// A key whose terms hold these spawns for World 3460 and no spawn for every
-/// other world a test's map may run in, as the content load leaves them.
+/// other world a test's map may run in, as the content load leaves them. It is
+/// the test's own, erased when the body ends: a test with no spawns takes
+/// `key_without_spawns` and puts nothing.
 pub fn key_with(
   spawns spawns: List(Spawn),
   respawn_ms respawn_ms: Int,
@@ -116,7 +120,27 @@ pub fn key_in(
   spawns spawns: List(Spawn),
   respawn_ms respawn_ms: Int,
 ) -> table_store.Key {
-  let key = table_store.new_key()
+  let key = owned_key.new_fixture_key()
+  put_worlds(key:, spawns_world:, spawns:, respawn_ms:)
+  key
+}
+
+/// The key every test with no spawns shares: the terms are put once per run and
+/// never erased, as the content load leaves them for a database with no spawn.
+pub fn key_without_spawns() -> table_store.Key {
+  database_support.once("spawn_support_key_without_spawns", fn() {
+    let key = owned_key.new_shared_key()
+    put_worlds(key:, spawns_world: 3460, spawns: [], respawn_ms: 60_000)
+    key
+  })
+}
+
+fn put_worlds(
+  key key: table_store.Key,
+  spawns_world spawns_world: Int,
+  spawns spawns: List(Spawn),
+  respawn_ms respawn_ms: Int,
+) -> Nil {
   content_creature_kind.put(
     key:,
     kinds: Kinds(default: Kind(respawn_ms:), by_creature: dict.new()),
@@ -131,5 +155,4 @@ pub fn key_in(
       },
     )
   })
-  key
 }

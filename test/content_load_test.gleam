@@ -30,6 +30,7 @@ import gleam/list
 import gleam/string
 import log_capture
 import mailbox_support
+import owned_key
 import owned_test
 import pog
 import unitest
@@ -54,7 +55,7 @@ fn load_asking(
   ask ask: readiness.Settings,
   probe probe: fn(pog.Connection) -> readiness.Probe,
 ) -> #(Result(Nil, content.LoadError), table_store.Key) {
-  let key = table_store.new_key()
+  let key = owned_key.new_fixture_key()
   let pool =
     database_support.config(
       database_support.settings(),

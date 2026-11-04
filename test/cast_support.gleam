@@ -99,14 +99,11 @@ pub fn abilities() -> List(Spell4BaseId) {
 /// makes them from the planted rows (`spell_tables`, each value the client's own
 /// row), and the three planted spells by hand.
 pub fn plans() -> Plans {
-  let assert Ok(built) =
-    spell_tables.with_loaded(rows: spell_tables.rows(), body: fn(tables) {
-      spell_plan.build(tables:)
-    })
-    as "the planted spell rows build"
-  list.fold([exempt(), blocked_only(), slow()], built, fn(plans, spell) {
-    dict.insert(plans, spell.spell4_base_id.value, spell)
-  })
+  list.fold(
+    [exempt(), blocked_only(), slow()],
+    spell_tables.default_plans(),
+    fn(plans, spell) { dict.insert(plans, spell.spell4_base_id.value, spell) },
+  )
 }
 
 /// The player 7 with the abilities above and its weapon, seen by the connections
