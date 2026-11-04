@@ -32,6 +32,7 @@ import genesis_prime/message/game_hello_reply.{GameHelloReply}
 import genesis_prime/message/item_added
 import genesis_prime/message/movement_command.{type MovementCommand}
 import genesis_prime/message/movement_rotation.{MovementRotation}
+import genesis_prime/message/player_health
 import genesis_prime/message/player_movement.{PlayerMovement}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/send_chat_line.{SendChatLine}
@@ -39,6 +40,7 @@ import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/server_hello
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused
+import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_missed
@@ -48,6 +50,7 @@ import genesis_prime/message/spell_threshold_ended
 import genesis_prime/message/spell_threshold_index
 import genesis_prime/message/spell_threshold_opened
 import genesis_prime/message/start_movement
+import genesis_prime/message/unit_combat_state
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_death_state
@@ -56,6 +59,9 @@ import genesis_prime/message/unit_health
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property
+import genesis_prime/message/unit_stat_changed
+import genesis_prime/message/unit_target
+import genesis_prime/message/unit_threat
 import genesis_prime/message/world_message.{WorldMessage}
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId}
@@ -1274,4 +1280,157 @@ fn property_value(property: unit_property.UnitProperty) -> Float {
   let assert Ok(value) = float32.value(bits)
     as "the server sends a finite property value"
   value
+}
+
+/// What a frame says of a fight, as the client reads it.
+pub type FightEvent {
+  /// 0x908: the unit targets another with this threat (opcode.0x908).
+  Targeted(unit_id: Int, target_unit_id: Int, threat: Int)
+  /// 0x90a: the unit holds this threat toward another, 0 erasing it (opcode.0x90a).
+  Threatens(unit_id: Int, other_unit_id: Int, threat: Int)
+  /// 0x89a: the unit is in a fight or out of one (opcode.0x89a).
+  InCombat(unit_id: Int, in_combat: Bool)
+  /// 0x938 of stat 20: the unit's shield (opcode.0x938).
+  ShieldIs(unit_id: Int, shield: Int)
+  /// 0x92f: the player's own health (opcode.0x92f).
+  OwnHealthIs(unit_id: Int, health: Int)
+  /// 0x638 of a path: the unit's command kinds in order, and the path's last point
+  /// and speed bits when it holds one (movement_command.kind_4).
+  Moves(
+    unit_id: Int,
+    kinds: List(Int),
+    path_end: Option(#(Float, Float, Float)),
+  )
+  /// 0x7f4: each target's unit with the effect ids and raw damage of its effects
+  /// (opcode.0x7f4).
+  Went(cast_id: Int, targets: List(#(Int, List(#(Int, Int)))))
+  /// 0x7ff: a unit's cast starts (opcode.0x7ff).
+  Started(cast_id: Int, caster_unit_id: Int, spell4_id: Int)
+  /// 0x937: a unit's health (opcode.0x937).
+  HealthIs(unit_id: Int, health: Int)
+}
+
+/// The fight's frames among the frames, in order.
+pub fn fight_in(frames frames: List(Frame)) -> List(FightEvent) {
+  list.filter_map(frames, fn(frame) {
+    case frame.message_id {
+      0x0908 -> {
+        let assert Ok(target) = unit_target.decode(frame.body)
+          as "0x908 decodes"
+        Ok(Targeted(
+          unit_id: target.unit_id,
+          target_unit_id: target.target_unit_id,
+          threat: target.threat,
+        ))
+      }
+      0x090A -> {
+        let assert Ok(threat) = unit_threat.decode(frame.body)
+          as "0x90a decodes"
+        Ok(Threatens(
+          unit_id: threat.unit_id,
+          other_unit_id: threat.other_unit_id,
+          threat: threat.threat,
+        ))
+      }
+      0x089A -> {
+        let assert Ok(state) = unit_combat_state.decode(frame.body)
+          as "0x89a decodes"
+        Ok(InCombat(unit_id: state.unit_id, in_combat: state.in_combat == 1))
+      }
+      0x0938 -> {
+        let assert Ok(changed) = unit_stat_changed.decode(frame.body)
+          as "0x938 decodes"
+        case changed.stat_id {
+          20 -> Ok(ShieldIs(unit_id: changed.unit_id, shield: changed.value))
+          _ -> Error(Nil)
+        }
+      }
+      0x092F -> {
+        let assert Ok(health) = player_health.decode(frame.body)
+          as "0x92f decodes"
+        Ok(OwnHealthIs(unit_id: health.unit_id, health: health.health))
+      }
+      0x0937 -> {
+        let assert Ok(health) = unit_health.decode(frame.body)
+          as "0x937 decodes"
+        Ok(HealthIs(unit_id: health.unit_id, health: health.health))
+      }
+      0x0638 -> {
+        let assert Ok(moved) = unit_movement.decode(frame.body)
+          as "0x638 decodes"
+        let path_end =
+          list.find_map(moved.commands, fn(command) {
+            case command {
+              relayed_movement.Path(path) ->
+                list.last(path.points)
+                |> result.try(fn(point) {
+                  use x <- result.try(
+                    float32.bits(point.x) |> result.try(float32.value),
+                  )
+                  use y <- result.try(
+                    float32.bits(point.y) |> result.try(float32.value),
+                  )
+                  use z <- result.try(
+                    float32.bits(point.z) |> result.try(float32.value),
+                  )
+                  Ok(#(x, y, z))
+                })
+              _ -> Error(Nil)
+            }
+          })
+          |> option.from_result
+        Ok(Moves(
+          unit_id: moved.unit_id,
+          kinds: list.map(moved.commands, relayed_kind),
+          path_end:,
+        ))
+      }
+      0x07F4 -> {
+        let assert Ok(go) = spell_go.decode(frame.body) as "0x7f4 decodes"
+        Ok(Went(
+          cast_id: go.cast_id,
+          targets: list.map(go.targets, fn(target) {
+            #(
+              target.unit_id,
+              list.filter_map(target.effects, fn(effect) {
+                case effect.result {
+                  spell_effect_result.Damage(damage) ->
+                    Ok(#(
+                      effect.spell4_effects_id,
+                      damage.description.raw_damage,
+                    ))
+                  _ -> Error(Nil)
+                }
+              }),
+            )
+          }),
+        ))
+      }
+      0x07FF -> {
+        let assert Ok(start) = spell_started.decode(frame.body)
+          as "0x7ff decodes"
+        Ok(Started(
+          cast_id: start.cast_id,
+          caster_unit_id: start.caster_unit_id,
+          spell4_id: start.spell4_id,
+        ))
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// A relayed command's kind, its first 5 bits (opcode.0x638).
+fn relayed_kind(command: relayed_movement.RelayedMovement) -> Int {
+  case command {
+    relayed_movement.Time(..) -> 0
+    relayed_movement.Platform(..) -> 1
+    relayed_movement.Position(..) -> 2
+    relayed_movement.Path(..) -> 4
+    relayed_movement.Velocity(..) -> 8
+    relayed_movement.MoveAsked(..) -> 11
+    relayed_movement.Rotation(..) -> 14
+    relayed_movement.StateFlags(..) -> 24
+    relayed_movement.Mode(..) -> 27
+  }
 }
