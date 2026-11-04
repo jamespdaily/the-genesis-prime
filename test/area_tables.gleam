@@ -26,7 +26,7 @@ import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
 import genesis_prime/table/telegraph_damage
-import gleam/erlang/reference
+import owned_key
 import planted_table.{Float, Integer}
 
 /// The values of the planted Kick that a test changes to meet a refusal.
@@ -172,7 +172,7 @@ pub fn with_loaded(
   use folder <- planted_table.in_folder(files_of(kick:))
   let assert Ok(tables) =
     table_store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: entries(),
       requirements: [],

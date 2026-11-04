@@ -21,9 +21,9 @@ import genesis_prime/table/creature2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{Kind, Kinds, Row}
 import gleam/dict
-import gleam/erlang/reference
 import gleam/list
 import gleam/string
+import owned_key
 import owned_test
 import planted_table.{Integer}
 
@@ -36,7 +36,7 @@ fn with_beast(body body: fn(table_store.Tables) -> a) -> a {
   ])
   let assert Ok(tables) =
     table_store.load(
-      under: reference.new(),
+      under: owned_key.new(),
       from: folder,
       entries: [creature2.entry()],
       requirements: [],
@@ -210,7 +210,7 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
 
 pub fn planted_kinds_put_under_a_key_are_read_back_test() -> Nil {
   use <- owned_test.run(60_000)
-  let key = table_store.new_key()
+  let key = owned_key.new_key()
   let kinds =
     Kinds(
       default: Kind(respawn_ms: 60_000),
@@ -220,4 +220,5 @@ pub fn planted_kinds_put_under_a_key_are_read_back_test() -> Nil {
   assert content_creature_kind.kinds(key:) == kinds
     as "one term for the whole table, put once"
   assert content_creature_kind.table == "creature_kind"
+  owned_key.erase(key)
 }

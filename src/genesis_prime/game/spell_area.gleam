@@ -485,17 +485,19 @@ fn damage_effects_of(
           value: effect.parameter_value03,
         ),
       ])
-    use aim <- result.try(
-      case spell_plan.aim_of(target_flags: effect.target_flags) {
-        spell_plan.OtherAim(flags:) ->
-          Error(AimNotRead(
-            spell4_id: id,
-            effect_id: effect.id,
-            target_flags: flags,
-          ))
-        aim -> Ok(aim)
-      },
-    )
+    let aim = spell_plan.aim_of(target_flags: effect.target_flags)
+    use Nil <- result.try(case aim {
+      spell_plan.OtherAim(flags:) ->
+        Error(AimNotRead(
+          spell4_id: id,
+          effect_id: effect.id,
+          target_flags: flags,
+        ))
+      spell_plan.AimsAtCaster
+      | spell_plan.AimsAtPrimaryTarget
+      | AimsAtArea
+      | AimsAtBoth -> Ok(Nil)
+    })
     use Nil <- result.try(case damage.unread(formula:) {
       Some(damage.Unread(parameter_kind:)) ->
         Error(FormulaNotRead(
