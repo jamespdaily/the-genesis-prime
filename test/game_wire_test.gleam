@@ -1132,6 +1132,16 @@ fn new_player(
   number number: Int,
   character_name character_name: String,
 ) -> #(game_client.Game, Int) {
+  new_player_of_class(started:, number:, character_name:, class_id: 4)
+}
+
+/// A player as `new_player` makes it, of the class given.
+fn new_player_of_class(
+  started started: login_support.Started,
+  number number: Int,
+  character_name character_name: String,
+  class_id class_id: Int,
+) -> #(game_client.Game, Int) {
   let port = login_support.ports(started).game_port
   let pool = pog.named_connection(started.settings.pool.pool_name)
   let login_name = case number {
@@ -1160,7 +1170,7 @@ fn new_player(
       pool:,
       account:,
       name: character_name,
-      class_id: 4,
+      class_id:,
       path: 2,
     )
   let game =
@@ -1176,9 +1186,42 @@ fn new_player(
 }
 
 fn two_players_enter_one_map() -> TwoEntered {
-  let started = login_support.start()
+  two_players_enter(started: login_support.start(), first_class: 4)
+}
+
+/// As `two_players_enter_one_map`, the first player being of the class given and
+/// the server holding the trees of the starting abilities of every cast method
+/// (`character_tables.shared_with_spell_trees`).
+fn two_players_of_class_enter_one_map(
+  first_class first_class: Int,
+) -> TwoEntered {
+  let started =
+    login_support.start_with(change: fn(settings) {
+      server.Settings(
+        ..settings,
+        game: server.Served(
+          ..settings.game,
+          settings: game_connection.Settings(
+            ..settings.game.settings,
+            tables: character_tables.shared_with_spell_trees(),
+          ),
+        ),
+      )
+    })
+  two_players_enter(started:, first_class:)
+}
+
+fn two_players_enter(
+  started started: login_support.Started,
+  first_class first_class: Int,
+) -> TwoEntered {
   let #(first, first_character) =
-    new_player(started:, number: 1, character_name: "Zed Qu")
+    new_player_of_class(
+      started:,
+      number: 1,
+      character_name: "Zed Qu",
+      class_id: first_class,
+    )
   let #(second, second_character) =
     new_player(started:, number: 2, character_name: "Ann Qu")
   send_play(game: first, character_id: first_character)
@@ -1262,6 +1305,243 @@ pub fn a_players_press_is_answered_0x7fd_go_and_finish_and_a_player_in_sight_rea
     as "one cast id, which no other unit's cast shares (0x140561c30)"
   assert root == 42_352
     as "the root is the pressed spell, Spell4 42352, Paralytic Surge, the Medic's third level-1 ability (SpellLevel 1089) at bag index 2 (opcode.0x7ff.root_parent)"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+/// What a client reads of the casts among its frames, as one line each, the
+/// casts named k1, k2 and so on in the order their ids first appear.
+fn cast_lines(frames frames: List(Frame)) -> List(String) {
+  let events = game_client.casts_in(frames:)
+  let ids =
+    list.filter_map(events, fn(event) {
+      case event {
+        game_client.CastConfirmed(server_cast_id:, ..) -> Ok(server_cast_id)
+        game_client.CastStarted(cast_id:, ..)
+        | game_client.CastWent(cast_id:, ..)
+        | game_client.CastFinished(cast_id:) -> Ok(cast_id)
+        game_client.CastRefused(..)
+        | game_client.ThresholdOpened(..)
+        | game_client.ThresholdIndex(..)
+        | game_client.ThresholdClosed(..)
+        | game_client.ThresholdEnded(..) -> Error(Nil)
+      }
+    })
+    |> list.unique
+  let label = fn(id) {
+    let assert Ok(position) =
+      list.index_map(ids, fn(known, position) { #(known, position) })
+      |> list.key_find(id)
+      as "every cast id of a line was read before"
+    "k" <> int.to_string(position + 1)
+  }
+  list.map(events, fn(event) {
+    case event {
+      game_client.CastRefused(spell4_id:, result:, ..) ->
+        "refused " <> int.to_string(spell4_id) <> " " <> int.to_string(result)
+      game_client.CastConfirmed(server_cast_id:, ..) ->
+        "confirmed " <> label(server_cast_id)
+      game_client.CastStarted(
+        cast_id:,
+        spell4_id:,
+        root_spell4_id:,
+        parent_spell4_id:,
+        ..,
+      ) ->
+        "started "
+        <> label(cast_id)
+        <> " "
+        <> int.to_string(spell4_id)
+        <> " root "
+        <> int.to_string(root_spell4_id)
+        <> " parent "
+        <> int.to_string(parent_spell4_id)
+      game_client.CastWent(cast_id:, phase:) ->
+        "went " <> label(cast_id) <> " p" <> int.to_string(phase)
+      game_client.CastFinished(cast_id:) -> "finished " <> label(cast_id)
+      game_client.ThresholdOpened(spell4_id:, cancel_cast_id:) ->
+        "opened " <> int.to_string(spell4_id) <> " " <> label(cancel_cast_id)
+      game_client.ThresholdIndex(spell4_id:, index:) ->
+        "index " <> int.to_string(spell4_id) <> " " <> int.to_string(index)
+      game_client.ThresholdClosed(spell4_id:, start_cooldowns:) ->
+        "closed "
+        <> int.to_string(spell4_id)
+        <> " "
+        <> int.to_string(start_cooldowns)
+      game_client.ThresholdEnded(spell4_id:) ->
+        "ended " <> int.to_string(spell4_id)
+    }
+  })
+}
+
+pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_same_casts_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
+    two_players_of_class_enter_one_map(first_class: 4)
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index: 0,
+    target: 0,
+  )
+  let pulse = fn(pulse, child) {
+    [
+      "went k1 p" <> int.to_string(pulse),
+      "started " <> child <> " 80382 root 58832 parent 58832",
+      "went " <> child <> " p0",
+      "finished " <> child,
+    ]
+  }
+  let pulses =
+    list.flatten([
+      pulse(0, "k2"),
+      pulse(1, "k3"),
+      pulse(2, "k4"),
+      ["finished k1"],
+    ])
+  let #(own, _) =
+    game_client.read_kept(game: first, have: first_have, count: 14)
+  assert cast_lines(frames: own) == ["confirmed k1", ..pulses]
+    as "Spell4.58832, Discharge, the Medic's first level-1 ability (SpellLevel 631): the accept, then a go for each of its three pulses (channelPulseTime 410, channelMaxTime 1250: 0x14053d1f0), each starting its Proxy 80382 (Spell4Effects 173926, phaseFlags -1) with the pulse index as its phase (opcode.0x7f4.phase), then the finish"
+  let #(seen, _) =
+    game_client.read_kept(game: second, have: second_have, count: 14)
+  assert cast_lines(frames: seen)
+    == ["started k1 58832 root 58832 parent 0", ..pulses]
+    as "opcode.0x7ff, 0x7f4 and 0x7fe: a player in sight reads the same casts, started by unit 1 with no parent"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+pub fn a_stalkers_two_taps_of_shred_open_and_close_the_threshold_and_a_player_in_sight_reads_both_casts_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
+    two_players_of_class_enter_one_map(first_class: 5)
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index: 0,
+    target: 0,
+  )
+  let #(own, first_have) =
+    game_client.read_kept(game: first, have: first_have, count: 9)
+  assert cast_lines(frames: own)
+    == [
+      "confirmed k1",
+      "opened 38765 k1",
+      "went k1 p0",
+      "started k2 38767 root 38765 parent 38765",
+      "finished k1",
+      "went k2 p0",
+      "went k2 p1",
+      "went k2 p2",
+      "finished k2",
+    ]
+    as "Spell4.38765, Shred (SpellLevel 780, thresholdTime 4000): the first tap casts it and opens the threshold with 0x816 (opcode.0x816), its Proxy 38767 starts in phase 0 (Spell4Effects 83776) and goes in three phases (SpellPhase 3712 to 3714)"
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 2,
+    bag_index: 0,
+    target: 0,
+  )
+  let #(own, _) = game_client.read_kept(game: first, have: first_have, count: 5)
+  assert cast_lines(frames: own)
+    == [
+      "confirmed k1",
+      "went k1 p0",
+      "started k2 39467 root 38765 parent 38766",
+      "finished k1",
+      "closed 38765 1",
+    ]
+    as "Spell4Thresholds 238: the second tap, held until the global cooldown ends (Spell4.38765: kind 0, SpellCoolDown 115, 1000 ms), casts the stage 38766 and 0x814 closes the threshold with the cooldown bit (opcode.0x814)"
+  let #(seen, _) =
+    game_client.read_kept(game: second, have: second_have, count: 12)
+  assert cast_lines(frames: seen)
+    == [
+      "started k1 38765 root 38765 parent 0",
+      "went k1 p0",
+      "started k2 38767 root 38765 parent 38765",
+      "finished k1",
+      "went k2 p0",
+      "went k2 p1",
+      "went k2 p2",
+      "finished k2",
+      "started k3 38766 root 38765 parent 38765",
+      "went k3 p0",
+      "started k4 39467 root 38765 parent 38766",
+      "finished k3",
+    ]
+    as "opcode.0x7ff.root_parent and cast.stage_root_parent: a player in sight reads the base cast with parent 0 and the stage with root and parent 38765, and no threshold message"
+  game_client.close(game: first)
+  game_client.close(game: second)
+  login_support.stop(started)
+}
+
+pub fn a_spellslingers_quick_draw_goes_in_five_phases_and_its_charged_shot_is_held_until_the_release_on_the_whole_server_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let TwoEntered(started:, first:, second:, first_have:, second_have:, ..) =
+    two_players_of_class_enter_one_map(first_class: 7)
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 1,
+    bag_index: 0,
+    target: 0,
+  )
+  let quick_draw = [
+    "went k1 p0",
+    "went k1 p1",
+    "went k1 p2",
+    "went k1 p3",
+    "went k1 p4",
+    "finished k1",
+  ]
+  let #(own, first_have) =
+    game_client.read_kept(game: first, have: first_have, count: 7)
+  assert cast_lines(frames: own) == ["confirmed k1", ..quick_draw]
+    as "Spell4.43468, Quick Draw (SpellLevel 1011): five gos, the phase indexes 0 to 4 (SpellPhase 5882 to 5886), no child (every Proxy sits behind a prerequisite) and a finish"
+  let #(seen, second_have) =
+    game_client.read_kept(game: second, have: second_have, count: 7)
+  assert cast_lines(frames: seen)
+    == ["started k1 43468 root 43468 parent 0", ..quick_draw]
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 2,
+    bag_index: 1,
+    target: 0,
+  )
+  let #(own, first_have) =
+    game_client.read_kept(game: first, have: first_have, count: 3)
+  assert cast_lines(frames: own)
+    == ["confirmed k1", "opened 34718 k1", "index 34718 1"]
+    as "Spell4.34718, Charged Shot (SpellLevel 1036): the press opens the threshold with the cast's id and holds the cast; Spell4Thresholds 123 raises the level to 1 after thresholdDuration 1000 (opcode.0x817)"
+  game_client.press_ability(
+    game: first,
+    client_cast_id: 3,
+    bag_index: 1,
+    target: 0,
+  )
+  let #(own, _) = game_client.read_kept(game: first, have: first_have, count: 5)
+  assert cast_lines(frames: own)
+    == [
+      "confirmed k1",
+      "went k1 p0",
+      "finished k1",
+      "closed 34718 0",
+      "finished k2",
+    ]
+    as "the release casts the row at level 1, 34722 (Spell4Thresholds 123), then 0x814 closes the threshold and the base cast ends with its 0x7fe (cast.charge_release_base)"
+  let #(seen, _) =
+    game_client.read_kept(game: second, have: second_have, count: 5)
+  assert cast_lines(frames: seen)
+    == [
+      "started k1 34718 root 34718 parent 0",
+      "started k2 34722 root 34718 parent 34718",
+      "went k2 p0",
+      "finished k2",
+      "finished k1",
+    ]
+    as "cast.stage_root_parent: a player in sight reads the charge, then the stage with root and parent 34718, and no go for the base cast"
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)

@@ -36,6 +36,8 @@ pub type CastResult {
   CasterMovement
   /// The value 51, the fact file's `Spell4CastResult.vital_cost`.
   CasterVitalCostResource1
+  /// The value 53, the fact file's `Spell4CastResult.vital_cost`.
+  CasterVitalCostResource3
   /// The value 55, the fact file's `Spell4CastResult.vital_cost`.
   CasterVitalCostResource5
   /// The value 57, the fact file's `Spell.CodeEnumCastResult`.
@@ -88,6 +90,7 @@ pub fn to_value(value: CastResult) -> Int {
     CasterNotIncontrolOfSelf -> 33
     CasterMovement -> 34
     CasterVitalCostResource1 -> 51
+    CasterVitalCostResource3 -> 53
     CasterVitalCostResource5 -> 55
     CasterCannotBeDead -> 57
     TargetUnknown -> 90
@@ -125,6 +128,7 @@ pub fn from_value(number: Int) -> CastResult {
     33 -> CasterNotIncontrolOfSelf
     34 -> CasterMovement
     51 -> CasterVitalCostResource1
+    53 -> CasterVitalCostResource3
     55 -> CasterVitalCostResource5
     57 -> CasterCannotBeDead
     90 -> TargetUnknown

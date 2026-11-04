@@ -35,6 +35,7 @@ import genesis_prime/table/item_slot
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
@@ -42,7 +43,9 @@ import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/order
 import planted_table.{type Cell, Boolean, Float, Integer}
+import spell_tables
 
 /// A Novice set the planted CharacterCreation rows hold: the row, its class and
 /// faction, the five armor pieces, the shield and the weapon.
@@ -774,6 +777,49 @@ pub fn spell4_base_rows() -> List(List(Cell)) {
   })
 }
 
+/// Every planted row holds its ID in its first cell.
+fn by_id(first: List(Cell), second: List(Cell)) -> order.Order {
+  let assert [Integer(first_id), ..] = first
+    as "a planted row holds its ID first"
+  let assert [Integer(second_id), ..] = second
+    as "a planted row holds its ID first"
+  int.compare(first_id, second_id)
+}
+
+/// The planted files of the spell tables with the trees of `spell_tables` (each
+/// the client's own rows) in place of the plain Normal casts; Paralytic Surge,
+/// 42352, stays one instant Normal cast. A table keeps a slot for each id up to
+/// its highest, so the Spell4Effects file, whose rows have ids up to 196522, is
+/// about 1.5 MB: only the tests that cast an ability of another method load these
+/// (`character_tables.shared_with_spell_trees`), and the plain `files` stay small.
+pub fn spell_tree_files() -> List(#(String, BitArray)) {
+  let rows = spell_tables.rows()
+  [
+    planted_table.file(
+      spell4.schema,
+      list.append(rows.spell4, [
+        planted_table.row(spell4.schema, [
+          #("ID", Integer(42_352)),
+          #("spell4BaseIdBaseSpell", Integer(26_543)),
+        ]),
+      ])
+        |> list.sort(by_id),
+    ),
+    planted_table.file(
+      spell4_base.schema,
+      list.append(rows.spell4_base, [
+        planted_table.row(spell4_base.schema, [#("ID", Integer(26_543))]),
+      ])
+        |> list.sort(by_id),
+    ),
+    planted_table.file(spell4_effects.schema, rows.spell4_effects),
+    planted_table.file(spell4_thresholds.schema, rows.spell4_thresholds),
+    planted_table.file(spell_phase.schema, rows.spell_phases),
+    planted_table.file(spell_cool_down.schema, rows.spell_cool_downs),
+    planted_table.file(class.schema, rows.classes),
+  ]
+}
+
 /// The planted files of the tables only the loadout and the spell plans read,
 /// each by its file name.
 pub fn files() -> List(#(String, BitArray)) {
@@ -789,6 +835,7 @@ pub fn files() -> List(#(String, BitArray)) {
     planted_table.file(spell4.schema, spell4_rows()),
     planted_table.file(spell4_base.schema, spell4_base_rows()),
     planted_table.file(spell4_effects.schema, []),
+    planted_table.file(spell4_thresholds.schema, []),
     planted_table.file(spell_phase.schema, []),
     planted_table.file(spell_cool_down.schema, []),
     planted_table.file(class.schema, []),

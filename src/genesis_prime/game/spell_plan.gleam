@@ -6,7 +6,8 @@
 //// ```
 //// SpellLevel (class, level 1, no prerequisite) ─▶ Spell4 (the ability) ─▶ Spell4Base
 ////      Spell4Effects (spellId = the Spell4 id), each effect of type Proxy (26) ─▶ the Spell4 it names, as a child
-////      SpellPhase (owner = a Multiphase Spell4) ─▶ the phase delays, in row order
+////      Spell4Thresholds (parent = the Spell4 id), by order index ─▶ the Spell4 each tap or charge level casts, as a stage
+////      SpellPhase (owner = a Multiphase Spell4) ─▶ the phase delays and flags, in row order
 ////      SpellCoolDown (the global row) ─▶ the global cooldown's time
 ////      Class (vitalEnumResource0..) ─▶ the result a short vital gives
 //// all of them, once, when the tables load ─▶ Plans ─▶ in_plans(base)
@@ -26,26 +27,43 @@
 ////   the phase before: the client sums the delays into the cast's duration when
 ////   its castTime is 0 (`0x14053d1f0`), which a gap reading fits, and schedules no
 ////   phase itself, so the go times are the server's choice
-////   (`SpellPhase.phaseDelay`). Any other spell has one go, at the end of its cast
-////   time.
+////   (`SpellPhase.phaseDelay`). A phase with the flag 0x200 moves the spell's
+////   cooldown to its last phase (`0x14053e5a0`). Any other spell has one go, at
+////   the end of its cast time, and a ChargeRelease ability that has stages has
+////   none (below).
+//// - **A channel** (`Spell.CodeEnumCastMethod` 1) gets (channelMaxTime -
+////   channelInitialDelay + channelPulseTime) / channelPulseTime gos, in whole
+////   numbers (`0x14053d1f0`); the pulses fall at the initial delay plus each pulse
+////   time and the cast ends at channelMaxTime, which are the server's choice
+////   (`Spell4.channelPulseTime`).
+//// - **The stages** of a RapidTap or ChargeRelease ability are the Spell4Thresholds
+////   rows whose parent it is, by order index, each a full tree with its
+////   thresholdDuration (`Spell4Thresholds.spell4IdToCast`). A press resolves to the
+////   row at the open threshold's index, the ability's own spell at -1, and is
+////   refused past the last row (`0x1403bfd60`). The threshold lasts the ability's
+////   thresholdTime (`opcode.0x816`).
+//// - **The cast bar** is decided by the cast method, as the client does
+////   (`cast.current_cast`): a spell that shows one is the caster's current cast from
+////   its start.
 //// - **The cooldowns.** The spell's own is `Spell4.spellCoolDown` in
-////   milliseconds. The global one is the row `spellCoolDownIdGlobal` names, in
+////   milliseconds, started where the method says (`CooldownStart`,
+////   `0x14053e5a0`). The global one is the row `spellCoolDownIdGlobal` names, in
 ////   effect only for kinds 0 and 1 and a non-zero row (`0x14046afc0`); kinds 0
 ////   and 2 are refused while it runs (`0x1403b14c0`).
 //// - **The cost.** An ability with an innate cost the unit cannot pay is refused
 ////   with 50 + the resource slot: types 5 to 11 are slots 0 to 6 (Mind Burst,
 ////   type 6, is 51), and type 18 goes to the class's slots, the last one holding
 ////   that vital giving the result and none passing (Gamma Rays is 55)
-////   (`0x1403b3320`, `0x1405e7980`, `Spell4CastResult.vital_cost`). Every
-////   resource a new unit holds is 0 (`0x140454380`). Health (1), shield (3), focus
-////   (15) and 16 give their own results (44, 176, 167, 177); any other type is an
-////   `UnreadCost`.
+////   (`0x1403b3320`, `0x1405e7980`, `Spell4CastResult.vital_cost`). A stage's row
+////   holds two more costs, checked the same way. Every resource a new unit holds
+////   is 0 (`0x140454380`). Health (1), shield (3), focus (15) and 16 give their own
+////   results (44, 176, 167, 177); any other type is an `UnreadCost`.
 //// - **No target.** None of the 18 level-1 abilities needs a target the client
 ////   picks (`Spell4TargetMechanics.targetType`), so the plan holds no range and
 ////   no target rule.
 //// - **What fails the load:** a Spell4, Spell4Base, SpellCoolDown or Class row the
-////   tree names that the tables lack, a cost of a type not read, and a cycle of
-////   Proxy effects.
+////   tree names that the tables lack, a cost of a type not read, a cycle of Proxy
+////   effects, and a channel with no pulse time.
 
 import genesis_prime/game/loadout
 import genesis_prime/table/class
@@ -58,6 +76,7 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_thresholds
 import genesis_prime/table/spell_cool_down
 import genesis_prime/table/spell_level
 import genesis_prime/table/spell_phase
@@ -85,16 +104,30 @@ pub type CastMethod {
 }
 
 /// Whether the client shows a cast bar for a spell (`SpellShowsCastBar`,
-/// `cast.current_cast`), decided here for the methods the server casts.
+/// `cast.current_cast`), which the spell's cast method decides.
 pub type CastBar {
-  /// A Normal spell with a cast time and a castBarType, or a Multiphase one with
-  /// either.
+  /// The spell has a cast bar: a Normal spell with a cast time and a castBarType, a
+  /// Multiphase one with either, a Channeled one with a castBarType, a ChargeRelease
+  /// one with a thresholdTime or else a cast time, and any other method with a cast
+  /// time.
   ShowsCastBar
   HidesCastBar
-  /// The method's rule (Channeled by its root or channel record, PressHold always,
-  /// ChargeRelease by its threshold, and so on) is not built: a press of such a
-  /// spell is refused 285, and a tree a Normal press starts may not hold one.
-  UndecidedCastBar
+  /// A Channeled spell with no castBarType: it shows the bar only as the pressed
+  /// spell itself (the cast's root is the spell).
+  ShowsWhenPressed
+}
+
+/// Which go of a cast starts the spell's own cooldown (`0x14053e5a0`).
+pub type CooldownStart {
+  /// The first go: a Normal spell, and a Multiphase one with no phase of the flag
+  /// 0x200.
+  AtFirstGo
+  /// The go that reaches the count: a Multiphase spell with a phase of the flag 0x200
+  /// (its last phase) and a channel (its last pulse).
+  AtLastGo
+  /// No go: a RapidTap ability's cooldown starts when its threshold closes, and a
+  /// ChargeRelease ability's at the first go of the stage the release casts.
+  NotAtAGo
 }
 
 /// Whether the spell needs the weapon (Spell4Base.weaponSlot, `0x1403afb10`).
@@ -129,6 +162,19 @@ pub type Condition {
   NeedsPrerequisite(prerequisite_id: PrerequisiteId)
 }
 
+/// The times of a Channeled spell, in milliseconds (Spell4.channelInitialDelay,
+/// channelMaxTime and channelPulseTime).
+pub type Channel {
+  Channel(initial_delay_ms: Int, max_time_ms: Int, pulse_time_ms: Int)
+}
+
+/// One stage of a RapidTap or ChargeRelease ability: the spell a tap or a charge
+/// level casts, and the time the threshold takes to reach it from the stage before
+/// (Spell4Thresholds.thresholdDuration).
+pub type Stage {
+  Stage(duration_ms: Int, spell: Spell)
+}
+
 /// A spell and what it starts. `spell4_id` is the id of the Spell4 row; the cast
 /// ids a press makes are the cast rule's (genesis_prime/game/cast).
 pub type Spell {
@@ -138,8 +184,14 @@ pub type Spell {
     method: CastMethod,
     /// Spell4.castTime; 0 goes at once.
     cast_time_ms: Int,
-    /// Spell4.spellCoolDown: the spell's own cooldown, from its first go.
+    /// Spell4.spellCoolDown: the spell's own cooldown, started where
+    /// `cooldown_start` says.
     cooldown_ms: Int,
+    cooldown_start: CooldownStart,
+    /// The index of the first phase with the flag 0x200 of a Multiphase spell: a
+    /// cast that has gone past it starts the cooldown at its 0x7fe even when it
+    /// ends before its last phase (`0x14053e1b0`).
+    cooldown_phase: Option(Int),
     /// Whether the client shows a cast bar for the spell, and so makes it the
     /// unit's current cast (`cast.current_cast`).
     cast_bar: CastBar,
@@ -157,6 +209,13 @@ pub type Spell {
     /// The gap before each phase's go, in order; empty for a spell that is not
     /// Multiphase.
     phase_delays_ms: List(Int),
+    /// How long the threshold a RapidTap or ChargeRelease ability opens stays open:
+    /// Spell4.thresholdTime; 0 for a spell that opens none.
+    threshold_ms: Int,
+    /// The spells a tap or charge level casts, in order.
+    stages: List(Stage),
+    /// The pulse times of a Channeled spell.
+    channel: Option(Channel),
     proxies: List(Proxy),
   )
 }
@@ -185,10 +244,12 @@ pub type PlanError {
   /// A spell's innate cost is of a type whose check the client's code was not
   /// read for (`0x1403b3320`).
   UnreadCost(spell4_id: Int, cost_type: Int)
-  /// A tree a Normal press starts holds a spell whose cast method's cast bar rule
-  /// is not built, so the server cannot say which cast the client counts as
-  /// current.
-  UnbuiltCastBar(spell4_id: Int, cast_method: Int)
+  /// A Channeled spell's channelPulseTime is 0, which gives no count of gos
+  /// (`0x14053d1f0`).
+  ChannelWithoutPulse(spell4_id: Int)
+  /// A RapidTap or ChargeRelease ability's thresholdTime is 0, which the client
+  /// refuses a press of with 285 (`0x1403bfd60`).
+  NoThresholdTime(spell4_id: Int)
 }
 
 /// A sentence that says why the plans cannot be built, naming the table and the
@@ -204,18 +265,20 @@ pub fn describe(error error: PlanError) -> String {
     ProxyCycle(chain:) ->
       "the Proxy effects of an ability lead round a cycle of spells: "
       <> string_of(chain)
-    UnbuiltCastBar(spell4_id:, cast_method:) ->
-      "the Spell4 row "
-      <> int.to_string(spell4_id)
-      <> " has the cast method "
-      <> int.to_string(cast_method)
-      <> ", whose cast bar rule is not built, in the tree of a Normal ability"
     UnreadCost(spell4_id:, cost_type:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
       <> " has an innate cost of type "
       <> int.to_string(cost_type)
       <> ", which the client's check was not read for"
+    ChannelWithoutPulse(spell4_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " is Channeled with a channelPulseTime of 0, which gives no count of pulses"
+    NoThresholdTime(spell4_id:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " is a RapidTap or ChargeRelease ability with a thresholdTime of 0, which the client refuses"
   }
 }
 
@@ -242,66 +305,63 @@ pub fn derivation() -> table_store.Derivation {
   })
 }
 
+/// The rows the tree reads, grouped by the spell they belong to.
+type Sources {
+  Sources(
+    effects: Dict(Int, List(spell4_effects.Spell4Effects)),
+    phases: Dict(Int, List(Phase)),
+    thresholds: Dict(Int, List(spell4_thresholds.Spell4Thresholds)),
+  )
+}
+
+/// A SpellPhase row the client keeps.
+type Phase {
+  Phase(delay_ms: Int, flags: Int)
+}
+
 /// Builds every plan from the loaded tables, or why one cannot be built; the
 /// derivation's body, and the function a test of a missing row or a cycle runs
 /// on planted tables.
 pub fn build(tables tables: table_store.Tables) -> Result(Plans, PlanError) {
-  let effects = effects_by_spell(tables:)
-  let phases = phases_by_owner(tables:)
+  let sources =
+    Sources(
+      effects: effects_by_spell(tables:),
+      phases: phases_by_owner(tables:),
+      thresholds: thresholds_by_parent(tables:),
+    )
   spell_level.all(tables)
   |> list.filter(loadout.is_level_one_ability)
   |> list.try_fold(dict.new(), fn(plans, row) {
     use spell <- result.try(
-      spell_of(tables:, effects:, phases:, spell4_id: row.spell4_id, chain: []),
+      spell_of(
+        tables:,
+        sources:,
+        spell4_id: row.spell4_id,
+        chain: [],
+        threshold_costs: [],
+      ),
     )
-    use Nil <- result.try(checked_cast_bars(spell:))
+    use Nil <- result.try(has_threshold_time(spell:))
     Ok(dict.insert(plans, spell.spell4_base_id.value, spell))
   })
 }
 
-/// A Normal ability's tree holds no spell whose cast bar rule is not built: the
-/// cast rule needs each cast's bar to know which cast is current. An ability of
-/// another method is never cast (it is refused 285), so its tree is not held to it.
-fn checked_cast_bars(spell spell: Spell) -> Result(Nil, PlanError) {
+/// A RapidTap or ChargeRelease ability opens a threshold of its thresholdTime, so
+/// a press of one with none is refused by the client (`0x1403bfd60`).
+fn has_threshold_time(spell spell: Spell) -> Result(Nil, PlanError) {
   case spell.method {
-    Normal -> children_decided(spell:)
-    Channeled
+    RapidTap | ChargeRelease if spell.threshold_ms == 0 ->
+      Error(NoThresholdTime(spell4_id: spell.spell4_id.value))
+    RapidTap
+    | ChargeRelease
+    | Normal
+    | Channeled
     | PressHold
     | ChanneledField
     | ClientSideInteraction
-    | RapidTap
-    | ChargeRelease
     | Multiphase
     | Transactional
     | OtherMethod(..) -> Ok(Nil)
-  }
-}
-
-fn children_decided(spell spell: Spell) -> Result(Nil, PlanError) {
-  list.try_each(spell.proxies, fn(proxy) {
-    case proxy.spell.cast_bar {
-      UndecidedCastBar ->
-        Error(UnbuiltCastBar(
-          spell4_id: proxy.spell.spell4_id.value,
-          cast_method: method_number(method: proxy.spell.method),
-        ))
-      ShowsCastBar | HidesCastBar -> children_decided(spell: proxy.spell)
-    }
-  })
-}
-
-fn method_number(method method: CastMethod) -> Int {
-  case method {
-    Normal -> 0
-    Channeled -> 1
-    PressHold -> 2
-    ChanneledField -> 3
-    ClientSideInteraction -> 5
-    RapidTap -> 6
-    ChargeRelease -> 7
-    Multiphase -> 8
-    Transactional -> 9
-    OtherMethod(id:) -> id
   }
 }
 
@@ -319,7 +379,9 @@ fn effects_by_spell(
   })
 }
 
-fn phases_by_owner(tables tables: table_store.Tables) -> Dict(Int, List(Int)) {
+fn phases_by_owner(
+  tables tables: table_store.Tables,
+) -> Dict(Int, List(Phase)) {
   spell_phase.all(tables)
   |> list.filter(fn(phase) {
     phase.order_index < max_phases
@@ -327,7 +389,26 @@ fn phases_by_owner(tables tables: table_store.Tables) -> Dict(Int, List(Int)) {
   })
   |> list.group(fn(phase) { phase.spell4_id_owner })
   |> dict.map_values(fn(_, phases) {
-    list.reverse(phases) |> list.map(fn(phase) { phase.phase_delay })
+    list.reverse(phases)
+    |> list.map(fn(phase) {
+      Phase(delay_ms: phase.phase_delay, flags: phase.phase_flags)
+    })
+  })
+}
+
+/// The Spell4Thresholds rows of each spell, by order index
+/// (`Spell4Thresholds.spell4IdToCast`: the client sorts them by the row's order
+/// index, `0x140566940`).
+fn thresholds_by_parent(
+  tables tables: table_store.Tables,
+) -> Dict(Int, List(spell4_thresholds.Spell4Thresholds)) {
+  spell4_thresholds.all(tables)
+  |> list.group(fn(row) { row.spell4_id_parent })
+  |> dict.map_values(fn(_, rows) {
+    list.sort(rows, fn(first, second) {
+      int.compare(first.order_index, second.order_index)
+      |> order.break_tie(int.compare(first.id, second.id))
+    })
   })
 }
 
@@ -337,12 +418,16 @@ const proxy_effect_type = 26
 /// The client keeps phase rows with an order index below 32 (`0x14055e180`).
 const max_phases = 32
 
+/// The phase flag that moves a Multiphase spell's cooldown to its last phase
+/// (`0x14053e5a0`).
+const cooldown_at_last_phase_flag = 0x200
+
 fn spell_of(
   tables tables: table_store.Tables,
-  effects effects: Dict(Int, List(spell4_effects.Spell4Effects)),
-  phases phases: Dict(Int, List(Int)),
+  sources sources: Sources,
   spell4_id spell4_id: Int,
   chain chain: List(Int),
+  threshold_costs threshold_costs: List(#(Int, Int)),
 ) -> Result(Spell, PlanError) {
   let chain = list.append(chain, [spell4_id])
   use <- bool.guard(
@@ -361,19 +446,27 @@ fn spell_of(
     )),
   )
   use global_cooldown <- result.try(global_cooldown_of(tables:, row:))
-  use unpayable_cost <- result.try(unpayable_cost_of(tables:, row:, base:))
+  use unpayable_cost <- result.try(
+    unpayable_cost_of(tables:, row:, base:, costs: [
+      #(row.innate_cost_type0, row.innate_cost0),
+      #(row.innate_cost_type1, row.innate_cost1),
+      ..threshold_costs
+    ]),
+  )
   use proxies <- result.try(
-    dict.get(effects, spell4_id)
+    dict.get(sources.effects, spell4_id)
     |> result.unwrap([])
     |> list.filter(fn(effect) { effect.data_bits00 != 0 })
     |> list.try_map(fn(effect) {
-      use child <- result.try(spell_of(
-        tables:,
-        effects:,
-        phases:,
-        spell4_id: effect.data_bits00,
-        chain:,
-      ))
+      use child <- result.try(
+        spell_of(
+          tables:,
+          sources:,
+          spell4_id: effect.data_bits00,
+          chain:,
+          threshold_costs: [],
+        ),
+      )
       Ok(Proxy(
         effect_id: Spell4EffectsId(effect.id),
         delay_ms: effect.delay_time,
@@ -383,14 +476,37 @@ fn spell_of(
       ))
     }),
   )
+  use stages <- result.try(
+    dict.get(sources.thresholds, spell4_id)
+    |> result.unwrap([])
+    |> list.try_map(fn(threshold) {
+      use stage <- result.try(
+        spell_of(
+          tables:,
+          sources:,
+          spell4_id: threshold.spell4_id_to_cast,
+          chain:,
+          threshold_costs: [
+            #(threshold.vital_enum_cost_type00, threshold.vital_cost_value00),
+            #(threshold.vital_enum_cost_type01, threshold.vital_cost_value01),
+          ],
+        ),
+      )
+      Ok(Stage(duration_ms: threshold.threshold_duration, spell: stage))
+    }),
+  )
   let method = method_of(base.cast_method)
+  let phases = dict.get(sources.phases, spell4_id) |> result.unwrap([])
   use delays <- result.try(phase_delays(phases:, method:, spell4_id:))
+  use channel <- result.try(channel_of(row:, method:))
   Ok(Spell(
     spell4_id: Spell4Id(spell4_id),
     spell4_base_id: Spell4BaseId(row.spell4_base_id_base_spell),
     method:,
     cast_time_ms: row.cast_time,
     cooldown_ms: row.spell_cool_down,
+    cooldown_start: cooldown_start_of(method:, phases:),
+    cooldown_phase: cooldown_phase_of(method:, phases:),
     cast_bar: cast_bar_of(method:, row:, base:),
     free_while_live: has_flag(flags: row.property_flags, bit: 0x40),
     ignores_casting: has_flag(flags: row.property_flags, bit: 0x10)
@@ -399,13 +515,15 @@ fn spell_of(
     global_cooldown:,
     unpayable_cost:,
     phase_delays_ms: delays,
+    threshold_ms: row.threshold_time,
+    stages:,
+    channel:,
     proxies:,
   ))
 }
 
 /// Whether the client shows a cast bar for the spell, by its method
-/// (`cast.current_cast`): Normal needs a cast time and a castBarType, Multiphase
-/// either; the other methods' rules are not built.
+/// (`cast.current_cast`, `SpellShowsCastBar`).
 fn cast_bar_of(
   method method: CastMethod,
   row row: spell4.Spell4,
@@ -414,16 +532,18 @@ fn cast_bar_of(
   let has_bar = base.cast_bar_type != 0
   let has_time = row.cast_time != 0
   case method {
-    Normal -> bar_if(shows: has_bar && has_time)
+    Normal | OtherMethod(10) -> bar_if(shows: has_bar && has_time)
     Multiphase -> bar_if(shows: has_bar || has_time)
-    Channeled
-    | PressHold
-    | ChanneledField
-    | ClientSideInteraction
-    | RapidTap
-    | ChargeRelease
-    | Transactional
-    | OtherMethod(..) -> UndecidedCastBar
+    Channeled ->
+      case has_bar {
+        True -> ShowsCastBar
+        False -> ShowsWhenPressed
+      }
+    PressHold -> ShowsCastBar
+    ChanneledField | Transactional -> HidesCastBar
+    ChargeRelease -> bar_if(shows: row.threshold_time != 0 || has_time)
+    ClientSideInteraction | RapidTap | OtherMethod(..) ->
+      bar_if(shows: has_time)
   }
 }
 
@@ -432,18 +552,82 @@ fn bar_if(shows shows: Bool) -> CastBar {
   HidesCastBar
 }
 
+/// Whether the client shows a cast bar for a cast of the spell, which makes it
+/// the caster's current cast from its start (`cast.current_cast`): `pressed` is
+/// whether the cast's root is the spell itself.
+pub fn shows_cast_bar(spell spell: Spell, pressed pressed: Bool) -> Bool {
+  case spell.cast_bar {
+    ShowsCastBar -> True
+    HidesCastBar -> False
+    ShowsWhenPressed -> pressed
+  }
+}
+
+/// Where the spell's own cooldown starts (`0x14053e5a0`): a Multiphase spell with a
+/// phase of the flag 0x200 at its last phase, a channel at its last pulse, a
+/// RapidTap, ChargeRelease or PressHold spell at no go.
+fn cooldown_start_of(
+  method method: CastMethod,
+  phases phases: List(Phase),
+) -> CooldownStart {
+  case method {
+    Multiphase ->
+      case
+        list.any(phases, fn(phase) {
+          has_flag(flags: phase.flags, bit: cooldown_at_last_phase_flag)
+        })
+      {
+        True -> AtLastGo
+        False -> AtFirstGo
+      }
+    Channeled -> AtLastGo
+    RapidTap | ChargeRelease | PressHold -> NotAtAGo
+    Normal
+    | ChanneledField
+    | ClientSideInteraction
+    | Transactional
+    | OtherMethod(..) -> AtFirstGo
+  }
+}
+
+/// The first phase of a Multiphase spell that moves its cooldown to the end
+/// (`0x14053e5a0`).
+fn cooldown_phase_of(
+  method method: CastMethod,
+  phases phases: List(Phase),
+) -> Option(Int) {
+  case method {
+    Multiphase ->
+      list.index_map(phases, fn(phase, index) { #(index, phase) })
+      |> list.find(fn(pair) {
+        has_flag(flags: { pair.1 }.flags, bit: cooldown_at_last_phase_flag)
+      })
+      |> result.map(fn(pair) { pair.0 })
+      |> option.from_result
+    Normal
+    | Channeled
+    | PressHold
+    | ChanneledField
+    | ClientSideInteraction
+    | RapidTap
+    | ChargeRelease
+    | Transactional
+    | OtherMethod(..) -> None
+  }
+}
+
 /// The phase delays of a spell: a Multiphase spell's SpellPhase rows the client
 /// keeps, which it must have, and none for any other method.
 fn phase_delays(
-  phases phases: Dict(Int, List(Int)),
+  phases phases: List(Phase),
   method method: CastMethod,
   spell4_id spell4_id: Int,
 ) -> Result(List(Int), PlanError) {
   case method {
     Multiphase ->
-      case dict.get(phases, spell4_id) {
-        Ok([_, ..] as delays) -> Ok(delays)
-        Ok([]) | Error(Nil) -> Error(NoRow(table: "SpellPhase", id: spell4_id))
+      case phases {
+        [_, ..] -> Ok(list.map(phases, fn(phase) { phase.delay_ms }))
+        [] -> Error(NoRow(table: "SpellPhase", id: spell4_id))
       }
     Normal
     | Channeled
@@ -454,6 +638,36 @@ fn phase_delays(
     | ChargeRelease
     | Transactional
     | OtherMethod(..) -> Ok([])
+  }
+}
+
+/// The channel of a Channeled spell: its pulse time must give a count of pulses.
+fn channel_of(
+  row row: spell4.Spell4,
+  method method: CastMethod,
+) -> Result(Option(Channel), PlanError) {
+  case method {
+    Channeled ->
+      case row.channel_pulse_time > 0 {
+        True ->
+          Ok(
+            Some(Channel(
+              initial_delay_ms: row.channel_initial_delay,
+              max_time_ms: row.channel_max_time,
+              pulse_time_ms: row.channel_pulse_time,
+            )),
+          )
+        False -> Error(ChannelWithoutPulse(spell4_id: row.id))
+      }
+    Normal
+    | PressHold
+    | ChanneledField
+    | ClientSideInteraction
+    | RapidTap
+    | ChargeRelease
+    | Multiphase
+    | Transactional
+    | OtherMethod(..) -> Ok(None)
   }
 }
 
@@ -519,31 +733,21 @@ fn global_cooldown_of(
   }
 }
 
-/// The result of the first of the spell's two innate costs that a unit holding
-/// nothing cannot pay.
+/// The result of the first of the spell's innate costs, as (vital type, amount),
+/// that a unit holding nothing cannot pay: the Spell4 row's two, then the two of
+/// the Spell4Thresholds row for a stage.
 fn unpayable_cost_of(
   tables tables: table_store.Tables,
   row row: spell4.Spell4,
   base base: spell4_base.Spell4Base,
+  costs costs: List(#(Int, Int)),
 ) -> Result(Option(Int), PlanError) {
-  use first <- result.try(cost_result(
-    tables:,
-    row:,
-    base:,
-    cost_type: row.innate_cost_type0,
-    cost: row.innate_cost0,
-  ))
-  case first {
-    Some(_) -> Ok(first)
-    None ->
-      cost_result(
-        tables:,
-        row:,
-        base:,
-        cost_type: row.innate_cost_type1,
-        cost: row.innate_cost1,
-      )
-  }
+  list.try_fold(costs, None, fn(found, cost) {
+    case found {
+      Some(_) -> Ok(found)
+      None -> cost_result(tables:, row:, base:, cost_type: cost.0, cost: cost.1)
+    }
+  })
 }
 
 fn cost_result(
@@ -617,14 +821,95 @@ pub fn in_plans(
   dict.get(plans, spell4_base_id.value)
 }
 
-/// The time of each phase's go after the start of a cast of the spell, in
-/// milliseconds: the running sum of its phase delays; the cast time for a spell
-/// that is not Multiphase, which has the one go.
+/// The time of each go after the start of a cast of the spell, in milliseconds: a
+/// channel's pulses, the running sum of a Multiphase spell's phase delays, none
+/// for a ChargeRelease ability with stages, whose cast is held until its release
+/// (`cast.charge_release_base`), and else the cast time, the one go.
 pub fn go_times_ms(spell spell: Spell) -> List(Int) {
-  case spell.phase_delays_ms {
-    [] -> [spell.cast_time_ms]
-    delays -> list.scan(delays, 0, fn(elapsed, delay) { elapsed + delay })
+  case spell.channel, spell.phase_delays_ms {
+    Some(channel), _ -> channel_go_times_ms(channel:)
+    None, [] ->
+      case opens_threshold(spell:) && spell.method == ChargeRelease {
+        True -> []
+        False -> [spell.cast_time_ms]
+      }
+    None, delays -> list.scan(delays, 0, fn(elapsed, delay) { elapsed + delay })
   }
+}
+
+/// The times of a channel's pulses: (channelMaxTime - channelInitialDelay +
+/// channelPulseTime) / channelPulseTime of them, in whole numbers
+/// (`0x14053d1f0`), at the initial delay plus each pulse time (the times are the
+/// server's choice).
+pub fn channel_go_times_ms(channel channel: Channel) -> List(Int) {
+  let count =
+    { channel.max_time_ms - channel.initial_delay_ms + channel.pulse_time_ms }
+    / channel.pulse_time_ms
+  list.repeat(Nil, count)
+  |> list.index_map(fn(_, pulse) {
+    channel.initial_delay_ms + pulse * channel.pulse_time_ms
+  })
+}
+
+/// The time a channel ends at when that is after its last pulse: the cast ends at
+/// channelMaxTime from a timer of its own. A channel whose last pulse is at
+/// channelMaxTime, and every spell that is not Channeled, ends with its last go.
+pub fn finish_after_ms(spell spell: Spell) -> Option(Int) {
+  case spell.channel {
+    None -> None
+    Some(channel) ->
+      case list.last(channel_go_times_ms(channel:)) {
+        Ok(last) if last >= channel.max_time_ms -> None
+        Ok(_) | Error(Nil) -> Some(channel.max_time_ms)
+      }
+  }
+}
+
+/// How long a cast of the spell lasts, in milliseconds, which is what the client
+/// counts the current cast's time left from (`cast.press_queue`): a channel's
+/// channelMaxTime, else the cast time, else the sum of a Multiphase spell's phase
+/// delays; none for a ChargeRelease ability that holds its cast until the release.
+pub fn duration_ms(spell spell: Spell) -> Option(Int) {
+  case spell.channel, spell.phase_delays_ms {
+    Some(channel), _ -> Some(channel.max_time_ms)
+    None, [] ->
+      case go_times_ms(spell:) {
+        [] -> None
+        [_, ..] -> Some(spell.cast_time_ms)
+      }
+    None, delays ->
+      case spell.cast_time_ms {
+        0 -> Some(int.sum(delays))
+        cast_time -> Some(cast_time)
+      }
+  }
+}
+
+/// Whether a press of the ability opens a threshold: a RapidTap or ChargeRelease
+/// spell with stages.
+pub fn opens_threshold(spell spell: Spell) -> Bool {
+  case spell.method {
+    RapidTap | ChargeRelease -> spell.stages != []
+    Normal
+    | Channeled
+    | PressHold
+    | ChanneledField
+    | ClientSideInteraction
+    | Multiphase
+    | Transactional
+    | OtherMethod(..) -> False
+  }
+}
+
+/// The spell a press casts through the ability's open threshold at `index`: the
+/// stage's at 0 or more, the ability's own at -1, and none past the last stage or
+/// below -1, which the press is refused for (4) (`0x1403bfd60`).
+pub fn stage_at(spell spell: Spell, index index: Int) -> Result(Spell, Nil) {
+  use <- bool.guard(when: index == -1, return: Ok(spell))
+  use <- bool.guard(when: index < 0, return: Error(Nil))
+  list.drop(spell.stages, index)
+  |> list.first
+  |> result.map(fn(stage) { stage.spell })
 }
 
 /// The Proxies of the spell that fire in phase `phase`.
