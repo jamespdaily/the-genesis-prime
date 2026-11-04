@@ -372,8 +372,11 @@ pub fn joined(
             ]),
           ))
         }
-        map.Left | map.Watched(..) | map.Unwatched(..) | map.Gone(..) ->
-          Error(Nil)
+        map.Left
+        | map.Watched(..)
+        | map.Unwatched(..)
+        | map.Gone(..)
+        | map.Retire -> Error(Nil)
       }
     }
     Loading(..) -> Error(Nil)

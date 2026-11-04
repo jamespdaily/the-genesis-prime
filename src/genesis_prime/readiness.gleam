@@ -20,6 +20,13 @@
 ////   within_ms (monotonic) passed with no Reached ─▶ DatabaseUnreachable
 //// ```
 ////
+//// - **Before the tree.** The content load (genesis_prime/content) asks the same
+////   way before the tree exists, so `tree` is optional: with `None` nothing ends
+////   the wait but the database answering, and the probe is the load's own pool's
+////   (`worker.probe_pool`). A database that is down at start therefore leaves
+////   the server with no listener until it answers, where it used to serve
+////   `Unavailable` meanwhile; the warning after `within_ms` is still logged once
+////   per window.
 //// - **What `main` does with each outcome** is in genesis_prime. `Ready` prints
 ////   the ready line when the server still serves (genesis_prime/application:
 ////   the tree is running and the node is not stopping).
@@ -60,6 +67,7 @@ import genesis_prime/step/runtime
 import genesis_prime/store/worker.{type Probed, Reached, Unreached}
 import gleam/erlang/process.{type Monitor, type Subject}
 import gleam/int
+import gleam/option.{type Option, None, Some}
 import gleam/result
 
 /// How `await` asks and for how long, made once at start. The numbers are the
@@ -113,7 +121,7 @@ type Event {
 /// tree has started.
 pub fn await(
   probe probe: Probe,
-  tree tree: Monitor,
+  tree tree: Option(Monitor),
   settings settings: Settings,
   files files: List(Migration),
 ) -> Outcome {
@@ -123,7 +131,7 @@ pub fn await(
 
 fn attempt(
   probe probe: Probe,
-  tree tree: Monitor,
+  tree tree: Option(Monitor),
   settings settings: Settings,
   files files: List(Migration),
   deadline_ms deadline_ms: Int,
@@ -140,9 +148,7 @@ fn attempt(
       let event =
         process.new_selector()
         |> process.select_map(answers, Answered)
-        |> process.select_specific_monitor(tree, fn(down) {
-          TreeDown(runtime.down_reason(down))
-        })
+        |> watching_tree(tree)
         |> process.select_specific_monitor(watched, fn(_down) { WorkerEnded })
         |> process.selector_receive(within: wait_ms)
         |> result.unwrap(NoAnswerInTime)
@@ -158,6 +164,20 @@ fn attempt(
           retry(probe:, tree:, settings:, files:, deadline_ms:)
       }
     }
+  }
+}
+
+/// The selector with the tree's end added when there is a tree to watch.
+fn watching_tree(
+  selector selector: process.Selector(Event),
+  tree tree: Option(Monitor),
+) -> process.Selector(Event) {
+  case tree {
+    Some(tree) ->
+      process.select_specific_monitor(selector, tree, fn(down) {
+        TreeDown(runtime.down_reason(down))
+      })
+    None -> selector
   }
 }
 
@@ -201,7 +221,7 @@ fn empty(answers: Subject(Probed)) -> Nil {
 /// has passed.
 fn retry(
   probe probe: Probe,
-  tree tree: Monitor,
+  tree tree: Option(Monitor),
   settings settings: Settings,
   files files: List(Migration),
   deadline_ms deadline_ms: Int,
@@ -209,9 +229,7 @@ fn retry(
   let pause_ms = int.min(settings.pause_ms, remaining_ms(deadline_ms))
   let paused =
     process.new_selector()
-    |> process.select_specific_monitor(tree, fn(down) {
-      TreeDown(runtime.down_reason(down))
-    })
+    |> watching_tree(tree)
     |> process.selector_receive(within: int.max(pause_ms, 0))
   case paused {
     Ok(TreeDown(reason)) -> TreeEnded(reason:)

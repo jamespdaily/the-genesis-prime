@@ -26,6 +26,10 @@
 ////   Resist 1, the display groups 28793 and 28431 with their entries and
 ////   displays 26565 and 26578, and the Stamina and Armor overrides), in the
 ////   columns the spawns read (genesis_prime/world_map/spawn).
+//// - The tables only the content load reads (`content_files`): Faction2 rows 164
+////   to 168, 174, 177, 189, 219, 1441 and 1442 with their parents, the
+////   Faction2Relationship rows among them (684, 691, 726, 944 and 2943 to 2948),
+////   no Creature2OutfitInfo row, and the World rows the tests' maps run in.
 //// - Bone counts: opcode.0x25b.counts gives 46 bone values for race 1, sex 1
 ////   and 48 for race 1, sex 0. The planted maps are that many rows of one
 ////   parameter that sets one part, which carry those counts; the real
@@ -46,11 +50,14 @@ import genesis_prime/table/creature2_difficulty
 import genesis_prime/table/creature2_display_group_entry
 import genesis_prime/table/creature2_display_info
 import genesis_prime/table/creature2_outfit_group_entry
+import genesis_prime/table/creature2_outfit_info
 import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/creature2_resist
 import genesis_prime/table/creature2_tier
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
+import genesis_prime/table/faction2
+import genesis_prime/table/faction2_relationship
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{CharacterCustomizationLabelId}
 import genesis_prime/table/instance_portal
@@ -58,6 +65,7 @@ import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/table/loader/tbl_file
 import genesis_prime/table/path_mission
+import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
@@ -487,6 +495,88 @@ pub fn map_file_naming(parameter_id parameter_id: Int) -> #(String, BitArray) {
 
 fn load() -> store.Tables {
   load_files(files())
+}
+
+/// The Faction2 rows the planted factions walk: id and parent, as the client's.
+const faction_parents = [
+  #(164, 0),
+  #(165, 0),
+  #(166, 165),
+  #(167, 165),
+  #(168, 164),
+  #(174, 168),
+  #(177, 168),
+  #(189, 177),
+  #(219, 0),
+  #(1441, 164),
+  #(1442, 164),
+]
+
+/// The Faction2Relationship rows among them, as id, factionId0, factionId1 and
+/// factionLevel, the client's: Dominion 166 and Exile 167 are level 0 (Hostile)
+/// to each other, 189 is level 0 to 165, 219 is level 10 to 165 and 164, 1441 is
+/// level 0 to Exile and 10 to Dominion, 1442 level 0 to Dominion and 10 to Exile.
+const faction_relationships = [
+  #(684, 166, 167, 0),
+  #(691, 189, 165, 0),
+  #(726, 219, 165, 10),
+  #(944, 219, 164, 10),
+  #(2943, 1441, 167, 0),
+  #(2944, 1441, 166, 10),
+  #(2945, 1441, 174, 0),
+  #(2946, 1442, 166, 0),
+  #(2947, 1442, 167, 10),
+  #(2948, 1442, 174, 0),
+]
+
+/// The Worlds the tests' maps run in, each with the id column only.
+const content_worlds = [22, 51, 426, 870, 990, 1061, 1387, 3460, 3461, 6009]
+
+/// The planted files of the tables only the content load reads
+/// (`server_table.content_entries`), each by its file name.
+pub fn content_files() -> List(#(String, BitArray)) {
+  [
+    planted_table.file(
+      faction2.schema,
+      list.map(faction_parents, fn(faction) {
+        planted_table.row(faction2.schema, [
+          #("ID", Integer(faction.0)),
+          #("faction2IdParent", Integer(faction.1)),
+        ])
+      }),
+    ),
+    planted_table.file(
+      faction2_relationship.schema,
+      list.map(faction_relationships, fn(relationship) {
+        planted_table.row(faction2_relationship.schema, [
+          #("ID", Integer(relationship.0)),
+          #("factionId0", Integer(relationship.1)),
+          #("factionId1", Integer(relationship.2)),
+          #("factionLevel", Integer(relationship.3)),
+        ])
+      }),
+    ),
+    planted_table.file(creature2_outfit_info.schema, []),
+    planted_table.file(
+      world.schema,
+      list.map(content_worlds, fn(id) {
+        planted_table.row(world.schema, [#("ID", Integer(id))])
+      }),
+    ),
+  ]
+}
+
+/// The tables only the content load reads, loaded once from the planted files
+/// beside the planted tables (`shared`), under their key: the content load reads
+/// the creature tables where they are. Never unloaded, as `shared` is not.
+pub fn content_tables() -> store.Tables {
+  database_support.once("character_content_tables", fn() {
+    use folder <- planted_table.in_folder(content_files())
+    let assert Ok(tables) =
+      server_table.load_content_tables(over: shared(), from: folder)
+      as "the planted files load as the content load's tables"
+    tables
+  })
 }
 
 fn load_files(files: List(#(String, BitArray))) -> store.Tables {

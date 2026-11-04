@@ -178,6 +178,33 @@ pub fn the_servers_own_table_load_from_the_table_folder_is_a_breach_test() -> Ni
     as "genesis_prime.load_tables loads the server's tables from GENESIS_TABLE_DIR, the folder of the client's real tables"
 }
 
+pub fn the_content_only_tables_loaded_from_the_clients_folder_are_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    test_module([
+      "import client_tables",
+      "import genesis_prime/table/loader/server_table",
+      "fn more(tables) {",
+      "  server_table.load_content_tables(over: tables, from: client_tables.folder())",
+      "}",
+    ])
+  assert planted.lines(shared_tables.breaches([file])) == [5]
+    as "load_content_tables reads the content-only tables from the folder it is given, the client's real one"
+}
+
+pub fn the_servers_content_load_from_the_table_folder_is_a_breach_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    test_module([
+      "import genesis_prime",
+      "fn content(tables) { genesis_prime.load_content(tables:) }",
+    ])
+  assert planted.lines(shared_tables.breaches([file])) == [3]
+    as "genesis_prime.load_content loads the content-only tables from GENESIS_TABLE_DIR, the folder of the client's real tables"
+}
+
 pub fn no_test_loads_the_clients_tables_outside_the_shared_load_test() -> Nil {
   use <- owned_test.run(20_000)
   use <- unitest.tag("code_rule")

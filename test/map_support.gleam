@@ -11,9 +11,16 @@ import genesis_prime/world_map/spawn.{type Spawn}
 /// The map's realm: not 1, so a unit built with a fixed realm fails.
 pub const realm_id = 7
 
-/// How long a spawn whose creature ended stays empty in the tests' maps: the
+/// How long a spawn whose creature crashed stays empty in the tests' maps: the
 /// server's 60 s respawn.
 pub const creature_restart_ms = 60_000
+
+/// How long a creature no player sees keeps running in the tests' maps, and
+/// how often the map looks for one: the server's 60 s and 10 s. A rule's test
+/// drives the clock through the inputs' times, so it waits for neither.
+pub const idle_stop_ms = 60_000
+
+pub const sweep_ms = 10_000
 
 /// A map of the World table's row 3460 with no players, run as `incarnation`.
 pub fn empty(incarnation incarnation: Int) -> State {
@@ -31,8 +38,10 @@ pub fn standing(
     incarnation:,
     realm_id:,
     tables: character_tables.shared(),
-    spawns:,
+    spawns: spawn.world_spawns(spawns:),
     creature_restart_ms:,
+    idle_stop_ms:,
+    sweep_ms:,
   ))
 }
 

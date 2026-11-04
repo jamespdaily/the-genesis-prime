@@ -1,17 +1,19 @@
 //// Starts the server: it loads the client's game tables from the folder named
 //// by GENESIS_TABLE_DIR, stopping at once with the reason when one does not
-//// load, then starts the supervision tree under the application's root
-//// (genesis_prime/application), with the database named by PGHOST, PGPORT,
-//// PGUSER, PGPASSWORD and PGDATABASE. Once one read of the database has
-//// returned, and the migrations the database recorded are the files in
-//// priv/migrations (genesis_prime/migration), it prints the ready line, and it
-//// keeps the node alive until SIGTERM, which OTP turns into the tree's ordered
-//// stop and then the node's. A database that lacks a migration, ran a
-//// migration this build has no file for, ran an edited one, has no record of
-//// its migrations or cannot be read makes `main` stop with the reason and the
-//// node end with status 1, with no ready line, however late the database
-//// answers: one that is down at start is logged as unreachable and asked again
-//// until it answers.
+//// load, then loads the content tables (genesis_prime/content) from the database
+//// named by PGHOST, PGPORT, PGUSER, PGPASSWORD and PGDATABASE into persistent
+//// terms, and only then starts the supervision tree under the application's root
+//// (genesis_prime/application), with the same database. The content load waits for
+//// the database as the readiness ask does, so one that is down at start is logged
+//// as unreachable and asked again until it answers, and no listener is open
+//// meanwhile. Once one read of the database has returned, and the migrations the
+//// database recorded are the files in priv/migrations (genesis_prime/migration),
+//// it prints the ready line, and it keeps the node alive until SIGTERM, which OTP
+//// turns into the tree's ordered stop and then the node's. A database that lacks
+//// a migration, ran a migration this build has no file for, ran an edited one,
+//// has no record of its migrations or cannot be read, or holds a spawn row the
+//// client would refuse, makes `main` stop with the reason and the node end with
+//// status 1, with no ready line, however late the database answers.
 //// It serves the client's STS and auth logins (`login`) and the game server
 //// (`game`).
 
@@ -20,6 +22,7 @@ import genesis_prime/application
 import genesis_prime/client_connection.{type Bucket}
 import genesis_prime/connection/registry
 import genesis_prime/connection/script
+import genesis_prime/content
 import genesis_prime/digest
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game_settings
@@ -35,7 +38,6 @@ import genesis_prime/store/worker
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_registry
-import genesis_prime/world_map/spawn
 import gleam/erlang/application as erlang_application
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/charlist.{type Charlist}
@@ -51,7 +53,39 @@ import simplifile
 
 pub fn main() -> Nil {
   let #(tables, count) = load_tables()
-  start(settings: settings(tables:), tables: count)
+  let spawns = load_content(tables:)
+  start(settings: settings(tables:, spawns:), tables: count)
+}
+
+/// Loads the content tables (genesis_prime/content) into the server's own
+/// persistent terms, after the client's tables and before the tree, so the
+/// listeners open once the world's spawns are in place: waits for the database
+/// as the readiness ask does, and stops the program with the reasons when the
+/// migrations differ or any row is refused. `tables` are the server's own, which
+/// the selection reads the creature tables from; the tables only it reads are
+/// loaded beside them and unloaded after. Gives the key the terms are under.
+pub fn load_content(tables tables: store.Tables) -> store.Key {
+  let key = store.server_key()
+  let more = case
+    server_table.load_content_tables(over: tables, from: table_folder())
+  {
+    Ok(more) -> more
+    Error(error) -> panic as store.describe(error)
+  }
+  let loaded =
+    content.load(
+      tables: more,
+      migrations: load_migrations(),
+      pool: pool(),
+      ask: ready_ask(),
+      probe: content.pool_probe,
+      key:,
+    )
+  store.unload(more)
+  case loaded {
+    Ok(Nil) -> key
+    Error(error) -> panic as content.describe(error)
+  }
 }
 
 /// Loads the game tables the server's rules read
@@ -62,14 +96,19 @@ pub fn main() -> Nil {
 /// Gives the loaded tables, which the game connections read, and how many
 /// tables there are.
 pub fn load_tables() -> #(store.Tables, Int) {
-  let folder = case envoy.get("GENESIS_TABLE_DIR") {
+  case server_table.load(from: table_folder()) {
+    Ok(tables) -> #(tables, list.length(server_table.entries()))
+    Error(error) -> panic as store.describe(error)
+  }
+}
+
+/// The folder GENESIS_TABLE_DIR names, which holds the client's extracted tables;
+/// a missing variable stops the program with the reason.
+fn table_folder() -> String {
+  case envoy.get("GENESIS_TABLE_DIR") {
     Ok(folder) -> folder
     Error(Nil) ->
       panic as "GENESIS_TABLE_DIR is not set; the server loads the client's game tables from the folder it names"
-  }
-  case server_table.load(from: folder) {
-    Ok(tables) -> #(tables, list.length(server_table.entries()))
-    Error(error) -> panic as store.describe(error)
   }
 }
 
@@ -144,7 +183,7 @@ pub fn serve(
   let outcome =
     readiness.await(
       probe:,
-      tree: tree.monitor,
+      tree: Some(tree.monitor),
       settings: ready,
       files: migrations,
     )
@@ -187,7 +226,7 @@ fn settle(
           settle(
             outcome: readiness.await(
               probe:,
-              tree: tree.monitor,
+              tree: Some(tree.monitor),
               settings: ready,
               files: migrations,
             ),
@@ -231,9 +270,13 @@ fn ready_line(
 }
 
 /// The tree's settings: the database from the environment, with Postgres's
-/// own defaults for what is not set, a fresh name for each child, and the
-/// game tables the game connections read.
-pub fn settings(tables tables: store.Tables) -> server.Settings {
+/// own defaults for what is not set, a fresh name for each child, the
+/// game tables the game connections read and the key the world's spawns are
+/// kept under (`load_content`).
+pub fn settings(
+  tables tables: store.Tables,
+  spawns spawns: store.Key,
+) -> server.Settings {
   server.Settings(
     pool: pool(),
     store: process.new_name("store"),
@@ -242,7 +285,7 @@ pub fn settings(tables tables: store.Tables) -> server.Settings {
     sessions: process.new_name("sessions"),
     sessions_shutdown_ms: 5000,
     registry: registry.new(),
-    world: world(tables),
+    world: world(spawns),
     send_deadline_ms: 2000,
     connection_shutdown_ms: 5000,
     login: login(),
@@ -252,11 +295,14 @@ pub fn settings(tables tables: store.Tables) -> server.Settings {
 
 /// The world subtree's names, and its times: a watch's call to Maps may take
 /// 5 s, the same as an ask, a map and a creature have 5 s to stop, and a spawn
-/// whose creature ended stays empty for 60 s, the respawn time the server
-/// chooses since no client table holds one (death.creature_respawn). It stands
-/// the creatures of the tables' spawns. Recording is off; the dev start changes
-/// it.
-fn world(tables: store.Tables) -> server.World {
+/// whose creature crashed stays empty for 60 s, the respawn time the server
+/// chooses since no client table holds one (death.creature_respawn). A creature
+/// that no player has seen for 60 s stops, and each map looks for one every 10
+/// s: the idle stop is the server's choice, since no one sees a stopped creature
+/// and the delay only bounds how often a spawn starts and stops as a player
+/// walks by. The world stands the creatures of the spawns the content load put
+/// under `spawns`. Recording is off; the dev start changes it.
+fn world(spawns: store.Key) -> server.World {
   server.World(
     maps: process.new_name("maps"),
     map_supervisor: process.new_name("map_supervisor"),
@@ -266,7 +312,9 @@ fn world(tables: store.Tables) -> server.World {
     creature_supervisor: process.new_name("creature_supervisor"),
     creature_shutdown_ms: 5000,
     creature_restart_ms: 60_000,
-    spawns: spawn.all(tables),
+    idle_stop_ms: 60_000,
+    sweep_ms: 10_000,
+    spawns:,
   )
 }
 

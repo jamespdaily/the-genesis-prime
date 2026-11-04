@@ -31,6 +31,7 @@ import login_client.{type Ports, Ports}
 import login_vectors as vector
 import pog
 import readiness_support
+import spawn_support
 
 /// The most connections each test listener holds, a different number for each
 /// so a listener given another's setting shows.
@@ -104,7 +105,9 @@ pub fn world() -> server.World {
     creature_supervisor: process.new_name("test_creature_supervisor"),
     creature_shutdown_ms: 1000,
     creature_restart_ms: 60_000,
-    spawns: [],
+    idle_stop_ms: 60_000,
+    sweep_ms: 10_000,
+    spawns: spawn_support.key_with(spawns: []),
   )
 }
 
@@ -158,7 +161,10 @@ pub fn settings(pool pool: pog.Config) -> server.Settings {
 pub fn servers_settings() -> server.Settings {
   envoy.set("GENESIS_GAME_ADDRESS", "127.0.0.1")
   envoy.set("GENESIS_REALM_NAME", "Test")
-  genesis_prime.settings(tables: character_tables.shared())
+  genesis_prime.settings(
+    tables: character_tables.shared(),
+    spawns: spawn_support.key_with(spawns: []),
+  )
 }
 
 /// The rate bucket the server's own settings give the auth rule.

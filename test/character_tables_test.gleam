@@ -17,8 +17,11 @@ import genesis_prime/table/id.{
 import genesis_prime/table/world_location2
 import genesis_prime/table/xp_per_level
 import genesis_prime/world_map/spawn
+import genesis_prime/world_map/spawn_id.{SpawnId}
+import gleam/dict
 import gleam/list
 import owned_test
+import spawn_support
 import unitest
 
 pub fn the_planted_character_creation_rows_are_the_clients_rows_test() -> Nil {
@@ -149,15 +152,6 @@ pub fn the_planted_level_rows_are_the_clients_game_formula_and_xp_per_level_rows
     as "the planted table holds exactly the records the level rule reads"
 }
 
-pub fn the_spawns_built_from_the_planted_creature_rows_are_the_spawns_the_clients_rows_build_test() -> Nil {
-  use <- owned_test.run(60_000)
-  use <- unitest.guard(client_tables.present())
-  assert spawn.all(character_tables.shared())
-    == spawn.all(client_tables.shared())
-    as "the planted creature rows carry the real rows' values in the columns the spawns read: the same 54 spawns"
-  assert list.length(spawn.all(character_tables.shared())) == 54
-}
-
 pub fn the_planted_objective_circles_are_the_clients_world_location2_rows_test() -> Nil {
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
@@ -181,4 +175,41 @@ pub fn the_planted_objective_circles_are_the_clients_world_location2_rows_test()
     assert get(planted) == get(real)
       as "WorldLocation2: the planted circle has the real row's id, radius, position, world and zone"
   })
+}
+
+pub fn the_planted_creature_and_faction_rows_select_the_spawns_the_clients_rows_select_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  // Every faction a test plants (the player factions 166 and 167, 189, 174, 219,
+  // 1441, 1442 and no faction) for both training creatures, selected against the
+  // planted content tables and against the client's own: the spawns that start
+  // carry the same values, and the coverage is the same.
+  let rows =
+    list.index_map([0, 166, 167, 189, 174, 219, 1441, 1442], fn(faction, index) {
+      list.map([73_464, 73_465], fn(creature) {
+        spawn.Row(
+          ..spawn_support.beast_row(number: index * 2 + creature - 73_463),
+          creature_id: creature,
+          display_info_id: case creature {
+            73_464 -> 26_565
+            _ -> 26_578
+          },
+          faction_id: faction,
+          base_faction_id: faction,
+        )
+      })
+    })
+    |> list.flatten
+  let planted = spawn.select(rows:, tables: character_tables.content_tables())
+  let real = spawn.select(rows:, tables: client_tables.every_table())
+  assert planted.refusals == [] && real.refusals == []
+    as "no row is refused by either"
+  assert planted.coverage == real.coverage
+    as "the same rows start and are left out, for the same reasons"
+  let assert Ok(planted_world) = dict.get(planted.worlds, 3460)
+  let assert Ok(real_world) = dict.get(real.worlds, 3460)
+  assert planted_world.by_id == real_world.by_id
+    as "the spawns that start carry the same values: Base Health, level, faction, display"
+  assert dict.has_key(planted_world.by_id, SpawnId(1)) == False
+    as "faction 0 is left out in both"
 }

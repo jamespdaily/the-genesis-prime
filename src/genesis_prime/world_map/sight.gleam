@@ -23,7 +23,7 @@ import genesis_prime/game/start_place.{type Place}
 
 /// How far apart two players may stand and still see each other, in units: the
 /// client's largest draw distance (unit.range).
-const range = 1024.0
+pub const range = 1024.0
 
 /// Whether the two places are within `range` of each other, inclusive:
 /// exactly 1024.0 apart sees, 1024.01 does not.

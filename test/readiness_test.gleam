@@ -26,6 +26,7 @@ import genesis_prime/store.{FindAccount, Login, Unavailable}
 import genesis_prime/store/worker.{type Probed, Reached, Unreached}
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/list
+import gleam/option
 import gleam/string
 import log_capture
 import login_support
@@ -55,7 +56,7 @@ pub fn the_ask_gives_ready_only_after_the_probe_is_answered_test() -> Nil {
         outcomes,
         readiness.await(
           probe: fn(reply) { Ok(held_probe(held:, reply:)) },
-          tree: process.monitor(tree),
+          tree: option.Some(process.monitor(tree)),
           settings: patient(),
           files: [],
         ),
@@ -86,7 +87,7 @@ pub fn a_probe_that_reached_a_database_missing_a_migration_ends_the_ask_with_a_r
           times: 1,
         ))
       },
-      tree: process.monitor(tree),
+      tree: option.Some(process.monitor(tree)),
       settings: patient(),
       files: [first, second],
     )
@@ -136,7 +137,7 @@ pub fn the_ask_ends_with_the_trees_end_when_the_tree_ends_while_it_waits_test() 
             process.send(asked, worker)
             Ok(ToWorker(pid: worker))
           },
-          tree: process.monitor(tree),
+          tree: option.Some(process.monitor(tree)),
           settings: readiness.Settings(
             within_ms: 30_000,
             attempt_ms: 30_000,
@@ -176,7 +177,7 @@ pub fn an_ask_the_database_never_answers_keeps_asking_until_its_time_runs_out_te
             process.send(asked, runtime.now().monotonic_ms)
             Ok(answering(reply:, probed: Unreached, times: 1))
           },
-          tree: process.monitor(tree),
+          tree: option.Some(process.monitor(tree)),
           settings: settings,
           files: [],
         ),
@@ -221,7 +222,7 @@ pub fn an_ask_leaves_no_answer_behind_in_its_mailbox_test() -> Nil {
           probe: fn(reply) {
             Ok(answering(reply:, probed: Unreached, times: 3))
           },
-          tree: process.monitor(tree),
+          tree: option.Some(process.monitor(tree)),
           settings: short(),
           files: [],
         )

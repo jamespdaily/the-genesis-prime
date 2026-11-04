@@ -28,15 +28,18 @@ pub const shield_stat = 20
 pub const base_health_property = 7
 
 /// The record after a unit's type data: the stats, the movement commands that
-/// place it, the properties, the item visuals, both factions the same, the
-/// display, and the time its place is stamped with; every other field 0 or empty.
+/// place it, the properties, the item visuals, the faction and the base faction,
+/// the display and the outfit, and the time its place is stamped with; every
+/// other field 0 or empty.
 pub fn tail(
   stats stats: List(UnitStat),
   movement_commands movement_commands: List(StartMovement),
   properties properties: List(UnitProperty),
   item_visuals item_visuals: List(ItemVisual),
   faction_id faction_id: Int,
+  base_faction_id base_faction_id: Int,
   display_info_id display_info_id: Int,
+  outfit_info_id outfit_info_id: Int,
   server_time_estimate_start server_time_estimate_start: Int,
 ) -> UnitCreateTail {
   UnitCreateTail(
@@ -48,7 +51,7 @@ pub fn tail(
     item_visuals:,
     cast_id: 0,
     faction_id:,
-    base_faction_id: faction_id,
+    base_faction_id:,
     tagged_by_unit_id: 0,
     tagged_by_group_id: 0,
     field_14: 0,
@@ -58,6 +61,6 @@ pub fn tail(
     field_20: 0,
     minimap_marker_id: 0,
     display_info_id:,
-    outfit_info_id: 0,
+    outfit_info_id:,
   )
 }

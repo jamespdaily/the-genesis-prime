@@ -32,13 +32,17 @@ import ask_support
 import character_support
 import character_tables
 import connection_rule_support as support
+import content_support
 import event_wait
 import game_client
+import genesis_prime
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
+import genesis_prime/content
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, Put, SessionKey}
+import genesis_prime/import_world_data
 import genesis_prime/login/guid
 import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown
@@ -73,13 +77,14 @@ import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/whisper_failed
+import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/sitting_bot
 import genesis_prime/store.{type AccountId, AccountId}
+import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
-import genesis_prime/world_map/spawn
 import gleam/bool
 import gleam/dict
 import gleam/dynamic/decode
@@ -2009,16 +2014,38 @@ pub fn a_sigterm_to_the_node_ends_the_sitting_bot_which_leaves_and_gives_its_tal
   login_support.stop(started)
 }
 
-/// The server's tree with the world standing the creatures of the planted
-/// tables' spawns, which are the real spawns' values (`character_tables_test`).
+/// The server's tree with the world standing the creatures of the spawn table
+/// the test's database holds: the 27 Virtual Defense Daguns the migrations seed
+/// and the 27 Virtual Battle Beasts of the planted world-database file, loaded
+/// through the content load into a key of the test's own.
 fn start_with_creatures() -> login_support.Started {
   login_support.start_with(change: fn(settings) {
+    let pool =
+      pog.Config(
+        ..settings.pool,
+        pool_name: process.new_name("content_pool"),
+        pool_size: 1,
+      )
+    let assert Ok(_) =
+      import_world_data.import_spawns(
+        db: content_support.connect_with(config: pool),
+        folder: content_support.fixture_folder,
+      )
+      as "the planted world-database file imports"
+    let key = table_store.new_key()
+    let assert Ok(Nil) =
+      content.load(
+        tables: character_tables.content_tables(),
+        migrations: genesis_prime.load_migrations(),
+        pool: pog.Config(..pool, pool_name: process.new_name("load_pool")),
+        ask: readiness.Settings(within_ms: 5000, attempt_ms: 2000, pause_ms: 50),
+        probe: content.pool_probe,
+        key:,
+      )
+      as "the content load puts the seeded spawns in the world's term"
     server.Settings(
       ..settings,
-      world: server.World(
-        ..settings.world,
-        spawns: spawn.all(character_tables.shared()),
-      ),
+      world: server.World(..settings.world, spawns: key),
     )
   })
 }
@@ -2051,10 +2078,18 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
     && list.count(seen, fn(creature) { creature.creature_id == 73_465 }) == 27
     as "opcode.0x262.creature: the Creature2 id of each spawn's creature"
   assert list.all(seen, fn(creature) {
-    creature.tail.base_faction_id == creature.tail.faction_id
-    && creature.tail.display_info_id != 0
+    let values = #(
+      creature.tail.display_info_id,
+      creature.tail.outfit_info_id,
+      creature.tail.faction_id,
+      creature.tail.base_faction_id,
+    )
+    case creature.creature_id {
+      73_464 -> values == #(26_565, 0, 1441, 1441)
+      _ -> values == #(26_578, 0, 1442, 1442)
+    }
   })
-    as "both faction fields hold the creature's faction, and a display is sent"
+    as "each spawn's own values: the Battle Beast's display 26565, faction 1441 and base faction 1441, the Dagun's 26578, 1442 and 1442, and no outfit (the world database's rows and migration 0008's)"
   let #(second, second_character) =
     new_player(started:, number: 2, character_name: "Ann Qu")
   character_support.move_to(

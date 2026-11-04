@@ -15,12 +15,15 @@ import genesis_prime/table/creature2_difficulty
 import genesis_prime/table/creature2_display_group_entry
 import genesis_prime/table/creature2_display_info
 import genesis_prime/table/creature2_outfit_group_entry
+import genesis_prime/table/creature2_outfit_info
 import genesis_prime/table/creature2_override_properties
 import genesis_prime/table/creature2_resist
 import genesis_prime/table/creature2_tier
 import genesis_prime/table/creature_level
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map
+import genesis_prime/table/faction2
+import genesis_prime/table/faction2_relationship
 import genesis_prime/table/game_formula
 import genesis_prime/table/instance_portal
 import genesis_prime/table/item2
@@ -34,6 +37,7 @@ import genesis_prime/table/loader/store
 import genesis_prime/table/path_mission
 import genesis_prime/table/spell4
 import genesis_prime/table/spell_level
+import genesis_prime/table/world
 import genesis_prime/table/world_location2
 import genesis_prime/table/world_zone
 import genesis_prime/table/xp_per_level
@@ -90,6 +94,33 @@ pub fn entries() -> List(store.Entry) {
     world_zone.entry(),
     xp_per_level.entry(),
   ]
+}
+
+/// The entries only the content load reads (genesis_prime/content), listed apart
+/// from `entries` so the tables digest of a recording does not change with them:
+/// - Creature2OutfitInfo: the outfit of a spawn (genesis_prime/world_map/spawn).
+/// - Faction2 and Faction2Relationship: which creatures a player can attack
+///   (genesis_prime/world_map/spawn).
+/// - World: the worlds a map can run in, each of which gets a term of its spawns
+///   (genesis_prime/world_map/spawn).
+fn content_entries() -> List(store.Entry) {
+  [
+    creature2_outfit_info.entry(),
+    faction2.entry(),
+    faction2_relationship.entry(),
+    world.entry(),
+  ]
+}
+
+/// The content-only tables, loaded beside the server's own `tables` under the
+/// key they were loaded under, so the content load reads the creature tables
+/// already loaded and loads nothing twice. Gives only the content-only ones: the
+/// caller unloads them once the content is loaded, and the server's own stay.
+pub fn load_content_tables(
+  over tables: store.Tables,
+  from folder: String,
+) -> Result(store.Tables, store.LoadError) {
+  store.load_more(over: tables, from: folder, entries: content_entries())
 }
 
 /// Loads the server's tables under the server's own key, the same in every

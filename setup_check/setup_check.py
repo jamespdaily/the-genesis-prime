@@ -174,13 +174,21 @@ def check_manifest(machine: Machine) -> list[Missing]:
     return [Missing("manifest.toml tracked by git", _first_line(output), "git add manifest.toml, and commit it")]
 
 
+def _postgres_address(machine: Machine) -> tuple[str, str, str]:
+    """The Postgres the machine's environment names: PGHOST, PGPORT and PGUSER, with the
+    defaults the full check uses (the socket directory /tmp, port 5433, user postgres)."""
+    return (
+        machine.env.get("PGHOST") or "/tmp",
+        machine.env.get("PGPORT") or "5433",
+        machine.env.get("PGUSER") or "postgres",
+    )
+
+
 def check_postgres(machine: Machine) -> list[Missing]:
     """Reachable at PGHOST, PGPORT and PGUSER; major version 18; its clock
     within 1 second of this machine's; built with ICU, whose collation
     "und-x-icu" the character name index folds case with."""
-    host = machine.env.get("PGHOST") or "/tmp"
-    port = machine.env.get("PGPORT") or "5433"
-    user = machine.env.get("PGUSER") or "postgres"
+    host, port, user = _postgres_address(machine)
     part = "Postgres %d" % POSTGRES_MAJOR
     query = (
         "select current_setting('server_version_num'), extract(epoch from clock_timestamp()), "
@@ -208,6 +216,46 @@ def check_postgres(machine: Machine) -> list[Missing]:
         fix = "run a Postgres built with ICU (the Homebrew, Debian and apt.postgresql.org builds are; a source build needs --with-icu)"
         missing.append(Missing("%s built with ICU (collation und-x-icu)" % part,
                                "no collation und-x-icu: Postgres was built without ICU", fix))
+    return missing
+
+
+IMPORT_COMMAND = "gleam run -m genesis_prime/import_world_data"
+
+
+def check_world_data(machine: Machine) -> list[Missing]:
+    """Where GENESIS_WORLD_DATA is set: every file the play database's content_import
+    lists is in that folder with the SHA-256 recorded when it was imported, so a
+    changed or missing file of the world database is named with the import command
+    that brings the database level with it, one line for each file. The play
+    database is PGDATABASE at PGHOST, PGPORT and PGUSER (default postgres); one that
+    cannot be read, or has no content_import (the migrations have not run), lists no
+    file, and the Postgres check and the server's migration check say why."""
+    folder = machine.env.get("GENESIS_WORLD_DATA")
+    if not folder:
+        return []
+    host, port, user = _postgres_address(machine)
+    database = machine.env.get("PGDATABASE") or "postgres"
+    code, output = machine.run(
+        ["psql", "-X", "-At", "-h", host, "-p", port, "-U", user, "-d", database, "-c",
+         "select file, sha256 from content_import order by file"]
+    )
+    if code != 0:
+        return []
+    missing = []
+    for line in output.splitlines():
+        file, _, recorded = line.strip().partition("|")
+        if not file:
+            continue
+        path = Path(folder) / file
+        part = "the world database's %s as the play database imported it" % file
+        if not path.is_file():
+            missing.append(Missing(part, "no file at %s" % path,
+                                   "put %s in the folder GENESIS_WORLD_DATA names, or set it in env.sh" % file))
+            continue
+        found = hashlib.sha256(path.read_bytes()).hexdigest()
+        if found != recorded:
+            missing.append(Missing(part, "the file's SHA-256 is %s, the database recorded %s" % (found[:12], recorded[:12]),
+                                   "import it again: %s" % IMPORT_COMMAND))
     return missing
 
 
@@ -417,8 +465,9 @@ def check_distribution(machine: Machine) -> list[Missing]:
 
 def check_all(machine: Machine) -> list[Missing]:
     """Every part's check, in order, skipping the client's parts where
-    GENESIS_NO_CLIENT=1."""
-    checks = [check_gleam, check_erlang, check_rebar, check_manifest, check_postgres, check_distribution]
+    GENESIS_NO_CLIENT=1. The world data's runs only where GENESIS_WORLD_DATA is set."""
+    checks = [check_gleam, check_erlang, check_rebar, check_manifest, check_postgres, check_distribution,
+              check_world_data]
     if not _no_client(machine):
         checks += [check_client, check_table_folder, check_query_process]
     return [missing for check in checks for missing in check(machine)]

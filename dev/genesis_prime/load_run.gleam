@@ -380,12 +380,19 @@ pub fn maximum(history: List(#(Int, Verdict))) -> Int {
 /// run, waits until the database answers and its migrations are the files', and
 /// gives the settings it started with.
 pub fn start_server() -> Settings {
+  start_server_with(change: fn(settings) { settings })
+}
+
+/// `start_server` with the settings changed by `change` before the tree starts,
+/// for a run that must not take the client's default ports.
+pub fn start_server_with(change change: fn(Settings) -> Settings) -> Settings {
   log_to_null()
   runtime.show_info_lines()
   runtime.keep_mailboxes_out_of_crash_reports()
   load_sample.start()
   let #(tables, _count) = genesis_prime.load_tables()
-  let settings = genesis_prime.settings(tables:)
+  let spawns = genesis_prime.load_content(tables:)
+  let settings = genesis_prime.settings(tables:, spawns:)
   let login = settings.login
   let settings =
     server.Settings(
@@ -396,12 +403,13 @@ pub fn start_server() -> Settings {
       ),
       game: server.Served(..settings.game, max_connections: cap_for_the_run),
     )
+    |> change
   let assert Ok(tree) = application.start_server(settings:)
     as "the supervision tree started"
   let assert readiness.Ready =
     readiness.await(
       probe: fn(reply) { worker.probe(store: settings.store, reply:) },
-      tree: tree.monitor,
+      tree: option.Some(tree.monitor),
       settings: readiness.Settings(
         within_ms: 30_000,
         attempt_ms: 2000,

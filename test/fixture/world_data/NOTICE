@@ -1,0 +1,6 @@
+test/fixture/world_data/spawn.tsv holds the header and rows 29113 to 29139 of spawn.tsv of the
+wildstar-knowledge world-data (https://github.com/jamespdaily/wildstar-knowledge, path
+world-data/spawn.tsv), copied as they are, under that repository's licence, the GNU
+Affero General Public License, version 3 (the same as this project's). The tests import
+it as the world database's own rows: the 27 Virtual Battle Beasts of the Novice training
+simulation.

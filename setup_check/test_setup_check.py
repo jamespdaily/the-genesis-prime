@@ -106,6 +106,10 @@ PATCH_FILE = "otp-1b4ac11-clear-live-hf-end.patch"
 MARKER = "GENESIS_PATCHES"
 
 PATCH_SHA256 = hashlib.sha256((HERE / PATCH_FILE).read_bytes()).hexdigest()
+
+SPAWN_TSV = b"id\tentity_type\n1\t0\n"
+PATH_TSV = b"id\tspawn_id\n1\t1\n"
+IMPORT_COMMAND = "gleam run -m genesis_prime/import_world_data"
 STALE_SHA256 = hashlib.sha256(b"an older patch").hexdigest()
 
 PLANTED_CLIENT = b"planted WildStar64.exe"
@@ -176,6 +180,10 @@ class Plan:
     tables_missing: tuple = ()  # of those, the ones left out of the table folder
     table_folder: str = "present"  # present, or absent (no folder at all)
     index_damage: str = "none"  # none, or directory: a good header and a damaged directory node
+    # GENESIS_WORLD_DATA and the play database's content_import: absent (the variable unset), matching,
+    # one_changed (spawn.tsv differs from the recorded hash), two_changed, missing_file (spawn_path.tsv
+    # is listed and not in the folder) or no_record (the play database has no content_import table)
+    world_data: str = "absent"
 
 
 class PlantedTestCase(unittest.TestCase):
@@ -213,6 +221,13 @@ class PlantedTestCase(unittest.TestCase):
             env.update(self.plant_client(plan))
         elif plan.otp_without_client:
             env.update(self.plant_otp(plan))
+        if plan.world_data != "absent":
+            folder = self.root / "world-data"
+            folder.mkdir(exist_ok=True)
+            (folder / "spawn.tsv").write_bytes(SPAWN_TSV)
+            if plan.world_data != "missing_file":
+                (folder / "spawn_path.tsv").write_bytes(PATH_TSV)
+            env["GENESIS_WORLD_DATA"] = str(folder)
         env["PATH"] = self.plant_path(plan, env)
         for name in plan.without_variables:
             env.pop(name, None)
@@ -398,6 +413,15 @@ class PlantedTestCase(unittest.TestCase):
         if not plan.postgres_reachable:
             return 2, 'psql: error: connection to server on socket "/tmp/.s.PGSQL.5433" failed: No such file or directory\n'
         query = " ".join(argv).lower()
+        if "content_import" in query:
+            if plan.world_data == "no_record":
+                return 1, 'ERROR:  relation "content_import" does not exist\n'
+            old = sha256(b"an older file")
+            recorded = {
+                "spawn.tsv": old if plan.world_data in ("one_changed", "two_changed") else sha256(SPAWN_TSV),
+                "spawn_path.tsv": old if plan.world_data == "two_changed" else sha256(PATH_TSV),
+            }
+            return 0, "".join("%s|%s\n" % (file, recorded[file]) for file in sorted(recorded))
         words = {
             "server_version_num": _version_number(plan.postgres_version),
             "server_version": plan.postgres_version,
@@ -507,6 +531,50 @@ class PostgresTest(PlantedTestCase):
         self.assert_part(missing, "icu")
         self.assert_found(missing, "und-x-icu")
         self.assert_fix(missing, "ICU")
+
+
+class WorldDataTest(PlantedTestCase):
+    """The setup check compares the world database's files with what the play
+    database imported.
+
+    Expected values: the design of the world spawns (the Design artifact of issue
+    375, section 1): for each file listed in the play database's content_import, the
+    file in GENESIS_WORLD_DATA has the SHA-256 recorded; a file that differs is named
+    on a line of its own with the import command as the fix; the check runs only
+    where GENESIS_WORLD_DATA is set. The planted files are spawn.tsv and
+    spawn_path.tsv, each with its hash in the planted content_import."""
+
+    def test_matching_hashes_and_an_unset_variable_pass(self):
+        self.assertEqual(setup_check.check_world_data(self.plant(world_data="matching")), [])
+        self.assertEqual(setup_check.check_world_data(self.plant(world_data="absent")), [])
+
+    def test_a_file_that_differs_from_the_recorded_hash_is_named_with_the_import_command(self):
+        missing = self.only(setup_check.check_world_data(self.plant(world_data="one_changed")))
+        self.assert_part(missing, "spawn.tsv")
+        self.assertNotIn("spawn_path", self.text(missing))
+        self.assert_found(missing, sha256(SPAWN_TSV)[:12])
+        self.assert_found(missing, sha256(b"an older file")[:12])
+        self.assert_fix(missing, IMPORT_COMMAND)
+
+    def test_each_file_that_differs_is_named_on_a_line_of_its_own(self):
+        result = setup_check.check_world_data(self.plant(world_data="two_changed"))
+        self.assertEqual(len(result), 2, "one Missing for each differing file")
+        self.assert_part(result[0], "spawn.tsv")
+        self.assert_part(result[1], "spawn_path.tsv")
+        for missing in result:
+            self.assert_fix(missing, IMPORT_COMMAND)
+
+    def test_a_listed_file_that_is_not_in_the_folder_is_named(self):
+        missing = self.only(setup_check.check_world_data(self.plant(world_data="missing_file")))
+        self.assert_part(missing, "spawn_path.tsv")
+        self.assert_found(missing, "no file")
+
+    def test_a_play_database_with_no_content_import_lists_nothing(self):
+        self.assertEqual(setup_check.check_world_data(self.plant(world_data="no_record")), [])
+
+    def test_the_whole_check_runs_it(self):
+        result = setup_check.check_all(self.plant(world_data="one_changed"))
+        self.assertEqual(len([m for m in result if "spawn.tsv" in m.part]), 1)
 
 
 class TableFolderTest(PlantedTestCase):

@@ -1757,8 +1757,12 @@ fn map_sent(
   message message: map.Outgoing,
 ) -> client_connection.Handled(Session) {
   case message, held_in_the_world(session.status) {
-    map.Joined(..), _ | map.Left, _ ->
-      end_for(session:, now:, text: "the map sent an answer as a message")
+    map.Joined(..), _ | map.Left, _ | map.Retire, _ ->
+      end_for(
+        session:,
+        now:,
+        text: "the map sent an answer, or a creature's word, as a message",
+      )
     map.Watched(..), None | map.Unwatched(..), None | map.Gone(..), None ->
       Continue(session, [])
     map.Watched(by:), Some(entered) ->
@@ -2511,6 +2515,7 @@ fn leave_answered(
     | step.Answer(FromMap(map.Watched(..)))
     | step.Answer(FromMap(map.Unwatched(..)))
     | step.Answer(FromMap(map.Gone(..)))
+    | step.Answer(FromMap(map.Retire))
     | step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromSessions(..)) ->

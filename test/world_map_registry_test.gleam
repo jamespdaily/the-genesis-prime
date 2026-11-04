@@ -36,6 +36,7 @@ import gleam/list
 import gleam/otp/static_supervisor as supervisor
 import owned_test
 import place_support
+import spawn_support
 
 /// The world supervisor as the server builds it, with the names it was built
 /// with, a registry the maps find their players' connections in, and, when the
@@ -63,7 +64,9 @@ fn start_world() -> World {
       creature_supervisor: process.new_name("creature_supervisor"),
       creature_shutdown_ms: 1000,
       creature_restart_ms: 60_000,
-      spawns: [],
+      idle_stop_ms: 60_000,
+      sweep_ms: 10_000,
+      spawns: spawn_support.key_with(spawns: []),
     )
   let tree =
     supervisor.new(supervisor.RestForOne)

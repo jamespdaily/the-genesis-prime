@@ -533,6 +533,7 @@ fn start_creature(
           map: creature.map,
           incarnation: creature.incarnation,
           unit_id: creature.unit_id,
+          life: creature.life,
         ),
       )
     Error(error) ->

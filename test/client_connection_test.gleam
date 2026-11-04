@@ -22,6 +22,7 @@ import genesis_prime/step.{
 import genesis_prime/store
 import gleam/option.{None, Some}
 import owned_test
+import spawn_support
 
 pub fn a_bucket_that_holds_less_than_one_or_never_fills_is_refused_test() -> Nil {
   use <- owned_test.run(5000)
@@ -70,7 +71,11 @@ pub fn each_rules_bucket_in_the_servers_settings_holds_what_a_client_sends_at_th
   // server that is started sets them for real.
   envoy.set("GENESIS_GAME_ADDRESS", "127.0.0.1")
   envoy.set("GENESIS_REALM_NAME", "Test")
-  let settings = genesis_prime.settings(tables: character_tables.shared())
+  let settings =
+    genesis_prime.settings(
+      tables: character_tables.shared(),
+      spawns: spawn_support.key_with(spawns: []),
+    )
   let sts = settings.login.sts.settings
   let auth = settings.login.auth.settings
   let game = settings.game.settings

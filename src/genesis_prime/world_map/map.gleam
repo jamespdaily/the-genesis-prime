@@ -2,8 +2,9 @@
 //// the players and the creatures in it. It builds the unit of each player that
 //// joins, with the next unit id and the body of the character's look, keeps it,
 //// and forgets the player and its unit when the player's connection ends. It has
-//// a creature started at each spawn of its world, with the next unit id, and
-//// watches it. It owns who sees whom: a player and another player, or a player
+//// a creature started at a spawn of its world when a player first sees the spawn
+//// and stopped after no player has seen it for the idle stop, and watches it. It
+//// owns who sees whom: a player and another player, or a player
 //// and a creature, see each other when they are within
 //// `genesis_prime/world_map/sight.range`; two creatures never do. It decides
 //// sight and tells it; it sends the client no unit and carries no move. Each
@@ -62,26 +63,36 @@
 ////                                           to every player in the map: Gone(its unit)
 //// ```
 ////
-//// The map's start, from the map's side, and what happens to a creature that
-//// does not run or ends:
+//// The map's start, from the map's side, and the creatures a player's sight starts
+//// and stops. A spawn that no player sees has no process and no state, only its unit
+//// id when it has had one: it is dormant.
 ////
 //// ```
 //// supervisor                map                                         shell
-////   starts the map ─▶ Started ─▶ for each spawn of the map's world:
-////                                 unit id u = next unit id; watch w = next watch
-////                                 StartCreature(w, spawn, u)  ─▶ the creature supervisor starts it
-////                                                                                the shell watches Creature(map, run, u) as w
-////                                                                             (a start that fails ─▶ CreatureNotStarted(w, reason))
-//// CreatureNotStarted(w) ─▶ error line; the spawn stays empty for the run
-//// a player joins or moves into 1024 units of a creature:
-////                                 Watched(by: c) ─▶ Creature(.., u)           ─▶ the creature sends c its 0x262
-//// a player leaves, ends or moves out of sight:
-////                                 Unwatched(by: c) ─▶ Creature(.., u)         ─▶ the creature sends c its 0x355 if c saw it
-//// WatchEnded(w) of a creature ─▶ Gone(u) to every player in the map            (the creature that ended sent nothing)
-////                                 StartServiceTimer(the spawn's number, creature_restart_ms)
-//// the timer fires ─▶ unit id u' = next unit id; watch w' = next watch
-////                                 StartCreature(w', spawn, u')
-////                                 Watched(by: c) ─▶ Creature(.., u') for each player c in sight of the spawn now
+////   starts the map ─▶ Started ─▶ the sweep timer TimerId(0), every sweep_ms
+////                                 (no creature starts)
+//// Join / Moved: the spawns the player sees now (spawn_cell.near, then exact sight)
+////   a dormant spawn, seen now:   unit id u = the spawn's own, else next unit id
+////                                 life w = next watch
+////                                 StartCreature(w, spawn, u, life w, viewers [c]) ─▶ the creature supervisor starts it;
+////                                                                       the shell watches Creature(map, run, u, w) as w;
+////                                                                       the creature sends c its 0x262 as it starts
+////   a live spawn, seen now:      Watched(by: c) ─▶ Creature(.., u, w); idle ends
+////   a live spawn, no longer:     Unwatched(by: c) ─▶ the creature sends c its 0x355
+////                                 the last viewer gone: idle since now
+////   a retiring spawn, seen now:  nothing is sent, nothing starts: c is found among the seers at its end
+//// the sweep fires ─▶ for each live spawn idle for idle_stop_ms or more:
+////                                 Send(Creature(.., u, w), Retire)     the spawn is retiring
+////                                 StartServiceTimer(TimerId(0), sweep_ms)
+//// WatchEnded(w) of a retiring creature (or one that crashed while retiring)
+////                              ─▶ dormant, with u kept; no Gone: the 0x355s went when its viewers did
+////                                 players who see the spawn now: StartCreature(u, life w', viewers them)
+//// WatchEnded(w) of a live creature (a crash)
+////                              ─▶ Gone(u) to every player in the map (the creature that ended sent nothing)
+////                                 StartServiceTimer(the spawn's number, creature_restart_ms); u is given up
+//// the spawn's timer fires      ─▶ players see the spawn now: a new unit id, a creature as for a dormant spawn
+////                                 none: dormant
+//// CreatureNotStarted(w)        ─▶ error line; the spawn stays empty for the run
 //// ```
 ////
 //// What a connection does with them is its own (genesis_prime/game/connection):
@@ -99,13 +110,19 @@
 //// - **The incarnation** is in every `Joined`, so the joiner watches the run
 ////   of the map that holds its player, not a later one started after this
 ////   one ended.
-//// - **Unit ids** start at 1 and are never given twice in the map's life, to a
-////   player or a creature, whoever leaves or ends: the client refuses a 0x262
-////   whose unit id it has already seen (opcode.0x262), and a 0x262 with unit id 0
-////   makes the client's controlled unit (0x1403d9760). They stay below 2^20,
-////   since a cast id is built from its caster's unit id in the rest of the 32
-////   bits (`0x140561c30`): a map that has given them all crashes, and its
-////   players' connections end.
+//// - **Unit ids** start at 1 and are never given to two units at once, whoever
+////   leaves or ends: the client refuses a 0x262 whose unit id it already holds
+////   (opcode.0x262), and a 0x262 with unit id 0 makes the client's controlled unit
+////   (0x1403d9760). A player's id is given once. A spawn has one id for the run,
+////   given when its first creature starts and reused after a clean stop, since
+////   the client holds no unit of that id then (its 0x355 went with the last viewer)
+////   and takes a 0x262 for an id it removed (`death.creature_respawn`,
+////   `opcode.0x262`); a creature that crashed gave its id up with its `Gone`, and the
+////   spawn's next creature takes a new one. So the ids given are at most the
+////   players that joined, the spawns that ever had a creature and the crashes. They
+////   stay below 2^20, since a cast id is built from its caster's unit id in the
+////   rest of the 32 bits (`0x140561c30`): a map that has given them all crashes,
+////   and its players' connections end.
 //// - **A second Join from a connection in the map** answers the record built
 ////   from the unit the map keeps, not from the new Join, sends the joiner a
 ////   `Watched` for each player it sees again, changes nothing else and logs an
@@ -153,26 +170,52 @@
 ////   logged as an error: the connection's rule tells only while joined. A
 ////   tell in the form of an ask, or an ask in the form of a tell, is a bug and
 ////   crashes the map.
-//// - **Started** sets the map's clock and has a creature started at each spawn
-////   of the map's world, in the order of the spawns, each under the next unit id
-////   and the next watch id and standing from the start: a map starts with no
-////   player.
+//// - **Started** sets the map's clock and starts the sweep timer, `TimerId(0)`
+////   (spawn numbers start at 1): a map starts with no player and no creature.
+//// - **The spawns a player sees** are the spawns of the map's world within sight
+////   (`sight.sees`, exact, 3D) of its place, found through the cell index
+////   (`spawn_cell.near`) so a move reads only the spawns near it. The map keeps
+////   them for each player (`seen`), and the players who see each live spawn
+////   (`viewers`), so the two always agree.
 //// - **A creature** is a process of its own (genesis_prime/world_map/creature):
-////   the map keeps its spawn, its watch and the players who see it, and sends it
-////   `Watched` and `Unwatched` as it sends a player's connection, so the creature
-////   sends the 0x262 and the 0x355 of its own unit itself. A creature never
-////   moves, so a move of a player is the only change of sight with it.
+////   the map keeps, for each spawn that is not dormant, whether its creature is
+////   live, retiring, waiting for its restart or failed (`SpawnState`), and sends it
+////   `Watched`, `Unwatched` and `Retire`, so the creature sends the 0x262 and the
+////   0x355 of its own unit itself and decides nothing about its own life. A
+////   creature never moves, so a move of a player is the only change of sight with
+////   it.
+//// - **A creature starts** when its spawn gets its first viewer, with the spawn's
+////   unit id, a new life (its watch id) and its first viewers in `CreatureStart`, so
+////   it sends their 0x262s as it starts and a burst of starts is followed by no burst
+////   of `Watched`; the map's `Reply` of a Join comes first, then the starts. A
+////   player's watch is taken before the starts, so no life is the player's watch.
+//// - **A creature stops** when no player has seen it for `idle_stop_ms`: the sweep,
+////   every `sweep_ms`, sends `Retire` to each live spawn idle that long, so a stop
+////   comes between `idle_stop_ms` and `idle_stop_ms + sweep_ms` after the last
+////   viewer left. A player that steps back within that time finds the same
+////   creature, with its corpse and its health.
+//// - **A spawn seen while its creature retires** waits: the creature has been
+////   told to stop, so it cannot be shown to a viewer, and nothing starts until its
+////   end. Then a creature starts there under the same unit id and a new life, with
+////   the players who see the spawn from where they stand then as its first viewers. The registry drops a member when
+////   it learns of the member's end, which can be after the map has, so the new
+////   creature's address differs by its life: two members of one group would crash
+////   the map's `find` (`group_registry`).
 //// - **A creature that does not start** (`CreatureNotStarted`) is an error line
 ////   with the reason; its spawn stays empty for the rest of the run, with no
-////   later creature and no one told.
-//// - **A creature that ends** (its watch's `WatchEnded`, whatever the reason)
-////   is removed, and every player in the map is sent `Gone` of its unit, as for a
-////   player's end: the creature that ended sent nothing. Its spawn waits
+////   later creature and no one told. The other spawns are not affected.
+//// - **A creature that ends** while live (its watch's `WatchEnded`, whatever the
+////   reason) is removed, and every player in the map is sent `Gone` of its unit,
+////   as for a player's end: the creature that ended sent nothing. Its spawn waits
 ////   `creature_restart_ms` on a timer of the spawn's number, and nothing about
-////   the spawn is started or told until it fires. Then a creature is started
-////   there as a new unit under the next unit id, and each player in sight of the
-////   spawn from where it stands then is told to it `Watched`. A creature that
-////   crashes in a loop is so started at most once in `creature_restart_ms`.
+////   the spawn is started or told until it fires. Then, when a player sees the
+////   spawn from where it stands, a creature is started there as a new unit under
+////   the next unit id, and each player in sight is told to it `Watched`; when none
+////   does, the spawn is dormant. A creature that crashes in a loop is so started at
+////   most once in `creature_restart_ms`.
+//// - **A creature that ends while retiring** is a clean stop, whatever the reason:
+////   no client shows the unit.
+//// - **A map that ends** ends its creatures: each watches the run.
 ////
 //// Order, in short: every 0x262, 0x638 and 0x355 about a live unit comes from its
 //// owner's process, a player's connection or a creature, so for one viewer they
@@ -196,13 +239,19 @@
 //// | `Moved` reaches the map after that connection's `Leave` | ignored, with an error line |
 //// | a connection's `Watched` or `Unwatched` reaches it with no player in the world | dropped: a player that enters again starts with no viewers and is sent a `Watched` for each player in sight by its new join |
 //// | the same pair crosses sight twice in one `Moved` batch | the map decides on the final place: at most one `Watched` or `Unwatched` per pair per `Moved` |
-//// | a creature does not start | an error line with the supervisor's reason; the spawn stays empty for the run |
-//// | a creature crashes | every player is sent `Gone`; the spawn waits the respawn time, then a new unit is started there and the players in sight are told to it |
+//// | a creature does not start | an error line with the supervisor's reason; the spawn stays empty for the run; the burst's other spawns start |
+//// | the map crashes in the middle of a burst of starts | every creature started sees the run end and stops; the players' connections end with the run |
+//// | a Leave or an end is queued behind a burst of starts | taken next: `Unwatched` to each of the player's creatures, each stopped after the idle stop |
+//// | a spawn is seen while its creature retires | waits; a creature starts at its end, with the same unit id and a new life, if a player still sees it |
+//// | a creature crashes while retiring | taken as retired: the spawn is dormant, or a new creature starts if a player sees it |
+//// | a creature crashes while live | every player is sent `Gone`; the spawn waits the respawn time, then a new unit is started there if a player sees it, and it is dormant if none does |
+//// | the respawn timer fires with no one in sight | the spawn is dormant |
 //// | a creature crashes as soon as it is told of a player | the same, once for each respawn time: no creature is started or told anything before the timer fires |
 //// | the respawn timer fires after the map ended | not possible: the timer lives in the process |
 //// | the map has given every unit id | the map crashes, which ends its run and its players' connections; the next run starts from 1 |
 //// | the map run ends | each creature's watch on the run ends and it stops; the players' connections end with the run |
 //// | the creature supervisor or the creature registry restarts | every creature and every map ends (genesis_prime/server) |
+//// | the sweep timer fires after a restart of the map | not possible: the timer lives in the process, and a restarted map starts its own |
 
 import genesis_prime/game/appearance
 import genesis_prime/game/start_place.{type Place}
@@ -220,13 +269,16 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/player_unit.{type PlayerUnit}
 import genesis_prime/world_map/sight
-import genesis_prime/world_map/spawn.{type Spawn}
+import genesis_prime/world_map/spawn.{type WorldSpawns}
+import genesis_prime/world_map/spawn_cell
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
-import gleam/option.{Some}
+import gleam/option.{type Option, Some}
+import gleam/order
+import gleam/result
 import gleam/set.{type Set}
 
 /// The rule's name: its module path.
@@ -241,19 +293,30 @@ const server_time_modulus = 4_294_967_296
 /// but not including this one are given.
 const unit_id_limit = 1_048_576
 
+/// The sweep timer: it fires every `sweep_ms` and retires the creatures idle for
+/// `idle_stop_ms`. A spawn's restart timer is the spawn's number, which starts at
+/// 1, so this id is never one.
+pub const sweep_timer = TimerId(0)
+
 /// What a map is started with: which map it is, the incarnation Maps gave this
 /// run of it, unique in the node's life, the realm its players' units are
-/// created in, the client's game tables, which give a unit's body, the spawns of
-/// its world, which it has a creature started at, and how long a spawn whose
-/// creature ended waits before a creature is started there again.
+/// created in, the client's game tables, which give a unit's body, the spawns
+/// that start in its world (the world's persistent term, read by the map's start and
+/// never copied: genesis_prime/content/spawn), how long a spawn whose
+/// creature crashed waits before a creature is started there again, how long a
+/// creature that no player sees keeps running, and how often the map looks for
+/// one. The two times are the server's choice, settings so a test can shorten
+/// them: 60 s and 10 s.
 pub type Settings {
   Settings(
     map: MapId,
     incarnation: Int,
     realm_id: Int,
     tables: table_store.Tables,
-    spawns: List(Spawn),
+    spawns: WorldSpawns,
     creature_restart_ms: Int,
+    idle_stop_ms: Int,
+    sweep_ms: Int,
   )
 }
 
@@ -298,38 +361,68 @@ pub type Outgoing {
   /// connection of a player removes the unit from its client if it shows it, and
   /// shows it no more.
   Gone(unit_id: Int)
+  /// A send to a creature, never to a connection: no player has seen it for the
+  /// idle stop, so it ends (genesis_prime/world_map/creature).
+  Retire
 }
 
-/// A map's players, its creatures, their units and what it gives next: the
-/// players by their connection, the connection each open watch was opened for,
-/// the creatures by their unit id, the unit each creature watch was opened for,
-/// the next unit id and the next watch id, neither of which goes back, and the
-/// monotonic time the map started at, which its clock counts from (`Joined`
-/// carries it).
+/// A map's players, its spawns that have a creature or a failure, the spawns'
+/// unit ids and what it gives next: the players by their connection, the
+/// connection each open watch was opened for, the state of each spawn that is not
+/// dormant, the spawn each creature watch was opened for, the unit id each spawn
+/// has had this run, the next unit id and the next watch id, neither of which goes
+/// back, and the monotonic time the map started at, which its clock counts from
+/// (`Joined` carries it). A dormant spawn is a spawn with no entry in `spawns`.
 pub opaque type State {
   State(
     settings: Settings,
     players: Dict(ConnectionId, Player),
     watches: Dict(WatchId, ConnectionId),
-    creatures: Dict(Int, Standing),
-    creature_watches: Dict(WatchId, Int),
+    spawns: Dict(SpawnId, SpawnState),
+    creature_watches: Dict(WatchId, SpawnId),
+    unit_of_spawn: Dict(SpawnId, Int),
     next_unit_id: Int,
     next_watch: Int,
     started_ms: Int,
   )
 }
 
-/// A creature standing in the map: its spawn, the watch on its process, and the
-/// players who see it. A creature never moves, so it holds no place of its own.
-type Standing {
-  Standing(spawn: Spawn, watch: WatchId, sees: Set(ConnectionId))
+/// What a spawn that is not dormant has: a creature running, a creature told to
+/// stop, a wait for its restart, or a start that failed. A dormant spawn has
+/// none of these and no entry in the map's state.
+pub type SpawnState {
+  /// A creature runs as `unit_id` under `life` (its watch's number). `viewers` are
+  /// the players who see it, and `idle_since_ms` is the monotonic time the last
+  /// one stopped seeing it, `None` while any does: the sweep retires it when
+  /// `idle_stop_ms` has passed.
+  Live(
+    unit_id: Int,
+    life: Int,
+    viewers: Set(ConnectionId),
+    idle_since_ms: Option(Int),
+  )
+  /// The creature was told `Retire` and has not ended. The players who see the
+  /// spawn meanwhile are the players whose `seen` holds it, found when it ends.
+  Retiring(unit_id: Int, life: Int)
+  /// The creature crashed: the unit was sent `Gone`, and the spawn's restart
+  /// timer runs.
+  WaitingForRestart
+  /// The creature did not start: the spawn stays empty for the run.
+  Failed
 }
 
-/// One player in the map: its unit, the watch on its connection, and the
-/// players it sees, who see it: the relation is symmetric, so a pair is in one
-/// player's `sees` exactly when it is in the other's.
+/// One player in the map: its unit, the watch on its connection, the players
+/// it sees, who see it (the relation is symmetric, so a pair is in one
+/// player's `sees` exactly when it is in the other's), and the spawns of the
+/// map's world it sees, whatever their creature's state (a spawn is in `seen`
+/// exactly when it is within sight of the player's place).
 type Player {
-  Player(unit: PlayerUnit, watch: WatchId, sees: Set(ConnectionId))
+  Player(
+    unit: PlayerUnit,
+    watch: WatchId,
+    sees: Set(ConnectionId),
+    seen: Set(SpawnId),
+  )
 }
 
 /// Why a player is removed: it left, and its connection said so itself, or its
@@ -339,14 +432,24 @@ type Removal {
   Ended
 }
 
+/// The state of the spawn, or `Error(Nil)` for a dormant one.
+pub fn spawn_state(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> Result(SpawnState, Nil) {
+  dict.get(state.spawns, spawn)
+}
+
 /// The map's rule, as its service shell runs it.
 pub fn rule(
   map map: MapId,
   incarnation incarnation: Int,
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
-  spawns spawns: List(Spawn),
+  spawns spawns: WorldSpawns,
   creature_restart_ms creature_restart_ms: Int,
+  idle_stop_ms idle_stop_ms: Int,
+  sweep_ms sweep_ms: Int,
 ) -> ServiceRule(Settings, State, Message, Outgoing) {
   step.Rule(
     name: rule_name,
@@ -357,20 +460,24 @@ pub fn rule(
       tables:,
       spawns:,
       creature_restart_ms:,
+      idle_stop_ms:,
+      sweep_ms:,
     ),
     new:,
     step:,
   )
 }
 
-/// A map's first state: no players; unit id 1 and watch 1 are next.
+/// A map's first state: no players and every spawn dormant; unit id 1 and watch
+/// 1 are next.
 pub fn new(settings: Settings) -> State {
   State(
     settings:,
     players: dict.new(),
     watches: dict.new(),
-    creatures: dict.new(),
+    spawns: dict.new(),
     creature_watches: dict.new(),
+    unit_of_spawn: dict.new(),
     next_unit_id: 1,
     next_watch: 1,
     started_ms: 0,
@@ -390,79 +497,60 @@ pub fn step(
     Stopping(..) -> #(state, Effects([Stop]))
     OwnEvent(CreatureNotStarted(watch:, reason:)) ->
       creature_not_started(state:, watch:, reason:)
-    OwnEvent(ServiceTimerFired(timer: TimerId(number))) ->
-      creature_returns(state:, spawn: SpawnId(number))
+    OwnEvent(ServiceTimerFired(timer:)) ->
+      case timer == sweep_timer {
+        True -> swept(state:, now_ms: input.now.monotonic_ms)
+        False -> {
+          let TimerId(number) = timer
+          restart_due(state:, spawn: SpawnId(number))
+        }
+      }
     OwnEvent(Asked(caller:, message: Join(connection:, character:, place:))) ->
-      joined(state:, caller:, connection:, character:, place:)
+      joined(
+        state:,
+        caller:,
+        connection:,
+        character:,
+        place:,
+        now_ms: input.now.monotonic_ms,
+      )
     OwnEvent(Asked(caller:, message: Leave(connection:))) ->
-      left(state:, caller:, connection:)
+      left(state:, caller:, connection:, now_ms: input.now.monotonic_ms)
     OwnEvent(Told(message: Moved(connection:, place:))) ->
-      moved(state:, connection:, place:)
+      moved(state:, connection:, place:, now_ms: input.now.monotonic_ms)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Told(message: Join(..)))
     | OwnEvent(Told(message: Leave(..))) ->
       panic as "a map is asked Join and Leave and told Moved only"
     WatchEnded(watch:) ->
       case dict.get(state.creature_watches, watch) {
-        Ok(unit_id) -> creature_ended(state:, unit_id:)
-        Error(Nil) -> ended(state:, watch:)
+        Ok(spawn) -> creature_ended(state:, spawn:, watch:)
+        Error(Nil) -> ended(state:, watch:, now_ms: input.now.monotonic_ms)
       }
   }
 }
 
-/// A map's start: its clock is set, and each spawn of its world has a creature
-/// started at it, in the order of the spawns, with the next unit id and the next
-/// watch id, which the shell opens on the creature once it runs. The creatures
-/// stand from the start: they have no players in sight yet.
+/// A map's start: its clock is set and the sweep timer starts. No creature
+/// starts: a spawn gets one when a player first sees it.
 fn started(state: State) -> #(State, ServiceStep(Outgoing)) {
-  let #(state, starts) =
-    list.fold(state.settings.spawns, #(state, []), fn(held, spawn) {
-      let #(state, starts) = held
-      let #(state, _unit_id, start) = start_standing(state:, spawn:)
-      #(state, [start, ..starts])
-    })
-  #(state, Effects(list.reverse(starts)))
-}
-
-/// The map with a creature standing at the spawn under the next unit id and the
-/// next watch id, that unit id, and the effect that starts it.
-fn start_standing(
-  state state: State,
-  spawn spawn: Spawn,
-) -> #(State, Int, Effect(ServiceEffect(Outgoing))) {
-  let #(state, unit_id) = take_unit_id(state)
-  let watch = WatchId(state.next_watch)
   #(
-    State(
-      ..state,
-      creatures: dict.insert(
-        state.creatures,
-        unit_id,
-        Standing(spawn:, watch:, sees: set.new()),
-      ),
-      creature_watches: dict.insert(state.creature_watches, watch, unit_id),
-      next_watch: state.next_watch + 1,
-    ),
-    unit_id,
-    OwnEffect(StartCreature(
-      watch:,
-      creature: CreatureStart(
-        map: state.settings.map,
-        incarnation: state.settings.incarnation,
-        unit_id:,
-        spawn_id: spawn.id,
-        clock_origin_ms: state.started_ms,
-      ),
-    )),
+    state,
+    Effects([
+      OwnEffect(StartServiceTimer(
+        timer: sweep_timer,
+        after_ms: state.settings.sweep_ms,
+      )),
+    ]),
   )
 }
 
 /// The next unit id, and the map that has given it. Ids start at 1 and go up to
-/// `unit_id_limit` less one, about a million, one for each player that joins and
-/// each creature the map starts, a spawn's replacement included. A map that has
-/// given them all crashes, which ends its run and its players' connections; the
-/// next run starts from 1. A creature that crashes in a loop takes one id for
-/// each respawn time, so the ids last a run for about two years of them.
+/// `unit_id_limit` less one, about a million, one for each player that joins,
+/// each spawn that first has a creature and each creature that crashed and is
+/// replaced. A map that has given them all crashes, which ends its run and its
+/// players' connections; the next run starts from 1. A creature that crashes in
+/// a loop takes one id for each respawn time, so the ids last a run for about
+/// two years of them.
 fn take_unit_id(state: State) -> #(State, Int) {
   let unit_id = state.next_unit_id
   case unit_id < unit_id_limit {
@@ -479,38 +567,95 @@ fn creature_not_started(
   reason reason: String,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.creature_watches, watch) {
-    Ok(unit_id) -> #(
-      State(
-        ..state,
-        creatures: dict.delete(state.creatures, unit_id),
-        creature_watches: dict.delete(state.creature_watches, watch),
-      ),
-      Effects([
-        log_error(
-          state:,
-          about: step.no_one,
-          text: "the creature of unit "
-            <> int.to_string(unit_id)
-            <> " did not start, so its spawn stays empty: "
-            <> reason,
+    Ok(spawn) -> {
+      let SpawnId(number) = spawn
+      #(
+        State(
+          ..state,
+          spawns: dict.insert(state.spawns, spawn, Failed),
+          creature_watches: dict.delete(state.creature_watches, watch),
         ),
-      ]),
-    )
+        Effects([
+          log_error(
+            state:,
+            about: step.no_one,
+            text: "the creature of spawn "
+              <> int.to_string(number)
+              <> " did not start, so its spawn stays empty: "
+              <> reason,
+          ),
+        ]),
+      )
+    }
     Error(Nil) -> panic as "a creature that did not start was never started"
   }
 }
 
-/// A creature that ended: it is removed, every player in the map is sent `Gone`
-/// of its unit, and its spawn waits `creature_restart_ms` before a new creature
-/// is started there (`creature_returns`), so a creature that crashes at once
-/// again is started at most once in that time.
+/// The sweep: every live spawn idle for `idle_stop_ms` or more is sent `Retire`
+/// and becomes retiring, in the order of the spawns, and the sweep timer starts
+/// again.
+fn swept(
+  state state: State,
+  now_ms now_ms: Int,
+) -> #(State, ServiceStep(Outgoing)) {
+  let idle =
+    dict.to_list(state.spawns)
+    |> list.filter_map(fn(entry) {
+      case entry.1 {
+        Live(unit_id:, life:, idle_since_ms: Some(since_ms), ..)
+          if now_ms - since_ms >= state.settings.idle_stop_ms
+        -> Ok(#(entry.0, unit_id, life))
+        Live(..) | Retiring(..) | WaitingForRestart | Failed -> Error(Nil)
+      }
+    })
+    |> list.sort(fn(first, second) { compare_spawns(first.0, second.0) })
+  let spawns =
+    list.fold(idle, state.spawns, fn(spawns, retired) {
+      dict.insert(
+        spawns,
+        retired.0,
+        Retiring(unit_id: retired.1, life: retired.2),
+      )
+    })
+  #(
+    State(..state, spawns:),
+    Effects(
+      list.append(
+        list.map(idle, fn(retired) {
+          tell_creature(
+            state:,
+            unit_id: retired.1,
+            life: retired.2,
+            message: Retire,
+          )
+        }),
+        [
+          OwnEffect(StartServiceTimer(
+            timer: sweep_timer,
+            after_ms: state.settings.sweep_ms,
+          )),
+        ],
+      ),
+    ),
+  )
+}
+
+/// A creature's watch ended. A live creature crashed: every player is sent
+/// `Gone` of its unit, the unit id is given up, and the spawn's restart timer
+/// starts. A retiring one ended cleanly, whatever the reason: the spawn is
+/// dormant with its unit id kept, or, when a player sees it now, a creature
+/// starts at once under the same unit id and a new life, with those players as
+/// its first viewers.
 fn creature_ended(
   state state: State,
-  unit_id unit_id: Int,
+  spawn spawn: SpawnId,
+  watch watch: WatchId,
 ) -> #(State, ServiceStep(Outgoing)) {
-  case dict.get(state.creatures, unit_id) {
-    Ok(standing) -> {
-      let SpawnId(number) = standing.spawn.id
+  let state =
+    State(..state, creature_watches: dict.delete(state.creature_watches, watch))
+  case dict.get(state.spawns, spawn) {
+    Ok(Live(unit_id:, ..)) -> {
+      let SpawnId(number) = spawn
       let gone =
         list.map(players_in_order(state), fn(player) {
           send(to: player.0, message: Gone(unit_id:))
@@ -518,8 +663,8 @@ fn creature_ended(
       #(
         State(
           ..state,
-          creatures: dict.delete(state.creatures, unit_id),
-          creature_watches: dict.delete(state.creature_watches, standing.watch),
+          spawns: dict.insert(state.spawns, spawn, WaitingForRestart),
+          unit_of_spawn: dict.delete(state.unit_of_spawn, spawn),
         ),
         Effects(
           list.append(gone, [
@@ -531,72 +676,263 @@ fn creature_ended(
         ),
       )
     }
-    Error(Nil) -> panic as "a watch ended that names no creature of the map"
+    Ok(Retiring(..)) -> started_for_those_who_see(state:, spawn:)
+    Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
+      panic as "a watch ended for a creature the map holds no live or retiring spawn for"
   }
 }
 
-/// A spawn's wait is over: a creature is started there as a new unit, and the
-/// players who see the spawn from where they stand now are told to it
-/// `Watched`, in the order of their connections.
-fn creature_returns(
+/// A spawn's restart timer fired: when a player sees the spawn from where it
+/// stands, a creature starts there under the next unit id with those players as
+/// its first viewers; when none does, the spawn is dormant.
+fn restart_due(
   state state: State,
-  spawn id: SpawnId,
+  spawn spawn: SpawnId,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let assert Ok(spawn) = spawn.find(state.settings.spawns, id)
-    as "a timer of the map names one of its spawns"
-  let #(state, unit_id, start) = start_standing(state:, spawn:)
-  let seeing =
-    list.filter(players_in_order(state), fn(player) {
-      sight.sees(player_unit.place({ player.1 }.unit), spawn.place)
-    })
-  let viewers = set.from_list(list.map(seeing, fn(player) { player.0 }))
-  let state =
-    State(
-      ..state,
-      creatures: dict.insert(
-        state.creatures,
-        unit_id,
-        Standing(..standing_of(state, unit_id), sees: viewers),
-      ),
-    )
-  #(
-    state,
-    Effects([
-      start,
-      ..list.map(seeing, fn(player) {
-        tell_creature(state:, unit_id:, message: Watched(by: player.0))
-      })
-    ]),
-  )
+  case dict.get(state.spawns, spawn) {
+    Ok(WaitingForRestart) -> started_for_those_who_see(state:, spawn:)
+    Ok(Live(..)) | Ok(Retiring(..)) | Ok(Failed) | Error(Nil) ->
+      panic as "a restart timer fired for a spawn that does not wait for one"
+  }
 }
 
-fn standing_of(state: State, unit_id: Int) -> Standing {
-  let assert Ok(standing) = dict.get(state.creatures, unit_id)
-    as "the map holds the creature it has just started"
-  standing
+/// The spawn is dormant when no player sees it from where it stands, and
+/// otherwise a creature starts there with those players as its first viewers.
+fn started_for_those_who_see(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> #(State, ServiceStep(Outgoing)) {
+  case players_seeing(state:, spawn:) {
+    [] -> #(
+      State(..state, spawns: dict.delete(state.spawns, spawn)),
+      Effects([]),
+    )
+    viewers -> {
+      let #(state, start) = start_creature(state:, spawn:, viewers:)
+      #(state, Effects([start]))
+    }
+  }
+}
+
+/// The connections of the players who see the spawn from where they stand, in
+/// the order of their numbers.
+fn players_seeing(
+  state state: State,
+  spawn spawn: SpawnId,
+) -> List(ConnectionId) {
+  players_in_order(state)
+  |> list.filter(fn(player) { set.contains({ player.1 }.seen, spawn) })
+  |> list.map(fn(player) { player.0 })
 }
 
 /// The players by their connection's number.
 fn players_in_order(state: State) -> List(#(ConnectionId, Player)) {
   dict.to_list(state.players)
-  |> list.sort(fn(first, second) {
-    let ConnectionId(first) = first.0
-    let ConnectionId(second) = second.0
-    int.compare(first, second)
+  |> list.sort(fn(first, second) { compare_connections(first.0, second.0) })
+}
+
+fn compare_connections(
+  first: ConnectionId,
+  second: ConnectionId,
+) -> order.Order {
+  let ConnectionId(first) = first
+  let ConnectionId(second) = second
+  int.compare(first, second)
+}
+
+fn compare_spawns(first: SpawnId, second: SpawnId) -> order.Order {
+  let SpawnId(first) = first
+  let SpawnId(second) = second
+  int.compare(first, second)
+}
+
+/// Starts a creature at the spawn with these players as its first viewers: under
+/// the spawn's unit id for the run, taken from the counter when the spawn has had
+/// none (the first creature there, or the first after a crash gave its id up),
+/// and a new life, the number of the watch it is started under. The spawn is
+/// then live with those viewers.
+fn start_creature(
+  state state: State,
+  spawn spawn: SpawnId,
+  viewers viewers: List(ConnectionId),
+) -> #(State, Effect(ServiceEffect(Outgoing))) {
+  let #(state, unit_id) = case dict.get(state.unit_of_spawn, spawn) {
+    Ok(unit_id) -> #(state, unit_id)
+    Error(Nil) -> {
+      let #(state, unit_id) = take_unit_id(state)
+      #(
+        State(
+          ..state,
+          unit_of_spawn: dict.insert(state.unit_of_spawn, spawn, unit_id),
+        ),
+        unit_id,
+      )
+    }
+  }
+  let watch = WatchId(state.next_watch)
+  let WatchId(life) = watch
+  #(
+    State(
+      ..state,
+      spawns: dict.insert(
+        state.spawns,
+        spawn,
+        Live(
+          unit_id:,
+          life:,
+          viewers: set.from_list(viewers),
+          idle_since_ms: option.None,
+        ),
+      ),
+      creature_watches: dict.insert(state.creature_watches, watch, spawn),
+      next_watch: state.next_watch + 1,
+    ),
+    OwnEffect(StartCreature(
+      watch:,
+      creature: CreatureStart(
+        map: state.settings.map,
+        incarnation: state.settings.incarnation,
+        unit_id:,
+        life:,
+        spawn_id: spawn,
+        clock_origin_ms: state.started_ms,
+        viewers:,
+      ),
+    )),
+  )
+}
+
+/// The spawns of the map's world the player at `place` sees: those the cell
+/// index finds near it that are within sight, exactly.
+fn spawns_in_sight(state state: State, place place: Place) -> Set(SpawnId) {
+  let spawns = state.settings.spawns
+  spawn_cell.near(
+    cells: spawns.cells,
+    x: start_place.x(place),
+    z: start_place.z(place),
+    range: sight.range,
+  )
+  |> list.filter(fn(id) {
+    dict.get(spawns.by_id, id)
+    |> result.map(fn(spawn) { sight.sees(place, spawn.place) })
+    |> result.unwrap(False)
   })
+  |> set.from_list
 }
 
-/// The creatures by their unit id.
-fn creatures_in_order(state: State) -> List(#(Int, Standing)) {
-  dict.to_list(state.creatures)
-  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
+/// The state and effects of the player of `connection` coming to see the spawns
+/// `now` after it saw `was`, at monotonic time `now_ms`: a dormant spawn it now
+/// sees starts a creature with the player as its first viewer (the creature
+/// sends the 0x262 as it starts), a live one is told `Watched`, and a retiring,
+/// waiting or failed one is not told, for the player is found among its viewers
+/// when it needs them; for each spawn it no longer sees, a live creature is told
+/// `Unwatched` and the spawn is idle from `now_ms` when the player was its last
+/// viewer. The starts come first, in the order of the spawns, then the sends. A
+/// spawn the player saw and sees is not told.
+fn spawns_decided(
+  state state: State,
+  connection connection: ConnectionId,
+  was was: Set(SpawnId),
+  now now: Set(SpawnId),
+  now_ms now_ms: Int,
+) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
+  use <- bool.guard(when: was == now, return: #(state, []))
+  let entered = in_order(set.difference(now, was))
+  let left = in_order(set.difference(was, now))
+  let #(state, starts, sends) =
+    list.fold(entered, #(state, [], []), fn(held, spawn) {
+      let #(state, starts, sends) = held
+      case dict.get(state.spawns, spawn) {
+        Error(Nil) -> {
+          let #(state, start) =
+            start_creature(state:, spawn:, viewers: [connection])
+          #(state, [start, ..starts], sends)
+        }
+        Ok(Live(unit_id:, life:, viewers:, ..)) -> #(
+          State(
+            ..state,
+            spawns: dict.insert(
+              state.spawns,
+              spawn,
+              Live(
+                unit_id:,
+                life:,
+                viewers: set.insert(viewers, connection),
+                idle_since_ms: option.None,
+              ),
+            ),
+          ),
+          starts,
+          [
+            tell_creature(
+              state:,
+              unit_id:,
+              life:,
+              message: Watched(by: connection),
+            ),
+            ..sends
+          ],
+        )
+        Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) -> held
+      }
+    })
+  let #(state, sends) =
+    list.fold(left, #(state, sends), fn(held, spawn) {
+      let #(state, sends) = held
+      case dict.get(state.spawns, spawn) {
+        Ok(Live(unit_id:, life:, viewers:, idle_since_ms:)) -> {
+          let viewers = set.delete(viewers, connection)
+          let idle_since_ms = case set.is_empty(viewers) {
+            True -> Some(now_ms)
+            False -> idle_since_ms
+          }
+          #(
+            State(
+              ..state,
+              spawns: dict.insert(
+                state.spawns,
+                spawn,
+                Live(unit_id:, life:, viewers:, idle_since_ms:),
+              ),
+            ),
+            [
+              tell_creature(
+                state:,
+                unit_id:,
+                life:,
+                message: Unwatched(by: connection),
+              ),
+              ..sends
+            ],
+          )
+        }
+        Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) -> #(
+          state,
+          sends,
+        )
+      }
+    })
+  #(state, list.append(list.reverse(starts), list.reverse(sends)))
 }
 
-/// The send that tells the creature `unit_id` that the player of connection `by`
-/// sees it (`Watched`) or no longer does (`Unwatched`).
+/// The spawns of a set in the order of their numbers.
+fn in_order(spawns: Set(SpawnId)) -> List(SpawnId) {
+  set.to_list(spawns) |> list.sort(compare_spawns)
+}
+
+/// The spawns the player sees by their number, so the sends about them are in
+/// one order.
+fn seen_in_order(player: Player) -> List(SpawnId) {
+  in_order(player.seen)
+}
+
+/// The send that tells the creature `unit_id` under `life` that the player of
+/// connection `by` sees it (`Watched`) or no longer does (`Unwatched`), or that
+/// it ends (`Retire`).
 fn tell_creature(
   state state: State,
   unit_id unit_id: Int,
+  life life: Int,
   message message: Outgoing,
 ) -> Effect(ServiceEffect(Outgoing)) {
   OwnEffect(Send(
@@ -604,54 +940,10 @@ fn tell_creature(
       map: state.settings.map,
       incarnation: state.settings.incarnation,
       unit_id:,
+      life:,
     ),
     message:,
   ))
-}
-
-/// The creatures after the player of `connection` is decided against each of
-/// them, by `sees_now`, whether it sees the creature's spawn, in the order of the
-/// map's table, which no sort is made for on each move (as `others_of`): a creature it did not see and does now is told `Watched`,
-/// one it saw and does not is told `Unwatched`, one that stays as it was is told
-/// nothing.
-fn creatures_decided(
-  state state: State,
-  connection connection: ConnectionId,
-  sees_now sees_now: fn(Spawn) -> Bool,
-) -> #(Dict(Int, Standing), List(Effect(ServiceEffect(Outgoing)))) {
-  dict.fold(
-    state.creatures,
-    #(state.creatures, []),
-    fn(held, unit_id, standing) {
-      let #(creatures, effects) = held
-      let was = set.contains(standing.sees, connection)
-      case was, sees_now(standing.spawn) {
-        False, True -> #(
-          dict.insert(
-            creatures,
-            unit_id,
-            Standing(..standing, sees: set.insert(standing.sees, connection)),
-          ),
-          [
-            tell_creature(state:, unit_id:, message: Watched(by: connection)),
-            ..effects
-          ],
-        )
-        True, False -> #(
-          dict.insert(
-            creatures,
-            unit_id,
-            Standing(..standing, sees: set.delete(standing.sees, connection)),
-          ),
-          [
-            tell_creature(state:, unit_id:, message: Unwatched(by: connection)),
-            ..effects
-          ],
-        )
-        True, True | False, False -> held
-      }
-    },
-  )
 }
 
 /// The map's server time at monotonic time `monotonic_ms`, for a map started at
@@ -682,6 +974,7 @@ fn moved(
   state state: State,
   connection connection: ConnectionId,
   place place: Place,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
     Error(Nil) -> #(
@@ -740,21 +1033,19 @@ fn moved(
             }
           },
         )
-      let #(creatures, creature_effects) =
-        creatures_decided(state:, connection:, sees_now: fn(spawn) {
-          sight.sees(place, spawn.place)
-        })
+      let seen = spawns_in_sight(state:, place:)
+      let #(state, spawn_effects) =
+        spawns_decided(state:, connection:, was: mover.seen, now: seen, now_ms:)
       #(
         State(
           ..state,
           players: dict.insert(
             others,
             connection,
-            Player(..mover, unit:, sees: mover_sees),
+            Player(..mover, unit:, sees: mover_sees, seen:),
           ),
-          creatures:,
         ),
-        Effects(list.append(effects, creature_effects)),
+        Effects(list.append(effects, spawn_effects)),
       )
     }
   }
@@ -768,10 +1059,12 @@ fn left(
   state state: State,
   caller caller: CallerId,
   connection connection: ConnectionId,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
     Ok(player) -> {
-      let #(state, told) = without(state:, connection:, player:, why: Camped)
+      let #(state, told) =
+        without(state:, connection:, player:, why: Camped, now_ms:)
       #(
         state,
         Effects(
@@ -809,11 +1102,13 @@ fn joined(
   connection connection: ConnectionId,
   character character: Character,
   place place: Place,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, connection) {
     Ok(player) ->
       joined_again(state:, caller:, connection:, character:, player:)
-    Error(Nil) -> joined_new(state:, caller:, connection:, character:, place:)
+    Error(Nil) ->
+      joined_new(state:, caller:, connection:, character:, place:, now_ms:)
   }
 }
 
@@ -838,16 +1133,19 @@ fn joined_again(
       ]
     })
     |> list.append(
-      creatures_in_order(state)
-      |> list.filter(fn(creature) {
-        set.contains({ creature.1 }.sees, connection)
-      })
-      |> list.map(fn(creature) {
-        tell_creature(
-          state:,
-          unit_id: creature.0,
-          message: Watched(by: connection),
-        )
+      seen_in_order(player)
+      |> list.filter_map(fn(spawn) {
+        case dict.get(state.spawns, spawn) {
+          Ok(Live(unit_id:, life:, ..)) ->
+            Ok(tell_creature(
+              state:,
+              unit_id:,
+              life:,
+              message: Watched(by: connection),
+            ))
+          Ok(Retiring(..)) | Ok(WaitingForRestart) | Ok(Failed) | Error(Nil) ->
+            Error(Nil)
+        }
       }),
     )
   #(
@@ -886,9 +1184,11 @@ fn joined_new(
   connection connection: ConnectionId,
   character character: Character,
   place place: Place,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   let #(state, unit_id) = take_unit_id(state)
   let watch = WatchId(state.next_watch)
+  let state = State(..state, next_watch: state.next_watch + 1)
   let unit =
     player_unit.new(
       character:,
@@ -916,17 +1216,18 @@ fn joined_new(
     list.flat_map(in_sight, fn(other) {
       comes_into_sight(newcomer: connection, other: other.0)
     })
-  let #(creatures, creature_effects) =
-    creatures_decided(state:, connection:, sees_now: fn(spawn) {
-      sight.sees(place, spawn.place)
-    })
+  let seen = spawns_in_sight(state:, place:)
+  let #(state, spawn_effects) =
+    spawns_decided(state:, connection:, was: set.new(), now: seen, now_ms:)
   #(
     State(
       ..state,
-      players: dict.insert(players, connection, Player(unit:, watch:, sees:)),
+      players: dict.insert(
+        players,
+        connection,
+        Player(unit:, watch:, sees:, seen:),
+      ),
       watches: dict.insert(state.watches, watch, connection),
-      creatures:,
-      next_watch: state.next_watch + 1,
     ),
     Effects(
       list.flatten([
@@ -935,7 +1236,7 @@ fn joined_new(
           OwnEffect(Reply(caller, answer(state:, unit:))),
         ],
         pairs,
-        creature_effects,
+        spawn_effects,
       ]),
     ),
   )
@@ -994,12 +1295,14 @@ fn answer(state state: State, unit unit: PlayerUnit) -> Outgoing {
 fn ended(
   state state: State,
   watch watch: WatchId,
+  now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.watches, watch) {
     Ok(connection) ->
       case dict.get(state.players, connection) {
         Ok(player) -> {
-          let #(state, told) = without(state:, connection:, player:, why: Ended)
+          let #(state, told) =
+            without(state:, connection:, player:, why: Ended, now_ms:)
           #(state, Effects(told))
         }
         Error(Nil) -> no_player_for_watch(state)
@@ -1034,6 +1337,7 @@ fn without(
   connection connection: ConnectionId,
   player player: Player,
   why why: Removal,
+  now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
   let others = others_of(state:, connection:)
   let viewers =
@@ -1046,15 +1350,16 @@ fn without(
         Player(..v.1, sees: set.delete({ v.1 }.sees, connection)),
       )
     })
-  let #(creatures, creature_effects) =
-    creatures_decided(state:, connection:, sees_now: fn(_spawn) { False })
+  let #(state, spawn_effects) =
+    spawns_decided(
+      state:,
+      connection:,
+      was: player.seen,
+      now: set.new(),
+      now_ms:,
+    )
   #(
-    State(
-      ..state,
-      players:,
-      creatures:,
-      watches: dict.delete(state.watches, player.watch),
-    ),
+    State(..state, players:, watches: dict.delete(state.watches, player.watch)),
     list.append(
       case why {
         Camped ->
@@ -1074,7 +1379,7 @@ fn without(
             }
           })
       },
-      creature_effects,
+      spawn_effects,
     ),
   )
 }

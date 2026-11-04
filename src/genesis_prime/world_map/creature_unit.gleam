@@ -12,10 +12,10 @@
 //// - **Place:** a kind 2 movement command at the spawn's position and a kind 14
 ////   at its facing, each with its bit clear, which places the unit at once
 ////   (`genesis_prime/world_map/player_unit.standing`).
-//// - **Factions:** Creature2.factionId in both fields, which the client keeps
+//// - **Factions:** the spawn's faction and base faction, which the client keeps
 ////   in place of the row's (opcode.0x262.creature).
-//// - **Display:** the spawn's display info, since with 0 the creature has no
-////   model (opcode.0x262.creature).
+//// - **Display and outfit:** the spawn's display info, since with 0 the creature
+////   has no model, and its outfit info (opcode.0x262.creature).
 //// - **Properties:** none; the client computes each from its tables
 ////   (`0x1404585c0`).
 //// - Every other field 0 or empty, each by its record
@@ -56,7 +56,9 @@ pub fn create(
       properties: [],
       item_visuals: [],
       faction_id: spawn.faction_id,
+      base_faction_id: spawn.base_faction_id,
       display_info_id: spawn.display_info_id,
+      outfit_info_id: spawn.outfit_info_id,
       server_time_estimate_start:,
     ),
   )
